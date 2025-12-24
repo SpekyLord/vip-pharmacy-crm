@@ -8,53 +8,111 @@
  * - MongoDB database connection
  * - JWT authentication
  * - Role-based access control
- * - File upload with Cloudinary
+ * - File upload with AWS S3
  * - CORS configuration
  * - Error handling
  */
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
-const errorHandler = require('./middleware/errorHandler');
+const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 // Load environment variables
 dotenv.config();
 
-// TODO: Initialize Express app
-// TODO: Connect to MongoDB
-// TODO: Configure middleware (cors, json parser, etc.)
-// TODO: Mount route handlers
-// TODO: Configure error handling
-// TODO: Start server
-
+// Initialize Express app
 const app = express();
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Security middleware
+app.use(helmet());
 
-// Routes
-// TODO: Mount routes
-// app.use('/api/auth', require('./routes/authRoutes'));
-// app.use('/api/users', require('./routes/userRoutes'));
-// app.use('/api/doctors', require('./routes/doctorRoutes'));
-// app.use('/api/visits', require('./routes/visitRoutes'));
-// app.use('/api/products', require('./routes/productRoutes'));
-// app.use('/api/regions', require('./routes/regionRoutes'));
+// Request logging (only in development)
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev'));
+}
 
-// Error Handler
-// app.use(errorHandler);
+// CORS configuration
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+app.use(cors(corsOptions));
 
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'VIP Pharmacy CRM API is running',
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Mount route handlers
+app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/users', require('./routes/userRoutes'));
+app.use('/api/doctors', require('./routes/doctorRoutes'));
+app.use('/api/visits', require('./routes/visitRoutes'));
+app.use('/api/products', require('./routes/productRoutes'));
+app.use('/api/regions', require('./routes/regionRoutes'));
+app.use('/api/assignments', require('./routes/productAssignmentRoutes'));
+
+// 404 handler for undefined routes
+app.use(notFound);
+
+// Global error handler
+app.use(errorHandler);
+
+// Server configuration
 const PORT = process.env.PORT || 5000;
 
-// TODO: Connect to DB and start server
-// connectDB().then(() => {
-//   app.listen(PORT, () => {
-//     console.log(`Server running on port ${PORT}`);
-//   });
-// });
+// Connect to database and start server
+const startServer = async () => {
+  try {
+    await connectDB();
+
+    app.listen(PORT, () => {
+      console.log(`
+╔═══════════════════════════════════════════════════════╗
+║       VIP Pharmacy CRM - API Server                   ║
+╠═══════════════════════════════════════════════════════╣
+║  Status:      Running                                 ║
+║  Port:        ${PORT.toString().padEnd(40)}║
+║  Environment: ${(process.env.NODE_ENV || 'development').padEnd(40)}║
+║  API Base:    /api                                    ║
+╚═══════════════════════════════════════════════════════╝
+      `);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error.message);
+    process.exit(1);
+  }
+};
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Promise Rejection:', err.message);
+  // Close server gracefully
+  process.exit(1);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err.message);
+  process.exit(1);
+});
+
+// Start the server
+startServer();
 
 module.exports = app;

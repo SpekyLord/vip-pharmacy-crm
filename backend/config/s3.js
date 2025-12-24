@@ -1,0 +1,184 @@
+/**
+ * AWS S3 Configuration
+ *
+ * This file handles:
+ * - AWS S3 client initialization
+ * - Upload and delete operations
+ * - Signed URL generation
+ * - Folder structure management
+ */
+
+const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { v4: uuidv4 } = require('uuid');
+const path = require('path');
+
+// Initialize S3 Client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
+
+const bucketName = process.env.S3_BUCKET_NAME;
+
+/**
+ * Generate a unique filename with folder structure
+ * @param {string} originalName - Original filename
+ * @param {string} folder - Folder path (e.g., 'visits/2024/12', 'products', 'avatars')
+ * @returns {string} Full S3 key
+ */
+const generateS3Key = (originalName, folder = 'uploads') => {
+  const ext = path.extname(originalName).toLowerCase();
+  const filename = `${uuidv4()}${ext}`;
+  return `${folder}/${filename}`;
+};
+
+/**
+ * Upload a file buffer to S3
+ * @param {Buffer} buffer - File buffer
+ * @param {string} key - S3 object key
+ * @param {string} contentType - MIME type of the file
+ * @returns {Promise<string>} Public URL of uploaded file
+ */
+const uploadToS3 = async (buffer, key, contentType) => {
+  const command = new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    Body: buffer,
+    ContentType: contentType,
+    // ACL: 'public-read', // Uncomment if bucket allows public access
+  });
+
+  await s3Client.send(command);
+
+  // Return the public URL
+  return `https://${bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
+};
+
+/**
+ * Upload a visit photo
+ * @param {Buffer} buffer - Image buffer
+ * @param {string} originalName - Original filename
+ * @param {string} contentType - MIME type
+ * @returns {Promise<{url: string, key: string}>}
+ */
+const uploadVisitPhoto = async (buffer, originalName, contentType) => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const folder = `visits/${year}/${month}`;
+  const key = generateS3Key(originalName, folder);
+  const url = await uploadToS3(buffer, key, contentType);
+  return { url, key };
+};
+
+/**
+ * Upload a product image
+ * @param {Buffer} buffer - Image buffer
+ * @param {string} originalName - Original filename
+ * @param {string} contentType - MIME type
+ * @returns {Promise<{url: string, key: string}>}
+ */
+const uploadProductImage = async (buffer, originalName, contentType) => {
+  const key = generateS3Key(originalName, 'products');
+  const url = await uploadToS3(buffer, key, contentType);
+  return { url, key };
+};
+
+/**
+ * Upload a user avatar
+ * @param {Buffer} buffer - Image buffer
+ * @param {string} originalName - Original filename
+ * @param {string} contentType - MIME type
+ * @returns {Promise<{url: string, key: string}>}
+ */
+const uploadAvatar = async (buffer, originalName, contentType) => {
+  const key = generateS3Key(originalName, 'avatars');
+  const url = await uploadToS3(buffer, key, contentType);
+  return { url, key };
+};
+
+/**
+ * Delete a file from S3
+ * @param {string} key - S3 object key
+ * @returns {Promise<void>}
+ */
+const deleteFromS3 = async (key) => {
+  const command = new DeleteObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+  });
+
+  await s3Client.send(command);
+};
+
+/**
+ * Delete a file by URL
+ * @param {string} url - Full S3 URL
+ * @returns {Promise<void>}
+ */
+const deleteByUrl = async (url) => {
+  // Extract key from URL
+  const urlObj = new URL(url);
+  const key = urlObj.pathname.slice(1); // Remove leading slash
+  await deleteFromS3(key);
+};
+
+/**
+ * Generate a signed URL for private file access
+ * @param {string} key - S3 object key
+ * @param {number} expiresIn - URL expiration time in seconds (default: 3600)
+ * @returns {Promise<string>} Signed URL
+ */
+const getSignedDownloadUrl = async (key, expiresIn = 3600) => {
+  const command = new GetObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+  });
+
+  return getSignedUrl(s3Client, command, { expiresIn });
+};
+
+/**
+ * Extract S3 key from a full URL
+ * @param {string} url - Full S3 URL
+ * @returns {string} S3 key
+ */
+const extractKeyFromUrl = (url) => {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.pathname.slice(1); // Remove leading slash
+  } catch {
+    return url; // Return as-is if not a valid URL
+  }
+};
+
+/**
+ * Check if S3 configuration is valid
+ * @returns {boolean}
+ */
+const isConfigured = () => {
+  return !!(
+    process.env.AWS_ACCESS_KEY_ID &&
+    process.env.AWS_SECRET_ACCESS_KEY &&
+    process.env.S3_BUCKET_NAME
+  );
+};
+
+module.exports = {
+  s3Client,
+  bucketName,
+  generateS3Key,
+  uploadToS3,
+  uploadVisitPhoto,
+  uploadProductImage,
+  uploadAvatar,
+  deleteFromS3,
+  deleteByUrl,
+  getSignedDownloadUrl,
+  extractKeyFromUrl,
+  isConfigured,
+};

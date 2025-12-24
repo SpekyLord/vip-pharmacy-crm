@@ -9,9 +9,209 @@
  * - Production vs development error details
  */
 
-// TODO: Implement error handler middleware
-// - Catch all errors from routes
-// - Format error responses consistently
-// - Log errors appropriately
-// - Hide sensitive error details in production
-// - Handle specific error types (CastError, ValidationError, etc.)
+/**
+ * Custom API Error class
+ */
+class ApiError extends Error {
+  constructor(statusCode, message, isOperational = true) {
+    super(message);
+    this.statusCode = statusCode;
+    this.isOperational = isOperational;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+/**
+ * Not Found Error (404)
+ */
+class NotFoundError extends ApiError {
+  constructor(message = 'Resource not found') {
+    super(404, message);
+  }
+}
+
+/**
+ * Validation Error (400)
+ */
+class ValidationError extends ApiError {
+  constructor(message = 'Validation failed', errors = []) {
+    super(400, message);
+    this.errors = errors;
+  }
+}
+
+/**
+ * Unauthorized Error (401)
+ */
+class UnauthorizedError extends ApiError {
+  constructor(message = 'Unauthorized access') {
+    super(401, message);
+  }
+}
+
+/**
+ * Forbidden Error (403)
+ */
+class ForbiddenError extends ApiError {
+  constructor(message = 'Access forbidden') {
+    super(403, message);
+  }
+}
+
+/**
+ * Handle CastError (invalid MongoDB ObjectId)
+ */
+const handleCastError = (err) => {
+  const message = `Invalid ${err.path}: ${err.value}`;
+  return new ApiError(400, message);
+};
+
+/**
+ * Handle MongoDB duplicate key error
+ */
+const handleDuplicateKeyError = (err) => {
+  const field = Object.keys(err.keyValue)[0];
+  const message = `${field} already exists. Please use a different value.`;
+  return new ApiError(400, message);
+};
+
+/**
+ * Handle Mongoose validation error
+ */
+const handleValidationError = (err) => {
+  const errors = Object.values(err.errors).map((el) => ({
+    field: el.path,
+    message: el.message,
+  }));
+  const message = 'Validation failed. Please check your input.';
+  const error = new ValidationError(message, errors);
+  return error;
+};
+
+/**
+ * Handle JWT errors
+ */
+const handleJWTError = () => {
+  return new UnauthorizedError('Invalid token. Please log in again.');
+};
+
+/**
+ * Handle JWT expired error
+ */
+const handleJWTExpiredError = () => {
+  return new UnauthorizedError('Token expired. Please log in again.');
+};
+
+/**
+ * Send error response for development environment
+ */
+const sendErrorDev = (err, res) => {
+  res.status(err.statusCode || 500).json({
+    success: false,
+    message: err.message,
+    error: err,
+    stack: err.stack,
+    errors: err.errors, // Include validation errors if present
+  });
+};
+
+/**
+ * Send error response for production environment
+ */
+const sendErrorProd = (err, res) => {
+  // Operational errors: send message to client
+  if (err.isOperational) {
+    res.status(err.statusCode).json({
+      success: false,
+      message: err.message,
+      errors: err.errors, // Include validation errors if present
+    });
+  } else {
+    // Programming/unknown errors: don't leak details
+    console.error('ERROR:', err);
+
+    res.status(500).json({
+      success: false,
+      message: 'Something went wrong. Please try again later.',
+    });
+  }
+};
+
+/**
+ * Global error handler middleware
+ */
+const errorHandler = (err, req, res, next) => {
+  // Set default values
+  err.statusCode = err.statusCode || 500;
+  err.message = err.message || 'Internal Server Error';
+
+  // Log error in development
+  if (process.env.NODE_ENV === 'development') {
+    console.error('Error:', err);
+  }
+
+  // Handle specific error types
+  let error = { ...err };
+  error.message = err.message;
+  error.stack = err.stack;
+
+  // MongoDB CastError (invalid ObjectId)
+  if (err.name === 'CastError') {
+    error = handleCastError(err);
+  }
+
+  // MongoDB duplicate key error
+  if (err.code === 11000) {
+    error = handleDuplicateKeyError(err);
+  }
+
+  // Mongoose validation error
+  if (err.name === 'ValidationError') {
+    error = handleValidationError(err);
+  }
+
+  // JWT errors
+  if (err.name === 'JsonWebTokenError') {
+    error = handleJWTError();
+  }
+
+  if (err.name === 'TokenExpiredError') {
+    error = handleJWTExpiredError();
+  }
+
+  // Send appropriate response based on environment
+  if (process.env.NODE_ENV === 'development') {
+    sendErrorDev(error, res);
+  } else {
+    sendErrorProd(error, res);
+  }
+};
+
+/**
+ * Catch async errors wrapper
+ * Wraps async route handlers to catch errors
+ */
+const catchAsync = (fn) => {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+};
+
+/**
+ * Handle 404 Not Found for undefined routes
+ */
+const notFound = (req, res, next) => {
+  const error = new NotFoundError(`Cannot ${req.method} ${req.originalUrl}`);
+  next(error);
+};
+
+module.exports = {
+  errorHandler,
+  catchAsync,
+  notFound,
+  ApiError,
+  NotFoundError,
+  ValidationError,
+  UnauthorizedError,
+  ForbiddenError,
+};
