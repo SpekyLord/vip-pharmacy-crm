@@ -1,0 +1,1260 @@
+# VIP Pharmacy CRM - Phase Task Breakdown for Team Assignment
+
+## Project Overview
+A pharmaceutical field sales CRM system to replace manual Excel tracking with automated visit management, compliance monitoring, and product intelligence.
+
+---
+
+# PHASE 1: Foundation & Core System
+**Goal**: Complete working system with authentication, doctor management, visit logging, and basic dashboards
+
+## Backend Tasks
+
+### Task 1.1: Database Connection Setup
+**Assignee**: Backend Developer
+**Priority**: CRITICAL (blocks all other backend work)
+**Files**: `backend/config/db.js`
+
+**Deliverables**:
+- [ ] Implement MongoDB Atlas connection in `db.js` (currently empty skeleton)
+- [ ] Add connection pooling configuration
+- [ ] Add connection event handlers (connected, error, disconnected)
+- [ ] Add graceful shutdown handling
+- [ ] Create MongoDB Atlas cluster (M0 free tier for dev)
+- [ ] Generate connection string and add to `.env`
+- [ ] Test connection with `npm run dev`
+
+**Acceptance Criteria**:
+- Server starts without errors
+- Console shows "MongoDB Connected: [cluster-name]"
+- Handles connection failures gracefully
+
+---
+
+### Task 1.2: AWS S3 Bucket Configuration
+**Assignee**: Backend Developer / DevOps
+**Priority**: HIGH (blocks photo uploads)
+**Files**: `backend/config/s3.js` (code ready), AWS Console
+
+**Deliverables**:
+- [ ] Create S3 bucket: `vip-pharmacy-crm-[env]`
+- [ ] Configure bucket CORS for frontend domain
+- [ ] Create IAM user with minimal S3 permissions
+- [ ] Generate access keys
+- [ ] Add credentials to `.env`:
+  - AWS_ACCESS_KEY_ID
+  - AWS_SECRET_ACCESS_KEY
+  - AWS_REGION=ap-southeast-1
+  - S3_BUCKET_NAME
+- [ ] Create folder structure: `visits/`, `products/`, `avatars/`
+- [ ] Test upload functionality
+
+**Acceptance Criteria**:
+- Can upload test image via API
+- Images accessible via signed URLs
+- No public access to bucket
+
+---
+
+### Task 1.3: Seed Data & Initial Admin User
+**Assignee**: Backend Developer
+**Priority**: HIGH
+**Files**: New file `backend/scripts/seedData.js`
+
+**Deliverables**:
+- [ ] Create seed script for initial admin user
+- [ ] Create seed script for sample regions (based on "Whole Panay" example from proposal)
+- [ ] Create seed script for sample doctors (150+ from Excel migration)
+- [ ] Create seed script for sample products with images
+- [ ] Add `npm run seed` script to package.json
+- [ ] Document seed data structure
+
+**Acceptance Criteria**:
+- Running `npm run seed` creates all initial data
+- Admin can login with seeded credentials
+- Sample data matches proposal requirements
+
+---
+
+### Task 1.4: Backend API Testing & Validation
+**Assignee**: Backend Developer / QA
+**Priority**: HIGH
+**Files**: `backend/tests/` (new directory)
+
+**Deliverables**:
+- [ ] Test auth endpoints (register, login, logout, refresh)
+- [ ] Test doctor CRUD with region filtering
+- [ ] Test visit creation with weekly limit enforcement
+- [ ] Test product CRUD
+- [ ] Test product assignment
+- [ ] Test region hierarchy
+- [ ] Create Postman collection in `docs/postman_collection.json`
+- [ ] Document all API endpoints
+
+**Acceptance Criteria**:
+- All API endpoints return expected responses
+- Weekly visit limit (1 per doctor per week) enforced
+- Monthly visit limit (2x or 4x) enforced
+- Region filtering works for employees
+- Error responses follow standard format
+
+---
+
+## Frontend Tasks
+
+### Task 1.5: Authentication Flow Implementation
+**Assignee**: Frontend Developer
+**Priority**: CRITICAL (blocks all other frontend work)
+**Files**:
+- `frontend/src/context/AuthContext.jsx` (exists, needs verification)
+- `frontend/src/components/auth/LoginForm.jsx`
+- `frontend/src/components/auth/ProtectedRoute.jsx`
+- `frontend/src/pages/LoginPage.jsx`
+- `frontend/src/services/authService.js`
+
+**Deliverables**:
+- [ ] Complete LoginForm with email/password validation
+- [ ] Implement AuthContext with token management
+- [ ] Handle token refresh on 401 errors
+- [ ] Implement ProtectedRoute with role checking
+- [ ] Role-based redirect after login:
+  - admin → /admin
+  - medrep → /medrep
+  - employee → /employee
+- [ ] Implement logout with token cleanup
+- [ ] Add "Remember me" functionality (optional)
+
+**Acceptance Criteria**:
+- User can login with valid credentials
+- Invalid credentials show error message
+- Token automatically refreshes before expiry
+- Unauthorized routes redirect to login
+- Role-based routes are protected
+
+---
+
+### Task 1.6: Employee Dashboard & Doctor List
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/pages/employee/EmployeeDashboard.jsx`
+- `frontend/src/components/employee/DoctorList.jsx`
+- `frontend/src/services/doctorService.js`
+
+**Deliverables**:
+- [ ] Fetch and display dashboard stats (today's visits, weekly progress, pending)
+- [ ] Display assigned regional doctors list
+- [ ] Implement doctor search by name/specialization
+- [ ] **FIX**: Replace deprecated A/B/C/D categories with visitFrequency (2/4)
+- [ ] Show visit status for each doctor (visited this week? this month?)
+- [ ] Add "Log Visit" button per doctor
+- [ ] Show weekly progress: "Week 1: 8/10 doctors visited"
+- [ ] Show monthly completion percentage
+
+**Acceptance Criteria**:
+- Employee sees only doctors in their assigned region
+- Can search/filter doctors
+- Visit frequency shows 2x or 4x (not A/B/C/D)
+- Weekly and monthly progress displayed
+
+---
+
+### Task 1.7: Visit Logger Component with Photo & GPS
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/components/employee/VisitLogger.jsx`
+- `frontend/src/components/employee/CameraCapture.jsx`
+- `frontend/src/services/visitService.js`
+
+**Deliverables**:
+- [ ] Implement visit logging form:
+  - Visit type selector
+  - Purpose/notes field
+  - Products discussed (from recommendations)
+  - Doctor feedback
+  - Next visit date
+- [ ] Integrate CameraCapture component for photo proof
+- [ ] Require minimum 1 photo before submit
+- [ ] Capture GPS coordinates automatically
+- [ ] Show GPS accuracy indicator
+- [ ] Validate work day (Monday-Friday only)
+- [ ] Check weekly limit before allowing submission
+- [ ] Upload photos to S3 on submit
+- [ ] Show success/error feedback
+
+**Acceptance Criteria**:
+- Cannot submit without photo
+- Cannot submit without GPS location
+- Cannot submit on weekends
+- Cannot submit if already visited this doctor this week
+- Photos upload to S3 successfully
+- Visit appears in history after creation
+
+---
+
+### Task 1.8: My Visits History Page
+**Assignee**: Frontend Developer
+**Priority**: MEDIUM
+**Files**:
+- `frontend/src/pages/employee/MyVisits.jsx`
+- `frontend/src/services/visitService.js`
+
+**Deliverables**:
+- [ ] Fetch and display visit history
+- [ ] Filter by status (all/completed/pending/cancelled)
+- [ ] Filter by date range
+- [ ] Filter by doctor
+- [ ] Show visit details (date, doctor, photos, GPS, products)
+- [ ] Display week label (W1D2, W2D3 format)
+- [ ] Implement pagination
+- [ ] Show visit proof photos
+
+**Acceptance Criteria**:
+- All visits displayed with correct details
+- Filters work correctly
+- Photos viewable
+- Week labels shown
+
+---
+
+### Task 1.9: Admin Dashboard
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/pages/admin/AdminDashboard.jsx`
+- `frontend/src/components/admin/Dashboard.jsx`
+
+**Deliverables**:
+- [ ] Replace hardcoded mock data with API calls
+- [ ] Display stats grid:
+  - Total doctors (all regions)
+  - Total employees
+  - Total visits (today/week/month)
+  - Pending approvals
+- [ ] Recent activity feed
+- [ ] Quick action buttons
+- [ ] Regional overview summary
+
+**Acceptance Criteria**:
+- All stats fetched from API
+- Real-time data display
+- Admin sees ALL regions data
+
+---
+
+### Task 1.10: Admin Doctor Management (Master Database)
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/pages/admin/DoctorsPage.jsx`
+- `frontend/src/components/admin/DoctorManagement.jsx`
+- `frontend/src/services/doctorService.js`
+
+**Deliverables**:
+- [ ] Display ALL doctors across ALL regions (master database)
+- [ ] Advanced filtering:
+  - By region
+  - By specialization
+  - By assigned employee
+  - By visitFrequency (2x/4x)
+- [ ] Add new doctor form with all fields:
+  - Name, contact, email
+  - Specialization
+  - Region assignment
+  - Visit frequency (2 or 4)
+  - Clinic schedule
+  - Assigned employee
+- [ ] Edit existing doctor
+- [ ] Delete doctor (with confirmation)
+- [ ] Bulk import from Excel (optional, Phase 1 stretch)
+- [ ] Export to CSV
+
+**Acceptance Criteria**:
+- Admin sees all 150+ doctors in one table
+- Can filter and search effectively
+- CRUD operations work
+- **Uses visitFrequency (2/4), NOT categories (A/B/C/D)**
+
+---
+
+### Task 1.11: Admin Employee Management
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/pages/admin/EmployeesPage.jsx`
+- `frontend/src/components/admin/EmployeeManagement.jsx`
+- `frontend/src/services/userService.js` (new)
+
+**Deliverables**:
+- [ ] Create userService.js for user API calls
+- [ ] Display all employees with their assigned regions
+- [ ] Add new employee form:
+  - Name, email, password
+  - Role selection (employee/medrep)
+  - Region assignment
+- [ ] Edit employee details
+- [ ] Toggle employee active/inactive status
+- [ ] View employee performance summary
+- [ ] Reassign employee to different region
+
+**Acceptance Criteria**:
+- Can create new employees
+- Can assign employees to regions
+- Can deactivate employees
+- Historical data preserved on reassignment
+
+---
+
+### Task 1.12: Region Management
+**Assignee**: Frontend Developer
+**Priority**: MEDIUM
+**Files**:
+- `frontend/src/pages/admin/RegionsPage.jsx` (new)
+- `frontend/src/components/admin/RegionManagement.jsx` (new)
+- `frontend/src/services/regionService.js`
+
+**Deliverables**:
+- [ ] Create RegionsPage and RegionManagement components
+- [ ] Display region hierarchy tree
+- [ ] Add new region with parent assignment
+- [ ] Edit region details
+- [ ] View doctors and employees per region
+- [ ] Display geographical boundaries (optional)
+
+**Acceptance Criteria**:
+- Hierarchical region display
+- Can create nested regions
+- Clear parent-child relationships
+
+---
+
+### Task 1.13: MedRep Dashboard & Product Assignment
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/pages/medrep/MedRepDashboard.jsx`
+- `frontend/src/components/medrep/ProductAssignment.jsx`
+- `frontend/src/components/medrep/DoctorProductMapping.jsx`
+- `frontend/src/services/productService.js`
+
+**Deliverables**:
+- [ ] MedRep dashboard with assignment overview
+- [ ] Product catalog view with images and descriptions
+- [ ] Doctor list with specializations
+- [ ] Assign products to specific doctors:
+  - Select doctor
+  - Select products to recommend
+  - Set priority (1=high, 2=medium, 3=low)
+- [ ] View current assignments
+- [ ] Bulk assignment (product → multiple doctors)
+- [ ] Deactivate/remove assignments
+
+**Acceptance Criteria**:
+- MedRep can assign products to doctors
+- Assignments show in employee visit interface
+- Priority ordering works
+- Only medrep and admin can manage assignments
+
+---
+
+### Task 1.14: Product Recommendations in Visit Interface
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/components/employee/ProductRecommendations.jsx`
+- `frontend/src/components/employee/VisitLogger.jsx` (integration)
+
+**Deliverables**:
+- [ ] When employee selects doctor to visit, show assigned products
+- [ ] Display product image, name, description, key benefits
+- [ ] Click product to view full details modal
+- [ ] Track which products were discussed in visit
+- [ ] Save discussed products with visit record
+
+**Acceptance Criteria**:
+- Products shown based on MedRep assignments for that doctor
+- Employee can view product details
+- Discussed products recorded with visit
+
+---
+
+### Task 1.15: Common UI Components & Styling
+**Assignee**: Frontend Developer
+**Priority**: MEDIUM
+**Files**:
+- `frontend/src/components/common/Navbar.jsx`
+- `frontend/src/components/common/Sidebar.jsx`
+- `frontend/src/components/common/LoadingSpinner.jsx`
+- `frontend/src/components/common/ErrorMessage.jsx`
+- `frontend/src/index.css`
+- `frontend/src/styles/` (new directory)
+
+**Deliverables**:
+- [ ] Complete Navbar with user info and logout
+- [ ] Role-based Sidebar navigation
+- [ ] Consistent loading spinners
+- [ ] Error message component with retry
+- [ ] Complete CSS styling:
+  - Forms and inputs
+  - Tables
+  - Cards
+  - Buttons
+  - Modals
+  - Responsive breakpoints
+- [ ] Mobile-responsive design (tablet/phone)
+
+**Acceptance Criteria**:
+- Consistent visual design across app
+- Works on desktop, tablet, mobile
+- Role-specific navigation
+
+---
+
+## Infrastructure Tasks
+
+### Task 1.16: Development Environment Setup Documentation
+**Assignee**: DevOps / Backend Developer
+**Priority**: HIGH
+**Files**: `docs/DEVELOPMENT.md` (new)
+
+**Deliverables**:
+- [ ] Document local development setup steps
+- [ ] Document environment variables
+- [ ] Document MongoDB Atlas setup
+- [ ] Document AWS S3 setup
+- [ ] Create `.env.example` files for both backend and frontend
+- [ ] Add troubleshooting section
+
+**Acceptance Criteria**:
+- New developer can set up project using documentation
+- All required env vars documented
+
+---
+
+### Task 1.17: Initial Deployment to AWS Lightsail
+**Assignee**: DevOps
+**Priority**: HIGH (end of Phase 1)
+**Files**: Various config files, AWS Console
+
+**Deliverables**:
+- [ ] Create Lightsail instance (Ubuntu 22.04)
+- [ ] Attach static IP
+- [ ] Configure firewall (22, 80, 443)
+- [ ] Install Node.js 18 LTS
+- [ ] Install Nginx
+- [ ] Install PM2
+- [ ] Clone repository
+- [ ] Build frontend
+- [ ] Configure Nginx as reverse proxy
+- [ ] Set up SSL with Let's Encrypt
+- [ ] Configure PM2 for process management
+- [ ] Create `ecosystem.config.js`
+- [ ] Document deployment process
+
+**Acceptance Criteria**:
+- Application accessible via HTTPS
+- API responds correctly
+- PM2 manages Node process
+- Auto-restart on crash
+
+---
+
+## Phase 1 Summary
+
+| Category | Tasks | Estimated Complexity |
+|----------|-------|---------------------|
+| Backend Infrastructure | 4 tasks | High |
+| Frontend Auth | 1 task | High |
+| Frontend Employee Features | 3 tasks | High |
+| Frontend Admin Features | 4 tasks | High |
+| Frontend MedRep Features | 2 tasks | Medium |
+| Frontend UI/UX | 1 task | Medium |
+| DevOps | 2 tasks | High |
+| **Total** | **17 tasks** | |
+
+---
+
+# PHASE 2: Compliance & Monitoring
+**Goal**: Add real-time monitoring, alerts, notifications, and visit approval workflow
+
+## Backend Tasks
+
+### Task 2.1: Compliance Alerts API
+**Assignee**: Backend Developer
+**Priority**: HIGH
+**Files**:
+- `backend/controllers/complianceController.js` (new)
+- `backend/routes/complianceRoutes.js` (new)
+- `backend/utils/validateWeeklyVisit.js` (enhance)
+
+**Deliverables**:
+- [ ] Create compliance controller with:
+  - `getComplianceAlerts()` - employees behind schedule
+  - `getBehindScheduleEmployees()` - less than 80% weekly target
+  - `getQuotaDumpingAlerts()` - detect multiple visits in short period
+  - `getWeeklyComplianceReport()` - all employees weekly status
+  - `getMonthlyComplianceReport()` - monthly completion rates
+- [ ] Add routes and protect with admin middleware
+- [ ] Implement 80% threshold for "behind schedule" alerts
+- [ ] Track visit patterns for quota dumping detection
+
+**Acceptance Criteria**:
+- Admin can see who is behind schedule
+- Quota dumping patterns flagged
+- Weekly/monthly reports accurate
+
+---
+
+### Task 2.2: Email Notification System (AWS SES)
+**Assignee**: Backend Developer
+**Priority**: HIGH
+**Files**:
+- `backend/config/ses.js` (new)
+- `backend/services/emailService.js` (new)
+- `backend/templates/emails/` (new directory)
+
+**Deliverables**:
+- [ ] Configure AWS SES
+- [ ] Create email service with templates:
+  - Welcome email (new user registration)
+  - Password reset
+  - Weekly compliance summary (to managers)
+  - Behind schedule alert
+  - Visit approval notification
+- [ ] Create HTML email templates
+- [ ] Add email sending to relevant controllers
+- [ ] Handle SES sandbox mode for development
+
+**Acceptance Criteria**:
+- Emails sent successfully via SES
+- Templates render correctly
+- Password reset email works
+- Weekly summary emails scheduled
+
+---
+
+### Task 2.3: Push Notification System (Web Push)
+**Assignee**: Backend Developer
+**Priority**: MEDIUM
+**Files**:
+- `backend/services/pushService.js` (new)
+- `backend/models/PushSubscription.js` (new)
+
+**Deliverables**:
+- [ ] Implement Web Push API support
+- [ ] Store push subscriptions in database
+- [ ] Send notifications for:
+  - Daily visit reminders
+  - Behind schedule warnings
+  - Visit approval status changes
+- [ ] Handle subscription management (subscribe/unsubscribe)
+
+**Acceptance Criteria**:
+- Users can subscribe to push notifications
+- Notifications appear in browser
+- Unsubscribe works
+
+---
+
+### Task 2.4: Visit Approval Workflow
+**Assignee**: Backend Developer
+**Priority**: HIGH
+**Files**:
+- `backend/controllers/visitController.js` (enhance)
+- `backend/models/Visit.js` (enhance status field)
+
+**Deliverables**:
+- [ ] Add visit statuses: `pending_approval`, `approved`, `rejected`
+- [ ] Add `approvedBy`, `approvedAt`, `rejectionReason` fields
+- [ ] Create `approveVisit()` endpoint
+- [ ] Create `rejectVisit(reason)` endpoint
+- [ ] Add notification on approval/rejection
+- [ ] Allow admin/manager to bulk approve
+
+**Acceptance Criteria**:
+- Visits require approval before counting
+- Admin can approve/reject with reason
+- Employee notified of approval status
+
+---
+
+### Task 2.5: Scheduled Jobs (Cron Tasks)
+**Assignee**: Backend Developer
+**Priority**: HIGH
+**Files**:
+- `backend/jobs/scheduler.js` (new)
+- `backend/jobs/weeklyReport.js` (new)
+- `backend/jobs/dailyReminder.js` (new)
+
+**Deliverables**:
+- [ ] Set up node-cron for scheduled tasks
+- [ ] Daily job: Send visit reminders (8 AM)
+- [ ] Weekly job: Generate compliance reports (Monday 7 AM)
+- [ ] Weekly job: Send behind-schedule alerts
+- [ ] Monthly job: Generate monthly summary
+- [ ] Add job logging and error handling
+
+**Acceptance Criteria**:
+- Jobs run on schedule
+- Reports generated correctly
+- Errors logged but don't crash server
+
+---
+
+## Frontend Tasks
+
+### Task 2.6: Real-Time Activity Monitor (Admin)
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/pages/admin/ActivityMonitor.jsx` (new)
+- `frontend/src/components/admin/LiveActivityFeed.jsx` (new)
+
+**Deliverables**:
+- [ ] Real-time activity feed showing:
+  - Recent visits logged
+  - Employee login/logout
+  - Doctor updates
+  - Product assignments
+- [ ] Filter by region, employee, activity type
+- [ ] Auto-refresh every 30 seconds
+- [ ] Click to view activity details
+- [ ] Optional: WebSocket for true real-time updates
+
+**Acceptance Criteria**:
+- Admin sees live activity
+- Filters work correctly
+- Updates without manual refresh
+
+---
+
+### Task 2.7: Compliance Dashboard
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/pages/admin/ComplianceDashboard.jsx` (new)
+- `frontend/src/components/admin/ComplianceAlerts.jsx` (new)
+- `frontend/src/components/admin/EmployeeComplianceCard.jsx` (new)
+
+**Deliverables**:
+- [ ] Overview metrics:
+  - Team-wide compliance rate
+  - Employees on track vs behind
+  - Weekly completion percentage
+- [ ] Alert list with:
+  - Behind schedule warnings
+  - Quota dumping flags
+  - Missed visits
+- [ ] Per-employee compliance cards:
+  - Weekly progress (8/10 doctors)
+  - Monthly progress percentage
+  - Trend indicator (improving/declining)
+- [ ] Drill-down to employee details
+
+**Acceptance Criteria**:
+- Clear visibility into compliance status
+- Alerts actionable
+- Easy to identify problems
+
+---
+
+### Task 2.8: Visit Approval Interface
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/components/admin/VisitApproval.jsx`
+- `frontend/src/pages/admin/PendingApprovalsPage.jsx` (new)
+
+**Deliverables**:
+- [ ] List pending visits awaiting approval
+- [ ] Show visit details:
+  - Employee name
+  - Doctor visited
+  - Date/time
+  - GPS location (map view)
+  - Photo proofs
+  - Products discussed
+- [ ] Approve button (single and bulk)
+- [ ] Reject button with reason input
+- [ ] Filter by employee, date, region
+- [ ] Sort by date
+
+**Acceptance Criteria**:
+- Easy to review visit proofs
+- Can approve/reject efficiently
+- Bulk operations work
+
+---
+
+### Task 2.9: GPS Location Verification Map
+**Assignee**: Frontend Developer
+**Priority**: MEDIUM
+**Files**:
+- `frontend/src/components/admin/VisitLocationMap.jsx` (new)
+- `frontend/src/components/common/MapView.jsx` (new)
+
+**Deliverables**:
+- [ ] Integrate map library (Leaflet or Google Maps)
+- [ ] Show visit location on map
+- [ ] Show doctor clinic location (if available)
+- [ ] Display distance between visit GPS and clinic
+- [ ] Flag suspicious locations (too far from clinic)
+- [ ] Accuracy indicator
+
+**Acceptance Criteria**:
+- Map displays correctly
+- Can verify visit location visually
+- Distance calculation works
+
+---
+
+### Task 2.10: Employee Performance Analytics
+**Assignee**: Frontend Developer
+**Priority**: MEDIUM
+**Files**:
+- `frontend/src/pages/admin/EmployeeAnalytics.jsx` (new)
+- `frontend/src/components/admin/PerformanceChart.jsx` (new)
+
+**Deliverables**:
+- [ ] Individual employee performance view:
+  - Visits over time (chart)
+  - Completion rate trend
+  - Doctor coverage
+  - Products presented
+- [ ] Compare employees (optional)
+- [ ] Export performance data
+- [ ] Date range selector
+
+**Acceptance Criteria**:
+- Charts display correctly
+- Data is accurate
+- Can export for reports
+
+---
+
+### Task 2.11: Notification Center (Frontend)
+**Assignee**: Frontend Developer
+**Priority**: MEDIUM
+**Files**:
+- `frontend/src/components/common/NotificationCenter.jsx` (new)
+- `frontend/src/hooks/usePushNotifications.js` (new)
+
+**Deliverables**:
+- [ ] Notification bell icon in navbar
+- [ ] Dropdown showing recent notifications
+- [ ] Mark as read functionality
+- [ ] Push notification subscription UI
+- [ ] Notification preferences page
+- [ ] Badge count for unread
+
+**Acceptance Criteria**:
+- Notifications visible
+- Can manage preferences
+- Push subscription works
+
+---
+
+### Task 2.12: Reports Page Implementation
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/pages/admin/ReportsPage.jsx`
+- `frontend/src/components/admin/ReportGenerator.jsx` (new)
+
+**Deliverables**:
+- [ ] Report types:
+  - Weekly compliance report
+  - Monthly visit summary
+  - Employee performance report
+  - Regional comparison report
+  - Product presentation report
+- [ ] Date range selection
+- [ ] Filter by region/employee
+- [ ] Export to PDF/CSV
+- [ ] Schedule recurring reports (optional)
+
+**Acceptance Criteria**:
+- Reports generate correctly
+- Export works
+- Data matches backend
+
+---
+
+## Phase 2 Summary
+
+| Category | Tasks | Estimated Complexity |
+|----------|-------|---------------------|
+| Backend Compliance | 2 tasks | High |
+| Backend Notifications | 2 tasks | High |
+| Backend Jobs | 1 task | Medium |
+| Frontend Monitoring | 2 tasks | High |
+| Frontend Approvals | 2 tasks | High |
+| Frontend Analytics | 2 tasks | Medium |
+| Frontend Notifications | 1 task | Medium |
+| **Total** | **12 tasks** | |
+
+---
+
+# PHASE 3: Product Intelligence
+**Goal**: Advanced product-doctor matching, analytics, and smart recommendations
+
+## Backend Tasks
+
+### Task 3.1: Product Analytics API
+**Assignee**: Backend Developer
+**Priority**: HIGH
+**Files**:
+- `backend/controllers/analyticsController.js` (new)
+- `backend/routes/analyticsRoutes.js` (new)
+
+**Deliverables**:
+- [ ] Product presentation stats:
+  - Most presented products
+  - Products by specialization
+  - Products by region
+  - Presentation success rate (if tracking)
+- [ ] Doctor coverage analytics:
+  - Products presented per doctor
+  - Doctors not receiving target products
+  - Specialization-product gaps
+- [ ] Time-based trends:
+  - Monthly product trends
+  - Seasonal patterns
+- [ ] Create aggregation pipelines
+
+**Acceptance Criteria**:
+- Analytics endpoints return accurate data
+- Performance optimized with indexes
+
+---
+
+### Task 3.2: Smart Product Matching Engine
+**Assignee**: Backend Developer
+**Priority**: HIGH
+**Files**:
+- `backend/services/productMatchingService.js` (new)
+- `backend/models/Product.js` (enhance)
+
+**Deliverables**:
+- [ ] Auto-suggest products based on doctor specialization
+- [ ] Analyze historical visit data for patterns
+- [ ] Identify gaps (products not being presented to target specialists)
+- [ ] Recommend products to assign based on:
+  - Doctor specialization match
+  - Similar doctor patterns
+  - Regional trends
+- [ ] API endpoint for recommendations
+
+**Acceptance Criteria**:
+- Recommendations relevant to specialization
+- Gaps identified correctly
+- Performance acceptable
+
+---
+
+### Task 3.3: Product Performance Tracking
+**Assignee**: Backend Developer
+**Priority**: MEDIUM
+**Files**:
+- `backend/models/ProductPresentation.js` (new)
+- `backend/controllers/productController.js` (enhance)
+
+**Deliverables**:
+- [ ] Track product presentations per visit
+- [ ] Record doctor interest level (optional)
+- [ ] Calculate presentation frequency
+- [ ] Track regional product performance
+- [ ] Generate product effectiveness scores
+
+**Acceptance Criteria**:
+- Presentation data captured
+- Scores calculated correctly
+
+---
+
+## Frontend Tasks
+
+### Task 3.4: Product Analytics Dashboard
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/pages/admin/ProductAnalytics.jsx` (new)
+- `frontend/src/components/admin/ProductCharts.jsx` (new)
+
+**Deliverables**:
+- [ ] Product overview metrics:
+  - Total products
+  - Active assignments
+  - Presentation count
+- [ ] Charts:
+  - Top 10 presented products
+  - Products by category
+  - Presentation trends over time
+- [ ] Filter by date range, region, category
+- [ ] Drill-down to product details
+
+**Acceptance Criteria**:
+- Charts render correctly
+- Data accurate
+- Responsive design
+
+---
+
+### Task 3.5: Smart Assignment Recommendations UI
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/components/medrep/SmartRecommendations.jsx` (new)
+- `frontend/src/pages/medrep/AssignmentSuggestions.jsx` (new)
+
+**Deliverables**:
+- [ ] Show AI-suggested product assignments
+- [ ] Display matching score/confidence
+- [ ] One-click accept recommendation
+- [ ] Bulk accept multiple suggestions
+- [ ] Show reasoning (e.g., "Doctor is Gastro specialist, product targets Gastro")
+- [ ] Dismiss/ignore suggestion
+
+**Acceptance Criteria**:
+- Recommendations displayed clearly
+- Easy to accept/reject
+- Reasoning understandable
+
+---
+
+### Task 3.6: Product-Specialization Matrix View
+**Assignee**: Frontend Developer
+**Priority**: MEDIUM
+**Files**:
+- `frontend/src/components/admin/SpecializationMatrix.jsx` (new)
+- `frontend/src/pages/admin/ProductCoverage.jsx` (new)
+
+**Deliverables**:
+- [ ] Grid showing products vs specializations
+- [ ] Color-coded coverage (assigned/not assigned)
+- [ ] Click cell to see details
+- [ ] Identify gaps in coverage
+- [ ] Filter by region
+
+**Acceptance Criteria**:
+- Matrix displays correctly
+- Gaps visible at a glance
+- Interactive cells
+
+---
+
+### Task 3.7: Product Catalog Enhancement
+**Assignee**: Frontend Developer
+**Priority**: MEDIUM
+**Files**:
+- `frontend/src/pages/admin/ProductCatalog.jsx` (new)
+- `frontend/src/components/admin/ProductManagement.jsx`
+
+**Deliverables**:
+- [ ] Rich product details view:
+  - Large image gallery
+  - Full description
+  - Key benefits list
+  - Target specializations
+  - Usage information
+- [ ] Product comparison (side by side)
+- [ ] Product search and filter
+- [ ] Category navigation
+- [ ] Print-friendly product sheet
+
+**Acceptance Criteria**:
+- Product information easily accessible
+- Images display well
+- Search works effectively
+
+---
+
+### Task 3.8: Visit Product Tracking Enhancement
+**Assignee**: Frontend Developer
+**Priority**: MEDIUM
+**Files**:
+- `frontend/src/components/employee/VisitLogger.jsx` (enhance)
+- `frontend/src/components/employee/ProductSelector.jsx` (new)
+
+**Deliverables**:
+- [ ] Enhanced product selection during visit logging:
+  - Quick multi-select
+  - Interest level indicator (optional)
+  - Notes per product
+- [ ] Show product details while logging
+- [ ] Track time spent discussing (optional)
+- [ ] Save as draft and continue later
+
+**Acceptance Criteria**:
+- Easy to select multiple products
+- Data captured correctly
+- Good mobile UX
+
+---
+
+## Phase 3 Summary
+
+| Category | Tasks | Estimated Complexity |
+|----------|-------|---------------------|
+| Backend Analytics | 3 tasks | High |
+| Frontend Analytics | 2 tasks | High |
+| Frontend Recommendations | 1 task | High |
+| Frontend Catalog | 2 tasks | Medium |
+| **Total** | **8 tasks** | |
+
+---
+
+# PHASE 4: Go-Live & Training
+**Goal**: Production deployment, data migration, user training, and support
+
+## Infrastructure Tasks
+
+### Task 4.1: Production Environment Hardening
+**Assignee**: DevOps
+**Priority**: CRITICAL
+**Files**: Various server configs
+
+**Deliverables**:
+- [ ] Security audit:
+  - Review all environment variables
+  - Ensure no secrets in code
+  - Check CORS configuration
+  - Verify rate limiting
+- [ ] Performance optimization:
+  - Database indexes verified
+  - Nginx caching configured
+  - Static asset compression
+- [ ] Monitoring setup:
+  - PM2 metrics
+  - Error tracking (Sentry optional)
+  - Uptime monitoring
+- [ ] Backup configuration:
+  - MongoDB Atlas backups enabled
+  - S3 versioning enabled
+- [ ] SSL certificate auto-renewal verified
+
+**Acceptance Criteria**:
+- Passes security checklist
+- Performance acceptable under load
+- Backups tested
+
+---
+
+### Task 4.2: Data Migration from Excel
+**Assignee**: Backend Developer + Data Entry
+**Priority**: CRITICAL
+**Files**:
+- `backend/scripts/migrateFromExcel.js` (new)
+- `docs/data-migration-template.xlsx` (new)
+
+**Deliverables**:
+- [ ] Create Excel template matching database schema
+- [ ] Build migration script:
+  - Parse Excel file
+  - Validate data
+  - Handle duplicates
+  - Report errors
+- [ ] Migrate:
+  - 150+ doctor profiles
+  - Regional territories
+  - Employee assignments
+  - Product catalog
+  - Existing visit history (if available)
+- [ ] Verify migrated data
+- [ ] Create rollback procedure
+
+**Acceptance Criteria**:
+- All data migrated correctly
+- No duplicates
+- Relationships intact
+
+---
+
+### Task 4.3: User Acceptance Testing (UAT)
+**Assignee**: QA + Stakeholders
+**Priority**: HIGH
+**Files**: `docs/UAT-checklist.md` (new)
+
+**Deliverables**:
+- [ ] Create UAT test cases for:
+  - Employee: Login, view doctors, log visit, view history
+  - MedRep: Assign products, view assignments
+  - Admin: All CRUD operations, reports, approvals
+- [ ] Test on multiple devices (desktop, tablet, phone)
+- [ ] Test with real users
+- [ ] Document bugs and issues
+- [ ] Fix critical bugs
+- [ ] Get sign-off from stakeholders
+
+**Acceptance Criteria**:
+- All critical flows work
+- No blocking bugs
+- User feedback addressed
+
+---
+
+### Task 4.4: Training Materials Creation
+**Assignee**: Documentation Specialist
+**Priority**: HIGH
+**Files**: `docs/training/` (new directory)
+
+**Deliverables**:
+- [ ] User guides:
+  - Employee Quick Start Guide
+  - MedRep User Guide
+  - Admin User Guide
+- [ ] Video tutorials (optional):
+  - How to log a visit
+  - How to assign products
+  - How to approve visits
+- [ ] FAQ document
+- [ ] Troubleshooting guide
+- [ ] In-app help tooltips (optional)
+
+**Acceptance Criteria**:
+- Guides clear and complete
+- Screenshots up-to-date
+- Accessible to all users
+
+---
+
+### Task 4.5: User Training Sessions
+**Assignee**: Project Lead + Trainers
+**Priority**: HIGH
+
+**Deliverables**:
+- [ ] Schedule training sessions:
+  - Session 1: Employees (field reps)
+  - Session 2: MedReps
+  - Session 3: Administrators
+- [ ] Conduct live training with demo
+- [ ] Hands-on practice time
+- [ ] Q&A session
+- [ ] Collect feedback
+- [ ] Follow-up support channel (WhatsApp group, email, etc.)
+
+**Acceptance Criteria**:
+- All users trained
+- Users can perform basic tasks independently
+- Support channel active
+
+---
+
+### Task 4.6: Phased Rollout Plan
+**Assignee**: Project Lead
+**Priority**: HIGH
+**Files**: `docs/rollout-plan.md` (new)
+
+**Deliverables**:
+- [ ] Define rollout phases:
+  - Pilot: 1 region, 5-10 users (1 week)
+  - Expansion: Additional regions (1-2 weeks)
+  - Full rollout: All users
+- [ ] Define success criteria for each phase
+- [ ] Create rollback plan
+- [ ] Monitor closely during pilot
+- [ ] Address issues before expansion
+- [ ] Full go-live announcement
+
+**Acceptance Criteria**:
+- Pilot successful
+- Issues resolved before expansion
+- Smooth full rollout
+
+---
+
+### Task 4.7: Post-Launch Support Plan
+**Assignee**: Project Lead + Support Team
+**Priority**: HIGH
+**Files**: `docs/support-plan.md` (new)
+
+**Deliverables**:
+- [ ] Define support channels:
+  - Primary: In-app help/FAQ
+  - Secondary: WhatsApp/Email support
+  - Escalation: Direct contact
+- [ ] Define SLA for issue resolution
+- [ ] Create bug reporting process
+- [ ] Weekly check-in meetings (first month)
+- [ ] Collect ongoing feedback
+- [ ] Plan for continuous improvement
+
+**Acceptance Criteria**:
+- Support channels active
+- Issues tracked and resolved
+- Feedback loop established
+
+---
+
+## Phase 4 Summary
+
+| Category | Tasks | Estimated Complexity |
+|----------|-------|---------------------|
+| Infrastructure | 2 tasks | High |
+| Data Migration | 1 task | High |
+| Testing | 1 task | High |
+| Training | 3 tasks | Medium |
+| **Total** | **7 tasks** | |
+
+---
+
+# COMPLETE PHASE SUMMARY
+
+| Phase | Tasks | Key Deliverables |
+|-------|-------|------------------|
+| **Phase 1: Foundation** | 17 tasks | Working app with auth, doctors, visits, products |
+| **Phase 2: Compliance** | 12 tasks | Alerts, approvals, notifications, reports |
+| **Phase 3: Intelligence** | 8 tasks | Analytics, smart recommendations, insights |
+| **Phase 4: Go-Live** | 7 tasks | Deployment, migration, training, support |
+| **TOTAL** | **44 tasks** | |
+
+---
+
+# TASK ASSIGNMENT MATRIX
+
+## Recommended Team Structure
+
+| Role | Count | Primary Phases |
+|------|-------|----------------|
+| Backend Developer | 1-2 | Phase 1, 2, 3 |
+| Frontend Developer | 1-2 | Phase 1, 2, 3 |
+| DevOps | 1 | Phase 1, 4 |
+| QA/Tester | 1 | Phase 1, 2, 4 |
+| Project Lead | 1 | All phases |
+| Documentation | 1 | Phase 4 |
+
+## Task Dependencies
+
+### Phase 1 Critical Path
+```
+Task 1.1 (DB Connection) → All other backend tasks
+Task 1.2 (S3 Setup) → Task 1.7 (Visit Logger with photos)
+Task 1.5 (Auth Flow) → All other frontend tasks
+Task 1.6 (Doctor List) → Task 1.7 (Visit Logger)
+Task 1.13 (MedRep Assignment) → Task 1.14 (Product Recommendations)
+```
+
+### Phase 2 Dependencies
+```
+Phase 1 complete → Phase 2 start
+Task 2.1 (Compliance API) → Task 2.7 (Compliance Dashboard)
+Task 2.2 (Email) → Task 2.5 (Scheduled Jobs)
+Task 2.4 (Approval Workflow) → Task 2.8 (Approval Interface)
+```
+
+### Phase 3 Dependencies
+```
+Phase 2 complete → Phase 3 start
+Task 3.1 (Analytics API) → Task 3.4 (Analytics Dashboard)
+Task 3.2 (Matching Engine) → Task 3.5 (Recommendations UI)
+```
+
+### Phase 4 Dependencies
+```
+Phase 3 complete → Phase 4 start
+Task 4.1 (Hardening) → Task 4.2 (Data Migration)
+Task 4.2 (Migration) → Task 4.3 (UAT)
+Task 4.4 (Training Materials) → Task 4.5 (Training Sessions)
+Task 4.3 (UAT) → Task 4.6 (Rollout)
+```
