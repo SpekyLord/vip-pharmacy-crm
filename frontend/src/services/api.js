@@ -10,7 +10,24 @@
 
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Determine API URL based on how the frontend is accessed
+// If accessed via network IP (phone), use the same host for API
+const getApiUrl = () => {
+  // Check if custom API URL is set
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+
+  // If accessing from localhost, use localhost
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:5000/api';
+  }
+
+  // If accessing from network IP (phone), use the same IP for backend
+  return `http://${window.location.hostname}:5000/api`;
+};
+
+const API_URL = getApiUrl();
 
 const api = axios.create({
   baseURL: API_URL,

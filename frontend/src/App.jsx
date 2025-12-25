@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast';
 import LoginPage from './pages/LoginPage';
 import EmployeeDashboard from './pages/employee/EmployeeDashboard';
 import MyVisits from './pages/employee/MyVisits';
+import NewVisitPage from './pages/employee/NewVisitPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import DoctorsPage from './pages/admin/DoctorsPage';
 import EmployeesPage from './pages/admin/EmployeesPage';
@@ -36,6 +37,14 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <MyVisits />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/employee/visit/new"
+          element={
+            <ProtectedRoute allowedRoles={['employee', 'admin']}>
+              <NewVisitPage />
             </ProtectedRoute>
           }
         />

@@ -28,7 +28,11 @@ const LoginForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await login(formData.email, formData.password);
+    try {
+      await login(formData.email, formData.password);
+    } catch {
+      // Error is already set in AuthContext, no additional handling needed
+    }
   };
 
   return (

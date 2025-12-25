@@ -26,6 +26,8 @@ const {
   getVisitStats,
   getWeeklyCompliance,
   getComplianceAlerts,
+  checkCanVisit,
+  getTodayVisits,
 } = require('../controllers/visitController');
 
 const { protect } = require('../middleware/auth');
@@ -38,9 +40,11 @@ router.use(protect);
 
 // Employee and admin routes
 router.get('/my', getVisitsByUser);
+router.get('/today', getTodayVisits);
 router.get('/stats', getVisitStats);
 router.get('/weekly', getWeeklyCompliance);
-router.get('/compliance', getComplianceAlerts);
+router.get('/compliance', adminOnly, getComplianceAlerts);
+router.get('/can-visit/:doctorId', checkCanVisit);
 router.get('/', getAllVisits);
 router.get('/:id', getVisitById);
 router.post('/', uploadMultiple('photos', 5), processVisitPhotos, createVisitValidation, createVisit);

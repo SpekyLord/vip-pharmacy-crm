@@ -49,6 +49,12 @@ const doctorService = {
     const response = await api.post(`/doctors/${doctorId}/assign`, { repId });
     return response.data;
   },
+
+  // Get assigned products for a doctor
+  getAssignedProducts: async (doctorId) => {
+    const response = await api.get(`/doctors/${doctorId}/products`);
+    return response.data;
+  },
 };
 
 export default doctorService;

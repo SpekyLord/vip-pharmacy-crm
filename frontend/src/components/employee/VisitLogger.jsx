@@ -2,25 +2,45 @@
  * VisitLogger Component
  *
  * Form for logging doctor visits with:
- * - Doctor selection
+ * - Photo capture with GPS location
  * - Visit type and purpose
- * - Products discussed
- * - Notes and feedback
- * - Photo capture option
- * - GPS location capture
+ * - Doctor feedback and notes
+ * - Work day validation
+ * - FormData submission to backend
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
+import CameraCapture from './CameraCapture';
+import visitService from '../../services/visitService';
+import doctorService from '../../services/doctorService';
 
-const VisitLogger = ({ doctor = null, products = [], onSubmit, loading = false }) => {
+const VisitLogger = ({ doctor, onSuccess }) => {
+  const [photos, setPhotos] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     visitType: 'regular',
     purpose: '',
     productsDiscussed: [],
-    feedback: '',
+    doctorFeedback: '',
     notes: '',
     nextVisitDate: '',
   });
+
+  // Fetch assigned products for this doctor
+  useEffect(() => {
+    const fetchProducts = async () => {
+      if (!doctor?._id) return;
+      try {
+        const response = await doctorService.getAssignedProducts(doctor._id);
+        setProducts(response.data?.products || []);
+      } catch (err) {
+        console.error('Failed to fetch products:', err);
+      }
+    };
+    fetchProducts();
+  }, [doctor?._id]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -39,96 +59,227 @@ const VisitLogger = ({ doctor = null, products = [], onSubmit, loading = false }
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handlePhotosChange = (capturedPhotos) => {
+    setPhotos(capturedPhotos);
+  };
+
+  // Check if today is a work day (Mon-Fri)
+  const isWorkDay = () => {
+    const day = new Date().getDay();
+    return day >= 1 && day <= 5;
+  };
+
+  // Convert base64 to File object
+  const base64ToFile = (base64Data, filename) => {
+    const arr = base64Data.split(',');
+    const mime = arr[0].match(/:(.*?);/)[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSubmit?.({ ...formData, doctor: doctor?._id });
+
+    // Validate photos
+    if (photos.length === 0) {
+      toast.error('At least 1 photo is required as proof of visit');
+      return;
+    }
+
+    // Validate work day
+    if (!isWorkDay()) {
+      toast.error('Visits can only be logged on work days (Monday-Friday)');
+      return;
+    }
+
+    // Get location from first photo
+    const visitLocation = photos[0].location;
+    if (!visitLocation) {
+      toast.error('GPS location is required. Please retake photos with location enabled.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Create FormData for multipart upload
+      const submitData = new FormData();
+      submitData.append('doctor', doctor._id);
+      submitData.append('visitType', formData.visitType);
+      submitData.append('purpose', formData.purpose);
+      submitData.append('doctorFeedback', formData.doctorFeedback);
+      submitData.append('notes', formData.notes);
+
+      // Add location as JSON string
+      submitData.append('location', JSON.stringify({
+        latitude: visitLocation.latitude,
+        longitude: visitLocation.longitude,
+        accuracy: visitLocation.accuracy,
+        capturedAt: photos[0].capturedAt,
+      }));
+
+      // Add products discussed
+      if (formData.productsDiscussed.length > 0) {
+        const productsData = formData.productsDiscussed.map((productId) => ({
+          product: productId,
+          presented: true,
+        }));
+        submitData.append('productsDiscussed', JSON.stringify(productsData));
+      }
+
+      // Add next visit date if set
+      if (formData.nextVisitDate) {
+        submitData.append('nextVisitDate', formData.nextVisitDate);
+      }
+
+      // Convert and append photos
+      photos.forEach((photo, index) => {
+        const file = base64ToFile(photo.data, `visit-photo-${index + 1}.jpg`);
+        submitData.append('photos', file);
+      });
+
+      await visitService.create(submitData);
+      toast.success('Visit logged successfully!');
+      onSuccess?.();
+    } catch (err) {
+      console.error('Failed to log visit:', err);
+      toast.error(err.response?.data?.message || 'Failed to log visit');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} className="visit-logger">
-      <h3>Log Visit for {doctor?.name || 'Selected Doctor'}</h3>
-
-      <div className="form-group">
-        <label htmlFor="visitType">Visit Type</label>
-        <select
-          id="visitType"
-          name="visitType"
-          value={formData.visitType}
-          onChange={handleChange}
-        >
-          <option value="regular">Regular</option>
-          <option value="follow-up">Follow-up</option>
-          <option value="emergency">Emergency</option>
-        </select>
+      {/* Doctor Info Header */}
+      <div className="doctor-info-header">
+        <h2>{doctor?.name}</h2>
+        <p className="doctor-details">
+          {doctor?.specialization} | {doctor?.hospital}
+        </p>
+        <span className="visit-frequency-badge">
+          {doctor?.visitFrequency}x per month
+        </span>
       </div>
 
-      <div className="form-group">
-        <label htmlFor="purpose">Purpose</label>
-        <input
-          type="text"
-          id="purpose"
-          name="purpose"
-          value={formData.purpose}
-          onChange={handleChange}
-          placeholder="Enter visit purpose"
-          required
+      {/* Photo Capture Section */}
+      <div className="form-section">
+        <h3>Photo Proof *</h3>
+        <CameraCapture
+          onCapture={handlePhotosChange}
+          maxPhotos={5}
         />
       </div>
 
-      <div className="form-group">
-        <label>Products Discussed</label>
-        <div className="product-checkboxes">
-          {products.map((product) => (
-            <label key={product._id} className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={formData.productsDiscussed.includes(product._id)}
-                onChange={() => handleProductToggle(product._id)}
-              />
-              {product.name}
-            </label>
-          ))}
+      {/* Visit Details */}
+      <div className="form-section">
+        <h3>Visit Details</h3>
+
+        <div className="form-group">
+          <label htmlFor="visitType">Visit Type</label>
+          <select
+            id="visitType"
+            name="visitType"
+            value={formData.visitType}
+            onChange={handleChange}
+          >
+            <option value="regular">Regular</option>
+            <option value="follow-up">Follow-up</option>
+            <option value="emergency">Emergency</option>
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="purpose">Purpose</label>
+          <input
+            type="text"
+            id="purpose"
+            name="purpose"
+            value={formData.purpose}
+            onChange={handleChange}
+            placeholder="Enter visit purpose"
+          />
         </div>
       </div>
 
-      <div className="form-group">
-        <label htmlFor="feedback">Doctor Feedback</label>
-        <textarea
-          id="feedback"
-          name="feedback"
-          value={formData.feedback}
-          onChange={handleChange}
-          placeholder="Enter doctor's feedback"
-          rows={3}
-        />
+      {/* Products Discussed */}
+      {products.length > 0 && (
+        <div className="form-section">
+          <h3>Products Discussed</h3>
+          <div className="product-checkboxes">
+            {products.map((item) => (
+              <label key={item.product?._id || item._id} className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={formData.productsDiscussed.includes(item.product?._id || item._id)}
+                  onChange={() => handleProductToggle(item.product?._id || item._id)}
+                />
+                {item.product?.name || item.name}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Feedback & Notes */}
+      <div className="form-section">
+        <h3>Feedback & Notes</h3>
+
+        <div className="form-group">
+          <label htmlFor="doctorFeedback">Doctor Feedback</label>
+          <textarea
+            id="doctorFeedback"
+            name="doctorFeedback"
+            value={formData.doctorFeedback}
+            onChange={handleChange}
+            placeholder="Enter doctor's feedback or response"
+            rows={3}
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="notes">Additional Notes</label>
+          <textarea
+            id="notes"
+            name="notes"
+            value={formData.notes}
+            onChange={handleChange}
+            placeholder="Any additional notes about the visit"
+            rows={3}
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="nextVisitDate">Next Visit Date (Optional)</label>
+          <input
+            type="date"
+            id="nextVisitDate"
+            name="nextVisitDate"
+            value={formData.nextVisitDate}
+            onChange={handleChange}
+            min={new Date().toISOString().split('T')[0]}
+          />
+        </div>
       </div>
 
-      <div className="form-group">
-        <label htmlFor="notes">Notes</label>
-        <textarea
-          id="notes"
-          name="notes"
-          value={formData.notes}
-          onChange={handleChange}
-          placeholder="Additional notes"
-          rows={3}
-        />
+      {/* Submit Button */}
+      <div className="form-actions">
+        <button
+          type="submit"
+          disabled={loading || photos.length === 0}
+          className="btn btn-primary btn-large"
+        >
+          {loading ? 'Submitting...' : 'Submit Visit'}
+        </button>
+        {photos.length === 0 && (
+          <p className="submit-hint">Take at least 1 photo to submit</p>
+        )}
       </div>
-
-      <div className="form-group">
-        <label htmlFor="nextVisitDate">Next Visit Date</label>
-        <input
-          type="date"
-          id="nextVisitDate"
-          name="nextVisitDate"
-          value={formData.nextVisitDate}
-          onChange={handleChange}
-        />
-      </div>
-
-      <button type="submit" disabled={loading} className="btn btn-primary">
-        {loading ? 'Logging Visit...' : 'Log Visit'}
-      </button>
     </form>
   );
 };

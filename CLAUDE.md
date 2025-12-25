@@ -231,42 +231,44 @@ S3_BUCKET_NAME=vip-pharmacy-crm
 
 ## Implementation Progress Checklist
 
-### Backend Status: CODE SCAFFOLDED (Not Connected)
+### Backend Status: ✅ FULLY FUNCTIONAL
 
-#### Infrastructure (NOT YET CONFIGURED)
-- [ ] MongoDB Atlas - Database not created/connected
-- [ ] AWS S3 - Bucket not created, credentials not configured
+#### Infrastructure
+- [x] MongoDB Atlas - Connected (cluster0.wv27nfk.mongodb.net)
+- [x] AWS S3 - Bucket `vip-pharmacy-crm-devs` configured (ap-southeast-1)
 - [ ] AWS Lightsail - Instance not provisioned
 
-#### Config Files (Code Written, Not Connected)
-- [x] `config/db.js` - MongoDB connection code (needs MONGODB_URI)
-- [x] `config/s3.js` - AWS S3 integration code (needs AWS credentials)
+#### Config Files
+- [x] `config/db.js` - MongoDB connection (WORKING)
+- [x] `config/s3.js` - AWS S3 integration (WORKING)
+- [x] `config/websiteDb.js` - Dual DB connection for website products
 
-#### Models (6/6 Code Complete, Untested)
+#### Models (7/7 Complete & Tested)
 - [x] `models/User.js` - Admin, medrep, employee roles
 - [x] `models/Doctor.js` - visitFrequency (2/4), region-based
 - [x] `models/Visit.js` - Weekly tracking, GPS, photos, unique constraint
 - [x] `models/Product.js` - Product catalog with specializations
 - [x] `models/ProductAssignment.js` - Product-to-doctor assignments
 - [x] `models/Region.js` - Hierarchical regions
+- [x] `models/WebsiteProduct.js` - Read-only website products
 
-#### Middleware (5/5 Code Complete, Untested)
+#### Middleware (5/5 Complete & Working)
 - [x] `middleware/auth.js` - JWT protect, optionalAuth, verifyRefreshToken
 - [x] `middleware/roleCheck.js` - adminOnly, medRepOnly, employeeOnly, etc.
 - [x] `middleware/errorHandler.js` - Global error handling, custom errors
 - [x] `middleware/validation.js` - Express-validator rules
-- [x] `middleware/upload.js` - Multer + S3 processors (needs S3 config)
+- [x] `middleware/upload.js` - Multer + S3 processors
 
-#### Controllers (7/7 Code Complete, Untested)
+#### Controllers (7/7 Complete & Tested)
 - [x] `controllers/authController.js` - Login, register, password reset
 - [x] `controllers/userController.js` - User CRUD, profile management
 - [x] `controllers/doctorController.js` - Doctor CRUD with region filter
 - [x] `controllers/visitController.js` - Visit logging with enforcement
-- [x] `controllers/productController.js` - Product CRUD
+- [x] `controllers/productController.js` - Product CRUD (reads from website DB)
 - [x] `controllers/productAssignmentController.js` - Assignments
 - [x] `controllers/regionController.js` - Region hierarchy
 
-#### Routes (7/7 Code Complete, Untested)
+#### Routes (7/7 Complete & Tested)
 - [x] `routes/authRoutes.js` → `/api/auth`
 - [x] `routes/userRoutes.js` → `/api/users`
 - [x] `routes/doctorRoutes.js` → `/api/doctors`
@@ -275,16 +277,19 @@ S3_BUCKET_NAME=vip-pharmacy-crm
 - [x] `routes/productAssignmentRoutes.js` → `/api/assignments`
 - [x] `routes/regionRoutes.js` → `/api/regions`
 
-#### Utils (2/2 Code Complete, Untested)
+#### Utils (2/2 Complete)
 - [x] `utils/generateToken.js` - JWT access + refresh tokens
 - [x] `utils/validateWeeklyVisit.js` - Visit limit enforcement
+
+#### Scripts
+- [x] `scripts/seedData.js` - Seed data for testing (npm run seed)
 
 #### Entry Point
 - [x] `server.js` - Express app, all routes mounted, health check
 
 ---
 
-### Frontend Status: SCAFFOLDED (Needs Implementation)
+### Frontend Status: IN PROGRESS (Tasks 1.5-1.6 Complete)
 
 #### Core Setup
 - [x] `package.json` - Dependencies configured
@@ -294,54 +299,54 @@ S3_BUCKET_NAME=vip-pharmacy-crm
 - [ ] `index.css` - Global styles (needs completion)
 
 #### Services Layer
-- [ ] `services/api.js` - Axios instance with interceptors
-- [ ] `services/authService.js` - Login, logout, refresh
-- [ ] `services/doctorService.js` - Doctor API calls
-- [ ] `services/visitService.js` - Visit API calls
+- [x] `services/api.js` - Axios instance with interceptors
+- [x] `services/authService.js` - Login, logout, refresh, profile
+- [x] `services/doctorService.js` - Doctor API calls + getAssignedProducts
+- [x] `services/visitService.js` - Visit API calls + getToday, canVisit, getWeeklyCompliance
 - [ ] `services/productService.js` - Product API calls
 - [ ] `services/regionService.js` - Region API calls
 
 #### Context & Hooks
-- [ ] `contexts/AuthContext.jsx` - Auth state, token management
-- [ ] `hooks/useAuth.js` - Auth hook
-- [ ] `hooks/useApi.js` - API hook with loading/error states
+- [x] `context/AuthContext.jsx` - Auth state, token management (WORKING)
+- [x] `hooks/useAuth.js` - Auth hook
+- [x] `hooks/useApi.js` - API hook with loading/error states
 
 #### Components - Auth
-- [ ] `components/auth/LoginForm.jsx`
-- [ ] `components/auth/ProtectedRoute.jsx`
+- [x] `components/auth/LoginForm.jsx` - Email/password form (WORKING)
+- [x] `components/auth/ProtectedRoute.jsx` - Role-based route protection (WORKING)
 
 #### Components - Common
-- [ ] `components/common/Navbar.jsx`
-- [ ] `components/common/Sidebar.jsx`
-- [ ] `components/common/LoadingSpinner.jsx`
-- [ ] `components/common/ErrorMessage.jsx`
+- [x] `components/common/Navbar.jsx` - Scaffolded
+- [x] `components/common/Sidebar.jsx` - Scaffolded
+- [x] `components/common/LoadingSpinner.jsx` - Working
+- [x] `components/common/ErrorMessage.jsx` - Working
 
 #### Components - Employee
-- [ ] `components/employee/DoctorList.jsx`
-- [ ] `components/employee/VisitLogger.jsx`
-- [ ] `components/employee/CameraCapture.jsx`
-- [ ] `components/employee/ProductRecommendations.jsx`
+- [x] `components/employee/DoctorList.jsx` - COMPLETE (visitFrequency filter, visit status, Log Visit button)
+- [ ] `components/employee/VisitLogger.jsx` - Needs implementation (Task 1.7)
+- [ ] `components/employee/CameraCapture.jsx` - Needs implementation (Task 1.7)
+- [ ] `components/employee/ProductRecommendations.jsx` - Needs implementation
 
 #### Components - Admin
-- [ ] `components/admin/Dashboard.jsx`
-- [ ] `components/admin/DoctorManagement.jsx`
-- [ ] `components/admin/EmployeeManagement.jsx`
-- [ ] `components/admin/ProductManagement.jsx`
-- [ ] `components/admin/VisitApproval.jsx`
+- [ ] `components/admin/Dashboard.jsx` - Scaffolded
+- [ ] `components/admin/DoctorManagement.jsx` - Needs implementation
+- [ ] `components/admin/EmployeeManagement.jsx` - Needs implementation
+- [ ] `components/admin/ProductManagement.jsx` - Needs implementation
+- [ ] `components/admin/VisitApproval.jsx` - Needs implementation
 
 #### Components - MedRep
-- [ ] `components/medrep/ProductAssignment.jsx`
-- [ ] `components/medrep/DoctorProductMapping.jsx`
+- [ ] `components/medrep/ProductAssignment.jsx` - Needs implementation
+- [ ] `components/medrep/DoctorProductMapping.jsx` - Needs implementation
 
 #### Pages
-- [ ] `pages/LoginPage.jsx`
-- [ ] `pages/admin/AdminDashboard.jsx`
-- [ ] `pages/admin/DoctorsPage.jsx`
-- [ ] `pages/admin/EmployeesPage.jsx`
-- [ ] `pages/admin/ReportsPage.jsx`
-- [ ] `pages/employee/EmployeeDashboard.jsx`
-- [ ] `pages/employee/MyVisits.jsx`
-- [ ] `pages/medrep/MedRepDashboard.jsx`
+- [x] `pages/LoginPage.jsx` - COMPLETE (role-based redirect)
+- [ ] `pages/admin/AdminDashboard.jsx` - Scaffolded
+- [ ] `pages/admin/DoctorsPage.jsx` - Scaffolded
+- [ ] `pages/admin/EmployeesPage.jsx` - Scaffolded
+- [ ] `pages/admin/ReportsPage.jsx` - Scaffolded
+- [x] `pages/employee/EmployeeDashboard.jsx` - COMPLETE (real API data, stats)
+- [ ] `pages/employee/MyVisits.jsx` - Scaffolded
+- [ ] `pages/medrep/MedRepDashboard.jsx` - Scaffolded
 
 ---
 
@@ -388,19 +393,40 @@ App.jsx
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Backend Code | Scaffolded | All files written, not tested |
-| MongoDB Atlas | NOT CONNECTED | Need to create cluster and get URI |
-| AWS S3 | NOT CONFIGURED | Need bucket + IAM credentials |
+| Backend Code | ✅ WORKING | All APIs tested with Postman |
+| MongoDB Atlas | ✅ CONNECTED | cluster0.wv27nfk.mongodb.net |
+| AWS S3 | ✅ CONFIGURED | vip-pharmacy-crm-devs (ap-southeast-1) |
 | AWS Lightsail | NOT PROVISIONED | Need to set up instance |
-| Frontend Code | Scaffolded | Basic structure in place |
+| Frontend Auth | ✅ WORKING | Login, logout, token refresh |
+| Employee Dashboard | ✅ WORKING | Real API data, doctor list |
+| Visit Logger | IN PROGRESS | Task 1.7 |
 
 ---
 
+## Completed Tasks
+
+1. ✅ **Task 1.1** - MongoDB Atlas setup & connection
+2. ✅ **Task 1.2** - AWS S3 bucket configuration
+3. ✅ **Task 1.3** - Seed data script (12 regions, 5 users, 56 doctors)
+4. ✅ **Task 1.4** - Backend API testing (all endpoints verified)
+5. ✅ **Task 1.5** - Authentication flow (login, logout, token refresh)
+6. ✅ **Task 1.6** - Employee Dashboard & Doctor List (visitFrequency filter)
+
 ## Next Steps Priority
 
-1. **Set up MongoDB Atlas** - Create cluster, get connection string, add to .env
-2. **Set up AWS S3** - Create bucket, IAM user, configure credentials
-3. **Test Backend Locally** - Run server with database connected
-4. **Frontend Services** - Implement API client layer
-5. **Auth Flow** - Login page + AuthContext
-6. **Deploy to AWS Lightsail** - Provision instance, deploy app
+1. **Task 1.7** - Visit Logger with Photo & GPS capture
+2. **Task 1.8** - My Visits history page
+3. **Task 1.9** - Admin Dashboard
+4. **Deploy to AWS Lightsail** - Provision instance, deploy app
+
+---
+
+## Test Credentials
+
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | admin@vippharmacy.com | Admin123!@# |
+| MedRep | medrep@vippharmacy.com | Medrep123!@# |
+| Employee | juan@vippharmacy.com | Employee123!@# |
+| Employee | maria@vippharmacy.com | Employee123!@# |
+| Employee | pedro@vippharmacy.com | Employee123!@# |

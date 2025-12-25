@@ -24,8 +24,9 @@ export const AuthProvider = ({ children }) => {
       try {
         const token = localStorage.getItem('accessToken');
         if (token) {
-          const userData = await authService.getProfile();
-          setUser(userData);
+          const response = await authService.getProfile();
+          // Backend returns { success, data: user } or { data: user }
+          setUser(response.data || response);
         }
       } catch (err) {
         console.error('Auth initialization error:', err);
@@ -44,9 +45,11 @@ export const AuthProvider = ({ children }) => {
     setError(null);
     try {
       const response = await authService.login(email, password);
-      localStorage.setItem('accessToken', response.accessToken);
-      localStorage.setItem('refreshToken', response.refreshToken);
-      setUser(response.user);
+      // Backend returns { success, data: { user, accessToken, refreshToken } }
+      const { user: userData, accessToken, refreshToken } = response.data;
+      localStorage.setItem('accessToken', accessToken);
+      localStorage.setItem('refreshToken', refreshToken);
+      setUser(userData);
       return response;
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
@@ -74,8 +77,10 @@ export const AuthProvider = ({ children }) => {
       if (!token) throw new Error('No refresh token');
 
       const response = await authService.refreshToken(token);
-      localStorage.setItem('accessToken', response.accessToken);
-      return response.accessToken;
+      // Backend returns { success, data: { accessToken } }
+      const newAccessToken = response.data?.accessToken || response.accessToken;
+      localStorage.setItem('accessToken', newAccessToken);
+      return newAccessToken;
     } catch (err) {
       logout();
       throw err;

@@ -1,17 +1,19 @@
 /**
  * Product Controller
  *
- * Handles product catalog CRUD operations
- * Follows CLAUDE.md rules:
- * - Admin can manage products
- * - All authenticated users can view products
- * - Images stored in AWS S3
+ * Handles product catalog operations
+ *
+ * IMPORTANT: Products are READ from the website database (vip-pharmacy)
+ * The CRM does not manage products directly - they are managed via the website.
+ *
+ * This controller provides:
+ * - Read-only access to website products
+ * - Product search and filtering for MedReps/Employees
+ * - Product data for assignments and visits
  */
 
-const Product = require('../models/Product');
-const ProductAssignment = require('../models/ProductAssignment');
+const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
-const { deleteFromS3 } = require('../config/s3');
 
 /**
  * @desc    Get all products with pagination and filters
@@ -19,21 +21,27 @@ const { deleteFromS3 } = require('../config/s3');
  * @access  All authenticated users
  */
 const getAllProducts = catchAsync(async (req, res) => {
+  const Product = getWebsiteProductModel();
   const page = parseInt(req.query.page, 10) || 1;
   const limit = parseInt(req.query.limit, 10) || 20;
   const skip = (page - 1) * limit;
 
   // Build filter query
-  const filter = { isActive: true };
+  const filter = { inStock: true };
 
   // Filter by category
   if (req.query.category) {
     filter.category = req.query.category;
   }
 
-  // Filter by target specialization
-  if (req.query.specialization) {
-    filter.targetSpecializations = req.query.specialization;
+  // Filter by VIP products
+  if (req.query.isVIP === 'true') {
+    filter.isVIP = true;
+  }
+
+  // Filter by prescription requirement
+  if (req.query.requiresPrescription === 'true') {
+    filter.requiresPrescription = true;
   }
 
   // Search by name or description
@@ -41,19 +49,18 @@ const getAllProducts = catchAsync(async (req, res) => {
     filter.$or = [
       { name: { $regex: req.query.search, $options: 'i' } },
       { genericName: { $regex: req.query.search, $options: 'i' } },
-      { briefDescription: { $regex: req.query.search, $options: 'i' } },
+      { description: { $regex: req.query.search, $options: 'i' } },
     ];
   }
 
-  // Include inactive if requested (admin only)
-  if (req.query.includeInactive === 'true' && req.user.role === 'admin') {
-    delete filter.isActive;
+  // Include out of stock if requested (admin only)
+  if (req.query.includeOutOfStock === 'true' && req.user.role === 'admin') {
+    delete filter.inStock;
   }
 
   // Execute query
   const [products, total] = await Promise.all([
     Product.find(filter)
-      .select('name genericName category briefDescription keyBenefits image price isActive')
       .sort({ name: 1 })
       .skip(skip)
       .limit(limit),
@@ -78,6 +85,7 @@ const getAllProducts = catchAsync(async (req, res) => {
  * @access  All authenticated users
  */
 const getProductById = catchAsync(async (req, res) => {
+  const Product = getWebsiteProductModel();
   const product = await Product.findById(req.params.id);
 
   if (!product) {
@@ -87,143 +95,6 @@ const getProductById = catchAsync(async (req, res) => {
   res.status(200).json({
     success: true,
     data: product,
-  });
-});
-
-/**
- * @desc    Create new product
- * @route   POST /api/products
- * @access  Admin only
- */
-const createProduct = catchAsync(async (req, res) => {
-  const {
-    name,
-    genericName,
-    category,
-    briefDescription,
-    description,
-    keyBenefits,
-    usageInformation,
-    dosage,
-    price,
-    manufacturer,
-    sku,
-    targetSpecializations,
-  } = req.body;
-
-  // Image URL from S3 upload middleware
-  const image = req.body.image || (req.file ? req.file.location : null);
-
-  if (!image) {
-    throw new NotFoundError('Product image is required');
-  }
-
-  const product = await Product.create({
-    name,
-    genericName,
-    category,
-    briefDescription,
-    description,
-    keyBenefits: keyBenefits || [],
-    usageInformation,
-    dosage,
-    price,
-    manufacturer,
-    image,
-    sku,
-    targetSpecializations: targetSpecializations || [],
-  });
-
-  res.status(201).json({
-    success: true,
-    message: 'Product created successfully',
-    data: product,
-  });
-});
-
-/**
- * @desc    Update product
- * @route   PUT /api/products/:id
- * @access  Admin only
- */
-const updateProduct = catchAsync(async (req, res) => {
-  const product = await Product.findById(req.params.id);
-
-  if (!product) {
-    throw new NotFoundError('Product not found');
-  }
-
-  // Allowed fields to update
-  const allowedFields = [
-    'name',
-    'genericName',
-    'category',
-    'briefDescription',
-    'description',
-    'keyBenefits',
-    'usageInformation',
-    'dosage',
-    'price',
-    'manufacturer',
-    'sku',
-    'targetSpecializations',
-    'isActive',
-  ];
-
-  // Update only allowed fields
-  allowedFields.forEach((field) => {
-    if (req.body[field] !== undefined) {
-      product[field] = req.body[field];
-    }
-  });
-
-  // Handle image update
-  if (req.file) {
-    // Delete old image from S3 if exists
-    if (product.image) {
-      try {
-        await deleteFromS3(product.image);
-      } catch (err) {
-        console.error('Failed to delete old product image:', err);
-      }
-    }
-    product.image = req.file.location;
-  }
-
-  await product.save();
-
-  res.status(200).json({
-    success: true,
-    message: 'Product updated successfully',
-    data: product,
-  });
-});
-
-/**
- * @desc    Deactivate product (soft delete)
- * @route   DELETE /api/products/:id
- * @access  Admin only
- */
-const deleteProduct = catchAsync(async (req, res) => {
-  const product = await Product.findById(req.params.id);
-
-  if (!product) {
-    throw new NotFoundError('Product not found');
-  }
-
-  // Soft delete
-  product.isActive = false;
-  await product.save();
-
-  // Deactivate all product assignments
-  await ProductAssignment.updateMany(
-    { product: product._id, status: 'active' },
-    { status: 'inactive', deactivatedAt: new Date() }
-  );
-
-  res.status(200).json({
-    success: true,
-    message: 'Product deactivated successfully',
   });
 });
 
@@ -233,10 +104,10 @@ const deleteProduct = catchAsync(async (req, res) => {
  * @access  All authenticated users
  */
 const getProductsByCategory = catchAsync(async (req, res) => {
+  const Product = getWebsiteProductModel();
   const { category } = req.params;
 
-  const products = await Product.find({ category, isActive: true })
-    .select('name genericName briefDescription keyBenefits image price')
+  const products = await Product.find({ category, inStock: true })
     .sort({ name: 1 });
 
   res.status(200).json({
@@ -252,7 +123,8 @@ const getProductsByCategory = catchAsync(async (req, res) => {
  * @access  All authenticated users
  */
 const getCategories = catchAsync(async (req, res) => {
-  const categories = await Product.distinct('category', { isActive: true });
+  const Product = getWebsiteProductModel();
+  const categories = await Product.distinct('category', { inStock: true });
 
   res.status(200).json({
     success: true,
@@ -261,24 +133,97 @@ const getCategories = catchAsync(async (req, res) => {
 });
 
 /**
- * @desc    Get products for a specific specialization
- * @route   GET /api/products/specialization/:specialization
+ * @desc    Get VIP products
+ * @route   GET /api/products/vip
  * @access  All authenticated users
  */
-const getProductsForSpecialization = catchAsync(async (req, res) => {
-  const { specialization } = req.params;
-
-  const products = await Product.find({
-    targetSpecializations: specialization,
-    isActive: true,
-  })
-    .select('name genericName category briefDescription keyBenefits image price')
+const getVIPProducts = catchAsync(async (req, res) => {
+  const Product = getWebsiteProductModel();
+  const products = await Product.find({ isVIP: true, inStock: true })
     .sort({ name: 1 });
 
   res.status(200).json({
     success: true,
     data: products,
     count: products.length,
+  });
+});
+
+/**
+ * @desc    Search products
+ * @route   GET /api/products/search
+ * @access  All authenticated users
+ */
+const searchProducts = catchAsync(async (req, res) => {
+  const Product = getWebsiteProductModel();
+  const { q } = req.query;
+
+  if (!q || q.length < 2) {
+    return res.status(400).json({
+      success: false,
+      message: 'Search query must be at least 2 characters',
+    });
+  }
+
+  const products = await Product.find({
+    $or: [
+      { name: { $regex: q, $options: 'i' } },
+      { genericName: { $regex: q, $options: 'i' } },
+      { description: { $regex: q, $options: 'i' } },
+    ],
+    inStock: true,
+  })
+    .limit(20)
+    .sort({ name: 1 });
+
+  res.status(200).json({
+    success: true,
+    data: products,
+    count: products.length,
+  });
+});
+
+/**
+ * NOTE: Create, Update, Delete operations are NOT available in CRM
+ * Products are managed through the VIP Pharmacy website.
+ * These placeholder functions return appropriate messages.
+ */
+
+const createProduct = catchAsync(async (req, res) => {
+  res.status(403).json({
+    success: false,
+    message: 'Products are managed through the VIP Pharmacy website. Please use the website admin panel to add products.',
+  });
+});
+
+const updateProduct = catchAsync(async (req, res) => {
+  res.status(403).json({
+    success: false,
+    message: 'Products are managed through the VIP Pharmacy website. Please use the website admin panel to update products.',
+  });
+});
+
+const deleteProduct = catchAsync(async (req, res) => {
+  res.status(403).json({
+    success: false,
+    message: 'Products are managed through the VIP Pharmacy website. Please use the website admin panel to remove products.',
+  });
+});
+
+// Placeholder for backward compatibility
+const getProductsForSpecialization = catchAsync(async (req, res) => {
+  const Product = getWebsiteProductModel();
+
+  // Since website products don't have targetSpecializations,
+  // return all VIP products as a fallback
+  const products = await Product.find({ isVIP: true, inStock: true })
+    .sort({ name: 1 });
+
+  res.status(200).json({
+    success: true,
+    data: products,
+    count: products.length,
+    note: 'Returning VIP products. Website products do not have specialization targeting.',
   });
 });
 
@@ -291,4 +236,6 @@ module.exports = {
   getProductsByCategory,
   getCategories,
   getProductsForSpecialization,
+  getVIPProducts,
+  searchProducts,
 };

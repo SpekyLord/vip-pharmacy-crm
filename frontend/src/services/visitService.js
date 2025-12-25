@@ -21,8 +21,13 @@ const visitService = {
     return response.data;
   },
 
-  create: async (visitData) => {
-    const response = await api.post('/visits', visitData);
+  // Create visit with FormData (for photo uploads)
+  create: async (formData) => {
+    const response = await api.post('/visits', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
     return response.data;
   },
 
@@ -63,6 +68,30 @@ const visitService = {
 
   getStats: async (params = {}) => {
     const response = await api.get('/visits/stats', { params });
+    return response.data;
+  },
+
+  // Get today's visits for current user
+  getToday: async () => {
+    const response = await api.get('/visits/today');
+    return response.data;
+  },
+
+  // Get current user's visits
+  getMy: async (params = {}) => {
+    const response = await api.get('/visits/my', { params });
+    return response.data;
+  },
+
+  // Check if user can visit a specific doctor (weekly/monthly limit check)
+  canVisit: async (doctorId) => {
+    const response = await api.get(`/visits/can-visit/${doctorId}`);
+    return response.data;
+  },
+
+  // Get weekly compliance report for a user
+  getWeeklyCompliance: async (monthYear) => {
+    const response = await api.get('/visits/weekly', { params: { monthYear } });
     return response.data;
   },
 };
