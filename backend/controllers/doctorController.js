@@ -58,8 +58,10 @@ const getRegionFilter = async (user) => {
  */
 const getAllDoctors = catchAsync(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
-  const skip = (page - 1) * limit;
+  const requestedLimit = parseInt(req.query.limit, 10);
+  // limit=0 means fetch all (no limit), otherwise default to 20
+  const limit = requestedLimit === 0 ? 0 : (requestedLimit || 20);
+  const skip = limit === 0 ? 0 : (page - 1) * limit;
 
   // Start with region filter based on user role (includes descendant regions)
   const regionFilter = await getRegionFilter(req.user);
@@ -93,14 +95,18 @@ const getAllDoctors = catchAsync(async (req, res) => {
     ];
   }
 
-  // Execute query
+  // Execute query - if limit is 0, don't apply skip/limit (fetch all)
+  let query = Doctor.find(filter)
+    .populate('region', 'name code level')
+    .populate('assignedTo', 'name email')
+    .sort({ name: 1 });
+
+  if (limit > 0) {
+    query = query.skip(skip).limit(limit);
+  }
+
   const [doctors, total] = await Promise.all([
-    Doctor.find(filter)
-      .populate('region', 'name code level')
-      .populate('assignedTo', 'name email')
-      .sort({ name: 1 })
-      .skip(skip)
-      .limit(limit),
+    query,
     Doctor.countDocuments(filter),
   ]);
 
@@ -109,9 +115,9 @@ const getAllDoctors = catchAsync(async (req, res) => {
     data: doctors,
     pagination: {
       page,
-      limit,
+      limit: limit || total, // If no limit, show total as limit
       total,
-      pages: Math.ceil(total / limit),
+      pages: limit > 0 ? Math.ceil(total / limit) : 1,
     },
   });
 });

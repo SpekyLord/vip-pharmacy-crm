@@ -159,8 +159,9 @@ const EmployeeDashboard = () => {
       const monthYear = getCurrentMonthYear();
 
       // Use Promise.allSettled for graceful degradation on partial failures
+      // Fetch ALL doctors (limit=0) so employee can see their full assigned list
       const results = await Promise.allSettled([
-        doctorService.getAll(),
+        doctorService.getAll({ limit: 0 }),
         visitService.getToday(),
         visitService.getStats({ monthYear }),
         visitService.getWeeklyCompliance(monthYear),
