@@ -13,6 +13,7 @@
  */
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 
 const {
@@ -33,11 +34,34 @@ const {
   registerValidation,
 } = require('../middleware/validation');
 
-// Public routes
-router.post('/login', loginValidation, login);
-router.post('/refresh-token', refreshToken);
-router.post('/forgot-password', forgotPassword);
-router.post('/reset-password/:token', resetPassword);
+// Rate limiting for auth routes (security: prevent brute force attacks)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per window
+  message: {
+    success: false,
+    message: 'Too many authentication attempts. Please try again after 15 minutes.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // 5 attempts per hour
+  message: {
+    success: false,
+    message: 'Too many password reset attempts. Please try again after 1 hour.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Public routes with rate limiting
+router.post('/login', authLimiter, loginValidation, login);
+router.post('/refresh-token', authLimiter, refreshToken);
+router.post('/forgot-password', passwordResetLimiter, forgotPassword);
+router.post('/reset-password/:token', passwordResetLimiter, resetPassword);
 
 // Protected routes
 router.use(protect); // All routes below require authentication

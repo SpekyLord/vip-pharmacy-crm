@@ -18,6 +18,109 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
 
+const newVisitStyles = `
+  .dashboard-layout {
+    min-height: 100vh;
+    background: #f3f4f6;
+  }
+
+  .dashboard-content {
+    display: flex;
+  }
+
+  .main-content {
+    flex: 1;
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .page-header {
+    margin-bottom: 24px;
+  }
+
+  .page-header h1 {
+    margin: 12px 0 0 0;
+    font-size: 28px;
+    color: #1f2937;
+  }
+
+  .back-link {
+    color: #2563eb;
+    text-decoration: none;
+    font-size: 14px;
+  }
+
+  .back-link:hover {
+    text-decoration: underline;
+  }
+
+  .error-message {
+    background: #fee2e2;
+    border: 1px solid #fecaca;
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+  }
+
+  .error-message p {
+    color: #dc2626;
+    margin: 0 0 16px 0;
+  }
+
+  .limit-reached-message {
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+  }
+
+  .limit-reached-message h2 {
+    color: #92400e;
+    margin: 0 0 8px 0;
+  }
+
+  .limit-reached-message p {
+    color: #a16207;
+    margin: 0 0 16px 0;
+  }
+
+  .visit-stats {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    margin-bottom: 20px;
+  }
+
+  .visit-stats span {
+    background: white;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: #2563eb;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #1d4ed8;
+  }
+`;
+
 const NewVisitPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -69,6 +172,7 @@ const NewVisitPage = () => {
 
   return (
     <div className="dashboard-layout">
+      <style>{newVisitStyles}</style>
       <Navbar />
       <div className="dashboard-content">
         <Sidebar />

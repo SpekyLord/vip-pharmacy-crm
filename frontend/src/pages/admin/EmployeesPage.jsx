@@ -4,56 +4,234 @@
  * Admin page for employee management:
  * - Employee list with CRUD
  * - Role assignment
+ * - Region assignment
  * - Account status management
- * - Performance overview
  */
 
 import { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import EmployeeManagement from '../../components/admin/EmployeeManagement';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import userService from '../../services/userService';
+import regionService from '../../services/regionService';
+
+const employeesPageStyles = `
+  .dashboard-layout {
+    min-height: 100vh;
+    background: #f3f4f6;
+  }
+
+  .dashboard-content {
+    display: flex;
+  }
+
+  .main-content {
+    flex: 1;
+    padding: 24px;
+    max-width: 1400px;
+  }
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+
+  .page-header h1 {
+    margin: 0;
+    font-size: 28px;
+    color: #1f2937;
+  }
+
+  .error-banner {
+    background: #fee2e2;
+    color: #dc2626;
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 24px;
+  }
+`;
 
 const EmployeesPage = () => {
   const [employees, setEmployees] = useState([]);
+  const [regions, setRegions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    pages: 0,
+  });
+  const [filters, setFilters] = useState({
+    search: '',
+    role: '',
+    isActive: '',
+    region: '',
+  });
+
+  // Fetch employees with current filters and pagination
+  const fetchEmployees = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const params = {
+        page: pagination.page,
+        limit: pagination.limit,
+      };
+
+      if (filters.search) params.search = filters.search;
+      if (filters.role) params.role = filters.role;
+      if (filters.isActive !== '') params.isActive = filters.isActive;
+      if (filters.region) params.region = filters.region;
+
+      const response = await userService.getAll(params);
+      setEmployees(response.data || []);
+      setPagination((prev) => ({
+        ...prev,
+        total: response.pagination?.total || 0,
+        pages: response.pagination?.pages || 0,
+      }));
+    } catch (err) {
+      console.error('Failed to fetch employees:', err);
+      setError('Failed to load employees. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Flatten hierarchy tree into array with depth for indented display
+  const flattenHierarchy = (nodes, depth = 0) => {
+    let result = [];
+    for (const node of nodes) {
+      // Count children recursively
+      const countChildren = (n) => {
+        if (!n.children || n.children.length === 0) return 0;
+        return n.children.reduce((sum, child) => sum + 1 + countChildren(child), 0);
+      };
+      result.push({ ...node, depth, childCount: countChildren(node) });
+      if (node.children && node.children.length > 0) {
+        result = result.concat(flattenHierarchy(node.children, depth + 1));
+      }
+    }
+    return result;
+  };
+
+  // Fetch regions hierarchy for dropdown
+  const fetchRegions = async () => {
+    try {
+      const response = await regionService.getHierarchy();
+      const flatRegions = flattenHierarchy(response.data || []);
+      setRegions(flatRegions);
+    } catch (err) {
+      console.error('Failed to fetch regions:', err);
+    }
+  };
 
   useEffect(() => {
-    // TODO: Fetch employees data
-    setLoading(false);
+    fetchRegions();
   }, []);
 
+  useEffect(() => {
+    fetchEmployees();
+  }, [pagination.page, filters]);
+
+  // Handle create/update employee
   const handleSaveEmployee = async (employeeData) => {
-    // TODO: Implement save employee
-    console.log('Saving employee:', employeeData);
+    try {
+      if (employeeData._id) {
+        // Update existing employee
+        await userService.update(employeeData._id, employeeData);
+        toast.success('Employee updated successfully');
+      } else {
+        // Create new employee
+        await userService.create(employeeData);
+        toast.success('Employee created successfully');
+      }
+      fetchEmployees();
+      return true;
+    } catch (err) {
+      console.error('Failed to save employee:', err);
+      toast.error(err.response?.data?.message || 'Failed to save employee');
+      return false;
+    }
   };
 
+  // Handle delete (soft delete) employee
   const handleDeleteEmployee = async (employeeId) => {
-    // TODO: Implement delete employee
-    console.log('Deleting employee:', employeeId);
+    try {
+      await userService.delete(employeeId);
+      toast.success('Employee deactivated successfully');
+      fetchEmployees();
+      return true;
+    } catch (err) {
+      console.error('Failed to delete employee:', err);
+      toast.error(err.response?.data?.message || 'Failed to delete employee');
+      return false;
+    }
   };
 
-  const handleToggleStatus = async (employeeId) => {
-    // TODO: Implement toggle status
-    console.log('Toggling status for:', employeeId);
+  // Handle toggle active status
+  const handleToggleStatus = async (employee) => {
+    try {
+      await userService.update(employee._id, { isActive: !employee.isActive });
+      toast.success(`Employee ${employee.isActive ? 'deactivated' : 'activated'} successfully`);
+      fetchEmployees();
+      return true;
+    } catch (err) {
+      console.error('Failed to toggle status:', err);
+      toast.error(err.response?.data?.message || 'Failed to update status');
+      return false;
+    }
   };
 
-  if (loading) {
+  // Handle filter changes
+  const handleFilterChange = (newFilters) => {
+    setFilters(newFilters);
+    setPagination((prev) => ({ ...prev, page: 1 })); // Reset to first page
+  };
+
+  // Handle page change
+  const handlePageChange = (newPage) => {
+    setPagination((prev) => ({ ...prev, page: newPage }));
+  };
+
+  if (loading && employees.length === 0) {
     return <LoadingSpinner fullScreen />;
   }
 
   return (
     <div className="dashboard-layout">
+      <style>{employeesPageStyles}</style>
       <Navbar />
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <div className="page-header">
+            <h1>Employee Management</h1>
+          </div>
+
+          {error && (
+            <div className="error-banner">
+              {error}
+            </div>
+          )}
+
           <EmployeeManagement
             employees={employees}
+            regions={regions}
+            filters={filters}
+            pagination={pagination}
+            loading={loading}
             onSave={handleSaveEmployee}
             onDelete={handleDeleteEmployee}
             onToggleStatus={handleToggleStatus}
-            loading={loading}
+            onFilterChange={handleFilterChange}
+            onPageChange={handlePageChange}
           />
         </main>
       </div>

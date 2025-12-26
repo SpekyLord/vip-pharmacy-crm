@@ -12,31 +12,44 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+// Common error messages (DRY principle)
+const AUTH_ERRORS = {
+  NO_TOKEN: 'Not authorized. Please log in to access this resource.',
+  USER_NOT_FOUND: 'User not found. Please log in again.',
+  ACCOUNT_DEACTIVATED: 'Your account has been deactivated. Please contact an administrator.',
+  TOKEN_EXPIRED: 'Token expired. Please log in again.',
+  TOKEN_INVALID: 'Invalid token. Please log in again.',
+  AUTH_FAILED: 'Authentication failed. Please log in again.',
+};
+
+/**
+ * Extract JWT token from request (DRY utility)
+ * Checks Authorization header first, then cookies
+ */
+const extractTokenFromRequest = (req) => {
+  // Check Authorization header
+  if (req.headers.authorization?.startsWith('Bearer')) {
+    return req.headers.authorization.split(' ')[1];
+  }
+  // Check cookies
+  if (req.cookies?.accessToken) {
+    return req.cookies.accessToken;
+  }
+  return null;
+};
+
 /**
  * Protect routes - require authentication
  * Extracts and verifies JWT token from Authorization header
  */
 const protect = async (req, res, next) => {
-  let token;
-
-  // Check for token in Authorization header
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith('Bearer')
-  ) {
-    token = req.headers.authorization.split(' ')[1];
-  }
-
-  // Check for token in cookies (alternative method)
-  if (!token && req.cookies?.accessToken) {
-    token = req.cookies.accessToken;
-  }
+  const token = extractTokenFromRequest(req);
 
   // No token found
   if (!token) {
     return res.status(401).json({
       success: false,
-      message: 'Not authorized. Please log in to access this resource.',
+      message: AUTH_ERRORS.NO_TOKEN,
     });
   }
 
@@ -45,12 +58,12 @@ const protect = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Get user from database
-    const user = await User.findById(decoded.id).populate('assignedRegions', 'name code');
+    const user = await User.findById(decoded.id).populate('assignedRegions');
 
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'User not found. Please log in again.',
+        message: AUTH_ERRORS.USER_NOT_FOUND,
       });
     }
 
@@ -58,7 +71,7 @@ const protect = async (req, res, next) => {
     if (!user.isActive) {
       return res.status(401).json({
         success: false,
-        message: 'Your account has been deactivated. Please contact an administrator.',
+        message: AUTH_ERRORS.ACCOUNT_DEACTIVATED,
       });
     }
 
@@ -69,7 +82,7 @@ const protect = async (req, res, next) => {
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
-        message: 'Token expired. Please log in again.',
+        message: AUTH_ERRORS.TOKEN_EXPIRED,
         code: 'TOKEN_EXPIRED',
       });
     }
@@ -77,7 +90,7 @@ const protect = async (req, res, next) => {
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
-        message: 'Invalid token. Please log in again.',
+        message: AUTH_ERRORS.TOKEN_INVALID,
         code: 'TOKEN_INVALID',
       });
     }
@@ -85,7 +98,7 @@ const protect = async (req, res, next) => {
     console.error('Auth middleware error:', error);
     return res.status(401).json({
       success: false,
-      message: 'Authentication failed. Please log in again.',
+      message: AUTH_ERRORS.AUTH_FAILED,
     });
   }
 };
@@ -95,20 +108,7 @@ const protect = async (req, res, next) => {
  * Attaches user to request if token is valid, but doesn't require it
  */
 const optionalAuth = async (req, res, next) => {
-  let token;
-
-  // Check for token in Authorization header
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith('Bearer')
-  ) {
-    token = req.headers.authorization.split(' ')[1];
-  }
-
-  // Check for token in cookies
-  if (!token && req.cookies?.accessToken) {
-    token = req.cookies.accessToken;
-  }
+  const token = extractTokenFromRequest(req);
 
   // No token - continue without user
   if (!token) {
@@ -120,7 +120,7 @@ const optionalAuth = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Get user from database
-    const user = await User.findById(decoded.id).populate('assignedRegions', 'name code');
+    const user = await User.findById(decoded.id).populate('assignedRegions');
 
     if (user && user.isActive) {
       req.user = user;

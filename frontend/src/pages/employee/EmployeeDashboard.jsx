@@ -19,6 +19,117 @@ import { useAuth } from '../../hooks/useAuth';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
 
+const dashboardStyles = `
+  .main-content h1 {
+    margin: 0 0 24px 0;
+    font-size: 28px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    border: 1px solid #e5e7eb;
+  }
+
+  .stat-card .stat-value {
+    font-size: 36px;
+    font-weight: 700;
+    color: #2563eb;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+
+  .stat-card .stat-label {
+    font-size: 14px;
+    color: #6b7280;
+    font-weight: 500;
+  }
+
+  .compliance-bar {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    margin-bottom: 24px;
+    border: 1px solid #e5e7eb;
+  }
+
+  .compliance-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .compliance-header span:first-child {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .compliance-header span:last-child {
+    font-size: 18px;
+    font-weight: 700;
+    color: #2563eb;
+  }
+
+  .progress-track {
+    height: 12px;
+    background: #e5e7eb;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .progress-track .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #2563eb, #3b82f6);
+    border-radius: 6px;
+    transition: width 0.5s ease;
+  }
+
+  .dashboard-section {
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e5e7eb;
+  }
+
+  .dashboard-section h2 {
+    margin: 0 0 20px 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #1f2937;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+
+  @media (max-width: 768px) {
+    .stats-row {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .stat-card .stat-value {
+      font-size: 28px;
+    }
+  }
+`;
+
 const EmployeeDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -39,28 +150,49 @@ const EmployeeDashboard = () => {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   };
 
-  // Fetch all dashboard data
+  // Fetch all dashboard data with graceful degradation
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Fetch data in parallel
-      const [doctorsRes, todayRes, statsRes, weeklyRes] = await Promise.all([
+      const monthYear = getCurrentMonthYear();
+
+      // Use Promise.allSettled for graceful degradation on partial failures
+      const results = await Promise.allSettled([
         doctorService.getAll(),
         visitService.getToday(),
-        visitService.getStats({ monthYear: getCurrentMonthYear() }),
-        visitService.getWeeklyCompliance(getCurrentMonthYear()),
+        visitService.getStats({ monthYear }),
+        visitService.getWeeklyCompliance(monthYear),
       ]);
 
-      // Set doctors list
-      const doctorsList = doctorsRes.data || [];
+      // Extract results with fallbacks for failed requests
+      const [doctorsResult, todayResult, statsResult, weeklyResult] = results;
+
+      // Process doctors - critical, show error if fails
+      const doctorsList = doctorsResult.status === 'fulfilled'
+        ? (doctorsResult.value.data || [])
+        : [];
       setDoctors(doctorsList);
 
-      // Calculate stats from responses
-      const todayCount = todayRes.count || todayRes.data?.length || 0;
-      const weeklyData = weeklyRes.data || {};
-      const statsData = statsRes.data || {};
+      if (doctorsResult.status === 'rejected') {
+        console.error('Failed to fetch doctors:', doctorsResult.reason);
+      }
+
+      // Process today's visits - non-critical, use fallback
+      const todayCount = todayResult.status === 'fulfilled'
+        ? (todayResult.value.count || todayResult.value.data?.length || 0)
+        : 0;
+
+      // Process stats - non-critical, use fallback
+      const statsData = statsResult.status === 'fulfilled'
+        ? (statsResult.value.data || {})
+        : {};
+
+      // Process weekly data - non-critical, use fallback
+      const weeklyData = weeklyResult.status === 'fulfilled'
+        ? (weeklyResult.value.data || {})
+        : {};
 
       // Get current week's visits from weekly breakdown
       const currentWeek = Math.ceil(new Date().getDate() / 7);
@@ -74,6 +206,12 @@ const EmployeeDashboard = () => {
         doctorsVisitedThisMonth: weeklyData.uniqueDoctorsVisited || statsData.summary?.uniqueDoctorsCount || 0,
         compliancePercentage: weeklyData.compliancePercentage || 0,
       });
+
+      // Show error only if all requests failed
+      const allFailed = results.every(r => r.status === 'rejected');
+      if (allFailed) {
+        setError('Failed to load dashboard data. Please try again.');
+      }
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
       setError(err.response?.data?.message || 'Failed to load dashboard data');
@@ -102,6 +240,7 @@ const EmployeeDashboard = () => {
 
   return (
     <div className="dashboard-layout">
+      <style>{dashboardStyles}</style>
       <Navbar />
       <div className="dashboard-content">
         <Sidebar />

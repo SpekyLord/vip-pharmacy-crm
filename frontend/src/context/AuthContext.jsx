@@ -20,24 +20,42 @@ export const AuthProvider = ({ children }) => {
 
   // Check for existing session on mount
   useEffect(() => {
+    let isMounted = true;
+
     const initAuth = async () => {
+      const token = localStorage.getItem('accessToken');
+
+      // No token - immediately stop loading
+      if (!token) {
+        if (isMounted) {
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
-        const token = localStorage.getItem('accessToken');
-        if (token) {
-          const response = await authService.getProfile();
-          // Backend returns { success, data: user } or { data: user }
+        const response = await authService.getProfile();
+        // Backend returns { success, data: user } or { data: user }
+        if (isMounted) {
           setUser(response.data || response);
         }
       } catch (err) {
         console.error('Auth initialization error:', err);
+        // Clear invalid tokens
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     initAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const login = useCallback(async (email, password) => {

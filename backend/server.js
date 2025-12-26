@@ -25,6 +25,34 @@ const { errorHandler, notFound } = require('./middleware/errorHandler');
 // Load environment variables
 dotenv.config();
 
+// Validate required environment variables at startup
+const validateEnv = () => {
+  const required = [
+    'MONGO_URI',
+    'JWT_SECRET',
+    'JWT_REFRESH_SECRET',
+  ];
+
+  const missing = required.filter((key) => !process.env[key]);
+
+  if (missing.length > 0) {
+    console.error('Missing required environment variables:');
+    missing.forEach((key) => console.error(`  - ${key}`));
+    process.exit(1);
+  }
+
+  // Warn about optional but recommended variables
+  const recommended = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'S3_BUCKET_NAME'];
+  const missingRecommended = recommended.filter((key) => !process.env[key]);
+
+  if (missingRecommended.length > 0) {
+    console.warn('Warning: Missing recommended environment variables (S3 uploads may fail):');
+    missingRecommended.forEach((key) => console.warn(`  - ${key}`));
+  }
+};
+
+validateEnv();
+
 // Initialize Express app
 const app = express();
 
@@ -39,9 +67,17 @@ if (process.env.NODE_ENV === 'development') {
 // CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc.)
-    // Also allow localhost and local network IPs for development
-    const allowedOrigins = [
+    // In production, use explicit allowed origins from env
+    if (process.env.NODE_ENV === 'production' && process.env.CORS_ORIGINS) {
+      const allowedOrigins = process.env.CORS_ORIGINS.split(',').map((o) => o.trim());
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('Not allowed by CORS'));
+    }
+
+    // Development: Allow localhost and local network IPs
+    const devAllowedOrigins = [
       'http://localhost:5173',
       'http://127.0.0.1:5173',
       /^http:\/\/10\.\d+\.\d+\.\d+:5173$/, // Local network IPs (10.x.x.x)
@@ -50,7 +86,7 @@ const corsOptions = {
 
     if (!origin) return callback(null, true);
 
-    const isAllowed = allowedOrigins.some((allowed) =>
+    const isAllowed = devAllowedOrigins.some((allowed) =>
       allowed instanceof RegExp ? allowed.test(origin) : allowed === origin
     );
 
@@ -70,14 +106,25 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
+// Health check endpoint with dependency status
+const mongoose = require('mongoose');
+
+app.get('/api/health', async (req, res) => {
+  const healthStatus = {
     success: true,
     message: 'VIP Pharmacy CRM API is running',
     environment: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
-  });
+    dependencies: {
+      mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      s3: process.env.S3_BUCKET_NAME ? 'configured' : 'not_configured',
+    },
+  };
+
+  // Return 503 if database is not connected
+  const statusCode = mongoose.connection.readyState === 1 ? 200 : 503;
+
+  res.status(statusCode).json(healthStatus);
 });
 
 // Mount route handlers

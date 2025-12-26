@@ -75,6 +75,14 @@ const doctorSchema = new mongoose.Schema(
       ref: 'Region',
       required: [true, 'Region is required'],
     },
+    // Parent regions for hierarchical filtering (auto-populated on save)
+    // Stores ancestor chain: e.g., if region is ILO-CITY, stores [ILO, REG-VI, PH]
+    parentRegions: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Region',
+      },
+    ],
     phone: {
       type: String,
       trim: true,
@@ -130,11 +138,27 @@ const doctorSchema = new mongoose.Schema(
 
 // Indexes for performance
 doctorSchema.index({ region: 1 });
+doctorSchema.index({ parentRegions: 1 }); // For hierarchical region queries
 doctorSchema.index({ assignedTo: 1 });
 doctorSchema.index({ specialization: 1 });
 doctorSchema.index({ isActive: 1 });
 doctorSchema.index({ name: 'text', hospital: 'text' }); // Text search
 doctorSchema.index({ location: '2dsphere' }); // Geospatial queries
+
+// Pre-save hook to auto-populate parentRegions from region hierarchy
+doctorSchema.pre('save', async function (next) {
+  // Only update parentRegions if region has changed
+  if (this.isModified('region') && this.region) {
+    const Region = mongoose.model('Region');
+    const ancestors = await Region.getAncestorChain(this.region);
+
+    // Store all ancestor IDs except the region itself
+    this.parentRegions = ancestors
+      .filter((ancestor) => ancestor._id.toString() !== this.region.toString())
+      .map((ancestor) => ancestor._id);
+  }
+  next();
+});
 
 // Virtual: Full address string
 doctorSchema.virtual('fullAddress').get(function () {

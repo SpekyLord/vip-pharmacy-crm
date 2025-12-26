@@ -20,6 +20,7 @@ const Sidebar = () => {
           { path: '/admin', label: 'Dashboard', icon: '📊' },
           { path: '/admin/doctors', label: 'Doctors', icon: '👨‍⚕️' },
           { path: '/admin/employees', label: 'Employees', icon: '👥' },
+          { path: '/admin/regions', label: 'Regions', icon: '🗺️' },
           { path: '/admin/reports', label: 'Reports', icon: '📈' },
         ];
       case 'medrep':

@@ -14,8 +14,11 @@
  * - Hard limit: Block excess visits beyond monthly quota
  */
 
+const mongoose = require('mongoose');
 const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
+const User = require('../models/User');
+const Region = require('../models/Region');
 
 /**
  * Get ISO week number for a date
@@ -121,6 +124,40 @@ const isWorkDay = (date) => {
 };
 
 /**
+ * Check if an employee can access a doctor's region (hierarchical check)
+ * @param {Object} user - User object with assignedRegions
+ * @param {ObjectId} doctorRegionId - The doctor's region ID
+ * @returns {Promise<boolean>}
+ */
+const canAccessDoctorRegion = async (user, doctorRegionId) => {
+  // Admin can access all regions
+  if (user.role === 'admin' && user.canAccessAllRegions) {
+    return true;
+  }
+
+  // If no assigned regions, no access
+  if (!user.assignedRegions || user.assignedRegions.length === 0) {
+    return false;
+  }
+
+  const doctorRegionStr = doctorRegionId.toString();
+
+  // Get all descendant regions for each assigned region
+  for (const region of user.assignedRegions) {
+    const regionId = region._id || region;
+    const descendants = await Region.getDescendantIds(regionId);
+
+    // Check if doctor's region is in the descendants list
+    const hasAccess = descendants.some((id) => id.toString() === doctorRegionStr);
+    if (hasAccess) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
  * Check if user has already visited this doctor this week
  * @param {string} doctorId
  * @param {string} userId
@@ -144,13 +181,16 @@ const getMonthlyVisitCount = async (doctorId, userId, monthYear) => {
 };
 
 /**
- * Check if user can visit this doctor (both weekly and monthly limits)
+ * Check if user can visit this doctor (region access, weekly and monthly limits)
  * @param {string} doctorId
- * @param {string} userId
+ * @param {Object} user - User object (with _id and assignedRegions)
  * @param {Date} visitDate - Optional date, defaults to today
  * @returns {Promise<{canVisit: boolean, reason?: string, weeklyCount: number, monthlyCount: number, monthlyLimit: number}>}
  */
-const canVisitDoctor = async (doctorId, userId, visitDate = new Date()) => {
+const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
+  // Handle both user object and userId for backward compatibility
+  const userId = user._id || user;
+
   // Check if it's a work day
   if (!isWorkDay(visitDate)) {
     return {
@@ -163,7 +203,7 @@ const canVisitDoctor = async (doctorId, userId, visitDate = new Date()) => {
   }
 
   // Get doctor's visit frequency (2x or 4x monthly)
-  const doctor = await Doctor.findById(doctorId);
+  const doctor = await Doctor.findById(doctorId).populate('region');
   if (!doctor) {
     return {
       canVisit: false,
@@ -172,6 +212,20 @@ const canVisitDoctor = async (doctorId, userId, visitDate = new Date()) => {
       monthlyCount: 0,
       monthlyLimit: 0,
     };
+  }
+
+  // Check region access (only if user object with assignedRegions is provided)
+  if (user.assignedRegions !== undefined) {
+    const hasRegionAccess = await canAccessDoctorRegion(user, doctor.region._id || doctor.region);
+    if (!hasRegionAccess) {
+      return {
+        canVisit: false,
+        reason: 'You do not have access to this doctor\'s region',
+        weeklyCount: 0,
+        monthlyCount: 0,
+        monthlyLimit: doctor.visitFrequency || 4,
+      };
+    }
   }
 
   const monthlyLimit = doctor.visitFrequency || 4;
@@ -337,6 +391,7 @@ module.exports = {
   getYearWeekKey,
   getWeekDateRange,
   isWorkDay,
+  canAccessDoctorRegion,
   hasVisitedThisWeek,
   getMonthlyVisitCount,
   canVisitDoctor,

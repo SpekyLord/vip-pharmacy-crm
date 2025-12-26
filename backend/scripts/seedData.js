@@ -27,32 +27,141 @@ const regions = [
     level: 'country',
     parent: null,
   },
-  // Level 2: Province (Panay Island)
+  // Level 2: Regions (18 Philippine Regions)
+  {
+    name: 'Region I',
+    code: 'REG-I',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region II',
+    code: 'REG-II',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region III',
+    code: 'REG-III',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region IV-A',
+    code: 'REG-IV-A',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'MIMAROPA',
+    code: 'MIMAROPA',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region V',
+    code: 'REG-V',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region VI',
+    code: 'REG-VI',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region VII',
+    code: 'REG-VII',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region VIII',
+    code: 'REG-VIII',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region IX',
+    code: 'REG-IX',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region X',
+    code: 'REG-X',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region XI',
+    code: 'REG-XI',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region XII',
+    code: 'REG-XII',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'Region XIII',
+    code: 'REG-XIII',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'NCR',
+    code: 'NCR',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'CAR',
+    code: 'CAR',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'BARMM',
+    code: 'BARMM',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  {
+    name: 'NIR',
+    code: 'NIR',
+    level: 'region',
+    parentCode: 'PH',
+  },
+  // Level 3: Provinces (under Region VI - Western Visayas / Panay Island)
   {
     name: 'Iloilo',
     code: 'ILO',
     level: 'province',
-    parentCode: 'PH',
+    parentCode: 'REG-VI',
   },
   {
     name: 'Capiz',
     code: 'CAP',
     level: 'province',
-    parentCode: 'PH',
+    parentCode: 'REG-VI',
   },
   {
     name: 'Aklan',
     code: 'AKL',
     level: 'province',
-    parentCode: 'PH',
+    parentCode: 'REG-VI',
   },
   {
     name: 'Antique',
     code: 'ANT',
     level: 'province',
-    parentCode: 'PH',
+    parentCode: 'REG-VI',
   },
-  // Level 3: Cities
+  // Level 4: Cities
   {
     name: 'Iloilo City',
     code: 'ILO-CITY',
@@ -77,7 +186,7 @@ const regions = [
     level: 'city',
     parentCode: 'ANT',
   },
-  // Level 4: Districts/Areas
+  // Level 5: Districts/Areas
   {
     name: 'Jaro District',
     code: 'ILO-JARO',

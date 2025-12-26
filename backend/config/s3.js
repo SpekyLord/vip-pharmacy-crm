@@ -168,6 +168,30 @@ const isConfigured = () => {
   );
 };
 
+/**
+ * Sign all photo URLs in a visit object
+ * Replaces public S3 URLs with temporary signed URLs for private bucket access
+ * @param {Object} visit - Visit document (or plain object)
+ * @returns {Promise<Object>} Visit with signed photo URLs
+ */
+const signVisitPhotos = async (visit) => {
+  if (!visit || !visit.photos || visit.photos.length === 0) {
+    return visit;
+  }
+
+  const visitObj = visit.toObject ? visit.toObject() : { ...visit };
+
+  visitObj.photos = await Promise.all(
+    visitObj.photos.map(async (photo) => {
+      const key = extractKeyFromUrl(photo.url);
+      const signedUrl = await getSignedDownloadUrl(key, 3600); // 1 hour expiry
+      return { ...photo, url: signedUrl };
+    })
+  );
+
+  return visitObj;
+};
+
 module.exports = {
   s3Client,
   bucketName,
@@ -181,4 +205,5 @@ module.exports = {
   getSignedDownloadUrl,
   extractKeyFromUrl,
   isConfigured,
+  signVisitPhotos,
 };

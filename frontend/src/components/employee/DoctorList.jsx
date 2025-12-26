@@ -13,6 +13,230 @@ import { useState, useEffect } from 'react';
 import LoadingSpinner from '../common/LoadingSpinner';
 import visitService from '../../services/visitService';
 
+const doctorListStyles = `
+  .doctor-list {
+    padding: 0;
+  }
+
+  .doctor-list-filters {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .search-input {
+    flex: 1;
+    min-width: 250px;
+    padding: 12px 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+
+  .frequency-select {
+    padding: 12px 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+    cursor: pointer;
+    min-width: 160px;
+  }
+
+  .frequency-select:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+
+  .loading-status {
+    text-align: center;
+    color: #6b7280;
+    padding: 8px;
+    font-size: 14px;
+  }
+
+  .doctor-list-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+  }
+
+  .doctor-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid #e5e7eb;
+  }
+
+  .doctor-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  .doctor-card.completed {
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    border-color: #86efac;
+  }
+
+  .doctor-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+
+  .doctor-card-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .frequency-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .frequency-2 {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .frequency-4 {
+    background: #dcfce7;
+    color: #16a34a;
+  }
+
+  .doctor-specialization {
+    margin: 0 0 4px 0;
+    color: #4b5563;
+    font-size: 14px;
+  }
+
+  .doctor-hospital {
+    margin: 0 0 16px 0;
+    color: #6b7280;
+    font-size: 13px;
+  }
+
+  .visit-status {
+    margin-bottom: 16px;
+  }
+
+  .visit-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .visit-count {
+    font-size: 13px;
+    color: #4b5563;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .progress-bar {
+    flex: 1;
+    height: 8px;
+    background: #e5e7eb;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+
+  .progress-fill.low {
+    background: #3b82f6;
+  }
+
+  .progress-fill.medium {
+    background: #f59e0b;
+  }
+
+  .progress-fill.complete {
+    background: #22c55e;
+  }
+
+  .visit-limit-reached {
+    display: block;
+    font-size: 12px;
+    color: #dc2626;
+    font-weight: 500;
+    margin-top: 4px;
+  }
+
+  .doctor-card-actions {
+    margin-top: 16px;
+  }
+
+  .log-visit-btn {
+    width: 100%;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #2563eb;
+    color: white;
+  }
+
+  .log-visit-btn:hover:not(:disabled) {
+    background: #1d4ed8;
+  }
+
+  .log-visit-btn.disabled,
+  .log-visit-btn:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+  }
+
+  .no-results {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6b7280;
+    font-size: 15px;
+  }
+
+  @media (max-width: 640px) {
+    .doctor-list-filters {
+      flex-direction: column;
+    }
+
+    .search-input,
+    .frequency-select {
+      width: 100%;
+    }
+
+    .doctor-list-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+`;
+
 const DoctorList = ({
   doctors = [],
   loading = false,
@@ -24,38 +248,48 @@ const DoctorList = ({
   const [visitStatus, setVisitStatus] = useState({});
   const [loadingStatus, setLoadingStatus] = useState(false);
 
-  // Fetch visit status for all doctors
+  // Fetch visit status for all doctors using batch endpoint (eliminates N+1 problem)
   useEffect(() => {
+    let isMounted = true;
+    const abortController = new AbortController();
+
     const fetchVisitStatus = async () => {
       if (doctors.length === 0) return;
 
       setLoadingStatus(true);
-      const statusMap = {};
 
-      // Fetch visit status for each doctor in parallel (batched)
-      const batchSize = 10;
-      for (let i = 0; i < doctors.length; i += batchSize) {
-        const batch = doctors.slice(i, i + batchSize);
-        const promises = batch.map(async (doctor) => {
-          try {
-            const response = await visitService.canVisit(doctor._id);
-            return { id: doctor._id, data: response.data };
-          } catch {
-            return { id: doctor._id, data: { canVisit: true } };
-          }
-        });
+      try {
+        // Use batch endpoint - single API call instead of N calls
+        const doctorIds = doctors.map((doctor) => doctor._id);
+        const response = await visitService.canVisitBatch(doctorIds);
 
-        const results = await Promise.all(promises);
-        results.forEach(({ id, data }) => {
-          statusMap[id] = data;
-        });
+        // Only update state if component is still mounted
+        if (isMounted) {
+          setVisitStatus(response.data || {});
+        }
+      } catch (error) {
+        // Fallback: set all as visitable if batch fails
+        if (isMounted) {
+          const fallbackStatus = {};
+          doctors.forEach((doctor) => {
+            fallbackStatus[doctor._id] = { canVisit: true };
+          });
+          setVisitStatus(fallbackStatus);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingStatus(false);
+        }
       }
-
-      setVisitStatus(statusMap);
-      setLoadingStatus(false);
     };
 
     fetchVisitStatus();
+
+    // Cleanup function to prevent memory leaks
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
   }, [doctors]);
 
   const filteredDoctors = doctors.filter((doctor) => {
@@ -85,12 +319,21 @@ const DoctorList = ({
     };
   };
 
+  // Get progress bar color class based on completion percentage
+  const getProgressColorClass = (count, limit) => {
+    const percentage = (count / limit) * 100;
+    if (percentage >= 100) return 'complete';
+    if (percentage >= 50) return 'medium';
+    return 'low';
+  };
+
   if (loading) {
     return <LoadingSpinner text="Loading doctors..." />;
   }
 
   return (
     <div className="doctor-list">
+      <style>{doctorListStyles}</style>
       <div className="doctor-list-filters">
         <input
           type="text"
@@ -143,9 +386,9 @@ const DoctorList = ({
                     </span>
                     <div className="progress-bar">
                       <div
-                        className="progress-fill"
+                        className={`progress-fill ${getProgressColorClass(statusDisplay.monthlyCount, statusDisplay.monthlyLimit)}`}
                         style={{
-                          width: `${(statusDisplay.monthlyCount / statusDisplay.monthlyLimit) * 100}%`,
+                          width: `${Math.min((statusDisplay.monthlyCount / statusDisplay.monthlyLimit) * 100, 100)}%`,
                         }}
                       />
                     </div>

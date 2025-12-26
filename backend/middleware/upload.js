@@ -148,10 +148,10 @@ const processVisitPhotos = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('S3 upload error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to upload photos. Please try again.',
-    });
+    // Pass to global error handler for consistent error responses
+    error.statusCode = 500;
+    error.message = 'Failed to upload photos. Please try again.';
+    next(error);
   }
 };
 
@@ -184,10 +184,9 @@ const processProductImage = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('S3 product image upload error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to upload product image. Please try again.',
-    });
+    error.statusCode = 500;
+    error.message = 'Failed to upload product image. Please try again.';
+    next(error);
   }
 };
 
@@ -217,10 +216,9 @@ const processAvatar = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('S3 avatar upload error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to upload avatar. Please try again.',
-    });
+    error.statusCode = 500;
+    error.message = 'Failed to upload avatar. Please try again.';
+    next(error);
   }
 };
 
@@ -250,11 +248,27 @@ const processProductImageOptional = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('S3 product image upload error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to upload product image. Please try again.',
-    });
+    error.statusCode = 500;
+    error.message = 'Failed to upload product image. Please try again.';
+    next(error);
   }
+};
+
+/**
+ * Middleware to parse JSON string fields in FormData before validation
+ * This allows express-validator to validate nested properties like location.latitude
+ */
+const parseFormDataJson = (fields) => (req, res, next) => {
+  fields.forEach((field) => {
+    if (req.body[field] && typeof req.body[field] === 'string') {
+      try {
+        req.body[field] = JSON.parse(req.body[field]);
+      } catch (e) {
+        // Leave as-is if not valid JSON, validation will catch it
+      }
+    }
+  });
+  next();
 };
 
 module.exports = {
@@ -266,6 +280,7 @@ module.exports = {
   processProductImage,
   processProductImageOptional,
   processAvatar,
+  parseFormDataJson,
   ALLOWED_MIME_TYPES,
   MAX_FILE_SIZE,
   MAX_FILES,

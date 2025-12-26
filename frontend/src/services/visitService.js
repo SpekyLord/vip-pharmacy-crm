@@ -89,6 +89,12 @@ const visitService = {
     return response.data;
   },
 
+  // Batch check visit status for multiple doctors (eliminates N+1 problem)
+  canVisitBatch: async (doctorIds) => {
+    const response = await api.post('/visits/can-visit-batch', { doctorIds });
+    return response.data;
+  },
+
   // Get weekly compliance report for a user
   getWeeklyCompliance: async (monthYear) => {
     const response = await api.get('/visits/weekly', { params: { monthYear } });

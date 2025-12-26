@@ -15,6 +15,162 @@ import CameraCapture from './CameraCapture';
 import visitService from '../../services/visitService';
 import doctorService from '../../services/doctorService';
 
+const visitLoggerStyles = `
+  .visit-logger {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  .doctor-info-header {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: white;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    text-align: center;
+  }
+
+  .doctor-info-header h2 {
+    margin: 0 0 8px 0;
+    font-size: 24px;
+  }
+
+  .doctor-details {
+    margin: 0 0 12px 0;
+    opacity: 0.9;
+  }
+
+  .visit-frequency-badge {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+  }
+
+  .form-section {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+
+  .form-section h3 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    color: #1f2937;
+    border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 8px;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+
+  .form-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    box-sizing: border-box;
+  }
+
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+
+  .form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  .product-checkboxes {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    background: #f9fafb;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .checkbox-label:hover {
+    background: #f3f4f6;
+  }
+
+  .checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+
+  .form-actions {
+    text-align: center;
+    padding: 20px 0;
+  }
+
+  .btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: #2563eb;
+    color: white;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: #1d4ed8;
+  }
+
+  .btn-primary:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+  }
+
+  .btn-large {
+    padding: 16px 48px;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .submit-hint {
+    color: #6b7280;
+    font-size: 14px;
+    margin-top: 12px;
+  }
+`;
+
 const VisitLogger = ({ doctor, onSuccess }) => {
   const [photos, setPhotos] = useState([]);
   const [products, setProducts] = useState([]);
@@ -148,7 +304,14 @@ const VisitLogger = ({ doctor, onSuccess }) => {
       onSuccess?.();
     } catch (err) {
       console.error('Failed to log visit:', err);
-      toast.error(err.response?.data?.message || 'Failed to log visit');
+      console.error('Error response:', err.response?.data);
+      // Show detailed validation errors if available
+      if (err.response?.data?.errors?.length > 0) {
+        const errorMessages = err.response.data.errors.map(e => `${e.field}: ${e.message}`).join(', ');
+        toast.error(`Validation failed: ${errorMessages}`);
+      } else {
+        toast.error(err.response?.data?.message || 'Failed to log visit');
+      }
     } finally {
       setLoading(false);
     }
@@ -156,6 +319,7 @@ const VisitLogger = ({ doctor, onSuccess }) => {
 
   return (
     <form onSubmit={handleSubmit} className="visit-logger">
+      <style>{visitLoggerStyles}</style>
       {/* Doctor Info Header */}
       <div className="doctor-info-header">
         <h2>{doctor?.name}</h2>

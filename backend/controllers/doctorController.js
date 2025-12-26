@@ -8,26 +8,47 @@
  * - visitFrequency: 2 or 4 (NOT A/B/C/D categories)
  */
 
+const mongoose = require('mongoose');
 const Doctor = require('../models/Doctor');
 const Visit = require('../models/Visit');
 const User = require('../models/User');
+const Region = require('../models/Region');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 
 /**
  * Build region filter based on user role
  * - Admin: no filter (see all)
- * - Employee: only assigned regions
+ * - Employee: assigned regions AND all their descendants (child regions)
+ *
+ * This enables cascading region access:
+ * - Employee assigned to Region VI sees doctors in all provinces/cities/districts under Region VI
  */
-const getRegionFilter = (user) => {
+const getRegionFilter = async (user) => {
   if (user.role === 'admin' && user.canAccessAllRegions) {
     return {}; // No region filter for admin
   }
-  // Employees and medreps see only assigned regions
+
+  // Employees and medreps see assigned regions AND all descendant regions
   if (user.assignedRegions && user.assignedRegions.length > 0) {
-    return { region: { $in: user.assignedRegions } };
+    const allRegionIds = [];
+
+    // For each assigned region, get all descendant region IDs
+    for (const region of user.assignedRegions) {
+      // Handle both populated objects and plain ObjectIds
+      const regionId = region._id || region;
+      const descendants = await Region.getDescendantIds(regionId);
+      allRegionIds.push(...descendants);
+    }
+
+    // Remove duplicates and convert to ObjectIds for MongoDB query
+    const uniqueRegionIds = [...new Set(allRegionIds.map((id) => id.toString()))];
+    const objectIdRegions = uniqueRegionIds.map((id) => new mongoose.Types.ObjectId(id));
+
+    return { region: { $in: objectIdRegions } };
   }
-  // If no regions assigned, return empty (no access)
-  return { region: null };
+
+  // If no regions assigned, return impossible filter (matches nothing)
+  return { _id: null };
 };
 
 /**
@@ -40,8 +61,9 @@ const getAllDoctors = catchAsync(async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 20;
   const skip = (page - 1) * limit;
 
-  // Start with region filter based on user role
-  const filter = { isActive: true, ...getRegionFilter(req.user) };
+  // Start with region filter based on user role (includes descendant regions)
+  const regionFilter = await getRegionFilter(req.user);
+  const filter = { isActive: true, ...regionFilter };
 
   // Filter by specific region
   if (req.query.region) {

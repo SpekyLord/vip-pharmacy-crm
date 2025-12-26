@@ -9,6 +9,7 @@ import NewVisitPage from './pages/employee/NewVisitPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import DoctorsPage from './pages/admin/DoctorsPage';
 import EmployeesPage from './pages/admin/EmployeesPage';
+import RegionsPage from './pages/admin/RegionsPage';
 import ReportsPage from './pages/admin/ReportsPage';
 import MedRepDashboard from './pages/medrep/MedRepDashboard';
 
@@ -71,6 +72,14 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['admin']}>
               <EmployeesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/regions"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <RegionsPage />
             </ProtectedRoute>
           }
         />

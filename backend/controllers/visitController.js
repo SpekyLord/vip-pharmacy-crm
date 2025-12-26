@@ -13,6 +13,7 @@ const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { canVisitDoctor, getComplianceReport, checkBehindSchedule, getMonthYear } = require('../utils/validateWeeklyVisit');
+const { signVisitPhotos } = require('../config/s3');
 
 /**
  * @desc    Create a new visit
@@ -33,10 +34,33 @@ const createVisit = catchAsync(async (req, res) => {
     nextVisitDate,
   } = req.body;
 
+  // Parse location if it's a JSON string (from FormData)
+  let locationData = location;
+  if (typeof location === 'string') {
+    try {
+      locationData = JSON.parse(location);
+    } catch (e) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid location data format',
+      });
+    }
+  }
+
+  // Parse productsDiscussed if it's a JSON string (from FormData)
+  let productsData = productsDiscussed;
+  if (typeof productsDiscussed === 'string') {
+    try {
+      productsData = JSON.parse(productsDiscussed);
+    } catch (e) {
+      productsData = [];
+    }
+  }
+
   const visitDateObj = visitDate ? new Date(visitDate) : new Date();
 
-  // Check if user can visit this doctor (weekly and monthly limits)
-  const visitCheck = await canVisitDoctor(doctorId, req.user._id, visitDateObj);
+  // Check if user can visit this doctor (region access, weekly and monthly limits)
+  const visitCheck = await canVisitDoctor(doctorId, req.user, visitDateObj);
 
   if (!visitCheck.canVisit) {
     return res.status(400).json({
@@ -71,13 +95,13 @@ const createVisit = catchAsync(async (req, res) => {
     visitDate: visitDateObj,
     visitType: visitType || 'regular',
     location: {
-      latitude: location.latitude,
-      longitude: location.longitude,
-      accuracy: location.accuracy,
+      latitude: locationData.latitude,
+      longitude: locationData.longitude,
+      accuracy: locationData.accuracy,
       capturedAt: new Date(),
     },
     photos,
-    productsDiscussed,
+    productsDiscussed: productsData,
     purpose,
     doctorFeedback,
     notes,
@@ -140,9 +164,12 @@ const getAllVisits = catchAsync(async (req, res) => {
     Visit.countDocuments(query),
   ]);
 
+  // Sign photo URLs for private S3 access
+  const signedVisits = await Promise.all(visits.map((visit) => signVisitPhotos(visit)));
+
   res.json({
     success: true,
-    data: visits,
+    data: signedVisits,
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
@@ -175,9 +202,12 @@ const getVisitById = catchAsync(async (req, res) => {
     });
   }
 
+  // Sign photo URLs for private S3 access
+  const signedVisit = await signVisitPhotos(visit);
+
   res.json({
     success: true,
-    data: visit,
+    data: signedVisit,
   });
 });
 
@@ -349,6 +379,53 @@ const checkCanVisit = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    Batch check if user can visit multiple doctors (eliminates N+1 problem)
+ * @route   POST /api/visits/can-visit-batch
+ * @access  Private (Employee)
+ */
+const checkCanVisitBatch = catchAsync(async (req, res) => {
+  const { doctorIds } = req.body;
+
+  if (!doctorIds || !Array.isArray(doctorIds) || doctorIds.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'doctorIds array is required',
+    });
+  }
+
+  // Limit batch size to prevent abuse
+  if (doctorIds.length > 100) {
+    return res.status(400).json({
+      success: false,
+      message: 'Maximum 100 doctors per batch request',
+    });
+  }
+
+  // Process all doctors in parallel for efficiency
+  const results = await Promise.all(
+    doctorIds.map(async (doctorId) => {
+      try {
+        const result = await canVisitDoctor(doctorId, req.user._id);
+        return { doctorId, ...result };
+      } catch (error) {
+        return { doctorId, canVisit: false, error: 'Failed to check status' };
+      }
+    })
+  );
+
+  // Convert to object keyed by doctorId for O(1) lookup on frontend
+  const resultMap = {};
+  results.forEach((result) => {
+    resultMap[result.doctorId] = result;
+  });
+
+  res.json({
+    success: true,
+    data: resultMap,
+  });
+});
+
+/**
  * @desc    Get compliance alerts (behind schedule employees)
  * @route   GET /api/visits/compliance-alerts
  * @access  Private (Admin)
@@ -479,10 +556,91 @@ const getTodayVisits = catchAsync(async (req, res) => {
     status: 'completed',
   }).populate('doctor', 'name specialization hospital');
 
+  // Sign photo URLs for private S3 access
+  const signedVisits = await Promise.all(visits.map((visit) => signVisitPhotos(visit)));
+
   res.json({
     success: true,
-    data: visits,
-    count: visits.length,
+    data: signedVisits,
+    count: signedVisits.length,
+  });
+});
+
+/**
+ * @desc    Get current user's visits (for /my route)
+ * @route   GET /api/visits/my
+ * @access  Private (Employee)
+ */
+const getMyVisits = catchAsync(async (req, res) => {
+  const { page = 1, limit = 20, status, monthYear, doctorId, dateFrom, dateTo, search } = req.query;
+
+  const query = { user: req.user._id };
+
+  // Filter by status
+  if (status && status !== 'all') {
+    query.status = status;
+  }
+
+  // Filter by month-year
+  if (monthYear) {
+    query.monthYear = monthYear;
+  }
+
+  // Filter by doctor
+  if (doctorId) {
+    query.doctor = doctorId;
+  }
+
+  // Filter by date range
+  if (dateFrom || dateTo) {
+    query.visitDate = {};
+    if (dateFrom) {
+      query.visitDate.$gte = new Date(dateFrom);
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      query.visitDate.$lte = toDate;
+    }
+  }
+
+  const skip = (page - 1) * limit;
+
+  // Build the base query
+  let visitQuery = Visit.find(query)
+    .populate('doctor', 'name specialization hospital')
+    .populate('productsDiscussed.product', 'name')
+    .sort({ visitDate: -1 })
+    .skip(skip)
+    .limit(parseInt(limit));
+
+  const [visits, total] = await Promise.all([
+    visitQuery,
+    Visit.countDocuments(query),
+  ]);
+
+  // If search term provided, filter results (doctor name search)
+  let filteredVisits = visits;
+  if (search) {
+    const searchLower = search.toLowerCase();
+    filteredVisits = visits.filter(v =>
+      v.doctor?.name?.toLowerCase().includes(searchLower) ||
+      v.doctor?.hospital?.toLowerCase().includes(searchLower)
+    );
+  }
+
+  // Sign photo URLs for private S3 access
+  const signedVisits = await Promise.all(filteredVisits.map((visit) => signVisitPhotos(visit)));
+
+  res.json({
+    success: true,
+    data: signedVisits,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total: search ? signedVisits.length : total,
+      pages: Math.ceil((search ? signedVisits.length : total) / limit),
+    },
   });
 });
 
@@ -493,8 +651,10 @@ module.exports = {
   updateVisit,
   cancelVisit,
   getVisitsByUser,
+  getMyVisits,
   getWeeklyCompliance,
   checkCanVisit,
+  checkCanVisitBatch,
   getComplianceAlerts,
   getVisitStats,
   getTodayVisits,

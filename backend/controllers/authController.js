@@ -185,15 +185,10 @@ const forgotPassword = catchAsync(async (req, res) => {
   user.passwordResetExpires = Date.now() + 3600000; // 1 hour
   await user.save();
 
-  // In production, send email with reset link
-  // For now, return token in response (development only)
-  if (process.env.NODE_ENV === 'development') {
-    return res.json({
-      success: true,
-      message: 'Password reset token generated',
-      resetToken, // Only in development
-    });
-  }
+  // TODO: Send email with reset link using AWS SES (Phase 2)
+  // Reset link format: ${FRONTEND_URL}/reset-password/${resetToken}
+  // SECURITY: Never expose reset token in response - only send via email
+  console.log(`Password reset requested for: ${email}`);
 
   res.json({
     success: true,

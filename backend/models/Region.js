@@ -38,7 +38,7 @@ const regionSchema = new mongoose.Schema(
     level: {
       type: String,
       enum: {
-        values: ['country', 'province', 'city', 'district', 'area'],
+        values: ['country', 'region', 'province', 'city', 'district', 'area'],
         message: 'Invalid region level',
       },
       required: [true, 'Region level is required'],

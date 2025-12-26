@@ -141,9 +141,12 @@ userSchema.methods.canAccessRegion = function (regionId) {
     return true;
   }
   // Employees can only access their assigned regions
-  return this.assignedRegions.some(
-    (r) => r.toString() === regionId.toString()
-  );
+  const regionIdStr = regionId.toString();
+  return this.assignedRegions.some((r) => {
+    // Handle both populated (object with _id) and unpopulated (raw ObjectId) states
+    const rId = r._id ? r._id.toString() : r.toString();
+    return rId === regionIdStr;
+  });
 };
 
 // Static method to find user by email with password

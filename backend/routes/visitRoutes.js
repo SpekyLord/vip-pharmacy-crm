@@ -19,6 +19,7 @@ const router = express.Router();
 const {
   getAllVisits,
   getVisitsByUser,
+  getMyVisits,
   getVisitById,
   createVisit,
   updateVisit,
@@ -27,27 +28,29 @@ const {
   getWeeklyCompliance,
   getComplianceAlerts,
   checkCanVisit,
+  checkCanVisitBatch,
   getTodayVisits,
 } = require('../controllers/visitController');
 
 const { protect } = require('../middleware/auth');
 const { adminOnly } = require('../middleware/roleCheck');
 const { createVisitValidation } = require('../middleware/validation');
-const { uploadMultiple, processVisitPhotos } = require('../middleware/upload');
+const { uploadMultiple, processVisitPhotos, parseFormDataJson } = require('../middleware/upload');
 
 // All routes require authentication
 router.use(protect);
 
 // Employee and admin routes
-router.get('/my', getVisitsByUser);
+router.get('/my', getMyVisits);
 router.get('/today', getTodayVisits);
 router.get('/stats', getVisitStats);
 router.get('/weekly', getWeeklyCompliance);
 router.get('/compliance', adminOnly, getComplianceAlerts);
 router.get('/can-visit/:doctorId', checkCanVisit);
+router.post('/can-visit-batch', checkCanVisitBatch);
 router.get('/', getAllVisits);
 router.get('/:id', getVisitById);
-router.post('/', uploadMultiple('photos', 5), processVisitPhotos, createVisitValidation, createVisit);
+router.post('/', uploadMultiple('photos', 5), processVisitPhotos, parseFormDataJson(['location', 'productsDiscussed']), createVisitValidation, createVisit);
 router.put('/:id', updateVisit);
 
 // Admin only routes
