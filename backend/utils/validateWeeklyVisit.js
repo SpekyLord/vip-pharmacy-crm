@@ -140,11 +140,19 @@ const canAccessDoctorRegion = async (user, doctorRegionId) => {
     return false;
   }
 
-  const doctorRegionStr = doctorRegionId.toString();
+  // Ensure we extract the actual ObjectId from potentially populated objects
+  const targetRegionId = doctorRegionId?._id || doctorRegionId;
+  if (!targetRegionId) {
+    console.error('canAccessDoctorRegion: No valid doctor region ID provided');
+    return false;
+  }
+  const doctorRegionStr = targetRegionId.toString();
 
   // Get all descendant regions for each assigned region
   for (const region of user.assignedRegions) {
-    const regionId = region._id || region;
+    const regionId = region?._id || region;
+    if (!regionId) continue;
+
     const descendants = await Region.getDescendantIds(regionId);
 
     // Check if doctor's region is in the descendants list

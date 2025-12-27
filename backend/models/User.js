@@ -131,8 +131,8 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// Instance method to check if user can access a specific region
-userSchema.methods.canAccessRegion = function (regionId) {
+// Instance method to check if user can access a specific region (hierarchical)
+userSchema.methods.canAccessRegion = async function (regionId) {
   if (this.role === 'admin' && this.canAccessAllRegions) {
     return true;
   }
@@ -140,13 +140,20 @@ userSchema.methods.canAccessRegion = function (regionId) {
     // Med reps can access all doctors for product assignment
     return true;
   }
-  // Employees can only access their assigned regions
-  const regionIdStr = regionId.toString();
-  return this.assignedRegions.some((r) => {
-    // Handle both populated (object with _id) and unpopulated (raw ObjectId) states
-    const rId = r._id ? r._id.toString() : r.toString();
-    return rId === regionIdStr;
-  });
+
+  // Employees can access their assigned regions AND all descendant regions
+  const Region = require('./Region');
+  const targetRegionStr = (regionId._id || regionId).toString();
+
+  for (const region of this.assignedRegions) {
+    const assignedId = region._id || region;
+    const descendants = await Region.getDescendantIds(assignedId);
+    const hasAccess = descendants.some((id) => id.toString() === targetRegionStr);
+    if (hasAccess) {
+      return true;
+    }
+  }
+  return false;
 };
 
 // Static method to find user by email with password

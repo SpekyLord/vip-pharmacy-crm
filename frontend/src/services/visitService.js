@@ -100,6 +100,12 @@ const visitService = {
     const response = await api.get('/visits/weekly', { params: { monthYear } });
     return response.data;
   },
+
+  // Refresh photo URLs for a visit (when presigned URLs expire)
+  refreshPhotos: async (visitId) => {
+    const response = await api.get(`/visits/${visitId}/refresh-photos`);
+    return response.data;
+  },
 };
 
 export default visitService;

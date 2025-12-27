@@ -40,6 +40,7 @@ const MyVisits = () => {
   // Modal state
   const [selectedVisit, setSelectedVisit] = useState(null);
   const [fullImageUrl, setFullImageUrl] = useState(null);
+  const [refreshingPhotos, setRefreshingPhotos] = useState(false);
 
   // Fetch visits
   const fetchVisits = useCallback(async () => {
@@ -150,6 +151,42 @@ const MyVisits = () => {
   // Close full image modal
   const closeFullImage = () => {
     setFullImageUrl(null);
+  };
+
+  // Handle image load error (expired presigned URL)
+  const handleImageError = async (e, visitId) => {
+    // Prevent infinite loops - only try once
+    if (e.target.dataset.retried) return;
+    e.target.dataset.retried = 'true';
+
+    // Don't refresh if already refreshing
+    if (refreshingPhotos) return;
+
+    setRefreshingPhotos(true);
+    try {
+      const response = await visitService.refreshPhotos(visitId);
+      if (response.success && response.data?.photos) {
+        // Update the selected visit's photos with fresh URLs
+        setSelectedVisit(prev => ({
+          ...prev,
+          photos: response.data.photos
+        }));
+
+        // Also update in the visits list
+        setVisits(prev => prev.map(v =>
+          v._id === visitId
+            ? { ...v, photos: response.data.photos }
+            : v
+        ));
+
+        toast.success('Photos refreshed');
+      }
+    } catch (err) {
+      console.error('Failed to refresh photo URLs:', err);
+      toast.error('Failed to load photos. Please try again.');
+    } finally {
+      setRefreshingPhotos(false);
+    }
   };
 
   if (loading && visits.length === 0) {
@@ -476,12 +513,19 @@ const MyVisits = () => {
 
                   {/* Photos */}
                   <div className="visit-info-section">
-                    <h3>Photos ({selectedVisit.photos?.length || 0})</h3>
+                    <h3>
+                      Photos ({selectedVisit.photos?.length || 0})
+                      {refreshingPhotos && <span className="refreshing-indicator"> Refreshing...</span>}
+                    </h3>
                     {selectedVisit.photos?.length > 0 ? (
                       <div className="photo-grid">
                         {selectedVisit.photos.map((photo, index) => (
                           <div key={index} className="photo-item" onClick={() => openFullImage(photo.url)}>
-                            <img src={photo.url} alt={`Visit photo ${index + 1}`} />
+                            <img
+                              src={photo.url}
+                              alt={`Visit photo ${index + 1}`}
+                              onError={(e) => handleImageError(e, selectedVisit._id)}
+                            />
                             <span className="photo-time">
                               {photo.capturedAt ? formatTime(photo.capturedAt) : ''}
                             </span>
@@ -817,6 +861,13 @@ const MyVisits = () => {
         .no-photos {
           color: #999;
           font-style: italic;
+        }
+
+        .refreshing-indicator {
+          font-size: 0.75rem;
+          color: #1976d2;
+          font-weight: normal;
+          margin-left: 0.5rem;
         }
 
         .image-modal .full-image-container {

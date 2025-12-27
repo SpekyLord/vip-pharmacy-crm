@@ -644,6 +644,39 @@ const getMyVisits = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Refresh photo URLs for a visit (generates fresh presigned URLs)
+ * @route   GET /api/visits/:id/refresh-photos
+ * @access  Private
+ */
+const refreshPhotoUrls = catchAsync(async (req, res) => {
+  const visit = await Visit.findById(req.params.id);
+
+  if (!visit) {
+    throw new NotFoundError('Visit not found');
+  }
+
+  // Check if user has access to this visit
+  if (req.user.role !== 'admin' && visit.user.toString() !== req.user._id.toString()) {
+    return res.status(403).json({
+      success: false,
+      message: 'You do not have permission to access this visit',
+    });
+  }
+
+  // Re-sign photo URLs
+  const signedVisit = await signVisitPhotos(visit);
+
+  res.status(200).json({
+    success: true,
+    message: 'Photo URLs refreshed successfully',
+    data: {
+      visitId: visit._id,
+      photos: signedVisit.photos,
+    },
+  });
+});
+
 module.exports = {
   createVisit,
   getAllVisits,
@@ -658,4 +691,5 @@ module.exports = {
   getComplianceAlerts,
   getVisitStats,
   getTodayVisits,
+  refreshPhotoUrls,
 };

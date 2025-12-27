@@ -83,7 +83,7 @@ const anyRole = roleCheck('admin', 'medrep', 'employee');
  * @returns {Function} Express middleware function
  */
 const canAccessRegion = (regionIdParam = 'regionId') => {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     // Check if user is authenticated
     if (!req.user) {
       return res.status(401).json({
@@ -110,9 +110,9 @@ const canAccessRegion = (regionIdParam = 'regionId') => {
       return next();
     }
 
-    // Check if user has access to this region
+    // Check if user has access to this region (async - includes descendant regions)
     if (req.user.canAccessRegion) {
-      const hasAccess = req.user.canAccessRegion(regionId);
+      const hasAccess = await req.user.canAccessRegion(regionId);
       if (!hasAccess) {
         return res.status(403).json({
           success: false,

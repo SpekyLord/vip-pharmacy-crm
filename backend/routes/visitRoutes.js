@@ -30,6 +30,7 @@ const {
   checkCanVisit,
   checkCanVisitBatch,
   getTodayVisits,
+  refreshPhotoUrls,
 } = require('../controllers/visitController');
 
 const { protect } = require('../middleware/auth');
@@ -50,6 +51,7 @@ router.get('/can-visit/:doctorId', checkCanVisit);
 router.post('/can-visit-batch', checkCanVisitBatch);
 router.get('/', getAllVisits);
 router.get('/:id', getVisitById);
+router.get('/:id/refresh-photos', refreshPhotoUrls);
 router.post('/', uploadMultiple('photos', 5), processVisitPhotos, parseFormDataJson(['location', 'productsDiscussed']), createVisitValidation, createVisit);
 router.put('/:id', updateVisit);
 

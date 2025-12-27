@@ -18,6 +18,7 @@ const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/err
 /**
  * Build region filter based on user role
  * - Admin: no filter (see all)
+ * - MedRep: no filter (see all doctors for product assignment)
  * - Employee: assigned regions AND all their descendants (child regions)
  *
  * This enables cascading region access:
@@ -28,7 +29,12 @@ const getRegionFilter = async (user) => {
     return {}; // No region filter for admin
   }
 
-  // Employees and medreps see assigned regions AND all descendant regions
+  // MedReps can access all doctors for product assignment
+  if (user.role === 'medrep') {
+    return {}; // No region filter for medrep
+  }
+
+  // Employees see assigned regions AND all descendant regions
   if (user.assignedRegions && user.assignedRegions.length > 0) {
     const allRegionIds = [];
 
@@ -142,7 +148,7 @@ const getDoctorById = catchAsync(async (req, res) => {
 
   // Check region access for non-admin users
   if (req.user.role !== 'admin') {
-    const hasAccess = req.user.canAccessRegion(doctor.region._id || doctor.region);
+    const hasAccess = await req.user.canAccessRegion(doctor.region._id || doctor.region);
     if (!hasAccess) {
       throw new ForbiddenError('You do not have access to this doctor');
     }
@@ -282,7 +288,7 @@ const getDoctorsByRegion = catchAsync(async (req, res) => {
 
   // Check if user has access to this region
   if (req.user.role !== 'admin') {
-    const hasAccess = req.user.canAccessRegion(regionId);
+    const hasAccess = await req.user.canAccessRegion(regionId);
     if (!hasAccess) {
       throw new ForbiddenError('You do not have access to this region');
     }
@@ -314,7 +320,7 @@ const getDoctorVisits = catchAsync(async (req, res) => {
 
   // Check region access for non-admin users
   if (req.user.role !== 'admin') {
-    const hasAccess = req.user.canAccessRegion(doctor.region);
+    const hasAccess = await req.user.canAccessRegion(doctor.region);
     if (!hasAccess) {
       throw new ForbiddenError('You do not have access to this doctor');
     }

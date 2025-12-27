@@ -128,8 +128,38 @@ regionSchema.statics.getHierarchy = async function () {
 
 // Static: Get all descendant region IDs (for querying)
 regionSchema.statics.getDescendantIds = async function (regionId) {
-  const descendants = [regionId];
-  const queue = [regionId];
+  // Ensure we have a valid ObjectId - handle string, ObjectId, or populated document
+  let startId;
+  try {
+    if (typeof regionId === 'string') {
+      startId = new mongoose.Types.ObjectId(regionId);
+    } else if (regionId._id) {
+      // Populated document - extract _id
+      startId = regionId._id instanceof mongoose.Types.ObjectId
+        ? regionId._id
+        : new mongoose.Types.ObjectId(regionId._id.toString());
+    } else if (regionId instanceof mongoose.Types.ObjectId) {
+      startId = regionId;
+    } else {
+      // Try to convert whatever it is to ObjectId
+      startId = new mongoose.Types.ObjectId(regionId.toString());
+    }
+  } catch {
+    // If invalid ObjectId, return empty array
+    return [];
+  }
+
+  // Extra safety: ensure startId is definitely an ObjectId
+  if (!(startId instanceof mongoose.Types.ObjectId)) {
+    try {
+      startId = new mongoose.Types.ObjectId(startId.toString());
+    } catch {
+      return [];
+    }
+  }
+
+  const descendants = [startId];
+  const queue = [startId];
 
   while (queue.length > 0) {
     const currentId = queue.shift();
