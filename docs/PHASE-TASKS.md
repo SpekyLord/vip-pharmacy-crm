@@ -509,6 +509,57 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 ---
 
+### Task 1.14b: Frontend Optimization
+**Assignee**: Frontend Developer
+**Priority**: HIGH
+**Files**:
+- `frontend/src/components/common/ErrorBoundary.jsx` (new)
+- `frontend/src/components/common/Pagination.jsx` (new)
+- `frontend/src/hooks/useDebounce.js` (new)
+- Multiple existing files (see below)
+
+**Deliverables**:
+- [x] Create ErrorBoundary component to catch React errors
+- [x] Create useDebounce hook for search inputs (300ms default)
+- [x] Create shared Pagination component with React.memo
+- [x] Fix ProtectedRoute to redirect to role dashboard instead of showing error
+- [x] Fix API interceptor logout flow (dispatch CustomEvent instead of redirect)
+- [x] Add request cancellation (AbortController) to MyVisits
+- [x] Add GPS timeout (5 minutes) to CameraCapture
+- [x] Fix useEffect dependencies in DoctorsPage (useCallback)
+- [x] Fix useEffect cleanup in NewVisitPage (isMounted pattern)
+- [x] Replace custom toast with react-hot-toast in MedRepDashboard
+- [x] Fix AdminDashboard API calls (limit: 0 for count queries)
+- [x] Add React.memo to DoctorList
+- [x] Add useMemo for filtered lists in DoctorList
+- [x] Remove console.log statements from ReportsPage
+
+**Acceptance Criteria**:
+- [x] ErrorBoundary catches errors and shows fallback UI
+- [x] Search inputs are debounced (no excessive API calls)
+- [x] Pagination is memoized and shared across components
+- [x] Auth logout events handled properly across contexts
+- [x] API requests are cancellable on component unmount
+- [x] GPS timeout prevents infinite waiting
+- [x] No useEffect dependency warnings
+- [x] No console.log in production code
+- [x] React.memo prevents unnecessary re-renders
+
+**Status**: ✅ COMPLETED
+
+**Implementation Details:**
+- `ErrorBoundary.jsx`: Class component that catches errors, shows fallback UI with retry button
+- `Pagination.jsx`: React.memo wrapped component for consistent pagination
+- `useDebounce.js`: Custom hook using setTimeout/clearTimeout pattern
+- `api.js`: Dispatches `auth:logout` CustomEvent for cross-context communication
+- `AuthContext.jsx`: Listens for `auth:logout` events to trigger logout
+- `MyVisits.jsx`: Uses AbortController for request cancellation on unmount
+- `CameraCapture.jsx`: 5-minute watchPosition timeout for GPS
+- `DoctorsPage.jsx`: useCallback for fetchDoctors to stabilize useEffect deps
+- `NewVisitPage.jsx`: isMounted ref pattern for async cleanup
+
+---
+
 ### Task 1.15: Common UI Components & Styling
 **Assignee**: Frontend Developer
 **Priority**: MEDIUM
@@ -601,9 +652,10 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 | Frontend Employee Features | 3 tasks | High |
 | Frontend Admin Features | 4 tasks | High |
 | Frontend MedRep Features | 2 tasks | Medium |
+| Frontend Optimization | 1 task | High |
 | Frontend UI/UX | 1 task | Medium |
 | DevOps | 2 tasks | High |
-| **Total** | **17 tasks** | |
+| **Total** | **18 tasks** | |
 
 ---
 
@@ -1335,11 +1387,11 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 | Phase | Tasks | Key Deliverables |
 |-------|-------|------------------|
-| **Phase 1: Foundation** | 17 tasks | Working app with auth, doctors, visits, products |
+| **Phase 1: Foundation** | 18 tasks | Working app with auth, doctors, visits, products, optimization |
 | **Phase 2: Compliance** | 12 tasks | Alerts, approvals, notifications, reports |
 | **Phase 3: Intelligence** | 8 tasks | Analytics, smart recommendations, insights |
 | **Phase 4: Go-Live** | 7 tasks | Deployment, migration, training, support |
-| **TOTAL** | **44 tasks** | |
+| **TOTAL** | **45 tasks** | |
 
 ---
 

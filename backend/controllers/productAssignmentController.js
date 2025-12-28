@@ -287,6 +287,11 @@ const bulkAssign = catchAsync(async (req, res) => {
     throw new ForbiddenError('Doctor ID and product IDs array are required');
   }
 
+  // Validate array size to prevent abuse
+  if (productIds.length > 100) {
+    throw new ForbiddenError('Maximum 100 products per bulk assignment');
+  }
+
   // Verify doctor exists
   const doctor = await Doctor.findById(doctorId);
   if (!doctor || !doctor.isActive) {

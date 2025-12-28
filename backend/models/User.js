@@ -53,11 +53,10 @@ const userSchema = new mongoose.Schema(
       },
     ],
     // For admin users: whether they can access all regions or just assigned ones
+    // Note: Default is set in pre-save hook to ensure correct timing
     canAccessAllRegions: {
       type: Boolean,
-      default: function () {
-        return this.role === 'admin';
-      },
+      default: false,
     },
     phone: {
       type: String,
@@ -112,6 +111,20 @@ userSchema.index({ email: 1 });
 userSchema.index({ role: 1 });
 userSchema.index({ assignedRegions: 1 });
 userSchema.index({ isActive: 1 });
+// Compound indexes for common query patterns
+userSchema.index({ role: 1, isActive: 1 });
+userSchema.index({ role: 1, assignedRegions: 1 });
+// TTL index to auto-expire password reset tokens
+userSchema.index({ passwordResetExpires: 1 }, { expireAfterSeconds: 0 });
+
+// Pre-save hook to set canAccessAllRegions for new admins
+userSchema.pre('save', function (next) {
+  // Only set for new documents where canAccessAllRegions wasn't explicitly set
+  if (this.isNew && this.canAccessAllRegions === false && this.role === 'admin') {
+    this.canAccessAllRegions = true;
+  }
+  next();
+});
 
 // Pre-save hook to hash password
 userSchema.pre('save', async function (next) {

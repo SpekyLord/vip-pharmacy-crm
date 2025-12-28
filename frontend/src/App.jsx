@@ -1,6 +1,9 @@
 import { Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
+// Components
+import ErrorBoundary from './components/common/ErrorBoundary';
+
 // Pages
 import LoginPage from './pages/LoginPage';
 import EmployeeDashboard from './pages/employee/EmployeeDashboard';
@@ -13,12 +16,11 @@ import RegionsPage from './pages/admin/RegionsPage';
 import ReportsPage from './pages/admin/ReportsPage';
 import MedRepDashboard from './pages/medrep/MedRepDashboard';
 
-// Components
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 function App() {
   return (
-    <>
+    <ErrorBoundary>
       <Toaster position="top-right" />
       <Routes>
         {/* Public Routes */}
@@ -105,7 +107,7 @@ function App() {
         {/* Default Route */}
         <Route path="/" element={<LoginPage />} />
       </Routes>
-    </>
+    </ErrorBoundary>
   );
 }
 

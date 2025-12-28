@@ -132,6 +132,8 @@ const NewVisitPage = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     const fetchData = async () => {
       if (!doctorId) {
         setError('No doctor selected. Please select a doctor from the dashboard.');
@@ -148,17 +150,26 @@ const NewVisitPage = () => {
           visitService.canVisit(doctorId),
         ]);
 
-        setDoctor(doctorRes.data);
-        setCanVisit(canVisitRes.data);
+        if (isMounted) {
+          setDoctor(doctorRes.data);
+          setCanVisit(canVisitRes.data);
+        }
       } catch (err) {
-        console.error('Error fetching data:', err);
-        setError(err.response?.data?.message || 'Failed to load doctor information');
+        if (isMounted) {
+          setError(err.response?.data?.message || 'Failed to load doctor information');
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [doctorId]);
 
   // Handle successful visit submission

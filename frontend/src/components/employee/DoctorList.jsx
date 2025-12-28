@@ -9,7 +9,7 @@
  * - Log Visit button
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import LoadingSpinner from '../common/LoadingSpinner';
 import visitService from '../../services/visitService';
 
@@ -237,12 +237,12 @@ const doctorListStyles = `
   }
 `;
 
-const DoctorList = ({
+const DoctorList = memo(function DoctorList({
   doctors = [],
   loading = false,
   onSelectDoctor,
   onLogVisit,
-}) => {
+}) {
   const [searchTerm, setSearchTerm] = useState('');
   const [frequencyFilter, setFrequencyFilter] = useState('all');
   const [visitStatus, setVisitStatus] = useState({});
@@ -292,16 +292,19 @@ const DoctorList = ({
     };
   }, [doctors]);
 
-  const filteredDoctors = doctors.filter((doctor) => {
-    const matchesSearch =
-      doctor.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      doctor.specialization?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      doctor.hospital?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFrequency =
-      frequencyFilter === 'all' ||
-      doctor.visitFrequency === parseInt(frequencyFilter);
-    return matchesSearch && matchesFrequency;
-  });
+  // Memoize filtered doctors to prevent recalculation on every render
+  const filteredDoctors = useMemo(() => {
+    return doctors.filter((doctor) => {
+      const matchesSearch =
+        doctor.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        doctor.specialization?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        doctor.hospital?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesFrequency =
+        frequencyFilter === 'all' ||
+        doctor.visitFrequency === parseInt(frequencyFilter);
+      return matchesSearch && matchesFrequency;
+    });
+  }, [doctors, searchTerm, frequencyFilter]);
 
   // Get visit status display for a doctor
   const getVisitStatusDisplay = (doctor) => {
@@ -432,6 +435,6 @@ const DoctorList = ({
       )}
     </div>
   );
-};
+});
 
 export default DoctorList;

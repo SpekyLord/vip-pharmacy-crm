@@ -17,6 +17,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const { connectWebsiteDB } = require('./config/websiteDb');
@@ -56,22 +57,32 @@ validateEnv();
 // Initialize Express app
 const app = express();
 
-// Security middleware
-app.use(helmet());
+// Security middleware with HSTS for HTTPS enforcement
+app.use(
+  helmet({
+    hsts: {
+      maxAge: 31536000, // 1 year in seconds
+      includeSubDomains: true,
+      preload: true,
+    },
+    contentSecurityPolicy: process.env.NODE_ENV === 'production',
+  })
+);
 
-// Request logging (only in development)
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-}
-
-// CORS configuration
+// CORS configuration - MUST be before rate limiter so CORS headers are included on 429 responses
 const corsOptions = {
   origin: function (origin, callback) {
     // In production, use explicit allowed origins from env
-    if (process.env.NODE_ENV === 'production' && process.env.CORS_ORIGINS) {
-      const allowedOrigins = process.env.CORS_ORIGINS.split(',').map((o) => o.trim());
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
+    if (process.env.NODE_ENV === 'production') {
+      // In production, require Origin header (prevents CORS bypass)
+      if (!origin) {
+        return callback(new Error('Origin header required in production'));
+      }
+      if (process.env.CORS_ORIGINS) {
+        const allowedOrigins = process.env.CORS_ORIGINS.split(',').map((o) => o.trim());
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
       }
       return callback(new Error('Not allowed by CORS'));
     }
@@ -84,6 +95,7 @@ const corsOptions = {
       /^http:\/\/192\.168\.\d+\.\d+:5173$/, // Local network IPs (192.168.x.x)
     ];
 
+    // In development, allow requests without Origin (e.g., Postman, curl)
     if (!origin) return callback(null, true);
 
     const isAllowed = devAllowedOrigins.some((allowed) =>
@@ -102,9 +114,53 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
+// Request logging (only in development)
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev'));
+}
+
+// Rate limiting - protect against brute force and DoS attacks
+// Applied AFTER CORS so rate limit responses include CORS headers
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: {
+    success: false,
+    message: 'Too many requests, please try again later.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Stricter rate limiting for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // Limit each IP to 20 auth requests per windowMs
+  message: {
+    success: false,
+    message: 'Too many authentication attempts, please try again later.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply general rate limiting to all API routes
+app.use('/api/', generalLimiter);
+
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Request timeout middleware (30 seconds)
+app.use((req, res, next) => {
+  req.setTimeout(30000, () => {
+    res.status(408).json({
+      success: false,
+      message: 'Request timeout',
+    });
+  });
+  next();
+});
 
 // Health check endpoint with dependency status
 const mongoose = require('mongoose');
@@ -128,7 +184,8 @@ app.get('/api/health', async (req, res) => {
 });
 
 // Mount route handlers
-app.use('/api/auth', require('./routes/authRoutes'));
+// Apply stricter rate limiting to auth routes
+app.use('/api/auth', authLimiter, require('./routes/authRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/doctors', require('./routes/doctorRoutes'));
 app.use('/api/visits', require('./routes/visitRoutes'));

@@ -390,6 +390,158 @@ const checkBehindSchedule = async (userId, checkDate = new Date()) => {
   };
 };
 
+/**
+ * Batch check if user can visit multiple doctors
+ * OPTIMIZED: Loads all doctors and visits once, then checks in parallel
+ * @param {Array<string>} doctorIds - Array of doctor IDs
+ * @param {Object} user - User object with _id and assignedRegions
+ * @param {Date} visitDate - Optional date, defaults to today
+ * @returns {Promise<Array<{doctorId: string, canVisit: boolean, reason?: string, weeklyCount: number, monthlyCount: number, monthlyLimit: number}>>}
+ */
+const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => {
+  // Check if it's a work day first
+  if (!isWorkDay(visitDate)) {
+    return doctorIds.map((doctorId) => ({
+      doctorId,
+      canVisit: false,
+      reason: 'Visits can only be logged on work days (Monday-Friday)',
+      weeklyCount: 0,
+      monthlyCount: 0,
+      monthlyLimit: 0,
+    }));
+  }
+
+  const userId = user._id || user;
+  const monthYear = getMonthYear(visitDate);
+  const yearWeekKey = getYearWeekKey(visitDate);
+
+  // OPTIMIZATION: Load all doctors in one query
+  const doctors = await Doctor.find({ _id: { $in: doctorIds } }).populate('region');
+  const doctorMap = new Map(doctors.map((d) => [d._id.toString(), d]));
+
+  // OPTIMIZATION: Get all weekly visits in one query
+  const weeklyVisits = await Visit.find({
+    doctor: { $in: doctorIds },
+    user: userId,
+    yearWeekKey,
+    status: 'completed',
+  }).select('doctor');
+  const visitedThisWeek = new Set(weeklyVisits.map((v) => v.doctor.toString()));
+
+  // OPTIMIZATION: Get all monthly visit counts in one aggregation
+  const monthlyCounts = await Visit.aggregate([
+    {
+      $match: {
+        doctor: { $in: doctorIds.map((id) => new mongoose.Types.ObjectId(id)) },
+        user: new mongoose.Types.ObjectId(userId),
+        monthYear,
+        status: 'completed',
+      },
+    },
+    {
+      $group: {
+        _id: '$doctor',
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+  const monthlyCountMap = new Map(monthlyCounts.map((c) => [c._id.toString(), c.count]));
+
+  // Check region access for all doctors if user has assignedRegions
+  let regionAccessMap = new Map();
+  if (user.assignedRegions !== undefined) {
+    // Get all unique region IDs from doctors
+    const regionIds = [...new Set(doctors.map((d) => (d.region?._id || d.region)?.toString()).filter(Boolean))];
+
+    // For each assigned region, get all descendants
+    const allAccessibleRegions = new Set();
+    for (const region of user.assignedRegions || []) {
+      const regionId = region?._id || region;
+      if (regionId) {
+        const descendants = await Region.getDescendantIds(regionId);
+        descendants.forEach((id) => allAccessibleRegions.add(id.toString()));
+      }
+    }
+
+    // Build access map for each doctor's region
+    regionIds.forEach((regionId) => {
+      regionAccessMap.set(regionId, allAccessibleRegions.has(regionId));
+    });
+
+    // Admin can access all
+    if (user.role === 'admin' && user.canAccessAllRegions) {
+      regionIds.forEach((regionId) => regionAccessMap.set(regionId, true));
+    }
+  }
+
+  // Process each doctor
+  return doctorIds.map((doctorId) => {
+    const doctor = doctorMap.get(doctorId);
+
+    if (!doctor) {
+      return {
+        doctorId,
+        canVisit: false,
+        reason: 'Doctor not found',
+        weeklyCount: 0,
+        monthlyCount: 0,
+        monthlyLimit: 0,
+      };
+    }
+
+    const monthlyLimit = doctor.visitFrequency || 4;
+    const monthlyCount = monthlyCountMap.get(doctorId) || 0;
+    const doctorRegionId = (doctor.region?._id || doctor.region)?.toString();
+
+    // Check region access
+    if (user.assignedRegions !== undefined && doctorRegionId) {
+      const hasRegionAccess = regionAccessMap.get(doctorRegionId);
+      if (!hasRegionAccess) {
+        return {
+          doctorId,
+          canVisit: false,
+          reason: 'You do not have access to this doctor\'s region',
+          weeklyCount: 0,
+          monthlyCount,
+          monthlyLimit,
+        };
+      }
+    }
+
+    // Check weekly limit
+    if (visitedThisWeek.has(doctorId)) {
+      return {
+        doctorId,
+        canVisit: false,
+        reason: 'You have already visited this doctor this week. Only one visit per doctor per week is allowed.',
+        weeklyCount: 1,
+        monthlyCount,
+        monthlyLimit,
+      };
+    }
+
+    // Check monthly limit
+    if (monthlyCount >= monthlyLimit) {
+      return {
+        doctorId,
+        canVisit: false,
+        reason: `Monthly visit quota reached. This doctor requires ${monthlyLimit}x visits per month, and you have already visited ${monthlyCount} times.`,
+        weeklyCount: 0,
+        monthlyCount,
+        monthlyLimit,
+      };
+    }
+
+    return {
+      doctorId,
+      canVisit: true,
+      weeklyCount: 0,
+      monthlyCount,
+      monthlyLimit,
+    };
+  });
+};
+
 module.exports = {
   getWeekNumber,
   getWeekOfMonth,
@@ -403,6 +555,7 @@ module.exports = {
   hasVisitedThisWeek,
   getMonthlyVisitCount,
   canVisitDoctor,
+  canVisitDoctorsBatch,
   getWeeklyComplianceStats,
   getComplianceReport,
   checkBehindSchedule,

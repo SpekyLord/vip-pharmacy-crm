@@ -76,6 +76,9 @@ regionSchema.index({ parent: 1 });
 regionSchema.index({ level: 1 });
 regionSchema.index({ isActive: 1 });
 regionSchema.index({ name: 'text' });
+// Compound indexes for common queries
+regionSchema.index({ parent: 1, isActive: 1 });
+regionSchema.index({ level: 1, isActive: 1 });
 
 // Virtual: Get child regions
 regionSchema.virtual('children', {
@@ -127,6 +130,7 @@ regionSchema.statics.getHierarchy = async function () {
 };
 
 // Static: Get all descendant region IDs (for querying)
+// OPTIMIZED: Loads all regions once and traverses in-memory to avoid N+1 queries
 regionSchema.statics.getDescendantIds = async function (regionId) {
   // Ensure we have a valid ObjectId - handle string, ObjectId, or populated document
   let startId;
@@ -158,16 +162,32 @@ regionSchema.statics.getDescendantIds = async function (regionId) {
     }
   }
 
+  // OPTIMIZATION: Load all active regions once (single query)
+  const allRegions = await this.find({ isActive: true }, '_id parent').lean();
+
+  // Build a parent-to-children map for O(1) lookups
+  const childrenMap = new Map();
+  allRegions.forEach((region) => {
+    if (region.parent) {
+      const parentId = region.parent.toString();
+      if (!childrenMap.has(parentId)) {
+        childrenMap.set(parentId, []);
+      }
+      childrenMap.get(parentId).push(region._id);
+    }
+  });
+
+  // Traverse the tree in-memory using BFS
   const descendants = [startId];
-  const queue = [startId];
+  const queue = [startId.toString()];
 
   while (queue.length > 0) {
     const currentId = queue.shift();
-    const children = await this.find({ parent: currentId, isActive: true }, '_id');
+    const children = childrenMap.get(currentId) || [];
 
-    children.forEach((child) => {
-      descendants.push(child._id);
-      queue.push(child._id);
+    children.forEach((childId) => {
+      descendants.push(childId);
+      queue.push(childId.toString());
     });
   }
 

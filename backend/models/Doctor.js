@@ -144,6 +144,11 @@ doctorSchema.index({ specialization: 1 });
 doctorSchema.index({ isActive: 1 });
 doctorSchema.index({ name: 'text', hospital: 'text' }); // Text search
 doctorSchema.index({ location: '2dsphere' }); // Geospatial queries
+// Compound indexes for common query patterns
+doctorSchema.index({ region: 1, isActive: 1 });
+doctorSchema.index({ assignedTo: 1, isActive: 1 });
+doctorSchema.index({ specialization: 1, region: 1 });
+doctorSchema.index({ parentRegions: 1, isActive: 1 });
 
 // Pre-save hook to auto-populate parentRegions from region hierarchy
 doctorSchema.pre('save', async function (next) {
@@ -201,6 +206,31 @@ doctorSchema.methods.isAvailableOnDay = function (dayOfWeek) {
   if (dayOfWeek === 0 || dayOfWeek === 6) return false;
   return this.clinicSchedule?.[day] !== false;
 };
+
+// Pre-delete hook to cascade delete related ProductAssignments
+doctorSchema.pre('deleteOne', { document: true, query: false }, async function (next) {
+  try {
+    const ProductAssignment = mongoose.model('ProductAssignment');
+    await ProductAssignment.deleteMany({ doctor: this._id });
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Also handle findOneAndDelete and deleteMany via query middleware
+doctorSchema.pre('findOneAndDelete', async function (next) {
+  try {
+    const doc = await this.model.findOne(this.getFilter());
+    if (doc) {
+      const ProductAssignment = mongoose.model('ProductAssignment');
+      await ProductAssignment.deleteMany({ doctor: doc._id });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 const Doctor = mongoose.model('Doctor', doctorSchema);
 

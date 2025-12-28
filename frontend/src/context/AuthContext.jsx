@@ -18,6 +18,20 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Handle forced logout from API interceptor
+  const handleForcedLogout = useCallback(() => {
+    setUser(null);
+    setLoading(false);
+  }, []);
+
+  // Listen for auth:logout events from API interceptor
+  useEffect(() => {
+    window.addEventListener('auth:logout', handleForcedLogout);
+    return () => {
+      window.removeEventListener('auth:logout', handleForcedLogout);
+    };
+  }, [handleForcedLogout]);
+
   // Check for existing session on mount
   useEffect(() => {
     let isMounted = true;
@@ -39,9 +53,8 @@ export const AuthProvider = ({ children }) => {
         if (isMounted) {
           setUser(response.data || response);
         }
-      } catch (err) {
-        console.error('Auth initialization error:', err);
-        // Clear invalid tokens
+      } catch {
+        // Clear invalid tokens silently
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
       } finally {
@@ -80,8 +93,8 @@ export const AuthProvider = ({ children }) => {
   const logout = useCallback(async () => {
     try {
       await authService.logout();
-    } catch (err) {
-      console.error('Logout error:', err);
+    } catch {
+      // Logout error - continue with local cleanup anyway
     } finally {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');

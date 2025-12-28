@@ -25,13 +25,14 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   }
 
   if (allowedRoles.length > 0 && !allowedRoles.includes(user?.role)) {
-    return (
-      <div className="unauthorized">
-        <h2>Unauthorized</h2>
-        <p>You do not have permission to access this page.</p>
-        <Navigate to="/login" replace />
-      </div>
-    );
+    // Redirect to appropriate dashboard based on user role instead of showing error
+    const roleRedirects = {
+      admin: '/admin',
+      medrep: '/medrep',
+      employee: '/employee',
+    };
+    const redirectTo = roleRedirects[user?.role] || '/login';
+    return <Navigate to={redirectTo} replace />;
   }
 
   return children;

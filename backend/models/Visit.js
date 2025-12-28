@@ -90,7 +90,7 @@ const visitSchema = new mongoose.Schema(
       },
     },
 
-    // Photos (REQUIRED - minimum 1 for proof of visit)
+    // Photos (REQUIRED - minimum 1, maximum 10 for proof of visit)
     photos: {
       type: [
         {
@@ -101,9 +101,9 @@ const visitSchema = new mongoose.Schema(
       ],
       validate: {
         validator: function (arr) {
-          return arr && arr.length >= 1;
+          return arr && arr.length >= 1 && arr.length <= 10;
         },
-        message: 'At least one photo is required as proof of visit',
+        message: 'Visits must have 1-10 photos as proof of visit',
       },
     },
 
@@ -179,25 +179,66 @@ visitSchema.index({ visitDate: -1 });
 visitSchema.index({ yearWeekKey: 1 });
 visitSchema.index({ doctor: 1, user: 1, monthYear: 1 }); // For monthly visit count queries
 
+/**
+ * Calculate ISO 8601 week number
+ * Week 1 is the first week with a Thursday (or the week containing January 4th)
+ * @param {Date} date - The date to calculate week for
+ * @returns {Object} - { weekNumber, weekYear } where weekYear may differ from calendar year
+ */
+function getISOWeek(date) {
+  // Create a copy in UTC to avoid timezone issues
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+
+  // Set to nearest Thursday: current date + 4 - current day number
+  // Make Sunday day 7 instead of 0
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+
+  // Get first day of year
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+
+  // Calculate full weeks to nearest Thursday
+  const weekNumber = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+
+  // The year for the ISO week might be different from calendar year
+  // (e.g., Dec 31 might be in Week 1 of next year)
+  const weekYear = d.getUTCFullYear();
+
+  return { weekNumber, weekYear };
+}
+
+/**
+ * Calculate the week of the month (1-5)
+ * Uses ISO week standard: week starts on Monday
+ * @param {Date} date - The date to calculate week for
+ * @returns {Number} - Week of month (1-5)
+ */
+function getWeekOfMonth(date) {
+  const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+  // Get day of week for first of month (0=Sun, convert to Mon=0)
+  const firstDayOfWeek = firstOfMonth.getDay();
+  const adjustedFirst = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1; // 0=Mon, 6=Sun
+
+  // Calculate which week of the month this date falls in
+  const dayOfMonth = date.getDate();
+  return Math.ceil((dayOfMonth + adjustedFirst) / 7);
+}
+
 // Pre-save hook to generate week tracking fields
 visitSchema.pre('save', function (next) {
   if (this.isNew || this.isModified('visitDate')) {
     const date = this.visitDate;
 
-    // Get ISO week number (1-53)
-    const startOfYear = new Date(date.getFullYear(), 0, 1);
-    const days = Math.floor((date - startOfYear) / (24 * 60 * 60 * 1000));
-    this.weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+    // Get ISO week number (1-53) and week year
+    const { weekNumber, weekYear } = getISOWeek(date);
+    this.weekNumber = weekNumber;
 
     // Get week of month (1-5)
-    const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-    const dayOfMonth = date.getDate();
-    const startDayOfWeek = startOfMonth.getDay();
-    this.weekOfMonth = Math.ceil((dayOfMonth + startDayOfWeek) / 7);
+    this.weekOfMonth = getWeekOfMonth(date);
 
-    // Get day of week (1 = Monday, 5 = Friday)
-    const jsDay = date.getDay(); // 0 = Sunday
-    this.dayOfWeek = jsDay === 0 ? 7 : jsDay; // Convert to ISO (Mon = 1)
+    // Get day of week (1 = Monday, 5 = Friday, 6 = Saturday, 7 = Sunday)
+    const jsDay = date.getDay(); // 0 = Sunday in JavaScript
+    this.dayOfWeek = jsDay === 0 ? 7 : jsDay; // Convert to ISO (Mon = 1, Sun = 7)
 
     // Generate week label (W1D1, W2D3, etc.)
     this.weekLabel = `W${this.weekOfMonth}D${this.dayOfWeek}`;
@@ -206,9 +247,10 @@ visitSchema.pre('save', function (next) {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     this.monthYear = `${date.getFullYear()}-${month}`;
 
-    // Generate yearWeekKey (2024-W52) - ISO format
-    const week = String(this.weekNumber).padStart(2, '0');
-    this.yearWeekKey = `${date.getFullYear()}-W${week}`;
+    // Generate yearWeekKey using ISO week year (handles year boundaries correctly)
+    // e.g., Dec 31, 2024 might be "2025-W01" if it falls in week 1 of 2025
+    const week = String(weekNumber).padStart(2, '0');
+    this.yearWeekKey = `${weekYear}-W${week}`;
   }
   next();
 });

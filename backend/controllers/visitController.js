@@ -12,7 +12,7 @@
 const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
-const { canVisitDoctor, getComplianceReport, checkBehindSchedule, getMonthYear } = require('../utils/validateWeeklyVisit');
+const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, checkBehindSchedule, getMonthYear } = require('../utils/validateWeeklyVisit');
 const { signVisitPhotos } = require('../config/s3');
 
 /**
@@ -401,17 +401,8 @@ const checkCanVisitBatch = catchAsync(async (req, res) => {
     });
   }
 
-  // Process all doctors in parallel for efficiency
-  const results = await Promise.all(
-    doctorIds.map(async (doctorId) => {
-      try {
-        const result = await canVisitDoctor(doctorId, req.user._id);
-        return { doctorId, ...result };
-      } catch (error) {
-        return { doctorId, canVisit: false, error: 'Failed to check status' };
-      }
-    })
-  );
+  // OPTIMIZED: Use batch function that loads all data in 3 queries instead of N+1
+  const results = await canVisitDoctorsBatch(doctorIds, req.user);
 
   // Convert to object keyed by doctorId for O(1) lookup on frontend
   const resultMap = {};

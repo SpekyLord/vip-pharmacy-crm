@@ -8,7 +8,7 @@
  * - Add/Edit modal
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -74,7 +74,7 @@ const DoctorsPage = () => {
   });
 
   // Fetch doctors with current filters and pagination
-  const fetchDoctors = async () => {
+  const fetchDoctors = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -96,13 +96,12 @@ const DoctorsPage = () => {
         total: response.pagination?.total || 0,
         pages: response.pagination?.pages || 0,
       }));
-    } catch (err) {
-      console.error('Failed to fetch doctors:', err);
+    } catch {
       setError('Failed to load doctors. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.page, pagination.limit, filters]);
 
   // Flatten hierarchy tree into array with depth for indented dropdown
   const flattenHierarchy = (nodes, depth = 0) => {
@@ -122,8 +121,8 @@ const DoctorsPage = () => {
       const response = await regionService.getHierarchy();
       const flatRegions = flattenHierarchy(response.data || []);
       setRegions(flatRegions);
-    } catch (err) {
-      console.error('Failed to fetch regions:', err);
+    } catch {
+      // Region fetch failed - filter dropdown will be empty
     }
   };
 
@@ -133,7 +132,7 @@ const DoctorsPage = () => {
 
   useEffect(() => {
     fetchDoctors();
-  }, [pagination.page, filters]);
+  }, [fetchDoctors]);
 
   // Handle create doctor
   const handleSaveDoctor = async (doctorData) => {
@@ -150,9 +149,6 @@ const DoctorsPage = () => {
       fetchDoctors();
       return true;
     } catch (err) {
-      console.error('Failed to save doctor:', err);
-      console.error('Request data:', doctorData);
-      console.error('Error response:', err.response?.data);
       // Show validation errors if available
       const errors = err.response?.data?.errors;
       if (errors && errors.length > 0) {
@@ -173,7 +169,6 @@ const DoctorsPage = () => {
       fetchDoctors();
       return true;
     } catch (err) {
-      console.error('Failed to delete doctor:', err);
       toast.error(err.response?.data?.message || 'Failed to delete doctor');
       return false;
     }

@@ -8,12 +8,13 @@
  * - Pagination
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import visitService from '../../services/visitService';
+import useDebounce from '../../hooks/useDebounce';
 import toast from 'react-hot-toast';
 
 const MyVisits = () => {
@@ -42,8 +43,22 @@ const MyVisits = () => {
   const [fullImageUrl, setFullImageUrl] = useState(null);
   const [refreshingPhotos, setRefreshingPhotos] = useState(false);
 
+  // Debounce search input to avoid excessive API calls
+  const debouncedSearch = useDebounce(doctorSearch, 400);
+
+  // AbortController ref for request cancellation
+  const abortControllerRef = useRef(null);
+
   // Fetch visits
   const fetchVisits = useCallback(async () => {
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController();
+
     setLoading(true);
     setError(null);
 
@@ -63,11 +78,13 @@ const MyVisits = () => {
       if (dateRange.end) {
         params.endDate = dateRange.end;
       }
-      if (doctorSearch.trim()) {
-        params.search = doctorSearch.trim();
+      if (debouncedSearch.trim()) {
+        params.search = debouncedSearch.trim();
       }
 
-      const response = await visitService.getMy(params);
+      const response = await visitService.getMy(params, {
+        signal: abortControllerRef.current.signal,
+      });
 
       setVisits(response.data || []);
       setPagination(prev => ({
@@ -76,13 +93,25 @@ const MyVisits = () => {
         pages: response.pagination?.pages || 1,
       }));
     } catch (err) {
-      console.error('Error fetching visits:', err);
+      // Ignore abort errors
+      if (err.name === 'AbortError' || err.name === 'CanceledError') {
+        return;
+      }
       setError('Failed to load visits. Please try again.');
       toast.error('Failed to load visits');
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.limit, statusFilter, dateRange, doctorSearch]);
+  }, [pagination.page, pagination.limit, statusFilter, dateRange, debouncedSearch]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   // Initial fetch
   useEffect(() => {

@@ -20,13 +20,14 @@ const ReportsPage = () => {
   });
 
   const handleGenerateReport = () => {
-    // TODO: Generate report based on type and date range
-    console.log('Generating report:', { reportType, dateRange });
+    // TODO: Phase 2 - Generate report based on type and date range
+    // Will integrate with backend reporting endpoints
   };
 
   const handleExport = (format) => {
-    // TODO: Export report in specified format
-    console.log('Exporting as:', format);
+    // TODO: Phase 2 - Export report in specified format (PDF/Excel/CSV)
+    // Will integrate with export service
+    void format; // Acknowledge parameter for future use
   };
 
   return (

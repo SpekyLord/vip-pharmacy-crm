@@ -145,6 +145,9 @@ productSchema.index({ category: 1 });
 productSchema.index({ isActive: 1 });
 productSchema.index({ targetSpecializations: 1 });
 productSchema.index({ sku: 1 });
+// Compound indexes for common query patterns
+productSchema.index({ category: 1, isActive: 1 });
+productSchema.index({ targetSpecializations: 1, isActive: 1 });
 
 // Virtual: Get assignment count
 productSchema.virtual('assignmentCount', {
@@ -175,6 +178,31 @@ productSchema.statics.searchProducts = function (query) {
     { score: { $meta: 'textScore' } }
   ).sort({ score: { $meta: 'textScore' } });
 };
+
+// Pre-delete hook to cascade delete related ProductAssignments
+productSchema.pre('deleteOne', { document: true, query: false }, async function (next) {
+  try {
+    const ProductAssignment = mongoose.model('ProductAssignment');
+    await ProductAssignment.deleteMany({ product: this._id });
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Also handle findOneAndDelete via query middleware
+productSchema.pre('findOneAndDelete', async function (next) {
+  try {
+    const doc = await this.model.findOne(this.getFilter());
+    if (doc) {
+      const ProductAssignment = mongoose.model('ProductAssignment');
+      await ProductAssignment.deleteMany({ product: doc._id });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 const Product = mongoose.model('Product', productSchema);
 

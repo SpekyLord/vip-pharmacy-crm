@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import ProductAssignment from '../../components/medrep/ProductAssignment';
@@ -144,37 +145,6 @@ const medrepDashboardStyles = `
     padding: 16px;
     border-radius: 8px;
     margin-bottom: 24px;
-  }
-
-  .success-toast {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    background: #10b981;
-    color: white;
-    padding: 16px 24px;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    z-index: 1000;
-    animation: slideIn 0.3s ease;
-  }
-
-  .error-toast {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    background: #ef4444;
-    color: white;
-    padding: 16px 24px;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    z-index: 1000;
-    animation: slideIn 0.3s ease;
-  }
-
-  @keyframes slideIn {
-    from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
   }
 
   /* Modal Styles */
@@ -353,7 +323,6 @@ const MedRepDashboard = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [toast, setToast] = useState(null);
   const [stats, setStats] = useState({
     totalAssignments: 0,
     activeAssignments: 0,
@@ -413,8 +382,7 @@ const MedRepDashboard = () => {
         }));
       }
 
-    } catch (err) {
-      console.error('Failed to fetch data:', err);
+    } catch {
       setError('Failed to load dashboard data. Please try again.');
     } finally {
       setLoading(false);
@@ -424,12 +392,6 @@ const MedRepDashboard = () => {
   useEffect(() => {
     fetchData();
   }, []);
-
-  // Show toast notification
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
 
   // View assignment details
   const handleViewDetails = (assignment) => {
@@ -454,12 +416,11 @@ const MedRepDashboard = () => {
     try {
       setSaving(true);
       await assignmentService.update(selectedAssignment._id, editForm);
-      showToast('Assignment updated successfully');
+      toast.success('Assignment updated successfully');
       setShowEditModal(false);
       fetchData(); // Refresh data
     } catch (err) {
-      console.error('Failed to update assignment:', err);
-      showToast(err.response?.data?.message || 'Failed to update assignment', 'error');
+      toast.error(err.response?.data?.message || 'Failed to update assignment');
     } finally {
       setSaving(false);
     }
@@ -471,12 +432,11 @@ const MedRepDashboard = () => {
 
     try {
       await assignmentService.delete(assignment._id, reason);
-      showToast('Assignment deactivated');
+      toast.success('Assignment deactivated');
       setShowDetailsModal(false);
       fetchData();
     } catch (err) {
-      console.error('Failed to deactivate assignment:', err);
-      showToast(err.response?.data?.message || 'Failed to deactivate assignment', 'error');
+      toast.error(err.response?.data?.message || 'Failed to deactivate assignment');
     }
   };
 
@@ -488,11 +448,10 @@ const MedRepDashboard = () => {
         product: productId,
         priority,
       });
-      showToast('Product assigned successfully');
+      toast.success('Product assigned successfully');
       fetchData();
     } catch (err) {
-      console.error('Failed to assign product:', err);
-      showToast(err.response?.data?.message || 'Failed to assign product', 'error');
+      toast.error(err.response?.data?.message || 'Failed to assign product');
     }
   };
 
@@ -504,17 +463,16 @@ const MedRepDashboard = () => {
     );
 
     if (!assignment) {
-      showToast('Assignment not found', 'error');
+      toast.error('Assignment not found');
       return;
     }
 
     try {
       await assignmentService.delete(assignment._id);
-      showToast('Product unassigned');
+      toast.success('Product unassigned');
       fetchData();
     } catch (err) {
-      console.error('Failed to unassign product:', err);
-      showToast(err.response?.data?.message || 'Failed to unassign product', 'error');
+      toast.error(err.response?.data?.message || 'Failed to unassign product');
     }
   };
 
@@ -623,13 +581,6 @@ const MedRepDashboard = () => {
           </div>
         </main>
       </div>
-
-      {/* Toast Notification */}
-      {toast && (
-        <div className={toast.type === 'error' ? 'error-toast' : 'success-toast'}>
-          {toast.message}
-        </div>
-      )}
 
       {/* Details Modal */}
       {showDetailsModal && selectedAssignment && (

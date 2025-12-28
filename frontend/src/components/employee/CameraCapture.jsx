@@ -210,6 +210,10 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const gpsWatchId = useRef(null);
+  const gpsTimeoutId = useRef(null);
+
+  // GPS timeout duration (5 minutes max to prevent battery drain)
+  const GPS_TIMEOUT_MS = 5 * 60 * 1000;
 
   // Cleanup camera and GPS on unmount
   useEffect(() => {
@@ -223,6 +227,11 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
       if (gpsWatchId.current) {
         navigator.geolocation.clearWatch(gpsWatchId.current);
         gpsWatchId.current = null;
+      }
+      // Cleanup GPS timeout
+      if (gpsTimeoutId.current) {
+        clearTimeout(gpsTimeoutId.current);
+        gpsTimeoutId.current = null;
       }
     };
   }, []);
@@ -260,11 +269,11 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
     };
 
     const handleError = (err) => {
-      console.warn('GPS error:', err.message);
       // Only show acquiring if we don't have a location yet
       if (!hasLocation) {
         setGpsStatus('acquiring');
       }
+      void err; // Acknowledge parameter
     };
 
     // First: Try quick low-accuracy position (usually instant from cached/network)
@@ -284,6 +293,19 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
         maximumAge: 5000,
       }
     );
+
+    // Set a maximum timeout (5 minutes) to stop GPS tracking and prevent battery drain
+    gpsTimeoutId.current = setTimeout(() => {
+      if (gpsWatchId.current) {
+        navigator.geolocation.clearWatch(gpsWatchId.current);
+        gpsWatchId.current = null;
+      }
+      // If we still don't have a location after 5 minutes, mark as failed
+      if (!hasLocation) {
+        setGpsStatus('failed');
+        setError('GPS timed out. Please ensure location is enabled and try again.');
+      }
+    }, GPS_TIMEOUT_MS);
   };
 
   // Stop GPS tracking
@@ -291,6 +313,10 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
     if (gpsWatchId.current) {
       navigator.geolocation.clearWatch(gpsWatchId.current);
       gpsWatchId.current = null;
+    }
+    if (gpsTimeoutId.current) {
+      clearTimeout(gpsTimeoutId.current);
+      gpsTimeoutId.current = null;
     }
     setGpsStatus('idle');
     setCachedLocation(null);

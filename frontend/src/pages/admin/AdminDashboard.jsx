@@ -105,29 +105,26 @@ const AdminDashboard = () => {
         setLoading(true);
         setError(null);
 
-        // Fetch data in parallel
+        // Fetch data in parallel - use limit: 0 to only get count without data
         const [doctorsRes, visitStatsRes, usersRes] = await Promise.all([
-          doctorService.getAll({ limit: 1 }), // Just to get total count
+          doctorService.getAll({ limit: 0 }),
           visitService.getStats(),
-          api.get('/users', { params: { limit: 1 } }), // Get employee count
+          api.get('/users', { params: { limit: 0 } }),
         ]);
 
         setStats({
           totalDoctors: doctorsRes.pagination?.total || 0,
           totalEmployees: usersRes.data?.pagination?.total || 0,
           totalVisits: visitStatsRes.data?.summary?.totalVisits || 0,
-          pendingApprovals: 0, // Not implemented yet
+          pendingApprovals: 0, // Phase 2: approval workflow
           visitsToday: visitStatsRes.data?.summary?.totalVisits || 0,
           visitsThisWeek: visitStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0,
         });
 
-        // Set some sample recent activity (can be enhanced later)
-        setRecentActivity([
-          { timestamp: new Date(), description: 'Dashboard loaded with real data' },
-        ]);
+        // Recent activity placeholder (Phase 2: audit log)
+        setRecentActivity([]);
 
-      } catch (err) {
-        console.error('Failed to fetch dashboard data:', err);
+      } catch {
         setError('Failed to load dashboard data. Please try again.');
       } finally {
         setLoading(false);

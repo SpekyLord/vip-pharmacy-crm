@@ -40,10 +40,17 @@ const isValidObjectId = (value) => {
   return true;
 };
 
+// Note: For email validation, prefer using express-validator's built-in isEmail()
+// which is RFC 5322 compliant. This custom validator is kept for backward compatibility.
 const isValidEmail = (value) => {
-  const emailRegex = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/;
+  // More permissive regex that handles modern TLDs (.museum, .travel, etc.)
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   if (!emailRegex.test(value)) {
     throw new Error('Invalid email format');
+  }
+  // Also check max length per RFC 5321
+  if (value.length > 254) {
+    throw new Error('Email address too long');
   }
   return true;
 };

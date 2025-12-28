@@ -188,7 +188,7 @@ const forgotPassword = catchAsync(async (req, res) => {
   // TODO: Send email with reset link using AWS SES (Phase 2)
   // Reset link format: ${FRONTEND_URL}/reset-password/${resetToken}
   // SECURITY: Never expose reset token in response - only send via email
-  console.log(`Password reset requested for: ${email}`);
+  // Note: In production, this should send an email via AWS SES
 
   res.json({
     success: true,

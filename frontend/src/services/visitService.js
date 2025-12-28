@@ -78,8 +78,8 @@ const visitService = {
   },
 
   // Get current user's visits
-  getMy: async (params = {}) => {
-    const response = await api.get('/visits/my', { params });
+  getMy: async (params = {}, options = {}) => {
+    const response = await api.get('/visits/my', { params, ...options });
     return response.data;
   },
 
