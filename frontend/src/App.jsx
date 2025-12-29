@@ -14,6 +14,7 @@ import DoctorsPage from './pages/admin/DoctorsPage';
 import EmployeesPage from './pages/admin/EmployeesPage';
 import RegionsPage from './pages/admin/RegionsPage';
 import ReportsPage from './pages/admin/ReportsPage';
+import StatisticsPage from './pages/admin/StatisticsPage';
 import MedRepDashboard from './pages/medrep/MedRepDashboard';
 
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -90,6 +91,14 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['admin']}>
               <ReportsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/statistics"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <StatisticsPage />
             </ProtectedRoute>
           }
         />
