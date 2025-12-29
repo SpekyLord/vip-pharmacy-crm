@@ -338,7 +338,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - [x] Edit existing doctor
 - [x] Delete doctor (with confirmation)
 - [ ] Bulk import from Excel (optional, Phase 1 stretch)
-- [ ] Export to CSV (optional)
+- [x] Export to Excel/CSV (Call Plan Template format)
 
 **Acceptance Criteria**:
 - [x] Admin sees all doctors in paginated table
@@ -352,6 +352,14 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - `regionService.js`: New service for region API calls
 - `DoctorsPage.jsx`: Full CRUD with pagination, filtering, API integration
 - `DoctorManagement.jsx`: Complete rewrite with search/filter bar, data table, Add/Edit modal, Delete confirmation modal, full CSS styling
+
+**Export Feature (Task 1.10c - Dec 2024):**
+- `frontend/src/utils/exportCallPlan.js`: Export utility matching "Montero Call Plan Template" format
+- Added `xlsx` and `file-saver` npm packages
+- Excel export includes: Header summary (2x/4x counts), Day1-20 visit schedule columns, assigned products
+- CSV export: Flat format with same columns
+- Export buttons in DoctorsPage header ("Export Excel", "Export CSV")
+- Exports respect current filters (region, specialization, visitFrequency)
 
 **Doctor Region Cascading Dropdown Fix (Task 1.10b):**
 - **Problem**: Validation error when editing doctors - address field sent as string instead of object
