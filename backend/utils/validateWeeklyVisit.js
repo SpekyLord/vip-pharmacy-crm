@@ -78,12 +78,20 @@ const getMonthYear = (date) => {
 
 /**
  * Get year-week key (2024-W52) - ISO format
+ * Uses ISO year which may differ from calendar year at year boundaries
+ * e.g., Dec 30, 2025 is in Week 1 of 2026 (not Week 53 of 2025)
  * @param {Date} date
  * @returns {string} Year-week key
  */
 const getYearWeekKey = (date) => {
+  // Calculate ISO year (may differ from calendar year at year boundaries)
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const isoYear = d.getUTCFullYear();
+
   const week = String(getWeekNumber(date)).padStart(2, '0');
-  return `${date.getFullYear()}-W${week}`;
+  return `${isoYear}-W${week}`;
 };
 
 /**

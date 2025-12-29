@@ -70,6 +70,11 @@ const handleCastError = (err) => {
  * Handle MongoDB duplicate key error
  */
 const handleDuplicateKeyError = (err) => {
+  // Check if this is a visit duplicate (compound key: doctor + user + yearWeekKey)
+  if (err.keyValue && err.keyValue.doctor && err.keyValue.user && err.keyValue.yearWeekKey) {
+    return new ApiError(400, 'You have already visited this doctor this week. Only one visit per doctor per week is allowed.');
+  }
+
   const field = Object.keys(err.keyValue)[0];
   const message = `${field} already exists. Please use a different value.`;
   return new ApiError(400, message);

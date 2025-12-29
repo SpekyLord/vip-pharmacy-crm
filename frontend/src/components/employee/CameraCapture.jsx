@@ -223,6 +223,10 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       }
+      // Clear video source to ensure camera stops
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
       // Cleanup GPS watch
       if (gpsWatchId.current) {
         navigator.geolocation.clearWatch(gpsWatchId.current);
@@ -342,6 +346,11 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
   const stopCamera = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    // Clear video source to ensure camera stops
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
     stopGPSTracking();
     setIsCapturing(false);
