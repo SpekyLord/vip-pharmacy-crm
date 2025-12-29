@@ -16,6 +16,9 @@ import DoctorManagement from '../../components/admin/DoctorManagement';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
 import regionService from '../../services/regionService';
+import assignmentService from '../../services/assignmentService';
+import { useAuth } from '../../hooks/useAuth';
+import { exportToExcel, exportToCSV } from '../../utils/exportCallPlan';
 
 const doctorsPageStyles = `
   .dashboard-layout {
@@ -53,12 +56,57 @@ const doctorsPageStyles = `
     border-radius: 8px;
     margin-bottom: 24px;
   }
+
+  .header-actions {
+    display: flex;
+    gap: 12px;
+  }
+
+  .export-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .export-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .export-btn-excel {
+    background: #22c55e;
+    color: white;
+    border: none;
+  }
+
+  .export-btn-excel:hover:not(:disabled) {
+    background: #16a34a;
+  }
+
+  .export-btn-csv {
+    background: white;
+    color: #374151;
+    border: 1px solid #d1d5db;
+  }
+
+  .export-btn-csv:hover:not(:disabled) {
+    background: #f9fafb;
+    border-color: #9ca3af;
+  }
 `;
 
 const DoctorsPage = () => {
+  const { user } = useAuth();
   const [doctors, setDoctors] = useState([]);
   const [regions, setRegions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState(null);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -185,6 +233,103 @@ const DoctorsPage = () => {
     setPagination((prev) => ({ ...prev, page: newPage }));
   };
 
+  // Get current month/year for export
+  const getCurrentMonthYear = () => {
+    const now = new Date();
+    return now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  // Get area name for export
+  const getAreaName = () => {
+    if (filters.region) {
+      const region = regions.find((r) => r._id === filters.region);
+      return region?.name || 'Selected Region';
+    }
+    return 'All Regions';
+  };
+
+  // Handle export to Excel
+  const handleExportExcel = async () => {
+    try {
+      setExporting(true);
+
+      // Fetch ALL doctors with current filters (no pagination limit)
+      const params = { limit: 0 };
+      if (filters.search) params.search = filters.search;
+      if (filters.region) params.region = filters.region;
+      if (filters.visitFrequency) params.visitFrequency = filters.visitFrequency;
+      if (filters.specialization) params.specialization = filters.specialization;
+
+      const [doctorsResponse, assignmentsResponse] = await Promise.all([
+        doctorService.getAll(params),
+        assignmentService.getAll(),
+      ]);
+
+      const allDoctors = doctorsResponse.data || [];
+      const allAssignments = assignmentsResponse.data || [];
+
+      if (allDoctors.length === 0) {
+        toast.error('No doctors to export');
+        return;
+      }
+
+      const config = {
+        employeeName: user?.name || 'Admin',
+        areaAssigned: getAreaName(),
+        monthYear: getCurrentMonthYear(),
+        assignments: allAssignments,
+      };
+
+      exportToExcel(allDoctors, config);
+      toast.success(`Exported ${allDoctors.length} doctors to Excel`);
+    } catch (err) {
+      toast.error('Failed to export to Excel');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Handle export to CSV
+  const handleExportCSV = async () => {
+    try {
+      setExporting(true);
+
+      // Fetch ALL doctors with current filters (no pagination limit)
+      const params = { limit: 0 };
+      if (filters.search) params.search = filters.search;
+      if (filters.region) params.region = filters.region;
+      if (filters.visitFrequency) params.visitFrequency = filters.visitFrequency;
+      if (filters.specialization) params.specialization = filters.specialization;
+
+      const [doctorsResponse, assignmentsResponse] = await Promise.all([
+        doctorService.getAll(params),
+        assignmentService.getAll(),
+      ]);
+
+      const allDoctors = doctorsResponse.data || [];
+      const allAssignments = assignmentsResponse.data || [];
+
+      if (allDoctors.length === 0) {
+        toast.error('No doctors to export');
+        return;
+      }
+
+      const config = {
+        employeeName: user?.name || 'Admin',
+        areaAssigned: getAreaName(),
+        monthYear: getCurrentMonthYear(),
+        assignments: allAssignments,
+      };
+
+      exportToCSV(allDoctors, config);
+      toast.success(`Exported ${allDoctors.length} doctors to CSV`);
+    } catch (err) {
+      toast.error('Failed to export to CSV');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading && doctors.length === 0) {
     return <LoadingSpinner fullScreen />;
   }
@@ -198,6 +343,22 @@ const DoctorsPage = () => {
         <main className="main-content">
           <div className="page-header">
             <h1>Doctor Management</h1>
+            <div className="header-actions">
+              <button
+                className="export-btn export-btn-excel"
+                onClick={handleExportExcel}
+                disabled={exporting}
+              >
+                {exporting ? 'Exporting...' : '↓ Export Excel'}
+              </button>
+              <button
+                className="export-btn export-btn-csv"
+                onClick={handleExportCSV}
+                disabled={exporting}
+              >
+                {exporting ? 'Exporting...' : '↓ Export CSV'}
+              </button>
+            </div>
           </div>
 
           {error && (

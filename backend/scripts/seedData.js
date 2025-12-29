@@ -5,8 +5,10 @@
  * - Admin user
  * - Sample regions (Panay Island hierarchy)
  * - Sample doctors
- * - Sample products
  * - Sample employees
+ *
+ * Note: Products are managed through the VIP Pharmacy website database,
+ * not the CRM database. Use the website admin to manage products.
  *
  * Usage: npm run seed
  */
@@ -16,7 +18,6 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Region = require('../models/Region');
 const Doctor = require('../models/Doctor');
-const Product = require('../models/Product');
 
 // Sample data
 const regions = [
@@ -207,109 +208,6 @@ const regions = [
   },
 ];
 
-const products = [
-  {
-    name: 'GastroRelief Pro',
-    genericName: 'Omeprazole',
-    category: 'Gastrointestinal',
-    briefDescription: 'Proton pump inhibitor for acid reflux and GERD',
-    description: 'GastroRelief Pro is a proton pump inhibitor that reduces stomach acid production. Effective for treating gastroesophageal reflux disease (GERD), peptic ulcers, and Zollinger-Ellison syndrome.',
-    keyBenefits: [
-      'Fast-acting acid relief',
-      'Once-daily dosing',
-      '24-hour protection',
-      'Heals erosive esophagitis',
-      'Reduces heartburn symptoms',
-    ],
-    usageInformation: 'Take one capsule daily before breakfast. For best results, take at the same time each day.',
-    dosage: '20mg once daily',
-    price: 45.00,
-    manufacturer: 'VIP Pharma',
-    image: 'https://via.placeholder.com/400x300?text=GastroRelief+Pro',
-    targetSpecializations: ['IM Gastro', 'Internal Medicine', 'General Practice'],
-  },
-  {
-    name: 'PediaGrow Plus',
-    genericName: 'Multivitamin Complex',
-    category: 'Pediatric',
-    briefDescription: 'Complete multivitamin for children growth and development',
-    description: 'PediaGrow Plus is specially formulated for children aged 2-12, providing essential vitamins and minerals for optimal growth, immune function, and cognitive development.',
-    keyBenefits: [
-      'Supports healthy growth',
-      'Boosts immune system',
-      'Enhances cognitive function',
-      'Delicious orange flavor',
-      'No artificial colors',
-    ],
-    usageInformation: 'Give one chewable tablet daily with food. Children under 4 should be supervised.',
-    dosage: '1 tablet daily',
-    price: 25.00,
-    manufacturer: 'VIP Pharma',
-    image: 'https://via.placeholder.com/400x300?text=PediaGrow+Plus',
-    targetSpecializations: ['Pediatrics', 'General Practice'],
-  },
-  {
-    name: 'CardioShield',
-    genericName: 'Atorvastatin',
-    category: 'Cardiovascular',
-    briefDescription: 'Statin medication for cholesterol management',
-    description: 'CardioShield helps lower bad cholesterol (LDL) and triglycerides while raising good cholesterol (HDL). Reduces the risk of heart attack and stroke in patients with cardiovascular risk factors.',
-    keyBenefits: [
-      'Lowers LDL cholesterol',
-      'Reduces cardiovascular risk',
-      'Once-daily convenience',
-      'Well-tolerated formula',
-      'Proven long-term efficacy',
-    ],
-    usageInformation: 'Take one tablet daily, preferably in the evening. Can be taken with or without food.',
-    dosage: '10-80mg once daily',
-    price: 65.00,
-    manufacturer: 'VIP Pharma',
-    image: 'https://via.placeholder.com/400x300?text=CardioShield',
-    targetSpecializations: ['Cardiology', 'Internal Medicine', 'General Practice'],
-  },
-  {
-    name: 'RespiClear',
-    genericName: 'Salbutamol + Bromhexine',
-    category: 'Respiratory',
-    briefDescription: 'Bronchodilator and mucolytic combination for respiratory relief',
-    description: 'RespiClear combines bronchodilator and mucolytic action for effective relief of respiratory conditions. Helps open airways and thin mucus for easier breathing.',
-    keyBenefits: [
-      'Dual-action formula',
-      'Fast bronchodilation',
-      'Effective mucus clearance',
-      'Suitable for acute and chronic conditions',
-      'Well-tolerated',
-    ],
-    usageInformation: 'Take 5ml three times daily. Shake well before use.',
-    dosage: '5ml TID',
-    price: 35.00,
-    manufacturer: 'VIP Pharma',
-    image: 'https://via.placeholder.com/400x300?text=RespiClear',
-    targetSpecializations: ['Pulmonology', 'Pediatrics', 'General Practice', 'ENT'],
-  },
-  {
-    name: 'DermaHeal Cream',
-    genericName: 'Betamethasone + Clotrimazole',
-    category: 'Dermatological',
-    briefDescription: 'Anti-inflammatory and antifungal combination cream',
-    description: 'DermaHeal Cream provides dual-action relief for inflammatory skin conditions with fungal infection. Reduces itching, redness, and scaling while eliminating fungal pathogens.',
-    keyBenefits: [
-      'Rapid itch relief',
-      'Anti-inflammatory action',
-      'Antifungal coverage',
-      'Non-greasy formula',
-      'Suitable for sensitive areas',
-    ],
-    usageInformation: 'Apply a thin layer to affected area twice daily. Do not use for more than 2 weeks without medical advice.',
-    dosage: 'Apply BID',
-    price: 55.00,
-    manufacturer: 'VIP Pharma',
-    image: 'https://via.placeholder.com/400x300?text=DermaHeal+Cream',
-    targetSpecializations: ['Dermatology', 'General Practice'],
-  },
-];
-
 const specializations = [
   'IM Gastro',
   'Pediatrics',
@@ -377,7 +275,6 @@ const seedDatabase = async () => {
     await User.deleteMany({});
     await Region.deleteMany({});
     await Doctor.deleteMany({});
-    await Product.deleteMany({});
 
     // 1. Create Regions
     console.log('Creating regions...');
@@ -459,15 +356,7 @@ const seedDatabase = async () => {
       console.log(`  Employee created: ${employee.email} (assigned to ${empData.regionCode})`);
     }
 
-    // 5. Create Products
-    console.log('\nCreating products...');
-    for (const productData of products) {
-      const product = await Product.create(productData);
-      console.log(`  Product created: ${product.name}`);
-    }
-    console.log(`Created ${products.length} products`);
-
-    // 6. Create Doctors
+    // 5. Create Doctors
     console.log('\nCreating doctors...');
     let totalDoctors = 0;
 
@@ -510,8 +399,8 @@ const seedDatabase = async () => {
     console.log('-------------');
     console.log(`Regions:   ${Object.keys(regionMap).length}`);
     console.log(`Users:     ${3 + employees.length}`);
-    console.log(`Products:  ${products.length}`);
     console.log(`Doctors:   ${totalDoctors}`);
+    console.log('\nNote: Products are managed via VIP Pharmacy website database.');
     console.log('========================================\n');
 
     await mongoose.connection.close();
