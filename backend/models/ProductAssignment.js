@@ -116,23 +116,23 @@ productAssignmentSchema.pre('save', function (next) {
 });
 
 // Static: Get active assignments for a doctor (for employee visit view)
+// NOTE: Product data must be populated manually from website database
 productAssignmentSchema.statics.getActiveForDoctor = function (doctorId) {
   return this.find({
     doctor: doctorId,
     status: 'active',
   })
-    .populate('product', 'name briefDescription keyBenefits usageInformation image')
     .sort({ priority: 1 })
     .lean();
 };
 
 // Static: Get active assignments by a med rep
+// NOTE: Product data must be populated manually from website database
 productAssignmentSchema.statics.getByMedRep = function (medRepId) {
   return this.find({
     assignedBy: medRepId,
     status: 'active',
   })
-    .populate('product', 'name category image')
     .populate('doctor', 'name specialization hospital')
     .sort({ createdAt: -1 });
 };

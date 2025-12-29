@@ -14,7 +14,7 @@
 | React | 18.3.x | UI library |
 | Vite | 5.4.x | Build tool & dev server |
 | React Router | 6.28.x | Client-side routing |
-| Zustand | 5.x | State management |
+| React Context | (built-in) | State management (AuthContext) |
 | Axios | 1.7.x | HTTP client |
 | React Hot Toast | 2.4.x | Toast notifications |
 | React Icons | 5.3.x | Icon library |
@@ -666,5 +666,44 @@ AWS_REGION=ap-southeast-1
 S3_BUCKET_NAME=vip-pharmacy-crm
 
 # Frontend URL (for CORS)
-FRONTEND_URL=https://your-domain.com
+CLIENT_URL=https://your-domain.com
+
+# CORS Origins (production - comma-separated)
+CORS_ORIGINS=https://your-domain.com,https://www.your-domain.com
 ```
+
+---
+
+## 11. Phase 1 Optimizations (December 2024)
+
+### 11.1 Backend Optimizations
+
+| Optimization | Implementation |
+|--------------|----------------|
+| Rate Limiting | `express-rate-limit` - 100 req/15min general, 20 req/15min auth |
+| Request Timeout | 30 second timeout middleware |
+| Security Headers | HSTS via helmet (1 year max-age) |
+| Database Indexes | Compound indexes on User, Doctor, Region, Product, Visit |
+| TTL Index | Password reset tokens auto-expire |
+| Cascade Delete | Doctor and Product models have cascade delete hooks |
+
+### 11.2 Frontend Optimizations
+
+| Component | Purpose |
+|-----------|---------|
+| `ErrorBoundary.jsx` | Catches React errors, shows fallback UI with retry |
+| `useDebounce.js` | Debounces search inputs (300ms default) |
+| `Pagination.jsx` | Shared pagination component with React.memo |
+| AbortController | Request cancellation on component unmount (MyVisits) |
+| React.memo | Prevents unnecessary re-renders (DoctorList) |
+| useMemo | Memoized filtered lists |
+| useCallback | Stable function references (DoctorsPage) |
+
+### 11.3 Security Fixes
+
+| Fix | Details |
+|-----|---------|
+| CORS Middleware Order | Moved before rate limiter to include headers on 429 responses |
+| Array Bounds Validation | Max 100 products in bulk assign, 1-10 photos per visit |
+| Auth Event Handling | CustomEvent dispatch for cross-context logout |
+| GPS Timeout | 5-minute watchPosition timeout in CameraCapture |

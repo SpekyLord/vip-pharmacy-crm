@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -317,11 +318,27 @@ const medrepDashboardStyles = `
 
 const MedRepDashboard = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('assignments');
+  const location = useLocation();
+
+  // Determine tab based on URL path
+  const getTabFromPath = (pathname) => {
+    if (pathname === '/medrep/assignments') {
+      return 'assignments';
+    }
+    // /medrep shows dashboard view (stats only, no tab content)
+    return 'dashboard';
+  };
+
+  const [activeTab, setActiveTab] = useState(() => getTabFromPath(location.pathname));
   const [assignments, setAssignments] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Sync tab with URL changes
+  useEffect(() => {
+    setActiveTab(getTabFromPath(location.pathname));
+  }, [location.pathname]);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState({
     totalAssignments: 0,
@@ -542,43 +559,48 @@ const MedRepDashboard = () => {
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="dashboard-tabs">
-            <button
-              className={`tab-btn ${activeTab === 'assignments' ? 'active' : ''}`}
-              onClick={() => setActiveTab('assignments')}
-            >
-              My Assignments
-            </button>
-            <button
-              className={`tab-btn ${activeTab === 'mapping' ? 'active' : ''}`}
-              onClick={() => setActiveTab('mapping')}
-            >
-              Doctor-Product Mapping
-            </button>
-          </div>
+          {/* Only show tabs and content when on assignments page */}
+          {(activeTab === 'assignments' || activeTab === 'mapping') && (
+            <>
+              {/* Tabs */}
+              <div className="dashboard-tabs">
+                <button
+                  className={`tab-btn ${activeTab === 'assignments' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('assignments')}
+                >
+                  My Assignments
+                </button>
+                <button
+                  className={`tab-btn ${activeTab === 'mapping' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('mapping')}
+                >
+                  Doctor-Product Mapping
+                </button>
+              </div>
 
-          {/* Tab Content */}
-          <div className="tab-content">
-            {activeTab === 'assignments' && (
-              <ProductAssignment
-                assignments={assignments}
-                onViewDetails={handleViewDetails}
-                onEdit={handleEditAssignment}
-                onDeactivate={handleDeactivateAssignment}
-              />
-            )}
+              {/* Tab Content */}
+              <div className="tab-content">
+                {activeTab === 'assignments' && (
+                  <ProductAssignment
+                    assignments={assignments}
+                    onViewDetails={handleViewDetails}
+                    onEdit={handleEditAssignment}
+                    onDeactivate={handleDeactivateAssignment}
+                  />
+                )}
 
-            {activeTab === 'mapping' && (
-              <DoctorProductMapping
-                doctors={doctors}
-                products={products}
-                mappings={mappings}
-                onMapProduct={handleMapProduct}
-                onUnmapProduct={handleUnmapProduct}
-              />
-            )}
-          </div>
+                {activeTab === 'mapping' && (
+                  <DoctorProductMapping
+                    doctors={doctors}
+                    products={products}
+                    mappings={mappings}
+                    onMapProduct={handleMapProduct}
+                    onUnmapProduct={handleUnmapProduct}
+                  />
+                )}
+              </div>
+            </>
+          )}
         </main>
       </div>
 
