@@ -6,9 +6,14 @@ import ErrorBoundary from './components/common/ErrorBoundary';
 
 // Pages
 import LoginPage from './pages/LoginPage';
+
 import EmployeeDashboard from './pages/employee/EmployeeDashboard';
 import MyVisits from './pages/employee/MyVisits';
 import NewVisitPage from './pages/employee/NewVisitPage';
+import EmployeeInbox from './pages/employee/EMP_InboxPage';
+
+
+
 import AdminDashboard from './pages/admin/AdminDashboard';
 import DoctorsPage from './pages/admin/DoctorsPage';
 import EmployeesPage from './pages/admin/EmployeesPage';
@@ -49,6 +54,15 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <NewVisitPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/employee/inbox"
+          element={
+            <ProtectedRoute allowedRoles={['employee', 'admin']}>
+              <EmployeeInbox />
             </ProtectedRoute>
           }
         />

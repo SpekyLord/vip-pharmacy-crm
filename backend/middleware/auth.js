@@ -27,16 +27,16 @@ const AUTH_ERRORS = {
  * Checks Authorization header first, then cookies
  */
 const extractTokenFromRequest = (req) => {
-  // Check Authorization header
-  if (req.headers.authorization?.startsWith('Bearer')) {
+  // 1) Authorization header
+  if (req.headers.authorization?.startsWith('Bearer ')) {
     return req.headers.authorization.split(' ')[1];
   }
-  // Check cookies
-  if (req.cookies?.accessToken) {
-    return req.cookies.accessToken;
-  }
-  return null;
+
+  // 2) Cookies (support common names)
+  const cookies = req.cookies || {};
+  return cookies.accessToken || cookies.token || null;
 };
+
 
 /**
  * Protect routes - require authentication
