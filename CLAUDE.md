@@ -438,6 +438,48 @@ App.jsx
 17. ✅ **Backend Optimization** - Pre-deployment code review and optimization (Dec 2024)
 18. ✅ **Frontend Optimization** - ErrorBoundary, useDebounce, Pagination, AbortController, React.memo (Dec 2024)
 19. ✅ **Task 1.16** - Development Environment Documentation (DEVELOPMENT_GUIDE.md, .env.example files)
+20. ✅ **Task 1.14c** - Cross-Database Product Population Fix (Dec 2024)
+
+## Cross-Database Product Fix (Completed Dec 2024)
+
+### Problem
+Products are stored in a separate website database (`vip-pharmacy`), but the CRM uses Mongoose `populate()` which only works within the same database connection. This caused `MissingSchemaError: Schema hasn't been registered for model "Product"` errors.
+
+### Solution
+Replace Mongoose populate with manual product fetching using `getWebsiteProductModel()`:
+
+```javascript
+// Pattern used in visitController.js and doctorController.js:
+const { getWebsiteProductModel } = require('../models/WebsiteProduct');
+
+// 1. Get documents without product population
+const visits = await Visit.find(query).populate('doctor', 'name');
+
+// 2. Collect product IDs
+const productIds = visits.flatMap(v => v.productsDiscussed.map(p => p.product));
+
+// 3. Fetch from website DB
+const Product = getWebsiteProductModel();
+const products = await Product.find({ _id: { $in: productIds } }).select('name category').lean();
+const productMap = new Map(products.map(p => [p._id.toString(), p]));
+
+// 4. Enrich documents
+visits.forEach(v => {
+  v.productsDiscussed = v.productsDiscussed.map(item => ({
+    ...item,
+    product: productMap.get(item.product?.toString()) || { _id: item.product }
+  }));
+});
+```
+
+### Files Modified
+| File | Function | Change |
+|------|----------|--------|
+| `visitController.js` | `getMyVisits` | Manual product population for visit history |
+| `visitController.js` | `getVisitById` | Manual product population for single visit |
+| `visitController.js` | `getWeeklyCompliance` | Default to current user when no userId param |
+| `doctorController.js` | `getDoctorById` | Manual product population for assigned products |
+| `doctorController.js` | `getDoctorProducts` | Manual product population for doctor's products |
 
 ## Backend Optimization Summary (Completed Dec 2024)
 

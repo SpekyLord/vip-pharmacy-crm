@@ -509,6 +509,41 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 ---
 
+### Task 1.14c: Cross-Database Product Population Fix
+**Assignee**: Backend Developer
+**Priority**: CRITICAL
+**Files**:
+- `backend/controllers/visitController.js`
+- `backend/controllers/doctorController.js`
+
+**Problem**: Products are stored in a separate website database (`vip-pharmacy`), but the CRM uses Mongoose `populate()` which only works within the same database connection. This caused `MissingSchemaError: Schema hasn't been registered for model "Product"` errors.
+
+**Deliverables**:
+- [x] Remove Mongoose populate for products (fails across databases)
+- [x] Add manual product population using `getWebsiteProductModel()` helper
+- [x] Fix `getMyVisits` - manually fetch product data after getting visits
+- [x] Fix `getVisitById` - manually fetch product data after getting visit
+- [x] Fix `getDoctorById` - manually fetch product data for assigned products
+- [x] Fix `getDoctorProducts` - manually fetch product data for assigned products
+- [x] Fix `getWeeklyCompliance` - default to current user when no userId param
+
+**Acceptance Criteria**:
+- [x] No MissingSchemaError when fetching visits
+- [x] Product names display correctly in My Visits page
+- [x] Product names display correctly in Visit Logger
+- [x] No 403 error on weekly compliance endpoint
+
+**Status**: ✅ COMPLETED
+
+**Implementation Details:**
+- Import `getWebsiteProductModel` from `models/WebsiteProduct.js`
+- Collect all product IDs from documents
+- Query website database for product data
+- Map product data back to original documents
+- Pattern matches `productAssignmentController.js` approach
+
+---
+
 ### Task 1.14b: Frontend Optimization
 **Assignee**: Frontend Developer
 **Priority**: HIGH

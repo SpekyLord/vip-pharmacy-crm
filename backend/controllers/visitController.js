@@ -11,6 +11,7 @@
 
 const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
+const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, checkBehindSchedule, getMonthYear } = require('../utils/validateWeeklyVisit');
 const { signVisitPhotos } = require('../config/s3');
@@ -185,10 +186,10 @@ const getAllVisits = catchAsync(async (req, res) => {
  * @access  Private
  */
 const getVisitById = catchAsync(async (req, res) => {
+  // Note: productsDiscussed.product is NOT populated because products are in a separate database
   const visit = await Visit.findById(req.params.id)
     .populate('doctor', 'name specialization hospital address phone')
-    .populate('user', 'name email')
-    .populate('productsDiscussed.product', 'name briefDescription image');
+    .populate('user', 'name email');
 
   if (!visit) {
     throw new NotFoundError('Visit not found');
@@ -202,8 +203,24 @@ const getVisitById = catchAsync(async (req, res) => {
     });
   }
 
+  // Manually populate product data from website database
+  const visitObj = visit.toObject();
+  if (visitObj.productsDiscussed?.length > 0) {
+    const productIds = visitObj.productsDiscussed.map((item) => item.product);
+    const Product = getWebsiteProductModel();
+    const products = await Product.find({ _id: { $in: productIds } })
+      .select('name category briefDescription image')
+      .lean();
+    const productMap = new Map(products.map((p) => [p._id.toString(), p]));
+
+    visitObj.productsDiscussed = visitObj.productsDiscussed.map((item) => ({
+      ...item,
+      product: productMap.get(item.product?.toString()) || { _id: item.product },
+    }));
+  }
+
   // Sign photo URLs for private S3 access
-  const signedVisit = await signVisitPhotos(visit);
+  const signedVisit = await signVisitPhotos(visitObj);
 
   res.json({
     success: true,
@@ -335,14 +352,15 @@ const getVisitsByUser = catchAsync(async (req, res) => {
 
 /**
  * @desc    Get weekly compliance stats for a user
- * @route   GET /api/visits/weekly-compliance/:userId
+ * @route   GET /api/visits/weekly
  * @access  Private
  */
 const getWeeklyCompliance = catchAsync(async (req, res) => {
-  const { userId } = req.params;
   const { monthYear } = req.query;
+  // Default to current user if no userId provided in params
+  const userId = req.params.userId || req.user._id.toString();
 
-  // Check access
+  // Check access - employees can only see their own compliance
   if (req.user.role === 'employee' && userId !== req.user._id.toString()) {
     return res.status(403).json({
       success: false,
@@ -598,9 +616,9 @@ const getMyVisits = catchAsync(async (req, res) => {
   const skip = (page - 1) * limit;
 
   // Build the base query
+  // Note: productsDiscussed.product is NOT populated because products are in a separate database
   let visitQuery = Visit.find(query)
     .populate('doctor', 'name specialization hospital')
-    .populate('productsDiscussed.product', 'name')
     .sort({ visitDate: -1 })
     .skip(skip)
     .limit(parseInt(limit));
@@ -620,8 +638,37 @@ const getMyVisits = catchAsync(async (req, res) => {
     );
   }
 
+  // Manually populate product data from website database
+  const allProductIds = new Set();
+  filteredVisits.forEach((visit) => {
+    visit.productsDiscussed?.forEach((item) => {
+      if (item.product) allProductIds.add(item.product.toString());
+    });
+  });
+
+  let productMap = new Map();
+  if (allProductIds.size > 0) {
+    const Product = getWebsiteProductModel();
+    const products = await Product.find({ _id: { $in: [...allProductIds] } })
+      .select('name category briefDescription image')
+      .lean();
+    productMap = new Map(products.map((p) => [p._id.toString(), p]));
+  }
+
+  // Enrich visits with product data
+  const enrichedVisits = filteredVisits.map((visit) => {
+    const visitObj = visit.toObject ? visit.toObject() : visit;
+    if (visitObj.productsDiscussed?.length > 0) {
+      visitObj.productsDiscussed = visitObj.productsDiscussed.map((item) => ({
+        ...item,
+        product: productMap.get(item.product?.toString()) || { _id: item.product },
+      }));
+    }
+    return visitObj;
+  });
+
   // Sign photo URLs for private S3 access
-  const signedVisits = await Promise.all(filteredVisits.map((visit) => signVisitPhotos(visit)));
+  const signedVisits = await Promise.all(enrichedVisits.map((visit) => signVisitPhotos(visit)));
 
   res.json({
     success: true,
