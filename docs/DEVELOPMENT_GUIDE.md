@@ -107,7 +107,10 @@ AWS_REGION=ap-southeast-1
 S3_BUCKET_NAME=vip-pharmacy-crm-dev
 
 # Frontend URL (for CORS)
-FRONTEND_URL=http://localhost:5173
+CLIENT_URL=http://localhost:5173
+
+# CORS Origins (required in production, comma-separated)
+# CORS_ORIGINS=https://your-domain.com,https://www.your-domain.com
 
 # Rate Limiting
 RATE_LIMIT_WINDOW_MS=900000

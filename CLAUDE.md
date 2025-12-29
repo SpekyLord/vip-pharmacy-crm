@@ -437,6 +437,7 @@ App.jsx
 16. ✅ **Task 1.13** - MedRep Dashboard & Product Assignment (full CRUD, doctor mapping)
 17. ✅ **Backend Optimization** - Pre-deployment code review and optimization (Dec 2024)
 18. ✅ **Frontend Optimization** - ErrorBoundary, useDebounce, Pagination, AbortController, React.memo (Dec 2024)
+19. ✅ **Task 1.16** - Development Environment Documentation (DEVELOPMENT_GUIDE.md, .env.example files)
 
 ## Backend Optimization Summary (Completed Dec 2024)
 
@@ -515,8 +516,7 @@ App.jsx
 ## Next Steps Priority
 
 1. **Task 1.15** - Complete CSS styling (mobile responsive)
-2. **Task 1.16** - Development Environment Documentation (.env.example files)
-3. **Task 1.17** - Deploy to AWS Lightsail (provision instance, deploy app)
+2. **Task 1.17** - Deploy to AWS Lightsail (provision instance, deploy app)
 
 ---
 

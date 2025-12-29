@@ -8,9 +8,37 @@
  */
 
 const ProductAssignment = require('../models/ProductAssignment');
-const Product = require('../models/Product');
+const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 const Doctor = require('../models/Doctor');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
+
+/**
+ * Helper to manually populate product data from website database
+ * Mongoose populate() doesn't work across different database connections
+ * @param {Array} assignments - Array of assignment documents
+ * @param {string} fields - Space-separated field names to include (e.g., 'name category image')
+ * @returns {Array} Assignments with populated product data
+ */
+const populateProductData = async (assignments, fields = 'name category image briefDescription') => {
+  if (!assignments || assignments.length === 0) return assignments;
+
+  const Product = getWebsiteProductModel();
+  const productIds = [...new Set(assignments.map((a) => a.product?.toString() || a.product))];
+
+  const fieldList = fields.split(' ').join(' ');
+  const products = await Product.find({ _id: { $in: productIds } })
+    .select(fieldList)
+    .lean();
+
+  const productMap = new Map(products.map((p) => [p._id.toString(), p]));
+
+  return assignments.map((assignment) => {
+    const assignmentObj = assignment.toObject ? assignment.toObject() : assignment;
+    const productId = assignmentObj.product?.toString() || assignmentObj.product;
+    assignmentObj.product = productMap.get(productId) || { _id: productId };
+    return assignmentObj;
+  });
+};
 
 /**
  * @desc    Get all assignments with pagination and filters
@@ -52,10 +80,9 @@ const getAllAssignments = catchAsync(async (req, res) => {
     filter.priority = parseInt(req.query.priority);
   }
 
-  // Execute query
+  // Execute query - don't populate 'product' (it's in a different database)
   const [assignments, total] = await Promise.all([
     ProductAssignment.find(filter)
-      .populate('product', 'name category briefDescription image')
       .populate('doctor', 'name specialization hospital region')
       .populate('assignedBy', 'name email')
       .sort({ createdAt: -1 })
@@ -64,9 +91,12 @@ const getAllAssignments = catchAsync(async (req, res) => {
     ProductAssignment.countDocuments(filter),
   ]);
 
+  // Manually populate product data from website database
+  const populatedAssignments = await populateProductData(assignments, 'name category briefDescription image');
+
   res.status(200).json({
     success: true,
-    data: assignments,
+    data: populatedAssignments,
     pagination: {
       page,
       limit,
@@ -83,7 +113,6 @@ const getAllAssignments = catchAsync(async (req, res) => {
  */
 const getAssignmentById = catchAsync(async (req, res) => {
   const assignment = await ProductAssignment.findById(req.params.id)
-    .populate('product')
     .populate('doctor')
     .populate('assignedBy', 'name email');
 
@@ -91,9 +120,12 @@ const getAssignmentById = catchAsync(async (req, res) => {
     throw new NotFoundError('Assignment not found');
   }
 
+  // Manually populate product data from website database
+  const populatedAssignments = await populateProductData([assignment]);
+
   res.status(200).json({
     success: true,
-    data: assignment,
+    data: populatedAssignments[0],
   });
 });
 
@@ -105,10 +137,11 @@ const getAssignmentById = catchAsync(async (req, res) => {
 const createAssignment = catchAsync(async (req, res) => {
   const { product, doctor, priority, notes } = req.body;
 
-  // Verify product exists and is active
+  // Verify product exists in website database
+  const Product = getWebsiteProductModel();
   const productDoc = await Product.findById(product);
-  if (!productDoc || !productDoc.isActive) {
-    throw new NotFoundError('Product not found or inactive');
+  if (!productDoc || !productDoc.inStock) {
+    throw new NotFoundError('Product not found or out of stock');
   }
 
   // Verify doctor exists and is active
@@ -136,14 +169,24 @@ const createAssignment = catchAsync(async (req, res) => {
     notes,
   });
 
-  await assignment.populate('product', 'name category briefDescription image');
+  // Populate doctor and assignedBy from CRM database
   await assignment.populate('doctor', 'name specialization hospital');
   await assignment.populate('assignedBy', 'name email');
+
+  // Manually attach product data from website database (already fetched above)
+  const assignmentData = assignment.toObject();
+  assignmentData.product = {
+    _id: productDoc._id,
+    name: productDoc.name,
+    category: productDoc.category,
+    briefDescription: productDoc.briefDescription || productDoc.description,
+    image: productDoc.image,
+  };
 
   res.status(201).json({
     success: true,
     message: 'Product assigned to doctor successfully',
-    data: assignment,
+    data: assignmentData,
   });
 });
 
@@ -168,14 +211,16 @@ const updateAssignment = catchAsync(async (req, res) => {
   }
 
   await assignment.save();
-  await assignment.populate('product', 'name category briefDescription image');
   await assignment.populate('doctor', 'name specialization hospital');
   await assignment.populate('assignedBy', 'name email');
+
+  // Manually populate product data from website database
+  const populatedAssignments = await populateProductData([assignment], 'name category briefDescription image');
 
   res.status(200).json({
     success: true,
     message: 'Assignment updated successfully',
-    data: assignment,
+    data: populatedAssignments[0],
   });
 });
 
@@ -222,9 +267,14 @@ const getAssignmentsByDoctor = catchAsync(async (req, res) => {
     doctor: doctorId,
     status: 'active',
   })
-    .populate('product', 'name category briefDescription keyBenefits usageInformation image price')
     .populate('assignedBy', 'name')
     .sort({ priority: 1 });
+
+  // Manually populate product data from website database
+  const populatedAssignments = await populateProductData(
+    assignments,
+    'name category briefDescription keyBenefits usageInformation image price'
+  );
 
   res.status(200).json({
     success: true,
@@ -234,9 +284,9 @@ const getAssignmentsByDoctor = catchAsync(async (req, res) => {
         name: doctor.name,
         specialization: doctor.specialization,
       },
-      assignments,
+      assignments: populatedAssignments,
     },
-    count: assignments.length,
+    count: populatedAssignments.length,
   });
 });
 
@@ -248,6 +298,7 @@ const getAssignmentsByDoctor = catchAsync(async (req, res) => {
 const getAssignmentsByProduct = catchAsync(async (req, res) => {
   const { productId } = req.params;
 
+  const Product = getWebsiteProductModel();
   const product = await Product.findById(productId);
   if (!product) {
     throw new NotFoundError('Product not found');
@@ -359,7 +410,6 @@ const getMyAssignments = catchAsync(async (req, res) => {
 
   const [assignments, total] = await Promise.all([
     ProductAssignment.find(filter)
-      .populate('product', 'name category image')
       .populate('doctor', 'name specialization hospital')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -367,9 +417,12 @@ const getMyAssignments = catchAsync(async (req, res) => {
     ProductAssignment.countDocuments(filter),
   ]);
 
+  // Manually populate product data from website database
+  const populatedAssignments = await populateProductData(assignments, 'name category image');
+
   res.status(200).json({
     success: true,
-    data: assignments,
+    data: populatedAssignments,
     pagination: {
       page,
       limit,

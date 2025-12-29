@@ -103,6 +103,14 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/medrep/assignments"
+          element={
+            <ProtectedRoute allowedRoles={['medrep', 'admin']}>
+              <MedRepDashboard />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Default Route */}
         <Route path="/" element={<LoginPage />} />
