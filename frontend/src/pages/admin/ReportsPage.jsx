@@ -26,6 +26,7 @@ import {
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import VisitLocationMap from '../../components/admin/VisitLocationMap';
+import EmployeeAnalytics from '../../components/admin/EmployeeAnalytics';
 
 /* =============================================================================
    MOCK DATA
@@ -436,10 +437,20 @@ const ReportsPage = () => {
               <VisitLocationMap
                 clinicCoords={{ lat: selectedVisit.clinicLat, lng: selectedVisit.clinicLng }}
                 employeeCoords={{ lat: selectedVisit.employeeLat, lng: selectedVisit.employeeLng }}
-                allowedRadius={200}
+                allowedRadius={400}
                 accuracy={selectedVisit.accuracy}
               />
             </div>
+          )}
+
+          {/* Employee Performance Analytics (Task 2.10) */}
+          {reportGenerated && selectedBdm && (
+            <EmployeeAnalytics
+              employeeId={selectedBdm}
+              employeeName={MOCK_BDMS.find(b => b.id === selectedBdm)?.name || 'Unknown'}
+              month={selectedMonth}
+              visits={filteredVisits}
+            />
           )}
         </main>
       </div>
