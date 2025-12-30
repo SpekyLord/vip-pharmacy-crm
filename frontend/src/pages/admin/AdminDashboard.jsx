@@ -8,10 +8,11 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import Dashboard from '../../components/admin/Dashboard';
+import ActivityDetailModal from '../../components/admin/ActivityDetailModal';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
@@ -87,6 +88,7 @@ const adminDashboardStyles = `
 `;
 
 const AdminDashboard = () => {
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalDoctors: 0,
     totalEmployees: 0,
@@ -95,9 +97,29 @@ const AdminDashboard = () => {
     visitsToday: 0,
     visitsThisWeek: 0,
   });
-  const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Modal state for activity details
+  const [selectedActivity, setSelectedActivity] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Handler: Navigate to Activity Monitor page
+  const handleViewAllActivity = () => {
+    navigate('/admin/activity');
+  };
+
+  // Handler: Open activity detail modal
+  const handleActivityClick = (activity) => {
+    setSelectedActivity(activity);
+    setIsModalOpen(true);
+  };
+
+  // Handler: Close modal
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedActivity(null);
+  };
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -121,8 +143,7 @@ const AdminDashboard = () => {
           visitsThisWeek: visitStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0,
         });
 
-        // Recent activity placeholder (Phase 2: audit log)
-        setRecentActivity([]);
+        // Note: Recent activity now handled by LiveActivityFeed component
 
       } catch {
         setError('Failed to load dashboard data. Please try again.');
@@ -155,7 +176,11 @@ const AdminDashboard = () => {
             </div>
           )}
 
-          <Dashboard stats={stats} recentActivity={recentActivity} />
+          <Dashboard 
+            stats={stats} 
+            onViewAllActivity={handleViewAllActivity}
+            onActivityClick={handleActivityClick}
+          />
 
           <div className="quick-actions">
             <Link to="/admin/doctors" className="quick-action-btn">
@@ -170,6 +195,13 @@ const AdminDashboard = () => {
           </div>
         </main>
       </div>
+
+      {/* Activity Detail Modal */}
+      <ActivityDetailModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        activity={selectedActivity}
+      />
     </div>
   );
 };
