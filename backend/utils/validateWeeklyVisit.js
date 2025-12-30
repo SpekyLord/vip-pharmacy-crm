@@ -70,13 +70,38 @@ const getWeekLabel = (date) => {
 };
 
 /**
- * Get month-year string (2024-12)
+ * Get month-year string (2024-12) - Calendar month
  * @param {Date} date
  * @returns {string} Month-year string
  */
 const getMonthYear = (date) => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   return `${date.getFullYear()}-${month}`;
+};
+
+/**
+ * Get EFFECTIVE month-year, applying 5th week → next month logic
+ * Matches Visit.js pre-save hook behavior exactly
+ * @param {Date} date
+ * @returns {string} Effective month-year string (may differ from calendar month)
+ */
+const getEffectiveMonthYear = (date) => {
+  const weekOfMonth = getWeekOfMonth(date);
+
+  let effectiveYear = date.getFullYear();
+  let effectiveMonth = date.getMonth(); // 0-indexed
+
+  // 5th+ week dates count towards next month (matches Visit.js logic)
+  if (weekOfMonth > 4) {
+    effectiveMonth++;
+    if (effectiveMonth > 11) {
+      effectiveMonth = 0;
+      effectiveYear++;
+    }
+  }
+
+  const monthStr = String(effectiveMonth + 1).padStart(2, '0');
+  return `${effectiveYear}-${monthStr}`;
 };
 
 /**
@@ -248,7 +273,7 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
   }
 
   const monthlyLimit = doctor.visitFrequency || 4;
-  const monthYear = getMonthYear(visitDate);
+  const monthYear = getEffectiveMonthYear(visitDate); // Use effective month (5th week → next month)
   const yearWeekKey = getYearWeekKey(visitDate);
 
   // Check weekly limit (one per week)
@@ -423,7 +448,7 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
   }
 
   const userId = user._id || user;
-  const monthYear = getMonthYear(visitDate);
+  const monthYear = getEffectiveMonthYear(visitDate); // Use effective month (5th week → next month)
   const yearWeekKey = getYearWeekKey(visitDate);
 
   // OPTIMIZATION: Load all doctors in one query
@@ -559,6 +584,7 @@ module.exports = {
   getDayOfWeek,
   getWeekLabel,
   getMonthYear,
+  getEffectiveMonthYear,
   getYearWeekKey,
   getWeekDateRange,
   isWorkDay,
