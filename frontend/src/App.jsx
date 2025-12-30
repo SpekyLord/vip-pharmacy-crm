@@ -21,6 +21,7 @@ import RegionsPage from './pages/admin/RegionsPage';
 import ReportsPage from './pages/admin/ReportsPage';
 import StatisticsPage from './pages/admin/StatisticsPage';
 import ActivityMonitor from './pages/admin/ActivityMonitor';
+import PendingApprovalsPage from './pages/admin/PendingApprovalsPage';
 import MedRepDashboard from './pages/medrep/MedRepDashboard';
 
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -122,6 +123,14 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['admin']}>
               <ActivityMonitor />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/approvals"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <PendingApprovalsPage />
             </ProtectedRoute>
           }
         />

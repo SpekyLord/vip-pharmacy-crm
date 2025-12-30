@@ -21,6 +21,7 @@ const Sidebar = () => {
           { path: '/admin/doctors', label: 'Doctors', icon: '👨‍⚕️' },
           { path: '/admin/employees', label: 'Employees', icon: '👥' },
           { path: '/admin/regions', label: 'Regions', icon: '🗺️' },
+          { path: '/admin/approvals', label: 'Approvals', icon: '✅' },
           { path: '/admin/statistics', label: 'Statistics', icon: '📉' },
           { path: '/admin/reports', label: 'Reports', icon: '📈' },
         ];
