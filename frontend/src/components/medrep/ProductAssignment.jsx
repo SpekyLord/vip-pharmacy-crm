@@ -281,7 +281,7 @@ const ProductAssignment = ({
         <div className="filter-controls">
           <input
             type="text"
-            placeholder="Search product or doctor..."
+            placeholder="Search product or VIP Client..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
@@ -312,7 +312,7 @@ const ProductAssignment = ({
 
               <div className="card-details">
                 <div className="detail-row">
-                  <span className="label">Doctor</span>
+                  <span className="label">VIP Client</span>
                   <span className="value">{assignment.doctor?.name || 'N/A'}</span>
                 </div>
                 <div className="detail-row">
@@ -370,7 +370,7 @@ const ProductAssignment = ({
           <p>
             {searchQuery || statusFilter !== 'all'
               ? 'Try adjusting your filters'
-              : 'Go to Doctor-Product Mapping to create assignments'}
+              : 'Go to VIP Client-Product Mapping to create assignments'}
           </p>
         </div>
       )}

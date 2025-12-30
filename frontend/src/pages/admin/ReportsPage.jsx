@@ -292,14 +292,14 @@ const ReportsPage = () => {
         <Sidebar />
         <main className="main-content">
           <div className="page-header">
-            <h1>Employee Visit Report</h1>
+            <h1>BDM Visit Report</h1>
           </div>
 
           {error && <div className="error-banner">{error}</div>}
 
           <div className="report-controls">
             <div className="control-group">
-              <label htmlFor="employee-select">Employee</label>
+              <label htmlFor="employee-select">BDM</label>
               <select
                 id="employee-select"
                 value={selectedEmployee}
@@ -307,7 +307,7 @@ const ReportsPage = () => {
                 disabled={loadingEmployees}
               >
                 <option value="">
-                  {loadingEmployees ? 'Loading...' : 'Select Employee'}
+                  {loadingEmployees ? 'Loading...' : 'Select BDM'}
                 </option>
                 {employees.map((emp) => (
                   <option key={emp._id} value={emp._id}>
@@ -362,7 +362,7 @@ const ReportsPage = () => {
           ) : (
             <div className="report-placeholder">
               <h3>No Report Generated</h3>
-              <p>Select an employee and month, then click &quot;Generate Report&quot; to view the Call Plan Template.</p>
+              <p>Select a BDM and month, then click &quot;Generate Report&quot; to view the Call Plan Template.</p>
             </div>
           )}
         </main>

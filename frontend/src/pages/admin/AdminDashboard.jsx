@@ -184,10 +184,10 @@ const AdminDashboard = () => {
 
           <div className="quick-actions">
             <Link to="/admin/doctors" className="quick-action-btn">
-              Manage Doctors
+              Manage VIP Clients
             </Link>
             <Link to="/admin/employees" className="quick-action-btn secondary">
-              Manage Employees
+              Manage BDMs
             </Link>
             <Link to="/admin/reports" className="quick-action-btn secondary">
               View Reports

@@ -327,7 +327,7 @@ const ACTIVITY_CONFIG = {
     textColor: 'text-purple-600',
     badgeColor: 'bg-purple-500',
     borderColor: 'border-purple-400',
-    label: 'Doctor',
+    label: 'VIP Client',
   },
   PRODUCT_ASSIGN: {
     icon: Box,
@@ -360,7 +360,7 @@ const ACTIVITY_TYPES = [
   { value: 'all', label: 'All Activities' },
   { value: 'VISIT_LOG', label: 'Visits' },
   { value: 'AUTH', label: 'Authentication' },
-  { value: 'DOCTOR_UPDATE', label: 'Doctor Updates' },
+  { value: 'DOCTOR_UPDATE', label: 'VIP Client Updates' },
   { value: 'PRODUCT_ASSIGN', label: 'Product Assignments' },
 ];
 

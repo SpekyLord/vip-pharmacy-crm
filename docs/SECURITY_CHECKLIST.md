@@ -1,5 +1,5 @@
 # Security Checklist
-## VIP Pharmacy CRM
+## VIP CRM
 
 **Version:** 2.1
 **Last Updated:** December 2024
@@ -8,37 +8,37 @@ Use this checklist before deploying to production and during regular security au
 
 ---
 
-## ✅ Phase 1 Security Implementation Summary
+## Phase 1 Security Implementation Summary
 
 The following security features have been **implemented** as of December 2024:
 
 ### Backend Security
 | Feature | Status | Details |
 |---------|--------|---------|
-| Rate Limiting | ✅ Implemented | 100 req/15min general, 20 req/15min auth (express-rate-limit) |
-| Request Timeout | ✅ Implemented | 30 second timeout middleware |
-| HSTS Headers | ✅ Implemented | 1 year max-age via helmet |
-| Security Headers | ✅ Implemented | helmet with CSP in production |
-| Input Validation | ✅ Implemented | express-validator on all endpoints |
-| Password Hashing | ✅ Implemented | bcrypt with 12 salt rounds |
-| JWT Auth | ✅ Implemented | 15min access, 7d refresh tokens |
-| CORS | ✅ Implemented | Whitelist-based, credentials enabled |
+| Rate Limiting | Implemented | 100 req/15min general, 20 req/15min auth (express-rate-limit) |
+| Request Timeout | Implemented | 30 second timeout middleware |
+| HSTS Headers | Implemented | 1 year max-age via helmet |
+| Security Headers | Implemented | helmet with CSP in production |
+| Input Validation | Implemented | express-validator on all endpoints |
+| Password Hashing | Implemented | bcrypt with 12 salt rounds |
+| JWT Auth | Implemented | 15min access, 7d refresh tokens |
+| CORS | Implemented | Whitelist-based, credentials enabled |
 
 ### Frontend Security
 | Feature | Status | Details |
 |---------|--------|---------|
-| ErrorBoundary | ✅ Implemented | Catches errors, prevents info leakage |
-| Auth Token Handling | ✅ Implemented | CustomEvent for cross-context logout |
-| Request Cancellation | ✅ Implemented | AbortController on unmount |
-| GPS Timeout | ✅ Implemented | 5-minute timeout prevents hanging |
+| ErrorBoundary | Implemented | Catches errors, prevents info leakage |
+| Auth Token Handling | Implemented | CustomEvent for cross-context logout |
+| Request Cancellation | Implemented | AbortController on unmount |
+| GPS Timeout | Implemented | 5-minute timeout prevents hanging |
 
 ### Database Security
 | Feature | Status | Details |
 |---------|--------|---------|
-| Compound Indexes | ✅ Implemented | Performance + constraint enforcement |
-| TTL Index | ✅ Implemented | Password reset tokens auto-expire |
-| Cascade Delete | ✅ Implemented | Doctor/Product cleanup hooks |
-| Array Bounds | ✅ Implemented | Max 100 products bulk, 1-10 photos/visit |
+| Compound Indexes | Implemented | Performance + constraint enforcement |
+| TTL Index | Implemented | Password reset tokens auto-expire |
+| Cascade Delete | Implemented | VIPClient/Product cleanup hooks |
+| Array Bounds | Implemented | Max 100 products bulk, 1-10 photos/visit |
 
 ### Critical Fixes Applied
 | Fix | Details |
@@ -116,7 +116,7 @@ The following security features have been **implemented** as of December 2024:
 ## 3. Authorization Checklist
 
 ### 3.1 Role-Based Access Control
-- [ ] Roles defined (admin, medrep, employee)
+- [ ] Roles defined (admin, medrep, bdm)
 - [ ] Permissions documented per role
 - [ ] Role check middleware implemented
 - [ ] Default role is least privileged

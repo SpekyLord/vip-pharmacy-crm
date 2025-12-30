@@ -1,5 +1,5 @@
 # Technical Specification
-## VIP Pharmacy CRM
+## VIP CRM
 
 **Version:** 2.0
 **Last Updated:** December 2024
@@ -151,7 +151,7 @@
 
 ```
 ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
-│      USER       │       │     REGION      │       │     DOCTOR      │
+│      USER       │       │     REGION      │       │   VIP_CLIENT    │
 ├─────────────────┤       ├─────────────────┤       ├─────────────────┤
 │ _id             │       │ _id             │       │ _id             │
 │ name            │       │ name            │       │ name            │
@@ -174,8 +174,8 @@
 │     VISIT       │       │    PRODUCT      │   │  │ PRODUCT_ASSIGN  │
 ├─────────────────┤       ├─────────────────┤   │  ├─────────────────┤
 │ _id             │       │ _id             │   │  │ _id             │
-│ doctor (ref)────┼───────│ name            │◀──┼──│ product (ref)   │
-│ user (ref)──────┼──┐    │ category        │   │  │ doctor (ref)────┼───┐
+│ vipClient (ref) ┼───────│ name            │◀──┼──│ product (ref)   │
+│ user (ref)──────┼──┐    │ category        │   │  │ vipClient (ref) ┼───┐
 │ visitDate       │  │    │ briefDescription│   │  │ assignedBy (ref)│   │
 │ visitType       │  │    │ description     │   │  │ priority        │   │
 │ weekNumber      │  │    │ keyBenefits[]   │   │  │ status          │   │
@@ -203,7 +203,7 @@
   name: { type: String, required: true, trim: true, maxlength: 100 },
   email: { type: String, required: true, unique: true, lowercase: true },
   password: { type: String, required: true, minlength: 8, select: false },
-  role: { type: String, enum: ['admin', 'medrep', 'employee'], default: 'employee' },
+  role: { type: String, enum: ['admin', 'medrep', 'bdm'], default: 'bdm' },
   phone: { type: String },
   avatar: { type: String }, // S3 URL
   assignedRegions: [{ type: ObjectId, ref: 'Region' }],
@@ -220,7 +220,7 @@
 // Virtual: canAccessRegion(regionId) method
 ```
 
-#### Doctor Schema
+#### VIPClient Schema
 ```javascript
 {
   _id: ObjectId,
@@ -258,7 +258,7 @@
 ```javascript
 {
   _id: ObjectId,
-  doctor: { type: ObjectId, ref: 'Doctor', required: true },
+  vipClient: { type: ObjectId, ref: 'VIPClient', required: true },
   user: { type: ObjectId, ref: 'User', required: true },
   visitDate: { type: Date, required: true },
   visitType: { type: String, enum: ['regular', 'follow-up', 'emergency'], default: 'regular' },
@@ -293,7 +293,7 @@
     quantity: { type: Number, default: 0 }
   }],
   purpose: { type: String, maxlength: 500 },
-  doctorFeedback: { type: String, maxlength: 1000 },
+  vipClientFeedback: { type: String, maxlength: 1000 },
   notes: { type: String, maxlength: 1000 },
   duration: { type: Number },                          // in minutes
   nextVisitDate: { type: Date },
@@ -306,9 +306,9 @@
 }
 
 // CRITICAL INDEX: Prevents duplicate visits in same week
-// Compound unique index: { doctor: 1, user: 1, yearWeekKey: 1 }
+// Compound unique index: { vipClient: 1, user: 1, yearWeekKey: 1 }
 
-// Other indexes: doctor, user, visitDate, monthYear, status
+// Other indexes: vipClient, user, visitDate, monthYear, status
 ```
 
 #### Product Schema
@@ -353,7 +353,7 @@
 {
   _id: ObjectId,
   product: { type: ObjectId, ref: 'Product', required: true },
-  doctor: { type: ObjectId, ref: 'Doctor', required: true },
+  vipClient: { type: ObjectId, ref: 'VIPClient', required: true },
   assignedBy: { type: ObjectId, ref: 'User', required: true },
   priority: { type: Number, enum: [1, 2, 3], default: 2 },  // 1=High, 2=Medium, 3=Low
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
@@ -361,7 +361,7 @@
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 }
-// Indexes: (product + doctor: compound unique), assignedBy, status
+// Indexes: (product + vipClient: compound unique), assignedBy, status
 ```
 
 ---
@@ -388,19 +388,19 @@
 | POST | `/api/users` | Create user | Admin |
 | PUT | `/api/users/:id` | Update user | Admin/Self |
 | DELETE | `/api/users/:id` | Deactivate user | Admin |
-| GET | `/api/users/employees` | Get all employees | Admin/MedRep |
+| GET | `/api/users/bdms` | Get all BDMs | Admin/MedRep |
 | PUT | `/api/users/:id/regions` | Update assigned regions | Admin |
 
-### 4.3 Doctors
+### 4.3 VIP Clients
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
-| GET | `/api/doctors` | Get doctors (region-filtered) | User |
-| GET | `/api/doctors/:id` | Get doctor by ID | User |
-| POST | `/api/doctors` | Create doctor | Admin/MedRep |
-| PUT | `/api/doctors/:id` | Update doctor | Admin/MedRep |
-| DELETE | `/api/doctors/:id` | Deactivate doctor | Admin |
-| GET | `/api/doctors/region/:regionId` | Get doctors by region | User |
-| GET | `/api/doctors/:id/visits` | Get doctor's visit history | User |
+| GET | `/api/doctors` | Get VIP Clients (region-filtered) | User |
+| GET | `/api/doctors/:id` | Get VIP Client by ID | User |
+| POST | `/api/doctors` | Create VIP Client | Admin/MedRep |
+| PUT | `/api/doctors/:id` | Update VIP Client | Admin/MedRep |
+| DELETE | `/api/doctors/:id` | Deactivate VIP Client | Admin |
+| GET | `/api/doctors/region/:regionId` | Get VIP Clients by region | User |
+| GET | `/api/doctors/:id/visits` | Get VIP Client's visit history | User |
 | GET | `/api/doctors/:id/products` | Get assigned products | User |
 
 ### 4.4 Visits
@@ -408,15 +408,15 @@
 |--------|----------|-------------|------|
 | GET | `/api/visits` | Get visits (role-filtered) | User |
 | GET | `/api/visits/:id` | Get visit by ID | User |
-| POST | `/api/visits` | Create visit (with photos) | Employee |
+| POST | `/api/visits` | Create visit (with photos) | BDM |
 | PUT | `/api/visits/:id` | Update visit notes | User |
 | PUT | `/api/visits/:id/cancel` | Cancel visit | User |
 | GET | `/api/visits/user/:userId` | Get visits by user | User/Admin |
-| GET | `/api/visits/today` | Get today's visits | Employee |
+| GET | `/api/visits/today` | Get today's visits | BDM |
 | GET | `/api/visits/stats` | Get visit statistics | User |
-| GET | `/api/visits/can-visit/:doctorId` | Check if can visit doctor | Employee |
+| GET | `/api/visits/can-visit/:vipClientId` | Check if can visit VIP Client | BDM |
 | GET | `/api/visits/weekly-compliance/:userId` | Get weekly compliance report | User |
-| GET | `/api/visits/compliance-alerts` | Get behind-schedule employees | Admin |
+| GET | `/api/visits/compliance-alerts` | Get behind-schedule BDMs | Admin |
 
 ### 4.5 Products
 | Method | Endpoint | Description | Auth |
@@ -436,7 +436,7 @@
 | POST | `/api/assignments` | Create assignment | MedRep |
 | PUT | `/api/assignments/:id` | Update assignment | MedRep |
 | DELETE | `/api/assignments/:id` | Remove assignment | MedRep |
-| GET | `/api/assignments/doctor/:doctorId` | Get doctor's assignments | User |
+| GET | `/api/assignments/doctor/:vipClientId` | Get VIP Client's assignments | User |
 | GET | `/api/assignments/product/:productId` | Get product's assignments | MedRep |
 
 ### 4.7 Regions
@@ -461,8 +461,8 @@
 - Rate limiting on login attempts (5 attempts per 15 minutes)
 
 ### 5.2 Authorization
-- Role-based access control (RBAC): admin, medrep, employee
-- Region-based access control for employees
+- Role-based access control (RBAC): admin, medrep, bdm
+- Region-based access control for BDMs
 - Resource-level permissions checking
 - API endpoint protection with middleware
 
@@ -513,7 +513,7 @@
 
 ### 6.4 S3 Bucket Structure
 ```
-vip-pharmacy-crm-bucket/
+vip-crm-bucket/
 ├── visits/
 │   └── {uuid}.jpg
 ├── products/
@@ -596,16 +596,16 @@ vip-pharmacy-crm-bucket/
 ## 8. Weekly Visit Enforcement
 
 ### 8.1 Business Rules
-- Maximum ONE visit per doctor per user per week
+- Maximum ONE visit per VIP Client per user per week
 - Week = Monday to Friday (work days only)
-- Monthly limit based on doctor's `visitFrequency` (2 or 4)
+- Monthly limit based on VIP Client's `visitFrequency` (2 or 4)
 - Hard enforcement - excess visits are BLOCKED
 
 ### 8.2 Implementation
 ```javascript
 // Compound unique index prevents duplicate visits
 visitSchema.index(
-  { doctor: 1, user: 1, yearWeekKey: 1 },
+  { vipClient: 1, user: 1, yearWeekKey: 1 },
   { unique: true, partialFilterExpression: { status: 'completed' } }
 );
 
@@ -622,7 +622,7 @@ function getYearWeekKey(date) {
 1. User attempts to create visit
 2. Check if work day (Mon-Fri)
 3. Calculate yearWeekKey for visit date
-4. Check if visit exists for (doctor, user, yearWeekKey)
+4. Check if visit exists for (vipClient, user, yearWeekKey)
 5. Check monthly count against visitFrequency
 6. If all pass → Create visit
 7. If any fail → Return error with details
@@ -651,7 +651,7 @@ NODE_ENV=production
 PORT=5000
 
 # Database
-MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/vip-pharmacy
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/vip-crm
 
 # JWT
 JWT_SECRET=your-super-secret-key-min-32-chars
@@ -663,7 +663,7 @@ JWT_REFRESH_EXPIRE=7d
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
 AWS_REGION=ap-southeast-1
-S3_BUCKET_NAME=vip-pharmacy-crm
+S3_BUCKET_NAME=vip-crm
 
 # Frontend URL (for CORS)
 CLIENT_URL=https://your-domain.com
@@ -683,9 +683,9 @@ CORS_ORIGINS=https://your-domain.com,https://www.your-domain.com
 | Rate Limiting | `express-rate-limit` - 100 req/15min general, 20 req/15min auth |
 | Request Timeout | 30 second timeout middleware |
 | Security Headers | HSTS via helmet (1 year max-age) |
-| Database Indexes | Compound indexes on User, Doctor, Region, Product, Visit |
+| Database Indexes | Compound indexes on User, VIPClient, Region, Product, Visit |
 | TTL Index | Password reset tokens auto-expire |
-| Cascade Delete | Doctor and Product models have cascade delete hooks |
+| Cascade Delete | VIPClient and Product models have cascade delete hooks |
 
 ### 11.2 Frontend Optimizations
 
@@ -695,15 +695,15 @@ CORS_ORIGINS=https://your-domain.com,https://www.your-domain.com
 | `useDebounce.js` | Debounces search inputs (300ms default) |
 | `Pagination.jsx` | Shared pagination component with React.memo |
 | AbortController | Request cancellation on component unmount (MyVisits) |
-| React.memo | Prevents unnecessary re-renders (DoctorList) |
+| React.memo | Prevents unnecessary re-renders (VIPClientList) |
 | useMemo | Memoized filtered lists |
-| useCallback | Stable function references (DoctorsPage) |
+| useCallback | Stable function references (VIPClientsPage) |
 
 ### 11.3 Security Fixes
 
 | Fix | Details |
 |-----|---------|
-| CORS Middleware Order | Moved before rate limiter to include headers on 429 responses |
+| CORS Middleware Order | Moved before rate limiter (429 responses now have CORS headers) |
 | Array Bounds Validation | Max 100 products in bulk assign, 1-10 photos per visit |
 | Auth Event Handling | CustomEvent dispatch for cross-context logout |
 | GPS Timeout | 5-minute watchPosition timeout in CameraCapture |

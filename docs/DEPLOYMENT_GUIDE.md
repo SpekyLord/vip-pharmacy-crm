@@ -1,10 +1,10 @@
 # Deployment Guide
-## VIP Pharmacy CRM - AWS Lightsail Edition
+## VIP CRM - AWS Lightsail Edition
 
 **Version:** 2.0
 **Last Updated:** December 2024
 
-This guide covers deploying the VIP Pharmacy CRM to AWS Lightsail with S3 for image storage.
+This guide covers deploying the VIP CRM to AWS Lightsail with S3 for image storage.
 
 ---
 
@@ -65,7 +65,7 @@ Choose a region closest to your users. Recommended:
 
 1. Go to **IAM** in AWS Console
 2. Click **Users** → **Create user**
-3. User name: `vip-pharmacy-app`
+3. User name: `vip-crm-app`
 4. Click **Next**
 5. Select **Attach policies directly**
 6. Search and attach: `AmazonS3FullAccess` (or create custom policy below)
@@ -95,8 +95,8 @@ Create a custom policy with minimal permissions:
                 "s3:ListBucket"
             ],
             "Resource": [
-                "arn:aws:s3:::vip-pharmacy-crm-bucket",
-                "arn:aws:s3:::vip-pharmacy-crm-bucket/*"
+                "arn:aws:s3:::vip-crm-bucket",
+                "arn:aws:s3:::vip-crm-bucket/*"
             ]
         }
     ]
@@ -111,7 +111,7 @@ Create a custom policy with minimal permissions:
 1. Go to **S3** in AWS Console
 2. Click **Create bucket**
 3. Configure:
-   - **Bucket name**: `vip-pharmacy-crm-bucket` (must be globally unique)
+   - **Bucket name**: `vip-crm-bucket` (must be globally unique)
    - **AWS Region**: Same as Lightsail (e.g., `ap-southeast-1`)
    - **Object Ownership**: ACLs disabled
    - **Block Public Access**: Keep ALL blocked (recommended)
@@ -164,14 +164,14 @@ Create folders for organization (optional, S3 creates them automatically):
    - **Platform**: Linux/Unix
    - **Blueprint**: OS Only → Ubuntu 22.04 LTS
    - **Instance plan**: $10/month (2GB RAM) for production
-   - **Instance name**: `vip-pharmacy-crm`
+   - **Instance name**: `vip-crm`
 4. Click **Create instance**
 
 ### 4.2 Create Static IP
 1. Go to **Networking** tab
 2. Click **Create static IP**
 3. Attach to your instance
-4. Name it: `vip-pharmacy-static-ip`
+4. Name it: `vip-crm-static-ip`
 5. **Save the IP address** for DNS configuration
 
 ### 4.3 Configure Firewall
@@ -205,19 +205,19 @@ ssh -i LightsailDefaultKey-ap-southeast-1.pem ubuntu@YOUR_STATIC_IP
 ### 5.1 Create Cluster
 1. Go to [MongoDB Atlas](https://www.mongodb.com/atlas)
 2. Sign up or log in
-3. Create new project: "VIP-Pharmacy-CRM"
+3. Create new project: "VIP-CRM"
 4. Click **Build a Database**
 5. Select **FREE** tier (M0 Sandbox)
 6. Choose provider: AWS
 7. Region: Same as Lightsail (e.g., Singapore)
-8. Cluster name: `vip-pharmacy-cluster`
+8. Cluster name: `vip-crm-cluster`
 9. Click **Create**
 
 ### 5.2 Create Database User
 1. Go to **Database Access** in sidebar
 2. Click **Add New Database User**
 3. Authentication: Password
-4. Username: `vip_pharmacy_admin`
+4. Username: `vip_crm_admin`
 5. Password: Click **Autogenerate Secure Password** → **Copy and SAVE it**
 6. Database User Privileges: **Read and write to any database**
 7. Click **Add User**
@@ -236,12 +236,12 @@ For development, you can temporarily add `0.0.0.0/0` (Allow from anywhere).
 2. Choose **Drivers** (Node.js)
 3. Copy connection string:
 ```
-mongodb+srv://vip_pharmacy_admin:<password>@vip-pharmacy-cluster.xxxxx.mongodb.net/?retryWrites=true&w=majority
+mongodb+srv://vip_crm_admin:<password>@vip-crm-cluster.xxxxx.mongodb.net/?retryWrites=true&w=majority
 ```
 4. Replace `<password>` with your saved password
 5. Add database name after `.net/`:
 ```
-mongodb+srv://...mongodb.net/vip-pharmacy-crm?retryWrites=true&w=majority
+mongodb+srv://...mongodb.net/vip-crm?retryWrites=true&w=majority
 ```
 
 ---
@@ -287,7 +287,7 @@ sudo apt install certbot python3-certbot-nginx -y
 
 ### 6.7 Create Application User (Optional but Recommended)
 ```bash
-sudo adduser --system --group --home /var/www/vip-pharmacy nodeapp
+sudo adduser --system --group --home /var/www/vip-crm nodeapp
 ```
 
 ---
@@ -300,29 +300,29 @@ sudo mkdir -p /var/www
 cd /var/www
 
 # Clone your repository
-sudo git clone https://github.com/YOUR_USERNAME/vip-pharmacy-crm.git
-cd vip-pharmacy-crm
+sudo git clone https://github.com/YOUR_USERNAME/vip-crm.git
+cd vip-crm
 
 # Set ownership
-sudo chown -R ubuntu:ubuntu /var/www/vip-pharmacy-crm
+sudo chown -R ubuntu:ubuntu /var/www/vip-crm
 ```
 
 ### 7.2 Install Backend Dependencies
 ```bash
-cd /var/www/vip-pharmacy-crm/backend
+cd /var/www/vip-crm/backend
 npm install --production
 ```
 
 ### 7.3 Build Frontend
 ```bash
-cd /var/www/vip-pharmacy-crm/frontend
+cd /var/www/vip-crm/frontend
 npm install
 npm run build
 ```
 
 ### 7.4 Create Environment File
 ```bash
-cd /var/www/vip-pharmacy-crm/backend
+cd /var/www/vip-crm/backend
 nano .env
 ```
 
@@ -330,7 +330,7 @@ Add your environment variables (see Section 10).
 
 ### 7.5 Test Application
 ```bash
-cd /var/www/vip-pharmacy-crm/backend
+cd /var/www/vip-crm/backend
 node server.js
 
 # Should see: "Server running on port 5000"
@@ -343,7 +343,7 @@ node server.js
 
 ### 8.1 Create Nginx Configuration
 ```bash
-sudo nano /etc/nginx/sites-available/vip-pharmacy-crm
+sudo nano /etc/nginx/sites-available/vip-crm
 ```
 
 Paste this configuration:
@@ -371,7 +371,7 @@ server {
     # ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
 
     # Root for frontend static files
-    root /var/www/vip-pharmacy-crm/frontend/dist;
+    root /var/www/vip-crm/frontend/dist;
     index index.html;
 
     # Gzip compression
@@ -425,7 +425,7 @@ server {
 ### 8.2 Enable Site
 ```bash
 # Enable site
-sudo ln -s /etc/nginx/sites-available/vip-pharmacy-crm /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/vip-crm /etc/nginx/sites-enabled/
 
 # Remove default site
 sudo rm -f /etc/nginx/sites-enabled/default
@@ -463,7 +463,7 @@ sudo systemctl status certbot.timer
 
 ### 9.1 Create PM2 Ecosystem File
 ```bash
-cd /var/www/vip-pharmacy-crm
+cd /var/www/vip-crm
 nano ecosystem.config.js
 ```
 
@@ -472,9 +472,9 @@ Content:
 module.exports = {
   apps: [
     {
-      name: 'vip-pharmacy-api',
+      name: 'vip-crm-api',
       script: './backend/server.js',
-      cwd: '/var/www/vip-pharmacy-crm',
+      cwd: '/var/www/vip-crm',
       instances: 2,
       exec_mode: 'cluster',
       env: {
@@ -495,12 +495,12 @@ module.exports = {
 
 ### 9.2 Create Logs Directory
 ```bash
-mkdir -p /var/www/vip-pharmacy-crm/logs
+mkdir -p /var/www/vip-crm/logs
 ```
 
 ### 9.3 Start Application
 ```bash
-cd /var/www/vip-pharmacy-crm
+cd /var/www/vip-crm
 
 # Start with PM2
 pm2 start ecosystem.config.js
@@ -529,11 +529,11 @@ pm2 monit            # Monitor resources
 ## 10. Environment Variables
 
 ### 10.1 Production .env File
-Create `/var/www/vip-pharmacy-crm/backend/.env`:
+Create `/var/www/vip-crm/backend/.env`:
 
 ```bash
 # ===========================================
-# PRODUCTION ENVIRONMENT - VIP Pharmacy CRM
+# PRODUCTION ENVIRONMENT - VIP CRM
 # ===========================================
 
 # Server Configuration
@@ -541,7 +541,7 @@ NODE_ENV=production
 PORT=5000
 
 # MongoDB Atlas
-MONGODB_URI=mongodb+srv://vip_pharmacy_admin:YOUR_PASSWORD@vip-pharmacy-cluster.xxxxx.mongodb.net/vip-pharmacy-crm?retryWrites=true&w=majority
+MONGODB_URI=mongodb+srv://vip_crm_admin:YOUR_PASSWORD@vip-crm-cluster.xxxxx.mongodb.net/vip-crm?retryWrites=true&w=majority
 
 # JWT Configuration (generate new secrets!)
 JWT_SECRET=your_production_jwt_secret_minimum_32_characters_long
@@ -553,7 +553,7 @@ JWT_REFRESH_EXPIRE=7d
 AWS_ACCESS_KEY_ID=AKIA...your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_access_key
 AWS_REGION=ap-southeast-1
-S3_BUCKET_NAME=vip-pharmacy-crm-bucket
+S3_BUCKET_NAME=vip-crm-bucket
 
 # Frontend URL (for CORS)
 FRONTEND_URL=https://yourdomain.com
@@ -571,7 +571,7 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 
 ### 10.3 Secure .env File
 ```bash
-chmod 600 /var/www/vip-pharmacy-crm/backend/.env
+chmod 600 /var/www/vip-crm/backend/.env
 ```
 
 ---
@@ -609,7 +609,7 @@ chmod 600 /var/www/vip-pharmacy-crm/backend/.env
 ### 12.1 Log Locations
 | Log | Location |
 |-----|----------|
-| Application | `/var/www/vip-pharmacy-crm/logs/` |
+| Application | `/var/www/vip-crm/logs/` |
 | PM2 | `pm2 logs` |
 | Nginx Access | `/var/log/nginx/access.log` |
 | Nginx Error | `/var/log/nginx/error.log` |
@@ -633,7 +633,7 @@ free -m
 
 ### 12.4 Update Application
 ```bash
-cd /var/www/vip-pharmacy-crm
+cd /var/www/vip-crm
 
 # Pull latest code
 git pull origin main
@@ -664,7 +664,7 @@ BACKUP_DIR="/home/ubuntu/backups"
 mkdir -p $BACKUP_DIR
 
 # Backup app (excluding node_modules)
-tar --exclude='node_modules' -czf $BACKUP_DIR/app_$DATE.tar.gz /var/www/vip-pharmacy-crm
+tar --exclude='node_modules' -czf $BACKUP_DIR/app_$DATE.tar.gz /var/www/vip-crm
 
 # Remove backups older than 7 days
 find $BACKUP_DIR -type f -mtime +7 -delete
@@ -693,7 +693,7 @@ chmod +x /home/ubuntu/backup.sh
 pm2 logs --lines 50
 
 # Test manually
-cd /var/www/vip-pharmacy-crm/backend
+cd /var/www/vip-crm/backend
 node server.js
 
 # Check environment variables
@@ -722,16 +722,16 @@ sudo systemctl restart nginx
 aws configure list
 
 # Test S3 access
-aws s3 ls s3://vip-pharmacy-crm-bucket/
+aws s3 ls s3://vip-crm-bucket/
 
 # Check bucket CORS
-aws s3api get-bucket-cors --bucket vip-pharmacy-crm-bucket
+aws s3api get-bucket-cors --bucket vip-crm-bucket
 ```
 
 ### 13.4 Database Connection Issues
 ```bash
 # Test MongoDB connection
-cd /var/www/vip-pharmacy-crm/backend
+cd /var/www/vip-crm/backend
 node -e "
 require('dotenv').config();
 const mongoose = require('mongoose');
@@ -756,11 +756,11 @@ sudo nginx -t
 ### 13.6 Permission Issues
 ```bash
 # Fix ownership
-sudo chown -R ubuntu:ubuntu /var/www/vip-pharmacy-crm
+sudo chown -R ubuntu:ubuntu /var/www/vip-crm
 
 # Fix permissions
-chmod -R 755 /var/www/vip-pharmacy-crm
-chmod 600 /var/www/vip-pharmacy-crm/backend/.env
+chmod -R 755 /var/www/vip-crm
+chmod 600 /var/www/vip-crm/backend/.env
 ```
 
 ---

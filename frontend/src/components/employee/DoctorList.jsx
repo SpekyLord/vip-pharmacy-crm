@@ -331,7 +331,7 @@ const DoctorList = memo(function DoctorList({
   };
 
   if (loading) {
-    return <LoadingSpinner text="Loading doctors..." />;
+    return <LoadingSpinner text="Loading VIP Clients..." />;
   }
 
   return (
@@ -416,7 +416,7 @@ const DoctorList = memo(function DoctorList({
                     }
                   }}
                   disabled={!canVisit}
-                  title={!canVisit ? statusDisplay?.reason : 'Log a visit for this doctor'}
+                  title={!canVisit ? statusDisplay?.reason : 'Log a visit for this VIP Client'}
                 >
                   {canVisit ? 'Log Visit' : 'Cannot Visit'}
                 </button>
@@ -429,8 +429,8 @@ const DoctorList = memo(function DoctorList({
       {filteredDoctors.length === 0 && (
         <p className="no-results">
           {doctors.length === 0
-            ? 'No doctors assigned to your region'
-            : 'No doctors match your search criteria'}
+            ? 'No VIP Clients assigned to your region'
+            : 'No VIP Clients match your search criteria'}
         </p>
       )}
     </div>

@@ -395,13 +395,13 @@ const VisitLogger = ({ doctor, onSuccess }) => {
         <h3>Feedback & Notes</h3>
 
         <div className="form-group">
-          <label htmlFor="doctorFeedback">Doctor Feedback</label>
+          <label htmlFor="doctorFeedback">VIP Client Feedback</label>
           <textarea
             id="doctorFeedback"
             name="doctorFeedback"
             value={formData.doctorFeedback}
             onChange={handleChange}
-            placeholder="Enter doctor's feedback or response"
+            placeholder="Enter VIP Client's feedback or response"
             rows={3}
           />
         </div>

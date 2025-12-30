@@ -259,7 +259,7 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
         <style>{reportStyles}</style>
         <div className="no-data">
           <h3>No Report Data</h3>
-          <p>Select an employee and month to generate the report.</p>
+          <p>Select a BDM and month to generate the report.</p>
         </div>
       </div>
     );
@@ -355,7 +355,7 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
             {sortedDoctors.length === 0 ? (
               <tr>
                 <td colSpan={30} style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
-                  No doctors found for this employee&apos;s assigned regions.
+                  No VIP Clients found for this BDM&apos;s assigned regions.
                 </td>
               </tr>
             ) : (

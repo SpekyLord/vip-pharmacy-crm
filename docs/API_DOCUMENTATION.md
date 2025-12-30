@@ -1,5 +1,5 @@
 # API Documentation
-## VIP Pharmacy CRM
+## VIP CRM
 
 **Base URL:** `https://your-domain.com/api`
 **Version:** 2.0
@@ -40,7 +40,7 @@ Content-Type: multipart/form-data
 |------|-------------|--------------|
 | `admin` | System administrator | Full access to all resources and regions |
 | `medrep` | Medical representative manager | Manages product assignments |
-| `employee` | Field sales representative | Limited to assigned regions |
+| `bdm` | Business Development Manager | Limited to assigned regions |
 
 ---
 
@@ -88,7 +88,7 @@ When weekly or monthly visit limits are exceeded:
 ```json
 {
   "success": false,
-  "message": "Weekly visit limit reached for this doctor",
+  "message": "Weekly visit limit reached for this VIP Client",
   "data": {
     "weeklyCount": 1,
     "monthlyCount": 2,
@@ -130,7 +130,7 @@ Create new user account (Admin only in production).
   "name": "John Doe",
   "email": "john@example.com",
   "password": "Password123",
-  "role": "employee",
+  "role": "bdm",
   "phone": "+1234567890",
   "assignedRegions": ["507f1f77bcf86cd799439012"]
 }
@@ -146,7 +146,7 @@ Create new user account (Admin only in production).
       "_id": "507f1f77bcf86cd799439011",
       "name": "John Doe",
       "email": "john@example.com",
-      "role": "employee"
+      "role": "bdm"
     },
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
     "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
@@ -180,7 +180,7 @@ Authenticate user and receive tokens.
       "_id": "507f1f77bcf86cd799439011",
       "name": "John Doe",
       "email": "user@example.com",
-      "role": "employee",
+      "role": "bdm",
       "assignedRegions": [
         {
           "_id": "507f1f77bcf86cd799439012",
@@ -300,7 +300,7 @@ Get current authenticated user's profile.
     "_id": "507f1f77bcf86cd799439011",
     "name": "John Doe",
     "email": "john@example.com",
-    "role": "employee",
+    "role": "bdm",
     "phone": "+1234567890",
     "avatar": "https://s3.amazonaws.com/.../avatar.jpg",
     "assignedRegions": [
@@ -352,14 +352,14 @@ Update current user's password.
 
 **POST** `/visits`
 
-Log a new doctor visit. Requires photo upload and GPS location.
+Log a new VIP Client visit. Requires photo upload and GPS location.
 
 **Headers:** `Content-Type: multipart/form-data`
 
 **Request:**
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| doctor | ObjectId | Yes | Doctor ID |
+| vipClient | ObjectId | Yes | VIP Client ID |
 | visitDate | Date | No | Visit date (default: now) |
 | visitType | String | No | regular, follow-up, emergency |
 | location.latitude | Number | Yes | GPS latitude |
@@ -368,7 +368,7 @@ Log a new doctor visit. Requires photo upload and GPS location.
 | photos | File[] | Yes | At least 1 photo required |
 | productsDiscussed | Array | No | Products discussed |
 | purpose | String | No | Visit purpose |
-| doctorFeedback | String | No | Doctor's feedback |
+| vipClientFeedback | String | No | VIP Client's feedback |
 | notes | String | No | Additional notes |
 | duration | Number | No | Duration in minutes |
 | nextVisitDate | Date | No | Scheduled next visit |
@@ -380,7 +380,7 @@ Log a new doctor visit. Requires photo upload and GPS location.
   "message": "Visit logged successfully",
   "data": {
     "_id": "507f1f77bcf86cd799439031",
-    "doctor": {
+    "vipClient": {
       "_id": "507f1f77bcf86cd799439020",
       "name": "Dr. Sarah Smith",
       "specialization": "Cardiology",
@@ -410,7 +410,7 @@ Log a new doctor visit. Requires photo upload and GPS location.
 ```json
 {
   "success": false,
-  "message": "You have already visited this doctor this week",
+  "message": "You have already visited this VIP Client this week",
   "data": {
     "weeklyCount": 1,
     "monthlyCount": 2,
@@ -425,7 +425,7 @@ Log a new doctor visit. Requires photo upload and GPS location.
 
 **GET** `/visits`
 
-Get visits with filtering. Employees see only their visits; admins see all.
+Get visits with filtering. BDMs see only their visits; admins see all.
 
 **Query Parameters:**
 | Parameter | Type | Description |
@@ -435,7 +435,7 @@ Get visits with filtering. Employees see only their visits; admins see all.
 | status | String | Filter by status (completed, cancelled) |
 | monthYear | String | Filter by month (YYYY-MM format) |
 | userId | ObjectId | Filter by user (admin only) |
-| doctorId | ObjectId | Filter by doctor |
+| vipClientId | ObjectId | Filter by VIP Client |
 
 **Response (200):**
 ```json
@@ -444,7 +444,7 @@ Get visits with filtering. Employees see only their visits; admins see all.
   "data": [
     {
       "_id": "507f1f77bcf86cd799439031",
-      "doctor": {
+      "vipClient": {
         "_id": "507f1f77bcf86cd799439020",
         "name": "Dr. Sarah Smith",
         "specialization": "Cardiology",
@@ -483,7 +483,7 @@ Get single visit details.
   "success": true,
   "data": {
     "_id": "507f1f77bcf86cd799439031",
-    "doctor": {
+    "vipClient": {
       "_id": "507f1f77bcf86cd799439020",
       "name": "Dr. Sarah Smith",
       "specialization": "Cardiology",
@@ -529,7 +529,7 @@ Get single visit details.
       }
     ],
     "purpose": "Quarterly review",
-    "doctorFeedback": "Interested in new formulation",
+    "vipClientFeedback": "Interested in new formulation",
     "notes": "Schedule follow-up",
     "duration": 30,
     "nextVisitDate": "2024-02-20T14:00:00Z",
@@ -549,7 +549,7 @@ Update visit details (limited fields).
 **Request:**
 ```json
 {
-  "doctorFeedback": "Updated feedback",
+  "vipClientFeedback": "Updated feedback",
   "notes": "Additional notes",
   "nextVisitDate": "2024-02-25T10:00:00Z"
 }
@@ -575,7 +575,7 @@ Cancel a visit.
 **Request:**
 ```json
 {
-  "reason": "Doctor unavailable"
+  "reason": "VIP Client unavailable"
 }
 ```
 
@@ -587,7 +587,7 @@ Cancel a visit.
   "data": {
     "_id": "507f1f77bcf86cd799439031",
     "status": "cancelled",
-    "cancelReason": "Doctor unavailable"
+    "cancelReason": "VIP Client unavailable"
   }
 }
 ```
@@ -628,11 +628,11 @@ Get current user's visits for today.
 
 ---
 
-### 5.8 Check Can Visit Doctor
+### 5.8 Check Can Visit VIP Client
 
-**GET** `/visits/can-visit/:doctorId`
+**GET** `/visits/can-visit/:vipClientId`
 
-Check if current user can visit a specific doctor (weekly/monthly limits).
+Check if current user can visit a specific VIP Client (weekly/monthly limits).
 
 **Response (200):**
 ```json
@@ -680,8 +680,8 @@ Get weekly visit compliance report for a user.
   "success": true,
   "data": {
     "monthYear": "2024-01",
-    "assignedDoctors": 20,
-    "doctorsVisited": 15,
+    "assignedVIPClients": 20,
+    "vipClientsVisited": 15,
     "totalVisitsRequired": 60,
     "totalVisitsCompleted": 45,
     "complianceRate": 75,
@@ -693,7 +693,7 @@ Get weekly visit compliance report for a user.
     ],
     "behindSchedule": [
       {
-        "doctor": { "_id": "...", "name": "Dr. Smith" },
+        "vipClient": { "_id": "...", "name": "Dr. Smith" },
         "requiredVisits": 4,
         "completedVisits": 2
       }
@@ -708,7 +708,7 @@ Get weekly visit compliance report for a user.
 
 **GET** `/visits/compliance-alerts`
 
-Get employees who are behind schedule (Admin only).
+Get BDMs who are behind schedule (Admin only).
 
 **Response (200):**
 ```json
@@ -716,12 +716,12 @@ Get employees who are behind schedule (Admin only).
   "success": true,
   "data": [
     {
-      "employee": {
+      "bdm": {
         "_id": "507f1f77bcf86cd799439011",
         "name": "John Doe",
         "email": "john@example.com"
       },
-      "assignedDoctors": 20,
+      "assignedVIPClients": 20,
       "expectedVisits": 45,
       "completedVisits": 30,
       "behindBy": 15,
@@ -753,14 +753,14 @@ Get visit statistics.
   "data": {
     "summary": {
       "totalVisits": 245,
-      "uniqueDoctorsCount": 85,
+      "uniqueVIPClientsCount": 85,
       "avgDuration": 25
     },
     "weeklyBreakdown": [
-      { "week": 1, "visitCount": 62, "doctorCount": 55 },
-      { "week": 2, "visitCount": 58, "doctorCount": 52 },
-      { "week": 3, "visitCount": 65, "doctorCount": 58 },
-      { "week": 4, "visitCount": 60, "doctorCount": 54 }
+      { "week": 1, "visitCount": 62, "vipClientCount": 55 },
+      { "week": 2, "visitCount": 58, "vipClientCount": 52 },
+      { "week": 3, "visitCount": 65, "vipClientCount": 58 },
+      { "week": 4, "visitCount": 60, "vipClientCount": 54 }
     ]
   }
 }
@@ -768,13 +768,13 @@ Get visit statistics.
 
 ---
 
-## 6. Doctor Endpoints
+## 6. VIP Client Endpoints
 
-### 6.1 Get All Doctors
+### 6.1 Get All VIP Clients
 
 **GET** `/doctors`
 
-Get doctors. Employees see only doctors in their assigned regions.
+Get VIP Clients. BDMs see only VIP Clients in their assigned regions.
 
 **Query Parameters:**
 | Parameter | Type | Description |
@@ -810,11 +810,11 @@ Get doctors. Employees see only doctors in their assigned regions.
 
 ---
 
-### 6.2 Get Doctor by ID
+### 6.2 Get VIP Client by ID
 
 **GET** `/doctors/:id`
 
-Get doctor details.
+Get VIP Client details.
 
 **Response (200):**
 ```json
@@ -853,11 +853,11 @@ Get doctor details.
 
 ---
 
-### 6.3 Create Doctor
+### 6.3 Create VIP Client
 
 **POST** `/doctors`
 
-Create new doctor (Admin/MedRep only).
+Create new VIP Client (Admin/MedRep only).
 
 **Request:**
 ```json
@@ -882,23 +882,23 @@ Create new doctor (Admin/MedRep only).
 }
 ```
 
-**Response (201):** Created doctor object
+**Response (201):** Created VIP Client object
 
 ---
 
-### 6.4 Update Doctor
+### 6.4 Update VIP Client
 
 **PUT** `/doctors/:id`
 
-Update doctor details (Admin/MedRep only).
+Update VIP Client details (Admin/MedRep only).
 
 ---
 
-### 6.5 Delete Doctor
+### 6.5 Delete VIP Client
 
 **DELETE** `/doctors/:id`
 
-Soft delete (deactivate) doctor (Admin only).
+Soft delete (deactivate) VIP Client (Admin only).
 
 ---
 
@@ -995,7 +995,7 @@ Soft delete (deactivate) product (Admin only).
 
 **GET** `/assignments`
 
-Get product-to-doctor assignments (MedRep/Admin).
+Get product-to-VIP Client assignments (MedRep/Admin).
 
 ---
 
@@ -1003,13 +1003,13 @@ Get product-to-doctor assignments (MedRep/Admin).
 
 **POST** `/assignments`
 
-Assign product to doctor (MedRep only).
+Assign product to VIP Client (MedRep only).
 
 **Request:**
 ```json
 {
   "product": "507f1f77bcf86cd799439040",
-  "doctor": "507f1f77bcf86cd799439020",
+  "vipClient": "507f1f77bcf86cd799439020",
   "priority": 1,
   "notes": "Focus on new formulation benefits"
 }
@@ -1025,7 +1025,7 @@ Assign product to doctor (MedRep only).
       "_id": "507f1f77bcf86cd799439040",
       "name": "CardioMax 100mg"
     },
-    "doctor": {
+    "vipClient": {
       "_id": "507f1f77bcf86cd799439020",
       "name": "Dr. Sarah Smith"
     },
@@ -1058,11 +1058,11 @@ Remove assignment (MedRep only).
 
 ---
 
-### 8.5 Get Doctor's Assignments
+### 8.5 Get VIP Client's Assignments
 
-**GET** `/assignments/doctor/:doctorId`
+**GET** `/assignments/doctor/:vipClientId`
 
-Get all product assignments for a doctor.
+Get all product assignments for a VIP Client.
 
 ---
 
@@ -1211,7 +1211,7 @@ All files are stored in AWS S3:
 ```bash
 curl -X POST https://your-domain.com/api/visits \
   -H "Authorization: Bearer <token>" \
-  -F "doctor=507f1f77bcf86cd799439020" \
+  -F "vipClient=507f1f77bcf86cd799439020" \
   -F "location.latitude=14.5995" \
   -F "location.longitude=120.9842" \
   -F "photos=@photo1.jpg" \
@@ -1227,7 +1227,7 @@ curl -X POST https://your-domain.com/api/visits \
 |-------|-------------|
 | `visit.created` | New visit logged |
 | `visit.cancelled` | Visit cancelled |
-| `compliance.alert` | Employee behind schedule |
+| `compliance.alert` | BDM behind schedule |
 | `user.created` | New user registered |
 
 ### 12.2 Webhook Payload

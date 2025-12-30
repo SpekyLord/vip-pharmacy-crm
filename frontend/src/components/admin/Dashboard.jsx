@@ -154,7 +154,7 @@ const Dashboard = ({ stats = {}, onViewAllActivity = null, onActivityClick = nul
           <div className="stat-icon">&#x1F468;&#x200D;&#x2695;&#xFE0F;</div>
           <div className="stat-info">
             <span className="stat-value">{totalDoctors}</span>
-            <span className="stat-label">Total Doctors</span>
+            <span className="stat-label">Total VIP Clients</span>
           </div>
         </div>
 
@@ -162,7 +162,7 @@ const Dashboard = ({ stats = {}, onViewAllActivity = null, onActivityClick = nul
           <div className="stat-icon">&#x1F465;</div>
           <div className="stat-info">
             <span className="stat-value">{totalEmployees}</span>
-            <span className="stat-label">Total Employees</span>
+            <span className="stat-label">Total BDMs</span>
           </div>
         </div>
 

@@ -1,5 +1,5 @@
 # Product Requirements Document (PRD)
-## VIP Pharmacy CRM
+## VIP CRM
 
 **Version:** 2.1
 **Last Updated:** December 2024
@@ -10,27 +10,27 @@
 ## 1. Project Overview
 
 ### 1.1 Executive Summary
-VIP Pharmacy CRM is a pharmaceutical field sales management system designed for medical representatives to track doctor visits, manage product assignments, and ensure compliance with visit schedules. The system enforces weekly and monthly visit quotas to ensure proper coverage of healthcare providers.
+VIP CRM is a pharmaceutical field sales management system designed for Business Development Managers (BDM) to track VIP Client visits, manage product assignments, and ensure compliance with visit schedules. The system enforces weekly and monthly visit quotas to ensure proper coverage of healthcare providers.
 
 ### 1.2 Problem Statement
 Pharmaceutical companies struggle with:
-- Enforcing visit compliance (ensuring reps visit doctors on schedule)
-- Tracking field employee visits with proof (photos, GPS)
-- Managing product-to-doctor assignments
+- Enforcing visit compliance (ensuring BDMs visit VIP Clients on schedule)
+- Tracking field BDM visits with proof (photos, GPS)
+- Managing product-to-VIP Client assignments
 - Monitoring weekly and monthly visit quotas
-- Maintaining accurate, region-based doctor databases
+- Maintaining accurate, region-based VIP Client databases
 
 ### 1.3 Solution
 A tablet-optimized web application that provides:
-- **Weekly visit enforcement** (one visit per doctor per week)
-- **Monthly quota tracking** (2x or 4x visits per doctor per month)
+- **Weekly visit enforcement** (one visit per VIP Client per week)
+- **Monthly quota tracking** (2x or 4x visits per VIP Client per month)
 - Real-time visit logging with GPS and photo verification
-- Region-based doctor access control
+- Region-based VIP Client access control
 - Compliance reporting and alerts
 - Role-based dashboards for different user types
 
 ### 1.4 Target Users
-- **Primary:** Field sales representatives (Employees)
+- **Primary:** Business Development Managers (BDM)
 - **Secondary:** Medical Representative Managers (MedReps)
 - **Tertiary:** System administrators (Admins)
 
@@ -43,38 +43,38 @@ A tablet-optimized web application that provides:
 
 **Permissions:**
 - Manage all users (create, edit, deactivate)
-- Manage all doctors across all regions
+- Manage all VIP Clients across all regions
 - Manage products and product categories
 - Configure regions and territories
 - Access all visits and reports
-- View compliance alerts (behind-schedule employees)
+- View compliance alerts (behind-schedule BDMs)
 - Configure system settings
 
 ### 2.2 MedRep (Medical Representative Manager)
-**Description:** Manages product-to-doctor assignments for their region.
+**Description:** Manages product-to-VIP Client assignments for their region.
 
 **Permissions:**
-- View doctors in their assigned regions
-- Assign products to doctors (priority-based)
+- View VIP Clients in their assigned regions
+- Assign products to VIP Clients (priority-based)
 - View product assignment reports
 - View visits for their region
-- Cannot create/edit doctors or users
+- Cannot create/edit VIP Clients or users
 
-### 2.3 Employee (Field Sales Representative)
-**Description:** Field representatives who visit doctors and log their activities.
+### 2.3 Business Development Manager (BDM)
+**Description:** Field representatives who visit VIP Clients and log their activities.
 
 **Permissions:**
-- View doctors ONLY in their assigned regions
+- View VIP Clients ONLY in their assigned regions
 - Log visits with GPS and photo proof
-- View recommended products for each doctor
+- View recommended products for each VIP Client
 - View personal visit history
 - Check weekly/monthly visit limits before visiting
 - View personal compliance dashboard
 
 **Important Constraints:**
-- Can only see doctors in their assigned region(s)
-- Limited to ONE visit per doctor per week
-- Limited by doctor's monthly quota (2x or 4x)
+- Can only see VIP Clients in their assigned region(s)
+- Limited to ONE visit per VIP Client per week
+- Limited by VIP Client's monthly quota (2x or 4x)
 
 ---
 
@@ -83,14 +83,14 @@ A tablet-optimized web application that provides:
 ### 3.1 Weekly Visit Enforcement
 | Rule | Description |
 |------|-------------|
-| One visit per week | Maximum ONE visit per doctor per user per calendar week |
+| One visit per week | Maximum ONE visit per VIP Client per user per calendar week |
 | Work days only | Visits can only be logged Monday through Friday |
 | Week definition | Calendar weeks (Monday = Day 1, Friday = Day 5) |
 | Enforcement | **Hard limit** - system blocks excess visits |
 
 ### 3.2 Monthly Visit Quota
-| Doctor Type | Monthly Limit | Weekly Pattern |
-|-------------|---------------|----------------|
+| VIP Client Type | Monthly Limit | Weekly Pattern |
+|-----------------|---------------|----------------|
 | `visitFrequency: 4` | 4 visits/month | ~1 visit per week |
 | `visitFrequency: 2` | 2 visits/month | ~1 visit per 2 weeks |
 
@@ -105,7 +105,7 @@ Every visit MUST include:
 |------|---------------|
 | Admin | All regions |
 | MedRep | Assigned regions only |
-| Employee | Assigned regions only |
+| BDM | Assigned regions only |
 
 ---
 
@@ -114,17 +114,17 @@ Every visit MUST include:
 ### 4.1 Authentication & Authorization
 - Secure login with email/password
 - JWT-based authentication (15min access, 7d refresh)
-- Role-based access control (admin, medrep, employee)
+- Role-based access control (admin, medrep, bdm)
 - Password reset functionality
 
 ### 4.2 User Management (Admin Only)
 - User CRUD operations
-- Role assignment (admin, medrep, employee)
+- Role assignment (admin, medrep, bdm)
 - Region assignment (multiple regions per user)
 - Account activation/deactivation
 
-### 4.3 Doctor Management
-- Doctor database with detailed profiles
+### 4.3 VIP Client Management
+- VIP Client database with detailed profiles
 - **Visit frequency setting** (2 or 4 per month) - NOT A/B/C/D categories
 - Specialization and hospital tracking
 - Region assignment (required)
@@ -133,22 +133,22 @@ Every visit MUST include:
 
 ### 4.4 Visit Logging
 - Create visit records with required fields:
-  - Doctor selection
+  - VIP Client selection
   - GPS location (required)
   - Photo(s) (required, minimum 1)
   - Visit date (work days only)
   - Products discussed (optional)
-  - Doctor feedback (optional)
+  - VIP Client feedback (optional)
   - Notes (optional)
 - **Automatic weekly tracking** (week number, day of week, yearWeekKey)
 - **Automatic monthly tracking** (monthYear)
 - Visit status (completed, cancelled)
 
 ### 4.5 Visit Compliance
-- Check if user can visit doctor (`/api/visits/can-visit/:doctorId`)
+- Check if user can visit VIP Client (`/api/visits/can-visit/:vipClientId`)
 - Weekly compliance report per user
 - Monthly compliance report
-- Compliance alerts for behind-schedule employees
+- Compliance alerts for behind-schedule BDMs
 - Visit statistics and breakdowns
 
 ### 4.6 Product Management (Admin Only)
@@ -162,7 +162,7 @@ Every visit MUST include:
   - Image (S3 storage)
 
 ### 4.7 Product Assignments (MedRep Only)
-- Assign products to doctors
+- Assign products to VIP Clients
 - Priority levels (1=High, 2=Medium, 3=Low)
 - Assignment status (active/inactive)
 - Notes per assignment
@@ -176,33 +176,33 @@ Every visit MUST include:
 ### 4.9 Reporting & Analytics
 - Visit completion statistics
 - Weekly/monthly breakdowns
-- Employee compliance rates
+- BDM compliance rates
 - Behind-schedule alerts
 
 ---
 
 ## 5. User Stories
 
-### 5.1 Employee User Stories
+### 5.1 BDM User Stories
 
 | ID | User Story | Priority | Acceptance Criteria |
 |----|------------|----------|---------------------|
-| E1 | As an employee, I want to see only doctors in my region | High | Doctor list filtered by assigned regions |
-| E2 | As an employee, I want to check if I can visit a doctor before going | High | `/can-visit` endpoint returns limit status |
-| E3 | As an employee, I want to log a visit with GPS and photo proof | High | Visit created only with valid GPS and photo |
-| E4 | As an employee, I want to see my weekly compliance status | High | Dashboard shows week-by-week progress |
-| E5 | As an employee, I want to be blocked from duplicate weekly visits | High | System rejects second visit to same doctor in week |
-| E6 | As an employee, I want to see products assigned to each doctor | Medium | Product list shown per doctor |
-| E7 | As an employee, I want to see my visit history | Medium | Filterable list of past visits |
+| E1 | As a BDM, I want to see only VIP Clients in my region | High | VIP Client list filtered by assigned regions |
+| E2 | As a BDM, I want to check if I can visit a VIP Client before going | High | `/can-visit` endpoint returns limit status |
+| E3 | As a BDM, I want to log a visit with GPS and photo proof | High | Visit created only with valid GPS and photo |
+| E4 | As a BDM, I want to see my weekly compliance status | High | Dashboard shows week-by-week progress |
+| E5 | As a BDM, I want to be blocked from duplicate weekly visits | High | System rejects second visit to same VIP Client in week |
+| E6 | As a BDM, I want to see products assigned to each VIP Client | Medium | Product list shown per VIP Client |
+| E7 | As a BDM, I want to see my visit history | Medium | Filterable list of past visits |
 
 ### 5.2 Admin User Stories
 
 | ID | User Story | Priority | Acceptance Criteria |
 |----|------------|----------|---------------------|
 | A1 | As an admin, I want to see all visits across all regions | High | Unfiltered visit list with all data |
-| A2 | As an admin, I want to see employees who are behind schedule | High | Compliance alerts list with details |
+| A2 | As an admin, I want to see BDMs who are behind schedule | High | Compliance alerts list with details |
 | A3 | As an admin, I want to manage users and their regions | High | Full CRUD on users with region assignment |
-| A4 | As an admin, I want to manage the doctor database | High | Full CRUD on doctors |
+| A4 | As an admin, I want to manage the VIP Client database | High | Full CRUD on VIP Clients |
 | A5 | As an admin, I want to manage products | Medium | Full CRUD on products with image upload |
 | A6 | As an admin, I want to manage regions | Medium | Hierarchical region management |
 
@@ -210,8 +210,8 @@ Every visit MUST include:
 
 | ID | User Story | Priority | Acceptance Criteria |
 |----|------------|----------|---------------------|
-| M1 | As a medrep, I want to assign products to doctors | High | Product-doctor mapping with priority |
-| M2 | As a medrep, I want to see which products are assigned to which doctors | High | Assignment list filtered by region |
+| M1 | As a medrep, I want to assign products to VIP Clients | High | Product-VIP Client mapping with priority |
+| M2 | As a medrep, I want to see which products are assigned to which VIP Clients | High | Assignment list filtered by region |
 | M3 | As a medrep, I want to update assignment priorities | Medium | Edit existing assignments |
 
 ---
@@ -222,16 +222,16 @@ Every visit MUST include:
 
 **Must Have:**
 - [x] User authentication (login/logout/refresh)
-- [x] Role-based access control (admin, medrep, employee)
+- [x] Role-based access control (admin, medrep, bdm)
 - [x] JWT with access and refresh tokens
 - [x] User management (CRUD)
-- [x] Doctor model with visitFrequency
-- [x] Doctor management (CRUD with cascading region dropdowns)
+- [x] VIP Client model with visitFrequency
+- [x] VIP Client management (CRUD with cascading region dropdowns)
 - [x] Visit model with weekly tracking
 - [x] Visit logging with GPS + photo (S3)
 - [x] Weekly visit enforcement
 - [x] Monthly quota enforcement
-- [x] Basic dashboards per role (Admin, MedRep, Employee)
+- [x] Basic dashboards per role (Admin, MedRep, BDM)
 - [x] Compliance reporting
 
 **Should Have:**
@@ -240,7 +240,7 @@ Every visit MUST include:
 - [x] Weekly compliance endpoint
 - [x] Compliance alerts endpoint
 - [x] Product management
-- [x] Product-to-doctor assignments (MedRep dashboard)
+- [x] Product-to-VIP Client assignments (MedRep dashboard)
 
 **Optimization (Added December 2024):**
 - [x] Backend: Rate limiting, HSTS headers, request timeout, compound indexes
@@ -252,7 +252,7 @@ Every visit MUST include:
 - [ ] Email notifications (AWS SES)
 - [ ] Advanced analytics and charts
 - [ ] Export reports (PDF, Excel)
-- [ ] Bulk import/export (doctors, products)
+- [ ] Bulk import/export (VIP Clients, products)
 - [ ] Visit scheduling calendar
 - [ ] Push notifications (web)
 
@@ -267,7 +267,7 @@ Every visit MUST include:
 ### 6.4 Out of Scope (Not Planned)
 
 - Mobile native apps (web-only, mobile-responsive)
-- Doctor A/B/C/D categories (use visitFrequency instead)
+- VIP Client A/B/C/D categories (use visitFrequency instead)
 - Cloudinary integration (use AWS S3)
 - Generic VPS hosting (use AWS Lightsail)
 - Integration with pharmacy systems
@@ -292,7 +292,7 @@ Every visit MUST include:
 |--------|--------|-------------|
 | Weekly compliance | > 85% | Visits logged / visits required per week |
 | Monthly compliance | > 90% | Monthly quota completion rate |
-| Employee adoption | > 90% | Active daily users / total employees |
+| BDM adoption | > 90% | Active daily users / total BDMs |
 | Visit with proof | 100% | Visits with GPS + photo / total visits |
 
 ### 7.3 Compliance Metrics

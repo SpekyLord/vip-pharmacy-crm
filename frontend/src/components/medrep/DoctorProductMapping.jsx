@@ -421,17 +421,17 @@ const DoctorProductMapping = ({
       <style>{doctorProductMappingStyles}</style>
 
       <div className="mapping-header">
-        <h2>Doctor Product Mapping</h2>
+        <h2>VIP Client Product Mapping</h2>
       </div>
 
       <div className="mapping-container">
-        {/* Doctor List Panel */}
+        {/* VIP Client List Panel */}
         <div className="doctor-list-panel">
-          <h3>Select Doctor</h3>
+          <h3>Select VIP Client</h3>
           <input
             type="text"
             className="doctor-search"
-            placeholder="Search doctors..."
+            placeholder="Search VIP Clients..."
             value={doctorSearch}
             onChange={e => setDoctorSearch(e.target.value)}
           />
@@ -461,7 +461,7 @@ const DoctorProductMapping = ({
             </ul>
           ) : (
             <div className="no-doctors">
-              {doctorSearch ? 'No doctors match your search' : 'No doctors available'}
+              {doctorSearch ? 'No VIP Clients match your search' : 'No VIP Clients available'}
             </div>
           )}
         </div>
@@ -555,7 +555,7 @@ const DoctorProductMapping = ({
             ) : (
               <div className="no-products">
                 <div className="no-products-icon">📦</div>
-                <p>No products assigned to this doctor yet</p>
+                <p>No products assigned to this VIP Client yet</p>
               </div>
             )}
           </div>
@@ -563,8 +563,8 @@ const DoctorProductMapping = ({
           <div className="product-mapping-panel">
             <div className="select-doctor-prompt">
               <div className="select-doctor-prompt-icon">👈</div>
-              <h3>Select a Doctor</h3>
-              <p>Choose a doctor from the list to manage their product assignments</p>
+              <h3>Select a VIP Client</h3>
+              <p>Choose a VIP Client from the list to manage their product assignments</p>
             </div>
           </div>
         )}

@@ -18,8 +18,8 @@ const Sidebar = () => {
       case 'admin':
         return [
           { path: '/admin', label: 'Dashboard', icon: '📊' },
-          { path: '/admin/doctors', label: 'Doctors', icon: '👨‍⚕️' },
-          { path: '/admin/employees', label: 'Employees', icon: '👥' },
+          { path: '/admin/doctors', label: 'VIP Clients', icon: '👨‍⚕️' },
+          { path: '/admin/employees', label: 'BDMs', icon: '👥' },
           { path: '/admin/regions', label: 'Regions', icon: '🗺️' },
           { path: '/admin/approvals', label: 'Approvals', icon: '✅' },
           { path: '/admin/statistics', label: 'Statistics', icon: '📉' },

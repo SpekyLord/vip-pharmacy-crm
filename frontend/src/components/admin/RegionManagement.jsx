@@ -798,7 +798,7 @@ const RegionManagement = ({
         <div className="tree-header">
           <div>Region</div>
           <div>Level</div>
-          <div>Doctors</div>
+          <div>VIP Clients</div>
           <div>Status</div>
           <div>Actions</div>
         </div>
@@ -977,11 +977,11 @@ const RegionManagement = ({
                   <div className="stats-grid">
                     <div className="stat-card">
                       <div className="stat-value">{statsData.doctorCount || 0}</div>
-                      <div className="stat-label">Doctors</div>
+                      <div className="stat-label">VIP Clients</div>
                     </div>
                     <div className="stat-card">
                       <div className="stat-value">{statsData.employeeCount || 0}</div>
-                      <div className="stat-label">Employees</div>
+                      <div className="stat-label">BDMs</div>
                     </div>
                     <div className="stat-card">
                       <div className="stat-value">{statsData.childRegionCount || 0}</div>
@@ -995,7 +995,7 @@ const RegionManagement = ({
 
                   {statsData.doctorsByFrequency && (
                     <div className="stats-details">
-                      <h4>Doctors by Visit Frequency</h4>
+                      <h4>VIP Clients by Visit Frequency</h4>
                       <ul>
                         <li>2x per month: {statsData.doctorsByFrequency['2'] || 0}</li>
                         <li>4x per month: {statsData.doctorsByFrequency['4'] || 0}</li>

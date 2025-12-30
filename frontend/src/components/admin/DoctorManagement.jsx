@@ -744,9 +744,9 @@ const DoctorManagement = ({
       <style>{doctorManagementStyles}</style>
 
       <div className="management-header">
-        <h2>Doctors ({pagination.total || doctors.length})</h2>
+        <h2>VIP Clients ({pagination.total || doctors.length})</h2>
         <button onClick={handleCreate} className="btn btn-primary">
-          + Add Doctor
+          + Add VIP Client
         </button>
       </div>
 
@@ -825,7 +825,7 @@ const DoctorManagement = ({
           </table>
         ) : (
           <div className="empty-state">
-            <p>No doctors found</p>
+            <p>No VIP Clients found</p>
           </div>
         )}
       </div>
@@ -836,7 +836,7 @@ const DoctorManagement = ({
           <div className="pagination-info">
             Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
             {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
-            {pagination.total} doctors
+            {pagination.total} VIP Clients
           </div>
           <div className="pagination-buttons">
             <button
@@ -862,7 +862,7 @@ const DoctorManagement = ({
         <div className="modal-overlay" onClick={handleCloseModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>{selectedDoctor ? 'Edit Doctor' : 'Add New Doctor'}</h3>
+              <h3>{selectedDoctor ? 'Edit VIP Client' : 'Add New VIP Client'}</h3>
               <button className="modal-close" onClick={handleCloseModal}>
                 &times;
               </button>
@@ -1067,7 +1067,7 @@ const DoctorManagement = ({
                   name="notes"
                   value={formData.notes}
                   onChange={handleFormChange}
-                  placeholder="Additional notes about this doctor..."
+                  placeholder="Additional notes about this VIP Client..."
                 />
               </div>
 
@@ -1084,7 +1084,7 @@ const DoctorManagement = ({
                   className="btn btn-primary"
                   disabled={saving}
                 >
-                  {saving ? 'Saving...' : selectedDoctor ? 'Update Doctor' : 'Add Doctor'}
+                  {saving ? 'Saving...' : selectedDoctor ? 'Update VIP Client' : 'Add VIP Client'}
                 </button>
               </div>
             </form>

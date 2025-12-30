@@ -1,4 +1,4 @@
-# VIP Pharmacy CRM - Phase Task Breakdown for Team Assignment
+# VIP CRM - Phase Task Breakdown for Team Assignment
 
 ## Project Overview
 A pharmaceutical field sales CRM system to replace manual Excel tracking with automated visit management, compliance monitoring, and product intelligence.
@@ -6,7 +6,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 ---
 
 # PHASE 1: Foundation & Core System
-**Goal**: Complete working system with authentication, doctor management, visit logging, and basic dashboards
+**Goal**: Complete working system with authentication, VIP Client management, visit logging, and basic dashboards
 
 ## Backend Tasks
 
@@ -39,7 +39,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Files**: `backend/config/s3.js` (code ready), AWS Console
 
 **Deliverables**:
-- [x] Create S3 bucket: `vip-pharmacy-crm-devs`
+- [x] Create S3 bucket: `vip-crm-devs`
 - [x] Configure bucket CORS for frontend domain
 - [x] Create IAM user with minimal S3 permissions
 - [x] Generate access keys
@@ -68,7 +68,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Deliverables**:
 - [x] Create seed script for initial admin user
 - [x] Create seed script for sample regions (based on "Whole Panay" example from proposal)
-- [x] Create seed script for sample doctors (56 doctors across 3 districts)
+- [x] Create seed script for sample VIP Clients (56 VIP Clients across 3 districts)
 - [x] Create seed script for sample products with images
 - [x] Add `npm run seed` script to package.json
 - [x] Document seed data structure
@@ -82,14 +82,14 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Seeded Data:**
 - 12 regions (Panay Island hierarchy)
-- 5 users (1 admin, 1 medrep, 3 employees)
+- 5 users (1 admin, 1 medrep, 3 BDMs)
 - 5 products
-- 56 doctors
+- 56 VIP Clients
 
 **Login Credentials:**
-- Admin: admin@vippharmacy.com / Admin123!@#
-- MedRep: medrep@vippharmacy.com / Medrep123!@#
-- Employees: juan/maria/pedro@vippharmacy.com / Employee123!@#
+- Admin: admin@vipcrm.com / Admin123!@#
+- MedRep: medrep@vipcrm.com / Medrep123!@#
+- BDMs: juan/maria/pedro@vipcrm.com / BDM123!@#
 
 ---
 
@@ -100,19 +100,19 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Deliverables**:
 - [x] Test auth endpoints (register, login, logout, refresh)
-- [x] Test doctor CRUD with region filtering
+- [x] Test VIP Client CRUD with region filtering
 - [x] Test visit creation with weekly limit enforcement
 - [x] Test product CRUD
 - [x] Test product assignment
 - [x] Test region hierarchy
-- [x] Create Postman collection in `backend/postman/VIP-Pharmacy-CRM.postman_collection.json`
+- [x] Create Postman collection in `backend/postman/VIP-CRM.postman_collection.json`
 - [x] Document all API endpoints
 
 **Acceptance Criteria**:
 - [x] All API endpoints return expected responses
-- [x] Weekly visit limit (1 per doctor per week) enforced via `/visits/can-visit/:doctorId`
+- [x] Weekly visit limit (1 per VIP Client per week) enforced via `/visits/can-visit/:vipClientId`
 - [x] Monthly visit limit (2x or 4x) enforced
-- [x] Region filtering works for employees
+- [x] Region filtering works for BDMs
 - [x] Error responses follow standard format
 
 **Status**: ✅ COMPLETED
@@ -120,11 +120,11 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Tested Endpoints:**
 - `POST /api/auth/login` - Login with JWT tokens
 - `GET /api/auth/me` - Get current user profile
-- `GET /api/doctors` - List doctors with pagination
+- `GET /api/vip-clients` - List VIP Clients with pagination
 - `GET /api/regions` - List all regions
 - `GET /api/products` - List all products
 - `GET /api/visits` - List visits (role-based)
-- `GET /api/visits/can-visit/:doctorId` - Check visit limits
+- `GET /api/visits/can-visit/:vipClientId` - Check visit limits
 - `GET /api/health` - Health check
 
 ---
@@ -152,7 +152,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - [x] Role-based redirect after login:
   - admin → /admin
   - medrep → /medrep
-  - employee → /employee
+  - bdm → /employee
 - [x] Implement logout with token cleanup
 - [ ] Add "Remember me" functionality (optional - deferred)
 
@@ -167,7 +167,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 ---
 
-### Task 1.6: Employee Dashboard & Doctor List
+### Task 1.6: BDM Dashboard & VIP Client List
 **Assignee**: Frontend Developer
 **Priority**: HIGH
 **Files**:
@@ -178,17 +178,17 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Deliverables**:
 - [x] Fetch and display dashboard stats (today's visits, weekly progress, pending)
-- [x] Display assigned regional doctors list
-- [x] Implement doctor search by name/specialization
+- [x] Display assigned regional VIP Clients list
+- [x] Implement VIP Client search by name/specialization
 - [x] **FIX**: Replace deprecated A/B/C/D categories with visitFrequency (2/4)
-- [x] Show visit status for each doctor (visited this week? this month?)
-- [x] Add "Log Visit" button per doctor
-- [x] Show weekly progress: "Week 1: 8/10 doctors visited"
+- [x] Show visit status for each VIP Client (visited this week? this month?)
+- [x] Add "Log Visit" button per VIP Client
+- [x] Show weekly progress: "Week 1: 8/10 VIP Clients visited"
 - [x] Show monthly completion percentage
 
 **Acceptance Criteria**:
-- [x] Employee sees only doctors in their assigned region
-- [x] Can search/filter doctors
+- [x] BDM sees only VIP Clients in their assigned region
+- [x] Can search/filter VIP Clients
 - [x] Visit frequency shows 2x or 4x (not A/B/C/D)
 - [x] Weekly and monthly progress displayed
 
@@ -198,7 +198,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - `visitService.js`: Added `getToday()`, `getMy()`, `canVisit()`, `getWeeklyCompliance()`
 - `doctorService.js`: Added `getAssignedProducts()`
 - `EmployeeDashboard.jsx`: Connected to real APIs, displays stats cards and compliance bar
-- `DoctorList.jsx`: Replaced A/B/C/D with visitFrequency (2x/4x), added visit status per doctor, added Log Visit button with limit checking
+- `DoctorList.jsx`: Replaced A/B/C/D with visitFrequency (2x/4x), added visit status per VIP Client, added Log Visit button with limit checking
 
 ---
 
@@ -217,7 +217,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
   - Visit type selector
   - Purpose/notes field
   - Products discussed (from recommendations)
-  - Doctor feedback
+  - VIP Client feedback
   - Next visit date
 - [x] Integrate CameraCapture component for photo proof
 - [x] Require minimum 1 photo before submit
@@ -232,7 +232,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - [x] Cannot submit without photo
 - [x] Cannot submit without GPS location
 - [x] Cannot submit on weekends
-- [x] Cannot submit if already visited this doctor this week
+- [x] Cannot submit if already visited this VIP Client this week
 - [x] Photos upload to S3 successfully
 - [x] Visit appears in history after creation
 
@@ -243,7 +243,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - `VisitLogger.jsx`: Full form with photo integration, FormData submission
 - `NewVisitPage.jsx`: Page wrapper that checks canVisit before rendering form
 - `visitService.js`: Updated create() for multipart/form-data
-- Route: `/employee/visit/new?doctorId=xxx`
+- Route: `/employee/visit/new?vipClientId=xxx`
 
 ---
 
@@ -258,8 +258,8 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - [x] Fetch and display visit history
 - [x] Filter by status (all/completed/pending/cancelled)
 - [x] Filter by date range
-- [x] Filter by doctor
-- [x] Show visit details (date, doctor, photos, GPS, products)
+- [x] Filter by VIP Client
+- [x] Show visit details (date, VIP Client, photos, GPS, products)
 - [x] Display week label (W1D2, W2D3 format)
 - [x] Implement pagination
 - [x] Show visit proof photos
@@ -274,9 +274,9 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Implementation Details:**
 - `MyVisits.jsx`: Full implementation with filters, pagination, and visit details modal
-- Filters: Status dropdown, date range pickers, doctor search input
-- Table shows: Date/time, week label (W1D2), doctor info, visit type, status, photo count
-- Visit details modal shows: All visit info, doctor details, GPS with Google Maps link, photo gallery
+- Filters: Status dropdown, date range pickers, VIP Client search input
+- Table shows: Date/time, week label (W1D2), VIP Client info, visit type, status, photo count
+- Visit details modal shows: All visit info, VIP Client details, GPS with Google Maps link, photo gallery
 - Full image modal for viewing photos
 - Responsive design for mobile
 
@@ -292,8 +292,8 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Deliverables**:
 - [x] Replace hardcoded mock data with API calls
 - [x] Display stats grid:
-  - Total doctors (all regions)
-  - Total employees
+  - Total VIP Clients (all regions)
+  - Total BDMs
   - Total visits (today/week/month)
   - Pending approvals
 - [x] Recent activity feed
@@ -308,13 +308,13 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Status**: ✅ COMPLETED
 
 **Implementation Details:**
-- `AdminDashboard.jsx`: Fetches real data from doctorService, visitService, and users API
+- `AdminDashboard.jsx`: Fetches real data from vipClientService, visitService, and users API
 - `Dashboard.jsx`: Full CSS styling with stat cards, activity feed
-- Quick action buttons link to Doctors, Employees, Reports pages
+- Quick action buttons link to VIP Clients, BDMs, Reports pages
 
 ---
 
-### Task 1.10: Admin Doctor Management (Master Database)
+### Task 1.10: Admin VIP Client Management (Master Database)
 **Assignee**: Frontend Developer
 **Priority**: HIGH
 **Files**:
@@ -324,24 +324,24 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - `frontend/src/services/regionService.js` (NEW)
 
 **Deliverables**:
-- [x] Display ALL doctors across ALL regions (master database)
+- [x] Display ALL VIP Clients across ALL regions (master database)
 - [x] Advanced filtering:
   - By region
   - By specialization (search)
   - By visitFrequency (2x/4x)
-- [x] Add new doctor form with all fields:
+- [x] Add new VIP Client form with all fields:
   - Name, contact, email
   - Specialization
   - Region assignment
   - Visit frequency (2 or 4)
   - Address, notes
-- [x] Edit existing doctor
-- [x] Delete doctor (with confirmation)
+- [x] Edit existing VIP Client
+- [x] Delete VIP Client (with confirmation)
 - [ ] Bulk import from Excel (optional, Phase 1 stretch)
 - [x] Export to Excel/CSV (Call Plan Template format)
 
 **Acceptance Criteria**:
-- [x] Admin sees all doctors in paginated table
+- [x] Admin sees all VIP Clients in paginated table
 - [x] Can filter and search effectively
 - [x] CRUD operations work
 - [x] **Uses visitFrequency (2/4), NOT categories (A/B/C/D)**
@@ -361,21 +361,30 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - Export buttons in DoctorsPage header ("Export Excel", "Export CSV")
 - Exports respect current filters (region, specialization, visitFrequency)
 
-**Employee Visit Report (Task 1.10d - Dec 2024):**
-- Backend endpoint: `GET /api/visits/employee-report/:userId?monthYear=YYYY-MM`
-- `visitController.js`: Added `getEmployeeReport` function
+**BDM Visit Report (Task 1.10d - Dec 2024):**
+- Backend endpoint: `GET /api/visits/bdm-report/:userId?monthYear=YYYY-MM`
+- `visitController.js`: Added `getBDMReport` function
 - `visitRoutes.js`: Added route with adminOnly middleware
-- `visitService.js`: Added `getEmployeeReport` method
-- `EmployeeVisitReport.jsx`: New component displaying Call Plan Template format with actual visits
-- `exportEmployeeReport.js`: New export utility for employee reports
-- `ReportsPage.jsx`: Complete rewrite with employee selector, month picker, generate button
+- `visitService.js`: Added `getBDMReport` method
+- `BDMVisitReport.jsx`: New component displaying Call Plan Template format with actual visits
+- `exportBDMReport.js`: New export utility for BDM reports
+- `ReportsPage.jsx`: Complete rewrite with BDM selector, month picker, generate button
 - Features: Yellow header rows, Day1-Day20 grid with actual visits, green highlights, assigned products
 
-**Doctor Region Cascading Dropdown Fix (Task 1.10b):**
-- **Problem**: Validation error when editing doctors - address field sent as string instead of object
+**Visit Week Calculation Bug Fix (Task 1.10e - Dec 2024):**
+- **Problem**: Visits showed in Excel export totals but not in grid cells
+- **Root Cause**: Inconsistent `getWeekOfMonth` formulas + months with 5+ weeks exceeded 20-day grid
+- **Solution**:
+  - `validateWeeklyVisit.js`: Aligned `getWeekOfMonth` formula with Visit.js (ISO week standard)
+  - `Visit.js`: Added 5th week → next month logic (week 5+ dates count as Week 1 of next month)
+  - `backend/scripts/fixVisitWeeks.js`: Migration script to fix existing visits
+- **Business Rule**: Grid supports 20 days (4 weeks × 5 days). Week 5+ visits count towards next month's report
+
+**VIP Client Region Cascading Dropdown Fix (Task 1.10b):**
+- **Problem**: Validation error when editing VIP Clients - address field sent as string instead of object
 - **Problem**: Region dropdown used indented "──" format, hard to navigate for deep hierarchies
 - **Solution**:
-  - Fixed `address` field to send as nested object `{street: "..."}` matching Doctor model schema
+  - Fixed `address` field to send as nested object `{street: "..."}` matching VIPClient model schema
   - Replaced single region dropdown with cascading dropdowns: Country → Region → Province → City → District
   - Each dropdown dynamically loads children from parent selection using `regionService.getChildren()`
   - Edit mode auto-populates all dropdown levels by traversing the region hierarchy
@@ -383,7 +392,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 ---
 
-### Task 1.11: Admin Employee Management
+### Task 1.11: Admin BDM Management
 **Assignee**: Frontend Developer
 **Priority**: HIGH
 **Files**:
@@ -393,20 +402,20 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Deliverables**:
 - [x] Create userService.js for user API calls
-- [x] Display all employees with their assigned regions
-- [x] Add new employee form:
+- [x] Display all BDMs with their assigned regions
+- [x] Add new BDM form:
   - Name, email, password
-  - Role selection (employee/medrep)
+  - Role selection (bdm/medrep)
   - Region assignment
-- [x] Edit employee details
-- [x] Toggle employee active/inactive status
-- [ ] View employee performance summary (deferred to Phase 2)
-- [x] Reassign employee to different region
+- [x] Edit BDM details
+- [x] Toggle BDM active/inactive status
+- [ ] View BDM performance summary (deferred to Phase 2)
+- [x] Reassign BDM to different region
 
 **Acceptance Criteria**:
-- [x] Can create new employees
-- [x] Can assign employees to regions
-- [x] Can deactivate employees
+- [x] Can create new BDMs
+- [x] Can assign BDMs to regions
+- [x] Can deactivate BDMs
 - [x] Historical data preserved on reassignment
 
 **Status**: ✅ COMPLETED
@@ -431,7 +440,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - [x] Display region hierarchy tree
 - [x] Add new region with parent assignment
 - [x] Edit region details
-- [x] View doctors and employees per region
+- [x] View VIP Clients and BDMs per region
 - [ ] Display geographical boundaries (optional - deferred)
 
 **Acceptance Criteria**:
@@ -452,9 +461,9 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - Provinces (Iloilo, Capiz, Aklan, Antique) now under REG-VI (Western Visayas)
 
 **Cascading Region Assignment Fix (Task 1.12b):**
-- **Problem**: Employees assigned to Region VI couldn't see doctors from child provinces/cities
-- **Backend Fix**: Updated `doctorController.js` to use `Region.getDescendantIds()` for cascading region access
-- **Doctor Model**: Added `parentRegions` field with pre-save hook to auto-populate ancestor chain when doctor is assigned to a region
+- **Problem**: BDMs assigned to Region VI couldn't see VIP Clients from child provinces/cities
+- **Backend Fix**: Updated `vipClientController.js` to use `Region.getDescendantIds()` for cascading region access
+- **VIPClient Model**: Added `parentRegions` field with pre-save hook to auto-populate ancestor chain when VIP Client is assigned to a region
 - **Frontend Updates**:
   - `DoctorsPage.jsx` & `EmployeesPage.jsx`: Fetch region hierarchy and flatten with depth for indented display
   - `DoctorManagement.jsx`: Indented dropdown showing hierarchy (──Region VI, ────Iloilo, etc.)
@@ -474,10 +483,10 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Deliverables**:
 - [x] MedRep dashboard with assignment overview
-- [x] Stats cards (active assignments, total doctors, products, total assignments)
-- [x] Doctor list with specializations and product count
-- [x] Assign products to specific doctors:
-  - Select doctor from searchable list
+- [x] Stats cards (active assignments, total VIP Clients, products, total assignments)
+- [x] VIP Client list with specializations and product count
+- [x] Assign products to specific VIP Clients:
+  - Select VIP Client from searchable list
   - Select products to recommend
   - Set priority (1=high, 2=medium, 3=low)
 - [x] View current assignments with filtering (search, status)
@@ -485,18 +494,18 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - [x] Deactivate/remove assignments
 
 **Acceptance Criteria**:
-- [x] MedRep can assign products to doctors
-- [x] Assignments show in employee visit interface
+- [x] MedRep can assign products to VIP Clients
+- [x] Assignments show in BDM visit interface
 - [x] Priority ordering works
 - [x] Only medrep and admin can manage assignments
 
 **Status**: ✅ COMPLETED
 
 **Implementation Details:**
-- `assignmentService.js`: New service with getAll, getMyAssignments, getByDoctor, create, bulkCreate, update, delete
+- `assignmentService.js`: New service with getAll, getMyAssignments, getByVIPClient, create, bulkCreate, update, delete
 - `MedRepDashboard.jsx`: Full implementation with tabs (Assignments/Mapping), stats, modals, toast notifications
 - `ProductAssignment.jsx`: Assignment cards with search/filter, view/edit/deactivate actions
-- `DoctorProductMapping.jsx`: Two-panel layout with doctor search, product assignment with priority
+- `DoctorProductMapping.jsx`: Two-panel layout with VIP Client search, product assignment with priority
 
 ---
 
@@ -508,21 +517,21 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - `frontend/src/components/employee/VisitLogger.jsx` (integration)
 
 **Deliverables**:
-- [x] When employee selects doctor to visit, show assigned products
+- [x] When BDM selects VIP Client to visit, show assigned products
 - [x] Display product image, name, description, key benefits
 - [x] Click product to view full details modal
 - [x] Track which products were discussed in visit
 - [x] Save discussed products with visit record
 
 **Acceptance Criteria**:
-- [x] Products shown based on MedRep assignments for that doctor
-- [x] Employee can view product details
+- [x] Products shown based on MedRep assignments for that VIP Client
+- [x] BDM can view product details
 - [x] Discussed products recorded with visit
 
 **Status**: ✅ COMPLETED
 
 **Implementation Details:**
-- `ProductRecommendations.jsx`: Shows assigned products for selected doctor with image, name, key benefits, and product detail modal
+- `ProductRecommendations.jsx`: Shows assigned products for selected VIP Client with image, name, key benefits, and product detail modal
 - `VisitLogger.jsx`: Integrates ProductRecommendations and tracks discussed products with visit submission
 
 ---
@@ -532,7 +541,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Priority**: CRITICAL
 **Files**:
 - `backend/controllers/visitController.js`
-- `backend/controllers/doctorController.js`
+- `backend/controllers/vipClientController.js`
 
 **Problem**: Products are stored in a separate website database (`vip-pharmacy`), but the CRM uses Mongoose `populate()` which only works within the same database connection. This caused `MissingSchemaError: Schema hasn't been registered for model "Product"` errors.
 
@@ -541,8 +550,8 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - [x] Add manual product population using `getWebsiteProductModel()` helper
 - [x] Fix `getMyVisits` - manually fetch product data after getting visits
 - [x] Fix `getVisitById` - manually fetch product data after getting visit
-- [x] Fix `getDoctorById` - manually fetch product data for assigned products
-- [x] Fix `getDoctorProducts` - manually fetch product data for assigned products
+- [x] Fix `getVIPClientById` - manually fetch product data for assigned products
+- [x] Fix `getVIPClientProducts` - manually fetch product data for assigned products
 - [x] Fix `getWeeklyCompliance` - default to current user when no userId param
 
 **Acceptance Criteria**:
@@ -608,7 +617,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - `AuthContext.jsx`: Listens for `auth:logout` events to trigger logout
 - `MyVisits.jsx`: Uses AbortController for request cancellation on unmount
 - `CameraCapture.jsx`: 5-minute watchPosition timeout for GPS
-- `DoctorsPage.jsx`: useCallback for fetchDoctors to stabilize useEffect deps
+- `DoctorsPage.jsx`: useCallback for fetchVIPClients to stabilize useEffect deps
 - `NewVisitPage.jsx`: isMounted ref pattern for async cleanup
 
 ---
@@ -716,7 +725,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 |----------|-------|---------------------|
 | Backend Infrastructure | 4 tasks | High |
 | Frontend Auth | 1 task | High |
-| Frontend Employee Features | 3 tasks | High |
+| Frontend BDM Features | 3 tasks | High |
 | Frontend Admin Features | 4 tasks | High |
 | Frontend MedRep Features | 2 tasks | Medium |
 | Frontend Optimization | 1 task | High |
@@ -741,10 +750,10 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Deliverables**:
 - [ ] Create compliance controller with:
-  - `getComplianceAlerts()` - employees behind schedule
-  - `getBehindScheduleEmployees()` - less than 80% weekly target
+  - `getComplianceAlerts()` - BDMs behind schedule
+  - `getBehindScheduleBDMs()` - less than 80% weekly target
   - `getQuotaDumpingAlerts()` - detect multiple visits in short period
-  - `getWeeklyComplianceReport()` - all employees weekly status
+  - `getWeeklyComplianceReport()` - all BDMs weekly status
   - `getMonthlyComplianceReport()` - monthly completion rates
 - [ ] Add routes and protect with admin middleware
 - [ ] Implement 80% threshold for "behind schedule" alerts
@@ -826,7 +835,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Acceptance Criteria**:
 - Visits require approval before counting
 - Admin can approve/reject with reason
-- Employee notified of approval status
+- BDM notified of approval status
 
 ---
 
@@ -865,10 +874,10 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Deliverables**:
 - [ ] Real-time activity feed showing:
   - Recent visits logged
-  - Employee login/logout
-  - Doctor updates
+  - BDM login/logout
+  - VIP Client updates
   - Product assignments
-- [ ] Filter by region, employee, activity type
+- [ ] Filter by region, BDM, activity type
 - [ ] Auto-refresh every 30 seconds
 - [ ] Click to view activity details
 - [ ] Optional: WebSocket for true real-time updates
@@ -886,22 +895,22 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Files**:
 - `frontend/src/pages/admin/ComplianceDashboard.jsx` (new)
 - `frontend/src/components/admin/ComplianceAlerts.jsx` (new)
-- `frontend/src/components/admin/EmployeeComplianceCard.jsx` (new)
+- `frontend/src/components/admin/BDMComplianceCard.jsx` (new)
 
 **Deliverables**:
 - [ ] Overview metrics:
   - Team-wide compliance rate
-  - Employees on track vs behind
+  - BDMs on track vs behind
   - Weekly completion percentage
 - [ ] Alert list with:
   - Behind schedule warnings
   - Quota dumping flags
   - Missed visits
-- [ ] Per-employee compliance cards:
-  - Weekly progress (8/10 doctors)
+- [ ] Per-BDM compliance cards:
+  - Weekly progress (8/10 VIP Clients)
   - Monthly progress percentage
   - Trend indicator (improving/declining)
-- [ ] Drill-down to employee details
+- [ ] Drill-down to BDM details
 
 **Acceptance Criteria**:
 - Clear visibility into compliance status
@@ -920,15 +929,15 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Deliverables**:
 - [ ] List pending visits awaiting approval
 - [ ] Show visit details:
-  - Employee name
-  - Doctor visited
+  - BDM name
+  - VIP Client visited
   - Date/time
   - GPS location (map view)
   - Photo proofs
   - Products discussed
 - [ ] Approve button (single and bulk)
 - [ ] Reject button with reason input
-- [ ] Filter by employee, date, region
+- [ ] Filter by BDM, date, region
 - [ ] Sort by date
 
 **Acceptance Criteria**:
@@ -948,7 +957,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Deliverables**:
 - [ ] Integrate map library (Leaflet or Google Maps)
 - [ ] Show visit location on map
-- [ ] Show doctor clinic location (if available)
+- [ ] Show VIP Client clinic location (if available)
 - [ ] Display distance between visit GPS and clinic
 - [ ] Flag suspicious locations (too far from clinic)
 - [ ] Accuracy indicator
@@ -960,20 +969,20 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 ---
 
-### Task 2.10: Employee Performance Analytics
+### Task 2.10: BDM Performance Analytics
 **Assignee**: Frontend Developer
 **Priority**: MEDIUM
 **Files**:
-- `frontend/src/pages/admin/EmployeeAnalytics.jsx` (new)
+- `frontend/src/pages/admin/BDMAnalytics.jsx` (new)
 - `frontend/src/components/admin/PerformanceChart.jsx` (new)
 
 **Deliverables**:
-- [ ] Individual employee performance view:
+- [ ] Individual BDM performance view:
   - Visits over time (chart)
   - Completion rate trend
-  - Doctor coverage
+  - VIP Client coverage
   - Products presented
-- [ ] Compare employees (optional)
+- [ ] Compare BDMs (optional)
 - [ ] Export performance data
 - [ ] Date range selector
 
@@ -1012,29 +1021,29 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Files**:
 - `frontend/src/pages/admin/ReportsPage.jsx`
 - `frontend/src/components/admin/ReportGenerator.jsx` (new)
-- `frontend/src/components/admin/EmployeeVisitReport.jsx`
-- `frontend/src/utils/exportEmployeeReport.js`
+- `frontend/src/components/admin/BDMVisitReport.jsx`
+- `frontend/src/utils/exportBDMReport.js`
 
 **Deliverables**:
 - [x] Report types:
-  - [x] Employee Visit Report (Call Plan Template format) - COMPLETED Dec 2024
+  - [x] BDM Visit Report (Call Plan Template format) - COMPLETED Dec 2024
   - [ ] Weekly compliance report
   - [ ] Monthly visit summary
   - [ ] Regional comparison report
   - [ ] Product presentation report
 - [x] Date range selection (month picker)
-- [x] Filter by employee
+- [x] Filter by BDM
 - [x] Export to Excel/CSV
 - [ ] Export to PDF
 - [ ] Schedule recurring reports (optional)
 
 **Acceptance Criteria**:
-- [x] Employee Visit Report generates correctly with actual visit data
+- [x] BDM Visit Report generates correctly with actual visit data
 - [x] Export to Excel/CSV works
 - [x] Data matches backend
 - [ ] Additional report types to be added in future
 
-**Status**: ⚠️ PARTIALLY COMPLETE (Employee Visit Report done, other report types pending)
+**Status**: ⚠️ PARTIALLY COMPLETE (BDM Visit Report done, other report types pending)
 
 ---
 
@@ -1054,7 +1063,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 ---
 
 # PHASE 3: Product Intelligence
-**Goal**: Advanced product-doctor matching, analytics, and smart recommendations
+**Goal**: Advanced product-VIP Client matching, analytics, and smart recommendations
 
 ## Backend Tasks
 
@@ -1071,9 +1080,9 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
   - Products by specialization
   - Products by region
   - Presentation success rate (if tracking)
-- [ ] Doctor coverage analytics:
-  - Products presented per doctor
-  - Doctors not receiving target products
+- [ ] VIP Client coverage analytics:
+  - Products presented per VIP Client
+  - VIP Clients not receiving target products
   - Specialization-product gaps
 - [ ] Time-based trends:
   - Monthly product trends
@@ -1094,12 +1103,12 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - `backend/models/Product.js` (enhance)
 
 **Deliverables**:
-- [ ] Auto-suggest products based on doctor specialization
+- [ ] Auto-suggest products based on VIP Client specialization
 - [ ] Analyze historical visit data for patterns
 - [ ] Identify gaps (products not being presented to target specialists)
 - [ ] Recommend products to assign based on:
-  - Doctor specialization match
-  - Similar doctor patterns
+  - VIP Client specialization match
+  - Similar VIP Client patterns
   - Regional trends
 - [ ] API endpoint for recommendations
 
@@ -1119,7 +1128,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Deliverables**:
 - [ ] Track product presentations per visit
-- [ ] Record doctor interest level (optional)
+- [ ] Record VIP Client interest level (optional)
 - [ ] Calculate presentation frequency
 - [ ] Track regional product performance
 - [ ] Generate product effectiveness scores
@@ -1170,7 +1179,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - [ ] Display matching score/confidence
 - [ ] One-click accept recommendation
 - [ ] Bulk accept multiple suggestions
-- [ ] Show reasoning (e.g., "Doctor is Gastro specialist, product targets Gastro")
+- [ ] Show reasoning (e.g., "VIP Client is Gastro specialist, product targets Gastro")
 - [ ] Dismiss/ignore suggestion
 
 **Acceptance Criteria**:
@@ -1313,9 +1322,9 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
   - Handle duplicates
   - Report errors
 - [ ] Migrate:
-  - 150+ doctor profiles
+  - 150+ VIP Client profiles
   - Regional territories
-  - Employee assignments
+  - BDM assignments
   - Product catalog
   - Existing visit history (if available)
 - [ ] Verify migrated data
@@ -1335,7 +1344,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Deliverables**:
 - [ ] Create UAT test cases for:
-  - Employee: Login, view doctors, log visit, view history
+  - BDM: Login, view VIP Clients, log visit, view history
   - MedRep: Assign products, view assignments
   - Admin: All CRUD operations, reports, approvals
 - [ ] Test on multiple devices (desktop, tablet, phone)
@@ -1358,7 +1367,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Deliverables**:
 - [ ] User guides:
-  - Employee Quick Start Guide
+  - BDM Quick Start Guide
   - MedRep User Guide
   - Admin User Guide
 - [ ] Video tutorials (optional):
@@ -1382,7 +1391,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Deliverables**:
 - [ ] Schedule training sessions:
-  - Session 1: Employees (field reps)
+  - Session 1: BDMs (field reps)
   - Session 2: MedReps
   - Session 3: Administrators
 - [ ] Conduct live training with demo
@@ -1460,7 +1469,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 | Phase | Tasks | Key Deliverables |
 |-------|-------|------------------|
-| **Phase 1: Foundation** | 18 tasks | Working app with auth, doctors, visits, products, optimization |
+| **Phase 1: Foundation** | 18 tasks | Working app with auth, VIP Clients, visits, products, optimization |
 | **Phase 2: Compliance** | 12 tasks | Alerts, approvals, notifications, reports |
 | **Phase 3: Intelligence** | 8 tasks | Analytics, smart recommendations, insights |
 | **Phase 4: Go-Live** | 7 tasks | Deployment, migration, training, support |
@@ -1488,7 +1497,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 Task 1.1 (DB Connection) → All other backend tasks
 Task 1.2 (S3 Setup) → Task 1.7 (Visit Logger with photos)
 Task 1.5 (Auth Flow) → All other frontend tasks
-Task 1.6 (Doctor List) → Task 1.7 (Visit Logger)
+Task 1.6 (VIP Client List) → Task 1.7 (Visit Logger)
 Task 1.13 (MedRep Assignment) → Task 1.14 (Product Recommendations)
 ```
 

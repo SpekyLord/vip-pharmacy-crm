@@ -360,7 +360,7 @@ const getTypeConfig = (type) => {
     DOCTOR_UPDATE: {
       icon: Stethoscope,
       colorClass: 'doctor',
-      title: 'Doctor Update',
+      title: 'VIP Client Update',
     },
     PRODUCT_ASSIGN: {
       icon: Box,
@@ -490,7 +490,7 @@ const VisitDetails = ({ details }) => {
               <Stethoscope size={16} />
             </div>
             <div className="detail-content">
-              <div className="detail-label">Doctor</div>
+              <div className="detail-label">VIP Client</div>
               <div className="detail-value">{details.doctorName || 'N/A'}</div>
             </div>
           </div>
@@ -628,7 +628,7 @@ const DoctorUpdateDetails = ({ details }) => {
             <Stethoscope size={16} />
           </div>
           <div className="detail-content">
-            <div className="detail-label">Doctor</div>
+            <div className="detail-label">VIP Client</div>
             <div className="detail-value">{details.doctorName || 'N/A'}</div>
           </div>
         </div>

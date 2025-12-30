@@ -1,4 +1,4 @@
-# VIP Pharmacy CRM - Project Context
+# VIP CRM - Project Context
 
 This file provides essential context for AI assistants working on this project. Read this before making any implementation decisions.
 
@@ -6,15 +6,15 @@ This file provides essential context for AI assistants working on this project. 
 
 ## Project Overview
 
-**VIP Pharmacy CRM** is a pharmaceutical field sales management system designed for medical representatives to track doctor visits, manage product assignments, and ensure compliance with visit schedules.
+**VIP CRM** is a pharmaceutical field sales management system designed for Business Development Managers (BDM) to track VIP Client visits, manage product assignments, and ensure compliance with visit schedules.
 
 ---
 
 ## Business Rules (MUST Follow)
 
 ### 1. Visit Frequency Rules
-- **Weekly Limit**: Maximum ONE visit per doctor per week (Monday-Friday only)
-- **Monthly Quota**: Based on doctor's `visitFrequency` setting:
+- **Weekly Limit**: Maximum ONE visit per VIP Client per week (Monday-Friday only)
+- **Monthly Quota**: Based on VIP Client's `visitFrequency` setting:
   - `2` = Maximum 2 visits per month
   - `4` = Maximum 4 visits per month
 - **Enforcement**: These are HARD LIMITS - the system must BLOCK excess visits, not just warn
@@ -24,8 +24,8 @@ This file provides essential context for AI assistants working on this project. 
 | Role | Description | Access |
 |------|-------------|--------|
 | `admin` | System administrator | Full access to all regions, users, and data |
-| `medrep` | Medical representative manager | Manages product-to-doctor assignments |
-| `employee` | Field sales representative | Logs visits, sees only assigned region's doctors |
+| `medrep` | Medical representative manager | Manages product-to-VIP Client assignments |
+| `bdm` | Business Development Manager (BDM) | Logs visits, sees only assigned region's VIP Clients |
 
 **Important**: There is NO "manager" role. Admin handles management functions.
 
@@ -36,11 +36,11 @@ Every visit MUST include:
 - Visit date (must be a work day)
 
 ### 4. Region-Based Access
-- Employees can ONLY see doctors in their assigned regions
-- Employees can ONLY log visits for doctors they are assigned to
+- BDMs can ONLY see VIP Clients in their assigned regions
+- BDMs can ONLY log visits for VIP Clients they are assigned to
 - Admins can see and access ALL regions
 
-### 5. Doctor Categorization
+### 5. VIP Client Categorization
 - Use `visitFrequency: 2` or `visitFrequency: 4`
 - Do NOT use A/B/C/D categories (deprecated)
 
@@ -85,7 +85,7 @@ These decisions are final. Do not suggest alternatives.
 ### Unique Constraint for Visit Enforcement
 ```javascript
 // Compound unique index prevents duplicate visits
-{ doctor: 1, user: 1, yearWeekKey: 1 } // unique: true
+{ vipClient: 1, user: 1, yearWeekKey: 1 } // unique: true
 ```
 
 ---
@@ -93,14 +93,14 @@ These decisions are final. Do not suggest alternatives.
 ## What's IN Scope (Phase 1)
 
 - User authentication (register, login, password reset)
-- Doctor management (CRUD, region assignment)
+- VIP Client management (CRUD, region assignment)
 - Visit logging with GPS + photo proof
 - Weekly/monthly visit enforcement
 - Product catalog management
-- Product-to-doctor assignments
+- Product-to-VIP Client assignments
 - Compliance reporting and alerts
 - Admin dashboard with all-region access
-- Employee dashboard with assigned-region access
+- BDM dashboard with assigned-region access
 
 ---
 
@@ -112,7 +112,7 @@ These decisions are final. Do not suggest alternatives.
 | Offline mode | Phase 3 | Service workers, IndexedDB |
 | Email notifications | Phase 2 | SES integration |
 | Push notifications | Phase 2 | Web push API |
-| Doctor A/B/C/D categories | Deprecated | Use visitFrequency instead |
+| VIP Client A/B/C/D categories | Deprecated | Use visitFrequency instead |
 | Cloudinary integration | Removed | Use AWS S3 |
 | Generic VPS hosting | Removed | Use AWS Lightsail |
 
@@ -143,7 +143,7 @@ These decisions are final. Do not suggest alternatives.
 ```json
 {
   "success": false,
-  "message": "Weekly visit limit reached for this doctor",
+  "message": "Weekly visit limit reached for this VIP Client",
   "data": {
     "weeklyCount": 1,
     "monthlyCount": 2,
@@ -157,7 +157,7 @@ These decisions are final. Do not suggest alternatives.
 ## File Structure
 
 ```
-vip-pharmacy-crm/
+vip-crm/
 ├── backend/
 │   ├── config/          # Database and S3 configuration
 │   ├── controllers/     # Route handlers
@@ -184,7 +184,7 @@ vip-pharmacy-crm/
 
 Before implementing a feature, verify:
 
-1. [ ] Does it align with the three roles (admin, medrep, employee)?
+1. [ ] Does it align with the three roles (admin, medrep, bdm)?
 2. [ ] Does it respect region-based access control?
 3. [ ] Does it enforce weekly/monthly visit limits?
 4. [ ] Does it use AWS S3 for file storage (not Cloudinary)?
@@ -198,8 +198,8 @@ If any answer is NO, clarify with the user before proceeding.
 
 1. **Week numbers**: Use ISO week numbers (1-53), not simple division
 2. **Work days only**: Visits can only be logged Monday-Friday
-3. **Unique constraint**: The yearWeekKey prevents same user visiting same doctor twice in one week
-4. **Region filtering**: Always apply region filter for employee queries
+3. **Unique constraint**: The yearWeekKey prevents same user visiting same VIP Client twice in one week
+4. **Region filtering**: Always apply region filter for BDM queries
 5. **Photo requirement**: Visits without photos should be rejected
 
 ---
@@ -224,7 +224,7 @@ JWT_REFRESH_EXPIRE=7d
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_REGION=ap-southeast-1
-S3_BUCKET_NAME=vip-pharmacy-crm
+S3_BUCKET_NAME=vip-crm
 ```
 
 ---
@@ -244,17 +244,17 @@ S3_BUCKET_NAME=vip-pharmacy-crm
 - [x] `config/websiteDb.js` - Dual DB connection for website products
 
 #### Models (7/7 Complete & Tested)
-- [x] `models/User.js` - Admin, medrep, employee roles
-- [x] `models/Doctor.js` - visitFrequency (2/4), region-based
+- [x] `models/User.js` - Admin, medrep, bdm roles
+- [x] `models/VIPClient.js` - visitFrequency (2/4), region-based
 - [x] `models/Visit.js` - Weekly tracking, GPS, photos, unique constraint
 - [x] `models/Product.js` - Product catalog with specializations
-- [x] `models/ProductAssignment.js` - Product-to-doctor assignments
+- [x] `models/ProductAssignment.js` - Product-to-VIP Client assignments
 - [x] `models/Region.js` - Hierarchical regions
 - [x] `models/WebsiteProduct.js` - Read-only website products
 
 #### Middleware (5/5 Complete & Working)
 - [x] `middleware/auth.js` - JWT protect, optionalAuth, verifyRefreshToken
-- [x] `middleware/roleCheck.js` - adminOnly, medRepOnly, employeeOnly, etc.
+- [x] `middleware/roleCheck.js` - adminOnly, medRepOnly, bdmOnly, etc.
 - [x] `middleware/errorHandler.js` - Global error handling, custom errors
 - [x] `middleware/validation.js` - Express-validator rules
 - [x] `middleware/upload.js` - Multer + S3 processors
@@ -262,7 +262,7 @@ S3_BUCKET_NAME=vip-pharmacy-crm
 #### Controllers (7/7 Complete & Tested)
 - [x] `controllers/authController.js` - Login, register, password reset
 - [x] `controllers/userController.js` - User CRUD, profile management
-- [x] `controllers/doctorController.js` - Doctor CRUD with region filter
+- [x] `controllers/vipClientController.js` - VIP Client CRUD with region filter
 - [x] `controllers/visitController.js` - Visit logging with enforcement
 - [x] `controllers/productController.js` - Product CRUD (reads from website DB)
 - [x] `controllers/productAssignmentController.js` - Assignments
@@ -271,7 +271,7 @@ S3_BUCKET_NAME=vip-pharmacy-crm
 #### Routes (7/7 Complete & Tested)
 - [x] `routes/authRoutes.js` → `/api/auth`
 - [x] `routes/userRoutes.js` → `/api/users`
-- [x] `routes/doctorRoutes.js` → `/api/doctors`
+- [x] `routes/vipClientRoutes.js` → `/api/vip-clients`
 - [x] `routes/visitRoutes.js` → `/api/visits`
 - [x] `routes/productRoutes.js` → `/api/products`
 - [x] `routes/productAssignmentRoutes.js` → `/api/assignments`
@@ -301,8 +301,8 @@ S3_BUCKET_NAME=vip-pharmacy-crm
 #### Services Layer
 - [x] `services/api.js` - Axios instance with interceptors, auth:logout event dispatch
 - [x] `services/authService.js` - Login, logout, refresh, profile
-- [x] `services/doctorService.js` - Doctor API calls + getAssignedProducts
-- [x] `services/visitService.js` - Visit API calls + getToday, canVisit, getWeeklyCompliance, getEmployeeReport, AbortController support
+- [x] `services/vipClientService.js` - VIP Client API calls + getAssignedProducts
+- [x] `services/visitService.js` - Visit API calls + getToday, canVisit, getWeeklyCompliance, getBDMReport, AbortController support
 - [x] `services/productService.js` - Product API calls
 - [x] `services/regionService.js` - Region API calls
 - [x] `services/assignmentService.js` - Product assignment API calls
@@ -326,35 +326,35 @@ S3_BUCKET_NAME=vip-pharmacy-crm
 - [x] `components/common/ErrorBoundary.jsx` - Catches React errors, shows fallback UI
 - [x] `components/common/Pagination.jsx` - Shared pagination with React.memo
 
-#### Components - Employee
-- [x] `components/employee/DoctorList.jsx` - COMPLETE (React.memo, useMemo, visit status, Log Visit)
-- [x] `components/employee/VisitLogger.jsx` - COMPLETE (FormData upload, GPS, products discussed)
-- [x] `components/employee/CameraCapture.jsx` - COMPLETE (GPS watchPosition, 5-min timeout, accuracy badges)
-- [x] `components/employee/ProductRecommendations.jsx` - COMPLETE (assigned products display, detail modal)
+#### Components - BDM
+- [x] `components/bdm/VIPClientList.jsx` - COMPLETE (React.memo, useMemo, visit status, Log Visit)
+- [x] `components/bdm/VisitLogger.jsx` - COMPLETE (FormData upload, GPS, products discussed)
+- [x] `components/bdm/CameraCapture.jsx` - COMPLETE (GPS watchPosition, 5-min timeout, accuracy badges)
+- [x] `components/bdm/ProductRecommendations.jsx` - COMPLETE (assigned products display, detail modal)
 
 #### Components - Admin
 - [x] `components/admin/Dashboard.jsx` - COMPLETE (stats display, activity feed)
-- [x] `components/admin/DoctorManagement.jsx` - COMPLETE (full CRUD, cascading region dropdowns)
-- [x] `components/admin/EmployeeManagement.jsx` - COMPLETE (CRUD, multi-region assignment)
+- [x] `components/admin/VIPClientManagement.jsx` - COMPLETE (full CRUD, cascading region dropdowns)
+- [x] `components/admin/BDMManagement.jsx` - COMPLETE (CRUD, multi-region assignment)
 - [x] `components/admin/RegionManagement.jsx` - COMPLETE (tree view, stats modal)
 - [x] `components/admin/ProductManagement.jsx` - COMPLETE
-- [x] `components/admin/EmployeeVisitReport.jsx` - COMPLETE (Call Plan Template format, visit grid)
+- [x] `components/admin/BDMVisitReport.jsx` - COMPLETE (Call Plan Template format, visit grid)
 - [ ] `components/admin/VisitApproval.jsx` - Scaffolded (Phase 2)
 
 #### Components - MedRep
 - [x] `components/medrep/ProductAssignment.jsx` - COMPLETE (assignment cards, filtering, view/edit/deactivate)
-- [x] `components/medrep/DoctorProductMapping.jsx` - COMPLETE (doctor selection, product assignment, priority)
+- [x] `components/medrep/VIPClientProductMapping.jsx` - COMPLETE (VIP Client selection, product assignment, priority)
 
 #### Pages
 - [x] `pages/LoginPage.jsx` - COMPLETE (role-based redirect)
 - [x] `pages/admin/AdminDashboard.jsx` - COMPLETE (optimized API calls with limit:0)
-- [x] `pages/admin/DoctorsPage.jsx` - COMPLETE (useCallback, CRUD, filters, pagination)
-- [x] `pages/admin/EmployeesPage.jsx` - COMPLETE (CRUD, filters, pagination)
+- [x] `pages/admin/VIPClientsPage.jsx` - COMPLETE (useCallback, CRUD, filters, pagination)
+- [x] `pages/admin/BDMsPage.jsx` - COMPLETE (CRUD, filters, pagination)
 - [x] `pages/admin/RegionsPage.jsx` - COMPLETE (hierarchy tree, CRUD)
-- [x] `pages/admin/ReportsPage.jsx` - COMPLETE (Employee Visit Report, Call Plan Template format, Excel/CSV export)
-- [x] `pages/employee/EmployeeDashboard.jsx` - COMPLETE (real API data, stats)
-- [x] `pages/employee/MyVisits.jsx` - COMPLETE (AbortController, debounced search, pagination)
-- [x] `pages/employee/NewVisitPage.jsx` - COMPLETE (isMounted cleanup, canVisit check)
+- [x] `pages/admin/ReportsPage.jsx` - COMPLETE (BDM Visit Report, Call Plan Template format, Excel/CSV export)
+- [x] `pages/bdm/BDMDashboard.jsx` - COMPLETE (real API data, stats)
+- [x] `pages/bdm/MyVisits.jsx` - COMPLETE (AbortController, debounced search, pagination)
+- [x] `pages/bdm/NewVisitPage.jsx` - COMPLETE (isMounted cleanup, canVisit check)
 - [x] `pages/medrep/MedRepDashboard.jsx` - COMPLETE (react-hot-toast, assignment CRUD)
 
 ---
@@ -385,7 +385,7 @@ utils/validateWeeklyVisit.js
 └── Used by: controllers/visitController.js
 ```
 
-### Frontend Dependencies (Planned)
+### Frontend Dependencies
 ```
 App.jsx
 ├── contexts/AuthContext.jsx
@@ -407,15 +407,15 @@ App.jsx
 | AWS S3 | ✅ CONFIGURED | vip-pharmacy-crm-devs (ap-southeast-1) |
 | AWS Lightsail | NOT PROVISIONED | Need to set up instance |
 | Frontend Auth | ✅ WORKING | Login, logout, token refresh |
-| Employee Dashboard | ✅ WORKING | Real API data, doctor list |
+| BDM Dashboard | ✅ WORKING | Real API data, VIP Client list |
 | Visit Logger | ✅ WORKING | Photo + GPS capture, FormData upload |
 | My Visits History | ✅ WORKING | Filters, pagination, photo gallery |
 | Admin Dashboard | ✅ WORKING | Real API data, stats |
-| Doctor Management | ✅ WORKING | Full CRUD, cascading regions |
-| Employee Management | ✅ WORKING | Full CRUD, multi-region assignment |
+| VIP Client Management | ✅ WORKING | Full CRUD, cascading regions |
+| BDM Management | ✅ WORKING | Full CRUD, multi-region assignment |
 | Region Management | ✅ WORKING | Tree view, hierarchy CRUD |
-| MedRep Dashboard | ✅ WORKING | Full assignment CRUD, doctor mapping |
-| Reports Page | ✅ WORKING | Employee Visit Report, Excel/CSV export |
+| MedRep Dashboard | ✅ WORKING | Full assignment CRUD, VIP Client mapping |
+| Reports Page | ✅ WORKING | BDM Visit Report, Excel/CSV export |
 
 ---
 
@@ -423,26 +423,27 @@ App.jsx
 
 1. ✅ **Task 1.1** - MongoDB Atlas setup & connection
 2. ✅ **Task 1.2** - AWS S3 bucket configuration
-3. ✅ **Task 1.3** - Seed data script (12 regions, 5 users, 56 doctors)
+3. ✅ **Task 1.3** - Seed data script (12 regions, 5 users, 56 VIP Clients)
 4. ✅ **Task 1.4** - Backend API testing (all endpoints verified)
 5. ✅ **Task 1.5** - Authentication flow (login, logout, token refresh)
-6. ✅ **Task 1.6** - Employee Dashboard & Doctor List (visitFrequency filter)
+6. ✅ **Task 1.6** - BDM Dashboard & VIP Client List (visitFrequency filter)
 7. ✅ **Task 1.7** - Visit Logger with Photo & GPS capture
 8. ✅ **Task 1.8** - My Visits history page (filters, pagination, photo gallery)
 9. ✅ **Task 1.9** - Admin Dashboard (real API data, stats)
-10. ✅ **Task 1.10** - Doctor Management (full CRUD, cascading regions)
+10. ✅ **Task 1.10** - VIP Client Management (full CRUD, cascading regions)
 11. ✅ **Task 1.10b** - Cascading Region Dropdown Fix
-12. ✅ **Task 1.11** - Employee Management (CRUD, multi-region assignment)
+12. ✅ **Task 1.11** - BDM Management (CRUD, multi-region assignment)
 13. ✅ **Task 1.12** - Region Management (tree view, hierarchy CRUD)
 14. ✅ **Task 1.12b** - Cascading Region Assignment Fix (parentRegions field)
 15. ✅ **Task 1.14** - Product Recommendations in Visit Interface
-16. ✅ **Task 1.13** - MedRep Dashboard & Product Assignment (full CRUD, doctor mapping)
+16. ✅ **Task 1.13** - MedRep Dashboard & Product Assignment (full CRUD, VIP Client mapping)
 17. ✅ **Backend Optimization** - Pre-deployment code review and optimization (Dec 2024)
 18. ✅ **Frontend Optimization** - ErrorBoundary, useDebounce, Pagination, AbortController, React.memo (Dec 2024)
 19. ✅ **Task 1.16** - Development Environment Documentation (DEVELOPMENT_GUIDE.md, .env.example files)
 20. ✅ **Task 1.14c** - Cross-Database Product Population Fix (Dec 2024)
-21. ✅ **Task 1.10c** - Doctor Export to Excel/CSV (Call Plan Template format)
-22. ✅ **Employee Visit Report** - Reports page with employee selector, month picker, actual visit data, Excel/CSV export (Dec 2024)
+21. ✅ **Task 1.10c** - VIP Client Export to Excel/CSV (Call Plan Template format)
+22. ✅ **BDM Visit Report** - Reports page with BDM selector, month picker, actual visit data, Excel/CSV export (Dec 2024)
+23. ✅ **Visit Week Calculation Fix** - Fixed weekOfMonth calculation and 5th week handling (Dec 2024)
 
 ## Cross-Database Product Fix (Completed Dec 2024)
 
@@ -453,11 +454,11 @@ Products are stored in a separate website database (`vip-pharmacy`), but the CRM
 Replace Mongoose populate with manual product fetching using `getWebsiteProductModel()`:
 
 ```javascript
-// Pattern used in visitController.js and doctorController.js:
+// Pattern used in visitController.js and vipClientController.js:
 const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 
 // 1. Get documents without product population
-const visits = await Visit.find(query).populate('doctor', 'name');
+const visits = await Visit.find(query).populate('vipClient', 'name');
 
 // 2. Collect product IDs
 const productIds = visits.flatMap(v => v.productsDiscussed.map(p => p.product));
@@ -482,8 +483,34 @@ visits.forEach(v => {
 | `visitController.js` | `getMyVisits` | Manual product population for visit history |
 | `visitController.js` | `getVisitById` | Manual product population for single visit |
 | `visitController.js` | `getWeeklyCompliance` | Default to current user when no userId param |
-| `doctorController.js` | `getDoctorById` | Manual product population for assigned products |
-| `doctorController.js` | `getDoctorProducts` | Manual product population for doctor's products |
+| `vipClientController.js` | `getVIPClientById` | Manual product population for assigned products |
+| `vipClientController.js` | `getVIPClientProducts` | Manual product population for VIP Client's products |
+
+## Visit Week Calculation Fix (Completed Dec 2024)
+
+### Problem
+BDM Visit Report showed visits in Excel export totals (SUM OF column) but not in the correct week/day cells in the grid. Root cause: inconsistent `getWeekOfMonth` formulas and months with more than 4 calendar weeks.
+
+### Solution
+1. **Aligned `getWeekOfMonth` formula** in `validateWeeklyVisit.js` to match `Visit.js` (ISO week standard)
+2. **Added 5th week → next month logic** in Visit.js pre-save hook:
+   - If `weekOfMonth > 4`, visit counts towards NEXT month's report as Week 1
+   - Grid supports 20 days (4 weeks × 5 days)
+3. **Created migration script** `backend/scripts/fixVisitWeeks.js` to fix existing visits
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `backend/utils/validateWeeklyVisit.js` | Aligned `getWeekOfMonth` formula with Visit.js |
+| `backend/models/Visit.js` | Added 5th week → next month logic in pre-save hook |
+| `backend/scripts/fixVisitWeeks.js` | NEW: Migration script for existing data |
+
+### Business Rule
+- **Week 1-4 visits**: Stay in current month
+- **Week 5+ visits**: Count towards NEXT month's Week 1
+- Example: Dec 30, 2024 (week 6) → January 2025 Week 1
+
+---
 
 ## Backend Optimization Summary (Completed Dec 2024)
 
@@ -495,8 +522,8 @@ visits.forEach(v => {
 
 ### Performance Optimizations
 - ✅ Optimized Region.getDescendantIds() - single query + in-memory traversal (was N+1)
-- ✅ Added canVisitDoctorsBatch() - 3 queries instead of N+1 for batch checks
-- ✅ Added compound indexes to User, Doctor, Region, Product, Visit models
+- ✅ Added canVisitVIPClientsBatch() - 3 queries instead of N+1 for batch checks
+- ✅ Added compound indexes to User, VIPClient, Region, Product, Visit models
 - ✅ Added TTL index for password reset token auto-expiration
 
 ### Security Enhancements
@@ -508,7 +535,7 @@ visits.forEach(v => {
 
 ### Code Quality
 - ✅ Created controllerHelpers.js utility functions for code deduplication
-- ✅ Added cascade delete hooks to Doctor and Product models
+- ✅ Added cascade delete hooks to VIPClient and Product models
 - ✅ Improved email validation regex (handles modern TLDs)
 - ✅ Removed console.log statements from production code
 
@@ -525,12 +552,12 @@ visits.forEach(v => {
 ### Performance Optimizations
 - ✅ Created useDebounce hook (`hooks/useDebounce.js`)
 - ✅ Created shared Pagination component with React.memo
-- ✅ Added React.memo to DoctorList
-- ✅ Added useMemo for filtered lists in DoctorList
+- ✅ Added React.memo to VIPClientList
+- ✅ Added useMemo for filtered lists in VIPClientList
 - ✅ Fixed AdminDashboard API calls (limit: 0 for count queries)
 
 ### Code Quality
-- ✅ Fixed useEffect dependencies in DoctorsPage (useCallback)
+- ✅ Fixed useEffect dependencies in VIPClientsPage (useCallback)
 - ✅ Fixed useEffect cleanup in NewVisitPage (isMounted pattern)
 - ✅ Replaced custom toast with react-hot-toast in MedRepDashboard
 - ✅ Updated visitService.getMy to support AbortController signal
@@ -553,11 +580,11 @@ visits.forEach(v => {
 | `MyVisits.jsx` | Added AbortController, debounced search |
 | `visitService.js` | Added signal support to getMy() |
 | `CameraCapture.jsx` | Added 5-minute GPS timeout |
-| `DoctorsPage.jsx` | useCallback for fetchDoctors |
+| `VIPClientsPage.jsx` | useCallback for fetchVIPClients |
 | `NewVisitPage.jsx` | isMounted pattern for async cleanup |
 | `MedRepDashboard.jsx` | Use react-hot-toast |
 | `AdminDashboard.jsx` | Changed limit:1 to limit:0 |
-| `DoctorList.jsx` | React.memo, useMemo for filtered list |
+| `VIPClientList.jsx` | React.memo, useMemo for filtered list |
 
 ## Next Steps Priority
 
@@ -570,8 +597,8 @@ visits.forEach(v => {
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@vippharmacy.com | Admin123!@# |
-| MedRep | medrep@vippharmacy.com | Medrep123!@# |
-| Employee | juan@vippharmacy.com | Employee123!@# |
-| Employee | maria@vippharmacy.com | Employee123!@# |
-| Employee | pedro@vippharmacy.com | Employee123!@# |
+| Admin | admin@vipcrm.com | Admin123!@# |
+| MedRep | medrep@vipcrm.com | Medrep123!@# |
+| BDM | juan@vipcrm.com | BDM123!@# |
+| BDM | maria@vipcrm.com | BDM123!@# |
+| BDM | pedro@vipcrm.com | BDM123!@# |

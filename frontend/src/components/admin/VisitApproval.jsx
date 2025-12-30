@@ -558,7 +558,7 @@ const VisitApproval = ({ visit, isOpen, onClose, onApprove, onReject }) => {
                 <Stethoscope size={20} />
               </div>
               <div className="info-content">
-                <div className="info-label">Doctor Visited</div>
+                <div className="info-label">VIP Client Visited</div>
                 <div className="info-value">{visit.doctorVisited}</div>
               </div>
             </div>

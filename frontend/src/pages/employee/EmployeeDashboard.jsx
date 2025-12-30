@@ -266,11 +266,11 @@ const EmployeeDashboard = () => {
             </div>
             <div className="stat-card">
               <span className="stat-value">{stats.doctorsVisitedThisMonth}</span>
-              <span className="stat-label">Doctors Visited</span>
+              <span className="stat-label">VIP Clients Visited</span>
             </div>
             <div className="stat-card">
               <span className="stat-value">{stats.totalDoctors}</span>
-              <span className="stat-label">Total Doctors</span>
+              <span className="stat-label">Total VIP Clients</span>
             </div>
           </div>
 
@@ -290,7 +290,7 @@ const EmployeeDashboard = () => {
           )}
 
           <section className="dashboard-section">
-            <h2>My Doctors</h2>
+            <h2>My VIP Clients</h2>
             <DoctorList
               doctors={doctors}
               loading={loading}

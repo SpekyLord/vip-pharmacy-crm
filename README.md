@@ -1,24 +1,24 @@
-# VIP Pharmacy CRM
+# VIP CRM
 
-A pharmaceutical field sales management system designed for medical representatives to track doctor visits, manage product assignments, and ensure compliance with visit schedules.
+A pharmaceutical field sales management system designed for Business Development Managers (BDM) to track VIP Client visits, manage product assignments, and ensure compliance with visit schedules.
 
 ## Features
 
-### Employee (Field Sales Rep)
-- View doctors in assigned regions only
+### Business Development Manager (BDM)
+- View VIP Clients in assigned regions only
 - Log visits with GPS location and photo proof
 - Track weekly/monthly visit compliance
-- View products assigned to each doctor
+- View products assigned to each VIP Client
 - View personal visit history with filters
 
 ### Medical Representative (MedRep)
-- Assign products to doctors with priority levels
-- Manage product-doctor mappings (create, update, deactivate)
+- Assign products to VIP Clients with priority levels
+- Manage product-VIP Client mappings (create, update, deactivate)
 - View assignment reports across all regions
 
 ### Administrator
 - Manage users (create, edit, assign regions, deactivate)
-- Manage doctors across all regions
+- Manage VIP Clients across all regions
 - Manage products with image uploads
 - Manage regions (hierarchical structure)
 - View all visits and compliance alerts
@@ -37,7 +37,7 @@ A pharmaceutical field sales management system designed for medical representati
 ## Project Structure
 
 ```
-vip-pharmacy-crm/
+vip-crm/
 ├── backend/          # Express.js API server
 │   ├── config/       # Database and S3 configuration
 │   ├── controllers/  # Route handlers
@@ -96,9 +96,9 @@ cd frontend && npm run dev
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@vippharmacy.com | Admin123!@# |
-| MedRep | medrep@vippharmacy.com | Medrep123!@# |
-| Employee | juan@vippharmacy.com | Employee123!@# |
+| Admin | admin@vipcrm.com | Admin123!@# |
+| MedRep | medrep@vipcrm.com | Medrep123!@# |
+| BDM | juan@vipcrm.com | BDM123!@# |
 
 ## Documentation
 
@@ -108,10 +108,10 @@ cd frontend && npm run dev
 
 ## Business Rules
 
-- **Weekly Limit**: Maximum ONE visit per doctor per week (Mon-Fri only)
-- **Monthly Quota**: 2x or 4x visits per doctor based on visitFrequency
+- **Weekly Limit**: Maximum ONE visit per VIP Client per week (Mon-Fri only)
+- **Monthly Quota**: 2x or 4x visits per VIP Client based on visitFrequency
 - **Visit Proof**: Every visit requires GPS coordinates and at least one photo
-- **Region Access**: Employees only see doctors in their assigned regions
+- **Region Access**: BDMs only see VIP Clients in their assigned regions
 
 ## License
 

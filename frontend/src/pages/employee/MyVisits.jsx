@@ -281,13 +281,13 @@ const MyVisits = () => {
                 />
               </div>
 
-              {/* Doctor Search */}
+              {/* VIP Client Search */}
               <div className="filter-group">
-                <label htmlFor="doctor-search">Doctor</label>
+                <label htmlFor="doctor-search">VIP Client</label>
                 <input
                   id="doctor-search"
                   type="text"
-                  placeholder="Search by doctor name..."
+                  placeholder="Search by VIP Client name..."
                   value={doctorSearch}
                   onChange={(e) => setDoctorSearch(e.target.value)}
                 />
@@ -324,7 +324,7 @@ const MyVisits = () => {
                     <tr>
                       <th>Date</th>
                       <th>Week</th>
-                      <th>Doctor</th>
+                      <th>VIP Client</th>
                       <th>Type</th>
                       <th>Status</th>
                       <th>Photos</th>
@@ -446,9 +446,9 @@ const MyVisits = () => {
                     </div>
                   </div>
 
-                  {/* Doctor Info */}
+                  {/* VIP Client Info */}
                   <div className="visit-info-section">
-                    <h3>Doctor</h3>
+                    <h3>VIP Client</h3>
                     <div className="info-grid">
                       <div className="info-item">
                         <label>Name</label>
@@ -478,7 +478,7 @@ const MyVisits = () => {
                         <span>{selectedVisit.purpose || 'N/A'}</span>
                       </div>
                       <div className="info-item">
-                        <label>Doctor Feedback</label>
+                        <label>VIP Client Feedback</label>
                         <span>{selectedVisit.doctorFeedback || 'N/A'}</span>
                       </div>
                       <div className="info-item">

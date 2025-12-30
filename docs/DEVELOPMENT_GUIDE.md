@@ -1,5 +1,5 @@
 # Development Guide
-## VIP Pharmacy CRM
+## VIP CRM
 
 **Version:** 2.0
 **Last Updated:** December 2024
@@ -55,10 +55,10 @@ mongod --version  # Should show MongoDB version (if local)
 ### 2.1 Clone Repository
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/vip-pharmacy-crm.git
+git clone https://github.com/YOUR_USERNAME/vip-crm.git
 
 # Navigate to project directory
-cd vip-pharmacy-crm
+cd vip-crm
 ```
 
 ### 2.2 Install All Dependencies
@@ -90,9 +90,9 @@ NODE_ENV=development
 PORT=5000
 
 # Database - Use local MongoDB or Atlas
-MONGODB_URI=mongodb://localhost:27017/vip-pharmacy-crm
+MONGODB_URI=mongodb://localhost:27017/vip-crm
 # OR for Atlas:
-# MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/vip-pharmacy-crm
+# MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/vip-crm
 
 # JWT Configuration
 JWT_SECRET=dev_jwt_secret_change_in_production_min_32_chars
@@ -104,7 +104,7 @@ JWT_REFRESH_EXPIRE=7d
 AWS_ACCESS_KEY_ID=your_access_key_id
 AWS_SECRET_ACCESS_KEY=your_secret_access_key
 AWS_REGION=ap-southeast-1
-S3_BUCKET_NAME=vip-pharmacy-crm-dev
+S3_BUCKET_NAME=vip-crm-dev
 
 # Frontend URL (for CORS)
 CLIENT_URL=http://localhost:5173
@@ -138,13 +138,13 @@ VITE_APP_ENV=development
 
 **Step 2: Create IAM User**
 1. Go to **IAM** > **Users** > **Create user**
-2. User name: `vip-pharmacy-dev`
+2. User name: `vip-crm-dev`
 3. Attach policy: `AmazonS3FullAccess`
 4. Create and download access keys
 
 **Step 3: Create S3 Bucket**
 1. Go to **S3** > **Create bucket**
-2. Bucket name: `vip-pharmacy-crm-dev` (must be unique globally)
+2. Bucket name: `vip-crm-dev` (must be unique globally)
 3. Region: `ap-southeast-1` (or closest to you)
 4. Keep "Block all public access" enabled
 5. Create bucket
@@ -169,7 +169,7 @@ Add your AWS credentials to `backend/.env`:
 AWS_ACCESS_KEY_ID=AKIA...your_key
 AWS_SECRET_ACCESS_KEY=your_secret
 AWS_REGION=ap-southeast-1
-S3_BUCKET_NAME=vip-pharmacy-crm-dev
+S3_BUCKET_NAME=vip-crm-dev
 ```
 
 **Note:** Never commit AWS credentials to git. The `.env` file is in `.gitignore`.
@@ -271,7 +271,7 @@ mongod --dbpath /path/to/data
 
 **Connection string for local:**
 ```
-MONGO_URI=mongodb://localhost:27017/vip-pharmacy-crm
+MONGO_URI=mongodb://localhost:27017/vip-crm
 ```
 
 ### 5.2 Option B: MongoDB Atlas (Recommended)
@@ -296,7 +296,7 @@ MONGO_URI=mongodb://localhost:27017/vip-pharmacy-crm
 mongosh
 
 # Connect to Atlas
-mongosh "mongodb+srv://cluster.xxxxx.mongodb.net/vip-pharmacy-crm" --username your_user
+mongosh "mongodb+srv://cluster.xxxxx.mongodb.net/vip-crm" --username your_user
 ```
 
 ### 5.4 Seed Database (Optional)
@@ -338,7 +338,7 @@ backend/
 ├── tests/
 │   ├── auth.test.js
 │   ├── users.test.js
-│   ├── doctors.test.js
+│   ├── vipClients.test.js
 │   ├── visits.test.js
 │   └── setup.js
 ```
@@ -397,7 +397,7 @@ describe('Auth Endpoints', () => {
 
 ### 7.2 Branch Naming
 ```
-feature/add-doctor-search
+feature/add-vip-client-search
 feature/user-authentication
 bugfix/fix-login-validation
 hotfix/security-patch
@@ -416,7 +416,7 @@ git checkout -b feature/your-feature-name
 
 # Work on feature...
 git add .
-git commit -m "feat: add doctor search functionality"
+git commit -m "feat: add VIP Client search functionality"
 
 # Push branch
 git push origin feature/your-feature-name
@@ -595,7 +595,7 @@ npx eslint .
 
 ### 9.1 Root Structure
 ```
-vip-pharmacy-crm/
+vip-crm/
 ├── backend/           # Express.js API
 ├── frontend/          # React application
 ├── docs/              # Documentation
@@ -612,28 +612,28 @@ backend/
 ├── controllers/
 │   ├── authController.js  # Authentication logic
 │   ├── userController.js  # User CRUD
-│   ├── doctorController.js
+│   ├── vipClientController.js
 │   ├── visitController.js # Weekly visit enforcement
 │   ├── productController.js
 │   ├── productAssignmentController.js
 │   └── regionController.js
 ├── middleware/
 │   ├── auth.js            # JWT verification (protect, optionalAuth)
-│   ├── roleCheck.js       # RBAC (adminOnly, medRepOnly, employeeOnly)
+│   ├── roleCheck.js       # RBAC (adminOnly, medRepOnly, bdmOnly)
 │   ├── errorHandler.js    # Global error handler + custom errors
 │   ├── validation.js      # Express-validator rules
 │   └── upload.js          # S3 file upload (multer + AWS SDK)
 ├── models/
-│   ├── User.js            # Roles: admin, medrep, employee
-│   ├── Doctor.js          # visitFrequency: 2 or 4
+│   ├── User.js            # Roles: admin, medrep, bdm
+│   ├── VIPClient.js       # visitFrequency: 2 or 4
 │   ├── Visit.js           # Weekly tracking (yearWeekKey)
 │   ├── Product.js         # Product catalog
-│   ├── ProductAssignment.js # Doctor-product mapping
+│   ├── ProductAssignment.js # VIPClient-product mapping
 │   └── Region.js          # Hierarchical regions
 ├── routes/
 │   ├── authRoutes.js
 │   ├── userRoutes.js
-│   ├── doctorRoutes.js
+│   ├── vipClientRoutes.js
 │   ├── visitRoutes.js
 │   ├── productRoutes.js
 │   ├── productAssignmentRoutes.js
@@ -659,7 +659,7 @@ frontend/
 │   ├── components/
 │   │   ├── common/        # Shared components
 │   │   ├── auth/          # Auth components
-│   │   ├── employee/      # Employee features
+│   │   ├── employee/      # BDM features
 │   │   ├── admin/         # Admin features
 │   │   └── medrep/        # Med rep features
 │   ├── pages/

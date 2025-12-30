@@ -636,9 +636,9 @@ const EmployeeManagement = ({
       <style>{employeeManagementStyles}</style>
 
       <div className="management-header">
-        <h2>Employees ({pagination.total || employees.length})</h2>
+        <h2>BDMs ({pagination.total || employees.length})</h2>
         <button onClick={handleCreate} className="btn btn-primary">
-          + Add Employee
+          + Add BDM
         </button>
       </div>
 
@@ -657,7 +657,7 @@ const EmployeeManagement = ({
           <option value="">All Roles</option>
           <option value="admin">Admin</option>
           <option value="medrep">MedRep</option>
-          <option value="employee">Employee</option>
+          <option value="employee">BDM</option>
         </select>
         <select
           value={filters.isActive === '' ? '' : filters.isActive}
@@ -751,7 +751,7 @@ const EmployeeManagement = ({
           </table>
         ) : (
           <div className="empty-state">
-            <p>No employees found</p>
+            <p>No BDMs found</p>
           </div>
         )}
       </div>
@@ -762,7 +762,7 @@ const EmployeeManagement = ({
           <div className="pagination-info">
             Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
             {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
-            {pagination.total} employees
+            {pagination.total} BDMs
           </div>
           <div className="pagination-buttons">
             <button
@@ -788,7 +788,7 @@ const EmployeeManagement = ({
         <div className="modal-overlay" onClick={handleCloseModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>{selectedEmployee ? 'Edit Employee' : 'Add New Employee'}</h3>
+              <h3>{selectedEmployee ? 'Edit BDM' : 'Add New BDM'}</h3>
               <button className="modal-close" onClick={handleCloseModal}>
                 &times;
               </button>
@@ -860,7 +860,7 @@ const EmployeeManagement = ({
                   onChange={handleFormChange}
                   required
                 >
-                  <option value="employee">Employee (Field Rep)</option>
+                  <option value="employee">BDM (Field Rep)</option>
                   <option value="medrep">MedRep (Product Manager)</option>
                   <option value="admin">Admin</option>
                 </select>
@@ -924,7 +924,7 @@ const EmployeeManagement = ({
                   className="btn btn-primary"
                   disabled={saving}
                 >
-                  {saving ? 'Saving...' : selectedEmployee ? 'Update Employee' : 'Add Employee'}
+                  {saving ? 'Saving...' : selectedEmployee ? 'Update BDM' : 'Add BDM'}
                 </button>
               </div>
             </form>

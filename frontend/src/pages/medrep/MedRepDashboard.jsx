@@ -545,7 +545,7 @@ const MedRepDashboard = () => {
             <div className="stat-card">
               <div className="stat-icon green">👨‍⚕️</div>
               <span className="stat-value">{stats.totalDoctors}</span>
-              <span className="stat-label">Total Doctors</span>
+              <span className="stat-label">Total VIP Clients</span>
             </div>
             <div className="stat-card">
               <div className="stat-icon purple">💊</div>
@@ -574,7 +574,7 @@ const MedRepDashboard = () => {
                   className={`tab-btn ${activeTab === 'mapping' ? 'active' : ''}`}
                   onClick={() => setActiveTab('mapping')}
                 >
-                  Doctor-Product Mapping
+                  VIP Client-Product Mapping
                 </button>
               </div>
 
@@ -625,7 +625,7 @@ const MedRepDashboard = () => {
                   <span className="info-value">{selectedAssignment.product?.category || 'N/A'}</span>
                 </div>
                 <div className="info-row">
-                  <span className="info-label">Doctor:</span>
+                  <span className="info-label">VIP Client:</span>
                   <span className="info-value">{selectedAssignment.doctor?.name}</span>
                 </div>
                 <div className="info-row">
@@ -712,7 +712,7 @@ const MedRepDashboard = () => {
                 />
               </div>
               <div className="form-group">
-                <label>Doctor</label>
+                <label>VIP Client</label>
                 <input
                   type="text"
                   value={selectedAssignment.doctor?.name || ''}

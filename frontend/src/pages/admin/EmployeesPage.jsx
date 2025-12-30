@@ -212,7 +212,7 @@ const EmployeesPage = () => {
         <Sidebar />
         <main className="main-content">
           <div className="page-header">
-            <h1>Employee Management</h1>
+            <h1>BDM Management</h1>
           </div>
 
           {error && (

@@ -342,7 +342,7 @@ const DoctorsPage = () => {
         <Sidebar />
         <main className="main-content">
           <div className="page-header">
-            <h1>Doctor Management</h1>
+            <h1>VIP Client Management</h1>
             <div className="header-actions">
               <button
                 className="export-btn export-btn-excel"
