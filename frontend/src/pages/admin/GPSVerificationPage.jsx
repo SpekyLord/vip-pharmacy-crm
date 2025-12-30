@@ -2,13 +2,18 @@
  * GPSVerificationPage
  *
  * Test/Demo page for GPS Location Verification (Task 2.9)
- * Showcases the VisitLocationMap component with mock data.
+ * Showcases the VisitLocationMap component with different scenarios.
  *
- * Includes two test scenarios:
- * 1. Suspicious: ~350m distance (exceeds 200m threshold)
- * 2. Verified: ~80m distance (within 200m threshold)
+ * Threshold: 400 meters
+ * - Within 400m = VERIFIED ✓
+ * - Beyond 400m = SUSPICIOUS ⚠
  *
- * Route: /admin/gps-verification (for testing)
+ * Test Scenarios:
+ * 1. Suspicious: ~550m distance (exceeds 400m threshold)
+ * 2. Verified: ~80m distance (well within 400m threshold)
+ * 3. Edge Case: ~380m (just within threshold)
+ *
+ * Route: /admin/gps-verification
  */
 
 import { useState } from 'react';
@@ -16,61 +21,57 @@ import {
   MapPin,
   AlertTriangle,
   CheckCircle,
-  RefreshCw,
+  Navigation,
+  Info,
 } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import VisitLocationMap from '../../components/admin/VisitLocationMap';
+import VisitLocationMap, { MOCK_VISIT_DATA } from '../../components/admin/VisitLocationMap';
 
 /* =============================================================================
-   MOCK DATA
-   Two scenarios in Iloilo City for testing verification logic
+   MOCK SCENARIOS
+   Using coordinates from Iloilo City, Philippines for realistic testing
    ============================================================================= */
 
 const MOCK_SCENARIOS = {
   suspicious: {
-    name: 'Suspicious Visit',
-    description: 'Employee logged visit ~350m away from clinic location',
+    name: 'Suspicious - Location Mismatch',
+    description: 'Employee photo taken ~550m away from clinic (exceeds 400m threshold)',
+    icon: AlertTriangle,
+    color: 'red',
+    // Using visitData format (old style)
     visitData: {
-      visitCoordinates: {
-        lat: 10.7235, // Near SM City Iloilo
-        lng: 122.5580,
-      },
-      clinicCoordinates: {
-        lat: 10.7202, // Iloilo City Center (Plaza Libertad area)
-        lng: 122.5621,
-      },
-      accuracy: 15,
+      clinicName: 'Rizal Health Center',
+      clinicLat: 14.5995,
+      clinicLng: 120.9842,
+      employeeLat: 14.6040,
+      employeeLng: 120.9890,
+      accuracy: 18,
+      timestamp: new Date().toISOString(),
     },
   },
   verified: {
-    name: 'Verified Visit',
-    description: 'Employee logged visit ~80m from clinic location',
-    visitData: {
-      visitCoordinates: {
-        lat: 10.7208, // Very close to clinic
-        lng: 122.5615,
-      },
-      clinicCoordinates: {
-        lat: 10.7202, // Iloilo City Center
-        lng: 122.5621,
-      },
-      accuracy: 10,
-    },
+    name: 'Verified - Within Range',
+    description: 'Employee photo taken ~80m from clinic (well within 400m threshold)',
+    icon: CheckCircle,
+    color: 'green',
+    // Using individual coords format (new style)
+    clinicCoords: { lat: 10.6969, lng: 122.5648 },
+    employeeCoords: { lat: 10.6975, lng: 122.5652 },
+    accuracy: 12,
   },
   edge: {
-    name: 'Edge Case (~200m)',
-    description: 'Employee logged visit right at the boundary (~195m)',
+    name: 'Edge Case - Near Threshold',
+    description: 'Employee photo taken ~380m from clinic (just within 400m threshold)',
+    icon: Navigation,
+    color: 'amber',
+    // Using visitData with clinicCoordinates format (alternative)
     visitData: {
-      visitCoordinates: {
-        lat: 10.7220,
-        lng: 122.5621,
-      },
-      clinicCoordinates: {
-        lat: 10.7202,
-        lng: 122.5621,
-      },
-      accuracy: 12,
+      clinicName: 'Western Visayas Medical Center',
+      clinicCoordinates: { lat: 10.6920, lng: 122.5700 },
+      employeeCoordinates: { lat: 10.6954, lng: 122.5700 },
+      accuracy: 15,
+      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     },
   },
 };
@@ -95,10 +96,11 @@ const pageStyles = `
     max-width: 1200px;
   }
 
+  /* Page Header */
   .page-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 16px;
     margin-bottom: 24px;
   }
 
@@ -106,36 +108,77 @@ const pageStyles = `
     margin: 0;
     font-size: 28px;
     color: #1f2937;
-    display: flex;
-    align-items: center;
-    gap: 12px;
   }
 
   .page-header-icon {
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
     background: linear-gradient(135deg, #3b82f6, #2563eb);
-    border-radius: 10px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  }
+
+  /* Info Banner */
+  .info-banner {
+    background: linear-gradient(135deg, #eff6ff, #dbeafe);
+    border: 1px solid #bfdbfe;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .info-banner-icon {
+    width: 40px;
+    height: 40px;
+    background: white;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #2563eb;
+    flex-shrink: 0;
+  }
+
+  .info-banner-content {
+    flex: 1;
+  }
+
+  .info-banner-title {
+    font-weight: 600;
+    color: #1e40af;
+    margin-bottom: 2px;
+  }
+
+  .info-banner-text {
+    font-size: 14px;
+    color: #3b82f6;
   }
 
   /* Scenario Selector */
   .scenario-selector {
     background: white;
-    border-radius: 12px;
-    padding: 20px;
+    border-radius: 16px;
+    padding: 24px;
     margin-bottom: 24px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    border: 1px solid #e5e7eb;
   }
 
   .scenario-selector h3 {
-    margin: 0 0 16px 0;
+    margin: 0 0 20px 0;
     font-size: 16px;
     font-weight: 600;
     color: #1f2937;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .scenario-buttons {
@@ -147,118 +190,158 @@ const pageStyles = `
   .scenario-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 12px 20px;
-    border-radius: 10px;
+    gap: 10px;
+    padding: 14px 24px;
+    border-radius: 12px;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
     border: 2px solid transparent;
+    transition: all 0.2s;
+    flex: 1;
+    min-width: 180px;
+    justify-content: center;
   }
 
-  .scenario-btn.suspicious {
-    background: #fef2f2;
+  .scenario-btn.red {
+    background: linear-gradient(135deg, #fef2f2, #fee2e2);
     color: #dc2626;
     border-color: #fecaca;
   }
 
-  .scenario-btn.suspicious:hover,
-  .scenario-btn.suspicious.active {
-    background: #fee2e2;
+  .scenario-btn.red:hover,
+  .scenario-btn.red.active {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
     border-color: #dc2626;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.2);
   }
 
-  .scenario-btn.verified {
-    background: #f0fdf4;
+  .scenario-btn.green {
+    background: linear-gradient(135deg, #f0fdf4, #dcfce7);
     color: #16a34a;
     border-color: #bbf7d0;
   }
 
-  .scenario-btn.verified:hover,
-  .scenario-btn.verified.active {
-    background: #dcfce7;
+  .scenario-btn.green:hover,
+  .scenario-btn.green.active {
+    background: linear-gradient(135deg, #dcfce7, #bbf7d0);
     border-color: #16a34a;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2);
   }
 
-  .scenario-btn.edge {
-    background: #fef9c3;
-    color: #a16207;
+  .scenario-btn.amber {
+    background: linear-gradient(135deg, #fefce8, #fef9c3);
+    color: #b45309;
     border-color: #fde047;
   }
 
-  .scenario-btn.edge:hover,
-  .scenario-btn.edge.active {
-    background: #fef08a;
-    border-color: #ca8a04;
+  .scenario-btn.amber:hover,
+  .scenario-btn.amber.active {
+    background: linear-gradient(135deg, #fef9c3, #fde047);
+    border-color: #f59e0b;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
   }
 
   .scenario-description {
-    margin-top: 12px;
-    padding: 12px 16px;
-    background: #f9fafb;
-    border-radius: 8px;
-    font-size: 14px;
-    color: #6b7280;
-  }
-
-  /* Result Panel */
-  .result-panel {
     margin-top: 20px;
     padding: 16px 20px;
+    background: #f9fafb;
     border-radius: 10px;
+    font-size: 14px;
+    color: #4b5563;
+    border-left: 4px solid #3b82f6;
     display: flex;
     align-items: center;
     gap: 12px;
   }
 
-  .result-panel.verified {
-    background: #dcfce7;
-    border: 1px solid #86efac;
+  .scenario-description strong {
+    color: #1f2937;
   }
 
-  .result-panel.suspicious {
-    background: #fee2e2;
-    border: 1px solid #fca5a5;
-  }
-
-  .result-panel-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
+  .scenario-description-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
   }
 
-  .result-panel.verified .result-panel-icon {
-    background: #16a34a;
-    color: white;
-  }
-
-  .result-panel.suspicious .result-panel-icon {
-    background: #dc2626;
-    color: white;
-  }
-
-  .result-panel-content h4 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-  }
-
-  .result-panel.verified .result-panel-content h4 {
-    color: #15803d;
-  }
-
-  .result-panel.suspicious .result-panel-content h4 {
+  .scenario-description-icon.red {
+    background: #fee2e2;
     color: #dc2626;
   }
 
-  .result-panel-content p {
-    margin: 4px 0 0;
-    font-size: 14px;
+  .scenario-description-icon.green {
+    background: #dcfce7;
+    color: #16a34a;
+  }
+
+  .scenario-description-icon.amber {
+    background: #fef3c7;
+    color: #d97706;
+  }
+
+  /* Props Reference */
+  .props-reference {
+    background: white;
+    border-radius: 16px;
+    padding: 24px;
+    margin-top: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    border: 1px solid #e5e7eb;
+  }
+
+  .props-reference h3 {
+    margin: 0 0 16px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .props-code {
+    background: #1f2937;
+    border-radius: 10px;
+    padding: 20px;
+    overflow-x: auto;
+  }
+
+  .props-code pre {
+    margin: 0;
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 13px;
+    color: #e5e7eb;
+    line-height: 1.6;
+  }
+
+  .props-code .comment {
     color: #6b7280;
+  }
+
+  .props-code .key {
+    color: #93c5fd;
+  }
+
+  .props-code .value {
+    color: #86efac;
+  }
+
+  .props-code .number {
+    color: #fde68a;
+  }
+
+  @media (max-width: 768px) {
+    .scenario-buttons {
+      flex-direction: column;
+    }
+    .scenario-btn {
+      min-width: 100%;
+    }
   }
 `;
 
@@ -268,13 +351,8 @@ const pageStyles = `
 
 const GPSVerificationPage = () => {
   const [activeScenario, setActiveScenario] = useState('suspicious');
-  const [verificationResult, setVerificationResult] = useState(null);
-
-  const currentScenario = MOCK_SCENARIOS[activeScenario];
-
-  const handleVerificationResult = (result) => {
-    setVerificationResult(result);
-  };
+  const scenario = MOCK_SCENARIOS[activeScenario];
+  const ScenarioIcon = scenario.icon;
 
   return (
     <div className="gps-page-layout">
@@ -285,76 +363,117 @@ const GPSVerificationPage = () => {
         <main className="gps-page-main">
           {/* Page Header */}
           <div className="page-header">
-            <h1>
-              <div className="page-header-icon">
-                <MapPin size={20} />
+            <div className="page-header-icon">
+              <MapPin size={24} />
+            </div>
+            <h1>GPS Verification Demo</h1>
+          </div>
+
+          {/* Info Banner */}
+          <div className="info-banner">
+            <div className="info-banner-icon">
+              <Info size={20} />
+            </div>
+            <div className="info-banner-content">
+              <div className="info-banner-title">Verification Threshold: 400 meters</div>
+              <div className="info-banner-text">
+                Visits with employee photo taken within 400m of the clinic are marked as VERIFIED.
+                Beyond 400m is flagged as SUSPICIOUS.
               </div>
-              GPS Verification Demo
-            </h1>
+            </div>
           </div>
 
           {/* Scenario Selector */}
           <div className="scenario-selector">
-            <h3>Select Test Scenario</h3>
+            <h3>
+              <Navigation size={18} />
+              Select Test Scenario
+            </h3>
             <div className="scenario-buttons">
               <button
-                className={`scenario-btn suspicious ${activeScenario === 'suspicious' ? 'active' : ''}`}
+                className={`scenario-btn red ${activeScenario === 'suspicious' ? 'active' : ''}`}
                 onClick={() => setActiveScenario('suspicious')}
               >
                 <AlertTriangle size={18} />
-                Suspicious (~350m)
+                Suspicious (~550m)
               </button>
               <button
-                className={`scenario-btn verified ${activeScenario === 'verified' ? 'active' : ''}`}
+                className={`scenario-btn green ${activeScenario === 'verified' ? 'active' : ''}`}
                 onClick={() => setActiveScenario('verified')}
               >
                 <CheckCircle size={18} />
                 Verified (~80m)
               </button>
               <button
-                className={`scenario-btn edge ${activeScenario === 'edge' ? 'active' : ''}`}
+                className={`scenario-btn amber ${activeScenario === 'edge' ? 'active' : ''}`}
                 onClick={() => setActiveScenario('edge')}
               >
-                <RefreshCw size={18} />
-                Edge Case (~195m)
+                <Navigation size={18} />
+                Edge Case (~380m)
               </button>
             </div>
             <div className="scenario-description">
-              <strong>{currentScenario.name}:</strong> {currentScenario.description}
+              <div className={`scenario-description-icon ${scenario.color}`}>
+                <ScenarioIcon size={18} />
+              </div>
+              <div>
+                <strong>{scenario.name}:</strong> {scenario.description}
+              </div>
             </div>
           </div>
 
-          {/* Verification Map Component */}
+          {/* Map Component - Supports multiple prop formats */}
           <VisitLocationMap
-            key={activeScenario} // Force re-render on scenario change
-            visitData={currentScenario.visitData}
-            allowedRadius={200}
-            onVerificationResult={handleVerificationResult}
+            key={activeScenario}
+            // Pass visitData if available
+            visitData={scenario.visitData || null}
+            // Or pass individual coords
+            clinicCoords={scenario.clinicCoords || null}
+            employeeCoords={scenario.employeeCoords || null}
+            // Common props
+            allowedRadius={400}
+            accuracy={scenario.accuracy || null}
+            height="350px"
           />
 
-          {/* Result Panel */}
-          {verificationResult && (
-            <div className={`result-panel ${verificationResult.isVerified ? 'verified' : 'suspicious'}`}>
-              <div className="result-panel-icon">
-                {verificationResult.isVerified ? (
-                  <CheckCircle size={20} />
-                ) : (
-                  <AlertTriangle size={20} />
-                )}
-              </div>
-              <div className="result-panel-content">
-                <h4>
-                  {verificationResult.isVerified
-                    ? 'Location Verified'
-                    : 'Location Mismatch Detected'}
-                </h4>
-                <p>
-                  Distance: {verificationResult.distance}m | Threshold: 200m |
-                  Status: {verificationResult.isVerified ? 'PASS' : 'FAIL'}
-                </p>
-              </div>
+          {/* Props Reference */}
+          <div className="props-reference">
+            <h3>📚 Component Usage Reference</h3>
+            <div className="props-code">
+              <pre>
+{`// Format 1: Using visitData object
+<VisitLocationMap
+  visitData={{
+    clinicLat: 10.6969,
+    clinicLng: 122.5648,
+    employeeLat: 10.6975,
+    employeeLng: 122.5652,
+    accuracy: 12,
+    clinicName: 'Santos Clinic'  // optional
+  }}
+  allowedRadius={400}
+/>
+
+// Format 2: Using individual props
+<VisitLocationMap
+  clinicCoords={{ lat: 10.6969, lng: 122.5648 }}
+  employeeCoords={{ lat: 10.6975, lng: 122.5652 }}
+  accuracy={12}
+  allowedRadius={400}
+/>
+
+// Format 3: Using visitData with coordinate objects
+<VisitLocationMap
+  visitData={{
+    clinicCoordinates: { lat: 10.6969, lng: 122.5648 },
+    employeeCoordinates: { lat: 10.6975, lng: 122.5652 },
+    accuracy: 12
+  }}
+  allowedRadius={400}
+/>`}
+              </pre>
             </div>
-          )}
+          </div>
         </main>
       </div>
     </div>
