@@ -233,19 +233,37 @@ visitSchema.pre('save', function (next) {
     const { weekNumber, weekYear } = getISOWeek(date);
     this.weekNumber = weekNumber;
 
-    // Get week of month (1-5)
-    this.weekOfMonth = getWeekOfMonth(date);
+    // Get week of month (1-5+)
+    let weekOfMonth = getWeekOfMonth(date);
 
     // Get day of week (1 = Monday, 5 = Friday, 6 = Saturday, 7 = Sunday)
     const jsDay = date.getDay(); // 0 = Sunday in JavaScript
     this.dayOfWeek = jsDay === 0 ? 7 : jsDay; // Convert to ISO (Mon = 1, Sun = 7)
 
+    // Determine the effective month for this visit
+    // Grid only supports 4 weeks (20 work days). If weekOfMonth > 4,
+    // this visit counts towards the NEXT month's report as Week 1
+    let effectiveYear = date.getFullYear();
+    let effectiveMonth = date.getMonth(); // 0-indexed
+
+    if (weekOfMonth > 4) {
+      // 5th+ week dates count towards next month's report
+      effectiveMonth++;
+      if (effectiveMonth > 11) {
+        effectiveMonth = 0;
+        effectiveYear++;
+      }
+      weekOfMonth = 1; // Week 1 of next month
+    }
+
+    this.weekOfMonth = weekOfMonth;
+
     // Generate week label (W1D1, W2D3, etc.)
     this.weekLabel = `W${this.weekOfMonth}D${this.dayOfWeek}`;
 
-    // Generate monthYear (2024-12)
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    this.monthYear = `${date.getFullYear()}-${month}`;
+    // Generate monthYear using effective month (may differ from actual date)
+    const monthStr = String(effectiveMonth + 1).padStart(2, '0');
+    this.monthYear = `${effectiveYear}-${monthStr}`;
 
     // Generate yearWeekKey using ISO week year (handles year boundaries correctly)
     // e.g., Dec 31, 2024 might be "2025-W01" if it falls in week 1 of 2025

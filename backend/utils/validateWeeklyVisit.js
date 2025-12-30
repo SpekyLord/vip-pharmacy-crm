@@ -35,14 +35,17 @@ const getWeekNumber = (date) => {
 
 /**
  * Get week of month (1-5)
+ * Uses ISO week standard: week starts on Monday
  * @param {Date} date
  * @returns {number} Week of month
  */
 const getWeekOfMonth = (date) => {
-  const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+  const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+  // Get day of week for first of month (0=Sun, convert to Mon=0)
+  const firstDayOfWeek = firstOfMonth.getDay();
+  const adjustedFirst = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1; // ISO: Mon=0, Sun=6
   const dayOfMonth = date.getDate();
-  const startDayOfWeek = startOfMonth.getDay();
-  return Math.ceil((dayOfMonth + startDayOfWeek) / 7);
+  return Math.ceil((dayOfMonth + adjustedFirst) / 7);
 };
 
 /**

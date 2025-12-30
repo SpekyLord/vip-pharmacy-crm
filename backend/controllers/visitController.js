@@ -715,6 +715,190 @@ const refreshPhotoUrls = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get employee visit report (Call Plan Template format)
+ * @route   GET /api/visits/employee-report/:userId
+ * @access  Private (Admin)
+ *
+ * Returns all doctors assigned to employee's regions with their actual logged visits
+ * for the specified month, mapped to Day1-Day20 grid format.
+ */
+const getEmployeeReport = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+  const { monthYear } = req.query;
+
+  if (!monthYear) {
+    return res.status(400).json({
+      success: false,
+      message: 'monthYear query parameter is required (format: YYYY-MM)',
+    });
+  }
+
+  // Get the employee
+  const User = require('../models/User');
+  const employee = await User.findById(userId).populate('assignedRegions', 'name');
+
+  if (!employee) {
+    throw new NotFoundError('Employee not found');
+  }
+
+  // Get all region IDs the employee has access to (including descendants)
+  const Region = require('../models/Region');
+  const allRegionIds = [];
+
+  for (const region of employee.assignedRegions) {
+    const descendants = await Region.getDescendantIds(region._id);
+    allRegionIds.push(...descendants);
+  }
+
+  // Remove duplicates
+  const uniqueRegionIds = [...new Set(allRegionIds.map((id) => id.toString()))];
+
+  // Fetch all doctors in those regions
+  const doctors = await Doctor.find({
+    region: { $in: uniqueRegionIds },
+    isActive: true,
+  })
+    .select('name specialization hospital region visitFrequency')
+    .populate('region', 'name')
+    .lean();
+
+  // Fetch all visits by this employee for the selected month
+  const visits = await Visit.find({
+    user: userId,
+    monthYear: monthYear,
+    status: 'completed',
+  })
+    .select('doctor visitDate weekOfMonth dayOfWeek productsDiscussed')
+    .lean();
+
+  // Create a map of doctor visits: doctorId -> array of visits
+  const visitsByDoctor = new Map();
+  visits.forEach((visit) => {
+    const doctorId = visit.doctor.toString();
+    if (!visitsByDoctor.has(doctorId)) {
+      visitsByDoctor.set(doctorId, []);
+    }
+    visitsByDoctor.get(doctorId).push(visit);
+  });
+
+  // Fetch all active product assignments for these doctors
+  const ProductAssignment = require('../models/ProductAssignment');
+  const doctorIds = doctors.map((d) => d._id);
+  const assignments = await ProductAssignment.find({
+    doctor: { $in: doctorIds },
+    status: 'active',
+  })
+    .select('doctor product priority')
+    .lean();
+
+  // Fetch product details from website database
+  const productIds = [...new Set(assignments.map((a) => a.product.toString()))];
+  let productMap = new Map();
+
+  if (productIds.length > 0) {
+    const Product = getWebsiteProductModel();
+    const products = await Product.find({ _id: { $in: productIds } })
+      .select('name')
+      .lean();
+    productMap = new Map(products.map((p) => [p._id.toString(), p]));
+  }
+
+  // Group assignments by doctor
+  const assignmentsByDoctor = new Map();
+  assignments.forEach((assignment) => {
+    const doctorId = assignment.doctor.toString();
+    if (!assignmentsByDoctor.has(doctorId)) {
+      assignmentsByDoctor.set(doctorId, []);
+    }
+    const product = productMap.get(assignment.product.toString());
+    if (product) {
+      assignmentsByDoctor.get(doctorId).push({
+        name: product.name,
+        priority: assignment.priority,
+      });
+    }
+  });
+
+  // Calculate daily VIP counts (visits per day in the grid)
+  const dailyVIPCounts = Array(20).fill(0);
+
+  // Build the doctor data with visits mapped to grid days
+  const doctorsWithVisits = doctors.map((doctor) => {
+    const doctorId = doctor._id.toString();
+    const doctorVisits = visitsByDoctor.get(doctorId) || [];
+
+    // Map visits to Day1-Day20 grid
+    // Grid calculation: gridDay = ((weekOfMonth - 1) * 5) + dayOfWeek
+    // weekOfMonth: 1-5, dayOfWeek: 1-5 (Mon=1, Fri=5)
+    const visitGrid = Array(20).fill(0);
+    const visitDetails = [];
+
+    doctorVisits.forEach((visit) => {
+      // Calculate grid day (1-indexed to 0-indexed for array)
+      const gridDay = ((visit.weekOfMonth - 1) * 5) + visit.dayOfWeek;
+      if (gridDay >= 1 && gridDay <= 20) {
+        visitGrid[gridDay - 1] = 1;
+        dailyVIPCounts[gridDay - 1]++;
+        visitDetails.push({
+          visitDate: visit.visitDate,
+          weekOfMonth: visit.weekOfMonth,
+          dayOfWeek: visit.dayOfWeek,
+          gridDay: gridDay,
+        });
+      }
+    });
+
+    // Get top 3 assigned products (sorted by priority)
+    const assignedProducts = (assignmentsByDoctor.get(doctorId) || [])
+      .sort((a, b) => a.priority - b.priority)
+      .slice(0, 3);
+
+    return {
+      _id: doctor._id,
+      name: doctor.name,
+      specialization: doctor.specialization,
+      hospital: doctor.hospital,
+      region: doctor.region,
+      visitFrequency: doctor.visitFrequency || 4,
+      visitGrid: visitGrid,
+      visitCount: doctorVisits.length,
+      visits: visitDetails,
+      assignedProducts: assignedProducts,
+    };
+  });
+
+  // Calculate summary stats
+  const count2x = doctors.filter((d) => d.visitFrequency === 2).length;
+  const count4x = doctors.filter((d) => d.visitFrequency === 4 || !d.visitFrequency).length;
+  const totalVisits = visits.length;
+
+  // Get region names for display
+  const regionNames = employee.assignedRegions.map((r) => r.name).join(', ') || 'No regions assigned';
+
+  res.json({
+    success: true,
+    data: {
+      employee: {
+        _id: employee._id,
+        name: employee.name,
+        email: employee.email,
+        assignedRegions: employee.assignedRegions,
+      },
+      monthYear: monthYear,
+      areaAssigned: regionNames,
+      doctors: doctorsWithVisits,
+      summary: {
+        totalDoctors: doctors.length,
+        count2x: count2x,
+        count4x: count4x,
+        totalVisits: totalVisits,
+        dailyVIPCounts: dailyVIPCounts,
+      },
+    },
+  });
+});
+
 module.exports = {
   createVisit,
   getAllVisits,
@@ -730,4 +914,5 @@ module.exports = {
   getVisitStats,
   getTodayVisits,
   refreshPhotoUrls,
+  getEmployeeReport,
 };

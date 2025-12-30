@@ -361,6 +361,16 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - Export buttons in DoctorsPage header ("Export Excel", "Export CSV")
 - Exports respect current filters (region, specialization, visitFrequency)
 
+**Employee Visit Report (Task 1.10d - Dec 2024):**
+- Backend endpoint: `GET /api/visits/employee-report/:userId?monthYear=YYYY-MM`
+- `visitController.js`: Added `getEmployeeReport` function
+- `visitRoutes.js`: Added route with adminOnly middleware
+- `visitService.js`: Added `getEmployeeReport` method
+- `EmployeeVisitReport.jsx`: New component displaying Call Plan Template format with actual visits
+- `exportEmployeeReport.js`: New export utility for employee reports
+- `ReportsPage.jsx`: Complete rewrite with employee selector, month picker, generate button
+- Features: Yellow header rows, Day1-Day20 grid with actual visits, green highlights, assigned products
+
 **Doctor Region Cascading Dropdown Fix (Task 1.10b):**
 - **Problem**: Validation error when editing doctors - address field sent as string instead of object
 - **Problem**: Region dropdown used indented "──" format, hard to navigate for deep hierarchies
@@ -1002,23 +1012,29 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 **Files**:
 - `frontend/src/pages/admin/ReportsPage.jsx`
 - `frontend/src/components/admin/ReportGenerator.jsx` (new)
+- `frontend/src/components/admin/EmployeeVisitReport.jsx`
+- `frontend/src/utils/exportEmployeeReport.js`
 
 **Deliverables**:
-- [ ] Report types:
-  - Weekly compliance report
-  - Monthly visit summary
-  - Employee performance report
-  - Regional comparison report
-  - Product presentation report
-- [ ] Date range selection
-- [ ] Filter by region/employee
-- [ ] Export to PDF/CSV
+- [x] Report types:
+  - [x] Employee Visit Report (Call Plan Template format) - COMPLETED Dec 2024
+  - [ ] Weekly compliance report
+  - [ ] Monthly visit summary
+  - [ ] Regional comparison report
+  - [ ] Product presentation report
+- [x] Date range selection (month picker)
+- [x] Filter by employee
+- [x] Export to Excel/CSV
+- [ ] Export to PDF
 - [ ] Schedule recurring reports (optional)
 
 **Acceptance Criteria**:
-- Reports generate correctly
-- Export works
-- Data matches backend
+- [x] Employee Visit Report generates correctly with actual visit data
+- [x] Export to Excel/CSV works
+- [x] Data matches backend
+- [ ] Additional report types to be added in future
+
+**Status**: ⚠️ PARTIALLY COMPLETE (Employee Visit Report done, other report types pending)
 
 ---
 

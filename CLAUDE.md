@@ -302,7 +302,7 @@ S3_BUCKET_NAME=vip-pharmacy-crm
 - [x] `services/api.js` - Axios instance with interceptors, auth:logout event dispatch
 - [x] `services/authService.js` - Login, logout, refresh, profile
 - [x] `services/doctorService.js` - Doctor API calls + getAssignedProducts
-- [x] `services/visitService.js` - Visit API calls + getToday, canVisit, getWeeklyCompliance, AbortController support
+- [x] `services/visitService.js` - Visit API calls + getToday, canVisit, getWeeklyCompliance, getEmployeeReport, AbortController support
 - [x] `services/productService.js` - Product API calls
 - [x] `services/regionService.js` - Region API calls
 - [x] `services/assignmentService.js` - Product assignment API calls
@@ -338,6 +338,7 @@ S3_BUCKET_NAME=vip-pharmacy-crm
 - [x] `components/admin/EmployeeManagement.jsx` - COMPLETE (CRUD, multi-region assignment)
 - [x] `components/admin/RegionManagement.jsx` - COMPLETE (tree view, stats modal)
 - [x] `components/admin/ProductManagement.jsx` - COMPLETE
+- [x] `components/admin/EmployeeVisitReport.jsx` - COMPLETE (Call Plan Template format, visit grid)
 - [ ] `components/admin/VisitApproval.jsx` - Scaffolded (Phase 2)
 
 #### Components - MedRep
@@ -350,7 +351,7 @@ S3_BUCKET_NAME=vip-pharmacy-crm
 - [x] `pages/admin/DoctorsPage.jsx` - COMPLETE (useCallback, CRUD, filters, pagination)
 - [x] `pages/admin/EmployeesPage.jsx` - COMPLETE (CRUD, filters, pagination)
 - [x] `pages/admin/RegionsPage.jsx` - COMPLETE (hierarchy tree, CRUD)
-- [ ] `pages/admin/ReportsPage.jsx` - Scaffolded (UI only, Phase 2)
+- [x] `pages/admin/ReportsPage.jsx` - COMPLETE (Employee Visit Report, Call Plan Template format, Excel/CSV export)
 - [x] `pages/employee/EmployeeDashboard.jsx` - COMPLETE (real API data, stats)
 - [x] `pages/employee/MyVisits.jsx` - COMPLETE (AbortController, debounced search, pagination)
 - [x] `pages/employee/NewVisitPage.jsx` - COMPLETE (isMounted cleanup, canVisit check)
@@ -414,6 +415,7 @@ App.jsx
 | Employee Management | ✅ WORKING | Full CRUD, multi-region assignment |
 | Region Management | ✅ WORKING | Tree view, hierarchy CRUD |
 | MedRep Dashboard | ✅ WORKING | Full assignment CRUD, doctor mapping |
+| Reports Page | ✅ WORKING | Employee Visit Report, Excel/CSV export |
 
 ---
 
@@ -439,6 +441,8 @@ App.jsx
 18. ✅ **Frontend Optimization** - ErrorBoundary, useDebounce, Pagination, AbortController, React.memo (Dec 2024)
 19. ✅ **Task 1.16** - Development Environment Documentation (DEVELOPMENT_GUIDE.md, .env.example files)
 20. ✅ **Task 1.14c** - Cross-Database Product Population Fix (Dec 2024)
+21. ✅ **Task 1.10c** - Doctor Export to Excel/CSV (Call Plan Template format)
+22. ✅ **Employee Visit Report** - Reports page with employee selector, month picker, actual visit data, Excel/CSV export (Dec 2024)
 
 ## Cross-Database Product Fix (Completed Dec 2024)
 

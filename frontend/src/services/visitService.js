@@ -106,6 +106,14 @@ const visitService = {
     const response = await api.get(`/visits/${visitId}/refresh-photos`);
     return response.data;
   },
+
+  // Get employee visit report for Call Plan Template format (Admin only)
+  getEmployeeReport: async (userId, monthYear) => {
+    const response = await api.get(`/visits/employee-report/${userId}`, {
+      params: { monthYear },
+    });
+    return response.data;
+  },
 };
 
 export default visitService;
