@@ -1,11 +1,9 @@
 /**
  * EmployeeInbox Page (HRM Notifications)
  *
- * Employee inbox for admin/HR/system notifications with:
- * - Hardcoded inbox list (swap later to DB/API)
- * - Filters (type, read/unread, search)
- * - Pagination
- * - Details modal (view notification)
+ * Now includes:
+ * - Inbox tab (received)
+ * - Sent tab (sent by current user)
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -14,134 +12,167 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import MessageBox from '../../components/employee/MessageBox';
 import messageService from '../../services/messageInboxService';
-const API_BASE = 'http://localhost:5000';
- 
+import AdminSentMessageBox from "../../components/employee/AdminSentMessageBox";
+
+const toggleSentOpen = (id) => {
+  setExpandedId(prev => (prev === id ? null : id));
+  // ✅ do NOT auto-kill editing here
+};
+
+const openSentMessageLikeReply = (id) => {
+  setExpandedId(id);   // ✅ open dropdown
+  setEditingId(id);    // ✅ show edit box immediately (reply-style)
+};
+
+
 const EmployeeInbox = () => {
   const navigate = useNavigate();
 
-  // ✅ Dynamic data
+  // Tabs
+  const [activeTab, setActiveTab] = useState('inbox'); // 'inbox' | 'sent'
+
+  // Dynamic data
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-  (async () => {
-    try {
-      setLoading(true);
+    useEffect(() => {
+    (async () => {
+        try {
+        setLoading(true);
 
-   
+        const json =
+            activeTab === "sent"
+            ? await messageService.getSent()   // ✅ GET /api/messages/sent
+            : await messageService.getAll();   // ✅ GET /api/messages
+            
 
-    const json = await messageService.getAll(); // uses same api instance as visits
-    const data = json?.data ?? [];
+        const data = json?.data ?? [];
 
-    const currentUserId = localStorage.getItem("userId"); // or your auth source
+        const currentUserId = localStorage.getItem("userId");
 
-    const normalizeMessage = (m) => ({
-    ...m,
+        const pickId = (v) => {
+            if (!v) return null;
+            if (typeof v === "string") return v;
+            if (typeof v === "object" && v._id) return String(v._id);
+            return String(v);
+        };
 
-    // ✅ what MessageBox renders
-    message: m.message ?? m.body ?? "",
-    from: m.from ?? m.senderName ?? "Admin",
+        const normalizeMessage = (m) => ({
+            ...m,
+            senderUserId: pickId(m.senderUserId ?? m.fromUserId ?? m.senderId),
+            recipientUserId: pickId(m.recipientUserId ?? m.toUserId ?? m.recipientId),
 
-    // ✅ schema readBy = [{ userId, readAt }]
-    read: typeof m.read === "boolean"
-    ? m.read
-    : (Array.isArray(m.readBy) && currentUserId
-        ? m.readBy.some(id => String(id) === String(currentUserId))
-        : false),
+            message: m.message ?? m.body ?? "",
+            from: m.from ?? m.senderName ?? "Admin",
+            to: m.to ?? m.recipientName ?? m.recipientRole ?? "Recipient",
 
-    });
+            read: typeof m.read === "boolean"
+            ? m.read
+            : (Array.isArray(m.readBy) && currentUserId
+                ? m.readBy.some(id => String(id) === String(currentUserId))
+                : false),
+        });
 
-    setMessages(Array.isArray(data) ? data.map(normalizeMessage) : []);
+        setMessages(Array.isArray(data) ? data.map(normalizeMessage) : []);
+        } catch (err) {
+        console.error("Failed to load messages:", err);
+        setMessages([]);
+        } finally {
+        setLoading(false);
+        }
+    })();
+    }, [activeTab]); // ✅ IMPORTANT
 
-
-    } catch (err) {
-      console.error('Failed to load inbox:', err);
-      setMessages([]);
-    } finally {
-      setLoading(false);
-    }
-  })();
-}, []);
 
   // Filters
   const [typeFilter, setTypeFilter] = useState('all');
-  const [readFilter, setReadFilter] = useState('all'); // all | unread | read
+  const [readFilter, setReadFilter] = useState('all'); // inbox only
   const [search, setSearch] = useState('');
 
   // Pagination
   const [pagination, setPagination] = useState({ page: 1, limit: 8 });
 
-  // Modal
+  // Dropdown
   const [expandedId, setExpandedId] = useState(null);
 
-  // ✅ Reply UI state (client-only)
+  // ✅ Sent-only edit UI state
+const [editingId, setEditingId] = useState(null);
+
+  // Reply UI state (client-only)
   const [replyOpenId, setReplyOpenId] = useState(null);
-  const [replyDraftById, setReplyDraftById] = useState({});     // { [msgId]: "draft text" }
-  const [repliesById, setRepliesById] = useState({});         
+  const [replyDraftById, setReplyDraftById] = useState({});
+  const [repliesById, setRepliesById] = useState({});
 
-
-const openReply = (id) => {
-  setExpandedId(id);     // ✅ force dropdown open
-  setReplyOpenId(id);    // ✅ open reply UI
-};
-
-
-const closeReply = () => {
-  setReplyOpenId(null);
-};
-
-const setReplyDraft = (id, text) => {
-  setReplyDraftById(prev => ({ ...prev, [id]: text }));
-};
-
-const sendReply = (id) => {
-  const text = (replyDraftById[id] ?? "").trim();
-  if (!text) return;
-
-  const newReply = {
-    id: `${id}-${Date.now()}`,
-    text,
-    at: new Date().toISOString(),
-    from: "You", // hardcoded sender (employee)
+  const openReply = (id) => {
+    setExpandedId(id);
+    setReplyOpenId(id);
   };
 
-  setRepliesById(prev => ({
-    ...prev,
-    [id]: [...(prev[id] ?? []), newReply],
-  }));
+  const closeReply = () => setReplyOpenId(null);
 
-  // clear draft + close
-  setReplyDraftById(prev => ({ ...prev, [id]: "" }));
-  setReplyOpenId(null);
-};
+  const setReplyDraft = (id, text) => {
+    setReplyDraftById(prev => ({ ...prev, [id]: text }));
+  };
+
+  const sendReply = (id) => {
+    const text = (replyDraftById[id] ?? "").trim();
+    if (!text) return;
+
+    const newReply = {
+      id: `${id}-${Date.now()}`,
+      text,
+      at: new Date().toISOString(),
+      from: "You",
+    };
+
+    setRepliesById(prev => ({
+      ...prev,
+      [id]: [...(prev[id] ?? []), newReply],
+    }));
+
+    setReplyDraftById(prev => ({ ...prev, [id]: "" }));
+    setReplyOpenId(null);
+  };
+
+  // Base lists per tab
+  const currentUserId = localStorage.getItem("userId");
+
+    const inboxBase = useMemo(() => {
+    // ✅ /messages already filtered by backend audience; no need for extra filter
+    return messages;
+    }, [messages]);
 
 
-  // Derived data
+    const sentBase = useMemo(() => {
+    // ✅ /messages/sent is already filtered by backend using req.user._id
+    return messages;
+    }, [messages]);
+
+
+  // Derived filtered list
   const filteredMessages = useMemo(() => {
     const s = search.trim().toLowerCase();
+    const activeBase = activeTab === 'inbox' ? inboxBase : sentBase;
 
-return messages
-  .filter(m => (typeFilter === 'all' ? true : m.category === typeFilter))
-  .filter(m => {
-    if (readFilter === 'unread') return !m.read;
-    if (readFilter === 'read') return !!m.read;
-    return true;
-  })
-  .filter(m => {
-    if (!s) return true;
+    return activeBase
+      .filter(m => (typeFilter === 'all' ? true : m.category === typeFilter))
+      .filter(m => {
+        if (activeTab !== 'inbox') return true; // sent ignores read filter
+        if (readFilter === 'unread') return !m.read;
+        if (readFilter === 'read') return !!m.read;
+        return true;
+      })
+      .filter(m => {
+        if (!s) return true;
 
-    const title = (m.title ?? '').toLowerCase();
-    const body = (m.message ?? '').toLowerCase();
+        const title = (m.title ?? '').toLowerCase();
+        const body = (m.message ?? '').toLowerCase();
+        const fromTxt = (m.from ?? m.senderName ?? "").toLowerCase();
 
-    const fromTxt = (m.from ?? m.senderName ?? "").toLowerCase();
-    return title.includes(s) || body.includes(s) || fromTxt.includes(s);
-
-
-   
-  })
-  .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  }, [messages, typeFilter, readFilter, search]);
+        return title.includes(s) || body.includes(s) || fromTxt.includes(s);
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [activeTab, inboxBase, sentBase, typeFilter, readFilter, search]);
 
   const pages = Math.max(1, Math.ceil(filteredMessages.length / pagination.limit));
   const pageSafe = Math.min(pages, Math.max(1, pagination.page));
@@ -181,80 +212,58 @@ return messages
     }
   };
 
-  const unreadCount = useMemo(() => messages.filter(m => !m.read).length, [messages]);
-
-    const markAsRead = (id) => {
-    setMessages(prev => prev.map(m => (m._id === id ? { ...m, read: true } : m)));
-    };
-
+  const unreadCount = useMemo(() => inboxBase.filter(m => !m.read).length, [inboxBase]);
 
   const toggleRead = async (id, nextRead) => {
     const target = messages.find(m => m._id === id);
     if (!target) return;
 
-    // if MessageBox doesn't pass nextRead, we just toggle
-    const shouldBeRead =
-      typeof nextRead === "boolean" ? nextRead : !target.read;
+    const shouldBeRead = typeof nextRead === "boolean" ? nextRead : !target.read;
 
     try {
       await messageService.toggleRead(id, shouldBeRead);
 
-    setMessages(prev =>
-      prev.map(m => (m._id === id ? { ...m, read: shouldBeRead } : m))
-    );
+      setMessages(prev =>
+        prev.map(m => (m._id === id ? { ...m, read: shouldBeRead } : m))
+      );
 
-    // ✅ notify sidebar immediately
-    window.dispatchEvent(new Event('inbox:updated'));
-
+      window.dispatchEvent(new Event('inbox:updated'));
     } catch (e) {
       console.error("toggleRead failed:", e?.response?.data || e);
     }
   };
 
+  const toggleMessage = async (msgOrId) => {
+    const id = typeof msgOrId === "string" ? msgOrId : msgOrId?._id;
+    if (!id) return;
 
+    const msg = typeof msgOrId === "object"
+      ? msgOrId
+      : messages.find(m => m._id === id);
 
+    if (!msg) return;
 
-const toggleMessage = async (msgOrId) => {
-  const id = typeof msgOrId === "string" ? msgOrId : msgOrId?._id;
-  if (!id) return; // ✅ prevents "Cannot read properties of null"
+    setExpandedId(prev => {
+      const next = (prev === id ? null : id);
 
-  const msg = typeof msgOrId === "object"
-    ? msgOrId
-    : messages.find(m => m._id === id);
+      setReplyOpenId(prevReply => (prevReply === id ? prevReply : null));
+      if (next === null) setReplyOpenId(null);
 
-  if (!msg) return; // ✅ message not found (state not ready)
+      return next;
+    });
 
-  setExpandedId(prev => {
-    const next = (prev === id ? null : id);
-
-  setReplyOpenId(prev => (prev === id ? prev : null));
-
-
-    // ✅ if we're collapsing the same message, also close reply
-    if (next === null) setReplyOpenId(null);
-
-    return next;
-  });
-
-
-  if (!msg.read) {
-    try {
-      await messageService.markRead(id);
-      setMessages(prev =>
-        prev.map(m => (m._id === id ? { ...m, read: true } : m))
-      );
-    } catch (e) {
-      console.error("markRead failed:", e?.response?.data || e);
+    // only auto-mark read on Inbox tab
+    if (activeTab === 'inbox' && !msg.read) {
+      try {
+        await messageService.markRead(id);
+        setMessages(prev =>
+          prev.map(m => (m._id === id ? { ...m, read: true } : m))
+        );
+      } catch (e) {
+        console.error("markRead failed:", e?.response?.data || e);
+      }
     }
-  }
-};
-
-
-
-
-
-  const closeModal = () => setExpandedId(null);
-
+  };
 
   const changePage = (delta) => {
     setPagination(prev => ({
@@ -280,13 +289,44 @@ const toggleMessage = async (msgOrId) => {
           {/* Header */}
           <div className="page-header">
             <div className="header-left">
-              <h1>Inbox</h1>
+              <h1>{activeTab === 'inbox' ? 'Inbox' : 'Sent'}</h1>
               <p className="subtle">
-                Notifications from Admin / HR / System
-                {unreadCount > 0 && (
+                {activeTab === 'inbox'
+                  ? 'Notifications from Admin / HR / System'
+                  : 'Messages you sent'}
+                {activeTab === 'inbox' && unreadCount > 0 && (
                   <span className="unread-pill">{unreadCount} unread</span>
                 )}
               </p>
+
+              {/* Tabs */}
+              <div className="tabs">
+                <button
+                  className={`tab ${activeTab === 'inbox' ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveTab('inbox');
+                    setPagination(p => ({ ...p, page: 1 }));
+                    setExpandedId(null);
+                    setReplyOpenId(null);
+                  }}
+                >
+                  Inbox
+                </button>
+
+                <button
+                  className={`tab ${activeTab === 'sent' ? 'active' : ''}`}
+               onClick={() => {
+                setActiveTab('sent');
+                setPagination(p => ({ ...p, page: 1 }));
+                setExpandedId(null);
+                setReplyOpenId(null);
+                setEditingId(null); // ✅ add
+                }}
+
+                >
+                  Sent
+                </button>
+              </div>
             </div>
 
             <div className="header-right">
@@ -322,21 +362,24 @@ const toggleMessage = async (msgOrId) => {
                 </select>
               </div>
 
-              <div className="filter-group">
-                <label htmlFor="read-filter">Status</label>
-                <select
-                  id="read-filter"
-                  value={readFilter}
-                  onChange={(e) => {
-                    setReadFilter(e.target.value);
-                    setPagination(p => ({ ...p, page: 1 }));
-                  }}
-                >
-                  <option value="all">All</option>
-                  <option value="unread">Unread</option>
-                  <option value="read">Read</option>
-                </select>
-              </div>
+              {/* Status only for Inbox */}
+              {activeTab === 'inbox' && (
+                <div className="filter-group">
+                  <label htmlFor="read-filter">Status</label>
+                  <select
+                    id="read-filter"
+                    value={readFilter}
+                    onChange={(e) => {
+                      setReadFilter(e.target.value);
+                      setPagination(p => ({ ...p, page: 1 }));
+                    }}
+                  >
+                    <option value="all">All</option>
+                    <option value="unread">Unread</option>
+                    <option value="read">Read</option>
+                  </select>
+                </div>
+              )}
 
               <div className="filter-group grow">
                 <label htmlFor="search">Search</label>
@@ -360,69 +403,105 @@ const toggleMessage = async (msgOrId) => {
             </div>
           </div>
 
-        {/* ✅ UPDATED: inline dropdown details (no right preview panel) */}
-        <div className="inbox-shell">
-        <div className="inbox-list">
-            {pageItems.length > 0 ? (
+          {/* List */}
+          <div className="inbox-shell">
+            <div className="inbox-list">
+                {loading ? (
+                <div className="no-data"><p>Loading...</p></div>
+                ) : pageItems.length > 0 ? (
                 pageItems.map((msg) => (
-                  <MessageBox
-                    key={msg._id}
-                    message={msg}
-                    isOpen={expandedId === msg._id}
-                    onToggle={toggleMessage}
-                    onToggleRead={toggleRead}
-                    formatDateTime={formatDateTime}
-                    getTypeMeta={getTypeMeta}
+                    activeTab === "sent" ? (
+                    <AdminSentMessageBox
+                        key={msg._id}
+                        message={msg}
+                        isOpen={expandedId === msg._id}
+                        isEditing={editingId === msg._id}
+                        onToggleOpen={() => {
+                        setExpandedId(prev => (prev === msg._id ? null : msg._id));
+                        setEditingId(null); // close edit when toggling other message
+                        }}
+                        onStartEdit={() => setEditingId(msg._id)}
+                        onCancelEdit={() => setEditingId(null)}
+                        onSaveEdit={(payload) => {
+                        // ✅ placeholder: wire your PATCH endpoint later
+                        console.log("SAVE SENT:", msg._id, payload);
 
-                    // ✅ Reply feature props
-                    isReplyOpen={replyOpenId === msg._id}
-                    replyDraft={replyDraftById[msg._id] ?? ""}
-                    replies={repliesById[msg._id] ?? []}
-                    onOpenReply={() => openReply(msg._id)}
-                    onCloseReply={closeReply}
-                    onChangeReply={(text) => setReplyDraft(msg._id, text)}
-                    onSendReply={() => sendReply(msg._id)}
-                  />
+                        // optional optimistic update:
+                        setMessages(prev =>
+                            prev.map(m => (m._id === msg._id ? { ...m, ...payload } : m))
+                        );
 
+                        setEditingId(null);
+                        }}
+                        onDelete={() => {
+                        // ✅ placeholder: wire your DELETE endpoint later
+                        console.log("DELETE SENT:", msg._id);
+                        }}
+                        formatDateTime={formatDateTime}
+                        getTypeMeta={getTypeMeta}
+                    />
+                    ) : (
+                    <MessageBox
+                        key={msg._id}
+                        message={msg}
+                        isOpen={expandedId === msg._id}
+                        activeTab={activeTab}
+                        onToggle={toggleMessage}
+                        onToggleRead={toggleRead}
+                        formatDateTime={formatDateTime}
+                        getTypeMeta={getTypeMeta}
+
+                        // Reply props (Inbox only)
+                        isReplyOpen={replyOpenId === msg._id}
+                        replyDraft={replyDraftById[msg._id] ?? ""}
+                        replies={repliesById[msg._id] ?? []}
+                        onOpenReply={() => openReply(msg._id)}
+                        onCloseReply={closeReply}
+                        onChangeReply={(text) => setReplyDraft(msg._id, text)}
+                        onSendReply={() => sendReply(msg._id)}
+                    />
+                    )
                 ))
-            ) : (
-            <div className="no-data">
-                <p>No notifications found.</p>
-                <p className="hint">Try adjusting filters or search terms.</p>
+                ) : (
+                <div className="no-data">
+                    <p>{activeTab === 'inbox' ? 'No notifications found.' : 'No sent messages found.'}</p>
+                    <p className="hint">Try adjusting filters or search terms.</p>
+                </div>
+                )}
+
+
+              {/* Pagination */}
+              <div className="pagination">
+                <button
+                  onClick={() => changePage(-1)}
+                  disabled={pageSafe === 1}
+                  className="btn btn-secondary btn-sm"
+                >
+                  Previous
+                </button>
+
+                <span className="pagination-info">
+                  Page {pageSafe} of {pages} ({filteredMessages.length} total)
+                </span>
+
+                <button
+                  onClick={() => changePage(1)}
+                  disabled={pageSafe >= pages}
+                  className="btn btn-secondary btn-sm"
+                >
+                  Next
+                </button>
+              </div>
             </div>
-            )}
-
-            {/* Pagination */}
-            <div className="pagination">
-            <button
-                onClick={() => changePage(-1)}
-                disabled={pageSafe === 1}
-                className="btn btn-secondary btn-sm"
-            >
-                Previous
-            </button>
-
-            <span className="pagination-info">
-                Page {pageSafe} of {pages} ({filteredMessages.length} total)
-            </span>
-
-            <button
-                onClick={() => changePage(1)}
-                disabled={pageSafe >= pages}
-                className="btn btn-secondary btn-sm"
-            >
-                Next
-            </button>
-            </div>
-        </div>
-        </div>
-
+          </div>
 
         </main>
       </div>
 
-      <style>{`
-        /* --- Header --- */
+        <style>{`
+
+
+           /* --- Header --- */
         .page-header {
           display: flex;
           justify-content: space-between;
@@ -1100,8 +1179,26 @@ const toggleMessage = async (msgOrId) => {
             box-shadow: 0 0 0 4px rgba(147, 197, 253, 0.25);
           }
 
+        /* ⬇️ PASTE ENTIRE STYLE FROM EMP_InboxPage.jsx HERE (UNCHANGED) */
 
-      `}</style>
+        /* ⬇️ KEEP ONLY SENT-SPECIFIC ADDITIONS */
+        .tabs { display:flex; gap:10px; margin-top:10px; }
+        .tab{
+            border:1px solid #e5e7eb;
+            background:#fff;
+            border-radius:999px;
+            padding:8px 12px;
+            font-weight:800;
+            color:#374151;
+            cursor:pointer;
+        }
+        .tab.active{
+            border-color:#93c5fd;
+            background:#eff6ff;
+            color:#1d4ed8;
+        }
+        `}</style>
+
     </div>
   );
 };

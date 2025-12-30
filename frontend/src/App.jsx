@@ -24,6 +24,7 @@ import ActivityMonitor from './pages/admin/ActivityMonitor';
 import PendingApprovalsPage from './pages/admin/PendingApprovalsPage';
 import GPSVerificationPage from './pages/admin/GPSVerificationPage';
 import MedRepDashboard from './pages/medrep/MedRepDashboard';
+import AdminSent from './pages/admin/SentPage'; // ✅ create this
 
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
@@ -52,6 +53,10 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+           {/* ...admin routes... */}
+          <Route path="/admin/sent" element={<AdminSent />} />  {/* ✅ NEW */}
+
         <Route
           path="/employee/visit/new"
           element={

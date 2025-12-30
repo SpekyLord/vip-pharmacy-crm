@@ -22,6 +22,8 @@ const messageInboxSchema = new mongoose.Schema(
       default: "Admin",
     },
 
+    
+
     // Optional role string (your DB has senderRole)
     senderRole: {
       type: String,
@@ -69,12 +71,15 @@ const messageInboxSchema = new mongoose.Schema(
     priority: {
       type: String,
       enum: {
-        values: ["normal", "important"],
+        values: ["normal", "important", "high"], // ✅ align with controller/DB
         message: "Invalid priority",
       },
       default: "normal",
       index: true,
     },
+
+    
+
 
     // Targeting by role
     recipientRole: {
@@ -152,5 +157,11 @@ messageInboxSchema.statics.findVisibleFor = function ({ role, userId }) {
 
 const MessageInbox = mongoose.model("MessageInbox", messageInboxSchema, "messages");
 
+messageInboxSchema.statics.findSentBy = function ({ senderUserId }) {
+  return this.find({
+    isArchived: false,
+    senderUserId: new mongoose.Types.ObjectId(senderUserId),
+  }).sort({ createdAt: -1 });
+};
 
 module.exports = MessageInbox;

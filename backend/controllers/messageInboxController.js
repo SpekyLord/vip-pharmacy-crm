@@ -87,16 +87,23 @@ const toInboxDTO = (doc, userId) => {
     : false;
 
     return {
-    _id: String(obj._id),
-    senderName: obj.senderName,
-    senderRole: obj.senderRole,
-    title: obj.title,
-    body: obj.body,
-    category: obj.category,
-    priority: obj.priority,
-    createdAt: obj.createdAt,
-    read,
+      _id: String(obj._id),
+
+      senderName: obj.senderName,
+      senderRole: obj.senderRole,
+      senderUserId: obj.senderUserId ? String(obj.senderUserId) : null,          // ✅ add
+
+      recipientRole: obj.recipientRole,                                         // ✅ add
+      recipientUserId: obj.recipientUserId ? String(obj.recipientUserId) : null, // ✅ add
+
+      title: obj.title,
+      body: obj.body,
+      category: obj.category,
+      priority: obj.priority,
+      createdAt: obj.createdAt,
+      read,
     };
+
 
 };
 
@@ -194,17 +201,21 @@ const createInboxMessage = catchAsync(async (req, res) => {
     }
 
     const doc = await Message.create({
-    title,
-    body,
-    category,
-    priority,
-    senderName: senderName || req.user.name || "Admin",
-    senderRole: req.user.role || "admin",
-    recipientRole,
-    recipientUserId,
-    readBy: [],
-    isArchived: false,
+      title,
+      body,
+      category,
+      priority,
+
+      senderName: senderName || req.user.name || "Admin",
+      senderRole: req.user.role || "admin",
+      senderUserId: req.user._id, // ✅ REQUIRED for /sent
+
+      recipientRole,
+      recipientUserId,
+      readBy: [],
+      isArchived: false,
     });
+
 
   res.status(201).json({
     success: true,
@@ -349,8 +360,65 @@ const markMessageUnread = catchAsync(async (req, res) => {
   });
 });
 
+/* ------------------------------------------------------------------ */
+/* @desc    Get SENT messages (admin only)                             */
+/* @route   GET /api/messages/sent                                     */
+/* @access  Admin only                                                 */
+/* ------------------------------------------------------------------ */
+const getSentMessages = catchAsync(async (req, res) => {
+  if (req.user.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Only admins can view sent messages.",
+    });
+  }
+
+  const Message = getMessageModel();
+
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const skip = (page - 1) * limit;
+
+  const category = req.query.category; // all|announcement|...
+  const search = (req.query.search || "").trim();
+
+  const filter = {
+    isArchived: false,
+    senderUserId: req.user._id, // ✅ key line: admin's sent messages
+  };
+
+  if (category && category !== "all") {
+    filter.category = category;
+  }
+
+  if (search) {
+    filter.$or = [
+      { title: { $regex: search, $options: "i" } },
+      { body: { $regex: search, $options: "i" } },
+      { recipientRole: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  const [docs, total] = await Promise.all([
+    Message.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    Message.countDocuments(filter),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: docs.map((d) => toInboxDTO(d, req.user._id)),
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+    },
+  });
+});
+
 module.exports = {
   getInboxMessages,
+  getSentMessages,      // ✅ add
   createInboxMessage,
   createMessageNotify,
   markMessageRead,
