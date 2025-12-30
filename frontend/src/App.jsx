@@ -22,6 +22,7 @@ import ReportsPage from './pages/admin/ReportsPage';
 import StatisticsPage from './pages/admin/StatisticsPage';
 import ActivityMonitor from './pages/admin/ActivityMonitor';
 import PendingApprovalsPage from './pages/admin/PendingApprovalsPage';
+import GPSVerificationPage from './pages/admin/GPSVerificationPage';
 import MedRepDashboard from './pages/medrep/MedRepDashboard';
 
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -131,6 +132,14 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['admin']}>
               <PendingApprovalsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/gps-verification"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <GPSVerificationPage />
             </ProtectedRoute>
           }
         />
