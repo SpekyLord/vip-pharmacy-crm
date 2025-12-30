@@ -33,8 +33,10 @@ const Sidebar = () => {
       default:
         return [
           { path: '/employee', label: 'Dashboard', icon: '📊' },
+          { path: '/employee/inbox', label: 'Inbox', icon: '📨' }, // 🆕
           { path: '/employee/visits', label: 'My Visits', icon: '📍' },
         ];
+
     }
   };
 

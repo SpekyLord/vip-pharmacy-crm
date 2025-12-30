@@ -110,15 +110,32 @@ const login = catchAsync(async (req, res) => {
   // Get user without password
   const userResponse = await User.findById(user._id).populate('assignedRegions', 'name code');
 
-  res.json({
-    success: true,
-    message: 'Login successful',
-    data: {
-      user: userResponse,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-    },
-  });
+// ✅ set cookies (localhost-friendly)
+res.cookie('accessToken', tokens.accessToken, {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production', // false on localhost
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  maxAge: 15 * 60 * 1000, // 15 mins (adjust to your access token expiry)
+});
+
+res.cookie('refreshToken', tokens.refreshToken, {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days (adjust)
+});
+
+res.json({
+  success: true,
+  message: 'Login successful',
+  data: {
+    user: userResponse,
+    // optional: you can omit these if you want pure cookie auth
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+  },
+});
+
 });
 
 /**
@@ -132,10 +149,14 @@ const logout = catchAsync(async (req, res) => {
     await User.findByIdAndUpdate(req.user._id, { refreshToken: null });
   }
 
+  res.clearCookie('accessToken');
+  res.clearCookie('refreshToken');
+
   res.json({
     success: true,
     message: 'Logged out successfully',
   });
+
 });
 
 /**
@@ -150,12 +171,18 @@ const refreshToken = catchAsync(async (req, res) => {
   // Generate new access token
   const accessToken = generateAccessToken(user);
 
+  res.cookie('accessToken', accessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 15 * 60 * 1000,
+  });
+
   res.json({
     success: true,
-    data: {
-      accessToken,
-    },
+    data: { accessToken },
   });
+
 });
 
 /**

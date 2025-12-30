@@ -15,6 +15,8 @@
 
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
+
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
@@ -148,8 +150,13 @@ const authLimiter = rateLimit({
 app.use('/api/', generalLimiter);
 
 // Body parsing middleware
+// Cookie parsing (so protect middleware can read req.cookies)
+app.use(cookieParser());
+
+// Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
 
 // Request timeout middleware (30 seconds)
 app.use((req, res, next) => {
@@ -189,6 +196,9 @@ app.use('/api/auth', authLimiter, require('./routes/authRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/doctors', require('./routes/doctorRoutes'));
 app.use('/api/visits', require('./routes/visitRoutes'));
+app.use('/api/messages', require('./routes/messageInbox')); // if file is messageInbox.js
+
+
 app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/regions', require('./routes/regionRoutes'));
 app.use('/api/assignments', require('./routes/productAssignmentRoutes'));

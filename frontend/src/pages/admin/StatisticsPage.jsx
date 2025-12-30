@@ -101,7 +101,8 @@ const MOCK_MONTHLY_REPORT = {
 // Mock: getBehindScheduleEmployees response
 const MOCK_BEHIND_SCHEDULE_EMPLOYEES = [
   {
-    _id: '1',
+    _id: '1', // keep for table row key if you want
+    userId: '694e844d77c859b62da6e6da', // ✅ must be 24 hex chars
     name: 'Juan Dela Cruz',
     email: 'juan@vippharmacy.com',
     region: 'Region VI - Western Visayas',
@@ -1326,35 +1327,40 @@ const StatisticsPage = () => {
     setNotifySending(true);
 
     try {
-      // TODO: Replace with actual API call
-      // await complianceService.sendNotification(selectedEmployee._id, {
-      //   message: notifyMessage,
-      //   channels: ['email', 'inbox'],
-      // });
+      const res = await fetch(`/api/messages/notify`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipientUserId: selectedEmployee.userId, // ✅ real Mongo user id
+          recipientRole: "employee",
+          category: "system",
+          priority: "important",
+          title: "Compliance Alert",
+          body: notifyMessage?.trim() || `Hi ${selectedEmployee.name}, please review your compliance status and submit pending visits.`,
+        }),
+      });
 
-      // Simulate API call
-      console.log('=== SEND NOTIFICATION ===');
-      console.log('Employee:', selectedEmployee.name);
-      console.log('Email:', selectedEmployee.email);
-      console.log('Message:', notifyMessage || '(Default compliance alert message)');
-      console.log('Channels: Email, Dashboard Inbox');
-      console.log('========================');
-
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(txt || "Failed to send alert");
+      }
 
       setNotifySuccess(true);
 
-      // Auto-close after success
       setTimeout(() => {
         handleCloseModal();
       }, 2000);
 
-    } catch {
-      console.error('Failed to send notification');
+    } catch (err) {
+      console.error("Failed to send notification:", err);
+      setNotifySuccess(false);
+      // optional: setError(String(err?.message || "Failed to send alert"));
     } finally {
       setNotifySending(false);
     }
   };
+
 
   /* ---------------------------------------------------------------------------
      Tab Count Badges

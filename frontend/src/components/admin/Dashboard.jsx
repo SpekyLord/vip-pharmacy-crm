@@ -3,10 +3,12 @@
  *
  * Admin dashboard with:
  * - Key metrics overview
- * - Recent activity feed
+ * - Recent activity feed (LiveActivityFeed)
  * - Charts and graphs
  * - Quick action buttons
  */
+
+import LiveActivityFeed from './LiveActivityFeed';
 
 const dashboardStyles = `
   .admin-dashboard {
@@ -132,7 +134,7 @@ const dashboardStyles = `
   }
 `;
 
-const Dashboard = ({ stats = {}, recentActivity = [] }) => {
+const Dashboard = ({ stats = {}, onViewAllActivity = null, onActivityClick = null }) => {
   const {
     totalDoctors = 0,
     totalEmployees = 0,
@@ -197,23 +199,14 @@ const Dashboard = ({ stats = {}, recentActivity = [] }) => {
         </div>
       </div>
 
-      <div className="recent-activity">
-        <h3>Recent Activity</h3>
-        <ul className="activity-list">
-          {recentActivity.length > 0 ? (
-            recentActivity.map((activity, index) => (
-              <li key={index} className="activity-item">
-                <span className="activity-time">
-                  {new Date(activity.timestamp).toLocaleTimeString()}
-                </span>
-                <span className="activity-description">{activity.description}</span>
-              </li>
-            ))
-          ) : (
-            <li className="activity-item empty">No recent activity</li>
-          )}
-        </ul>
-      </div>
+      {/* Recent Activity - Uses LiveActivityFeed component */}
+      <LiveActivityFeed
+        compact={true}
+        limit={5}
+        showFilters={false}
+        onViewAll={onViewAllActivity}
+        onActivityClick={onActivityClick}
+      />
     </div>
   );
 };
