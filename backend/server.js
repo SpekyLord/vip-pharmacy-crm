@@ -1,5 +1,5 @@
 /**
- * VIP Pharmacy CRM - Backend Server
+ * VIP CRM - Backend Server
  *
  * Main entry point for the Express.js API server
  *
@@ -175,7 +175,7 @@ const mongoose = require('mongoose');
 app.get('/api/health', async (req, res) => {
   const healthStatus = {
     success: true,
-    message: 'VIP Pharmacy CRM API is running',
+    message: 'VIP CRM API is running',
     environment: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
     dependencies: {
@@ -225,7 +225,7 @@ const startServer = async () => {
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`
 ╔═══════════════════════════════════════════════════════╗
-║       VIP Pharmacy CRM - API Server                   ║
+║       VIP CRM - API Server                   ║
 ╠═══════════════════════════════════════════════════════╣
 ║  Status:      Running                                 ║
 ║  Port:        ${PORT.toString().padEnd(40)}║

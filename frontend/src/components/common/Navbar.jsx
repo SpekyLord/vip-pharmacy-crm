@@ -16,7 +16,7 @@ const Navbar = () => {
   return (
     <nav className="navbar">
       <div className="navbar-brand">
-        <h1>VIP Pharmacy CRM</h1>
+        <h1>VIP CRM</h1>
       </div>
       <div className="navbar-menu">
         {user && (

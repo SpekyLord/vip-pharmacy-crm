@@ -1,7 +1,7 @@
 {
   "name": "vip-pharmacy-crm-backend",
   "version": "1.0.0",
-  "description": "Backend API for VIP Pharmacy CRM - Pharmaceutical Field Sales Management",
+  "description": "Backend API for VIP CRM - Pharmaceutical Field Sales Management",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

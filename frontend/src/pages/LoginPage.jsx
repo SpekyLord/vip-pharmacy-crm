@@ -36,7 +36,7 @@ const LoginPage = () => {
     <div className="login-page">
       <div className="login-container">
         <div className="login-header">
-          <h1>VIP Pharmacy CRM</h1>
+          <h1>VIP CRM</h1>
           <p>Customer Relationship Management System</p>
         </div>
         <LoginForm />

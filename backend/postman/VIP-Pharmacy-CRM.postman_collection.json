@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "VIP Pharmacy CRM API",
-    "description": "API collection for VIP Pharmacy CRM - Pharmaceutical Field Sales Management",
+    "name": "VIP CRM API",
+    "description": "API collection for VIP CRM - Pharmaceutical Field Sales Management",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
