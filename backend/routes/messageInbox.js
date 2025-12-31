@@ -14,11 +14,13 @@ const router = express.Router();
 
 const {
   getInboxMessages,
+  getSentMessages, // ✅ add
   createInboxMessage,
   createMessageNotify,
   markMessageRead,
   markMessageUnread,
 } = require('../controllers/messageInboxController');
+
 
 
 
@@ -32,6 +34,9 @@ router.use(protect);
 
 // 📄 Single message
 router.get('/', getInboxMessages);
+
+// 📤 Sent (admin only)
+router.get('/sent', adminOnly, getSentMessages); // ✅ add
 
 // 📝 Admin creates message (generic)
 router.post('/', adminOnly, createInboxMessage);

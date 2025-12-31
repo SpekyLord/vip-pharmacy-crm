@@ -12,8 +12,6 @@ import MyVisits from './pages/employee/MyVisits';
 import NewVisitPage from './pages/employee/NewVisitPage';
 import EmployeeInbox from './pages/employee/EMP_InboxPage';
 
-
-
 import AdminDashboard from './pages/admin/AdminDashboard';
 import DoctorsPage from './pages/admin/DoctorsPage';
 import EmployeesPage from './pages/admin/EmployeesPage';
@@ -23,6 +21,8 @@ import StatisticsPage from './pages/admin/StatisticsPage';
 import ActivityMonitor from './pages/admin/ActivityMonitor';
 import PendingApprovalsPage from './pages/admin/PendingApprovalsPage';
 import GPSVerificationPage from './pages/admin/GPSVerificationPage';
+import NotificationPreferences from './pages/common/NotificationPreferences';
+
 import MedRepDashboard from './pages/medrep/MedRepDashboard';
 
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -60,7 +60,6 @@ function App() {
             </ProtectedRoute>
           }
         />
-
         <Route
           path="/employee/inbox"
           element={
@@ -158,6 +157,16 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['medrep', 'admin']}>
               <MedRepDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Notification Preferences (All Roles) */}
+        <Route
+          path="/notifications/preferences"
+          element={
+            <ProtectedRoute allowedRoles={['employee', 'admin', 'medrep']}>
+              <NotificationPreferences />
             </ProtectedRoute>
           }
         />

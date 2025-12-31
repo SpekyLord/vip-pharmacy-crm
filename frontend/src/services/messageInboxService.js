@@ -16,41 +16,73 @@ const messageService = {
   // Supports query params: category, search, read, page, limit, etc.
   // ✅ Route example: GET /messages?category=announcement&search=holiday&page=1&limit=10
   getAll: async (params = {}, options = {}) => {
-    const res = await api.get('/messages', { params, ...options });
-    return res.data; // expect { success, data, pagination? } OR controller format
+    const res = await api.get('/messages', {
+      params,
+      withCredentials: true, // ✅ ADD
+      ...options,
+    });
+    return res.data;
   },
 
-  // If you later create a dedicated endpoint like GET /messages/my
+  getSent: async (params = {}, options = {}) => {
+    const res = await api.get('/messages/sent', {
+      params,
+      withCredentials: true, // ✅ ADD
+      ...options,
+    });
+    return res.data;
+  },
+
+
   getMy: async (params = {}, options = {}) => {
-    const res = await api.get('/messages/my', { params, ...options });
+    const res = await api.get('/messages/my', {
+      params,
+      withCredentials: true,
+      ...options,
+    });
     return res.data;
   },
 
-  // Get single message (if you have it)
   getById: async (id, options = {}) => {
-    const res = await api.get(`/messages/${id}`, { ...options });
+    const res = await api.get(`/messages/${id}`, {
+      withCredentials: true,
+      ...options,
+    });
     return res.data;
   },
+
 
   // Mark read (recommended: backend pushes userId into readBy)
   // ✅ PATCH /messages/:id/read
   markRead: async (id) => {
-    const res = await api.patch(`/messages/${id}/read`);
+    const res = await api.patch(
+      `/messages/${id}/read`,
+      {},
+      { withCredentials: true } // ✅ ADD
+    );
     return res.data;
   },
+
 
   // Mark unread (only if you implement it)
   // ✅ PATCH /messages/:id/unread
   markUnread: async (id) => {
-    const res = await api.patch(`/messages/${id}/unread`);
+    const res = await api.patch(
+      `/messages/${id}/unread`,
+      {},
+      { withCredentials: true }
+    );
     return res.data;
   },
 
-  // Toggle read (fallback: if backend uses one route and toggles internally)
-  toggleRead: async (id) => {
-    const res = await api.patch(`/messages/${id}/read`);
+  toggleRead: async (id, shouldBeRead) => {
+    const res = shouldBeRead
+      ? await api.patch(`/messages/${id}/read`, {}, { withCredentials: true })
+      : await api.patch(`/messages/${id}/unread`, {}, { withCredentials: true });
     return res.data;
   },
+
+
 
   // Archive (optional)
   // ✅ PATCH /messages/:id/archive
