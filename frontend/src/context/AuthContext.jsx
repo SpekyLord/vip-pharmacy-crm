@@ -4,8 +4,11 @@
  * Authentication context providing:
  * - User state management
  * - Login/logout functionality
- * - Token management
+ * - Cookie-based authentication (httpOnly cookies)
  * - Authentication status
+ *
+ * SECURITY: Tokens are stored in httpOnly cookies only.
+ * The frontend never accesses tokens directly - this protects against XSS attacks.
  */
 
 import { createContext, useState, useEffect, useCallback } from 'react';
@@ -32,31 +35,25 @@ export const AuthProvider = ({ children }) => {
     };
   }, [handleForcedLogout]);
 
-  // Check for existing session on mount
+  // Check for existing session on mount by calling /api/auth/me
+  // Cookies are sent automatically - if valid, user is authenticated
   useEffect(() => {
     let isMounted = true;
 
     const initAuth = async () => {
-      const token = localStorage.getItem('accessToken');
-
-      // No token - immediately stop loading
-      if (!token) {
-        if (isMounted) {
-          setLoading(false);
-        }
-        return;
-      }
-
       try {
+        // Try to get profile - cookie will be sent automatically
         const response = await authService.getProfile();
         // Backend returns { success, data: user } or { data: user }
         if (isMounted) {
           setUser(response.data || response);
         }
       } catch {
-        // Clear invalid tokens silently
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
+        // No valid session - user is not authenticated
+        // No localStorage cleanup needed - cookies are httpOnly
+        if (isMounted) {
+          setUser(null);
+        }
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -76,10 +73,9 @@ export const AuthProvider = ({ children }) => {
     setError(null);
     try {
       const response = await authService.login(email, password);
-      // Backend returns { success, data: { user, accessToken, refreshToken } }
-      const { user: userData, accessToken, refreshToken } = response.data;
-      localStorage.setItem('accessToken', accessToken);
-      localStorage.setItem('refreshToken', refreshToken);
+      // Backend sets httpOnly cookies automatically
+      // Only store user data in state - never tokens
+      const { user: userData } = response.data;
       setUser(userData);
       return response;
     } catch (err) {
@@ -92,26 +88,23 @@ export const AuthProvider = ({ children }) => {
 
   const logout = useCallback(async () => {
     try {
+      // Backend clears httpOnly cookies
       await authService.logout();
     } catch {
       // Logout error - continue with local cleanup anyway
     } finally {
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
+      // Clear user state - cookies are cleared by backend
       setUser(null);
     }
   }, []);
 
+  // Token refresh is handled automatically by the API interceptor
+  // This function is kept for backward compatibility but does nothing
   const refreshToken = useCallback(async () => {
     try {
-      const token = localStorage.getItem('refreshToken');
-      if (!token) throw new Error('No refresh token');
-
-      const response = await authService.refreshToken(token);
-      // Backend returns { success, data: { accessToken } }
-      const newAccessToken = response.data?.accessToken || response.accessToken;
-      localStorage.setItem('accessToken', newAccessToken);
-      return newAccessToken;
+      // Refresh is handled via cookies - just call the endpoint
+      await authService.refreshToken();
+      return true;
     } catch (err) {
       logout();
       throw err;

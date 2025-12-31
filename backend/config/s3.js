@@ -184,7 +184,7 @@ const signVisitPhotos = async (visit) => {
   visitObj.photos = await Promise.all(
     visitObj.photos.map(async (photo) => {
       const key = extractKeyFromUrl(photo.url);
-      const signedUrl = await getSignedDownloadUrl(key, 86400); // 24 hour expiry
+      const signedUrl = await getSignedDownloadUrl(key, 3600); // 1 hour expiry (security best practice)
       return { ...photo, url: signedUrl };
     })
   );

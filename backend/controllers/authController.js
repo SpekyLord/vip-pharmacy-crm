@@ -7,12 +7,15 @@
  * - Password reset functionality
  * - Token refresh
  * - Logout functionality
+ *
+ * SECURITY: All authentication events are logged for audit trail
  */
 
 const crypto = require('crypto');
 const User = require('../models/User');
 const { generateTokens, generateAccessToken } = require('../utils/generateToken');
 const { catchAsync } = require('../middleware/errorHandler');
+const { logAuditEvent, AuditActions } = require('../utils/auditLogger');
 
 /**
  * @desc    Register a new user
@@ -48,6 +51,21 @@ const register = catchAsync(async (req, res) => {
   user.refreshToken = tokens.refreshToken;
   await user.save();
 
+  // Set httpOnly cookies for security
+  res.cookie('accessToken', tokens.accessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 15 * 60 * 1000, // 15 mins
+  });
+
+  res.cookie('refreshToken', tokens.refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+
   res.status(201).json({
     success: true,
     message: 'Registration successful',
@@ -58,8 +76,7 @@ const register = catchAsync(async (req, res) => {
         email: user.email,
         role: user.role,
       },
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
+      // SECURITY: Tokens are only in httpOnly cookies - never exposed to JavaScript
     },
   });
 });
@@ -72,18 +89,44 @@ const register = catchAsync(async (req, res) => {
 const login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
 
-  // Find user with password
+  // Find user with password and lockout fields
   const user = await User.findByEmailWithPassword(email);
 
   if (!user) {
+    // Log failed login attempt for non-existent user
+    await logAuditEvent(AuditActions.LOGIN_FAILURE, {
+      email,
+      req,
+      details: { reason: 'User not found' },
+    });
     return res.status(401).json({
       success: false,
       message: 'Invalid email or password',
     });
   }
 
+  // Check if account is locked due to too many failed attempts
+  if (user.isLocked()) {
+    const remainingSeconds = user.getLockoutRemaining();
+    const remainingMinutes = Math.ceil(remainingSeconds / 60);
+    return res.status(423).json({
+      success: false,
+      message: `Account is temporarily locked. Try again in ${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}.`,
+      data: {
+        lockedUntil: user.lockoutUntil,
+        remainingSeconds,
+      },
+    });
+  }
+
   // Check if user is active
   if (!user.isActive) {
+    await logAuditEvent(AuditActions.LOGIN_FAILURE, {
+      userId: user._id,
+      email,
+      req,
+      details: { reason: 'Account deactivated' },
+    });
     return res.status(401).json({
       success: false,
       message: 'Your account has been deactivated. Please contact an administrator.',
@@ -93,11 +136,54 @@ const login = catchAsync(async (req, res) => {
   // Check password
   const isMatch = await user.matchPassword(password);
   if (!isMatch) {
+    // Increment failed login attempts and potentially lock account
+    const attempts = await user.handleFailedLogin();
+    const remainingAttempts = 5 - attempts;
+
+    // Log failed login attempt
+    await logAuditEvent(AuditActions.LOGIN_FAILURE, {
+      userId: user._id,
+      email,
+      req,
+      details: { reason: 'Invalid password', attemptNumber: attempts },
+    });
+
+    // Different message if account is now locked
+    if (user.isLocked()) {
+      // Log account lockout
+      await logAuditEvent(AuditActions.ACCOUNT_LOCKED, {
+        userId: user._id,
+        email,
+        req,
+        details: { lockoutUntil: user.lockoutUntil },
+      });
+      return res.status(423).json({
+        success: false,
+        message: 'Too many failed login attempts. Account is temporarily locked for 15 minutes.',
+        data: {
+          lockedUntil: user.lockoutUntil,
+          remainingSeconds: user.getLockoutRemaining(),
+        },
+      });
+    }
+
     return res.status(401).json({
       success: false,
-      message: 'Invalid email or password',
+      message: remainingAttempts > 0
+        ? `Invalid email or password. ${remainingAttempts} attempt${remainingAttempts > 1 ? 's' : ''} remaining.`
+        : 'Invalid email or password',
     });
   }
+
+  // Successful login - reset failed attempts counter
+  await user.resetLoginAttempts();
+
+  // Log successful login
+  await logAuditEvent(AuditActions.LOGIN_SUCCESS, {
+    userId: user._id,
+    email,
+    req,
+  });
 
   // Generate tokens
   const tokens = generateTokens(user);
@@ -130,9 +216,7 @@ res.json({
   message: 'Login successful',
   data: {
     user: userResponse,
-    // optional: you can omit these if you want pure cookie auth
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
+    // SECURITY: Tokens are only in httpOnly cookies - never exposed to JavaScript
   },
 });
 
@@ -147,6 +231,12 @@ const logout = catchAsync(async (req, res) => {
   // Clear refresh token from database
   if (req.user) {
     await User.findByIdAndUpdate(req.user._id, { refreshToken: null });
+
+    // Log logout event
+    await logAuditEvent(AuditActions.LOGOUT, {
+      userId: req.user._id,
+      req,
+    });
   }
 
   res.clearCookie('accessToken');
@@ -212,6 +302,13 @@ const forgotPassword = catchAsync(async (req, res) => {
   user.passwordResetExpires = Date.now() + 3600000; // 1 hour
   await user.save();
 
+  // Log password reset request
+  await logAuditEvent(AuditActions.PASSWORD_RESET_REQUEST, {
+    userId: user._id,
+    email,
+    req,
+  });
+
   // TODO: Send email with reset link using AWS SES (Phase 2)
   // Reset link format: ${FRONTEND_URL}/reset-password/${resetToken}
   // SECURITY: Never expose reset token in response - only send via email
@@ -254,6 +351,12 @@ const resetPassword = catchAsync(async (req, res) => {
   user.passwordResetExpires = undefined;
   user.refreshToken = null; // Invalidate all sessions
   await user.save();
+
+  // Log password reset completion
+  await logAuditEvent(AuditActions.PASSWORD_RESET_COMPLETE, {
+    userId: user._id,
+    req,
+  });
 
   res.json({
     success: true,
@@ -300,18 +403,36 @@ const updatePassword = catchAsync(async (req, res) => {
   user.refreshToken = null; // Invalidate all sessions
   await user.save();
 
+  // Log password change
+  await logAuditEvent(AuditActions.PASSWORD_CHANGE, {
+    userId: user._id,
+    req,
+  });
+
   // Generate new tokens
   const tokens = generateTokens(user);
   user.refreshToken = tokens.refreshToken;
   await user.save();
 
+  // Set new httpOnly cookies
+  res.cookie('accessToken', tokens.accessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 15 * 60 * 1000, // 15 mins
+  });
+
+  res.cookie('refreshToken', tokens.refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+
   res.json({
     success: true,
     message: 'Password updated successfully',
-    data: {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-    },
+    // SECURITY: Tokens are only in httpOnly cookies - never exposed to JavaScript
   });
 });
 
