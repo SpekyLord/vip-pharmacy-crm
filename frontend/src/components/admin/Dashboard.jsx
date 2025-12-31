@@ -1,138 +1,212 @@
 /**
- * Dashboard Component (Admin)
+ * Dashboard Component (Admin) - Redesigned
  *
- * Admin dashboard with:
- * - Key metrics overview
- * - Recent activity feed (LiveActivityFeed)
- * - Charts and graphs
- * - Quick action buttons
+ * Modern admin dashboard with:
+ * - Key metrics overview with icons
+ * - Visual stat cards
+ * - Recent activity feed
+ * - Clean layout
  */
 
+import {
+  Stethoscope,
+  Users,
+  MapPin,
+  Clock,
+  Calendar,
+  TrendingUp,
+  ArrowUpRight,
+  ArrowDownRight,
+} from 'lucide-react';
 import LiveActivityFeed from './LiveActivityFeed';
 
+/* =============================================================================
+   STYLES
+   ============================================================================= */
+
 const dashboardStyles = `
-  .admin-dashboard {
-    padding: 0;
+  .dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
   }
 
-  .admin-dashboard h2 {
-    margin: 0 0 24px 0;
-    font-size: 20px;
-    color: #1f2937;
-  }
-
+  /* Stats Grid */
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 20px;
-    margin-bottom: 32px;
   }
 
   .stat-card {
     background: white;
-    border-radius: 12px;
-    padding: 20px;
+    border-radius: 16px;
+    padding: 24px;
+    border: 1px solid #e5e7eb;
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 16px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: all 0.2s;
   }
 
   .stat-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-color: #d1d5db;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
 
-  .stat-card.highlight {
-    background: linear-gradient(135deg, #fef3c7, #fde68a);
-    border: 1px solid #f59e0b;
+  .stat-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
   }
 
   .stat-icon {
     width: 48px;
     height: 48px;
-    background: #f3f4f6;
     border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
   }
 
-  .stat-card.highlight .stat-icon {
-    background: rgba(245, 158, 11, 0.2);
+  .stat-icon.blue { background: #dbeafe; color: #2563eb; }
+  .stat-icon.purple { background: #f3e8ff; color: #7c3aed; }
+  .stat-icon.green { background: #dcfce7; color: #16a34a; }
+  .stat-icon.amber { background: #fef3c7; color: #d97706; }
+  .stat-icon.pink { background: #fce7f3; color: #db2777; }
+  .stat-icon.cyan { background: #cffafe; color: #0891b2; }
+
+  .stat-trend {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
   }
 
-  .stat-info {
+  .stat-trend.up {
+    background: #dcfce7;
+    color: #16a34a;
+  }
+
+  .stat-trend.down {
+    background: #fee2e2;
+    color: #dc2626;
+  }
+
+  .stat-content {
     display: flex;
     flex-direction: column;
+    gap: 4px;
   }
 
   .stat-value {
-    font-size: 28px;
+    font-size: 32px;
     font-weight: 700;
     color: #1f2937;
-    line-height: 1.2;
+    line-height: 1;
   }
 
   .stat-label {
     font-size: 14px;
     color: #6b7280;
-    margin-top: 4px;
   }
 
-  .recent-activity {
+  /* Highlight Card */
+  .stat-card.highlight {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border-color: #fbbf24;
+  }
+
+  .stat-card.highlight .stat-icon {
+    background: rgba(217, 119, 6, 0.2);
+    color: #b45309;
+  }
+
+  /* Two Column Layout */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  /* Quick Stats Row */
+  .quick-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  .quick-stat {
     background: white;
     border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
-  .recent-activity h3 {
-    margin: 0 0 16px 0;
-    font-size: 18px;
-    color: #1f2937;
-    border-bottom: 2px solid #e5e7eb;
-    padding-bottom: 12px;
-  }
-
-  .activity-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-
-  .activity-item {
+    padding: 20px;
+    border: 1px solid #e5e7eb;
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 0;
-    border-bottom: 1px solid #f3f4f6;
+    gap: 14px;
   }
 
-  .activity-item:last-child {
-    border-bottom: none;
-  }
-
-  .activity-item.empty {
-    color: #9ca3af;
-    font-style: italic;
+  .quick-stat-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
     justify-content: center;
-    padding: 24px;
   }
 
-  .activity-time {
-    font-size: 12px;
-    color: #9ca3af;
-    min-width: 80px;
+  .quick-stat-content {
+    flex: 1;
   }
 
-  .activity-description {
-    font-size: 14px;
-    color: #374151;
+  .quick-stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1f2937;
+  }
+
+  .quick-stat-label {
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  /* Activity Section */
+  .activity-section {
+    grid-column: span 2;
+  }
+
+  /* Responsive */
+  @media (max-width: 1200px) {
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .quick-stats {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 768px) {
+    .stats-grid {
+      grid-template-columns: 1fr;
+    }
+    .quick-stats {
+      grid-template-columns: 1fr;
+    }
+    .dashboard-grid {
+      grid-template-columns: 1fr;
+    }
+    .activity-section {
+      grid-column: span 1;
+    }
   }
 `;
+
+/* =============================================================================
+   COMPONENT
+   ============================================================================= */
 
 const Dashboard = ({ stats = {}, onViewAllActivity = null, onActivityClick = null }) => {
   const {
@@ -145,68 +219,110 @@ const Dashboard = ({ stats = {}, onViewAllActivity = null, onActivityClick = nul
   } = stats;
 
   return (
-    <div className="admin-dashboard">
+    <div className="dashboard">
       <style>{dashboardStyles}</style>
-      <h2>Dashboard Overview</h2>
 
+      {/* Main Stats */}
       <div className="stats-grid">
         <div className="stat-card">
-          <div className="stat-icon">&#x1F468;&#x200D;&#x2695;&#xFE0F;</div>
-          <div className="stat-info">
+          <div className="stat-card-header">
+            <div className="stat-icon blue">
+              <Stethoscope size={24} />
+            </div>
+            <div className="stat-trend up">
+              <ArrowUpRight size={14} />
+              12%
+            </div>
+          </div>
+          <div className="stat-content">
             <span className="stat-value">{totalDoctors}</span>
-            <span className="stat-label">Total VIP Clients</span>
+            <span className="stat-label">VIP Clients</span>
           </div>
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon">&#x1F465;</div>
-          <div className="stat-info">
+          <div className="stat-card-header">
+            <div className="stat-icon purple">
+              <Users size={24} />
+            </div>
+            <div className="stat-trend up">
+              <ArrowUpRight size={14} />
+              8%
+            </div>
+          </div>
+          <div className="stat-content">
             <span className="stat-value">{totalEmployees}</span>
-            <span className="stat-label">Total BDMs</span>
+            <span className="stat-label">Field Employees</span>
           </div>
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon">&#x1F4CD;</div>
-          <div className="stat-info">
+          <div className="stat-card-header">
+            <div className="stat-icon green">
+              <MapPin size={24} />
+            </div>
+            <div className="stat-trend up">
+              <ArrowUpRight size={14} />
+              24%
+            </div>
+          </div>
+          <div className="stat-content">
             <span className="stat-value">{totalVisits}</span>
             <span className="stat-label">Total Visits</span>
           </div>
         </div>
 
         <div className="stat-card highlight">
-          <div className="stat-icon">&#x23F3;</div>
-          <div className="stat-info">
+          <div className="stat-card-header">
+            <div className="stat-icon amber">
+              <Clock size={24} />
+            </div>
+          </div>
+          <div className="stat-content">
             <span className="stat-value">{pendingApprovals}</span>
             <span className="stat-label">Pending Approvals</span>
           </div>
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon">&#x1F4C5;</div>
-          <div className="stat-info">
+          <div className="stat-card-header">
+            <div className="stat-icon cyan">
+              <Calendar size={24} />
+            </div>
+          </div>
+          <div className="stat-content">
             <span className="stat-value">{visitsToday}</span>
             <span className="stat-label">Visits Today</span>
           </div>
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon">&#x1F4CA;</div>
-          <div className="stat-info">
+          <div className="stat-card-header">
+            <div className="stat-icon pink">
+              <TrendingUp size={24} />
+            </div>
+            <div className="stat-trend down">
+              <ArrowDownRight size={14} />
+              3%
+            </div>
+          </div>
+          <div className="stat-content">
             <span className="stat-value">{visitsThisWeek}</span>
             <span className="stat-label">Visits This Week</span>
           </div>
         </div>
       </div>
 
-      {/* Recent Activity - Uses LiveActivityFeed component */}
-      <LiveActivityFeed
-        compact={true}
-        limit={5}
-        showFilters={false}
-        onViewAll={onViewAllActivity}
-        onActivityClick={onActivityClick}
-      />
+      {/* Activity Feed */}
+      <div className="activity-section">
+        <LiveActivityFeed
+          compact={true}
+          limit={5}
+          showFilters={false}
+          onViewAll={onViewAllActivity}
+          onActivityClick={onActivityClick}
+        />
+      </div>
     </div>
   );
 };

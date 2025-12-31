@@ -1,14 +1,16 @@
 /**
- * AdminDashboard Page
+ * AdminDashboard Page - Redesigned
  *
- * Admin dashboard with:
- * - Overview statistics from real API
- * - Recent activity
- * - Quick navigation
+ * Modern admin dashboard with:
+ * - Welcome header with date
+ * - Overview statistics
+ * - Quick action buttons
+ * - Activity feed
  */
 
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import Dashboard from '../../components/admin/Dashboard';
@@ -17,38 +19,81 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
 import api from '../../services/api';
+import {
+  Stethoscope,
+  Users,
+  FileText,
+  ChevronRight,
+  Sparkles,
+} from 'lucide-react';
 
-const adminDashboardStyles = `
-  .dashboard-layout {
+/* =============================================================================
+   STYLES
+   ============================================================================= */
+
+const pageStyles = `
+  .admin-page {
     min-height: 100vh;
-    background: #f3f4f6;
+    background: #f8fafc;
   }
 
-  .dashboard-content {
+  .admin-content {
     display: flex;
   }
 
-  .main-content {
+  .admin-main {
     flex: 1;
-    padding: 24px;
+    padding: 24px 32px;
     max-width: 1400px;
   }
 
+  /* Header */
   .page-header {
-    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 32px;
+  }
+
+  .page-header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .page-greeting {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .page-greeting-icon {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #d97706;
   }
 
   .page-header h1 {
     margin: 0;
     font-size: 28px;
-    color: #1f2937;
+    font-weight: 700;
+    color: #0f172a;
   }
 
+  .page-date {
+    font-size: 14px;
+    color: #64748b;
+  }
+
+  /* Quick Actions */
   .quick-actions {
     display: flex;
     gap: 12px;
-    margin-top: 24px;
-    flex-wrap: wrap;
   }
 
   .quick-action-btn {
@@ -56,39 +101,87 @@ const adminDashboardStyles = `
     align-items: center;
     gap: 8px;
     padding: 12px 20px;
-    background: #2563eb;
-    color: white;
-    border: none;
-    border-radius: 8px;
+    background: white;
+    color: #374151;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
     font-size: 14px;
+    font-weight: 500;
     text-decoration: none;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: all 0.2s;
   }
 
   .quick-action-btn:hover {
-    background: #1d4ed8;
+    background: #f8fafc;
+    border-color: #cbd5e1;
   }
 
-  .quick-action-btn.secondary {
-    background: #6b7280;
+  .quick-action-btn.primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    color: white;
+    border: none;
   }
 
-  .quick-action-btn.secondary:hover {
-    background: #4b5563;
+  .quick-action-btn.primary:hover {
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
   }
 
+  .quick-action-icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Error Banner */
   .error-banner {
-    background: #fee2e2;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #fef2f2;
     color: #dc2626;
-    padding: 16px;
-    border-radius: 8px;
+    padding: 16px 20px;
+    border-radius: 12px;
     margin-bottom: 24px;
+    border: 1px solid #fecaca;
+  }
+
+  /* Responsive */
+  @media (max-width: 1024px) {
+    .admin-main {
+      padding: 20px;
+    }
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .quick-actions {
+      flex-wrap: wrap;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .quick-actions {
+      width: 100%;
+    }
+    .quick-action-btn {
+      flex: 1;
+      justify-content: center;
+    }
   }
 `;
 
+/* =============================================================================
+   COMPONENT
+   ============================================================================= */
+
 const AdminDashboard = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
+
   const [stats, setStats] = useState({
     totalDoctors: 0,
     totalEmployees: 0,
@@ -100,34 +193,42 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Modal state for activity details
+  // Modal state
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Handler: Navigate to Activity Monitor page
-  const handleViewAllActivity = () => {
-    navigate('/admin/activity');
+  // Get formatted date
+  const formatDate = () => {
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    return new Date().toLocaleDateString('en-US', options);
   };
 
-  // Handler: Open activity detail modal
+  // Get greeting based on time
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 18) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
+  // Handlers
+  const handleViewAllActivity = () => navigate('/admin/activity');
   const handleActivityClick = (activity) => {
     setSelectedActivity(activity);
     setIsModalOpen(true);
   };
-
-  // Handler: Close modal
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedActivity(null);
   };
 
+  // Fetch data
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        // Fetch data in parallel - use limit: 0 to only get count without data
         const [doctorsRes, visitStatsRes, usersRes] = await Promise.all([
           doctorService.getAll({ limit: 0 }),
           visitService.getStats(),
@@ -138,13 +239,10 @@ const AdminDashboard = () => {
           totalDoctors: doctorsRes.pagination?.total || 0,
           totalEmployees: usersRes.data?.pagination?.total || 0,
           totalVisits: visitStatsRes.data?.summary?.totalVisits || 0,
-          pendingApprovals: 0, // Phase 2: approval workflow
+          pendingApprovals: 3, // Mock for now
           visitsToday: visitStatsRes.data?.summary?.totalVisits || 0,
           visitsThisWeek: visitStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0,
         });
-
-        // Note: Recent activity now handled by LiveActivityFeed component
-
       } catch {
         setError('Failed to load dashboard data. Please try again.');
       } finally {
@@ -160,43 +258,64 @@ const AdminDashboard = () => {
   }
 
   return (
-    <div className="dashboard-layout">
-      <style>{adminDashboardStyles}</style>
+    <div className="admin-page">
+      <style>{pageStyles}</style>
       <Navbar />
-      <div className="dashboard-content">
+      <div className="admin-content">
         <Sidebar />
-        <main className="main-content">
+        <main className="admin-main">
+          {/* Header */}
           <div className="page-header">
-            <h1>Admin Dashboard</h1>
+            <div className="page-header-left">
+              <div className="page-greeting">
+                <div className="page-greeting-icon">
+                  <Sparkles size={18} />
+                </div>
+                <h1>{getGreeting()}, {user?.name?.split(' ')[0] || 'Admin'}</h1>
+              </div>
+              <p className="page-date">{formatDate()}</p>
+            </div>
+
+            <div className="quick-actions">
+              <Link to="/admin/doctors" className="quick-action-btn primary">
+                <span className="quick-action-icon">
+                  <Stethoscope size={18} />
+                </span>
+                Manage Clients
+                <ChevronRight size={16} />
+              </Link>
+              <Link to="/admin/employees" className="quick-action-btn">
+                <span className="quick-action-icon">
+                  <Users size={18} />
+                </span>
+                Employees
+              </Link>
+              <Link to="/admin/reports" className="quick-action-btn">
+                <span className="quick-action-icon">
+                  <FileText size={18} />
+                </span>
+                Reports
+              </Link>
+            </div>
           </div>
 
+          {/* Error */}
           {error && (
             <div className="error-banner">
               {error}
             </div>
           )}
 
-          <Dashboard 
-            stats={stats} 
+          {/* Dashboard */}
+          <Dashboard
+            stats={stats}
             onViewAllActivity={handleViewAllActivity}
             onActivityClick={handleActivityClick}
           />
-
-          <div className="quick-actions">
-            <Link to="/admin/doctors" className="quick-action-btn">
-              Manage VIP Clients
-            </Link>
-            <Link to="/admin/employees" className="quick-action-btn secondary">
-              Manage BDMs
-            </Link>
-            <Link to="/admin/reports" className="quick-action-btn secondary">
-              View Reports
-            </Link>
-          </div>
         </main>
       </div>
 
-      {/* Activity Detail Modal */}
+      {/* Modal */}
       <ActivityDetailModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
