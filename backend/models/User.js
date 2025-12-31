@@ -27,7 +27,8 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       match: [
-        /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
+        // RFC 5322 compliant email regex supporting modern TLDs (e.g., .technology, .museum)
+        /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/,
         'Please enter a valid email',
       ],
     },
@@ -89,6 +90,15 @@ const userSchema = new mongoose.Schema(
     refreshToken: {
       type: String,
       select: false,
+    },
+    // Account lockout fields for brute force protection
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+    },
+    lockoutUntil: {
+      type: Date,
+      default: null,
     },
   },
   {
@@ -169,14 +179,55 @@ userSchema.methods.canAccessRegion = async function (regionId) {
   return false;
 };
 
-// Static method to find user by email with password
+// Static method to find user by email with password and lockout fields
 userSchema.statics.findByEmailWithPassword = function (email) {
-  return this.findOne({ email }).select('+password');
+  return this.findOne({ email }).select('+password +failedLoginAttempts +lockoutUntil');
 };
 
 // Static method to find active users by role
 userSchema.statics.findActiveByRole = function (role) {
   return this.find({ role, isActive: true });
+};
+
+// Account lockout configuration
+const LOCKOUT_CONFIG = {
+  MAX_ATTEMPTS: 5,
+  LOCKOUT_DURATION_MS: 15 * 60 * 1000, // 15 minutes
+};
+
+// Instance method to check if account is locked
+userSchema.methods.isLocked = function () {
+  if (!this.lockoutUntil) return false;
+  return this.lockoutUntil > new Date();
+};
+
+// Instance method to get remaining lockout time in seconds
+userSchema.methods.getLockoutRemaining = function () {
+  if (!this.lockoutUntil) return 0;
+  const remaining = Math.ceil((this.lockoutUntil - new Date()) / 1000);
+  return Math.max(0, remaining);
+};
+
+// Instance method to handle failed login
+userSchema.methods.handleFailedLogin = async function () {
+  this.failedLoginAttempts = (this.failedLoginAttempts || 0) + 1;
+
+  // Lock account after MAX_ATTEMPTS failed attempts
+  if (this.failedLoginAttempts >= LOCKOUT_CONFIG.MAX_ATTEMPTS) {
+    this.lockoutUntil = new Date(Date.now() + LOCKOUT_CONFIG.LOCKOUT_DURATION_MS);
+  }
+
+  await this.save();
+  return this.failedLoginAttempts;
+};
+
+// Instance method to reset login attempts on successful login
+userSchema.methods.resetLoginAttempts = async function () {
+  if (this.failedLoginAttempts > 0 || this.lockoutUntil) {
+    this.failedLoginAttempts = 0;
+    this.lockoutUntil = null;
+    await this.save();
+  }
 };
 
 const User = mongoose.model('User', userSchema);

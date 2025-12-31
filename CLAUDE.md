@@ -586,6 +586,64 @@ BDM Visit Report showed visits in Excel export totals (SUM OF column) but not in
 | `AdminDashboard.jsx` | Changed limit:1 to limit:0 |
 | `VIPClientList.jsx` | React.memo, useMemo for filtered list |
 
+## Security Hardening (Completed Dec 2024)
+
+### Critical Security Fixes
+- ✅ **Token Storage (SEC-001)**: Removed localStorage token storage, now using httpOnly cookies only
+  - Frontend no longer stores or accesses tokens directly
+  - Cookies sent automatically with `withCredentials: true`
+  - Protects against XSS attacks stealing tokens
+- ✅ **Visit Race Condition (SEC-002)**: Added duplicate key error handling in visitController
+  - Prevents duplicate visits when two requests arrive simultaneously
+  - Returns user-friendly error message
+- ✅ **Account Lockout (SEC-003)**: Implemented brute force protection
+  - 5 failed login attempts = 15 minute account lockout
+  - Added `failedLoginAttempts` and `lockoutUntil` fields to User model
+  - Shows remaining attempts and lockout time to user
+
+### Security Enhancements
+- ✅ **JWT Secret Validation (SEC-006)**: Server startup validates JWT secrets are 32+ characters
+- ✅ **CORS Validation (SEC-009)**: Production requires CORS_ORIGINS environment variable
+- ✅ **Password Complexity (SEC-004)**: Enhanced password requirements
+  - Minimum 8 characters
+  - Must contain uppercase, lowercase, number, and special character (@$!%*?&)
+- ✅ **S3 URL Expiry (SEC-007)**: Reduced signed URL expiry from 24 hours to 1 hour
+- ✅ **Token Response Cleanup (SEC-008)**: Tokens no longer returned in JSON response body
+- ✅ **Email Validation (SEC-010)**: Updated regex to support modern TLDs
+
+### Audit Logging (SEC-005)
+Security events are now logged to MongoDB `auditlogs` collection:
+- `LOGIN_SUCCESS` / `LOGIN_FAILURE` - With IP address and user agent
+- `LOGOUT` - When user logs out
+- `PASSWORD_CHANGE` - When user changes password
+- `PASSWORD_RESET_REQUEST` / `PASSWORD_RESET_COMPLETE` - Password reset flow
+- `ACCOUNT_LOCKED` - After 5 failed login attempts
+
+**Configuration:**
+- Logs auto-expire after 90 days (TTL index)
+- Query example: `db.auditlogs.find({ action: 'LOGIN_FAILURE', timestamp: { $gte: new Date(Date.now() - 24*60*60*1000) }})`
+
+### New Files Created
+| File | Purpose |
+|------|---------|
+| `backend/models/AuditLog.js` | Audit log schema with TTL index |
+| `backend/utils/auditLogger.js` | Utility functions for logging security events |
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `frontend/src/context/AuthContext.jsx` | Removed localStorage, cookie-based auth |
+| `frontend/src/services/api.js` | Removed token injection, cookie-based refresh |
+| `frontend/src/services/authService.js` | Updated for cookie-based auth |
+| `backend/controllers/authController.js` | Added lockout logic, audit logging, removed tokens from response |
+| `backend/controllers/visitController.js` | Added duplicate key error handling |
+| `backend/models/User.js` | Added lockout fields, isLocked(), handleFailedLogin() methods |
+| `backend/middleware/validation.js` | Enhanced password complexity validation |
+| `backend/server.js` | Added JWT secret and CORS validation at startup |
+| `backend/config/s3.js` | Reduced signed URL expiry to 1 hour |
+
+---
+
 ## Next Steps Priority
 
 1. **Task 1.15** - Complete CSS styling (mobile responsive)

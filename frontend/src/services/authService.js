@@ -6,8 +6,11 @@
  * - Logout
  * - Register
  * - Password reset
- * - Token refresh
+ * - Token refresh (via httpOnly cookies)
  * - Get profile
+ *
+ * SECURITY: All authentication uses httpOnly cookies.
+ * Tokens are never exposed to JavaScript.
  */
 
 import api from './api';
@@ -38,8 +41,9 @@ const authService = {
     return response.data;
   },
 
-  refreshToken: async (refreshToken) => {
-    const response = await api.post('/auth/refresh-token', { refreshToken });
+  // Token refresh is handled via httpOnly cookies - no token parameter needed
+  refreshToken: async () => {
+    const response = await api.post('/auth/refresh-token', {});
     return response.data;
   },
 

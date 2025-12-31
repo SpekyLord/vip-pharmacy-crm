@@ -89,27 +89,42 @@ const createVisit = catchAsync(async (req, res) => {
     capturedAt: photo.capturedAt || new Date(),
   }));
 
-  // Create visit
-  const visit = await Visit.create({
-    doctor: doctorId,
-    user: req.user._id,
-    visitDate: visitDateObj,
-    visitType: visitType || 'regular',
-    location: {
-      latitude: locationData.latitude,
-      longitude: locationData.longitude,
-      accuracy: locationData.accuracy,
-      capturedAt: new Date(),
-    },
-    photos,
-    productsDiscussed: productsData,
-    purpose,
-    doctorFeedback,
-    notes,
-    duration,
-    nextVisitDate,
-    status: 'completed',
-  });
+  // Create visit with race condition protection
+  // The unique index on (doctor, user, yearWeekKey) prevents duplicate visits
+  // but we need to handle the case where two requests arrive simultaneously
+  let visit;
+  try {
+    visit = await Visit.create({
+      doctor: doctorId,
+      user: req.user._id,
+      visitDate: visitDateObj,
+      visitType: visitType || 'regular',
+      location: {
+        latitude: locationData.latitude,
+        longitude: locationData.longitude,
+        accuracy: locationData.accuracy,
+        capturedAt: new Date(),
+      },
+      photos,
+      productsDiscussed: productsData,
+      purpose,
+      doctorFeedback,
+      notes,
+      duration,
+      nextVisitDate,
+      status: 'completed',
+    });
+  } catch (error) {
+    // Handle duplicate key error (race condition - another visit was created first)
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'A visit to this VIP Client has already been logged this week. Only one visit per week is allowed.',
+      });
+    }
+    // Re-throw other errors for the error handler
+    throw error;
+  }
 
   // Populate doctor info for response
   await visit.populate('doctor', 'name specialization hospital');

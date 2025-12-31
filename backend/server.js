@@ -44,6 +44,27 @@ const validateEnv = () => {
     process.exit(1);
   }
 
+  // SECURITY: Validate JWT secret strength (minimum 32 characters)
+  const MIN_SECRET_LENGTH = 32;
+  if (process.env.JWT_SECRET.length < MIN_SECRET_LENGTH) {
+    console.error(`SECURITY ERROR: JWT_SECRET must be at least ${MIN_SECRET_LENGTH} characters for adequate security.`);
+    console.error(`Current length: ${process.env.JWT_SECRET.length} characters.`);
+    process.exit(1);
+  }
+  if (process.env.JWT_REFRESH_SECRET.length < MIN_SECRET_LENGTH) {
+    console.error(`SECURITY ERROR: JWT_REFRESH_SECRET must be at least ${MIN_SECRET_LENGTH} characters for adequate security.`);
+    console.error(`Current length: ${process.env.JWT_REFRESH_SECRET.length} characters.`);
+    process.exit(1);
+  }
+
+  // SECURITY: Validate CORS_ORIGINS is set in production
+  if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
+    console.error('SECURITY ERROR: CORS_ORIGINS is required in production.');
+    console.error('Set CORS_ORIGINS to a comma-separated list of allowed origins.');
+    console.error('Example: CORS_ORIGINS=https://app.vipcrm.com,https://www.vipcrm.com');
+    process.exit(1);
+  }
+
   // Warn about optional but recommended variables
   const recommended = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'S3_BUCKET_NAME'];
   const missingRecommended = recommended.filter((key) => !process.env[key]);
