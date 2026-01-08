@@ -1,8 +1,8 @@
 # Deployment Guide
 ## VIP CRM - AWS Lightsail Edition
 
-**Version:** 2.0
-**Last Updated:** December 2024
+**Version:** 3.0
+**Last Updated:** January 2026 (Security Hardening Update)
 
 This guide covers deploying the VIP CRM to AWS Lightsail with S3 for image storage.
 
@@ -543,7 +543,8 @@ PORT=5000
 # MongoDB Atlas
 MONGODB_URI=mongodb+srv://vip_crm_admin:YOUR_PASSWORD@vip-crm-cluster.xxxxx.mongodb.net/vip-crm?retryWrites=true&w=majority
 
-# JWT Configuration (generate new secrets!)
+# JWT Configuration (SECURITY: Secrets must be at least 32 characters!)
+# Server will refuse to start if secrets are too short.
 JWT_SECRET=your_production_jwt_secret_minimum_32_characters_long
 JWT_EXPIRE=15m
 JWT_REFRESH_SECRET=your_production_refresh_secret_minimum_32_characters
@@ -558,9 +559,16 @@ S3_BUCKET_NAME=vip-crm-bucket
 # Frontend URL (for CORS)
 FRONTEND_URL=https://yourdomain.com
 
+# CORS Origins (REQUIRED in production - server will not start without it!)
+CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+
 # Rate Limiting
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX_REQUESTS=100
+
+# Login Rate Limiting (Account Lockout)
+LOGIN_MAX_ATTEMPTS=5
+LOGIN_LOCKOUT_DURATION=15
 ```
 
 ### 10.2 Generate Secure JWT Secrets
@@ -762,6 +770,36 @@ sudo chown -R ubuntu:ubuntu /var/www/vip-crm
 chmod -R 755 /var/www/vip-crm
 chmod 600 /var/www/vip-crm/backend/.env
 ```
+
+---
+
+## Security Hardening Checklist (January 2026)
+
+Before deploying to production, verify these security requirements:
+
+### Authentication Security
+- [ ] JWT secrets are at least 32 characters (server validates at startup)
+- [ ] Access token expiry is 15 minutes or less
+- [ ] Refresh token expiry is 7 days or less
+- [ ] CORS_ORIGINS environment variable is set (required in production)
+- [ ] httpOnly cookies are being used (not localStorage)
+
+### Account Security
+- [ ] Account lockout is enabled (5 attempts = 15 min lockout)
+- [ ] Password complexity is enforced (upper, lower, number, special char)
+- [ ] Audit logging is enabled (check AuditLog collection)
+
+### API Security
+- [ ] Rate limiting is configured (100 req/15min general, 20 req/15min auth)
+- [ ] HSTS headers are enabled via helmet
+- [ ] S3 signed URL expiry is 1 hour (not 24 hours)
+
+### Monitoring
+- [ ] Audit logs are being written to MongoDB
+- [ ] TTL index on AuditLog collection (90 day expiry)
+- [ ] Failed login attempts are logged with IP address
+
+For detailed security documentation, see `docs/SECURITY_CHECKLIST.md`.
 
 ---
 

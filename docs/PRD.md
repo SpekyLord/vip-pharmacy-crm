@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 ## VIP CRM
 
-**Version:** 2.1
-**Last Updated:** December 2024
+**Version:** 3.0
+**Last Updated:** January 2026 (Security Hardening Complete)
 **Status:** Phase 1 Complete - Ready for Phase 2
 
 ---
@@ -114,8 +114,11 @@ Every visit MUST include:
 ### 4.1 Authentication & Authorization
 - Secure login with email/password
 - JWT-based authentication (15min access, 7d refresh)
+- **httpOnly cookie token storage** (XSS protection)
 - Role-based access control (admin, medrep, bdm)
 - Password reset functionality
+- **Account lockout after 5 failed attempts** (15 min lockout)
+- **Security audit logging** (login/logout/password events)
 
 ### 4.2 User Management (Admin Only)
 - User CRUD operations
@@ -218,7 +221,7 @@ Every visit MUST include:
 
 ## 6. Implementation Phases
 
-### 6.1 Phase 1 - MVP ✅ COMPLETED (December 2024)
+### 6.1 Phase 1 - MVP ✅ COMPLETED (December 2025)
 
 **Must Have:**
 - [x] User authentication (login/logout/refresh)
@@ -242,10 +245,18 @@ Every visit MUST include:
 - [x] Product management
 - [x] Product-to-VIP Client assignments (MedRep dashboard)
 
-**Optimization (Added December 2024):**
+**Optimization (Added December 2025):**
 - [x] Backend: Rate limiting, HSTS headers, request timeout, compound indexes
 - [x] Frontend: ErrorBoundary, useDebounce hook, AbortController, React.memo
 - [x] Security: CORS middleware order fix, array bounds validation
+
+**Security Hardening (Added January 2026):**
+- [x] httpOnly cookie authentication (SEC-001)
+- [x] Account lockout after 5 failed attempts (SEC-003)
+- [x] Security audit logging with TTL (SEC-005)
+- [x] Password complexity enforcement (SEC-004)
+- [x] JWT secret validation at startup (SEC-006)
+- [x] Visit race condition handling (SEC-002)
 
 ### 6.2 Phase 2 - Enhanced Features
 

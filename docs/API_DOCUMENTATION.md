@@ -2,16 +2,27 @@
 ## VIP CRM
 
 **Base URL:** `https://your-domain.com/api`
-**Version:** 2.0
-**Last Updated:** December 2024
+**Version:** 3.0
+**Last Updated:** January 2026 (Security Hardening Update)
 
 ---
 
 ## 1. Overview
 
 ### 1.1 Authentication
-All API requests (except public endpoints) require a valid JWT token in the Authorization header:
+Authentication is handled via **httpOnly cookies**. After login, the server sets:
+- `accessToken` cookie (httpOnly, secure in production, 15 min expiry)
+- `refreshToken` cookie (httpOnly, secure in production, 7 day expiry)
 
+**Important:** Tokens are NOT returned in JSON response bodies for security (XSS protection).
+
+For API requests, cookies are sent automatically when using `credentials: 'include'`:
+```javascript
+// Frontend example
+fetch('/api/users', { credentials: 'include' })
+```
+
+Legacy Bearer token header is still accepted for API testing tools:
 ```
 Authorization: Bearer <access_token>
 ```
@@ -29,13 +40,20 @@ Content-Type: multipart/form-data
 ```
 
 ### 1.3 Rate Limiting
-- **Limit:** 100 requests per 15 minutes per IP
+- **General Limit:** 100 requests per 15 minutes per IP
+- **Auth Limit:** 20 requests per 15 minutes per IP (login, register, password reset)
 - **Headers:**
   - `X-RateLimit-Limit`: Maximum requests allowed
   - `X-RateLimit-Remaining`: Requests remaining
   - `X-RateLimit-Reset`: Timestamp when limit resets
 
-### 1.4 Role-Based Access
+### 1.4 Account Lockout
+After 5 failed login attempts, the account is locked for 15 minutes:
+- **Max Attempts:** 5 per account
+- **Lockout Duration:** 15 minutes
+- **Status Code:** 423 (Locked)
+
+### 1.5 Role-Based Access
 | Role | Description | Access Level |
 |------|-------------|--------------|
 | `admin` | System administrator | Full access to all resources and regions |
@@ -97,6 +115,27 @@ When weekly or monthly visit limits are exceeded:
 }
 ```
 
+### 2.5 Account Lockout Response
+When account is locked due to failed login attempts:
+```json
+{
+  "success": false,
+  "message": "Account is temporarily locked. Try again in 15 minutes.",
+  "data": {
+    "lockedUntil": "2025-12-20T10:00:00Z",
+    "remainingSeconds": 900
+  }
+}
+```
+
+### 2.6 Failed Login Response (with remaining attempts)
+```json
+{
+  "success": false,
+  "message": "Invalid email or password. 3 attempts remaining."
+}
+```
+
 ---
 
 ## 3. Error Codes
@@ -111,6 +150,7 @@ When weekly or monthly visit limits are exceeded:
 | 401 | Unauthorized - Invalid or missing token |
 | 403 | Forbidden - Insufficient permissions |
 | 404 | Not Found - Resource doesn't exist |
+| 423 | Locked - Account temporarily locked due to failed login attempts |
 | 429 | Too Many Requests - Rate limit exceeded |
 | 500 | Internal Server Error |
 
@@ -147,12 +187,11 @@ Create new user account (Admin only in production).
       "name": "John Doe",
       "email": "john@example.com",
       "role": "bdm"
-    },
-    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
+    }
   }
 }
 ```
+**Note:** Tokens are set as httpOnly cookies, not in response body.
 
 ---
 
@@ -188,9 +227,20 @@ Authenticate user and receive tokens.
           "code": "NORTH"
         }
       ]
-    },
-    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
+    }
+  }
+}
+```
+**Note:** Tokens are set as httpOnly cookies, not in response body.
+
+**Error Response (423) - Account Locked:**
+```json
+{
+  "success": false,
+  "message": "Account is temporarily locked. Try again in 15 minutes.",
+  "data": {
+    "lockedUntil": "2025-12-20T10:00:00Z",
+    "remainingSeconds": 900
   }
 }
 ```
@@ -219,14 +269,9 @@ Invalidate current session.
 
 **POST** `/auth/refresh-token`
 
-Get new access token using refresh token.
+Get new access token using refresh token. The refresh token is read from httpOnly cookie.
 
-**Request:**
-```json
-{
-  "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
-}
-```
+**Request:** No body required (refresh token is in httpOnly cookie)
 
 **Response (200):**
 ```json
@@ -237,6 +282,7 @@ Get new access token using refresh token.
   }
 }
 ```
+**Note:** New access token is also set as httpOnly cookie.
 
 ---
 
@@ -336,13 +382,10 @@ Update current user's password.
 ```json
 {
   "success": true,
-  "message": "Password updated successfully",
-  "data": {
-    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
-  }
+  "message": "Password updated successfully"
 }
 ```
+**Note:** New tokens are set as httpOnly cookies.
 
 ---
 
@@ -386,10 +429,10 @@ Log a new VIP Client visit. Requires photo upload and GPS location.
       "specialization": "Cardiology",
       "hospital": "City Hospital"
     },
-    "visitDate": "2024-01-20T14:00:00Z",
+    "visitDate": "2025-01-20T14:00:00Z",
     "visitType": "regular",
     "weekLabel": "W3D1",
-    "monthYear": "2024-01",
+    "monthYear": "2025-01",
     "location": {
       "latitude": 14.5995,
       "longitude": 120.9842,
@@ -398,7 +441,7 @@ Log a new VIP Client visit. Requires photo upload and GPS location.
     "photos": [
       {
         "url": "https://s3.amazonaws.com/.../visit-photo-1.jpg",
-        "capturedAt": "2024-01-20T14:00:00Z"
+        "capturedAt": "2025-01-20T14:00:00Z"
       }
     ],
     "status": "completed"
@@ -455,7 +498,7 @@ Get visits with filtering. BDMs see only their visits; admins see all.
         "name": "John Doe",
         "email": "john@example.com"
       },
-      "visitDate": "2024-01-20T14:00:00Z",
+      "visitDate": "2025-01-20T14:00:00Z",
       "visitType": "regular",
       "status": "completed"
     }
@@ -496,23 +539,23 @@ Get single visit details.
       "name": "John Doe",
       "email": "john@example.com"
     },
-    "visitDate": "2024-01-20T14:00:00Z",
+    "visitDate": "2025-01-20T14:00:00Z",
     "visitType": "regular",
     "weekNumber": 3,
     "weekOfMonth": 3,
     "dayOfWeek": 1,
     "weekLabel": "W3D1",
-    "monthYear": "2024-01",
+    "monthYear": "2025-01",
     "location": {
       "latitude": 14.5995,
       "longitude": 120.9842,
       "accuracy": 10,
-      "capturedAt": "2024-01-20T14:00:00Z"
+      "capturedAt": "2025-01-20T14:00:00Z"
     },
     "photos": [
       {
         "url": "https://s3.amazonaws.com/.../visit-photo.jpg",
-        "capturedAt": "2024-01-20T14:00:00Z"
+        "capturedAt": "2025-01-20T14:00:00Z"
       }
     ],
     "productsDiscussed": [
@@ -532,7 +575,7 @@ Get single visit details.
     "vipClientFeedback": "Interested in new formulation",
     "notes": "Schedule follow-up",
     "duration": 30,
-    "nextVisitDate": "2024-02-20T14:00:00Z",
+    "nextVisitDate": "2025-02-20T14:00:00Z",
     "status": "completed"
   }
 }
@@ -551,7 +594,7 @@ Update visit details (limited fields).
 {
   "vipClientFeedback": "Updated feedback",
   "notes": "Additional notes",
-  "nextVisitDate": "2024-02-25T10:00:00Z"
+  "nextVisitDate": "2025-02-25T10:00:00Z"
 }
 ```
 
@@ -679,7 +722,7 @@ Get weekly visit compliance report for a user.
 {
   "success": true,
   "data": {
-    "monthYear": "2024-01",
+    "monthYear": "2025-01",
     "assignedVIPClients": 20,
     "vipClientsVisited": 15,
     "totalVisitsRequired": 60,
@@ -1035,7 +1078,7 @@ Assign product to VIP Client (MedRep only).
     },
     "priority": 1,
     "status": "active",
-    "createdAt": "2024-01-20T10:00:00Z"
+    "createdAt": "2025-01-20T10:00:00Z"
   }
 }
 ```
@@ -1234,7 +1277,7 @@ curl -X POST https://your-domain.com/api/visits \
 ```json
 {
   "event": "visit.created",
-  "timestamp": "2024-01-20T14:00:00Z",
+  "timestamp": "2025-01-20T14:00:00Z",
   "data": { ... }
 }
 ```

@@ -77,8 +77,8 @@ These decisions are final. Do not suggest alternatives.
   weekOfMonth: Number,     // 1-5 (week within month)
   dayOfWeek: Number,       // 1-5 (Mon-Fri only)
   weekLabel: String,       // "W2D3" format
-  monthYear: String,       // "2024-01" format
-  yearWeekKey: String      // "2024-W52" format (for unique constraint)
+  monthYear: String,       // "2025-01" format
+  yearWeekKey: String      // "2025-W52" format (for unique constraint)
 }
 ```
 
@@ -437,15 +437,15 @@ App.jsx
 14. ✅ **Task 1.12b** - Cascading Region Assignment Fix (parentRegions field)
 15. ✅ **Task 1.14** - Product Recommendations in Visit Interface
 16. ✅ **Task 1.13** - MedRep Dashboard & Product Assignment (full CRUD, VIP Client mapping)
-17. ✅ **Backend Optimization** - Pre-deployment code review and optimization (Dec 2024)
-18. ✅ **Frontend Optimization** - ErrorBoundary, useDebounce, Pagination, AbortController, React.memo (Dec 2024)
+17. ✅ **Backend Optimization** - Pre-deployment code review and optimization (Dec 2025)
+18. ✅ **Frontend Optimization** - ErrorBoundary, useDebounce, Pagination, AbortController, React.memo (Dec 2025)
 19. ✅ **Task 1.16** - Development Environment Documentation (DEVELOPMENT_GUIDE.md, .env.example files)
-20. ✅ **Task 1.14c** - Cross-Database Product Population Fix (Dec 2024)
+20. ✅ **Task 1.14c** - Cross-Database Product Population Fix (Dec 2025)
 21. ✅ **Task 1.10c** - VIP Client Export to Excel/CSV (Call Plan Template format)
-22. ✅ **BDM Visit Report** - Reports page with BDM selector, month picker, actual visit data, Excel/CSV export (Dec 2024)
-23. ✅ **Visit Week Calculation Fix** - Fixed weekOfMonth calculation and 5th week handling (Dec 2024)
+22. ✅ **BDM Visit Report** - Reports page with BDM selector, month picker, actual visit data, Excel/CSV export (Dec 2025)
+23. ✅ **Visit Week Calculation Fix** - Fixed weekOfMonth calculation and 5th week handling (Dec 2025)
 
-## Cross-Database Product Fix (Completed Dec 2024)
+## Cross-Database Product Fix (Completed Dec 2025)
 
 ### Problem
 Products are stored in a separate website database (`vip-pharmacy`), but the CRM uses Mongoose `populate()` which only works within the same database connection. This caused `MissingSchemaError: Schema hasn't been registered for model "Product"` errors.
@@ -486,7 +486,7 @@ visits.forEach(v => {
 | `vipClientController.js` | `getVIPClientById` | Manual product population for assigned products |
 | `vipClientController.js` | `getVIPClientProducts` | Manual product population for VIP Client's products |
 
-## Visit Week Calculation Fix (Completed Dec 2024)
+## Visit Week Calculation Fix (Completed Dec 2025)
 
 ### Problem
 BDM Visit Report showed visits in Excel export totals (SUM OF column) but not in the correct week/day cells in the grid. Root cause: inconsistent `getWeekOfMonth` formulas and months with more than 4 calendar weeks.
@@ -508,11 +508,11 @@ BDM Visit Report showed visits in Excel export totals (SUM OF column) but not in
 ### Business Rule
 - **Week 1-4 visits**: Stay in current month
 - **Week 5+ visits**: Count towards NEXT month's Week 1
-- Example: Dec 30, 2024 (week 6) → January 2025 Week 1
+- Example: Dec 30, 2025 (week 6) → January 2026 Week 1
 
 ---
 
-## Backend Optimization Summary (Completed Dec 2024)
+## Backend Optimization Summary (Completed Dec 2025)
 
 ### Critical Fixes
 - ✅ Fixed ISO 8601 week calculation in Visit.js (handles year boundaries correctly)
@@ -539,7 +539,7 @@ BDM Visit Report showed visits in Excel export totals (SUM OF column) but not in
 - ✅ Improved email validation regex (handles modern TLDs)
 - ✅ Removed console.log statements from production code
 
-## Frontend Optimization Summary (Completed Dec 2024)
+## Frontend Optimization Summary (Completed Dec 2025)
 
 ### Critical Fixes
 - ✅ Created ErrorBoundary component (`components/common/ErrorBoundary.jsx`)
@@ -586,7 +586,7 @@ BDM Visit Report showed visits in Excel export totals (SUM OF column) but not in
 | `AdminDashboard.jsx` | Changed limit:1 to limit:0 |
 | `VIPClientList.jsx` | React.memo, useMemo for filtered list |
 
-## Security Hardening (Completed Dec 2024)
+## Security Hardening (Completed Dec 2025)
 
 ### Critical Security Fixes
 - ✅ **Token Storage (SEC-001)**: Removed localStorage token storage, now using httpOnly cookies only

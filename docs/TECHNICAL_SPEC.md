@@ -1,8 +1,8 @@
 # Technical Specification
 ## VIP CRM
 
-**Version:** 2.0
-**Last Updated:** December 2024
+**Version:** 3.0
+**Last Updated:** January 2026 (Security Hardening Update)
 
 ---
 
@@ -113,7 +113,7 @@
 └──────────┘     └──────────┘     └──────────┘
 ```
 
-### 2.3 Authentication Flow
+### 2.3 Authentication Flow (httpOnly Cookie-Based)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -126,22 +126,41 @@
 │       │                               │  3. User Data             │         │
 │       │                               │◀──────────────────────────┘         │
 │       │                               │                                      │
-│       │  5. Return Tokens             │  4. Generate Tokens                 │
+│       │  5. Set httpOnly Cookies      │  4. Generate Tokens                 │
 │       │◀──────────────────────────────│  (Access + Refresh)                 │
-│       │  (accessToken,                │                                      │
-│       │   refreshToken)               │                                      │
+│       │  Set-Cookie: accessToken      │  + Log to AuditLog                  │
+│       │  Set-Cookie: refreshToken     │                                      │
 └───────┼───────────────────────────────┼──────────────────────────────────────┘
         │                               │
 ┌───────┼───────────────────────────────┼──────────────────────────────────────┐
 │       │          AUTHENTICATED REQUEST                                       │
 │       │                               │                                      │
-│       │  1. Request + Bearer Token    │                                      │
-│       │──────────────────────────────▶│  2. Verify JWT                      │
-│       │                               │                                      │
+│       │  1. Request + Cookie          │                                      │
+│       │──────────────────────────────▶│  2. Verify JWT from cookie          │
+│       │  (cookies sent automatically) │                                      │
 │       │  4. Response                  │  3. Process Request                 │
 │       │◀──────────────────────────────│                                      │
 └───────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     ACCOUNT LOCKOUT FLOW                                     │
+│                                                                              │
+│  ┌────────┐  1. Login (wrong pwd)  ┌────────┐                               │
+│  │ Client │───────────────────────▶│ Server │  2. Increment failedAttempts  │
+│  └────────┘                        └────────┘                               │
+│       ▲                                 │                                    │
+│       │  3. "X attempts remaining"      │  If attempts >= 5:                │
+│       │◀────────────────────────────────│    Set lockoutUntil = now + 15min │
+│       │                                 │    Log ACCOUNT_LOCKED event       │
+│       │                                 │    Return 423 status              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Security Features:**
+- Tokens stored in httpOnly cookies (not accessible via JavaScript)
+- Account lockout after 5 failed login attempts (15 min lockout)
+- All auth events logged to AuditLog collection
+- JWT secrets validated at startup (minimum 32 characters)
 
 ---
 
@@ -213,11 +232,15 @@
   refreshToken: { type: String, select: false },
   passwordResetToken: { type: String },
   passwordResetExpires: { type: Date },
+  // Account lockout fields (Security Hardening)
+  failedLoginAttempts: { type: Number, default: 0 },
+  lockoutUntil: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 }
 // Indexes: email (unique), role, isActive
 // Virtual: canAccessRegion(regionId) method
+// Methods: isLocked(), handleFailedLogin(), resetLoginAttempts()
 ```
 
 #### VIPClient Schema
@@ -268,8 +291,8 @@
   weekOfMonth: { type: Number, min: 1, max: 5 },      // Week within month
   dayOfWeek: { type: Number, min: 1, max: 5 },        // 1=Mon, 5=Fri
   weekLabel: { type: String },                         // "W2D3" format
-  monthYear: { type: String },                         // "2024-01" format
-  yearWeekKey: { type: String },                       // "2024-W52" format
+  monthYear: { type: String },                         // "2025-01" format
+  yearWeekKey: { type: String },                       // "2025-W52" format
 
   // Location (required)
   location: {
@@ -364,6 +387,33 @@
 // Indexes: (product + vipClient: compound unique), assignedBy, status
 ```
 
+#### AuditLog Schema (Security Hardening)
+```javascript
+{
+  _id: ObjectId,
+  action: {
+    type: String,
+    enum: [
+      'LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT',
+      'PASSWORD_CHANGE', 'PASSWORD_RESET_REQUEST', 'PASSWORD_RESET_COMPLETE',
+      'ACCOUNT_LOCKED', 'ACCOUNT_UNLOCKED',
+      'ROLE_CHANGE', 'ACCOUNT_DEACTIVATED', 'ACCOUNT_ACTIVATED',
+      'USER_CREATED', 'USER_DELETED'
+    ],
+    required: true
+  },
+  userId: { type: ObjectId, ref: 'User' },           // User who performed the action
+  targetUserId: { type: ObjectId, ref: 'User' },     // User being affected (for admin actions)
+  email: { type: String },                            // Email used in login attempt
+  ipAddress: { type: String },                        // Client IP address
+  userAgent: { type: String },                        // Browser user agent
+  details: { type: Object },                          // Additional context
+  timestamp: { type: Date, default: Date.now }
+}
+// Indexes: action, userId, timestamp
+// TTL Index: timestamp (expires after 90 days)
+```
+
 ---
 
 ## 4. API Endpoints
@@ -454,11 +504,16 @@
 
 ## 5. Security Requirements
 
-### 5.1 Authentication
+### 5.1 Authentication (Updated January 2026)
 - JWT-based authentication with short-lived access tokens (15 minutes)
 - Refresh tokens stored in database (7 days expiry)
+- **httpOnly cookies for token storage** (XSS protection)
 - Password hashing with bcrypt (salt rounds: 12)
-- Rate limiting on login attempts (5 attempts per 15 minutes)
+- **Password complexity requirements:**
+  - Minimum 8 characters
+  - Must contain: uppercase, lowercase, number, special character (@$!%*?&)
+- **Account lockout after 5 failed attempts** (15 minute lockout)
+- **JWT secret validation at startup** (minimum 32 characters required)
 
 ### 5.2 Authorization
 - Role-based access control (RBAC): admin, medrep, bdm
@@ -474,16 +529,31 @@
 - Request sanitization
 
 ### 5.4 API Security
-- Rate limiting (100 requests per 15 minutes)
+- **General rate limiting:** 100 requests per 15 minutes
+- **Auth rate limiting:** 20 requests per 15 minutes (login, register, password reset)
 - Request size limits (10MB max for file uploads)
 - CORS configuration (whitelist frontend origin)
+- **CORS_ORIGINS required in production**
 - Security headers via helmet
 
 ### 5.5 AWS Security
 - IAM users with least-privilege access
 - S3 bucket private by default
-- Signed URLs for file access (optional)
+- **Signed URLs with 1-hour expiry** (reduced from 24 hours)
 - AWS credentials via environment variables (never committed)
+
+### 5.6 Audit Logging (Security Hardening)
+All security-relevant events are logged to the AuditLog collection:
+- `LOGIN_SUCCESS` / `LOGIN_FAILURE` - with IP address and user agent
+- `LOGOUT` - user session end
+- `PASSWORD_CHANGE` - password updates
+- `PASSWORD_RESET_REQUEST` / `PASSWORD_RESET_COMPLETE` - password reset flow
+- `ACCOUNT_LOCKED` - after 5 failed login attempts
+
+**Configuration:**
+- Logs auto-expire after 90 days (TTL index)
+- Includes IP address (with X-Forwarded-For support) and user agent
+- Non-blocking (logging failures don't break authentication)
 
 ---
 
@@ -653,7 +723,7 @@ PORT=5000
 # Database
 MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/vip-crm
 
-# JWT
+# JWT (SECURITY: Secrets must be at least 32 characters!)
 JWT_SECRET=your-super-secret-key-min-32-chars
 JWT_EXPIRE=15m
 JWT_REFRESH_SECRET=your-refresh-secret-key-min-32-chars
@@ -668,13 +738,21 @@ S3_BUCKET_NAME=vip-crm
 # Frontend URL (for CORS)
 CLIENT_URL=https://your-domain.com
 
-# CORS Origins (production - comma-separated)
+# CORS Origins (REQUIRED in production - comma-separated)
 CORS_ORIGINS=https://your-domain.com,https://www.your-domain.com
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+
+# Login Rate Limiting (Security Hardening)
+LOGIN_MAX_ATTEMPTS=5
+LOGIN_LOCKOUT_DURATION=15
 ```
 
 ---
 
-## 11. Phase 1 Optimizations (December 2024)
+## 11. Phase 1 Optimizations (December 2025)
 
 ### 11.1 Backend Optimizations
 
@@ -707,3 +785,22 @@ CORS_ORIGINS=https://your-domain.com,https://www.your-domain.com
 | Array Bounds Validation | Max 100 products in bulk assign, 1-10 photos per visit |
 | Auth Event Handling | CustomEvent dispatch for cross-context logout |
 | GPS Timeout | 5-minute watchPosition timeout in CameraCapture |
+
+### 11.4 Security Hardening (January 2026)
+
+| Fix ID | Severity | Description |
+|--------|----------|-------------|
+| SEC-001 | CRITICAL | Token Storage - Removed localStorage, httpOnly cookies only |
+| SEC-002 | CRITICAL | Visit Race Condition - Duplicate key error handling |
+| SEC-003 | HIGH | Account Lockout - 5 attempts = 15 min lockout |
+| SEC-004 | HIGH | Password Complexity - Upper, lower, number, special char required |
+| SEC-005 | HIGH | Audit Logging - All auth events logged with TTL |
+| SEC-006 | MEDIUM | JWT Secret Validation - 32+ characters required at startup |
+| SEC-007 | MEDIUM | S3 URL Expiry - Reduced from 24h to 1h |
+| SEC-008 | MEDIUM | Token Response - Tokens removed from JSON response body |
+| SEC-009 | MEDIUM | CORS Validation - Required in production |
+| SEC-010 | LOW | Email Regex - Updated to support modern TLDs |
+
+**New Files Created:**
+- `backend/models/AuditLog.js` - Audit log schema with TTL index
+- `backend/utils/auditLogger.js` - Utility functions for logging security events

@@ -2,7 +2,7 @@
 ## VIP CRM
 
 **Version:** 3.0
-**Last Updated:** December 2024 (Security Hardening Complete)
+**Last Updated:** December 2025 (Security Hardening Complete)
 
 Use this checklist before deploying to production and during regular security audits.
 
@@ -10,7 +10,7 @@ Use this checklist before deploying to production and during regular security au
 
 ## Phase 1 Security Implementation Summary
 
-The following security features have been **implemented** as of December 2024:
+The following security features have been **implemented** as of December 2025:
 
 ### Backend Security
 | Feature | Status | Details |
@@ -47,7 +47,7 @@ The following security features have been **implemented** as of December 2024:
 | **Audit Log TTL** | **NEW** | Logs auto-expire after 90 days |
 | **Duplicate Visit Prevention** | **NEW** | Race condition handling in controller |
 
-### Security Hardening (December 2024)
+### Security Hardening (December 2025)
 | Fix | Severity | Details |
 |-----|----------|---------|
 | Token Storage (SEC-001) | CRITICAL | Removed localStorage, httpOnly cookies only |

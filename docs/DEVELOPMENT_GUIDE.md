@@ -1,8 +1,8 @@
 # Development Guide
 ## VIP CRM
 
-**Version:** 2.0
-**Last Updated:** December 2024
+**Version:** 3.0
+**Last Updated:** January 2026 (Security Hardening Update)
 
 This guide helps developers set up their local environment and contribute to the project.
 
@@ -95,6 +95,7 @@ MONGODB_URI=mongodb://localhost:27017/vip-crm
 # MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/vip-crm
 
 # JWT Configuration
+# SECURITY: JWT secrets must be at least 32 characters! Server will fail to start otherwise.
 JWT_SECRET=dev_jwt_secret_change_in_production_min_32_chars
 JWT_EXPIRE=15m
 JWT_REFRESH_SECRET=dev_refresh_secret_change_in_production_min_32
@@ -109,12 +110,17 @@ S3_BUCKET_NAME=vip-crm-dev
 # Frontend URL (for CORS)
 CLIENT_URL=http://localhost:5173
 
-# CORS Origins (required in production, comma-separated)
+# CORS Origins (REQUIRED in production, comma-separated)
+# Server will not start in production without this!
 # CORS_ORIGINS=https://your-domain.com,https://www.your-domain.com
 
 # Rate Limiting
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX_REQUESTS=100
+
+# Login Rate Limiting (Account Lockout)
+LOGIN_MAX_ATTEMPTS=5
+LOGIN_LOCKOUT_DURATION=15
 ```
 
 **Frontend (.env.local):**
@@ -782,6 +788,44 @@ migrate();
 ```
 
 Run: `node scripts/migration-xxx.js`
+
+### 10.6 Authentication Flow (Security Update January 2026)
+
+The authentication system uses **httpOnly cookies** instead of localStorage for security:
+
+**How it works:**
+1. Login request sends credentials to `/api/auth/login`
+2. Server validates and sets httpOnly cookies (`accessToken`, `refreshToken`)
+3. Browser automatically sends cookies with all requests (via `credentials: 'include'`)
+4. Access token expires in 15 minutes, refresh token in 7 days
+
+**Frontend API calls:**
+```javascript
+// api.js is configured with credentials: 'include'
+// Cookies are sent automatically - no manual token handling needed
+import api from './api';
+
+const response = await api.get('/users');
+```
+
+**Account Lockout:**
+- 5 failed login attempts = 15 minute account lockout
+- Error code 423 (Locked) returned during lockout
+- Failed attempts show remaining tries in error message
+
+**Password Requirements:**
+- Minimum 8 characters
+- Must contain: uppercase, lowercase, number, special character (@$!%*?&)
+
+**Testing Auth in Development:**
+```javascript
+// Test with curl or Postman
+// Cookies will be set in response headers
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@vipcrm.com","password":"Admin123!@#"}' \
+  -c cookies.txt  # Save cookies to file
+```
 
 ---
 

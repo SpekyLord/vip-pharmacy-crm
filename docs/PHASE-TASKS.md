@@ -353,7 +353,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - `DoctorsPage.jsx`: Full CRUD with pagination, filtering, API integration
 - `DoctorManagement.jsx`: Complete rewrite with search/filter bar, data table, Add/Edit modal, Delete confirmation modal, full CSS styling
 
-**Export Feature (Task 1.10c - Dec 2024):**
+**Export Feature (Task 1.10c - Dec 2025):**
 - `frontend/src/utils/exportCallPlan.js`: Export utility matching "Montero Call Plan Template" format
 - Added `xlsx` and `file-saver` npm packages
 - Excel export includes: Header summary (2x/4x counts), Day1-20 visit schedule columns, assigned products
@@ -361,7 +361,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - Export buttons in DoctorsPage header ("Export Excel", "Export CSV")
 - Exports respect current filters (region, specialization, visitFrequency)
 
-**BDM Visit Report (Task 1.10d - Dec 2024):**
+**BDM Visit Report (Task 1.10d - Dec 2025):**
 - Backend endpoint: `GET /api/visits/bdm-report/:userId?monthYear=YYYY-MM`
 - `visitController.js`: Added `getBDMReport` function
 - `visitRoutes.js`: Added route with adminOnly middleware
@@ -371,7 +371,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 - `ReportsPage.jsx`: Complete rewrite with BDM selector, month picker, generate button
 - Features: Yellow header rows, Day1-Day20 grid with actual visits, green highlights, assigned products
 
-**Visit Week Calculation Bug Fix (Task 1.10e - Dec 2024):**
+**Visit Week Calculation Bug Fix (Task 1.10e - Dec 2025):**
 - **Problem**: Visits showed in Excel export totals but not in grid cells
 - **Root Cause**: Inconsistent `getWeekOfMonth` formulas + months with 5+ weeks exceeded 20-day grid
 - **Solution**:
@@ -379,6 +379,46 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
   - `Visit.js`: Added 5th week → next month logic (week 5+ dates count as Week 1 of next month)
   - `backend/scripts/fixVisitWeeks.js`: Migration script to fix existing visits
 - **Business Rule**: Grid supports 20 days (4 weeks × 5 days). Week 5+ visits count towards next month's report
+
+---
+
+### Task 1.18: Security Hardening
+**Assignee**: Backend/Frontend Developer
+**Priority**: CRITICAL
+**Status**: ✅ COMPLETED (January 2026)
+**Files**:
+- `backend/controllers/authController.js`
+- `backend/controllers/visitController.js`
+- `backend/models/User.js`
+- `backend/models/AuditLog.js` (new)
+- `backend/utils/auditLogger.js` (new)
+- `backend/middleware/validation.js`
+- `backend/server.js`
+- `backend/config/s3.js`
+- `frontend/src/context/AuthContext.jsx`
+- `frontend/src/services/api.js`
+- `frontend/src/services/authService.js`
+
+**Deliverables:**
+- [x] SEC-001: Token Storage - Remove localStorage, use httpOnly cookies only (CRITICAL)
+- [x] SEC-002: Visit Race Condition - Add duplicate key error handling (CRITICAL)
+- [x] SEC-003: Account Lockout - 5 attempts = 15 min lockout (HIGH)
+- [x] SEC-004: Password Complexity - Upper, lower, number, special char required (HIGH)
+- [x] SEC-005: Audit Logging - All auth events logged with TTL (HIGH)
+- [x] SEC-006: JWT Secret Validation - 32+ characters required at startup (MEDIUM)
+- [x] SEC-007: S3 URL Expiry - Reduced from 24h to 1h (MEDIUM)
+- [x] SEC-008: Token Response - Remove tokens from JSON response body (MEDIUM)
+- [x] SEC-009: CORS Validation - Required in production (MEDIUM)
+- [x] SEC-010: Email Regex - Support modern TLDs (LOW)
+
+**Acceptance Criteria:**
+- [x] Tokens are stored in httpOnly cookies only (not accessible via JavaScript)
+- [x] Account locks after 5 failed login attempts for 15 minutes
+- [x] All auth events logged to AuditLog collection with TTL
+- [x] Server refuses to start if JWT secrets < 32 characters
+- [x] Server refuses to start in production without CORS_ORIGINS
+
+---
 
 **VIP Client Region Cascading Dropdown Fix (Task 1.10b):**
 - **Problem**: Validation error when editing VIP Clients - address field sent as string instead of object
@@ -731,7 +771,8 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 | Frontend Optimization | 1 task | High |
 | Frontend UI/UX | 1 task | Medium |
 | DevOps | 2 tasks | High |
-| **Total** | **18 tasks** | |
+| **Security Hardening** | **1 task** | **Critical** |
+| **Total** | **19 tasks** | |
 
 ---
 
@@ -1026,7 +1067,7 @@ A pharmaceutical field sales CRM system to replace manual Excel tracking with au
 
 **Deliverables**:
 - [x] Report types:
-  - [x] BDM Visit Report (Call Plan Template format) - COMPLETED Dec 2024
+  - [x] BDM Visit Report (Call Plan Template format) - COMPLETED Dec 2025
   - [ ] Weekly compliance report
   - [ ] Monthly visit summary
   - [ ] Regional comparison report
