@@ -223,39 +223,50 @@
 
 ---
 
-### CHANGE 4: Product Detail Popup
+### CHANGE 4: Product Detail Popup (Tablet-Friendly)
 
-**Requirement**: Clicking assigned product shows image + description popup for presenting to doctors.
+**Requirement**: Clicking assigned product shows image + description popup for presenting to doctors. The **tablet is the only device BDMs use for product presentation** — they show the tablet screen to the doctor during visits. The product view must be **tablet-friendly and full-screen capable**. BDMs do all other CRM work on their phone (see Change 5).
 
 **Current State**: Products shown as simple checkboxes with names only in VisitLogger.
 
 **Files to Modify**:
 | File | Change |
 |---|---|
-| `frontend/src/components/employee/ProductRecommendations.jsx` | Add modal with product image + description |
+| `frontend/src/components/employee/ProductRecommendations.jsx` | Add modal with product image + description, full-screen view for tablet |
 | `frontend/src/components/employee/VisitLogger.jsx` (line 379-389) | Enhance product checkboxes to clickable cards |
+
+**Product Catalog & Selection Flow**: Admin uploads products to the catalog (name, image, description → stored in S3). BDM picks 3 products from the catalog to assign as target products for each VIP Client. BDM opens a VIP Client's profile → sees the 3 target products with images and descriptions → taps a product to view full-screen for showing to the doctor on the tablet. This is the BDM's guide for knowing what products to promote during visits. BDMs don't upload product images — they browse the catalog, pick 3, and present them.
 
 ---
 
-### CHANGE 5: Offline Photo Capture + Timestamp-Based Logging
+### CHANGE 5: Photo Upload Flexibility
 
-**Requirement**: Photo capture works offline. Use photo EXIF timestamp for log entry. Research GPS offline.
+**Requirement**: BDMs need flexibility in how visit proof photos get into the system. They may not always take photos through the app — they might take photos with their phone or tablet's normal camera during the visit, then upload them when logging the visit afterwards. Support multiple upload methods so BDMs can use whatever device is handy.
 
-**Current State**: No offline support. CameraCapture.jsx requires live GPS.
+**Device usage clarification**: BDMs prefer to use their **phone (cellphone) as the primary device** for daily CRM work — logging visits, uploading photos, browsing the app. It's easier to operate than a tablet. The **tablet is ONLY used for presenting product images** to doctors during visits (see Change 4). The CRM must be **mobile-phone friendly first**, tablet second.
+
+**Current State**: CameraCapture.jsx requires live GPS and only supports camera capture through the app.
+
+**Photo Upload Methods** (all should be supported):
+| Method | Use Case |
+|---|---|
+| Camera capture | Take photo directly in the app |
+| File picker / gallery | Select existing photo from phone or tablet gallery (taken earlier during the visit) |
+| Copy-paste | Paste image from clipboard (copied from another app) |
+
+**Key clarification**: BDMs do NOT have to take photos through the app at the exact moment of the visit. The typical flow is:
+1. Visit the doctor → take photos with whatever device is handy (phone camera, tablet camera)
+2. After the visit (or when they have signal), open the CRM and log the visit
+3. Upload the photos from their phone/tablet gallery when logging
 
 **Implementation**:
 | Component | Technology |
 |---|---|
-| Offline photo storage | IndexedDB |
-| App caching | Service Worker |
-| EXIF parsing | `exifr` or `exif-js` library |
-| Upload queue | Background Sync API |
-| GPS offline | Works on phones with hardware GPS (no WiFi needed) |
+| File picker | Standard `<input type="file" accept="image/*">` with multiple selection |
+| Copy-paste | Clipboard API (`paste` event listener on the upload area) |
+| EXIF parsing | `exifr` or `exif-js` library (extract timestamp from photo metadata) |
 
-**Recommendation**: Phase 2/3 feature. Implement in stages:
-1. IndexedDB photo storage + sync queue
-2. Service worker for app caching
-3. Full offline visit logging with background sync
+**Offline Capture (Phase 2/3)**: Full offline visit logging (IndexedDB photo storage, Service Worker caching, Background Sync upload queue) is a future enhancement. The immediate need is just photo upload flexibility — not full offline mode.
 
 ---
 
@@ -267,7 +278,8 @@
 - W1: Jan 5-9, W2: Jan 12-16, W3: Jan 19-23, W4: Jan 26-30
 - Then resets: W1: Feb 2-6, W2: Feb 9-13, W3: Feb 16-20, W4: Feb 23-27
 - ...and so on indefinitely
-- Any "extra" days in a month (e.g., December with 5+ calendar weeks) simply continue the rolling W1-W4 pattern — no special handling needed
+- **January through November fit neatly** into the 4-week cycle — no leftover days
+- **December is the only month with extra weeks** (2-3 extra weeks depending on the year). These extra December weeks still follow the same W1-W4 rolling pattern — no special handling, just more cycles before the year ends
 
 **Current State**: No scheduling system exists.
 
@@ -293,22 +305,31 @@
 5. When a BDM logs a visit, the corresponding schedule entry is marked as `completed`
 6. Unvisited scheduled entries auto-carry to the next workday (see auto-carry rules below)
 
+**Visit Logging Flexibility**: BDMs do NOT have to log the visit at the exact moment they are with the doctor. The typical flow is: visit the doctor → take photos with phone or tablet → after the visit (or when they have signal), open the CRM → log the visit and upload the photos. The system accepts photos from any device — BDMs can take photos on their phone and log the visit on their tablet, or vice versa (see Change 5).
+
 **The calendar view IS the CPT grid** — same format, same layout. The only difference is that the calendar is interactive (click a cell to log a visit) while the Excel is static.
 
-**Schedule Looping**: The approved schedule automatically **repeats every month** until a new Excel is uploaded (typically every ~6 months). Each new month gets a fresh copy of the schedule with all entries reset to `planned`.
+**Schedule Looping**: The approved schedule automatically **repeats every 4-week cycle** until a new Excel is uploaded (typically every ~3 months / quarterly). Each new cycle gets a fresh copy of the schedule with all entries reset to `planned`.
 
 **Schedule Locking & Auto-Carry Rules**:
 
-Once a schedule is approved, it is **locked until the next Excel replacement** (typically ~6 months). BDMs cannot manually move visits around (no "I'll do it tomorrow because I don't feel like it"). The schedule loops every month with the same pattern.
+Once a schedule is approved, it is **locked until the next Excel replacement** (typically every ~3 months / quarterly). BDMs cannot manually move visits around (no "I'll do it tomorrow because I don't feel like it"). The schedule loops every cycle with the same pattern.
 
-**Auto-carry on miss**: If a BDM doesn't visit the scheduled VIP Client on the planned day, the visit automatically carries forward:
-- Scheduled for Monday (W2D1), missed → carries to Tuesday (W2D2)
-- Still missed Tuesday → carries to Wednesday (W2D3)
-- Continues through Thursday → Friday
-- **If still missed by Friday**, the visit carries to **the following week** (e.g., W2D1 missed → carries through W2 → if still not done, carries into W3)
-- **End of month = hard cutoff** — if not visited by the last workday of the 4-week cycle, the visit is marked as `missed`. No more chances.
+**Weekly Open Window**: The BDM sees the daily schedule, but the **entire week is open** (D1 through D5). If a visit is scheduled for W2D1 (Monday) but the BDM can't visit that day, they can visit any other day that week (W2D2 through W2D5). The scheduled day is the *target*, but the whole week is the *window*.
 
-**The core rule**: What matters is that the VIP Client gets visited at least once that week (4x frequency) or once every other week (2x frequency). The schedule defines *which day*, but the auto-carry gives flexibility when the doctor isn't available. The BDM has until the end of the month to make up missed visits.
+**Carry to next week**: If the BDM still couldn't visit during the scheduled week, the visit carries forward to the next week — and continues carrying until **W4D5 (end of cycle) = hard cutoff**. If not visited by W4D5, it's marked `missed`.
+
+**Who can be visited**: BDMs can only visit VIP Clients that are **scheduled for the current week** plus any **carried/missed visits from previous weeks**. A VIP Client scheduled for Week 3 does NOT appear as visitable during Week 1. The schedule controls who shows up on the BDM's daily list.
+
+**Visit Rules**:
+- For those VIP Clients who ARE open (scheduled this week or carried), BDMs can visit them **as many times as they want** — the system does not block extra visits
+- However, only **1 visit per week counts** towards that week's scheduled requirement
+- **No advance credit**: Visiting a VIP Client 3 times in W1 does NOT tick off W2 or W3. Each week's requirement must be fulfilled in its own week (or carried forward if missed)
+- **Catch-up**: If W1's requirement was missed, it can be fulfilled in W2, W3, or W4 — but the W2/W3/W4 requirements are still separate
+- **W4 catch-up**: In the final week, a BDM might need to fulfill up to 3 carried requirements for the same VIP Client (missed W1 + missed W2 + W4's own), which means up to 3 visits that week to clear them all
+- **W4D5 = hard cutoff**: Any week's requirement still not fulfilled by the last day is marked `missed`
+
+**The core rule**: Each week has its own visit requirement. It stands on its own. Extra visits don't pre-fulfill future weeks. Missed weeks carry forward but still need their own visit. You can go backwards (catch up), but you can't go forwards (advance).
 
 **Schedule entry statuses**:
 | Status | Meaning |
@@ -445,10 +466,10 @@ OTHER DETAILS (free-form — any additional info not covered above)
 
 **Workflow**:
 1. BDM prepares their Excel and gives it to the admin (email, in person, etc.)
-2. Admin uploads the Excel to the CRM → entire batch goes to `ImportBatch` with `status: pending`
-3. System checks for **duplicate VIP Clients** (by name match). If duplicates found, show a warning and auto-navigate to the potential duplicate so the admin can verify if it's truly a duplicate or a different person
-4. Admin reviews the full VIP Client list from the Excel thoroughly — no auto-validation needed, admin checks manually
-5. Admin **approves or rejects the ENTIRE batch** (not individual doctors)
+2. Admin **reviews the Excel thoroughly first** (before uploading) — checking doctor info, schedule correctness, duplicates, etc.
+3. Admin uploads the Excel to the CRM → entire batch goes to `ImportBatch` with `status: pending`
+4. System checks for **duplicate VIP Clients** (by name match). If duplicates found, show a warning and auto-navigate to the potential duplicate so the admin can verify
+5. Admin does a final review in the CRM interface → **approves or rejects the ENTIRE batch** (not individual doctors)
 6. On approval — **ALL data from the Excel populates the system**:
    - VIP Client profiles are created/updated with ALL fields (name, specialty, address, outlet indicator, programs, support, target products, engagement level, birthday, anniversary, other details)
    - The coverage schedule (the "1" markers in the 20-day grid) is imported into the calendar scheduling system (see Change 6)
@@ -456,9 +477,17 @@ OTHER DETAILS (free-form — any additional info not covered above)
    - **If a VIP Client already exists** (from a previous import or CRM edits), the Excel data OVERWRITES the existing data. Show a warning: "This will overwrite changes made to Dr. Santos in the app"
 7. On rejection: Admin can add a reason; BDM can revise and re-submit
 
-**Schedule Rotation**: Excels are typically updated every ~6 months (may include doctor changes). The approved schedule **loops every month** automatically until a new Excel replaces it. The schedule is **locked each month** — BDMs cannot rearrange visits (see Change 6 locking rules). To change the schedule, a new Excel must be uploaded and approved.
+**Schedule Rotation**: Excels are typically updated every **~3 months (quarterly)** — the client may change doctors or adjust schedules each quarter. The approved schedule **loops every 4-week cycle** automatically until a new Excel replaces it. The schedule is **locked** — BDMs cannot rearrange visits (see Change 6 locking rules). To change the schedule, a new Excel must be uploaded and approved.
 
-**Data Migration Note**: The client is migrating a LOT of data from Excel to this CRM. Export format must match the client's Excel CPT format exactly (same columns, same formatting, same structure) so that data can flow both ways: Excel → CRM (import) and CRM → Excel (export).
+**Quarterly Update Workflow (Export → Edit → Re-upload)**: When it's time to update the VIP Client list (~every 3 months), BDMs don't start from scratch. Instead:
+1. BDM **exports** current VIP Client data from the CRM to Excel (gets all their latest edits — support, programs, engagement level, etc.)
+2. BDM **edits** the exported Excel — adds new doctors, removes old ones, updates info, adjusts the schedule grid
+3. BDM gives the **same file** to admin
+4. Admin uploads it back to the CRM → normal approval flow (see workflow above)
+
+This is a **round trip**: CRM → Excel → CRM. The export IS the template for the next import. This is why the export format must match the client's Excel CPT format exactly (same columns, same formatting, same structure).
+
+**Data Migration Note**: The client is migrating a LOT of data from Excel to this CRM. Data must flow both ways seamlessly: Excel → CRM (import) and CRM → Excel (export).
 
 **Note**: Repurpose the existing scaffolded Approvals page (`/admin/approvals`) for this batch review workflow.
 
@@ -599,11 +628,29 @@ OTHER DETAILS (free-form — any additional info not covered above)
 
 **Key Differences from VIP Clients**:
 - BDMs can **add regular clients directly** (no Excel upload or admin approval needed)
+- **Daily limit: up to 30 extra calls (unlisted VIP clients) per day** — system must enforce this cap
 - No visit frequency enforcement (no 2x/4x rules)
 - No scheduling grid / CPT integration
 - Simpler profile (name, specialty, address, phone, notes)
 - These clients may eventually be promoted to VIP status through the Excel upload + admin approval process
 - **Reporting**: Visits to regular clients appear in the **"EXTRA CALL (VIP NOT INCLUDED IN THE LIST)"** section at the bottom of each daily CPT sheet. They have their own engagement type columns (TXT/PROMAT, MES/VIBER GIF, PICTURE, SIGNED CALL, VOICE CALL) but do NOT count towards the Call Rate target (see DCR Summary in Change 7)
+
+---
+
+### CHANGE 17: Filter VIP Clients by Support Type & Program
+
+**Requirement**: Admin and BDMs need to look up which VIP Clients are under a specific support type or program — a reverse lookup instead of opening each doctor's profile individually.
+
+**Current State**: No filtering by support or program exists. These fields are not yet in the Doctor model (see Change 9).
+
+**What Needs to Change**:
+- Add filter/search on VIP Client list pages (both admin and BDM views):
+  - **Filter by Support During Coverage**: e.g., "Show me all VIP Clients with STARTER DOSES"
+  - **Filter by Programs to Implement**: e.g., "Show me all VIP Clients under CME GRANT"
+- Results show a list of VIP Clients grouped by the selected support type or program
+- Both admin and BDMs can use this — admin sees all VIP Clients, BDMs see only their assigned ones
+
+**Depends on**: Change 9 (Doctor model field extensions — `supportDuringCoverage` and `programsToImplement` fields must exist first)
 
 ---
 
@@ -627,6 +674,7 @@ OTHER DETAILS (free-form — any additional info not covered above)
 | 7 | **Change 12**: Level of engagement tracking | Uses new Doctor field |
 | 8 | **Change 14**: BDM performance self-view | Employee satisfaction |
 | 9 | **Change 16**: Non-VIP regular clients table | BDMs also cater to non-VIP clients |
+| 10 | **Change 17**: Filter by support/program | Reverse lookup, depends on Change 9 |
 
 #### Phase C — New Features
 | # | Change | Reason |
@@ -710,7 +758,7 @@ OTHER DETAILS (free-form — any additional info not covered above)
 
 | Metric | Count |
 |---|---|
-| Total changes identified | 16 |
+| Total changes identified | 17 |
 | New Doctor model fields | 13+ |
 | Files to modify | 11+ |
 | New files to create | 20+ |
