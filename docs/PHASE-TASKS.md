@@ -1,1567 +1,704 @@
-# VIP CRM - Phase Task Breakdown for Team Assignment
+# VIP CRM - Phase Task Breakdown
 
-## Project Overview
-A pharmaceutical field sales CRM system to replace manual Excel tracking with automated visit management, compliance monitoring, and product intelligence.
+> **Last Updated**: February 2026
+> **Status**: Phase 1 Complete. Phases A-D defined based on client change requests.
+> **Reference**: See `docs/CHANGE_LOG.md` for full details on all 17 client-requested changes.
+
+## Terminology Note
+
+Documentation uses business terms (BDM, VIP Client). Code uses Doctor/Employee. See CLAUDE.md Terminology Mapping for details.
 
 ---
 
-# PHASE 1: Foundation & Core System
-**Goal**: Complete working system with authentication, VIP Client management, visit logging, and basic dashboards
+# PHASE 1: Foundation & Core System ✅ COMPLETE
+**Goal**: Working system with authentication, VIP Client management, visit logging, and dashboards.
 
-## Backend Tasks
+## Backend Tasks (All Complete)
 
-### Task 1.1: Database Connection Setup
-**Assignee**: Backend Developer
-**Priority**: CRITICAL (blocks all other backend work)
+### Task 1.1: Database Connection Setup ✅
 **Files**: `backend/config/db.js`
+- MongoDB Atlas connection with pooling and graceful shutdown
+- Status: Connected to cluster0.wv27nfk.mongodb.net
 
-**Deliverables**:
-- [x] Implement MongoDB Atlas connection in `db.js` (currently empty skeleton)
-- [x] Add connection pooling configuration
-- [x] Add connection event handlers (connected, error, disconnected)
-- [x] Add graceful shutdown handling
-- [x] Create MongoDB Atlas cluster (M0 free tier for dev)
-- [x] Generate connection string and add to `.env`
-- [x] Test connection with `npm run dev`
+### Task 1.2: AWS S3 Bucket Configuration ✅
+**Files**: `backend/config/s3.js`
+- S3 bucket `vip-pharmacy-crm-devs` in ap-southeast-1
+- Signed URL expiry: 1 hour
+- Folder structure: visits/, products/, avatars/
 
-**Acceptance Criteria**:
-- [x] Server starts without errors
-- [x] Console shows "MongoDB Connected: [cluster-name]"
-- [x] Handles connection failures gracefully
-
-**Status**: ✅ COMPLETED
-
----
-
-### Task 1.2: AWS S3 Bucket Configuration
-**Assignee**: Backend Developer / DevOps
-**Priority**: HIGH (blocks photo uploads)
-**Files**: `backend/config/s3.js` (code ready), AWS Console
-
-**Deliverables**:
-- [x] Create S3 bucket: `vip-crm-devs`
-- [x] Configure bucket CORS for frontend domain
-- [x] Create IAM user with minimal S3 permissions
-- [x] Generate access keys
-- [x] Add credentials to `.env`:
-  - AWS_ACCESS_KEY_ID
-  - AWS_SECRET_ACCESS_KEY
-  - AWS_REGION=ap-southeast-1
-  - S3_BUCKET_NAME
-- [x] Create folder structure: `visits/`, `products/`, `avatars/` (auto-created on upload)
-- [x] Test upload functionality
-
-**Acceptance Criteria**:
-- [x] Can upload test image via API
-- [x] Images accessible via signed URLs
-- [x] No public access to bucket
-
-**Status**: ✅ COMPLETED
-
----
-
-### Task 1.3: Seed Data & Initial Admin User
-**Assignee**: Backend Developer
-**Priority**: HIGH
-**Files**: New file `backend/scripts/seedData.js`
-
-**Deliverables**:
-- [x] Create seed script for initial admin user
-- [x] Create seed script for sample regions (based on "Whole Panay" example from proposal)
-- [x] Create seed script for sample VIP Clients (56 VIP Clients across 3 districts)
-- [x] Create seed script for sample products with images
-- [x] Add `npm run seed` script to package.json
-- [x] Document seed data structure
-
-**Acceptance Criteria**:
-- [x] Running `npm run seed` creates all initial data
-- [x] Admin can login with seeded credentials
-- [x] Sample data matches proposal requirements
-
-**Status**: ✅ COMPLETED
-
-**Seeded Data:**
-- 12 regions (Panay Island hierarchy)
+### Task 1.3: Seed Data ✅
+**Files**: `backend/scripts/seedData.js`
+- 12 regions (Panay Island hierarchy + 18 Philippine regions)
 - 5 users (1 admin, 1 medrep, 3 BDMs)
-- 5 products
-- 56 VIP Clients
+- 5 products, 56 VIP Clients
 
-**Login Credentials:**
-- Admin: admin@vipcrm.com / Admin123!@#
-- MedRep: medrep@vipcrm.com / Medrep123!@#
-- BDMs: juan/maria/pedro@vipcrm.com / BDM123!@#
+### Task 1.4: Backend API Testing ✅
+- All endpoints tested with Postman
+- Visit limit enforcement verified
 
----
-
-### Task 1.4: Backend API Testing & Validation
-**Assignee**: Backend Developer / QA
-**Priority**: HIGH
-**Files**: `backend/tests/` (new directory)
-
-**Deliverables**:
-- [x] Test auth endpoints (register, login, logout, refresh)
-- [x] Test VIP Client CRUD with region filtering
-- [x] Test visit creation with weekly limit enforcement
-- [x] Test product CRUD
-- [x] Test product assignment
-- [x] Test region hierarchy
-- [x] Create Postman collection in `backend/postman/VIP-CRM.postman_collection.json`
-- [x] Document all API endpoints
-
-**Acceptance Criteria**:
-- [x] All API endpoints return expected responses
-- [x] Weekly visit limit (1 per VIP Client per week) enforced via `/visits/can-visit/:vipClientId`
-- [x] Monthly visit limit (2x or 4x) enforced
-- [x] Region filtering works for BDMs
-- [x] Error responses follow standard format
-
-**Status**: ✅ COMPLETED
-
-**Tested Endpoints:**
-- `POST /api/auth/login` - Login with JWT tokens
-- `GET /api/auth/me` - Get current user profile
-- `GET /api/vip-clients` - List VIP Clients with pagination
-- `GET /api/regions` - List all regions
-- `GET /api/products` - List all products
-- `GET /api/visits` - List visits (role-based)
-- `GET /api/visits/can-visit/:vipClientId` - Check visit limits
-- `GET /api/health` - Health check
-
----
-
-## Frontend Tasks
-
-### Task 1.5: Authentication Flow Implementation
-**Assignee**: Frontend Developer
-**Priority**: CRITICAL (blocks all other frontend work)
+### Task 1.18: Security Hardening ✅ (January 2026)
 **Files**:
-- `frontend/src/context/AuthContext.jsx`
-- `frontend/src/components/auth/LoginForm.jsx`
-- `frontend/src/components/auth/ProtectedRoute.jsx`
-- `frontend/src/pages/LoginPage.jsx`
-- `frontend/src/services/authService.js`
-- `frontend/src/services/api.js`
-- `frontend/src/hooks/useAuth.js`
-- `frontend/src/hooks/useApi.js`
-
-**Deliverables**:
-- [x] Complete LoginForm with email/password validation
-- [x] Implement AuthContext with token management
-- [x] Handle token refresh on 401 errors
-- [x] Implement ProtectedRoute with role checking
-- [x] Role-based redirect after login:
-  - admin → /admin
-  - medrep → /medrep
-  - bdm → /employee
-- [x] Implement logout with token cleanup
-- [ ] Add "Remember me" functionality (optional - deferred)
-
-**Acceptance Criteria**:
-- [x] User can login with valid credentials
-- [x] Invalid credentials show error message
-- [x] Token automatically refreshes before expiry
-- [x] Unauthorized routes redirect to login
-- [x] Role-based routes are protected
-
-**Status**: ✅ COMPLETED
-
----
-
-### Task 1.6: BDM Dashboard & VIP Client List
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/pages/employee/EmployeeDashboard.jsx`
-- `frontend/src/components/employee/DoctorList.jsx`
-- `frontend/src/services/doctorService.js`
-- `frontend/src/services/visitService.js`
-
-**Deliverables**:
-- [x] Fetch and display dashboard stats (today's visits, weekly progress, pending)
-- [x] Display assigned regional VIP Clients list
-- [x] Implement VIP Client search by name/specialization
-- [x] **FIX**: Replace deprecated A/B/C/D categories with visitFrequency (2/4)
-- [x] Show visit status for each VIP Client (visited this week? this month?)
-- [x] Add "Log Visit" button per VIP Client
-- [x] Show weekly progress: "Week 1: 8/10 VIP Clients visited"
-- [x] Show monthly completion percentage
-
-**Acceptance Criteria**:
-- [x] BDM sees only VIP Clients in their assigned region
-- [x] Can search/filter VIP Clients
-- [x] Visit frequency shows 2x or 4x (not A/B/C/D)
-- [x] Weekly and monthly progress displayed
-
-**Status**: ✅ COMPLETED
-
-**Implementation Details:**
-- `visitService.js`: Added `getToday()`, `getMy()`, `canVisit()`, `getWeeklyCompliance()`
-- `doctorService.js`: Added `getAssignedProducts()`
-- `EmployeeDashboard.jsx`: Connected to real APIs, displays stats cards and compliance bar
-- `DoctorList.jsx`: Replaced A/B/C/D with visitFrequency (2x/4x), added visit status per VIP Client, added Log Visit button with limit checking
-
----
-
-### Task 1.7: Visit Logger Component with Photo & GPS
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/components/employee/VisitLogger.jsx`
-- `frontend/src/components/employee/CameraCapture.jsx`
-- `frontend/src/services/visitService.js`
-- `frontend/src/pages/employee/NewVisitPage.jsx`
-- `frontend/src/App.jsx`
-
-**Deliverables**:
-- [x] Implement visit logging form:
-  - Visit type selector
-  - Purpose/notes field
-  - Products discussed (from recommendations)
-  - VIP Client feedback
-  - Next visit date
-- [x] Integrate CameraCapture component for photo proof
-- [x] Require minimum 1 photo before submit
-- [x] Capture GPS coordinates with each photo (not separately)
-- [x] Show GPS accuracy indicator per photo
-- [x] Validate work day (Monday-Friday only)
-- [x] Check weekly limit before allowing submission (on page load)
-- [x] Upload photos to S3 on submit (via FormData)
-- [x] Show success/error feedback (toast messages)
-
-**Acceptance Criteria**:
-- [x] Cannot submit without photo
-- [x] Cannot submit without GPS location
-- [x] Cannot submit on weekends
-- [x] Cannot submit if already visited this VIP Client this week
-- [x] Photos upload to S3 successfully
-- [x] Visit appears in history after creation
-
-**Status**: ✅ COMPLETED
-
-**Implementation Details:**
-- `CameraCapture.jsx`: Captures GPS location with each photo, shows accuracy badge
-- `VisitLogger.jsx`: Full form with photo integration, FormData submission
-- `NewVisitPage.jsx`: Page wrapper that checks canVisit before rendering form
-- `visitService.js`: Updated create() for multipart/form-data
-- Route: `/employee/visit/new?vipClientId=xxx`
-
----
-
-### Task 1.8: My Visits History Page
-**Assignee**: Frontend Developer
-**Priority**: MEDIUM
-**Files**:
-- `frontend/src/pages/employee/MyVisits.jsx`
-- `frontend/src/services/visitService.js`
-
-**Deliverables**:
-- [x] Fetch and display visit history
-- [x] Filter by status (all/completed/pending/cancelled)
-- [x] Filter by date range
-- [x] Filter by VIP Client
-- [x] Show visit details (date, VIP Client, photos, GPS, products)
-- [x] Display week label (W1D2, W2D3 format)
-- [x] Implement pagination
-- [x] Show visit proof photos
-
-**Acceptance Criteria**:
-- [x] All visits displayed with correct details
-- [x] Filters work correctly
-- [x] Photos viewable
-- [x] Week labels shown
-
-**Status**: COMPLETED
-
-**Implementation Details:**
-- `MyVisits.jsx`: Full implementation with filters, pagination, and visit details modal
-- Filters: Status dropdown, date range pickers, VIP Client search input
-- Table shows: Date/time, week label (W1D2), VIP Client info, visit type, status, photo count
-- Visit details modal shows: All visit info, VIP Client details, GPS with Google Maps link, photo gallery
-- Full image modal for viewing photos
-- Responsive design for mobile
-
----
-
-### Task 1.9: Admin Dashboard
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/pages/admin/AdminDashboard.jsx`
-- `frontend/src/components/admin/Dashboard.jsx`
-
-**Deliverables**:
-- [x] Replace hardcoded mock data with API calls
-- [x] Display stats grid:
-  - Total VIP Clients (all regions)
-  - Total BDMs
-  - Total visits (today/week/month)
-  - Pending approvals
-- [x] Recent activity feed
-- [x] Quick action buttons
-- [ ] Regional overview summary (deferred)
-
-**Acceptance Criteria**:
-- [x] All stats fetched from API
-- [x] Real-time data display
-- [x] Admin sees ALL regions data
-
-**Status**: ✅ COMPLETED
-
-**Implementation Details:**
-- `AdminDashboard.jsx`: Fetches real data from vipClientService, visitService, and users API
-- `Dashboard.jsx`: Full CSS styling with stat cards, activity feed
-- Quick action buttons link to VIP Clients, BDMs, Reports pages
-
----
-
-### Task 1.10: Admin VIP Client Management (Master Database)
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/pages/admin/DoctorsPage.jsx`
-- `frontend/src/components/admin/DoctorManagement.jsx`
-- `frontend/src/services/doctorService.js`
-- `frontend/src/services/regionService.js` (NEW)
-
-**Deliverables**:
-- [x] Display ALL VIP Clients across ALL regions (master database)
-- [x] Advanced filtering:
-  - By region
-  - By specialization (search)
-  - By visitFrequency (2x/4x)
-- [x] Add new VIP Client form with all fields:
-  - Name, contact, email
-  - Specialization
-  - Region assignment
-  - Visit frequency (2 or 4)
-  - Address, notes
-- [x] Edit existing VIP Client
-- [x] Delete VIP Client (with confirmation)
-- [ ] Bulk import from Excel (optional, Phase 1 stretch)
-- [x] Export to Excel/CSV (Call Plan Template format)
-
-**Acceptance Criteria**:
-- [x] Admin sees all VIP Clients in paginated table
-- [x] Can filter and search effectively
-- [x] CRUD operations work
-- [x] **Uses visitFrequency (2/4), NOT categories (A/B/C/D)**
-
-**Status**: ✅ COMPLETED
-
-**Implementation Details:**
-- `regionService.js`: New service for region API calls
-- `DoctorsPage.jsx`: Full CRUD with pagination, filtering, API integration
-- `DoctorManagement.jsx`: Complete rewrite with search/filter bar, data table, Add/Edit modal, Delete confirmation modal, full CSS styling
-
-**Export Feature (Task 1.10c - Dec 2025):**
-- `frontend/src/utils/exportCallPlan.js`: Export utility matching "Montero Call Plan Template" format
-- Added `xlsx` and `file-saver` npm packages
-- Excel export includes: Header summary (2x/4x counts), Day1-20 visit schedule columns, assigned products
-- CSV export: Flat format with same columns
-- Export buttons in DoctorsPage header ("Export Excel", "Export CSV")
-- Exports respect current filters (region, specialization, visitFrequency)
-
-**BDM Visit Report (Task 1.10d - Dec 2025):**
-- Backend endpoint: `GET /api/visits/bdm-report/:userId?monthYear=YYYY-MM`
-- `visitController.js`: Added `getBDMReport` function
-- `visitRoutes.js`: Added route with adminOnly middleware
-- `visitService.js`: Added `getBDMReport` method
-- `BDMVisitReport.jsx`: New component displaying Call Plan Template format with actual visits
-- `exportBDMReport.js`: New export utility for BDM reports
-- `ReportsPage.jsx`: Complete rewrite with BDM selector, month picker, generate button
-- Features: Yellow header rows, Day1-Day20 grid with actual visits, green highlights, assigned products
-
-**Visit Week Calculation Bug Fix (Task 1.10e - Dec 2025):**
-- **Problem**: Visits showed in Excel export totals but not in grid cells
-- **Root Cause**: Inconsistent `getWeekOfMonth` formulas + months with 5+ weeks exceeded 20-day grid
-- **Solution**:
-  - `validateWeeklyVisit.js`: Aligned `getWeekOfMonth` formula with Visit.js (ISO week standard)
-  - `Visit.js`: Added 5th week → next month logic (week 5+ dates count as Week 1 of next month)
-  - `backend/scripts/fixVisitWeeks.js`: Migration script to fix existing visits
-- **Business Rule**: Grid supports 20 days (4 weeks × 5 days). Week 5+ visits count towards next month's report
-
----
-
-### Task 1.18: Security Hardening
-**Assignee**: Backend/Frontend Developer
-**Priority**: CRITICAL
-**Status**: ✅ COMPLETED (January 2026)
-**Files**:
-- `backend/controllers/authController.js`
-- `backend/controllers/visitController.js`
-- `backend/models/User.js`
-- `backend/models/AuditLog.js` (new)
-- `backend/utils/auditLogger.js` (new)
-- `backend/middleware/validation.js`
-- `backend/server.js`
-- `backend/config/s3.js`
-- `frontend/src/context/AuthContext.jsx`
-- `frontend/src/services/api.js`
-- `frontend/src/services/authService.js`
-
-**Deliverables:**
-- [x] SEC-001: Token Storage - Remove localStorage, use httpOnly cookies only (CRITICAL)
-- [x] SEC-002: Visit Race Condition - Add duplicate key error handling (CRITICAL)
-- [x] SEC-003: Account Lockout - 5 attempts = 15 min lockout (HIGH)
-- [x] SEC-004: Password Complexity - Upper, lower, number, special char required (HIGH)
-- [x] SEC-005: Audit Logging - All auth events logged with TTL (HIGH)
-- [x] SEC-006: JWT Secret Validation - 32+ characters required at startup (MEDIUM)
-- [x] SEC-007: S3 URL Expiry - Reduced from 24h to 1h (MEDIUM)
-- [x] SEC-008: Token Response - Remove tokens from JSON response body (MEDIUM)
-- [x] SEC-009: CORS Validation - Required in production (MEDIUM)
-- [x] SEC-010: Email Regex - Support modern TLDs (LOW)
-
-**Acceptance Criteria:**
-- [x] Tokens are stored in httpOnly cookies only (not accessible via JavaScript)
-- [x] Account locks after 5 failed login attempts for 15 minutes
-- [x] All auth events logged to AuditLog collection with TTL
-- [x] Server refuses to start if JWT secrets < 32 characters
-- [x] Server refuses to start in production without CORS_ORIGINS
-
----
-
-**VIP Client Region Cascading Dropdown Fix (Task 1.10b):**
-- **Problem**: Validation error when editing VIP Clients - address field sent as string instead of object
-- **Problem**: Region dropdown used indented "──" format, hard to navigate for deep hierarchies
-- **Solution**:
-  - Fixed `address` field to send as nested object `{street: "..."}` matching VIPClient model schema
-  - Replaced single region dropdown with cascading dropdowns: Country → Region → Province → City → District
-  - Each dropdown dynamically loads children from parent selection using `regionService.getChildren()`
-  - Edit mode auto-populates all dropdown levels by traversing the region hierarchy
-  - Added loading indicator during region fetch
-
----
-
-### Task 1.11: Admin BDM Management
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/pages/admin/EmployeesPage.jsx`
-- `frontend/src/components/admin/EmployeeManagement.jsx`
-- `frontend/src/services/userService.js` (new)
-
-**Deliverables**:
-- [x] Create userService.js for user API calls
-- [x] Display all BDMs with their assigned regions
-- [x] Add new BDM form:
-  - Name, email, password
-  - Role selection (bdm/medrep)
-  - Region assignment
-- [x] Edit BDM details
-- [x] Toggle BDM active/inactive status
-- [ ] View BDM performance summary (deferred to Phase 2)
-- [x] Reassign BDM to different region
-
-**Acceptance Criteria**:
-- [x] Can create new BDMs
-- [x] Can assign BDMs to regions
-- [x] Can deactivate BDMs
-- [x] Historical data preserved on reassignment
-
-**Status**: ✅ COMPLETED
-
-**Implementation Details:**
-- `userService.js`: Full CRUD operations for users (getAll, create, update, delete, assignRegions)
-- `EmployeesPage.jsx`: Complete API integration with filters, pagination, toast notifications
-- `EmployeeManagement.jsx`: Full UI with filters (search, role, status, region), data table with role/status badges, Add/Edit modal with multi-region checkbox selection, deactivate confirmation modal
-
----
-
-### Task 1.12: Region Management
-**Assignee**: Frontend Developer
-**Priority**: MEDIUM
-**Files**:
-- `frontend/src/pages/admin/RegionsPage.jsx` (new)
-- `frontend/src/components/admin/RegionManagement.jsx` (new)
-- `frontend/src/services/regionService.js`
-
-**Deliverables**:
-- [x] Create RegionsPage and RegionManagement components
-- [x] Display region hierarchy tree
-- [x] Add new region with parent assignment
-- [x] Edit region details
-- [x] View VIP Clients and BDMs per region
-- [ ] Display geographical boundaries (optional - deferred)
-
-**Acceptance Criteria**:
-- [x] Hierarchical region display
-- [x] Can create nested regions
-- [x] Clear parent-child relationships
-
-**Status**: ✅ COMPLETED
-
-**Implementation Details:**
-- `RegionsPage.jsx`: Page component with data fetching, state management, CRUD handlers
-- `RegionManagement.jsx`: Full tree view UI with expand/collapse, level badges, filters, Add/Edit/Delete modals, Stats modal
-- `regionService.js`: Extended with create, update, delete, getHierarchy, getStats, getByLevel, getChildren methods
-- Added `/admin/regions` route to App.jsx
-- Added "Regions" navigation item to Sidebar.jsx
-- Added 'region' level to Region model enum (country > region > province > city > district > area)
-- Added 18 Philippine regions (REG-I through REG-XIII, NCR, CAR, BARMM, MIMAROPA, NIR) to seed data
-- Provinces (Iloilo, Capiz, Aklan, Antique) now under REG-VI (Western Visayas)
-
-**Cascading Region Assignment Fix (Task 1.12b):**
-- **Problem**: BDMs assigned to Region VI couldn't see VIP Clients from child provinces/cities
-- **Backend Fix**: Updated `vipClientController.js` to use `Region.getDescendantIds()` for cascading region access
-- **VIPClient Model**: Added `parentRegions` field with pre-save hook to auto-populate ancestor chain when VIP Client is assigned to a region
-- **Frontend Updates**:
-  - `DoctorsPage.jsx` & `EmployeesPage.jsx`: Fetch region hierarchy and flatten with depth for indented display
-  - `DoctorManagement.jsx`: Indented dropdown showing hierarchy (──Region VI, ────Iloilo, etc.)
-  - `EmployeeManagement.jsx`: Indented region checkboxes with "(+X sub-regions)" count for each parent region
-  - Filter dropdowns also show indented hierarchy
-
----
-
-### Task 1.13: MedRep Dashboard & Product Assignment
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/pages/medrep/MedRepDashboard.jsx`
-- `frontend/src/components/medrep/ProductAssignment.jsx`
-- `frontend/src/components/medrep/DoctorProductMapping.jsx`
-- `frontend/src/services/assignmentService.js` (NEW)
-
-**Deliverables**:
-- [x] MedRep dashboard with assignment overview
-- [x] Stats cards (active assignments, total VIP Clients, products, total assignments)
-- [x] VIP Client list with specializations and product count
-- [x] Assign products to specific VIP Clients:
-  - Select VIP Client from searchable list
-  - Select products to recommend
-  - Set priority (1=high, 2=medium, 3=low)
-- [x] View current assignments with filtering (search, status)
-- [x] Edit assignment (priority, notes)
-- [x] Deactivate/remove assignments
-
-**Acceptance Criteria**:
-- [x] MedRep can assign products to VIP Clients
-- [x] Assignments show in BDM visit interface
-- [x] Priority ordering works
-- [x] Only medrep and admin can manage assignments
-
-**Status**: ✅ COMPLETED
-
-**Implementation Details:**
-- `assignmentService.js`: New service with getAll, getMyAssignments, getByVIPClient, create, bulkCreate, update, delete
-- `MedRepDashboard.jsx`: Full implementation with tabs (Assignments/Mapping), stats, modals, toast notifications
-- `ProductAssignment.jsx`: Assignment cards with search/filter, view/edit/deactivate actions
-- `DoctorProductMapping.jsx`: Two-panel layout with VIP Client search, product assignment with priority
-
----
-
-### Task 1.14: Product Recommendations in Visit Interface
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/components/employee/ProductRecommendations.jsx`
-- `frontend/src/components/employee/VisitLogger.jsx` (integration)
-
-**Deliverables**:
-- [x] When BDM selects VIP Client to visit, show assigned products
-- [x] Display product image, name, description, key benefits
-- [x] Click product to view full details modal
-- [x] Track which products were discussed in visit
-- [x] Save discussed products with visit record
-
-**Acceptance Criteria**:
-- [x] Products shown based on MedRep assignments for that VIP Client
-- [x] BDM can view product details
-- [x] Discussed products recorded with visit
-
-**Status**: ✅ COMPLETED
-
-**Implementation Details:**
-- `ProductRecommendations.jsx`: Shows assigned products for selected VIP Client with image, name, key benefits, and product detail modal
-- `VisitLogger.jsx`: Integrates ProductRecommendations and tracks discussed products with visit submission
-
----
-
-### Task 1.14c: Cross-Database Product Population Fix
-**Assignee**: Backend Developer
-**Priority**: CRITICAL
-**Files**:
-- `backend/controllers/visitController.js`
-- `backend/controllers/vipClientController.js`
-
-**Problem**: Products are stored in a separate website database (`vip-pharmacy`), but the CRM uses Mongoose `populate()` which only works within the same database connection. This caused `MissingSchemaError: Schema hasn't been registered for model "Product"` errors.
-
-**Deliverables**:
-- [x] Remove Mongoose populate for products (fails across databases)
-- [x] Add manual product population using `getWebsiteProductModel()` helper
-- [x] Fix `getMyVisits` - manually fetch product data after getting visits
-- [x] Fix `getVisitById` - manually fetch product data after getting visit
-- [x] Fix `getVIPClientById` - manually fetch product data for assigned products
-- [x] Fix `getVIPClientProducts` - manually fetch product data for assigned products
-- [x] Fix `getWeeklyCompliance` - default to current user when no userId param
-
-**Acceptance Criteria**:
-- [x] No MissingSchemaError when fetching visits
-- [x] Product names display correctly in My Visits page
-- [x] Product names display correctly in Visit Logger
-- [x] No 403 error on weekly compliance endpoint
-
-**Status**: ✅ COMPLETED
-
-**Implementation Details:**
-- Import `getWebsiteProductModel` from `models/WebsiteProduct.js`
-- Collect all product IDs from documents
-- Query website database for product data
-- Map product data back to original documents
-- Pattern matches `productAssignmentController.js` approach
-
----
-
-### Task 1.14b: Frontend Optimization
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/components/common/ErrorBoundary.jsx` (new)
-- `frontend/src/components/common/Pagination.jsx` (new)
-- `frontend/src/hooks/useDebounce.js` (new)
-- Multiple existing files (see below)
-
-**Deliverables**:
-- [x] Create ErrorBoundary component to catch React errors
-- [x] Create useDebounce hook for search inputs (300ms default)
-- [x] Create shared Pagination component with React.memo
-- [x] Fix ProtectedRoute to redirect to role dashboard instead of showing error
-- [x] Fix API interceptor logout flow (dispatch CustomEvent instead of redirect)
-- [x] Add request cancellation (AbortController) to MyVisits
-- [x] Add GPS timeout (5 minutes) to CameraCapture
-- [x] Fix useEffect dependencies in DoctorsPage (useCallback)
-- [x] Fix useEffect cleanup in NewVisitPage (isMounted pattern)
-- [x] Replace custom toast with react-hot-toast in MedRepDashboard
-- [x] Fix AdminDashboard API calls (limit: 0 for count queries)
-- [x] Add React.memo to DoctorList
-- [x] Add useMemo for filtered lists in DoctorList
-- [x] Remove console.log statements from ReportsPage
-
-**Acceptance Criteria**:
-- [x] ErrorBoundary catches errors and shows fallback UI
-- [x] Search inputs are debounced (no excessive API calls)
-- [x] Pagination is memoized and shared across components
-- [x] Auth logout events handled properly across contexts
-- [x] API requests are cancellable on component unmount
-- [x] GPS timeout prevents infinite waiting
-- [x] No useEffect dependency warnings
-- [x] No console.log in production code
-- [x] React.memo prevents unnecessary re-renders
-
-**Status**: ✅ COMPLETED
-
-**Implementation Details:**
-- `ErrorBoundary.jsx`: Class component that catches errors, shows fallback UI with retry button
-- `Pagination.jsx`: React.memo wrapped component for consistent pagination
-- `useDebounce.js`: Custom hook using setTimeout/clearTimeout pattern
-- `api.js`: Dispatches `auth:logout` CustomEvent for cross-context communication
-- `AuthContext.jsx`: Listens for `auth:logout` events to trigger logout
-- `MyVisits.jsx`: Uses AbortController for request cancellation on unmount
-- `CameraCapture.jsx`: 5-minute watchPosition timeout for GPS
-- `DoctorsPage.jsx`: useCallback for fetchVIPClients to stabilize useEffect deps
-- `NewVisitPage.jsx`: isMounted ref pattern for async cleanup
-
----
-
-### Task 1.15: Common UI Components & Styling
-**Assignee**: Frontend Developer
-**Priority**: MEDIUM
-**Files**:
-- `frontend/src/components/common/Navbar.jsx`
-- `frontend/src/components/common/Sidebar.jsx`
-- `frontend/src/components/common/LoadingSpinner.jsx`
-- `frontend/src/components/common/ErrorMessage.jsx`
-- `frontend/src/index.css`
-- `frontend/src/styles/` (new directory)
-
-**Deliverables**:
-- [x] Complete Navbar with user info and logout
-- [x] Role-based Sidebar navigation
-- [x] Consistent loading spinners
-- [x] Error message component with retry
-- [ ] Complete CSS styling:
-  - Forms and inputs
-  - Tables
-  - Cards
-  - Buttons
-  - Modals
-  - Responsive breakpoints
-- [ ] Mobile-responsive design (tablet/phone)
-
-**Acceptance Criteria**:
-- Consistent visual design across app
-- Works on desktop, tablet, mobile
-- Role-specific navigation
-
-**Status**: ⚠️ IN PROGRESS (Navbar and Sidebar functional. index.css has base styles but missing comprehensive component styles)
-
----
-
-## Infrastructure Tasks
-
-### Task 1.16: Development Environment Setup Documentation
-**Assignee**: DevOps / Backend Developer
-**Priority**: HIGH
-**Files**: `docs/DEVELOPMENT_GUIDE.md`
-
-**Deliverables**:
-- [x] Document local development setup steps
-- [x] Document environment variables
-- [x] Document MongoDB Atlas setup
-- [x] Document AWS S3 setup
-- [x] Create `.env.example` files for both backend and frontend
-- [x] Add troubleshooting section
-
-**Acceptance Criteria**:
-- [x] New developer can set up project using documentation
-- [x] All required env vars documented
-
-**Status**: ✅ COMPLETED
-
-**Implementation Details:**
-- `docs/DEVELOPMENT_GUIDE.md`: Comprehensive 923-line development guide covering:
-  - Prerequisites and software requirements
-  - Local environment setup with step-by-step instructions
-  - Backend and frontend configuration
-  - AWS S3 setup for image storage
-  - Database setup (local MongoDB and Atlas)
-  - Testing, Git workflow, and code standards
-  - IDE setup with VS Code extensions
-- `backend/.env.example`: 89 lines with all environment variables documented
-- `frontend/.env.example`: Frontend environment variables for Vite
-
----
-
-### Task 1.17: Initial Deployment to AWS Lightsail
-**Assignee**: DevOps
-**Priority**: HIGH (end of Phase 1)
-**Files**: Various config files, AWS Console
-
-**Deliverables**:
-- [ ] Create Lightsail instance (Ubuntu 22.04)
-- [ ] Attach static IP
-- [ ] Configure firewall (22, 80, 443)
-- [ ] Install Node.js 18 LTS
-- [ ] Install Nginx
-- [ ] Install PM2
-- [ ] Clone repository
-- [ ] Build frontend
-- [ ] Configure Nginx as reverse proxy
-- [ ] Set up SSL with Let's Encrypt
-- [ ] Configure PM2 for process management
-- [ ] Create `ecosystem.config.js`
-- [ ] Document deployment process
-
-**Acceptance Criteria**:
-- Application accessible via HTTPS
-- API responds correctly
-- PM2 manages Node process
-- Auto-restart on crash
+- `backend/controllers/authController.js` - Lockout logic, audit logging
+- `backend/models/User.js` - failedLoginAttempts, lockoutUntil fields
+- `backend/models/AuditLog.js` (new) - Security audit schema, 90-day TTL
+- `backend/utils/auditLogger.js` (new) - Event logging utility
+- `backend/middleware/validation.js` - Password complexity (upper+lower+number+special, 8+ chars)
+- `backend/server.js` - JWT secret 32+ char validation, CORS_ORIGINS required in production
+- `backend/config/s3.js` - 1-hour signed URL expiry
+- `frontend/src/context/AuthContext.jsx` - Cookie-based auth, auth:logout listener
+- `frontend/src/services/api.js` - withCredentials, no token injection
+- `frontend/src/services/authService.js` - Cookie-based auth
+
+**Security Items**:
+- [x] SEC-001: httpOnly cookie token storage (XSS protection)
+- [x] SEC-002: Visit race condition duplicate key handling
+- [x] SEC-003: Account lockout (5 attempts = 15 min)
+- [x] SEC-004: Password complexity enforcement
+- [x] SEC-005: Audit logging (13 event types, 90-day TTL)
+- [x] SEC-006: JWT secret validation at startup (32+ chars)
+- [x] SEC-007: S3 URL expiry reduced to 1 hour
+- [x] SEC-008: Tokens removed from JSON response body
+- [x] SEC-009: CORS_ORIGINS required in production
+- [x] SEC-010: Modern TLD email validation
+
+## Frontend Tasks (All Complete)
+
+### Task 1.5: Authentication Flow ✅
+**Files**: `context/AuthContext.jsx`, `components/auth/LoginForm.jsx`, `components/auth/ProtectedRoute.jsx`, `pages/LoginPage.jsx`, `services/authService.js`, `services/api.js`, `hooks/useAuth.js`, `hooks/useApi.js`
+- Cookie-based JWT auth (NOT localStorage)
+- Role-based redirect: admin→/admin, medrep→/medrep, employee→/employee
+- Token refresh on 401 errors
+
+### Task 1.6: BDM Dashboard & VIP Client List ✅
+**Files**: `pages/employee/EmployeeDashboard.jsx`, `components/employee/DoctorList.jsx`, `services/doctorService.js`, `services/visitService.js`
+- Real API data, stats cards, compliance bar
+- VIP Client list with visitFrequency (2x/4x), visit status, Log Visit button
+- Region-filtered for BDMs
+
+### Task 1.7: Visit Logger with Photo & GPS ✅
+**Files**: `components/employee/VisitLogger.jsx`, `components/employee/CameraCapture.jsx`, `services/visitService.js`, `pages/employee/NewVisitPage.jsx`
+- FormData upload with photos + GPS
+- GPS watchPosition with 5-min timeout, accuracy badges
+- canVisit check before rendering form
+- Work day validation (Mon-Fri only)
+
+### Task 1.8: My Visits History ✅
+**Files**: `pages/employee/MyVisits.jsx`, `services/visitService.js`
+- Filters (status, date range, VIP Client search), pagination
+- AbortController for request cancellation, debounced search
+- Visit details modal with photo gallery, GPS Google Maps link
+
+### Task 1.9: Admin Dashboard ✅
+**Files**: `pages/admin/AdminDashboard.jsx`, `components/admin/Dashboard.jsx`
+- Real API data, optimized calls (limit:0 for counts)
+- Stats grid, activity feed, quick action buttons
+
+### Task 1.10: Admin VIP Client Management ✅
+**Files**: `pages/admin/DoctorsPage.jsx`, `components/admin/DoctorManagement.jsx`, `services/doctorService.js`, `services/regionService.js`
+- Full CRUD with cascading region dropdowns (Country→Region→Province→City→District)
+- Filters (region, specialization, visitFrequency), pagination
+- Excel/CSV export matching Call Plan Template format (`utils/exportCallPlan.js`)
+
+### Task 1.11: Admin BDM Management ✅
+**Files**: `pages/admin/EmployeesPage.jsx`, `components/admin/EmployeeManagement.jsx`, `services/userService.js`
+- Full CRUD with multi-region checkbox assignment
+- Filters (search, role, status, region), pagination
+
+### Task 1.12: Region Management ✅
+**Files**: `pages/admin/RegionsPage.jsx`, `components/admin/RegionManagement.jsx`, `services/regionService.js`
+- Tree view with expand/collapse, level badges
+- CRUD with parent assignment, stats modal
+
+### Task 1.13: MedRep Dashboard & Product Assignment ✅
+**Files**: `pages/medrep/MedRepDashboard.jsx`, `components/medrep/ProductAssignment.jsx`, `components/medrep/DoctorProductMapping.jsx`, `services/assignmentService.js`
+- Assignment cards with search/filter, view/edit/deactivate
+- Two-panel VIP Client→Product mapping with priority
+
+### Task 1.14: Product Recommendations in Visit Interface ✅
+**Files**: `components/employee/ProductRecommendations.jsx`, `components/employee/VisitLogger.jsx`
+- Shows assigned products for selected VIP Client
+- Product detail modal, tracks discussed products with visit
+
+### Task 1.14b: Frontend Optimization ✅ (December 2025)
+**New Files**: `components/common/ErrorBoundary.jsx`, `components/common/Pagination.jsx`, `hooks/useDebounce.js`
+- ErrorBoundary wrapping App routes
+- React.memo on DoctorList, Pagination
+- AbortController in MyVisits, debounced search
+- useCallback in DoctorsPage, isMounted in NewVisitPage
+
+### Task 1.14c: Cross-Database Product Fix ✅
+**Files**: `controllers/visitController.js`, `controllers/doctorController.js`
+- Replaced Mongoose populate with manual `getWebsiteProductModel()` fetching
+- Fixed getMyVisits, getVisitById, getVIPClientById, getVIPClientProducts
+
+### BDM Visit Report ✅ (December 2025)
+**Files**: `pages/admin/ReportsPage.jsx`, `components/admin/EmployeeVisitReport.jsx`, `utils/exportEmployeeReport.js`, `controllers/visitController.js` (getBDMReport)
+- Call Plan Template format with 20-day grid
+- BDM selector, month picker, Excel/CSV export
+
+### Visit Week Calculation Fix ✅ (December 2025)
+**Files**: `utils/validateWeeklyVisit.js`, `models/Visit.js`, `scripts/fixVisitWeeks.js`
+- Aligned getWeekOfMonth formula
+- 5th week → next month logic (week 5+ = next month Week 1)
+
+### Messaging System ✅ (January 2026)
+**Files**: `models/MessageInbox.js`, `controllers/messageInboxController.js`, `routes/messageInbox.js`, `routes/sentRoutes.js`, `services/messageInboxService.js`, `pages/employee/EMP_InboxPage.jsx`, `components/employee/MessageBox.jsx`, `components/employee/AdminSentMessageBox.jsx`, `pages/admin/SentPage.jsx`
+- Admin→BDM messaging with categories (announcement, payroll, leave, policy, system, compliance_alert)
+- Priority levels, read tracking, archive
+
+### Admin Page Scaffolding ✅ (January 2026)
+**Files**: `pages/admin/StatisticsPage.jsx`, `pages/admin/ActivityMonitor.jsx`, `pages/admin/PendingApprovalsPage.jsx`, `pages/admin/GPSVerificationPage.jsx`
+- UI built with Recharts, tables, modals
+- **All use mock/hardcoded data** — backend endpoints don't exist yet
+- `services/complianceService.js` calls non-existent endpoints
+
+### Task 1.15: CSS Styling ⚠️ IN PROGRESS
+- Base styles exist but missing comprehensive component styles
+- Mobile-responsive design incomplete
+
+### Task 1.17: Deploy to AWS Lightsail ❌ NOT STARTED
+- Instance not provisioned
 
 ---
 
 ## Phase 1 Summary
 
-| Category | Tasks | Estimated Complexity |
-|----------|-------|---------------------|
-| Backend Infrastructure | 4 tasks | High |
-| Frontend Auth | 1 task | High |
-| Frontend BDM Features | 3 tasks | High |
-| Frontend Admin Features | 4 tasks | High |
-| Frontend MedRep Features | 2 tasks | Medium |
-| Frontend Optimization | 1 task | High |
-| Frontend UI/UX | 1 task | Medium |
-| DevOps | 2 tasks | High |
-| **Security Hardening** | **1 task** | **Critical** |
-| **Total** | **19 tasks** | |
+| Category | Tasks | Status |
+|----------|-------|--------|
+| Backend Infrastructure | 4 tasks | ✅ Complete |
+| Frontend Auth | 1 task | ✅ Complete |
+| Frontend BDM Features | 4 tasks | ✅ Complete |
+| Frontend Admin Features | 5 tasks | ✅ Complete |
+| Frontend MedRep Features | 1 task | ✅ Complete |
+| Optimization | 2 tasks | ✅ Complete |
+| Security | 1 task | ✅ Complete |
+| Messaging | 1 task | ✅ Complete |
+| Admin Scaffolding | 1 task | ✅ UI only (mock data) |
+| CSS/Deployment | 2 tasks | ⚠️ Incomplete |
 
 ---
 
-# PHASE 2: Compliance & Monitoring
-**Goal**: Add real-time monitoring, alerts, notifications, and visit approval workflow
+# PHASE A: Core Schema + Role Changes
+**Goal**: Lay the foundation for the client's target system by updating the VIP Client model, fixing visit rules, and restructuring roles.
+**Dependency**: Must complete before Phases B and C.
 
-## Backend Tasks
+---
 
-### Task 2.1: Compliance Alerts API
-**Assignee**: Backend Developer
-**Priority**: HIGH
-**Files**:
-- `backend/controllers/complianceController.js` (new)
-- `backend/routes/complianceRoutes.js` (new)
-- `backend/utils/validateWeeklyVisit.js` (enhance)
+### Task A.1: VIP Client Model Field Extensions (CHANGE_LOG Change 9)
+**Priority**: CRITICAL (blocks nearly everything else)
+**Files to modify**: `backend/models/Doctor.js`, migration script (new)
+**Files affected downstream**: `controllers/doctorController.js`, `components/admin/DoctorManagement.jsx`, `components/employee/DoctorList.jsx`, `pages/admin/DoctorsPage.jsx`, `utils/exportCallPlan.js`, `utils/exportEmployeeReport.js`
 
 **Deliverables**:
-- [ ] Create compliance controller with:
-  - `getComplianceAlerts()` - BDMs behind schedule
-  - `getBehindScheduleBDMs()` - less than 80% weekly target
-  - `getQuotaDumpingAlerts()` - detect multiple visits in short period
-  - `getWeeklyComplianceReport()` - all BDMs weekly status
-  - `getMonthlyComplianceReport()` - monthly completion rates
-- [ ] Add routes and protect with admin middleware
-- [ ] Implement 80% threshold for "behind schedule" alerts
-- [ ] Track visit patterns for quota dumping detection
+- [ ] Split `name` into `firstName` (required) + `lastName` (required), add virtual `fullName` getter
+- [ ] Change `specialization` from enum to free-form String (client uses "Pedia Hema", "Im Car", "Breast Surg", etc.)
+- [ ] Merge `hospital` + `address` into single `clinicOfficeAddress` (free-form String)
+- [ ] Add new fields:
+  - `outletIndicator` (String)
+  - `programsToImplement` ([String] enum: CME GRANT, REBATES / MONEY, REST AND RECREATION, MED SOCIETY PARTICIPATION)
+  - `supportDuringCoverage` ([String] enum: STARTER DOSES, PROMATS, FULL DOSE, PATIENT DISCOUNT, AIR FRESHENER)
+  - `levelOfEngagement` (Number 1-5)
+  - `secretaryName` (String)
+  - `secretaryPhone` (String)
+  - `birthday` (Date)
+  - `anniversary` (Date)
+  - `otherDetails` (String)
+  - `targetProducts` ([{ product: ObjectId, status: 'showcasing'|'accepted' }]) — always 3 slots
+  - `isVipAssociated` (Boolean) — admin approval for VIP partnership
+- [ ] Create migration script to split existing `name` fields and merge address fields
+- [ ] Update all frontend forms and displays for new fields
+- [ ] Update export utilities to include new fields in CPT format
 
-**Acceptance Criteria**:
-- Admin can see who is behind schedule
-- Quota dumping patterns flagged
-- Weekly/monthly reports accurate
+**Breaking Changes**:
+- `name` → `firstName` + `lastName` affects every query, index, and component
+- `hospital` + `address` → `clinicOfficeAddress` affects forms and displays
+- `specialization` enum removal affects dropdowns/filters
 
 ---
 
-### Task 2.2: Email Notification System (AWS SES)
-**Assignee**: Backend Developer
+### Task A.2: 2x Alternating Week Rule (CHANGE_LOG Change 10)
+**Priority**: HIGH (core business logic)
+**Files**: `backend/utils/validateWeeklyVisit.js`
+
+**Deliverables**:
+- [ ] For VIP Clients with `visitFrequency: 2`, enforce alternating weeks:
+  - If visited in W1, next allowed visit is W3 (not W2)
+  - If visited in W2, next allowed visit is W4 (not W3)
+  - Pattern: W1+W3 or W2+W4
+- [ ] Update visit limit error response to indicate next allowed week
+- [ ] Thorough testing — wrong logic blocks valid visits or allows invalid ones
+
+---
+
+### Task A.3: Remove MedRep Role (CHANGE_LOG Change 1)
+**Priority**: HIGH (role architecture change)
+**Files to modify**:
+- `backend/models/User.js` — Remove `medrep` from role enum
+- `backend/models/ProductAssignment.js` — Update pre-save hook (line 94-108) to allow `employee` role
+- `backend/middleware/roleCheck.js` — Remove `medRepOnly` middleware
+- `backend/controllers/productAssignmentController.js` — Update role checks
+- `backend/routes/productAssignmentRoutes.js` — Update route middleware
+- `frontend/src/App.jsx` — Remove `/medrep` routes
+- `frontend/src/components/common/Sidebar.jsx` — Remove medrep menu, add product assignment to BDM menu
+- `frontend/src/pages/medrep/MedRepDashboard.jsx` — Delete or repurpose
+- `frontend/src/components/employee/` — Add product assignment UI (adapt from medrep components)
+
+**Deliverables**:
+- [ ] BDMs can assign their own 3 target products per VIP Client
+- [ ] Product assignment UI moved to BDM section
+- [ ] MedRep routes and pages removed
+- [ ] Migration: convert existing medrep users to employee or admin
+- [ ] Target product flow: 3 slots per VIP Client, status `showcasing` or `accepted`, BDM swaps failed products for new picks
+
+---
+
+### Task A.4: BDM Edit Own VIP Clients (CHANGE_LOG Change 2)
 **Priority**: HIGH
 **Files**:
-- `backend/config/ses.js` (new)
-- `backend/services/emailService.js` (new)
-- `backend/templates/emails/` (new directory)
+- `backend/controllers/doctorController.js` — Add employee permission where `assignedTo === req.user._id`
+- `backend/routes/doctorRoutes.js` — Allow PUT for employee role with ownership check
+- `frontend/src/components/employee/DoctorList.jsx` — Add edit button per VIP Client card
+- NEW: `frontend/src/components/employee/DoctorEditForm.jsx` — Edit form
+
+**Deliverables**:
+- [ ] BDMs can edit all fields EXCEPT `assignedTo`
+- [ ] BDM-editable fields include: supportDuringCoverage, programsToImplement, levelOfEngagement (plus all other fields except assignedTo)
+- [ ] Region IS editable (BDM might correct mistakes)
+- [ ] Admin retains full edit control over everything
+
+---
+
+## Phase A Summary
+
+| Task | Change # | Impact | Blocking? |
+|------|----------|--------|-----------|
+| A.1: VIP Client Model Extensions | 9 | 15+ new fields, 3 breaking changes | Yes — blocks B and C |
+| A.2: 2x Alternating Week Rule | 10 | Core business logic | No |
+| A.3: Remove MedRep Role | 1 | 9+ files, role architecture | No |
+| A.4: BDM Edit Own VIP Clients | 2 | Ownership permissions | Depends on A.1 |
+
+---
+
+# PHASE B: UX + Visit Flow Improvements
+**Goal**: Improve the BDM daily experience — better VIP Client views, photo flexibility, engagement tracking, regular clients.
+**Dependency**: Phase A (especially A.1 for new Doctor fields).
+
+---
+
+### Task B.1: VIP Client Info Page Before Log Visit (CHANGE_LOG Change 3)
+**Priority**: HIGH (major UX flow change)
+**Files**:
+- NEW: `frontend/src/pages/employee/DoctorDetailPage.jsx` — Full VIP Client profile + visit history + "Log Visit" button
+- `frontend/src/App.jsx` — Add route `/employee/doctor/:id`
+- `frontend/src/components/employee/DoctorList.jsx` — Card click → detail page (not visit logger)
+- `frontend/src/pages/employee/EmployeeDashboard.jsx` — Update handleSelectDoctor navigation
+
+**Deliverables**:
+- [ ] Clicking a VIP Client shows info page first (all fields from A.1)
+- [ ] "Log Visit" button at bottom of info page
+- [ ] Visit history for that VIP Client shown on the page
+- [ ] BDM can edit VIP Client fields from this page (per A.4)
+
+---
+
+### Task B.2: Product Detail Popup — Tablet-Friendly (CHANGE_LOG Change 4)
+**Priority**: MEDIUM
+**Files**: `frontend/src/components/employee/ProductRecommendations.jsx`, `frontend/src/components/employee/VisitLogger.jsx`
+
+**Deliverables**:
+- [ ] Clicking a product shows full-screen modal with image + description
+- [ ] Tablet-optimized: large image, readable text, easy to show to VIP Client
+- [ ] Product cards instead of simple checkboxes in VisitLogger
+- [ ] BDM picks 3 products from catalog → assigns as target products → presents on tablet
+
+---
+
+### Task B.3: Photo Upload Flexibility (CHANGE_LOG Change 5)
+**Priority**: HIGH
+**Files**: `frontend/src/components/employee/CameraCapture.jsx`
+
+**Deliverables**:
+- [ ] Camera capture (existing — keep)
+- [ ] File picker / gallery: `<input type="file" accept="image/*" multiple>`
+- [ ] Copy-paste: Clipboard API (`paste` event listener on upload area)
+- [ ] EXIF parsing: `exifr` or `exif-js` library for photo timestamp extraction
+- [ ] BDMs can take photos with any device, then upload when logging visit later
+
+---
+
+### Task B.4: Level of Engagement Tracking (CHANGE_LOG Change 12)
+**Priority**: MEDIUM
+**Files**: `components/employee/DoctorList.jsx`, new `DoctorDetailPage.jsx`, `components/admin/DoctorManagement.jsx`
+
+**Deliverables**:
+- [ ] Display engagement badge (1-5) on VIP Client cards and detail pages
+- [ ] BDMs can update engagement level from VIP Client detail page
+- [ ] Scale: 1=Visited 4x, 2=Knows BDM/products, 3=Tried products, 4=In group chat, 5=Active partner
+
+---
+
+### Task B.5: BDM Self-Service Performance (CHANGE_LOG Change 14)
+**Priority**: MEDIUM
+**Files**: NEW `frontend/src/pages/employee/MyPerformancePage.jsx`
+
+**Deliverables**:
+- [ ] Total visits/month, compliance %, engagement distribution
+- [ ] VIP coverage breakdown (2x vs 4x)
+- [ ] Behind-schedule warnings
+- [ ] DCR Summary view (once scheduling exists in Phase C)
+
+---
+
+### Task B.6: Non-VIP Regular Clients Table (CHANGE_LOG Change 16)
+**Priority**: MEDIUM
+**Files**:
+- NEW: `backend/models/Client.js` — Simpler than Doctor (name, specialty, address, phone, notes)
+- NEW: `backend/controllers/clientController.js` — CRUD
+- NEW: `backend/routes/clientRoutes.js` — API endpoints
+- `frontend/src/pages/employee/EmployeeDashboard.jsx` — Second table below VIP Client list
+- NEW: `frontend/src/components/employee/ClientList.jsx`
+- NEW: `frontend/src/services/clientService.js`
+
+**Deliverables**:
+- [ ] BDMs can add regular clients directly (no Excel/admin approval needed)
+- [ ] Daily limit: up to 30 extra calls per day (system enforced)
+- [ ] No visit frequency enforcement (no 2x/4x rules)
+- [ ] No scheduling grid integration
+- [ ] Visits appear in "EXTRA CALL (VIP NOT INCLUDED IN THE LIST)" section of CPT (Phase C)
+- [ ] May eventually be promoted to VIP status through Excel upload + admin approval
+
+---
+
+### Task B.7: Filter VIP Clients by Support Type & Program (CHANGE_LOG Change 17)
+**Priority**: LOW
+**Depends on**: A.1 (supportDuringCoverage and programsToImplement fields must exist)
+**Files**: `pages/admin/DoctorsPage.jsx`, `pages/employee/EmployeeDashboard.jsx`, `controllers/doctorController.js`
+
+**Deliverables**:
+- [ ] Filter by Support During Coverage (e.g., "Show all VIP Clients with STARTER DOSES")
+- [ ] Filter by Programs to Implement (e.g., "Show all under CME GRANT")
+- [ ] Both admin and BDM views — admin sees all, BDMs see assigned only
+
+---
+
+## Phase B Summary
+
+| Task | Change # | Impact | Depends On |
+|------|----------|--------|------------|
+| B.1: VIP Client Info Page | 3 | New page, navigation flow change | A.1 |
+| B.2: Product Detail Popup | 4 | Tablet UX improvement | A.3 (target products) |
+| B.3: Photo Upload Flexibility | 5 | Camera + gallery + clipboard | None |
+| B.4: Engagement Tracking | 12 | Display + update engagement level | A.1 |
+| B.5: BDM Performance | 14 | New self-service page | None |
+| B.6: Regular Clients | 16 | New model + table + API | None |
+| B.7: Filter by Support/Program | 17 | Filter UI on list pages | A.1 |
+
+---
+
+# PHASE C: Scheduling, CPT & Excel Import
+**Goal**: Implement the core of the client's system flow — the 4-week scheduling cycle, Call Planning Tool, and Excel import/export round-trip.
+**Dependency**: Phase A (model fields), Phase B.6 (regular clients for Extra Call section).
+
+---
+
+### Task C.1: Schedule Model + 4-Week Calendar (CHANGE_LOG Change 6)
+**Priority**: CRITICAL (core system flow)
+**Files**:
+- NEW: `backend/models/Schedule.js`
+- NEW: `backend/controllers/scheduleController.js`
+- NEW: `backend/routes/scheduleRoutes.js`
+- NEW: `frontend/src/components/employee/ScheduleCalendar.jsx`
+- NEW: `frontend/src/services/scheduleService.js`
+
+**Schedule Model**:
+```javascript
+{
+  doctor: ObjectId,
+  user: ObjectId,
+  cycleStart: Date,        // Start date of 4-week cycle (e.g., 2026-01-05)
+  scheduledDay: String,    // Original: "W2D1" (Monday of Week 2)
+  currentDay: String,      // Where carried to (starts same as scheduledDay)
+  status: String,          // planned | carried | completed | missed
+  completedAt: Date,
+  visit: ObjectId,         // Reference to Visit record once completed
+}
+```
+
+**4-Week Cycle Rules**:
+- Anchor date: **January 5, 2026 (Monday) = W1D1**
+- 4-week cycle rolls continuously from this date
+- January through November fit neatly; December has extra weeks (still W1-W4 rolling)
+- Schedule loops every 4-week cycle until new Excel replaces it (~quarterly)
+- Schedule is LOCKED after approval — BDMs cannot rearrange visits
+
+**Carry & Cutoff Rules**:
+- Scheduled day = target, entire week = open window (W2D1 missed → can visit W2D2-W2D5)
+- If not visited during scheduled week → carries to next week
+- Carries continue until **W4D5 = hard cutoff** → marked `missed`
+- BDMs can only visit VIP Clients scheduled for current week + carried from previous weeks
+- VIP Client scheduled for Week 3 does NOT appear as visitable during Week 1
+
+**Visit Rules**:
+- Once a VIP Client is visited this week, they are **blocked** until next week — UNLESS there are carried/missed weeks to clear
+- If carried weeks exist, the VIP Client stays visitable for additional logs within the same calendar week
+- **Current week priority**: When logging a visit, the system ticks off the **current week first**, then carried weeks (oldest first)
+  - Example: W1 missed, now W2. First log → counts for W2 (current). Second log → counts for W1 (carried).
+- No advance credit: extra visits in W1 do NOT tick off W2 or W3
+- Each week's requirement stands on its own
+- Missed weeks carry forward but still need their own visit
+- W4 catch-up: BDM might need up to 3 visits for same VIP Client in final week (missed W1 + missed W2 + W4's own)
+
+**Deliverables**:
+- [ ] Schedule model with cycle tracking
+- [ ] Calendar grid matching CPT format (W1D1 through W4D5, 20 workdays)
+- [ ] Auto-carry logic for missed visits
+- [ ] W4D5 hard cutoff → missed status
+- [ ] Schedule looping (auto-repeat every 4-week cycle)
+- [ ] BDM daily view: "Today you need to visit: Dr. A, Dr. B, Dr. C"
+
+---
+
+### Task C.2: Call Planning Tool / CPT View (CHANGE_LOG Change 7)
+**Priority**: HIGH
+**Depends on**: C.1 (Schedule model)
+**Files**:
+- NEW: `frontend/src/components/employee/CallPlanView.jsx`
+- Enhance: `pages/admin/ReportsPage.jsx`
+
+**CPT Grid**:
+- Rows = VIP Clients (alphabetical by lastName)
+- Columns = W1D1 through W4D5 (20 workdays)
+- Cells = "1" for scheduled, checkmark for completed, orange for carried, red for missed
+- Final column = SUM OF (total scheduled visits per VIP Client)
+- Daily VIP count row at bottom (auto-calculated)
+
+**Two Modes**:
+- **Planned**: Shows schedule with "1"s (before visits happen)
+- **Actual**: Shows completed/missed (after visits are logged)
+
+**Editable During Planning Phase** (before approval):
+- BDMs can place/remove "1"s to plan their schedule in the app
+- Auto-distribution algorithm: 4x = 1/week spread across M-F, 2x = alternating weeks (W1+W3 or W2+W4) spread across different days
+- Once approved → LOCKED for the cycle
+
+**DCR Summary Table**:
+| Column | Description |
+|--------|-------------|
+| Day | W1 D1, W1 D2, ... W4 D5 |
+| Target Engagements | Number of "1"s scheduled for that day |
+| Total Engagements | Actual visits completed |
+| Call Rate | Total / Target × 100% |
+| TOTAL row | Sum of all days, overall Call Rate % |
+
+**Engagement Types** (tracked per visit):
+- TXT/PROMAT, MES/VIBER GIF, PICTURE, SIGNED CALL, VOICE CALL
+
+**Daily MD Count**: MDs visited per day, split into:
+- Included in List (VIP Clients from schedule)
+- Not Included in List (Extra Calls — non-VIP, see B.6)
+
+**Extra Call Section**: Bottom of each daily sheet for non-VIP visits (from B.6). Own engagement type tracking but does NOT count toward Call Rate.
+
+**Deliverables**:
+- [ ] Editable 20-day grid (planning mode)
+- [ ] Auto-distribution algorithm
+- [ ] Read-only grid (actual mode)
+- [ ] DCR Summary table with Call Rate per day + overall
+- [ ] Engagement type tracking per visit
+- [ ] Daily MD count (VIP vs Extra Call split)
+- [ ] Extra Call section for non-VIP visits
+
+---
+
+### Task C.3: Excel Upload & Import (CHANGE_LOG Change 8)
+**Priority**: HIGH
+**Depends on**: C.1 (Schedule model), A.1 (Doctor fields)
+**Files**:
+- NEW: `backend/models/ImportBatch.js` — Staging model for pending imports
+- NEW: `backend/controllers/importController.js` — Excel parsing with `xlsx` library
+- NEW: `backend/routes/importRoutes.js`
+- NEW: `frontend/src/pages/admin/ImportPage.jsx` — Upload + review/approve UI
+- NEW: `frontend/src/services/importService.js`
+- Repurpose: `pages/admin/PendingApprovalsPage.jsx` (scaffolded) for batch review
+
+**Excel Template Columns** (must match client's CPT exactly):
+```
+#, LASTNAME, FIRSTNAME, VIP SPECIALTY (free-form),
+[20-day grid: W1 mo, W1 tu, W1 we, W1 th, W1 fr, W2 mo, ... W4 fr],
+Count of 1 Status (auto-calculated SUM),
+CLINIC/OFFICE ADDRESS, OUTLET INDICATOR,
+PROGRAMS TO BE IMPLEMENTED, SUPPORT DURING COVERAGE,
+TARGET PRODUCT 1, TARGET PRODUCT 2, TARGET PRODUCT 3,
+LEVEL OF ENGAGEMENT (1-5), BIRTHDAY, ANNIVERSARY, OTHER DETAILS
+```
+
+**Workflow**:
+1. BDM prepares Excel externally, gives to admin
+2. Admin reviews thoroughly, then uploads to CRM
+3. System checks for duplicate VIP Clients (by name match) — shows warning + navigates to potential duplicate
+4. Admin does final review in CRM → approves or rejects ENTIRE batch
+5. On approval: VIP Client profiles created/updated + schedule "1"s become schedule entries
+6. **If VIP Client already exists → Excel data OVERWRITES with warning**: "This will overwrite changes made to Dr. Santos in the app"
+7. On rejection: Admin adds reason, BDM revises and re-submits
+
+**Quarterly Round-Trip** (export → edit → re-upload):
+1. BDM exports current VIP Client data from CRM to Excel
+2. BDM edits exported Excel (add/remove doctors, update info, adjust schedule)
+3. BDM gives edited file to admin
+4. Admin uploads back to CRM → normal approval flow
+
+**Deliverables**:
+- [ ] ImportBatch staging model (status: pending/approved/rejected)
+- [ ] Excel parsing with `xlsx` npm package
+- [ ] Column mapping matching client's CPT template exactly
+- [ ] Duplicate VIP Client detection (name match)
+- [ ] Admin review UI with approve/reject entire batch
+- [ ] Overwrite existing data with warning
+- [ ] Schedule entries created from "1"s in grid
+- [ ] Export format matches import format (round-trip compatible)
+
+---
+
+### Task C.4: VIP Count Minimums & Validation (CHANGE_LOG Change 11)
+**Priority**: LOW
+**Files**: `pages/employee/EmployeeDashboard.jsx`, `pages/admin/AdminDashboard.jsx`, `pages/admin/StatisticsPage.jsx`
+
+**Deliverables**:
+- [ ] BDM dashboard: Warning banner when assigned VIP Clients < 20
+- [ ] Admin dashboard: Warning when total active VIP Clients < 130
+- [ ] Statistics page: VIP count breakdown (2x vs 4x per BDM)
+- [ ] Schedule validation: Ensure planned visits adequately fill 20 working days
+
+---
+
+## Phase C Summary
+
+| Task | Change # | Impact | Depends On |
+|------|----------|--------|------------|
+| C.1: Schedule Model + Calendar | 6 | New model, new UI, core system flow | A.1 |
+| C.2: CPT View + DCR Summary | 7 | Editable grid, performance tracking | C.1, B.6 |
+| C.3: Excel Upload & Import | 8 | Import/export round-trip, staging model | C.1, A.1 |
+| C.4: VIP Count Minimums | 11 | Warning banners, dashboard stats | A.1 |
+
+---
+
+# PHASE D: Admin Monitoring & Advanced
+**Goal**: Complete admin monitoring tools, wire up scaffolded pages, deployment.
+
+---
+
+### Task D.1: Admin View Per-BDM DCR Summary (CHANGE_LOG Change 15)
+**Priority**: HIGH
+**Depends on**: C.2 (DCR Summary)
+**Files**: `pages/admin/StatisticsPage.jsx` (wire up), `components/admin/EmployeeAnalytics.jsx` (wire up)
+
+**Deliverables**:
+- [ ] Per-BDM drill-down with Call Rate, VIP coverage, engagement distribution
+- [ ] DCR Summary view per BDM: 20-row table (W1D1-W4D5) with Target/Total/Call Rate
+- [ ] Admin can evaluate if BDM's Call Rate justifies continuing partnership
+- [ ] Filter VIP Clients by support type and program (Change 17, admin view)
+
+---
+
+### Task D.2: Wire Up Scaffolded Admin Pages
+**Priority**: MEDIUM
+**Files**: `pages/admin/StatisticsPage.jsx`, `pages/admin/ActivityMonitor.jsx`, `pages/admin/GPSVerificationPage.jsx`, `services/complianceService.js`
+
+**Deliverables**:
+- [ ] Create backend compliance API endpoints (complianceController.js, complianceRoutes.js)
+- [ ] Wire StatisticsPage to real data (replace mock/Recharts with actual compliance stats)
+- [ ] Wire ActivityMonitor to real activity data (audit log or activity collection)
+- [ ] Wire GPS Verification to real visit GPS data with distance calculation
+
+---
+
+### Task D.3: Repurpose Approvals for Excel Import (CHANGE_LOG Change 13)
+**Priority**: MEDIUM
+**Depends on**: C.3 (Excel import)
+**Files**: `pages/admin/PendingApprovalsPage.jsx`, `components/admin/VisitApproval.jsx`
+
+**Deliverables**:
+- [ ] Remove visit approval UI (client says no approval needed for visits)
+- [ ] Replace with Excel import batch review/approve workflow
+- [ ] Show pending import batches with preview of data
+
+---
+
+### Task D.4: Email Notifications (AWS SES)
+**Priority**: LOW
+**Files**: NEW `backend/config/ses.js`, NEW `backend/services/emailService.js`
 
 **Deliverables**:
 - [ ] Configure AWS SES
-- [ ] Create email service with templates:
-  - Welcome email (new user registration)
-  - Password reset
-  - Weekly compliance summary (to managers)
-  - Behind schedule alert
-  - Visit approval notification
-- [ ] Create HTML email templates
-- [ ] Add email sending to relevant controllers
-- [ ] Handle SES sandbox mode for development
-
-**Acceptance Criteria**:
-- Emails sent successfully via SES
-- Templates render correctly
-- Password reset email works
-- Weekly summary emails scheduled
+- [ ] Password reset email
+- [ ] Weekly compliance summary
+- [ ] Behind-schedule alerts
 
 ---
 
-### Task 2.3: Push Notification System (Web Push)
-**Assignee**: Backend Developer
-**Priority**: MEDIUM
-**Files**:
-- `backend/services/pushService.js` (new)
-- `backend/models/PushSubscription.js` (new)
+### Task D.5: Deploy to AWS Lightsail
+**Priority**: HIGH (when ready for production)
+**Files**: Various config files
 
 **Deliverables**:
-- [ ] Implement Web Push API support
-- [ ] Store push subscriptions in database
-- [ ] Send notifications for:
-  - Daily visit reminders
-  - Behind schedule warnings
-  - Visit approval status changes
-- [ ] Handle subscription management (subscribe/unsubscribe)
-
-**Acceptance Criteria**:
-- Users can subscribe to push notifications
-- Notifications appear in browser
-- Unsubscribe works
+- [ ] Lightsail instance (Ubuntu), static IP, firewall
+- [ ] Node.js, Nginx, PM2 setup
+- [ ] SSL with Let's Encrypt
+- [ ] PM2 ecosystem config
+- [ ] Deploy documentation
 
 ---
 
-### Task 2.4: Visit Approval Workflow
-**Assignee**: Backend Developer
-**Priority**: HIGH
-**Files**:
-- `backend/controllers/visitController.js` (enhance)
-- `backend/models/Visit.js` (enhance status field)
+### Task D.6: Offline Capability (Deferred)
+**Priority**: LOW (future)
 
 **Deliverables**:
-- [ ] Add visit statuses: `pending_approval`, `approved`, `rejected`
-- [ ] Add `approvedBy`, `approvedAt`, `rejectionReason` fields
-- [ ] Create `approveVisit()` endpoint
-- [ ] Create `rejectVisit(reason)` endpoint
-- [ ] Add notification on approval/rejection
-- [ ] Allow admin/manager to bulk approve
-
-**Acceptance Criteria**:
-- Visits require approval before counting
-- Admin can approve/reject with reason
-- BDM notified of approval status
+- [ ] Service Worker for caching
+- [ ] IndexedDB for offline photo storage
+- [ ] Background Sync for upload queue
 
 ---
 
-### Task 2.5: Scheduled Jobs (Cron Tasks)
-**Assignee**: Backend Developer
-**Priority**: HIGH
-**Files**:
-- `backend/jobs/scheduler.js` (new)
-- `backend/jobs/weeklyReport.js` (new)
-- `backend/jobs/dailyReminder.js` (new)
+## Phase D Summary
 
-**Deliverables**:
-- [ ] Set up node-cron for scheduled tasks
-- [ ] Daily job: Send visit reminders (8 AM)
-- [ ] Weekly job: Generate compliance reports (Monday 7 AM)
-- [ ] Weekly job: Send behind-schedule alerts
-- [ ] Monthly job: Generate monthly summary
-- [ ] Add job logging and error handling
-
-**Acceptance Criteria**:
-- Jobs run on schedule
-- Reports generated correctly
-- Errors logged but don't crash server
+| Task | Change # | Impact | Depends On |
+|------|----------|--------|------------|
+| D.1: Admin Per-BDM DCR Summary | 15 | Performance monitoring | C.2 |
+| D.2: Wire Up Scaffolded Pages | — | Replace mock data with real APIs | C.1 |
+| D.3: Repurpose Approvals | 13 | Excel import review UI | C.3 |
+| D.4: Email Notifications | — | AWS SES integration | None |
+| D.5: AWS Lightsail Deployment | — | Production hosting | None |
+| D.6: Offline Capability | — | Service Workers, IndexedDB | D.5 |
 
 ---
 
-## Frontend Tasks
-
-### Task 2.6: Real-Time Activity Monitor (Admin)
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/pages/admin/ActivityMonitor.jsx` (new)
-- `frontend/src/components/admin/LiveActivityFeed.jsx` (new)
-
-**Deliverables**:
-- [ ] Real-time activity feed showing:
-  - Recent visits logged
-  - BDM login/logout
-  - VIP Client updates
-  - Product assignments
-- [ ] Filter by region, BDM, activity type
-- [ ] Auto-refresh every 30 seconds
-- [ ] Click to view activity details
-- [ ] Optional: WebSocket for true real-time updates
-
-**Acceptance Criteria**:
-- Admin sees live activity
-- Filters work correctly
-- Updates without manual refresh
-
----
-
-### Task 2.7: Compliance Dashboard
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/pages/admin/ComplianceDashboard.jsx` (new)
-- `frontend/src/components/admin/ComplianceAlerts.jsx` (new)
-- `frontend/src/components/admin/BDMComplianceCard.jsx` (new)
-
-**Deliverables**:
-- [ ] Overview metrics:
-  - Team-wide compliance rate
-  - BDMs on track vs behind
-  - Weekly completion percentage
-- [ ] Alert list with:
-  - Behind schedule warnings
-  - Quota dumping flags
-  - Missed visits
-- [ ] Per-BDM compliance cards:
-  - Weekly progress (8/10 VIP Clients)
-  - Monthly progress percentage
-  - Trend indicator (improving/declining)
-- [ ] Drill-down to BDM details
-
-**Acceptance Criteria**:
-- Clear visibility into compliance status
-- Alerts actionable
-- Easy to identify problems
-
----
-
-### Task 2.8: Visit Approval Interface
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/components/admin/VisitApproval.jsx`
-- `frontend/src/pages/admin/PendingApprovalsPage.jsx` (new)
-
-**Deliverables**:
-- [ ] List pending visits awaiting approval
-- [ ] Show visit details:
-  - BDM name
-  - VIP Client visited
-  - Date/time
-  - GPS location (map view)
-  - Photo proofs
-  - Products discussed
-- [ ] Approve button (single and bulk)
-- [ ] Reject button with reason input
-- [ ] Filter by BDM, date, region
-- [ ] Sort by date
-
-**Acceptance Criteria**:
-- Easy to review visit proofs
-- Can approve/reject efficiently
-- Bulk operations work
-
----
-
-### Task 2.9: GPS Location Verification Map
-**Assignee**: Frontend Developer
-**Priority**: MEDIUM
-**Files**:
-- `frontend/src/components/admin/VisitLocationMap.jsx` (new)
-- `frontend/src/components/common/MapView.jsx` (new)
-
-**Deliverables**:
-- [ ] Integrate map library (Leaflet or Google Maps)
-- [ ] Show visit location on map
-- [ ] Show VIP Client clinic location (if available)
-- [ ] Display distance between visit GPS and clinic
-- [ ] Flag suspicious locations (too far from clinic)
-- [ ] Accuracy indicator
-
-**Acceptance Criteria**:
-- Map displays correctly
-- Can verify visit location visually
-- Distance calculation works
-
----
-
-### Task 2.10: BDM Performance Analytics
-**Assignee**: Frontend Developer
-**Priority**: MEDIUM
-**Files**:
-- `frontend/src/pages/admin/BDMAnalytics.jsx` (new)
-- `frontend/src/components/admin/PerformanceChart.jsx` (new)
-
-**Deliverables**:
-- [ ] Individual BDM performance view:
-  - Visits over time (chart)
-  - Completion rate trend
-  - VIP Client coverage
-  - Products presented
-- [ ] Compare BDMs (optional)
-- [ ] Export performance data
-- [ ] Date range selector
-
-**Acceptance Criteria**:
-- Charts display correctly
-- Data is accurate
-- Can export for reports
-
----
-
-### Task 2.11: Notification Center (Frontend)
-**Assignee**: Frontend Developer
-**Priority**: MEDIUM
-**Files**:
-- `frontend/src/components/common/NotificationCenter.jsx` (new)
-- `frontend/src/hooks/usePushNotifications.js` (new)
-
-**Deliverables**:
-- [ ] Notification bell icon in navbar
-- [ ] Dropdown showing recent notifications
-- [ ] Mark as read functionality
-- [ ] Push notification subscription UI
-- [ ] Notification preferences page
-- [ ] Badge count for unread
-
-**Acceptance Criteria**:
-- Notifications visible
-- Can manage preferences
-- Push subscription works
-
----
-
-### Task 2.12: Reports Page Implementation
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/pages/admin/ReportsPage.jsx`
-- `frontend/src/components/admin/ReportGenerator.jsx` (new)
-- `frontend/src/components/admin/BDMVisitReport.jsx`
-- `frontend/src/utils/exportBDMReport.js`
-
-**Deliverables**:
-- [x] Report types:
-  - [x] BDM Visit Report (Call Plan Template format) - COMPLETED Dec 2025
-  - [ ] Weekly compliance report
-  - [ ] Monthly visit summary
-  - [ ] Regional comparison report
-  - [ ] Product presentation report
-- [x] Date range selection (month picker)
-- [x] Filter by BDM
-- [x] Export to Excel/CSV
-- [ ] Export to PDF
-- [ ] Schedule recurring reports (optional)
-
-**Acceptance Criteria**:
-- [x] BDM Visit Report generates correctly with actual visit data
-- [x] Export to Excel/CSV works
-- [x] Data matches backend
-- [ ] Additional report types to be added in future
-
-**Status**: ⚠️ PARTIALLY COMPLETE (BDM Visit Report done, other report types pending)
-
----
-
-## Phase 2 Summary
-
-| Category | Tasks | Estimated Complexity |
-|----------|-------|---------------------|
-| Backend Compliance | 2 tasks | High |
-| Backend Notifications | 2 tasks | High |
-| Backend Jobs | 1 task | Medium |
-| Frontend Monitoring | 2 tasks | High |
-| Frontend Approvals | 2 tasks | High |
-| Frontend Analytics | 2 tasks | Medium |
-| Frontend Notifications | 1 task | Medium |
-| **Total** | **12 tasks** | |
-
----
-
-# PHASE 3: Product Intelligence
-**Goal**: Advanced product-VIP Client matching, analytics, and smart recommendations
-
-## Backend Tasks
-
-### Task 3.1: Product Analytics API
-**Assignee**: Backend Developer
-**Priority**: HIGH
-**Files**:
-- `backend/controllers/analyticsController.js` (new)
-- `backend/routes/analyticsRoutes.js` (new)
-
-**Deliverables**:
-- [ ] Product presentation stats:
-  - Most presented products
-  - Products by specialization
-  - Products by region
-  - Presentation success rate (if tracking)
-- [ ] VIP Client coverage analytics:
-  - Products presented per VIP Client
-  - VIP Clients not receiving target products
-  - Specialization-product gaps
-- [ ] Time-based trends:
-  - Monthly product trends
-  - Seasonal patterns
-- [ ] Create aggregation pipelines
-
-**Acceptance Criteria**:
-- Analytics endpoints return accurate data
-- Performance optimized with indexes
-
----
-
-### Task 3.2: Smart Product Matching Engine
-**Assignee**: Backend Developer
-**Priority**: HIGH
-**Files**:
-- `backend/services/productMatchingService.js` (new)
-- `backend/models/Product.js` (enhance)
-
-**Deliverables**:
-- [ ] Auto-suggest products based on VIP Client specialization
-- [ ] Analyze historical visit data for patterns
-- [ ] Identify gaps (products not being presented to target specialists)
-- [ ] Recommend products to assign based on:
-  - VIP Client specialization match
-  - Similar VIP Client patterns
-  - Regional trends
-- [ ] API endpoint for recommendations
-
-**Acceptance Criteria**:
-- Recommendations relevant to specialization
-- Gaps identified correctly
-- Performance acceptable
-
----
-
-### Task 3.3: Product Performance Tracking
-**Assignee**: Backend Developer
-**Priority**: MEDIUM
-**Files**:
-- `backend/models/ProductPresentation.js` (new)
-- `backend/controllers/productController.js` (enhance)
-
-**Deliverables**:
-- [ ] Track product presentations per visit
-- [ ] Record VIP Client interest level (optional)
-- [ ] Calculate presentation frequency
-- [ ] Track regional product performance
-- [ ] Generate product effectiveness scores
-
-**Acceptance Criteria**:
-- Presentation data captured
-- Scores calculated correctly
-
----
-
-## Frontend Tasks
-
-### Task 3.4: Product Analytics Dashboard
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/pages/admin/ProductAnalytics.jsx` (new)
-- `frontend/src/components/admin/ProductCharts.jsx` (new)
-
-**Deliverables**:
-- [ ] Product overview metrics:
-  - Total products
-  - Active assignments
-  - Presentation count
-- [ ] Charts:
-  - Top 10 presented products
-  - Products by category
-  - Presentation trends over time
-- [ ] Filter by date range, region, category
-- [ ] Drill-down to product details
-
-**Acceptance Criteria**:
-- Charts render correctly
-- Data accurate
-- Responsive design
-
----
-
-### Task 3.5: Smart Assignment Recommendations UI
-**Assignee**: Frontend Developer
-**Priority**: HIGH
-**Files**:
-- `frontend/src/components/medrep/SmartRecommendations.jsx` (new)
-- `frontend/src/pages/medrep/AssignmentSuggestions.jsx` (new)
-
-**Deliverables**:
-- [ ] Show AI-suggested product assignments
-- [ ] Display matching score/confidence
-- [ ] One-click accept recommendation
-- [ ] Bulk accept multiple suggestions
-- [ ] Show reasoning (e.g., "VIP Client is Gastro specialist, product targets Gastro")
-- [ ] Dismiss/ignore suggestion
-
-**Acceptance Criteria**:
-- Recommendations displayed clearly
-- Easy to accept/reject
-- Reasoning understandable
-
----
-
-### Task 3.6: Product-Specialization Matrix View
-**Assignee**: Frontend Developer
-**Priority**: MEDIUM
-**Files**:
-- `frontend/src/components/admin/SpecializationMatrix.jsx` (new)
-- `frontend/src/pages/admin/ProductCoverage.jsx` (new)
-
-**Deliverables**:
-- [ ] Grid showing products vs specializations
-- [ ] Color-coded coverage (assigned/not assigned)
-- [ ] Click cell to see details
-- [ ] Identify gaps in coverage
-- [ ] Filter by region
-
-**Acceptance Criteria**:
-- Matrix displays correctly
-- Gaps visible at a glance
-- Interactive cells
-
----
-
-### Task 3.7: Product Catalog Enhancement
-**Assignee**: Frontend Developer
-**Priority**: MEDIUM
-**Files**:
-- `frontend/src/pages/admin/ProductCatalog.jsx` (new)
-- `frontend/src/components/admin/ProductManagement.jsx`
-
-**Deliverables**:
-- [ ] Rich product details view:
-  - Large image gallery
-  - Full description
-  - Key benefits list
-  - Target specializations
-  - Usage information
-- [ ] Product comparison (side by side)
-- [ ] Product search and filter
-- [ ] Category navigation
-- [ ] Print-friendly product sheet
-
-**Acceptance Criteria**:
-- Product information easily accessible
-- Images display well
-- Search works effectively
-
----
-
-### Task 3.8: Visit Product Tracking Enhancement
-**Assignee**: Frontend Developer
-**Priority**: MEDIUM
-**Files**:
-- `frontend/src/components/employee/VisitLogger.jsx` (enhance)
-- `frontend/src/components/employee/ProductSelector.jsx` (new)
-
-**Deliverables**:
-- [ ] Enhanced product selection during visit logging:
-  - Quick multi-select
-  - Interest level indicator (optional)
-  - Notes per product
-- [ ] Show product details while logging
-- [ ] Track time spent discussing (optional)
-- [ ] Save as draft and continue later
-
-**Acceptance Criteria**:
-- Easy to select multiple products
-- Data captured correctly
-- Good mobile UX
-
----
-
-## Phase 3 Summary
-
-| Category | Tasks | Estimated Complexity |
-|----------|-------|---------------------|
-| Backend Analytics | 3 tasks | High |
-| Frontend Analytics | 2 tasks | High |
-| Frontend Recommendations | 1 task | High |
-| Frontend Catalog | 2 tasks | Medium |
-| **Total** | **8 tasks** | |
-
----
-
-# PHASE 4: Go-Live & Training
-**Goal**: Production deployment, data migration, user training, and support
-
-## Infrastructure Tasks
-
-### Task 4.1: Production Environment Hardening
-**Assignee**: DevOps
-**Priority**: CRITICAL
-**Files**: Various server configs
-
-**Deliverables**:
-- [ ] Security audit:
-  - Review all environment variables
-  - Ensure no secrets in code
-  - Check CORS configuration
-  - Verify rate limiting
-- [ ] Performance optimization:
-  - Database indexes verified
-  - Nginx caching configured
-  - Static asset compression
-- [ ] Monitoring setup:
-  - PM2 metrics
-  - Error tracking (Sentry optional)
-  - Uptime monitoring
-- [ ] Backup configuration:
-  - MongoDB Atlas backups enabled
-  - S3 versioning enabled
-- [ ] SSL certificate auto-renewal verified
-
-**Acceptance Criteria**:
-- Passes security checklist
-- Performance acceptable under load
-- Backups tested
-
----
-
-### Task 4.2: Data Migration from Excel
-**Assignee**: Backend Developer + Data Entry
-**Priority**: CRITICAL
-**Files**:
-- `backend/scripts/migrateFromExcel.js` (new)
-- `docs/data-migration-template.xlsx` (new)
-
-**Deliverables**:
-- [ ] Create Excel template matching database schema
-- [ ] Build migration script:
-  - Parse Excel file
-  - Validate data
-  - Handle duplicates
-  - Report errors
-- [ ] Migrate:
-  - 150+ VIP Client profiles
-  - Regional territories
-  - BDM assignments
-  - Product catalog
-  - Existing visit history (if available)
-- [ ] Verify migrated data
-- [ ] Create rollback procedure
-
-**Acceptance Criteria**:
-- All data migrated correctly
-- No duplicates
-- Relationships intact
-
----
-
-### Task 4.3: User Acceptance Testing (UAT)
-**Assignee**: QA + Stakeholders
-**Priority**: HIGH
-**Files**: `docs/UAT-checklist.md` (new)
-
-**Deliverables**:
-- [ ] Create UAT test cases for:
-  - BDM: Login, view VIP Clients, log visit, view history
-  - MedRep: Assign products, view assignments
-  - Admin: All CRUD operations, reports, approvals
-- [ ] Test on multiple devices (desktop, tablet, phone)
-- [ ] Test with real users
-- [ ] Document bugs and issues
-- [ ] Fix critical bugs
-- [ ] Get sign-off from stakeholders
-
-**Acceptance Criteria**:
-- All critical flows work
-- No blocking bugs
-- User feedback addressed
-
----
-
-### Task 4.4: Training Materials Creation
-**Assignee**: Documentation Specialist
-**Priority**: HIGH
-**Files**: `docs/training/` (new directory)
-
-**Deliverables**:
-- [ ] User guides:
-  - BDM Quick Start Guide
-  - MedRep User Guide
-  - Admin User Guide
-- [ ] Video tutorials (optional):
-  - How to log a visit
-  - How to assign products
-  - How to approve visits
-- [ ] FAQ document
-- [ ] Troubleshooting guide
-- [ ] In-app help tooltips (optional)
-
-**Acceptance Criteria**:
-- Guides clear and complete
-- Screenshots up-to-date
-- Accessible to all users
-
----
-
-### Task 4.5: User Training Sessions
-**Assignee**: Project Lead + Trainers
-**Priority**: HIGH
-
-**Deliverables**:
-- [ ] Schedule training sessions:
-  - Session 1: BDMs (field reps)
-  - Session 2: MedReps
-  - Session 3: Administrators
-- [ ] Conduct live training with demo
-- [ ] Hands-on practice time
-- [ ] Q&A session
-- [ ] Collect feedback
-- [ ] Follow-up support channel (WhatsApp group, email, etc.)
-
-**Acceptance Criteria**:
-- All users trained
-- Users can perform basic tasks independently
-- Support channel active
-
----
-
-### Task 4.6: Phased Rollout Plan
-**Assignee**: Project Lead
-**Priority**: HIGH
-**Files**: `docs/rollout-plan.md` (new)
-
-**Deliverables**:
-- [ ] Define rollout phases:
-  - Pilot: 1 region, 5-10 users (1 week)
-  - Expansion: Additional regions (1-2 weeks)
-  - Full rollout: All users
-- [ ] Define success criteria for each phase
-- [ ] Create rollback plan
-- [ ] Monitor closely during pilot
-- [ ] Address issues before expansion
-- [ ] Full go-live announcement
-
-**Acceptance Criteria**:
-- Pilot successful
-- Issues resolved before expansion
-- Smooth full rollout
-
----
-
-### Task 4.7: Post-Launch Support Plan
-**Assignee**: Project Lead + Support Team
-**Priority**: HIGH
-**Files**: `docs/support-plan.md` (new)
-
-**Deliverables**:
-- [ ] Define support channels:
-  - Primary: In-app help/FAQ
-  - Secondary: WhatsApp/Email support
-  - Escalation: Direct contact
-- [ ] Define SLA for issue resolution
-- [ ] Create bug reporting process
-- [ ] Weekly check-in meetings (first month)
-- [ ] Collect ongoing feedback
-- [ ] Plan for continuous improvement
-
-**Acceptance Criteria**:
-- Support channels active
-- Issues tracked and resolved
-- Feedback loop established
-
----
-
-## Phase 4 Summary
-
-| Category | Tasks | Estimated Complexity |
-|----------|-------|---------------------|
-| Infrastructure | 2 tasks | High |
-| Data Migration | 1 task | High |
-| Testing | 1 task | High |
-| Training | 3 tasks | Medium |
-| **Total** | **7 tasks** | |
+# TASK DEPENDENCIES
+
+## Critical Path
+```
+A.1 (VIP Client Model) → A.4 (BDM Edit) → B.1 (Info Page) → B.4 (Engagement)
+A.1 → A.3 (Remove MedRep) → B.2 (Product Popup)
+A.1 → C.1 (Schedule) → C.2 (CPT/DCR) → D.1 (Admin DCR)
+C.1 → C.3 (Excel Import) → D.3 (Repurpose Approvals)
+B.6 (Regular Clients) → C.2 (Extra Call section)
+```
+
+## Independent Tasks (can start anytime)
+- A.2 (Alternating week rule)
+- B.3 (Photo upload flexibility)
+- B.5 (BDM performance page)
+- B.6 (Regular clients)
+- D.4 (Email notifications)
+- D.5 (AWS Lightsail deployment)
 
 ---
 
 # COMPLETE PHASE SUMMARY
 
-| Phase | Tasks | Key Deliverables |
-|-------|-------|------------------|
-| **Phase 1: Foundation** | 18 tasks | Working app with auth, VIP Clients, visits, products, optimization |
-| **Phase 2: Compliance** | 12 tasks | Alerts, approvals, notifications, reports |
-| **Phase 3: Intelligence** | 8 tasks | Analytics, smart recommendations, insights |
-| **Phase 4: Go-Live** | 7 tasks | Deployment, migration, training, support |
-| **TOTAL** | **45 tasks** | |
-
----
-
-# TASK ASSIGNMENT MATRIX
-
-## Recommended Team Structure
-
-| Role | Count | Primary Phases |
-|------|-------|----------------|
-| Backend Developer | 1-2 | Phase 1, 2, 3 |
-| Frontend Developer | 1-2 | Phase 1, 2, 3 |
-| DevOps | 1 | Phase 1, 4 |
-| QA/Tester | 1 | Phase 1, 2, 4 |
-| Project Lead | 1 | All phases |
-| Documentation | 1 | Phase 4 |
-
-## Task Dependencies
-
-### Phase 1 Critical Path
-```
-Task 1.1 (DB Connection) → All other backend tasks
-Task 1.2 (S3 Setup) → Task 1.7 (Visit Logger with photos)
-Task 1.5 (Auth Flow) → All other frontend tasks
-Task 1.6 (VIP Client List) → Task 1.7 (Visit Logger)
-Task 1.13 (MedRep Assignment) → Task 1.14 (Product Recommendations)
-```
-
-### Phase 2 Dependencies
-```
-Phase 1 complete → Phase 2 start
-Task 2.1 (Compliance API) → Task 2.7 (Compliance Dashboard)
-Task 2.2 (Email) → Task 2.5 (Scheduled Jobs)
-Task 2.4 (Approval Workflow) → Task 2.8 (Approval Interface)
-```
-
-### Phase 3 Dependencies
-```
-Phase 2 complete → Phase 3 start
-Task 3.1 (Analytics API) → Task 3.4 (Analytics Dashboard)
-Task 3.2 (Matching Engine) → Task 3.5 (Recommendations UI)
-```
-
-### Phase 4 Dependencies
-```
-Phase 3 complete → Phase 4 start
-Task 4.1 (Hardening) → Task 4.2 (Data Migration)
-Task 4.2 (Migration) → Task 4.3 (UAT)
-Task 4.4 (Training Materials) → Task 4.5 (Training Sessions)
-Task 4.3 (UAT) → Task 4.6 (Rollout)
-```
+| Phase | Tasks | Key Deliverables | Status |
+|-------|-------|------------------|--------|
+| **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
+| **Phase A: Schema + Roles** | 4 tasks | New Doctor fields, alternating weeks, remove MedRep, BDM edit | Not started |
+| **Phase B: UX Improvements** | 7 tasks | Info page, photos, engagement, regular clients, filters | Not started |
+| **Phase C: Scheduling & Import** | 4 tasks | 4-week calendar, CPT/DCR, Excel import, VIP minimums | Not started |
+| **Phase D: Advanced** | 6 tasks | Admin monitoring, scaffolded pages, deployment, offline | Not started |

@@ -322,14 +322,15 @@ Once a schedule is approved, it is **locked until the next Excel replacement** (
 **Who can be visited**: BDMs can only visit VIP Clients that are **scheduled for the current week** plus any **carried/missed visits from previous weeks**. A VIP Client scheduled for Week 3 does NOT appear as visitable during Week 1. The schedule controls who shows up on the BDM's daily list.
 
 **Visit Rules**:
-- For those VIP Clients who ARE open (scheduled this week or carried), BDMs can visit them **as many times as they want** — the system does not block extra visits
-- However, only **1 visit per week counts** towards that week's scheduled requirement
+- Once a VIP Client is visited this week, they are **blocked** — UNLESS there are carried/missed weeks still to clear
+- If carried weeks exist, the VIP Client stays visitable for additional logs within the same calendar week (one log per outstanding week)
+- **Current week priority**: When logging a visit, the system ticks off the **current week first**, then carried weeks (oldest first). Example: W1 missed, now W2 → first log = W2 (current week), second log = W1 (carried). The current week always takes priority.
 - **No advance credit**: Visiting a VIP Client 3 times in W1 does NOT tick off W2 or W3. Each week's requirement must be fulfilled in its own week (or carried forward if missed)
 - **Catch-up**: If W1's requirement was missed, it can be fulfilled in W2, W3, or W4 — but the W2/W3/W4 requirements are still separate
 - **W4 catch-up**: In the final week, a BDM might need to fulfill up to 3 carried requirements for the same VIP Client (missed W1 + missed W2 + W4's own), which means up to 3 visits that week to clear them all
 - **W4D5 = hard cutoff**: Any week's requirement still not fulfilled by the last day is marked `missed`
 
-**The core rule**: Each week has its own visit requirement. It stands on its own. Extra visits don't pre-fulfill future weeks. Missed weeks carry forward but still need their own visit. You can go backwards (catch up), but you can't go forwards (advance).
+**The core rule**: Each week has its own visit requirement. It stands on its own. Extra visits don't pre-fulfill future weeks. Missed weeks carry forward but still need their own visit. You can go backwards (catch up), but you can't go forwards (advance). The system always prioritizes completing the current week's requirement before clearing carried weeks.
 
 **Schedule entry statuses**:
 | Status | Meaning |
