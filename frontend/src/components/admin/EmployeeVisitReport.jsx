@@ -221,19 +221,6 @@ const reportStyles = `
 const dayNames = ['mon', 'tue', 'wed', 'thu', 'fri'];
 
 const EmployeeVisitReport = ({ reportData, monthYear }) => {
-  // Split name into lastName and firstName
-  const splitName = (fullName) => {
-    if (!fullName) return { lastName: '', firstName: '' };
-    let name = fullName.replace(/^Dr\.?\s*/i, '').trim();
-    const parts = name.split(' ');
-    if (parts.length === 1) {
-      return { lastName: parts[0], firstName: '' };
-    }
-    const lastName = parts[parts.length - 1];
-    const firstName = parts.slice(0, -1).join(' ');
-    return { lastName, firstName };
-  };
-
   // Format month/year for display
   const formatMonthYear = (my) => {
     if (!my) return '';
@@ -246,11 +233,7 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
   const sortedDoctors = useMemo(() => {
     if (!reportData?.doctors) return [];
     return [...reportData.doctors]
-      .map((doc) => {
-        const { lastName, firstName } = splitName(doc.name);
-        return { ...doc, lastName, firstName };
-      })
-      .sort((a, b) => a.lastName.localeCompare(b.lastName));
+      .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
   }, [reportData]);
 
   if (!reportData) {
@@ -379,7 +362,7 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
                     ))}
                     <td>{doctor.visitFrequency}</td>
                     <td>{doctor.visitCount}</td>
-                    <td className="text-left">{doctor.hospital || '-'}</td>
+                    <td className="text-left">{doctor.clinicOfficeAddress || '-'}</td>
                     <td className="text-left product-cell" title={doctor.assignedProducts[0]?.name}>
                       {doctor.assignedProducts[0]?.name || '-'}
                     </td>

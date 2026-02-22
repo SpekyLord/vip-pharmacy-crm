@@ -9,28 +9,6 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
 /**
- * Split full name into lastName and firstName
- * Handles "Dr. FirstName LastName" format
- */
-const splitName = (fullName) => {
-  if (!fullName) return { lastName: '', firstName: '' };
-
-  // Remove "Dr." prefix if present
-  let name = fullName.replace(/^Dr\.?\s*/i, '').trim();
-
-  const parts = name.split(' ');
-  if (parts.length === 1) {
-    return { lastName: parts[0], firstName: '' };
-  }
-
-  // Last word is lastName, rest is firstName
-  const lastName = parts[parts.length - 1];
-  const firstName = parts.slice(0, -1).join(' ');
-
-  return { lastName, firstName };
-};
-
-/**
  * Format monthYear for display
  */
 const formatMonthYear = (monthYear) => {
@@ -48,11 +26,7 @@ const buildWorksheetData = (reportData, monthYear) => {
 
   // Sort doctors alphabetically by lastName
   const sortedDoctors = [...doctors]
-    .map((doc) => {
-      const { lastName, firstName } = splitName(doc.name);
-      return { ...doc, lastName, firstName };
-    })
-    .sort((a, b) => a.lastName.localeCompare(b.lastName));
+    .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
 
   // Day column headers
   const dayHeaders = [
@@ -169,10 +143,10 @@ const buildWorksheetData = (reportData, monthYear) => {
       ...doc.visitGrid, // Actual visit data (0 or 1 for each day)
       doc.visitFrequency || 4, // No. Of
       doc.visitCount, // SUM OF (actual visits logged)
-      doc.hospital || '',
-      '', // OUTLET INDICATOR
-      '', // PROGRAMS TO BE IMPLEMENTED
-      '', // SUPPORT DURING COVERAGE
+      doc.clinicOfficeAddress || '',
+      doc.outletIndicator || '',
+      (doc.programsToImplement || []).join(', '),
+      (doc.supportDuringCoverage || []).join(', '),
       doc.assignedProducts[0]?.name || '',
       doc.assignedProducts[1]?.name || '',
       doc.assignedProducts[2]?.name || '',
@@ -254,11 +228,7 @@ export const exportEmployeeReportToCSV = (reportData, monthYear) => {
 
   // Sort doctors alphabetically by lastName
   const sortedDoctors = [...doctors]
-    .map((doc) => {
-      const { lastName, firstName } = splitName(doc.name);
-      return { ...doc, lastName, firstName };
-    })
-    .sort((a, b) => a.lastName.localeCompare(b.lastName));
+    .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
 
   // Day column headers
   const dayHeaders = [
@@ -300,10 +270,10 @@ export const exportEmployeeReportToCSV = (reportData, monthYear) => {
       ...doc.visitGrid,
       doc.visitFrequency || 4,
       doc.visitCount,
-      doc.hospital || '',
-      '',
-      '',
-      '',
+      doc.clinicOfficeAddress || '',
+      doc.outletIndicator || '',
+      (doc.programsToImplement || []).join(', '),
+      (doc.supportDuringCoverage || []).join(', '),
       doc.assignedProducts[0]?.name || '',
       doc.assignedProducts[1]?.name || '',
       doc.assignedProducts[2]?.name || '',

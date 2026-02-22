@@ -1,7 +1,7 @@
 # VIP CRM - Phase Task Breakdown
 
 > **Last Updated**: February 2026
-> **Status**: Phase 1 Complete. Phases A-D defined based on client change requests.
+> **Status**: Phase 1 Complete. Phase A in progress (A.1 complete).
 > **Reference**: See `docs/CHANGE_LOG.md` for full details on all 17 client-requested changes.
 
 ## Terminology Note
@@ -184,16 +184,32 @@ Documentation uses business terms (BDM, VIP Client). Code uses Doctor/Employee. 
 
 ---
 
-### Task A.1: VIP Client Model Field Extensions (CHANGE_LOG Change 9)
+### Task A.1: VIP Client Model Field Extensions (CHANGE_LOG Change 9) ✅ COMPLETE
 **Priority**: CRITICAL (blocks nearly everything else)
-**Files to modify**: `backend/models/Doctor.js`, migration script (new)
-**Files affected downstream**: `controllers/doctorController.js`, `components/admin/DoctorManagement.jsx`, `components/employee/DoctorList.jsx`, `pages/admin/DoctorsPage.jsx`, `utils/exportCallPlan.js`, `utils/exportEmployeeReport.js`
+**Completed**: February 2026
+
+**Files modified (15 total)**:
+- `backend/models/Doctor.js` — Rewrote model with all new fields, indexes, fullName virtual
+- `backend/middleware/validation.js` — Updated create/update validation for all new fields
+- `backend/controllers/doctorController.js` — Updated search, sort, CRUD, response fields
+- `backend/controllers/visitController.js` — Updated 8 populate statements + response fields
+- `backend/models/ProductAssignment.js` — Updated 2 populate statements
+- `backend/controllers/productAssignmentController.js` — Updated 5 populates + response fields
+- `backend/models/Visit.js` — Updated 2 populate statements in statics
+- `backend/scripts/seedData.js` — Updated to new field format
+- `backend/scripts/migrateDoctorFields.js` (NEW) — One-time migration for existing DB data
+- `frontend/src/components/admin/DoctorManagement.jsx` — Full form redesign with all new fields
+- `frontend/src/components/employee/DoctorList.jsx` — Updated search + display
+- `frontend/src/utils/exportCallPlan.js` — Removed splitName(), real field values for new columns
+- `frontend/src/utils/exportEmployeeReport.js` — Same changes
+- `frontend/src/components/medrep/DoctorProductMapping.jsx` — doctor.name → doctor.fullName
+- `frontend/src/components/admin/EmployeeVisitReport.jsx` — Removed splitName(), hospital → clinicOfficeAddress
 
 **Deliverables**:
-- [ ] Split `name` into `firstName` (required) + `lastName` (required), add virtual `fullName` getter
-- [ ] Change `specialization` from enum to free-form String (client uses "Pedia Hema", "Im Car", "Breast Surg", etc.)
-- [ ] Merge `hospital` + `address` into single `clinicOfficeAddress` (free-form String)
-- [ ] Add new fields:
+- [x] Split `name` into `firstName` (required) + `lastName` (required), add virtual `fullName` getter
+- [x] Change `specialization` from enum to free-form String (client uses "Pedia Hema", "Im Car", "Breast Surg", etc.)
+- [x] Merge `hospital` + `address` into single `clinicOfficeAddress` (free-form String)
+- [x] Add new fields:
   - `outletIndicator` (String)
   - `programsToImplement` ([String] enum: CME GRANT, REBATES / MONEY, REST AND RECREATION, MED SOCIETY PARTICIPATION)
   - `supportDuringCoverage` ([String] enum: STARTER DOSES, PROMATS, FULL DOSE, PATIENT DISCOUNT, AIR FRESHENER)
@@ -205,14 +221,19 @@ Documentation uses business terms (BDM, VIP Client). Code uses Doctor/Employee. 
   - `otherDetails` (String)
   - `targetProducts` ([{ product: ObjectId, status: 'showcasing'|'accepted' }]) — always 3 slots
   - `isVipAssociated` (Boolean) — admin approval for VIP partnership
-- [ ] Create migration script to split existing `name` fields and merge address fields
-- [ ] Update all frontend forms and displays for new fields
-- [ ] Update export utilities to include new fields in CPT format
+- [x] Create migration script to split existing `name` fields and merge address fields
+- [x] Update all frontend forms and displays for new fields
+- [x] Update export utilities to include new fields in CPT format
 
-**Breaking Changes**:
-- `name` → `firstName` + `lastName` affects every query, index, and component
-- `hospital` + `address` → `clinicOfficeAddress` affects forms and displays
-- `specialization` enum removal affects dropdowns/filters
+**Breaking Changes** (all resolved):
+- `name` → `firstName` + `lastName` — updated in all 15 files
+- `hospital` + `address` → `clinicOfficeAddress` — updated in all files
+- `specialization` enum → free-form String — dropdown replaced with text input in admin form
+
+**To run migration on existing data**:
+```bash
+node backend/scripts/migrateDoctorFields.js
+```
 
 ---
 
@@ -270,12 +291,12 @@ Documentation uses business terms (BDM, VIP Client). Code uses Doctor/Employee. 
 
 ## Phase A Summary
 
-| Task | Change # | Impact | Blocking? |
-|------|----------|--------|-----------|
-| A.1: VIP Client Model Extensions | 9 | 15+ new fields, 3 breaking changes | Yes — blocks B and C |
-| A.2: 2x Alternating Week Rule | 10 | Core business logic | No |
-| A.3: Remove MedRep Role | 1 | 9+ files, role architecture | No |
-| A.4: BDM Edit Own VIP Clients | 2 | Ownership permissions | Depends on A.1 |
+| Task | Change # | Impact | Blocking? | Status |
+|------|----------|--------|-----------|--------|
+| A.1: VIP Client Model Extensions | 9 | 15+ new fields, 3 breaking changes | Yes — blocks B and C | ✅ Complete |
+| A.2: 2x Alternating Week Rule | 10 | Core business logic | No | ⬜ Not started |
+| A.3: Remove MedRep Role | 1 | 9+ files, role architecture | No | ⬜ Not started |
+| A.4: BDM Edit Own VIP Clients | 2 | Ownership permissions | Depends on A.1 | ⬜ Not started |
 
 ---
 
@@ -698,7 +719,7 @@ B.6 (Regular Clients) → C.2 (Extra Call section)
 | Phase | Tasks | Key Deliverables | Status |
 |-------|-------|------------------|--------|
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
-| **Phase A: Schema + Roles** | 4 tasks | New Doctor fields, alternating weeks, remove MedRep, BDM edit | Not started |
+| **Phase A: Schema + Roles** | 4 tasks | New Doctor fields, alternating weeks, remove MedRep, BDM edit | 🔄 In progress (1/4 complete) |
 | **Phase B: UX Improvements** | 7 tasks | Info page, photos, engagement, regular clients, filters | Not started |
 | **Phase C: Scheduling & Import** | 4 tasks | 4-week calendar, CPT/DCR, Excel import, VIP minimums | Not started |
 | **Phase D: Advanced** | 6 tasks | Admin monitoring, scaffolded pages, deployment, offline | Not started |

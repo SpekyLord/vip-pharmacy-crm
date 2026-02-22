@@ -295,10 +295,13 @@ const DoctorList = memo(function DoctorList({
   // Memoize filtered doctors to prevent recalculation on every render
   const filteredDoctors = useMemo(() => {
     return doctors.filter((doctor) => {
+      const searchLower = searchTerm.toLowerCase();
       const matchesSearch =
-        doctor.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doctor.specialization?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doctor.hospital?.toLowerCase().includes(searchTerm.toLowerCase());
+        doctor.firstName?.toLowerCase().includes(searchLower) ||
+        doctor.lastName?.toLowerCase().includes(searchLower) ||
+        doctor.fullName?.toLowerCase().includes(searchLower) ||
+        doctor.specialization?.toLowerCase().includes(searchLower) ||
+        doctor.clinicOfficeAddress?.toLowerCase().includes(searchLower);
       const matchesFrequency =
         frequencyFilter === 'all' ||
         doctor.visitFrequency === parseInt(frequencyFilter);
@@ -340,7 +343,7 @@ const DoctorList = memo(function DoctorList({
       <div className="doctor-list-filters">
         <input
           type="text"
-          placeholder="Search by name, specialization, or hospital..."
+          placeholder="Search by name, specialization, or address..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="search-input"
@@ -372,14 +375,14 @@ const DoctorList = memo(function DoctorList({
               onClick={() => onSelectDoctor?.(doctor)}
             >
               <div className="doctor-card-header">
-                <h3>{doctor.name}</h3>
+                <h3>{doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}</h3>
                 <span className={`frequency-badge frequency-${doctor.visitFrequency}`}>
                   {doctor.visitFrequency}x/mo
                 </span>
               </div>
 
-              <p className="doctor-specialization">{doctor.specialization}</p>
-              <p className="doctor-hospital">{doctor.hospital}</p>
+              <p className="doctor-specialization">{doctor.specialization || '-'}</p>
+              <p className="doctor-hospital">{doctor.clinicOfficeAddress || '-'}</p>
 
               {statusDisplay && (
                 <div className="visit-status">

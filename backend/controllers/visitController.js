@@ -127,7 +127,7 @@ const createVisit = catchAsync(async (req, res) => {
   }
 
   // Populate doctor info for response
-  await visit.populate('doctor', 'name specialization hospital');
+  await visit.populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
 
   res.status(201).json({
     success: true,
@@ -172,7 +172,7 @@ const getAllVisits = catchAsync(async (req, res) => {
 
   const [visits, total] = await Promise.all([
     Visit.find(query)
-      .populate('doctor', 'name specialization hospital')
+      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
       .populate('user', 'name email')
       .sort({ visitDate: -1 })
       .skip(skip)
@@ -203,7 +203,7 @@ const getAllVisits = catchAsync(async (req, res) => {
 const getVisitById = catchAsync(async (req, res) => {
   // Note: productsDiscussed.product is NOT populated because products are in a separate database
   const visit = await Visit.findById(req.params.id)
-    .populate('doctor', 'name specialization hospital address phone')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress phone')
     .populate('user', 'name email');
 
   if (!visit) {
@@ -277,7 +277,7 @@ const updateVisit = catchAsync(async (req, res) => {
     req.params.id,
     updates,
     { new: true, runValidators: true }
-  ).populate('doctor', 'name specialization hospital');
+  ).populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
 
   res.json({
     success: true,
@@ -346,7 +346,7 @@ const getVisitsByUser = catchAsync(async (req, res) => {
 
   const [visits, total] = await Promise.all([
     Visit.find(query)
-      .populate('doctor', 'name specialization hospital')
+      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
       .sort({ visitDate: -1 })
       .skip(skip)
       .limit(parseInt(limit)),
@@ -578,7 +578,7 @@ const getTodayVisits = catchAsync(async (req, res) => {
     user: req.user._id,
     visitDate: { $gte: today, $lt: tomorrow },
     status: 'completed',
-  }).populate('doctor', 'name specialization hospital');
+  }).populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
 
   // Sign photo URLs for private S3 access
   const signedVisits = await Promise.all(visits.map((visit) => signVisitPhotos(visit)));
@@ -633,7 +633,7 @@ const getMyVisits = catchAsync(async (req, res) => {
   // Build the base query
   // Note: productsDiscussed.product is NOT populated because products are in a separate database
   let visitQuery = Visit.find(query)
-    .populate('doctor', 'name specialization hospital')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
     .sort({ visitDate: -1 })
     .skip(skip)
     .limit(parseInt(limit));
@@ -871,9 +871,11 @@ const getEmployeeReport = catchAsync(async (req, res) => {
 
     return {
       _id: doctor._id,
-      name: doctor.name,
+      firstName: doctor.firstName,
+      lastName: doctor.lastName,
+      fullName: doctor.fullName,
       specialization: doctor.specialization,
-      hospital: doctor.hospital,
+      clinicOfficeAddress: doctor.clinicOfficeAddress,
       region: doctor.region,
       visitFrequency: doctor.visitFrequency || 4,
       visitGrid: visitGrid,

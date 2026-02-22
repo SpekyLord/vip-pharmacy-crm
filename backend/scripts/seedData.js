@@ -233,6 +233,9 @@ const hospitals = [
   'Aklan Provincial Hospital',
 ];
 
+const programs = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
+const supportTypes = ['STARTER DOSES', 'PROMATS', 'FULL DOSE', 'PATIENT DISCOUNT', 'AIR FRESHENER'];
+
 // Helper to generate random doctors
 const generateDoctors = (regionId, count) => {
   const doctors = [];
@@ -245,18 +248,23 @@ const generateDoctors = (regionId, count) => {
     const specialization = specializations[Math.floor(Math.random() * specializations.length)];
     const hospital = hospitals[Math.floor(Math.random() * hospitals.length)];
     const visitFrequency = Math.random() > 0.5 ? 4 : 2;
+    const engagementLevel = Math.floor(Math.random() * 5) + 1;
+
+    // Random subset of programs and support types
+    const randomPrograms = programs.filter(() => Math.random() > 0.6);
+    const randomSupport = supportTypes.filter(() => Math.random() > 0.6);
 
     doctors.push({
-      name: `Dr. ${firstName} ${lastName}`,
+      firstName,
+      lastName,
       specialization,
-      hospital,
+      clinicOfficeAddress: hospital,
       region: regionId,
       visitFrequency,
       phone: `+63 9${Math.floor(100000000 + Math.random() * 900000000)}`,
-      address: {
-        city: 'Iloilo City',
-        province: 'Iloilo',
-      },
+      levelOfEngagement: engagementLevel,
+      programsToImplement: randomPrograms,
+      supportDuringCoverage: randomSupport,
     });
   }
 

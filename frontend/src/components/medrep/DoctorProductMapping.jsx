@@ -448,7 +448,7 @@ const DoctorProductMapping = ({
                     }`}
                     onClick={() => setSelectedDoctor(doctor)}
                   >
-                    <span className="doctor-name">{doctor.name}</span>
+                    <span className="doctor-name">{doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}</span>
                     <span className="doctor-specialization">
                       {doctor.specialization || 'General'}
                     </span>
@@ -471,7 +471,7 @@ const DoctorProductMapping = ({
           <div className="product-mapping-panel">
             <div className="panel-header">
               <div className="doctor-info">
-                <h3>{selectedDoctor.name}</h3>
+                <h3>{selectedDoctor.fullName || `${selectedDoctor.firstName} ${selectedDoctor.lastName}`}</h3>
                 <span className="specialization-badge">
                   {selectedDoctor.specialization || 'General'}
                 </span>

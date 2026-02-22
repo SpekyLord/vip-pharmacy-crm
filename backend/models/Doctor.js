@@ -1,62 +1,44 @@
 /**
- * Doctor Model
+ * Doctor Model (VIP Client)
  *
- * This model represents doctors/healthcare providers visited by field employees
+ * This model represents VIP Clients (doctors/healthcare providers) visited by BDMs (employees).
  *
  * Key features:
  * - Visit frequency: 2x or 4x monthly (no A/B/C/D categorization)
  * - Region-based assignment for employee filtering
- * - Specialization for med rep product targeting
+ * - Name split into firstName + lastName for Call Plan Template format
+ * - Free-form specialization (not enum)
+ * - Level of engagement tracking (1-5 scale)
+ * - Target products (3 slots with showcasing/accepted status)
+ * - Programs and support type tracking
  */
 
 const mongoose = require('mongoose');
 
 const doctorSchema = new mongoose.Schema(
   {
-    name: {
+    firstName: {
       type: String,
-      required: [true, 'Doctor name is required'],
+      required: [true, 'First name is required'],
       trim: true,
-      maxlength: [100, 'Name cannot exceed 100 characters'],
+      maxlength: [50, 'First name cannot exceed 50 characters'],
     },
+    lastName: {
+      type: String,
+      required: [true, 'Last name is required'],
+      trim: true,
+      maxlength: [50, 'Last name cannot exceed 50 characters'],
+    },
+    // Free-form specialization (client uses "Pedia Hema", "Im Car", "Breast Surg", etc.)
     specialization: {
       type: String,
-      required: [true, 'Specialization is required'],
       trim: true,
-      enum: {
-        values: [
-          'IM Gastro',
-          'Pediatrics',
-          'General Surgery',
-          'ENT',
-          'Urology',
-          'Internal Medicine',
-          'Cardiology',
-          'Dermatology',
-          'Neurology',
-          'Orthopedics',
-          'Obstetrics/Gynecology',
-          'Ophthalmology',
-          'Pulmonology',
-          'Nephrology',
-          'Oncology',
-          'General Practice',
-          'Other',
-        ],
-        message: 'Invalid specialization',
-      },
     },
-    hospital: {
+    // Single address field (merged from old hospital + address fields)
+    clinicOfficeAddress: {
       type: String,
-      required: [true, 'Hospital/Clinic name is required'],
       trim: true,
-      maxlength: [200, 'Hospital name cannot exceed 200 characters'],
-    },
-    address: {
-      street: { type: String, trim: true },
-      city: { type: String, trim: true },
-      province: { type: String, trim: true },
-      postalCode: { type: String, trim: true },
+      maxlength: [500, 'Clinic/Office address cannot exceed 500 characters'],
     },
     // GeoJSON for location-based queries
     location: {
@@ -128,6 +110,86 @@ const doctorSchema = new mongoose.Schema(
       thursday: { type: Boolean, default: true },
       friday: { type: Boolean, default: true },
     },
+    // --- New fields (Task A.1) ---
+    outletIndicator: {
+      type: String,
+      trim: true,
+    },
+    // Enum arrays for programs and support types
+    programsToImplement: [
+      {
+        type: String,
+        enum: {
+          values: [
+            'CME GRANT',
+            'REBATES / MONEY',
+            'REST AND RECREATION',
+            'MED SOCIETY PARTICIPATION',
+          ],
+          message: 'Invalid program type',
+        },
+      },
+    ],
+    supportDuringCoverage: [
+      {
+        type: String,
+        enum: {
+          values: [
+            'STARTER DOSES',
+            'PROMATS',
+            'FULL DOSE',
+            'PATIENT DISCOUNT',
+            'AIR FRESHENER',
+          ],
+          message: 'Invalid support type',
+        },
+      },
+    ],
+    // Level of engagement: 1=visited 4x, 2=knows BDM/products, 3=tried products, 4=in GC, 5=active partner
+    levelOfEngagement: {
+      type: Number,
+      min: [1, 'Level of engagement must be at least 1'],
+      max: [5, 'Level of engagement cannot exceed 5'],
+    },
+    secretaryName: {
+      type: String,
+      trim: true,
+    },
+    secretaryPhone: {
+      type: String,
+      trim: true,
+    },
+    birthday: {
+      type: Date,
+    },
+    anniversary: {
+      type: Date,
+    },
+    otherDetails: {
+      type: String,
+      maxlength: [2000, 'Other details cannot exceed 2000 characters'],
+    },
+    // 3 target product slots — BDM showcases products, marks as accepted when VIP Client likes it
+    targetProducts: [
+      {
+        product: {
+          type: mongoose.Schema.Types.ObjectId,
+        },
+        status: {
+          type: String,
+          enum: {
+            values: ['showcasing', 'accepted'],
+            message: 'Product status must be showcasing or accepted',
+          },
+          default: 'showcasing',
+        },
+      },
+    ],
+    // Whether admin has approved this doctor as VIP partner
+    isVipAssociated: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -142,13 +204,14 @@ doctorSchema.index({ parentRegions: 1 }); // For hierarchical region queries
 doctorSchema.index({ assignedTo: 1 });
 doctorSchema.index({ specialization: 1 });
 doctorSchema.index({ isActive: 1 });
-doctorSchema.index({ name: 'text', hospital: 'text' }); // Text search
+doctorSchema.index({ firstName: 'text', lastName: 'text', clinicOfficeAddress: 'text' }); // Text search
 doctorSchema.index({ location: '2dsphere' }); // Geospatial queries
 // Compound indexes for common query patterns
 doctorSchema.index({ region: 1, isActive: 1 });
 doctorSchema.index({ assignedTo: 1, isActive: 1 });
 doctorSchema.index({ specialization: 1, region: 1 });
 doctorSchema.index({ parentRegions: 1, isActive: 1 });
+doctorSchema.index({ lastName: 1, firstName: 1 }); // For alphabetical sorting
 
 // Pre-save hook to auto-populate parentRegions from region hierarchy
 doctorSchema.pre('save', async function (next) {
@@ -165,14 +228,9 @@ doctorSchema.pre('save', async function (next) {
   next();
 });
 
-// Virtual: Full address string
-doctorSchema.virtual('fullAddress').get(function () {
-  const parts = [];
-  if (this.address?.street) parts.push(this.address.street);
-  if (this.address?.city) parts.push(this.address.city);
-  if (this.address?.province) parts.push(this.address.province);
-  if (this.address?.postalCode) parts.push(this.address.postalCode);
-  return parts.join(', ');
+// Virtual: Full name (combines firstName and lastName)
+doctorSchema.virtual('fullName').get(function () {
+  return `${this.firstName || ''} ${this.lastName || ''}`.trim();
 });
 
 // Virtual: Get assigned products (populated via ProductAssignment)

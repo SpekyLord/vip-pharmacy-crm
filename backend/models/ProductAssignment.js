@@ -133,7 +133,7 @@ productAssignmentSchema.statics.getByMedRep = function (medRepId) {
     assignedBy: medRepId,
     status: 'active',
   })
-    .populate('doctor', 'name specialization hospital')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
     .sort({ createdAt: -1 });
 };
 
@@ -143,7 +143,7 @@ productAssignmentSchema.statics.getDoctorsForProduct = function (productId) {
     product: productId,
     status: 'active',
   })
-    .populate('doctor', 'name specialization hospital region')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress region')
     .sort({ priority: 1 });
 };
 

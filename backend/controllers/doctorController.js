@@ -94,11 +94,12 @@ const getAllDoctors = catchAsync(async (req, res) => {
     filter.assignedTo = req.query.assignedTo;
   }
 
-  // Search by name or hospital
+  // Search by firstName, lastName, or clinicOfficeAddress
   if (req.query.search) {
     filter.$or = [
-      { name: { $regex: req.query.search, $options: 'i' } },
-      { hospital: { $regex: req.query.search, $options: 'i' } },
+      { firstName: { $regex: req.query.search, $options: 'i' } },
+      { lastName: { $regex: req.query.search, $options: 'i' } },
+      { clinicOfficeAddress: { $regex: req.query.search, $options: 'i' } },
     ];
   }
 
@@ -106,7 +107,7 @@ const getAllDoctors = catchAsync(async (req, res) => {
   let query = Doctor.find(filter)
     .populate('region', 'name code level')
     .populate('assignedTo', 'name email')
-    .sort({ name: 1 });
+    .sort({ lastName: 1, firstName: 1 });
 
   if (limit > 0) {
     query = query.skip(skip).limit(limit);
@@ -183,10 +184,10 @@ const getDoctorById = catchAsync(async (req, res) => {
  */
 const createDoctor = catchAsync(async (req, res) => {
   const {
-    name,
+    firstName,
+    lastName,
     specialization,
-    hospital,
-    address,
+    clinicOfficeAddress,
     region,
     phone,
     email,
@@ -195,13 +196,24 @@ const createDoctor = catchAsync(async (req, res) => {
     notes,
     clinicSchedule,
     location,
+    outletIndicator,
+    programsToImplement,
+    supportDuringCoverage,
+    levelOfEngagement,
+    secretaryName,
+    secretaryPhone,
+    birthday,
+    anniversary,
+    otherDetails,
+    targetProducts,
+    isVipAssociated,
   } = req.body;
 
   const doctor = await Doctor.create({
-    name,
+    firstName,
+    lastName,
     specialization,
-    hospital,
-    address,
+    clinicOfficeAddress,
     region,
     phone,
     email,
@@ -210,6 +222,17 @@ const createDoctor = catchAsync(async (req, res) => {
     notes,
     clinicSchedule,
     location,
+    outletIndicator,
+    programsToImplement,
+    supportDuringCoverage,
+    levelOfEngagement,
+    secretaryName,
+    secretaryPhone,
+    birthday,
+    anniversary,
+    otherDetails,
+    targetProducts,
+    isVipAssociated,
   });
 
   await doctor.populate('region', 'name code level');
@@ -238,10 +261,10 @@ const updateDoctor = catchAsync(async (req, res) => {
 
   // Allowed fields to update
   const allowedFields = [
-    'name',
+    'firstName',
+    'lastName',
     'specialization',
-    'hospital',
-    'address',
+    'clinicOfficeAddress',
     'region',
     'phone',
     'email',
@@ -251,6 +274,17 @@ const updateDoctor = catchAsync(async (req, res) => {
     'clinicSchedule',
     'location',
     'isActive',
+    'outletIndicator',
+    'programsToImplement',
+    'supportDuringCoverage',
+    'levelOfEngagement',
+    'secretaryName',
+    'secretaryPhone',
+    'birthday',
+    'anniversary',
+    'otherDetails',
+    'targetProducts',
+    'isVipAssociated',
   ];
 
   // Update only allowed fields
@@ -313,7 +347,7 @@ const getDoctorsByRegion = catchAsync(async (req, res) => {
   const doctors = await Doctor.find({ region: regionId, isActive: true })
     .populate('region', 'name code level')
     .populate('assignedTo', 'name email')
-    .sort({ name: 1 });
+    .sort({ lastName: 1, firstName: 1 });
 
   res.status(200).json({
     success: true,
@@ -376,9 +410,11 @@ const getDoctorVisits = catchAsync(async (req, res) => {
     data: {
       doctor: {
         _id: doctor._id,
-        name: doctor.name,
+        firstName: doctor.firstName,
+        lastName: doctor.lastName,
+        fullName: doctor.fullName,
         specialization: doctor.specialization,
-        hospital: doctor.hospital,
+        clinicOfficeAddress: doctor.clinicOfficeAddress,
       },
       visits,
     },
@@ -431,7 +467,9 @@ const getDoctorProducts = catchAsync(async (req, res) => {
     data: {
       doctor: {
         _id: doctor._id,
-        name: doctor.name,
+        firstName: doctor.firstName,
+        lastName: doctor.lastName,
+        fullName: doctor.fullName,
         specialization: doctor.specialization,
       },
       products: assignedProducts,

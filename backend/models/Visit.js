@@ -298,7 +298,7 @@ visitSchema.statics.getMonthlyVisits = function (userId, monthYear) {
     user: userId,
     monthYear: monthYear,
     status: 'completed',
-  }).populate('doctor', 'name specialization hospital');
+  }).populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
 };
 
 // Static: Get visits for a user in a specific week
@@ -307,7 +307,7 @@ visitSchema.statics.getWeeklyVisits = function (userId, yearWeekKey) {
     user: userId,
     yearWeekKey: yearWeekKey,
     status: 'completed',
-  }).populate('doctor', 'name specialization hospital');
+  }).populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
 };
 
 // Static: Count visits to a doctor by a user in a month

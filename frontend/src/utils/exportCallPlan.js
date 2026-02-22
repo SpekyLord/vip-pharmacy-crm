@@ -9,28 +9,6 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
 /**
- * Split full name into lastName and firstName
- * Handles "Dr. FirstName LastName" format
- */
-const splitName = (fullName) => {
-  if (!fullName) return { lastName: '', firstName: '' };
-
-  // Remove "Dr." prefix if present
-  let name = fullName.replace(/^Dr\.?\s*/i, '').trim();
-
-  const parts = name.split(' ');
-  if (parts.length === 1) {
-    return { lastName: parts[0], firstName: '' };
-  }
-
-  // Last word is lastName, rest is firstName
-  const lastName = parts[parts.length - 1];
-  const firstName = parts.slice(0, -1).join(' ');
-
-  return { lastName, firstName };
-};
-
-/**
  * Generate visit pattern for a doctor based on visitFrequency
  * Returns array of 20 elements (Day1-Day20), with "1" or "" for each day
  *
@@ -100,12 +78,11 @@ const buildWorksheetData = (doctors, config) => {
   // Sort doctors alphabetically by lastName
   const sortedDoctors = [...doctors]
     .map((doc, idx) => {
-      const { lastName, firstName } = splitName(doc.name);
       const pattern = generateVisitPattern(doc.visitFrequency || 4, idx);
       const products = getAssignedProductsForDoctor(doc._id, assignments);
-      return { ...doc, lastName, firstName, pattern, products };
+      return { ...doc, pattern, products };
     })
-    .sort((a, b) => a.lastName.localeCompare(b.lastName));
+    .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
 
   // Count 2x and 4x doctors
   const count2x = doctors.filter((d) => d.visitFrequency === 2).length;
@@ -300,10 +277,10 @@ const buildWorksheetData = (doctors, config) => {
       ...doc.pattern,
       doc.visitFrequency || 4, // No. Of
       doc.visitFrequency || 4, // SUM OF
-      doc.hospital || '',
-      '', // OUTLET INDICATOR
-      '', // PROGRAMS TO BE IMPLEMENTED
-      '', // SUPPORT DURING COVERAGE
+      doc.clinicOfficeAddress || '',
+      doc.outletIndicator || '',
+      (doc.programsToImplement || []).join(', '),
+      (doc.supportDuringCoverage || []).join(', '),
       doc.products[0],
       doc.products[1],
       doc.products[2],
@@ -393,12 +370,11 @@ export const exportToCSV = (doctors, config) => {
   // Sort doctors alphabetically by lastName
   const sortedDoctors = [...doctors]
     .map((doc, idx) => {
-      const { lastName, firstName } = splitName(doc.name);
       const pattern = generateVisitPattern(doc.visitFrequency || 4, idx);
       const products = getAssignedProductsForDoctor(doc._id, assignments);
-      return { ...doc, lastName, firstName, pattern, products };
+      return { ...doc, pattern, products };
     })
-    .sort((a, b) => a.lastName.localeCompare(b.lastName));
+    .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
 
   // Day column headers
   const dayHeaders = [
@@ -456,10 +432,10 @@ export const exportToCSV = (doctors, config) => {
       ...doc.pattern,
       doc.visitFrequency || 4,
       doc.visitFrequency || 4,
-      doc.hospital || '',
-      '',
-      '',
-      '',
+      doc.clinicOfficeAddress || '',
+      doc.outletIndicator || '',
+      (doc.programsToImplement || []).join(', '),
+      (doc.supportDuringCoverage || []).join(', '),
       doc.products[0],
       doc.products[1],
       doc.products[2],

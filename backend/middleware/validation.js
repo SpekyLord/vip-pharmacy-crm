@@ -189,20 +189,28 @@ const updateUserValidation = [
 /**
  * Doctor validation rules
  */
+const VALID_PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
+const VALID_SUPPORT_TYPES = ['STARTER DOSES', 'PROMATS', 'FULL DOSE', 'PATIENT DISCOUNT', 'AIR FRESHENER'];
+
 const createDoctorValidation = [
-  body('name')
+  body('firstName')
     .notEmpty()
-    .withMessage('Doctor name is required')
-    .isLength({ max: 100 })
-    .withMessage('Name cannot exceed 100 characters'),
+    .withMessage('First name is required')
+    .isLength({ max: 50 })
+    .withMessage('First name cannot exceed 50 characters'),
+  body('lastName')
+    .notEmpty()
+    .withMessage('Last name is required')
+    .isLength({ max: 50 })
+    .withMessage('Last name cannot exceed 50 characters'),
   body('specialization')
-    .notEmpty()
-    .withMessage('Specialization is required'),
-  body('hospital')
-    .notEmpty()
-    .withMessage('Hospital/Clinic name is required')
-    .isLength({ max: 200 })
-    .withMessage('Hospital name cannot exceed 200 characters'),
+    .optional()
+    .isLength({ max: 100 })
+    .withMessage('Specialization cannot exceed 100 characters'),
+  body('clinicOfficeAddress')
+    .optional()
+    .isLength({ max: 500 })
+    .withMessage('Clinic/Office address cannot exceed 500 characters'),
   body('region')
     .notEmpty()
     .withMessage('Region is required')
@@ -218,19 +226,66 @@ const createDoctorValidation = [
     .optional()
     .isEmail()
     .withMessage('Please enter a valid email'),
+  body('programsToImplement')
+    .optional()
+    .isArray()
+    .withMessage('Programs to implement must be an array'),
+  body('programsToImplement.*')
+    .optional()
+    .isIn(VALID_PROGRAMS)
+    .withMessage('Invalid program type'),
+  body('supportDuringCoverage')
+    .optional()
+    .isArray()
+    .withMessage('Support during coverage must be an array'),
+  body('supportDuringCoverage.*')
+    .optional()
+    .isIn(VALID_SUPPORT_TYPES)
+    .withMessage('Invalid support type'),
+  body('levelOfEngagement')
+    .optional()
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Level of engagement must be between 1 and 5'),
+  body('birthday')
+    .optional()
+    .isISO8601()
+    .withMessage('Invalid birthday date format'),
+  body('anniversary')
+    .optional()
+    .isISO8601()
+    .withMessage('Invalid anniversary date format'),
+  body('targetProducts')
+    .optional()
+    .isArray({ max: 3 })
+    .withMessage('Target products must be an array with max 3 items'),
+  body('targetProducts.*.product')
+    .optional()
+    .custom(isValidObjectId),
+  body('targetProducts.*.status')
+    .optional()
+    .isIn(['showcasing', 'accepted'])
+    .withMessage('Product status must be showcasing or accepted'),
   validate,
 ];
 
 const updateDoctorValidation = [
   param('id').custom(isValidObjectId),
-  body('name')
+  body('firstName')
+    .optional()
+    .isLength({ max: 50 })
+    .withMessage('First name cannot exceed 50 characters'),
+  body('lastName')
+    .optional()
+    .isLength({ max: 50 })
+    .withMessage('Last name cannot exceed 50 characters'),
+  body('specialization')
     .optional()
     .isLength({ max: 100 })
-    .withMessage('Name cannot exceed 100 characters'),
-  body('hospital')
+    .withMessage('Specialization cannot exceed 100 characters'),
+  body('clinicOfficeAddress')
     .optional()
-    .isLength({ max: 200 })
-    .withMessage('Hospital name cannot exceed 200 characters'),
+    .isLength({ max: 500 })
+    .withMessage('Clinic/Office address cannot exceed 500 characters'),
   body('visitFrequency')
     .optional()
     .isIn([2, 4])
@@ -242,6 +297,45 @@ const updateDoctorValidation = [
     .optional()
     .isEmail()
     .withMessage('Please enter a valid email'),
+  body('programsToImplement')
+    .optional()
+    .isArray()
+    .withMessage('Programs to implement must be an array'),
+  body('programsToImplement.*')
+    .optional()
+    .isIn(VALID_PROGRAMS)
+    .withMessage('Invalid program type'),
+  body('supportDuringCoverage')
+    .optional()
+    .isArray()
+    .withMessage('Support during coverage must be an array'),
+  body('supportDuringCoverage.*')
+    .optional()
+    .isIn(VALID_SUPPORT_TYPES)
+    .withMessage('Invalid support type'),
+  body('levelOfEngagement')
+    .optional()
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Level of engagement must be between 1 and 5'),
+  body('birthday')
+    .optional()
+    .isISO8601()
+    .withMessage('Invalid birthday date format'),
+  body('anniversary')
+    .optional()
+    .isISO8601()
+    .withMessage('Invalid anniversary date format'),
+  body('targetProducts')
+    .optional()
+    .isArray({ max: 3 })
+    .withMessage('Target products must be an array with max 3 items'),
+  body('targetProducts.*.product')
+    .optional()
+    .custom(isValidObjectId),
+  body('targetProducts.*.status')
+    .optional()
+    .isIn(['showcasing', 'accepted'])
+    .withMessage('Product status must be showcasing or accepted'),
   validate,
 ];
 

@@ -11,25 +11,15 @@
 import { useState, useEffect } from 'react';
 import regionService from '../../services/regionService';
 
-// Specialization options matching backend enum (Doctor.js)
-const SPECIALIZATIONS = [
-  'IM Gastro',
-  'Pediatrics',
-  'General Surgery',
-  'ENT',
-  'Urology',
-  'Internal Medicine',
-  'Cardiology',
-  'Dermatology',
-  'Neurology',
-  'Orthopedics',
-  'Obstetrics/Gynecology',
-  'Ophthalmology',
-  'Pulmonology',
-  'Nephrology',
-  'Oncology',
-  'General Practice',
-  'Other',
+// Enum options for programs and support types (matching backend Doctor.js)
+const PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
+const SUPPORT_TYPES = ['STARTER DOSES', 'PROMATS', 'FULL DOSE', 'PATIENT DISCOUNT', 'AIR FRESHENER'];
+const ENGAGEMENT_LEVELS = [
+  { value: 1, label: '1 - Visited 4 times' },
+  { value: 2, label: '2 - Knows BDM/products' },
+  { value: 3, label: '3 - Tried products' },
+  { value: 4, label: '4 - In group chat' },
+  { value: 5, label: '5 - Active partner' },
 ];
 
 const doctorManagementStyles = `
@@ -610,15 +600,24 @@ const DoctorManagement = ({
   const handleCreate = () => {
     setSelectedDoctor(null);
     setFormData({
-      name: '',
+      firstName: '',
+      lastName: '',
       specialization: '',
-      hospital: '',
-      addressStreet: '',
+      clinicOfficeAddress: '',
       phone: '',
       email: '',
       region: '',
       visitFrequency: 4,
       notes: '',
+      outletIndicator: '',
+      programsToImplement: [],
+      supportDuringCoverage: [],
+      levelOfEngagement: '',
+      secretaryName: '',
+      secretaryPhone: '',
+      birthday: '',
+      anniversary: '',
+      otherDetails: '',
     });
     // Reset cascading dropdowns
     setSelectedCountry('');
@@ -636,24 +635,25 @@ const DoctorManagement = ({
   const handleEdit = async (doctor) => {
     setSelectedDoctor(doctor);
 
-    // Extract address - handle both string and object formats
-    let addressStr = '';
-    if (typeof doctor.address === 'string') {
-      addressStr = doctor.address;
-    } else if (doctor.address?.street) {
-      addressStr = doctor.address.street;
-    }
-
     setFormData({
-      name: doctor.name || '',
+      firstName: doctor.firstName || '',
+      lastName: doctor.lastName || '',
       specialization: doctor.specialization || '',
-      hospital: doctor.hospital || '',
-      addressStreet: addressStr,
+      clinicOfficeAddress: doctor.clinicOfficeAddress || '',
       phone: doctor.phone || '',
       email: doctor.email || '',
       region: doctor.region?._id || doctor.region || '',
       visitFrequency: doctor.visitFrequency || 4,
       notes: doctor.notes || '',
+      outletIndicator: doctor.outletIndicator || '',
+      programsToImplement: doctor.programsToImplement || [],
+      supportDuringCoverage: doctor.supportDuringCoverage || [],
+      levelOfEngagement: doctor.levelOfEngagement || '',
+      secretaryName: doctor.secretaryName || '',
+      secretaryPhone: doctor.secretaryPhone || '',
+      birthday: doctor.birthday ? doctor.birthday.split('T')[0] : '',
+      anniversary: doctor.anniversary ? doctor.anniversary.split('T')[0] : '',
+      otherDetails: doctor.otherDetails || '',
     });
 
     // Show modal first so user sees immediate feedback
@@ -693,17 +693,21 @@ const DoctorManagement = ({
     e.preventDefault();
     setSaving(true);
 
-    // Build doctor data with proper address format
-    // Only include required fields and non-empty optional fields
+    // Build doctor data
     const doctorData = {
-      name: formData.name,
-      specialization: formData.specialization,
-      hospital: formData.hospital,
+      firstName: formData.firstName,
+      lastName: formData.lastName,
       region: formData.region,
       visitFrequency: formData.visitFrequency,
     };
 
     // Only include optional fields if they have values
+    if (formData.specialization && formData.specialization.trim()) {
+      doctorData.specialization = formData.specialization.trim();
+    }
+    if (formData.clinicOfficeAddress && formData.clinicOfficeAddress.trim()) {
+      doctorData.clinicOfficeAddress = formData.clinicOfficeAddress.trim();
+    }
     if (formData.phone && formData.phone.trim()) {
       doctorData.phone = formData.phone.trim();
     }
@@ -713,12 +717,32 @@ const DoctorManagement = ({
     if (formData.notes && formData.notes.trim()) {
       doctorData.notes = formData.notes.trim();
     }
-
-    // Send address as nested object if provided
-    if (formData.addressStreet && formData.addressStreet.trim()) {
-      doctorData.address = {
-        street: formData.addressStreet.trim(),
-      };
+    if (formData.outletIndicator && formData.outletIndicator.trim()) {
+      doctorData.outletIndicator = formData.outletIndicator.trim();
+    }
+    if (formData.programsToImplement && formData.programsToImplement.length > 0) {
+      doctorData.programsToImplement = formData.programsToImplement;
+    }
+    if (formData.supportDuringCoverage && formData.supportDuringCoverage.length > 0) {
+      doctorData.supportDuringCoverage = formData.supportDuringCoverage;
+    }
+    if (formData.levelOfEngagement) {
+      doctorData.levelOfEngagement = parseInt(formData.levelOfEngagement);
+    }
+    if (formData.secretaryName && formData.secretaryName.trim()) {
+      doctorData.secretaryName = formData.secretaryName.trim();
+    }
+    if (formData.secretaryPhone && formData.secretaryPhone.trim()) {
+      doctorData.secretaryPhone = formData.secretaryPhone.trim();
+    }
+    if (formData.birthday) {
+      doctorData.birthday = formData.birthday;
+    }
+    if (formData.anniversary) {
+      doctorData.anniversary = formData.anniversary;
+    }
+    if (formData.otherDetails && formData.otherDetails.trim()) {
+      doctorData.otherDetails = formData.otherDetails.trim();
     }
 
     if (selectedDoctor) {
@@ -796,9 +820,9 @@ const DoctorManagement = ({
             <tbody>
               {doctors.map((doctor) => (
                 <tr key={doctor._id}>
-                  <td>{doctor.name}</td>
-                  <td>{doctor.specialization}</td>
-                  <td>{doctor.hospital}</td>
+                  <td>{doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}</td>
+                  <td>{doctor.specialization || '-'}</td>
+                  <td>{doctor.clinicOfficeAddress || '-'}</td>
                   <td>{doctor.region?.name || '-'}</td>
                   <td>
                     <span className={`visit-freq-badge freq-${doctor.visitFrequency}`}>
@@ -871,44 +895,62 @@ const DoctorManagement = ({
             <form onSubmit={handleSubmit}>
               <div className="form-row">
                 <div className="form-group">
-                  <label htmlFor="name">Name *</label>
+                  <label htmlFor="lastName">Last Name *</label>
                   <input
                     type="text"
-                    id="name"
-                    name="name"
-                    value={formData.name}
+                    id="lastName"
+                    name="lastName"
+                    value={formData.lastName}
                     onChange={handleFormChange}
                     required
                   />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="specialization">Specialization *</label>
-                  <select
+                  <label htmlFor="firstName">First Name *</label>
+                  <input
+                    type="text"
+                    id="firstName"
+                    name="firstName"
+                    value={formData.firstName}
+                    onChange={handleFormChange}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="specialization">VIP Specialty</label>
+                  <input
+                    type="text"
                     id="specialization"
                     name="specialization"
                     value={formData.specialization}
                     onChange={handleFormChange}
-                    required
-                  >
-                    <option value="">Select Specialization</option>
-                    {SPECIALIZATIONS.map((spec) => (
-                      <option key={spec} value={spec}>
-                        {spec}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="e.g. Pedia Hema, Im Car, Breast Surg"
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="outletIndicator">Outlet Indicator</label>
+                  <input
+                    type="text"
+                    id="outletIndicator"
+                    name="outletIndicator"
+                    value={formData.outletIndicator}
+                    onChange={handleFormChange}
+                  />
                 </div>
               </div>
 
               <div className="form-group full-width">
-                <label htmlFor="hospital">Hospital *</label>
+                <label htmlFor="clinicOfficeAddress">Clinic/Office Address</label>
                 <input
                   type="text"
-                  id="hospital"
-                  name="hospital"
-                  value={formData.hospital}
+                  id="clinicOfficeAddress"
+                  name="clinicOfficeAddress"
+                  value={formData.clinicOfficeAddress}
                   onChange={handleFormChange}
-                  required
+                  placeholder="Hospital, clinic, or office address"
                 />
               </div>
 
@@ -1009,18 +1051,6 @@ const DoctorManagement = ({
                 <p style={{ fontSize: '12px', color: '#6b7280', margin: '8px 0' }}>Loading regions...</p>
               )}
 
-              <div className="form-group full-width">
-                <label htmlFor="addressStreet">Address</label>
-                <input
-                  type="text"
-                  id="addressStreet"
-                  name="addressStreet"
-                  value={formData.addressStreet}
-                  onChange={handleFormChange}
-                  placeholder="Street address, building, etc."
-                />
-              </div>
-
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="phone">Phone</label>
@@ -1044,11 +1074,38 @@ const DoctorManagement = ({
                 </div>
               </div>
 
+              <div className="form-group full-width">
+                <label htmlFor="notes">Notes</label>
+                <textarea
+                  id="notes"
+                  name="notes"
+                  value={formData.notes}
+                  onChange={handleFormChange}
+                  placeholder="Additional notes about this VIP Client..."
+                />
+              </div>
+
               <div className="form-row">
                 <div className="form-group">
-                  <label htmlFor="visitFrequency">Visit Frequency *</label>
+                  <label htmlFor="levelOfEngagement">Level of Engagement</label>
                   <select
-                    id="visitFrequency"
+                    id="levelOfEngagement"
+                    name="levelOfEngagement"
+                    value={formData.levelOfEngagement}
+                    onChange={handleFormChange}
+                  >
+                    <option value="">Select Level</option>
+                    {ENGAGEMENT_LEVELS.map((level) => (
+                      <option key={level.value} value={level.value}>
+                        {level.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="visitFrequencyNew">Visit Frequency *</label>
+                  <select
+                    id="visitFrequencyNew"
                     name="visitFrequency"
                     value={formData.visitFrequency}
                     onChange={handleFormChange}
@@ -1061,13 +1118,101 @@ const DoctorManagement = ({
               </div>
 
               <div className="form-group full-width">
-                <label htmlFor="notes">Notes</label>
+                <label>Programs to Implement</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                  {PROGRAMS.map((program) => (
+                    <label key={program} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.programsToImplement?.includes(program) || false}
+                        onChange={(e) => {
+                          const updated = e.target.checked
+                            ? [...(formData.programsToImplement || []), program]
+                            : (formData.programsToImplement || []).filter((p) => p !== program);
+                          setFormData((prev) => ({ ...prev, programsToImplement: updated }));
+                        }}
+                      />
+                      {program}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="form-group full-width">
+                <label>Support During Coverage</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                  {SUPPORT_TYPES.map((support) => (
+                    <label key={support} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.supportDuringCoverage?.includes(support) || false}
+                        onChange={(e) => {
+                          const updated = e.target.checked
+                            ? [...(formData.supportDuringCoverage || []), support]
+                            : (formData.supportDuringCoverage || []).filter((s) => s !== support);
+                          setFormData((prev) => ({ ...prev, supportDuringCoverage: updated }));
+                        }}
+                      />
+                      {support}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="secretaryName">Secretary Name</label>
+                  <input
+                    type="text"
+                    id="secretaryName"
+                    name="secretaryName"
+                    value={formData.secretaryName}
+                    onChange={handleFormChange}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="secretaryPhone">Secretary Phone</label>
+                  <input
+                    type="tel"
+                    id="secretaryPhone"
+                    name="secretaryPhone"
+                    value={formData.secretaryPhone}
+                    onChange={handleFormChange}
+                  />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="birthday">Birthday</label>
+                  <input
+                    type="date"
+                    id="birthday"
+                    name="birthday"
+                    value={formData.birthday}
+                    onChange={handleFormChange}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="anniversary">Anniversary</label>
+                  <input
+                    type="date"
+                    id="anniversary"
+                    name="anniversary"
+                    value={formData.anniversary}
+                    onChange={handleFormChange}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group full-width">
+                <label htmlFor="otherDetails">Other Details</label>
                 <textarea
-                  id="notes"
-                  name="notes"
-                  value={formData.notes}
+                  id="otherDetails"
+                  name="otherDetails"
+                  value={formData.otherDetails}
                   onChange={handleFormChange}
-                  placeholder="Additional notes about this VIP Client..."
+                  placeholder="Any additional information..."
                 />
               </div>
 
@@ -1109,7 +1254,7 @@ const DoctorManagement = ({
               </button>
             </div>
             <p>
-              Are you sure you want to deactivate <strong>{selectedDoctor?.name}</strong>?
+              Are you sure you want to deactivate <strong>{selectedDoctor?.fullName || `${selectedDoctor?.firstName} ${selectedDoctor?.lastName}`}</strong>?
               This action can be undone later.
             </p>
             <div className="confirm-actions">
