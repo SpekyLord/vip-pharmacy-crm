@@ -1124,6 +1124,7 @@ const DoctorManagement = ({
                     <label key={program} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', cursor: 'pointer' }}>
                       <input
                         type="checkbox"
+                        style={{ width: '14px', height: '14px', flexShrink: 0 }}
                         checked={formData.programsToImplement?.includes(program) || false}
                         onChange={(e) => {
                           const updated = e.target.checked
@@ -1145,6 +1146,7 @@ const DoctorManagement = ({
                     <label key={support} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', cursor: 'pointer' }}>
                       <input
                         type="checkbox"
+                        style={{ width: '14px', height: '14px', flexShrink: 0 }}
                         checked={formData.supportDuringCoverage?.includes(support) || false}
                         onChange={(e) => {
                           const updated = e.target.checked

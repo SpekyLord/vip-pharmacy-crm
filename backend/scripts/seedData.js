@@ -322,7 +322,7 @@ const seedDatabase = async () => {
     console.log('\nCreating admin user...');
     const admin = await User.create({
       name: 'System Administrator',
-      email: 'admin@vippharmacy.com',
+      email: 'admin@vipcrm.com',
       password: 'Admin123!@#',
       role: 'admin',
       canAccessAllRegions: true,
@@ -334,7 +334,7 @@ const seedDatabase = async () => {
     console.log('\nCreating medrep user...');
     const medrep = await User.create({
       name: 'Medical Representative',
-      email: 'medrep@vippharmacy.com',
+      email: 'medrep@vipcrm.com',
       password: 'Medrep123!@#',
       role: 'medrep',
       isActive: true,
@@ -346,16 +346,16 @@ const seedDatabase = async () => {
     const employees = [];
 
     const employeeData = [
-      { name: 'Juan Dela Cruz', email: 'juan@vippharmacy.com', regionCode: 'ILO-JARO' },
-      { name: 'Maria Santos', email: 'maria@vippharmacy.com', regionCode: 'ILO-MAND' },
-      { name: 'Pedro Reyes', email: 'pedro@vippharmacy.com', regionCode: 'ILO-LPAZ' },
+      { name: 'Juan Dela Cruz', email: 'juan@vipcrm.com', regionCode: 'ILO-JARO' },
+      { name: 'Maria Santos', email: 'maria@vipcrm.com', regionCode: 'ILO-MAND' },
+      { name: 'Pedro Reyes', email: 'pedro@vipcrm.com', regionCode: 'ILO-LPAZ' },
     ];
 
     for (const empData of employeeData) {
       const employee = await User.create({
         name: empData.name,
         email: empData.email,
-        password: 'Employee123!@#',
+        password: 'BDM123!@#',
         role: 'employee',
         assignedRegions: [regionMap[empData.regionCode]],
         isActive: true,
@@ -398,11 +398,11 @@ const seedDatabase = async () => {
     console.log('========================================');
     console.log('\nLogin Credentials:');
     console.log('------------------');
-    console.log('Admin:    admin@vippharmacy.com / Admin123!@#');
-    console.log('MedRep:   medrep@vippharmacy.com / Medrep123!@#');
-    console.log('Employee: juan@vippharmacy.com / Employee123!@#');
-    console.log('Employee: maria@vippharmacy.com / Employee123!@#');
-    console.log('Employee: pedro@vippharmacy.com / Employee123!@#');
+    console.log('Admin:    admin@vipcrm.com / Admin123!@#');
+    console.log('MedRep:   medrep@vipcrm.com / Medrep123!@#');
+    console.log('BDM:      juan@vipcrm.com / BDM123!@#');
+    console.log('BDM:      maria@vipcrm.com / BDM123!@#');
+    console.log('BDM:      pedro@vipcrm.com / BDM123!@#');
     console.log('\nData Summary:');
     console.log('-------------');
     console.log(`Regions:   ${Object.keys(regionMap).length}`);
