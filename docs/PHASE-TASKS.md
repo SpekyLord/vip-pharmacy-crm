@@ -1,8 +1,9 @@
 # VIP CRM - Phase Task Breakdown
 
 > **Last Updated**: February 2026
-> **Status**: Phase 1 Complete. Phase A in progress (A.1 complete).
+> **Status**: Phase 1 Complete. Phase 2 next (A.1 complete from original Phase A).
 > **Reference**: See `docs/CHANGE_LOG.md` for full details on all 17 client-requested changes.
+> **Note**: Phases were reorganized from theme-based (A/B/C/D) to dependency-driven order (2-6). Task IDs (A.1, B.6, etc.) preserved for CHANGE_LOG traceability.
 
 ## Terminology Note
 
@@ -178,9 +179,10 @@ Documentation uses business terms (BDM, VIP Client). Code uses Doctor/Employee. 
 
 ---
 
-# PHASE A: Core Schema + Role Changes
-**Goal**: Lay the foundation for the client's target system by updating the VIP Client model, fixing visit rules, and restructuring roles.
-**Dependency**: Must complete before Phases B and C.
+# PHASE 2: Role & Permission Changes
+**Goal**: Restructure roles and permissions — remove MedRep, let BDMs self-manage.
+**Dependency**: A.1 ✅ complete.
+**Why first**: No heavy dependencies, cleans up role architecture before building new features.
 
 ---
 
@@ -237,20 +239,6 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task A.2: 2x Alternating Week Rule (CHANGE_LOG Change 10)
-**Priority**: HIGH (core business logic)
-**Files**: `backend/utils/validateWeeklyVisit.js`
-
-**Deliverables**:
-- [ ] For VIP Clients with `visitFrequency: 2`, enforce alternating weeks:
-  - If visited in W1, next allowed visit is W3 (not W2)
-  - If visited in W2, next allowed visit is W4 (not W3)
-  - Pattern: W1+W3 or W2+W4
-- [ ] Update visit limit error response to indicate next allowed week
-- [ ] Thorough testing — wrong logic blocks valid visits or allows invalid ones
-
----
-
 ### Task A.3: Remove MedRep Role (CHANGE_LOG Change 1)
 **Priority**: HIGH (role architecture change)
 **Files to modify**:
@@ -275,6 +263,7 @@ node backend/scripts/migrateDoctorFields.js
 
 ### Task A.4: BDM Edit Own VIP Clients (CHANGE_LOG Change 2)
 **Priority**: HIGH
+**Depends on**: A.1 ✅
 **Files**:
 - `backend/controllers/doctorController.js` — Add employee permission where `assignedTo === req.user._id`
 - `backend/routes/doctorRoutes.js` — Allow PUT for employee role with ownership check
@@ -289,53 +278,26 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-## Phase A Summary
+## Phase 2 Summary
 
-| Task | Change # | Impact | Blocking? | Status |
-|------|----------|--------|-----------|--------|
-| A.1: VIP Client Model Extensions | 9 | 15+ new fields, 3 breaking changes | Yes — blocks B and C | ✅ Complete |
-| A.2: 2x Alternating Week Rule | 10 | Core business logic | No | ⬜ Not started |
-| A.3: Remove MedRep Role | 1 | 9+ files, role architecture | No | ⬜ Not started |
-| A.4: BDM Edit Own VIP Clients | 2 | Ownership permissions | Depends on A.1 | ⬜ Not started |
-
----
-
-# PHASE B: UX + Visit Flow Improvements
-**Goal**: Improve the BDM daily experience — better VIP Client views, photo flexibility, engagement tracking, regular clients.
-**Dependency**: Phase A (especially A.1 for new Doctor fields).
+| Task | Change # | Status | Notes |
+|------|----------|--------|-------|
+| A.1: VIP Client Model Extensions | 9 | ✅ Complete | Foundation for everything |
+| A.3: Remove MedRep Role | 1 | ⬜ Not started | Role architecture cleanup |
+| A.4: BDM Edit Own VIP Clients | 2 | ⬜ Not started | Ownership permissions |
 
 ---
 
-### Task B.1: VIP Client Info Page Before Log Visit (CHANGE_LOG Change 3)
-**Priority**: HIGH (major UX flow change)
-**Files**:
-- NEW: `frontend/src/pages/employee/DoctorDetailPage.jsx` — Full VIP Client profile + visit history + "Log Visit" button
-- `frontend/src/App.jsx` — Add route `/employee/doctor/:id`
-- `frontend/src/components/employee/DoctorList.jsx` — Card click → detail page (not visit logger)
-- `frontend/src/pages/employee/EmployeeDashboard.jsx` — Update handleSelectDoctor navigation
-
-**Deliverables**:
-- [ ] Clicking a VIP Client shows info page first (all fields from A.1)
-- [ ] "Log Visit" button at bottom of info page
-- [ ] Visit history for that VIP Client shown on the page
-- [ ] BDM can edit VIP Client fields from this page (per A.4)
-
----
-
-### Task B.2: Product Detail Popup — Tablet-Friendly (CHANGE_LOG Change 4)
-**Priority**: MEDIUM
-**Files**: `frontend/src/components/employee/ProductRecommendations.jsx`, `frontend/src/components/employee/VisitLogger.jsx`
-
-**Deliverables**:
-- [ ] Clicking a product shows full-screen modal with image + description
-- [ ] Tablet-optimized: large image, readable text, easy to show to VIP Client
-- [ ] Product cards instead of simple checkboxes in VisitLogger
-- [ ] BDM picks 3 products from catalog → assigns as target products → presents on tablet
+# PHASE 3: Independent UX Improvements
+**Goal**: Quick wins that have no heavy dependencies. Can be parallelized.
+**Dependency**: A.1 ✅ for some tasks. No cross-task blocking within this phase.
+**Note**: B.6 (Regular Clients) should be done early — it unblocks C.2 in Phase 5.
 
 ---
 
 ### Task B.3: Photo Upload Flexibility (CHANGE_LOG Change 5)
 **Priority**: HIGH
+**Depends on**: None
 **Files**: `frontend/src/components/employee/CameraCapture.jsx`
 
 **Deliverables**:
@@ -347,31 +309,9 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task B.4: Level of Engagement Tracking (CHANGE_LOG Change 12)
-**Priority**: MEDIUM
-**Files**: `components/employee/DoctorList.jsx`, new `DoctorDetailPage.jsx`, `components/admin/DoctorManagement.jsx`
-
-**Deliverables**:
-- [ ] Display engagement badge (1-5) on VIP Client cards and detail pages
-- [ ] BDMs can update engagement level from VIP Client detail page
-- [ ] Scale: 1=Visited 4x, 2=Knows BDM/products, 3=Tried products, 4=In group chat, 5=Active partner
-
----
-
-### Task B.5: BDM Self-Service Performance (CHANGE_LOG Change 14)
-**Priority**: MEDIUM
-**Files**: NEW `frontend/src/pages/employee/MyPerformancePage.jsx`
-
-**Deliverables**:
-- [ ] Total visits/month, compliance %, engagement distribution
-- [ ] VIP coverage breakdown (2x vs 4x)
-- [ ] Behind-schedule warnings
-- [ ] DCR Summary view (once scheduling exists in Phase C)
-
----
-
 ### Task B.6: Non-VIP Regular Clients Table (CHANGE_LOG Change 16)
-**Priority**: MEDIUM
+**Priority**: HIGH — **do early, unblocks Phase 5 (C.2 Extra Call section)**
+**Depends on**: None
 **Files**:
 - NEW: `backend/models/Client.js` — Simpler than Doctor (name, specialty, address, phone, notes)
 - NEW: `backend/controllers/clientController.js` — CRUD
@@ -385,14 +325,14 @@ node backend/scripts/migrateDoctorFields.js
 - [ ] Daily limit: up to 30 extra calls per day (system enforced)
 - [ ] No visit frequency enforcement (no 2x/4x rules)
 - [ ] No scheduling grid integration
-- [ ] Visits appear in "EXTRA CALL (VIP NOT INCLUDED IN THE LIST)" section of CPT (Phase C)
+- [ ] Visits appear in "EXTRA CALL (VIP NOT INCLUDED IN THE LIST)" section of CPT (Phase 5)
 - [ ] May eventually be promoted to VIP status through Excel upload + admin approval
 
 ---
 
 ### Task B.7: Filter VIP Clients by Support Type & Program (CHANGE_LOG Change 17)
 **Priority**: LOW
-**Depends on**: A.1 (supportDuringCoverage and programsToImplement fields must exist)
+**Depends on**: A.1 ✅
 **Files**: `pages/admin/DoctorsPage.jsx`, `pages/employee/EmployeeDashboard.jsx`, `controllers/doctorController.js`
 
 **Deliverables**:
@@ -402,34 +342,80 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-## Phase B Summary
+### Task B.4: Level of Engagement Tracking (CHANGE_LOG Change 12)
+**Priority**: MEDIUM
+**Depends on**: A.1 ✅
+**Files**: `components/employee/DoctorList.jsx`, new `DoctorDetailPage.jsx`, `components/admin/DoctorManagement.jsx`
 
-| Task | Change # | Impact | Depends On |
-|------|----------|--------|------------|
-| B.1: VIP Client Info Page | 3 | New page, navigation flow change | A.1 |
-| B.2: Product Detail Popup | 4 | Tablet UX improvement | A.3 (target products) |
-| B.3: Photo Upload Flexibility | 5 | Camera + gallery + clipboard | None |
-| B.4: Engagement Tracking | 12 | Display + update engagement level | A.1 |
-| B.5: BDM Performance | 14 | New self-service page | None |
-| B.6: Regular Clients | 16 | New model + table + API | None |
-| B.7: Filter by Support/Program | 17 | Filter UI on list pages | A.1 |
+**Deliverables**:
+- [ ] Display engagement badge (1-5) on VIP Client cards and detail pages
+- [ ] BDMs can update engagement level from VIP Client detail page
+- [ ] Scale: 1=Visited 4x, 2=Knows BDM/products, 3=Tried products, 4=In group chat, 5=Active partner
 
 ---
 
-# PHASE C: Scheduling, CPT & Excel Import
-**Goal**: Implement the core of the client's system flow — the 4-week scheduling cycle, Call Planning Tool, and Excel import/export round-trip.
-**Dependency**: Phase A (model fields), Phase B.6 (regular clients for Extra Call section).
+### Task B.5a: BDM Self-Service Performance — Basic Stats (CHANGE_LOG Change 14, partial)
+**Priority**: MEDIUM
+**Depends on**: None
+**Files**: NEW `frontend/src/pages/employee/MyPerformancePage.jsx`
+
+**Deliverables**:
+- [ ] Total visits/month, compliance %, engagement distribution
+- [ ] VIP coverage breakdown (2x vs 4x)
+- [ ] Behind-schedule warnings
+
+> **Note**: DCR Summary view (Call Rate, Target vs Actual) requires C.2 — see Task B.5b in Phase 5.
 
 ---
 
-### Task C.1: Schedule Model + 4-Week Calendar (CHANGE_LOG Change 6)
+### Task C.4: VIP Count Minimums & Validation (CHANGE_LOG Change 11)
+**Priority**: LOW
+**Depends on**: A.1 ✅
+**Files**: `pages/employee/EmployeeDashboard.jsx`, `pages/admin/AdminDashboard.jsx`, `pages/admin/StatisticsPage.jsx`
+
+**Deliverables**:
+- [ ] BDM dashboard: Warning banner when assigned VIP Clients < 20
+- [ ] Admin dashboard: Warning when total active VIP Clients < 130
+- [ ] Statistics page: VIP count breakdown (2x vs 4x per BDM)
+- [ ] Schedule validation: Ensure planned visits adequately fill 20 working days
+
+---
+
+## Phase 3 Summary
+
+| Task | Change # | Depends On | Notes |
+|------|----------|------------|-------|
+| B.3: Photo Upload Flexibility | 5 | None | Independent |
+| B.6: Regular Clients | 16 | None | **Do early — unblocks C.2** |
+| B.7: Filter by Support/Program | 17 | A.1 ✅ | Independent |
+| B.4: Engagement Tracking | 12 | A.1 ✅ | Independent |
+| B.5a: BDM Performance (basic) | 14 | None | DCR part deferred to Phase 5 |
+| C.4: VIP Count Minimums | 11 | A.1 ✅ | Independent |
+
+---
+
+# PHASE 4: Schedule System + Remaining UX
+**Goal**: Build the core scheduling system (the biggest feature) and complete UX pages that depend on Phase 2.
+**Dependency**: Phase 2 (A.3, A.4 must be done). A.2 (alternating weeks) is merged into C.1 here.
+
+---
+
+### Task C.1 + A.2: Schedule Model + 4-Week Calendar + Alternating Week Rule (CHANGE_LOG Changes 6 + 10)
 **Priority**: CRITICAL (core system flow)
+**Depends on**: A.1 ✅
+
+**Why A.2 is merged here**: The 2x alternating week rule (W1+W3 or W2+W4) was deferred from the original Task A.2.
+Without the Schedule model, a calendar-week parity check incorrectly blocks valid carry-forward visits
+(e.g., a missed W1 visit being legitimately logged in W2). The alternating pattern must be enforced
+through schedule entries, not raw visit counts.
+
 **Files**:
 - NEW: `backend/models/Schedule.js`
 - NEW: `backend/controllers/scheduleController.js`
 - NEW: `backend/routes/scheduleRoutes.js`
 - NEW: `frontend/src/components/employee/ScheduleCalendar.jsx`
 - NEW: `frontend/src/services/scheduleService.js`
+- UPDATE: `backend/utils/validateWeeklyVisit.js` — validate against Schedule entries for alternating rule
 
 **Schedule Model**:
 ```javascript
@@ -469,6 +455,11 @@ node backend/scripts/migrateDoctorFields.js
 - Missed weeks carry forward but still need their own visit
 - W4 catch-up: BDM might need up to 3 visits for same VIP Client in final week (missed W1 + missed W2 + W4's own)
 
+**Alternating Week Enforcement (A.2)**:
+- 2x doctors must have their 2 schedule entries placed in alternating weeks (W1+W3 or W2+W4)
+- `canVisitDoctor()` in `validateWeeklyVisit.js` validates against Schedule entries instead of raw Visit counts
+- Remove the deferred NOTE comments in `validateWeeklyVisit.js` (both `canVisitDoctor` and `canVisitDoctorsBatch`) once Schedule-based validation is in place
+
 **Deliverables**:
 - [ ] Schedule model with cycle tracking
 - [ ] Calendar grid matching CPT format (W1D1 through W4D5, 20 workdays)
@@ -476,12 +467,60 @@ node backend/scripts/migrateDoctorFields.js
 - [ ] W4D5 hard cutoff → missed status
 - [ ] Schedule looping (auto-repeat every 4-week cycle)
 - [ ] BDM daily view: "Today you need to visit: Dr. A, Dr. B, Dr. C"
+- [ ] Enforce 2x alternating week pattern through schedule entries (W1+W3 or W2+W4)
+- [ ] Update `validateWeeklyVisit.js` to validate against Schedule entries for alternating rule
+
+---
+
+### Task B.1: VIP Client Info Page Before Log Visit (CHANGE_LOG Change 3)
+**Priority**: HIGH (major UX flow change)
+**Depends on**: A.4 (BDM edit permissions)
+**Files**:
+- NEW: `frontend/src/pages/employee/DoctorDetailPage.jsx` — Full VIP Client profile + visit history + "Log Visit" button
+- `frontend/src/App.jsx` — Add route `/employee/doctor/:id`
+- `frontend/src/components/employee/DoctorList.jsx` — Card click → detail page (not visit logger)
+- `frontend/src/pages/employee/EmployeeDashboard.jsx` — Update handleSelectDoctor navigation
+
+**Deliverables**:
+- [ ] Clicking a VIP Client shows info page first (all fields from A.1)
+- [ ] "Log Visit" button at bottom of info page
+- [ ] Visit history for that VIP Client shown on the page
+- [ ] BDM can edit VIP Client fields from this page (per A.4)
+
+---
+
+### Task B.2: Product Detail Popup — Tablet-Friendly (CHANGE_LOG Change 4)
+**Priority**: MEDIUM
+**Depends on**: A.3 (target products moved to BDM)
+**Files**: `frontend/src/components/employee/ProductRecommendations.jsx`, `frontend/src/components/employee/VisitLogger.jsx`
+
+**Deliverables**:
+- [ ] Clicking a product shows full-screen modal with image + description
+- [ ] Tablet-optimized: large image, readable text, easy to show to VIP Client
+- [ ] Product cards instead of simple checkboxes in VisitLogger
+- [ ] BDM picks 3 products from catalog → assigns as target products → presents on tablet
+
+---
+
+## Phase 4 Summary
+
+| Task | Change # | Depends On | Notes |
+|------|----------|------------|-------|
+| C.1+A.2: Schedule + Alternating Weeks | 6+10 | A.1 ✅ | **Core system flow** — biggest feature |
+| B.1: VIP Client Info Page | 3 | A.4 | Navigation flow change |
+| B.2: Product Detail Popup | 4 | A.3 | Tablet UX |
+
+---
+
+# PHASE 5: CPT, DCR & Excel Import
+**Goal**: Build the Call Planning Tool, DCR Summary tracking, and Excel import/export round-trip.
+**Dependency**: C.1 (Schedule model from Phase 4), B.6 (Regular Clients from Phase 3).
 
 ---
 
 ### Task C.2: Call Planning Tool / CPT View (CHANGE_LOG Change 7)
 **Priority**: HIGH
-**Depends on**: C.1 (Schedule model)
+**Depends on**: C.1 (Schedule model), B.6 (Regular Clients for Extra Call section)
 **Files**:
 - NEW: `frontend/src/components/employee/CallPlanView.jsx`
 - Enhance: `pages/admin/ReportsPage.jsx`
@@ -531,16 +570,19 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task C.3: Excel Upload & Import (CHANGE_LOG Change 8)
+### Task C.3 + D.3: Excel Import + Approvals UI (CHANGE_LOG Changes 8 + 13)
 **Priority**: HIGH
-**Depends on**: C.1 (Schedule model), A.1 (Doctor fields)
+**Depends on**: C.1 (Schedule model), A.1 ✅
+**Note**: These were originally separate tasks (C.3 in Phase C, D.3 in Phase D) but are the same feature — Excel import backend + approval review UI. Implementing together.
+
 **Files**:
 - NEW: `backend/models/ImportBatch.js` — Staging model for pending imports
 - NEW: `backend/controllers/importController.js` — Excel parsing with `xlsx` library
 - NEW: `backend/routes/importRoutes.js`
 - NEW: `frontend/src/pages/admin/ImportPage.jsx` — Upload + review/approve UI
 - NEW: `frontend/src/services/importService.js`
-- Repurpose: `pages/admin/PendingApprovalsPage.jsx` (scaffolded) for batch review
+- Repurpose: `pages/admin/PendingApprovalsPage.jsx` (scaffolded) → Excel import batch review
+- Repurpose: `components/admin/VisitApproval.jsx` → Import batch approval
 
 **Excel Template Columns** (must match client's CPT exactly):
 ```
@@ -573,38 +615,38 @@ LEVEL OF ENGAGEMENT (1-5), BIRTHDAY, ANNIVERSARY, OTHER DETAILS
 - [ ] Excel parsing with `xlsx` npm package
 - [ ] Column mapping matching client's CPT template exactly
 - [ ] Duplicate VIP Client detection (name match)
-- [ ] Admin review UI with approve/reject entire batch
+- [ ] Admin review UI with approve/reject entire batch (repurposed from Approvals page)
+- [ ] Remove old visit approval UI (client says no approval needed for visits)
 - [ ] Overwrite existing data with warning
 - [ ] Schedule entries created from "1"s in grid
 - [ ] Export format matches import format (round-trip compatible)
 
 ---
 
-### Task C.4: VIP Count Minimums & Validation (CHANGE_LOG Change 11)
-**Priority**: LOW
-**Files**: `pages/employee/EmployeeDashboard.jsx`, `pages/admin/AdminDashboard.jsx`, `pages/admin/StatisticsPage.jsx`
+### Task B.5b: BDM Performance — DCR Summary (CHANGE_LOG Change 14, remaining)
+**Priority**: MEDIUM
+**Depends on**: C.2 (DCR Summary data)
+**Files**: `frontend/src/pages/employee/MyPerformancePage.jsx` (extend from B.5a)
 
 **Deliverables**:
-- [ ] BDM dashboard: Warning banner when assigned VIP Clients < 20
-- [ ] Admin dashboard: Warning when total active VIP Clients < 130
-- [ ] Statistics page: VIP count breakdown (2x vs 4x per BDM)
-- [ ] Schedule validation: Ensure planned visits adequately fill 20 working days
+- [ ] DCR Summary view: Call Rate per day + overall
+- [ ] Target vs Actual engagements breakdown
 
 ---
 
-## Phase C Summary
+## Phase 5 Summary
 
-| Task | Change # | Impact | Depends On |
-|------|----------|--------|------------|
-| C.1: Schedule Model + Calendar | 6 | New model, new UI, core system flow | A.1 |
-| C.2: CPT View + DCR Summary | 7 | Editable grid, performance tracking | C.1, B.6 |
-| C.3: Excel Upload & Import | 8 | Import/export round-trip, staging model | C.1, A.1 |
-| C.4: VIP Count Minimums | 11 | Warning banners, dashboard stats | A.1 |
+| Task | Change # | Depends On | Notes |
+|------|----------|------------|-------|
+| C.2: CPT View + DCR Summary | 7 | C.1, B.6 | Core reporting feature |
+| C.3+D.3: Excel Import + Approvals UI | 8+13 | C.1 | **Combined** — same feature |
+| B.5b: BDM Performance (DCR part) | 14 | C.2 | Extends B.5a from Phase 3 |
 
 ---
 
-# PHASE D: Admin Monitoring & Advanced
-**Goal**: Complete admin monitoring tools, wire up scaffolded pages, deployment.
+# PHASE 6: Admin Monitoring & Deployment
+**Goal**: Complete admin monitoring tools, wire up scaffolded pages, deploy to production.
+**Dependency**: C.2 (DCR Summary data) for D.1 and D.2.
 
 ---
 
@@ -623,6 +665,7 @@ LEVEL OF ENGAGEMENT (1-5), BIRTHDAY, ANNIVERSARY, OTHER DETAILS
 
 ### Task D.2: Wire Up Scaffolded Admin Pages
 **Priority**: MEDIUM
+**Depends on**: C.2 (DCR Summary data for StatisticsPage)
 **Files**: `pages/admin/StatisticsPage.jsx`, `pages/admin/ActivityMonitor.jsx`, `pages/admin/GPSVerificationPage.jsx`, `services/complianceService.js`
 
 **Deliverables**:
@@ -633,20 +676,9 @@ LEVEL OF ENGAGEMENT (1-5), BIRTHDAY, ANNIVERSARY, OTHER DETAILS
 
 ---
 
-### Task D.3: Repurpose Approvals for Excel Import (CHANGE_LOG Change 13)
-**Priority**: MEDIUM
-**Depends on**: C.3 (Excel import)
-**Files**: `pages/admin/PendingApprovalsPage.jsx`, `components/admin/VisitApproval.jsx`
-
-**Deliverables**:
-- [ ] Remove visit approval UI (client says no approval needed for visits)
-- [ ] Replace with Excel import batch review/approve workflow
-- [ ] Show pending import batches with preview of data
-
----
-
 ### Task D.4: Email Notifications (AWS SES)
 **Priority**: LOW
+**Depends on**: None
 **Files**: NEW `backend/config/ses.js`, NEW `backend/services/emailService.js`
 
 **Deliverables**:
@@ -659,6 +691,7 @@ LEVEL OF ENGAGEMENT (1-5), BIRTHDAY, ANNIVERSARY, OTHER DETAILS
 
 ### Task D.5: Deploy to AWS Lightsail
 **Priority**: HIGH (when ready for production)
+**Depends on**: None
 **Files**: Various config files
 
 **Deliverables**:
@@ -680,16 +713,15 @@ LEVEL OF ENGAGEMENT (1-5), BIRTHDAY, ANNIVERSARY, OTHER DETAILS
 
 ---
 
-## Phase D Summary
+## Phase 6 Summary
 
-| Task | Change # | Impact | Depends On |
-|------|----------|--------|------------|
-| D.1: Admin Per-BDM DCR Summary | 15 | Performance monitoring | C.2 |
-| D.2: Wire Up Scaffolded Pages | — | Replace mock data with real APIs | C.1 |
-| D.3: Repurpose Approvals | 13 | Excel import review UI | C.3 |
-| D.4: Email Notifications | — | AWS SES integration | None |
-| D.5: AWS Lightsail Deployment | — | Production hosting | None |
-| D.6: Offline Capability | — | Service Workers, IndexedDB | D.5 |
+| Task | Change # | Depends On | Notes |
+|------|----------|------------|-------|
+| D.1: Admin Per-BDM DCR Summary | 15 | C.2 | Performance monitoring |
+| D.2: Wire Up Scaffolded Pages | — | C.2 | Replace mock data with real APIs |
+| D.4: Email Notifications | — | None | Independent |
+| D.5: AWS Lightsail Deployment | — | None | Production hosting |
+| D.6: Offline Capability | — | D.5 | Deferred |
 
 ---
 
@@ -697,20 +729,49 @@ LEVEL OF ENGAGEMENT (1-5), BIRTHDAY, ANNIVERSARY, OTHER DETAILS
 
 ## Critical Path
 ```
-A.1 (VIP Client Model) → A.4 (BDM Edit) → B.1 (Info Page) → B.4 (Engagement)
-A.1 → A.3 (Remove MedRep) → B.2 (Product Popup)
-A.1 → C.1 (Schedule) → C.2 (CPT/DCR) → D.1 (Admin DCR)
-C.1 → C.3 (Excel Import) → D.3 (Repurpose Approvals)
-B.6 (Regular Clients) → C.2 (Extra Call section)
+A.1 ✅ → A.3 → B.2 (Product Popup needs target products in BDM)
+A.1 ✅ → A.4 → B.1 (Info Page needs BDM edit permissions)
+A.1 ✅ → C.1+A.2 (Schedule + Alternating Weeks)
+         C.1 → C.2 (CPT/DCR needs Schedule)
+         C.1 → C.3+D.3 (Excel Import needs Schedule)
+B.6 ───→ C.2 (Extra Call section needs Regular Clients)
+C.2 ───→ D.1 (Admin DCR needs CPT data)
+C.2 ───→ D.2 (Scaffolded pages need real DCR data)
+C.2 ───→ B.5b (BDM Performance DCR part)
 ```
 
-## Independent Tasks (can start anytime)
-- A.2 (Alternating week rule)
+## Independent Tasks (can start anytime after A.1 ✅)
 - B.3 (Photo upload flexibility)
-- B.5 (BDM performance page)
-- B.6 (Regular clients)
+- B.6 (Regular clients) — **prioritize early, unblocks C.2**
+- B.7 (Filter by support/program)
+- B.4 (Engagement tracking display)
+- B.5a (BDM performance basic stats)
+- C.4 (VIP count minimums)
 - D.4 (Email notifications)
 - D.5 (AWS Lightsail deployment)
+
+## Recommended Implementation Order
+```
+ 1. A.3  — Remove MedRep Role
+ 2. A.4  — BDM Edit Own VIP Clients
+ 3. B.3  — Photo Upload Flexibility (independent)
+ 4. B.6  — Regular Clients (independent, unblocks C.2)
+ 5. C.1+A.2 — Schedule System + Alternating Weeks (core feature)
+ 6. B.1  — VIP Client Info Page (needs A.4)
+ 7. B.2  — Product Detail Popup (needs A.3)
+ 8. B.4  — Engagement Tracking Display
+ 9. B.5a — BDM Performance (basic stats)
+10. B.7  — Filter by Support/Program
+11. C.4  — VIP Count Minimums
+12. C.2  — CPT View + DCR Summary (needs C.1 + B.6)
+13. C.3+D.3 — Excel Import + Approvals UI (needs C.1)
+14. D.1  — Admin Per-BDM DCR Summary (needs C.2)
+15. D.2  — Wire Up Scaffolded Pages (needs C.2)
+16. B.5b — BDM Performance DCR part (needs C.2)
+17. D.4  — Email Notifications
+18. D.5  — AWS Lightsail Deployment
+19. D.6  — Offline Capability (deferred)
+```
 
 ---
 
@@ -719,7 +780,20 @@ B.6 (Regular Clients) → C.2 (Extra Call section)
 | Phase | Tasks | Key Deliverables | Status |
 |-------|-------|------------------|--------|
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
-| **Phase A: Schema + Roles** | 4 tasks | New Doctor fields, alternating weeks, remove MedRep, BDM edit | 🔄 In progress (1/4 complete) |
-| **Phase B: UX Improvements** | 7 tasks | Info page, photos, engagement, regular clients, filters | Not started |
-| **Phase C: Scheduling & Import** | 4 tasks | 4-week calendar, CPT/DCR, Excel import, VIP minimums | Not started |
-| **Phase D: Advanced** | 6 tasks | Admin monitoring, scaffolded pages, deployment, offline | Not started |
+| **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3, A.4) | Remove MedRep, BDM self-edit | 🔄 In progress (1/3 complete) |
+| **Phase 3: Independent UX** | 6 tasks (B.3, B.6, B.7, B.4, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | ⬜ Not started |
+| **Phase 4: Schedule System** | 3 tasks (C.1+A.2, B.1, B.2) | 4-week calendar, alternating weeks, info page | ⬜ Not started |
+| **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |
+| **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |
+
+---
+
+## Key Changes from Original Phase Structure
+
+| What Changed | Original | New | Why |
+|---|---|---|---|
+| A.2 (Alternating Weeks) | Phase A standalone | Merged into C.1 in Phase 4 | Needs Schedule model for carry-forward logic |
+| B.6 (Regular Clients) | Phase B middle | Phase 3 early priority | Unblocks C.2's Extra Call section |
+| C.3 + D.3 | Separate phases | Combined in Phase 5 | Same feature (Excel Import) split across phases |
+| D.1, D.2 | Phase D no deps noted | Phase 6 with C.2 dependency | Need DCR data from C.2 |
+| B.5 (BDM Performance) | Single task | Split: B.5a (Phase 3) + B.5b (Phase 5) | DCR part needs C.2 |

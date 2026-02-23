@@ -7,7 +7,7 @@
  * - Work days validation (Monday-Friday only)
  * - Week number and date calculations
  *
- * Business Rules (New):
+ * Business Rules:
  * - Maximum ONE visit per doctor per calendar week (Mon-Fri)
  * - Monthly quota: 2x or 4x visits per doctor based on visitFrequency
  * - Work days only: Monday to Friday
@@ -306,6 +306,13 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
     };
   }
 
+  // NOTE (Task A.2 / Phase C): Alternating week enforcement for 2x doctors (W1+W3 or W2+W4)
+  // is deferred to Phase C (Task C.1 - Schedule System). The parity check cannot be
+  // implemented correctly here because missed visits carry forward (a visit logged in W2
+  // may be a legitimate carried W1 entry, not an invalid W2 visit). Once the Schedule
+  // model exists, alternating weeks will be enforced through schedule entries themselves —
+  // only scheduled/carried weeks will appear as visitable for each doctor.
+
   return {
     canVisit: true,
     weeklyCount: 0,
@@ -567,6 +574,9 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
         monthlyLimit,
       };
     }
+
+    // NOTE (Task A.2 / Phase C): Alternating week enforcement deferred to Phase C Schedule system.
+    // See canVisitDoctor() for full explanation.
 
     return {
       doctorId,

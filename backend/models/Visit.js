@@ -320,6 +320,18 @@ visitSchema.statics.countDoctorVisitsInMonth = async function (doctorId, userId,
   });
 };
 
+// Static: Get weekOfMonth values for visits to a doctor by a user in a month
+// Used by alternating week validation (2x frequency doctors must visit W1+W3 or W2+W4)
+visitSchema.statics.getDoctorVisitWeeksInMonth = async function (doctorId, userId, monthYear) {
+  const visits = await this.find({
+    doctor: doctorId,
+    user: userId,
+    monthYear: monthYear,
+    status: 'completed',
+  }).select('weekOfMonth').lean();
+  return visits.map((v) => v.weekOfMonth);
+};
+
 // Static: Check if user already visited doctor this week
 visitSchema.statics.hasVisitedThisWeek = async function (doctorId, userId, yearWeekKey) {
   const visit = await this.findOne({
