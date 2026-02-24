@@ -304,17 +304,20 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task B.3: Photo Upload Flexibility (CHANGE_LOG Change 5)
+### Task B.3: Photo Upload Flexibility (CHANGE_LOG Change 5) ✅ COMPLETE
 **Priority**: HIGH
 **Depends on**: None
-**Files**: `frontend/src/components/employee/CameraCapture.jsx`
+**Files**: `frontend/src/components/employee/CameraCapture.jsx`, `frontend/src/components/employee/VisitLogger.jsx`
 
 **Deliverables**:
-- [ ] Camera capture (existing — keep)
-- [ ] File picker / gallery: `<input type="file" accept="image/*" multiple>`
-- [ ] Copy-paste: Clipboard API (`paste` event listener on upload area)
-- [ ] EXIF parsing: `exifr` or `exif-js` library for photo timestamp extraction
-- [ ] BDMs can take photos with any device, then upload when logging visit later
+- [x] Camera capture (existing — kept)
+- [x] File picker / gallery: `<input type="file" accept="image/jpeg,image/png,image/webp" multiple>`
+- [x] Copy-paste: Clipboard API (`paste` event listener on container div)
+- [x] EXIF parsing: `exifr` library for photo timestamp extraction (`DateTimeOriginal`)
+- [x] BDMs can take photos with any device, then upload when logging visit later
+- [x] GPS decoupled from camera — acquired on component mount independently
+- [x] Source badges on photo thumbnails (Camera/Gallery/Clipboard)
+- [x] VisitLogger GPS fallback — tries any photo with GPS, not just first photo
 
 ---
 
@@ -394,7 +397,7 @@ node backend/scripts/migrateDoctorFields.js
 
 | Task | Change # | Depends On | Notes |
 |------|----------|------------|-------|
-| B.3: Photo Upload Flexibility | 5 | None | Independent |
+| B.3: Photo Upload Flexibility | 5 | None | ✅ COMPLETE |
 | B.6: Regular Clients | 16 | None | **Do early — unblocks C.2** |
 | B.7: Filter by Support/Program | 17 | A.1 ✅ | Independent |
 | B.4: Engagement Tracking | 12 | A.1 ✅ | Independent |
@@ -750,7 +753,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 ```
 
 ## Independent Tasks (can start anytime after A.1 ✅)
-- B.3 (Photo upload flexibility)
+- B.3 (Photo upload flexibility) ✅
 - B.6 (Regular clients) — **prioritize early, unblocks C.2**
 - B.7 (Filter by support/program)
 - B.4 (Engagement tracking display)
@@ -763,7 +766,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 ```
  1. A.3  — Remove MedRep Role ✅
  2. A.4  — BDM Edit Own VIP Clients ✅
- 3. B.3  — Photo Upload Flexibility (independent)
+ 3. B.3  — Photo Upload Flexibility ✅
  4. B.6  — Regular Clients (independent, unblocks C.2)
  5. C.1+A.2 — Schedule System + Alternating Weeks (core feature)
  6. B.1  — VIP Client Info Page (needs A.4)
@@ -790,7 +793,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 |-------|-------|------------------|--------|
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
 | **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4 ✅) | Remove MedRep, BDM self-edit | ✅ COMPLETE |
-| **Phase 3: Independent UX** | 6 tasks (B.3, B.6, B.7, B.4, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | ⬜ Not started |
+| **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6, B.7, B.4, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | 🔄 In progress (1/6) |
 | **Phase 4: Schedule System** | 3 tasks (C.1+A.2, B.1, B.2) | 4-week calendar, alternating weeks, info page | ⬜ Not started |
 | **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |
 | **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |

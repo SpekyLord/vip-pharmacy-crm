@@ -253,10 +253,10 @@ const VisitLogger = ({ doctor, onSuccess }) => {
       return;
     }
 
-    // Get location from first photo
-    const visitLocation = photos[0].location;
+    // Get GPS location - prefer first photo, fall back to any photo with GPS
+    const visitLocation = photos.find(p => p.location)?.location;
     if (!visitLocation) {
-      toast.error('GPS location is required. Please retake photos with location enabled.');
+      toast.error('GPS location required. Please enable location services and try again.');
       return;
     }
 
@@ -334,6 +334,9 @@ const VisitLogger = ({ doctor, onSuccess }) => {
       {/* Photo Capture Section */}
       <div className="form-section">
         <h3>Photo Proof *</h3>
+        <p style={{ color: '#6b7280', fontSize: '13px', margin: '0 0 12px 0' }}>
+          Use camera, upload from gallery, or paste from clipboard
+        </p>
         <CameraCapture
           onCapture={handlePhotosChange}
           maxPhotos={5}

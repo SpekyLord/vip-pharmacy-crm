@@ -1,15 +1,17 @@
 /**
- * CameraCapture Component
+ * CameraCapture Component (Photo Capture)
  *
- * Camera functionality for:
- * - Capturing visit photos with GPS location
- * - Each photo includes GPS coordinates and timestamp
- * - Preview before upload with accuracy indicator
+ * Multi-source photo capture for visit proof:
+ * - Camera capture (existing) with live viewfinder
+ * - File picker / gallery upload (new)
+ * - Clipboard paste (new)
+ * - GPS acquired independently on mount (decoupled from camera)
+ * - EXIF timestamp parsing for gallery photos (exifr)
  * - Multiple photo support (up to maxPhotos)
- * - GPS pre-acquisition when camera opens (60 second timeout)
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import exifr from 'exifr';
 
 const cameraStyles = `
   .camera-capture {
@@ -47,6 +49,7 @@ const cameraStyles = `
     padding: 8px 12px;
     border-radius: 6px;
     background: #f0f0f0;
+    width: 100%;
   }
 
   .gps-acquiring {
@@ -197,6 +200,78 @@ const cameraStyles = `
     background: #d1d5db;
     cursor: not-allowed;
   }
+
+  .photo-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .upload-btn {
+    background: #6b7280;
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .upload-btn:hover:not(:disabled) {
+    background: #4b5563;
+  }
+
+  .upload-btn:disabled {
+    background: #d1d5db;
+    cursor: not-allowed;
+  }
+
+  .paste-hint {
+    color: #9ca3af;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+
+  .source-badge {
+    display: inline-block;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+
+  .photo-source-camera {
+    background: #2563eb;
+    color: white;
+  }
+
+  .photo-source-gallery {
+    background: #7c3aed;
+    color: white;
+  }
+
+  .photo-source-clipboard {
+    background: #0891b2;
+    color: white;
+  }
+
+  .no-gps-badge {
+    color: #f59e0b;
+  }
+
+  @media (max-width: 480px) {
+    .photo-actions {
+      flex-direction: column;
+    }
+    .photo-actions button {
+      width: 100%;
+    }
+  }
 `;
 
 const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
@@ -204,52 +279,22 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [gpsStatus, setGpsStatus] = useState('idle'); // idle, acquiring, ready, failed
+  const [gpsStatus, setGpsStatus] = useState('acquiring');
   const [cachedLocation, setCachedLocation] = useState(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const gpsWatchId = useRef(null);
   const gpsTimeoutId = useRef(null);
+  const fileInputRef = useRef(null);
+  const containerRef = useRef(null);
+  const hasLocationRef = useRef(false);
 
   // GPS timeout duration (5 minutes max to prevent battery drain)
   const GPS_TIMEOUT_MS = 5 * 60 * 1000;
 
-  // Cleanup camera and GPS on unmount
-  useEffect(() => {
-    return () => {
-      // Cleanup camera stream
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
-      // Clear video source to ensure camera stops
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-      // Cleanup GPS watch
-      if (gpsWatchId.current) {
-        navigator.geolocation.clearWatch(gpsWatchId.current);
-        gpsWatchId.current = null;
-      }
-      // Cleanup GPS timeout
-      if (gpsTimeoutId.current) {
-        clearTimeout(gpsTimeoutId.current);
-        gpsTimeoutId.current = null;
-      }
-    };
-  }, []);
-
-  // Attach stream to video element when capturing starts
-  // This fixes the race condition where srcObject was set before video element existed
-  useEffect(() => {
-    if (isCapturing && videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-    }
-  }, [isCapturing]);
-
   // Start continuous GPS tracking with quick initial fix
-  const startGPSTracking = () => {
+  const startGPSTracking = useCallback(() => {
     if (!navigator.geolocation) {
       setError('Geolocation is not supported by your browser');
       setGpsStatus('failed');
@@ -259,31 +304,27 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
     setGpsStatus('acquiring');
     setError(null);
 
-    // Track if we got a location (using ref to avoid stale closure)
-    let hasLocation = false;
-
     const handlePosition = (position) => {
-      hasLocation = true;
-      setCachedLocation({
+      hasLocationRef.current = true;
+      const loc = {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
         accuracy: position.coords.accuracy,
-      });
+      };
+      setCachedLocation(loc);
       setGpsStatus('ready');
     };
 
-    const handleError = (err) => {
-      // Only show acquiring if we don't have a location yet
-      if (!hasLocation) {
+    const handleError = () => {
+      if (!hasLocationRef.current) {
         setGpsStatus('acquiring');
       }
-      void err; // Acknowledge parameter
     };
 
     // First: Try quick low-accuracy position (usually instant from cached/network)
     navigator.geolocation.getCurrentPosition(
       handlePosition,
-      () => {}, // Ignore error, watchPosition will keep trying
+      () => {},
       { enableHighAccuracy: false, timeout: 5000, maximumAge: 30000 }
     );
 
@@ -293,7 +334,7 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
       handleError,
       {
         enableHighAccuracy: true,
-        timeout: 15000, // 15 seconds per attempt
+        timeout: 15000,
         maximumAge: 5000,
       }
     );
@@ -304,26 +345,158 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
         navigator.geolocation.clearWatch(gpsWatchId.current);
         gpsWatchId.current = null;
       }
-      // If we still don't have a location after 5 minutes, mark as failed
-      if (!hasLocation) {
+      if (!hasLocationRef.current) {
         setGpsStatus('failed');
         setError('GPS timed out. Please ensure location is enabled and try again.');
       }
     }, GPS_TIMEOUT_MS);
+  }, [GPS_TIMEOUT_MS]);
+
+  // Start GPS tracking on mount (decoupled from camera)
+  useEffect(() => {
+    startGPSTracking();
+
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      if (gpsWatchId.current) {
+        navigator.geolocation.clearWatch(gpsWatchId.current);
+        gpsWatchId.current = null;
+      }
+      if (gpsTimeoutId.current) {
+        clearTimeout(gpsTimeoutId.current);
+        gpsTimeoutId.current = null;
+      }
+    };
+  }, [startGPSTracking]);
+
+  // Attach stream to video element when capturing starts
+  useEffect(() => {
+    if (isCapturing && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [isCapturing]);
+
+  // Clipboard paste listener
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const onPaste = (e) => {
+      handlePaste(e);
+    };
+
+    container.addEventListener('paste', onPaste);
+    return () => container.removeEventListener('paste', onPaste);
+  });
+
+  // Parse EXIF DateTimeOriginal from a File, fall back to current time
+  const getExifTimestamp = async (file) => {
+    try {
+      const exifData = await exifr.parse(file, { pick: ['DateTimeOriginal'] });
+      if (exifData?.DateTimeOriginal) {
+        return new Date(exifData.DateTimeOriginal).toISOString();
+      }
+    } catch {
+      // No EXIF or parse error — fall back
+    }
+    return new Date().toISOString();
   };
 
-  // Stop GPS tracking
-  const stopGPSTracking = () => {
-    if (gpsWatchId.current) {
-      navigator.geolocation.clearWatch(gpsWatchId.current);
-      gpsWatchId.current = null;
+  // Read a File as base64 data URL
+  const readFileAsDataURL = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Add photos from File objects (used by gallery and clipboard)
+  const addPhotosFromFiles = async (files, source) => {
+    const remaining = maxPhotos - photos.length;
+    if (remaining <= 0) return;
+
+    const filesToProcess = Array.from(files).slice(0, remaining);
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const newPhotoEntries = [];
+
+      for (const file of filesToProcess) {
+        // Validate file type
+        if (!file.type.startsWith('image/')) continue;
+
+        // Validate file size (5MB max)
+        if (file.size > 5 * 1024 * 1024) {
+          setError(`File "${file.name}" exceeds 5MB limit and was skipped.`);
+          continue;
+        }
+
+        const [dataUrl, capturedAt] = await Promise.all([
+          readFileAsDataURL(file),
+          getExifTimestamp(file),
+        ]);
+
+        newPhotoEntries.push({
+          data: dataUrl,
+          location: cachedLocation || null,
+          capturedAt,
+          source,
+        });
+      }
+
+      if (newPhotoEntries.length > 0) {
+        const updatedPhotos = [...photos, ...newPhotoEntries];
+        setPhotos(updatedPhotos);
+        onCapture?.(updatedPhotos);
+      }
+    } catch (err) {
+      console.error(`Error processing ${source} photos:`, err);
+      setError(`Failed to process ${source} photo(s).`);
+    } finally {
+      setIsLoading(false);
     }
-    if (gpsTimeoutId.current) {
-      clearTimeout(gpsTimeoutId.current);
-      gpsTimeoutId.current = null;
+  };
+
+  // Gallery file picker handler
+  const handleFileSelect = (e) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      addPhotosFromFiles(files, 'gallery');
     }
-    setGpsStatus('idle');
-    setCachedLocation(null);
+    // Reset input so same file can be re-selected
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Clipboard paste handler
+  const handlePaste = (e) => {
+    if (photos.length >= maxPhotos) return;
+
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const imageFiles = [];
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      addPhotosFromFiles(imageFiles, 'clipboard');
+    }
   };
 
   const startCamera = async () => {
@@ -333,10 +506,7 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
         video: { facingMode: 'environment' },
       });
       streamRef.current = stream;
-      setIsCapturing(true); // useEffect will attach stream to video element
-
-      // Start GPS tracking immediately when camera opens
-      startGPSTracking();
+      setIsCapturing(true);
     } catch (err) {
       console.error('Error accessing camera:', err);
       setError('Unable to access camera. Please allow camera permission.');
@@ -348,16 +518,13 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-    // Clear video source to ensure camera stops
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-    stopGPSTracking();
     setIsCapturing(false);
     setIsVideoReady(false);
   };
 
-  // Handle video metadata loaded - ensures video dimensions are available
   const handleVideoLoaded = () => {
     if (videoRef.current && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
       setIsVideoReady(true);
@@ -371,7 +538,6 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
         reject(new Error('Geolocation not supported'));
         return;
       }
-
       navigator.geolocation.getCurrentPosition(
         (position) => {
           resolve({
@@ -394,21 +560,18 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
 
   // Retry GPS with fallback to lower accuracy
   const getGPSWithRetry = async () => {
-    // First attempt: high accuracy, 60 seconds
     try {
       return await getGPSLocation({ enableHighAccuracy: true, timeout: 60000 });
     } catch (err) {
       console.warn('High accuracy GPS failed, trying lower accuracy:', err.message);
-      // Second attempt: lower accuracy, 30 seconds
       return await getGPSLocation({ enableHighAccuracy: false, timeout: 30000 });
     }
   };
 
-  // Capture photo with GPS location
+  // Capture photo from camera with GPS location
   const capturePhoto = async () => {
     if (!videoRef.current) return;
 
-    // Validate video is ready with proper dimensions
     if (!videoRef.current.videoWidth || !videoRef.current.videoHeight) {
       setError('Camera not ready. Please wait for video to load.');
       return;
@@ -426,8 +589,9 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
         try {
           location = await getGPSWithRetry();
           setCachedLocation(location);
+          hasLocationRef.current = true;
           setGpsStatus('ready');
-        } catch (err) {
+        } catch {
           setError('Unable to get GPS location. Please ensure location is enabled and try again.');
           setGpsStatus('failed');
           setIsLoading(false);
@@ -435,7 +599,6 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
         }
       }
 
-      // Capture photo from video stream
       const canvas = document.createElement('canvas');
       canvas.width = videoRef.current.videoWidth;
       canvas.height = videoRef.current.videoHeight;
@@ -444,11 +607,11 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
 
       const photoData = canvas.toDataURL('image/jpeg', 0.8);
 
-      // Create photo object with GPS data
       const photoWithGps = {
         data: photoData,
         location: location,
         capturedAt: new Date().toISOString(),
+        source: 'camera',
       };
 
       const newPhotos = [...photos, photoWithGps];
@@ -472,7 +635,6 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
     onCapture?.(newPhotos);
   };
 
-  // Format GPS accuracy for display
   const formatAccuracy = (meters) => {
     if (meters < 10) return 'Excellent';
     if (meters < 30) return 'Good';
@@ -480,24 +642,69 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
     return 'Poor';
   };
 
-  // Check if GPS accuracy is acceptable for visit proof (within 100 meters)
-  const isAccuracyAcceptable = (meters) => meters <= 100;
-
-  // Get button text based on GPS status
   const getCaptureButtonText = () => {
     if (isLoading) return 'Capturing...';
     if (gpsStatus === 'acquiring') return 'Waiting for GPS...';
     return 'Take Photo';
   };
 
+  const isFull = photos.length >= maxPhotos;
+
+  const renderGPSStatus = () => (
+    <div className="gps-status-indicator">
+      {gpsStatus === 'acquiring' && (
+        <span className="gps-acquiring">Acquiring GPS...</span>
+      )}
+      {gpsStatus === 'ready' && cachedLocation && (
+        <div className="gps-ready">
+          <div>GPS Ready ({Math.round(cachedLocation.accuracy)}m accuracy)</div>
+          <div className="gps-coordinates">
+            Lat: {cachedLocation.latitude.toFixed(6)}, Lng: {cachedLocation.longitude.toFixed(6)}
+          </div>
+        </div>
+      )}
+      {gpsStatus === 'failed' && (
+        <span className="gps-failed">GPS Unavailable</span>
+      )}
+    </div>
+  );
+
+  const renderPhotoBadge = (photo) => {
+    const hasGps = photo.location != null;
+    const sourceBadgeClass = `source-badge photo-source-${photo.source || 'camera'}`;
+    const sourceLabel = photo.source === 'gallery' ? 'Gallery' : photo.source === 'clipboard' ? 'Clipboard' : 'Camera';
+
+    return (
+      <div className="photo-gps-badge">
+        <span className={sourceBadgeClass}>{sourceLabel}</span>
+        {hasGps ? (
+          <>
+            <span className={`accuracy-${formatAccuracy(photo.location.accuracy).toLowerCase()}`}>
+              GPS: {formatAccuracy(photo.location.accuracy)} ({Math.round(photo.location.accuracy)}m)
+            </span>
+            <span className="photo-coordinates">
+              {photo.location.latitude.toFixed(6)}, {photo.location.longitude.toFixed(6)}
+            </span>
+          </>
+        ) : (
+          <span className="no-gps-badge">No GPS</span>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className="camera-capture">
+    <div className="camera-capture" ref={containerRef} tabIndex={-1}>
       <style>{cameraStyles}</style>
+
       {error && (
         <div className="camera-error">
           {error}
         </div>
       )}
+
+      {/* GPS status - always visible since GPS starts on mount */}
+      {!isCapturing && renderGPSStatus()}
 
       {isCapturing ? (
         <div className="camera-view">
@@ -509,23 +716,7 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
             onLoadedMetadata={handleVideoLoaded}
           />
 
-          {/* GPS Status Indicator */}
-          <div className="gps-status-indicator">
-            {gpsStatus === 'acquiring' && (
-              <span className="gps-acquiring">Acquiring GPS...</span>
-            )}
-            {gpsStatus === 'ready' && cachedLocation && (
-              <div className="gps-ready">
-                <div>GPS Ready ({Math.round(cachedLocation.accuracy)}m accuracy)</div>
-                <div className="gps-coordinates">
-                  Lat: {cachedLocation.latitude.toFixed(6)}, Lng: {cachedLocation.longitude.toFixed(6)}
-                </div>
-              </div>
-            )}
-            {gpsStatus === 'failed' && (
-              <span className="gps-failed">GPS Unavailable</span>
-            )}
-          </div>
+          {renderGPSStatus()}
 
           <div className="camera-controls">
             <button
@@ -542,35 +733,48 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
           </div>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={startCamera}
-          disabled={photos.length >= maxPhotos}
-          className="btn btn-secondary"
-        >
-          Open Camera ({photos.length}/{maxPhotos})
-        </button>
+        <div className="photo-actions" style={{ marginTop: '12px' }}>
+          <button
+            type="button"
+            onClick={startCamera}
+            disabled={isFull}
+            className="btn btn-secondary"
+          >
+            Open Camera ({photos.length}/{maxPhotos})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isFull || isLoading}
+            className="upload-btn"
+          >
+            {isLoading ? 'Processing...' : 'Upload from Gallery'}
+          </button>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+          />
+        </div>
       )}
 
       {photos.length > 0 && (
         <div className="photo-preview">
           {photos.map((photo, index) => (
             <div key={index} className="photo-thumbnail">
-              <img src={photo.data} alt={`Captured ${index + 1}`} />
-              <div className="photo-gps-badge">
-                <span className={`accuracy-${formatAccuracy(photo.location.accuracy).toLowerCase()}`}>
-                  GPS: {formatAccuracy(photo.location.accuracy)} ({Math.round(photo.location.accuracy)}m)
-                </span>
-                <span className="photo-coordinates">
-                  {photo.location.latitude.toFixed(6)}, {photo.location.longitude.toFixed(6)}
-                </span>
-              </div>
+              <img src={photo.data} alt={`Photo ${index + 1}`} />
+              {renderPhotoBadge(photo)}
               <button
                 type="button"
                 onClick={() => removePhoto(index)}
                 className="photo-remove"
               >
-                ✕
+                &#x2715;
               </button>
             </div>
           ))}
@@ -579,7 +783,13 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
 
       {photos.length === 0 && !isCapturing && (
         <p className="camera-hint">
-          Take at least 1 photo as proof of visit. GPS location will be captured automatically.
+          Take a photo, upload from gallery, or paste from clipboard. GPS location is captured automatically.
+        </p>
+      )}
+
+      {!isCapturing && !isFull && (
+        <p className="paste-hint">
+          You can also paste images from clipboard (Ctrl+V)
         </p>
       )}
     </div>
