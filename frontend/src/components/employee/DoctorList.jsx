@@ -12,6 +12,7 @@
 import { useState, useEffect, useMemo, memo } from 'react';
 import LoadingSpinner from '../common/LoadingSpinner';
 import visitService from '../../services/visitService';
+import TargetProductsModal from './TargetProductsModal';
 
 const doctorListStyles = `
   .doctor-list {
@@ -189,10 +190,12 @@ const doctorListStyles = `
 
   .doctor-card-actions {
     margin-top: 16px;
+    display: flex;
+    gap: 10px;
   }
 
   .log-visit-btn {
-    width: 100%;
+    flex: 1;
     padding: 12px 20px;
     border: none;
     border-radius: 8px;
@@ -212,6 +215,24 @@ const doctorListStyles = `
   .log-visit-btn:disabled {
     background: #9ca3af;
     cursor: not-allowed;
+  }
+
+  .products-btn {
+    padding: 12px 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #fff;
+    color: #374151;
+    white-space: nowrap;
+  }
+
+  .products-btn:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
   }
 
   .no-results {
@@ -247,6 +268,7 @@ const DoctorList = memo(function DoctorList({
   const [frequencyFilter, setFrequencyFilter] = useState('all');
   const [visitStatus, setVisitStatus] = useState({});
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [productsDoctor, setProductsDoctor] = useState(null);
 
   // Fetch visit status for all doctors using batch endpoint (eliminates N+1 problem)
   useEffect(() => {
@@ -423,6 +445,16 @@ const DoctorList = memo(function DoctorList({
                 >
                   {canVisit ? 'Log Visit' : 'Cannot Visit'}
                 </button>
+                <button
+                  className="products-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setProductsDoctor(doctor);
+                  }}
+                  title="Manage target products"
+                >
+                  Products
+                </button>
               </div>
             </div>
           );
@@ -435,6 +467,14 @@ const DoctorList = memo(function DoctorList({
             ? 'No VIP Clients assigned to your region'
             : 'No VIP Clients match your search criteria'}
         </p>
+      )}
+
+      {productsDoctor && (
+        <TargetProductsModal
+          doctor={productsDoctor}
+          onClose={() => setProductsDoctor(null)}
+          onSaved={() => setProductsDoctor(null)}
+        />
       )}
     </div>
   );

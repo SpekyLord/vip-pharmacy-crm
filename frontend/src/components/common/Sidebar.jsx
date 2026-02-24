@@ -23,7 +23,6 @@ import {
   Inbox,
   Calendar,
   Stethoscope,
-  Package,
   ChevronLeft,
   ChevronRight,
   Activity,
@@ -357,28 +356,6 @@ const getMenuConfig = (role) => {
         ],
       };
 
-    case 'medrep':
-      return {
-        roleTitle: 'Medical Rep',
-        roleSubtitle: 'Product Specialist',
-        roleIcon: Package,
-        sections: [
-          {
-            title: 'Main',
-            items: [
-              { path: '/medrep', label: 'Dashboard', icon: LayoutDashboard },
-            ],
-          },
-          {
-            title: 'Work',
-            items: [
-              { path: '/medrep/assignments', label: 'Assignments', icon: ClipboardCheck },
-              { path: '/medrep/products', label: 'Products', icon: Package },
-            ],
-          },
-        ],
-      };
-
     case 'employee':
     default:
       return {
@@ -417,7 +394,7 @@ const Sidebar = () => {
   const RoleIcon = menuConfig.roleIcon;
 
   const isActive = (path) => {
-    if (path === '/admin' || path === '/employee' || path === '/medrep') {
+    if (path === '/admin' || path === '/employee') {
       return location.pathname === path;
     }
     return location.pathname.startsWith(path);

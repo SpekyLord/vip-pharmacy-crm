@@ -4,7 +4,7 @@
  * Product Assignment API calls:
  * - CRUD operations for product-doctor assignments
  * - Bulk assignment operations
- * - MedRep-specific queries
+ * - Admin-specific queries
  */
 
 import api from './api';
@@ -20,7 +20,7 @@ const assignmentService = {
   },
 
   /**
-   * Get assignments created by the current MedRep
+   * Get assignments created by the current user
    * @param {Object} params - Query parameters (page, limit)
    */
   getMyAssignments: async (params = {}) => {

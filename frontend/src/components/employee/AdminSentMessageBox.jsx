@@ -277,7 +277,6 @@ const AdminSentMessageBox = ({
                     onChange={(e) => setDraftRecipientRole(e.target.value)}
                   >
                     <option value="employee">Employee</option>
-                    <option value="medrep">Medrep</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>

@@ -150,9 +150,9 @@ const MOCK_ACTIVITIES = [
   {
     _id: 'act-007',
     type: 'DOCTOR_UPDATE',
-    message: 'MedRep created new doctor profile: Dr. Angela Yu',
-    employeeName: 'MedRep User',
-    employeeId: 'medrep-001',
+    message: 'Admin created new doctor profile: Dr. Angela Yu',
+    employeeName: 'Admin User',
+    employeeId: 'admin-001',
     region: 'NCR - Metro Manila',
     timestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
     details: {
@@ -266,9 +266,9 @@ const MOCK_ACTIVITIES = [
   {
     _id: 'act-014',
     type: 'PRODUCT_ASSIGN',
-    message: 'MedRep assigned GastroShield to Dr. Mendoza',
-    employeeName: 'MedRep User',
-    employeeId: 'medrep-001',
+    message: 'Admin assigned GastroShield to Dr. Mendoza',
+    employeeName: 'Admin User',
+    employeeId: 'admin-001',
     region: 'Region VI - Western Visayas',
     timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
     details: {

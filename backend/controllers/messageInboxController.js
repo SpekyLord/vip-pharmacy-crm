@@ -109,7 +109,7 @@ const toInboxDTO = (doc, userId) => {
 
 
 /* ------------------------------------------------------------------ */
-/* @desc    Get inbox messages (employee/medrep/admin)                 */
+/* @desc    Get inbox messages (employee/admin)                        */
 /* @route   GET /api/messages                                         */
 /* @access  All authenticated users                                   */
 /* ------------------------------------------------------------------ */

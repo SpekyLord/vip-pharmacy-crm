@@ -8,7 +8,7 @@
  *
  * This controller provides:
  * - Read-only access to website products
- * - Product search and filtering for MedReps/Employees
+ * - Product search and filtering for BDMs/Admins
  * - Product data for assignments and visits
  */
 

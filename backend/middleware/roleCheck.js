@@ -9,8 +9,7 @@
  *
  * Roles:
  * - admin: Full system access, can access all regions
- * - medrep: Medical representative - can assign products to doctors
- * - employee: Field employee - can only access assigned regions
+ * - employee: Field employee (BDM) - can only access assigned regions
  */
 
 /**
@@ -47,22 +46,10 @@ const roleCheck = (...allowedRoles) => {
 const adminOnly = roleCheck('admin');
 
 /**
- * Med rep only middleware
- * Shortcut for roleCheck('medrep')
- */
-const medRepOnly = roleCheck('medrep');
-
-/**
  * Employee only middleware
  * Shortcut for roleCheck('employee')
  */
 const employeeOnly = roleCheck('employee');
-
-/**
- * Admin or Med rep middleware
- * For routes accessible by both admin and med reps
- */
-const adminOrMedRep = roleCheck('admin', 'medrep');
 
 /**
  * Admin or Employee middleware
@@ -74,7 +61,7 @@ const adminOrEmployee = roleCheck('admin', 'employee');
  * All authenticated users middleware
  * For routes accessible by any authenticated user
  */
-const anyRole = roleCheck('admin', 'medrep', 'employee');
+const anyRole = roleCheck('admin', 'employee');
 
 /**
  * Check if user can access a specific region
@@ -94,11 +81,6 @@ const canAccessRegion = (regionIdParam = 'regionId') => {
 
     // Admin with canAccessAllRegions can access any region
     if (req.user.role === 'admin' && req.user.canAccessAllRegions) {
-      return next();
-    }
-
-    // Med reps can access all regions (for product assignment)
-    if (req.user.role === 'medrep') {
       return next();
     }
 
@@ -237,9 +219,7 @@ const isAssignedToDoctor = async (req, res, next) => {
 module.exports = {
   roleCheck,
   adminOnly,
-  medRepOnly,
   employeeOnly,
-  adminOrMedRep,
   adminOrEmployee,
   anyRole,
   canAccessRegion,

@@ -3,8 +3,8 @@
  *
  * Handles product-to-doctor assignments
  * Follows CLAUDE.md rules:
- * - Only MedRep can manage assignments
- * - Used to show relevant products during employee visits
+ * - Admin can manage assignments
+ * - Used to show relevant products during BDM visits
  */
 
 const ProductAssignment = require('../models/ProductAssignment');
@@ -43,7 +43,7 @@ const populateProductData = async (assignments, fields = 'name category image br
 /**
  * @desc    Get all assignments with pagination and filters
  * @route   GET /api/assignments
- * @access  MedRep, Admin
+ * @access  Admin, Employee
  */
 const getAllAssignments = catchAsync(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
@@ -70,7 +70,7 @@ const getAllAssignments = catchAsync(async (req, res) => {
     filter.doctor = req.query.doctor;
   }
 
-  // Filter by assigned by (for medrep to see their own assignments)
+  // Filter by assigned by (for admin to see their own assignments)
   if (req.query.assignedBy) {
     filter.assignedBy = req.query.assignedBy;
   }
@@ -132,7 +132,7 @@ const getAssignmentById = catchAsync(async (req, res) => {
 /**
  * @desc    Create new assignment
  * @route   POST /api/assignments
- * @access  MedRep only
+ * @access  Admin only
  */
 const createAssignment = catchAsync(async (req, res) => {
   const { product, doctor, priority, notes } = req.body;
@@ -193,7 +193,7 @@ const createAssignment = catchAsync(async (req, res) => {
 /**
  * @desc    Update assignment
  * @route   PUT /api/assignments/:id
- * @access  MedRep only
+ * @access  Admin only
  */
 const updateAssignment = catchAsync(async (req, res) => {
   const assignment = await ProductAssignment.findById(req.params.id);
@@ -227,7 +227,7 @@ const updateAssignment = catchAsync(async (req, res) => {
 /**
  * @desc    Deactivate assignment
  * @route   DELETE /api/assignments/:id
- * @access  MedRep only
+ * @access  Admin only
  */
 const deleteAssignment = catchAsync(async (req, res) => {
   const { reason } = req.body;
@@ -295,7 +295,7 @@ const getAssignmentsByDoctor = catchAsync(async (req, res) => {
 /**
  * @desc    Get assignments for a product
  * @route   GET /api/assignments/product/:productId
- * @access  MedRep, Admin
+ * @access  Admin
  */
 const getAssignmentsByProduct = catchAsync(async (req, res) => {
   const { productId } = req.params;
@@ -331,7 +331,7 @@ const getAssignmentsByProduct = catchAsync(async (req, res) => {
 /**
  * @desc    Bulk assign products to a doctor
  * @route   POST /api/assignments/bulk
- * @access  MedRep only
+ * @access  Admin only
  */
 const bulkAssign = catchAsync(async (req, res) => {
   const { doctorId, productIds, priority } = req.body;
@@ -396,9 +396,9 @@ const bulkAssign = catchAsync(async (req, res) => {
 });
 
 /**
- * @desc    Get my assignments (for MedRep)
+ * @desc    Get my assignments (for current user)
  * @route   GET /api/assignments/my
- * @access  MedRep
+ * @access  Admin, Employee
  */
 const getMyAssignments = catchAsync(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;

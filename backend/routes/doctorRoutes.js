@@ -8,6 +8,7 @@
  * GET /api/doctors/:id/products - Get doctor's assigned products
  * POST /api/doctors - Create new doctor (admin only)
  * PUT /api/doctors/:id - Update doctor (admin only)
+ * PUT /api/doctors/:id/target-products - Update target products (admin or assigned BDM)
  * DELETE /api/doctors/:id - Soft delete doctor (admin only)
  */
 
@@ -22,10 +23,11 @@ const {
   deleteDoctor,
   getDoctorVisits,
   getDoctorProducts,
+  updateTargetProducts,
 } = require('../controllers/doctorController');
 
 const { protect } = require('../middleware/auth');
-const { adminOnly } = require('../middleware/roleCheck');
+const { adminOnly, adminOrEmployee } = require('../middleware/roleCheck');
 const { createDoctorValidation, updateDoctorValidation } = require('../middleware/validation');
 
 // All routes require authentication
@@ -36,6 +38,9 @@ router.get('/', getAllDoctors);
 router.get('/:id', getDoctorById);
 router.get('/:id/visits', getDoctorVisits);
 router.get('/:id/products', getDoctorProducts);
+
+// Admin or Employee (BDM) routes - ownership checked in controller
+router.put('/:id/target-products', adminOrEmployee, updateTargetProducts);
 
 // Admin only routes
 router.post('/', adminOnly, createDoctorValidation, createDoctor);

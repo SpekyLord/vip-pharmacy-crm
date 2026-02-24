@@ -19,7 +19,6 @@ const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/err
 /**
  * Build region filter based on user role
  * - Admin: no filter (see all)
- * - MedRep: no filter (see all doctors for product assignment)
  * - Employee: assigned regions AND all their descendants (child regions)
  *
  * This enables cascading region access:
@@ -28,11 +27,6 @@ const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/err
 const getRegionFilter = async (user) => {
   if (user.role === 'admin' && user.canAccessAllRegions) {
     return {}; // No region filter for admin
-  }
-
-  // MedReps can access all doctors for product assignment
-  if (user.role === 'medrep') {
-    return {}; // No region filter for medrep
   }
 
   // Employees see assigned regions AND all descendant regions
@@ -180,7 +174,7 @@ const getDoctorById = catchAsync(async (req, res) => {
 /**
  * @desc    Create new doctor
  * @route   POST /api/doctors
- * @access  Admin, MedRep
+ * @access  Admin, Employee
  */
 const createDoctor = catchAsync(async (req, res) => {
   const {
@@ -250,7 +244,7 @@ const createDoctor = catchAsync(async (req, res) => {
 /**
  * @desc    Update doctor
  * @route   PUT /api/doctors/:id
- * @access  Admin, MedRep
+ * @access  Admin, Employee
  */
 const updateDoctor = catchAsync(async (req, res) => {
   const doctor = await Doctor.findById(req.params.id);
@@ -512,6 +506,100 @@ const assignEmployee = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Update target products for a doctor (BDM self-service)
+ * @route   PUT /api/doctors/:id/target-products
+ * @access  Admin, Employee (owner only)
+ */
+const updateTargetProducts = catchAsync(async (req, res) => {
+  const doctor = await Doctor.findById(req.params.id);
+  if (!doctor) {
+    throw new NotFoundError('Doctor not found');
+  }
+
+  // Ownership check: BDMs can only update their own assigned VIP Clients
+  if (req.user.role === 'employee') {
+    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
+    if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+      throw new ForbiddenError('You can only manage products for your assigned VIP Clients');
+    }
+  }
+
+  const { targetProducts } = req.body;
+
+  // Validate: max 3 products
+  if (!Array.isArray(targetProducts) || targetProducts.length > 3) {
+    return res.status(400).json({
+      success: false,
+      message: 'Target products must be an array with max 3 items',
+    });
+  }
+
+  // Validate each product entry
+  for (const item of targetProducts) {
+    if (!item.product || !mongoose.Types.ObjectId.isValid(item.product)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Each target product must have a valid product ID',
+      });
+    }
+    if (item.status && !['showcasing', 'accepted'].includes(item.status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Product status must be showcasing or accepted',
+      });
+    }
+  }
+
+  // Verify products exist in website database
+  if (targetProducts.length > 0) {
+    const Product = getWebsiteProductModel();
+    const productIds = targetProducts.map((tp) => tp.product);
+    const existingProducts = await Product.find({ _id: { $in: productIds } }).select('_id').lean();
+    if (existingProducts.length !== productIds.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'One or more product IDs are invalid',
+      });
+    }
+  }
+
+  doctor.targetProducts = targetProducts.map((tp) => ({
+    product: tp.product,
+    status: tp.status || 'showcasing',
+  }));
+
+  await doctor.save();
+
+  // Populate product data for response
+  let populatedProducts = [];
+  if (doctor.targetProducts.length > 0) {
+    const Product = getWebsiteProductModel();
+    const productIds = doctor.targetProducts.map((tp) => tp.product);
+    const products = await Product.find({ _id: { $in: productIds } })
+      .select('name category image briefDescription')
+      .lean();
+    const productMap = new Map(products.map((p) => [p._id.toString(), p]));
+
+    populatedProducts = doctor.targetProducts.map((tp) => ({
+      product: productMap.get(tp.product.toString()) || { _id: tp.product },
+      status: tp.status,
+    }));
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'Target products updated successfully',
+    data: {
+      _id: doctor._id,
+      firstName: doctor.firstName,
+      lastName: doctor.lastName,
+      fullName: doctor.fullName,
+      targetProducts: populatedProducts,
+    },
+  });
+});
+
 module.exports = {
   getAllDoctors,
   getDoctorById,
@@ -522,4 +610,5 @@ module.exports = {
   getDoctorVisits,
   getDoctorProducts,
   assignEmployee,
+  updateTargetProducts,
 };

@@ -330,18 +330,7 @@ const seedDatabase = async () => {
     });
     console.log(`  Admin created: ${admin.email}`);
 
-    // 3. Create MedRep User
-    console.log('\nCreating medrep user...');
-    const medrep = await User.create({
-      name: 'Medical Representative',
-      email: 'medrep@vipcrm.com',
-      password: 'Medrep123!@#',
-      role: 'medrep',
-      isActive: true,
-    });
-    console.log(`  MedRep created: ${medrep.email}`);
-
-    // 4. Create Employee Users
+    // 3. Create Employee Users
     console.log('\nCreating employee users...');
     const employees = [];
 
@@ -399,14 +388,13 @@ const seedDatabase = async () => {
     console.log('\nLogin Credentials:');
     console.log('------------------');
     console.log('Admin:    admin@vipcrm.com / Admin123!@#');
-    console.log('MedRep:   medrep@vipcrm.com / Medrep123!@#');
     console.log('BDM:      juan@vipcrm.com / BDM123!@#');
     console.log('BDM:      maria@vipcrm.com / BDM123!@#');
     console.log('BDM:      pedro@vipcrm.com / BDM123!@#');
     console.log('\nData Summary:');
     console.log('-------------');
     console.log(`Regions:   ${Object.keys(regionMap).length}`);
-    console.log(`Users:     ${3 + employees.length}`);
+    console.log(`Users:     ${1 + employees.length}`);
     console.log(`Doctors:   ${totalDoctors}`);
     console.log('\nNote: Products are managed via VIP Pharmacy website database.');
     console.log('========================================\n');

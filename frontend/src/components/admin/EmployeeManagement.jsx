@@ -157,11 +157,6 @@ const employeeManagementStyles = `
     color: #d97706;
   }
 
-  .role-badge.role-medrep {
-    background: #dbeafe;
-    color: #1d4ed8;
-  }
-
   .role-badge.role-employee {
     background: #dcfce7;
     color: #16a34a;
@@ -656,7 +651,6 @@ const EmployeeManagement = ({
         >
           <option value="">All Roles</option>
           <option value="admin">Admin</option>
-          <option value="medrep">MedRep</option>
           <option value="employee">BDM</option>
         </select>
         <select
@@ -861,7 +855,6 @@ const EmployeeManagement = ({
                   required
                 >
                   <option value="employee">BDM (Field Rep)</option>
-                  <option value="medrep">MedRep (Product Manager)</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>

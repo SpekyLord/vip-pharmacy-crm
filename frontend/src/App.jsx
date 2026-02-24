@@ -23,8 +23,6 @@ import PendingApprovalsPage from './pages/admin/PendingApprovalsPage';
 import GPSVerificationPage from './pages/admin/GPSVerificationPage';
 import NotificationPreferences from './pages/common/NotificationPreferences';
 
-import MedRepDashboard from './pages/medrep/MedRepDashboard';
-
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 function App() {
@@ -143,29 +141,11 @@ function App() {
           }
         />
 
-        {/* Med Rep Routes */}
-        <Route
-          path="/medrep"
-          element={
-            <ProtectedRoute allowedRoles={['medrep', 'admin']}>
-              <MedRepDashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/medrep/assignments"
-          element={
-            <ProtectedRoute allowedRoles={['medrep', 'admin']}>
-              <MedRepDashboard />
-            </ProtectedRoute>
-          }
-        />
-
         {/* Notification Preferences (All Roles) */}
         <Route
           path="/notifications/preferences"
           element={
-            <ProtectedRoute allowedRoles={['employee', 'admin', 'medrep']}>
+            <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <NotificationPreferences />
             </ProtectedRoute>
           }

@@ -3,7 +3,7 @@
  *
  * Endpoints:
  * GET /api/users - Get all users (admin only)
- * GET /api/users/employees - Get all employees (admin/medrep)
+ * GET /api/users/employees - Get all employees (admin only)
  * GET /api/users/:id - Get user by ID (admin only)
  * POST /api/users - Create new user (admin only)
  * PUT /api/users/:id - Update user (admin only)
@@ -29,7 +29,7 @@ const {
 } = require('../controllers/userController');
 
 const { protect } = require('../middleware/auth');
-const { adminOnly, adminOrMedRep } = require('../middleware/roleCheck');
+const { adminOnly } = require('../middleware/roleCheck');
 const { createUserValidation, updateUserValidation } = require('../middleware/validation');
 const { uploadSingle, processAvatar } = require('../middleware/upload');
 
@@ -40,8 +40,8 @@ router.use(protect);
 router.get('/profile', getProfile);
 router.put('/profile', uploadSingle('avatar'), processAvatar, updateProfile);
 
-// Employee list (for admin and medrep)
-router.get('/employees', adminOrMedRep, getEmployees);
+// Employee list (admin only)
+router.get('/employees', adminOnly, getEmployees);
 
 // Admin only routes
 router.get('/', adminOnly, getAllUsers);

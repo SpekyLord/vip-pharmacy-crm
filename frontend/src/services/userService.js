@@ -16,7 +16,7 @@ const userService = {
     return response.data;
   },
 
-  // Get employees only (admin/medrep)
+  // Get employees only (admin)
   getEmployees: async (params = {}) => {
     const response = await api.get('/users/employees', { params });
     return response.data;

@@ -1,12 +1,11 @@
 /**
  * User Model
  *
- * This model represents system users (admins, med reps, field employees)
+ * This model represents system users (admins, field employees/BDMs)
  *
  * Roles:
  * - admin: Full system access, can see all regions, manage all users
- * - medrep: Medical representative - assigns products to doctors
- * - employee: Field employee - logs visits to doctors in assigned region
+ * - employee: Field employee (BDM) - logs visits to doctors in assigned region
  */
 
 const mongoose = require('mongoose');
@@ -41,8 +40,8 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: {
-        values: ['admin', 'medrep', 'employee'],
-        message: 'Role must be admin, medrep, or employee',
+        values: ['admin', 'employee'],
+        message: 'Role must be admin or employee',
       },
       default: 'employee',
     },
@@ -159,11 +158,6 @@ userSchema.methods.canAccessRegion = async function (regionId) {
   if (this.role === 'admin' && this.canAccessAllRegions) {
     return true;
   }
-  if (this.role === 'medrep') {
-    // Med reps can access all doctors for product assignment
-    return true;
-  }
-
   // Employees can access their assigned regions AND all descendant regions
   const Region = require('./Region');
   const targetRegionStr = (regionId._id || regionId).toString();

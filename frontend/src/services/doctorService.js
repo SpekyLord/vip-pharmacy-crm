@@ -55,6 +55,14 @@ const doctorService = {
     const response = await api.get(`/doctors/${doctorId}/products`);
     return response.data;
   },
+
+  // Update target products (3 slots) for a VIP Client
+  updateTargetProducts: async (doctorId, targetProducts) => {
+    const response = await api.put(`/doctors/${doctorId}/target-products`, {
+      targetProducts,
+    });
+    return response.data;
+  },
 };
 
 export default doctorService;

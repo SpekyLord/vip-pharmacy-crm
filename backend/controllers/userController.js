@@ -3,7 +3,7 @@
  *
  * Handles user CRUD operations and profile management
  * Follows CLAUDE.md rules:
- * - Three roles: admin, medrep, employee
+ * - Two roles: admin, employee
  * - Region-based access control
  * - Admin can access all users
  */
@@ -25,7 +25,7 @@ const getAllUsers = catchAsync(async (req, res) => {
   const filter = {};
 
   // Filter by role
-  if (req.query.role && ['admin', 'medrep', 'employee'].includes(req.query.role)) {
+  if (req.query.role && ['admin', 'employee'].includes(req.query.role)) {
     filter.role = req.query.role;
   }
 
@@ -202,9 +202,9 @@ const deleteUser = catchAsync(async (req, res) => {
 });
 
 /**
- * @desc    Get all employees (for admin/medrep)
+ * @desc    Get all employees (for admin)
  * @route   GET /api/users/employees
- * @access  Admin, MedRep
+ * @access  Admin
  */
 const getEmployees = catchAsync(async (req, res) => {
   const filter = { role: 'employee', isActive: true };

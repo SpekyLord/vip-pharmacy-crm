@@ -57,11 +57,6 @@ const checkRegionAccess = async (req, regionId) => {
     return true;
   }
 
-  // MedReps can access all regions for product assignment
-  if (req.user.role === 'medrep') {
-    return true;
-  }
-
   // For employees, check if region is in their assigned regions or descendants
   if (req.user.canAccessRegion) {
     return await req.user.canAccessRegion(regionId);

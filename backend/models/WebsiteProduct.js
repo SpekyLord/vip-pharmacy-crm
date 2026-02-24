@@ -5,7 +5,7 @@
  * It's READ-ONLY from the CRM perspective - products are managed via the website.
  *
  * Used for:
- * - Displaying products to MedReps and Employees
+ * - Displaying products to BDMs and Admins
  * - Assigning products to doctors
  * - Product recommendations during visits
  */

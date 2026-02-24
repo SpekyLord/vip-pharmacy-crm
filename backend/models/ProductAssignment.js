@@ -1,13 +1,12 @@
 /**
  * Product Assignment Model
  *
- * This model represents product-to-doctor assignments made by med reps
- * Med reps control which products should be recommended to which doctors
+ * This model represents product-to-doctor assignments made by admins
  *
  * Key features:
- * - Only med reps can create/manage assignments
+ * - Admins and BDMs can create/manage assignments
  * - Simplified status (active/inactive only)
- * - Used to show relevant products during field employee visits
+ * - Used to show relevant products during BDM visits
  */
 
 const mongoose = require('mongoose');
@@ -24,7 +23,7 @@ const productAssignmentSchema = new mongoose.Schema(
       ref: 'Doctor',
       required: [true, 'Doctor is required'],
     },
-    // User who made the assignment (must be med rep)
+    // User who made the assignment (admin or BDM)
     assignedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -90,7 +89,7 @@ productAssignmentSchema.index({ assignedBy: 1 });
 productAssignmentSchema.index({ status: 1 });
 productAssignmentSchema.index({ priority: 1 });
 
-// Pre-save validation to ensure assignedBy is a med rep
+// Pre-save validation to ensure assignedBy is an admin or employee
 productAssignmentSchema.pre('save', async function (next) {
   if (this.isNew || this.isModified('assignedBy')) {
     const User = mongoose.model('User');
@@ -100,8 +99,8 @@ productAssignmentSchema.pre('save', async function (next) {
       return next(new Error('Assigned user not found'));
     }
 
-    if (user.role !== 'medrep' && user.role !== 'admin') {
-      return next(new Error('Only med reps or admins can assign products to doctors'));
+    if (user.role !== 'admin' && user.role !== 'employee') {
+      return next(new Error('Only admins or BDMs can assign products to doctors'));
     }
   }
   next();
@@ -126,11 +125,11 @@ productAssignmentSchema.statics.getActiveForDoctor = function (doctorId) {
     .lean();
 };
 
-// Static: Get active assignments by a med rep
+// Static: Get active assignments by a user (admin or BDM)
 // NOTE: Product data must be populated manually from website database
-productAssignmentSchema.statics.getByMedRep = function (medRepId) {
+productAssignmentSchema.statics.getByUser = function (userId) {
   return this.find({
-    assignedBy: medRepId,
+    assignedBy: userId,
     status: 'active',
   })
     .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
