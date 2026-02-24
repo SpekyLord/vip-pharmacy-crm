@@ -253,8 +253,16 @@ const updateDoctor = catchAsync(async (req, res) => {
     throw new NotFoundError('Doctor not found');
   }
 
-  // Allowed fields to update
-  const allowedFields = [
+  // Ownership check: BDMs can only edit their own assigned VIP Clients
+  if (req.user.role === 'employee') {
+    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
+    if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+      throw new ForbiddenError('You can only edit VIP Clients assigned to you');
+    }
+  }
+
+  // Allowed fields to update - BDMs cannot change assignedTo, isActive, isVipAssociated
+  const adminAllowedFields = [
     'firstName',
     'lastName',
     'specialization',
@@ -280,6 +288,10 @@ const updateDoctor = catchAsync(async (req, res) => {
     'targetProducts',
     'isVipAssociated',
   ];
+  const employeeAllowedFields = adminAllowedFields.filter(
+    (f) => !['assignedTo', 'isActive', 'isVipAssociated'].includes(f)
+  );
+  const allowedFields = req.user.role === 'admin' ? adminAllowedFields : employeeAllowedFields;
 
   // Update only allowed fields
   allowedFields.forEach((field) => {

@@ -7,7 +7,7 @@
  * GET /api/doctors/:id/visits - Get doctor's visit history
  * GET /api/doctors/:id/products - Get doctor's assigned products
  * POST /api/doctors - Create new doctor (admin only)
- * PUT /api/doctors/:id - Update doctor (admin only)
+ * PUT /api/doctors/:id - Update doctor (admin or assigned BDM)
  * PUT /api/doctors/:id/target-products - Update target products (admin or assigned BDM)
  * DELETE /api/doctors/:id - Soft delete doctor (admin only)
  */
@@ -42,9 +42,11 @@ router.get('/:id/products', getDoctorProducts);
 // Admin or Employee (BDM) routes - ownership checked in controller
 router.put('/:id/target-products', adminOrEmployee, updateTargetProducts);
 
+// Admin or Employee (BDM) routes - ownership checked in controller
+router.put('/:id', adminOrEmployee, updateDoctorValidation, updateDoctor);
+
 // Admin only routes
 router.post('/', adminOnly, createDoctorValidation, createDoctor);
-router.put('/:id', adminOnly, updateDoctorValidation, updateDoctor);
 router.delete('/:id', adminOnly, deleteDoctor);
 
 module.exports = router;

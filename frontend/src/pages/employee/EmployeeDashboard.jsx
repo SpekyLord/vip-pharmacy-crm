@@ -235,6 +235,11 @@ const EmployeeDashboard = () => {
     navigate(`/employee/visit/new?doctorId=${doctor._id}`);
   };
 
+  // Handle edit doctor - refresh dashboard data after save
+  const handleEditDoctor = () => {
+    fetchDashboardData();
+  };
+
   if (loading) {
     return <LoadingSpinner fullScreen />;
   }
@@ -296,6 +301,7 @@ const EmployeeDashboard = () => {
               loading={loading}
               onSelectDoctor={handleSelectDoctor}
               onLogVisit={handleLogVisit}
+              onEditDoctor={handleEditDoctor}
             />
           </section>
         </main>

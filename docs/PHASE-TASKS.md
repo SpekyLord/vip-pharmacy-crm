@@ -1,7 +1,7 @@
 # VIP CRM - Phase Task Breakdown
 
 > **Last Updated**: February 2026
-> **Status**: Phase 1 Complete. Phase 2 in progress (A.1 ✅, A.3 ✅ complete; A.4 remaining).
+> **Status**: Phase 1 Complete. Phase 2 Complete (A.1 ✅, A.3 ✅, A.4 ✅).
 > **Reference**: See `docs/CHANGE_LOG.md` for full details on all 17 client-requested changes.
 > **Note**: Phases were reorganized from theme-based (A/B/C/D) to dependency-driven order (2-6). Task IDs (A.1, B.6, etc.) preserved for CHANGE_LOG traceability.
 
@@ -267,30 +267,33 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task A.4: BDM Edit Own VIP Clients (CHANGE_LOG Change 2)
+### Task A.4: BDM Edit Own VIP Clients (CHANGE_LOG Change 2) ✅ COMPLETE
 **Priority**: HIGH
 **Depends on**: A.1 ✅
 **Files**:
-- `backend/controllers/doctorController.js` — Add employee permission where `assignedTo === req.user._id`
-- `backend/routes/doctorRoutes.js` — Allow PUT for employee role with ownership check
-- `frontend/src/components/employee/DoctorList.jsx` — Add edit button per VIP Client card
-- NEW: `frontend/src/components/employee/DoctorEditForm.jsx` — Edit form
+- `backend/controllers/doctorController.js` — Added ownership check (`assignedTo === req.user._id`) + split `allowedFields` by role
+- `backend/routes/doctorRoutes.js` — Changed PUT `/:id` from `adminOnly` to `adminOrEmployee`
+- `frontend/src/components/employee/DoctorList.jsx` — Added Edit button per VIP Client card + DoctorEditForm modal
+- NEW: `frontend/src/components/employee/DoctorEditForm.jsx` — Modal edit form with cascading region dropdowns
+- `frontend/src/pages/employee/EmployeeDashboard.jsx` — Added `onEditDoctor` callback to refresh data after save
 
 **Deliverables**:
-- [ ] BDMs can edit all fields EXCEPT `assignedTo`
-- [ ] BDM-editable fields include: supportDuringCoverage, programsToImplement, levelOfEngagement (plus all other fields except assignedTo)
-- [ ] Region IS editable (BDM might correct mistakes)
-- [ ] Admin retains full edit control over everything
+- [x] BDMs can edit all fields EXCEPT `assignedTo`, `isActive`, `isVipAssociated`
+- [x] BDM-editable fields include: supportDuringCoverage, programsToImplement, levelOfEngagement (plus all other fields except restricted ones)
+- [x] Region IS editable (BDM might correct mistakes) — cascading dropdowns
+- [x] Admin retains full edit control over everything
+- [x] Ownership enforced server-side (403 if not assigned)
+- [x] Restricted fields silently ignored if BDM sends them
 
 ---
 
-## Phase 2 Summary
+## Phase 2 Summary ✅ COMPLETE
 
 | Task | Change # | Status | Notes |
 |------|----------|--------|-------|
 | A.1: VIP Client Model Extensions | 9 | ✅ Complete | Foundation for everything |
 | A.3: Remove MedRep Role | 1 | ✅ Complete | Role architecture cleanup |
-| A.4: BDM Edit Own VIP Clients | 2 | ⬜ Not started | Ownership permissions |
+| A.4: BDM Edit Own VIP Clients | 2 | ✅ Complete | Ownership permissions |
 
 ---
 
@@ -759,7 +762,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 ## Recommended Implementation Order
 ```
  1. A.3  — Remove MedRep Role ✅
- 2. A.4  — BDM Edit Own VIP Clients
+ 2. A.4  — BDM Edit Own VIP Clients ✅
  3. B.3  — Photo Upload Flexibility (independent)
  4. B.6  — Regular Clients (independent, unblocks C.2)
  5. C.1+A.2 — Schedule System + Alternating Weeks (core feature)
@@ -786,7 +789,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 | Phase | Tasks | Key Deliverables | Status |
 |-------|-------|------------------|--------|
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
-| **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4) | Remove MedRep, BDM self-edit | 🔄 In progress (2/3 complete) |
+| **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4 ✅) | Remove MedRep, BDM self-edit | ✅ COMPLETE |
 | **Phase 3: Independent UX** | 6 tasks (B.3, B.6, B.7, B.4, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | ⬜ Not started |
 | **Phase 4: Schedule System** | 3 tasks (C.1+A.2, B.1, B.2) | 4-week calendar, alternating weeks, info page | ⬜ Not started |
 | **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |

@@ -13,6 +13,7 @@ import { useState, useEffect, useMemo, memo } from 'react';
 import LoadingSpinner from '../common/LoadingSpinner';
 import visitService from '../../services/visitService';
 import TargetProductsModal from './TargetProductsModal';
+import DoctorEditForm from './DoctorEditForm';
 
 const doctorListStyles = `
   .doctor-list {
@@ -217,7 +218,8 @@ const doctorListStyles = `
     cursor: not-allowed;
   }
 
-  .products-btn {
+  .products-btn,
+  .edit-btn {
     padding: 12px 16px;
     border: 1px solid #d1d5db;
     border-radius: 8px;
@@ -230,7 +232,8 @@ const doctorListStyles = `
     white-space: nowrap;
   }
 
-  .products-btn:hover {
+  .products-btn:hover,
+  .edit-btn:hover {
     background: #f3f4f6;
     border-color: #9ca3af;
   }
@@ -263,12 +266,14 @@ const DoctorList = memo(function DoctorList({
   loading = false,
   onSelectDoctor,
   onLogVisit,
+  onEditDoctor,
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [frequencyFilter, setFrequencyFilter] = useState('all');
   const [visitStatus, setVisitStatus] = useState({});
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [productsDoctor, setProductsDoctor] = useState(null);
+  const [editDoctor, setEditDoctor] = useState(null);
 
   // Fetch visit status for all doctors using batch endpoint (eliminates N+1 problem)
   useEffect(() => {
@@ -446,6 +451,16 @@ const DoctorList = memo(function DoctorList({
                   {canVisit ? 'Log Visit' : 'Cannot Visit'}
                 </button>
                 <button
+                  className="edit-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditDoctor(doctor);
+                  }}
+                  title="Edit VIP Client details"
+                >
+                  Edit
+                </button>
+                <button
                   className="products-btn"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -474,6 +489,17 @@ const DoctorList = memo(function DoctorList({
           doctor={productsDoctor}
           onClose={() => setProductsDoctor(null)}
           onSaved={() => setProductsDoctor(null)}
+        />
+      )}
+
+      {editDoctor && (
+        <DoctorEditForm
+          doctor={editDoctor}
+          onClose={() => setEditDoctor(null)}
+          onSaved={() => {
+            setEditDoctor(null);
+            onEditDoctor?.();
+          }}
         />
       )}
     </div>
