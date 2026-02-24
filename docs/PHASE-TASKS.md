@@ -1,7 +1,7 @@
 # VIP CRM - Phase Task Breakdown
 
 > **Last Updated**: February 2026
-> **Status**: Phase 1 Complete. Phase 2 next (A.1 complete from original Phase A).
+> **Status**: Phase 1 Complete. Phase 2 in progress (A.1 ✅, A.3 ✅ complete; A.4 remaining).
 > **Reference**: See `docs/CHANGE_LOG.md` for full details on all 17 client-requested changes.
 > **Note**: Phases were reorganized from theme-based (A/B/C/D) to dependency-driven order (2-6). Task IDs (A.1, B.6, etc.) preserved for CHANGE_LOG traceability.
 
@@ -239,25 +239,31 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task A.3: Remove MedRep Role (CHANGE_LOG Change 1)
+### Task A.3: Remove MedRep Role (CHANGE_LOG Change 1) ✅ COMPLETE
 **Priority**: HIGH (role architecture change)
-**Files to modify**:
-- `backend/models/User.js` — Remove `medrep` from role enum
-- `backend/models/ProductAssignment.js` — Update pre-save hook (line 94-108) to allow `employee` role
-- `backend/middleware/roleCheck.js` — Remove `medRepOnly` middleware
-- `backend/controllers/productAssignmentController.js` — Update role checks
-- `backend/routes/productAssignmentRoutes.js` — Update route middleware
-- `frontend/src/App.jsx` — Remove `/medrep` routes
-- `frontend/src/components/common/Sidebar.jsx` — Remove medrep menu, add product assignment to BDM menu
-- `frontend/src/pages/medrep/MedRepDashboard.jsx` — Delete or repurpose
-- `frontend/src/components/employee/` — Add product assignment UI (adapt from medrep components)
+**Completed**: February 2026
+
+**Files modified**:
+- `backend/models/User.js` — Removed `medrep` from role enum
+- `backend/models/ProductAssignment.js` — Updated pre-save hook to allow `employee` role
+- `backend/middleware/roleCheck.js` — Removed `medRepOnly` middleware
+- `backend/controllers/productAssignmentController.js` — Updated role checks
+- `backend/routes/productAssignmentRoutes.js` — Updated route middleware
+- `frontend/src/App.jsx` — Removed `/medrep` routes
+- `frontend/src/components/common/Sidebar.jsx` — Removed medrep menu
+- `frontend/src/pages/medrep/` — Deleted folder (MedRepDashboard.jsx removed)
+- `frontend/src/components/medrep/` — Deleted folder
+- `frontend/src/services/assignmentService.js` — Updated for BDM usage
+- `backend/scripts/migrateMedRepUsers.js` (NEW) — Migration script for existing medrep users
 
 **Deliverables**:
-- [ ] BDMs can assign their own 3 target products per VIP Client
-- [ ] Product assignment UI moved to BDM section
-- [ ] MedRep routes and pages removed
-- [ ] Migration: convert existing medrep users to employee or admin
-- [ ] Target product flow: 3 slots per VIP Client, status `showcasing` or `accepted`, BDM swaps failed products for new picks
+- [x] MedRep routes and pages removed
+- [x] Migration script: convert existing medrep users to employee or admin
+- [ ] BDMs can assign their own 3 target products per VIP Client (deferred to B.2)
+- [ ] Product assignment UI moved to BDM section (deferred to B.2)
+- [ ] Target product flow: 3 slots per VIP Client, status `showcasing` or `accepted` (deferred to B.2)
+
+**Note**: Product assignment UI for BDMs deferred to Task B.2 (Product Detail Popup) which builds the tablet-friendly product selection interface.
 
 ---
 
@@ -283,7 +289,7 @@ node backend/scripts/migrateDoctorFields.js
 | Task | Change # | Status | Notes |
 |------|----------|--------|-------|
 | A.1: VIP Client Model Extensions | 9 | ✅ Complete | Foundation for everything |
-| A.3: Remove MedRep Role | 1 | ⬜ Not started | Role architecture cleanup |
+| A.3: Remove MedRep Role | 1 | ✅ Complete | Role architecture cleanup |
 | A.4: BDM Edit Own VIP Clients | 2 | ⬜ Not started | Ownership permissions |
 
 ---
@@ -752,7 +758,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 
 ## Recommended Implementation Order
 ```
- 1. A.3  — Remove MedRep Role
+ 1. A.3  — Remove MedRep Role ✅
  2. A.4  — BDM Edit Own VIP Clients
  3. B.3  — Photo Upload Flexibility (independent)
  4. B.6  — Regular Clients (independent, unblocks C.2)
@@ -780,7 +786,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 | Phase | Tasks | Key Deliverables | Status |
 |-------|-------|------------------|--------|
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
-| **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3, A.4) | Remove MedRep, BDM self-edit | 🔄 In progress (1/3 complete) |
+| **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4) | Remove MedRep, BDM self-edit | 🔄 In progress (2/3 complete) |
 | **Phase 3: Independent UX** | 6 tasks (B.3, B.6, B.7, B.4, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | ⬜ Not started |
 | **Phase 4: Schedule System** | 3 tasks (C.1+A.2, B.1, B.2) | 4-week calendar, alternating weeks, info page | ⬜ Not started |
 | **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |
