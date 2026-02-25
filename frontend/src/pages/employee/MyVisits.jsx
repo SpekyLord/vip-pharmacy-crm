@@ -14,6 +14,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import visitService from '../../services/visitService';
+import clientService from '../../services/clientService';
 import useDebounce from '../../hooks/useDebounce';
 import toast from 'react-hot-toast';
 
@@ -24,6 +25,9 @@ const MyVisits = () => {
   const [visits, setVisits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Category tab state
+  const [visitCategory, setVisitCategory] = useState('all'); // 'all' | 'vip' | 'extra'
 
   // Filter state
   const [statusFilter, setStatusFilter] = useState('all');
@@ -49,7 +53,7 @@ const MyVisits = () => {
   // AbortController ref for request cancellation
   const abortControllerRef = useRef(null);
 
-  // Fetch visits
+  // Fetch visits based on category tab
   const fetchVisits = useCallback(async () => {
     // Cancel any previous request
     if (abortControllerRef.current) {
@@ -74,24 +78,67 @@ const MyVisits = () => {
       }
       if (dateRange.start) {
         params.startDate = dateRange.start;
+        params.dateFrom = dateRange.start;
       }
       if (dateRange.end) {
         params.endDate = dateRange.end;
+        params.dateTo = dateRange.end;
       }
       if (debouncedSearch.trim()) {
         params.search = debouncedSearch.trim();
       }
 
-      const response = await visitService.getMy(params, {
-        signal: abortControllerRef.current.signal,
-      });
+      const signal = abortControllerRef.current.signal;
 
-      setVisits(response.data || []);
-      setPagination(prev => ({
-        ...prev,
-        total: response.pagination?.total || 0,
-        pages: response.pagination?.pages || 1,
-      }));
+      if (visitCategory === 'vip') {
+        // VIP visits only
+        const response = await visitService.getMy(params, { signal });
+        const vipVisits = (response.data || []).map(v => ({ ...v, _visitCategory: 'vip' }));
+        setVisits(vipVisits);
+        setPagination(prev => ({
+          ...prev,
+          total: response.pagination?.total || 0,
+          pages: response.pagination?.pages || 1,
+        }));
+      } else if (visitCategory === 'extra') {
+        // Extra calls only
+        const response = await clientService.getMyVisits(params, { signal });
+        const extraVisits = (response.data || []).map(v => ({ ...v, _visitCategory: 'extra' }));
+        setVisits(extraVisits);
+        setPagination(prev => ({
+          ...prev,
+          total: response.pagination?.total || 0,
+          pages: response.pagination?.pages || 1,
+        }));
+      } else {
+        // All visits — fetch from both sources in parallel
+        const [vipRes, extraRes] = await Promise.allSettled([
+          visitService.getMy(params, { signal }),
+          clientService.getMyVisits(params, { signal }),
+        ]);
+
+        const vipVisits = vipRes.status === 'fulfilled'
+          ? (vipRes.value.data || []).map(v => ({ ...v, _visitCategory: 'vip' }))
+          : [];
+        const extraVisits = extraRes.status === 'fulfilled'
+          ? (extraRes.value.data || []).map(v => ({ ...v, _visitCategory: 'extra' }))
+          : [];
+
+        // Merge and sort by visitDate descending
+        const merged = [...vipVisits, ...extraVisits].sort(
+          (a, b) => new Date(b.visitDate) - new Date(a.visitDate)
+        );
+
+        const vipTotal = vipRes.status === 'fulfilled' ? (vipRes.value.pagination?.total || 0) : 0;
+        const extraTotal = extraRes.status === 'fulfilled' ? (extraRes.value.pagination?.total || 0) : 0;
+
+        setVisits(merged);
+        setPagination(prev => ({
+          ...prev,
+          total: vipTotal + extraTotal,
+          pages: Math.ceil((vipTotal + extraTotal) / prev.limit),
+        }));
+      }
     } catch (err) {
       // Ignore abort errors
       if (err.name === 'AbortError' || err.name === 'CanceledError') {
@@ -102,7 +149,7 @@ const MyVisits = () => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.limit, statusFilter, dateRange, debouncedSearch]);
+  }, [pagination.page, pagination.limit, statusFilter, dateRange, debouncedSearch, visitCategory]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -147,6 +194,7 @@ const MyVisits = () => {
 
   // Clear all filters
   const clearFilters = () => {
+    setVisitCategory('all');
     setStatusFilter('all');
     setDateRange({ start: '', end: '' });
     setDoctorSearch('');
@@ -240,6 +288,26 @@ const MyVisits = () => {
             </button>
           </div>
 
+          {/* Category Tabs */}
+          <div className="category-tabs">
+            {[
+              { key: 'all', label: 'All Visits' },
+              { key: 'vip', label: 'VIP Visits' },
+              { key: 'extra', label: 'Extra Calls' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                className={`category-tab ${visitCategory === tab.key ? 'active' : ''}`}
+                onClick={() => {
+                  setVisitCategory(tab.key);
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
           {/* Filters Section */}
           <div className="filters-section">
             <div className="filters-row">
@@ -281,13 +349,15 @@ const MyVisits = () => {
                 />
               </div>
 
-              {/* VIP Client Search */}
+              {/* Client Search */}
               <div className="filter-group">
-                <label htmlFor="doctor-search">VIP Client</label>
+                <label htmlFor="doctor-search">
+                  {visitCategory === 'extra' ? 'Client' : visitCategory === 'vip' ? 'VIP Client' : 'Client Name'}
+                </label>
                 <input
                   id="doctor-search"
                   type="text"
-                  placeholder="Search by VIP Client name..."
+                  placeholder={visitCategory === 'extra' ? 'Search by client name...' : 'Search by VIP Client name...'}
                   value={doctorSearch}
                   onChange={(e) => setDoctorSearch(e.target.value)}
                 />
@@ -323,53 +393,70 @@ const MyVisits = () => {
                   <thead>
                     <tr>
                       <th>Date</th>
-                      <th>Week</th>
-                      <th>VIP Client</th>
                       <th>Type</th>
+                      <th>Week</th>
+                      <th>Client</th>
                       <th>Status</th>
                       <th>Photos</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {visits.map((visit) => (
-                      <tr key={visit._id}>
-                        <td>
-                          <div className="date-cell">
-                            <span className="date">{formatDate(visit.visitDate)}</span>
-                            <span className="time">{formatTime(visit.visitDate)}</span>
-                          </div>
-                        </td>
-                        <td>
-                          <span className="week-label">{visit.weekLabel || '-'}</span>
-                        </td>
-                        <td>
-                          <div className="doctor-cell">
-                            <span className="doctor-name">{visit.doctor?.name || 'Unknown'}</span>
-                            <span className="doctor-spec">{visit.doctor?.specialization || ''}</span>
-                          </div>
-                        </td>
-                        <td className="visit-type">{visit.visitType || 'regular'}</td>
-                        <td>
-                          <span className={getStatusBadgeClass(visit.status)}>
-                            {visit.status}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="photo-count">
-                            {visit.photos?.length || 0} photo{visit.photos?.length !== 1 ? 's' : ''}
-                          </span>
-                        </td>
-                        <td>
-                          <button
-                            onClick={() => setSelectedVisit(visit)}
-                            className="btn btn-link"
-                          >
-                            View Details
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {visits.map((visit) => {
+                      const isExtra = visit._visitCategory === 'extra';
+                      const clientName = isExtra
+                        ? (visit.client?.fullName || `${visit.client?.firstName || ''} ${visit.client?.lastName || ''}`.trim() || 'Unknown')
+                        : (visit.doctor?.fullName || visit.doctor?.name || `${visit.doctor?.firstName || ''} ${visit.doctor?.lastName || ''}`.trim() || 'Unknown');
+                      const clientSpec = isExtra
+                        ? (visit.client?.specialization || '')
+                        : (visit.doctor?.specialization || '');
+
+                      return (
+                        <tr key={`${visit._visitCategory}-${visit._id}`}>
+                          <td>
+                            <div className="date-cell">
+                              <span className="date">{formatDate(visit.visitDate)}</span>
+                              <span className="time">{formatTime(visit.visitDate)}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`visit-type-badge ${isExtra ? 'type-extra' : 'type-vip'}`}>
+                              {isExtra ? 'Extra' : 'VIP'}
+                            </span>
+                          </td>
+                          <td>
+                            {isExtra
+                              ? <span style={{ color: '#9ca3af' }}>&mdash;</span>
+                              : <span className="week-label">{visit.weekLabel || '-'}</span>
+                            }
+                          </td>
+                          <td>
+                            <div className="doctor-cell">
+                              <span className="doctor-name">{clientName}</span>
+                              <span className="doctor-spec">{clientSpec}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={getStatusBadgeClass(visit.status)}>
+                              {visit.status}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="photo-count">
+                              {visit.photos?.length || 0} photo{visit.photos?.length !== 1 ? 's' : ''}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              onClick={() => setSelectedVisit(visit)}
+                              className="btn btn-link"
+                            >
+                              View Details
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
 
@@ -398,8 +485,8 @@ const MyVisits = () => {
               <div className="no-data">
                 <p>No visits found</p>
                 <p className="hint">
-                  {statusFilter !== 'all' || dateRange.start || dateRange.end || doctorSearch
-                    ? 'Try adjusting your filters'
+                  {statusFilter !== 'all' || dateRange.start || dateRange.end || doctorSearch || visitCategory !== 'all'
+                    ? 'Try adjusting your filters or category'
                     : 'Start logging visits from the Employee Dashboard'}
                 </p>
               </div>
@@ -429,13 +516,17 @@ const MyVisits = () => {
                         <label>Date & Time</label>
                         <span>{formatDate(selectedVisit.visitDate)} at {formatTime(selectedVisit.visitDate)}</span>
                       </div>
+                      {selectedVisit._visitCategory !== 'extra' && (
+                        <div className="info-item">
+                          <label>Week Label</label>
+                          <span className="week-label">{selectedVisit.weekLabel || '-'}</span>
+                        </div>
+                      )}
                       <div className="info-item">
-                        <label>Week Label</label>
-                        <span className="week-label">{selectedVisit.weekLabel || '-'}</span>
-                      </div>
-                      <div className="info-item">
-                        <label>Visit Type</label>
-                        <span>{selectedVisit.visitType || 'regular'}</span>
+                        <label>Category</label>
+                        <span className={`visit-type-badge ${selectedVisit._visitCategory === 'extra' ? 'type-extra' : 'type-vip'}`}>
+                          {selectedVisit._visitCategory === 'extra' ? 'Extra Call' : 'VIP Visit'}
+                        </span>
                       </div>
                       <div className="info-item">
                         <label>Status</label>
@@ -446,27 +537,50 @@ const MyVisits = () => {
                     </div>
                   </div>
 
-                  {/* VIP Client Info */}
+                  {/* Client Info — adapts based on category */}
                   <div className="visit-info-section">
-                    <h3>VIP Client</h3>
-                    <div className="info-grid">
-                      <div className="info-item">
-                        <label>Name</label>
-                        <span>{selectedVisit.doctor?.name || 'Unknown'}</span>
+                    <h3>{selectedVisit._visitCategory === 'extra' ? 'Regular Client' : 'VIP Client'}</h3>
+                    {selectedVisit._visitCategory === 'extra' ? (
+                      <div className="info-grid">
+                        <div className="info-item">
+                          <label>Name</label>
+                          <span>{selectedVisit.client?.fullName || `${selectedVisit.client?.firstName || ''} ${selectedVisit.client?.lastName || ''}`.trim() || 'Unknown'}</span>
+                        </div>
+                        <div className="info-item">
+                          <label>Specialization</label>
+                          <span>{selectedVisit.client?.specialization || '-'}</span>
+                        </div>
+                        <div className="info-item">
+                          <label>Address</label>
+                          <span>{selectedVisit.client?.clinicOfficeAddress || '-'}</span>
+                        </div>
+                        {selectedVisit.client?.phone && (
+                          <div className="info-item">
+                            <label>Phone</label>
+                            <span>{selectedVisit.client.phone}</span>
+                          </div>
+                        )}
                       </div>
-                      <div className="info-item">
-                        <label>Specialization</label>
-                        <span>{selectedVisit.doctor?.specialization || '-'}</span>
+                    ) : (
+                      <div className="info-grid">
+                        <div className="info-item">
+                          <label>Name</label>
+                          <span>{selectedVisit.doctor?.fullName || selectedVisit.doctor?.name || 'Unknown'}</span>
+                        </div>
+                        <div className="info-item">
+                          <label>Specialization</label>
+                          <span>{selectedVisit.doctor?.specialization || '-'}</span>
+                        </div>
+                        <div className="info-item">
+                          <label>Hospital/Clinic</label>
+                          <span>{selectedVisit.doctor?.clinicOfficeAddress || selectedVisit.doctor?.hospital || '-'}</span>
+                        </div>
+                        <div className="info-item">
+                          <label>Visit Frequency</label>
+                          <span>{selectedVisit.doctor?.visitFrequency || 4}x per month</span>
+                        </div>
                       </div>
-                      <div className="info-item">
-                        <label>Hospital/Clinic</label>
-                        <span>{selectedVisit.doctor?.hospital || '-'}</span>
-                      </div>
-                      <div className="info-item">
-                        <label>Visit Frequency</label>
-                        <span>{selectedVisit.doctor?.visitFrequency || 4}x per month</span>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Visit Notes */}
@@ -525,8 +639,8 @@ const MyVisits = () => {
                     </div>
                   </div>
 
-                  {/* Products Discussed */}
-                  {selectedVisit.productsDiscussed?.length > 0 && (
+                  {/* Products Discussed (VIP visits only) */}
+                  {selectedVisit._visitCategory !== 'extra' && selectedVisit.productsDiscussed?.length > 0 && (
                     <div className="visit-info-section">
                       <h3>Products Discussed</h3>
                       <ul className="products-list">
@@ -592,6 +706,59 @@ const MyVisits = () => {
       </div>
 
       <style>{`
+        .category-tabs {
+          display: flex;
+          gap: 0;
+          margin-bottom: 1rem;
+          background: white;
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .category-tab {
+          flex: 1;
+          padding: 0.75rem 1rem;
+          border: none;
+          background: white;
+          font-size: 0.875rem;
+          font-weight: 500;
+          color: #6b7280;
+          cursor: pointer;
+          transition: all 0.2s;
+          border-bottom: 2px solid transparent;
+        }
+
+        .category-tab:hover {
+          background: #f9fafb;
+          color: #374151;
+        }
+
+        .category-tab.active {
+          color: #2563eb;
+          border-bottom-color: #2563eb;
+          background: #eff6ff;
+        }
+
+        .visit-type-badge {
+          display: inline-block;
+          padding: 0.2rem 0.5rem;
+          border-radius: 4px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          text-transform: uppercase;
+        }
+
+        .type-vip {
+          background: #dbeafe;
+          color: #1d4ed8;
+        }
+
+        .type-extra {
+          background: #ede9fe;
+          color: #7c3aed;
+        }
+
         .filters-section {
           background: white;
           padding: 1rem;

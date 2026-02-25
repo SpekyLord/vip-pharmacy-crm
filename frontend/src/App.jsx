@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage';
 import EmployeeDashboard from './pages/employee/EmployeeDashboard';
 import MyVisits from './pages/employee/MyVisits';
 import NewVisitPage from './pages/employee/NewVisitPage';
+import NewClientVisitPage from './pages/employee/NewClientVisitPage';
 import EmployeeInbox from './pages/employee/EMP_InboxPage';
 
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -55,6 +56,14 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <NewVisitPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/employee/regular-visit/new"
+          element={
+            <ProtectedRoute allowedRoles={['employee', 'admin']}>
+              <NewClientVisitPage />
             </ProtectedRoute>
           }
         />

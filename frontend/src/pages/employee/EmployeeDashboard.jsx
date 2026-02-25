@@ -15,9 +15,12 @@ import Sidebar from '../../components/common/Sidebar';
 import DoctorList from '../../components/employee/DoctorList';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorMessage from '../../components/common/ErrorMessage';
+import ClientList from '../../components/employee/ClientList';
+import ClientAddModal from '../../components/employee/ClientAddModal';
 import { useAuth } from '../../hooks/useAuth';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
+import clientService from '../../services/clientService';
 
 const dashboardStyles = `
   .main-content h1 {
@@ -134,6 +137,10 @@ const EmployeeDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [doctors, setDoctors] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [showAddClient, setShowAddClient] = useState(false);
+  const [editClient, setEditClient] = useState(null);
+  const [dailyClientVisitCount, setDailyClientVisitCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState({
@@ -165,10 +172,12 @@ const EmployeeDashboard = () => {
         visitService.getToday(),
         visitService.getStats({ monthYear }),
         visitService.getWeeklyCompliance(monthYear),
+        clientService.getAll({ limit: 0 }),
+        clientService.getTodayVisitCount(),
       ]);
 
       // Extract results with fallbacks for failed requests
-      const [doctorsResult, todayResult, statsResult, weeklyResult] = results;
+      const [doctorsResult, todayResult, statsResult, weeklyResult, clientsResult, clientCountResult] = results;
 
       // Process doctors - critical, show error if fails
       const doctorsList = doctorsResult.status === 'fulfilled'
@@ -199,6 +208,17 @@ const EmployeeDashboard = () => {
       const currentWeek = Math.ceil(new Date().getDate() / 7);
       const weeklyBreakdown = statsData.weeklyBreakdown || [];
       const thisWeekData = weeklyBreakdown.find(w => w.week === currentWeek) || {};
+
+      // Process regular clients - non-critical, use fallback
+      const clientsList = clientsResult.status === 'fulfilled'
+        ? (clientsResult.value.data || [])
+        : [];
+      setClients(clientsList);
+
+      const clientDailyCount = clientCountResult.status === 'fulfilled'
+        ? (clientCountResult.value.data?.dailyCount || 0)
+        : 0;
+      setDailyClientVisitCount(clientDailyCount);
 
       setStats({
         visitsToday: todayCount,
@@ -277,6 +297,10 @@ const EmployeeDashboard = () => {
               <span className="stat-value">{stats.totalDoctors}</span>
               <span className="stat-label">Total VIP Clients</span>
             </div>
+            <div className="stat-card">
+              <span className="stat-value">{dailyClientVisitCount}/30</span>
+              <span className="stat-label">Extra Calls Today</span>
+            </div>
           </div>
 
           {stats.compliancePercentage > 0 && (
@@ -304,6 +328,34 @@ const EmployeeDashboard = () => {
               onEditDoctor={handleEditDoctor}
             />
           </section>
+
+          <section className="dashboard-section" style={{ marginTop: '24px' }}>
+            <h2>Regular Clients (Extra Calls)</h2>
+            <ClientList
+              clients={clients}
+              loading={loading}
+              onLogVisit={(client) => navigate(`/employee/regular-visit/new?clientId=${client._id}`)}
+              onAddClient={() => setShowAddClient(true)}
+              onEditClient={(client) => setEditClient(client)}
+              dailyVisitCount={dailyClientVisitCount}
+              dailyLimit={30}
+            />
+          </section>
+
+          {(showAddClient || editClient) && (
+            <ClientAddModal
+              client={editClient || null}
+              onClose={() => {
+                setShowAddClient(false);
+                setEditClient(null);
+              }}
+              onSaved={() => {
+                setShowAddClient(false);
+                setEditClient(null);
+                fetchDashboardData();
+              }}
+            />
+          )}
         </main>
       </div>
     </div>

@@ -492,6 +492,99 @@ const createRegionValidation = [
 ];
 
 /**
+ * Client validation rules (Regular / Non-VIP Clients)
+ */
+const createClientValidation = [
+  body('firstName')
+    .notEmpty()
+    .withMessage('First name is required')
+    .isLength({ max: 50 })
+    .withMessage('First name cannot exceed 50 characters'),
+  body('lastName')
+    .notEmpty()
+    .withMessage('Last name is required')
+    .isLength({ max: 50 })
+    .withMessage('Last name cannot exceed 50 characters'),
+  body('specialization')
+    .optional()
+    .isLength({ max: 100 })
+    .withMessage('Specialization cannot exceed 100 characters'),
+  body('clinicOfficeAddress')
+    .optional()
+    .isLength({ max: 500 })
+    .withMessage('Clinic/Office address cannot exceed 500 characters'),
+  body('region')
+    .notEmpty()
+    .withMessage('Region is required')
+    .custom(isValidObjectId),
+  body('phone')
+    .optional()
+    .custom(isValidPhone),
+  body('notes')
+    .optional()
+    .isLength({ max: 1000 })
+    .withMessage('Notes cannot exceed 1000 characters'),
+  validate,
+];
+
+const updateClientValidation = [
+  param('id').custom(isValidObjectId),
+  body('firstName')
+    .optional()
+    .isLength({ max: 50 })
+    .withMessage('First name cannot exceed 50 characters'),
+  body('lastName')
+    .optional()
+    .isLength({ max: 50 })
+    .withMessage('Last name cannot exceed 50 characters'),
+  body('specialization')
+    .optional()
+    .isLength({ max: 100 })
+    .withMessage('Specialization cannot exceed 100 characters'),
+  body('clinicOfficeAddress')
+    .optional()
+    .isLength({ max: 500 })
+    .withMessage('Clinic/Office address cannot exceed 500 characters'),
+  body('phone')
+    .optional()
+    .custom(isValidPhone),
+  body('notes')
+    .optional()
+    .isLength({ max: 1000 })
+    .withMessage('Notes cannot exceed 1000 characters'),
+  validate,
+];
+
+const createClientVisitValidation = [
+  body('client')
+    .notEmpty()
+    .withMessage('Client is required')
+    .custom(isValidObjectId),
+  body('visitDate')
+    .optional()
+    .isISO8601()
+    .withMessage('Invalid date format')
+    .custom(isWorkDay),
+  body('location.latitude')
+    .notEmpty()
+    .withMessage('GPS latitude is required')
+    .custom(isValidLatitude),
+  body('location.longitude')
+    .notEmpty()
+    .withMessage('GPS longitude is required')
+    .custom(isValidLongitude),
+  body('purpose')
+    .optional()
+    .isLength({ max: 500 })
+    .withMessage('Purpose cannot exceed 500 characters'),
+  body('notes')
+    .optional()
+    .isLength({ max: 1000 })
+    .withMessage('Notes cannot exceed 1000 characters'),
+  validate,
+];
+
+/**
  * Query validation rules
  */
 const paginationValidation = [
@@ -541,6 +634,9 @@ module.exports = {
   updateProductValidation,
   createAssignmentValidation,
   createRegionValidation,
+  createClientValidation,
+  updateClientValidation,
+  createClientVisitValidation,
   paginationValidation,
   monthYearValidation,
   objectIdParamValidation,

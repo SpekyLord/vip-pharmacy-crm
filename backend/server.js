@@ -220,6 +220,7 @@ app.use('/api/visits', require('./routes/visitRoutes'));
 app.use('/api/messages', require('./routes/messageInbox')); // if file is messageInbox.js
 
 
+app.use('/api/clients', require('./routes/clientRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/regions', require('./routes/regionRoutes'));
 app.use('/api/assignments', require('./routes/productAssignmentRoutes'));

@@ -321,24 +321,33 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task B.6: Non-VIP Regular Clients Table (CHANGE_LOG Change 16)
+### Task B.6: Non-VIP Regular Clients Table (CHANGE_LOG Change 16) ✅ COMPLETE
 **Priority**: HIGH — **do early, unblocks Phase 5 (C.2 Extra Call section)**
 **Depends on**: None
 **Files**:
 - NEW: `backend/models/Client.js` — Simpler than Doctor (name, specialty, address, phone, notes)
-- NEW: `backend/controllers/clientController.js` — CRUD
+- NEW: `backend/models/ClientVisit.js` — Simplified Visit (no weekly tracking, no products)
+- NEW: `backend/controllers/clientController.js` — CRUD + visit logging
 - NEW: `backend/routes/clientRoutes.js` — API endpoints
+- `backend/middleware/validation.js` — Added client/client visit validators
+- `backend/server.js` — Mounted `/api/clients` routes
 - `frontend/src/pages/employee/EmployeeDashboard.jsx` — Second table below VIP Client list
 - NEW: `frontend/src/components/employee/ClientList.jsx`
+- NEW: `frontend/src/components/employee/ClientAddModal.jsx`
+- NEW: `frontend/src/pages/employee/NewClientVisitPage.jsx`
 - NEW: `frontend/src/services/clientService.js`
+- `frontend/src/pages/employee/MyVisits.jsx` — Category tabs (All/VIP/Extra)
+- `frontend/src/App.jsx` — Added `/employee/regular-visit/new` route
 
 **Deliverables**:
-- [ ] BDMs can add regular clients directly (no Excel/admin approval needed)
-- [ ] Daily limit: up to 30 extra calls per day (system enforced)
-- [ ] No visit frequency enforcement (no 2x/4x rules)
-- [ ] No scheduling grid integration
-- [ ] Visits appear in "EXTRA CALL (VIP NOT INCLUDED IN THE LIST)" section of CPT (Phase 5)
-- [ ] May eventually be promoted to VIP status through Excel upload + admin approval
+- [x] BDMs can add regular clients directly (no Excel/admin approval needed)
+- [x] Daily limit: up to 30 extra calls per day (system enforced, hard block)
+- [x] No visit frequency enforcement (no 2x/4x rules)
+- [x] No scheduling grid integration
+- [x] Visits appear in "EXTRA CALL (VIP NOT INCLUDED IN THE LIST)" section of CPT (Phase 5)
+- [x] May eventually be promoted to VIP status through Excel upload + admin approval
+- [x] My Visits page shows merged VIP + Extra calls with category tabs
+- [x] Visit detail modal adapts to show correct info for VIP vs Regular clients
 
 ---
 
@@ -398,7 +407,7 @@ node backend/scripts/migrateDoctorFields.js
 | Task | Change # | Depends On | Notes |
 |------|----------|------------|-------|
 | B.3: Photo Upload Flexibility | 5 | None | ✅ COMPLETE |
-| B.6: Regular Clients | 16 | None | **Do early — unblocks C.2** |
+| B.6: Regular Clients | 16 | None | ✅ COMPLETE |
 | B.7: Filter by Support/Program | 17 | A.1 ✅ | Independent |
 | B.4: Engagement Tracking | 12 | A.1 ✅ | Independent |
 | B.5a: BDM Performance (basic) | 14 | None | DCR part deferred to Phase 5 |
@@ -767,7 +776,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
  1. A.3  — Remove MedRep Role ✅
  2. A.4  — BDM Edit Own VIP Clients ✅
  3. B.3  — Photo Upload Flexibility ✅
- 4. B.6  — Regular Clients (independent, unblocks C.2)
+ 4. B.6  — Regular Clients ✅
  5. C.1+A.2 — Schedule System + Alternating Weeks (core feature)
  6. B.1  — VIP Client Info Page (needs A.4)
  7. B.2  — Product Detail Popup (needs A.3)
@@ -793,7 +802,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 |-------|-------|------------------|--------|
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
 | **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4 ✅) | Remove MedRep, BDM self-edit | ✅ COMPLETE |
-| **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6, B.7, B.4, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | 🔄 In progress (1/6) |
+| **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7, B.4, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | 🔄 In progress (2/6) |
 | **Phase 4: Schedule System** | 3 tasks (C.1+A.2, B.1, B.2) | 4-week calendar, alternating weeks, info page | ⬜ Not started |
 | **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |
 | **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |
