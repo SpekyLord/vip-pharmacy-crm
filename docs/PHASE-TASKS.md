@@ -351,15 +351,15 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task B.7: Filter VIP Clients by Support Type & Program (CHANGE_LOG Change 17)
+### Task B.7: Filter VIP Clients by Support Type & Program (CHANGE_LOG Change 17) ✅ COMPLETE
 **Priority**: LOW
 **Depends on**: A.1 ✅
-**Files**: `pages/admin/DoctorsPage.jsx`, `pages/employee/EmployeeDashboard.jsx`, `controllers/doctorController.js`
+**Files**: `pages/admin/DoctorsPage.jsx`, `components/employee/DoctorList.jsx`, `controllers/doctorController.js`, `models/Doctor.js`
 
 **Deliverables**:
-- [ ] Filter by Support During Coverage (e.g., "Show all VIP Clients with STARTER DOSES")
-- [ ] Filter by Programs to Implement (e.g., "Show all under CME GRANT")
-- [ ] Both admin and BDM views — admin sees all, BDMs see assigned only
+- [x] Filter by Support During Coverage (e.g., "Show all VIP Clients with STARTER DOSES")
+- [x] Filter by Programs to Implement (e.g., "Show all under CME GRANT")
+- [x] Both admin and BDM views — admin sees all (server-side), BDMs see assigned only (client-side)
 
 ---
 
@@ -408,7 +408,7 @@ node backend/scripts/migrateDoctorFields.js
 |------|----------|------------|-------|
 | B.3: Photo Upload Flexibility | 5 | None | ✅ COMPLETE |
 | B.6: Regular Clients | 16 | None | ✅ COMPLETE |
-| B.7: Filter by Support/Program | 17 | A.1 ✅ | Independent |
+| B.7: Filter by Support/Program | 17 | A.1 ✅ | ✅ COMPLETE |
 | B.4: Engagement Tracking | 12 | A.1 ✅ | Independent |
 | B.5a: BDM Performance (basic) | 14 | None | DCR part deferred to Phase 5 |
 | C.4: VIP Count Minimums | 11 | A.1 ✅ | Independent |
@@ -680,7 +680,7 @@ LEVEL OF ENGAGEMENT (1-5), BIRTHDAY, ANNIVERSARY, OTHER DETAILS
 - [ ] Per-BDM drill-down with Call Rate, VIP coverage, engagement distribution
 - [ ] DCR Summary view per BDM: 20-row table (W1D1-W4D5) with Target/Total/Call Rate
 - [ ] Admin can evaluate if BDM's Call Rate justifies continuing partnership
-- [ ] Filter VIP Clients by support type and program (Change 17, admin view)
+- [x] Filter VIP Clients by support type and program (Change 17, admin view) — moved to B.7 ✅
 
 ---
 
@@ -802,7 +802,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 |-------|-------|------------------|--------|
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
 | **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4 ✅) | Remove MedRep, BDM self-edit | ✅ COMPLETE |
-| **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7, B.4, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | 🔄 In progress (2/6) |
+| **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | 🔄 In progress (3/6) |
 | **Phase 4: Schedule System** | 3 tasks (C.1+A.2, B.1, B.2) | 4-week calendar, alternating weeks, info page | ⬜ Not started |
 | **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |
 | **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |

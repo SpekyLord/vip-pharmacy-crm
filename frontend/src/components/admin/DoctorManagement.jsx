@@ -801,6 +801,24 @@ const DoctorManagement = ({
           <option value="2">2x per month</option>
           <option value="4">4x per month</option>
         </select>
+        <select
+          value={filters.supportDuringCoverage || ''}
+          onChange={(e) => handleFilterChange('supportDuringCoverage', e.target.value)}
+        >
+          <option value="">All Support Types</option>
+          {SUPPORT_TYPES.map((type) => (
+            <option key={type} value={type}>{type}</option>
+          ))}
+        </select>
+        <select
+          value={filters.programsToImplement || ''}
+          onChange={(e) => handleFilterChange('programsToImplement', e.target.value)}
+        >
+          <option value="">All Programs</option>
+          {PROGRAMS.map((prog) => (
+            <option key={prog} value={prog}>{prog}</option>
+          ))}
+        </select>
       </div>
 
       {/* Table */}

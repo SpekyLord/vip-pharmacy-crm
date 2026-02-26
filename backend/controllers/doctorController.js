@@ -88,6 +88,18 @@ const getAllDoctors = catchAsync(async (req, res) => {
     filter.assignedTo = req.query.assignedTo;
   }
 
+  // Filter by support during coverage
+  if (req.query.supportDuringCoverage) {
+    filter.supportDuringCoverage = { $in: Array.isArray(req.query.supportDuringCoverage)
+      ? req.query.supportDuringCoverage : [req.query.supportDuringCoverage] };
+  }
+
+  // Filter by programs to implement
+  if (req.query.programsToImplement) {
+    filter.programsToImplement = { $in: Array.isArray(req.query.programsToImplement)
+      ? req.query.programsToImplement : [req.query.programsToImplement] };
+  }
+
   // Search by firstName, lastName, or clinicOfficeAddress
   if (req.query.search) {
     filter.$or = [

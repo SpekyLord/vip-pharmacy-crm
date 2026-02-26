@@ -212,6 +212,8 @@ doctorSchema.index({ assignedTo: 1, isActive: 1 });
 doctorSchema.index({ specialization: 1, region: 1 });
 doctorSchema.index({ parentRegions: 1, isActive: 1 });
 doctorSchema.index({ lastName: 1, firstName: 1 }); // For alphabetical sorting
+doctorSchema.index({ supportDuringCoverage: 1 });
+doctorSchema.index({ programsToImplement: 1 });
 
 // Pre-save hook to auto-populate parentRegions from region hierarchy
 doctorSchema.pre('save', async function (next) {

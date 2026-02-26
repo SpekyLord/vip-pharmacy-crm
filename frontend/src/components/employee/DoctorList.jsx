@@ -270,6 +270,8 @@ const DoctorList = memo(function DoctorList({
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [frequencyFilter, setFrequencyFilter] = useState('all');
+  const [supportFilter, setSupportFilter] = useState('');
+  const [programFilter, setProgramFilter] = useState('');
   const [visitStatus, setVisitStatus] = useState({});
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [productsDoctor, setProductsDoctor] = useState(null);
@@ -332,9 +334,15 @@ const DoctorList = memo(function DoctorList({
       const matchesFrequency =
         frequencyFilter === 'all' ||
         doctor.visitFrequency === parseInt(frequencyFilter);
-      return matchesSearch && matchesFrequency;
+      const matchesSupport =
+        !supportFilter ||
+        (doctor.supportDuringCoverage && doctor.supportDuringCoverage.includes(supportFilter));
+      const matchesProgram =
+        !programFilter ||
+        (doctor.programsToImplement && doctor.programsToImplement.includes(programFilter));
+      return matchesSearch && matchesFrequency && matchesSupport && matchesProgram;
     });
-  }, [doctors, searchTerm, frequencyFilter]);
+  }, [doctors, searchTerm, frequencyFilter, supportFilter, programFilter]);
 
   // Get visit status display for a doctor
   const getVisitStatusDisplay = (doctor) => {
@@ -383,6 +391,29 @@ const DoctorList = memo(function DoctorList({
           <option value="all">All Frequencies</option>
           <option value="2">2x per month</option>
           <option value="4">4x per month</option>
+        </select>
+        <select
+          value={supportFilter}
+          onChange={(e) => setSupportFilter(e.target.value)}
+          className="frequency-select"
+        >
+          <option value="">All Support Types</option>
+          <option value="STARTER DOSES">STARTER DOSES</option>
+          <option value="PROMATS">PROMATS</option>
+          <option value="FULL DOSE">FULL DOSE</option>
+          <option value="PATIENT DISCOUNT">PATIENT DISCOUNT</option>
+          <option value="AIR FRESHENER">AIR FRESHENER</option>
+        </select>
+        <select
+          value={programFilter}
+          onChange={(e) => setProgramFilter(e.target.value)}
+          className="frequency-select"
+        >
+          <option value="">All Programs</option>
+          <option value="CME GRANT">CME GRANT</option>
+          <option value="REBATES / MONEY">REBATES / MONEY</option>
+          <option value="REST AND RECREATION">REST AND RECREATION</option>
+          <option value="MED SOCIETY PARTICIPATION">MED SOCIETY PARTICIPATION</option>
         </select>
       </div>
 

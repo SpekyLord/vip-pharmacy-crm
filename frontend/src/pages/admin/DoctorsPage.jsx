@@ -119,6 +119,8 @@ const DoctorsPage = () => {
     region: '',
     visitFrequency: '',
     specialization: '',
+    supportDuringCoverage: '',
+    programsToImplement: '',
   });
 
   // Fetch doctors with current filters and pagination
@@ -136,6 +138,8 @@ const DoctorsPage = () => {
       if (filters.region) params.region = filters.region;
       if (filters.visitFrequency) params.visitFrequency = filters.visitFrequency;
       if (filters.specialization) params.specialization = filters.specialization;
+      if (filters.supportDuringCoverage) params.supportDuringCoverage = filters.supportDuringCoverage;
+      if (filters.programsToImplement) params.programsToImplement = filters.programsToImplement;
 
       const response = await doctorService.getAll(params);
       setDoctors(response.data || []);
@@ -259,6 +263,8 @@ const DoctorsPage = () => {
       if (filters.region) params.region = filters.region;
       if (filters.visitFrequency) params.visitFrequency = filters.visitFrequency;
       if (filters.specialization) params.specialization = filters.specialization;
+      if (filters.supportDuringCoverage) params.supportDuringCoverage = filters.supportDuringCoverage;
+      if (filters.programsToImplement) params.programsToImplement = filters.programsToImplement;
 
       const [doctorsResponse, assignmentsResponse] = await Promise.all([
         doctorService.getAll(params),
@@ -300,6 +306,8 @@ const DoctorsPage = () => {
       if (filters.region) params.region = filters.region;
       if (filters.visitFrequency) params.visitFrequency = filters.visitFrequency;
       if (filters.specialization) params.specialization = filters.specialization;
+      if (filters.supportDuringCoverage) params.supportDuringCoverage = filters.supportDuringCoverage;
+      if (filters.programsToImplement) params.programsToImplement = filters.programsToImplement;
 
       const [doctorsResponse, assignmentsResponse] = await Promise.all([
         doctorService.getAll(params),
