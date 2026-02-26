@@ -19,6 +19,7 @@ const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
 const User = require('../models/User');
 const Region = require('../models/Region');
+const { CYCLE_ANCHOR, getWeekOfMonth, getDayOfWeek, isWorkDay: isWorkDayUtil, getCycleNumber } = require('./scheduleCycleUtils');
 
 /**
  * Get ISO week number for a date
@@ -31,34 +32,6 @@ const getWeekNumber = (date) => {
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-};
-
-/**
- * 4-week cycle anchor: January 5, 2026 (Monday) = W1D1
- */
-const CYCLE_ANCHOR = new Date(2026, 0, 5);
-
-/**
- * Get week in 4-week cycle (1-4) based on Jan 5, 2026 anchor.
- * Replaces naive "week of calendar month" with anchor-based cycle position.
- * @param {Date} date
- * @returns {number} Week in cycle (1-4)
- */
-const getWeekOfMonth = (date) => {
-  const diffMs = date.getTime() - CYCLE_ANCHOR.getTime();
-  const diffDays = Math.floor(diffMs / 86400000);
-  const dayInCycle = ((diffDays % 28) + 28) % 28;
-  return Math.floor(dayInCycle / 7) + 1;
-};
-
-/**
- * Get day of week (1 = Monday, 5 = Friday)
- * @param {Date} date
- * @returns {number} Day of week (1-7, Monday-Sunday)
- */
-const getDayOfWeek = (date) => {
-  const jsDay = date.getDay(); // 0 = Sunday
-  return jsDay === 0 ? 7 : jsDay; // Convert to ISO (1 = Monday)
 };
 
 /**
@@ -139,15 +112,8 @@ const getWeekDateRange = (weekNumber, year) => {
   return { start, end };
 };
 
-/**
- * Check if a date is a work day (Monday-Friday)
- * @param {Date} date
- * @returns {boolean}
- */
-const isWorkDay = (date) => {
-  const day = date.getDay();
-  return day >= 1 && day <= 5;
-};
+// Use shared isWorkDay from scheduleCycleUtils
+const isWorkDay = isWorkDayUtil;
 
 /**
  * Check if an employee can access a doctor's region (hierarchical check)
@@ -296,13 +262,54 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
     };
   }
 
-  // NOTE (Task A.2 / Phase C): Alternating week enforcement for 2x doctors (W1+W3 or W2+W4)
-  // is deferred to Phase C (Task C.1 - Schedule System). The parity check cannot be
-  // implemented correctly here because missed visits carry forward (a visit logged in W2
-  // may be a legitimate carried W1 entry, not an invalid W2 visit). Once the Schedule
-  // model exists, alternating weeks will be enforced through schedule entries themselves —
-  // only scheduled/carried weeks will appear as visitable for each doctor.
+  // Schedule-aware validation (Task A.2 + C.1):
+  // If schedule entries exist for this doctor+user+cycle, enforce via schedule.
+  // Only scheduled (current/past week) or carried entries are visitable.
+  const Schedule = require('../models/Schedule');
+  const currentCycle = Schedule.getCycleNumber(visitDate);
+  const currentWeek = Schedule.getCurrentCycleWeek(visitDate);
 
+  const scheduleEntries = await Schedule.find({
+    doctor: doctorId,
+    user: userId,
+    cycleNumber: currentCycle,
+  });
+
+  if (scheduleEntries.length > 0) {
+    // Schedule exists — enforce through schedule entries
+    const visitable = scheduleEntries.filter((e) => {
+      if (e.status === 'completed' || e.status === 'missed') return false;
+      if (e.status === 'planned' && e.scheduledWeek <= currentWeek) return true;
+      if (e.status === 'carried') return true;
+      return false;
+    });
+
+    if (visitable.length === 0) {
+      // Check if all are completed
+      const allCompleted = scheduleEntries.every((e) => e.status === 'completed');
+      const reason = allCompleted
+        ? 'All scheduled visits for this VIP Client have been completed this cycle.'
+        : `This VIP Client is scheduled for ${scheduleEntries.filter(e => e.status === 'planned').map(e => `W${e.scheduledWeek}`).join(', ')}. Not visitable in W${currentWeek}.`;
+      return {
+        canVisit: false,
+        reason,
+        weeklyCount: 0,
+        monthlyCount,
+        monthlyLimit,
+        scheduleInfo: { hasSchedule: true, entries: scheduleEntries },
+      };
+    }
+
+    return {
+      canVisit: true,
+      weeklyCount: 0,
+      monthlyCount,
+      monthlyLimit,
+      scheduleInfo: { hasSchedule: true, visitableEntries: visitable },
+    };
+  }
+
+  // No schedule exists — fall through to existing monthly quota logic (backward compat)
   return {
     canVisit: true,
     weeklyCount: 0,
@@ -565,9 +572,6 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
       };
     }
 
-    // NOTE (Task A.2 / Phase C): Alternating week enforcement deferred to Phase C Schedule system.
-    // See canVisitDoctor() for full explanation.
-
     return {
       doctorId,
       canVisit: true,
@@ -576,6 +580,151 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
       monthlyLimit,
     };
   });
+
+  // Schedule-aware batch validation (Task A.2 + C.1):
+  // Overlay schedule constraints on results for doctors that have schedule entries.
+  const Schedule = require('../models/Schedule');
+  const currentCycle = Schedule.getCycleNumber(visitDate);
+  const currentWeek = Schedule.getCurrentCycleWeek(visitDate);
+
+  const scheduleEntries = await Schedule.find({
+    doctor: { $in: doctorIds },
+    user: userId,
+    cycleNumber: currentCycle,
+  });
+
+  if (scheduleEntries.length > 0) {
+    // Group schedule entries by doctor
+    const scheduleByDoctor = new Map();
+    scheduleEntries.forEach((e) => {
+      const did = e.doctor.toString();
+      if (!scheduleByDoctor.has(did)) scheduleByDoctor.set(did, []);
+      scheduleByDoctor.get(did).push(e);
+    });
+
+    // Override canVisit for doctors that have schedule entries
+    return results.map((result) => {
+      const entries = scheduleByDoctor.get(result.doctorId);
+      if (!entries || entries.length === 0) return result;
+
+      // If already blocked by weekly/monthly/region check, keep that result
+      if (!result.canVisit) return result;
+
+      const visitable = entries.filter((e) => {
+        if (e.status === 'completed' || e.status === 'missed') return false;
+        if (e.status === 'planned' && e.scheduledWeek <= currentWeek) return true;
+        if (e.status === 'carried') return true;
+        return false;
+      });
+
+      if (visitable.length === 0) {
+        const allCompleted = entries.every((e) => e.status === 'completed');
+        return {
+          ...result,
+          canVisit: false,
+          reason: allCompleted
+            ? 'All scheduled visits completed this cycle.'
+            : `Scheduled for ${entries.filter(e => e.status === 'planned').map(e => `W${e.scheduledWeek}`).join(', ')}. Not visitable in W${currentWeek}.`,
+          scheduleInfo: { hasSchedule: true },
+        };
+      }
+
+      return {
+        ...result,
+        scheduleInfo: { hasSchedule: true, visitableCount: visitable.length },
+      };
+    });
+  }
+
+  return results;
+};
+
+/**
+ * Find the best schedule entry to link a visit to.
+ * Priority: current week planned first → oldest carried entry.
+ * Uses findOneAndUpdate for race-condition safety.
+ *
+ * @param {string} doctorId
+ * @param {string} userId
+ * @param {Date} visitDate
+ * @returns {Promise<{entry: Object|null, isExtra: boolean}>}
+ */
+const getScheduleMatchForVisit = async (doctorId, userId, visitDate = new Date()) => {
+  const Schedule = require('../models/Schedule');
+  const currentCycle = Schedule.getCycleNumber(visitDate);
+  const currentWeek = Schedule.getCurrentCycleWeek(visitDate);
+
+  // Try current week planned entry first
+  let entry = await Schedule.findOneAndUpdate(
+    {
+      doctor: doctorId,
+      user: userId,
+      cycleNumber: currentCycle,
+      scheduledWeek: currentWeek,
+      status: 'planned',
+    },
+    {
+      status: 'completed',
+      completedAt: new Date(),
+      completedInWeek: currentWeek,
+    },
+    { new: true }
+  );
+
+  if (entry) {
+    return { entry, isExtra: false };
+  }
+
+  // Try oldest carried entry
+  const carriedEntries = await Schedule.find({
+    doctor: doctorId,
+    user: userId,
+    cycleNumber: currentCycle,
+    status: 'carried',
+  }).sort({ scheduledWeek: 1 });
+
+  if (carriedEntries.length > 0) {
+    entry = await Schedule.findOneAndUpdate(
+      {
+        _id: carriedEntries[0]._id,
+        status: 'carried', // Ensure still carried (race condition guard)
+      },
+      {
+        status: 'completed',
+        completedAt: new Date(),
+        completedInWeek: currentWeek,
+      },
+      { new: true }
+    );
+
+    if (entry) {
+      return { entry, isExtra: false };
+    }
+  }
+
+  // Try any planned entry for past weeks (should have been carried but wasn't reconciled yet)
+  entry = await Schedule.findOneAndUpdate(
+    {
+      doctor: doctorId,
+      user: userId,
+      cycleNumber: currentCycle,
+      scheduledWeek: { $lt: currentWeek },
+      status: 'planned',
+    },
+    {
+      status: 'completed',
+      completedAt: new Date(),
+      completedInWeek: currentWeek,
+    },
+    { new: true, sort: { scheduledWeek: 1 } }
+  );
+
+  if (entry) {
+    return { entry, isExtra: false };
+  }
+
+  // No matching schedule entry — this is an extra visit
+  return { entry: null, isExtra: true };
 };
 
 module.exports = {
@@ -596,4 +745,6 @@ module.exports = {
   getWeeklyComplianceStats,
   getComplianceReport,
   checkBehindSchedule,
+  getScheduleMatchForVisit,
+  CYCLE_ANCHOR,
 };

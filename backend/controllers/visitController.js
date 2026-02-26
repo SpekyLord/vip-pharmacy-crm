@@ -13,7 +13,7 @@ const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
 const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
-const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, checkBehindSchedule, getMonthYear } = require('../utils/validateWeeklyVisit');
+const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, checkBehindSchedule, getMonthYear, getScheduleMatchForVisit } = require('../utils/validateWeeklyVisit');
 const { signVisitPhotos } = require('../config/s3');
 
 /**
@@ -124,6 +124,18 @@ const createVisit = catchAsync(async (req, res) => {
     }
     // Re-throw other errors for the error handler
     throw error;
+  }
+
+  // Link visit to schedule entry (current week first, then oldest carried)
+  try {
+    const match = await getScheduleMatchForVisit(doctorId, req.user._id, visitDateObj);
+    if (match.entry) {
+      match.entry.visit = visit._id;
+      await match.entry.save();
+    }
+  } catch (scheduleErr) {
+    // Non-fatal: visit is still valid even if schedule linking fails
+    console.error('Schedule linking error (non-fatal):', scheduleErr.message);
   }
 
   // Populate doctor info for response

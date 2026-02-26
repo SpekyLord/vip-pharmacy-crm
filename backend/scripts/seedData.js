@@ -18,6 +18,8 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Region = require('../models/Region');
 const Doctor = require('../models/Doctor');
+const Schedule = require('../models/Schedule');
+const { getCycleNumber, getCycleStartDate } = require('../utils/scheduleCycleUtils');
 
 // Sample data
 const regions = [
@@ -283,6 +285,7 @@ const seedDatabase = async () => {
     await User.deleteMany({});
     await Region.deleteMany({});
     await Doctor.deleteMany({});
+    await Schedule.deleteMany({});
 
     // 1. Create Regions
     console.log('Creating regions...');
@@ -381,6 +384,77 @@ const seedDatabase = async () => {
 
     console.log(`Created ${totalDoctors} total doctors`);
 
+    // 6. Create Schedule Entries (Cycle 1)
+    console.log('\nCreating schedule entries...');
+    const today = new Date(2026, 1, 26); // Feb 26, 2026
+    const currentCycleNumber = getCycleNumber(today);
+    const cycleStart = getCycleStartDate(currentCycleNumber);
+    let totalScheduleEntries = 0;
+    let alternateFlag = false; // toggles W1+W3 vs W2+W4 for visitFrequency=2
+
+    for (const employee of employees) {
+      const assignedDoctors = await Doctor.find({ assignedTo: employee._id }).lean();
+      let dayCounter = 1; // round-robin days 1-5
+
+      for (const doctor of assignedDoctors) {
+        const weeks = doctor.visitFrequency === 4
+          ? [1, 2, 3, 4]
+          : alternateFlag ? [2, 4] : [1, 3];
+
+        for (const week of weeks) {
+          const scheduledDay = dayCounter;
+          dayCounter = (dayCounter % 5) + 1; // cycle 1→2→3→4→5→1
+
+          // Determine status based on week
+          let status = 'planned';
+          let completedAt = null;
+          let completedInWeek = null;
+          let carriedToWeek = null;
+          const rand = Math.random();
+
+          if (week === 1) {
+            status = rand < 0.8 ? 'completed' : 'missed';
+          } else if (week === 2) {
+            status = rand < 0.7 ? 'completed' : 'carried';
+          } else if (week === 3) {
+            status = rand < 0.6 ? 'completed' : 'carried';
+          }
+          // week === 4 stays 'planned'
+
+          if (status === 'completed') {
+            // Set completedAt to a date within that week
+            const completedDay = Math.floor(Math.random() * 5) + 1; // random workday
+            completedAt = new Date(cycleStart);
+            completedAt.setDate(completedAt.getDate() + (week - 1) * 7 + (completedDay - 1));
+            completedInWeek = week;
+          }
+
+          if (status === 'carried') {
+            carriedToWeek = 4; // carried to current week
+          }
+
+          await Schedule.create({
+            doctor: doctor._id,
+            user: employee._id,
+            cycleStart,
+            cycleNumber: currentCycleNumber,
+            scheduledWeek: week,
+            scheduledDay,
+            scheduledLabel: `W${week}D${scheduledDay}`,
+            status,
+            completedAt,
+            completedInWeek,
+            carriedToWeek,
+          });
+          totalScheduleEntries++;
+        }
+        alternateFlag = !alternateFlag;
+      }
+      console.log(`  Created schedules for ${employee.email}: ${assignedDoctors.length} doctors`);
+    }
+
+    console.log(`Created ${totalScheduleEntries} schedule entries (cycle ${currentCycleNumber})`);
+
     // Summary
     console.log('\n========================================');
     console.log('SEED DATA COMPLETE!');
@@ -396,6 +470,7 @@ const seedDatabase = async () => {
     console.log(`Regions:   ${Object.keys(regionMap).length}`);
     console.log(`Users:     ${1 + employees.length}`);
     console.log(`Doctors:   ${totalDoctors}`);
+    console.log(`Schedules: ${totalScheduleEntries} entries (cycle ${currentCycleNumber})`);
     console.log('\nNote: Products are managed via VIP Pharmacy website database.');
     console.log('========================================\n');
 

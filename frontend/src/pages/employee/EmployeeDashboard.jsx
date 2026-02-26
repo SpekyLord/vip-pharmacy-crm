@@ -21,6 +21,7 @@ import { useAuth } from '../../hooks/useAuth';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
 import clientService from '../../services/clientService';
+import scheduleService from '../../services/scheduleService';
 
 const dashboardStyles = `
   .main-content h1 {
@@ -122,6 +123,97 @@ const dashboardStyles = `
     border-bottom: 2px solid #e5e7eb;
   }
 
+  /* Today's Schedule Section */
+  .today-sched-section {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e5e7eb;
+    margin-bottom: 24px;
+  }
+
+  .today-sched-section h2 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .today-sched-section h2 .sched-badge {
+    background: #2563eb;
+    color: white;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+
+  .today-sched-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+  }
+
+  .today-sched-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+    background: #f8fafc;
+    transition: border-color 0.15s;
+  }
+
+  .today-sched-card:hover {
+    border-color: #3b82f6;
+  }
+
+  .today-sched-card .sched-info h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .today-sched-card .sched-info p {
+    margin: 2px 0 0 0;
+    font-size: 12px;
+    color: #6b7280;
+  }
+
+  .today-sched-card .sched-info .carried-tag {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #92400e;
+    background: #fef3c7;
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  .today-sched-card .sched-log-btn {
+    padding: 8px 16px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+  }
+
+  .today-sched-card .sched-log-btn:hover {
+    background: #1d4ed8;
+  }
+
   @media (max-width: 768px) {
     .stats-row {
       grid-template-columns: repeat(2, 1fr);
@@ -140,6 +232,7 @@ const EmployeeDashboard = () => {
   const [clients, setClients] = useState([]);
   const [showAddClient, setShowAddClient] = useState(false);
   const [editClient, setEditClient] = useState(null);
+  const [todaySchedule, setTodaySchedule] = useState([]);
   const [dailyClientVisitCount, setDailyClientVisitCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -174,10 +267,11 @@ const EmployeeDashboard = () => {
         visitService.getWeeklyCompliance(monthYear),
         clientService.getAll({ limit: 0 }),
         clientService.getTodayVisitCount(),
+        scheduleService.getToday(),
       ]);
 
       // Extract results with fallbacks for failed requests
-      const [doctorsResult, todayResult, statsResult, weeklyResult, clientsResult, clientCountResult] = results;
+      const [doctorsResult, todayResult, statsResult, weeklyResult, clientsResult, clientCountResult, scheduleResult] = results;
 
       // Process doctors - critical, show error if fails
       const doctorsList = doctorsResult.status === 'fulfilled'
@@ -219,6 +313,12 @@ const EmployeeDashboard = () => {
         ? (clientCountResult.value.data?.dailyCount || 0)
         : 0;
       setDailyClientVisitCount(clientDailyCount);
+
+      // Process today's schedule - non-critical, use fallback
+      const scheduleData = scheduleResult.status === 'fulfilled'
+        ? (scheduleResult.value.data || [])
+        : [];
+      setTodaySchedule(scheduleData);
 
       setStats({
         visitsToday: todayCount,
@@ -314,6 +414,34 @@ const EmployeeDashboard = () => {
                   className="progress-fill"
                   style={{ width: `${Math.min(stats.compliancePercentage, 100)}%` }}
                 />
+              </div>
+            </div>
+          )}
+
+          {todaySchedule.length > 0 && (
+            <div className="today-sched-section">
+              <h2>
+                Today&apos;s Schedule
+                <span className="sched-badge">{todaySchedule.length}</span>
+              </h2>
+              <div className="today-sched-cards">
+                {todaySchedule.map((entry) => (
+                  <div key={entry._id} className="today-sched-card">
+                    <div className="sched-info">
+                      <h4>{entry.doctor?.firstName} {entry.doctor?.lastName}</h4>
+                      <p>{entry.doctor?.specialization || 'N/A'} — {entry.scheduledLabel}</p>
+                      {entry.status === 'carried' && (
+                        <span className="carried-tag">Carried from W{entry.scheduledWeek}</span>
+                      )}
+                    </div>
+                    <button
+                      className="sched-log-btn"
+                      onClick={() => navigate(`/employee/visit/new?doctorId=${entry.doctor?._id}`)}
+                    >
+                      Log Visit
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           )}

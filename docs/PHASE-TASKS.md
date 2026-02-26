@@ -399,16 +399,18 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task C.4: VIP Count Minimums & Validation (CHANGE_LOG Change 11)
+### Task C.4: VIP Count Minimums & Validation (CHANGE_LOG Change 11) — ⏭ SKIPPED
 **Priority**: LOW
 **Depends on**: A.1 ✅
+**Status**: ⏭ SKIPPED — Admin already reviews the Excel CPT before uploading to CRM, catching VIP count shortfalls at that stage. Automated warning banners would be redundant.
+
 **Files**: `pages/employee/EmployeeDashboard.jsx`, `pages/admin/AdminDashboard.jsx`, `pages/admin/StatisticsPage.jsx`
 
 **Deliverables**:
-- [ ] BDM dashboard: Warning banner when assigned VIP Clients < 20
-- [ ] Admin dashboard: Warning when total active VIP Clients < 130
-- [ ] Statistics page: VIP count breakdown (2x vs 4x per BDM)
-- [ ] Schedule validation: Ensure planned visits adequately fill 20 working days
+- [x] ~~BDM dashboard: Warning banner when assigned VIP Clients < 20~~ — skipped
+- [x] ~~Admin dashboard: Warning when total active VIP Clients < 130~~ — skipped
+- [x] ~~Statistics page: VIP count breakdown (2x vs 4x per BDM)~~ — skipped
+- [x] ~~Schedule validation: Ensure planned visits adequately fill 20 working days~~ — skipped
 
 ---
 
@@ -421,7 +423,7 @@ node backend/scripts/migrateDoctorFields.js
 | B.7: Filter by Support/Program | 17 | A.1 ✅ | ✅ COMPLETE |
 | B.4: Engagement Tracking | 12 | A.1 ✅ | ✅ COMPLETE |
 | B.5a: BDM Performance (basic) | 14 | None | ✅ COMPLETE |
-| C.4: VIP Count Minimums | 11 | A.1 ✅ | Independent |
+| C.4: VIP Count Minimums | 11 | A.1 ✅ | ⏭ SKIPPED — admin reviews CPT pre-upload |
 
 ---
 
@@ -812,7 +814,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 |-------|-------|------------------|--------|
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
 | **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4 ✅) | Remove MedRep, BDM self-edit | ✅ COMPLETE |
-| **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4 ✅, B.5a ✅, C.4) | Photos, regular clients, filters, engagement, stats | 🔄 In progress (5/6) |
+| **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4 ✅, B.5a ✅, C.4 ⏭) | Photos, regular clients, filters, engagement, stats | ✅ Complete (5 done + 1 skipped) |
 | **Phase 4: Schedule System** | 3 tasks (C.1+A.2, B.1, B.2) | 4-week calendar, alternating weeks, info page | ⬜ Not started |
 | **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |
 | **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |
