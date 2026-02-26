@@ -22,29 +22,51 @@ const { getCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getD
  * Reconcile schedule entries for a user+cycle.
  * Updates statuses: planned→carried (past week), carried→missed (past cycle end).
  * Marks entries completed if a matching visit exists.
+ *
+ * @param {string} userId
+ * @param {number} cycleNumber
+ * @param {Array|null} prefetchedEntries - Optional pre-fetched unresolved entries to avoid redundant query
+ * @returns {Promise<boolean>} true if any entries were updated
  */
-const reconcileEntries = async (userId, cycleNumber) => {
+const reconcileEntries = async (userId, cycleNumber, prefetchedEntries = null) => {
   const now = new Date();
   const currentCycle = getCycleNumber(now);
   const currentWeek = getWeekOfMonth(now);
   const cycleEnd = getCycleEndDate(cycleNumber);
-
-  // Fetch unresolved entries
-  const entries = await Schedule.find({
-    user: userId,
-    cycleNumber,
-    status: { $in: ['planned', 'carried'] },
-  });
-
-  if (entries.length === 0) return;
-
-  // Fetch visits for this user in this cycle's date range
   const cycleStart = getCycleStartDate(cycleNumber);
-  const visits = await Visit.find({
-    user: userId,
-    visitDate: { $gte: cycleStart, $lte: cycleEnd },
-    status: 'completed',
-  }).select('doctor visitDate');
+
+  // Parallel fetch: unresolved entries + visits (if entries not pre-fetched)
+  let entries;
+  let visits;
+
+  if (prefetchedEntries) {
+    entries = prefetchedEntries;
+    if (entries.length === 0) return false;
+    // Still need visits
+    visits = await Visit.find({
+      user: userId,
+      visitDate: { $gte: cycleStart, $lte: cycleEnd },
+      status: 'completed',
+    }).select('doctor visitDate');
+  } else {
+    // Parallel fetch both
+    const [fetchedEntries, fetchedVisits] = await Promise.all([
+      Schedule.find({
+        user: userId,
+        cycleNumber,
+        status: { $in: ['planned', 'carried'] },
+      }),
+      Visit.find({
+        user: userId,
+        visitDate: { $gte: cycleStart, $lte: cycleEnd },
+        status: 'completed',
+      }).select('doctor visitDate'),
+    ]);
+    entries = fetchedEntries;
+    visits = fetchedVisits;
+  }
+
+  if (entries.length === 0) return false;
 
   // Build visit lookup: doctorId → array of visit dates
   const visitsByDoctor = new Map();
@@ -106,7 +128,9 @@ const reconcileEntries = async (userId, cycleNumber) => {
 
   if (bulkOps.length > 0) {
     await Schedule.bulkWrite(bulkOps);
+    return true;
   }
+  return false;
 };
 
 // ─── Schedule Looping ──────────────────────────────────────────────────────────
@@ -175,19 +199,26 @@ const getCycle = catchAsync(async (req, res) => {
     ? parseInt(req.query.cycleNumber)
     : getCycleNumber(now);
 
-  // Check if entries exist for this cycle
-  let entries = await Schedule.find({ user: userId, cycleNumber: requestedCycle });
+  // Fetch with populate upfront (combines existence check + final fetch)
+  let entries = await Schedule.getCycleSchedule(userId, requestedCycle);
 
   // If no entries, try looping from previous cycle
   if (entries.length === 0) {
-    entries = await loopScheduleFromPrevious(userId, requestedCycle);
+    const looped = await loopScheduleFromPrevious(userId, requestedCycle);
+    if (looped.length > 0) {
+      entries = await Schedule.getCycleSchedule(userId, requestedCycle);
+    }
   }
 
-  // Reconcile statuses
+  // Reconcile only unresolved entries, skip re-fetch if nothing changed
   if (entries.length > 0) {
-    await reconcileEntries(userId, requestedCycle);
-    // Re-fetch after reconciliation
-    entries = await Schedule.getCycleSchedule(userId, requestedCycle);
+    const unresolvedEntries = entries.filter((e) => e.status === 'planned' || e.status === 'carried');
+    if (unresolvedEntries.length > 0) {
+      const changed = await reconcileEntries(userId, requestedCycle, unresolvedEntries);
+      if (changed) {
+        entries = await Schedule.getCycleSchedule(userId, requestedCycle);
+      }
+    }
   }
 
   const cycleStart = getCycleStartDate(requestedCycle);
@@ -224,10 +255,10 @@ const getToday = catchAsync(async (req, res) => {
   const now = new Date();
   const currentCycle = getCycleNumber(now);
 
-  // Reconcile first
+  // Reconcile (parallel fetch inside), then get visitable entries
+  // Only re-reconcile if there were changes; getVisitableEntries always fetches fresh
   await reconcileEntries(userId, currentCycle);
 
-  // Get visitable entries
   const entries = await Schedule.getVisitableEntries(userId, now);
 
   res.json({
@@ -386,10 +417,18 @@ const adminGetCycle = catchAsync(async (req, res) => {
     ? parseInt(cycleNumber)
     : getCycleNumber(new Date());
 
-  // Reconcile first
-  await reconcileEntries(userId, targetCycle);
+  // Fetch with populate first, reconcile only unresolved, skip re-fetch if no changes
+  let entries = await Schedule.getCycleSchedule(userId, targetCycle);
 
-  const entries = await Schedule.getCycleSchedule(userId, targetCycle);
+  if (entries.length > 0) {
+    const unresolvedEntries = entries.filter((e) => e.status === 'planned' || e.status === 'carried');
+    if (unresolvedEntries.length > 0) {
+      const changed = await reconcileEntries(userId, targetCycle, unresolvedEntries);
+      if (changed) {
+        entries = await Schedule.getCycleSchedule(userId, targetCycle);
+      }
+    }
+  }
 
   const cycleStart = getCycleStartDate(targetCycle);
   const now = new Date();

@@ -80,16 +80,24 @@ const getAllClients = catchAsync(async (req, res) => {
   let query = Client.find(filter)
     .populate('region', 'name code level')
     .populate('createdBy', 'name email')
-    .sort({ lastName: 1, firstName: 1 });
+    .sort({ lastName: 1, firstName: 1 })
+    .lean();
 
   if (limit > 0) {
     query = query.skip(skip).limit(limit);
   }
 
-  const [clients, total] = await Promise.all([
-    query,
-    Client.countDocuments(filter),
-  ]);
+  // When fetching all (limit=0), skip countDocuments — use array.length instead
+  let clients, total;
+  if (limit === 0) {
+    clients = await query;
+    total = clients.length;
+  } else {
+    [clients, total] = await Promise.all([
+      query,
+      Client.countDocuments(filter),
+    ]);
+  }
 
   res.status(200).json({
     success: true,

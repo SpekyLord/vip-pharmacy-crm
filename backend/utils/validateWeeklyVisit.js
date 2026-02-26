@@ -335,21 +335,18 @@ const getWeeklyComplianceStats = async (userId, monthYear) => {
  * @returns {Promise<{weeks: Array, totalVisits: number, totalDoctors: number, compliancePercentage: number}>}
  */
 const getComplianceReport = async (userId, monthYear) => {
-  const weeklyStats = await getWeeklyComplianceStats(userId, monthYear);
+  // Parallelize independent queries
+  const [weeklyStats, user] = await Promise.all([
+    getWeeklyComplianceStats(userId, monthYear),
+    User.findById(userId),
+  ]);
 
-  // Get total assigned doctors for this user
-  const Doctor = require('../models/Doctor');
-  const User = require('../models/User');
-
-  const user = await User.findById(userId);
-  let totalDoctors = 0;
-
-  if (user.role === 'employee' && user.assignedRegions?.length > 0) {
-    totalDoctors = await Doctor.countDocuments({
-      region: { $in: user.assignedRegions },
-      isActive: true,
-    });
-  }
+  // Single query for doctors (replaces separate countDocuments + find)
+  const doctors = await Doctor.find({
+    region: { $in: user.assignedRegions || [] },
+    isActive: true,
+  }).lean();
+  const totalDoctors = doctors.length;
 
   // Calculate totals
   const totalVisits = weeklyStats.reduce((sum, w) => sum + w.visitCount, 0);
@@ -357,10 +354,6 @@ const getComplianceReport = async (userId, monthYear) => {
   weeklyStats.forEach((w) => w.doctors.forEach((d) => uniqueDoctors.add(d.toString())));
 
   // Calculate expected visits (sum of all doctor frequencies)
-  const doctors = await Doctor.find({
-    region: { $in: user.assignedRegions || [] },
-    isActive: true,
-  });
   const expectedVisits = doctors.reduce((sum, d) => sum + (d.visitFrequency || 4), 0);
 
   return {
@@ -389,12 +382,11 @@ const checkBehindSchedule = async (userId, checkDate = new Date()) => {
   const monthYear = getMonthYear(checkDate);
   const weekOfMonth = getWeekOfMonth(checkDate);
 
-  // Get compliance stats
-  const weeklyStats = await getWeeklyComplianceStats(userId, monthYear);
-
-  // Get expected visits by this week
-  const User = require('../models/User');
-  const user = await User.findById(userId);
+  // Parallelize independent queries
+  const [weeklyStats, user] = await Promise.all([
+    getWeeklyComplianceStats(userId, monthYear),
+    User.findById(userId),
+  ]);
 
   if (!user || user.role !== 'employee') {
     return { isBehind: false, details: {} };
@@ -455,36 +447,44 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
   const monthYear = getEffectiveMonthYear(visitDate); // Use effective month (5th week → next month)
   const yearWeekKey = getYearWeekKey(visitDate);
 
-  // OPTIMIZATION: Load all doctors in one query
-  const doctors = await Doctor.find({ _id: { $in: doctorIds } }).populate('region');
-  const doctorMap = new Map(doctors.map((d) => [d._id.toString(), d]));
+  // OPTIMIZATION: Load all data in parallel (doctors, weekly visits, monthly counts, schedule entries)
+  const Schedule = require('../models/Schedule');
+  const currentCycle = Schedule.getCycleNumber(visitDate);
+  const currentWeek = Schedule.getCurrentCycleWeek(visitDate);
 
-  // OPTIMIZATION: Get all weekly visits in one query
-  const weeklyVisits = await Visit.find({
-    doctor: { $in: doctorIds },
-    user: userId,
-    yearWeekKey,
-    status: 'completed',
-  }).select('doctor');
-  const visitedThisWeek = new Set(weeklyVisits.map((v) => v.doctor.toString()));
-
-  // OPTIMIZATION: Get all monthly visit counts in one aggregation
-  const monthlyCounts = await Visit.aggregate([
-    {
-      $match: {
-        doctor: { $in: doctorIds.map((id) => new mongoose.Types.ObjectId(id)) },
-        user: new mongoose.Types.ObjectId(userId),
-        monthYear,
-        status: 'completed',
+  const [doctors, weeklyVisits, monthlyCounts, scheduleEntries] = await Promise.all([
+    Doctor.find({ _id: { $in: doctorIds } }).populate('region'),
+    Visit.find({
+      doctor: { $in: doctorIds },
+      user: userId,
+      yearWeekKey,
+      status: 'completed',
+    }).select('doctor'),
+    Visit.aggregate([
+      {
+        $match: {
+          doctor: { $in: doctorIds.map((id) => new mongoose.Types.ObjectId(id)) },
+          user: new mongoose.Types.ObjectId(userId),
+          monthYear,
+          status: 'completed',
+        },
       },
-    },
-    {
-      $group: {
-        _id: '$doctor',
-        count: { $sum: 1 },
+      {
+        $group: {
+          _id: '$doctor',
+          count: { $sum: 1 },
+        },
       },
-    },
+    ]),
+    Schedule.find({
+      doctor: { $in: doctorIds },
+      user: userId,
+      cycleNumber: currentCycle,
+    }),
   ]);
+
+  const doctorMap = new Map(doctors.map((d) => [d._id.toString(), d]));
+  const visitedThisWeek = new Set(weeklyVisits.map((v) => v.doctor.toString()));
   const monthlyCountMap = new Map(monthlyCounts.map((c) => [c._id.toString(), c.count]));
 
   // Check region access for all doctors if user has assignedRegions
@@ -515,7 +515,7 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
   }
 
   // Process each doctor
-  return doctorIds.map((doctorId) => {
+  const results = doctorIds.map((doctorId) => {
     const doctor = doctorMap.get(doctorId);
 
     if (!doctor) {
@@ -583,16 +583,6 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
 
   // Schedule-aware batch validation (Task A.2 + C.1):
   // Overlay schedule constraints on results for doctors that have schedule entries.
-  const Schedule = require('../models/Schedule');
-  const currentCycle = Schedule.getCycleNumber(visitDate);
-  const currentWeek = Schedule.getCurrentCycleWeek(visitDate);
-
-  const scheduleEntries = await Schedule.find({
-    doctor: { $in: doctorIds },
-    user: userId,
-    cycleNumber: currentCycle,
-  });
-
   if (scheduleEntries.length > 0) {
     // Group schedule entries by doctor
     const scheduleByDoctor = new Map();

@@ -517,59 +517,61 @@ const getVisitStats = catchAsync(async (req, res) => {
     matchQuery.monthYear = monthYear;
   }
 
-  const stats = await Visit.aggregate([
+  // Single aggregation with $facet to avoid two DB round-trips
+  const [result] = await Visit.aggregate([
     { $match: matchQuery },
     {
-      $group: {
-        _id: null,
-        totalVisits: { $sum: 1 },
-        uniqueDoctors: { $addToSet: '$doctor' },
-        avgDuration: { $avg: '$duration' },
-        visitsByType: {
-          $push: '$visitType',
-        },
+      $facet: {
+        summary: [
+          {
+            $group: {
+              _id: null,
+              totalVisits: { $sum: 1 },
+              uniqueDoctors: { $addToSet: '$doctor' },
+              avgDuration: { $avg: '$duration' },
+              visitsByType: { $push: '$visitType' },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              totalVisits: 1,
+              uniqueDoctorsCount: { $size: '$uniqueDoctors' },
+              avgDuration: { $round: ['$avgDuration', 0] },
+              visitsByType: 1,
+            },
+          },
+        ],
+        weeklyBreakdown: [
+          {
+            $group: {
+              _id: '$weekOfMonth',
+              count: { $sum: 1 },
+              uniqueDoctors: { $addToSet: '$doctor' },
+            },
+          },
+          {
+            $project: {
+              week: '$_id',
+              visitCount: '$count',
+              doctorCount: { $size: '$uniqueDoctors' },
+            },
+          },
+          { $sort: { week: 1 } },
+        ],
       },
     },
-    {
-      $project: {
-        _id: 0,
-        totalVisits: 1,
-        uniqueDoctorsCount: { $size: '$uniqueDoctors' },
-        avgDuration: { $round: ['$avgDuration', 0] },
-        visitsByType: 1,
-      },
-    },
-  ]);
-
-  // Get weekly breakdown
-  const weeklyBreakdown = await Visit.aggregate([
-    { $match: matchQuery },
-    {
-      $group: {
-        _id: '$weekOfMonth',
-        count: { $sum: 1 },
-        uniqueDoctors: { $addToSet: '$doctor' },
-      },
-    },
-    {
-      $project: {
-        week: '$_id',
-        visitCount: '$count',
-        doctorCount: { $size: '$uniqueDoctors' },
-      },
-    },
-    { $sort: { week: 1 } },
   ]);
 
   res.json({
     success: true,
     data: {
-      summary: stats[0] || {
+      summary: result?.summary[0] || {
         totalVisits: 0,
         uniqueDoctorsCount: 0,
         avgDuration: 0,
       },
-      weeklyBreakdown,
+      weeklyBreakdown: result?.weeklyBreakdown || [],
     },
   });
 });

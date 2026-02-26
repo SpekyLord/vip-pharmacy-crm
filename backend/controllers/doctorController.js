@@ -113,23 +113,31 @@ const getAllDoctors = catchAsync(async (req, res) => {
   let query = Doctor.find(filter)
     .populate('region', 'name code level')
     .populate('assignedTo', 'name email')
-    .sort({ lastName: 1, firstName: 1 });
+    .sort({ lastName: 1, firstName: 1 })
+    .lean();
 
   if (limit > 0) {
     query = query.skip(skip).limit(limit);
   }
 
-  const [doctors, total] = await Promise.all([
-    query,
-    Doctor.countDocuments(filter),
-  ]);
+  // When fetching all (limit=0), skip countDocuments — use array.length instead
+  let doctors, total;
+  if (limit === 0) {
+    doctors = await query;
+    total = doctors.length;
+  } else {
+    [doctors, total] = await Promise.all([
+      query,
+      Doctor.countDocuments(filter),
+    ]);
+  }
 
   res.status(200).json({
     success: true,
     data: doctors,
     pagination: {
       page,
-      limit: limit || total, // If no limit, show total as limit
+      limit: limit || total,
       total,
       pages: limit > 0 ? Math.ceil(total / limit) : 1,
     },
