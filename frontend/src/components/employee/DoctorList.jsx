@@ -238,6 +238,30 @@ const doctorListStyles = `
     border-color: #9ca3af;
   }
 
+  .engagement-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-bottom: 12px;
+  }
+
+  .engagement-badge.eng-low {
+    background: #fef2f2;
+    color: #dc2626;
+  }
+
+  .engagement-badge.eng-mid {
+    background: #fefce8;
+    color: #a16207;
+  }
+
+  .engagement-badge.eng-high {
+    background: #f0fdf4;
+    color: #16a34a;
+  }
+
   .no-results {
     text-align: center;
     padding: 40px 20px;
@@ -260,6 +284,20 @@ const doctorListStyles = `
     }
   }
 `;
+
+const ENGAGEMENT_LABELS = {
+  1: 'Visited 4x',
+  2: 'Knows BDM/products',
+  3: 'Tried products',
+  4: 'In group chat',
+  5: 'Active partner',
+};
+
+const getEngagementClass = (level) => {
+  if (level <= 2) return 'eng-low';
+  if (level === 3) return 'eng-mid';
+  return 'eng-high';
+};
 
 const DoctorList = memo(function DoctorList({
   doctors = [],
@@ -441,6 +479,12 @@ const DoctorList = memo(function DoctorList({
 
               <p className="doctor-specialization">{doctor.specialization || '-'}</p>
               <p className="doctor-hospital">{doctor.clinicOfficeAddress || '-'}</p>
+
+              {doctor.levelOfEngagement && (
+                <span className={`engagement-badge ${getEngagementClass(doctor.levelOfEngagement)}`}>
+                  Eng: {doctor.levelOfEngagement}/5 - {ENGAGEMENT_LABELS[doctor.levelOfEngagement]}
+                </span>
+              )}
 
               {statusDisplay && (
                 <div className="visit-status">

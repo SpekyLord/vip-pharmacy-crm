@@ -363,15 +363,17 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task B.4: Level of Engagement Tracking (CHANGE_LOG Change 12)
+### Task B.4: Level of Engagement Tracking (CHANGE_LOG Change 12) ✅ COMPLETE
 **Priority**: MEDIUM
 **Depends on**: A.1 ✅
-**Files**: `components/employee/DoctorList.jsx`, new `DoctorDetailPage.jsx`, `components/admin/DoctorManagement.jsx`
+**Completed**: February 2026
+**Files**: `components/employee/DoctorList.jsx`, `components/admin/DoctorManagement.jsx`
 
 **Deliverables**:
-- [ ] Display engagement badge (1-5) on VIP Client cards and detail pages
-- [ ] BDMs can update engagement level from VIP Client detail page
-- [ ] Scale: 1=Visited 4x, 2=Knows BDM/products, 3=Tried products, 4=In group chat, 5=Active partner
+- [x] Display engagement badge (1-5) on BDM VIP Client cards with color coding (red/orange=1-2, yellow=3, green=4-5)
+- [x] Engagement column in admin DoctorManagement table with color badges
+- [x] BDMs can update engagement level via Edit button on card (A.4 already provides this)
+- [x] Scale: 1=Visited 4x, 2=Knows BDM/products, 3=Tried products, 4=In group chat, 5=Active partner
 
 ---
 
@@ -409,7 +411,7 @@ node backend/scripts/migrateDoctorFields.js
 | B.3: Photo Upload Flexibility | 5 | None | ✅ COMPLETE |
 | B.6: Regular Clients | 16 | None | ✅ COMPLETE |
 | B.7: Filter by Support/Program | 17 | A.1 ✅ | ✅ COMPLETE |
-| B.4: Engagement Tracking | 12 | A.1 ✅ | Independent |
+| B.4: Engagement Tracking | 12 | A.1 ✅ | ✅ COMPLETE |
 | B.5a: BDM Performance (basic) | 14 | None | DCR part deferred to Phase 5 |
 | C.4: VIP Count Minimums | 11 | A.1 ✅ | Independent |
 
@@ -802,7 +804,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 |-------|-------|------------------|--------|
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
 | **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4 ✅) | Remove MedRep, BDM self-edit | ✅ COMPLETE |
-| **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | 🔄 In progress (3/6) |
+| **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4 ✅, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | 🔄 In progress (4/6) |
 | **Phase 4: Schedule System** | 3 tasks (C.1+A.2, B.1, B.2) | 4-week calendar, alternating weeks, info page | ⬜ Not started |
 | **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |
 | **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |

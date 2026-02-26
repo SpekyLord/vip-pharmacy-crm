@@ -163,6 +163,29 @@ const doctorManagementStyles = `
     color: #16a34a;
   }
 
+  .eng-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .eng-badge.eng-low {
+    background: #fef2f2;
+    color: #dc2626;
+  }
+
+  .eng-badge.eng-mid {
+    background: #fefce8;
+    color: #a16207;
+  }
+
+  .eng-badge.eng-high {
+    background: #f0fdf4;
+    color: #16a34a;
+  }
+
   /* Pagination */
   .pagination {
     display: flex;
@@ -832,6 +855,7 @@ const DoctorManagement = ({
                 <th>Hospital</th>
                 <th>Region</th>
                 <th>Visit Freq</th>
+                <th>Engagement</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -846,6 +870,13 @@ const DoctorManagement = ({
                     <span className={`visit-freq-badge freq-${doctor.visitFrequency}`}>
                       {doctor.visitFrequency}x/mo
                     </span>
+                  </td>
+                  <td>
+                    {doctor.levelOfEngagement ? (
+                      <span className={`eng-badge ${doctor.levelOfEngagement <= 2 ? 'eng-low' : doctor.levelOfEngagement === 3 ? 'eng-mid' : 'eng-high'}`}>
+                        {doctor.levelOfEngagement}/5
+                      </span>
+                    ) : '-'}
                   </td>
                   <td className="actions">
                     <button
