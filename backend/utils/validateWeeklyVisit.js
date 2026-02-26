@@ -34,18 +34,21 @@ const getWeekNumber = (date) => {
 };
 
 /**
- * Get week of month (1-5)
- * Uses ISO week standard: week starts on Monday
+ * 4-week cycle anchor: January 5, 2026 (Monday) = W1D1
+ */
+const CYCLE_ANCHOR = new Date(2026, 0, 5);
+
+/**
+ * Get week in 4-week cycle (1-4) based on Jan 5, 2026 anchor.
+ * Replaces naive "week of calendar month" with anchor-based cycle position.
  * @param {Date} date
- * @returns {number} Week of month
+ * @returns {number} Week in cycle (1-4)
  */
 const getWeekOfMonth = (date) => {
-  const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-  // Get day of week for first of month (0=Sun, convert to Mon=0)
-  const firstDayOfWeek = firstOfMonth.getDay();
-  const adjustedFirst = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1; // ISO: Mon=0, Sun=6
-  const dayOfMonth = date.getDate();
-  return Math.ceil((dayOfMonth + adjustedFirst) / 7);
+  const diffMs = date.getTime() - CYCLE_ANCHOR.getTime();
+  const diffDays = Math.floor(diffMs / 86400000);
+  const dayInCycle = ((diffDays % 28) + 28) % 28;
+  return Math.floor(dayInCycle / 7) + 1;
 };
 
 /**
@@ -80,28 +83,15 @@ const getMonthYear = (date) => {
 };
 
 /**
- * Get EFFECTIVE month-year, applying 5th week → next month logic
- * Matches Visit.js pre-save hook behavior exactly
+ * Get EFFECTIVE month-year for a visit date.
+ * Now that we use anchor-based cycles (Jan 5, 2026), there is no "5th week overflow".
+ * weekOfMonth is always 1-4, so effective month = calendar month.
+ * Kept for backward compatibility with callers.
  * @param {Date} date
- * @returns {string} Effective month-year string (may differ from calendar month)
+ * @returns {string} Month-year string (always calendar month)
  */
 const getEffectiveMonthYear = (date) => {
-  const weekOfMonth = getWeekOfMonth(date);
-
-  let effectiveYear = date.getFullYear();
-  let effectiveMonth = date.getMonth(); // 0-indexed
-
-  // 5th+ week dates count towards next month (matches Visit.js logic)
-  if (weekOfMonth > 4) {
-    effectiveMonth++;
-    if (effectiveMonth > 11) {
-      effectiveMonth = 0;
-      effectiveYear++;
-    }
-  }
-
-  const monthStr = String(effectiveMonth + 1).padStart(2, '0');
-  return `${effectiveYear}-${monthStr}`;
+  return getMonthYear(date);
 };
 
 /**

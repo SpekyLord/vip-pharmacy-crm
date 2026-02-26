@@ -374,6 +374,7 @@ const getMenuConfig = (role) => {
             items: [
               { path: '/employee/inbox', label: 'Mail', icon: Inbox, badge: 2 },
               { path: '/employee/visits', label: 'My Visits', icon: Calendar },
+              { path: '/employee/performance', label: 'Performance', icon: BarChart3 },
             ],
           },
         ],

@@ -208,20 +208,24 @@ function getISOWeek(date) {
 }
 
 /**
- * Calculate the week of the month (1-5)
- * Uses ISO week standard: week starts on Monday
- * @param {Date} date - The date to calculate week for
- * @returns {Number} - Week of month (1-5)
+ * 4-week cycle anchor: January 5, 2026 (Monday) = W1D1
+ * Cycles repeat every 28 calendar days from this anchor.
  */
-function getWeekOfMonth(date) {
-  const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-  // Get day of week for first of month (0=Sun, convert to Mon=0)
-  const firstDayOfWeek = firstOfMonth.getDay();
-  const adjustedFirst = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1; // 0=Mon, 6=Sun
+const CYCLE_ANCHOR = new Date(2026, 0, 5); // Jan 5, 2026
 
-  // Calculate which week of the month this date falls in
-  const dayOfMonth = date.getDate();
-  return Math.ceil((dayOfMonth + adjustedFirst) / 7);
+/**
+ * Calculate cycle position based on the Jan 5, 2026 anchor.
+ * @param {Date} date
+ * @returns {{ weekInCycle: number, dayInCycle: number }}
+ *   weekInCycle: 1-4, dayInCycle: 1-7 (1=Mon, 5=Fri, 6=Sat, 7=Sun)
+ */
+function getCyclePosition(date) {
+  const diffMs = date.getTime() - CYCLE_ANCHOR.getTime();
+  const diffDays = Math.floor(diffMs / 86400000);
+  const dayInCycle = ((diffDays % 28) + 28) % 28; // 0-27, handles pre-anchor dates
+  const weekInCycle = Math.floor(dayInCycle / 7) + 1; // 1-4
+  const dayOfWeekInCycle = (dayInCycle % 7) + 1; // 1=Mon ... 7=Sun
+  return { weekInCycle, dayOfWeekInCycle };
 }
 
 // Pre-save hook to generate week tracking fields
@@ -233,37 +237,17 @@ visitSchema.pre('save', function (next) {
     const { weekNumber, weekYear } = getISOWeek(date);
     this.weekNumber = weekNumber;
 
-    // Get week of month (1-5+)
-    let weekOfMonth = getWeekOfMonth(date);
-
-    // Get day of week (1 = Monday, 5 = Friday, 6 = Saturday, 7 = Sunday)
-    const jsDay = date.getDay(); // 0 = Sunday in JavaScript
-    this.dayOfWeek = jsDay === 0 ? 7 : jsDay; // Convert to ISO (Mon = 1, Sun = 7)
-
-    // Determine the effective month for this visit
-    // Grid only supports 4 weeks (20 work days). If weekOfMonth > 4,
-    // this visit counts towards the NEXT month's report as Week 1
-    let effectiveYear = date.getFullYear();
-    let effectiveMonth = date.getMonth(); // 0-indexed
-
-    if (weekOfMonth > 4) {
-      // 5th+ week dates count towards next month's report
-      effectiveMonth++;
-      if (effectiveMonth > 11) {
-        effectiveMonth = 0;
-        effectiveYear++;
-      }
-      weekOfMonth = 1; // Week 1 of next month
-    }
-
-    this.weekOfMonth = weekOfMonth;
+    // Get anchor-based cycle position (W1-W4, D1-D7)
+    const { weekInCycle, dayOfWeekInCycle } = getCyclePosition(date);
+    this.weekOfMonth = weekInCycle;
+    this.dayOfWeek = dayOfWeekInCycle;
 
     // Generate week label (W1D1, W2D3, etc.)
     this.weekLabel = `W${this.weekOfMonth}D${this.dayOfWeek}`;
 
-    // Generate monthYear using effective month (may differ from actual date)
-    const monthStr = String(effectiveMonth + 1).padStart(2, '0');
-    this.monthYear = `${effectiveYear}-${monthStr}`;
+    // monthYear = calendar month of the actual visit date
+    const monthStr = String(date.getMonth() + 1).padStart(2, '0');
+    this.monthYear = `${date.getFullYear()}-${monthStr}`;
 
     // Generate yearWeekKey using ISO week year (handles year boundaries correctly)
     // e.g., Dec 31, 2024 might be "2025-W01" if it falls in week 1 of 2025

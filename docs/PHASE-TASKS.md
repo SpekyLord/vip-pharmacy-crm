@@ -377,15 +377,23 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task B.5a: BDM Self-Service Performance — Basic Stats (CHANGE_LOG Change 14, partial)
+### Task B.5a: BDM Self-Service Performance — Basic Stats (CHANGE_LOG Change 14, partial) ✅ COMPLETE
 **Priority**: MEDIUM
 **Depends on**: None
-**Files**: NEW `frontend/src/pages/employee/MyPerformancePage.jsx`
+**Completed**: February 2026
+**Files**:
+- NEW: `frontend/src/pages/employee/MyPerformancePage.jsx` — Full performance page
+- `frontend/src/App.jsx` — Added `/employee/performance` route
+- `frontend/src/components/common/Sidebar.jsx` — Added Performance menu item to BDM Work section
 
 **Deliverables**:
-- [ ] Total visits/month, compliance %, engagement distribution
-- [ ] VIP coverage breakdown (2x vs 4x)
-- [ ] Behind-schedule warnings
+- [x] Total visits/month, compliance %, engagement distribution
+- [x] VIP coverage breakdown (2x vs 4x)
+- [x] Behind-schedule warnings
+- [x] Monthly stat cards with color-coded compliance
+- [x] Weekly breakdown bar chart (Recharts)
+- [x] Not-yet-visited VIP Clients table
+- [x] Month picker (last 6 months)
 
 > **Note**: DCR Summary view (Call Rate, Target vs Actual) requires C.2 — see Task B.5b in Phase 5.
 
@@ -412,7 +420,7 @@ node backend/scripts/migrateDoctorFields.js
 | B.6: Regular Clients | 16 | None | ✅ COMPLETE |
 | B.7: Filter by Support/Program | 17 | A.1 ✅ | ✅ COMPLETE |
 | B.4: Engagement Tracking | 12 | A.1 ✅ | ✅ COMPLETE |
-| B.5a: BDM Performance (basic) | 14 | None | DCR part deferred to Phase 5 |
+| B.5a: BDM Performance (basic) | 14 | None | ✅ COMPLETE |
 | C.4: VIP Count Minimums | 11 | A.1 ✅ | Independent |
 
 ---
@@ -804,7 +812,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 |-------|-------|------------------|--------|
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
 | **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4 ✅) | Remove MedRep, BDM self-edit | ✅ COMPLETE |
-| **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4 ✅, B.5a, C.4) | Photos, regular clients, filters, engagement, stats | 🔄 In progress (4/6) |
+| **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4 ✅, B.5a ✅, C.4) | Photos, regular clients, filters, engagement, stats | 🔄 In progress (5/6) |
 | **Phase 4: Schedule System** | 3 tasks (C.1+A.2, B.1, B.2) | 4-week calendar, alternating weeks, info page | ⬜ Not started |
 | **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |
 | **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |

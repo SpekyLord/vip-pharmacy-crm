@@ -628,15 +628,20 @@ const getMyVisits = catchAsync(async (req, res) => {
     }
   }
 
-  const skip = (page - 1) * limit;
+  const parsedLimit = parseInt(limit);
+  const skip = parsedLimit === 0 ? 0 : (page - 1) * parsedLimit;
 
   // Build the base query
   // Note: productsDiscussed.product is NOT populated because products are in a separate database
   let visitQuery = Visit.find(query)
     .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
     .sort({ visitDate: -1 })
-    .skip(skip)
-    .limit(parseInt(limit));
+    .skip(skip);
+
+  // limit=0 means "return all" (MongoDB .limit(0) returns nothing, so skip it)
+  if (parsedLimit > 0) {
+    visitQuery = visitQuery.limit(parsedLimit);
+  }
 
   const [visits, total] = await Promise.all([
     visitQuery,
@@ -685,14 +690,16 @@ const getMyVisits = catchAsync(async (req, res) => {
   // Sign photo URLs for private S3 access
   const signedVisits = await Promise.all(enrichedVisits.map((visit) => signVisitPhotos(visit)));
 
+  const totalCount = search ? signedVisits.length : total;
+
   res.json({
     success: true,
     data: signedVisits,
     pagination: {
       page: parseInt(page),
-      limit: parseInt(limit),
-      total: search ? signedVisits.length : total,
-      pages: Math.ceil((search ? signedVisits.length : total) / limit),
+      limit: parsedLimit,
+      total: totalCount,
+      pages: parsedLimit === 0 ? 1 : Math.ceil(totalCount / parsedLimit),
     },
   });
 });
