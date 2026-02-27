@@ -589,6 +589,7 @@ through schedule entries, not raw visit counts.
 ### Task C.2: Call Planning Tool / CPT View (CHANGE_LOG Change 7)
 **Priority**: HIGH
 **Depends on**: C.1 (Schedule model), B.6 (Regular Clients for Extra Call section)
+**Schema Reference**: See `docs/EXCEL_SCHEMA_DOCUMENTATION.md` for exact CPT sheet structure (columns A-AM), DCR day sheet layout, and engagement type columns.
 **Files**:
 - NEW: `frontend/src/components/employee/CallPlanView.jsx`
 - Enhance: `pages/admin/ReportsPage.jsx`
@@ -618,8 +619,12 @@ through schedule entries, not raw visit counts.
 | Call Rate | Total / Target × 100% |
 | TOTAL row | Sum of all days, overall Call Rate % |
 
-**Engagement Types** (tracked per visit):
-- TXT/PROMAT, MES/VIBER GIF, PICTURE, SIGNED CALL, VOICE CALL
+**Engagement Types** (tracked per visit — matches day sheet columns G-K, see `docs/EXCEL_SCHEMA_DOCUMENTATION.md` § Day Sheets):
+- TXT/PROMATS (col G)
+- MES/VIBER GIF (col H)
+- PICTURE (col I)
+- SIGNED CALL (col J)
+- VOICE CALL (col K)
 
 **Daily MD Count**: MDs visited per day, split into:
 - Included in List (VIP Clients from schedule)
@@ -641,7 +646,8 @@ through schedule entries, not raw visit counts.
 ### Task C.3 + D.3: Excel Import + Approvals UI (CHANGE_LOG Changes 8 + 13)
 **Priority**: HIGH
 **Depends on**: C.1 (Schedule model), A.1 ✅
-**Note**: These were originally separate tasks (C.3 in Phase C, D.3 in Phase D) but are the same feature — Excel import backend + approval review UI. Implementing together.
+**Schema Reference**: `docs/EXCEL_SCHEMA_DOCUMENTATION.md` is the **authoritative specification** for the CPT Excel format. All parsing and export logic must conform to that document.
+**Note**: These were originally separate tasks (C.3 in Phase C, D.3 in Phase D) but are the same feature — Excel import backend + approval review UI. Implementing together. The CRM does NOT need to produce a pixel-perfect Excel replica — it just needs to capture and organize all the information contained in the Excel.
 
 **Files**:
 - NEW: `backend/models/ImportBatch.js` — Staging model for pending imports
@@ -652,42 +658,122 @@ through schedule entries, not raw visit counts.
 - Repurpose: `pages/admin/PendingApprovalsPage.jsx` (scaffolded) → Excel import batch review
 - Repurpose: `components/admin/VisitApproval.jsx` → Import batch approval
 
-**Excel Template Columns** (must match client's CPT exactly):
-```
-#, LASTNAME, FIRSTNAME, VIP SPECIALTY (free-form),
-[20-day grid: W1 mo, W1 tu, W1 we, W1 th, W1 fr, W2 mo, ... W4 fr],
-Count of 1 Status (auto-calculated SUM),
-CLINIC/OFFICE ADDRESS, OUTLET INDICATOR,
-PROGRAMS TO BE IMPLEMENTED, SUPPORT DURING COVERAGE,
-TARGET PRODUCT 1, TARGET PRODUCT 2, TARGET PRODUCT 3,
-LEVEL OF ENGAGEMENT (1-5), BIRTHDAY, ANNIVERSARY, OTHER DETAILS
+**Workbook Structure** (23 sheets — 4 types):
+
+| Sheet Type | Sheets | Purpose |
+|---|---|---|
+| WEEKLY SUMMARY | 1 | Aggregates engagement data from all 20 day sheets (cols A-F) |
+| README | 1 | Documents sheet linkage rules |
+| CALL PLAN - VIP CPT | 1 | **Master doctor list** — single source of truth (39 cols A-AM, rows 9-158 data, row 159 = END sentinel) |
+| DCR Day Sheets | 20 | W1 D1 through W4 D5 — daily engagement tracking (cols A-T) |
+
+**Day-to-Column Mapping** (CPT sheet cols E-X → 20 workdays):
+
+| CPT Col | Day | Sheet | Week | Day-of-Week |
+|---|---|---|---|---|
+| E | Day 1 | W1 D1 | 1 | Mon |
+| F | Day 2 | W1 D2 | 1 | Tue |
+| G | Day 3 | W1 D3 | 1 | Wed |
+| H | Day 4 | W1 D4 | 1 | Thu |
+| I | Day 5 | W1 D5 | 1 | Fri |
+| J | Day 6 | W2 D1 | 2 | Mon |
+| K | Day 7 | W2 D2 | 2 | Tue |
+| L | Day 8 | W2 D3 | 2 | Wed |
+| M | Day 9 | W2 D4 | 2 | Thu |
+| N | Day 10 | W2 D5 | 2 | Fri |
+| O | Day 11 | W3 D1 | 3 | Mon |
+| P | Day 12 | W3 D2 | 3 | Tue |
+| Q | Day 13 | W3 D3 | 3 | Wed |
+| R | Day 14 | W3 D4 | 3 | Thu |
+| S | Day 15 | W3 D5 | 3 | Fri |
+| T | Day 16 | W4 D1 | 4 | Mon |
+| U | Day 17 | W4 D2 | 4 | Tue |
+| V | Day 18 | W4 D3 | 4 | Wed |
+| W | Day 19 | W4 D4 | 4 | Thu |
+| X | Day 20 | W4 D5 | 4 | Fri |
+
+**Excel Column → Doctor Model Field Mapping** (CPT master sheet):
+
+| Excel Col | CPT Header | Doctor Model Field | Notes |
+|---|---|---|---|
+| B | LASTNAME | `lastName` | Required |
+| C | FIRSTNAME | `firstName` | Required |
+| D | VIP SPECIALTY | `specialization` | Free-form text |
+| E-X | Day 1-20 flags | → Schedule `dayFlags[0..19]` | "1" or blank |
+| Y | Count of 1s | → `visitFrequency` | Auto-calc: must be 2 or 4 |
+| Z | Status | (validation only) | "OK", "INVALID", or "CHECK" |
+| AA | CLINIC/OFFICE ADDRESS | `clinicOfficeAddress` | |
+| AB | OUTLET INDICATOR | `outletIndicator` | e.g., MMC, AMC, IMH |
+| AC | PROGRAMS TO BE IMPLEMENTED | `programsToImplement` | Dropdown: CME GRANT, REBATES/MONEY, REST AND RECREATION, MED SOCIETY PARTICIPATION |
+| AD | SUPPORT DURING COVERAGE | `supportDuringCoverage` | Dropdown: STARTER DOSES, PROMATS, FULL DOSE, PATIENT DISCOUNT, AIR FRESHENER |
+| AE-AG | TARGET PRODUCT 1-3 | `targetProducts[0..2]` | Product name strings |
+| AH | LEVEL OF ENGAGEMENT | `engagementLevel` | Parse "1- The VIP was visited..." → integer 1-5 |
+| AI | NAME OF SECRETARY | `secretaryName` | |
+| AJ | CP # OF SECRETARY | `secretaryPhone` | |
+| AK | BIRTHDAY | `birthday` | Date |
+| AL | ANNIVERSARY | `anniversary` | Date |
+| AM | OTHER DETAILS | `otherDetails` | Free-form |
+
+**Day Sheet Engagement Columns** (cols G-K per day sheet, rows 11-40):
+
+| Col | Engagement Type |
+|---|---|
+| G | TXT/PROMATS |
+| H | MES/VIBER GIF |
+| I | PICTURE |
+| J | SIGNED CALL |
+| K | VOICE CALL |
+| L | TOTAL (formula: G+H+I+J+K) |
+| T | DATE COVERED ("OK" = on target date, "mm/dd/yy" = different date, empty = not yet) |
+
+**ImportBatch Model**:
+```javascript
+{
+  uploadedBy: ObjectId,      // Admin who uploaded
+  assignedToBDM: ObjectId,   // BDM this CPT belongs to
+  fileName: String,
+  status: 'pending' | 'approved' | 'rejected',
+  rejectionReason: String,
+  doctorCount: Number,        // Total VIP Clients in file
+  duplicateCount: Number,     // How many will be overwritten
+  rawData: Array,             // Parsed Excel rows (staged)
+  approvedAt: Date,
+  createdAt: Date
+}
 ```
 
-**Workflow**:
+**Duplicate Detection Rule**:
+- Match by `lastName + firstName` (case-insensitive, trimmed)
+- If found: OVERWRITE all fields with warning shown to admin — "This will overwrite changes made to Dr. Santos in the app"
+- If not found: CREATE new Doctor record
+- Doctor is then linked to the BDM (`assignedTo`)
+
+**Import Workflow**:
 1. BDM prepares Excel externally, gives to admin
-2. Admin reviews thoroughly, then uploads to CRM
-3. System checks for duplicate VIP Clients (by name match) — shows warning + navigates to potential duplicate
-4. Admin does final review in CRM → approves or rejects ENTIRE batch
-5. On approval: VIP Client profiles created/updated + schedule "1"s become schedule entries
-6. **If VIP Client already exists → Excel data OVERWRITES with warning**: "This will overwrite changes made to Dr. Santos in the app"
+2. Admin uploads to CRM, selects the target BDM
+3. System parses CPT master sheet (rows 9 to END sentinel) + 20 day sheets
+4. System stages as `ImportBatch` (status: `pending`) with duplicate warnings
+5. Admin reviews staged preview in CRM → approves or rejects ENTIRE batch
+6. On approval: Doctor records created/updated + day flags become Schedule entries
 7. On rejection: Admin adds reason, BDM revises and re-submits
 
 **Quarterly Round-Trip** (export → edit → re-upload):
-1. BDM exports current VIP Client data from CRM to Excel
-2. BDM edits exported Excel (add/remove doctors, update info, adjust schedule)
+1. BDM exports current VIP Client data from CRM (structured format with all CPT fields)
+2. BDM edits exported file (add/remove doctors, update info, adjust schedule)
 3. BDM gives edited file to admin
 4. Admin uploads back to CRM → normal approval flow
 
 **Deliverables**:
 - [ ] ImportBatch staging model (status: pending/approved/rejected)
-- [ ] Excel parsing with `xlsx` npm package
-- [ ] Column mapping matching client's CPT template exactly
-- [ ] Duplicate VIP Client detection (name match)
+- [ ] Excel parsing with `xlsx` npm package (parse CPT sheet rows 9-158, 20 day sheets rows 11-40)
+- [ ] Column mapping per `docs/EXCEL_SCHEMA_DOCUMENTATION.md` (39 CPT columns, day sheet engagement cols)
+- [ ] Day flag → Schedule entry conversion (cols E-X "1"s → Schedule model entries)
+- [ ] Duplicate VIP Client detection (lastName + firstName, case-insensitive)
 - [ ] Admin review UI with approve/reject entire batch (repurposed from Approvals page)
 - [ ] Remove old visit approval UI (client says no approval needed for visits)
 - [ ] Overwrite existing data with warning
-- [ ] Schedule entries created from "1"s in grid
-- [ ] Export format matches import format (round-trip compatible)
+- [ ] Engagement data import from day sheets (5 types + date covered)
+- [ ] Export: CRM data in structured format containing all CPT fields (round-trip compatible)
 
 ---
 

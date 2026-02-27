@@ -367,6 +367,7 @@ vip-pharmacy-crm/
 │   ├── CHANGE_LOG.md      # 17 client change requests (February 2026)
 │   ├── PHASE-TASKS.md     # Phase task breakdown
 │   ├── PRD.md             # Product Requirements Document
+│   ├── EXCEL_SCHEMA_DOCUMENTATION.md  # CPT Excel workbook exact schema (23 sheets, 39 cols, import/export logic)
 │   ├── API_DOCUMENTATION.md
 │   ├── TECHNICAL_SPEC.md
 │   ├── DEVELOPMENT_GUIDE.md
@@ -401,6 +402,7 @@ Before implementing a feature, verify:
 7. **httpOnly cookies**: Tokens are in cookies, NOT in localStorage or response body. Frontend uses `withCredentials: true`.
 8. **Code vs business terms**: Code uses Doctor/employee, business uses VIP Client/BDM
 9. **Scaffolded pages**: Statistics, Activity Monitor, Approvals, GPS Verification have UI but use mock data — backend endpoints don't exist yet for these
+10. **Excel CPT import**: The CPT Excel has 23 sheets with specific structure (1 master + 20 day sheets + summary + readme). Day flags in CPT cols E-X map to day sheets W1D1-W4D5. Duplicate detection is by `lastName + firstName` (case-insensitive). See `docs/EXCEL_SCHEMA_DOCUMENTATION.md` for exact column mappings and import/export logic.
 
 ---
 
@@ -795,6 +797,8 @@ See `docs/CHANGE_LOG.md` for full details on all 17 client-requested changes.
 13. **Change 7**: Call Planning Tool (CPT) with DCR Summary
 14. **Change 8**: Excel upload & import (admin reviews + approves)
 15. **Change 11**: VIP count minimums & validation
+
+> **Excel format spec**: `docs/EXCEL_SCHEMA_DOCUMENTATION.md` contains the exact CPT workbook structure (23 sheets, 39 columns, day-to-column mappings, field definitions, import/export logic). Required reading for C.2 (CPT View) and C.3+D.3 (Excel Import).
 
 ### Phase D — Advanced
 16. **Change 15**: Admin per-BDM DCR Summary view

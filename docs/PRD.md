@@ -290,12 +290,34 @@ Every visit MUST include:
 - Extra Call section for non-VIP visits
 
 ### 4.7 Excel Import/Export
-- Admin uploads BDM's Excel CPT → stages as ImportBatch → approves/rejects entire batch
-- On approval: VIP Client profiles + schedule imported
-- Duplicate detection by name match
-- Overwrites existing data with warning
-- Quarterly round-trip: CRM → Excel → edit → re-upload
-- Export format matches import format exactly (same columns, same ordering)
+
+> **Full schema reference**: See `docs/EXCEL_SCHEMA_DOCUMENTATION.md` for exact column mappings, sheet structures, and import/export logic.
+
+**Workbook Structure** — the CPT Excel has 23 sheets:
+- **WEEKLY SUMMARY** (1 sheet): Aggregates engagement totals, targets, and Call Rate from all 20 day sheets
+- **README** (1 sheet): Documents sheet linkage rules (day flags → day sheets)
+- **CALL PLAN - VIP CPT** (1 sheet): Master doctor list — 39 columns (A-AM), data in rows 9-158, row 159 = END sentinel
+- **DCR Day Sheets** (20 sheets): W1 D1 through W4 D5 — daily engagement tracking per VIP Client
+
+**CPT Master Sheet Key Columns**:
+- Cols A-D: Row #, Last Name, First Name, VIP Specialty
+- Cols E-X: 20 day flags ("1" = scheduled for that day), mapping Day 1-20 → W1D1-W4D5
+- Cols Y-Z: Auto-calculated visit count and validation status
+- Cols AA-AM: Address, outlet indicator, programs, support, 3 target products, engagement level, secretary info, birthday, anniversary, other details
+
+**Day Sheets**: Track 5 engagement types per visit (TXT/PROMATS, MES/VIBER GIF, PICTURE, SIGNED CALL, VOICE CALL) plus date covered. Doctors appear on a day sheet when their corresponding day flag = "1" in the CPT master.
+
+**Import Flow**:
+1. Admin uploads BDM's Excel CPT file, selects target BDM
+2. System parses CPT master sheet (doctor profiles + day flags) and 20 day sheets (engagement data)
+3. Stages as `ImportBatch` (status: `pending`) with duplicate detection (lastName + firstName, case-insensitive)
+4. Admin reviews staged preview → approves or rejects entire batch
+5. On approval: VIP Client profiles created/updated + day flags → Schedule entries + engagement data imported
+6. Overwrites existing VIP Client data with warning shown to admin
+
+**Export**: CRM data exported in a structured format containing all the same information as the CPT (doctor profiles, schedule day flags, engagement data). Does not need to be a pixel-perfect Excel replica — just all data organized and round-trip compatible.
+
+**Quarterly Round-Trip**: export → BDM edits externally → re-upload → admin approval → cycle repeats
 
 ### 4.8 Product Management (Admin Only)
 - Product catalog with images (S3), descriptions, key benefits
@@ -404,7 +426,7 @@ Every visit MUST include:
 ### 6.4 Phase C - Scheduling, CPT & Excel Import
 - [ ] 4-week schedule calendar (Schedule model, cycle rules, carry/cutoff)
 - [ ] Call Planning Tool (editable grid, DCR Summary, engagement types)
-- [ ] Excel upload & import (admin review, approve/reject, overwrite with warning)
+- [ ] Excel upload & import (admin review, approve/reject, overwrite with warning) — must conform to `docs/EXCEL_SCHEMA_DOCUMENTATION.md` for column mappings and sheet structure
 - [ ] VIP count minimums & validation
 
 ### 6.5 Phase D - Admin Monitoring & Advanced
