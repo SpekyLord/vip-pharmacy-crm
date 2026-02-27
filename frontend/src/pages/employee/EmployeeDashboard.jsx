@@ -345,9 +345,9 @@ const EmployeeDashboard = () => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // Handle doctor selection - navigate to visit logger
+  // Handle doctor selection - navigate to info page
   const handleSelectDoctor = (doctor) => {
-    navigate(`/employee/visit/new?doctorId=${doctor._id}`);
+    navigate(`/employee/doctor/${doctor._id}`);
   };
 
   // Handle log visit button click

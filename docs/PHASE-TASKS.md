@@ -1,7 +1,7 @@
 # VIP CRM - Phase Task Breakdown
 
 > **Last Updated**: February 2026
-> **Status**: Phase 1 Complete. Phase 2 Complete (A.1 ✅, A.3 ✅, A.4 ✅).
+> **Status**: Phase 1-3 Complete. Phase 4 in progress (C.1+A.2 ✅, B.1 and B.2 remaining).
 > **Reference**: See `docs/CHANGE_LOG.md` for full details on all 17 client-requested changes.
 > **Note**: Phases were reorganized from theme-based (A/B/C/D) to dependency-driven order (2-6). Task IDs (A.1, B.6, etc.) preserved for CHANGE_LOG traceability.
 
@@ -152,6 +152,31 @@ Documentation uses business terms (BDM, VIP Client). Code uses Doctor/Employee. 
 - UI built with Recharts, tables, modals
 - **All use mock/hardcoded data** — backend endpoints don't exist yet
 - `services/complianceService.js` calls non-existent endpoints
+
+### Database Query Optimization ✅ (February 2026)
+**Files**:
+- `backend/controllers/visitController.js` — Merged two `Visit.aggregate()` calls into single `$facet` pipeline in `getVisitStats`
+- `backend/utils/validateWeeklyVisit.js` — Parallelized queries in `canVisitDoctorsBatch`, `getComplianceReport`, `checkBehindSchedule`; fixed dead code bug (schedule overlay was unreachable)
+- `backend/controllers/scheduleController.js` — Parallelized `reconcileEntries` queries; eliminated redundant re-fetches in `getCycle`, `getToday`, `adminGetCycle`
+- `backend/controllers/doctorController.js` — Added `.lean()` to `getAllDoctors`; skip `countDocuments` when `limit=0`
+- `backend/controllers/clientController.js` — Added `.lean()` to `getAllClients`; skip `countDocuments` when `limit=0`
+
+**Optimizations**:
+- [x] `getVisitStats`: 2 aggregations → 1 `$facet` pipeline (~400ms saved)
+- [x] `canVisitDoctorsBatch`: 4 sequential queries → `Promise.all` parallel + fixed dead schedule overlay code
+- [x] `getComplianceReport`: Deduplicated `Doctor.countDocuments` + `Doctor.find`; parallelized with `User.findById`
+- [x] `checkBehindSchedule`: Parallelized `getWeeklyComplianceStats` + `User.findById`
+- [x] `reconcileEntries`: Parallelized `Schedule.find` + `Visit.find`; accepts pre-fetched entries; returns boolean to skip unnecessary re-fetches
+- [x] `getCycle`: Fetch with populate upfront (1 query vs 4); skip re-fetch when reconcile makes no changes
+- [x] `getToday`: Reconcile uses parallel fetch internally
+- [x] `getAllDoctors` / `getAllClients`: `.lean()` skips Mongoose hydration; skip `countDocuments` for `limit=0`
+
+**Results** (BDM dashboard `/employee` load):
+- `visits/stats`: 22,677ms → ~300ms
+- `can-visit-batch`: 1,800–3,200ms → ~375–780ms
+- `schedules/cycle`: 2,100–2,900ms → ~500–800ms (estimated)
+- `doctors?limit=0`: 1,300–2,600ms → ~400–800ms (estimated)
+- `clients?limit=0`: 425ms → ~160–300ms
 
 ### Task 1.15: CSS Styling ⚠️ IN PROGRESS
 - Base styles exist but missing comprehensive component styles
@@ -433,9 +458,10 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-### Task C.1 + A.2: Schedule Model + 4-Week Calendar + Alternating Week Rule (CHANGE_LOG Changes 6 + 10)
+### Task C.1 + A.2: Schedule Model + 4-Week Calendar + Alternating Week Rule (CHANGE_LOG Changes 6 + 10) ✅ COMPLETE
 **Priority**: CRITICAL (core system flow)
 **Depends on**: A.1 ✅
+**Completed**: February 2026
 
 **Why A.2 is merged here**: The 2x alternating week rule (W1+W3 or W2+W4) was deferred from the original Task A.2.
 Without the Schedule model, a calendar-week parity check incorrectly blocks valid carry-forward visits
@@ -443,65 +469,60 @@ Without the Schedule model, a calendar-week parity check incorrectly blocks vali
 through schedule entries, not raw visit counts.
 
 **Files**:
-- NEW: `backend/models/Schedule.js`
-- NEW: `backend/controllers/scheduleController.js`
-- NEW: `backend/routes/scheduleRoutes.js`
-- NEW: `frontend/src/components/employee/ScheduleCalendar.jsx`
-- NEW: `frontend/src/services/scheduleService.js`
-- UPDATE: `backend/utils/validateWeeklyVisit.js` — validate against Schedule entries for alternating rule
+- NEW: `backend/models/Schedule.js` — Schema with cycle tracking, indexes, statics (getCycleSchedule, getVisitableEntries)
+- NEW: `backend/controllers/scheduleController.js` — getCycle, getToday, generateSchedule, reconcile, admin CRUD
+- NEW: `backend/routes/scheduleRoutes.js` — `/api/schedules` (BDM + Admin endpoints)
+- NEW: `backend/utils/scheduleCycleUtils.js` — Shared cycle math (anchor, week/day/cycle calculations)
+- NEW: `frontend/src/components/employee/ScheduleCalendar.jsx` — 4-week calendar grid UI
+- NEW: `frontend/src/services/scheduleService.js` — Schedule API calls
+- UPDATE: `backend/utils/validateWeeklyVisit.js` — Schedule-aware validation in both `canVisitDoctor` and `canVisitDoctorsBatch`
 
-**Schedule Model**:
+**Schedule Model** (as implemented):
 ```javascript
 {
   doctor: ObjectId,
   user: ObjectId,
-  cycleStart: Date,        // Start date of 4-week cycle (e.g., 2026-01-05)
-  scheduledDay: String,    // Original: "W2D1" (Monday of Week 2)
-  currentDay: String,      // Where carried to (starts same as scheduledDay)
-  status: String,          // planned | carried | completed | missed
+  cycleStart: Date,           // Start date of 4-week cycle
+  cycleNumber: Number,        // 0-based cycle number from anchor
+  scheduledWeek: Number,      // 1-4
+  scheduledDay: Number,       // 1-5 (Mon-Fri)
+  scheduledLabel: String,     // "W2D1" format
+  status: String,             // planned | carried | completed | missed
+  carriedToWeek: Number,      // Week carried to (if carried)
   completedAt: Date,
-  visit: ObjectId,         // Reference to Visit record once completed
+  completedInWeek: Number,    // Week completed in
+  visit: ObjectId,            // Reference to Visit record once completed
 }
 ```
 
 **4-Week Cycle Rules**:
-- Anchor date: **January 5, 2026 (Monday) = W1D1**
-- 4-week cycle rolls continuously from this date
-- January through November fit neatly; December has extra weeks (still W1-W4 rolling)
-- Schedule loops every 4-week cycle until new Excel replaces it (~quarterly)
-- Schedule is LOCKED after approval — BDMs cannot rearrange visits
+- Anchor date: **January 5, 2026 (Monday) = W1D1** (`scheduleCycleUtils.js`)
+- 4-week cycle rolls continuously from this date (28-day periods)
+- Schedule loops every 4-week cycle via `loopScheduleFromPrevious()` (clones previous cycle)
+- `generateSchedule()`: Auto-generates entries from assigned doctors (4x=1/week, 2x=alternating W1+W3 or W2+W4)
 
-**Carry & Cutoff Rules**:
-- Scheduled day = target, entire week = open window (W2D1 missed → can visit W2D2-W2D5)
-- If not visited during scheduled week → carries to next week
-- Carries continue until **W4D5 = hard cutoff** → marked `missed`
-- BDMs can only visit VIP Clients scheduled for current week + carried from previous weeks
-- VIP Client scheduled for Week 3 does NOT appear as visitable during Week 1
+**Carry & Cutoff Rules** (implemented in `reconcileEntries()`):
+- `planned` + past scheduled week → `carried` (with `carriedToWeek`)
+- Past cycle end (W4D5) → `missed`
+- Matching visit found → `completed` (with `completedAt`, `completedInWeek`, `visit` ref)
+- `bulkWrite` for efficient batch status updates
 
-**Visit Rules**:
-- Once a VIP Client is visited this week, they are **blocked** until next week — UNLESS there are carried/missed weeks to clear
-- If carried weeks exist, the VIP Client stays visitable for additional logs within the same calendar week
-- **Current week priority**: When logging a visit, the system ticks off the **current week first**, then carried weeks (oldest first)
-  - Example: W1 missed, now W2. First log → counts for W2 (current). Second log → counts for W1 (carried).
-- No advance credit: extra visits in W1 do NOT tick off W2 or W3
-- Each week's requirement stands on its own
-- Missed weeks carry forward but still need their own visit
-- W4 catch-up: BDM might need up to 3 visits for same VIP Client in final week (missed W1 + missed W2 + W4's own)
-
-**Alternating Week Enforcement (A.2)**:
-- 2x doctors must have their 2 schedule entries placed in alternating weeks (W1+W3 or W2+W4)
-- `canVisitDoctor()` in `validateWeeklyVisit.js` validates against Schedule entries instead of raw Visit counts
-- Remove the deferred NOTE comments in `validateWeeklyVisit.js` (both `canVisitDoctor` and `canVisitDoctorsBatch`) once Schedule-based validation is in place
+**Visit Rules** (implemented in `validateWeeklyVisit.js`):
+- `canVisitDoctor()`: Schedule-aware — checks for visitable entries (planned ≤ current week, or carried)
+- `canVisitDoctorsBatch()`: Same logic applied in batch with schedule overlay
+- `getScheduleMatchForVisit()`: Current week planned first → oldest carried → past planned → extra visit
+- No advance credit: only current/past week planned + carried entries are visitable
 
 **Deliverables**:
-- [ ] Schedule model with cycle tracking
-- [ ] Calendar grid matching CPT format (W1D1 through W4D5, 20 workdays)
-- [ ] Auto-carry logic for missed visits
-- [ ] W4D5 hard cutoff → missed status
-- [ ] Schedule looping (auto-repeat every 4-week cycle)
-- [ ] BDM daily view: "Today you need to visit: Dr. A, Dr. B, Dr. C"
-- [ ] Enforce 2x alternating week pattern through schedule entries (W1+W3 or W2+W4)
-- [ ] Update `validateWeeklyVisit.js` to validate against Schedule entries for alternating rule
+- [x] Schedule model with cycle tracking (indexes on user+cycleNumber, unique on doctor+user+cycle+week)
+- [x] Calendar grid matching CPT format (W1D1 through W4D5, 20 workdays)
+- [x] Auto-carry logic for missed visits (`reconcileEntries` → planned→carried)
+- [x] W4D5 hard cutoff → missed status (`reconcileEntries` → past cycle end→missed)
+- [x] Schedule looping (auto-repeat every 4-week cycle via `loopScheduleFromPrevious`)
+- [x] BDM daily view: "Today you need to visit" (`getToday` → `getVisitableEntries`)
+- [x] Enforce 2x alternating week pattern through schedule entries (W1+W3 or W2+W4 in `generateSchedule`)
+- [x] Update `validateWeeklyVisit.js` to validate against Schedule entries for alternating rule
+- [x] Admin endpoints: generate, reconcile, view any BDM, create entries, clear cycle
 
 ---
 
@@ -539,9 +560,9 @@ through schedule entries, not raw visit counts.
 
 | Task | Change # | Depends On | Notes |
 |------|----------|------------|-------|
-| C.1+A.2: Schedule + Alternating Weeks | 6+10 | A.1 ✅ | **Core system flow** — biggest feature |
-| B.1: VIP Client Info Page | 3 | A.4 | Navigation flow change |
-| B.2: Product Detail Popup | 4 | A.3 | Tablet UX |
+| C.1+A.2: Schedule + Alternating Weeks | 6+10 | A.1 ✅ | ✅ COMPLETE |
+| B.1: VIP Client Info Page | 3 | A.4 ✅ | Navigation flow change |
+| B.2: Product Detail Popup | 4 | A.3 ✅ | Tablet UX |
 
 ---
 
@@ -789,7 +810,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
  2. A.4  — BDM Edit Own VIP Clients ✅
  3. B.3  — Photo Upload Flexibility ✅
  4. B.6  — Regular Clients ✅
- 5. C.1+A.2 — Schedule System + Alternating Weeks (core feature)
+ 5. C.1+A.2 — Schedule System + Alternating Weeks ✅
  6. B.1  — VIP Client Info Page (needs A.4)
  7. B.2  — Product Detail Popup (needs A.3)
  8. B.4  — Engagement Tracking Display
@@ -815,7 +836,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
 | **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4 ✅) | Remove MedRep, BDM self-edit | ✅ COMPLETE |
 | **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4 ✅, B.5a ✅, C.4 ⏭) | Photos, regular clients, filters, engagement, stats | ✅ Complete (5 done + 1 skipped) |
-| **Phase 4: Schedule System** | 3 tasks (C.1+A.2, B.1, B.2) | 4-week calendar, alternating weeks, info page | ⬜ Not started |
+| **Phase 4: Schedule System** | 3 tasks (C.1+A.2 ✅, B.1, B.2) | 4-week calendar, alternating weeks, info page | 🟡 In progress (1/3 done) |
 | **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |
 | **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |
 

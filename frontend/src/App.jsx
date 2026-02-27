@@ -14,6 +14,7 @@ import NewClientVisitPage from './pages/employee/NewClientVisitPage';
 import EmployeeInbox from './pages/employee/EMP_InboxPage';
 import MyPerformancePage from './pages/employee/MyPerformancePage';
 import SchedulePage from './pages/employee/SchedulePage';
+import DoctorDetailPage from './pages/employee/DoctorDetailPage';
 
 import AdminDashboard from './pages/admin/AdminDashboard';
 import DoctorsPage from './pages/admin/DoctorsPage';
@@ -82,6 +83,14 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <MyPerformancePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/employee/doctor/:id"
+          element={
+            <ProtectedRoute allowedRoles={['employee', 'admin']}>
+              <DoctorDetailPage />
             </ProtectedRoute>
           }
         />
