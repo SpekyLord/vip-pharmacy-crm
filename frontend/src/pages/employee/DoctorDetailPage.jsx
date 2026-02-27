@@ -17,8 +17,10 @@ import Sidebar from '../../components/common/Sidebar';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorMessage from '../../components/common/ErrorMessage';
 import DoctorEditForm from '../../components/employee/DoctorEditForm';
+import ProductDetailModal from '../../components/employee/ProductDetailModal';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
+import productService from '../../services/productService';
 
 const ENGAGEMENT_LABELS = {
   1: 'Visited 4x',
@@ -327,12 +329,26 @@ const pageStyles = `
     background: #f8fafc;
     border-radius: 8px;
     border: 1px solid #e5e7eb;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .ddp-product-item:hover {
+    background: #eff6ff;
+    border-color: #bfdbfe;
   }
 
   .ddp-product-name {
     font-size: 14px;
     font-weight: 500;
     color: #1f2937;
+  }
+
+  .ddp-product-view-hint {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-top: 8px;
+    text-align: center;
   }
 
   .ddp-product-status {
@@ -443,6 +459,8 @@ const DoctorDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [detailProduct, setDetailProduct] = useState(null);
+  const [loadingProductId, setLoadingProductId] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -487,6 +505,21 @@ const DoctorDetailPage = () => {
   const handleEditSaved = () => {
     setShowEditModal(false);
     fetchData();
+  };
+
+  const handleProductClick = async (tp) => {
+    const productId = tp.product?._id || tp.product;
+    if (!productId || loadingProductId) return;
+    setLoadingProductId(productId);
+    try {
+      const res = await productService.getById(productId);
+      setDetailProduct(res.data);
+    } catch {
+      // If fetch fails, show what we have
+      setDetailProduct(tp.product && typeof tp.product === 'object' ? tp.product : { _id: productId, name: 'Product' });
+    } finally {
+      setLoadingProductId(null);
+    }
   };
 
   const formatDate = (dateStr) => {
@@ -696,15 +729,25 @@ const DoctorDetailPage = () => {
                 <div className="ddp-product-list">
                   {targetProducts.map((tp, idx) => {
                     const productName = tp.product?.name || tp.product?.toString() || `Product ${idx + 1}`;
+                    const productId = tp.product?._id || tp.product;
+                    const isLoading = loadingProductId === productId;
                     return (
-                      <div key={idx} className="ddp-product-item">
-                        <span className="ddp-product-name">{productName}</span>
+                      <div
+                        key={idx}
+                        className="ddp-product-item"
+                        onClick={() => handleProductClick(tp)}
+                        title="Tap to view product details"
+                      >
+                        <span className="ddp-product-name">
+                          {isLoading ? 'Loading...' : productName}
+                        </span>
                         <span className={`ddp-product-status ${tp.status}`}>
                           {tp.status === 'accepted' ? 'Accepted' : 'Showcasing'}
                         </span>
                       </div>
                     );
                   })}
+                  <p className="ddp-product-view-hint">Tap a product to view details</p>
                 </div>
               ) : (
                 <p className="ddp-empty-text">No target products assigned</p>
@@ -780,6 +823,14 @@ const DoctorDetailPage = () => {
               doctor={doctor}
               onClose={() => setShowEditModal(false)}
               onSaved={handleEditSaved}
+            />
+          )}
+
+          {/* Product Detail Modal */}
+          {detailProduct && (
+            <ProductDetailModal
+              product={detailProduct}
+              onClose={() => setDetailProduct(null)}
             />
           )}
         </main>

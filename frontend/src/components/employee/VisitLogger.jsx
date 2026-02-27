@@ -12,6 +12,7 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import CameraCapture from './CameraCapture';
+import ProductDetailModal from './ProductDetailModal';
 import visitService from '../../services/visitService';
 import doctorService from '../../services/doctorService';
 
@@ -104,30 +105,93 @@ const visitLoggerStyles = `
     min-height: 80px;
   }
 
-  .product-checkboxes {
+  .vl-product-cards {
     display: flex;
     flex-direction: column;
     gap: 10px;
   }
 
-  .checkbox-label {
+  .vl-product-card {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px;
+    gap: 12px;
+    padding: 10px 12px;
     background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .vl-product-card:hover {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+  }
+
+  .vl-product-card.selected {
+    background: #eff6ff;
+    border-color: #2563eb;
+  }
+
+  .vl-product-thumb {
+    width: 48px;
+    height: 48px;
     border-radius: 6px;
-    cursor: pointer;
+    object-fit: cover;
+    background: #e5e7eb;
+    flex-shrink: 0;
   }
 
-  .checkbox-label:hover {
-    background: #f3f4f6;
+  .vl-product-thumb-placeholder {
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    background: #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: #9ca3af;
+    flex-shrink: 0;
   }
 
-  .checkbox-label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
+  .vl-product-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .vl-product-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vl-product-sub {
+    font-size: 12px;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vl-product-card input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
     cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .vl-view-hint {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-top: 6px;
+    text-align: center;
   }
 
   .form-actions {
@@ -175,6 +239,8 @@ const VisitLogger = ({ doctor, onSuccess }) => {
   const [photos, setPhotos] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [detailProduct, setDetailProduct] = useState(null);
+  const [detailIndex, setDetailIndex] = useState(0);
   const [formData, setFormData] = useState({
     visitType: 'regular',
     purpose: '',
@@ -378,19 +444,55 @@ const VisitLogger = ({ doctor, onSuccess }) => {
       {products.length > 0 && (
         <div className="form-section">
           <h3>Products Discussed</h3>
-          <div className="product-checkboxes">
-            {products.map((item) => (
-              <label key={item.product?._id || item._id} className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={formData.productsDiscussed.includes(item.product?._id || item._id)}
-                  onChange={() => handleProductToggle(item.product?._id || item._id)}
-                />
-                {item.product?.name || item.name}
-              </label>
-            ))}
+          <div className="vl-product-cards">
+            {products.map((item, idx) => {
+              const prod = item.product || item;
+              const productId = prod._id || item._id;
+              const isSelected = formData.productsDiscussed.includes(productId);
+              return (
+                <div
+                  key={productId}
+                  className={`vl-product-card${isSelected ? ' selected' : ''}`}
+                  onClick={() => {
+                    setDetailIndex(idx);
+                    setDetailProduct(prod);
+                  }}
+                >
+                  {prod.image ? (
+                    <img className="vl-product-thumb" src={prod.image} alt={prod.name} />
+                  ) : (
+                    <div className="vl-product-thumb-placeholder">&#128138;</div>
+                  )}
+                  <div className="vl-product-info">
+                    <span className="vl-product-name">{prod.name || 'Unknown'}</span>
+                    {(prod.genericName || prod.dosage) && (
+                      <span className="vl-product-sub">
+                        {[prod.genericName, prod.dosage].filter(Boolean).join(' - ')}
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => handleProductToggle(productId)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              );
+            })}
           </div>
+          <p className="vl-view-hint">Tap a product to view details</p>
         </div>
+      )}
+
+      {/* Product Detail Modal */}
+      {detailProduct && (
+        <ProductDetailModal
+          product={detailProduct}
+          onClose={() => setDetailProduct(null)}
+          products={products.map((item) => item.product || item)}
+          currentIndex={detailIndex}
+        />
       )}
 
       {/* Feedback & Notes */}

@@ -25,6 +25,9 @@ const Visit = require('../models/Visit');
 const Schedule = require('../models/Schedule');
 const Client = require('../models/Client');
 const ClientVisit = require('../models/ClientVisit');
+const ProductAssignment = require('../models/ProductAssignment');
+const { connectWebsiteDB } = require('../config/websiteDb');
+const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 const { getCycleNumber, getCycleStartDate } = require('../utils/scheduleCycleUtils');
 
 // ─── Region hierarchy ────────────────────────────────────────────────────────
@@ -230,6 +233,122 @@ const seedDatabase = async () => {
     await mongoose.connect(process.env.MONGO_URI);
     console.log('MongoDB Connected for seeding...');
 
+    // Connect website DB for products
+    let websiteProducts = [];
+    try {
+      await connectWebsiteDB();
+      const Product = getWebsiteProductModel();
+      websiteProducts = await Product.find({}).lean();
+
+      if (websiteProducts.length === 0) {
+        console.log('Website DB: No products found — seeding test products...');
+        const testProducts = [
+          {
+            id: 'p1',
+            name: 'CardioVex 80mg',
+            genericName: 'Valsartan',
+            dosage: '80mg tablet',
+            category: 'Cardiovascular',
+            price: 42.50,
+            description: 'Angiotensin II receptor blocker (ARB) for hypertension and heart failure management. Helps relax blood vessels to lower blood pressure and improve blood flow.',
+            usage: 'Take one tablet daily with or without food. Swallow whole with water. Do not crush or chew. Best taken at the same time each day.',
+            safety: 'Not for use during pregnancy. May cause dizziness. Avoid potassium supplements unless directed by physician. Monitor kidney function regularly.',
+            inStock: true,
+            stockQuantity: 500,
+            isFeatured: true,
+            isVIP: true,
+            requiresPrescription: true,
+          },
+          {
+            id: 'p2',
+            name: 'GastroShield 20mg',
+            genericName: 'Omeprazole',
+            dosage: '20mg capsule',
+            category: 'Gastrointestinal',
+            price: 28.00,
+            description: 'Proton pump inhibitor (PPI) for treatment of gastroesophageal reflux disease (GERD), peptic ulcers, and Zollinger-Ellison syndrome.',
+            usage: 'Take one capsule 30 minutes before breakfast. Swallow whole — do not crush, chew, or open capsule. Course duration as prescribed.',
+            safety: 'Long-term use may affect magnesium and calcium absorption. Report any bone pain or muscle cramps. Not recommended for more than 8 weeks without medical review.',
+            inStock: true,
+            stockQuantity: 800,
+            isFeatured: true,
+            isVIP: true,
+            requiresPrescription: true,
+          },
+          {
+            id: 'p3',
+            name: 'RespiraClear 10mg',
+            genericName: 'Montelukast Sodium',
+            dosage: '10mg chewable tablet',
+            category: 'Respiratory',
+            price: 35.75,
+            description: 'Leukotriene receptor antagonist for prevention and long-term treatment of asthma. Also relieves symptoms of allergic rhinitis.',
+            usage: 'Take one tablet in the evening, with or without food. For asthma: take daily even when symptom-free. Chewable tablet may be chewed or swallowed whole.',
+            safety: 'Report any mood or behavior changes immediately. Not for acute asthma attacks — use rescue inhaler. Safe for patients 6 years and older.',
+            inStock: true,
+            stockQuantity: 600,
+            isVIP: true,
+            requiresPrescription: true,
+          },
+          {
+            id: 'p4',
+            name: 'NeuroCalm 25mg',
+            genericName: 'Pregabalin',
+            dosage: '25mg capsule',
+            category: 'Neurological',
+            price: 55.00,
+            description: 'Anticonvulsant and analgesic for neuropathic pain, fibromyalgia, and as adjunctive therapy for partial-onset seizures.',
+            usage: 'Take 25-75mg twice daily. May be taken with or without food. Do not stop abruptly — taper dose gradually over at least one week.',
+            safety: 'May cause drowsiness and dizziness. Avoid alcohol. Do not drive until you know how it affects you. Report any swelling, weight gain, or vision changes.',
+            inStock: true,
+            stockQuantity: 350,
+            isFeatured: true,
+            isVIP: true,
+            requiresPrescription: true,
+          },
+          {
+            id: 'p5',
+            name: 'DermaHeal Cream 0.1%',
+            genericName: 'Mometasone Furoate',
+            dosage: '0.1% topical cream 15g',
+            category: 'Dermatology',
+            price: 185.00,
+            description: 'Medium-potency topical corticosteroid for inflammatory and pruritic skin conditions including eczema, psoriasis, and dermatitis.',
+            usage: 'Apply a thin layer to affected area once daily. Do not cover with occlusive dressing unless directed. Wash hands after application.',
+            safety: 'For external use only. Avoid contact with eyes. Do not use on broken skin or infected areas. Limit use to 2-3 weeks on face. Discontinue if irritation occurs.',
+            inStock: true,
+            stockQuantity: 200,
+            isVIP: false,
+            requiresPrescription: true,
+          },
+          {
+            id: 'p6',
+            name: 'ImmunoBoost 500mg',
+            genericName: 'Ascorbic Acid + Zinc',
+            dosage: '500mg/10mg tablet',
+            category: 'Vitamins & Supplements',
+            price: 12.50,
+            description: 'Vitamin C and Zinc combination supplement for immune system support. Helps reduce duration and severity of common colds.',
+            usage: 'Take one tablet daily after meals. May be taken with water or juice. For enhanced immune support during illness, take up to 3 tablets daily.',
+            safety: 'Generally well-tolerated. High doses may cause stomach upset. Not a substitute for a balanced diet. Consult physician if pregnant or breastfeeding.',
+            inStock: true,
+            stockQuantity: 1500,
+            isFeatured: true,
+            isVIP: false,
+            requiresPrescription: false,
+          },
+        ];
+
+        const created = await Product.insertMany(testProducts);
+        websiteProducts = created.map(p => p.toObject());
+        console.log(`  Seeded ${websiteProducts.length} test products into website DB`);
+      } else {
+        console.log(`Website DB: Found ${websiteProducts.length} existing products`);
+      }
+    } catch (err) {
+      console.warn(`Website DB connection failed (${err.message}) — skipping product assignments`);
+    }
+
     // Clear existing data
     console.log('Clearing existing data...');
     await Promise.all([
@@ -240,6 +359,7 @@ const seedDatabase = async () => {
       Visit.deleteMany({}),
       Client.deleteMany({}),
       ClientVisit.deleteMany({}),
+      ProductAssignment.deleteMany({}),
     ]);
 
     // 1. Create Regions
@@ -299,6 +419,8 @@ const seedDatabase = async () => {
     let totalScheduleEntries = 0;
 
     const statusCounts = { completed: 0, carried: 0, missed: 0, planned: 0 };
+    // Track created doctors with their BDM for product assignment
+    const createdDoctors = [];
 
     for (const { user: employee, regionCode } of employees) {
       const doctorDefs = territoryDoctors[regionCode];
@@ -333,6 +455,7 @@ const seedDatabase = async () => {
         if (def.otherDetails) doctorData.otherDetails = def.otherDetails;
 
         const doctor = await Doctor.create(doctorData);
+        createdDoctors.push({ doctor, employee });
         totalDoctors++;
 
         // Create Schedule entries
@@ -371,6 +494,52 @@ const seedDatabase = async () => {
     console.log(`  Carried:   ${statusCounts.carried}`);
     console.log(`  Missed:    ${statusCounts.missed}`);
     console.log(`  Planned:   ${statusCounts.planned}`);
+
+    // 5. Assign products to doctors (if website products exist)
+    if (websiteProducts.length >= 3) {
+      console.log('\nAssigning products to VIP Clients...');
+      let assignmentCount = 0;
+      const statuses = ['showcasing', 'accepted'];
+
+      for (const { doctor, employee } of createdDoctors) {
+        // Pick 3 products (rotating through available products)
+        const offset = assignmentCount % websiteProducts.length;
+        const picked = [];
+        for (let i = 0; i < 3; i++) {
+          picked.push(websiteProducts[(offset + i) % websiteProducts.length]);
+        }
+
+        // Set targetProducts on doctor
+        doctor.targetProducts = picked.map((p, i) => ({
+          product: p._id,
+          status: i === 0 ? 'accepted' : statuses[i % statuses.length],
+        }));
+        await doctor.save();
+
+        // Create ProductAssignment records (for VisitLogger product list)
+        for (let i = 0; i < picked.length; i++) {
+          try {
+            await ProductAssignment.create({
+              product: picked[i]._id,
+              doctor: doctor._id,
+              assignedBy: employee._id,
+              priority: i + 1,
+              status: 'active',
+            });
+          } catch (dupErr) {
+            // skip duplicates
+          }
+        }
+        assignmentCount++;
+      }
+      console.log(`  Assigned 3 products each to ${assignmentCount} VIP Clients`);
+      console.log(`  Created ${assignmentCount * 3} ProductAssignment records`);
+    } else if (websiteProducts.length > 0) {
+      console.warn(`\n  Only ${websiteProducts.length} products found (need 3+). Skipping product assignments.`);
+    } else {
+      console.warn('\n  No products in website DB. Skipping product assignments.');
+      console.warn('  Products are managed via the VIP Pharmacy website database.');
+    }
 
     // Summary
     console.log('\n========================================');

@@ -1,7 +1,7 @@
 # VIP CRM - Phase Task Breakdown
 
 > **Last Updated**: February 2026
-> **Status**: Phase 1-3 Complete. Phase 4 in progress (C.1+A.2 ✅, B.1 and B.2 remaining).
+> **Status**: Phase 1-4 Complete. Phase 5 next (C.2, C.3+D.3, B.5b).
 > **Reference**: See `docs/CHANGE_LOG.md` for full details on all 17 client-requested changes.
 > **Note**: Phases were reorganized from theme-based (A/B/C/D) to dependency-driven order (2-6). Task IDs (A.1, B.6, etc.) preserved for CHANGE_LOG traceability.
 
@@ -452,7 +452,7 @@ node backend/scripts/migrateDoctorFields.js
 
 ---
 
-# PHASE 4: Schedule System + Remaining UX
+# PHASE 4: Schedule System + Remaining UX ✅ COMPLETE
 **Goal**: Build the core scheduling system (the biggest feature) and complete UX pages that depend on Phase 2.
 **Dependency**: Phase 2 (A.3, A.4 must be done). A.2 (alternating weeks) is merged into C.1 here.
 
@@ -526,33 +526,47 @@ through schedule entries, not raw visit counts.
 
 ---
 
-### Task B.1: VIP Client Info Page Before Log Visit (CHANGE_LOG Change 3)
+### Task B.1: VIP Client Info Page Before Log Visit (CHANGE_LOG Change 3) ✅ COMPLETE
 **Priority**: HIGH (major UX flow change)
 **Depends on**: A.4 (BDM edit permissions)
+**Completed**: February 2026
 **Files**:
 - NEW: `frontend/src/pages/employee/DoctorDetailPage.jsx` — Full VIP Client profile + visit history + "Log Visit" button
-- `frontend/src/App.jsx` — Add route `/employee/doctor/:id`
-- `frontend/src/components/employee/DoctorList.jsx` — Card click → detail page (not visit logger)
-- `frontend/src/pages/employee/EmployeeDashboard.jsx` — Update handleSelectDoctor navigation
+- `frontend/src/App.jsx` — Added route `/employee/doctor/:id`
+- `frontend/src/pages/employee/EmployeeDashboard.jsx` — Updated `handleSelectDoctor` to navigate to info page
 
 **Deliverables**:
-- [ ] Clicking a VIP Client shows info page first (all fields from A.1)
-- [ ] "Log Visit" button at bottom of info page
-- [ ] Visit history for that VIP Client shown on the page
-- [ ] BDM can edit VIP Client fields from this page (per A.4)
+- [x] Clicking a VIP Client card body shows info page first (all fields from A.1)
+- [x] "Log Visit" button on info page header (disabled with reason when ineligible)
+- [x] Visit history table on the page (recent 10, "View All" link)
+- [x] BDM can edit VIP Client fields from this page via Edit button (reuses DoctorEditForm)
+- [x] Profile details: address, region, assigned BDM, phone, email, secretary, birthday, anniversary
+- [x] Clinic schedule dots (Mon-Fri availability)
+- [x] Programs & support type badge chips
+- [x] Target products with showcasing/accepted status
+- [x] Notes & other details section
+- [x] "Log Visit" quick-path button on DoctorList cards still goes directly to visit logger (unchanged)
 
 ---
 
-### Task B.2: Product Detail Popup — Tablet-Friendly (CHANGE_LOG Change 4)
+### Task B.2: Product Detail Popup — Tablet-Friendly (CHANGE_LOG Change 4) ✅ COMPLETE
 **Priority**: MEDIUM
 **Depends on**: A.3 (target products moved to BDM)
-**Files**: `frontend/src/components/employee/ProductRecommendations.jsx`, `frontend/src/components/employee/VisitLogger.jsx`
+**Completed**: February 2026
+**Files**:
+- NEW: `frontend/src/components/employee/ProductDetailModal.jsx` — Full-screen product detail modal (tablet-optimized)
+- `frontend/src/components/employee/VisitLogger.jsx` — Replaced checkboxes with product cards + detail modal
+- `frontend/src/pages/employee/DoctorDetailPage.jsx` — Clickable target products → detail modal
 
 **Deliverables**:
-- [ ] Clicking a product shows full-screen modal with image + description
-- [ ] Tablet-optimized: large image, readable text, easy to show to VIP Client
-- [ ] Product cards instead of simple checkboxes in VisitLogger
-- [ ] BDM picks 3 products from catalog → assigns as target products → presents on tablet
+- [x] Full-screen product detail modal with large image, name, generic name, dosage, category, price, description, usage, safety info
+- [x] Tablet-optimized: landscape side-by-side layout, large tap targets (48px), readable text (18px body), full-screen overlay
+- [x] Product cards instead of simple checkboxes in VisitLogger (thumbnail, name, generic name, dosage)
+- [x] Checkbox still toggles product selection (stopPropagation), card tap opens detail modal
+- [x] Prev/Next navigation arrows when viewing from product list context
+- [x] Keyboard navigation (Escape to close, arrow keys for prev/next)
+- [x] Clickable target products in DoctorDetailPage — fetches full product data via productService.getById()
+- [x] Body scroll lock when modal is open
 
 ---
 
@@ -561,8 +575,8 @@ through schedule entries, not raw visit counts.
 | Task | Change # | Depends On | Notes |
 |------|----------|------------|-------|
 | C.1+A.2: Schedule + Alternating Weeks | 6+10 | A.1 ✅ | ✅ COMPLETE |
-| B.1: VIP Client Info Page | 3 | A.4 ✅ | Navigation flow change |
-| B.2: Product Detail Popup | 4 | A.3 ✅ | Tablet UX |
+| B.1: VIP Client Info Page | 3 | A.4 ✅ | ✅ COMPLETE |
+| B.2: Product Detail Popup | 4 | A.3 ✅ | ✅ COMPLETE |
 
 ---
 
@@ -836,7 +850,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 | **Phase 1: Foundation** | 20+ tasks | Auth, CRUD, visits, products, messaging, security | ✅ COMPLETE |
 | **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4 ✅) | Remove MedRep, BDM self-edit | ✅ COMPLETE |
 | **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4 ✅, B.5a ✅, C.4 ⏭) | Photos, regular clients, filters, engagement, stats | ✅ Complete (5 done + 1 skipped) |
-| **Phase 4: Schedule System** | 3 tasks (C.1+A.2 ✅, B.1, B.2) | 4-week calendar, alternating weeks, info page | 🟡 In progress (1/3 done) |
+| **Phase 4: Schedule System** | 3 tasks (C.1+A.2 ✅, B.1 ✅, B.2 ✅) | 4-week calendar, alternating weeks, info page, product popup | ✅ COMPLETE |
 | **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |
 | **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |
 

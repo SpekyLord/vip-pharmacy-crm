@@ -475,7 +475,7 @@ const getDoctorProducts = catchAsync(async (req, res) => {
     const Product = getWebsiteProductModel();
     const productIds = assignedProducts.map((a) => a.product);
     const products = await Product.find({ _id: { $in: productIds } })
-      .select('name category briefDescription keyBenefits image price')
+      .select('name genericName dosage category image price description usage safety')
       .lean();
     const productMap = new Map(products.map((p) => [p._id.toString(), p]));
 
