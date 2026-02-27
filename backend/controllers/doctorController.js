@@ -171,18 +171,38 @@ const getDoctorById = catchAsync(async (req, res) => {
 
   // Manually populate product data from website database
   const doctorObj = doctor.toObject();
-  if (doctorObj.assignedProducts && doctorObj.assignedProducts.length > 0) {
+
+  // Collect all product IDs from both assignedProducts and targetProducts
+  const allProductIds = [];
+  if (doctorObj.assignedProducts?.length > 0) {
+    allProductIds.push(...doctorObj.assignedProducts.map((a) => a.product));
+  }
+  if (doctorObj.targetProducts?.length > 0) {
+    allProductIds.push(...doctorObj.targetProducts.map((tp) => tp.product).filter(Boolean));
+  }
+
+  // Single query for all product data
+  if (allProductIds.length > 0) {
     const Product = getWebsiteProductModel();
-    const productIds = doctorObj.assignedProducts.map((a) => a.product);
-    const products = await Product.find({ _id: { $in: productIds } })
-      .select('name category briefDescription image')
+    const uniqueIds = [...new Set(allProductIds.map((id) => id.toString()))];
+    const products = await Product.find({ _id: { $in: uniqueIds } })
+      .select('name genericName dosage category image price description usage safety')
       .lean();
     const productMap = new Map(products.map((p) => [p._id.toString(), p]));
 
-    doctorObj.assignedProducts = doctorObj.assignedProducts.map((assignment) => ({
-      ...assignment,
-      product: productMap.get(assignment.product?.toString()) || { _id: assignment.product },
-    }));
+    if (doctorObj.assignedProducts?.length > 0) {
+      doctorObj.assignedProducts = doctorObj.assignedProducts.map((assignment) => ({
+        ...assignment,
+        product: productMap.get(assignment.product?.toString()) || { _id: assignment.product },
+      }));
+    }
+
+    if (doctorObj.targetProducts?.length > 0) {
+      doctorObj.targetProducts = doctorObj.targetProducts.map((tp) => ({
+        ...tp,
+        product: productMap.get(tp.product?.toString()) || { _id: tp.product },
+      }));
+    }
   }
 
   res.status(200).json({

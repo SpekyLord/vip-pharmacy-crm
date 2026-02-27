@@ -238,6 +238,8 @@ const seedDatabase = async () => {
     try {
       await connectWebsiteDB();
       const Product = getWebsiteProductModel();
+      // Clear and re-seed products to ensure fresh data with images
+      await Product.deleteMany({});
       websiteProducts = await Product.find({}).lean();
 
       if (websiteProducts.length === 0) {
@@ -250,6 +252,7 @@ const seedDatabase = async () => {
             dosage: '80mg tablet',
             category: 'Cardiovascular',
             price: 42.50,
+            image: 'https://medias.watsons.com.ph/publishing/WTCPH-50055240-front-zoom.jpg?version=1758905406',
             description: 'Angiotensin II receptor blocker (ARB) for hypertension and heart failure management. Helps relax blood vessels to lower blood pressure and improve blood flow.',
             usage: 'Take one tablet daily with or without food. Swallow whole with water. Do not crush or chew. Best taken at the same time each day.',
             safety: 'Not for use during pregnancy. May cause dizziness. Avoid potassium supplements unless directed by physician. Monitor kidney function regularly.',
@@ -266,6 +269,7 @@ const seedDatabase = async () => {
             dosage: '20mg capsule',
             category: 'Gastrointestinal',
             price: 28.00,
+            image: 'https://medsgo.ph/images/detailed/36/Omephil-20.png',
             description: 'Proton pump inhibitor (PPI) for treatment of gastroesophageal reflux disease (GERD), peptic ulcers, and Zollinger-Ellison syndrome.',
             usage: 'Take one capsule 30 minutes before breakfast. Swallow whole — do not crush, chew, or open capsule. Course duration as prescribed.',
             safety: 'Long-term use may affect magnesium and calcium absorption. Report any bone pain or muscle cramps. Not recommended for more than 8 weeks without medical review.',
@@ -282,6 +286,7 @@ const seedDatabase = async () => {
             dosage: '10mg chewable tablet',
             category: 'Respiratory',
             price: 35.75,
+            image: 'https://vonagepharma.com/wp-content/uploads/2023/11/Montelukast-10-Front.jpg',
             description: 'Leukotriene receptor antagonist for prevention and long-term treatment of asthma. Also relieves symptoms of allergic rhinitis.',
             usage: 'Take one tablet in the evening, with or without food. For asthma: take daily even when symptom-free. Chewable tablet may be chewed or swallowed whole.',
             safety: 'Report any mood or behavior changes immediately. Not for acute asthma attacks — use rescue inhaler. Safe for patients 6 years and older.',
@@ -297,6 +302,7 @@ const seedDatabase = async () => {
             dosage: '25mg capsule',
             category: 'Neurological',
             price: 55.00,
+            image: 'https://smartwaywellness.com/wp-content/uploads/2021/09/PREGAFAB-75-CAP-copy.jpg',
             description: 'Anticonvulsant and analgesic for neuropathic pain, fibromyalgia, and as adjunctive therapy for partial-onset seizures.',
             usage: 'Take 25-75mg twice daily. May be taken with or without food. Do not stop abruptly — taper dose gradually over at least one week.',
             safety: 'May cause drowsiness and dizziness. Avoid alcohol. Do not drive until you know how it affects you. Report any swelling, weight gain, or vision changes.',
@@ -313,6 +319,7 @@ const seedDatabase = async () => {
             dosage: '0.1% topical cream 15g',
             category: 'Dermatology',
             price: 185.00,
+            image: 'https://click2pharmacy.co.uk/wp-content/uploads/2023/12/mometasone-cream-30g.jpg',
             description: 'Medium-potency topical corticosteroid for inflammatory and pruritic skin conditions including eczema, psoriasis, and dermatitis.',
             usage: 'Apply a thin layer to affected area once daily. Do not cover with occlusive dressing unless directed. Wash hands after application.',
             safety: 'For external use only. Avoid contact with eyes. Do not use on broken skin or infected areas. Limit use to 2-3 weeks on face. Discontinue if irritation occurs.',
@@ -328,6 +335,7 @@ const seedDatabase = async () => {
             dosage: '500mg/10mg tablet',
             category: 'Vitamins & Supplements',
             price: 12.50,
+            image: 'https://medias.watsons.com.ph/publishing/WTCPH-50041585-side-zoom.jpg?version=1721935274',
             description: 'Vitamin C and Zinc combination supplement for immune system support. Helps reduce duration and severity of common colds.',
             usage: 'Take one tablet daily after meals. May be taken with water or juice. For enhanced immune support during illness, take up to 3 tablets daily.',
             safety: 'Generally well-tolerated. High doses may cause stomach upset. Not a substitute for a balanced diet. Consult physician if pregnant or breastfeeding.',

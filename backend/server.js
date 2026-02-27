@@ -146,7 +146,7 @@ if (process.env.NODE_ENV === 'development') {
 // Applied AFTER CORS so rate limit responses include CORS headers
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 500, // Limit each IP to 500 requests per windowMs
   message: {
     success: false,
     message: 'Too many requests, please try again later.',
@@ -158,7 +158,7 @@ const generalLimiter = rateLimit({
 // Stricter rate limiting for auth endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // Limit each IP to 20 auth requests per windowMs
+  max: 50, // Limit each IP to 50 auth requests per windowMs
   message: {
     success: false,
     message: 'Too many authentication attempts, please try again later.',
