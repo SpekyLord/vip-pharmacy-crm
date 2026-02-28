@@ -18,7 +18,6 @@ const mongoose = require('mongoose');
 const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
 const User = require('../models/User');
-const Region = require('../models/Region');
 const { CYCLE_ANCHOR, getWeekOfMonth, getDayOfWeek, isWorkDay: isWorkDayUtil, getCycleNumber } = require('./scheduleCycleUtils');
 
 /**
@@ -116,45 +115,21 @@ const getWeekDateRange = (weekNumber, year) => {
 const isWorkDay = isWorkDayUtil;
 
 /**
- * Check if an employee can access a doctor's region (hierarchical check)
- * @param {Object} user - User object with assignedRegions
- * @param {ObjectId} doctorRegionId - The doctor's region ID
- * @returns {Promise<boolean>}
+ * Check if an employee can access a doctor (assignment-based check)
+ * @param {Object} user - User object with _id
+ * @param {Object} doctor - Doctor object with assignedTo field
+ * @returns {boolean}
  */
-const canAccessDoctorRegion = async (user, doctorRegionId) => {
-  // Admin can access all regions
+const canAccessDoctor = (user, doctor) => {
+  // Admin can access all doctors
   if (user.role === 'admin' && user.canAccessAllRegions) {
     return true;
   }
 
-  // If no assigned regions, no access
-  if (!user.assignedRegions || user.assignedRegions.length === 0) {
-    return false;
-  }
-
-  // Ensure we extract the actual ObjectId from potentially populated objects
-  const targetRegionId = doctorRegionId?._id || doctorRegionId;
-  if (!targetRegionId) {
-    console.error('canAccessDoctorRegion: No valid doctor region ID provided');
-    return false;
-  }
-  const doctorRegionStr = targetRegionId.toString();
-
-  // Get all descendant regions for each assigned region
-  for (const region of user.assignedRegions) {
-    const regionId = region?._id || region;
-    if (!regionId) continue;
-
-    const descendants = await Region.getDescendantIds(regionId);
-
-    // Check if doctor's region is in the descendants list
-    const hasAccess = descendants.some((id) => id.toString() === doctorRegionStr);
-    if (hasAccess) {
-      return true;
-    }
-  }
-
-  return false;
+  // BDMs can only access doctors assigned to them
+  const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
+  if (!assignedToId) return false;
+  return assignedToId.toString() === (user._id || user).toString();
 };
 
 /**
@@ -203,7 +178,7 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
   }
 
   // Get doctor's visit frequency (2x or 4x monthly)
-  const doctor = await Doctor.findById(doctorId).populate('region');
+  const doctor = await Doctor.findById(doctorId);
   if (!doctor) {
     return {
       canVisit: false,
@@ -214,13 +189,12 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
     };
   }
 
-  // Check region access (only if user object with assignedRegions is provided)
-  if (user.assignedRegions !== undefined) {
-    const hasRegionAccess = await canAccessDoctorRegion(user, doctor.region._id || doctor.region);
-    if (!hasRegionAccess) {
+  // Check assignment access (BDMs can only visit doctors assigned to them)
+  if (user.role === 'employee') {
+    if (!canAccessDoctor(user, doctor)) {
       return {
         canVisit: false,
-        reason: 'You do not have access to this doctor\'s region',
+        reason: 'This VIP Client is not assigned to you',
         weeklyCount: 0,
         monthlyCount: 0,
         monthlyLimit: doctor.visitFrequency || 4,
@@ -341,9 +315,9 @@ const getComplianceReport = async (userId, monthYear) => {
     User.findById(userId),
   ]);
 
-  // Single query for doctors (replaces separate countDocuments + find)
+  // Get doctors assigned to this user
   const doctors = await Doctor.find({
-    region: { $in: user.assignedRegions || [] },
+    assignedTo: userId,
     isActive: true,
   }).lean();
   const totalDoctors = doctors.length;
@@ -392,9 +366,9 @@ const checkBehindSchedule = async (userId, checkDate = new Date()) => {
     return { isBehind: false, details: {} };
   }
 
-  // Get doctors assigned to this user's regions
+  // Get doctors assigned to this user
   const doctors = await Doctor.find({
-    region: { $in: user.assignedRegions || [] },
+    assignedTo: userId,
     isActive: true,
   });
 
@@ -453,7 +427,7 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
   const currentWeek = Schedule.getCurrentCycleWeek(visitDate);
 
   const [doctors, weeklyVisits, monthlyCounts, scheduleEntries] = await Promise.all([
-    Doctor.find({ _id: { $in: doctorIds } }).populate('region'),
+    Doctor.find({ _id: { $in: doctorIds } }),
     Visit.find({
       doctor: { $in: doctorIds },
       user: userId,
@@ -487,33 +461,6 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
   const visitedThisWeek = new Set(weeklyVisits.map((v) => v.doctor.toString()));
   const monthlyCountMap = new Map(monthlyCounts.map((c) => [c._id.toString(), c.count]));
 
-  // Check region access for all doctors if user has assignedRegions
-  let regionAccessMap = new Map();
-  if (user.assignedRegions !== undefined) {
-    // Get all unique region IDs from doctors
-    const regionIds = [...new Set(doctors.map((d) => (d.region?._id || d.region)?.toString()).filter(Boolean))];
-
-    // For each assigned region, get all descendants
-    const allAccessibleRegions = new Set();
-    for (const region of user.assignedRegions || []) {
-      const regionId = region?._id || region;
-      if (regionId) {
-        const descendants = await Region.getDescendantIds(regionId);
-        descendants.forEach((id) => allAccessibleRegions.add(id.toString()));
-      }
-    }
-
-    // Build access map for each doctor's region
-    regionIds.forEach((regionId) => {
-      regionAccessMap.set(regionId, allAccessibleRegions.has(regionId));
-    });
-
-    // Admin can access all
-    if (user.role === 'admin' && user.canAccessAllRegions) {
-      regionIds.forEach((regionId) => regionAccessMap.set(regionId, true));
-    }
-  }
-
   // Process each doctor
   const results = doctorIds.map((doctorId) => {
     const doctor = doctorMap.get(doctorId);
@@ -531,16 +478,14 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
 
     const monthlyLimit = doctor.visitFrequency || 4;
     const monthlyCount = monthlyCountMap.get(doctorId) || 0;
-    const doctorRegionId = (doctor.region?._id || doctor.region)?.toString();
 
-    // Check region access
-    if (user.assignedRegions !== undefined && doctorRegionId) {
-      const hasRegionAccess = regionAccessMap.get(doctorRegionId);
-      if (!hasRegionAccess) {
+    // Check assignment access for BDMs
+    if (user.role === 'employee') {
+      if (!canAccessDoctor(user, doctor)) {
         return {
           doctorId,
           canVisit: false,
-          reason: 'You do not have access to this doctor\'s region',
+          reason: 'This VIP Client is not assigned to you',
           weeklyCount: 0,
           monthlyCount,
           monthlyLimit,
@@ -727,7 +672,7 @@ module.exports = {
   getYearWeekKey,
   getWeekDateRange,
   isWorkDay,
-  canAccessDoctorRegion,
+  canAccessDoctor,
   hasVisitedThisWeek,
   getMonthlyVisitCount,
   canVisitDoctor,

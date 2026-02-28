@@ -17,6 +17,8 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorMessage from '../../components/common/ErrorMessage';
 import visitService from '../../services/visitService';
 import doctorService from '../../services/doctorService';
+import scheduleService from '../../services/scheduleService';
+import DCRSummaryTable from '../../components/employee/DCRSummaryTable';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const performanceStyles = `
@@ -303,6 +305,12 @@ const getCycleWeek = (date) => {
   return Math.floor(dayInCycle / 7) + 1; // 1-4
 };
 
+const getCycleNumber = (date) => {
+  const diffMs = date.getTime() - CYCLE_ANCHOR.getTime();
+  const diffDays = Math.floor(diffMs / 86400000);
+  return Math.floor(diffDays / 28);
+};
+
 // Generate last 6 months as options for month picker
 const getMonthOptions = () => {
   const options = [];
@@ -344,23 +352,36 @@ const MyPerformancePage = () => {
   const [complianceData, setComplianceData] = useState(null);
   const [doctors, setDoctors] = useState([]);
   const [visits, setVisits] = useState([]);
+  const [dcrSummary, setDcrSummary] = useState([]);
+  const [dcrTotal, setDcrTotal] = useState({});
 
   const fetchData = useCallback(async (monthYear) => {
     try {
       setLoading(true);
       setError(null);
 
-      const [statsResult, complianceResult, doctorsResult, visitsResult] = await Promise.allSettled([
+      const currentCycleNumber = getCycleNumber(new Date());
+
+      const [statsResult, complianceResult, doctorsResult, visitsResult, cptResult] = await Promise.allSettled([
         visitService.getStats({ monthYear }),
         visitService.getWeeklyCompliance(monthYear),
         doctorService.getAll({ limit: 0 }),
         visitService.getMy({ monthYear, limit: 0 }),
+        scheduleService.getCPTGrid(currentCycleNumber),
       ]);
 
       setStatsData(statsResult.status === 'fulfilled' ? statsResult.value.data : null);
       setComplianceData(complianceResult.status === 'fulfilled' ? complianceResult.value.data : null);
       setDoctors(doctorsResult.status === 'fulfilled' ? (doctorsResult.value.data || []) : []);
       setVisits(visitsResult.status === 'fulfilled' ? (visitsResult.value.data || []) : []);
+
+      if (cptResult.status === 'fulfilled' && cptResult.value.data) {
+        setDcrSummary(cptResult.value.data.dcrSummary || []);
+        setDcrTotal(cptResult.value.data.dcrTotal || {});
+      } else {
+        setDcrSummary([]);
+        setDcrTotal({});
+      }
 
       const allFailed = [statsResult, complianceResult, doctorsResult, visitsResult].every(
         (r) => r.status === 'rejected'
@@ -561,6 +582,14 @@ const MyPerformancePage = () => {
               <p className="perf-empty">No visits recorded for this month</p>
             )}
           </section>
+
+          {/* DCR Summary */}
+          {dcrSummary.length > 0 && (
+            <section className="dashboard-section">
+              <h2>DCR Summary — Cycle {getCycleNumber(new Date())}</h2>
+              <DCRSummaryTable dcrSummary={dcrSummary} dcrTotal={dcrTotal} />
+            </section>
+          )}
 
           {/* Two-column: VIP Coverage + Engagement Distribution */}
           <div className="perf-two-col">

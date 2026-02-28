@@ -1,7 +1,7 @@
 # VIP CRM - Phase Task Breakdown
 
-> **Last Updated**: February 2026
-> **Status**: Phase 1-4 Complete. Phase 5 in progress — C.2 ✅ done, next: C.3+D.3, B.5b.
+> **Last Updated**: March 2026
+> **Status**: Phase 1-5 Complete. Phase 6 next — D.1, D.2, D.4, D.5, D.6.
 > **Reference**: See `docs/CHANGE_LOG.md` for full details on all 17 client-requested changes.
 > **Note**: Phases were reorganized from theme-based (A/B/C/D) to dependency-driven order (2-6). Task IDs (A.1, B.6, etc.) preserved for CHANGE_LOG traceability.
 
@@ -658,20 +658,23 @@ through schedule entries, not raw visit counts.
 
 ---
 
-### Task C.3 + D.3: Excel Import + Approvals UI (CHANGE_LOG Changes 8 + 13)
+### Task C.3 + D.3: Excel Import + Export + Approvals UI (CHANGE_LOG Changes 8 + 13) ✅ COMPLETE (March 2026)
 **Priority**: HIGH
 **Depends on**: C.1 (Schedule model), A.1 ✅
 **Schema Reference**: `docs/EXCEL_SCHEMA_DOCUMENTATION.md` is the **authoritative specification** for the CPT Excel format. All parsing and export logic must conform to that document.
 **Note**: These were originally separate tasks (C.3 in Phase C, D.3 in Phase D) but are the same feature — Excel import backend + approval review UI. Implementing together. The CRM does NOT need to produce a pixel-perfect Excel replica — it just needs to capture and organize all the information contained in the Excel.
 
 **Files**:
-- NEW: `backend/models/ImportBatch.js` — Staging model for pending imports
-- NEW: `backend/controllers/importController.js` — Excel parsing with `xlsx` library
-- NEW: `backend/routes/importRoutes.js`
-- NEW: `frontend/src/pages/admin/ImportPage.jsx` — Upload + review/approve UI
-- NEW: `frontend/src/services/importService.js`
-- Repurpose: `pages/admin/PendingApprovalsPage.jsx` (scaffolded) → Excel import batch review
-- Repurpose: `components/admin/VisitApproval.jsx` → Import batch approval
+- NEW: `backend/models/ImportBatch.js` — Staging model with parsedDoctors array, daySheetData, status, stats, cycleNumber
+- NEW: `backend/controllers/importController.js` — Upload, list, getById, approve, reject, deleteBatch endpoints
+- NEW: `backend/routes/importRoutes.js` — Custom multer (10MB, xlsx/xls), 120s approve timeout
+- NEW: `backend/utils/excelParser.js` — parseCPTWorkbook + detectDuplicates (column A-AM mapping, day sheet engagement parsing)
+- NEW: `frontend/src/services/importService.js` — Upload (60s timeout), list, getById, approve, reject, delete
+- NEW: `frontend/src/utils/exportCPTWorkbook.js` — Full 23-sheet CPT workbook export (WEEKLY SUMMARY, README, CPT master, 20 day sheets)
+- REWRITTEN: `frontend/src/pages/admin/PendingApprovalsPage.jsx` — 3-tab layout: Import, Export, History
+- REWRITTEN: `frontend/src/components/admin/VisitApproval.jsx` → BatchDetailModal (batch metadata, doctor table, approve/reject)
+- MODIFIED: `frontend/src/components/common/Sidebar.jsx` — Changed label to "Import / Export" with FileSpreadsheet icon
+- MODIFIED: `backend/server.js` — Mounted `/api/imports` routes
 
 **Workbook Structure** (23 sheets — 4 types):
 
@@ -779,16 +782,27 @@ through schedule entries, not raw visit counts.
 4. Admin uploads back to CRM → normal approval flow
 
 **Deliverables**:
-- [ ] ImportBatch staging model (status: pending/approved/rejected)
-- [ ] Excel parsing with `xlsx` npm package (parse CPT sheet rows 9-158, 20 day sheets rows 11-40)
-- [ ] Column mapping per `docs/EXCEL_SCHEMA_DOCUMENTATION.md` (39 CPT columns, day sheet engagement cols)
-- [ ] Day flag → Schedule entry conversion (cols E-X "1"s → Schedule model entries)
-- [ ] Duplicate VIP Client detection (lastName + firstName, case-insensitive)
-- [ ] Admin review UI with approve/reject entire batch (repurposed from Approvals page)
-- [ ] Remove old visit approval UI (client says no approval needed for visits)
-- [ ] Overwrite existing data with warning
-- [ ] Engagement data import from day sheets (5 types + date covered)
-- [ ] Export: CRM data in structured format containing all CPT fields (round-trip compatible)
+- [x] ImportBatch staging model (status: pending/approved/rejected)
+- [x] Excel parsing with `xlsx` npm package (parse CPT sheet rows 9-158, 20 day sheets rows 11-40)
+- [x] Column mapping per `docs/EXCEL_SCHEMA_DOCUMENTATION.md` (39 CPT columns, day sheet engagement cols)
+- [x] Day flag → Schedule entry conversion (cols E-X "1"s → Schedule model entries)
+- [x] Duplicate VIP Client detection (lastName + firstName, case-insensitive)
+- [x] Admin review UI with approve/reject entire batch (repurposed from Approvals page)
+- [x] Remove old visit approval UI (client says no approval needed for visits)
+- [x] Overwrite existing data with warning
+- [x] Engagement data import from day sheets (5 types + date covered)
+- [x] Export: CRM data in structured format containing all CPT fields (round-trip compatible)
+- [x] Bulk approve performance fix (Doctor.insertMany + bulkWrite, 120s timeout)
+- [x] Unassign old doctors not in new CPT file (remove assignedTo on re-import)
+- [x] Region lock removed for BDMs — doctors filtered by `assignedTo` instead of region
+
+**Region Lock Removal** (March 2026):
+Client confirmed BDMs seeing doctors is NOT region-specific. Since the CPT import assigns doctors to specific BDMs via `assignedTo`, region-based access control was redundant. Changed 5 files:
+- `backend/controllers/doctorController.js` — `getRegionFilter()` uses `{ assignedTo: user._id }` for employees
+- `backend/utils/validateWeeklyVisit.js` — `canAccessDoctor()` checks assignedTo instead of region hierarchy
+- `backend/controllers/visitController.js` — `getEmployeeReport()` uses `{ assignedTo: userId }`
+- `backend/controllers/scheduleController.js` — `generateSchedule()` uses `{ assignedTo: userId }`
+- `backend/middleware/roleCheck.js` — `isAssignedToDoctor()` checks assignedTo instead of region
 
 ---
 
@@ -798,8 +812,8 @@ through schedule entries, not raw visit counts.
 **Files**: `frontend/src/pages/employee/MyPerformancePage.jsx` (extend from B.5a)
 
 **Deliverables**:
-- [ ] DCR Summary view: Call Rate per day + overall
-- [ ] Target vs Actual engagements breakdown
+- [x] DCR Summary view: Call Rate per day + overall
+- [x] Target vs Actual engagements breakdown
 
 ---
 
@@ -808,8 +822,8 @@ through schedule entries, not raw visit counts.
 | Task | Change # | Depends On | Notes |
 |------|----------|------------|-------|
 | C.2: CPT View + DCR Summary | 7 | C.1, B.6 | ✅ COMPLETE |
-| C.3+D.3: Excel Import + Approvals UI | 8+13 | C.1 | **Combined** — same feature |
-| B.5b: BDM Performance (DCR part) | 14 | C.2 | Extends B.5a from Phase 3 |
+| C.3+D.3: Excel Import + Export + Approvals UI | 8+13 | C.1 | ✅ COMPLETE — region lock removed |
+| B.5b: BDM Performance (DCR part) | 14 | C.2 | ✅ COMPLETE |
 
 ---
 
@@ -933,7 +947,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 10. B.7  — Filter by Support/Program ✅
 11. C.4  — VIP Count Minimums (skipped)
 12. C.2  — CPT View + DCR Summary (needs C.1 + B.6) ✅
-13. C.3+D.3 — Excel Import + Approvals UI (needs C.1)
+13. C.3+D.3 — Excel Import + Export + Approvals UI (needs C.1) ✅
 14. D.1  — Admin Per-BDM DCR Summary (needs C.2 ✅)
 15. D.2  — Wire Up Scaffolded Pages (needs C.2 ✅)
 16. B.5b — BDM Performance DCR part (needs C.2 ✅)
@@ -952,7 +966,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 | **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4 ✅) | Remove MedRep, BDM self-edit | ✅ COMPLETE |
 | **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4 ✅, B.5a ✅, C.4 ⏭) | Photos, regular clients, filters, engagement, stats | ✅ Complete (5 done + 1 skipped) |
 | **Phase 4: Schedule System** | 3 tasks (C.1+A.2 ✅, B.1 ✅, B.2 ✅) | 4-week calendar, alternating weeks, info page, product popup | ✅ COMPLETE |
-| **Phase 5: CPT & Excel** | 3 tasks (C.2 ✅, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | 🔶 In progress (1/3 done) |
+| **Phase 5: CPT & Excel** | 3 tasks (C.2 ✅, C.3+D.3 ✅, B.5b ✅) | CPT grid, DCR Summary, Excel import/export | ✅ COMPLETE |
 | **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |
 
 ---

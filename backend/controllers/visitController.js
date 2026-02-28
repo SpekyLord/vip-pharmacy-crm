@@ -790,21 +790,9 @@ const getEmployeeReport = catchAsync(async (req, res) => {
     throw new NotFoundError('Employee not found');
   }
 
-  // Get all region IDs the employee has access to (including descendants)
-  const Region = require('../models/Region');
-  const allRegionIds = [];
-
-  for (const region of employee.assignedRegions) {
-    const descendants = await Region.getDescendantIds(region._id);
-    allRegionIds.push(...descendants);
-  }
-
-  // Remove duplicates
-  const uniqueRegionIds = [...new Set(allRegionIds.map((id) => id.toString()))];
-
-  // Fetch all doctors in those regions
+  // Fetch all doctors assigned to this BDM
   const doctors = await Doctor.find({
-    region: { $in: uniqueRegionIds },
+    assignedTo: userId,
     isActive: true,
   })
     .select('name specialization hospital region visitFrequency')

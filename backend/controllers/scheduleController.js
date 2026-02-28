@@ -11,7 +11,6 @@
 
 const Schedule = require('../models/Schedule');
 const Doctor = require('../models/Doctor');
-const Region = require('../models/Region');
 const Visit = require('../models/Visit');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
@@ -291,23 +290,16 @@ const generateSchedule = catchAsync(async (req, res) => {
   const targetCycle = cycleNumber != null ? cycleNumber : getCycleNumber(new Date());
   const cycleStart = getCycleStartDate(targetCycle);
 
-  // Get all region IDs the BDM has access to
-  const allRegionIds = [];
-  for (const region of user.assignedRegions || []) {
-    const descendants = await Region.getDescendantIds(region);
-    allRegionIds.push(...descendants);
-  }
-
-  // Get all active doctors in those regions
+  // Get all active doctors assigned to this BDM
   const doctors = await Doctor.find({
-    region: { $in: allRegionIds },
+    assignedTo: userId,
     isActive: true,
   }).select('_id visitFrequency');
 
   if (doctors.length === 0) {
     return res.status(400).json({
       success: false,
-      message: 'No active VIP Clients found in assigned regions',
+      message: 'No active VIP Clients assigned to this BDM',
     });
   }
 

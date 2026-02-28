@@ -1,9 +1,9 @@
 /**
  * Doctor Controller
  *
- * Handles doctor CRUD operations with region-based access control
+ * Handles doctor CRUD operations with assignment-based access control
  * Follows CLAUDE.md rules:
- * - Employees can ONLY see doctors in their assigned regions
+ * - Employees (BDMs) can ONLY see doctors assigned to them (via assignedTo field)
  * - Admin can see all doctors
  * - visitFrequency: 2 or 4 (NOT A/B/C/D categories)
  */
@@ -17,38 +17,21 @@ const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 
 /**
- * Build region filter based on user role
+ * Build access filter based on user role
  * - Admin: no filter (see all)
- * - Employee: assigned regions AND all their descendants (child regions)
- *
- * This enables cascading region access:
- * - Employee assigned to Region VI sees doctors in all provinces/cities/districts under Region VI
+ * - Employee (BDM): only doctors assigned to them via assignedTo field
  */
 const getRegionFilter = async (user) => {
   if (user.role === 'admin' && user.canAccessAllRegions) {
-    return {}; // No region filter for admin
+    return {}; // No filter for admin
   }
 
-  // Employees see assigned regions AND all descendant regions
-  if (user.assignedRegions && user.assignedRegions.length > 0) {
-    const allRegionIds = [];
-
-    // For each assigned region, get all descendant region IDs
-    for (const region of user.assignedRegions) {
-      // Handle both populated objects and plain ObjectIds
-      const regionId = region._id || region;
-      const descendants = await Region.getDescendantIds(regionId);
-      allRegionIds.push(...descendants);
-    }
-
-    // Remove duplicates and convert to ObjectIds for MongoDB query
-    const uniqueRegionIds = [...new Set(allRegionIds.map((id) => id.toString()))];
-    const objectIdRegions = uniqueRegionIds.map((id) => new mongoose.Types.ObjectId(id));
-
-    return { region: { $in: objectIdRegions } };
+  // BDMs see only doctors assigned to them (set by CPT import)
+  if (user.role === 'employee') {
+    return { assignedTo: user._id };
   }
 
-  // If no regions assigned, return impossible filter (matches nothing)
+  // Fallback: no access
   return { _id: null };
 };
 
@@ -161,11 +144,11 @@ const getDoctorById = catchAsync(async (req, res) => {
     throw new NotFoundError('Doctor not found');
   }
 
-  // Check region access for non-admin users
-  if (req.user.role !== 'admin') {
-    const hasAccess = await req.user.canAccessRegion(doctor.region._id || doctor.region);
-    if (!hasAccess) {
-      throw new ForbiddenError('You do not have access to this doctor');
+  // Check access for non-admin users: BDMs can only see doctors assigned to them
+  if (req.user.role === 'employee') {
+    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
+    if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+      throw new ForbiddenError('You do not have access to this VIP Client');
     }
   }
 
@@ -382,15 +365,14 @@ const deleteDoctor = catchAsync(async (req, res) => {
 const getDoctorsByRegion = catchAsync(async (req, res) => {
   const { regionId } = req.params;
 
-  // Check if user has access to this region
-  if (req.user.role !== 'admin') {
-    const hasAccess = await req.user.canAccessRegion(regionId);
-    if (!hasAccess) {
-      throw new ForbiddenError('You do not have access to this region');
-    }
+  const filter = { region: regionId, isActive: true };
+
+  // BDMs only see their assigned doctors even when filtering by region
+  if (req.user.role === 'employee') {
+    filter.assignedTo = req.user._id;
   }
 
-  const doctors = await Doctor.find({ region: regionId, isActive: true })
+  const doctors = await Doctor.find(filter)
     .populate('region', 'name code level')
     .populate('assignedTo', 'name email')
     .sort({ lastName: 1, firstName: 1 });
@@ -414,11 +396,11 @@ const getDoctorVisits = catchAsync(async (req, res) => {
     throw new NotFoundError('Doctor not found');
   }
 
-  // Check region access for non-admin users
-  if (req.user.role !== 'admin') {
-    const hasAccess = await req.user.canAccessRegion(doctor.region);
-    if (!hasAccess) {
-      throw new ForbiddenError('You do not have access to this doctor');
+  // Check access for non-admin users: BDMs can only see visits for their assigned doctors
+  if (req.user.role === 'employee') {
+    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
+    if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+      throw new ForbiddenError('You do not have access to this VIP Client');
     }
   }
 

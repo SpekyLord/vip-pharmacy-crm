@@ -20,6 +20,7 @@ import {
   ClipboardCheck,
   BarChart3,
   FileText,
+  FileSpreadsheet,
   Inbox,
   Calendar,
   CalendarRange,
@@ -349,7 +350,7 @@ const getMenuConfig = (role) => {
           {
             title: 'Operations',
             items: [
-              { path: '/admin/approvals', label: 'Approvals', icon: ClipboardCheck, badge: 3 },
+              { path: '/admin/approvals', label: 'Import / Export', icon: FileSpreadsheet },
               { path: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
               { path: '/admin/reports', label: 'Reports', icon: FileText },
             ],

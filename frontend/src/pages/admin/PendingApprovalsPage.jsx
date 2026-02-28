@@ -1,1438 +1,1282 @@
 /**
- * PendingApprovalsPage
+ * Import / Export Page (formerly PendingApprovalsPage)
  *
- * Admin page for reviewing and approving pending visits (Task 2.8 + 2.9)
+ * Admin page for CPT Excel import/export management.
  *
- * Features:
- * - Table of pending visits with filtering and sorting
- * - Search by employee or doctor name
- * - Region filter dropdown
- * - Date filter (Today/This Week/This Month/All)
- * - Sort by (Newest First/Oldest First)
- * - Bulk selection and operations (approve/reject multiple)
- * - Individual row actions
- * - Detail modal view with GPS verification map
+ * Tabs:
+ *   1. Import - Upload CPT Excel, preview parsed data, approve/reject
+ *   2. Export - Select BDM + cycle, download 23-sheet CPT workbook
+ *   3. History - View past import batches with status
  *
  * Route: /admin/approvals
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  Search,
-  Filter,
+  Upload,
+  Download,
+  History,
+  FileSpreadsheet,
   CheckCircle,
   XCircle,
   Eye,
-  Calendar,
-  MapPin,
-  User,
-  Stethoscope,
-  ChevronDown,
-  CheckSquare,
-  Square,
-  ArrowUpDown,
-  Clock,
+  Trash2,
   AlertTriangle,
+  Clock,
+  Users,
+  MapPin,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  RefreshCw,
   X,
-  SlidersHorizontal,
 } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import VisitApproval from '../../components/admin/VisitApproval';
-
-/* =============================================================================
-   MOCK DATA - With GPS verification fields
-   ============================================================================= */
-
-const MOCK_PENDING_VISITS = [
-  {
-    id: 'visit-001',
-    // Header Info
-    date: '2025-12-30',
-    time: '09:30 AM',
-    weekLabel: 'W1D2',
-    status: 'pending',
-    // Employee Info
-    employeeName: 'Juan Dela Cruz',
-    employeeId: 'emp-001',
-    region: 'Region VI - Western Visayas',
-    // VIP Client Info
-    doctorName: 'Dr. Maria Santos',
-    specialization: 'Cardiologist',
-    hospital: 'Iloilo Doctors Hospital',
-    clinicAddress: '123 General Luna St, Iloilo City',
-    visitFrequency: 'Weekly',
-    // Notes
-    purpose: 'Product presentation for CardioMax 100mg and follow-up on previous samples.',
-    clientFeedback: 'Doctor expressed interest in the new formulation. Requested additional clinical studies.',
-    privateNotes: 'Schedule follow-up visit next week. Bring updated brochures.',
-    // GPS Data
-    clinicCoordinates: { lat: 10.6969, lng: 122.5648 },
-    employeeCoordinates: { lat: 10.6975, lng: 122.5652 }, // ~70m away (verified)
-    gpsAccuracy: 12,
-    // Products & Photos
-    productsDiscussed: ['CardioMax 100mg', 'NeuroPlus 500mg'],
-    photoProofs: ['photo1.jpg', 'photo2.jpg'],
-    // Timestamps for filtering
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
-  },
-  {
-    id: 'visit-002',
-    date: '2025-12-29',
-    time: '02:00 PM',
-    weekLabel: 'W1D1',
-    status: 'pending',
-    employeeName: 'Maria Garcia',
-    employeeId: 'emp-002',
-    region: 'NCR - Metro Manila',
-    doctorName: 'Dr. Jose Rizal',
-    specialization: 'General Practitioner',
-    hospital: 'Manila Medical Center',
-    clinicAddress: '456 Taft Avenue, Manila',
-    visitFrequency: 'Monthly',
-    purpose: 'Introduce new GastroShield product line.',
-    clientFeedback: 'Needs more information about dosage recommendations.',
-    privateNotes: 'Send product literature via email.',
-    clinicCoordinates: { lat: 14.5995, lng: 120.9842 },
-    employeeCoordinates: { lat: 14.6030, lng: 120.9880 }, // ~500m away (suspicious)
-    gpsAccuracy: 18,
-    productsDiscussed: ['GastroShield 250mg'],
-    photoProofs: ['clinic_photo.jpg'],
-    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(), // 5 hours ago
-  },
-  {
-    id: 'visit-003',
-    date: '2025-12-28',
-    time: '10:00 AM',
-    weekLabel: 'W4D5',
-    status: 'pending',
-    employeeName: 'Pedro Martinez',
-    employeeId: 'emp-003',
-    region: 'Region VI - Western Visayas',
-    doctorName: 'Dr. Angela Yu',
-    specialization: 'Neurologist',
-    hospital: 'Western Visayas Medical Center',
-    clinicAddress: '789 Iznart St, Iloilo City',
-    visitFrequency: 'Bi-weekly',
-    purpose: 'Follow-up on NeuroPlus trial results.',
-    clientFeedback: 'Positive results observed. Will continue prescribing.',
-    privateNotes: 'Potential for increased order volume.',
-    clinicCoordinates: { lat: 10.6920, lng: 122.5700 },
-    employeeCoordinates: { lat: 10.6925, lng: 122.5705 }, // ~60m away (verified)
-    gpsAccuracy: 8,
-    productsDiscussed: ['NeuroPlus 500mg', 'ImmunoBoost'],
-    photoProofs: ['visit1.jpg', 'visit2.jpg'],
-    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
-  },
-  {
-    id: 'visit-004',
-    date: '2025-12-27',
-    time: '11:00 AM',
-    weekLabel: 'W4D4',
-    status: 'pending',
-    employeeName: 'Ana Lopez',
-    employeeId: 'emp-004',
-    region: 'Region VII - Central Visayas',
-    doctorName: 'Dr. Chen Wei',
-    specialization: 'Internist',
-    hospital: 'Cebu Doctors University Hospital',
-    clinicAddress: '321 Osmena Blvd, Cebu City',
-    visitFrequency: 'Weekly',
-    purpose: 'Regular check-in and inventory review.',
-    clientFeedback: 'Running low on CardioMax samples.',
-    privateNotes: 'Arrange sample delivery by Friday.',
-    clinicCoordinates: { lat: 10.3157, lng: 123.8854 },
-    employeeCoordinates: { lat: 10.3190, lng: 123.8890 }, // ~450m away (suspicious)
-    gpsAccuracy: 25,
-    productsDiscussed: ['CardioMax 100mg'],
-    photoProofs: ['proof1.jpg'],
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days ago
-  },
-  {
-    id: 'visit-005',
-    date: '2025-12-26',
-    time: '03:30 PM',
-    weekLabel: 'W4D3',
-    status: 'pending',
-    employeeName: 'Roberto Lim',
-    employeeId: 'emp-005',
-    region: 'NCR - Metro Manila',
-    doctorName: 'Dr. Park Soo-Min',
-    specialization: 'Pediatrician',
-    hospital: 'Makati Medical Center',
-    clinicAddress: '555 Ayala Ave, Makati City',
-    visitFrequency: 'Monthly',
-    purpose: 'New pediatric formulation presentation.',
-    clientFeedback: 'Very interested in child-friendly options.',
-    privateNotes: 'Prepare pediatric dosing guide for next visit.',
-    clinicCoordinates: { lat: 14.5547, lng: 121.0244 },
-    employeeCoordinates: { lat: 14.5550, lng: 121.0248 }, // ~50m away (verified)
-    gpsAccuracy: 5,
-    productsDiscussed: ['GastroShield 250mg', 'ImmunoBoost'],
-    photoProofs: ['doc1.jpg', 'doc2.jpg'],
-    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days ago
-  },
-];
-
-const REGIONS = [
-  'All Regions',
-  'Region VI - Western Visayas',
-  'NCR - Metro Manila',
-  'Region VII - Central Visayas',
-  'CAR - Cordillera',
-];
-
-const DATE_FILTERS = [
-  { value: 'all', label: 'All Time' },
-  { value: 'today', label: 'Today' },
-  { value: 'week', label: 'This Week' },
-  { value: 'month', label: 'This Month' },
-];
-
-const SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest First' },
-  { value: 'oldest', label: 'Oldest First' },
-];
+import BatchDetailModal from '../../components/admin/VisitApproval';
+import * as importService from '../../services/importService';
+import userService from '../../services/userService';
+import regionService from '../../services/regionService';
+import doctorService from '../../services/doctorService';
+import scheduleService from '../../services/scheduleService';
+import { exportCPTWorkbook } from '../../utils/exportCPTWorkbook';
 
 /* =============================================================================
    STYLES
    ============================================================================= */
 
-const pageStyles = `
-  /* ==========================================================================
-     LAYOUT
-     ========================================================================== */
-
-  .approvals-layout {
-    min-height: 100vh;
-    background: #f3f4f6;
-  }
-
-  .approvals-content {
+const styles = `
+  .ie-page {
     display: flex;
+    min-height: calc(100vh - 68px);
+    background: #f1f5f9;
   }
 
-  .approvals-main {
+  .ie-content {
     flex: 1;
     padding: 24px;
-    max-width: 1600px;
+    overflow-y: auto;
+    max-width: 1400px;
   }
 
-  /* ==========================================================================
-     PAGE HEADER
-     ========================================================================== */
-
-  .page-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+  .ie-header {
     margin-bottom: 24px;
   }
 
-  .page-header-left {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
-  .page-header h1 {
-    margin: 0;
-    font-size: 28px;
+  .ie-header h1 {
+    font-size: 24px;
     font-weight: 700;
-    color: #1f2937;
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    color: #0f172a;
+    margin: 0 0 4px;
   }
 
-  .page-header-icon {
-    width: 48px;
-    height: 48px;
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
-  }
-
-  .pending-count {
-    padding: 8px 16px;
-    background: linear-gradient(135deg, #fef3c7, #fde68a);
-    color: #92400e;
-    border-radius: 24px;
+  .ie-header p {
+    color: #64748b;
     font-size: 14px;
-    font-weight: 600;
-    border: 1px solid #fcd34d;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .pending-count .dot {
-    width: 8px;
-    height: 8px;
-    background: #f59e0b;
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.6; transform: scale(0.9); }
-  }
-
-  /* ==========================================================================
-     FILTER BAR
-     ========================================================================== */
-
-  .filter-bar {
-    background: white;
-    border-radius: 16px;
-    padding: 20px 24px;
-    margin-bottom: 24px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    border: 1px solid #e5e7eb;
-  }
-
-  .filter-bar-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    align-items: center;
-  }
-
-  .search-input-wrapper {
-    flex: 1;
-    min-width: 280px;
-    position: relative;
-  }
-
-  .search-input {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 16px;
-    background: #f9fafb;
-    border: 2px solid #e5e7eb;
-    border-radius: 10px;
-    transition: all 0.2s;
-  }
-
-  .search-input:focus-within {
-    border-color: #f59e0b;
-    background: white;
-    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.1);
-  }
-
-  .search-input input {
-    flex: 1;
-    border: none;
-    outline: none;
-    font-size: 14px;
-    background: transparent;
-    color: #1f2937;
-  }
-
-  .search-input input::placeholder {
-    color: #9ca3af;
-  }
-
-  .filter-group {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .filter-label {
-    font-size: 13px;
-    font-weight: 500;
-    color: #6b7280;
-    white-space: nowrap;
-  }
-
-  .filter-select {
-    padding: 10px 36px 10px 14px;
-    border: 2px solid #e5e7eb;
-    border-radius: 10px;
-    font-size: 14px;
-    color: #374151;
-    background: white;
-    cursor: pointer;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 10px center;
-    transition: all 0.2s;
-    min-width: 160px;
-  }
-
-  .filter-select:hover {
-    border-color: #d1d5db;
-  }
-
-  .filter-select:focus {
-    outline: none;
-    border-color: #f59e0b;
-    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.1);
-  }
-
-  .filter-divider {
-    width: 1px;
-    height: 32px;
-    background: #e5e7eb;
-    margin: 0 8px;
-  }
-
-  /* ==========================================================================
-     TABLE CONTAINER
-     ========================================================================== */
-
-  .table-container {
-    background: white;
-    border-radius: 16px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    border: 1px solid #e5e7eb;
-    overflow: hidden;
-  }
-
-  .table-header {
-    padding: 18px 24px;
-    border-bottom: 1px solid #e5e7eb;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #fafafa;
-  }
-
-  .table-header h3 {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: #374151;
+  }
+
+  /* Tabs */
+  .ie-tabs {
     display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .table-header-badge {
-    padding: 4px 10px;
-    background: #f3f4f6;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 500;
-    color: #6b7280;
-  }
-
-  /* ==========================================================================
-     TABLE STYLES
-     ========================================================================== */
-
-  .table-wrapper {
-    overflow-x: auto;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  thead {
-    background: #f9fafb;
-  }
-
-  th {
-    padding: 14px 20px;
-    text-align: left;
-    font-size: 11px;
-    font-weight: 600;
-    color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-bottom: 1px solid #e5e7eb;
-    white-space: nowrap;
-  }
-
-  th:first-child {
-    padding-left: 24px;
-  }
-
-  th:last-child {
-    padding-right: 24px;
-  }
-
-  td {
-    padding: 18px 20px;
-    font-size: 14px;
-    color: #374151;
-    border-bottom: 1px solid #f3f4f6;
-    vertical-align: middle;
-  }
-
-  td:first-child {
-    padding-left: 24px;
-  }
-
-  td:last-child {
-    padding-right: 24px;
-  }
-
-  tbody tr {
-    transition: all 0.15s;
-  }
-
-  tbody tr:hover {
-    background: #fefce8;
-  }
-
-  tbody tr.selected {
-    background: #fef3c7;
-  }
-
-  tbody tr:last-child td {
-    border-bottom: none;
-  }
-
-  /* ==========================================================================
-     CHECKBOX
-     ========================================================================== */
-
-  .checkbox-btn {
-    width: 22px;
-    height: 22px;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    color: #d1d5db;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s;
-  }
-
-  .checkbox-btn:hover {
-    color: #9ca3af;
-  }
-
-  .checkbox-btn.checked {
-    color: #f59e0b;
-  }
-
-  /* ==========================================================================
-     EMPLOYEE CELL
-     ========================================================================== */
-
-  .employee-cell {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .employee-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #2563eb;
-    font-weight: 600;
-    font-size: 14px;
-  }
-
-  .employee-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .employee-name {
-    font-weight: 600;
-    color: #1f2937;
-  }
-
-  .employee-id {
-    font-size: 12px;
-    color: #9ca3af;
-  }
-
-  /* ==========================================================================
-     DOCTOR CELL
-     ========================================================================== */
-
-  .doctor-cell {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .doctor-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    background: linear-gradient(135deg, #dcfce7, #bbf7d0);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #16a34a;
-  }
-
-  .doctor-name {
-    font-weight: 500;
-    color: #1f2937;
-  }
-
-  /* ==========================================================================
-     DATE CELL
-     ========================================================================== */
-
-  .date-cell {
-    display: flex;
-    flex-direction: column;
     gap: 4px;
+    background: #e2e8f0;
+    border-radius: 12px;
+    padding: 4px;
+    margin-bottom: 24px;
+    width: fit-content;
   }
 
-  .date-value {
-    font-weight: 500;
-    color: #1f2937;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .time-value {
-    font-size: 12px;
-    color: #6b7280;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  /* ==========================================================================
-     REGION BADGE
-     ========================================================================== */
-
-  .region-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    background: #f3f4f6;
-    border-radius: 8px;
-    font-size: 13px;
-    color: #4b5563;
-    white-space: nowrap;
-  }
-
-  .region-badge .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #9ca3af;
-  }
-
-  /* ==========================================================================
-     ACTION BUTTONS
-     ========================================================================== */
-
-  .action-buttons {
-    display: flex;
-    gap: 8px;
-  }
-
-  .action-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s;
-    white-space: nowrap;
-  }
-
-  .action-btn.view {
-    background: #f3f4f6;
-    color: #374151;
-  }
-
-  .action-btn.view:hover {
-    background: #e5e7eb;
-    transform: translateY(-1px);
-  }
-
-  .action-btn.approve {
-    background: linear-gradient(135deg, #dcfce7, #bbf7d0);
-    color: #15803d;
-    border: 1px solid #86efac;
-  }
-
-  .action-btn.approve:hover {
-    background: linear-gradient(135deg, #bbf7d0, #86efac);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3);
-  }
-
-  .action-btn.reject {
-    background: linear-gradient(135deg, #fee2e2, #fecaca);
-    color: #dc2626;
-    border: 1px solid #fca5a5;
-  }
-
-  .action-btn.reject:hover {
-    background: linear-gradient(135deg, #fecaca, #fca5a5);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
-  }
-
-  /* ==========================================================================
-     BULK ACTIONS BAR
-     ========================================================================== */
-
-  .bulk-actions-bar {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: linear-gradient(135deg, #1f2937, #111827);
-    color: white;
-    padding: 16px 28px;
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
-    z-index: 100;
-    animation: slideUp 0.3s ease-out;
-  }
-
-  @keyframes slideUp {
-    from { opacity: 0; transform: translateX(-50%) translateY(20px); }
-    to { opacity: 1; transform: translateX(-50%) translateY(0); }
-  }
-
-  .bulk-actions-bar .selected-count {
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-weight: 500;
-  }
-
-  .bulk-actions-bar .selected-count .count-badge {
-    padding: 4px 10px;
-    background: rgba(255,255,255,0.15);
-    border-radius: 6px;
-    font-weight: 600;
-  }
-
-  .bulk-actions-bar .divider {
-    width: 1px;
-    height: 28px;
-    background: rgba(255,255,255,0.2);
-  }
-
-  .bulk-btn {
+  .ie-tab {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 10px 20px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
+    border-radius: 8px;
     border: none;
+    background: transparent;
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
     transition: all 0.2s;
   }
 
-  .bulk-btn.approve {
-    background: linear-gradient(135deg, #22c55e, #16a34a);
+  .ie-tab:hover {
+    color: #334155;
+    background: rgba(255, 255, 255, 0.5);
+  }
+
+  .ie-tab.active {
+    background: white;
+    color: #0f172a;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Card */
+  .ie-card {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+
+  .ie-card-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #0f172a;
+    margin: 0 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Form */
+  .ie-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .ie-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ie-field label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #475569;
+  }
+
+  .ie-field select,
+  .ie-field input {
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+    color: #0f172a;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .ie-field select:focus,
+  .ie-field input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .ie-file-input {
+    border: 2px dashed #d1d5db;
+    border-radius: 12px;
+    padding: 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #fafafa;
+  }
+
+  .ie-file-input:hover {
+    border-color: #3b82f6;
+    background: #f0f7ff;
+  }
+
+  .ie-file-input.has-file {
+    border-color: #22c55e;
+    background: #f0fdf4;
+  }
+
+  .ie-file-input input {
+    display: none;
+  }
+
+  .ie-file-icon {
+    color: #94a3b8;
+    margin-bottom: 8px;
+  }
+
+  .ie-file-text {
+    font-size: 14px;
+    color: #64748b;
+  }
+
+  .ie-file-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #0f172a;
+    margin-top: 4px;
+  }
+
+  /* Buttons */
+  .ie-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .ie-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .ie-btn-primary {
+    background: #3b82f6;
     color: white;
   }
 
-  .bulk-btn.approve:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
+  .ie-btn-primary:hover:not(:disabled) {
+    background: #2563eb;
   }
 
-  .bulk-btn.reject {
-    background: transparent;
-    color: #fca5a5;
-    border: 2px solid rgba(252, 165, 165, 0.5);
+  .ie-btn-success {
+    background: #22c55e;
+    color: white;
   }
 
-  .bulk-btn.reject:hover {
-    background: rgba(220, 38, 38, 0.2);
-    border-color: #fca5a5;
+  .ie-btn-success:hover:not(:disabled) {
+    background: #16a34a;
   }
 
-  .bulk-btn.clear {
-    background: transparent;
-    color: #9ca3af;
-    padding: 10px;
+  .ie-btn-danger {
+    background: #ef4444;
+    color: white;
+  }
+
+  .ie-btn-danger:hover:not(:disabled) {
+    background: #dc2626;
+  }
+
+  .ie-btn-outline {
+    background: white;
+    color: #475569;
+    border: 1px solid #d1d5db;
+  }
+
+  .ie-btn-outline:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: #94a3b8;
+  }
+
+  .ie-btn-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  /* Stats bar */
+  .ie-stats {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .ie-stat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .ie-stat-total { background: #f0f4ff; color: #3b82f6; }
+  .ie-stat-new { background: #f0fdf4; color: #16a34a; }
+  .ie-stat-update { background: #fffbeb; color: #d97706; }
+  .ie-stat-invalid { background: #fef2f2; color: #dc2626; }
+
+  /* Preview table */
+  .ie-table-wrap {
+    overflow-x: auto;
+    border: 1px solid #e2e8f0;
     border-radius: 8px;
   }
 
-  .bulk-btn.clear:hover {
-    background: rgba(255,255,255,0.1);
-    color: white;
+  .ie-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
   }
 
-  /* ==========================================================================
-     EMPTY STATE
-     ========================================================================== */
-
-  .empty-state {
-    padding: 80px 20px;
-    text-align: center;
+  .ie-table th {
+    background: #f8fafc;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #475569;
+    border-bottom: 1px solid #e2e8f0;
+    white-space: nowrap;
   }
 
-  .empty-state-icon {
-    width: 80px;
-    height: 80px;
-    margin: 0 auto 20px;
-    background: linear-gradient(135deg, #dcfce7, #bbf7d0);
-    border-radius: 50%;
+  .ie-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #334155;
+  }
+
+  .ie-table tr:hover {
+    background: #f8fafc;
+  }
+
+  .ie-table tr.row-new td { background: #f0fdf4; }
+  .ie-table tr.row-update td { background: #fffbeb; }
+  .ie-table tr.row-invalid td { background: #fef2f2; }
+
+  /* Status badges */
+  .ie-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .ie-badge-new { background: #dcfce7; color: #16a34a; }
+  .ie-badge-update { background: #fef3c7; color: #d97706; }
+  .ie-badge-invalid { background: #fee2e2; color: #dc2626; }
+  .ie-badge-pending { background: #fef3c7; color: #d97706; }
+  .ie-badge-approved { background: #dcfce7; color: #16a34a; }
+  .ie-badge-rejected { background: #fee2e2; color: #dc2626; }
+
+  /* Day flags grid */
+  .ie-dayflags {
+    display: flex;
+    gap: 1px;
+  }
+
+  .ie-dayflag {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    font-size: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #16a34a;
   }
 
-  .empty-state h3 {
-    margin: 0 0 8px 0;
-    font-size: 20px;
-    font-weight: 600;
-    color: #1f2937;
+  .ie-dayflag.on { background: #3b82f6; color: white; }
+  .ie-dayflag.off { background: #f1f5f9; color: #94a3b8; }
+
+  /* Changes list */
+  .ie-changes {
+    font-size: 12px;
+    color: #d97706;
+    margin-top: 4px;
   }
 
-  .empty-state p {
-    margin: 0;
-    font-size: 15px;
-    color: #6b7280;
+  .ie-changes li {
+    margin-left: 16px;
   }
 
-  /* ==========================================================================
-     QUICK REJECT DIALOG
-     ========================================================================== */
+  /* Expandable row */
+  .ie-expand-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    color: #64748b;
+  }
 
-  .quick-reject-dialog {
+  /* Alert / message */
+  .ie-alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .ie-alert-info { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+  .ie-alert-success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+  .ie-alert-error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+  .ie-alert-warning { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+
+  /* Loading */
+  .ie-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: #64748b;
+    gap: 8px;
+  }
+
+  .ie-loading svg {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Reject dialog */
+  .ie-dialog-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.5);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
-    padding: 20px;
-    animation: fadeIn 0.2s ease-out;
+    z-index: 100;
   }
 
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  .quick-reject-content {
+  .ie-dialog {
     background: white;
-    border-radius: 20px;
-    padding: 28px;
-    width: 100%;
-    max-width: 460px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-    animation: modalSlide 0.3s ease-out;
+    border-radius: 16px;
+    padding: 24px;
+    width: 400px;
+    max-width: 90vw;
   }
 
-  @keyframes modalSlide {
-    from { opacity: 0; transform: scale(0.95) translateY(10px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
-  }
-
-  .quick-reject-content h3 {
-    margin: 0 0 8px 0;
-    font-size: 20px;
+  .ie-dialog h3 {
+    font-size: 18px;
     font-weight: 600;
-    color: #1f2937;
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    margin: 0 0 12px;
+    color: #0f172a;
   }
 
-  .quick-reject-content h3 .icon {
-    width: 40px;
-    height: 40px;
-    background: linear-gradient(135deg, #fee2e2, #fecaca);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #dc2626;
-  }
-
-  .quick-reject-content p {
-    margin: 0 0 20px 0;
-    font-size: 14px;
-    color: #6b7280;
-  }
-
-  .quick-reject-content textarea {
+  .ie-dialog textarea {
     width: 100%;
-    min-height: 120px;
-    padding: 14px;
-    border: 2px solid #e5e7eb;
-    border-radius: 12px;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
     font-size: 14px;
-    font-family: inherit;
-    margin-bottom: 20px;
     resize: vertical;
-    transition: all 0.2s;
+    min-height: 80px;
+    margin-bottom: 16px;
+    font-family: inherit;
   }
 
-  .quick-reject-content textarea:focus {
-    outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.1);
-  }
-
-  .quick-reject-content textarea::placeholder {
-    color: #9ca3af;
-  }
-
-  .quick-reject-actions {
+  /* History filter row */
+  .ie-filter-row {
     display: flex;
-    justify-content: flex-end;
     gap: 12px;
+    margin-bottom: 16px;
+    align-items: center;
   }
 
-  .dialog-btn {
-    padding: 12px 24px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s;
+  .ie-filter-select {
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 13px;
+    background: white;
   }
 
-  .dialog-btn.cancel {
-    background: #f3f4f6;
-    color: #374151;
+  /* Empty state */
+  .ie-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #94a3b8;
   }
 
-  .dialog-btn.cancel:hover {
-    background: #e5e7eb;
-  }
-
-  .dialog-btn.confirm {
-    background: linear-gradient(135deg, #dc2626, #b91c1c);
-    color: white;
-  }
-
-  .dialog-btn.confirm:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
-  }
-
-  .dialog-btn.confirm:disabled {
-    background: #fca5a5;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-  }
-
-  /* ==========================================================================
-     RESPONSIVE
-     ========================================================================== */
-
-  @media (max-width: 1024px) {
-    .filter-bar-row {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .search-input-wrapper {
-      min-width: 100%;
-    }
-
-    .filter-group {
-      flex-wrap: wrap;
-    }
-
-    .filter-divider {
-      display: none;
-    }
-
-    .action-buttons {
-      flex-direction: column;
-    }
+  .ie-empty svg {
+    margin-bottom: 12px;
+    opacity: 0.5;
   }
 
   @media (max-width: 768px) {
-    .approvals-main {
+    .ie-content {
       padding: 16px;
     }
-
-    .page-header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 12px;
+    .ie-form-row {
+      grid-template-columns: 1fr;
     }
-
-    .bulk-actions-bar {
-      width: calc(100% - 32px);
-      flex-wrap: wrap;
-      justify-content: center;
+    .ie-stats {
+      flex-direction: column;
     }
   }
 `;
-
-/* =============================================================================
-   HELPER FUNCTIONS
-   ============================================================================= */
-
-const isToday = (dateStr) => {
-  const date = new Date(dateStr);
-  const today = new Date();
-  return date.toDateString() === today.toDateString();
-};
-
-const isThisWeek = (dateStr) => {
-  const date = new Date(dateStr);
-  const today = new Date();
-  const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-  return date >= weekAgo && date <= today;
-};
-
-const isThisMonth = (dateStr) => {
-  const date = new Date(dateStr);
-  const today = new Date();
-  return date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear();
-};
-
-const getInitials = (name) => {
-  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-};
 
 /* =============================================================================
    COMPONENT
    ============================================================================= */
 
 const PendingApprovalsPage = () => {
-  // State
-  const [visits, setVisits] = useState(MOCK_PENDING_VISITS);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [regionFilter, setRegionFilter] = useState('All Regions');
-  const [dateFilter, setDateFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('newest');
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [selectedVisit, setSelectedVisit] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-  const [showQuickReject, setShowQuickReject] = useState(false);
-  const [rejectTarget, setRejectTarget] = useState(null);
-  const [rejectReason, setRejectReason] = useState('');
-
-  // Filter and sort visits
-  const filteredAndSortedVisits = useMemo(() => {
-    let result = [...visits];
-
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        (v) =>
-          v.employeeName.toLowerCase().includes(query) ||
-          v.doctorName.toLowerCase().includes(query)
-      );
-    }
-
-    // Region filter
-    if (regionFilter !== 'All Regions') {
-      result = result.filter((v) => v.region === regionFilter);
-    }
-
-    // Date filter
-    if (dateFilter === 'today') {
-      result = result.filter((v) => isToday(v.createdAt));
-    } else if (dateFilter === 'week') {
-      result = result.filter((v) => isThisWeek(v.createdAt));
-    } else if (dateFilter === 'month') {
-      result = result.filter((v) => isThisMonth(v.createdAt));
-    }
-
-    // Sort
-    result.sort((a, b) => {
-      const dateA = new Date(a.createdAt);
-      const dateB = new Date(b.createdAt);
-      return sortBy === 'newest' ? dateB - dateA : dateA - dateB;
-    });
-
-    return result;
-  }, [visits, searchQuery, regionFilter, dateFilter, sortBy]);
-
-  // Selection handlers
-  const handleSelectAll = () => {
-    if (selectedIds.length === filteredAndSortedVisits.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(filteredAndSortedVisits.map((v) => v.id));
-    }
-  };
-
-  const handleSelectOne = (id) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    );
-  };
-
-  // View details
-  const handleViewDetails = (visit) => {
-    setSelectedVisit(visit);
-    setShowModal(true);
-  };
-
-  const handleCloseModal = () => {
-    setShowModal(false);
-    setSelectedVisit(null);
-  };
-
-  // Approve single
-  const handleApprove = (visit) => {
-    console.log('✅ Approved:', visit.id);
-    setVisits((prev) => prev.filter((v) => v.id !== visit.id));
-    setSelectedIds((prev) => prev.filter((id) => id !== visit.id));
-  };
-
-  // Reject click
-  const handleRejectClick = (visit) => {
-    setRejectTarget(visit);
-    setShowQuickReject(true);
-  };
-
-  // Confirm reject
-  const handleConfirmReject = () => {
-    if (rejectTarget === 'bulk') {
-      console.log('❌ Bulk rejected:', selectedIds, 'Reason:', rejectReason);
-      setVisits((prev) => prev.filter((v) => !selectedIds.includes(v.id)));
-      setSelectedIds([]);
-    } else if (rejectTarget) {
-      console.log('❌ Rejected:', rejectTarget.id, 'Reason:', rejectReason);
-      setVisits((prev) => prev.filter((v) => v.id !== rejectTarget.id));
-      setSelectedIds((prev) => prev.filter((id) => id !== rejectTarget.id));
-    }
-    setShowQuickReject(false);
-    setRejectTarget(null);
-    setRejectReason('');
-  };
-
-  // Bulk actions
-  const handleBulkApprove = () => {
-    console.log('✅ Bulk approved:', selectedIds);
-    setVisits((prev) => prev.filter((v) => !selectedIds.includes(v.id)));
-    setSelectedIds([]);
-  };
-
-  const handleBulkReject = () => {
-    setRejectTarget('bulk');
-    setShowQuickReject(true);
-  };
-
-  const isAllSelected =
-    filteredAndSortedVisits.length > 0 && selectedIds.length === filteredAndSortedVisits.length;
+  const [activeTab, setActiveTab] = useState('import');
 
   return (
-    <div className="approvals-layout">
-      <style>{pageStyles}</style>
+    <>
       <Navbar />
-      <div className="approvals-content">
+      <div className="ie-page">
+        <style>{styles}</style>
         <Sidebar />
-        <main className="approvals-main">
-          {/* Page Header */}
-          <div className="page-header">
-            <div className="page-header-left">
-              <h1>
-                <div className="page-header-icon">
-                  <Clock size={24} />
-                </div>
-                Pending Approvals
-              </h1>
-            </div>
-            <span className="pending-count">
-              <span className="dot" />
-              {visits.length} Pending
-            </span>
+        <main className="ie-content">
+          <div className="ie-header">
+            <h1>Import / Export</h1>
+            <p>Upload CPT Excel files, export workbooks, and manage import history</p>
           </div>
 
-          {/* Filter Bar */}
-          <div className="filter-bar">
-            <div className="filter-bar-row">
-              {/* Search */}
-              <div className="search-input-wrapper">
-                <div className="search-input">
-                  <Search size={18} color="#9ca3af" />
-                  <input
-                    type="text"
-                    placeholder="Search by employee or doctor name..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-              </div>
+          <div className="ie-tabs">
+            <button
+              className={`ie-tab ${activeTab === 'import' ? 'active' : ''}`}
+              onClick={() => setActiveTab('import')}
+            >
+              <Upload size={16} /> Import
+            </button>
+            <button
+              className={`ie-tab ${activeTab === 'export' ? 'active' : ''}`}
+              onClick={() => setActiveTab('export')}
+            >
+              <Download size={16} /> Export
+            </button>
+            <button
+              className={`ie-tab ${activeTab === 'history' ? 'active' : ''}`}
+              onClick={() => setActiveTab('history')}
+            >
+              <History size={16} /> History
+            </button>
+          </div>
 
-              {/* Region Filter */}
-              <div className="filter-group">
-                <span className="filter-label">Region:</span>
-                <select
-                  className="filter-select"
-                  value={regionFilter}
-                  onChange={(e) => setRegionFilter(e.target.value)}
-                >
-                  {REGIONS.map((region) => (
-                    <option key={region} value={region}>{region}</option>
-                  ))}
-                </select>
-              </div>
+          {activeTab === 'import' && <ImportTab />}
+          {activeTab === 'export' && <ExportTab />}
+          {activeTab === 'history' && <HistoryTab />}
+        </main>
+      </div>
+    </>
+  );
+};
 
-              <div className="filter-divider" />
+/* =============================================================================
+   IMPORT TAB
+   ============================================================================= */
 
-              {/* Date Filter */}
-              <div className="filter-group">
-                <span className="filter-label">Date:</span>
-                <select
-                  className="filter-select"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                >
-                  {DATE_FILTERS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
+const ImportTab = () => {
+  const [employees, setEmployees] = useState([]);
+  const [regions, setRegions] = useState([]);
+  const [selectedBDM, setSelectedBDM] = useState('');
+  const [selectedRegion, setSelectedRegion] = useState('');
+  const [cycleNumber, setCycleNumber] = useState('');
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-              {/* Sort */}
-              <div className="filter-group">
-                <span className="filter-label">Sort:</span>
-                <select
-                  className="filter-select"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                >
-                  {SORT_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
+  // Preview state
+  const [batch, setBatch] = useState(null);
+  const [loadingBatch, setLoadingBatch] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [expandedRows, setExpandedRows] = useState(new Set());
+
+  // Load employees and regions
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [empRes, regRes] = await Promise.all([
+          userService.getEmployees(),
+          regionService.getAll(),
+        ]);
+        setEmployees(empRes.data || []);
+        setRegions(regRes.data || []);
+      } catch {
+        // Silently handle
+      }
+
+      // Default cycle number
+      const anchor = new Date(2026, 0, 5);
+      const diffMs = new Date().getTime() - anchor.getTime();
+      const diffDays = Math.floor(diffMs / 86400000);
+      setCycleNumber(String(Math.floor(diffDays / 28)));
+    };
+    load();
+  }, []);
+
+  const handleFileChange = (e) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      setFile(f);
+      setError('');
+    }
+  };
+
+  const handleUpload = async () => {
+    setError('');
+    setSuccess('');
+
+    if (!file) return setError('Please select an Excel file');
+    if (!selectedBDM) return setError('Please select a BDM');
+    if (!selectedRegion) return setError('Please select a region');
+    if (!cycleNumber) return setError('Please enter a cycle number');
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('assignedToBDM', selectedBDM);
+      formData.append('regionId', selectedRegion);
+      formData.append('cycleNumber', cycleNumber);
+
+      const result = await importService.upload(formData);
+      setSuccess(result.message);
+
+      // Load the full batch for preview
+      if (result.data?.batchId) {
+        setLoadingBatch(true);
+        const batchResult = await importService.getById(result.data.batchId);
+        setBatch(batchResult.data);
+        setLoadingBatch(false);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!batch) return;
+    setApproving(true);
+    setError('');
+    try {
+      const result = await importService.approve(batch._id);
+      setSuccess(result.message);
+      setBatch(null);
+      setFile(null);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Approval failed');
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!batch) return;
+    try {
+      await importService.reject(batch._id, rejectReason);
+      setSuccess('Batch rejected.');
+      setBatch(null);
+      setFile(null);
+      setShowRejectDialog(false);
+      setRejectReason('');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Rejection failed');
+    }
+  };
+
+  const toggleExpand = (idx) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const resetForm = () => {
+    setBatch(null);
+    setFile(null);
+    setSuccess('');
+    setError('');
+  };
+
+  return (
+    <>
+      {error && (
+        <div className="ie-alert ie-alert-error">
+          <AlertTriangle size={16} /> {error}
+          <button onClick={() => setError('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer' }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {success && (
+        <div className="ie-alert ie-alert-success">
+          <CheckCircle size={16} /> {success}
+        </div>
+      )}
+
+      {!batch ? (
+        <div className="ie-card">
+          <h2 className="ie-card-title"><Upload size={18} /> Upload CPT Excel</h2>
+
+          <div className="ie-form-row">
+            <div className="ie-field">
+              <label>BDM (Employee)</label>
+              <select value={selectedBDM} onChange={(e) => setSelectedBDM(e.target.value)}>
+                <option value="">Select BDM...</option>
+                {employees.map((emp) => (
+                  <option key={emp._id} value={emp._id}>{emp.name || `${emp.firstName} ${emp.lastName}`}</option>
+                ))}
+              </select>
+            </div>
+            <div className="ie-field">
+              <label>Region</label>
+              <select value={selectedRegion} onChange={(e) => setSelectedRegion(e.target.value)}>
+                <option value="">Select Region...</option>
+                {regions.map((r) => (
+                  <option key={r._id} value={r._id}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="ie-form-row">
+            <div className="ie-field">
+              <label>Cycle Number</label>
+              <input
+                type="number"
+                min="0"
+                value={cycleNumber}
+                onChange={(e) => setCycleNumber(e.target.value)}
+                placeholder="e.g., 2"
+              />
+            </div>
+            <div className="ie-field">
+              <label>&nbsp;</label>
+              <div style={{ fontSize: 12, color: '#94a3b8', paddingTop: 10 }}>
+                Cycle 0 = Jan 5–Feb 1, 2026. Each cycle = 28 days.
               </div>
             </div>
           </div>
 
-          {/* Table */}
-          <div className="table-container">
-            <div className="table-header">
-              <h3>
-                <Stethoscope size={18} />
-                Visit Requests
-                <span className="table-header-badge">{filteredAndSortedVisits.length} results</span>
-              </h3>
-            </div>
-
-            {filteredAndSortedVisits.length > 0 ? (
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={{ width: 50 }}>
-                        <button
-                          className={`checkbox-btn ${isAllSelected ? 'checked' : ''}`}
-                          onClick={handleSelectAll}
-                          title={isAllSelected ? 'Deselect all' : 'Select all'}
-                        >
-                          {isAllSelected ? <CheckSquare size={20} /> : <Square size={20} />}
-                        </button>
-                      </th>
-                      <th>Employee</th>
-                      <th>Doctor Visited</th>
-                      <th>Date & Time</th>
-                      <th>Region</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredAndSortedVisits.map((visit) => {
-                      const isSelected = selectedIds.includes(visit.id);
-                      return (
-                        <tr key={visit.id} className={isSelected ? 'selected' : ''}>
-                          <td>
-                            <button
-                              className={`checkbox-btn ${isSelected ? 'checked' : ''}`}
-                              onClick={() => handleSelectOne(visit.id)}
-                            >
-                              {isSelected ? <CheckSquare size={20} /> : <Square size={20} />}
-                            </button>
-                          </td>
-                          <td>
-                            <div className="employee-cell">
-                              <div className="employee-avatar">
-                                {getInitials(visit.employeeName)}
-                              </div>
-                              <div className="employee-info">
-                                <span className="employee-name">{visit.employeeName}</span>
-                                <span className="employee-id">{visit.employeeId}</span>
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <div className="doctor-cell">
-                              <div className="doctor-icon">
-                                <Stethoscope size={16} />
-                              </div>
-                              <span className="doctor-name">{visit.doctorName}</span>
-                            </div>
-                          </td>
-                          <td>
-                            <div className="date-cell">
-                              <span className="date-value">
-                                <Calendar size={14} color="#6b7280" />
-                                {visit.date}
-                              </span>
-                              <span className="time-value">
-                                <Clock size={12} />
-                                {visit.time}
-                              </span>
-                            </div>
-                          </td>
-                          <td>
-                            <span className="region-badge">
-                              <span className="dot" />
-                              {visit.region}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="action-buttons">
-                              <button
-                                className="action-btn view"
-                                onClick={() => handleViewDetails(visit)}
-                              >
-                                <Eye size={15} />
-                                View
-                              </button>
-                              <button
-                                className="action-btn approve"
-                                onClick={() => handleApprove(visit)}
-                              >
-                                <CheckCircle size={15} />
-                                Approve
-                              </button>
-                              <button
-                                className="action-btn reject"
-                                onClick={() => handleRejectClick(visit)}
-                              >
-                                <XCircle size={15} />
-                                Reject
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+          <div
+            className={`ie-file-input ${file ? 'has-file' : ''}`}
+            onClick={() => document.getElementById('cpt-file-input').click()}
+          >
+            <input
+              id="cpt-file-input"
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleFileChange}
+            />
+            <FileSpreadsheet size={32} className="ie-file-icon" />
+            {file ? (
+              <>
+                <div className="ie-file-name">{file.name}</div>
+                <div className="ie-file-text">{(file.size / 1024).toFixed(1)} KB</div>
+              </>
             ) : (
-              <div className="empty-state">
-                <div className="empty-state-icon">
-                  <CheckCircle size={40} />
-                </div>
-                <h3>All Caught Up!</h3>
-                <p>There are no pending visits matching your filters.</p>
-              </div>
+              <div className="ie-file-text">Click to select CPT Excel file (.xlsx)</div>
             )}
           </div>
 
-          {/* Bulk Actions Bar */}
-          {selectedIds.length > 0 && (
-            <div className="bulk-actions-bar">
-              <span className="selected-count">
-                <CheckSquare size={18} />
-                <span className="count-badge">{selectedIds.length}</span>
-                selected
-              </span>
-              <div className="divider" />
-              <button className="bulk-btn approve" onClick={handleBulkApprove}>
-                <CheckCircle size={16} />
-                Approve Selected
-              </button>
-              <button className="bulk-btn reject" onClick={handleBulkReject}>
-                <XCircle size={16} />
-                Reject Selected
-              </button>
-              <button className="bulk-btn clear" onClick={() => setSelectedIds([])}>
-                <X size={18} />
-              </button>
-            </div>
+          <div className="ie-btn-group">
+            <button
+              className="ie-btn ie-btn-primary"
+              onClick={handleUpload}
+              disabled={uploading || !file || !selectedBDM || !selectedRegion}
+            >
+              {uploading ? <><RefreshCw size={14} /> Parsing...</> : <><Upload size={14} /> Upload & Parse</>}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Preview */}
+          {loadingBatch ? (
+            <div className="ie-loading"><RefreshCw size={16} /> Loading preview...</div>
+          ) : (
+            <PreviewSection
+              batch={batch}
+              expandedRows={expandedRows}
+              toggleExpand={toggleExpand}
+              onApprove={handleApprove}
+              onReject={() => setShowRejectDialog(true)}
+              onReset={resetForm}
+              approving={approving}
+            />
           )}
-        </main>
-      </div>
+        </>
+      )}
 
-      {/* Visit Detail Modal */}
-      <VisitApproval
-        visit={selectedVisit}
-        isOpen={showModal}
-        onClose={handleCloseModal}
-        onApprove={handleApprove}
-        onReject={(visit, reason) => {
-          console.log('❌ Rejected from modal:', visit.id, 'Reason:', reason);
-          setVisits((prev) => prev.filter((v) => v.id !== visit.id));
-          setSelectedIds((prev) => prev.filter((id) => id !== visit.id));
-        }}
-      />
-
-      {/* Quick Reject Dialog */}
-      {showQuickReject && (
-        <div className="quick-reject-dialog">
-          <div className="quick-reject-content">
-            <h3>
-              <div className="icon">
-                <AlertTriangle size={20} />
-              </div>
-              {rejectTarget === 'bulk' ? `Reject ${selectedIds.length} Visits` : 'Reject Visit'}
-            </h3>
-            <p>Please provide a reason for rejecting this request. This will be sent to the employee.</p>
+      {/* Reject Dialog */}
+      {showRejectDialog && (
+        <div className="ie-dialog-overlay" onClick={() => setShowRejectDialog(false)}>
+          <div className="ie-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3>Reject Import Batch</h3>
+            <p style={{ fontSize: 14, color: '#64748b', marginBottom: 12 }}>
+              Provide a reason for rejecting this batch. No data will be written.
+            </p>
             <textarea
-              placeholder="Enter rejection reason..."
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
-              autoFocus
+              placeholder="Reason for rejection..."
             />
-            <div className="quick-reject-actions">
-              <button
-                className="dialog-btn cancel"
-                onClick={() => {
-                  setShowQuickReject(false);
-                  setRejectTarget(null);
-                  setRejectReason('');
-                }}
-              >
-                Cancel
+            <div className="ie-btn-group">
+              <button className="ie-btn ie-btn-danger" onClick={handleReject}>
+                <XCircle size={14} /> Reject
               </button>
-              <button
-                className="dialog-btn confirm"
-                onClick={handleConfirmReject}
-                disabled={!rejectReason.trim()}
-              >
-                Confirm Rejection
+              <button className="ie-btn ie-btn-outline" onClick={() => setShowRejectDialog(false)}>
+                Cancel
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </>
+  );
+};
+
+/* =============================================================================
+   PREVIEW SECTION
+   ============================================================================= */
+
+const PreviewSection = ({ batch, expandedRows, toggleExpand, onApprove, onReject, onReset, approving }) => {
+  const doctors = batch?.parsedDoctors || [];
+  const [confirmApprove, setConfirmApprove] = useState(false);
+
+  return (
+    <>
+      <div className="ie-card">
+        <h2 className="ie-card-title"><Eye size={18} /> Parsed Preview — {batch.fileName}</h2>
+
+        <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
+          BDM: <strong>{batch.assignedToBDM?.name || batch.assignedToBDM?.email}</strong>
+          {' | '}Region: <strong>{batch.regionId?.name}</strong>
+          {' | '}Cycle: <strong>{batch.cycleNumber}</strong>
+        </div>
+
+        <div className="ie-stats">
+          <div className="ie-stat ie-stat-total">
+            <FileSpreadsheet size={14} /> Total: {batch.doctorCount}
+          </div>
+          <div className="ie-stat ie-stat-new">
+            <CheckCircle size={14} /> New: {batch.newCount}
+          </div>
+          <div className="ie-stat ie-stat-update">
+            <AlertTriangle size={14} /> Update: {batch.updateCount}
+          </div>
+          {batch.invalidCount > 0 && (
+            <div className="ie-stat ie-stat-invalid">
+              <XCircle size={14} /> Invalid: {batch.invalidCount}
+            </div>
+          )}
+        </div>
+
+        <div className="ie-table-wrap">
+          <table className="ie-table">
+            <thead>
+              <tr>
+                <th style={{ width: 30 }}>#</th>
+                <th style={{ width: 70 }}>Status</th>
+                <th>Last Name</th>
+                <th>First Name</th>
+                <th>Specialty</th>
+                <th style={{ width: 50 }}>Freq</th>
+                <th style={{ width: 300 }}>Day Flags</th>
+                <th>Changes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {doctors.map((doc, idx) => {
+                const rowClass = doc.validationStatus === 'INVALID'
+                  ? 'row-invalid'
+                  : doc.isExisting
+                    ? 'row-update'
+                    : 'row-new';
+
+                return (
+                  <tr key={idx} className={rowClass}>
+                    <td>{doc.rowNumber}</td>
+                    <td>
+                      {doc.validationStatus === 'INVALID' ? (
+                        <span className="ie-badge ie-badge-invalid">INVALID</span>
+                      ) : doc.isExisting ? (
+                        <span className="ie-badge ie-badge-update">UPDATE</span>
+                      ) : (
+                        <span className="ie-badge ie-badge-new">NEW</span>
+                      )}
+                    </td>
+                    <td>{doc.lastName}</td>
+                    <td>{doc.firstName}</td>
+                    <td>{doc.specialization}</td>
+                    <td>{doc.visitFrequency}x</td>
+                    <td>
+                      <div className="ie-dayflags">
+                        {(doc.dayFlags || []).map((flag, di) => (
+                          <div key={di} className={`ie-dayflag ${flag ? 'on' : 'off'}`}>
+                            {flag ? '1' : ''}
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      {doc.isExisting && doc.changes?.length > 0 ? (
+                        <>
+                          <button className="ie-expand-btn" onClick={() => toggleExpand(idx)}>
+                            {expandedRows.has(idx) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            {doc.changes.length} change{doc.changes.length > 1 ? 's' : ''}
+                          </button>
+                          {expandedRows.has(idx) && (
+                            <ul className="ie-changes">
+                              {doc.changes.map((c, ci) => <li key={ci}>{c}</li>)}
+                            </ul>
+                          )}
+                        </>
+                      ) : doc.isExisting ? (
+                        <span style={{ fontSize: 12, color: '#94a3b8' }}>No field changes</span>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="ie-btn-group">
+          {!confirmApprove ? (
+            <button className="ie-btn ie-btn-success" onClick={() => setConfirmApprove(true)}>
+              <CheckCircle size={14} /> Approve & Import
+            </button>
+          ) : (
+            <button className="ie-btn ie-btn-success" onClick={onApprove} disabled={approving}>
+              {approving
+                ? <><RefreshCw size={14} /> Writing to database...</>
+                : <><CheckCircle size={14} /> Confirm — Write {batch.doctorCount} VIP Clients + Schedules</>}
+            </button>
+          )}
+          <button className="ie-btn ie-btn-danger" onClick={onReject}>
+            <XCircle size={14} /> Reject
+          </button>
+          <button className="ie-btn ie-btn-outline" onClick={onReset}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </>
+  );
+};
+
+/* =============================================================================
+   EXPORT TAB
+   ============================================================================= */
+
+const ExportTab = () => {
+  const [employees, setEmployees] = useState([]);
+  const [selectedBDM, setSelectedBDM] = useState('');
+  const [cycleNumber, setCycleNumber] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [previewStats, setPreviewStats] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const empRes = await userService.getEmployees();
+        setEmployees(empRes.data || []);
+      } catch {
+        // Silently handle
+      }
+
+      const anchor = new Date(2026, 0, 5);
+      const diffMs = new Date().getTime() - anchor.getTime();
+      const diffDays = Math.floor(diffMs / 86400000);
+      setCycleNumber(String(Math.floor(diffDays / 28)));
+    };
+    load();
+  }, []);
+
+  const handlePreview = async () => {
+    if (!selectedBDM || !cycleNumber) return;
+    setError('');
+    try {
+      const gridRes = await scheduleService.getCPTGrid(parseInt(cycleNumber, 10), selectedBDM);
+      const gridData = gridRes.data || gridRes;
+      const doctorCount = gridData.doctors?.length || 0;
+      const scheduledCount = gridData.doctors?.reduce(
+        (sum, d) => sum + (d.grid?.filter((c) => c.status !== null).length || 0), 0
+      ) || 0;
+      setPreviewStats({ doctorCount, scheduledCount });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load preview');
+    }
+  };
+
+  const handleExport = async () => {
+    if (!selectedBDM || !cycleNumber) return;
+    setExporting(true);
+    setError('');
+    try {
+      const cycle = parseInt(cycleNumber, 10);
+
+      // Fetch data in parallel
+      const [gridRes, doctorRes] = await Promise.all([
+        scheduleService.getCPTGrid(cycle, selectedBDM),
+        doctorService.getAll({ assignedTo: selectedBDM, limit: 300 }),
+      ]);
+
+      const gridData = gridRes.data || gridRes;
+      const doctors = doctorRes.data || [];
+      const bdm = employees.find((e) => e._id === selectedBDM);
+
+      // Calculate month/year from cycle start
+      const anchor = new Date(2026, 0, 5);
+      const cycleStart = new Date(anchor);
+      cycleStart.setDate(cycleStart.getDate() + cycle * 28);
+      const monthYear = `${String(cycleStart.getMonth() + 1).padStart(2, '0')}/${cycleStart.getFullYear()}`;
+
+      exportCPTWorkbook({
+        doctors,
+        cptGridData: gridData,
+        config: {
+          bdmName: bdm?.name || 'BDM',
+          territory: '',
+          monthYear,
+          cycleNumber: cycle,
+        },
+      });
+
+      setSuccess('CPT workbook downloaded successfully.');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <>
+      {error && (
+        <div className="ie-alert ie-alert-error">
+          <AlertTriangle size={16} /> {error}
+        </div>
+      )}
+      {success && (
+        <div className="ie-alert ie-alert-success">
+          <CheckCircle size={16} /> {success}
+        </div>
+      )}
+
+      <div className="ie-card">
+        <h2 className="ie-card-title"><Download size={18} /> Export CPT Workbook</h2>
+
+        <div className="ie-form-row">
+          <div className="ie-field">
+            <label>BDM (Employee)</label>
+            <select value={selectedBDM} onChange={(e) => { setSelectedBDM(e.target.value); setPreviewStats(null); }}>
+              <option value="">Select BDM...</option>
+              {employees.map((emp) => (
+                <option key={emp._id} value={emp._id}>{emp.name || `${emp.firstName} ${emp.lastName}`}</option>
+              ))}
+            </select>
+          </div>
+          <div className="ie-field">
+            <label>Cycle Number</label>
+            <input
+              type="number"
+              min="0"
+              value={cycleNumber}
+              onChange={(e) => { setCycleNumber(e.target.value); setPreviewStats(null); }}
+              placeholder="e.g., 2"
+            />
+          </div>
+        </div>
+
+        {previewStats && (
+          <div className="ie-stats">
+            <div className="ie-stat ie-stat-total">
+              <Users size={14} /> {previewStats.doctorCount} VIP Clients
+            </div>
+            <div className="ie-stat ie-stat-new">
+              <FileSpreadsheet size={14} /> {previewStats.scheduledCount} schedule entries
+            </div>
+          </div>
+        )}
+
+        <div className="ie-btn-group">
+          <button
+            className="ie-btn ie-btn-outline"
+            onClick={handlePreview}
+            disabled={!selectedBDM || !cycleNumber}
+          >
+            <Eye size={14} /> Preview Stats
+          </button>
+          <button
+            className="ie-btn ie-btn-primary"
+            onClick={handleExport}
+            disabled={exporting || !selectedBDM || !cycleNumber}
+          >
+            {exporting ? <><RefreshCw size={14} /> Generating...</> : <><Download size={14} /> Download CPT Workbook</>}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+};
+
+/* =============================================================================
+   HISTORY TAB
+   ============================================================================= */
+
+const HistoryTab = () => {
+  const [batches, setBatches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [selectedBatch, setSelectedBatch] = useState(null);
+  const [showDetail, setShowDetail] = useState(false);
+
+  const loadBatches = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = {};
+      if (statusFilter) params.status = statusFilter;
+      const result = await importService.list(params);
+      setBatches(result.data || []);
+    } catch {
+      // Silently handle
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter]);
+
+  useEffect(() => {
+    loadBatches();
+  }, [loadBatches]);
+
+  const handleViewDetail = async (batch) => {
+    try {
+      const result = await importService.getById(batch._id);
+      setSelectedBatch(result.data);
+      setShowDetail(true);
+    } catch {
+      // Silently handle
+    }
+  };
+
+  const handleDelete = async (batchId) => {
+    if (!confirm('Delete this import batch?')) return;
+    try {
+      await importService.deleteBatch(batchId);
+      loadBatches();
+    } catch {
+      // Silently handle
+    }
+  };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    return new Date(dateStr).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  return (
+    <>
+      <div className="ie-card">
+        <h2 className="ie-card-title"><History size={18} /> Import History</h2>
+
+        <div className="ie-filter-row">
+          <select
+            className="ie-filter-select"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+          <button className="ie-btn ie-btn-outline" onClick={loadBatches} style={{ padding: '8px 12px' }}>
+            <RefreshCw size={14} />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="ie-loading"><RefreshCw size={16} /> Loading...</div>
+        ) : batches.length === 0 ? (
+          <div className="ie-empty">
+            <FileSpreadsheet size={40} />
+            <p>No import batches found</p>
+          </div>
+        ) : (
+          <div className="ie-table-wrap">
+            <table className="ie-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>File</th>
+                  <th>BDM</th>
+                  <th>Region</th>
+                  <th>Cycle</th>
+                  <th>Status</th>
+                  <th>Doctors</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batches.map((batch) => (
+                  <tr key={batch._id}>
+                    <td>{formatDate(batch.createdAt)}</td>
+                    <td style={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {batch.fileName}
+                    </td>
+                    <td>{batch.assignedToBDM?.name || batch.assignedToBDM?.email || '—'}</td>
+                    <td>{batch.regionId?.name || '—'}</td>
+                    <td>{batch.cycleNumber}</td>
+                    <td>
+                      <span className={`ie-badge ie-badge-${batch.status}`}>
+                        {batch.status === 'pending' && <Clock size={10} />}
+                        {batch.status === 'approved' && <CheckCircle size={10} />}
+                        {batch.status === 'rejected' && <XCircle size={10} />}
+                        {batch.status}
+                      </span>
+                    </td>
+                    <td>
+                      {batch.doctorCount}
+                      <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 4 }}>
+                        ({batch.newCount}N/{batch.updateCount}U)
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          className="ie-btn ie-btn-outline"
+                          style={{ padding: '6px 10px', fontSize: 12 }}
+                          onClick={() => handleViewDetail(batch)}
+                        >
+                          <Eye size={12} />
+                        </button>
+                        {batch.status === 'pending' && (
+                          <button
+                            className="ie-btn ie-btn-outline"
+                            style={{ padding: '6px 10px', fontSize: 12, color: '#ef4444' }}
+                            onClick={() => handleDelete(batch._id)}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {showDetail && selectedBatch && (
+        <BatchDetailModal
+          batch={selectedBatch}
+          onClose={() => { setShowDetail(false); setSelectedBatch(null); }}
+          onApproved={() => { setShowDetail(false); setSelectedBatch(null); loadBatches(); }}
+        />
+      )}
+    </>
   );
 };
 

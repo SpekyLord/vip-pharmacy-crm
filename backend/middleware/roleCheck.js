@@ -192,16 +192,15 @@ const isAssignedToDoctor = async (req, res, next) => {
       });
     }
 
-    // Check if doctor is in user's assigned regions
-    const hasRegionAccess = req.user.assignedRegions?.some(
-      (r) => r.toString() === doctor.region.toString()
-    );
-
-    if (!hasRegionAccess && req.user.role === 'employee') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. This doctor is not in your assigned region.',
-      });
+    // Check if doctor is assigned to this BDM
+    if (req.user.role === 'employee') {
+      const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
+      if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. This VIP Client is not assigned to you.',
+        });
+      }
     }
 
     // Attach doctor to request for later use
