@@ -47,6 +47,15 @@ const scheduleService = {
     const response = await api.delete('/schedules/admin/cycle', { params });
     return response.data;
   },
+
+  getCPTGrid: async (cycleNumber, userId) => {
+    const params = {};
+    if (cycleNumber != null) params.cycleNumber = cycleNumber;
+    if (userId) params.userId = userId;
+    const response = await api.get('/schedules/cpt-grid', { params });
+    return response.data;
+  },
+
 };
 
 export default scheduleService;

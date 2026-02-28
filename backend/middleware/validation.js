@@ -33,6 +33,8 @@ const validate = (req, res, next) => {
 /**
  * Common validation rules
  */
+const VALID_ENGAGEMENT_TYPES = ['TXT_PROMATS', 'MES_VIBER_GIF', 'PICTURE', 'SIGNED_CALL', 'VOICE_CALL'];
+
 const isValidObjectId = (value) => {
   if (!mongoose.Types.ObjectId.isValid(value)) {
     throw new Error('Invalid ID format');
@@ -383,6 +385,14 @@ const createVisitValidation = [
   body('productsDiscussed.*.product')
     .optional()
     .custom(isValidObjectId),
+  body('engagementTypes')
+    .optional()
+    .isArray()
+    .withMessage('Engagement types must be an array'),
+  body('engagementTypes.*')
+    .optional()
+    .isIn(VALID_ENGAGEMENT_TYPES)
+    .withMessage('Invalid engagement type'),
   validate,
 ];
 
@@ -581,6 +591,14 @@ const createClientVisitValidation = [
     .optional()
     .isLength({ max: 1000 })
     .withMessage('Notes cannot exceed 1000 characters'),
+  body('engagementTypes')
+    .optional()
+    .isArray()
+    .withMessage('Engagement types must be an array'),
+  body('engagementTypes.*')
+    .optional()
+    .isIn(VALID_ENGAGEMENT_TYPES)
+    .withMessage('Invalid engagement type'),
   validate,
 ];
 

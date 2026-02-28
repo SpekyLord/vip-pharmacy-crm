@@ -1,7 +1,7 @@
 # VIP CRM - Phase Task Breakdown
 
 > **Last Updated**: February 2026
-> **Status**: Phase 1-4 Complete. Phase 5 next (C.2, C.3+D.3, B.5b).
+> **Status**: Phase 1-4 Complete. Phase 5 in progress — C.2 ✅ done, next: C.3+D.3, B.5b.
 > **Reference**: See `docs/CHANGE_LOG.md` for full details on all 17 client-requested changes.
 > **Note**: Phases were reorganized from theme-based (A/B/C/D) to dependency-driven order (2-6). Task IDs (A.1, B.6, etc.) preserved for CHANGE_LOG traceability.
 
@@ -586,13 +586,28 @@ through schedule entries, not raw visit counts.
 
 ---
 
-### Task C.2: Call Planning Tool / CPT View (CHANGE_LOG Change 7)
+### Task C.2: Call Planning Tool / CPT View (CHANGE_LOG Change 7) ✅ COMPLETE (February 2026)
 **Priority**: HIGH
 **Depends on**: C.1 (Schedule model), B.6 (Regular Clients for Extra Call section)
 **Schema Reference**: See `docs/EXCEL_SCHEMA_DOCUMENTATION.md` for exact CPT sheet structure (columns A-AM), DCR day sheet layout, and engagement type columns.
 **Files**:
-- NEW: `frontend/src/components/employee/CallPlanView.jsx`
-- Enhance: `pages/admin/ReportsPage.jsx`
+- NEW: `frontend/src/components/employee/CallPlanView.jsx` — Main CPT grid component (doctor rows × 20 day columns)
+- NEW: `frontend/src/components/employee/DCRSummaryTable.jsx` — DCR Summary with Call Rate + engagement breakdown
+- NEW: `frontend/src/components/employee/EngagementTypeSelector.jsx` — 5 toggle chips for engagement types
+- NEW: `frontend/src/pages/employee/CallPlanPage.jsx` — Page with cycle nav + mode toggle
+- MODIFIED: `backend/models/Visit.js` — Added `engagementTypes` enum array field
+- MODIFIED: `backend/models/ClientVisit.js` — Added `engagementTypes` + `weekOfMonth` computed field
+- MODIFIED: `backend/middleware/validation.js` — Engagement type validation rules
+- MODIFIED: `backend/controllers/scheduleController.js` — `getCPTGrid` + `toggleScheduleCell` endpoints
+- MODIFIED: `backend/routes/scheduleRoutes.js` — 2 new routes (`/cpt-grid`, `/toggle`)
+- MODIFIED: `backend/controllers/visitController.js` — Parse `engagementTypes` in createVisit
+- MODIFIED: `backend/controllers/clientController.js` — Parse `engagementTypes` in createClientVisit
+- MODIFIED: `frontend/src/components/employee/VisitLogger.jsx` — EngagementTypeSelector integration
+- MODIFIED: `frontend/src/pages/employee/NewClientVisitPage.jsx` — EngagementTypeSelector integration
+- MODIFIED: `frontend/src/services/scheduleService.js` — `getCPTGrid` + `toggleCell` methods
+- MODIFIED: `frontend/src/components/common/Sidebar.jsx` — Added "Call Plan" nav link
+- MODIFIED: `frontend/src/App.jsx` — Added `/employee/cpt` route
+- MODIFIED: `frontend/src/pages/admin/ReportsPage.jsx` — Added CPT View section (read-only, BDM selector)
 
 **CPT Grid**:
 - Rows = VIP Clients (alphabetical by lastName)
@@ -633,13 +648,13 @@ through schedule entries, not raw visit counts.
 **Extra Call Section**: Bottom of each daily sheet for non-VIP visits (from B.6). Own engagement type tracking but does NOT count toward Call Rate.
 
 **Deliverables**:
-- [ ] Editable 20-day grid (planning mode)
-- [ ] Auto-distribution algorithm
-- [ ] Read-only grid (actual mode)
-- [ ] DCR Summary table with Call Rate per day + overall
-- [ ] Engagement type tracking per visit
-- [ ] Daily MD count (VIP vs Extra Call split)
-- [ ] Extra Call section for non-VIP visits
+- [x] Read-only 20-day grid (editing done via Excel → Admin upload)
+- [x] Auto-distribution algorithm (via admin schedule generation)
+- [x] DCR Summary table with Call Rate per day + overall
+- [x] Engagement type tracking per visit
+- [x] Daily MD count (VIP vs Extra Call split)
+- [x] Extra Call section for non-VIP visits
+- [x] Admin CPT View on ReportsPage (read-only, BDM selector)
 
 ---
 
@@ -792,7 +807,7 @@ through schedule entries, not raw visit counts.
 
 | Task | Change # | Depends On | Notes |
 |------|----------|------------|-------|
-| C.2: CPT View + DCR Summary | 7 | C.1, B.6 | Core reporting feature |
+| C.2: CPT View + DCR Summary | 7 | C.1, B.6 | ✅ COMPLETE |
 | C.3+D.3: Excel Import + Approvals UI | 8+13 | C.1 | **Combined** — same feature |
 | B.5b: BDM Performance (DCR part) | 14 | C.2 | Extends B.5a from Phase 3 |
 
@@ -896,7 +911,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 
 ## Independent Tasks (can start anytime after A.1 ✅)
 - B.3 (Photo upload flexibility) ✅
-- B.6 (Regular clients) — **prioritize early, unblocks C.2**
+- B.6 (Regular clients) ✅ — unblocked C.2 ✅
 - B.7 (Filter by support/program)
 - B.4 (Engagement tracking display)
 - B.5a (BDM performance basic stats)
@@ -911,17 +926,17 @@ C.2 ───→ B.5b (BDM Performance DCR part)
  3. B.3  — Photo Upload Flexibility ✅
  4. B.6  — Regular Clients ✅
  5. C.1+A.2 — Schedule System + Alternating Weeks ✅
- 6. B.1  — VIP Client Info Page (needs A.4)
- 7. B.2  — Product Detail Popup (needs A.3)
- 8. B.4  — Engagement Tracking Display
- 9. B.5a — BDM Performance (basic stats)
-10. B.7  — Filter by Support/Program
-11. C.4  — VIP Count Minimums
-12. C.2  — CPT View + DCR Summary (needs C.1 + B.6)
+ 6. B.1  — VIP Client Info Page (needs A.4) ✅
+ 7. B.2  — Product Detail Popup (needs A.3) ✅
+ 8. B.4  — Engagement Tracking Display ✅
+ 9. B.5a — BDM Performance (basic stats) ✅
+10. B.7  — Filter by Support/Program ✅
+11. C.4  — VIP Count Minimums (skipped)
+12. C.2  — CPT View + DCR Summary (needs C.1 + B.6) ✅
 13. C.3+D.3 — Excel Import + Approvals UI (needs C.1)
-14. D.1  — Admin Per-BDM DCR Summary (needs C.2)
-15. D.2  — Wire Up Scaffolded Pages (needs C.2)
-16. B.5b — BDM Performance DCR part (needs C.2)
+14. D.1  — Admin Per-BDM DCR Summary (needs C.2 ✅)
+15. D.2  — Wire Up Scaffolded Pages (needs C.2 ✅)
+16. B.5b — BDM Performance DCR part (needs C.2 ✅)
 17. D.4  — Email Notifications
 18. D.5  — AWS Lightsail Deployment
 19. D.6  — Offline Capability (deferred)
@@ -937,7 +952,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 | **Phase 2: Role & Permissions** | 3 tasks (A.1 ✅, A.3 ✅, A.4 ✅) | Remove MedRep, BDM self-edit | ✅ COMPLETE |
 | **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4 ✅, B.5a ✅, C.4 ⏭) | Photos, regular clients, filters, engagement, stats | ✅ Complete (5 done + 1 skipped) |
 | **Phase 4: Schedule System** | 3 tasks (C.1+A.2 ✅, B.1 ✅, B.2 ✅) | 4-week calendar, alternating weeks, info page, product popup | ✅ COMPLETE |
-| **Phase 5: CPT & Excel** | 3 tasks (C.2, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | ⬜ Not started |
+| **Phase 5: CPT & Excel** | 3 tasks (C.2 ✅, C.3+D.3, B.5b) | CPT grid, DCR Summary, Excel import/export | 🔶 In progress (1/3 done) |
 | **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |
 
 ---

@@ -13,6 +13,7 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import CameraCapture from './CameraCapture';
 import ProductDetailModal from './ProductDetailModal';
+import EngagementTypeSelector from './EngagementTypeSelector';
 import visitService from '../../services/visitService';
 import doctorService from '../../services/doctorService';
 
@@ -245,6 +246,7 @@ const VisitLogger = ({ doctor, onSuccess }) => {
     visitType: 'regular',
     purpose: '',
     productsDiscussed: [],
+    engagementTypes: [],
     doctorFeedback: '',
     notes: '',
     nextVisitDate: '',
@@ -352,6 +354,11 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           presented: true,
         }));
         submitData.append('productsDiscussed', JSON.stringify(productsData));
+      }
+
+      // Add engagement types
+      if (formData.engagementTypes.length > 0) {
+        submitData.append('engagementTypes', JSON.stringify(formData.engagementTypes));
       }
 
       // Add next visit date if set
@@ -494,6 +501,18 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           currentIndex={detailIndex}
         />
       )}
+
+      {/* Engagement Types */}
+      <div className="form-section">
+        <h3>Engagement Type</h3>
+        <p style={{ color: '#6b7280', fontSize: '13px', margin: '0 0 12px 0' }}>
+          Select all engagement types used during this visit
+        </p>
+        <EngagementTypeSelector
+          selected={formData.engagementTypes}
+          onChange={(types) => setFormData((prev) => ({ ...prev, engagementTypes: types }))}
+        />
+      </div>
 
       {/* Feedback & Notes */}
       <div className="form-section">

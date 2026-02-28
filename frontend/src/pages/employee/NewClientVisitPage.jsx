@@ -11,6 +11,7 @@ import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import CameraCapture from '../../components/employee/CameraCapture';
+import EngagementTypeSelector from '../../components/employee/EngagementTypeSelector';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import clientService from '../../services/clientService';
 import toast from 'react-hot-toast';
@@ -231,6 +232,7 @@ const NewClientVisitPage = () => {
   const [photos, setPhotos] = useState([]);
   const [purpose, setPurpose] = useState('');
   const [notes, setNotes] = useState('');
+  const [engagementTypes, setEngagementTypes] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -296,6 +298,9 @@ const NewClientVisitPage = () => {
       submitData.append('client', clientId);
       submitData.append('purpose', purpose);
       submitData.append('notes', notes);
+      if (engagementTypes.length > 0) {
+        submitData.append('engagementTypes', JSON.stringify(engagementTypes));
+      }
 
       // Add location as JSON string
       submitData.append(
@@ -409,6 +414,15 @@ const NewClientVisitPage = () => {
                     onChange={(e) => setPurpose(e.target.value)}
                     placeholder="Purpose of this visit"
                     maxLength={500}
+                  />
+                </div>
+
+                {/* Engagement Types */}
+                <div className="form-section">
+                  <h3>Engagement Type</h3>
+                  <EngagementTypeSelector
+                    selected={engagementTypes}
+                    onChange={setEngagementTypes}
                   />
                 </div>
 

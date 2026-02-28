@@ -12,6 +12,7 @@
  */
 
 const mongoose = require('mongoose');
+const { getWeekOfMonth } = require('../utils/scheduleCycleUtils');
 
 const clientVisitSchema = new mongoose.Schema(
   {
@@ -68,6 +69,12 @@ const clientVisitSchema = new mongoose.Schema(
         message: 'Visits must have 1-10 photos as proof of visit',
       },
     },
+    // Engagement types (maps to Excel CPT day sheet columns G-K)
+    engagementTypes: {
+      type: [String],
+      enum: ['TXT_PROMATS', 'MES_VIBER_GIF', 'PICTURE', 'SIGNED_CALL', 'VOICE_CALL'],
+      default: [],
+    },
     purpose: {
       type: String,
       maxlength: [500, 'Purpose cannot exceed 500 characters'],
@@ -81,7 +88,7 @@ const clientVisitSchema = new mongoose.Schema(
       enum: ['completed', 'cancelled'],
       default: 'completed',
     },
-    // Auto-computed for future CPT reporting
+    // Auto-computed for CPT reporting
     monthYear: {
       type: String, // "2026-02"
     },
@@ -89,6 +96,11 @@ const clientVisitSchema = new mongoose.Schema(
       type: Number, // 1-5 (Mon-Fri)
       min: 1,
       max: 5,
+    },
+    weekOfMonth: {
+      type: Number, // 1-4 (cycle-based week)
+      min: 1,
+      max: 4,
     },
   },
   {
@@ -116,6 +128,9 @@ clientVisitSchema.pre('save', function (next) {
 
     // Compute dayOfWeek (1=Mon, 5=Fri)
     this.dayOfWeek = jsDay;
+
+    // Compute weekOfMonth (1-4, cycle-based)
+    this.weekOfMonth = getWeekOfMonth(date);
 
     // Compute monthYear
     const year = date.getFullYear();

@@ -20,7 +20,7 @@
  * Route: /admin/reports
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   FileText,
   Calendar,
@@ -57,6 +57,10 @@ import Sidebar from '../../components/common/Sidebar';
 import ReportGenerator from '../../components/admin/ReportGenerator';
 import VisitLocationMap from '../../components/admin/VisitLocationMap';
 import EmployeeAnalytics from '../../components/admin/EmployeeAnalytics';
+import CallPlanView from '../../components/employee/CallPlanView';
+import userService from '../../services/userService';
+import scheduleService from '../../services/scheduleService';
+import toast from 'react-hot-toast';
 
 /* =============================================================================
    MOCK DATA
@@ -1182,6 +1186,56 @@ const ReportsPage = () => {
     }
   };
 
+  // CPT View State
+  const [cptSectionExpanded, setCptSectionExpanded] = useState(true);
+  const [cptBdmId, setCptBdmId] = useState('');
+  const [cptCycleNumber, setCptCycleNumber] = useState(null);
+  const [cptData, setCptData] = useState(null);
+  const [cptLoading, setCptLoading] = useState(false);
+  const [realBdms, setRealBdms] = useState([]);
+
+  // Fetch real BDMs for CPT View
+  useEffect(() => {
+    const fetchBdms = async () => {
+      try {
+        const response = await userService.getEmployees({ limit: 0 });
+        setRealBdms(response.data || []);
+      } catch (err) {
+        console.error('Failed to fetch employees:', err);
+      }
+    };
+    fetchBdms();
+  }, []);
+
+  // Fetch CPT grid data when BDM selected
+  const fetchCPTData = useCallback(async (bdmId, cycle) => {
+    if (!bdmId) return;
+    try {
+      setCptLoading(true);
+      const response = await scheduleService.getCPTGrid(cycle, bdmId);
+      setCptData(response.data);
+      if (cycle == null && response.data?.cycleNumber != null) {
+        setCptCycleNumber(response.data.cycleNumber);
+      }
+    } catch (err) {
+      console.error('Failed to fetch CPT grid:', err);
+      toast.error(err.response?.data?.message || 'Failed to load CPT data');
+      setCptData(null);
+    } finally {
+      setCptLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (cptBdmId) {
+      fetchCPTData(cptBdmId, cptCycleNumber);
+    }
+  }, [cptBdmId, cptCycleNumber, fetchCPTData]);
+
+  const handleCptCycleChange = (delta) => {
+    setCptCycleNumber((prev) => (prev != null ? prev + delta : delta));
+  };
+
   // BDM Visit Report handlers
   const handleGenerateReport = () => {
     if (!selectedBdm) {
@@ -1453,6 +1507,92 @@ const ReportsPage = () => {
               allEmployees={MOCK_BDMS}
             />
           )}
+
+          {/* CPT View Section */}
+          <div className="bdm-report-section" style={{ marginTop: '24px' }}>
+            <div
+              className="bdm-report-header"
+              onClick={() => setCptSectionExpanded(!cptSectionExpanded)}
+            >
+              <div className="bdm-report-header-left">
+                <div className="bdm-report-header-icon" style={{ background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)' }}>
+                  <Calendar size={22} />
+                </div>
+                <div>
+                  <h3>Call Plan (CPT) View</h3>
+                  <p>View BDM call plans with DCR summary and engagement tracking</p>
+                </div>
+              </div>
+              <div className="bdm-report-toggle">
+                {cptSectionExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+              </div>
+            </div>
+
+            {cptSectionExpanded && (
+              <div className="bdm-report-content">
+                {/* Controls */}
+                <div className="bdm-report-controls">
+                  <div className="bdm-control-group">
+                    <label>BDM / Employee</label>
+                    <select
+                      className="bdm-select"
+                      value={cptBdmId}
+                      onChange={(e) => {
+                        setCptBdmId(e.target.value);
+                        setCptData(null);
+                        setCptCycleNumber(null);
+                      }}
+                    >
+                      <option value="">Select Employee</option>
+                      {realBdms.map((bdm) => (
+                        <option key={bdm._id} value={bdm._id}>
+                          {bdm.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {cptBdmId && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'white', padding: '6px 12px', borderRadius: '10px', border: '1px solid #e5e7eb' }}>
+                      <button
+                        className="bdm-btn-generate"
+                        style={{ padding: '6px 10px', minWidth: 'auto' }}
+                        onClick={() => handleCptCycleChange(-1)}
+                      >
+                        &#8249;
+                      </button>
+                      <span style={{ fontSize: '14px', fontWeight: 600, minWidth: '80px', textAlign: 'center' }}>
+                        Cycle {cptData?.cycleNumber ?? cptCycleNumber ?? '...'}
+                      </span>
+                      <button
+                        className="bdm-btn-generate"
+                        style={{ padding: '6px 10px', minWidth: 'auto' }}
+                        onClick={() => handleCptCycleChange(1)}
+                      >
+                        &#8250;
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* CPT Grid */}
+                {!cptBdmId ? (
+                  <div className="bdm-empty-state">
+                    <div className="bdm-empty-icon">
+                      <Calendar size={28} />
+                    </div>
+                    <h3>No BDM Selected</h3>
+                    <p>Select an employee to view their Call Plan</p>
+                  </div>
+                ) : (
+                  <CallPlanView
+                    cptData={cptData}
+                    loading={cptLoading}
+                  />
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Tabs Container */}
           <div className="tabs-container">

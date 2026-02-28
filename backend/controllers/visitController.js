@@ -28,6 +28,7 @@ const createVisit = catchAsync(async (req, res) => {
     visitType,
     location,
     productsDiscussed,
+    engagementTypes,
     purpose,
     doctorFeedback,
     notes,
@@ -55,6 +56,16 @@ const createVisit = catchAsync(async (req, res) => {
       productsData = JSON.parse(productsDiscussed);
     } catch (e) {
       productsData = [];
+    }
+  }
+
+  // Parse engagementTypes if it's a JSON string (from FormData)
+  let engagementData = engagementTypes;
+  if (typeof engagementTypes === 'string') {
+    try {
+      engagementData = JSON.parse(engagementTypes);
+    } catch (e) {
+      engagementData = [];
     }
   }
 
@@ -107,6 +118,7 @@ const createVisit = catchAsync(async (req, res) => {
       },
       photos,
       productsDiscussed: productsData,
+      engagementTypes: engagementData || [],
       purpose,
       doctorFeedback,
       notes,
@@ -805,7 +817,7 @@ const getEmployeeReport = catchAsync(async (req, res) => {
     monthYear: monthYear,
     status: 'completed',
   })
-    .select('doctor visitDate weekOfMonth dayOfWeek productsDiscussed')
+    .select('doctor visitDate weekOfMonth dayOfWeek productsDiscussed engagementTypes')
     .lean();
 
   // Create a map of doctor visits: doctorId -> array of visits

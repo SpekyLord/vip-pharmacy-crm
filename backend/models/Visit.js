@@ -119,6 +119,13 @@ const visitSchema = new mongoose.Schema(
       },
     ],
 
+    // Engagement types (maps to Excel CPT day sheet columns G-K)
+    engagementTypes: {
+      type: [String],
+      enum: ['TXT_PROMATS', 'MES_VIBER_GIF', 'PICTURE', 'SIGNED_CALL', 'VOICE_CALL'],
+      default: [],
+    },
+
     // Visit details
     purpose: {
       type: String,

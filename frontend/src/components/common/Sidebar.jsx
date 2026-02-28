@@ -22,6 +22,7 @@ import {
   FileText,
   Inbox,
   Calendar,
+  CalendarRange,
   Stethoscope,
   ChevronLeft,
   ChevronRight,
@@ -373,6 +374,7 @@ const getMenuConfig = (role) => {
             title: 'Work',
             items: [
               { path: '/employee/schedule', label: 'Schedule', icon: Calendar },
+              { path: '/employee/cpt', label: 'Call Plan', icon: CalendarRange },
               { path: '/employee/inbox', label: 'Mail', icon: Inbox, badge: 2 },
               { path: '/employee/visits', label: 'My Visits', icon: ClipboardCheck },
               { path: '/employee/performance', label: 'Performance', icon: BarChart3 },

@@ -27,6 +27,7 @@ const {
   adminGetCycle,
   adminCreate,
   adminClearCycle,
+  getCPTGrid,
 } = require('../controllers/scheduleController');
 
 // All routes require authentication
@@ -35,6 +36,7 @@ router.use(protect);
 // BDM + Admin routes
 router.get('/cycle', adminOrEmployee, getCycle);
 router.get('/today', adminOrEmployee, getToday);
+router.get('/cpt-grid', adminOrEmployee, getCPTGrid);
 
 // Admin-only routes
 router.post('/generate', adminOnly, generateSchedule);

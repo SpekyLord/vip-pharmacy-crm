@@ -13,6 +13,7 @@ const Schedule = require('../models/Schedule');
 const Doctor = require('../models/Doctor');
 const Region = require('../models/Region');
 const Visit = require('../models/Visit');
+const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { getCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getDayOfWeek } = require('../utils/scheduleCycleUtils');
 
@@ -535,6 +536,251 @@ const adminClearCycle = catchAsync(async (req, res) => {
   });
 });
 
+// ─── CPT Grid ────────────────────────────────────────────────────────────────
+
+/**
+ * @desc    Get CPT grid data (doctor-row × day-column) with DCR summary
+ * @route   GET /api/schedules/cpt-grid
+ * @access  Private (Employee, Admin)
+ * @query   cycleNumber (optional), userId (optional, admin only)
+ */
+const getCPTGrid = catchAsync(async (req, res) => {
+  const userId = req.query.userId && req.user.role === 'admin'
+    ? req.query.userId
+    : req.user._id;
+
+  const now = new Date();
+  const requestedCycle = req.query.cycleNumber != null
+    ? parseInt(req.query.cycleNumber)
+    : getCycleNumber(now);
+
+  const cycleStart = getCycleStartDate(requestedCycle);
+  const cycleEnd = getCycleEndDate(requestedCycle);
+  const currentCycle = getCycleNumber(now);
+  const currentWeek = currentCycle === requestedCycle ? getWeekOfMonth(now) : null;
+  const currentDay = currentCycle === requestedCycle ? getDayOfWeek(now) : null;
+
+  // Fetch schedule entries (try loop if empty)
+  let entries = await Schedule.find({ user: userId, cycleNumber: requestedCycle })
+    .populate('doctor', 'firstName lastName specialization visitFrequency')
+    .lean();
+
+  if (entries.length === 0) {
+    const looped = await loopScheduleFromPrevious(userId, requestedCycle);
+    if (looped.length > 0) {
+      entries = await Schedule.find({ user: userId, cycleNumber: requestedCycle })
+        .populate('doctor', 'firstName lastName specialization visitFrequency')
+        .lean();
+    }
+  }
+
+  // Reconcile
+  if (entries.length > 0) {
+    const unresolved = entries.filter((e) => e.status === 'planned' || e.status === 'carried');
+    if (unresolved.length > 0) {
+      const changed = await reconcileEntries(userId, requestedCycle, unresolved);
+      if (changed) {
+        entries = await Schedule.find({ user: userId, cycleNumber: requestedCycle })
+          .populate('doctor', 'firstName lastName specialization visitFrequency')
+          .lean();
+      }
+    }
+  }
+
+  // Fetch VIP visits in cycle range with engagement types
+  const vipVisits = await Visit.find({
+    user: userId,
+    visitDate: { $gte: cycleStart, $lte: cycleEnd },
+    status: 'completed',
+  }).select('doctor visitDate weekOfMonth dayOfWeek engagementTypes').lean();
+
+  // Build visit lookup: doctorId+week → visit
+  const visitLookup = new Map();
+  vipVisits.forEach((v) => {
+    const key = `${v.doctor.toString()}_W${v.weekOfMonth}`;
+    visitLookup.set(key, v);
+  });
+
+  // Fetch ClientVisits (extra calls) in cycle range
+  const clientVisits = await ClientVisit.find({
+    user: userId,
+    visitDate: { $gte: cycleStart, $lte: cycleEnd },
+    status: 'completed',
+  }).select('client visitDate weekOfMonth dayOfWeek engagementTypes')
+    .populate('client', 'firstName lastName specialization')
+    .lean();
+
+  // Build doctor rows
+  const doctorMap = new Map();
+  entries.forEach((entry) => {
+    if (!entry.doctor) return;
+    const did = entry.doctor._id.toString();
+    if (!doctorMap.has(did)) {
+      doctorMap.set(did, {
+        _id: entry.doctor._id,
+        firstName: entry.doctor.firstName,
+        lastName: entry.doctor.lastName,
+        specialization: entry.doctor.specialization,
+        visitFrequency: entry.doctor.visitFrequency || 4,
+        grid: Array(20).fill(null).map(() => ({ status: null, scheduleId: null, visitId: null, engagementTypes: [] })),
+        totalScheduled: 0,
+        totalCompleted: 0,
+      });
+    }
+
+    const doc = doctorMap.get(did);
+    const idx = (entry.scheduledWeek - 1) * 5 + (entry.scheduledDay - 1);
+    if (idx >= 0 && idx < 20) {
+      const visitKey = `${did}_W${entry.scheduledWeek}`;
+      const matchingVisit = visitLookup.get(visitKey);
+
+      doc.grid[idx] = {
+        status: entry.status,
+        scheduleId: entry._id,
+        visitId: entry.visit || null,
+        engagementTypes: matchingVisit?.engagementTypes || [],
+      };
+      doc.totalScheduled++;
+      if (entry.status === 'completed') {
+        doc.totalCompleted++;
+      }
+    }
+  });
+
+  // Sort doctors by lastName
+  const doctors = Array.from(doctorMap.values()).sort((a, b) =>
+    (a.lastName || '').localeCompare(b.lastName || '')
+  );
+
+  // Build DCR Summary (20 days)
+  const DAY_LABELS = [];
+  for (let w = 1; w <= 4; w++) {
+    for (let d = 1; d <= 5; d++) {
+      DAY_LABELS.push(`W${w}D${d}`);
+    }
+  }
+
+  const dcrSummary = DAY_LABELS.map((label, dayIdx) => {
+    // Count VIP visits on this grid day
+    let targetEngagements = 0;
+    let totalEngagements = 0;
+    const engagementBreakdown = {
+      TXT_PROMATS: 0,
+      MES_VIBER_GIF: 0,
+      PICTURE: 0,
+      SIGNED_CALL: 0,
+      VOICE_CALL: 0,
+    };
+
+    doctors.forEach((doc) => {
+      const cell = doc.grid[dayIdx];
+      if (cell.status) {
+        targetEngagements++;
+      }
+      if (cell.status === 'completed') {
+        totalEngagements++;
+        cell.engagementTypes.forEach((et) => {
+          if (engagementBreakdown[et] !== undefined) {
+            engagementBreakdown[et]++;
+          }
+        });
+      }
+    });
+
+    const callRate = targetEngagements > 0
+      ? Math.round((totalEngagements / targetEngagements) * 100)
+      : 0;
+
+    return {
+      day: dayIdx + 1,
+      label,
+      targetEngagements,
+      totalEngagements,
+      callRate,
+      engagementBreakdown,
+    };
+  });
+
+  // DCR Total
+  const dcrTotal = {
+    targetEngagements: dcrSummary.reduce((sum, d) => sum + d.targetEngagements, 0),
+    totalEngagements: dcrSummary.reduce((sum, d) => sum + d.totalEngagements, 0),
+  };
+  dcrTotal.callRate = dcrTotal.targetEngagements > 0
+    ? Math.round((dcrTotal.totalEngagements / dcrTotal.targetEngagements) * 100)
+    : 0;
+
+  // Daily MD count (VIP vs Extra Call)
+  const dailyMDCount = DAY_LABELS.map((label, dayIdx) => {
+    const week = Math.floor(dayIdx / 5) + 1;
+    const day = (dayIdx % 5) + 1;
+
+    // VIP count: completed schedule entries on this day
+    let vipCount = 0;
+    doctors.forEach((doc) => {
+      if (doc.grid[dayIdx].status === 'completed') {
+        vipCount++;
+      }
+    });
+
+    // Extra call count: ClientVisits on this day
+    const extraCallCount = clientVisits.filter(
+      (cv) => cv.weekOfMonth === week && cv.dayOfWeek === day
+    ).length;
+
+    return {
+      day: dayIdx + 1,
+      label,
+      vipCount,
+      extraCallCount,
+      totalMD: vipCount + extraCallCount,
+    };
+  });
+
+  // Extra calls grouped by day
+  const extraCalls = DAY_LABELS.map((label, dayIdx) => {
+    const week = Math.floor(dayIdx / 5) + 1;
+    const day = (dayIdx % 5) + 1;
+
+    const dayClientVisits = clientVisits.filter(
+      (cv) => cv.weekOfMonth === week && cv.dayOfWeek === day
+    );
+
+    return {
+      day: dayIdx + 1,
+      label,
+      clients: dayClientVisits.map((cv) => ({
+        _id: cv.client?._id || cv.client,
+        firstName: cv.client?.firstName || '',
+        lastName: cv.client?.lastName || '',
+        engagementTypes: cv.engagementTypes || [],
+      })),
+    };
+  });
+
+  // Summary stats
+  const completed = entries.filter((e) => e.status === 'completed').length;
+  const carried = entries.filter((e) => e.status === 'carried').length;
+  const missed = entries.filter((e) => e.status === 'missed').length;
+  const planned = entries.filter((e) => e.status === 'planned').length;
+
+  res.json({
+    success: true,
+    data: {
+      cycleNumber: requestedCycle,
+      cycleStart,
+      currentWeek,
+      currentDay,
+      doctors,
+      dcrSummary,
+      dcrTotal,
+      dailyMDCount,
+      extraCalls,
+      summary: { completed, carried, missed, planned, total: entries.length },
+    },
+  });
+});
+
 module.exports = {
   getCycle,
   getToday,
@@ -543,4 +789,5 @@ module.exports = {
   adminGetCycle,
   adminCreate,
   adminClearCycle,
+  getCPTGrid,
 };

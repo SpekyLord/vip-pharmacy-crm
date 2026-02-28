@@ -255,7 +255,7 @@ const deleteClient = catchAsync(async (req, res) => {
  * @access  Private (Employee, Admin)
  */
 const createClientVisit = catchAsync(async (req, res) => {
-  const { client: clientId, visitDate, location, purpose, notes } = req.body;
+  const { client: clientId, visitDate, location, purpose, notes, engagementTypes } = req.body;
 
   // Parse location if it's a JSON string (from FormData)
   let locationData = location;
@@ -311,6 +311,16 @@ const createClientVisit = catchAsync(async (req, res) => {
     capturedAt: photo.capturedAt || new Date(),
   }));
 
+  // Parse engagementTypes if it's a JSON string (from FormData)
+  let engagementData = engagementTypes;
+  if (typeof engagementTypes === 'string') {
+    try {
+      engagementData = JSON.parse(engagementTypes);
+    } catch (e) {
+      engagementData = [];
+    }
+  }
+
   const visit = await ClientVisit.create({
     client: clientId,
     user: req.user._id,
@@ -322,6 +332,7 @@ const createClientVisit = catchAsync(async (req, res) => {
       capturedAt: new Date(),
     },
     photos,
+    engagementTypes: engagementData || [],
     purpose,
     notes,
     status: 'completed',
