@@ -158,7 +158,7 @@ const getMonthlyVisitCount = async (doctorId, userId, monthYear) => {
 /**
  * Check if user can visit this doctor (region access, weekly and monthly limits)
  * @param {string} doctorId
- * @param {Object} user - User object (with _id and assignedRegions)
+ * @param {Object} user - User object (with _id and role)
  * @param {Date} visitDate - Optional date, defaults to today
  * @returns {Promise<{canVisit: boolean, reason?: string, weeklyCount: number, monthlyCount: number, monthlyLimit: number}>}
  */
@@ -400,7 +400,7 @@ const checkBehindSchedule = async (userId, checkDate = new Date()) => {
  * Batch check if user can visit multiple doctors
  * OPTIMIZED: Loads all doctors and visits once, then checks in parallel
  * @param {Array<string>} doctorIds - Array of doctor IDs
- * @param {Object} user - User object with _id and assignedRegions
+ * @param {Object} user - User object with _id and role
  * @param {Date} visitDate - Optional date, defaults to today
  * @returns {Promise<Array<{doctorId: string, canVisit: boolean, reason?: string, weeklyCount: number, monthlyCount: number, monthlyLimit: number}>>}
  */

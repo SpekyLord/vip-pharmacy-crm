@@ -23,7 +23,7 @@ const { logAuditEvent, AuditActions } = require('../utils/auditLogger');
  * @access  Public (or Admin only in production)
  */
 const register = catchAsync(async (req, res) => {
-  const { name, email, password, role, phone, assignedRegions } = req.body;
+  const { name, email, password, role, phone } = req.body;
 
   // Check if user already exists
   const existingUser = await User.findOne({ email });
@@ -41,7 +41,6 @@ const register = catchAsync(async (req, res) => {
     password,
     role: role || 'employee',
     phone,
-    assignedRegions,
   });
 
   // Generate tokens
@@ -194,7 +193,7 @@ const login = catchAsync(async (req, res) => {
   await user.save();
 
   // Get user without password
-  const userResponse = await User.findById(user._id).populate('assignedRegions', 'name code');
+  const userResponse = await User.findById(user._id);
 
 // ✅ set cookies (localhost-friendly)
 res.cookie('accessToken', tokens.accessToken, {
@@ -370,7 +369,7 @@ const resetPassword = catchAsync(async (req, res) => {
  * @access  Private
  */
 const getMe = catchAsync(async (req, res) => {
-  const user = await User.findById(req.user._id).populate('assignedRegions', 'name code level');
+  const user = await User.findById(req.user._id);
 
   res.json({
     success: true,

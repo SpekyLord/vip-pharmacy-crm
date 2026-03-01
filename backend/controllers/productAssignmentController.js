@@ -83,7 +83,7 @@ const getAllAssignments = catchAsync(async (req, res) => {
   // Execute query - don't populate 'product' (it's in a different database)
   const [assignments, total] = await Promise.all([
     ProductAssignment.find(filter)
-      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress region')
+      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
       .populate('assignedBy', 'name email')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -310,7 +310,7 @@ const getAssignmentsByProduct = catchAsync(async (req, res) => {
     product: productId,
     status: 'active',
   })
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress region')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
     .populate('assignedBy', 'name')
     .sort({ priority: 1 });
 

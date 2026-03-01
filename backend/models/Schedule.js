@@ -87,7 +87,7 @@ scheduleSchema.index({ user: 1, cycleNumber: 1 });
 scheduleSchema.index({ doctor: 1, user: 1, cycleNumber: 1 });
 scheduleSchema.index({ user: 1, cycleNumber: 1, status: 1 });
 scheduleSchema.index(
-  { doctor: 1, user: 1, cycleNumber: 1, scheduledWeek: 1 },
+  { doctor: 1, user: 1, cycleNumber: 1, scheduledWeek: 1, scheduledDay: 1 },
   { unique: true }
 );
 
@@ -149,7 +149,7 @@ scheduleSchema.statics.getVisitableEntries = async function (userId, date = new 
       { status: 'carried' },
     ],
   })
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress visitFrequency region')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress visitFrequency')
     .sort({ scheduledWeek: 1, scheduledDay: 1 });
 };
 
@@ -161,7 +161,7 @@ scheduleSchema.statics.getCycleSchedule = async function (userId, cycleNumber) {
     user: userId,
     cycleNumber,
   })
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress visitFrequency region')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress visitFrequency')
     .sort({ scheduledWeek: 1, scheduledDay: 1 });
 };
 

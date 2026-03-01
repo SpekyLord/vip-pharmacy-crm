@@ -2132,7 +2132,7 @@ const BDMPerformanceTab = ({
           <option value="">-- Select a BDM --</option>
           {employees.map((emp) => (
             <option key={emp._id} value={emp._id}>
-              {emp.firstName} {emp.lastName}
+              {emp.name}
             </option>
           ))}
         </select>

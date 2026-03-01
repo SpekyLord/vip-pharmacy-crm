@@ -158,13 +158,6 @@ const createUserValidation = [
   body('phone')
     .optional()
     .custom(isValidPhone),
-  body('assignedRegions')
-    .optional()
-    .isArray()
-    .withMessage('Assigned regions must be an array'),
-  body('assignedRegions.*')
-    .optional()
-    .custom(isValidObjectId),
   validate,
 ];
 
