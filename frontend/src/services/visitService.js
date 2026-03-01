@@ -114,6 +114,24 @@ const visitService = {
     });
     return response.data;
   },
+
+  // Get compliance alerts (behind-schedule employees)
+  getComplianceAlerts: async (params = {}) => {
+    const response = await api.get('/visits/compliance', { params });
+    return response.data;
+  },
+
+  // Get quota dumping alerts
+  getQuotaDumpingAlerts: async (params = {}) => {
+    const response = await api.get('/visits/quota-dumping', { params });
+    return response.data;
+  },
+
+  // Get GPS review data for verification
+  getGPSReview: async (params = {}) => {
+    const response = await api.get('/visits/gps-review', { params });
+    return response.data;
+  },
 };
 
 export default visitService;

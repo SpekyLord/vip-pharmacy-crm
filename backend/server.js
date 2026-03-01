@@ -226,6 +226,7 @@ app.use('/api/regions', require('./routes/regionRoutes'));
 app.use('/api/assignments', require('./routes/productAssignmentRoutes'));
 app.use('/api/schedules', require('./routes/scheduleRoutes'));
 app.use('/api/imports', require('./routes/importRoutes'));
+app.use('/api/audit-logs', require('./routes/auditLogRoutes'));
 
 // 404 handler for undefined routes
 app.use(notFound);

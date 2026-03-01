@@ -32,6 +32,8 @@ const {
   getTodayVisits,
   refreshPhotoUrls,
   getEmployeeReport,
+  getQuotaDumpingAlerts,
+  getGPSReview,
 } = require('../controllers/visitController');
 
 const { protect } = require('../middleware/auth');
@@ -48,6 +50,8 @@ router.get('/today', getTodayVisits);
 router.get('/stats', getVisitStats);
 router.get('/weekly', getWeeklyCompliance);
 router.get('/compliance', adminOnly, getComplianceAlerts);
+router.get('/quota-dumping', adminOnly, getQuotaDumpingAlerts);
+router.get('/gps-review', adminOnly, getGPSReview);
 router.get('/employee-report/:userId', adminOnly, getEmployeeReport);
 router.get('/can-visit/:doctorId', checkCanVisit);
 router.post('/can-visit-batch', checkCanVisitBatch);

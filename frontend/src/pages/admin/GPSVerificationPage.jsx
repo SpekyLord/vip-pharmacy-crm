@@ -1,80 +1,33 @@
 /**
  * GPSVerificationPage
  *
- * Test/Demo page for GPS Location Verification (Task 2.9)
- * Showcases the VisitLocationMap component with different scenarios.
+ * GPS Location Verification for admin review (Task D.2)
+ * Shows real visit GPS data with distance calculations.
  *
  * Threshold: 400 meters
- * - Within 400m = VERIFIED ✓
- * - Beyond 400m = SUSPICIOUS ⚠
- *
- * Test Scenarios:
- * 1. Suspicious: ~550m distance (exceeds 400m threshold)
- * 2. Verified: ~80m distance (well within 400m threshold)
- * 3. Edge Case: ~380m (just within threshold)
+ * - Within 400m = VERIFIED
+ * - Beyond 400m = SUSPICIOUS
  *
  * Route: /admin/gps-verification
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   MapPin,
   AlertTriangle,
   CheckCircle,
-  Navigation,
   Info,
+  RefreshCw,
+  Filter,
+  Loader,
+  Clock,
+  User,
+  Navigation,
 } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import VisitLocationMap, { MOCK_VISIT_DATA } from '../../components/admin/VisitLocationMap';
-
-/* =============================================================================
-   MOCK SCENARIOS
-   Using coordinates from Iloilo City, Philippines for realistic testing
-   ============================================================================= */
-
-const MOCK_SCENARIOS = {
-  suspicious: {
-    name: 'Suspicious - Location Mismatch',
-    description: 'Employee photo taken ~550m away from clinic (exceeds 400m threshold)',
-    icon: AlertTriangle,
-    color: 'red',
-    // Using visitData format (old style)
-    visitData: {
-      clinicName: 'Rizal Health Center',
-      clinicLat: 14.5995,
-      clinicLng: 120.9842,
-      employeeLat: 14.6040,
-      employeeLng: 120.9890,
-      accuracy: 18,
-      timestamp: new Date().toISOString(),
-    },
-  },
-  verified: {
-    name: 'Verified - Within Range',
-    description: 'Employee photo taken ~80m from clinic (well within 400m threshold)',
-    icon: CheckCircle,
-    color: 'green',
-    // Using individual coords format (new style)
-    clinicCoords: { lat: 10.6969, lng: 122.5648 },
-    employeeCoords: { lat: 10.6975, lng: 122.5652 },
-    accuracy: 12,
-  },
-  edge: {
-    name: 'Edge Case - Near Threshold',
-    description: 'Employee photo taken ~380m from clinic (just within 400m threshold)',
-    icon: Navigation,
-    color: 'amber',
-    // Using visitData with clinicCoordinates format (alternative)
-    visitData: {
-      clinicName: 'Western Visayas Medical Center',
-      clinicCoordinates: { lat: 10.6920, lng: 122.5700 },
-      employeeCoordinates: { lat: 10.6954, lng: 122.5700 },
-      accuracy: 15,
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    },
-  },
-};
+import VisitLocationMap from '../../components/admin/VisitLocationMap';
+import visitService from '../../services/visitService';
 
 /* =============================================================================
    STYLES
@@ -93,7 +46,7 @@ const pageStyles = `
   .gps-page-main {
     flex: 1;
     padding: 24px;
-    max-width: 1200px;
+    max-width: 1400px;
   }
 
   /* Page Header */
@@ -146,9 +99,7 @@ const pageStyles = `
     flex-shrink: 0;
   }
 
-  .info-banner-content {
-    flex: 1;
-  }
+  .info-banner-content { flex: 1; }
 
   .info-banner-title {
     font-weight: 600;
@@ -161,187 +112,262 @@ const pageStyles = `
     color: #3b82f6;
   }
 
-  /* Scenario Selector */
-  .scenario-selector {
-    background: white;
-    border-radius: 16px;
-    padding: 24px;
-    margin-bottom: 24px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    border: 1px solid #e5e7eb;
+  /* Filter Bar */
+  .gps-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
   }
 
-  .scenario-selector h3 {
-    margin: 0 0 20px 0;
-    font-size: 16px;
+  .gps-filter-bar select {
+    padding: 8px 14px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #374151;
+    background: white;
+    cursor: pointer;
+    min-width: 160px;
+  }
+
+  .gps-filter-bar select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .gps-refresh-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .gps-refresh-btn:hover { background: #2563eb; }
+
+  .gps-refresh-btn:disabled {
+    background: #93c5fd;
+    cursor: not-allowed;
+  }
+
+  .gps-refresh-btn.loading svg {
+    animation: gpsspin 1s linear infinite;
+  }
+
+  @keyframes gpsspin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* Stats Row */
+  .gps-stats-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+
+  .gps-stat-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-size: 14px;
     font-weight: 600;
+  }
+
+  .gps-stat-badge.verified {
+    background: #dcfce7;
+    color: #15803d;
+    border: 1px solid #86efac;
+  }
+
+  .gps-stat-badge.suspicious {
+    background: #fee2e2;
+    color: #dc2626;
+    border: 1px solid #fca5a5;
+  }
+
+  .gps-stat-badge.nodata {
+    background: #f3f4f6;
+    color: #6b7280;
+    border: 1px solid #d1d5db;
+  }
+
+  /* Two Column Layout */
+  .gps-two-col {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  @media (max-width: 960px) {
+    .gps-two-col {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Visit List */
+  .gps-visit-list {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    max-height: 600px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .gps-visit-list-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 600;
+    font-size: 15px;
     color: #1f2937;
+    background: #f9fafb;
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  .scenario-buttons {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
+  .gps-visit-list-body {
+    overflow-y: auto;
+    flex: 1;
   }
 
-  .scenario-btn {
+  .gps-visit-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 14px 24px;
-    border-radius: 12px;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #f3f4f6;
+    cursor: pointer;
+    transition: all 0.15s;
+    border-left: 3px solid transparent;
+  }
+
+  .gps-visit-row:last-child { border-bottom: none; }
+
+  .gps-visit-row:hover {
+    background: #f9fafb;
+  }
+
+  .gps-visit-row.selected {
+    background: #eff6ff;
+    border-left-color: #3b82f6;
+  }
+
+  .gps-visit-row.verified-row:hover { border-left-color: #22c55e; }
+  .gps-visit-row.suspicious-row:hover { border-left-color: #ef4444; }
+  .gps-visit-row.nodata-row:hover { border-left-color: #9ca3af; }
+  .gps-visit-row.selected.verified-row { border-left-color: #22c55e; }
+  .gps-visit-row.selected.suspicious-row { border-left-color: #ef4444; }
+  .gps-visit-row.selected.nodata-row { border-left-color: #9ca3af; }
+
+  .gps-visit-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .gps-visit-doctor {
     font-size: 14px;
     font-weight: 600;
-    cursor: pointer;
-    border: 2px solid transparent;
-    transition: all 0.2s;
-    flex: 1;
-    min-width: 180px;
-    justify-content: center;
-  }
-
-  .scenario-btn.red {
-    background: linear-gradient(135deg, #fef2f2, #fee2e2);
-    color: #dc2626;
-    border-color: #fecaca;
-  }
-
-  .scenario-btn.red:hover,
-  .scenario-btn.red.active {
-    background: linear-gradient(135deg, #fee2e2, #fecaca);
-    border-color: #dc2626;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.2);
-  }
-
-  .scenario-btn.green {
-    background: linear-gradient(135deg, #f0fdf4, #dcfce7);
-    color: #16a34a;
-    border-color: #bbf7d0;
-  }
-
-  .scenario-btn.green:hover,
-  .scenario-btn.green.active {
-    background: linear-gradient(135deg, #dcfce7, #bbf7d0);
-    border-color: #16a34a;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2);
-  }
-
-  .scenario-btn.amber {
-    background: linear-gradient(135deg, #fefce8, #fef9c3);
-    color: #b45309;
-    border-color: #fde047;
-  }
-
-  .scenario-btn.amber:hover,
-  .scenario-btn.amber.active {
-    background: linear-gradient(135deg, #fef9c3, #fde047);
-    border-color: #f59e0b;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
-  }
-
-  .scenario-description {
-    margin-top: 20px;
-    padding: 16px 20px;
-    background: #f9fafb;
-    border-radius: 10px;
-    font-size: 14px;
-    color: #4b5563;
-    border-left: 4px solid #3b82f6;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .scenario-description strong {
     color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .scenario-description-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
+  .gps-visit-meta {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 2px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+    gap: 6px;
   }
 
-  .scenario-description-icon.red {
+  .gps-distance-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .gps-distance-badge.verified {
+    background: #dcfce7;
+    color: #15803d;
+  }
+
+  .gps-distance-badge.suspicious {
     background: #fee2e2;
     color: #dc2626;
   }
 
-  .scenario-description-icon.green {
-    background: #dcfce7;
-    color: #16a34a;
-  }
-
-  .scenario-description-icon.amber {
-    background: #fef3c7;
-    color: #d97706;
-  }
-
-  /* Props Reference */
-  .props-reference {
-    background: white;
-    border-radius: 16px;
-    padding: 24px;
-    margin-top: 24px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    border: 1px solid #e5e7eb;
-  }
-
-  .props-reference h3 {
-    margin: 0 0 16px 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: #1f2937;
-  }
-
-  .props-code {
-    background: #1f2937;
-    border-radius: 10px;
-    padding: 20px;
-    overflow-x: auto;
-  }
-
-  .props-code pre {
-    margin: 0;
-    font-family: 'Monaco', 'Menlo', monospace;
-    font-size: 13px;
-    color: #e5e7eb;
-    line-height: 1.6;
-  }
-
-  .props-code .comment {
+  .gps-distance-badge.nodata {
+    background: #f3f4f6;
     color: #6b7280;
   }
 
-  .props-code .key {
-    color: #93c5fd;
+  /* Map Panel */
+  .gps-map-panel {
+    position: sticky;
+    top: 24px;
   }
 
-  .props-code .value {
-    color: #86efac;
+  .gps-map-placeholder {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    padding: 60px 20px;
+    text-align: center;
+    color: #6b7280;
   }
 
-  .props-code .number {
-    color: #fde68a;
+  .gps-map-placeholder-icon {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 16px;
+    background: #f3f4f6;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
   }
 
-  @media (max-width: 768px) {
-    .scenario-buttons {
-      flex-direction: column;
-    }
-    .scenario-btn {
-      min-width: 100%;
-    }
+  .gps-map-placeholder p {
+    margin: 0;
+    font-size: 14px;
+  }
+
+  /* Loading / Empty */
+  .gps-loading, .gps-empty {
+    padding: 60px 20px;
+    text-align: center;
+    color: #6b7280;
+  }
+
+  .gps-loading-icon {
+    animation: gpsspin 1s linear infinite;
+    margin-bottom: 12px;
   }
 `;
 
@@ -350,9 +376,72 @@ const pageStyles = `
    ============================================================================= */
 
 const GPSVerificationPage = () => {
-  const [activeScenario, setActiveScenario] = useState('suspicious');
-  const scenario = MOCK_SCENARIOS[activeScenario];
-  const ScenarioIcon = scenario.icon;
+  const [visits, setVisits] = useState([]);
+  const [selectedVisit, setSelectedVisit] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [stats, setStats] = useState({ verified: 0, suspicious: 0, noData: 0 });
+
+  /* ---------------------------------------------------------------------------
+     Fetch GPS Review Data
+     --------------------------------------------------------------------------- */
+
+  const fetchData = useCallback(async () => {
+    try {
+      const res = await visitService.getGPSReview({
+        limit: 50,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+      });
+
+      setVisits(res.data || []);
+      if (res.stats) {
+        setStats(res.stats);
+      }
+    } catch (err) {
+      console.error('Failed to fetch GPS review data:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [statusFilter]);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchData();
+  }, [fetchData]);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchData();
+  };
+
+  /* ---------------------------------------------------------------------------
+     Build map props for selected visit
+     --------------------------------------------------------------------------- */
+
+  const getMapProps = (visit) => {
+    if (!visit) return null;
+
+    const hasEmployeeCoords = visit.employeeLocation?.lat && visit.employeeLocation?.lng;
+    const hasClinicCoords = visit.clinicLocation?.lat && visit.clinicLocation?.lng;
+
+    if (!hasEmployeeCoords || !hasClinicCoords) return null;
+
+    return {
+      clinicCoords: visit.clinicLocation,
+      employeeCoords: visit.employeeLocation,
+      accuracy: visit.accuracy || 10,
+      allowedRadius: 400,
+      height: '400px',
+    };
+  };
+
+  const mapProps = getMapProps(selectedVisit);
+
+  /* ---------------------------------------------------------------------------
+     Render
+     --------------------------------------------------------------------------- */
 
   return (
     <div className="gps-page-layout">
@@ -366,7 +455,7 @@ const GPSVerificationPage = () => {
             <div className="page-header-icon">
               <MapPin size={24} />
             </div>
-            <h1>GPS Verification Demo</h1>
+            <h1>GPS Verification</h1>
           </div>
 
           {/* Info Banner */}
@@ -383,97 +472,137 @@ const GPSVerificationPage = () => {
             </div>
           </div>
 
-          {/* Scenario Selector */}
-          <div className="scenario-selector">
-            <h3>
-              <Navigation size={18} />
-              Select Test Scenario
-            </h3>
-            <div className="scenario-buttons">
-              <button
-                className={`scenario-btn red ${activeScenario === 'suspicious' ? 'active' : ''}`}
-                onClick={() => setActiveScenario('suspicious')}
-              >
-                <AlertTriangle size={18} />
-                Suspicious (~550m)
-              </button>
-              <button
-                className={`scenario-btn green ${activeScenario === 'verified' ? 'active' : ''}`}
-                onClick={() => setActiveScenario('verified')}
-              >
-                <CheckCircle size={18} />
-                Verified (~80m)
-              </button>
-              <button
-                className={`scenario-btn amber ${activeScenario === 'edge' ? 'active' : ''}`}
-                onClick={() => setActiveScenario('edge')}
-              >
-                <Navigation size={18} />
-                Edge Case (~380m)
-              </button>
+          {/* Filter Bar */}
+          <div className="gps-filter-bar">
+            <Filter size={16} style={{ color: '#6b7280' }} />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">All Visits</option>
+              <option value="suspicious">Suspicious Only</option>
+              <option value="verified">Verified Only</option>
+            </select>
+            <button
+              className={`gps-refresh-btn ${refreshing ? 'loading' : ''}`}
+              onClick={handleRefresh}
+              disabled={refreshing}
+            >
+              <RefreshCw size={14} />
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
+
+          {/* Stats Row */}
+          <div className="gps-stats-row">
+            <div className="gps-stat-badge verified">
+              <CheckCircle size={16} />
+              {stats.verified} Verified
             </div>
-            <div className="scenario-description">
-              <div className={`scenario-description-icon ${scenario.color}`}>
-                <ScenarioIcon size={18} />
-              </div>
-              <div>
-                <strong>{scenario.name}:</strong> {scenario.description}
-              </div>
+            <div className="gps-stat-badge suspicious">
+              <AlertTriangle size={16} />
+              {stats.suspicious} Suspicious
+            </div>
+            <div className="gps-stat-badge nodata">
+              <Navigation size={16} />
+              {stats.noData} No Data
             </div>
           </div>
 
-          {/* Map Component - Supports multiple prop formats */}
-          <VisitLocationMap
-            key={activeScenario}
-            // Pass visitData if available
-            visitData={scenario.visitData || null}
-            // Or pass individual coords
-            clinicCoords={scenario.clinicCoords || null}
-            employeeCoords={scenario.employeeCoords || null}
-            // Common props
-            allowedRadius={400}
-            accuracy={scenario.accuracy || null}
-            height="350px"
-          />
-
-          {/* Props Reference */}
-          <div className="props-reference">
-            <h3>📚 Component Usage Reference</h3>
-            <div className="props-code">
-              <pre>
-{`// Format 1: Using visitData object
-<VisitLocationMap
-  visitData={{
-    clinicLat: 10.6969,
-    clinicLng: 122.5648,
-    employeeLat: 10.6975,
-    employeeLng: 122.5652,
-    accuracy: 12,
-    clinicName: 'Santos Clinic'  // optional
-  }}
-  allowedRadius={400}
-/>
-
-// Format 2: Using individual props
-<VisitLocationMap
-  clinicCoords={{ lat: 10.6969, lng: 122.5648 }}
-  employeeCoords={{ lat: 10.6975, lng: 122.5652 }}
-  accuracy={12}
-  allowedRadius={400}
-/>
-
-// Format 3: Using visitData with coordinate objects
-<VisitLocationMap
-  visitData={{
-    clinicCoordinates: { lat: 10.6969, lng: 122.5648 },
-    employeeCoordinates: { lat: 10.6975, lng: 122.5652 },
-    accuracy: 12
-  }}
-  allowedRadius={400}
-/>`}
-              </pre>
+          {/* Loading */}
+          {loading ? (
+            <div className="gps-loading">
+              <Loader size={32} className="gps-loading-icon" />
+              <p>Loading GPS verification data...</p>
             </div>
-          </div>
+          ) : visits.length === 0 ? (
+            <div className="gps-empty">
+              <div className="gps-map-placeholder-icon" style={{ margin: '0 auto 16px' }}>
+                <MapPin size={28} />
+              </div>
+              <p>No visits with GPS data found</p>
+            </div>
+          ) : (
+            /* Two Column Layout */
+            <div className="gps-two-col">
+              {/* Left: Visit List */}
+              <div className="gps-visit-list">
+                <div className="gps-visit-list-header">
+                  <MapPin size={16} />
+                  Visits ({visits.length})
+                </div>
+                <div className="gps-visit-list-body">
+                  {visits.map((visit) => {
+                    const verClass = visit.verification === 'verified'
+                      ? 'verified-row'
+                      : visit.verification === 'suspicious'
+                        ? 'suspicious-row'
+                        : 'nodata-row';
+                    const isSelected = selectedVisit?._id === visit._id;
+                    const doctorName = visit.doctor
+                      ? `${visit.doctor.firstName || ''} ${visit.doctor.lastName || ''}`.trim()
+                      : 'Unknown';
+                    const employeeName = visit.user?.name || 'Unknown';
+                    const visitDate = visit.visitDate
+                      ? new Date(visit.visitDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      : '';
+
+                    return (
+                      <div
+                        key={visit._id}
+                        className={`gps-visit-row ${verClass} ${isSelected ? 'selected' : ''}`}
+                        onClick={() => setSelectedVisit(visit)}
+                      >
+                        <div className="gps-visit-info">
+                          <div className="gps-visit-doctor">{doctorName}</div>
+                          <div className="gps-visit-meta">
+                            <User size={11} />
+                            {employeeName}
+                            <Clock size={11} style={{ marginLeft: 4 }} />
+                            {visitDate}
+                          </div>
+                        </div>
+                        <div
+                          className={`gps-distance-badge ${
+                            visit.verification === 'verified'
+                              ? 'verified'
+                              : visit.verification === 'suspicious'
+                                ? 'suspicious'
+                                : 'nodata'
+                          }`}
+                        >
+                          {visit.distance != null
+                            ? `${visit.distance}m`
+                            : 'N/A'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Right: Map */}
+              <div className="gps-map-panel">
+                {selectedVisit && mapProps ? (
+                  <VisitLocationMap
+                    key={selectedVisit._id}
+                    clinicCoords={mapProps.clinicCoords}
+                    employeeCoords={mapProps.employeeCoords}
+                    accuracy={mapProps.accuracy}
+                    allowedRadius={mapProps.allowedRadius}
+                    height={mapProps.height}
+                  />
+                ) : (
+                  <div className="gps-map-placeholder">
+                    <div className="gps-map-placeholder-icon">
+                      <MapPin size={28} />
+                    </div>
+                    <p>{selectedVisit ? 'GPS data not available for this visit' : 'Select a visit to view on map'}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </main>
       </div>
     </div>

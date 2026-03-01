@@ -833,29 +833,30 @@ Client confirmed BDMs seeing doctors is NOT region-specific. Since the CPT impor
 
 ---
 
-### Task D.1: Admin View Per-BDM DCR Summary (CHANGE_LOG Change 15)
+### Task D.1: Admin View Per-BDM DCR Summary (CHANGE_LOG Change 15) ✅
 **Priority**: HIGH
 **Depends on**: C.2 (DCR Summary)
-**Files**: `pages/admin/StatisticsPage.jsx` (wire up), `components/admin/EmployeeAnalytics.jsx` (wire up)
+**Files**: `pages/admin/StatisticsPage.jsx` (4th tab: BDM Performance)
 
 **Deliverables**:
-- [ ] Per-BDM drill-down with Call Rate, VIP coverage, engagement distribution
-- [ ] DCR Summary view per BDM: 20-row table (W1D1-W4D5) with Target/Total/Call Rate
-- [ ] Admin can evaluate if BDM's Call Rate justifies continuing partnership
+- [x] Per-BDM drill-down with Call Rate, VIP coverage, engagement distribution
+- [x] DCR Summary view per BDM: 20-row table (W1D1-W4D5) with Target/Total/Call Rate
+- [x] Admin can evaluate if BDM's Call Rate justifies continuing partnership
 - [x] Filter VIP Clients by support type and program (Change 17, admin view) — moved to B.7 ✅
 
 ---
 
-### Task D.2: Wire Up Scaffolded Admin Pages
+### Task D.2: Wire Up Scaffolded Admin Pages ✅ COMPLETE (March 2026)
 **Priority**: MEDIUM
 **Depends on**: C.2 (DCR Summary data for StatisticsPage)
-**Files**: `pages/admin/StatisticsPage.jsx`, `pages/admin/ActivityMonitor.jsx`, `pages/admin/GPSVerificationPage.jsx`, `services/complianceService.js`
+**Files**: `pages/admin/StatisticsPage.jsx`, `pages/admin/ActivityMonitor.jsx`, `pages/admin/GPSVerificationPage.jsx`, `controllers/auditLogController.js`, `controllers/visitController.js`
 
 **Deliverables**:
-- [ ] Create backend compliance API endpoints (complianceController.js, complianceRoutes.js)
-- [ ] Wire StatisticsPage to real data (replace mock/Recharts with actual compliance stats)
-- [ ] Wire ActivityMonitor to real activity data (audit log or activity collection)
-- [ ] Wire GPS Verification to real visit GPS data with distance calculation
+- [x] Create backend audit log API endpoints (auditLogController.js, auditLogRoutes.js → `/api/audit-logs`)
+- [x] Add backend quota-dumping and GPS review endpoints to visitController (GET `/api/visits/quota-dumping`, GET `/api/visits/gps-review`)
+- [x] Wire StatisticsPage to real data — Overview (per-BDM call rates from CPT grid), Behind-Schedule (compliance API), Alerts (quota-dumping API)
+- [x] Wire ActivityMonitor + LiveActivityFeed to real audit logs + visit data with 30s/60s auto-refresh
+- [x] Wire GPS Verification to real visit GPS data with haversine distance calculation and 400m threshold
 
 ---
 
@@ -900,8 +901,8 @@ Client confirmed BDMs seeing doctors is NOT region-specific. Since the CPT impor
 
 | Task | Change # | Depends On | Notes |
 |------|----------|------------|-------|
-| D.1: Admin Per-BDM DCR Summary | 15 | C.2 | Performance monitoring |
-| D.2: Wire Up Scaffolded Pages | — | C.2 | Replace mock data with real APIs |
+| D.1: Admin Per-BDM DCR Summary | 15 | C.2 | ✅ COMPLETE — 4th tab in StatisticsPage |
+| D.2: Wire Up Scaffolded Pages | — | C.2 | ✅ COMPLETE — Real APIs for all 3 pages |
 | D.4: Email Notifications | — | None | Independent |
 | D.5: AWS Lightsail Deployment | — | None | Production hosting |
 | D.6: Offline Capability | — | D.5 | Deferred |
@@ -948,8 +949,8 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 11. C.4  — VIP Count Minimums (skipped)
 12. C.2  — CPT View + DCR Summary (needs C.1 + B.6) ✅
 13. C.3+D.3 — Excel Import + Export + Approvals UI (needs C.1) ✅
-14. D.1  — Admin Per-BDM DCR Summary (needs C.2 ✅)
-15. D.2  — Wire Up Scaffolded Pages (needs C.2 ✅)
+14. D.1  — Admin Per-BDM DCR Summary (needs C.2 ✅) ✅
+15. D.2  — Wire Up Scaffolded Pages (needs C.2 ✅) ✅
 16. B.5b — BDM Performance DCR part (needs C.2 ✅)
 17. D.4  — Email Notifications
 18. D.5  — AWS Lightsail Deployment
@@ -967,7 +968,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 | **Phase 3: Independent UX** | 6 tasks (B.3 ✅, B.6 ✅, B.7 ✅, B.4 ✅, B.5a ✅, C.4 ⏭) | Photos, regular clients, filters, engagement, stats | ✅ Complete (5 done + 1 skipped) |
 | **Phase 4: Schedule System** | 3 tasks (C.1+A.2 ✅, B.1 ✅, B.2 ✅) | 4-week calendar, alternating weeks, info page, product popup | ✅ COMPLETE |
 | **Phase 5: CPT & Excel** | 3 tasks (C.2 ✅, C.3+D.3 ✅, B.5b ✅) | CPT grid, DCR Summary, Excel import/export | ✅ COMPLETE |
-| **Phase 6: Admin & Deploy** | 5 tasks (D.1, D.2, D.4, D.5, D.6) | Admin monitoring, deployment, offline | ⬜ Not started |
+| **Phase 6: Admin & Deploy** | 5 tasks (D.1 ✅, D.2 ✅, D.4, D.5, D.6) | Admin monitoring, deployment, offline | 🔄 In progress (2/5) |
 
 ---
 

@@ -13,7 +13,7 @@
  * Route: /admin/activity
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Activity,
   MapPin,
@@ -28,20 +28,8 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import LiveActivityFeed from '../../components/admin/LiveActivityFeed';
 import ActivityDetailModal from '../../components/admin/ActivityDetailModal';
-
-/* =============================================================================
-   MOCK STATISTICS
-   Summary data for the activity overview cards.
-   ============================================================================= */
-
-const MOCK_STATS = {
-  totalToday: 47,
-  visitsLogged: 23,
-  authEvents: 15,
-  systemUpdates: 9,
-  activeUsers: 12,
-  peakHour: '10:00 AM',
-};
+import auditLogService from '../../services/auditLogService';
+import visitService from '../../services/visitService';
 
 /* =============================================================================
    STYLES
@@ -189,7 +177,14 @@ const pageStyles = `
    ============================================================================= */
 
 const ActivityMonitor = () => {
-  const [stats] = useState(MOCK_STATS);
+  const [stats, setStats] = useState({
+    totalToday: 0,
+    visitsLogged: 0,
+    authEvents: 0,
+    systemUpdates: 0,
+    activeUsers: 0,
+    peakHour: '—',
+  });
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Modal state
@@ -197,7 +192,39 @@ const ActivityMonitor = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   /* ---------------------------------------------------------------------------
-     Live Clock Update
+     Fetch Real Stats
+     --------------------------------------------------------------------------- */
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const todayISO = new Date().toISOString().split('T')[0];
+
+      const [auditStatsRes, visitsRes] = await Promise.all([
+        auditLogService.getStats({ date: todayISO }).catch(() => ({ data: {} })),
+        visitService.getAll({ dateFrom: todayISO, dateTo: todayISO, limit: 0 }).catch(() => ({ pagination: { total: 0 } })),
+      ]);
+
+      const auditData = auditStatsRes.data || {};
+      const visitsLogged = visitsRes.pagination?.total ?? (visitsRes.data?.length || 0);
+      const authEvents = auditData.authEvents || 0;
+      const activeUsers = auditData.activeUsers || 0;
+      const peakHour = auditData.peakHour || '—';
+
+      setStats({
+        totalToday: visitsLogged + authEvents,
+        visitsLogged,
+        authEvents,
+        systemUpdates: 0,
+        activeUsers,
+        peakHour,
+      });
+    } catch (err) {
+      console.error('Failed to fetch activity stats:', err);
+    }
+  }, []);
+
+  /* ---------------------------------------------------------------------------
+     Live Clock Update + Stats Refresh
      --------------------------------------------------------------------------- */
 
   useEffect(() => {
@@ -207,6 +234,12 @@ const ActivityMonitor = () => {
 
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    fetchStats();
+    const interval = setInterval(fetchStats, 60000);
+    return () => clearInterval(interval);
+  }, [fetchStats]);
 
   /* ---------------------------------------------------------------------------
      Modal Handlers

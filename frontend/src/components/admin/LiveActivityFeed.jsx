@@ -37,267 +37,9 @@ import {
   Box,
 } from 'lucide-react';
 
-/* =============================================================================
-   MOCK DATA
-   Comprehensive activity data with type-specific details objects.
-   ============================================================================= */
-
-const MOCK_ACTIVITIES = [
-  // VISIT_LOG activities
-  {
-    _id: 'act-001',
-    type: 'VISIT_LOG',
-    message: 'Juan Dela Cruz logged a visit to Dr. Maria Santos',
-    employeeName: 'Juan Dela Cruz',
-    employeeId: 'emp-001',
-    region: 'Region VI - Western Visayas',
-    timestamp: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
-    details: {
-      doctorName: 'Dr. Maria Santos',
-      clinicName: 'Santos Medical Clinic',
-      address: '123 Rizal Street, Iloilo City, Iloilo 5000',
-      coordinates: { lat: 10.7202, lng: 122.5621 },
-      visitType: 'Regular Visit',
-      notes: 'Discussed new CardioMax product line. Doctor showed interest in samples. Follow-up scheduled for next week.',
-      photos: ['photo1.jpg', 'photo2.jpg'],
-    },
-  },
-  {
-    _id: 'act-002',
-    type: 'AUTH',
-    subType: 'LOGIN',
-    message: 'Maria Garcia logged in',
-    employeeName: 'Maria Garcia',
-    employeeId: 'emp-002',
-    region: 'NCR - Metro Manila',
-    timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    details: {
-      ipAddress: '192.168.1.105',
-      device: 'Windows Desktop',
-      deviceType: 'Desktop',
-      browser: 'Chrome 120.0.6099.130',
-      location: 'Makati City, Metro Manila',
-    },
-  },
-  {
-    _id: 'act-003',
-    type: 'DOCTOR_UPDATE',
-    message: 'Admin updated Dr. Jose Rizal\'s profile',
-    employeeName: 'Admin User',
-    employeeId: 'admin-001',
-    region: 'System',
-    timestamp: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
-    details: {
-      doctorName: 'Dr. Jose Rizal',
-      action: 'update',
-      fieldsChanged: [
-        { field: 'Phone', from: '+63 912 345 6789', to: '+63 917 123 4567' },
-        { field: 'Address', from: '456 Old Street, Manila', to: '789 New Avenue, Quezon City' },
-      ],
-    },
-  },
-  {
-    _id: 'act-004',
-    type: 'PRODUCT_ASSIGN',
-    message: 'Sarah Reyes assigned CardioMax 100mg to Dr. Luna',
-    employeeName: 'Sarah Reyes',
-    employeeId: 'emp-003',
-    region: 'Region VII - Central Visayas',
-    timestamp: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-    details: {
-      productName: 'CardioMax 100mg',
-      sku: 'CM-100-2024',
-      quantity: 50,
-      doctorName: 'Dr. Luna',
-      approvalStatus: 'approved',
-    },
-  },
-  {
-    _id: 'act-005',
-    type: 'VISIT_LOG',
-    message: 'Pedro Martinez logged a visit to Dr. Chen',
-    employeeName: 'Pedro Martinez',
-    employeeId: 'emp-004',
-    region: 'Region VI - Western Visayas',
-    timestamp: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
-    details: {
-      doctorName: 'Dr. Chen',
-      clinicName: 'Chen Family Clinic',
-      address: '45 Mabini Street, Bacolod City, Negros Occidental 6100',
-      coordinates: { lat: 10.6713, lng: 122.9511 },
-      visitType: 'Follow-up',
-      notes: 'Delivered product samples as requested. Doctor confirmed prescription increase for NeuroPlus.',
-      photos: ['visit_photo.jpg'],
-    },
-  },
-  {
-    _id: 'act-006',
-    type: 'AUTH',
-    subType: 'LOGOUT',
-    message: 'Mike Torres logged out',
-    employeeName: 'Mike Torres',
-    employeeId: 'emp-005',
-    region: 'CAR - Cordillera',
-    timestamp: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
-    details: {
-      ipAddress: '172.16.0.45',
-      device: 'Android Phone',
-      deviceType: 'Mobile',
-      browser: 'Chrome Mobile 120.0',
-      sessionDuration: '2h 34m',
-    },
-  },
-  {
-    _id: 'act-007',
-    type: 'DOCTOR_UPDATE',
-    message: 'Admin created new doctor profile: Dr. Angela Yu',
-    employeeName: 'Admin User',
-    employeeId: 'admin-001',
-    region: 'NCR - Metro Manila',
-    timestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
-    details: {
-      doctorName: 'Dr. Angela Yu',
-      action: 'create',
-      fieldsChanged: [],
-    },
-  },
-  {
-    _id: 'act-008',
-    type: 'VISIT_LOG',
-    message: 'Ana Lopez logged a visit to Dr. Williams',
-    employeeName: 'Ana Lopez',
-    employeeId: 'emp-006',
-    region: 'Region VI - Western Visayas',
-    timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    details: {
-      doctorName: 'Dr. Williams',
-      clinicName: 'Williams General Hospital',
-      address: '78 Fuentes Drive, Iloilo City, Iloilo 5000',
-      coordinates: { lat: 10.6923, lng: 122.5644 },
-      visitType: 'Emergency',
-      notes: 'Urgent request for GastroShield samples. Hospital running low on stock.',
-      photos: ['receipt.jpg', 'stock_photo.jpg', 'clinic.jpg'],
-    },
-  },
-  {
-    _id: 'act-009',
-    type: 'PRODUCT_ASSIGN',
-    message: 'Admin bulk assigned NeuroPlus to 5 doctors',
-    employeeName: 'Admin User',
-    employeeId: 'admin-001',
-    region: 'System',
-    timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-    details: {
-      productName: 'NeuroPlus 500mg',
-      sku: 'NP-500-2024',
-      quantity: 200,
-      doctorName: '5 Doctors (Bulk Assignment)',
-      approvalStatus: 'pending',
-    },
-  },
-  {
-    _id: 'act-010',
-    type: 'AUTH',
-    subType: 'LOGIN',
-    message: 'Elena Cruz logged in',
-    employeeName: 'Elena Cruz',
-    employeeId: 'emp-007',
-    region: 'Region VII - Central Visayas',
-    timestamp: new Date(Date.now() - 1.5 * 60 * 60 * 1000).toISOString(),
-    details: {
-      ipAddress: '10.0.0.88',
-      device: 'iPad Pro',
-      deviceType: 'Mobile',
-      browser: 'Safari 17.2',
-      location: 'Cebu City, Cebu',
-    },
-  },
-  {
-    _id: 'act-011',
-    type: 'VISIT_LOG',
-    message: 'Roberto Lim logged a visit to Dr. Park',
-    employeeName: 'Roberto Lim',
-    employeeId: 'emp-008',
-    region: 'NCR - Metro Manila',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    details: {
-      doctorName: 'Dr. Park',
-      clinicName: 'Park Wellness Center',
-      address: '321 EDSA, Mandaluyong City, Metro Manila',
-      coordinates: { lat: 14.5794, lng: 121.0359 },
-      visitType: 'Regular Visit',
-      notes: 'Routine check-in. No new orders.',
-      photos: [],
-    },
-  },
-  {
-    _id: 'act-012',
-    type: 'DOCTOR_UPDATE',
-    message: 'Admin deactivated Dr. Old Profile',
-    employeeName: 'Admin User',
-    employeeId: 'admin-001',
-    region: 'System',
-    timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-    details: {
-      doctorName: 'Dr. Old Profile',
-      action: 'deactivate',
-      fieldsChanged: [
-        { field: 'Status', from: 'Active', to: 'Inactive' },
-      ],
-    },
-  },
-  {
-    _id: 'act-013',
-    type: 'AUTH',
-    subType: 'LOGIN',
-    message: 'Juan Dela Cruz logged in',
-    employeeName: 'Juan Dela Cruz',
-    employeeId: 'emp-001',
-    region: 'Region VI - Western Visayas',
-    timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    details: {
-      ipAddress: '192.168.50.12',
-      device: 'Samsung Galaxy S23',
-      deviceType: 'Mobile',
-      browser: 'Chrome Mobile 120.0',
-      location: 'Iloilo City, Iloilo',
-    },
-  },
-  {
-    _id: 'act-014',
-    type: 'PRODUCT_ASSIGN',
-    message: 'Admin assigned GastroShield to Dr. Mendoza',
-    employeeName: 'Admin User',
-    employeeId: 'admin-001',
-    region: 'Region VI - Western Visayas',
-    timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    details: {
-      productName: 'GastroShield 250mg',
-      sku: 'GS-250-2024',
-      quantity: 30,
-      doctorName: 'Dr. Mendoza',
-      approvalStatus: 'approved',
-    },
-  },
-  {
-    _id: 'act-015',
-    type: 'VISIT_LOG',
-    message: 'Maria Garcia logged a visit to Dr. Thompson',
-    employeeName: 'Maria Garcia',
-    employeeId: 'emp-002',
-    region: 'NCR - Metro Manila',
-    timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-    details: {
-      doctorName: 'Dr. Thompson',
-      clinicName: 'Thompson Medical Arts',
-      address: '55 Ayala Avenue, Makati City, Metro Manila',
-      coordinates: { lat: 14.5547, lng: 121.0244 },
-      visitType: 'Regular Visit',
-      notes: 'Presented Q4 product catalog. Doctor requested additional info on CardioMax clinical trials.',
-      photos: ['catalog.jpg'],
-    },
-  },
-];
+/* Mock data removed — now fetched from real APIs */
+import visitService from '../../services/visitService';
+import auditLogService from '../../services/auditLogService';
 
 /* =============================================================================
    CONSTANTS
@@ -345,15 +87,7 @@ const AUTH_ICONS = {
   LOGOUT: LogOut,
 };
 
-// Available regions for filtering
-const REGIONS = [
-  'All Regions',
-  'Region VI - Western Visayas',
-  'NCR - Metro Manila',
-  'Region VII - Central Visayas',
-  'CAR - Cordillera',
-  'System',
-];
+// Regions will be derived dynamically from fetched data
 
 // Activity type filter options
 const ACTIVITY_TYPES = [
@@ -689,32 +423,110 @@ const LiveActivityFeed = ({
   onActivityClick = null,
 }) => {
   // State: Activities data
-  const [activities, setActivities] = useState(MOCK_ACTIVITIES);
+  const [activities, setActivities] = useState([]);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // State: Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [regionFilter, setRegionFilter] = useState('All Regions');
   const [typeFilter, setTypeFilter] = useState('all');
 
   /* ---------------------------------------------------------------------------
-     Auto-Refresh Simulation
-     Refreshes data every 30 seconds.
+     Helper: Parse user agent into device/browser
+     --------------------------------------------------------------------------- */
+  const parseDevice = (ua) => {
+    if (!ua) return 'Unknown';
+    if (/android/i.test(ua)) return 'Android Phone';
+    if (/iphone/i.test(ua)) return 'iPhone';
+    if (/ipad/i.test(ua)) return 'iPad';
+    if (/macintosh/i.test(ua)) return 'Mac Desktop';
+    if (/windows/i.test(ua)) return 'Windows Desktop';
+    if (/linux/i.test(ua)) return 'Linux Desktop';
+    return 'Unknown Device';
+  };
+
+  const parseBrowser = (ua) => {
+    if (!ua) return 'Unknown';
+    const match = ua.match(/(Chrome|Firefox|Safari|Edge|Opera)[\s/](\d+)/i);
+    return match ? `${match[1]} ${match[2]}` : 'Unknown Browser';
+  };
+
+  /* ---------------------------------------------------------------------------
+     Data Fetching
      --------------------------------------------------------------------------- */
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      console.log('🔄 Refreshing activity data...');
-      setLastRefresh(new Date());
-      
-      // Simulate new activity by shuffling mock data
-      setActivities((prev) => {
-        const shuffled = [...prev].sort(() => Math.random() - 0.5);
-        return shuffled;
-      });
-    }, 30000); // 30 seconds
+  const fetchActivities = async () => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString().split('T')[0];
 
+      const [visitsRes, auditRes] = await Promise.all([
+        visitService.getAll({ limit: 20, dateFrom: todayISO }).catch(() => ({ data: [] })),
+        auditLogService.getAll({ limit: 20, dateFrom: todayISO }).catch(() => ({ data: [] })),
+      ]);
+
+      // Map visits to activity shape
+      const visitActivities = (visitsRes.data || []).map((v) => {
+        const docName = v.doctor
+          ? `${v.doctor.firstName || ''} ${v.doctor.lastName || ''}`.trim()
+          : 'Unknown';
+        const empName = v.user?.name || 'Unknown';
+        return {
+          _id: `visit-${v._id}`,
+          type: 'VISIT_LOG',
+          message: `${empName} logged a visit to ${docName}`,
+          employeeName: empName,
+          employeeId: v.user?._id,
+          region: '',
+          timestamp: v.visitDate,
+          details: {
+            doctorName: docName,
+            address: v.doctor?.clinicOfficeAddress || '',
+            coordinates: v.location ? { lat: v.location.latitude, lng: v.location.longitude } : null,
+            visitType: v.visitType || 'Regular Visit',
+            notes: v.notes || '',
+            photos: (v.photos || []).map((p) => p.url),
+          },
+        };
+      });
+
+      // Map audit logs to activity shape
+      const authActivities = (auditRes.data || []).map((log) => {
+        const empName = log.userId?.name || log.email || 'Unknown';
+        const actionLabel = (log.action || '').replace(/_/g, ' ').toLowerCase();
+        return {
+          _id: `audit-${log._id}`,
+          type: 'AUTH',
+          subType: log.action?.includes('LOGIN') ? 'LOGIN' : log.action?.includes('LOGOUT') ? 'LOGOUT' : log.action,
+          message: `${empName} — ${actionLabel}`,
+          employeeName: empName,
+          employeeId: log.userId?._id,
+          region: '',
+          timestamp: log.timestamp,
+          details: {
+            ipAddress: log.ipAddress || '',
+            device: parseDevice(log.userAgent),
+            deviceType: /mobile|android|iphone|ipad/i.test(log.userAgent || '') ? 'Mobile' : 'Desktop',
+            browser: parseBrowser(log.userAgent),
+          },
+        };
+      });
+
+      // Merge and sort by timestamp desc
+      const merged = [...visitActivities, ...authActivities]
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      setActivities(merged);
+      setLastRefresh(new Date());
+    } catch (err) {
+      console.error('Failed to fetch activities:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchActivities();
+    const interval = setInterval(fetchActivities, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -722,15 +534,10 @@ const LiveActivityFeed = ({
      Manual Refresh Handler
      --------------------------------------------------------------------------- */
 
-  const handleManualRefresh = () => {
+  const handleManualRefresh = async () => {
     setIsRefreshing(true);
-    console.log('🔄 Manual refresh triggered...');
-    
-    setTimeout(() => {
-      setLastRefresh(new Date());
-      setActivities((prev) => [...prev].sort(() => Math.random() - 0.5));
-      setIsRefreshing(false);
-    }, 1000);
+    await fetchActivities();
+    setIsRefreshing(false);
   };
 
   /* ---------------------------------------------------------------------------
@@ -746,17 +553,13 @@ const LiveActivityFeed = ({
         activity.employeeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         activity.message.toLowerCase().includes(searchQuery.toLowerCase());
 
-      // Region filter
-      const matchesRegion =
-        regionFilter === 'All Regions' || activity.region === regionFilter;
-
       // Type filter
       const matchesType =
         typeFilter === 'all' || activity.type === typeFilter;
 
-      return matchesSearch && matchesRegion && matchesType;
+      return matchesSearch && matchesType;
     });
-  }, [activities, searchQuery, regionFilter, typeFilter]);
+  }, [activities, searchQuery, typeFilter]);
 
   // Limit activities for display
   const displayedActivities = filteredActivities.slice(0, limit);
@@ -792,18 +595,6 @@ const LiveActivityFeed = ({
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-
-          <select
-            className="filter-select"
-            value={regionFilter}
-            onChange={(e) => setRegionFilter(e.target.value)}
-          >
-            {REGIONS.map((region) => (
-              <option key={region} value={region}>
-                {region}
-              </option>
-            ))}
-          </select>
 
           <select
             className="filter-select"

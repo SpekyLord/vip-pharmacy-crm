@@ -192,15 +192,32 @@ const getAllVisits = catchAsync(async (req, res) => {
     query.monthYear = monthYear;
   }
 
-  const skip = (page - 1) * limit;
+  // Filter by date range
+  if (req.query.dateFrom || req.query.dateTo) {
+    query.visitDate = {};
+    if (req.query.dateFrom) query.visitDate.$gte = new Date(req.query.dateFrom);
+    if (req.query.dateTo) {
+      const d = new Date(req.query.dateTo);
+      d.setHours(23, 59, 59, 999);
+      query.visitDate.$lte = d;
+    }
+  }
+
+  const parsedLimit = parseInt(limit);
+  const skip = parsedLimit === 0 ? 0 : (page - 1) * parsedLimit;
+
+  let visitQuery = Visit.find(query)
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('user', 'name email')
+    .sort({ visitDate: -1 })
+    .skip(skip);
+
+  if (parsedLimit > 0) {
+    visitQuery = visitQuery.limit(parsedLimit);
+  }
 
   const [visits, total] = await Promise.all([
-    Visit.find(query)
-      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
-      .populate('user', 'name email')
-      .sort({ visitDate: -1 })
-      .skip(skip)
-      .limit(parseInt(limit)),
+    visitQuery,
     Visit.countDocuments(query),
   ]);
 
@@ -212,9 +229,9 @@ const getAllVisits = catchAsync(async (req, res) => {
     data: signedVisits,
     pagination: {
       page: parseInt(page),
-      limit: parseInt(limit),
+      limit: parsedLimit,
       total,
-      pages: Math.ceil(total / limit),
+      pages: parsedLimit === 0 ? 1 : Math.ceil(total / parsedLimit),
     },
   });
 });
@@ -937,6 +954,216 @@ const getEmployeeReport = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Haversine distance between two lat/lng points (returns meters)
+ */
+function calculateHaversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * @desc    Detect quota dumping (many visits in short time)
+ * @route   GET /api/visits/quota-dumping
+ * @access  Private (Admin)
+ */
+const getQuotaDumpingAlerts = catchAsync(async (req, res) => {
+  const { dateFrom, dateTo } = req.query;
+
+  const matchStage = { status: 'completed' };
+  if (dateFrom || dateTo) {
+    matchStage.visitDate = {};
+    if (dateFrom) matchStage.visitDate.$gte = new Date(dateFrom);
+    if (dateTo) {
+      const d = new Date(dateTo);
+      d.setHours(23, 59, 59, 999);
+      matchStage.visitDate.$lte = d;
+    }
+  } else {
+    // Default: last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    matchStage.visitDate = { $gte: thirtyDaysAgo };
+  }
+
+  // Group visits by user+date, find days with 4+ visits
+  const dayGroups = await Visit.aggregate([
+    { $match: matchStage },
+    {
+      $group: {
+        _id: {
+          user: '$user',
+          date: { $dateToString: { format: '%Y-%m-%d', date: '$visitDate' } },
+        },
+        visits: {
+          $push: {
+            doctor: '$doctor',
+            visitDate: '$visitDate',
+          },
+        },
+        count: { $sum: 1 },
+        minTime: { $min: '$visitDate' },
+        maxTime: { $max: '$visitDate' },
+      },
+    },
+    { $match: { count: { $gte: 4 } } },
+    { $sort: { '_id.date': -1 } },
+  ]);
+
+  if (dayGroups.length === 0) {
+    return res.json({ success: true, data: [], count: 0 });
+  }
+
+  // Fetch user and doctor details
+  const User = require('../models/User');
+  const userIds = [...new Set(dayGroups.map((g) => g._id.user.toString()))];
+  const users = await User.find({ _id: { $in: userIds } })
+    .select('name email')
+    .lean();
+  const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+
+  const allDoctorIds = new Set();
+  dayGroups.forEach((g) => g.visits.forEach((v) => allDoctorIds.add(v.doctor.toString())));
+  const doctors = await Doctor.find({ _id: { $in: [...allDoctorIds] } })
+    .select('firstName lastName')
+    .lean();
+  const doctorMap = new Map(doctors.map((d) => [d._id.toString(), d]));
+
+  const alerts = dayGroups.map((group, idx) => {
+    const user = userMap.get(group._id.user.toString()) || {};
+    const timeSpanMs = new Date(group.maxTime) - new Date(group.minTime);
+    const timeSpanHours = Math.round(timeSpanMs / (1000 * 60 * 60) * 10) / 10;
+
+    const visitDetails = group.visits.map((v) => {
+      const doc = doctorMap.get(v.doctor.toString());
+      const docName = doc ? `${doc.firstName} ${doc.lastName}` : 'Unknown';
+      const time = new Date(v.visitDate).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      return { doctor: docName, time };
+    });
+
+    return {
+      _id: `alert-${idx}`,
+      employeeId: group._id.user.toString(),
+      employeeName: user.name || 'Unknown',
+      email: user.email || '',
+      alertType: 'quota_dumping',
+      severity: group.count >= 6 ? 'high' : group.count >= 5 ? 'medium' : 'low',
+      description: `${group.count} visits logged within ${timeSpanHours} hours on ${group._id.date}`,
+      visitCount: group.count,
+      timeSpan: `${timeSpanHours} hours`,
+      detectedAt: group.maxTime,
+      visits: visitDetails,
+      status: 'pending_review',
+    };
+  });
+
+  res.json({
+    success: true,
+    data: alerts,
+    count: alerts.length,
+  });
+});
+
+/**
+ * @desc    Get visits with GPS data for verification review
+ * @route   GET /api/visits/gps-review
+ * @access  Private (Admin)
+ */
+const getGPSReview = catchAsync(async (req, res) => {
+  const { page = 1, limit = 20, status: statusFilter } = req.query;
+  const parsedLimit = parseInt(limit);
+  const skip = (page - 1) * parsedLimit;
+
+  // Find completed visits that have GPS data
+  const query = {
+    status: 'completed',
+    'location.latitude': { $exists: true, $ne: null },
+    'location.longitude': { $exists: true, $ne: null },
+  };
+
+  const [visits, total] = await Promise.all([
+    Visit.find(query)
+      .populate('doctor', 'firstName lastName clinicOfficeAddress location')
+      .populate('user', 'name email')
+      .sort({ visitDate: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
+    Visit.countDocuments(query),
+  ]);
+
+  let stats = { verified: 0, suspicious: 0, noData: 0 };
+
+  const enrichedVisits = visits.map((visit) => {
+    const empLat = visit.location?.latitude;
+    const empLng = visit.location?.longitude;
+    const docCoords = visit.doctor?.location?.coordinates; // [lng, lat]
+
+    let distance = null;
+    let verification = 'no_data';
+
+    if (
+      empLat && empLng &&
+      docCoords && docCoords.length === 2 &&
+      (docCoords[0] !== 0 || docCoords[1] !== 0)
+    ) {
+      distance = Math.round(calculateHaversine(empLat, empLng, docCoords[1], docCoords[0]));
+      verification = distance <= 400 ? 'verified' : 'suspicious';
+    }
+
+    if (verification === 'verified') stats.verified++;
+    else if (verification === 'suspicious') stats.suspicious++;
+    else stats.noData++;
+
+    return {
+      _id: visit._id,
+      visitDate: visit.visitDate,
+      user: visit.user,
+      doctor: {
+        _id: visit.doctor?._id,
+        firstName: visit.doctor?.firstName,
+        lastName: visit.doctor?.lastName,
+        clinicOfficeAddress: visit.doctor?.clinicOfficeAddress,
+      },
+      employeeLocation: empLat && empLng ? { lat: empLat, lng: empLng } : null,
+      clinicLocation:
+        docCoords && docCoords.length === 2 && (docCoords[0] !== 0 || docCoords[1] !== 0)
+          ? { lat: docCoords[1], lng: docCoords[0] }
+          : null,
+      accuracy: visit.location?.accuracy || null,
+      distance,
+      verification,
+    };
+  });
+
+  // Filter by status if requested
+  let filteredVisits = enrichedVisits;
+  if (statusFilter && statusFilter !== 'all') {
+    filteredVisits = enrichedVisits.filter((v) => v.verification === statusFilter);
+  }
+
+  res.json({
+    success: true,
+    data: filteredVisits,
+    stats,
+    pagination: {
+      page: parseInt(page),
+      limit: parsedLimit,
+      total,
+      pages: Math.ceil(total / parsedLimit),
+    },
+  });
+});
+
 module.exports = {
   createVisit,
   getAllVisits,
@@ -953,4 +1180,6 @@ module.exports = {
   getTodayVisits,
   refreshPhotoUrls,
   getEmployeeReport,
+  getQuotaDumpingAlerts,
+  getGPSReview,
 };

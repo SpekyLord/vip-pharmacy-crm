@@ -195,9 +195,10 @@ const buildDoctorFields = (parsed, bdmId, regionId, parentRegions, productMap) =
   // Programs
   if (parsed.programs) {
     const validPrograms = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
+    // Normalize: trim, collapse whitespace, and normalize slash spacing ("REBATES/ MONEY" → "REBATES / MONEY")
+    const normalizeProgram = (s) => s.trim().replace(/\s+/g, ' ').replace(/\s*\/\s*/g, ' / ').toLowerCase();
     const program = validPrograms.find(
-      (p) => p.toLowerCase() === parsed.programs.toLowerCase() ||
-             p.replace(/\s+/g, ' ').toLowerCase() === parsed.programs.replace(/\s+/g, ' ').toLowerCase()
+      (p) => normalizeProgram(p) === normalizeProgram(parsed.programs)
     );
     if (program) {
       doctorFields.programsToImplement = [program];

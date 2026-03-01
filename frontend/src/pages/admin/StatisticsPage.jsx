@@ -37,6 +37,8 @@ import {
   Search,
   Calendar,
   RefreshCw,
+  UserCheck,
+  ChevronLeft,
 } from 'lucide-react';
 import {
   BarChart,
@@ -49,204 +51,16 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
-  LineChart,
-  Line,
 } from 'recharts';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
-// import complianceService from '../../services/complianceService';
+import DCRSummaryTable from '../../components/employee/DCRSummaryTable';
+import scheduleService from '../../services/scheduleService';
+import userService from '../../services/userService';
+import visitService from '../../services/visitService';
 
-/* =============================================================================
-   MOCK DATA
-   Simulates API responses from Task 2.1 backend endpoints.
-   Replace with actual API calls once backend is ready.
-   ============================================================================= */
-
-// Mock: getOverviewStats response
-const MOCK_OVERVIEW_STATS = {
-  totalComplianceRate: 78.5,
-  totalEmployees: 45,
-  onTrackEmployees: 35,
-  behindScheduleEmployees: 10,
-  criticalAlerts: 3,
-  totalVisitsThisMonth: 1247,
-  targetVisitsThisMonth: 1580,
-  weeklyTrend: [
-    { week: 'Week 1', compliance: 82, target: 100 },
-    { week: 'Week 2', compliance: 76, target: 100 },
-    { week: 'Week 3', compliance: 79, target: 100 },
-    { week: 'Week 4', compliance: 78, target: 100 },
-  ],
-  riskFactors: {
-    highRisk: 3,
-    mediumRisk: 5,
-    lowRisk: 2,
-  },
-};
-
-// Mock: getMonthlyComplianceReport response
-const MOCK_MONTHLY_REPORT = {
-  months: [
-    { month: 'Jul', completionRate: 85, visits: 1420, target: 1600 },
-    { month: 'Aug', completionRate: 82, visits: 1312, target: 1600 },
-    { month: 'Sep', completionRate: 88, visits: 1408, target: 1600 },
-    { month: 'Oct', completionRate: 79, visits: 1264, target: 1600 },
-    { month: 'Nov', completionRate: 81, visits: 1296, target: 1600 },
-    { month: 'Dec', completionRate: 78, visits: 1247, target: 1580 },
-  ],
-};
-
-// Mock: getBehindScheduleEmployees response
-const MOCK_BEHIND_SCHEDULE_EMPLOYEES = [
-  {
-    _id: '1', // keep for table row key if you want
-    userId: '694e844d77c859b62da6e6da', // ✅ must be 24 hex chars
-    name: 'Juan Dela Cruz',
-    email: 'juan@vippharmacy.com',
-    region: 'Region VI - Western Visayas',
-    weeklyTarget: 12,
-    completedVisits: 5,
-    percentage: 41.7,
-    status: 'behind',
-    lastVisitDate: '2024-12-27T10:30:00Z',
-    missedDays: 3,
-  },
-  {
-    _id: '2',
-    name: 'Maria Santos',
-    email: 'maria@vippharmacy.com',
-    region: 'Region VI - Western Visayas',
-    weeklyTarget: 10,
-    completedVisits: 6,
-    percentage: 60.0,
-    status: 'behind',
-    lastVisitDate: '2024-12-26T14:15:00Z',
-    missedDays: 2,
-  },
-  {
-    _id: '3',
-    name: 'Pedro Reyes',
-    email: 'pedro@vippharmacy.com',
-    region: 'NCR - Metro Manila',
-    weeklyTarget: 15,
-    completedVisits: 11,
-    percentage: 73.3,
-    status: 'behind',
-    lastVisitDate: '2024-12-28T09:00:00Z',
-    missedDays: 1,
-  },
-  {
-    _id: '4',
-    name: 'Ana Garcia',
-    email: 'ana@vippharmacy.com',
-    region: 'Region VII - Central Visayas',
-    weeklyTarget: 8,
-    completedVisits: 3,
-    percentage: 37.5,
-    status: 'behind',
-    lastVisitDate: '2024-12-25T11:45:00Z',
-    missedDays: 4,
-  },
-  {
-    _id: '5',
-    name: 'Jose Mendoza',
-    email: 'jose@vippharmacy.com',
-    region: 'Region VI - Western Visayas',
-    weeklyTarget: 10,
-    completedVisits: 7,
-    percentage: 70.0,
-    status: 'behind',
-    lastVisitDate: '2024-12-27T16:20:00Z',
-    missedDays: 2,
-  },
-  {
-    _id: '6',
-    name: 'Elena Cruz',
-    email: 'elena@vippharmacy.com',
-    region: 'CAR - Cordillera',
-    weeklyTarget: 6,
-    completedVisits: 6,
-    percentage: 100.0,
-    status: 'on-track',
-    lastVisitDate: '2024-12-28T10:00:00Z',
-    missedDays: 0,
-  },
-  {
-    _id: '7',
-    name: 'Roberto Lim',
-    email: 'roberto@vippharmacy.com',
-    region: 'NCR - Metro Manila',
-    weeklyTarget: 14,
-    completedVisits: 12,
-    percentage: 85.7,
-    status: 'on-track',
-    lastVisitDate: '2024-12-28T08:30:00Z',
-    missedDays: 0,
-  },
-];
-
-// Mock: getQuotaDumpingAlerts response
-const MOCK_QUOTA_DUMPING_ALERTS = [
-  {
-    _id: 'alert-1',
-    employeeId: '1',
-    employeeName: 'Juan Dela Cruz',
-    email: 'juan@vippharmacy.com',
-    alertType: 'quota_dumping',
-    severity: 'high',
-    description: '5 visits logged within 2 hours on Dec 27',
-    visitCount: 5,
-    timeSpan: '2 hours',
-    detectedAt: '2024-12-27T12:30:00Z',
-    visits: [
-      { doctor: 'Dr. Smith', time: '10:30 AM' },
-      { doctor: 'Dr. Johnson', time: '10:45 AM' },
-      { doctor: 'Dr. Williams', time: '11:15 AM' },
-      { doctor: 'Dr. Brown', time: '11:45 AM' },
-      { doctor: 'Dr. Davis', time: '12:20 PM' },
-    ],
-    status: 'pending_review',
-  },
-  {
-    _id: 'alert-2',
-    employeeId: '3',
-    employeeName: 'Pedro Reyes',
-    email: 'pedro@vippharmacy.com',
-    alertType: 'quota_dumping',
-    severity: 'medium',
-    description: '4 visits logged within 3 hours on Dec 26',
-    visitCount: 4,
-    timeSpan: '3 hours',
-    detectedAt: '2024-12-26T15:00:00Z',
-    visits: [
-      { doctor: 'Dr. Garcia', time: '09:00 AM' },
-      { doctor: 'Dr. Martinez', time: '10:00 AM' },
-      { doctor: 'Dr. Rodriguez', time: '11:30 AM' },
-      { doctor: 'Dr. Lopez', time: '12:00 PM' },
-    ],
-    status: 'pending_review',
-  },
-  {
-    _id: 'alert-3',
-    employeeId: '4',
-    employeeName: 'Ana Garcia',
-    email: 'ana@vippharmacy.com',
-    alertType: 'unusual_pattern',
-    severity: 'low',
-    description: 'All visits logged at end of week (Friday)',
-    visitCount: 3,
-    timeSpan: '1 day',
-    detectedAt: '2024-12-27T18:00:00Z',
-    visits: [
-      { doctor: 'Dr. Santos', time: '02:00 PM' },
-      { doctor: 'Dr. Reyes', time: '03:30 PM' },
-      { doctor: 'Dr. Cruz', time: '05:00 PM' },
-    ],
-    status: 'reviewed',
-  },
-];
+/* Mock data removed — now fetched from real APIs */
 
 /* =============================================================================
    STYLES
@@ -1184,6 +998,158 @@ const statisticsPageStyles = `
     from { transform: translateX(-20px); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
   }
+
+  /* BDM Performance Tab */
+  .bdm-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .cycle-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .cycle-nav-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #374151;
+    transition: all 0.2s;
+  }
+
+  .cycle-nav-btn:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+  }
+
+  .cycle-nav-label {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f2937;
+    min-width: 90px;
+    text-align: center;
+  }
+
+  .status-bar {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+
+  .status-bar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #374151;
+    font-weight: 500;
+  }
+
+  .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .status-dot.completed { background: #22c55e; }
+  .status-dot.planned { background: #3b82f6; }
+  .status-dot.carried { background: #f59e0b; }
+  .status-dot.missed { background: #ef4444; }
+
+  .bdm-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 24px;
+  }
+
+  @media (max-width: 900px) {
+    .bdm-two-col {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .coverage-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 14px;
+  }
+
+  .coverage-row:last-child {
+    border-bottom: none;
+    font-weight: 600;
+  }
+
+  .coverage-bar-bg {
+    width: 100px;
+    height: 8px;
+    background: #e5e7eb;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 12px;
+    flex-shrink: 0;
+  }
+
+  .coverage-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+    transition: width 0.3s ease;
+  }
+
+  .eng-type-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 14px;
+  }
+
+  .eng-type-row:last-child {
+    border-bottom: none;
+  }
+
+  .eng-type-bar-bg {
+    flex: 1;
+    height: 8px;
+    background: #e5e7eb;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 12px;
+  }
+
+  .eng-type-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+
+  @media (max-width: 768px) {
+    .bdm-controls {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .bdm-controls .filter-select {
+      width: 100%;
+    }
+  }
 `;
 
 /* =============================================================================
@@ -1211,11 +1177,10 @@ const StatisticsPage = () => {
   // State: Active tab
   const [activeTab, setActiveTab] = useState('overview');
 
-  // State: Data from API (using mock for now)
-  const [overviewStats, setOverviewStats] = useState(MOCK_OVERVIEW_STATS);
-  const [monthlyReport, setMonthlyReport] = useState(MOCK_MONTHLY_REPORT);
-  const [behindScheduleEmployees, setBehindScheduleEmployees] = useState(MOCK_BEHIND_SCHEDULE_EMPLOYEES);
-  const [quotaDumpingAlerts, setQuotaDumpingAlerts] = useState(MOCK_QUOTA_DUMPING_ALERTS);
+  // State: Data from API
+  const [overviewStats, setOverviewStats] = useState(null);
+  const [behindScheduleEmployees, setBehindScheduleEmployees] = useState([]);
+  const [quotaDumpingAlerts, setQuotaDumpingAlerts] = useState([]);
 
   // State: Loading and error
   const [loading, setLoading] = useState(false);
@@ -1233,41 +1198,136 @@ const StatisticsPage = () => {
   const [notifySending, setNotifySending] = useState(false);
   const [notifySuccess, setNotifySuccess] = useState(false);
 
+  // State: BDM Performance tab
+  const [bdmEmployees, setBdmEmployees] = useState([]);
+  const [selectedBdmId, setSelectedBdmId] = useState('');
+  const [bdmCycleNumber, setBdmCycleNumber] = useState(null);
+  const [bdmDcrSummary, setBdmDcrSummary] = useState([]);
+  const [bdmDcrTotal, setBdmDcrTotal] = useState({});
+  const [bdmSummary, setBdmSummary] = useState({});
+  const [bdmDoctors, setBdmDoctors] = useState([]);
+  const [bdmLoading, setBdmLoading] = useState(false);
+
   /* ---------------------------------------------------------------------------
-     Data Fetching
-     Replace mock data with actual API calls once backend is ready.
+     Data Fetching — real API calls
      --------------------------------------------------------------------------- */
 
+  const fetchAllData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch employees, compliance alerts, and quota dumping in parallel
+      const [empRes, complianceRes, alertsRes] = await Promise.all([
+        userService.getEmployees({ limit: 0 }),
+        visitService.getComplianceAlerts(),
+        visitService.getQuotaDumpingAlerts(),
+      ]);
+
+      const employees = empRes.data || [];
+      setBdmEmployees(employees);
+
+      // Map compliance alerts to behind-schedule table shape
+      const complianceData = (complianceRes.data || []).map((item, idx) => ({
+        _id: item.employee?._id || `comp-${idx}`,
+        userId: item.employee?._id,
+        name: item.employee?.name || 'Unknown',
+        email: item.employee?.email || '',
+        region: '',
+        weeklyTarget: item.expectedByNow || 0,
+        completedVisits: item.actualVisits || 0,
+        percentage: item.percentageComplete || 0,
+        status: (item.percentageComplete || 0) >= 80 ? 'on-track' : 'behind',
+      }));
+      setBehindScheduleEmployees(complianceData);
+
+      // Set quota dumping alerts
+      setQuotaDumpingAlerts(alertsRes.data || []);
+
+      // Derive overview stats from CPT grid data per BDM
+      let totalTarget = 0;
+      let totalActual = 0;
+      let onTrack = 0;
+      let behind = 0;
+      const perBdmCallRates = [];
+
+      // Fetch CPT grid for each BDM in parallel (limited concurrency)
+      const cptPromises = employees.map((emp) =>
+        scheduleService.getCPTGrid(null, emp._id).catch(() => null)
+      );
+      const cptResults = await Promise.all(cptPromises);
+
+      cptResults.forEach((result, i) => {
+        if (!result?.data) return;
+        const d = result.data;
+        const target = d.dcrTotal?.targetEngagements || 0;
+        const actual = d.dcrTotal?.totalEngagements || 0;
+        const rate = d.dcrTotal?.callRate || 0;
+        totalTarget += target;
+        totalActual += actual;
+        if (rate >= 80) onTrack++;
+        else behind++;
+        perBdmCallRates.push({
+          name: employees[i]?.firstName || employees[i]?.name?.split(' ')[0] || `BDM ${i + 1}`,
+          callRate: rate,
+        });
+      });
+
+      const totalComplianceRate = totalTarget > 0
+        ? Math.round((totalActual / totalTarget) * 100 * 10) / 10
+        : 0;
+
+      setOverviewStats({
+        totalComplianceRate,
+        totalEmployees: employees.length,
+        onTrackEmployees: onTrack,
+        behindScheduleEmployees: behind,
+        criticalAlerts: (alertsRes.data || []).length,
+        totalVisitsThisMonth: totalActual,
+        targetVisitsThisMonth: totalTarget,
+        perBdmCallRates,
+      });
+
+    } catch {
+      setError('Failed to load compliance data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
+    fetchAllData();
+  }, []);
+
+  // Employee list is fetched in fetchAllData above
+
+  // Fetch DCR data when BDM or cycle changes
+  useEffect(() => {
+    if (!selectedBdmId) return;
+    const fetchBdmDcr = async () => {
+      setBdmLoading(true);
       try {
-        setLoading(true);
-        setError(null);
-
-        // TODO: Replace with actual API calls
-        // const [statsRes, monthlyRes, employeesRes, alertsRes] = await Promise.all([
-        //   complianceService.getOverviewStats(),
-        //   complianceService.getMonthlyComplianceReport(),
-        //   complianceService.getBehindScheduleEmployees(),
-        //   complianceService.getQuotaDumpingAlerts(),
-        // ]);
-        // setOverviewStats(statsRes.data);
-        // setMonthlyReport(monthlyRes.data);
-        // setBehindScheduleEmployees(employeesRes.data);
-        // setQuotaDumpingAlerts(alertsRes.data);
-
-        // Simulate API delay
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-      } catch {
-        setError('Failed to load compliance data. Please try again.');
+        const response = await scheduleService.getCPTGrid(bdmCycleNumber, selectedBdmId);
+        const data = response.data;
+        setBdmDcrSummary(data.dcrSummary || []);
+        setBdmDcrTotal(data.dcrTotal || {});
+        setBdmSummary(data.summary || {});
+        setBdmDoctors(data.doctors || []);
+        if (bdmCycleNumber == null && data.cycleNumber != null) {
+          setBdmCycleNumber(data.cycleNumber);
+        }
+      } catch (err) {
+        console.error('Failed to fetch BDM DCR:', err);
+        setBdmDcrSummary([]);
+        setBdmDcrTotal({});
+        setBdmSummary({});
+        setBdmDoctors([]);
       } finally {
-        setLoading(false);
+        setBdmLoading(false);
       }
     };
-
-    fetchData();
-  }, []);
+    fetchBdmDcr();
+  }, [selectedBdmId, bdmCycleNumber]);
 
   /* ---------------------------------------------------------------------------
      Filtered Employees
@@ -1300,11 +1360,8 @@ const StatisticsPage = () => {
      Handlers
      --------------------------------------------------------------------------- */
 
-  const handleRefresh = async () => {
-    setLoading(true);
-    // Simulate refresh
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setLoading(false);
+  const handleRefresh = () => {
+    fetchAllData();
   };
 
   const handleNotifyClick = (employee) => {
@@ -1359,6 +1416,19 @@ const StatisticsPage = () => {
     } finally {
       setNotifySending(false);
     }
+  };
+
+  const handleBdmChange = (e) => {
+    setSelectedBdmId(e.target.value);
+    setBdmCycleNumber(null);
+    setBdmDcrSummary([]);
+    setBdmDcrTotal({});
+    setBdmSummary({});
+    setBdmDoctors([]);
+  };
+
+  const handleBdmCycleChange = (delta) => {
+    setBdmCycleNumber((prev) => (prev != null ? prev + delta : delta));
   };
 
 
@@ -1441,15 +1511,21 @@ const StatisticsPage = () => {
                 Alerts & Quota Dumping
                 {alertsCount > 0 && <span className="tab-badge warning">{alertsCount}</span>}
               </button>
+              <button
+                className={`tab-btn ${activeTab === 'bdm-performance' ? 'active' : ''}`}
+                onClick={() => setActiveTab('bdm-performance')}
+              >
+                <UserCheck size={18} />
+                BDM Performance
+              </button>
             </div>
 
             {/* Tab Content */}
             <div className="tabs-content">
               {/* Overview Tab */}
-              {activeTab === 'overview' && (
+              {activeTab === 'overview' && overviewStats && (
                 <OverviewTab
                   stats={overviewStats}
-                  monthlyReport={monthlyReport}
                 />
               )}
 
@@ -1472,6 +1548,22 @@ const StatisticsPage = () => {
                 <AlertsTab
                   alerts={quotaDumpingAlerts}
                   onNotify={handleNotifyClick}
+                />
+              )}
+
+              {/* BDM Performance Tab */}
+              {activeTab === 'bdm-performance' && (
+                <BDMPerformanceTab
+                  employees={bdmEmployees}
+                  selectedBdmId={selectedBdmId}
+                  onBdmChange={handleBdmChange}
+                  cycleNumber={bdmCycleNumber}
+                  onCycleChange={handleBdmCycleChange}
+                  dcrSummary={bdmDcrSummary}
+                  dcrTotal={bdmDcrTotal}
+                  summary={bdmSummary}
+                  doctors={bdmDoctors}
+                  loading={bdmLoading}
                 />
               )}
             </div>
@@ -1497,16 +1589,16 @@ const StatisticsPage = () => {
 
 /* =============================================================================
    COMPONENT: OverviewTab
-   High-level metrics, trends, and monthly completion chart.
+   High-level metrics and per-BDM call rate chart.
    ============================================================================= */
 
-const OverviewTab = ({ stats, monthlyReport }) => {
-  // Prepare pie chart data for risk factors
-  const riskPieData = [
-    { name: 'Low Risk', value: stats.riskFactors.lowRisk, color: CHART_COLORS.primary },
-    { name: 'Medium Risk', value: stats.riskFactors.mediumRisk, color: CHART_COLORS.warning },
-    { name: 'High Risk', value: stats.riskFactors.highRisk, color: CHART_COLORS.danger },
+const OverviewTab = ({ stats }) => {
+  // Prepare pie chart data: on-track vs behind
+  const statusPieData = [
+    { name: 'On Track', value: stats.onTrackEmployees },
+    { name: 'Behind', value: stats.behindScheduleEmployees },
   ];
+  const STATUS_PIE_COLORS = [CHART_COLORS.primary, CHART_COLORS.danger];
 
   return (
     <div>
@@ -1524,11 +1616,11 @@ const OverviewTab = ({ stats, monthlyReport }) => {
               ) : (
                 <TrendingDown size={14} />
               )}
-              {stats.totalComplianceRate >= 80 ? '+2.3%' : '-1.5%'}
+              {stats.totalComplianceRate}%
             </div>
           </div>
           <div className="stat-card-value">{stats.totalComplianceRate}%</div>
-          <div className="stat-card-label">Total Compliance Rate</div>
+          <div className="stat-card-label">Overall Call Rate</div>
           <div className="stat-card-sublabel">Target: 80%</div>
         </div>
 
@@ -1541,7 +1633,7 @@ const OverviewTab = ({ stats, monthlyReport }) => {
           </div>
           <div className="stat-card-value">{stats.onTrackEmployees}</div>
           <div className="stat-card-label">On Track</div>
-          <div className="stat-card-sublabel">of {stats.totalEmployees} employees</div>
+          <div className="stat-card-sublabel">of {stats.totalEmployees} BDMs</div>
         </div>
 
         {/* Behind Schedule */}
@@ -1556,7 +1648,7 @@ const OverviewTab = ({ stats, monthlyReport }) => {
           <div className="stat-card-sublabel">Requires attention</div>
         </div>
 
-        {/* Critical Alerts */}
+        {/* Quota Dumping Alerts */}
         <div className="stat-card">
           <div className="stat-card-header">
             <div className="stat-card-icon yellow">
@@ -1564,145 +1656,128 @@ const OverviewTab = ({ stats, monthlyReport }) => {
             </div>
           </div>
           <div className="stat-card-value">{stats.criticalAlerts}</div>
-          <div className="stat-card-label">Critical Alerts</div>
+          <div className="stat-card-label">Quota Dumping Alerts</div>
           <div className="stat-card-sublabel">Pending review</div>
         </div>
       </div>
 
       {/* Charts Grid */}
       <div className="charts-grid">
-        {/* Monthly Compliance Chart */}
+        {/* Per-BDM Call Rates Chart */}
         <div className="chart-card">
           <div className="chart-card-header">
             <div className="chart-card-title">
               <Activity size={18} />
-              Monthly Completion Rates
-            </div>
-            <div className="chart-legend">
-              <div className="chart-legend-item">
-                <div className="chart-legend-dot" style={{ background: CHART_COLORS.primary }} />
-                <span>Actual</span>
-              </div>
-              <div className="chart-legend-item">
-                <div className="chart-legend-dot" style={{ background: CHART_COLORS.gray }} />
-                <span>Target</span>
-              </div>
+              Per-BDM Call Rates (Current Cycle)
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={monthlyReport.months} barGap={4}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="month" axisLine={false} tickLine={false} />
-              <YAxis axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
-              <Tooltip
-                contentStyle={{
-                  background: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '8px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                }}
-                formatter={(value) => [`${value}%`, 'Completion Rate']}
-              />
-              <Bar
-                dataKey="completionRate"
-                fill={CHART_COLORS.primary}
-                radius={[4, 4, 0, 0]}
-                maxBarSize={50}
-              />
-            </BarChart>
-          </ResponsiveContainer>
+          {stats.perBdmCallRates?.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={stats.perBdmCallRates} barGap={4}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                <YAxis axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
+                <Tooltip
+                  contentStyle={{
+                    background: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  }}
+                  formatter={(value) => [`${value}%`, 'Call Rate']}
+                />
+                <Bar
+                  dataKey="callRate"
+                  fill={CHART_COLORS.primary}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={50}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="empty-state">
+              <p>No BDM schedule data available</p>
+            </div>
+          )}
         </div>
 
-        {/* Risk Factors Card */}
+        {/* On Track vs Behind Donut */}
         <div className="chart-card">
           <div className="chart-card-header">
             <div className="chart-card-title">
               <AlertCircle size={18} />
-              Risk Factors
+              BDM Status
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <PieChart>
-              <Pie
-                data={riskPieData}
-                cx="50%"
-                cy="50%"
-                innerRadius={50}
-                outerRadius={70}
-                paddingAngle={4}
-                dataKey="value"
-              >
-                {riskPieData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={PIE_COLORS[index]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="risk-factors-list">
-            <div className="risk-factor-item">
-              <div className="risk-factor-label">
-                <div className="risk-factor-dot high" />
-                <span>High Risk</span>
+          {stats.totalEmployees > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie
+                    data={statusPieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={70}
+                    paddingAngle={4}
+                    dataKey="value"
+                  >
+                    {statusPieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={STATUS_PIE_COLORS[index]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="risk-factors-list">
+                <div className="risk-factor-item">
+                  <div className="risk-factor-label">
+                    <div className="risk-factor-dot low" />
+                    <span>On Track (≥80%)</span>
+                  </div>
+                  <span className="risk-factor-count">{stats.onTrackEmployees}</span>
+                </div>
+                <div className="risk-factor-item">
+                  <div className="risk-factor-label">
+                    <div className="risk-factor-dot high" />
+                    <span>Behind (&lt;80%)</span>
+                  </div>
+                  <span className="risk-factor-count">{stats.behindScheduleEmployees}</span>
+                </div>
               </div>
-              <span className="risk-factor-count">{stats.riskFactors.highRisk}</span>
+            </>
+          ) : (
+            <div className="empty-state">
+              <p>No BDM data available</p>
             </div>
-            <div className="risk-factor-item">
-              <div className="risk-factor-label">
-                <div className="risk-factor-dot medium" />
-                <span>Medium Risk</span>
-              </div>
-              <span className="risk-factor-count">{stats.riskFactors.mediumRisk}</span>
-            </div>
-            <div className="risk-factor-item">
-              <div className="risk-factor-label">
-                <div className="risk-factor-dot low" />
-                <span>Low Risk</span>
-              </div>
-              <span className="risk-factor-count">{stats.riskFactors.lowRisk}</span>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Weekly Trend Chart */}
+      {/* Visit Progress Summary */}
       <div className="chart-card">
         <div className="chart-card-header">
           <div className="chart-card-title">
             <TrendingUp size={18} />
-            Weekly Compliance Trend
+            Visit Progress (Current Cycle)
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={stats.weeklyTrend}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="week" axisLine={false} tickLine={false} />
-            <YAxis axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
-            <Tooltip
-              contentStyle={{
-                background: 'white',
-                border: '1px solid #e5e7eb',
-                borderRadius: '8px',
-              }}
-            />
-            <Line
-              type="monotone"
-              dataKey="compliance"
-              stroke={CHART_COLORS.primary}
-              strokeWidth={3}
-              dot={{ fill: CHART_COLORS.primary, strokeWidth: 2, r: 5 }}
-              activeDot={{ r: 7 }}
-            />
-            <Line
-              type="monotone"
-              dataKey="target"
-              stroke={CHART_COLORS.gray}
-              strokeWidth={2}
-              strokeDasharray="5 5"
-              dot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        <div style={{ padding: '16px 0', display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: '28px', fontWeight: 700, color: '#1f2937' }}>{stats.totalVisitsThisMonth}</div>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>Completed Engagements</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '28px', fontWeight: 700, color: '#9ca3af' }}>{stats.targetVisitsThisMonth}</div>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>Target Engagements</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '28px', fontWeight: 700, color: stats.totalComplianceRate >= 80 ? '#16a34a' : '#dc2626' }}>
+              {stats.totalComplianceRate}%
+            </div>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>Completion Rate</div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1891,6 +1966,7 @@ const AlertsTab = ({ alerts, onNotify }) => {
   // Get employee object from alert for notify modal
   const getEmployeeFromAlert = (alert) => ({
     _id: alert.employeeId,
+    userId: alert.employeeId,
     name: alert.employeeName,
     email: alert.email,
   });
@@ -1985,6 +2061,263 @@ const AlertsTab = ({ alerts, onNotify }) => {
           </div>
         </div>
       ))}
+    </div>
+  );
+};
+
+/* =============================================================================
+   COMPONENT: BDMPerformanceTab
+   Admin view of any BDM's DCR Summary with metrics and engagement breakdown.
+   ============================================================================= */
+
+const ENG_TYPE_LABELS = {
+  TXT_PROMATS: { label: 'TXT / Promats', color: '#3b82f6' },
+  MES_VIBER_GIF: { label: 'MES / GIF', color: '#8b5cf6' },
+  PICTURE: { label: 'Picture', color: '#f59e0b' },
+  SIGNED_CALL: { label: 'Signed Call', color: '#22c55e' },
+  VOICE_CALL: { label: 'Voice Call', color: '#ef4444' },
+};
+
+const BDMPerformanceTab = ({
+  employees,
+  selectedBdmId,
+  onBdmChange,
+  cycleNumber,
+  onCycleChange,
+  dcrSummary,
+  dcrTotal,
+  summary,
+  doctors,
+  loading,
+}) => {
+  const metrics = useMemo(() => {
+    const totalTarget = dcrTotal.targetEngagements || 0;
+    const totalEngagements = dcrTotal.totalEngagements || 0;
+    const callRate = dcrTotal.callRate || 0;
+    const rateColor = callRate >= 80 ? '#16a34a' : callRate >= 50 ? '#d97706' : '#dc2626';
+
+    const vipCount = doctors.length;
+    const freq2 = doctors.filter((d) => d.visitFrequency === 2).length;
+    const freq4 = doctors.filter((d) => d.visitFrequency === 4).length;
+
+    // Aggregate engagement types from all days
+    const engTypeTotals = {};
+    for (const day of dcrSummary) {
+      const eb = day.engagementBreakdown || {};
+      for (const [key, val] of Object.entries(eb)) {
+        engTypeTotals[key] = (engTypeTotals[key] || 0) + val;
+      }
+    }
+    const maxEngType = Math.max(1, ...Object.values(engTypeTotals));
+
+    return { totalTarget, totalEngagements, callRate, rateColor, vipCount, freq2, freq4, engTypeTotals, maxEngType };
+  }, [dcrTotal, doctors, dcrSummary]);
+
+  // Compute schedule status counts from summary
+  const completed = summary.completed || 0;
+  const planned = summary.planned || 0;
+  const carried = summary.carried || 0;
+  const missed = summary.missed || 0;
+
+  return (
+    <div>
+      {/* Controls: BDM selector + Cycle navigator */}
+      <div className="bdm-controls">
+        <select
+          className="filter-select"
+          value={selectedBdmId}
+          onChange={onBdmChange}
+          style={{ minWidth: 240 }}
+        >
+          <option value="">-- Select a BDM --</option>
+          {employees.map((emp) => (
+            <option key={emp._id} value={emp._id}>
+              {emp.firstName} {emp.lastName}
+            </option>
+          ))}
+        </select>
+
+        {selectedBdmId && (
+          <div className="cycle-nav">
+            <button className="cycle-nav-btn" onClick={() => onCycleChange(-1)}>
+              <ChevronLeft size={18} />
+            </button>
+            <span className="cycle-nav-label">
+              Cycle {cycleNumber != null ? cycleNumber : '...'}
+            </span>
+            <button className="cycle-nav-btn" onClick={() => onCycleChange(1)}>
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Empty state: no BDM selected */}
+      {!selectedBdmId && (
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <UserCheck size={28} />
+          </div>
+          <h3>Select a BDM</h3>
+          <p>Choose a Business Development Manager from the dropdown to view their DCR Summary and performance metrics.</p>
+        </div>
+      )}
+
+      {/* Loading */}
+      {selectedBdmId && loading && (
+        <div style={{ textAlign: 'center', padding: '48px 0' }}>
+          <LoadingSpinner />
+        </div>
+      )}
+
+      {/* No schedule data */}
+      {selectedBdmId && !loading && dcrSummary.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <Calendar size={28} />
+          </div>
+          <h3>No Schedule Data</h3>
+          <p>This BDM has no schedule data for the selected cycle.</p>
+        </div>
+      )}
+
+      {/* Main content */}
+      {selectedBdmId && !loading && dcrSummary.length > 0 && (
+        <>
+          {/* Metric Cards */}
+          <div className="overview-grid">
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon blue">
+                  <Target size={22} />
+                </div>
+              </div>
+              <div className="stat-card-value">{metrics.totalTarget}</div>
+              <div className="stat-card-label">Total Target</div>
+              <div className="stat-card-sublabel">Scheduled engagements</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon green">
+                  <CheckCircle size={22} />
+                </div>
+              </div>
+              <div className="stat-card-value">{metrics.totalEngagements}</div>
+              <div className="stat-card-label">Total Engagements</div>
+              <div className="stat-card-sublabel">Completed engagements</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon" style={{ background: metrics.rateColor + '20', color: metrics.rateColor }}>
+                  <Activity size={22} />
+                </div>
+              </div>
+              <div className="stat-card-value" style={{ color: metrics.rateColor }}>{metrics.callRate}%</div>
+              <div className="stat-card-label">Overall Call Rate</div>
+              <div className="stat-card-sublabel">{metrics.callRate >= 80 ? 'On track' : metrics.callRate >= 50 ? 'Needs improvement' : 'Below target'}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon yellow">
+                  <Users size={22} />
+                </div>
+              </div>
+              <div className="stat-card-value">{metrics.vipCount}</div>
+              <div className="stat-card-label">VIP Clients</div>
+              <div className="stat-card-sublabel">{metrics.freq2} bi-weekly, {metrics.freq4} weekly</div>
+            </div>
+          </div>
+
+          {/* Schedule Status Bar */}
+          <div className="status-bar">
+            <div className="status-bar-item">
+              <span className="status-dot completed" />
+              Completed: {completed}
+            </div>
+            <div className="status-bar-item">
+              <span className="status-dot planned" />
+              Planned: {planned}
+            </div>
+            <div className="status-bar-item">
+              <span className="status-dot carried" />
+              Carried: {carried}
+            </div>
+            <div className="status-bar-item">
+              <span className="status-dot missed" />
+              Missed: {missed}
+            </div>
+          </div>
+
+          {/* DCR Summary Table (reused component) */}
+          <DCRSummaryTable dcrSummary={dcrSummary} dcrTotal={dcrTotal} />
+
+          {/* Two-column: VIP Coverage + Engagement Types */}
+          <div className="bdm-two-col">
+            {/* VIP Coverage */}
+            <div className="chart-card">
+              <div className="chart-card-header">
+                <div className="chart-card-title">
+                  <Users size={18} />
+                  VIP Coverage
+                </div>
+              </div>
+              <div className="coverage-row">
+                <span>2x/month</span>
+                <div className="coverage-bar-bg">
+                  <div
+                    className="coverage-bar-fill"
+                    style={{ width: metrics.freq2 > 0 ? '100%' : '0%' }}
+                  />
+                </div>
+                <span>{metrics.freq2} clients</span>
+              </div>
+              <div className="coverage-row">
+                <span>4x/month</span>
+                <div className="coverage-bar-bg">
+                  <div
+                    className="coverage-bar-fill"
+                    style={{ width: metrics.freq4 > 0 ? '100%' : '0%' }}
+                  />
+                </div>
+                <span>{metrics.freq4} clients</span>
+              </div>
+              <div className="coverage-row">
+                <span>Total</span>
+                <div className="coverage-bar-bg">
+                  <div className="coverage-bar-fill" style={{ width: '100%' }} />
+                </div>
+                <span>{metrics.vipCount} clients</span>
+              </div>
+            </div>
+
+            {/* Engagement Type Distribution */}
+            <div className="chart-card">
+              <div className="chart-card-header">
+                <div className="chart-card-title">
+                  <BarChart3 size={18} />
+                  Engagement Types
+                </div>
+              </div>
+              {Object.entries(ENG_TYPE_LABELS).map(([key, { label, color }]) => {
+                const count = metrics.engTypeTotals[key] || 0;
+                const pct = metrics.maxEngType > 0 ? (count / metrics.maxEngType) * 100 : 0;
+                return (
+                  <div key={key} className="eng-type-row">
+                    <span style={{ minWidth: 90 }}>{label}</span>
+                    <div className="eng-type-bar-bg">
+                      <div
+                        className="eng-type-bar-fill"
+                        style={{ width: `${pct}%`, background: color }}
+                      />
+                    </div>
+                    <span style={{ minWidth: 30, textAlign: 'right', fontWeight: 600 }}>{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
