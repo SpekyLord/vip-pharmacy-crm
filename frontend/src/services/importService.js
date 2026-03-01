@@ -9,7 +9,7 @@ import api from './api';
 
 /**
  * Upload a CPT Excel file for parsing and staging.
- * @param {FormData} formData - Must contain: file, assignedToBDM, regionId, cycleNumber
+ * @param {FormData} formData - Must contain: file, assignedToBDM, cycleNumber
  * @returns {Promise} Batch creation result with stats
  */
 export const upload = async (formData) => {

@@ -24,7 +24,6 @@ import {
   AlertTriangle,
   Clock,
   Users,
-  MapPin,
   ChevronDown,
   ChevronRight,
   Search,
@@ -36,7 +35,6 @@ import Sidebar from '../../components/common/Sidebar';
 import BatchDetailModal from '../../components/admin/VisitApproval';
 import * as importService from '../../services/importService';
 import userService from '../../services/userService';
-import regionService from '../../services/regionService';
 import doctorService from '../../services/doctorService';
 import scheduleService from '../../services/scheduleService';
 import { exportCPTWorkbook } from '../../utils/exportCPTWorkbook';
@@ -559,9 +557,7 @@ const PendingApprovalsPage = () => {
 
 const ImportTab = () => {
   const [employees, setEmployees] = useState([]);
-  const [regions, setRegions] = useState([]);
   const [selectedBDM, setSelectedBDM] = useState('');
-  const [selectedRegion, setSelectedRegion] = useState('');
   const [cycleNumber, setCycleNumber] = useState('');
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -580,12 +576,8 @@ const ImportTab = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const [empRes, regRes] = await Promise.all([
-          userService.getEmployees(),
-          regionService.getAll(),
-        ]);
+        const empRes = await userService.getEmployees();
         setEmployees(empRes.data || []);
-        setRegions(regRes.data || []);
       } catch {
         // Silently handle
       }
@@ -613,7 +605,6 @@ const ImportTab = () => {
 
     if (!file) return setError('Please select an Excel file');
     if (!selectedBDM) return setError('Please select a BDM');
-    if (!selectedRegion) return setError('Please select a region');
     if (!cycleNumber) return setError('Please enter a cycle number');
 
     setUploading(true);
@@ -621,7 +612,6 @@ const ImportTab = () => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('assignedToBDM', selectedBDM);
-      formData.append('regionId', selectedRegion);
       formData.append('cycleNumber', cycleNumber);
 
       const result = await importService.upload(formData);
@@ -717,15 +707,6 @@ const ImportTab = () => {
                 ))}
               </select>
             </div>
-            <div className="ie-field">
-              <label>Region</label>
-              <select value={selectedRegion} onChange={(e) => setSelectedRegion(e.target.value)}>
-                <option value="">Select Region...</option>
-                {regions.map((r) => (
-                  <option key={r._id} value={r._id}>{r.name}</option>
-                ))}
-              </select>
-            </div>
           </div>
 
           <div className="ie-form-row">
@@ -772,7 +753,7 @@ const ImportTab = () => {
             <button
               className="ie-btn ie-btn-primary"
               onClick={handleUpload}
-              disabled={uploading || !file || !selectedBDM || !selectedRegion}
+              disabled={uploading || !file || !selectedBDM}
             >
               {uploading ? <><RefreshCw size={14} /> Parsing...</> : <><Upload size={14} /> Upload & Parse</>}
             </button>
@@ -840,7 +821,6 @@ const PreviewSection = ({ batch, expandedRows, toggleExpand, onApprove, onReject
 
         <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
           BDM: <strong>{batch.assignedToBDM?.name || batch.assignedToBDM?.email}</strong>
-          {' | '}Region: <strong>{batch.regionId?.name}</strong>
           {' | '}Cycle: <strong>{batch.cycleNumber}</strong>
         </div>
 
@@ -1210,7 +1190,6 @@ const HistoryTab = () => {
                   <th>Date</th>
                   <th>File</th>
                   <th>BDM</th>
-                  <th>Region</th>
                   <th>Cycle</th>
                   <th>Status</th>
                   <th>Doctors</th>
@@ -1225,7 +1204,6 @@ const HistoryTab = () => {
                       {batch.fileName}
                     </td>
                     <td>{batch.assignedToBDM?.name || batch.assignedToBDM?.email || '—'}</td>
-                    <td>{batch.regionId?.name || '—'}</td>
                     <td>{batch.cycleNumber}</td>
                     <td>
                       <span className={`ie-badge ie-badge-${batch.status}`}>

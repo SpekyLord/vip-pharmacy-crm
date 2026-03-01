@@ -12,7 +12,6 @@ const mongoose = require('mongoose');
 const Doctor = require('../models/Doctor');
 const Visit = require('../models/Visit');
 const User = require('../models/User');
-const Region = require('../models/Region');
 const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 
@@ -21,8 +20,8 @@ const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/err
  * - Admin: no filter (see all)
  * - Employee (BDM): only doctors assigned to them via assignedTo field
  */
-const getRegionFilter = async (user) => {
-  if (user.role === 'admin' && user.canAccessAllRegions) {
+const getRegionFilter = (user) => {
+  if (user.role === 'admin') {
     return {}; // No filter for admin
   }
 
@@ -47,14 +46,9 @@ const getAllDoctors = catchAsync(async (req, res) => {
   const limit = requestedLimit === 0 ? 0 : (requestedLimit || 20);
   const skip = limit === 0 ? 0 : (page - 1) * limit;
 
-  // Start with region filter based on user role (includes descendant regions)
-  const regionFilter = await getRegionFilter(req.user);
+  // Start with access filter based on user role
+  const regionFilter = getRegionFilter(req.user);
   const filter = { isActive: true, ...regionFilter };
-
-  // Filter by specific region
-  if (req.query.region) {
-    filter.region = req.query.region;
-  }
 
   // Filter by visit frequency
   if (req.query.visitFrequency && [2, 4].includes(parseInt(req.query.visitFrequency))) {
@@ -94,7 +88,6 @@ const getAllDoctors = catchAsync(async (req, res) => {
 
   // Execute query - if limit is 0, don't apply skip/limit (fetch all)
   let query = Doctor.find(filter)
-    .populate('region', 'name code level')
     .populate('assignedTo', 'name email')
     .sort({ lastName: 1, firstName: 1 })
     .lean();
@@ -136,7 +129,6 @@ const getDoctorById = catchAsync(async (req, res) => {
   // Note: Products are in a separate database, so we can't use Mongoose populate
   // We populate assignedProducts (ProductAssignment), then manually fetch product data
   const doctor = await Doctor.findById(req.params.id)
-    .populate('region', 'name code level')
     .populate('assignedTo', 'name email phone')
     .populate('assignedProducts');
 
@@ -205,7 +197,6 @@ const createDoctor = catchAsync(async (req, res) => {
     lastName,
     specialization,
     clinicOfficeAddress,
-    region,
     phone,
     email,
     visitFrequency,
@@ -231,7 +222,6 @@ const createDoctor = catchAsync(async (req, res) => {
     lastName,
     specialization,
     clinicOfficeAddress,
-    region,
     phone,
     email,
     visitFrequency: visitFrequency || 4,
@@ -252,7 +242,6 @@ const createDoctor = catchAsync(async (req, res) => {
     isVipAssociated,
   });
 
-  await doctor.populate('region', 'name code level');
   if (doctor.assignedTo) {
     await doctor.populate('assignedTo', 'name email');
   }
@@ -290,7 +279,6 @@ const updateDoctor = catchAsync(async (req, res) => {
     'lastName',
     'specialization',
     'clinicOfficeAddress',
-    'region',
     'phone',
     'email',
     'visitFrequency',
@@ -324,7 +312,6 @@ const updateDoctor = catchAsync(async (req, res) => {
   });
 
   await doctor.save();
-  await doctor.populate('region', 'name code level');
   if (doctor.assignedTo) {
     await doctor.populate('assignedTo', 'name email');
   }
@@ -373,7 +360,6 @@ const getDoctorsByRegion = catchAsync(async (req, res) => {
   }
 
   const doctors = await Doctor.find(filter)
-    .populate('region', 'name code level')
     .populate('assignedTo', 'name email')
     .sort({ lastName: 1, firstName: 1 });
 
@@ -531,7 +517,6 @@ const assignEmployee = catchAsync(async (req, res) => {
   if (doctor.assignedTo) {
     await doctor.populate('assignedTo', 'name email');
   }
-  await doctor.populate('region', 'name code level');
 
   res.status(200).json({
     success: true,

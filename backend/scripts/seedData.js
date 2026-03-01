@@ -19,7 +19,6 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('../models/User');
-const Region = require('../models/Region');
 const Doctor = require('../models/Doctor');
 const Visit = require('../models/Visit');
 const Schedule = require('../models/Schedule');
@@ -30,51 +29,12 @@ const { connectWebsiteDB } = require('../config/websiteDb');
 const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 const { getCycleNumber, getCycleStartDate } = require('../utils/scheduleCycleUtils');
 
-// ─── Region hierarchy ────────────────────────────────────────────────────────
-
-const regions = [
-  { name: 'Philippines', code: 'PH', level: 'country', parent: null },
-  // Philippine Regions
-  { name: 'Region I', code: 'REG-I', level: 'region', parentCode: 'PH' },
-  { name: 'Region II', code: 'REG-II', level: 'region', parentCode: 'PH' },
-  { name: 'Region III', code: 'REG-III', level: 'region', parentCode: 'PH' },
-  { name: 'Region IV-A', code: 'REG-IV-A', level: 'region', parentCode: 'PH' },
-  { name: 'MIMAROPA', code: 'MIMAROPA', level: 'region', parentCode: 'PH' },
-  { name: 'Region V', code: 'REG-V', level: 'region', parentCode: 'PH' },
-  { name: 'Region VI', code: 'REG-VI', level: 'region', parentCode: 'PH' },
-  { name: 'Region VII', code: 'REG-VII', level: 'region', parentCode: 'PH' },
-  { name: 'Region VIII', code: 'REG-VIII', level: 'region', parentCode: 'PH' },
-  { name: 'Region IX', code: 'REG-IX', level: 'region', parentCode: 'PH' },
-  { name: 'Region X', code: 'REG-X', level: 'region', parentCode: 'PH' },
-  { name: 'Region XI', code: 'REG-XI', level: 'region', parentCode: 'PH' },
-  { name: 'Region XII', code: 'REG-XII', level: 'region', parentCode: 'PH' },
-  { name: 'Region XIII', code: 'REG-XIII', level: 'region', parentCode: 'PH' },
-  { name: 'NCR', code: 'NCR', level: 'region', parentCode: 'PH' },
-  { name: 'CAR', code: 'CAR', level: 'region', parentCode: 'PH' },
-  { name: 'BARMM', code: 'BARMM', level: 'region', parentCode: 'PH' },
-  { name: 'NIR', code: 'NIR', level: 'region', parentCode: 'PH' },
-  // Provinces under Region VI
-  { name: 'Iloilo', code: 'ILO', level: 'province', parentCode: 'REG-VI' },
-  { name: 'Capiz', code: 'CAP', level: 'province', parentCode: 'REG-VI' },
-  { name: 'Aklan', code: 'AKL', level: 'province', parentCode: 'REG-VI' },
-  { name: 'Antique', code: 'ANT', level: 'province', parentCode: 'REG-VI' },
-  // Cities
-  { name: 'Iloilo City', code: 'ILO-CITY', level: 'city', parentCode: 'ILO' },
-  { name: 'Roxas City', code: 'ROX-CITY', level: 'city', parentCode: 'CAP' },
-  { name: 'Kalibo', code: 'KAL', level: 'city', parentCode: 'AKL' },
-  { name: 'San Jose de Buenavista', code: 'SJB', level: 'city', parentCode: 'ANT' },
-  // Districts
-  { name: 'Jaro District', code: 'ILO-JARO', level: 'district', parentCode: 'ILO-CITY' },
-  { name: 'Mandurriao District', code: 'ILO-MAND', level: 'district', parentCode: 'ILO-CITY' },
-  { name: 'La Paz District', code: 'ILO-LPAZ', level: 'district', parentCode: 'ILO-CITY' },
-];
-
 // ─── Employee definitions ────────────────────────────────────────────────────
 
 const employeeData = [
-  { name: 'Juan Dela Cruz', email: 'juan@vipcrm.com', regionCode: 'ILO-JARO' },
-  { name: 'Maria Santos', email: 'maria@vipcrm.com', regionCode: 'ILO-MAND' },
-  { name: 'Pedro Reyes', email: 'pedro@vipcrm.com', regionCode: 'ILO-LPAZ' },
+  { name: 'Juan Dela Cruz', email: 'juan@vipcrm.com', territory: 'Jaro' },
+  { name: 'Maria Santos', email: 'maria@vipcrm.com', territory: 'Mandurriao' },
+  { name: 'Pedro Reyes', email: 'pedro@vipcrm.com', territory: 'La Paz' },
 ];
 
 // ─── Doctor definitions (20 per territory, all unique names) ─────────────────
@@ -172,11 +132,11 @@ const lapazDoctors = [
   { firstName: 'Rogelio', lastName: 'Balbin', spec: 'Dermatology', freq: 2, pattern: 'W2W4', day: 5, hosp: 'Western Visayas Medical Center', eng: 1 },
 ];
 
-// Map territory code → doctor list
+// Map territory name → doctor list
 const territoryDoctors = {
-  'ILO-JARO': jaroDoctors,
-  'ILO-MAND': mandurriaoDoctors,
-  'ILO-LPAZ': lapazDoctors,
+  'Jaro': jaroDoctors,
+  'Mandurriao': mandurriaoDoctors,
+  'La Paz': lapazDoctors,
 };
 
 // ─── Schedule status assignment ──────────────────────────────────────────────
@@ -361,7 +321,6 @@ const seedDatabase = async () => {
     console.log('Clearing existing data...');
     await Promise.all([
       User.deleteMany({}),
-      Region.deleteMany({}),
       Doctor.deleteMany({}),
       Schedule.deleteMany({}),
       Visit.deleteMany({}),
@@ -370,39 +329,18 @@ const seedDatabase = async () => {
       ProductAssignment.deleteMany({}),
     ]);
 
-    // 1. Create Regions
-    console.log('Creating regions...');
-    const regionMap = {};
-
-    // First pass: root regions (no parent)
-    for (const r of regions) {
-      if (!r.parentCode) {
-        const created = await Region.create({ name: r.name, code: r.code, level: r.level, parent: null });
-        regionMap[r.code] = created._id;
-      }
-    }
-    // Second pass: child regions
-    for (const r of regions) {
-      if (r.parentCode) {
-        const created = await Region.create({ name: r.name, code: r.code, level: r.level, parent: regionMap[r.parentCode] });
-        regionMap[r.code] = created._id;
-      }
-    }
-    console.log(`  Created ${Object.keys(regionMap).length} regions`);
-
-    // 2. Create Admin
+    // 1. Create Admin
     console.log('Creating admin user...');
     await User.create({
       name: 'System Administrator',
       email: 'admin@vipcrm.com',
       password: 'Admin123!@#',
       role: 'admin',
-      canAccessAllRegions: true,
       isActive: true,
     });
     console.log('  Admin created: admin@vipcrm.com');
 
-    // 3. Create BDM Employees
+    // 2. Create BDM Employees
     console.log('Creating BDM employees...');
     const employees = [];
     for (const emp of employeeData) {
@@ -411,14 +349,13 @@ const seedDatabase = async () => {
         email: emp.email,
         password: 'BDM123!@#',
         role: 'employee',
-        assignedRegions: [regionMap[emp.regionCode]],
         isActive: true,
       });
-      employees.push({ user, regionCode: emp.regionCode });
-      console.log(`  BDM created: ${emp.email} → ${emp.regionCode}`);
+      employees.push({ user, territory: emp.territory });
+      console.log(`  BDM created: ${emp.email} → ${emp.territory}`);
     }
 
-    // 4. Create Doctors + Schedule
+    // 3. Create Doctors + Schedule
     console.log('Creating VIP Clients and schedule...');
     const today = new Date(2026, 1, 27); // Feb 27, 2026
     const currentCycleNumber = getCycleNumber(today);
@@ -430,11 +367,9 @@ const seedDatabase = async () => {
     // Track created doctors with their BDM for product assignment
     const createdDoctors = [];
 
-    for (const { user: employee, regionCode } of employees) {
-      const doctorDefs = territoryDoctors[regionCode];
+    for (const { user: employee, territory } of employees) {
+      const doctorDefs = territoryDoctors[territory];
       if (!doctorDefs) continue;
-
-      const regionId = regionMap[regionCode];
 
       for (let docIdx = 0; docIdx < doctorDefs.length; docIdx++) {
         const def = doctorDefs[docIdx];
@@ -445,7 +380,6 @@ const seedDatabase = async () => {
           lastName: def.lastName,
           specialization: def.spec,
           clinicOfficeAddress: def.hosp,
-          region: regionId,
           assignedTo: employee._id,
           visitFrequency: def.freq,
           levelOfEngagement: def.eng || null,
@@ -503,7 +437,7 @@ const seedDatabase = async () => {
     console.log(`  Missed:    ${statusCounts.missed}`);
     console.log(`  Planned:   ${statusCounts.planned}`);
 
-    // 5. Assign products to doctors (if website products exist)
+    // 4. Assign products to doctors (if website products exist)
     if (websiteProducts.length >= 3) {
       console.log('\nAssigning products to VIP Clients...');
       let assignmentCount = 0;

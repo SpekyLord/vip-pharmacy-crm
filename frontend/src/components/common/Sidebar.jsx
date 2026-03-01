@@ -16,7 +16,6 @@ import {
   LayoutDashboard,
   Users,
   UserCog,
-  MapPin,
   ClipboardCheck,
   BarChart3,
   FileText,
@@ -344,7 +343,6 @@ const getMenuConfig = (role) => {
             items: [
               { path: '/admin/doctors', label: 'VIP Clients', icon: Stethoscope },
               { path: '/admin/employees', label: 'BDMs', icon: Users },
-              { path: '/admin/regions', label: 'Regions', icon: MapPin },
             ],
           },
           {

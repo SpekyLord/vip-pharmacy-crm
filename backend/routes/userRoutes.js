@@ -10,7 +10,6 @@
  * DELETE /api/users/:id - Soft delete user (admin only)
  * GET /api/users/profile - Get current user profile
  * PUT /api/users/profile - Update current user profile
- * PUT /api/users/:id/regions - Assign regions to user (admin only)
  */
 
 const express = require('express');
@@ -25,7 +24,6 @@ const {
   deleteUser,
   getProfile,
   updateProfile,
-  assignRegions,
 } = require('../controllers/userController');
 
 const { protect } = require('../middleware/auth');
@@ -49,6 +47,5 @@ router.post('/', adminOnly, createUserValidation, createUser);
 router.get('/:id', adminOnly, getUserById);
 router.put('/:id', adminOnly, updateUserValidation, updateUser);
 router.delete('/:id', adminOnly, deleteUser);
-router.put('/:id/regions', adminOnly, assignRegions);
 
 module.exports = router;

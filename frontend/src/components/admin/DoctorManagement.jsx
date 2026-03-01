@@ -5,11 +5,10 @@
  * - CRUD operations for doctors
  * - Search and filter
  * - Pagination
- * - Add/Edit modal with cascading region dropdowns
+ * - Add/Edit modal
  */
 
 import { useState, useEffect } from 'react';
-import regionService from '../../services/regionService';
 
 // Enum options for programs and support types (matching backend Doctor.js)
 const PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
@@ -370,7 +369,6 @@ const doctorManagementStyles = `
 
 const DoctorManagement = ({
   doctors = [],
-  regions = [],
   filters = {},
   pagination = {},
   loading = false,
@@ -389,143 +387,11 @@ const DoctorManagement = ({
     addressStreet: '',
     phone: '',
     email: '',
-    region: '',
     visitFrequency: 4,
     notes: '',
   });
   const [saving, setSaving] = useState(false);
   const [localFilters, setLocalFilters] = useState(filters);
-
-  // Cascading region dropdown state
-  const [selectedCountry, setSelectedCountry] = useState('');
-  const [selectedRegion, setSelectedRegion] = useState('');
-  const [selectedProvince, setSelectedProvince] = useState('');
-  const [selectedCity, setSelectedCity] = useState('');
-  const [selectedDistrict, setSelectedDistrict] = useState('');
-
-  const [countries, setCountries] = useState([]);
-  const [regionOptions, setRegionOptions] = useState([]);
-  const [provinceOptions, setProvinceOptions] = useState([]);
-  const [cityOptions, setCityOptions] = useState([]);
-  const [districtOptions, setDistrictOptions] = useState([]);
-  const [loadingRegions, setLoadingRegions] = useState(false);
-
-  // Load countries (root level) on mount
-  useEffect(() => {
-    const loadCountries = async () => {
-      try {
-        const response = await regionService.getHierarchy();
-        // Root level items are countries
-        setCountries(response.data || []);
-      } catch (error) {
-        console.error('Failed to load countries:', error);
-      }
-    };
-    loadCountries();
-  }, []);
-
-  // Update formData.region when any cascading selection changes
-  useEffect(() => {
-    // Use the most specific selection
-    const finalRegion = selectedDistrict || selectedCity || selectedProvince || selectedRegion || selectedCountry || '';
-    setFormData((prev) => ({ ...prev, region: finalRegion }));
-  }, [selectedCountry, selectedRegion, selectedProvince, selectedCity, selectedDistrict]);
-
-  // Handler for country change - load regions
-  const handleCountryChange = async (countryId) => {
-    setSelectedCountry(countryId);
-    // Clear downstream
-    setSelectedRegion('');
-    setSelectedProvince('');
-    setSelectedCity('');
-    setSelectedDistrict('');
-    setProvinceOptions([]);
-    setCityOptions([]);
-    setDistrictOptions([]);
-
-    if (countryId) {
-      setLoadingRegions(true);
-      try {
-        const response = await regionService.getChildren(countryId);
-        setRegionOptions(response.data?.children || []);
-      } catch (error) {
-        console.error('Failed to load regions:', error);
-        setRegionOptions([]);
-      }
-      setLoadingRegions(false);
-    } else {
-      setRegionOptions([]);
-    }
-  };
-
-  // Handler for region change - load provinces
-  const handleRegionChange = async (regionId) => {
-    setSelectedRegion(regionId);
-    // Clear downstream
-    setSelectedProvince('');
-    setSelectedCity('');
-    setSelectedDistrict('');
-    setCityOptions([]);
-    setDistrictOptions([]);
-
-    if (regionId) {
-      setLoadingRegions(true);
-      try {
-        const response = await regionService.getChildren(regionId);
-        setProvinceOptions(response.data?.children || []);
-      } catch (error) {
-        console.error('Failed to load provinces:', error);
-        setProvinceOptions([]);
-      }
-      setLoadingRegions(false);
-    } else {
-      setProvinceOptions([]);
-    }
-  };
-
-  // Handler for province change - load cities
-  const handleProvinceChange = async (provinceId) => {
-    setSelectedProvince(provinceId);
-    // Clear downstream
-    setSelectedCity('');
-    setSelectedDistrict('');
-    setDistrictOptions([]);
-
-    if (provinceId) {
-      setLoadingRegions(true);
-      try {
-        const response = await regionService.getChildren(provinceId);
-        setCityOptions(response.data?.children || []);
-      } catch (error) {
-        console.error('Failed to load cities:', error);
-        setCityOptions([]);
-      }
-      setLoadingRegions(false);
-    } else {
-      setCityOptions([]);
-    }
-  };
-
-  // Handler for city change - load districts
-  const handleCityChange = async (cityId) => {
-    setSelectedCity(cityId);
-    // Clear downstream
-    setSelectedDistrict('');
-
-    if (cityId) {
-      setLoadingRegions(true);
-      try {
-        const response = await regionService.getChildren(cityId);
-        setDistrictOptions(response.data?.children || []);
-      } catch (error) {
-        console.error('Failed to load districts:', error);
-        setDistrictOptions([]);
-      }
-      setLoadingRegions(false);
-    } else {
-      setDistrictOptions([]);
-    }
-  };
 
   // Debounce search
   useEffect(() => {
@@ -545,81 +411,6 @@ const DoctorManagement = ({
     }
   };
 
-  // Helper to ensure value is an array
-  const ensureArray = (value) => {
-    if (Array.isArray(value)) return value;
-    return [];
-  };
-
-  // Helper function to populate cascading dropdowns for edit mode
-  const populateCascadingDropdowns = async (doctorRegion) => {
-    if (!doctorRegion) return;
-
-    const regionId = doctorRegion._id || doctorRegion;
-
-    try {
-      // Get the ancestor chain for this region
-      const hierarchyResponse = await regionService.getHierarchy();
-      const hierarchy = ensureArray(hierarchyResponse?.data);
-
-      // Find the region and its ancestors in the hierarchy
-      const findRegionPath = (nodes, targetId, path = []) => {
-        for (const node of nodes) {
-          const currentPath = [...path, node];
-          if (node._id === targetId) {
-            return currentPath;
-          }
-          if (node.children && node.children.length > 0) {
-            const found = findRegionPath(node.children, targetId, currentPath);
-            if (found) return found;
-          }
-        }
-        return null;
-      };
-
-      const regionPath = findRegionPath(hierarchy, regionId);
-
-      if (regionPath && regionPath.length > 0) {
-        // Set each level based on the path
-        // Path order: [country, region, province, city, district, ...]
-        const countryNode = regionPath[0];
-        setSelectedCountry(countryNode._id);
-        setCountries(hierarchy);
-
-        if (regionPath.length > 1) {
-          const regionNode = regionPath[1];
-          setRegionOptions(ensureArray(countryNode.children));
-          setSelectedRegion(regionNode._id);
-
-          if (regionPath.length > 2) {
-            const provinceNode = regionPath[2];
-            setProvinceOptions(ensureArray(regionNode.children));
-            setSelectedProvince(provinceNode._id);
-
-            if (regionPath.length > 3) {
-              const cityNode = regionPath[3];
-              setCityOptions(ensureArray(provinceNode.children));
-              setSelectedCity(cityNode._id);
-
-              if (regionPath.length > 4) {
-                const districtNode = regionPath[4];
-                setDistrictOptions(ensureArray(cityNode.children));
-                setSelectedDistrict(districtNode._id);
-              }
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Failed to populate cascading dropdowns:', error);
-      // Reset all options to empty arrays on error
-      setRegionOptions([]);
-      setProvinceOptions([]);
-      setCityOptions([]);
-      setDistrictOptions([]);
-    }
-  };
-
   const handleCreate = () => {
     setSelectedDoctor(null);
     setFormData({
@@ -629,7 +420,6 @@ const DoctorManagement = ({
       clinicOfficeAddress: '',
       phone: '',
       email: '',
-      region: '',
       visitFrequency: 4,
       notes: '',
       outletIndicator: '',
@@ -642,20 +432,10 @@ const DoctorManagement = ({
       anniversary: '',
       otherDetails: '',
     });
-    // Reset cascading dropdowns
-    setSelectedCountry('');
-    setSelectedRegion('');
-    setSelectedProvince('');
-    setSelectedCity('');
-    setSelectedDistrict('');
-    setRegionOptions([]);
-    setProvinceOptions([]);
-    setCityOptions([]);
-    setDistrictOptions([]);
     setShowModal(true);
   };
 
-  const handleEdit = async (doctor) => {
+  const handleEdit = (doctor) => {
     setSelectedDoctor(doctor);
 
     setFormData({
@@ -665,7 +445,6 @@ const DoctorManagement = ({
       clinicOfficeAddress: doctor.clinicOfficeAddress || '',
       phone: doctor.phone || '',
       email: doctor.email || '',
-      region: doctor.region?._id || doctor.region || '',
       visitFrequency: doctor.visitFrequency || 4,
       notes: doctor.notes || '',
       outletIndicator: doctor.outletIndicator || '',
@@ -679,16 +458,7 @@ const DoctorManagement = ({
       otherDetails: doctor.otherDetails || '',
     });
 
-    // Show modal first so user sees immediate feedback
     setShowModal(true);
-
-    // Populate cascading dropdowns with error handling
-    try {
-      await populateCascadingDropdowns(doctor.region);
-    } catch (error) {
-      console.error('Failed to populate region dropdowns:', error);
-      // Modal is already shown, user can still edit other fields
-    }
   };
 
   const handleDeleteClick = (doctor) => {
@@ -720,7 +490,6 @@ const DoctorManagement = ({
     const doctorData = {
       firstName: formData.firstName,
       lastName: formData.lastName,
-      region: formData.region,
       visitFrequency: formData.visitFrequency,
     };
 
@@ -806,17 +575,6 @@ const DoctorManagement = ({
           onChange={(e) => handleFilterChange('search', e.target.value)}
         />
         <select
-          value={filters.region || ''}
-          onChange={(e) => handleFilterChange('region', e.target.value)}
-        >
-          <option value="">All Regions</option>
-          {regions.map((region) => (
-            <option key={region._id} value={region._id}>
-              {'──'.repeat(region.depth || 0)} {region.name}
-            </option>
-          ))}
-        </select>
-        <select
           value={filters.visitFrequency || ''}
           onChange={(e) => handleFilterChange('visitFrequency', e.target.value)}
         >
@@ -853,7 +611,6 @@ const DoctorManagement = ({
                 <th>Name</th>
                 <th>Specialization</th>
                 <th>Hospital</th>
-                <th>Region</th>
                 <th>Visit Freq</th>
                 <th>Engagement</th>
                 <th>Actions</th>
@@ -865,7 +622,6 @@ const DoctorManagement = ({
                   <td>{doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}</td>
                   <td>{doctor.specialization || '-'}</td>
                   <td>{doctor.clinicOfficeAddress || '-'}</td>
-                  <td>{doctor.region?.name || '-'}</td>
                   <td>
                     <span className={`visit-freq-badge freq-${doctor.visitFrequency}`}>
                       {doctor.visitFrequency}x/mo
@@ -1002,103 +758,6 @@ const DoctorManagement = ({
                   placeholder="Hospital, clinic, or office address"
                 />
               </div>
-
-              {/* Cascading Region Dropdowns */}
-              <div className="form-row">
-                <div className="form-group">
-                  <label htmlFor="country">Country *</label>
-                  <select
-                    id="country"
-                    value={selectedCountry}
-                    onChange={(e) => handleCountryChange(e.target.value)}
-                    required
-                    disabled={loadingRegions}
-                  >
-                    <option value="">Select Country</option>
-                    {Array.isArray(countries) && countries.map((country) => (
-                      <option key={country._id} value={country._id}>
-                        {country.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="regionSelect">Region</label>
-                  <select
-                    id="regionSelect"
-                    value={selectedRegion}
-                    onChange={(e) => handleRegionChange(e.target.value)}
-                    disabled={!selectedCountry || loadingRegions}
-                  >
-                    <option value="">{Array.isArray(regionOptions) && regionOptions.length > 0 ? 'Select Region (optional)' : 'No regions available'}</option>
-                    {Array.isArray(regionOptions) && regionOptions.map((region) => (
-                      <option key={region._id} value={region._id}>
-                        {region.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label htmlFor="province">Province</label>
-                  <select
-                    id="province"
-                    value={selectedProvince}
-                    onChange={(e) => handleProvinceChange(e.target.value)}
-                    disabled={!selectedRegion || loadingRegions}
-                  >
-                    <option value="">{Array.isArray(provinceOptions) && provinceOptions.length > 0 ? 'Select Province (optional)' : 'No provinces available'}</option>
-                    {Array.isArray(provinceOptions) && provinceOptions.map((province) => (
-                      <option key={province._id} value={province._id}>
-                        {province.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="city">City/Municipality</label>
-                  <select
-                    id="city"
-                    value={selectedCity}
-                    onChange={(e) => handleCityChange(e.target.value)}
-                    disabled={!selectedProvince || loadingRegions}
-                  >
-                    <option value="">{Array.isArray(cityOptions) && cityOptions.length > 0 ? 'Select City (optional)' : 'No cities available'}</option>
-                    {Array.isArray(cityOptions) && cityOptions.map((city) => (
-                      <option key={city._id} value={city._id}>
-                        {city.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {Array.isArray(districtOptions) && districtOptions.length > 0 && (
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="district">District/Area</label>
-                    <select
-                      id="district"
-                      value={selectedDistrict}
-                      onChange={(e) => setSelectedDistrict(e.target.value)}
-                      disabled={!selectedCity || loadingRegions}
-                    >
-                      <option value="">Select District (optional)</option>
-                      {districtOptions.map((district) => (
-                        <option key={district._id} value={district._id}>
-                          {district.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {loadingRegions && (
-                <p style={{ fontSize: '12px', color: '#6b7280', margin: '8px 0' }}>Loading regions...</p>
-              )}
 
               <div className="form-row">
                 <div className="form-group">

@@ -122,7 +122,7 @@ const isWorkDay = isWorkDayUtil;
  */
 const canAccessDoctor = (user, doctor) => {
   // Admin can access all doctors
-  if (user.role === 'admin' && user.canAccessAllRegions) {
+  if (user.role === 'admin') {
     return true;
   }
 

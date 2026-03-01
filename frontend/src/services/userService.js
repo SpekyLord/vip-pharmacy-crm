@@ -3,7 +3,6 @@
  *
  * User API calls:
  * - CRUD operations for users/employees
- * - Region assignment
  * - Profile management
  */
 
@@ -43,12 +42,6 @@ const userService = {
   // Delete (soft delete) user
   delete: async (id) => {
     const response = await api.delete(`/users/${id}`);
-    return response.data;
-  },
-
-  // Assign regions to user
-  assignRegions: async (id, regions) => {
-    const response = await api.put(`/users/${id}/regions`, { assignedRegions: regions });
     return response.data;
   },
 

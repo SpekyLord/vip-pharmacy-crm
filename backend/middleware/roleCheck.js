@@ -4,12 +4,11 @@
  * This file handles:
  * - Role-based access control (RBAC)
  * - Permission checking
- * - Regional access verification
  * - Access denial handling
  *
  * Roles:
- * - admin: Full system access, can access all regions
- * - employee: Field employee (BDM) - can only access assigned regions
+ * - admin: Full system access
+ * - employee: Field employee (BDM) - can only access assigned doctors
  */
 
 /**
@@ -62,61 +61,6 @@ const adminOrEmployee = roleCheck('admin', 'employee');
  * For routes accessible by any authenticated user
  */
 const anyRole = roleCheck('admin', 'employee');
-
-/**
- * Check if user can access a specific region
- * Use after auth middleware
- * @param {string} regionIdParam - Request parameter name containing region ID (default: 'regionId')
- * @returns {Function} Express middleware function
- */
-const canAccessRegion = (regionIdParam = 'regionId') => {
-  return async (req, res, next) => {
-    // Check if user is authenticated
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required. Please log in.',
-      });
-    }
-
-    // Admin with canAccessAllRegions can access any region
-    if (req.user.role === 'admin' && req.user.canAccessAllRegions) {
-      return next();
-    }
-
-    // Get region ID from params or body
-    const regionId = req.params[regionIdParam] || req.body?.region || req.query?.region;
-
-    if (!regionId) {
-      // No region specified, allow access (will be filtered later)
-      return next();
-    }
-
-    // Check if user has access to this region (async - includes descendant regions)
-    if (req.user.canAccessRegion) {
-      const hasAccess = await req.user.canAccessRegion(regionId);
-      if (!hasAccess) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied. You are not assigned to this region.',
-        });
-      }
-    } else {
-      // If canAccessRegion method not available, check assignedRegions directly
-      const hasAccess = req.user.assignedRegions?.some(
-        (r) => r.toString() === regionId.toString()
-      );
-      if (!hasAccess) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied. You are not assigned to this region.',
-        });
-      }
-    }
-
-    next();
-  };
-};
 
 /**
  * Check if user owns the resource (for user profile updates)
@@ -221,7 +165,6 @@ module.exports = {
   employeeOnly,
   adminOrEmployee,
   anyRole,
-  canAccessRegion,
   isOwnerOrAdmin,
   isAssignedToDoctor,
 };

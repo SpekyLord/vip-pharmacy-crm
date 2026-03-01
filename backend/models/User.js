@@ -4,8 +4,8 @@
  * This model represents system users (admins, field employees/BDMs)
  *
  * Roles:
- * - admin: Full system access, can see all regions, manage all users
- * - employee: Field employee (BDM) - logs visits to doctors in assigned region
+ * - admin: Full system access, manage all users
+ * - employee: Field employee (BDM) - logs visits to assigned doctors
  */
 
 const mongoose = require('mongoose');
@@ -44,19 +44,6 @@ const userSchema = new mongoose.Schema(
         message: 'Role must be admin or employee',
       },
       default: 'employee',
-    },
-    // For employees: the regions they are assigned to visit
-    assignedRegions: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Region',
-      },
-    ],
-    // For admin users: whether they can access all regions or just assigned ones
-    // Note: Default is set in pre-save hook to ensure correct timing
-    canAccessAllRegions: {
-      type: Boolean,
-      default: false,
     },
     phone: {
       type: String,
@@ -118,22 +105,11 @@ const userSchema = new mongoose.Schema(
 // Indexes for performance
 userSchema.index({ email: 1 });
 userSchema.index({ role: 1 });
-userSchema.index({ assignedRegions: 1 });
 userSchema.index({ isActive: 1 });
 // Compound indexes for common query patterns
 userSchema.index({ role: 1, isActive: 1 });
-userSchema.index({ role: 1, assignedRegions: 1 });
 // TTL index to auto-expire password reset tokens
 userSchema.index({ passwordResetExpires: 1 }, { expireAfterSeconds: 0 });
-
-// Pre-save hook to set canAccessAllRegions for new admins
-userSchema.pre('save', function (next) {
-  // Only set for new documents where canAccessAllRegions wasn't explicitly set
-  if (this.isNew && this.canAccessAllRegions === false && this.role === 'admin') {
-    this.canAccessAllRegions = true;
-  }
-  next();
-});
 
 // Pre-save hook to hash password
 userSchema.pre('save', async function (next) {
@@ -151,26 +127,6 @@ userSchema.pre('save', async function (next) {
 // Instance method to compare passwords
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
-};
-
-// Instance method to check if user can access a specific region (hierarchical)
-userSchema.methods.canAccessRegion = async function (regionId) {
-  if (this.role === 'admin' && this.canAccessAllRegions) {
-    return true;
-  }
-  // Employees can access their assigned regions AND all descendant regions
-  const Region = require('./Region');
-  const targetRegionStr = (regionId._id || regionId).toString();
-
-  for (const region of this.assignedRegions) {
-    const assignedId = region._id || region;
-    const descendants = await Region.getDescendantIds(assignedId);
-    const hasAccess = descendants.some((id) => id.toString() === targetRegionStr);
-    if (hasAccess) {
-      return true;
-    }
-  }
-  return false;
 };
 
 // Static method to find user by email with password and lockout fields

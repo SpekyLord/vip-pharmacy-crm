@@ -35,11 +35,6 @@ const doctorService = {
     return response.data;
   },
 
-  getByRegion: async (regionId) => {
-    const response = await api.get(`/doctors/region/${regionId}`);
-    return response.data;
-  },
-
   getVisitHistory: async (doctorId) => {
     const response = await api.get(`/doctors/${doctorId}/visits`);
     return response.data;

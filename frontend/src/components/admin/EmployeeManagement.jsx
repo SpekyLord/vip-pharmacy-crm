@@ -4,7 +4,6 @@
  * Admin component for managing employees:
  * - CRUD operations for employees
  * - Role assignment
- * - Region assignment (multiple regions)
  * - Account activation/deactivation
  */
 
@@ -180,21 +179,6 @@ const employeeManagementStyles = `
     color: #dc2626;
   }
 
-  .regions-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .region-tag {
-    display: inline-block;
-    padding: 2px 6px;
-    background: #e0e7ff;
-    color: #4338ca;
-    border-radius: 4px;
-    font-size: 11px;
-  }
-
   /* Pagination */
   .pagination {
     display: flex;
@@ -339,50 +323,6 @@ const employeeManagementStyles = `
     border-top: 1px solid #e5e7eb;
   }
 
-  /* Region checkboxes */
-  .region-checkboxes {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 8px;
-    max-height: 200px;
-    overflow-y: auto;
-    padding: 12px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-  }
-
-  .region-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-
-  .region-checkbox:hover {
-    background: #f3f4f6;
-  }
-
-  .region-checkbox input {
-    width: auto;
-    margin: 0;
-  }
-
-  .region-checkbox span {
-    font-size: 13px;
-    color: #374151;
-  }
-
-  .region-checkbox.covered-by-parent {
-    background: #f0fdf4;
-  }
-
-  .region-checkbox.covered-by-parent:hover {
-    background: #dcfce7;
-  }
-
   /* Empty state */
   .empty-state {
     text-align: center;
@@ -428,7 +368,6 @@ const employeeManagementStyles = `
 
 const EmployeeManagement = ({
   employees = [],
-  regions = [],
   filters = {},
   pagination = {},
   loading = false,
@@ -447,7 +386,6 @@ const EmployeeManagement = ({
     password: '',
     phone: '',
     role: 'employee',
-    assignedRegions: [],
   });
   const [saving, setSaving] = useState(false);
   const [localFilters, setLocalFilters] = useState(filters);
@@ -478,7 +416,6 @@ const EmployeeManagement = ({
       password: '',
       phone: '',
       role: 'employee',
-      assignedRegions: [],
     });
     setShowModal(true);
   };
@@ -491,7 +428,6 @@ const EmployeeManagement = ({
       password: '', // Don't show existing password
       phone: employee.phone || '',
       role: employee.role || 'employee',
-      assignedRegions: employee.assignedRegions?.map((r) => r._id || r) || [],
     });
     setShowModal(true);
   };
@@ -517,73 +453,6 @@ const EmployeeManagement = ({
     }));
   };
 
-  // Get all descendant IDs for a region from the flattened list
-  const getDescendantIds = (regionId) => {
-    const descendants = [];
-    const regionIndex = regions.findIndex((r) => r._id === regionId);
-    if (regionIndex === -1) return descendants;
-
-    const parentDepth = regions[regionIndex].depth;
-
-    // Traverse subsequent regions that have greater depth (children)
-    for (let i = regionIndex + 1; i < regions.length; i++) {
-      if (regions[i].depth > parentDepth) {
-        descendants.push(regions[i]._id);
-      } else {
-        // No longer a child, stop
-        break;
-      }
-    }
-    return descendants;
-  };
-
-  // Get parent IDs for a region (regions that contain this one)
-  const getParentIds = (regionId) => {
-    const parents = [];
-    const regionIndex = regions.findIndex((r) => r._id === regionId);
-    if (regionIndex === -1) return parents;
-
-    const targetDepth = regions[regionIndex].depth;
-
-    // Traverse backwards to find parent regions
-    for (let i = regionIndex - 1; i >= 0; i--) {
-      if (regions[i].depth < targetDepth) {
-        parents.push(regions[i]._id);
-      }
-    }
-    return parents;
-  };
-
-  // Check if a region is implicitly covered by a selected parent
-  const isImplicitlyCovered = (regionId) => {
-    const parentIds = getParentIds(regionId);
-    return parentIds.some((parentId) => formData.assignedRegions.includes(parentId));
-  };
-
-  const handleRegionToggle = (regionId) => {
-    setFormData((prev) => {
-      const currentRegions = prev.assignedRegions || [];
-      const isSelected = currentRegions.includes(regionId);
-
-      if (isSelected) {
-        // Deselecting: just remove this region (children become uncovered if no other parent covers them)
-        return {
-          ...prev,
-          assignedRegions: currentRegions.filter((id) => id !== regionId),
-        };
-      } else {
-        // Selecting: add this region
-        // Also remove any descendants that are explicitly selected (since parent now covers them)
-        const descendantIds = getDescendantIds(regionId);
-        const newRegions = currentRegions.filter((id) => !descendantIds.includes(id));
-        return {
-          ...prev,
-          assignedRegions: [...newRegions, regionId],
-        };
-      }
-    });
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -593,7 +462,6 @@ const EmployeeManagement = ({
       email: formData.email,
       phone: formData.phone,
       role: formData.role,
-      assignedRegions: formData.assignedRegions,
     };
 
     // Only include password for new employees or if it's been changed
@@ -619,11 +487,6 @@ const EmployeeManagement = ({
   const handleCloseModal = () => {
     setShowModal(false);
     setSelectedEmployee(null);
-  };
-
-  const getRegionNames = (assignedRegions) => {
-    if (!assignedRegions || assignedRegions.length === 0) return '-';
-    return assignedRegions.map((r) => r.name || r).filter(Boolean);
   };
 
   return (
@@ -661,17 +524,6 @@ const EmployeeManagement = ({
           <option value="true">Active</option>
           <option value="false">Inactive</option>
         </select>
-        <select
-          value={filters.region || ''}
-          onChange={(e) => handleFilterChange('region', e.target.value)}
-        >
-          <option value="">All Regions</option>
-          {regions.map((region) => (
-            <option key={region._id} value={region._id}>
-              {'──'.repeat(region.depth || 0)} {region.name} ({region.level})
-            </option>
-          ))}
-        </select>
       </div>
 
       {/* Table */}
@@ -684,7 +536,6 @@ const EmployeeManagement = ({
                 <th>Email</th>
                 <th>Phone</th>
                 <th>Role</th>
-                <th>Regions</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -699,22 +550,6 @@ const EmployeeManagement = ({
                     <span className={`role-badge role-${employee.role}`}>
                       {employee.role}
                     </span>
-                  </td>
-                  <td>
-                    <div className="regions-list">
-                      {(() => {
-                        const regionNames = getRegionNames(employee.assignedRegions);
-                        if (regionNames === '-') return '-';
-                        return regionNames.slice(0, 3).map((name, idx) => (
-                          <span key={idx} className="region-tag">
-                            {name}
-                          </span>
-                        ));
-                      })()}
-                      {employee.assignedRegions?.length > 3 && (
-                        <span className="region-tag">+{employee.assignedRegions.length - 3}</span>
-                      )}
-                    </div>
                   </td>
                   <td>
                     <span
@@ -857,51 +692,6 @@ const EmployeeManagement = ({
                   <option value="employee">BDM (Field Rep)</option>
                   <option value="admin">Admin</option>
                 </select>
-              </div>
-
-              <div className="form-group full-width">
-                <label>Assigned Regions <span style={{ fontSize: '12px', color: '#6b7280' }}>(selecting a region includes all its sub-regions)</span></label>
-                <div className="region-checkboxes">
-                  {regions.map((region) => {
-                    const isDirectlySelected = formData.assignedRegions.includes(region._id);
-                    const isCoveredByParent = isImplicitlyCovered(region._id);
-                    const isEffectivelySelected = isDirectlySelected || isCoveredByParent;
-
-                    return (
-                      <label
-                        key={region._id}
-                        className={`region-checkbox ${isCoveredByParent ? 'covered-by-parent' : ''}`}
-                        style={{
-                          paddingLeft: `${(region.depth || 0) * 20}px`,
-                          opacity: isCoveredByParent ? 0.6 : 1,
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isEffectivelySelected}
-                          onChange={() => handleRegionToggle(region._id)}
-                          disabled={isCoveredByParent}
-                        />
-                        <span>
-                          {region.name}
-                          {region.childCount > 0 && (
-                            <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '6px' }}>
-                              (+{region.childCount} sub-regions)
-                            </span>
-                          )}
-                          {isCoveredByParent && (
-                            <span style={{ fontSize: '10px', color: '#16a34a', marginLeft: '6px', fontStyle: 'italic' }}>
-                              (included via parent)
-                            </span>
-                          )}
-                        </span>
-                      </label>
-                    );
-                  })}
-                  {regions.length === 0 && (
-                    <p style={{ color: '#6b7280', margin: 0 }}>No regions available</p>
-                  )}
-                </div>
               </div>
 
               <div className="form-actions">

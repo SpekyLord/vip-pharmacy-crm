@@ -18,7 +18,6 @@ import {
   Clock,
   FileSpreadsheet,
   Users,
-  MapPin,
   Calendar,
   ChevronDown,
   ChevronRight,
@@ -411,10 +410,6 @@ const BatchDetailModal = ({ batch, onClose, onApproved }) => {
             <div className="bdm-meta-item">
               <Users size={14} />
               BDM: <strong>{batch.assignedToBDM?.name || batch.assignedToBDM?.email || '—'}</strong>
-            </div>
-            <div className="bdm-meta-item">
-              <MapPin size={14} />
-              Region: <strong>{batch.regionId?.name || '—'}</strong>
             </div>
             <div className="bdm-meta-item">
               <Calendar size={14} />

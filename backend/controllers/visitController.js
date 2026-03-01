@@ -801,7 +801,7 @@ const getEmployeeReport = catchAsync(async (req, res) => {
 
   // Get the employee
   const User = require('../models/User');
-  const employee = await User.findById(userId).populate('assignedRegions', 'name');
+  const employee = await User.findById(userId);
 
   if (!employee) {
     throw new NotFoundError('Employee not found');
@@ -812,8 +812,7 @@ const getEmployeeReport = catchAsync(async (req, res) => {
     assignedTo: userId,
     isActive: true,
   })
-    .select('name specialization hospital region visitFrequency')
-    .populate('region', 'name')
+    .select('name specialization clinicOfficeAddress visitFrequency')
     .lean();
 
   // Fetch all visits by this employee for the selected month
@@ -914,7 +913,6 @@ const getEmployeeReport = catchAsync(async (req, res) => {
       fullName: doctor.fullName,
       specialization: doctor.specialization,
       clinicOfficeAddress: doctor.clinicOfficeAddress,
-      region: doctor.region,
       visitFrequency: doctor.visitFrequency || 4,
       visitGrid: visitGrid,
       visitCount: doctorVisits.length,
@@ -928,9 +926,6 @@ const getEmployeeReport = catchAsync(async (req, res) => {
   const count4x = doctors.filter((d) => d.visitFrequency === 4 || !d.visitFrequency).length;
   const totalVisits = visits.length;
 
-  // Get region names for display
-  const regionNames = employee.assignedRegions.map((r) => r.name).join(', ') || 'No regions assigned';
-
   res.json({
     success: true,
     data: {
@@ -938,10 +933,8 @@ const getEmployeeReport = catchAsync(async (req, res) => {
         _id: employee._id,
         name: employee.name,
         email: employee.email,
-        assignedRegions: employee.assignedRegions,
       },
       monthYear: monthYear,
-      areaAssigned: regionNames,
       doctors: doctorsWithVisits,
       summary: {
         totalDoctors: doctors.length,

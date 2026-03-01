@@ -42,18 +42,6 @@ const clientSchema = new mongoose.Schema(
       trim: true,
       match: [/^[0-9+\-() ]{10,20}$/, 'Please enter a valid phone number'],
     },
-    region: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Region',
-      required: [true, 'Region is required'],
-    },
-    // Parent regions for hierarchical filtering (auto-populated on save)
-    parentRegions: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Region',
-      },
-    ],
     // BDM who created this client — always the owner
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -77,37 +65,16 @@ const clientSchema = new mongoose.Schema(
 );
 
 // Indexes
-clientSchema.index({ region: 1 });
-clientSchema.index({ parentRegions: 1 });
 clientSchema.index({ createdBy: 1 });
 clientSchema.index({ isActive: 1 });
 clientSchema.index({ firstName: 'text', lastName: 'text', clinicOfficeAddress: 'text' });
-clientSchema.index({ region: 1, isActive: 1 });
 clientSchema.index({ createdBy: 1, isActive: 1 });
 clientSchema.index({ lastName: 1, firstName: 1 });
-
-// Pre-save hook to auto-populate parentRegions from region hierarchy
-clientSchema.pre('save', async function (next) {
-  if (this.isModified('region') && this.region) {
-    const Region = mongoose.model('Region');
-    const ancestors = await Region.getAncestorChain(this.region);
-
-    this.parentRegions = ancestors
-      .filter((ancestor) => ancestor._id.toString() !== this.region.toString())
-      .map((ancestor) => ancestor._id);
-  }
-  next();
-});
 
 // Virtual: Full name
 clientSchema.virtual('fullName').get(function () {
   return `${this.firstName || ''} ${this.lastName || ''}`.trim();
 });
-
-// Static: Find clients by region
-clientSchema.statics.findByRegion = function (regionId) {
-  return this.find({ region: regionId, isActive: true });
-};
 
 // Static: Find clients created by an employee
 clientSchema.statics.findByEmployee = function (employeeId) {

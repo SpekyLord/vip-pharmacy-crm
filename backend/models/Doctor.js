@@ -5,7 +5,7 @@
  *
  * Key features:
  * - Visit frequency: 2x or 4x monthly (no A/B/C/D categorization)
- * - Region-based assignment for employee filtering
+ * - Assignment-based access (assignedTo field)
  * - Name split into firstName + lastName for Call Plan Template format
  * - Free-form specialization (not enum)
  * - Level of engagement tracking (1-5 scale)
@@ -52,19 +52,6 @@ const doctorSchema = new mongoose.Schema(
         default: [0, 0],
       },
     },
-    region: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Region',
-      required: [true, 'Region is required'],
-    },
-    // Parent regions for hierarchical filtering (auto-populated on save)
-    // Stores ancestor chain: e.g., if region is ILO-CITY, stores [ILO, REG-VI, PH]
-    parentRegions: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Region',
-      },
-    ],
     phone: {
       type: String,
       trim: true,
@@ -199,36 +186,16 @@ const doctorSchema = new mongoose.Schema(
 );
 
 // Indexes for performance
-doctorSchema.index({ region: 1 });
-doctorSchema.index({ parentRegions: 1 }); // For hierarchical region queries
 doctorSchema.index({ assignedTo: 1 });
 doctorSchema.index({ specialization: 1 });
 doctorSchema.index({ isActive: 1 });
 doctorSchema.index({ firstName: 'text', lastName: 'text', clinicOfficeAddress: 'text' }); // Text search
 doctorSchema.index({ location: '2dsphere' }); // Geospatial queries
 // Compound indexes for common query patterns
-doctorSchema.index({ region: 1, isActive: 1 });
 doctorSchema.index({ assignedTo: 1, isActive: 1 });
-doctorSchema.index({ specialization: 1, region: 1 });
-doctorSchema.index({ parentRegions: 1, isActive: 1 });
 doctorSchema.index({ lastName: 1, firstName: 1 }); // For alphabetical sorting
 doctorSchema.index({ supportDuringCoverage: 1 });
 doctorSchema.index({ programsToImplement: 1 });
-
-// Pre-save hook to auto-populate parentRegions from region hierarchy
-doctorSchema.pre('save', async function (next) {
-  // Only update parentRegions if region has changed
-  if (this.isModified('region') && this.region) {
-    const Region = mongoose.model('Region');
-    const ancestors = await Region.getAncestorChain(this.region);
-
-    // Store all ancestor IDs except the region itself
-    this.parentRegions = ancestors
-      .filter((ancestor) => ancestor._id.toString() !== this.region.toString())
-      .map((ancestor) => ancestor._id);
-  }
-  next();
-});
 
 // Virtual: Full name (combines firstName and lastName)
 doctorSchema.virtual('fullName').get(function () {
@@ -242,11 +209,6 @@ doctorSchema.virtual('assignedProducts', {
   foreignField: 'doctor',
   match: { status: 'active' },
 });
-
-// Static: Find doctors by region
-doctorSchema.statics.findByRegion = function (regionId) {
-  return this.find({ region: regionId, isActive: true });
-};
 
 // Static: Find doctors assigned to an employee
 doctorSchema.statics.findByEmployee = function (employeeId) {

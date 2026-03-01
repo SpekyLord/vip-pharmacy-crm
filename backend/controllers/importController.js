@@ -12,7 +12,6 @@ const ImportBatch = require('../models/ImportBatch');
 const Doctor = require('../models/Doctor');
 const Schedule = require('../models/Schedule');
 const User = require('../models/User');
-const Region = require('../models/Region');
 const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 const { parseCPTWorkbook, detectDuplicates } = require('../utils/excelParser');
 const { catchAsync, ApiError } = require('../middleware/errorHandler');
@@ -27,13 +26,10 @@ const upload = catchAsync(async (req, res) => {
     throw new ApiError(400, 'Excel file is required');
   }
 
-  const { assignedToBDM, regionId, cycleNumber } = req.body;
+  const { assignedToBDM, cycleNumber } = req.body;
 
   if (!assignedToBDM) {
     throw new ApiError(400, 'BDM (assignedToBDM) is required');
-  }
-  if (!regionId) {
-    throw new ApiError(400, 'Region (regionId) is required');
   }
   if (cycleNumber === undefined || cycleNumber === null || cycleNumber === '') {
     throw new ApiError(400, 'Cycle number is required');
@@ -50,12 +46,6 @@ const upload = catchAsync(async (req, res) => {
     throw new ApiError(400, 'Invalid BDM user. Must be an employee.');
   }
 
-  // Validate region exists
-  const region = await Region.findById(regionId);
-  if (!region) {
-    throw new ApiError(400, 'Invalid region');
-  }
-
   // Parse the Excel file
   const { doctors, daySheets, errors } = parseCPTWorkbook(req.file.buffer);
 
@@ -63,15 +53,9 @@ const upload = catchAsync(async (req, res) => {
     throw new ApiError(400, `Failed to parse CPT file: ${errors.join('; ')}`);
   }
 
-  // Fetch existing doctors for this BDM+region for duplicate detection
-  const regionIds = await Region.getDescendantIds(regionId);
-  regionIds.push(region._id);
-
+  // Fetch existing doctors for this BDM for duplicate detection
   const existingDoctors = await Doctor.find({
-    $or: [
-      { assignedTo: assignedToBDM },
-      { region: { $in: regionIds } },
-    ],
+    assignedTo: assignedToBDM,
     isActive: true,
   }).lean();
 
@@ -87,7 +71,6 @@ const upload = catchAsync(async (req, res) => {
   const batch = await ImportBatch.create({
     uploadedBy: req.user._id,
     assignedToBDM,
-    regionId,
     fileName: req.file.originalname,
     fileSize: req.file.size,
     cycleNumber: cycleNum,
@@ -133,7 +116,6 @@ const list = catchAsync(async (req, res) => {
       .select('-parsedDoctors -daySheetData')
       .populate('uploadedBy', 'name email')
       .populate('assignedToBDM', 'name email')
-      .populate('regionId', 'name')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -161,7 +143,6 @@ const getById = catchAsync(async (req, res) => {
   const batch = await ImportBatch.findById(req.params.id)
     .populate('uploadedBy', 'name email')
     .populate('assignedToBDM', 'name email')
-    .populate('regionId', 'name')
     .lean();
 
   if (!batch) {
@@ -178,7 +159,7 @@ const getById = catchAsync(async (req, res) => {
  * Build doctor fields object from parsed data.
  * Shared helper for the approve flow.
  */
-const buildDoctorFields = (parsed, bdmId, regionId, parentRegions, productMap) => {
+const buildDoctorFields = (parsed, bdmId, productMap) => {
   const doctorFields = {
     firstName: parsed.firstName,
     lastName: parsed.lastName,
@@ -187,8 +168,6 @@ const buildDoctorFields = (parsed, bdmId, regionId, parentRegions, productMap) =
     outletIndicator: parsed.outletIndicator || undefined,
     visitFrequency: parsed.visitFrequency === 2 ? 2 : 4,
     assignedTo: bdmId,
-    region: regionId,
-    parentRegions,
     isActive: true,
   };
 
@@ -274,15 +253,8 @@ const approve = catchAsync(async (req, res) => {
   }
 
   const bdmId = batch.assignedToBDM;
-  const regionId = batch.regionId;
   const cycleNumber = batch.cycleNumber;
   const cycleStart = getCycleStartDate(cycleNumber);
-
-  // Pre-compute parentRegions ONCE (avoids per-doctor pre-save hook lookups)
-  const ancestors = await Region.getAncestorChain(regionId);
-  const parentRegions = ancestors
-    .filter((a) => a._id.toString() !== regionId.toString())
-    .map((a) => a._id);
 
   // Resolve product names to ObjectIds
   const allProductNames = [];
@@ -319,10 +291,10 @@ const approve = catchAsync(async (req, res) => {
   const updateOps = [];
 
   for (const parsed of batch.parsedDoctors) {
-    const fields = buildDoctorFields(parsed, bdmId, regionId, parentRegions, productMap);
+    const fields = buildDoctorFields(parsed, bdmId, productMap);
 
     if (parsed.isExisting && parsed.existingDoctorId) {
-      // Queue update (bypasses pre-save hooks — parentRegions already set)
+      // Queue update
       updateOps.push({
         updateOne: {
           filter: { _id: parsed.existingDoctorId },
@@ -343,7 +315,7 @@ const approve = catchAsync(async (req, res) => {
     await Doctor.bulkWrite(updateOps, { ordered: false });
   }
 
-  // Bulk insert new doctors (bypasses pre-save hooks — parentRegions already set)
+  // Bulk insert new doctors
   if (newDoctorDocs.length > 0) {
     const inserted = await Doctor.insertMany(newDoctorDocs, { ordered: false });
     inserted.forEach((doc, idx) => {

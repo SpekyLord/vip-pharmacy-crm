@@ -4,7 +4,6 @@
  * Admin page for employee management:
  * - Employee list with CRUD
  * - Role assignment
- * - Region assignment
  * - Account status management
  */
 
@@ -15,7 +14,6 @@ import Sidebar from '../../components/common/Sidebar';
 import EmployeeManagement from '../../components/admin/EmployeeManagement';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import userService from '../../services/userService';
-import regionService from '../../services/regionService';
 
 const employeesPageStyles = `
   .dashboard-layout {
@@ -57,7 +55,6 @@ const employeesPageStyles = `
 
 const EmployeesPage = () => {
   const [employees, setEmployees] = useState([]);
-  const [regions, setRegions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pagination, setPagination] = useState({
@@ -70,7 +67,6 @@ const EmployeesPage = () => {
     search: '',
     role: '',
     isActive: '',
-    region: '',
   });
 
   // Fetch employees with current filters and pagination
@@ -87,7 +83,6 @@ const EmployeesPage = () => {
       if (filters.search) params.search = filters.search;
       if (filters.role) params.role = filters.role;
       if (filters.isActive !== '') params.isActive = filters.isActive;
-      if (filters.region) params.region = filters.region;
 
       const response = await userService.getAll(params);
       setEmployees(response.data || []);
@@ -103,38 +98,6 @@ const EmployeesPage = () => {
       setLoading(false);
     }
   };
-
-  // Flatten hierarchy tree into array with depth for indented display
-  const flattenHierarchy = (nodes, depth = 0) => {
-    let result = [];
-    for (const node of nodes) {
-      // Count children recursively
-      const countChildren = (n) => {
-        if (!n.children || n.children.length === 0) return 0;
-        return n.children.reduce((sum, child) => sum + 1 + countChildren(child), 0);
-      };
-      result.push({ ...node, depth, childCount: countChildren(node) });
-      if (node.children && node.children.length > 0) {
-        result = result.concat(flattenHierarchy(node.children, depth + 1));
-      }
-    }
-    return result;
-  };
-
-  // Fetch regions hierarchy for dropdown
-  const fetchRegions = async () => {
-    try {
-      const response = await regionService.getHierarchy();
-      const flatRegions = flattenHierarchy(response.data || []);
-      setRegions(flatRegions);
-    } catch (err) {
-      console.error('Failed to fetch regions:', err);
-    }
-  };
-
-  useEffect(() => {
-    fetchRegions();
-  }, []);
 
   useEffect(() => {
     fetchEmployees();
@@ -223,7 +186,6 @@ const EmployeesPage = () => {
 
           <EmployeeManagement
             employees={employees}
-            regions={regions}
             filters={filters}
             pagination={pagination}
             loading={loading}

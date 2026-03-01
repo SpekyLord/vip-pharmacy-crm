@@ -338,7 +338,7 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
             {sortedDoctors.length === 0 ? (
               <tr>
                 <td colSpan={30} style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
-                  No VIP Clients found for this BDM&apos;s assigned regions.
+                  No VIP Clients found for this BDM.
                 </td>
               </tr>
             ) : (

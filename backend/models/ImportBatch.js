@@ -22,11 +22,6 @@ const importBatchSchema = new mongoose.Schema(
       ref: 'User',
       required: [true, 'Assigned BDM is required'],
     },
-    regionId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Region',
-      required: [true, 'Region is required'],
-    },
     fileName: {
       type: String,
       required: [true, 'File name is required'],

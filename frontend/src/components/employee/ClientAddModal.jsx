@@ -11,12 +11,9 @@
  * - onSaved: callback after successful save
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import clientService from '../../services/clientService';
-import regionService from '../../services/regionService';
 import toast from 'react-hot-toast';
-
-const ensureArray = (val) => (Array.isArray(val) ? val : []);
 
 const modalStyles = `
   .client-modal-overlay {
@@ -176,11 +173,6 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [regions, setRegions] = useState([]);
-  const [loadingRegions, setLoadingRegions] = useState(false);
-
-  // Normalize region id to string (handles ObjectId objects from populated docs)
-  const initialRegion = String(client?.region?._id || client?.region || '');
 
   const [formData, setFormData] = useState({
     firstName: client?.firstName || '',
@@ -188,32 +180,8 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
     specialization: client?.specialization || '',
     clinicOfficeAddress: client?.clinicOfficeAddress || '',
     phone: client?.phone || '',
-    region: initialRegion,
     notes: client?.notes || '',
   });
-
-  // Load regions on mount
-  useEffect(() => {
-    const fetchRegions = async () => {
-      setLoadingRegions(true);
-      try {
-        const response = await regionService.getAll();
-        // regionService.getAll() returns the full API body: { success, data: [...] }
-        const allRegions = ensureArray(response?.data);
-        setRegions(allRegions);
-
-        // Default to first region only when adding (no client) and no region set yet
-        if (!initialRegion && allRegions.length > 0) {
-          setFormData((prev) => ({ ...prev, region: String(allRegions[0]._id) }));
-        }
-      } catch (err) {
-        console.error('Failed to load regions:', err);
-      } finally {
-        setLoadingRegions(false);
-      }
-    };
-    fetchRegions();
-  }, [initialRegion]);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -225,10 +193,6 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
 
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
       setError('First name and last name are required.');
-      return;
-    }
-    if (!formData.region) {
-      setError('Region is required.');
       return;
     }
 
@@ -322,23 +286,6 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                 placeholder="Full address"
                 maxLength={500}
               />
-            </div>
-
-            <div className="client-form-group">
-              <label>Region *</label>
-              <select
-                value={formData.region}
-                onChange={(e) => handleChange('region', e.target.value)}
-                disabled={loadingRegions}
-                required
-              >
-                <option value="">Select Region</option>
-                {regions.map((r) => (
-                  <option key={r._id} value={r._id}>
-                    {r.name} ({r.code})
-                  </option>
-                ))}
-              </select>
             </div>
 
             <div className="client-form-group">

@@ -222,7 +222,6 @@ app.use('/api/messages', require('./routes/messageInbox')); // if file is messag
 
 app.use('/api/clients', require('./routes/clientRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
-app.use('/api/regions', require('./routes/regionRoutes'));
 app.use('/api/assignments', require('./routes/productAssignmentRoutes'));
 app.use('/api/schedules', require('./routes/scheduleRoutes'));
 app.use('/api/imports', require('./routes/importRoutes'));

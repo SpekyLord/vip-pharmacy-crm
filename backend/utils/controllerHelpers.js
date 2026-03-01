@@ -46,41 +46,6 @@ const ensureOwnerOrAdmin = (req, resource, message = 'Access denied. You can onl
 };
 
 /**
- * Check if user has access to a region (handles hierarchical access)
- * @param {Object} req - Express request object with user
- * @param {ObjectId|string} regionId - Region ID to check access for
- * @returns {Promise<boolean>} - True if user has access
- */
-const checkRegionAccess = async (req, regionId) => {
-  // Admin with canAccessAllRegions can access any region
-  if (req.user.role === 'admin' && req.user.canAccessAllRegions) {
-    return true;
-  }
-
-  // For employees, check if region is in their assigned regions or descendants
-  if (req.user.canAccessRegion) {
-    return await req.user.canAccessRegion(regionId);
-  }
-
-  // Fallback: check assignedRegions directly
-  const targetId = (regionId._id || regionId).toString();
-  return req.user.assignedRegions?.some((r) => (r._id || r).toString() === targetId);
-};
-
-/**
- * Ensure user has access to a region, throws ForbiddenError if not
- * @param {Object} req - Express request object with user
- * @param {ObjectId|string} regionId - Region ID to check access for
- * @param {string} message - Optional custom error message
- */
-const ensureRegionAccess = async (req, regionId, message = 'You do not have access to this region.') => {
-  const hasAccess = await checkRegionAccess(req, regionId);
-  if (!hasAccess) {
-    throw new ForbiddenError(message);
-  }
-};
-
-/**
  * Parse pagination parameters from query string
  * @param {Object} query - Express request query object
  * @param {Object} defaults - Default values { page: 1, limit: 20 }
@@ -121,8 +86,6 @@ const sanitizeSearchString = (str) => {
 module.exports = {
   updateFields,
   ensureOwnerOrAdmin,
-  checkRegionAccess,
-  ensureRegionAccess,
   parsePagination,
   buildPaginationResponse,
   sanitizeSearchString,

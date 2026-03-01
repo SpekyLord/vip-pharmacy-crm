@@ -558,7 +558,6 @@ const DoctorDetailPage = () => {
   const fullName = doctor.fullName || `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim();
   const canVisit = visitEligibility?.canVisit ?? true;
   const visitReason = visitEligibility?.reason;
-  const regionName = doctor.region?.name || '';
   const assignedToName = doctor.assignedTo?.name || '';
   const schedule = doctor.clinicSchedule || {};
   const targetProducts = doctor.targetProducts || [];
@@ -640,12 +639,6 @@ const DoctorDetailPage = () => {
                     <span className="ddp-detail-value">{doctor.outletIndicator}</span>
                   </div>
                 )}
-                <div className="ddp-detail-item">
-                  <span className="ddp-detail-label">Region</span>
-                  <span className={`ddp-detail-value ${!regionName ? 'empty' : ''}`}>
-                    {regionName || 'Not set'}
-                  </span>
-                </div>
                 <div className="ddp-detail-item">
                   <span className="ddp-detail-label">Assigned BDM</span>
                   <span className={`ddp-detail-value ${!assignedToName ? 'empty' : ''}`}>

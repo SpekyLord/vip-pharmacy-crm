@@ -9,36 +9,23 @@
  * - Photo + GPS required per visit
  */
 
-const mongoose = require('mongoose');
 const Client = require('../models/Client');
 const ClientVisit = require('../models/ClientVisit');
-const Region = require('../models/Region');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { signVisitPhotos } = require('../config/s3');
 
 const DAILY_EXTRA_CALL_LIMIT = 30;
 
 /**
- * Build region filter based on user role (same pattern as doctorController)
+ * Build access filter based on user role
+ * - Admin: no filter (see all)
+ * - Employee: only their own clients (createdBy)
  */
-const getRegionFilter = async (user) => {
-  if (user.role === 'admin' && user.canAccessAllRegions) {
+const getAccessFilter = (user) => {
+  if (user.role === 'admin') {
     return {};
   }
-
-  if (user.assignedRegions && user.assignedRegions.length > 0) {
-    const allRegionIds = [];
-    for (const region of user.assignedRegions) {
-      const regionId = region._id || region;
-      const descendants = await Region.getDescendantIds(regionId);
-      allRegionIds.push(...descendants);
-    }
-    const uniqueRegionIds = [...new Set(allRegionIds.map((id) => id.toString()))];
-    const objectIdRegions = uniqueRegionIds.map((id) => new mongoose.Types.ObjectId(id));
-    return { region: { $in: objectIdRegions } };
-  }
-
-  return { _id: null };
+  return { createdBy: user._id };
 };
 
 /**
@@ -52,21 +39,8 @@ const getAllClients = catchAsync(async (req, res) => {
   const limit = requestedLimit === 0 ? 0 : (requestedLimit || 20);
   const skip = limit === 0 ? 0 : (page - 1) * limit;
 
-  const filter = { isActive: true };
-
-  // BDMs only see their own clients (no region filter needed — createdBy is sufficient)
-  if (req.user.role === 'employee') {
-    filter.createdBy = req.user._id;
-  } else {
-    // Admins: apply region filter
-    const regionFilter = await getRegionFilter(req.user);
-    Object.assign(filter, regionFilter);
-  }
-
-  // Filter by specific region
-  if (req.query.region) {
-    filter.region = req.query.region;
-  }
+  const accessFilter = getAccessFilter(req.user);
+  const filter = { isActive: true, ...accessFilter };
 
   // Search
   if (req.query.search) {
@@ -78,7 +52,6 @@ const getAllClients = catchAsync(async (req, res) => {
   }
 
   let query = Client.find(filter)
-    .populate('region', 'name code level')
     .populate('createdBy', 'name email')
     .sort({ lastName: 1, firstName: 1 })
     .lean();
@@ -118,7 +91,6 @@ const getAllClients = catchAsync(async (req, res) => {
  */
 const getClientById = catchAsync(async (req, res) => {
   const client = await Client.findById(req.params.id)
-    .populate('region', 'name code level')
     .populate('createdBy', 'name email');
 
   if (!client) {
@@ -149,7 +121,6 @@ const createClient = catchAsync(async (req, res) => {
     lastName,
     specialization,
     clinicOfficeAddress,
-    region,
     phone,
     notes,
   } = req.body;
@@ -159,13 +130,11 @@ const createClient = catchAsync(async (req, res) => {
     lastName,
     specialization,
     clinicOfficeAddress,
-    region,
     phone,
     notes,
     createdBy: req.user._id,
   });
 
-  await client.populate('region', 'name code level');
   await client.populate('createdBy', 'name email');
 
   res.status(201).json({
@@ -199,7 +168,6 @@ const updateClient = catchAsync(async (req, res) => {
     'lastName',
     'specialization',
     'clinicOfficeAddress',
-    'region',
     'phone',
     'notes',
   ];
@@ -211,7 +179,6 @@ const updateClient = catchAsync(async (req, res) => {
   });
 
   await client.save();
-  await client.populate('region', 'name code level');
   await client.populate('createdBy', 'name email');
 
   res.status(200).json({

@@ -554,7 +554,7 @@ const DoctorList = memo(function DoctorList({
       {filteredDoctors.length === 0 && (
         <p className="no-results">
           {doctors.length === 0
-            ? 'No VIP Clients assigned to your region'
+            ? 'No VIP Clients assigned to you'
             : 'No VIP Clients match your search criteria'}
         </p>
       )}

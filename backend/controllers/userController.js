@@ -4,7 +4,6 @@
  * Handles user CRUD operations and profile management
  * Follows CLAUDE.md rules:
  * - Two roles: admin, employee
- * - Region-based access control
  * - Admin can access all users
  */
 
@@ -34,11 +33,6 @@ const getAllUsers = catchAsync(async (req, res) => {
     filter.isActive = req.query.isActive === 'true';
   }
 
-  // Filter by region
-  if (req.query.region) {
-    filter.assignedRegions = req.query.region;
-  }
-
   // Search by name or email
   if (req.query.search) {
     filter.$or = [
@@ -50,7 +44,6 @@ const getAllUsers = catchAsync(async (req, res) => {
   // Execute query
   const [users, total] = await Promise.all([
     User.find(filter)
-      .populate('assignedRegions', 'name code level')
       .select('-password -refreshToken')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -77,7 +70,6 @@ const getAllUsers = catchAsync(async (req, res) => {
  */
 const getUserById = catchAsync(async (req, res) => {
   const user = await User.findById(req.params.id)
-    .populate('assignedRegions', 'name code level')
     .select('-password -refreshToken');
 
   if (!user) {
@@ -101,7 +93,7 @@ const getUserById = catchAsync(async (req, res) => {
  * @access  Admin only
  */
 const createUser = catchAsync(async (req, res) => {
-  const { name, email, password, role, phone, assignedRegions } = req.body;
+  const { name, email, password, role, phone } = req.body;
 
   // Create user
   const user = await User.create({
@@ -110,12 +102,7 @@ const createUser = catchAsync(async (req, res) => {
     password,
     role: role || 'employee',
     phone,
-    assignedRegions: assignedRegions || [],
-    canAccessAllRegions: role === 'admin',
   });
-
-  // Populate regions for response
-  await user.populate('assignedRegions', 'name code level');
 
   res.status(201).json({
     success: true,
@@ -148,7 +135,7 @@ const updateUser = catchAsync(async (req, res) => {
 
   // Admin can update additional fields
   if (isAdmin) {
-    allowedFields.push('role', 'assignedRegions', 'isActive', 'canAccessAllRegions');
+    allowedFields.push('role', 'isActive');
   }
 
   // Update only allowed fields
@@ -158,13 +145,7 @@ const updateUser = catchAsync(async (req, res) => {
     }
   });
 
-  // If role is set to admin, enable canAccessAllRegions
-  if (req.body.role === 'admin') {
-    user.canAccessAllRegions = true;
-  }
-
   await user.save();
-  await user.populate('assignedRegions', 'name code level');
 
   res.status(200).json({
     success: true,
@@ -209,14 +190,8 @@ const deleteUser = catchAsync(async (req, res) => {
 const getEmployees = catchAsync(async (req, res) => {
   const filter = { role: 'employee', isActive: true };
 
-  // Filter by region if specified
-  if (req.query.region) {
-    filter.assignedRegions = req.query.region;
-  }
-
   const employees = await User.find(filter)
-    .populate('assignedRegions', 'name code level')
-    .select('name email phone assignedRegions isActive lastLogin')
+    .select('name email phone isActive lastLogin')
     .sort({ name: 1 });
 
   res.status(200).json({
@@ -233,7 +208,6 @@ const getEmployees = catchAsync(async (req, res) => {
  */
 const getProfile = catchAsync(async (req, res) => {
   const user = await User.findById(req.user._id)
-    .populate('assignedRegions', 'name code level')
     .select('-password -refreshToken');
 
   res.status(200).json({
@@ -269,40 +243,10 @@ const updateProfile = catchAsync(async (req, res) => {
   }
 
   await user.save();
-  await user.populate('assignedRegions', 'name code level');
 
   res.status(200).json({
     success: true,
     message: 'Profile updated successfully',
-    data: user,
-  });
-});
-
-/**
- * @desc    Update user's assigned regions
- * @route   PUT /api/users/:id/regions
- * @access  Admin only
- */
-const assignRegions = catchAsync(async (req, res) => {
-  const { assignedRegions } = req.body;
-
-  if (!Array.isArray(assignedRegions)) {
-    throw new ForbiddenError('assignedRegions must be an array');
-  }
-
-  const user = await User.findById(req.params.id);
-
-  if (!user) {
-    throw new NotFoundError('User not found');
-  }
-
-  user.assignedRegions = assignedRegions;
-  await user.save();
-  await user.populate('assignedRegions', 'name code level');
-
-  res.status(200).json({
-    success: true,
-    message: 'User regions updated successfully',
     data: user,
   });
 });
@@ -316,5 +260,4 @@ module.exports = {
   getEmployees,
   getProfile,
   updateProfile,
-  assignRegions,
 };

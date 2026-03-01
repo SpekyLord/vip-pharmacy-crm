@@ -15,7 +15,6 @@ import Sidebar from '../../components/common/Sidebar';
 import DoctorManagement from '../../components/admin/DoctorManagement';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
-import regionService from '../../services/regionService';
 import assignmentService from '../../services/assignmentService';
 import { useAuth } from '../../hooks/useAuth';
 import { exportToExcel, exportToCSV } from '../../utils/exportCallPlan';
@@ -104,7 +103,6 @@ const doctorsPageStyles = `
 const DoctorsPage = () => {
   const { user } = useAuth();
   const [doctors, setDoctors] = useState([]);
-  const [regions, setRegions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState(null);
@@ -116,7 +114,6 @@ const DoctorsPage = () => {
   });
   const [filters, setFilters] = useState({
     search: '',
-    region: '',
     visitFrequency: '',
     specialization: '',
     supportDuringCoverage: '',
@@ -135,7 +132,6 @@ const DoctorsPage = () => {
       };
 
       if (filters.search) params.search = filters.search;
-      if (filters.region) params.region = filters.region;
       if (filters.visitFrequency) params.visitFrequency = filters.visitFrequency;
       if (filters.specialization) params.specialization = filters.specialization;
       if (filters.supportDuringCoverage) params.supportDuringCoverage = filters.supportDuringCoverage;
@@ -154,33 +150,6 @@ const DoctorsPage = () => {
       setLoading(false);
     }
   }, [pagination.page, pagination.limit, filters]);
-
-  // Flatten hierarchy tree into array with depth for indented dropdown
-  const flattenHierarchy = (nodes, depth = 0) => {
-    let result = [];
-    for (const node of nodes) {
-      result.push({ ...node, depth });
-      if (node.children && node.children.length > 0) {
-        result = result.concat(flattenHierarchy(node.children, depth + 1));
-      }
-    }
-    return result;
-  };
-
-  // Fetch regions hierarchy for dropdown
-  const fetchRegions = async () => {
-    try {
-      const response = await regionService.getHierarchy();
-      const flatRegions = flattenHierarchy(response.data || []);
-      setRegions(flatRegions);
-    } catch {
-      // Region fetch failed - filter dropdown will be empty
-    }
-  };
-
-  useEffect(() => {
-    fetchRegions();
-  }, []);
 
   useEffect(() => {
     fetchDoctors();
@@ -243,15 +212,6 @@ const DoctorsPage = () => {
     return now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
   };
 
-  // Get area name for export
-  const getAreaName = () => {
-    if (filters.region) {
-      const region = regions.find((r) => r._id === filters.region);
-      return region?.name || 'Selected Region';
-    }
-    return 'All Regions';
-  };
-
   // Handle export to Excel
   const handleExportExcel = async () => {
     try {
@@ -260,7 +220,6 @@ const DoctorsPage = () => {
       // Fetch ALL doctors with current filters (no pagination limit)
       const params = { limit: 0 };
       if (filters.search) params.search = filters.search;
-      if (filters.region) params.region = filters.region;
       if (filters.visitFrequency) params.visitFrequency = filters.visitFrequency;
       if (filters.specialization) params.specialization = filters.specialization;
       if (filters.supportDuringCoverage) params.supportDuringCoverage = filters.supportDuringCoverage;
@@ -281,7 +240,7 @@ const DoctorsPage = () => {
 
       const config = {
         employeeName: user?.name || 'Admin',
-        areaAssigned: getAreaName(),
+        areaAssigned: 'All',
         monthYear: getCurrentMonthYear(),
         assignments: allAssignments,
       };
@@ -303,7 +262,6 @@ const DoctorsPage = () => {
       // Fetch ALL doctors with current filters (no pagination limit)
       const params = { limit: 0 };
       if (filters.search) params.search = filters.search;
-      if (filters.region) params.region = filters.region;
       if (filters.visitFrequency) params.visitFrequency = filters.visitFrequency;
       if (filters.specialization) params.specialization = filters.specialization;
       if (filters.supportDuringCoverage) params.supportDuringCoverage = filters.supportDuringCoverage;
@@ -324,7 +282,7 @@ const DoctorsPage = () => {
 
       const config = {
         employeeName: user?.name || 'Admin',
-        areaAssigned: getAreaName(),
+        areaAssigned: 'All',
         monthYear: getCurrentMonthYear(),
         assignments: allAssignments,
       };
@@ -377,7 +335,6 @@ const DoctorsPage = () => {
 
           <DoctorManagement
             doctors={doctors}
-            regions={regions}
             filters={filters}
             pagination={pagination}
             loading={loading}
