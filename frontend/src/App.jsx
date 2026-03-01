@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
 // Components
@@ -12,8 +12,6 @@ import MyVisits from './pages/employee/MyVisits';
 import NewVisitPage from './pages/employee/NewVisitPage';
 import NewClientVisitPage from './pages/employee/NewClientVisitPage';
 import EmployeeInbox from './pages/employee/EMP_InboxPage';
-import MyPerformancePage from './pages/employee/MyPerformancePage';
-import SchedulePage from './pages/employee/SchedulePage';
 import CallPlanPage from './pages/employee/CallPlanPage';
 import DoctorDetailPage from './pages/employee/DoctorDetailPage';
 
@@ -78,14 +76,7 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/employee/performance"
-          element={
-            <ProtectedRoute allowedRoles={['employee', 'admin']}>
-              <MyPerformancePage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/employee/performance" element={<Navigate to="/employee/cpt" replace />} />
         <Route
           path="/employee/doctor/:id"
           element={
@@ -94,14 +85,7 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/employee/schedule"
-          element={
-            <ProtectedRoute allowedRoles={['employee', 'admin']}>
-              <SchedulePage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/employee/schedule" element={<Navigate to="/employee/cpt" replace />} />
         <Route
           path="/employee/cpt"
           element={
