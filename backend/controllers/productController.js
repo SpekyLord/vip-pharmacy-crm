@@ -14,6 +14,7 @@
 
 const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
+const { sanitizeSearchString } = require('../utils/controllerHelpers');
 
 /**
  * @desc    Get all products with pagination and filters
@@ -46,10 +47,11 @@ const getAllProducts = catchAsync(async (req, res) => {
 
   // Search by name or description
   if (req.query.search) {
+    const safeSearch = sanitizeSearchString(req.query.search);
     filter.$or = [
-      { name: { $regex: req.query.search, $options: 'i' } },
-      { genericName: { $regex: req.query.search, $options: 'i' } },
-      { description: { $regex: req.query.search, $options: 'i' } },
+      { name: { $regex: safeSearch, $options: 'i' } },
+      { genericName: { $regex: safeSearch, $options: 'i' } },
+      { description: { $regex: safeSearch, $options: 'i' } },
     ];
   }
 

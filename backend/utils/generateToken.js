@@ -20,10 +20,10 @@ const generateAccessToken = (user) => {
     {
       id: user._id,
       role: user.role,
-      email: user.email,
     },
     process.env.JWT_SECRET,
     {
+      algorithm: 'HS256',
       expiresIn: process.env.JWT_EXPIRE || '15m',
     }
   );
@@ -41,6 +41,7 @@ const generateRefreshToken = (user) => {
     },
     process.env.JWT_REFRESH_SECRET,
     {
+      algorithm: 'HS256',
       expiresIn: process.env.JWT_REFRESH_EXPIRE || '7d',
     }
   );

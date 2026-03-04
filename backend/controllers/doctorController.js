@@ -14,6 +14,7 @@ const Visit = require('../models/Visit');
 const User = require('../models/User');
 const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
+const { sanitizeSearchString } = require('../utils/controllerHelpers');
 
 /**
  * Build access filter based on user role
@@ -79,10 +80,11 @@ const getAllDoctors = catchAsync(async (req, res) => {
 
   // Search by firstName, lastName, or clinicOfficeAddress
   if (req.query.search) {
+    const safeSearch = sanitizeSearchString(req.query.search);
     filter.$or = [
-      { firstName: { $regex: req.query.search, $options: 'i' } },
-      { lastName: { $regex: req.query.search, $options: 'i' } },
-      { clinicOfficeAddress: { $regex: req.query.search, $options: 'i' } },
+      { firstName: { $regex: safeSearch, $options: 'i' } },
+      { lastName: { $regex: safeSearch, $options: 'i' } },
+      { clinicOfficeAddress: { $regex: safeSearch, $options: 'i' } },
     ];
   }
 

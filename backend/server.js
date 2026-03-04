@@ -20,6 +20,7 @@ const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const mongoSanitize = require('express-mongo-sanitize');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const { connectWebsiteDB } = require('./config/websiteDb');
@@ -44,8 +45,8 @@ const validateEnv = () => {
     process.exit(1);
   }
 
-  // SECURITY: Validate JWT secret strength (minimum 32 characters)
-  const MIN_SECRET_LENGTH = 32;
+  // SECURITY: Validate JWT secret strength (OWASP recommends 64+ for HS256)
+  const MIN_SECRET_LENGTH = 64;
   if (process.env.JWT_SECRET.length < MIN_SECRET_LENGTH) {
     console.error(`SECURITY ERROR: JWT_SECRET must be at least ${MIN_SECRET_LENGTH} characters for adequate security.`);
     console.error(`Current length: ${process.env.JWT_SECRET.length} characters.`);
@@ -88,7 +89,21 @@ app.use(
       includeSubDomains: true,
       preload: true,
     },
-    contentSecurityPolicy: process.env.NODE_ENV === 'production',
+    contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https://*.amazonaws.com'],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      },
+    } : false,
+    crossOriginEmbedderPolicy: false, // Allow S3 image loading
   })
 );
 
@@ -167,6 +182,22 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Per-user rate limiting for authenticated endpoints (prevents abuse behind shared IPs/NAT)
+const userLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300, // Limit each user to 300 requests per window
+  keyGenerator: (req) => {
+    // Use user ID if authenticated, fall back to IP
+    return req.user?._id?.toString() || req.ip;
+  },
+  message: {
+    success: false,
+    message: 'Too many requests from your account, please try again later.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Apply general rate limiting to all API routes
 app.use('/api/', generalLimiter);
 
@@ -177,6 +208,10 @@ app.use(cookieParser());
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// SECURITY: Sanitize user input against NoSQL injection
+// Strips $ and . operators from req.body, req.query, req.params
+app.use(mongoSanitize());
 
 
 // Request timeout middleware (30 seconds)
@@ -214,18 +249,17 @@ app.get('/api/health', async (req, res) => {
 // Mount route handlers
 // Apply stricter rate limiting to auth routes
 app.use('/api/auth', authLimiter, require('./routes/authRoutes'));
-app.use('/api/users', require('./routes/userRoutes'));
-app.use('/api/doctors', require('./routes/doctorRoutes'));
-app.use('/api/visits', require('./routes/visitRoutes'));
-app.use('/api/messages', require('./routes/messageInbox')); // if file is messageInbox.js
-
-
-app.use('/api/clients', require('./routes/clientRoutes'));
-app.use('/api/products', require('./routes/productRoutes'));
-app.use('/api/assignments', require('./routes/productAssignmentRoutes'));
-app.use('/api/schedules', require('./routes/scheduleRoutes'));
-app.use('/api/imports', require('./routes/importRoutes'));
-app.use('/api/audit-logs', require('./routes/auditLogRoutes'));
+// Apply per-user rate limiting to authenticated routes
+app.use('/api/users', userLimiter, require('./routes/userRoutes'));
+app.use('/api/doctors', userLimiter, require('./routes/doctorRoutes'));
+app.use('/api/visits', userLimiter, require('./routes/visitRoutes'));
+app.use('/api/messages', userLimiter, require('./routes/messageInbox'));
+app.use('/api/clients', userLimiter, require('./routes/clientRoutes'));
+app.use('/api/products', userLimiter, require('./routes/productRoutes'));
+app.use('/api/assignments', userLimiter, require('./routes/productAssignmentRoutes'));
+app.use('/api/schedules', userLimiter, require('./routes/scheduleRoutes'));
+app.use('/api/imports', userLimiter, require('./routes/importRoutes'));
+app.use('/api/audit-logs', userLimiter, require('./routes/auditLogRoutes'));
 
 // 404 handler for undefined routes
 app.use(notFound);

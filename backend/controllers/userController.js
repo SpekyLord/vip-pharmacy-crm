@@ -9,6 +9,7 @@
 
 const User = require('../models/User');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
+const { sanitizeSearchString } = require('../utils/controllerHelpers');
 
 /**
  * @desc    Get all users with pagination and filters
@@ -35,9 +36,10 @@ const getAllUsers = catchAsync(async (req, res) => {
 
   // Search by name or email
   if (req.query.search) {
+    const safeSearch = sanitizeSearchString(req.query.search);
     filter.$or = [
-      { name: { $regex: req.query.search, $options: 'i' } },
-      { email: { $regex: req.query.search, $options: 'i' } },
+      { name: { $regex: safeSearch, $options: 'i' } },
+      { email: { $regex: safeSearch, $options: 'i' } },
     ];
   }
 

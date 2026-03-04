@@ -12,6 +12,7 @@
 const Client = require('../models/Client');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
+const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { signVisitPhotos } = require('../config/s3');
 
 const DAILY_EXTRA_CALL_LIMIT = 30;
@@ -44,10 +45,11 @@ const getAllClients = catchAsync(async (req, res) => {
 
   // Search
   if (req.query.search) {
+    const safeSearch = sanitizeSearchString(req.query.search);
     filter.$or = [
-      { firstName: { $regex: req.query.search, $options: 'i' } },
-      { lastName: { $regex: req.query.search, $options: 'i' } },
-      { clinicOfficeAddress: { $regex: req.query.search, $options: 'i' } },
+      { firstName: { $regex: safeSearch, $options: 'i' } },
+      { lastName: { $regex: safeSearch, $options: 'i' } },
+      { clinicOfficeAddress: { $regex: safeSearch, $options: 'i' } },
     ];
   }
 

@@ -59,19 +59,38 @@ const getClientIp = (req) => {
  * @param {Object} [options.req] - Express request object (for IP and user agent)
  * @param {Object} [options.details] - Additional context
  */
+// Security-critical actions that should trigger alerts
+const ALERT_ACTIONS = new Set([
+  AuditActions.ACCOUNT_LOCKED,
+  AuditActions.LOGIN_FAILURE,
+  AuditActions.PASSWORD_RESET_REQUEST,
+  AuditActions.ACCOUNT_DEACTIVATED,
+  AuditActions.ROLE_CHANGE,
+  AuditActions.USER_DELETED,
+]);
+
 const logAuditEvent = async (action, options = {}) => {
   try {
     const { userId, targetUserId, email, req, details } = options;
+
+    const ipAddress = getClientIp(req);
 
     await AuditLog.create({
       action,
       userId,
       targetUserId,
       email,
-      ipAddress: getClientIp(req),
+      ipAddress,
       userAgent: req?.headers?.['user-agent'] || null,
       details,
     });
+
+    // Emit security alerts for critical events
+    if (ALERT_ACTIONS.has(action)) {
+      console.warn(
+        `[SECURITY_ALERT] ${action} | IP: ${ipAddress || 'unknown'} | Email: ${email || 'N/A'} | User: ${userId || 'N/A'} | ${details ? JSON.stringify(details) : ''}`
+      );
+    }
   } catch (error) {
     // Don't let audit logging failures break the application
     // Log to console for monitoring

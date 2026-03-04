@@ -54,8 +54,8 @@ const protect = async (req, res, next) => {
   }
 
   try {
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Verify token (locked to HS256 to prevent algorithm confusion attacks)
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
 
     // Get user from database
     const user = await User.findById(decoded.id);
@@ -116,8 +116,8 @@ const optionalAuth = async (req, res, next) => {
   }
 
   try {
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Verify token (locked to HS256)
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
 
     // Get user from database
     const user = await User.findById(decoded.id);
@@ -148,8 +148,8 @@ const verifyRefreshToken = async (req, res, next) => {
   }
 
   try {
-    // Verify refresh token
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    // Verify refresh token (locked to HS256)
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, { algorithms: ['HS256'] });
 
     // Get user and check if refresh token matches
     const user = await User.findById(decoded.id).select('+refreshToken');

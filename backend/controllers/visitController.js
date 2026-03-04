@@ -49,6 +49,18 @@ const createVisit = catchAsync(async (req, res) => {
     }
   }
 
+  // Validate GPS coordinates bounds
+  if (locationData) {
+    const lat = parseFloat(locationData.latitude);
+    const lng = parseFloat(locationData.longitude);
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid GPS coordinates. Latitude must be -90 to 90, longitude -180 to 180.',
+      });
+    }
+  }
+
   // Parse productsDiscussed if it's a JSON string (from FormData)
   let productsData = productsDiscussed;
   if (typeof productsDiscussed === 'string') {
