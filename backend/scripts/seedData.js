@@ -25,8 +25,7 @@ const Schedule = require('../models/Schedule');
 const Client = require('../models/Client');
 const ClientVisit = require('../models/ClientVisit');
 const ProductAssignment = require('../models/ProductAssignment');
-const { connectWebsiteDB } = require('../config/websiteDb');
-const { getWebsiteProductModel } = require('../models/WebsiteProduct');
+const CrmProduct = require('../models/CrmProduct');
 const { getCycleNumber, getCycleStartDate } = require('../utils/scheduleCycleUtils');
 
 // ─── Employee definitions ────────────────────────────────────────────────────
@@ -50,86 +49,86 @@ const employeeData = [
 
 const jaroDoctors = [
   // ── Monday (day 1) ──
-  { firstName: 'Elena', lastName: 'Santos', spec: 'Pediatrics', freq: 4, day: 1, hosp: 'Iloilo Doctors Hospital', eng: 4, programs: ['CME GRANT'], support: ['STARTER DOSES', 'PROMATS'], secName: 'Lisa Ramos', secPhone: '+63 9171234001', birthday: '1975-03-15', notes: 'Prefers morning visits. Very open to new products.' },
-  { firstName: 'Miguel', lastName: 'Torres', spec: 'Cardiology', freq: 4, day: 1, hosp: 'Western Visayas Medical Center', eng: 3, programs: ['REBATES / MONEY'], support: ['FULL DOSE'], birthday: '1968-08-22' },
+  { firstName: 'Elena', lastName: 'Santos', spec: 'Pedia', freq: 4, day: 1, hosp: 'Iloilo Doctors Hospital', eng: 4, programs: ['CME GRANT'], support: ['STARTER DOSES', 'PROMATS'], secName: 'Lisa Ramos', secPhone: '+63 9171234001', birthday: '1975-03-15', notes: 'Prefers morning visits. Very open to new products.' },
+  { firstName: 'Miguel', lastName: 'Torres', spec: 'IM Car', freq: 4, day: 1, hosp: 'Western Visayas Medical Center', eng: 3, programs: ['REBATES / MONEY'], support: ['FULL DOSE'], birthday: '1968-08-22' },
   { firstName: 'Rosa', lastName: 'Mendoza', spec: 'IM Gastro', freq: 2, pattern: 'W1W3', day: 1, hosp: 'St. Paul\'s Hospital', eng: 2, support: ['PATIENT DISCOUNT'] },
   { firstName: 'Carlos', lastName: 'Lim', spec: 'ENT', freq: 2, pattern: 'W2W4', day: 1, hosp: 'Iloilo Mission Hospital', eng: 5, programs: ['CME GRANT', 'REST AND RECREATION'], support: ['STARTER DOSES', 'AIR FRESHENER'], secName: 'Joy Tan', secPhone: '+63 9181234002', anniversary: '2010-06-12' },
   // ── Tuesday (day 2) ──
-  { firstName: 'Ana', lastName: 'Reyes', spec: 'Dermatology', freq: 4, day: 2, hosp: 'Medicus Medical Center', eng: 5, programs: ['REST AND RECREATION', 'MED SOCIETY PARTICIPATION'], support: ['PROMATS', 'FULL DOSE'], birthday: '1980-11-03', notes: 'Active partner. Participates in all CME events.' },
-  { firstName: 'Jose', lastName: 'Garcia', spec: 'General Surgery', freq: 4, day: 2, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'] },
-  { firstName: 'Sofia', lastName: 'Navarro', spec: 'Internal Medicine', freq: 2, pattern: 'W1W3', day: 2, hosp: 'Iloilo Doctors Hospital', eng: 2, programs: ['REBATES / MONEY'] },
-  { firstName: 'Antonio', lastName: 'Bautista', spec: 'Pulmonology', freq: 2, pattern: 'W2W4', day: 2, hosp: 'Western Visayas Medical Center', eng: 1, support: ['PATIENT DISCOUNT', 'AIR FRESHENER'] },
+  { firstName: 'Ana', lastName: 'Reyes', spec: 'Derma', freq: 4, day: 2, hosp: 'Medicus Medical Center', eng: 5, programs: ['REST AND RECREATION', 'MED SOCIETY PARTICIPATION'], support: ['PROMATS', 'FULL DOSE'], birthday: '1980-11-03', notes: 'Active partner. Participates in all CME events.' },
+  { firstName: 'Jose', lastName: 'Garcia', spec: 'Surg', freq: 4, day: 2, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'] },
+  { firstName: 'Sofia', lastName: 'Navarro', spec: 'IM', freq: 2, pattern: 'W1W3', day: 2, hosp: 'Iloilo Doctors Hospital', eng: 2, programs: ['REBATES / MONEY'] },
+  { firstName: 'Antonio', lastName: 'Bautista', spec: 'Pulmo', freq: 2, pattern: 'W2W4', day: 2, hosp: 'Western Visayas Medical Center', eng: 1, support: ['PATIENT DISCOUNT', 'AIR FRESHENER'] },
   // ── Wednesday (day 3) ──
-  { firstName: 'Carmen', lastName: 'Villanueva', spec: 'General Practice', freq: 4, day: 3, hosp: 'St. Paul\'s Hospital', eng: 4, programs: ['CME GRANT'], support: ['PROMATS'], secName: 'Beth Cruz', secPhone: '+63 9191234003' },
-  { firstName: 'Rafael', lastName: 'Aquino', spec: 'Cardiology', freq: 4, day: 3, hosp: 'Iloilo Mission Hospital', eng: 3, programs: ['MED SOCIETY PARTICIPATION'], support: ['FULL DOSE', 'STARTER DOSES'], birthday: '1972-05-28' },
-  { firstName: 'Lucia', lastName: 'Fernandez', spec: 'Pediatrics', freq: 2, pattern: 'W1W3', day: 3, hosp: 'Medicus Medical Center', eng: 2 },
-  { firstName: 'Manuel', lastName: 'Ramos', spec: 'Dermatology', freq: 2, pattern: 'W2W4', day: 3, hosp: 'Metro Iloilo Hospital', eng: 4, programs: ['REST AND RECREATION'], support: ['PROMATS'] },
+  { firstName: 'Carmen', lastName: 'Villanueva', spec: 'GP', freq: 4, day: 3, hosp: 'St. Paul\'s Hospital', eng: 4, programs: ['CME GRANT'], support: ['PROMATS'], secName: 'Beth Cruz', secPhone: '+63 9191234003' },
+  { firstName: 'Rafael', lastName: 'Aquino', spec: 'IM Car', freq: 4, day: 3, hosp: 'Iloilo Mission Hospital', eng: 3, programs: ['MED SOCIETY PARTICIPATION'], support: ['FULL DOSE', 'STARTER DOSES'], birthday: '1972-05-28' },
+  { firstName: 'Lucia', lastName: 'Fernandez', spec: 'Pedia', freq: 2, pattern: 'W1W3', day: 3, hosp: 'Medicus Medical Center', eng: 2 },
+  { firstName: 'Manuel', lastName: 'Ramos', spec: 'Derma', freq: 2, pattern: 'W2W4', day: 3, hosp: 'Metro Iloilo Hospital', eng: 4, programs: ['REST AND RECREATION'], support: ['PROMATS'] },
   // ── Thursday (day 4) ──
   { firstName: 'Isabel', lastName: 'Morales', spec: 'ENT', freq: 4, day: 4, hosp: 'Iloilo Doctors Hospital', eng: 3, support: ['STARTER DOSES', 'PATIENT DISCOUNT'], birthday: '1983-01-10' },
   { firstName: 'Ricardo', lastName: 'Cruz', spec: 'IM Gastro', freq: 4, day: 4, hosp: 'Western Visayas Medical Center', eng: 5, programs: ['CME GRANT', 'REBATES / MONEY'], support: ['FULL DOSE'], secName: 'Nina Santos', secPhone: '+63 9201234004', notes: 'Top prescriber. Always ask about clinical trial updates.', otherDetails: 'Preferred contact: secretary first. Clinic closes at 4 PM.' },
-  { firstName: 'Teresa', lastName: 'Lopez', spec: 'Pulmonology', freq: 2, pattern: 'W1W3', day: 4, hosp: 'St. Paul\'s Hospital', eng: 1 },
-  { firstName: 'Fernando', lastName: 'Castillo', spec: 'General Surgery', freq: 2, pattern: 'W2W4', day: 4, hosp: 'Iloilo Mission Hospital', eng: 2, support: ['AIR FRESHENER'] },
+  { firstName: 'Teresa', lastName: 'Lopez', spec: 'Pulmo', freq: 2, pattern: 'W1W3', day: 4, hosp: 'St. Paul\'s Hospital', eng: 1 },
+  { firstName: 'Fernando', lastName: 'Castillo', spec: 'Surg', freq: 2, pattern: 'W2W4', day: 4, hosp: 'Iloilo Mission Hospital', eng: 2, support: ['AIR FRESHENER'] },
   // ── Friday (day 5) ──
-  { firstName: 'Patricia', lastName: 'Dela Rosa', spec: 'Internal Medicine', freq: 4, day: 5, hosp: 'Medicus Medical Center', eng: 4, programs: ['MED SOCIETY PARTICIPATION', 'CME GRANT'], support: ['PROMATS', 'FULL DOSE'], anniversary: '2015-02-14' },
-  { firstName: 'Andres', lastName: 'Soriano', spec: 'General Practice', freq: 4, day: 5, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'] },
-  { firstName: 'Catalina', lastName: 'Perez', spec: 'Cardiology', freq: 2, pattern: 'W1W3', day: 5, hosp: 'Iloilo Doctors Hospital', eng: 2, programs: ['REBATES / MONEY'] },
-  { firstName: 'Roberto', lastName: 'Flores', spec: 'Dermatology', freq: 2, pattern: 'W2W4', day: 5, hosp: 'Western Visayas Medical Center', eng: 1 },
+  { firstName: 'Patricia', lastName: 'Dela Rosa', spec: 'IM', freq: 4, day: 5, hosp: 'Medicus Medical Center', eng: 4, programs: ['MED SOCIETY PARTICIPATION', 'CME GRANT'], support: ['PROMATS', 'FULL DOSE'], anniversary: '2015-02-14' },
+  { firstName: 'Andres', lastName: 'Soriano', spec: 'GP', freq: 4, day: 5, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'] },
+  { firstName: 'Catalina', lastName: 'Perez', spec: 'IM Car', freq: 2, pattern: 'W1W3', day: 5, hosp: 'Iloilo Doctors Hospital', eng: 2, programs: ['REBATES / MONEY'] },
+  { firstName: 'Roberto', lastName: 'Flores', spec: 'Derma', freq: 2, pattern: 'W2W4', day: 5, hosp: 'Western Visayas Medical Center', eng: 1 },
 ];
 
 const mandurriaoDoctors = [
   // ── Monday (day 1) ──
-  { firstName: 'Gloria', lastName: 'Tan', spec: 'Pediatrics', freq: 4, day: 1, hosp: 'Iloilo Doctors Hospital', eng: 5, programs: ['CME GRANT', 'MED SOCIETY PARTICIPATION'], support: ['STARTER DOSES', 'PROMATS'], secName: 'Amy Lim', secPhone: '+63 9171235001', birthday: '1970-07-20', notes: 'Very cooperative. Always available on schedule.' },
-  { firstName: 'Eduardo', lastName: 'Rivera', spec: 'Cardiology', freq: 4, day: 1, hosp: 'Western Visayas Medical Center', eng: 3, support: ['FULL DOSE'] },
+  { firstName: 'Gloria', lastName: 'Tan', spec: 'Pedia', freq: 4, day: 1, hosp: 'Iloilo Doctors Hospital', eng: 5, programs: ['CME GRANT', 'MED SOCIETY PARTICIPATION'], support: ['STARTER DOSES', 'PROMATS'], secName: 'Amy Lim', secPhone: '+63 9171235001', birthday: '1970-07-20', notes: 'Very cooperative. Always available on schedule.' },
+  { firstName: 'Eduardo', lastName: 'Rivera', spec: 'IM Car', freq: 4, day: 1, hosp: 'Western Visayas Medical Center', eng: 3, support: ['FULL DOSE'] },
   { firstName: 'Beatriz', lastName: 'Santiago', spec: 'IM Gastro', freq: 2, pattern: 'W1W3', day: 1, hosp: 'St. Paul\'s Hospital', eng: 2, programs: ['REBATES / MONEY'], support: ['PATIENT DISCOUNT'] },
   { firstName: 'Francisco', lastName: 'Ocampo', spec: 'ENT', freq: 2, pattern: 'W2W4', day: 1, hosp: 'Iloilo Mission Hospital', eng: 4, support: ['AIR FRESHENER'] },
   // ── Tuesday (day 2) ──
-  { firstName: 'Rosario', lastName: 'Diaz', spec: 'Dermatology', freq: 4, day: 2, hosp: 'Medicus Medical Center', eng: 4, programs: ['REST AND RECREATION'], support: ['PROMATS', 'FULL DOSE'], birthday: '1978-04-11' },
-  { firstName: 'Alberto', lastName: 'Manalo', spec: 'General Surgery', freq: 4, day: 2, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'] },
-  { firstName: 'Consuelo', lastName: 'Velasco', spec: 'Internal Medicine', freq: 2, pattern: 'W1W3', day: 2, hosp: 'Iloilo Doctors Hospital', eng: 2 },
-  { firstName: 'Ramon', lastName: 'Aguilar', spec: 'Pulmonology', freq: 2, pattern: 'W2W4', day: 2, hosp: 'Western Visayas Medical Center', eng: 1, support: ['PATIENT DISCOUNT'] },
+  { firstName: 'Rosario', lastName: 'Diaz', spec: 'Derma', freq: 4, day: 2, hosp: 'Medicus Medical Center', eng: 4, programs: ['REST AND RECREATION'], support: ['PROMATS', 'FULL DOSE'], birthday: '1978-04-11' },
+  { firstName: 'Alberto', lastName: 'Manalo', spec: 'Surg', freq: 4, day: 2, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'] },
+  { firstName: 'Consuelo', lastName: 'Velasco', spec: 'IM', freq: 2, pattern: 'W1W3', day: 2, hosp: 'Iloilo Doctors Hospital', eng: 2 },
+  { firstName: 'Ramon', lastName: 'Aguilar', spec: 'Pulmo', freq: 2, pattern: 'W2W4', day: 2, hosp: 'Western Visayas Medical Center', eng: 1, support: ['PATIENT DISCOUNT'] },
   // ── Wednesday (day 3) ──
-  { firstName: 'Pilar', lastName: 'Mercado', spec: 'General Practice', freq: 4, day: 3, hosp: 'St. Paul\'s Hospital', eng: 4, programs: ['CME GRANT'], support: ['PROMATS'], secName: 'Grace Uy', secPhone: '+63 9191235003' },
-  { firstName: 'Ernesto', lastName: 'Pascual', spec: 'Cardiology', freq: 4, day: 3, hosp: 'Iloilo Mission Hospital', eng: 3, programs: ['MED SOCIETY PARTICIPATION'], support: ['FULL DOSE'] },
-  { firstName: 'Dolores', lastName: 'Yap', spec: 'Pediatrics', freq: 2, pattern: 'W1W3', day: 3, hosp: 'Medicus Medical Center', eng: 2, support: ['STARTER DOSES'] },
-  { firstName: 'Arturo', lastName: 'Trinidad', spec: 'Dermatology', freq: 2, pattern: 'W2W4', day: 3, hosp: 'Metro Iloilo Hospital', eng: 4, programs: ['REST AND RECREATION'] },
+  { firstName: 'Pilar', lastName: 'Mercado', spec: 'GP', freq: 4, day: 3, hosp: 'St. Paul\'s Hospital', eng: 4, programs: ['CME GRANT'], support: ['PROMATS'], secName: 'Grace Uy', secPhone: '+63 9191235003' },
+  { firstName: 'Ernesto', lastName: 'Pascual', spec: 'IM Car', freq: 4, day: 3, hosp: 'Iloilo Mission Hospital', eng: 3, programs: ['MED SOCIETY PARTICIPATION'], support: ['FULL DOSE'] },
+  { firstName: 'Dolores', lastName: 'Yap', spec: 'Pedia', freq: 2, pattern: 'W1W3', day: 3, hosp: 'Medicus Medical Center', eng: 2, support: ['STARTER DOSES'] },
+  { firstName: 'Arturo', lastName: 'Trinidad', spec: 'Derma', freq: 2, pattern: 'W2W4', day: 3, hosp: 'Metro Iloilo Hospital', eng: 4, programs: ['REST AND RECREATION'] },
   // ── Thursday (day 4) ──
   { firstName: 'Virginia', lastName: 'Salazar', spec: 'ENT', freq: 4, day: 4, hosp: 'Iloilo Doctors Hospital', eng: 3, support: ['STARTER DOSES', 'PATIENT DISCOUNT'] },
   { firstName: 'Gregorio', lastName: 'Fuentes', spec: 'IM Gastro', freq: 4, day: 4, hosp: 'Western Visayas Medical Center', eng: 5, programs: ['CME GRANT', 'REBATES / MONEY'], support: ['FULL DOSE'], secName: 'Mila Reyes', secPhone: '+63 9201235004', birthday: '1965-12-25', notes: 'Senior doctor. Highly influential in the community.' },
-  { firstName: 'Leonora', lastName: 'Chua', spec: 'Pulmonology', freq: 2, pattern: 'W1W3', day: 4, hosp: 'St. Paul\'s Hospital', eng: 1 },
-  { firstName: 'Mariano', lastName: 'Bello', spec: 'General Surgery', freq: 2, pattern: 'W2W4', day: 4, hosp: 'Iloilo Mission Hospital', eng: 2, support: ['AIR FRESHENER'] },
+  { firstName: 'Leonora', lastName: 'Chua', spec: 'Pulmo', freq: 2, pattern: 'W1W3', day: 4, hosp: 'St. Paul\'s Hospital', eng: 1 },
+  { firstName: 'Mariano', lastName: 'Bello', spec: 'Surg', freq: 2, pattern: 'W2W4', day: 4, hosp: 'Iloilo Mission Hospital', eng: 2, support: ['AIR FRESHENER'] },
   // ── Friday (day 5) ──
-  { firstName: 'Remedios', lastName: 'Ong', spec: 'Internal Medicine', freq: 4, day: 5, hosp: 'Medicus Medical Center', eng: 4, programs: ['MED SOCIETY PARTICIPATION'], support: ['PROMATS', 'FULL DOSE'] },
-  { firstName: 'Danilo', lastName: 'Villar', spec: 'General Practice', freq: 4, day: 5, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'], birthday: '1976-09-05' },
-  { firstName: 'Angelina', lastName: 'Sy', spec: 'Cardiology', freq: 2, pattern: 'W1W3', day: 5, hosp: 'Iloilo Doctors Hospital', eng: 2, programs: ['REBATES / MONEY'] },
-  { firstName: 'Renato', lastName: 'Mapa', spec: 'Dermatology', freq: 2, pattern: 'W2W4', day: 5, hosp: 'Western Visayas Medical Center', eng: 1 },
+  { firstName: 'Remedios', lastName: 'Ong', spec: 'IM', freq: 4, day: 5, hosp: 'Medicus Medical Center', eng: 4, programs: ['MED SOCIETY PARTICIPATION'], support: ['PROMATS', 'FULL DOSE'] },
+  { firstName: 'Danilo', lastName: 'Villar', spec: 'GP', freq: 4, day: 5, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'], birthday: '1976-09-05' },
+  { firstName: 'Angelina', lastName: 'Sy', spec: 'IM Car', freq: 2, pattern: 'W1W3', day: 5, hosp: 'Iloilo Doctors Hospital', eng: 2, programs: ['REBATES / MONEY'] },
+  { firstName: 'Renato', lastName: 'Mapa', spec: 'Derma', freq: 2, pattern: 'W2W4', day: 5, hosp: 'Western Visayas Medical Center', eng: 1 },
 ];
 
 const lapazDoctors = [
   // ── Monday (day 1) ──
-  { firstName: 'Corazon', lastName: 'Pascual', spec: 'Pediatrics', freq: 4, day: 1, hosp: 'Iloilo Doctors Hospital', eng: 5, programs: ['CME GRANT', 'REST AND RECREATION'], support: ['STARTER DOSES', 'PROMATS'], birthday: '1969-02-14', notes: 'Long-time partner. Always receptive to new programs.' },
-  { firstName: 'Nestor', lastName: 'Galang', spec: 'Cardiology', freq: 4, day: 1, hosp: 'Western Visayas Medical Center', eng: 3, support: ['FULL DOSE'] },
+  { firstName: 'Corazon', lastName: 'Pascual', spec: 'Pedia', freq: 4, day: 1, hosp: 'Iloilo Doctors Hospital', eng: 5, programs: ['CME GRANT', 'REST AND RECREATION'], support: ['STARTER DOSES', 'PROMATS'], birthday: '1969-02-14', notes: 'Long-time partner. Always receptive to new programs.' },
+  { firstName: 'Nestor', lastName: 'Galang', spec: 'IM Car', freq: 4, day: 1, hosp: 'Western Visayas Medical Center', eng: 3, support: ['FULL DOSE'] },
   { firstName: 'Felisa', lastName: 'De Leon', spec: 'IM Gastro', freq: 2, pattern: 'W1W3', day: 1, hosp: 'St. Paul\'s Hospital', eng: 2, support: ['PATIENT DISCOUNT'] },
   { firstName: 'Leandro', lastName: 'Escano', spec: 'ENT', freq: 2, pattern: 'W2W4', day: 1, hosp: 'Iloilo Mission Hospital', eng: 4, programs: ['MED SOCIETY PARTICIPATION'], support: ['AIR FRESHENER'], secName: 'Lorna Reyes', secPhone: '+63 9171236001' },
   // ── Tuesday (day 2) ──
-  { firstName: 'Milagros', lastName: 'Ponce', spec: 'Dermatology', freq: 4, day: 2, hosp: 'Medicus Medical Center', eng: 4, programs: ['REST AND RECREATION'], support: ['PROMATS', 'FULL DOSE'] },
-  { firstName: 'Oscar', lastName: 'Sison', spec: 'General Surgery', freq: 4, day: 2, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'], birthday: '1981-06-30' },
-  { firstName: 'Esperanza', lastName: 'Abad', spec: 'Internal Medicine', freq: 2, pattern: 'W1W3', day: 2, hosp: 'Iloilo Doctors Hospital', eng: 2, programs: ['REBATES / MONEY'] },
-  { firstName: 'Virgilio', lastName: 'Jimenez', spec: 'Pulmonology', freq: 2, pattern: 'W2W4', day: 2, hosp: 'Western Visayas Medical Center', eng: 1, support: ['PATIENT DISCOUNT'] },
+  { firstName: 'Milagros', lastName: 'Ponce', spec: 'Derma', freq: 4, day: 2, hosp: 'Medicus Medical Center', eng: 4, programs: ['REST AND RECREATION'], support: ['PROMATS', 'FULL DOSE'] },
+  { firstName: 'Oscar', lastName: 'Sison', spec: 'Surg', freq: 4, day: 2, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'], birthday: '1981-06-30' },
+  { firstName: 'Esperanza', lastName: 'Abad', spec: 'IM', freq: 2, pattern: 'W1W3', day: 2, hosp: 'Iloilo Doctors Hospital', eng: 2, programs: ['REBATES / MONEY'] },
+  { firstName: 'Virgilio', lastName: 'Jimenez', spec: 'Pulmo', freq: 2, pattern: 'W2W4', day: 2, hosp: 'Western Visayas Medical Center', eng: 1, support: ['PATIENT DISCOUNT'] },
   // ── Wednesday (day 3) ──
-  { firstName: 'Natividad', lastName: 'Luna', spec: 'General Practice', freq: 4, day: 3, hosp: 'St. Paul\'s Hospital', eng: 4, programs: ['CME GRANT'], support: ['PROMATS'], secName: 'Cora Abad', secPhone: '+63 9191236003' },
-  { firstName: 'Hernando', lastName: 'Solis', spec: 'Cardiology', freq: 4, day: 3, hosp: 'Iloilo Mission Hospital', eng: 3, programs: ['MED SOCIETY PARTICIPATION'], support: ['FULL DOSE'] },
-  { firstName: 'Amelia', lastName: 'Castro', spec: 'Pediatrics', freq: 2, pattern: 'W1W3', day: 3, hosp: 'Medicus Medical Center', eng: 2, support: ['STARTER DOSES'] },
-  { firstName: 'Teodoro', lastName: 'Lara', spec: 'Dermatology', freq: 2, pattern: 'W2W4', day: 3, hosp: 'Metro Iloilo Hospital', eng: 4, programs: ['REST AND RECREATION'] },
+  { firstName: 'Natividad', lastName: 'Luna', spec: 'GP', freq: 4, day: 3, hosp: 'St. Paul\'s Hospital', eng: 4, programs: ['CME GRANT'], support: ['PROMATS'], secName: 'Cora Abad', secPhone: '+63 9191236003' },
+  { firstName: 'Hernando', lastName: 'Solis', spec: 'IM Car', freq: 4, day: 3, hosp: 'Iloilo Mission Hospital', eng: 3, programs: ['MED SOCIETY PARTICIPATION'], support: ['FULL DOSE'] },
+  { firstName: 'Amelia', lastName: 'Castro', spec: 'Pedia', freq: 2, pattern: 'W1W3', day: 3, hosp: 'Medicus Medical Center', eng: 2, support: ['STARTER DOSES'] },
+  { firstName: 'Teodoro', lastName: 'Lara', spec: 'Derma', freq: 2, pattern: 'W2W4', day: 3, hosp: 'Metro Iloilo Hospital', eng: 4, programs: ['REST AND RECREATION'] },
   // ── Thursday (day 4) ──
   { firstName: 'Josefina', lastName: 'Abaya', spec: 'ENT', freq: 4, day: 4, hosp: 'Iloilo Doctors Hospital', eng: 3, support: ['STARTER DOSES', 'PATIENT DISCOUNT'], birthday: '1977-10-18' },
   { firstName: 'Domingo', lastName: 'Enriquez', spec: 'IM Gastro', freq: 4, day: 4, hosp: 'Western Visayas Medical Center', eng: 5, programs: ['CME GRANT', 'REBATES / MONEY'], support: ['FULL DOSE'], secName: 'Tessie Go', secPhone: '+63 9201236004', notes: 'Key opinion leader. Valuable for product launches.' },
-  { firstName: 'Concepcion', lastName: 'Alba', spec: 'Pulmonology', freq: 2, pattern: 'W1W3', day: 4, hosp: 'St. Paul\'s Hospital', eng: 1 },
-  { firstName: 'Alfredo', lastName: 'Tugade', spec: 'General Surgery', freq: 2, pattern: 'W2W4', day: 4, hosp: 'Iloilo Mission Hospital', eng: 2, support: ['AIR FRESHENER'] },
+  { firstName: 'Concepcion', lastName: 'Alba', spec: 'Pulmo', freq: 2, pattern: 'W1W3', day: 4, hosp: 'St. Paul\'s Hospital', eng: 1 },
+  { firstName: 'Alfredo', lastName: 'Tugade', spec: 'Surg', freq: 2, pattern: 'W2W4', day: 4, hosp: 'Iloilo Mission Hospital', eng: 2, support: ['AIR FRESHENER'] },
   // ── Friday (day 5) ──
-  { firstName: 'Imelda', lastName: 'Viray', spec: 'Internal Medicine', freq: 4, day: 5, hosp: 'Medicus Medical Center', eng: 4, programs: ['MED SOCIETY PARTICIPATION', 'CME GRANT'], support: ['PROMATS', 'FULL DOSE'] },
-  { firstName: 'Gerardo', lastName: 'Sotto', spec: 'General Practice', freq: 4, day: 5, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'], anniversary: '2018-11-20' },
-  { firstName: 'Luzviminda', lastName: 'Dy', spec: 'Cardiology', freq: 2, pattern: 'W1W3', day: 5, hosp: 'Iloilo Doctors Hospital', eng: 2, programs: ['REBATES / MONEY'] },
-  { firstName: 'Rogelio', lastName: 'Balbin', spec: 'Dermatology', freq: 2, pattern: 'W2W4', day: 5, hosp: 'Western Visayas Medical Center', eng: 1 },
+  { firstName: 'Imelda', lastName: 'Viray', spec: 'IM', freq: 4, day: 5, hosp: 'Medicus Medical Center', eng: 4, programs: ['MED SOCIETY PARTICIPATION', 'CME GRANT'], support: ['PROMATS', 'FULL DOSE'] },
+  { firstName: 'Gerardo', lastName: 'Sotto', spec: 'GP', freq: 4, day: 5, hosp: 'Metro Iloilo Hospital', eng: 3, support: ['STARTER DOSES'], anniversary: '2018-11-20' },
+  { firstName: 'Luzviminda', lastName: 'Dy', spec: 'IM Car', freq: 2, pattern: 'W1W3', day: 5, hosp: 'Iloilo Doctors Hospital', eng: 2, programs: ['REBATES / MONEY'] },
+  { firstName: 'Rogelio', lastName: 'Balbin', spec: 'Derma', freq: 2, pattern: 'W2W4', day: 5, hosp: 'Western Visayas Medical Center', eng: 1 },
 ];
 
 // Map territory name → doctor list
@@ -193,129 +192,79 @@ const seedDatabase = async () => {
     await mongoose.connect(process.env.MONGO_URI);
     console.log('MongoDB Connected for seeding...');
 
-    // Connect website DB for products
-    let websiteProducts = [];
-    try {
-      await connectWebsiteDB();
-      const Product = getWebsiteProductModel();
-      // Clear and re-seed products to ensure fresh data with images
-      await Product.deleteMany({});
-      websiteProducts = await Product.find({}).lean();
+    // Seed CRM products
+    console.log('Seeding CRM products...');
+    const crmProductData = [
+      {
+        name: 'CardioVex 80mg',
+        genericName: 'Valsartan',
+        dosage: '80mg tablet',
+        category: 'Cardiovascular',
+        description: 'Angiotensin II receptor blocker (ARB) for hypertension and heart failure management. Helps relax blood vessels to lower blood pressure and improve blood flow.',
+        usage: 'Take one tablet daily with or without food. Swallow whole with water. Do not crush or chew. Best taken at the same time each day.',
+        safety: 'Not for use during pregnancy. May cause dizziness. Avoid potassium supplements unless directed by physician. Monitor kidney function regularly.',
+        targetSpecializations: ['IM Car', 'IM', 'IM Gastro'],
+        isActive: true,
+      },
+      {
+        name: 'GastroShield 20mg',
+        genericName: 'Omeprazole',
+        dosage: '20mg capsule',
+        category: 'Gastrointestinal',
+        description: 'Proton pump inhibitor (PPI) for treatment of gastroesophageal reflux disease (GERD), peptic ulcers, and Zollinger-Ellison syndrome.',
+        usage: 'Take one capsule 30 minutes before breakfast. Swallow whole — do not crush, chew, or open capsule. Course duration as prescribed.',
+        safety: 'Long-term use may affect magnesium and calcium absorption. Report any bone pain or muscle cramps. Not recommended for more than 8 weeks without medical review.',
+        targetSpecializations: ['IM Gastro', 'IM', 'GP'],
+        isActive: true,
+      },
+      {
+        name: 'RespiraClear 10mg',
+        genericName: 'Montelukast Sodium',
+        dosage: '10mg chewable tablet',
+        category: 'Respiratory',
+        description: 'Leukotriene receptor antagonist for prevention and long-term treatment of asthma. Also relieves symptoms of allergic rhinitis.',
+        usage: 'Take one tablet in the evening, with or without food. For asthma: take daily even when symptom-free. Chewable tablet may be chewed or swallowed whole.',
+        safety: 'Report any mood or behavior changes immediately. Not for acute asthma attacks — use rescue inhaler. Safe for patients 6 years and older.',
+        targetSpecializations: ['Pulmo', 'Pedia', 'ENT'],
+        isActive: true,
+      },
+      {
+        name: 'NeuroCalm 25mg',
+        genericName: 'Pregabalin',
+        dosage: '25mg capsule',
+        category: 'Neurological',
+        description: 'Anticonvulsant and analgesic for neuropathic pain, fibromyalgia, and as adjunctive therapy for partial-onset seizures.',
+        usage: 'Take 25-75mg twice daily. May be taken with or without food. Do not stop abruptly — taper dose gradually over at least one week.',
+        safety: 'May cause drowsiness and dizziness. Avoid alcohol. Do not drive until you know how it affects you. Report any swelling, weight gain, or vision changes.',
+        targetSpecializations: ['Internal Medicine', 'General Practice'],
+        isActive: true,
+      },
+      {
+        name: 'DermaHeal Cream 0.1%',
+        genericName: 'Mometasone Furoate',
+        dosage: '0.1% topical cream 15g',
+        category: 'Dermatology',
+        description: 'Medium-potency topical corticosteroid for inflammatory and pruritic skin conditions including eczema, psoriasis, and dermatitis.',
+        usage: 'Apply a thin layer to affected area once daily. Do not cover with occlusive dressing unless directed. Wash hands after application.',
+        safety: 'For external use only. Avoid contact with eyes. Do not use on broken skin or infected areas. Limit use to 2-3 weeks on face. Discontinue if irritation occurs.',
+        targetSpecializations: ['Dermatology'],
+        isActive: true,
+      },
+      {
+        name: 'ImmunoBoost 500mg',
+        genericName: 'Ascorbic Acid + Zinc',
+        dosage: '500mg/10mg tablet',
+        category: 'Vitamins & Supplements',
+        description: 'Vitamin C and Zinc combination supplement for immune system support. Helps reduce duration and severity of common colds.',
+        usage: 'Take one tablet daily after meals. May be taken with water or juice. For enhanced immune support during illness, take up to 3 tablets daily.',
+        safety: 'Generally well-tolerated. High doses may cause stomach upset. Not a substitute for a balanced diet. Consult physician if pregnant or breastfeeding.',
+        targetSpecializations: ['Pediatrics', 'General Practice', 'Internal Medicine'],
+        isActive: true,
+      },
+    ];
 
-      if (websiteProducts.length === 0) {
-        console.log('Website DB: No products found — seeding test products...');
-        const testProducts = [
-          {
-            id: 'p1',
-            name: 'CardioVex 80mg',
-            genericName: 'Valsartan',
-            dosage: '80mg tablet',
-            category: 'Cardiovascular',
-            price: 42.50,
-            image: 'https://medias.watsons.com.ph/publishing/WTCPH-50055240-front-zoom.jpg?version=1758905406',
-            description: 'Angiotensin II receptor blocker (ARB) for hypertension and heart failure management. Helps relax blood vessels to lower blood pressure and improve blood flow.',
-            usage: 'Take one tablet daily with or without food. Swallow whole with water. Do not crush or chew. Best taken at the same time each day.',
-            safety: 'Not for use during pregnancy. May cause dizziness. Avoid potassium supplements unless directed by physician. Monitor kidney function regularly.',
-            inStock: true,
-            stockQuantity: 500,
-            isFeatured: true,
-            isVIP: true,
-            requiresPrescription: true,
-          },
-          {
-            id: 'p2',
-            name: 'GastroShield 20mg',
-            genericName: 'Omeprazole',
-            dosage: '20mg capsule',
-            category: 'Gastrointestinal',
-            price: 28.00,
-            image: 'https://medsgo.ph/images/detailed/36/Omephil-20.png',
-            description: 'Proton pump inhibitor (PPI) for treatment of gastroesophageal reflux disease (GERD), peptic ulcers, and Zollinger-Ellison syndrome.',
-            usage: 'Take one capsule 30 minutes before breakfast. Swallow whole — do not crush, chew, or open capsule. Course duration as prescribed.',
-            safety: 'Long-term use may affect magnesium and calcium absorption. Report any bone pain or muscle cramps. Not recommended for more than 8 weeks without medical review.',
-            inStock: true,
-            stockQuantity: 800,
-            isFeatured: true,
-            isVIP: true,
-            requiresPrescription: true,
-          },
-          {
-            id: 'p3',
-            name: 'RespiraClear 10mg',
-            genericName: 'Montelukast Sodium',
-            dosage: '10mg chewable tablet',
-            category: 'Respiratory',
-            price: 35.75,
-            image: 'https://vonagepharma.com/wp-content/uploads/2023/11/Montelukast-10-Front.jpg',
-            description: 'Leukotriene receptor antagonist for prevention and long-term treatment of asthma. Also relieves symptoms of allergic rhinitis.',
-            usage: 'Take one tablet in the evening, with or without food. For asthma: take daily even when symptom-free. Chewable tablet may be chewed or swallowed whole.',
-            safety: 'Report any mood or behavior changes immediately. Not for acute asthma attacks — use rescue inhaler. Safe for patients 6 years and older.',
-            inStock: true,
-            stockQuantity: 600,
-            isVIP: true,
-            requiresPrescription: true,
-          },
-          {
-            id: 'p4',
-            name: 'NeuroCalm 25mg',
-            genericName: 'Pregabalin',
-            dosage: '25mg capsule',
-            category: 'Neurological',
-            price: 55.00,
-            image: 'https://smartwaywellness.com/wp-content/uploads/2021/09/PREGAFAB-75-CAP-copy.jpg',
-            description: 'Anticonvulsant and analgesic for neuropathic pain, fibromyalgia, and as adjunctive therapy for partial-onset seizures.',
-            usage: 'Take 25-75mg twice daily. May be taken with or without food. Do not stop abruptly — taper dose gradually over at least one week.',
-            safety: 'May cause drowsiness and dizziness. Avoid alcohol. Do not drive until you know how it affects you. Report any swelling, weight gain, or vision changes.',
-            inStock: true,
-            stockQuantity: 350,
-            isFeatured: true,
-            isVIP: true,
-            requiresPrescription: true,
-          },
-          {
-            id: 'p5',
-            name: 'DermaHeal Cream 0.1%',
-            genericName: 'Mometasone Furoate',
-            dosage: '0.1% topical cream 15g',
-            category: 'Dermatology',
-            price: 185.00,
-            image: 'https://click2pharmacy.co.uk/wp-content/uploads/2023/12/mometasone-cream-30g.jpg',
-            description: 'Medium-potency topical corticosteroid for inflammatory and pruritic skin conditions including eczema, psoriasis, and dermatitis.',
-            usage: 'Apply a thin layer to affected area once daily. Do not cover with occlusive dressing unless directed. Wash hands after application.',
-            safety: 'For external use only. Avoid contact with eyes. Do not use on broken skin or infected areas. Limit use to 2-3 weeks on face. Discontinue if irritation occurs.',
-            inStock: true,
-            stockQuantity: 200,
-            isVIP: false,
-            requiresPrescription: true,
-          },
-          {
-            id: 'p6',
-            name: 'ImmunoBoost 500mg',
-            genericName: 'Ascorbic Acid + Zinc',
-            dosage: '500mg/10mg tablet',
-            category: 'Vitamins & Supplements',
-            price: 12.50,
-            image: 'https://medias.watsons.com.ph/publishing/WTCPH-50041585-side-zoom.jpg?version=1721935274',
-            description: 'Vitamin C and Zinc combination supplement for immune system support. Helps reduce duration and severity of common colds.',
-            usage: 'Take one tablet daily after meals. May be taken with water or juice. For enhanced immune support during illness, take up to 3 tablets daily.',
-            safety: 'Generally well-tolerated. High doses may cause stomach upset. Not a substitute for a balanced diet. Consult physician if pregnant or breastfeeding.',
-            inStock: true,
-            stockQuantity: 1500,
-            isFeatured: true,
-            isVIP: false,
-            requiresPrescription: false,
-          },
-        ];
-
-        const created = await Product.insertMany(testProducts);
-        websiteProducts = created.map(p => p.toObject());
-        console.log(`  Seeded ${websiteProducts.length} test products into website DB`);
-      } else {
-        console.log(`Website DB: Found ${websiteProducts.length} existing products`);
-      }
-    } catch (err) {
-      console.warn(`Website DB connection failed (${err.message}) — skipping product assignments`);
-    }
+    const crmProducts = await CrmProduct.insertMany(crmProductData);
+    console.log(`  Created ${crmProducts.length} CRM products`);
 
     // Clear existing data
     console.log('Clearing existing data...');
@@ -327,6 +276,7 @@ const seedDatabase = async () => {
       Client.deleteMany({}),
       ClientVisit.deleteMany({}),
       ProductAssignment.deleteMany({}),
+      CrmProduct.deleteMany({}),
     ]);
 
     // 1. Create Admin
@@ -437,51 +387,44 @@ const seedDatabase = async () => {
     console.log(`  Missed:    ${statusCounts.missed}`);
     console.log(`  Planned:   ${statusCounts.planned}`);
 
-    // 4. Assign products to doctors (if website products exist)
-    if (websiteProducts.length >= 3) {
-      console.log('\nAssigning products to VIP Clients...');
-      let assignmentCount = 0;
-      const statuses = ['showcasing', 'accepted'];
+    // 4. Assign products to doctors
+    console.log('\nAssigning products to VIP Clients...');
+    let assignmentCount = 0;
+    const statuses = ['showcasing', 'accepted'];
 
-      for (const { doctor, employee } of createdDoctors) {
-        // Pick 3 products (rotating through available products)
-        const offset = assignmentCount % websiteProducts.length;
-        const picked = [];
-        for (let i = 0; i < 3; i++) {
-          picked.push(websiteProducts[(offset + i) % websiteProducts.length]);
-        }
-
-        // Set targetProducts on doctor
-        doctor.targetProducts = picked.map((p, i) => ({
-          product: p._id,
-          status: i === 0 ? 'accepted' : statuses[i % statuses.length],
-        }));
-        await doctor.save();
-
-        // Create ProductAssignment records (for VisitLogger product list)
-        for (let i = 0; i < picked.length; i++) {
-          try {
-            await ProductAssignment.create({
-              product: picked[i]._id,
-              doctor: doctor._id,
-              assignedBy: employee._id,
-              priority: i + 1,
-              status: 'active',
-            });
-          } catch (dupErr) {
-            // skip duplicates
-          }
-        }
-        assignmentCount++;
+    for (const { doctor, employee } of createdDoctors) {
+      // Pick 3 products (rotating through available products)
+      const offset = assignmentCount % crmProducts.length;
+      const picked = [];
+      for (let i = 0; i < 3; i++) {
+        picked.push(crmProducts[(offset + i) % crmProducts.length]);
       }
-      console.log(`  Assigned 3 products each to ${assignmentCount} VIP Clients`);
-      console.log(`  Created ${assignmentCount * 3} ProductAssignment records`);
-    } else if (websiteProducts.length > 0) {
-      console.warn(`\n  Only ${websiteProducts.length} products found (need 3+). Skipping product assignments.`);
-    } else {
-      console.warn('\n  No products in website DB. Skipping product assignments.');
-      console.warn('  Products are managed via the VIP Pharmacy website database.');
+
+      // Set targetProducts on doctor
+      doctor.targetProducts = picked.map((p, i) => ({
+        product: p._id,
+        status: i === 0 ? 'accepted' : statuses[i % statuses.length],
+      }));
+      await doctor.save();
+
+      // Create ProductAssignment records
+      for (let i = 0; i < picked.length; i++) {
+        try {
+          await ProductAssignment.create({
+            product: picked[i]._id,
+            doctor: doctor._id,
+            assignedBy: employee._id,
+            priority: i + 1,
+            status: 'active',
+          });
+        } catch (dupErr) {
+          // skip duplicates
+        }
+      }
+      assignmentCount++;
     }
+    console.log(`  Assigned 3 products each to ${assignmentCount} VIP Clients`);
+    console.log(`  Created ${assignmentCount * 3} ProductAssignment records`);
 
     // Summary
     console.log('\n========================================');

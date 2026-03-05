@@ -23,6 +23,7 @@ import {
   Inbox,
   CalendarRange,
   Stethoscope,
+  Package,
   ChevronLeft,
   ChevronRight,
   Activity,
@@ -342,6 +343,7 @@ const getMenuConfig = (role) => {
             items: [
               { path: '/admin/doctors', label: 'VIP Clients', icon: Stethoscope },
               { path: '/admin/employees', label: 'BDMs', icon: Users },
+              { path: '/admin/products', label: 'Products', icon: Package },
             ],
           },
           {

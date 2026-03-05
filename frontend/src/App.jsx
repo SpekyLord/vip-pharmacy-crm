@@ -18,6 +18,7 @@ import DoctorDetailPage from './pages/employee/DoctorDetailPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import DoctorsPage from './pages/admin/DoctorsPage';
 import EmployeesPage from './pages/admin/EmployeesPage';
+import ProductsPage from './pages/admin/ProductsPage';
 import ReportsPage from './pages/admin/ReportsPage';
 import StatisticsPage from './pages/admin/StatisticsPage';
 import ActivityMonitor from './pages/admin/ActivityMonitor';
@@ -117,6 +118,14 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['admin']}>
               <EmployeesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/products"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <ProductsPage />
             </ProtectedRoute>
           }
         />

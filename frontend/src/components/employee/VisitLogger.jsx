@@ -15,7 +15,7 @@ import CameraCapture from './CameraCapture';
 import ProductDetailModal from './ProductDetailModal';
 import EngagementTypeSelector from './EngagementTypeSelector';
 import visitService from '../../services/visitService';
-import doctorService from '../../services/doctorService';
+import productService from '../../services/productService';
 
 const visitLoggerStyles = `
   .visit-logger {
@@ -252,19 +252,24 @@ const VisitLogger = ({ doctor, onSuccess }) => {
     nextVisitDate: '',
   });
 
-  // Fetch assigned products for this doctor
+  // Fetch products by doctor's specialization (fallback to all)
   useEffect(() => {
     const fetchProducts = async () => {
       if (!doctor?._id) return;
       try {
-        const response = await doctorService.getAssignedProducts(doctor._id);
-        setProducts(response.data?.products || []);
+        let response;
+        if (doctor?.specialization) {
+          response = await productService.getBySpecialization(doctor.specialization);
+        } else {
+          response = await productService.getAll({ limit: 200 });
+        }
+        setProducts(response.data || []);
       } catch (err) {
         console.error('Failed to fetch products:', err);
       }
     };
     fetchProducts();
-  }, [doctor?._id]);
+  }, [doctor?._id, doctor?.specialization]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

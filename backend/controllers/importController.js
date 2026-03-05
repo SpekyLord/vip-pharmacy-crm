@@ -12,7 +12,7 @@ const ImportBatch = require('../models/ImportBatch');
 const Doctor = require('../models/Doctor');
 const Schedule = require('../models/Schedule');
 const User = require('../models/User');
-const { getWebsiteProductModel } = require('../models/WebsiteProduct');
+const CrmProduct = require('../models/CrmProduct');
 const { parseCPTWorkbook, detectDuplicates } = require('../utils/excelParser');
 const { catchAsync, ApiError } = require('../middleware/errorHandler');
 const { getCycleStartDate } = require('../utils/scheduleCycleUtils');
@@ -268,8 +268,7 @@ const approve = catchAsync(async (req, res) => {
   let productMap = new Map();
   if (uniqueProductNames.length > 0) {
     try {
-      const Product = getWebsiteProductModel();
-      const products = await Product.find({
+      const products = await CrmProduct.find({
         name: { $in: uniqueProductNames.map((n) => new RegExp(`^${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')) },
       }).select('_id name').lean();
 

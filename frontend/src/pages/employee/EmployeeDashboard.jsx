@@ -418,6 +418,17 @@ const EmployeeDashboard = () => {
             </div>
           )}
 
+          <section className="dashboard-section" style={{ marginBottom: '24px' }}>
+            <h2>My VIP Clients</h2>
+            <DoctorList
+              doctors={doctors}
+              loading={loading}
+              onSelectDoctor={handleSelectDoctor}
+              onLogVisit={handleLogVisit}
+              onEditDoctor={handleEditDoctor}
+            />
+          </section>
+
           {todaySchedule.length > 0 && (
             <div className="today-sched-section">
               <h2>
@@ -445,17 +456,6 @@ const EmployeeDashboard = () => {
               </div>
             </div>
           )}
-
-          <section className="dashboard-section">
-            <h2>My VIP Clients</h2>
-            <DoctorList
-              doctors={doctors}
-              loading={loading}
-              onSelectDoctor={handleSelectDoctor}
-              onLogVisit={handleLogVisit}
-              onEditDoctor={handleEditDoctor}
-            />
-          </section>
 
           <section className="dashboard-section" style={{ marginTop: '24px' }}>
             <h2>Regular Clients (Extra Calls)</h2>

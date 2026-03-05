@@ -112,7 +112,7 @@ const visitSchema = new mongoose.Schema(
       {
         product: {
           type: mongoose.Schema.Types.ObjectId,
-          ref: 'Product',
+          ref: 'CrmProduct',
         },
         presented: { type: Boolean, default: true },
         feedback: { type: String },

@@ -401,27 +401,18 @@ const createProductValidation = [
   body('category')
     .notEmpty()
     .withMessage('Category is required'),
-  body('briefDescription')
-    .notEmpty()
-    .withMessage('Brief description is required')
-    .isLength({ max: 200 })
-    .withMessage('Brief description cannot exceed 200 characters'),
   body('description')
     .optional()
     .isLength({ max: 2000 })
     .withMessage('Description cannot exceed 2000 characters'),
-  body('keyBenefits')
+  body('genericName')
     .optional()
-    .isArray({ max: 10 })
-    .withMessage('Maximum 10 key benefits allowed'),
-  body('usageInformation')
+    .isLength({ max: 100 })
+    .withMessage('Generic name cannot exceed 100 characters'),
+  body('dosage')
     .optional()
-    .isLength({ max: 1000 })
-    .withMessage('Usage information cannot exceed 1000 characters'),
-  body('price')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Price must be a positive number'),
+    .isLength({ max: 100 })
+    .withMessage('Dosage cannot exceed 100 characters'),
   validate,
 ];
 
@@ -431,18 +422,18 @@ const updateProductValidation = [
     .optional()
     .isLength({ max: 100 })
     .withMessage('Name cannot exceed 100 characters'),
-  body('briefDescription')
-    .optional()
-    .isLength({ max: 200 })
-    .withMessage('Brief description cannot exceed 200 characters'),
   body('description')
     .optional()
     .isLength({ max: 2000 })
     .withMessage('Description cannot exceed 2000 characters'),
-  body('price')
+  body('genericName')
     .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Price must be a positive number'),
+    .isLength({ max: 100 })
+    .withMessage('Generic name cannot exceed 100 characters'),
+  body('dosage')
+    .optional()
+    .isLength({ max: 100 })
+    .withMessage('Dosage cannot exceed 100 characters'),
   validate,
 ];
 

@@ -1,11 +1,10 @@
 /**
  * Product Service
  *
- * Product API calls:
- * - CRUD operations
- * - Category filtering
- * - Assignment operations
- * - Statistics
+ * CRM Product API calls:
+ * - CRUD operations (admin)
+ * - Category and specialization filtering
+ * - Search
  */
 
 import api from './api';
@@ -21,13 +20,17 @@ const productService = {
     return response.data;
   },
 
-  create: async (productData) => {
-    const response = await api.post('/products', productData);
+  create: async (formData) => {
+    const response = await api.post('/products', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
 
-  update: async (id, productData) => {
-    const response = await api.put(`/products/${id}`, productData);
+  update: async (id, formData) => {
+    const response = await api.put(`/products/${id}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
 
@@ -41,21 +44,23 @@ const productService = {
     return response.data;
   },
 
-  assignToDoctor: async (productId, doctorId, data) => {
-    const response = await api.post(`/products/${productId}/assign`, {
-      doctorId,
-      ...data,
-    });
+  getCategories: async () => {
+    const response = await api.get('/products/categories');
     return response.data;
   },
 
-  getAssignments: async (productId) => {
-    const response = await api.get(`/products/${productId}/assignments`);
+  getBySpecialization: async (specialization) => {
+    const response = await api.get(`/products/specialization/${encodeURIComponent(specialization)}`);
     return response.data;
   },
 
-  getStats: async (params = {}) => {
-    const response = await api.get('/products/stats', { params });
+  getSpecializations: async () => {
+    const response = await api.get('/products/specializations');
+    return response.data;
+  },
+
+  search: async (q) => {
+    const response = await api.get('/products/search', { params: { q } });
     return response.data;
   },
 };

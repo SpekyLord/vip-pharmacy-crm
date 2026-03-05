@@ -23,7 +23,6 @@ const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
-const { connectWebsiteDB } = require('./config/websiteDb');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 // Load environment variables
@@ -273,11 +272,8 @@ const PORT = process.env.PORT || 5000;
 // Connect to database and start server
 const startServer = async () => {
   try {
-    // Connect to CRM database (primary)
+    // Connect to CRM database
     await connectDB();
-
-    // Connect to website database (for products - read-only)
-    await connectWebsiteDB();
 
     // Listen on all network interfaces (0.0.0.0) to allow access from phone
     app.listen(PORT, '0.0.0.0', () => {

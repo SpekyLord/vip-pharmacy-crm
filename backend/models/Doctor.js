@@ -161,6 +161,7 @@ const doctorSchema = new mongoose.Schema(
       {
         product: {
           type: mongoose.Schema.Types.ObjectId,
+          ref: 'CrmProduct',
         },
         status: {
           type: String,

@@ -35,12 +35,17 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
     return initial;
   });
 
-  // Fetch available products on mount
+  // Fetch products filtered by doctor's specialization (fallback to all)
   useEffect(() => {
     let cancelled = false;
     const fetchProducts = async () => {
       try {
-        const res = await productService.getAll({ limit: 200 });
+        let res;
+        if (doctor?.specialization) {
+          res = await productService.getBySpecialization(doctor.specialization);
+        } else {
+          res = await productService.getAll({ limit: 200 });
+        }
         if (!cancelled) {
           setProducts(res.data || []);
         }
@@ -52,7 +57,7 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
     };
     fetchProducts();
     return () => { cancelled = true; };
-  }, []);
+  }, [doctor?.specialization]);
 
   const updateSlot = (index, field, value) => {
     setSlots((prev) => {

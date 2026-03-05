@@ -15,7 +15,7 @@ const productAssignmentSchema = new mongoose.Schema(
   {
     product: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Product',
+      ref: 'CrmProduct',
       required: [true, 'Product is required'],
     },
     doctor: {

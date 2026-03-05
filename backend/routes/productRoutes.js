@@ -4,7 +4,10 @@
  * Endpoints:
  * GET /api/products - Get all products
  * GET /api/products/categories - Get all product categories
- * GET /api/products/stats - Get product statistics
+ * GET /api/products/specializations - Get distinct specialization values
+ * GET /api/products/specialization/:specialization - Get products by specialization
+ * GET /api/products/search - Search products
+ * GET /api/products/category/:category - Get products by category
  * GET /api/products/:id - Get product by ID
  * POST /api/products - Create new product (admin only)
  * PUT /api/products/:id - Update product (admin only)
@@ -21,6 +24,10 @@ const {
   updateProduct,
   deleteProduct,
   getCategories,
+  getBySpecialization,
+  getSpecializations,
+  getProductsByCategory,
+  searchProducts,
 } = require('../controllers/productController');
 
 const { protect } = require('../middleware/auth');
@@ -31,9 +38,13 @@ const { uploadSingle, processProductImage, processProductImageOptional } = requi
 // All routes require authentication
 router.use(protect);
 
-// Public routes (accessible by all authenticated users)
+// Public routes (accessible by all authenticated users) — specific paths before /:id
 router.get('/', getAllProducts);
 router.get('/categories', getCategories);
+router.get('/specializations', getSpecializations);
+router.get('/specialization/:specialization', getBySpecialization);
+router.get('/search', searchProducts);
+router.get('/category/:category', getProductsByCategory);
 router.get('/:id', getProductById);
 
 // Admin only routes

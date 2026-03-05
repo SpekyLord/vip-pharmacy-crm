@@ -12,7 +12,7 @@ const mongoose = require('mongoose');
 const Doctor = require('../models/Doctor');
 const Visit = require('../models/Visit');
 const User = require('../models/User');
-const { getWebsiteProductModel } = require('../models/WebsiteProduct');
+const CrmProduct = require('../models/CrmProduct');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 
@@ -128,11 +128,13 @@ const getAllDoctors = catchAsync(async (req, res) => {
  * @access  All authenticated users (with region check for employees)
  */
 const getDoctorById = catchAsync(async (req, res) => {
-  // Note: Products are in a separate database, so we can't use Mongoose populate
-  // We populate assignedProducts (ProductAssignment), then manually fetch product data
   const doctor = await Doctor.findById(req.params.id)
     .populate('assignedTo', 'name email phone')
-    .populate('assignedProducts');
+    .populate({
+      path: 'assignedProducts',
+      populate: { path: 'product', select: 'name genericName dosage category image description usage safety' },
+    })
+    .populate('targetProducts.product', 'name genericName dosage category image description usage safety');
 
   if (!doctor) {
     throw new NotFoundError('Doctor not found');
@@ -146,45 +148,9 @@ const getDoctorById = catchAsync(async (req, res) => {
     }
   }
 
-  // Manually populate product data from website database
-  const doctorObj = doctor.toObject();
-
-  // Collect all product IDs from both assignedProducts and targetProducts
-  const allProductIds = [];
-  if (doctorObj.assignedProducts?.length > 0) {
-    allProductIds.push(...doctorObj.assignedProducts.map((a) => a.product));
-  }
-  if (doctorObj.targetProducts?.length > 0) {
-    allProductIds.push(...doctorObj.targetProducts.map((tp) => tp.product).filter(Boolean));
-  }
-
-  // Single query for all product data
-  if (allProductIds.length > 0) {
-    const Product = getWebsiteProductModel();
-    const uniqueIds = [...new Set(allProductIds.map((id) => id.toString()))];
-    const products = await Product.find({ _id: { $in: uniqueIds } })
-      .select('name genericName dosage category image price description usage safety')
-      .lean();
-    const productMap = new Map(products.map((p) => [p._id.toString(), p]));
-
-    if (doctorObj.assignedProducts?.length > 0) {
-      doctorObj.assignedProducts = doctorObj.assignedProducts.map((assignment) => ({
-        ...assignment,
-        product: productMap.get(assignment.product?.toString()) || { _id: assignment.product },
-      }));
-    }
-
-    if (doctorObj.targetProducts?.length > 0) {
-      doctorObj.targetProducts = doctorObj.targetProducts.map((tp) => ({
-        ...tp,
-        product: productMap.get(tp.product?.toString()) || { _id: tp.product },
-      }));
-    }
-  }
-
   res.status(200).json({
     success: true,
-    data: doctorObj,
+    data: doctor,
   });
 });
 
@@ -449,33 +415,14 @@ const getDoctorVisits = catchAsync(async (req, res) => {
  * @access  All authenticated users
  */
 const getDoctorProducts = catchAsync(async (req, res) => {
-  // Note: Products are in a separate database, so we can't use Mongoose populate
   const doctor = await Doctor.findById(req.params.id).populate({
     path: 'assignedProducts',
     match: { status: 'active' },
+    populate: { path: 'product', select: 'name genericName dosage category image description usage safety' },
   });
 
   if (!doctor) {
     throw new NotFoundError('Doctor not found');
-  }
-
-  // Manually populate product data from website database
-  let assignedProducts = doctor.assignedProducts || [];
-  if (assignedProducts.length > 0) {
-    const Product = getWebsiteProductModel();
-    const productIds = assignedProducts.map((a) => a.product);
-    const products = await Product.find({ _id: { $in: productIds } })
-      .select('name genericName dosage category image price description usage safety')
-      .lean();
-    const productMap = new Map(products.map((p) => [p._id.toString(), p]));
-
-    assignedProducts = assignedProducts.map((assignment) => {
-      const assignmentObj = assignment.toObject ? assignment.toObject() : assignment;
-      return {
-        ...assignmentObj,
-        product: productMap.get(assignmentObj.product?.toString()) || { _id: assignmentObj.product },
-      };
-    });
   }
 
   res.status(200).json({
@@ -488,7 +435,7 @@ const getDoctorProducts = catchAsync(async (req, res) => {
         fullName: doctor.fullName,
         specialization: doctor.specialization,
       },
-      products: assignedProducts,
+      products: doctor.assignedProducts || [],
     },
   });
 });
@@ -572,11 +519,10 @@ const updateTargetProducts = catchAsync(async (req, res) => {
     }
   }
 
-  // Verify products exist in website database
+  // Verify products exist in CRM database
   if (targetProducts.length > 0) {
-    const Product = getWebsiteProductModel();
     const productIds = targetProducts.map((tp) => tp.product);
-    const existingProducts = await Product.find({ _id: { $in: productIds } }).select('_id').lean();
+    const existingProducts = await CrmProduct.find({ _id: { $in: productIds } }).select('_id').lean();
     if (existingProducts.length !== productIds.length) {
       return res.status(400).json({
         success: false,
@@ -593,20 +539,7 @@ const updateTargetProducts = catchAsync(async (req, res) => {
   await doctor.save();
 
   // Populate product data for response
-  let populatedProducts = [];
-  if (doctor.targetProducts.length > 0) {
-    const Product = getWebsiteProductModel();
-    const productIds = doctor.targetProducts.map((tp) => tp.product);
-    const products = await Product.find({ _id: { $in: productIds } })
-      .select('name category image briefDescription')
-      .lean();
-    const productMap = new Map(products.map((p) => [p._id.toString(), p]));
-
-    populatedProducts = doctor.targetProducts.map((tp) => ({
-      product: productMap.get(tp.product.toString()) || { _id: tp.product },
-      status: tp.status,
-    }));
-  }
+  await doctor.populate('targetProducts.product', 'name category image description');
 
   res.status(200).json({
     success: true,
@@ -616,7 +549,7 @@ const updateTargetProducts = catchAsync(async (req, res) => {
       firstName: doctor.firstName,
       lastName: doctor.lastName,
       fullName: doctor.fullName,
-      targetProducts: populatedProducts,
+      targetProducts: doctor.targetProducts,
     },
   });
 });

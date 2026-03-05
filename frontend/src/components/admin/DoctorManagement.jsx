@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import VIP_SPECIALTIES from '../../constants/specializations';
 
 // Enum options for programs and support types (matching backend Doctor.js)
 const PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
@@ -726,14 +727,17 @@ const DoctorManagement = ({
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="specialization">VIP Specialty</label>
-                  <input
-                    type="text"
+                  <select
                     id="specialization"
                     name="specialization"
                     value={formData.specialization}
                     onChange={handleFormChange}
-                    placeholder="e.g. Pedia Hema, Im Car, Breast Surg"
-                  />
+                  >
+                    <option value="">— Select —</option>
+                    {VIP_SPECIALTIES.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="form-group">
                   <label htmlFor="outletIndicator">Outlet Indicator</label>
