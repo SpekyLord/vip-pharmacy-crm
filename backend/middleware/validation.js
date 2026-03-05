@@ -380,6 +380,12 @@ const createVisitValidation = [
     .custom(isValidObjectId),
   body('engagementTypes')
     .optional()
+    .customSanitizer((value) => {
+      if (typeof value === 'string') {
+        try { return JSON.parse(value); } catch { return value; }
+      }
+      return value;
+    })
     .isArray()
     .withMessage('Engagement types must be an array'),
   body('engagementTypes.*')
@@ -577,6 +583,12 @@ const createClientVisitValidation = [
     .withMessage('Notes cannot exceed 1000 characters'),
   body('engagementTypes')
     .optional()
+    .customSanitizer((value) => {
+      if (typeof value === 'string') {
+        try { return JSON.parse(value); } catch { return value; }
+      }
+      return value;
+    })
     .isArray()
     .withMessage('Engagement types must be an array'),
   body('engagementTypes.*')

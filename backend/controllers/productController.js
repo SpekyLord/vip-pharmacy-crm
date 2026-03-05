@@ -12,7 +12,25 @@
 const CrmProduct = require('../models/CrmProduct');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
-const { deleteFromS3 } = require('../config/s3');
+const { deleteFromS3, getSignedDownloadUrl, extractKeyFromUrl } = require('../config/s3');
+
+/**
+ * Sign product image URLs (replace raw S3 URLs with signed URLs)
+ */
+const signProductImage = async (product) => {
+  const obj = product.toObject ? product.toObject() : { ...product };
+  if (obj.image && obj.imageKey) {
+    obj.image = await getSignedDownloadUrl(obj.imageKey, 3600);
+  } else if (obj.image && obj.image.includes('.amazonaws.com/')) {
+    const key = extractKeyFromUrl(obj.image);
+    obj.image = await getSignedDownloadUrl(key, 3600);
+  }
+  return obj;
+};
+
+const signProductImages = async (products) => {
+  return Promise.all(products.map(signProductImage));
+};
 
 /**
  * @desc    Get all products with pagination and filters
@@ -69,9 +87,11 @@ const getAllProducts = catchAsync(async (req, res) => {
     ]);
   }
 
+  const signedProducts = await signProductImages(products);
+
   res.status(200).json({
     success: true,
-    data: products,
+    data: signedProducts,
     pagination: {
       page,
       limit: limit || total,
@@ -93,9 +113,11 @@ const getProductById = catchAsync(async (req, res) => {
     throw new NotFoundError('Product not found');
   }
 
+  const signedProduct = await signProductImage(product);
+
   res.status(200).json({
     success: true,
-    data: product,
+    data: signedProduct,
   });
 });
 
@@ -136,11 +158,12 @@ const createProduct = catchAsync(async (req, res) => {
   }
 
   const product = await CrmProduct.create(productData);
+  const signedProduct = await signProductImage(product);
 
   res.status(201).json({
     success: true,
     message: 'Product created successfully',
-    data: product,
+    data: signedProduct,
   });
 });
 
@@ -194,11 +217,12 @@ const updateProduct = catchAsync(async (req, res) => {
   }
 
   await product.save();
+  const signedProduct = await signProductImage(product);
 
   res.status(200).json({
     success: true,
     message: 'Product updated successfully',
-    data: product,
+    data: signedProduct,
   });
 });
 
@@ -234,10 +258,12 @@ const getProductsByCategory = catchAsync(async (req, res) => {
   const products = await CrmProduct.find({ category, isActive: true })
     .sort({ name: 1 });
 
+  const signedProducts = await signProductImages(products);
+
   res.status(200).json({
     success: true,
-    data: products,
-    count: products.length,
+    data: signedProducts,
+    count: signedProducts.length,
   });
 });
 
@@ -270,10 +296,12 @@ const getBySpecialization = catchAsync(async (req, res) => {
     },
   }).sort({ name: 1 });
 
+  const signedProducts = await signProductImages(products);
+
   res.status(200).json({
     success: true,
-    data: products,
-    count: products.length,
+    data: signedProducts,
+    count: signedProducts.length,
   });
 });
 
@@ -317,10 +345,12 @@ const searchProducts = catchAsync(async (req, res) => {
     .limit(20)
     .sort({ name: 1 });
 
+  const signedProducts = await signProductImages(products);
+
   res.status(200).json({
     success: true,
-    data: products,
-    count: products.length,
+    data: signedProducts,
+    count: signedProducts.length,
   });
 });
 
