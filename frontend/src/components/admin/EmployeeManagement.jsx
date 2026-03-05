@@ -548,7 +548,7 @@ const EmployeeManagement = ({
                   <td>{employee.phone || '-'}</td>
                   <td>
                     <span className={`role-badge role-${employee.role}`}>
-                      {employee.role}
+                      {employee.role === 'employee' ? 'BDM' : 'Admin'}
                     </span>
                   </td>
                   <td>

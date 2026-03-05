@@ -186,8 +186,6 @@ const AdminDashboard = () => {
     totalDoctors: 0,
     totalEmployees: 0,
     totalVisits: 0,
-    pendingApprovals: 0,
-    visitsToday: 0,
     visitsThisWeek: 0,
   });
   const [loading, setLoading] = useState(true);
@@ -239,8 +237,6 @@ const AdminDashboard = () => {
           totalDoctors: doctorsRes.pagination?.total || 0,
           totalEmployees: usersRes.data?.pagination?.total || 0,
           totalVisits: visitStatsRes.data?.summary?.totalVisits || 0,
-          pendingApprovals: 3, // Mock for now
-          visitsToday: visitStatsRes.data?.summary?.totalVisits || 0,
           visitsThisWeek: visitStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0,
         });
       } catch {
