@@ -16,6 +16,7 @@ const User = require('../models/User');
 const { generateTokens, generateAccessToken } = require('../utils/generateToken');
 const { catchAsync } = require('../middleware/errorHandler');
 const { logAuditEvent, AuditActions } = require('../utils/auditLogger');
+const { sendPasswordResetEmail } = require('../services/emailService');
 
 /**
  * @desc    Register a new user
@@ -308,10 +309,10 @@ const forgotPassword = catchAsync(async (req, res) => {
     req,
   });
 
-  // TODO: Send email with reset link using AWS SES (Phase 2)
-  // Reset link format: ${FRONTEND_URL}/reset-password/${resetToken}
-  // SECURITY: Never expose reset token in response - only send via email
-  // Note: In production, this should send an email via AWS SES
+  // Send password reset email (fire-and-forget — response sent regardless)
+  sendPasswordResetEmail(user, resetToken).catch((err) => {
+    console.error('Password reset email error:', err.message);
+  });
 
   res.json({
     success: true,

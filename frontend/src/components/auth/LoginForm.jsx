@@ -9,6 +9,7 @@
  */
 
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 
 const LoginForm = () => {
@@ -68,6 +69,12 @@ const LoginForm = () => {
       <button type="submit" disabled={loading} className="btn btn-primary">
         {loading ? 'Logging in...' : 'Login'}
       </button>
+
+      <div style={{ textAlign: 'center', marginTop: '16px' }}>
+        <Link to="/forgot-password" style={{ color: '#2563eb', fontSize: '14px', textDecoration: 'none' }}>
+          Forgot Password?
+        </Link>
+      </div>
     </form>
   );
 };

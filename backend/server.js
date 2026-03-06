@@ -73,6 +73,13 @@ const validateEnv = () => {
     console.warn('Warning: Missing recommended environment variables (S3 uploads may fail):');
     missingRecommended.forEach((key) => console.warn(`  - ${key}`));
   }
+
+  const emailRecommended = ['SES_FROM_EMAIL', 'FRONTEND_URL'];
+  const missingEmail = emailRecommended.filter((key) => !process.env[key]);
+  if (missingEmail.length > 0) {
+    console.warn('Warning: Missing email environment variables (email notifications disabled):');
+    missingEmail.forEach((key) => console.warn(`  - ${key}`));
+  }
 };
 
 validateEnv();
@@ -236,6 +243,7 @@ app.get('/api/health', async (req, res) => {
     dependencies: {
       mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
       s3: process.env.S3_BUCKET_NAME ? 'configured' : 'not_configured',
+      ses: process.env.SES_FROM_EMAIL ? (process.env.SES_SANDBOX_MODE !== 'false' ? 'sandbox' : 'configured') : 'not_configured',
     },
   };
 
@@ -259,6 +267,7 @@ app.use('/api/assignments', userLimiter, require('./routes/productAssignmentRout
 app.use('/api/schedules', userLimiter, require('./routes/scheduleRoutes'));
 app.use('/api/imports', userLimiter, require('./routes/importRoutes'));
 app.use('/api/audit-logs', userLimiter, require('./routes/auditLogRoutes'));
+app.use('/api/notification-preferences', userLimiter, require('./routes/notificationPreferenceRoutes'));
 
 // 404 handler for undefined routes
 app.use(notFound);
@@ -274,6 +283,9 @@ const startServer = async () => {
   try {
     // Connect to CRM database
     await connectDB();
+
+    // Initialize email scheduler (after DB connection)
+    require('./jobs/emailScheduler').initEmailScheduler();
 
     // Listen on all network interfaces (0.0.0.0) to allow access from phone
     app.listen(PORT, '0.0.0.0', () => {

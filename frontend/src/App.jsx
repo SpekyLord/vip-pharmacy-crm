@@ -6,6 +6,8 @@ import ErrorBoundary from './components/common/ErrorBoundary';
 
 // Pages
 import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 import EmployeeDashboard from './pages/employee/EmployeeDashboard';
 import MyVisits from './pages/employee/MyVisits';
@@ -35,6 +37,8 @@ function App() {
       <Routes>
         {/* Public Routes */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
 
         {/* Employee Routes */}
         <Route

@@ -13,7 +13,7 @@
  * Route: /notifications/preferences
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Bell,
   BellOff,
@@ -36,6 +36,8 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePushNotifications from '../../hooks/usePushNotifications';
+import useAuth from '../../hooks/useAuth';
+import notificationPreferenceService from '../../services/notificationPreferenceService';
 
 /* =============================================================================
    STYLES
@@ -488,6 +490,10 @@ const styles = `
     background: #059669;
   }
 
+  .np-toast.error {
+    background: #dc2626;
+  }
+
   /* Test Sound Button */
   .np-test-sound {
     display: flex;
@@ -505,6 +511,23 @@ const styles = `
 
   .np-test-sound:hover {
     background: #e5e7eb;
+  }
+
+  /* Select dropdown */
+  .np-select {
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #374151;
+    background: white;
+    cursor: pointer;
+    min-width: 140px;
+  }
+
+  .np-select:focus {
+    outline: none;
+    border-color: #2563eb;
   }
 
   @media (max-width: 640px) {
@@ -529,6 +552,7 @@ const styles = `
 
 const NotificationPreferences = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {
     permission,
     isSubscribed,
@@ -545,25 +569,52 @@ const NotificationPreferences = () => {
     emailNotifications: true,
     smsNotifications: false,
     inAppAlerts: true,
-    
+
     // Categories
     visitApprovals: true,
     securityAlerts: true,
     systemUpdates: true,
     reminders: true,
     messages: true,
-    
+
     // Sound
     soundEnabled: true,
-    
+
     // Quiet Hours
     quietHoursEnabled: false,
     quietHoursStart: '22:00',
     quietHoursEnd: '07:00',
+
+    // Email scheduling
+    behindScheduleAlertFrequency: 'twice_weekly',
+    weeklyComplianceSummary: true,
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingPrefs, setIsLoadingPrefs] = useState(true);
   const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('Preferences saved successfully');
+  const [toastType, setToastType] = useState('success');
+
+  // Load preferences from API on mount
+  useEffect(() => {
+    const loadPreferences = async () => {
+      try {
+        const response = await notificationPreferenceService.getPreferences();
+        if (response.success && response.data) {
+          setPreferences(prev => ({
+            ...prev,
+            ...response.data,
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to load preferences:', err);
+      } finally {
+        setIsLoadingPrefs(false);
+      }
+    };
+    loadPreferences();
+  }, []);
 
   /**
    * Update preference
@@ -584,20 +635,19 @@ const NotificationPreferences = () => {
    */
   const handleSave = async () => {
     setIsSaving(true);
-    
-    // Simulate API call
-    console.log('📤 Saving preferences:', {
-      pushEnabled: isSubscribed,
-      ...preferences,
-    });
-    
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    console.log('✅ Preferences saved successfully');
-    setIsSaving(false);
-    setShowToast(true);
-    
-    setTimeout(() => setShowToast(false), 3000);
+    try {
+      await notificationPreferenceService.updatePreferences(preferences);
+      setToastMessage('Preferences saved successfully');
+      setToastType('success');
+    } catch (err) {
+      console.error('Failed to save preferences:', err);
+      setToastMessage('Failed to save preferences');
+      setToastType('error');
+    } finally {
+      setIsSaving(false);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    }
   };
 
   /**
@@ -965,10 +1015,68 @@ const NotificationPreferences = () => {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Email Schedule Card */}
+          <div className="np-card">
+            <div className="np-card-header">
+              <h2 className="np-card-title">
+                <div className="icon blue">
+                  <Mail size={16} />
+                </div>
+                Email Schedule
+              </h2>
+              <p className="np-card-desc">Configure automated email reports and alerts</p>
+            </div>
+            <div className="np-card-body">
+              <div className="np-option">
+                <div className="np-option-info">
+                  <div className="np-option-icon green">
+                    <CheckCircle size={18} />
+                  </div>
+                  <div className="np-option-text">
+                    <h4>Weekly Compliance Summary</h4>
+                    <p>Receive a weekly email with your compliance stats</p>
+                  </div>
+                </div>
+                <label className="np-switch">
+                  <input
+                    type="checkbox"
+                    checked={preferences.weeklyComplianceSummary}
+                    onChange={(e) => updatePreference('weeklyComplianceSummary', e.target.checked)}
+                  />
+                  <span className="np-switch-slider" />
+                </label>
+              </div>
+
+              {user?.role === 'employee' && (
+                <div className="np-option">
+                  <div className="np-option-info">
+                    <div className="np-option-icon amber">
+                      <AlertTriangle size={18} />
+                    </div>
+                    <div className="np-option-text">
+                      <h4>Behind Schedule Alerts</h4>
+                      <p>Get notified when you fall behind on visits</p>
+                    </div>
+                  </div>
+                  <select
+                    className="np-select"
+                    value={preferences.behindScheduleAlertFrequency}
+                    onChange={(e) => updatePreference('behindScheduleAlertFrequency', e.target.value)}
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="twice_weekly">Twice Weekly</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="never">Never</option>
+                  </select>
+                </div>
+              )}
+            </div>
 
             {/* Save Button */}
             <div className="np-save-section">
-              <button className="np-save-btn" onClick={handleSave} disabled={isSaving}>
+              <button className="np-save-btn" onClick={handleSave} disabled={isSaving || isLoadingPrefs}>
                 {isSaving ? (
                   <>
                     <Loader2 size={18} className="spinner" />
@@ -988,9 +1096,9 @@ const NotificationPreferences = () => {
 
       {/* Toast */}
       {showToast && (
-        <div className="np-toast success">
-          <CheckCircle size={18} />
-          Preferences saved successfully
+        <div className={`np-toast ${toastType}`}>
+          {toastType === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+          {toastMessage}
         </div>
       )}
     </div>
