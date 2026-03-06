@@ -1,10 +1,10 @@
 # Deployment Guide
 ## VIP CRM - AWS Lightsail Edition
 
-**Version:** 3.0
-**Last Updated:** January 2026 (Security Hardening Update)
+**Version:** 4.0
+**Last Updated:** March 2026 (Email Notifications + SES Update)
 
-This guide covers deploying the VIP CRM to AWS Lightsail with S3 for image storage.
+This guide covers deploying the VIP CRM to AWS Lightsail with S3 for image storage and SES for email notifications.
 
 ---
 
@@ -12,16 +12,17 @@ This guide covers deploying the VIP CRM to AWS Lightsail with S3 for image stora
 1. [Prerequisites](#1-prerequisites)
 2. [AWS Account Setup](#2-aws-account-setup)
 3. [AWS S3 Bucket Setup](#3-aws-s3-bucket-setup)
-4. [AWS Lightsail Instance Setup](#4-aws-lightsail-instance-setup)
-5. [MongoDB Atlas Setup](#5-mongodb-atlas-setup)
-6. [Server Configuration](#6-server-configuration)
-7. [Application Deployment](#7-application-deployment)
-8. [Nginx & SSL Configuration](#8-nginx--ssl-configuration)
-9. [PM2 Process Management](#9-pm2-process-management)
-10. [Environment Variables](#10-environment-variables)
-11. [Domain & DNS Setup](#11-domain--dns-setup)
-12. [Monitoring & Maintenance](#12-monitoring--maintenance)
-13. [Troubleshooting](#13-troubleshooting)
+4. [AWS SES Email Setup](#4-aws-ses-email-setup)
+5. [AWS Lightsail Instance Setup](#5-aws-lightsail-instance-setup)
+6. [MongoDB Atlas Setup](#6-mongodb-atlas-setup)
+7. [Server Configuration](#7-server-configuration)
+8. [Application Deployment](#8-application-deployment)
+9. [Nginx & SSL Configuration](#9-nginx--ssl-configuration)
+10. [PM2 Process Management](#10-pm2-process-management)
+11. [Environment Variables](#11-environment-variables)
+12. [Domain & DNS Setup](#12-domain--dns-setup)
+13. [Monitoring & Maintenance](#13-monitoring--maintenance)
+14. [Troubleshooting](#14-troubleshooting)
 
 ---
 
@@ -68,7 +69,7 @@ Choose a region closest to your users. Recommended:
 3. User name: `vip-crm-app`
 4. Click **Next**
 5. Select **Attach policies directly**
-6. Search and attach: `AmazonS3FullAccess` (or create custom policy below)
+6. Search and attach: `AmazonS3FullAccess` and `AmazonSESFullAccess` (or create custom policies below)
 7. Click **Create user**
 
 ### 2.3 Create Access Keys
@@ -79,14 +80,15 @@ Choose a region closest to your users. Recommended:
 5. Click **Create access key**
 6. **SAVE** the Access Key ID and Secret Access Key (you won't see them again)
 
-### 2.4 Custom S3 Policy (Recommended for Production)
-Create a custom policy with minimal permissions:
+### 2.4 Custom IAM Policy (Recommended for Production)
+Create a custom policy with minimal permissions for both S3 and SES:
 
 ```json
 {
     "Version": "2012-10-17",
     "Statement": [
         {
+            "Sid": "S3Access",
             "Effect": "Allow",
             "Action": [
                 "s3:PutObject",
@@ -98,6 +100,15 @@ Create a custom policy with minimal permissions:
                 "arn:aws:s3:::vip-crm-bucket",
                 "arn:aws:s3:::vip-crm-bucket/*"
             ]
+        },
+        {
+            "Sid": "SESAccess",
+            "Effect": "Allow",
+            "Action": [
+                "ses:SendEmail",
+                "ses:SendRawEmail"
+            ],
+            "Resource": "*"
         }
     ]
 }
@@ -154,9 +165,65 @@ Create folders for organization (optional, S3 creates them automatically):
 
 ---
 
-## 4. AWS Lightsail Instance Setup
+## 4. AWS SES Email Setup
 
-### 4.1 Create Lightsail Instance
+The CRM uses AWS SES for sending transactional emails: password reset, weekly compliance reports, and behind-schedule alerts.
+
+### 4.1 Verify Sender Email
+1. Go to **SES** in AWS Console (make sure you're in the same region as `AWS_REGION`)
+2. Click **Verified identities** → **Create identity**
+3. Select **Email address**
+4. Enter your sender email (e.g., `sales@vippharmacy.online`)
+5. Click **Create identity**
+6. Check your inbox and click the verification link
+
+### 4.2 Verify Sending Domain
+1. Click **Create identity** → Select **Domain**
+2. Enter your domain (e.g., `viosintegrated.net`)
+3. AWS will provide **3 CNAME records** (DKIM) and **1 TXT record** (DMARC)
+4. Add these DNS records at your domain registrar:
+
+| Type | Host | Value |
+|------|------|-------|
+| CNAME | `xxxxx._domainkey` | `xxxxx.dkim.amazonses.com` |
+| CNAME | `xxxxx._domainkey` | `xxxxx.dkim.amazonses.com` |
+| CNAME | `xxxxx._domainkey` | `xxxxx.dkim.amazonses.com` |
+| TXT | `_dmarc` | `v=DMARC1; p=none;` |
+
+5. Wait 15-30 minutes for DNS propagation
+6. Status should change to **Verified** in SES console
+
+### 4.3 Request Production Access
+New SES accounts are in sandbox mode (can only send to verified emails). To send to any email:
+
+1. Go to **SES** → **Account dashboard**
+2. Click **Request production access**
+3. Fill in:
+   - **Mail type**: Transactional
+   - **Website URL**: Your domain
+   - **Use case**: "Password reset emails, weekly compliance reports, and schedule alerts for our internal CRM system. Low volume (~100 emails/week). All recipients are registered users."
+4. Check the acknowledgement box
+5. Submit — AWS usually approves within 24 hours
+
+### 4.4 Environment Variables for SES
+```bash
+SES_FROM_EMAIL=sales@vippharmacy.online    # Must be verified in SES
+SES_SANDBOX_MODE=false                      # false for production
+FRONTEND_URL=https://yourdomain.com         # Used in password reset email links
+```
+
+### 4.5 Email Features
+The CRM sends these automated emails:
+- **Password reset** — When a user clicks "Forgot Password"
+- **Weekly compliance summary** — Every Monday 7 AM (Manila time) to admins and BDMs
+- **Behind-schedule alerts** — Weekdays 8 AM to BDMs who are behind on visits
+- Users can configure their email preferences at **Settings → Notification Preferences**
+
+---
+
+## 5. AWS Lightsail Instance Setup
+
+### 5.1 Create Lightsail Instance
 1. Go to [AWS Lightsail](https://lightsail.aws.amazon.com/)
 2. Click **Create instance**
 3. Configure:
@@ -167,14 +234,14 @@ Create folders for organization (optional, S3 creates them automatically):
    - **Instance name**: `vip-crm`
 4. Click **Create instance**
 
-### 4.2 Create Static IP
+### 5.2 Create Static IP
 1. Go to **Networking** tab
 2. Click **Create static IP**
 3. Attach to your instance
 4. Name it: `vip-crm-static-ip`
 5. **Save the IP address** for DNS configuration
 
-### 4.3 Configure Firewall
+### 5.3 Configure Firewall
 1. Click on your instance
 2. Go to **Networking** tab
 3. Under **IPv4 Firewall**, add rules:
@@ -186,7 +253,7 @@ Create folders for organization (optional, S3 creates them automatically):
 | HTTPS | TCP | 443 |
 | Custom | TCP | 5000 (remove after nginx setup) |
 
-### 4.4 Connect via SSH
+### 5.4 Connect via SSH
 **Option 1: Browser-based SSH**
 - Click **Connect using SSH** button in Lightsail console
 
@@ -200,9 +267,9 @@ ssh -i LightsailDefaultKey-ap-southeast-1.pem ubuntu@YOUR_STATIC_IP
 
 ---
 
-## 5. MongoDB Atlas Setup
+## 6. MongoDB Atlas Setup
 
-### 5.1 Create Cluster
+### 6.1 Create Cluster
 1. Go to [MongoDB Atlas](https://www.mongodb.com/atlas)
 2. Sign up or log in
 3. Create new project: "VIP-CRM"
@@ -213,7 +280,7 @@ ssh -i LightsailDefaultKey-ap-southeast-1.pem ubuntu@YOUR_STATIC_IP
 8. Cluster name: `vip-crm-cluster`
 9. Click **Create**
 
-### 5.2 Create Database User
+### 6.2 Create Database User
 1. Go to **Database Access** in sidebar
 2. Click **Add New Database User**
 3. Authentication: Password
@@ -222,7 +289,7 @@ ssh -i LightsailDefaultKey-ap-southeast-1.pem ubuntu@YOUR_STATIC_IP
 6. Database User Privileges: **Read and write to any database**
 7. Click **Add User**
 
-### 5.3 Configure Network Access
+### 6.3 Configure Network Access
 1. Go to **Network Access** in sidebar
 2. Click **Add IP Address**
 3. Add your Lightsail static IP: `YOUR_STATIC_IP/32`
@@ -231,7 +298,7 @@ ssh -i LightsailDefaultKey-ap-southeast-1.pem ubuntu@YOUR_STATIC_IP
 
 For development, you can temporarily add `0.0.0.0/0` (Allow from anywhere).
 
-### 5.4 Get Connection String
+### 6.4 Get Connection String
 1. Go to **Database** → Click **Connect**
 2. Choose **Drivers** (Node.js)
 3. Copy connection string:
@@ -246,55 +313,55 @@ mongodb+srv://...mongodb.net/vip-crm?retryWrites=true&w=majority
 
 ---
 
-## 6. Server Configuration
+## 7. Server Configuration
 
-### 6.1 Update System
+### 7.1 Update System
 ```bash
 sudo apt update && sudo apt upgrade -y
 ```
 
-### 6.2 Install Node.js 18 LTS
+### 7.2 Install Node.js 20 LTS
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 
 # Verify
-node --version  # v18.x.x
-npm --version   # 9.x.x or 10.x.x
+node --version  # v20.x.x
+npm --version   # 10.x.x
 ```
 
-### 6.3 Install Nginx
+### 7.3 Install Nginx
 ```bash
 sudo apt install nginx -y
 sudo systemctl start nginx
 sudo systemctl enable nginx
 ```
 
-### 6.4 Install PM2
+### 7.4 Install PM2
 ```bash
 sudo npm install -g pm2
 ```
 
-### 6.5 Install Git
+### 7.5 Install Git
 ```bash
 sudo apt install git -y
 ```
 
-### 6.6 Install Certbot for SSL
+### 7.6 Install Certbot for SSL
 ```bash
 sudo apt install certbot python3-certbot-nginx -y
 ```
 
-### 6.7 Create Application User (Optional but Recommended)
+### 7.7 Create Application User (Optional but Recommended)
 ```bash
 sudo adduser --system --group --home /var/www/vip-crm nodeapp
 ```
 
 ---
 
-## 7. Application Deployment
+## 8. Application Deployment
 
-### 7.1 Clone Repository
+### 8.1 Clone Repository
 ```bash
 sudo mkdir -p /var/www
 cd /var/www
@@ -307,28 +374,30 @@ cd vip-crm
 sudo chown -R ubuntu:ubuntu /var/www/vip-crm
 ```
 
-### 7.2 Install Backend Dependencies
+### 8.2 Install Backend Dependencies
 ```bash
 cd /var/www/vip-crm/backend
 npm install --production
 ```
 
-### 7.3 Build Frontend
+### 8.3 Build Frontend
 ```bash
 cd /var/www/vip-crm/frontend
 npm install
-npm run build
+
+# IMPORTANT: Set the production API URL when building
+VITE_API_URL=https://yourdomain.com/api npm run build
 ```
 
-### 7.4 Create Environment File
+### 8.4 Create Environment File
 ```bash
 cd /var/www/vip-crm/backend
 nano .env
 ```
 
-Add your environment variables (see Section 10).
+Add your environment variables (see Section 11).
 
-### 7.5 Test Application
+### 8.5 Test Application
 ```bash
 cd /var/www/vip-crm/backend
 node server.js
@@ -339,9 +408,9 @@ node server.js
 
 ---
 
-## 8. Nginx & SSL Configuration
+## 9. Nginx & SSL Configuration
 
-### 8.1 Create Nginx Configuration
+### 9.1 Create Nginx Configuration
 ```bash
 sudo nano /etc/nginx/sites-available/vip-crm
 ```
@@ -422,7 +491,7 @@ server {
 }
 ```
 
-### 8.2 Enable Site
+### 9.2 Enable Site
 ```bash
 # Enable site
 sudo ln -s /etc/nginx/sites-available/vip-crm /etc/nginx/sites-enabled/
@@ -437,7 +506,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-### 8.3 Obtain SSL Certificate
+### 9.3 Obtain SSL Certificate
 ```bash
 # Get SSL certificate (replace with your domain)
 sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
@@ -448,7 +517,7 @@ sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
 # - Choose to redirect HTTP to HTTPS (recommended)
 ```
 
-### 8.4 Verify SSL Auto-Renewal
+### 9.4 Verify SSL Auto-Renewal
 ```bash
 # Test renewal
 sudo certbot renew --dry-run
@@ -459,9 +528,9 @@ sudo systemctl status certbot.timer
 
 ---
 
-## 9. PM2 Process Management
+## 10. PM2 Process Management
 
-### 9.1 Create PM2 Ecosystem File
+### 10.1 Create PM2 Ecosystem File
 ```bash
 cd /var/www/vip-crm
 nano ecosystem.config.js
@@ -493,12 +562,12 @@ module.exports = {
 };
 ```
 
-### 9.2 Create Logs Directory
+### 10.2 Create Logs Directory
 ```bash
 mkdir -p /var/www/vip-crm/logs
 ```
 
-### 9.3 Start Application
+### 10.3 Start Application
 ```bash
 cd /var/www/vip-crm
 
@@ -513,7 +582,7 @@ pm2 startup
 # Run the command it outputs (copy and execute)
 ```
 
-### 9.4 PM2 Commands Reference
+### 10.4 PM2 Commands Reference
 ```bash
 pm2 status           # View all processes
 pm2 logs             # View logs
@@ -526,9 +595,9 @@ pm2 monit            # Monitor resources
 
 ---
 
-## 10. Environment Variables
+## 11. Environment Variables
 
-### 10.1 Production .env File
+### 11.1 Production .env File
 Create `/var/www/vip-crm/backend/.env`:
 
 ```bash
@@ -541,22 +610,28 @@ NODE_ENV=production
 PORT=5000
 
 # MongoDB Atlas
-MONGODB_URI=mongodb+srv://vip_crm_admin:YOUR_PASSWORD@vip-crm-cluster.xxxxx.mongodb.net/vip-crm?retryWrites=true&w=majority
+MONGO_URI=mongodb+srv://vip_crm_admin:YOUR_PASSWORD@vip-crm-cluster.xxxxx.mongodb.net/vip-crm?retryWrites=true&w=majority
 
-# JWT Configuration (SECURITY: Secrets must be at least 32 characters!)
+# JWT Configuration (SECURITY: Secrets must be at least 64 characters!)
 # Server will refuse to start if secrets are too short.
-JWT_SECRET=your_production_jwt_secret_minimum_32_characters_long
+JWT_SECRET=your_production_jwt_secret_minimum_64_characters_long_generate_with_crypto
 JWT_EXPIRE=15m
-JWT_REFRESH_SECRET=your_production_refresh_secret_minimum_32_characters
+JWT_REFRESH_SECRET=your_production_refresh_secret_minimum_64_characters_long_generate_with_crypto
 JWT_REFRESH_EXPIRE=7d
 
-# AWS S3 Configuration
+# AWS Configuration (shared by S3 and SES)
 AWS_ACCESS_KEY_ID=AKIA...your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_access_key
 AWS_REGION=ap-southeast-1
-S3_BUCKET_NAME=vip-crm-bucket
 
-# Frontend URL (for CORS)
+# AWS S3 (Image Storage)
+S3_BUCKET_NAME=vip-pharmacy-crm-devs
+
+# AWS SES (Email Notifications)
+SES_FROM_EMAIL=sales@vippharmacy.online
+SES_SANDBOX_MODE=false
+
+# Frontend URL (for password reset links and CORS)
 FRONTEND_URL=https://yourdomain.com
 
 # CORS Origins (REQUIRED in production - server will not start without it!)
@@ -571,22 +646,22 @@ LOGIN_MAX_ATTEMPTS=5
 LOGIN_LOCKOUT_DURATION=15
 ```
 
-### 10.2 Generate Secure JWT Secrets
+### 11.2 Generate Secure JWT Secrets
 ```bash
 # Generate random secrets
 node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 ```
 
-### 10.3 Secure .env File
+### 11.3 Secure .env File
 ```bash
 chmod 600 /var/www/vip-crm/backend/.env
 ```
 
 ---
 
-## 11. Domain & DNS Setup
+## 12. Domain & DNS Setup
 
-### 11.1 Using Custom Domain
+### 12.1 Using Custom Domain
 
 1. **Get Static IP** from Lightsail (Section 4.2)
 
@@ -604,7 +679,7 @@ chmod 600 /var/www/vip-crm/backend/.env
    # Should return your static IP
    ```
 
-### 11.2 Using Lightsail Domain (Alternative)
+### 12.2 Using Lightsail Domain (Alternative)
 1. Go to Lightsail → Domains & DNS
 2. Create DNS zone
 3. Add A record pointing to your instance
@@ -612,9 +687,9 @@ chmod 600 /var/www/vip-crm/backend/.env
 
 ---
 
-## 12. Monitoring & Maintenance
+## 13. Monitoring & Maintenance
 
-### 12.1 Log Locations
+### 13.1 Log Locations
 | Log | Location |
 |-----|----------|
 | Application | `/var/www/vip-crm/logs/` |
@@ -622,12 +697,12 @@ chmod 600 /var/www/vip-crm/backend/.env
 | Nginx Access | `/var/log/nginx/access.log` |
 | Nginx Error | `/var/log/nginx/error.log` |
 
-### 12.2 Lightsail Monitoring
+### 13.2 Lightsail Monitoring
 1. Go to Lightsail Console → Your Instance
 2. Click **Metrics** tab
 3. Monitor: CPU, Network, Status checks
 
-### 12.3 Daily Health Check
+### 13.3 Daily Health Check
 ```bash
 # Check PM2 status
 pm2 status
@@ -639,7 +714,7 @@ df -h
 free -m
 ```
 
-### 12.4 Update Application
+### 13.4 Update Application
 ```bash
 cd /var/www/vip-crm
 
@@ -648,19 +723,19 @@ git pull origin main
 
 # Install any new dependencies
 cd backend && npm install --production
-cd ../frontend && npm install && npm run build
+cd ../frontend && npm install && VITE_API_URL=https://yourdomain.com/api npm run build
 
 # Restart application
 pm2 reload all
 ```
 
-### 12.5 System Updates (Monthly)
+### 13.5 System Updates (Monthly)
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo reboot  # If kernel updated
 ```
 
-### 12.6 Backup Strategy
+### 13.6 Backup Strategy
 
 **Application Backup:**
 ```bash
@@ -693,9 +768,9 @@ chmod +x /home/ubuntu/backup.sh
 
 ---
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
-### 13.1 Application Won't Start
+### 14.1 Application Won't Start
 ```bash
 # Check PM2 logs
 pm2 logs --lines 50
@@ -708,7 +783,7 @@ node server.js
 cat .env
 ```
 
-### 13.2 502 Bad Gateway
+### 14.2 502 Bad Gateway
 ```bash
 # Check if backend is running
 pm2 status
@@ -724,7 +799,7 @@ pm2 restart all
 sudo systemctl restart nginx
 ```
 
-### 13.3 S3 Upload Errors
+### 14.3 S3 Upload Errors
 ```bash
 # Test AWS credentials
 aws configure list
@@ -736,20 +811,48 @@ aws s3 ls s3://vip-crm-bucket/
 aws s3api get-bucket-cors --bucket vip-crm-bucket
 ```
 
-### 13.4 Database Connection Issues
+### 14.4 Database Connection Issues
 ```bash
 # Test MongoDB connection
 cd /var/www/vip-crm/backend
 node -e "
 require('dotenv').config();
 const mongoose = require('mongoose');
-mongoose.connect(process.env.MONGODB_URI)
+mongoose.connect(process.env.MONGO_URI)
   .then(() => { console.log('Connected!'); process.exit(0); })
   .catch(err => { console.error('Error:', err.message); process.exit(1); });
 "
 ```
 
-### 13.5 SSL Issues
+### 14.5 SES Email Issues
+```bash
+# Test SES connection
+cd /var/www/vip-crm/backend
+node -e "
+require('dotenv').config();
+const { sendEmail } = require('./config/ses');
+sendEmail({
+  to: 'sales@vippharmacy.online',
+  subject: 'Test',
+  html: '<p>Test email</p>',
+  text: 'Test email'
+}).then(r => { console.log('Sent:', r.messageId); process.exit(0); })
+.catch(err => { console.error('Error:', err.message); process.exit(1); });
+"
+
+# Check email logs in MongoDB
+node -e "
+require('dotenv').config();
+const mongoose = require('mongoose');
+mongoose.connect(process.env.MONGO_URI).then(async () => {
+  const logs = await mongoose.connection.db.collection('emaillogs').find().sort({sentAt:-1}).limit(5).toArray();
+  console.log(JSON.stringify(logs, null, 2));
+  process.exit(0);
+});
+"
+```
+
+### 14.6 SSL Issues
 ```bash
 # Check certificate
 sudo certbot certificates
@@ -761,7 +864,7 @@ sudo certbot renew --force-renewal
 sudo nginx -t
 ```
 
-### 13.6 Permission Issues
+### 14.7 Permission Issues
 ```bash
 # Fix ownership
 sudo chown -R ubuntu:ubuntu /var/www/vip-crm
@@ -773,12 +876,12 @@ chmod 600 /var/www/vip-crm/backend/.env
 
 ---
 
-## Security Hardening Checklist (January 2026)
+## Security Hardening Checklist (March 2026)
 
 Before deploying to production, verify these security requirements:
 
 ### Authentication Security
-- [ ] JWT secrets are at least 32 characters (server validates at startup)
+- [ ] JWT secrets are at least 64 characters (server validates at startup)
 - [ ] Access token expiry is 15 minutes or less
 - [ ] Refresh token expiry is 7 days or less
 - [ ] CORS_ORIGINS environment variable is set (required in production)
@@ -790,14 +893,23 @@ Before deploying to production, verify these security requirements:
 - [ ] Audit logging is enabled (check AuditLog collection)
 
 ### API Security
-- [ ] Rate limiting is configured (100 req/15min general, 20 req/15min auth)
+- [ ] Rate limiting is configured (500 req/15min general, 50 req/15min auth)
 - [ ] HSTS headers are enabled via helmet
 - [ ] S3 signed URL expiry is 1 hour (not 24 hours)
 
+### Email Security
+- [ ] SES_FROM_EMAIL is verified in AWS SES
+- [ ] SES_SANDBOX_MODE is set to `false` for production
+- [ ] SES production access approved (can send to any email)
+- [ ] FRONTEND_URL points to production domain (for password reset links)
+- [ ] EmailLog TTL index active (90-day auto-cleanup)
+
 ### Monitoring
 - [ ] Audit logs are being written to MongoDB
-- [ ] TTL index on AuditLog collection (90 day expiry)
+- [ ] Email logs are being written to MongoDB
+- [ ] TTL index on AuditLog and EmailLog collections (90 day expiry)
 - [ ] Failed login attempts are logged with IP address
+- [ ] Email cron jobs running (check PM2 logs for `[EmailScheduler]` entries)
 
 For detailed security documentation, see `docs/SECURITY_CHECKLIST.md`.
 
@@ -807,13 +919,19 @@ For detailed security documentation, see `docs/SECURITY_CHECKLIST.md`.
 
 ### AWS Setup
 - [ ] AWS account created
-- [ ] IAM user with S3 access created
+- [ ] IAM user with S3 + SES access created
 - [ ] Access keys saved securely
 
 ### S3 Setup
 - [ ] S3 bucket created
-- [ ] CORS configured
+- [ ] CORS configured for production domain
 - [ ] Folder structure created (optional)
+
+### SES Setup
+- [ ] Sender email verified
+- [ ] Sending domain verified (DKIM + DMARC DNS records)
+- [ ] Production access requested and approved
+- [ ] Test email sent successfully
 
 ### Lightsail Setup
 - [ ] Instance created (Ubuntu 22.04)
@@ -827,7 +945,7 @@ For detailed security documentation, see `docs/SECURITY_CHECKLIST.md`.
 - [ ] Connection string saved
 
 ### Server Setup
-- [ ] Node.js 18 installed
+- [ ] Node.js 20 LTS installed
 - [ ] Nginx installed
 - [ ] PM2 installed
 - [ ] Git installed
@@ -836,8 +954,8 @@ For detailed security documentation, see `docs/SECURITY_CHECKLIST.md`.
 ### Application Setup
 - [ ] Repository cloned
 - [ ] Backend dependencies installed
-- [ ] Frontend built
-- [ ] Environment variables configured
+- [ ] Frontend built with `VITE_API_URL=https://yourdomain.com/api`
+- [ ] Environment variables configured (including SES vars)
 - [ ] PM2 ecosystem file created
 - [ ] Application started with PM2
 
@@ -848,9 +966,11 @@ For detailed security documentation, see `docs/SECURITY_CHECKLIST.md`.
 
 ### Final Verification
 - [ ] Application accessible via HTTPS
-- [ ] API endpoints working
+- [ ] API endpoints working (`/api/health` returns SES: configured)
 - [ ] Image uploads working
 - [ ] Authentication working
+- [ ] Password reset email sending
+- [ ] Email cron jobs initialized (check PM2 logs)
 - [ ] PM2 starts on boot
 
 ---
@@ -862,8 +982,10 @@ For detailed security documentation, see `docs/SECURITY_CHECKLIST.md`.
 | Lightsail | 2GB Instance | $10 |
 | MongoDB Atlas | M0 (Free) | $0 |
 | S3 | ~5GB storage | ~$0.12 |
+| SES | ~400 emails/month | ~$0.04 |
+| SES VDM | Virtual Deliverability Manager | ~$1.50 |
 | Data Transfer | Included in Lightsail | $0 |
-| **Total** | | **~$10/month** |
+| **Total** | | **~$12/month** |
 
 For higher usage, consider:
 - Lightsail $20 plan (4GB RAM)

@@ -14,8 +14,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import MessageBox from '../../components/employee/MessageBox';
 import messageService from '../../services/messageInboxService';
-const API_BASE = 'http://localhost:5000';
- 
+
 const EmployeeInbox = () => {
   const navigate = useNavigate();
 
