@@ -89,10 +89,36 @@ const dashboardStyles = `
 
   @media (max-width: 768px) {
     .stats-grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
     }
     .activity-section {
       grid-column: span 1;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    .stat-card {
+      padding: 16px;
+      gap: 10px;
+    }
+    .stat-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+    }
+    .stat-value {
+      font-size: 24px;
+    }
+    .stat-label {
+      font-size: 13px;
+    }
+    .dashboard {
+      gap: 16px;
     }
   }
 `;

@@ -1112,6 +1112,68 @@ const MyVisits = () => {
             grid-template-columns: repeat(2, 1fr);
           }
         }
+
+        @media (max-width: 480px) {
+          .main-content {
+            padding: 16px;
+            padding-bottom: 80px;
+          }
+
+          .page-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 12px;
+          }
+
+          .page-header h1 {
+            font-size: 22px;
+          }
+
+          .page-header .btn {
+            width: 100%;
+            text-align: center;
+            min-height: 44px;
+          }
+
+          .category-tab {
+            padding: 0.6rem 0.5rem;
+            font-size: 0.8rem;
+          }
+
+          .filter-group select,
+          .filter-group input {
+            min-width: unset;
+            min-height: 44px;
+          }
+
+          .filter-actions {
+            width: 100%;
+          }
+
+          .filter-actions .btn {
+            flex: 1;
+            min-height: 44px;
+          }
+
+          .visits-list {
+            overflow-x: auto;
+          }
+
+          .modal-overlay {
+            padding: 0;
+          }
+
+          .modal-content {
+            max-width: 100%;
+            max-height: 100vh;
+            border-radius: 0;
+            height: 100vh;
+          }
+
+          .pagination .btn {
+            min-height: 44px;
+          }
+        }
       `}</style>
     </div>
   );

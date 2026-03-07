@@ -256,10 +256,24 @@ const componentStyles = `
     .vlm-verification {
       flex-direction: column;
       align-items: flex-start;
+      padding: 12px 16px;
     }
     .vlm-badge {
       width: 100%;
       justify-content: center;
+      min-height: 44px;
+    }
+    .vlm-legend {
+      gap: 12px;
+      padding: 10px 12px;
+      font-size: 12px;
+    }
+    .vlm-stats {
+      gap: 16px;
+      width: 100%;
+    }
+    .vlm-stat-value {
+      font-size: 15px;
     }
   }
 `;

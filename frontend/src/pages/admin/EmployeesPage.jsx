@@ -51,6 +51,17 @@ const employeesPageStyles = `
     border-radius: 8px;
     margin-bottom: 24px;
   }
+
+  @media (max-width: 480px) {
+    .main-content {
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+
+    .page-header h1 {
+      font-size: 22px;
+    }
+  }
 `;
 
 const EmployeesPage = () => {

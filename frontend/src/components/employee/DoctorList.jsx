@@ -283,6 +283,32 @@ const doctorListStyles = `
       grid-template-columns: 1fr;
     }
   }
+
+  @media (max-width: 480px) {
+    .search-input,
+    .frequency-select {
+      min-width: unset;
+      min-height: 44px;
+      font-size: 16px;
+    }
+    .doctor-card {
+      padding: 16px;
+    }
+    .doctor-card-header h3 {
+      font-size: 16px;
+    }
+    .doctor-card-actions {
+      flex-wrap: wrap;
+    }
+    .log-visit-btn {
+      min-height: 44px;
+    }
+    .products-btn,
+    .edit-btn {
+      min-height: 44px;
+      flex: 1;
+    }
+  }
 `;
 
 const ENGAGEMENT_LABELS = {

@@ -442,46 +442,18 @@
   }
 }
 
-/* Mobile styles */
-@media (max-width: 767px) {
-  .dashboard-content {
-    flex-direction: column;
-  }
-
-  .sidebar {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid var(--gray-200);
-  }
-
-  .sidebar-nav {
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: var(--spacing-2);
-  }
-
-  .sidebar-link {
-    flex-direction: column;
-    padding: var(--spacing-2);
-    min-width: 80px;
-    text-align: center;
-  }
-
-  .sidebar-icon {
-    font-size: var(--font-size-xl);
-  }
-
-  .sidebar-label {
-    font-size: var(--font-size-xs);
-  }
-
+/* Mobile styles - Updated for bottom tab bar navigation */
+@media (max-width: 480px) {
   .main-content {
-    padding: var(--spacing-4);
+    padding: 16px;
+    padding-bottom: 80px;
+    min-width: 0;
   }
 
   .stats-grid,
   .stats-row {
     grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
   }
 
   .data-table {
@@ -491,6 +463,48 @@
   .data-table th,
   .data-table td {
     padding: var(--spacing-2);
+  }
+
+  /* Touch-friendly form elements */
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .btn {
+    min-height: 44px;
+  }
+
+  /* Full-width modals on mobile */
+  .modal-overlay {
+    padding: 0;
+  }
+
+  .modal-content {
+    width: 100%;
+    max-width: 100%;
+    min-height: 100vh;
+    border-radius: 0;
+    padding: 16px;
+  }
+
+  /* No horizontal overflow */
+  body {
+    overflow-x: hidden;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 767px) {
+  .main-content {
+    padding: var(--spacing-4);
+    min-width: 0;
+  }
+
+  .stats-grid,
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 

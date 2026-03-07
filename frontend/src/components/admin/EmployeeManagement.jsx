@@ -364,6 +364,154 @@ const employeeManagementStyles = `
     color: #6b7280;
     margin-top: 4px;
   }
+
+  /* Mobile Card View */
+  .mobile-card-list {
+    display: none;
+  }
+
+  .mobile-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .mobile-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+
+  .mobile-card-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .mobile-card-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .mobile-card-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  .mobile-card-row span:last-child {
+    color: #374151;
+    font-weight: 500;
+  }
+
+  .mobile-card-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid #f3f4f6;
+  }
+
+  .mobile-card-actions .btn {
+    flex: 1;
+    text-align: center;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Responsive - Mobile */
+  @media (max-width: 480px) {
+    .employee-management {
+      padding: 12px;
+      border-radius: 10px;
+    }
+
+    .management-header {
+      flex-direction: column;
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .management-header .btn {
+      width: 100%;
+      min-height: 44px;
+      text-align: center;
+    }
+
+    .filters-bar {
+      flex-direction: column;
+    }
+
+    .filters-bar input,
+    .filters-bar select {
+      min-width: 0;
+      width: 100%;
+      min-height: 44px;
+    }
+
+    .data-table {
+      display: none;
+    }
+
+    .mobile-card-list {
+      display: block;
+    }
+
+    .pagination {
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .pagination-btn {
+      min-height: 44px;
+      padding: 10px 20px;
+    }
+
+    .modal-content {
+      width: 100%;
+      max-width: 100%;
+      height: 100vh;
+      max-height: 100vh;
+      border-radius: 0;
+      padding: 16px;
+    }
+
+    .form-row {
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+
+    .form-group input,
+    .form-group select {
+      min-height: 44px;
+      font-size: 16px;
+    }
+
+    .form-actions {
+      flex-direction: column-reverse;
+    }
+
+    .form-actions .btn {
+      width: 100%;
+      min-height: 48px;
+    }
+
+    .confirm-modal-content {
+      width: 90%;
+      max-width: 90%;
+      height: auto;
+      max-height: 90vh;
+      border-radius: 16px;
+    }
+  }
 `;
 
 const EmployeeManagement = ({
@@ -526,41 +674,91 @@ const EmployeeManagement = ({
         </select>
       </div>
 
-      {/* Table */}
+      {/* Table (Desktop) + Card List (Mobile) */}
       <div className={loading ? 'table-loading' : ''}>
         {employees.length > 0 ? (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employees.map((employee) => (
+                    <tr key={employee._id}>
+                      <td>{employee.name}</td>
+                      <td>{employee.email}</td>
+                      <td>{employee.phone || '-'}</td>
+                      <td>
+                        <span className={`role-badge role-${employee.role}`}>
+                          {employee.role === 'employee' ? 'BDM' : 'Admin'}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`status-badge ${
+                            employee.isActive ? 'status-active' : 'status-inactive'
+                          }`}
+                        >
+                          {employee.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="actions">
+                        <button
+                          onClick={() => handleEdit(employee)}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => onToggleStatus?.(employee)}
+                          className={`btn btn-sm ${employee.isActive ? 'btn-danger' : 'btn-success'}`}
+                        >
+                          {employee.isActive ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card List */}
+            <div className="mobile-card-list">
               {employees.map((employee) => (
-                <tr key={employee._id}>
-                  <td>{employee.name}</td>
-                  <td>{employee.email}</td>
-                  <td>{employee.phone || '-'}</td>
-                  <td>
-                    <span className={`role-badge role-${employee.role}`}>
-                      {employee.role === 'employee' ? 'BDM' : 'Admin'}
-                    </span>
-                  </td>
-                  <td>
-                    <span
-                      className={`status-badge ${
-                        employee.isActive ? 'status-active' : 'status-inactive'
-                      }`}
-                    >
+                <div key={employee._id} className="mobile-card">
+                  <div className="mobile-card-header">
+                    <span className="mobile-card-name">{employee.name}</span>
+                    <span className={`status-badge ${employee.isActive ? 'status-active' : 'status-inactive'}`}>
                       {employee.isActive ? 'Active' : 'Inactive'}
                     </span>
-                  </td>
-                  <td className="actions">
+                  </div>
+                  <div className="mobile-card-meta">
+                    <div className="mobile-card-row">
+                      <span>Email</span>
+                      <span>{employee.email}</span>
+                    </div>
+                    <div className="mobile-card-row">
+                      <span>Role</span>
+                      <span className={`role-badge role-${employee.role}`}>
+                        {employee.role === 'employee' ? 'BDM' : 'Admin'}
+                      </span>
+                    </div>
+                    {employee.phone && (
+                      <div className="mobile-card-row">
+                        <span>Phone</span>
+                        <span>{employee.phone}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mobile-card-actions">
                     <button
                       onClick={() => handleEdit(employee)}
                       className="btn btn-secondary btn-sm"
@@ -573,11 +771,11 @@ const EmployeeManagement = ({
                     >
                       {employee.isActive ? 'Deactivate' : 'Activate'}
                     </button>
-                  </td>
-                </tr>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         ) : (
           <div className="empty-state">
             <p>No BDMs found</p>

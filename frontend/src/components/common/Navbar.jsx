@@ -1,17 +1,20 @@
 /**
- * Navbar Component - Redesigned
+ * Navbar Component - Responsive
  *
  * Top navigation bar with:
- * - Logo/brand (left side - preserved)
- * - Search bar (center)
+ * - Logo/brand (left side)
+ * - Hamburger menu (mobile/tablet)
  * - Notifications (Bell icon with dropdown)
  * - User profile dropdown
  * - Logout button
+ *
+ * Mobile: hamburger + logo + notification bell + avatar
+ * Desktop: full layout
  */
 
 import { useAuth } from '../../hooks/useAuth';
 import NotificationCenter from './NotificationCenter';
-import { LogOut } from 'lucide-react';
+import { LogOut, Menu } from 'lucide-react';
 
 /* =============================================================================
    STYLES
@@ -63,6 +66,37 @@ const navbarStyles = `
 
   .navbar-brand h1 span {
     color: #3b82f6;
+  }
+
+  /* Hamburger */
+  .navbar-hamburger {
+    display: none;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: #374151;
+    cursor: pointer;
+    border-radius: 10px;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s;
+  }
+
+  .navbar-hamburger:hover {
+    background: #f3f4f6;
+  }
+
+  .navbar-hamburger:active {
+    background: #e5e7eb;
+  }
+
+  /* Left section with hamburger + brand */
+  .navbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   /* Right Menu */
@@ -135,6 +169,10 @@ const navbarStyles = `
     color: #dc2626;
   }
 
+  .navbar-logout-text {
+    display: inline;
+  }
+
   /* Divider between elements */
   .navbar-divider {
     width: 1px;
@@ -143,16 +181,91 @@ const navbarStyles = `
     margin: 0 8px;
   }
 
-  /* Responsive */
-  @media (max-width: 640px) {
+  /* ===== TABLET ===== */
+  @media (max-width: 1024px) {
     .navbar {
       padding: 0 16px;
     }
+    .navbar-profile-info {
+      display: none;
+    }
+    .navbar-profile {
+      padding: 6px;
+    }
+    .navbar-logout-text {
+      display: none;
+    }
+    .navbar-logout {
+      padding: 10px;
+    }
+  }
+
+  /* ===== MOBILE ===== */
+  @media (max-width: 480px) {
+    .navbar {
+      padding: 0 12px;
+      height: 60px;
+    }
+
+    .navbar-hamburger {
+      display: flex;
+    }
+
     .navbar-brand h1 {
       display: none;
     }
-    .navbar-profile-info {
+
+    .navbar-logo {
+      width: 36px;
+      height: 36px;
+      font-size: 15px;
+      border-radius: 10px;
+    }
+
+    .navbar-profile {
       display: none;
+    }
+
+    .navbar-divider {
+      display: none;
+    }
+
+    .navbar-logout {
+      padding: 8px;
+      border: none;
+      background: none;
+    }
+
+    .navbar-logout-text {
+      display: none;
+    }
+
+    .navbar-avatar-mobile {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .navbar-menu {
+      gap: 4px;
+    }
+  }
+
+  /* Hide mobile avatar on desktop */
+  .navbar-avatar-mobile {
+    display: none;
+  }
+
+  @media (max-width: 480px) {
+    .navbar-avatar-mobile {
+      display: flex;
     }
   }
 `;
@@ -175,14 +288,29 @@ const Navbar = () => {
       .slice(0, 2);
   };
 
+  // Dispatch event to open sidebar drawer
+  const handleHamburgerClick = () => {
+    window.dispatchEvent(new CustomEvent('sidebar:toggle'));
+  };
+
   return (
     <nav className="navbar">
       <style>{navbarStyles}</style>
 
-      {/* Logo - Preserved on left */}
-      <div className="navbar-brand">
-        <div className="navbar-logo">VP</div>
-        <h1>VIP <span>Pharmacy</span> CRM</h1>
+      {/* Left: Hamburger + Logo */}
+      <div className="navbar-left">
+        <button
+          className="navbar-hamburger"
+          onClick={handleHamburgerClick}
+          aria-label="Open menu"
+        >
+          <Menu size={24} />
+        </button>
+
+        <div className="navbar-brand">
+          <div className="navbar-logo">VP</div>
+          <h1>VIP <span>Pharmacy</span> CRM</h1>
+        </div>
       </div>
 
       {/* Right Menu */}
@@ -194,7 +322,12 @@ const Navbar = () => {
 
             <div className="navbar-divider" />
 
-            {/* User Profile Display */}
+            {/* Mobile Avatar */}
+            <div className="navbar-avatar-mobile">
+              {getInitials(user.name)}
+            </div>
+
+            {/* Desktop User Profile Display */}
             <div className="navbar-profile">
               <div className="navbar-avatar">
                 {getInitials(user.name)}
@@ -208,7 +341,7 @@ const Navbar = () => {
             {/* Logout Button */}
             <button className="navbar-logout" onClick={logout}>
               <LogOut size={16} />
-              Logout
+              <span className="navbar-logout-text">Logout</span>
             </button>
           </>
         )}

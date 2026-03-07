@@ -223,6 +223,62 @@ const dashboardStyles = `
       font-size: 28px;
     }
   }
+
+  @media (max-width: 480px) {
+    .main-content {
+      padding: 16px !important;
+      padding-bottom: 80px !important;
+    }
+
+    .main-content h1 {
+      font-size: 22px;
+      margin-bottom: 16px;
+    }
+
+    .stats-row {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .stat-card {
+      padding: 14px 12px;
+    }
+
+    .stat-card .stat-value {
+      font-size: 24px;
+    }
+
+    .stat-card .stat-label {
+      font-size: 12px;
+    }
+
+    .dashboard-section {
+      padding: 16px;
+    }
+
+    .dashboard-section h2 {
+      font-size: 17px;
+      margin-bottom: 14px;
+    }
+
+    .today-sched-section {
+      padding: 16px;
+    }
+
+    .today-sched-cards {
+      grid-template-columns: 1fr;
+    }
+
+    .today-sched-card .sched-log-btn {
+      padding: 10px 14px;
+      min-height: 44px;
+    }
+
+    .compliance-bar {
+      padding: 16px;
+    }
+  }
 `;
 
 const EmployeeDashboard = () => {

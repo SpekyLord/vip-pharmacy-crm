@@ -234,6 +234,29 @@ const visitLoggerStyles = `
     font-size: 14px;
     margin-top: 12px;
   }
+
+  @media (max-width: 480px) {
+    .visit-logger {
+      padding: 12px;
+    }
+    .doctor-info-header h2 {
+      font-size: 20px;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      min-height: 44px;
+      font-size: 16px;
+    }
+    .btn {
+      min-height: 44px;
+    }
+    .btn-large {
+      width: 100%;
+      padding: 14px 24px;
+      font-size: 16px;
+    }
+  }
 `;
 
 const VisitLogger = ({ doctor, onSuccess }) => {

@@ -1,16 +1,16 @@
 /**
- * Sidebar Component - Redesigned
+ * Sidebar Component - Responsive
  *
- * Side navigation with:
+ * Responsive navigation with:
+ * - Desktop (1025px+): Sidebar visible on the left, expanded or collapsible
+ * - Tablet (481px–1024px): Icon-only sidebar, hamburger opens overlay drawer
+ * - Mobile (≤480px): Hidden sidebar, bottom tab bar + slide-in drawer for overflow
  * - Role-based menu items with Lucide icons
- * - Grouped sections
  * - Active route highlighting
- * - Clean collapsible functionality
- * - Modern styling
  */
 
-import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import {
   LayoutDashboard,
@@ -28,6 +28,9 @@ import {
   ChevronRight,
   Activity,
   Shield,
+  Menu,
+  X,
+  PlusCircle,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -35,6 +38,7 @@ import {
    ============================================================================= */
 
 const sidebarStyles = `
+  /* ===== DESKTOP SIDEBAR ===== */
   .sidebar {
     width: 250px;
     min-height: calc(100vh - 68px);
@@ -285,8 +289,169 @@ const sidebarStyles = `
     border-radius: 2px;
   }
 
-  /* Responsive */
-  @media (max-width: 1024px) {
+  /* ===== MOBILE BOTTOM TAB BAR ===== */
+  .mobile-tab-bar {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 64px;
+    background: #0f172a;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 200;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .mobile-tab-bar-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    height: 64px;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .mobile-tab-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 0;
+    min-width: 56px;
+    min-height: 44px;
+    color: rgba(255, 255, 255, 0.5);
+    text-decoration: none;
+    font-size: 10px;
+    font-weight: 500;
+    border: none;
+    background: none;
+    cursor: pointer;
+    position: relative;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.15s;
+  }
+
+  .mobile-tab-item.active {
+    color: #3b82f6;
+  }
+
+  .mobile-tab-item:active {
+    color: #60a5fa;
+  }
+
+  .mobile-tab-item .tab-badge {
+    position: absolute;
+    top: 2px;
+    right: 8px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    background: #ef4444;
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ===== MOBILE DRAWER ===== */
+  .mobile-drawer-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 300;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .mobile-drawer-backdrop.visible {
+    opacity: 1;
+  }
+
+  .mobile-drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 85vw;
+    background: #0f172a;
+    z-index: 301;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .mobile-drawer.open {
+    transform: translateX(0);
+  }
+
+  .mobile-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .mobile-drawer-close {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+  }
+
+  .mobile-drawer-close:active {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .mobile-drawer-nav {
+    flex: 1;
+    padding: 12px;
+    overflow-y: auto;
+  }
+
+  .mobile-drawer .sidebar-link {
+    padding: 14px 16px;
+    margin-bottom: 2px;
+    font-size: 15px;
+  }
+
+  .mobile-drawer .sidebar-link-icon {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+  }
+
+  .mobile-drawer .sidebar-section {
+    margin-bottom: 20px;
+  }
+
+  .mobile-drawer .sidebar-section-title {
+    padding: 0 16px;
+    margin-bottom: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  /* ===== TABLET RESPONSIVE ===== */
+  @media (max-width: 1024px) and (min-width: 481px) {
     .sidebar {
       width: 72px;
     }
@@ -315,6 +480,37 @@ const sidebarStyles = `
       padding: 0 4px;
       font-size: 10px;
       margin-left: 0;
+    }
+    .sidebar .sidebar-link:hover .sidebar-tooltip {
+      opacity: 1;
+      visibility: visible;
+    }
+  }
+
+  /* ===== MOBILE RESPONSIVE ===== */
+  @media (max-width: 480px) {
+    .sidebar {
+      display: none;
+    }
+
+    .mobile-tab-bar {
+      display: block;
+    }
+
+    .mobile-drawer-backdrop {
+      display: block;
+      pointer-events: none;
+    }
+
+    .mobile-drawer-backdrop.visible {
+      pointer-events: auto;
+    }
+
+    /* Add bottom padding to main content for tab bar */
+    .admin-main,
+    .main-content,
+    .page-main {
+      padding-bottom: 80px !important;
     }
   }
 `;
@@ -355,6 +551,12 @@ const getMenuConfig = (role) => {
             ],
           },
         ],
+        bottomTabs: [
+          { path: '/admin', label: 'Home', icon: LayoutDashboard },
+          { path: '/admin/approvals', label: 'Import', icon: FileSpreadsheet },
+          { path: '/admin/doctors', label: 'Clients', icon: Stethoscope },
+          { path: '/admin/reports', label: 'Reports', icon: FileText },
+        ],
       };
 
     case 'employee':
@@ -379,6 +581,12 @@ const getMenuConfig = (role) => {
             ],
           },
         ],
+        bottomTabs: [
+          { path: '/employee', label: 'Home', icon: LayoutDashboard },
+          { path: '/employee/visits', label: 'Visits', icon: ClipboardCheck },
+          { path: '/employee/visit/new', label: 'New Visit', icon: PlusCircle },
+          { path: '/employee/inbox', label: 'Inbox', icon: Inbox, badge: 2 },
+        ],
       };
   }
 };
@@ -390,7 +598,9 @@ const getMenuConfig = (role) => {
 const Sidebar = () => {
   const { user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const menuConfig = getMenuConfig(user?.role);
   const RoleIcon = menuConfig.roleIcon;
@@ -402,59 +612,172 @@ const Sidebar = () => {
     return location.pathname.startsWith(path);
   };
 
+  // Listen for sidebar:toggle events from Navbar hamburger
+  useEffect(() => {
+    const handleToggle = () => setDrawerOpen(prev => !prev);
+    window.addEventListener('sidebar:toggle', handleToggle);
+    return () => window.removeEventListener('sidebar:toggle', handleToggle);
+  }, []);
+
+  // Close drawer on route change
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
+
+  // Prevent body scroll when drawer is open
+  useEffect(() => {
+    if (drawerOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [drawerOpen]);
+
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+
+  const handleDrawerNav = (path) => {
+    navigate(path);
+    setDrawerOpen(false);
+  };
+
+  // Get all flat items for the drawer
+  const allItems = menuConfig.sections.flatMap(s => s.items);
+
   return (
-    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+    <>
       <style>{sidebarStyles}</style>
 
-      {/* Toggle */}
-      <button
-        className="sidebar-toggle"
-        onClick={() => setCollapsed(!collapsed)}
-      >
-        {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-      </button>
+      {/* ===== DESKTOP / TABLET SIDEBAR ===== */}
+      <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+        {/* Toggle */}
+        <button
+          className="sidebar-toggle"
+          onClick={() => setCollapsed(!collapsed)}
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
 
-      {/* Role Badge */}
-      <div className="sidebar-role">
-        <div className="sidebar-role-badge">
-          <div className="sidebar-role-icon">
-            <RoleIcon size={18} />
-          </div>
-          <div className="sidebar-role-info">
-            <div className="sidebar-role-title">{menuConfig.roleTitle}</div>
-            <div className="sidebar-role-subtitle">{menuConfig.roleSubtitle}</div>
+        {/* Role Badge */}
+        <div className="sidebar-role">
+          <div className="sidebar-role-badge">
+            <div className="sidebar-role-icon">
+              <RoleIcon size={18} />
+            </div>
+            <div className="sidebar-role-info">
+              <div className="sidebar-role-title">{menuConfig.roleTitle}</div>
+              <div className="sidebar-role-subtitle">{menuConfig.roleSubtitle}</div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Navigation */}
-      <nav className="sidebar-nav">
-        {menuConfig.sections.map((section, sectionIndex) => (
-          <div key={sectionIndex} className="sidebar-section">
-            <div className="sidebar-section-title">{section.title}</div>
-            {section.items.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  className={`sidebar-link ${isActive(item.path) ? 'active' : ''}`}
-                >
-                  <span className="sidebar-link-icon">
-                    <Icon size={20} />
-                  </span>
-                  <span className="sidebar-link-label">{item.label}</span>
-                  {item.badge && (
-                    <span className="sidebar-badge">{item.badge}</span>
-                  )}
-                  <span className="sidebar-tooltip">{item.label}</span>
-                </NavLink>
-              );
-            })}
-          </div>
-        ))}
+        {/* Navigation */}
+        <nav className="sidebar-nav">
+          {menuConfig.sections.map((section, sectionIndex) => (
+            <div key={sectionIndex} className="sidebar-section">
+              <div className="sidebar-section-title">{section.title}</div>
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    className={`sidebar-link ${isActive(item.path) ? 'active' : ''}`}
+                  >
+                    <span className="sidebar-link-icon">
+                      <Icon size={20} />
+                    </span>
+                    <span className="sidebar-link-label">{item.label}</span>
+                    {item.badge && (
+                      <span className="sidebar-badge">{item.badge}</span>
+                    )}
+                    <span className="sidebar-tooltip">{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      {/* ===== MOBILE BOTTOM TAB BAR ===== */}
+      <nav className="mobile-tab-bar">
+        <div className="mobile-tab-bar-inner">
+          {menuConfig.bottomTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <NavLink
+                key={tab.path}
+                to={tab.path}
+                className={`mobile-tab-item ${isActive(tab.path) ? 'active' : ''}`}
+              >
+                <Icon size={22} />
+                <span>{tab.label}</span>
+                {tab.badge && <span className="tab-badge">{tab.badge}</span>}
+              </NavLink>
+            );
+          })}
+          {/* Menu overflow tab */}
+          <button
+            className={`mobile-tab-item ${drawerOpen ? 'active' : ''}`}
+            onClick={() => setDrawerOpen(true)}
+          >
+            <Menu size={22} />
+            <span>Menu</span>
+          </button>
+        </div>
       </nav>
-    </aside>
+
+      {/* ===== MOBILE DRAWER ===== */}
+      <div
+        className={`mobile-drawer-backdrop ${drawerOpen ? 'visible' : ''}`}
+        onClick={closeDrawer}
+      />
+      <div className={`mobile-drawer ${drawerOpen ? 'open' : ''}`}>
+        <div className="mobile-drawer-header">
+          <div className="sidebar-role-badge" style={{ border: 'none', background: 'transparent', padding: 0 }}>
+            <div className="sidebar-role-icon">
+              <RoleIcon size={18} />
+            </div>
+            <div className="sidebar-role-info" style={{ display: 'block' }}>
+              <div className="sidebar-role-title">{menuConfig.roleTitle}</div>
+              <div className="sidebar-role-subtitle">{menuConfig.roleSubtitle}</div>
+            </div>
+          </div>
+          <button className="mobile-drawer-close" onClick={closeDrawer}>
+            <X size={20} />
+          </button>
+        </div>
+        <nav className="mobile-drawer-nav">
+          {menuConfig.sections.map((section, sectionIndex) => (
+            <div key={sectionIndex} className="sidebar-section">
+              <div className="sidebar-section-title">{section.title}</div>
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.path}
+                    className={`sidebar-link ${isActive(item.path) ? 'active' : ''}`}
+                    onClick={() => handleDrawerNav(item.path)}
+                    style={{ width: '100%', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    <span className="sidebar-link-icon">
+                      <Icon size={22} />
+                    </span>
+                    <span className="sidebar-link-label" style={{ display: 'block' }}>
+                      {item.label}
+                    </span>
+                    {item.badge && (
+                      <span className="sidebar-badge">{item.badge}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+      </div>
+    </>
   );
 };
 

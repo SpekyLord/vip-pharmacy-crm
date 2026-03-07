@@ -52,6 +52,21 @@ const productsPageStyles = `
     border-radius: 8px;
     margin-bottom: 24px;
   }
+
+  @media (max-width: 480px) {
+    .main-content {
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .page-header h1 {
+      font-size: 22px;
+    }
+  }
 `;
 
 const ProductsPage = () => {

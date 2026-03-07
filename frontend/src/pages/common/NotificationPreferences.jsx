@@ -544,6 +544,26 @@ const styles = `
       align-items: flex-start;
     }
   }
+
+  @media (max-width: 480px) {
+    .np-main {
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+    .np-page-title {
+      font-size: 22px;
+    }
+    .np-card {
+      padding: 16px;
+    }
+    .np-toggle-label {
+      font-size: 14px;
+    }
+    .np-save-btn {
+      width: 100%;
+      min-height: 48px;
+    }
+  }
 `;
 
 /* =============================================================================

@@ -1121,6 +1121,45 @@ const styles = `
     color: #1e40af;
     font-weight: 500;
   }
+
+  @media (max-width: 480px) {
+    .reports-main {
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .page-header h1 {
+      font-size: 22px;
+    }
+    .quick-stats {
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .quick-stat-value {
+      font-size: 20px;
+    }
+    .report-types-grid {
+      grid-template-columns: 1fr;
+    }
+    .tabs-header {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .tab-btn {
+      padding: 12px 14px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .section-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+  }
 `;
 
 /* =============================================================================

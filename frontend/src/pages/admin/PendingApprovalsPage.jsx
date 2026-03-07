@@ -500,6 +500,47 @@ const styles = `
       flex-direction: column;
     }
   }
+
+  @media (max-width: 480px) {
+    .ie-content {
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+    .ie-header h1 {
+      font-size: 22px;
+    }
+    .ie-tabs {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .ie-tab {
+      padding: 10px 14px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .ie-card {
+      padding: 16px;
+    }
+    .ie-field select,
+    .ie-field input {
+      min-height: 44px;
+    }
+    .ie-btn {
+      width: 100%;
+      justify-content: center;
+      min-height: 44px;
+    }
+    .ie-btn-group {
+      flex-direction: column;
+    }
+    .ie-file-input {
+      padding: 20px;
+    }
+    .ie-dialog {
+      width: calc(100vw - 32px);
+    }
+  }
 `;
 
 /* =============================================================================

@@ -369,6 +369,49 @@ const pageStyles = `
     animation: gpsspin 1s linear infinite;
     margin-bottom: 12px;
   }
+
+  @media (max-width: 480px) {
+    .gps-page-main {
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .page-header h1 {
+      font-size: 22px;
+    }
+    .info-banner {
+      flex-direction: column;
+      text-align: center;
+      padding: 14px;
+    }
+    .gps-filter-bar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .gps-filter-bar select {
+      min-width: unset;
+      width: 100%;
+      min-height: 44px;
+    }
+    .gps-refresh-btn {
+      width: 100%;
+      justify-content: center;
+      min-height: 44px;
+    }
+    .gps-stats-row {
+      flex-direction: column;
+    }
+    .gps-two-col {
+      grid-template-columns: 1fr;
+    }
+    .gps-visit-list {
+      max-height: 400px;
+    }
+  }
 `;
 
 /* =============================================================================

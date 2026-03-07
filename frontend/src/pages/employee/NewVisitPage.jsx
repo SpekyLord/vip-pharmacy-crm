@@ -119,6 +119,26 @@ const newVisitStyles = `
   .btn-primary:hover {
     background: #1d4ed8;
   }
+
+  @media (max-width: 480px) {
+    .main-content {
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+    .page-header h1 {
+      font-size: 22px;
+    }
+    .visit-stats {
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+    .btn-primary {
+      width: 100%;
+      text-align: center;
+      min-height: 44px;
+    }
+  }
 `;
 
 const NewVisitPage = () => {

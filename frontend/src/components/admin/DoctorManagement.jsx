@@ -366,6 +366,176 @@ const doctorManagementStyles = `
     justify-content: center;
     gap: 12px;
   }
+
+  /* Mobile Card View */
+  .mobile-card-list {
+    display: none;
+  }
+
+  .mobile-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .mobile-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+
+  .mobile-card-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .mobile-card-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .mobile-card-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  .mobile-card-row span:last-child {
+    color: #374151;
+    font-weight: 500;
+  }
+
+  .mobile-card-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid #f3f4f6;
+  }
+
+  .mobile-card-actions .btn {
+    flex: 1;
+    text-align: center;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Responsive - Tablet */
+  @media (max-width: 1024px) {
+    .data-table th:nth-child(3),
+    .data-table td:nth-child(3) {
+      display: none;
+    }
+    .doctor-management {
+      padding: 16px;
+    }
+  }
+
+  /* Responsive - Mobile */
+  @media (max-width: 480px) {
+    .doctor-management {
+      padding: 12px;
+      border-radius: 10px;
+    }
+
+    .management-header {
+      flex-direction: column;
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .management-header .btn {
+      width: 100%;
+      min-height: 44px;
+      text-align: center;
+    }
+
+    .filters-bar {
+      flex-direction: column;
+    }
+
+    .filters-bar input,
+    .filters-bar select {
+      min-width: 0;
+      width: 100%;
+      min-height: 44px;
+    }
+
+    .data-table {
+      display: none;
+    }
+
+    .mobile-card-list {
+      display: block;
+    }
+
+    .pagination {
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .pagination-info {
+      font-size: 13px;
+    }
+
+    .pagination-btn {
+      min-height: 44px;
+      padding: 10px 20px;
+    }
+
+    /* Modal full-screen on mobile */
+    .modal-content {
+      width: 100%;
+      max-width: 100%;
+      height: 100vh;
+      max-height: 100vh;
+      border-radius: 0;
+      padding: 16px;
+    }
+
+    .form-row {
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      min-height: 44px;
+      font-size: 16px;
+    }
+
+    .form-actions {
+      flex-direction: column-reverse;
+    }
+
+    .form-actions .btn {
+      width: 100%;
+      min-height: 48px;
+    }
+
+    .confirm-modal-content {
+      width: 90%;
+      max-width: 90%;
+      height: auto;
+      max-height: 90vh;
+      border-radius: 16px;
+    }
+
+    .confirm-actions .btn {
+      min-height: 44px;
+      flex: 1;
+    }
+  }
 `;
 
 const DoctorManagement = ({
@@ -603,39 +773,96 @@ const DoctorManagement = ({
         </select>
       </div>
 
-      {/* Table */}
+      {/* Table (Desktop/Tablet) + Card List (Mobile) */}
       <div className={loading ? 'table-loading' : ''}>
         {doctors.length > 0 ? (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Specialization</th>
-                <th>Hospital</th>
-                <th>Visit Freq</th>
-                <th>Engagement</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            {/* Desktop Table */}
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Specialization</th>
+                    <th>Hospital</th>
+                    <th>Visit Freq</th>
+                    <th>Engagement</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {doctors.map((doctor) => (
+                    <tr key={doctor._id}>
+                      <td>{doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}</td>
+                      <td>{doctor.specialization || '-'}</td>
+                      <td>{doctor.clinicOfficeAddress || '-'}</td>
+                      <td>
+                        <span className={`visit-freq-badge freq-${doctor.visitFrequency}`}>
+                          {doctor.visitFrequency}x/mo
+                        </span>
+                      </td>
+                      <td>
+                        {doctor.levelOfEngagement ? (
+                          <span className={`eng-badge ${doctor.levelOfEngagement <= 2 ? 'eng-low' : doctor.levelOfEngagement === 3 ? 'eng-mid' : 'eng-high'}`}>
+                            {doctor.levelOfEngagement}/5
+                          </span>
+                        ) : '-'}
+                      </td>
+                      <td className="actions">
+                        <button
+                          onClick={() => handleEdit(doctor)}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClick(doctor)}
+                          className="btn btn-danger btn-sm"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card List */}
+            <div className="mobile-card-list">
               {doctors.map((doctor) => (
-                <tr key={doctor._id}>
-                  <td>{doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}</td>
-                  <td>{doctor.specialization || '-'}</td>
-                  <td>{doctor.clinicOfficeAddress || '-'}</td>
-                  <td>
+                <div key={doctor._id} className="mobile-card">
+                  <div className="mobile-card-header">
+                    <span className="mobile-card-name">
+                      {doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}
+                    </span>
                     <span className={`visit-freq-badge freq-${doctor.visitFrequency}`}>
                       {doctor.visitFrequency}x/mo
                     </span>
-                  </td>
-                  <td>
-                    {doctor.levelOfEngagement ? (
-                      <span className={`eng-badge ${doctor.levelOfEngagement <= 2 ? 'eng-low' : doctor.levelOfEngagement === 3 ? 'eng-mid' : 'eng-high'}`}>
-                        {doctor.levelOfEngagement}/5
-                      </span>
-                    ) : '-'}
-                  </td>
-                  <td className="actions">
+                  </div>
+                  <div className="mobile-card-meta">
+                    {doctor.specialization && (
+                      <div className="mobile-card-row">
+                        <span>Specialty</span>
+                        <span>{doctor.specialization}</span>
+                      </div>
+                    )}
+                    {doctor.clinicOfficeAddress && (
+                      <div className="mobile-card-row">
+                        <span>Address</span>
+                        <span>{doctor.clinicOfficeAddress}</span>
+                      </div>
+                    )}
+                    {doctor.levelOfEngagement && (
+                      <div className="mobile-card-row">
+                        <span>Engagement</span>
+                        <span className={`eng-badge ${doctor.levelOfEngagement <= 2 ? 'eng-low' : doctor.levelOfEngagement === 3 ? 'eng-mid' : 'eng-high'}`}>
+                          {doctor.levelOfEngagement}/5
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mobile-card-actions">
                     <button
                       onClick={() => handleEdit(doctor)}
                       className="btn btn-secondary btn-sm"
@@ -648,11 +875,11 @@ const DoctorManagement = ({
                     >
                       Delete
                     </button>
-                  </td>
-                </tr>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         ) : (
           <div className="empty-state">
             <p>No VIP Clients found</p>

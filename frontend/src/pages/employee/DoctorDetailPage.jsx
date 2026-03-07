@@ -447,6 +447,32 @@ const pageStyles = `
       padding: 8px 6px;
     }
   }
+
+  @media (max-width: 480px) {
+    .main-content {
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+    .ddp-header-info h1 {
+      font-size: 22px;
+    }
+    .ddp-header-card {
+      padding: 16px;
+    }
+    .ddp-header-actions {
+      flex-direction: column;
+    }
+    .ddp-header-actions .ddp-btn {
+      min-height: 44px;
+      text-align: center;
+    }
+    .ddp-section {
+      padding: 16px;
+    }
+    .ddp-back-btn {
+      min-height: 44px;
+    }
+  }
 `;
 
 const DoctorDetailPage = () => {

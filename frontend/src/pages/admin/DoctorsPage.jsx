@@ -98,6 +98,34 @@ const doctorsPageStyles = `
     background: #f9fafb;
     border-color: #9ca3af;
   }
+
+  @media (max-width: 480px) {
+    .main-content {
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+
+    .page-header {
+      flex-direction: column;
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .page-header h1 {
+      font-size: 22px;
+    }
+
+    .header-actions {
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .export-btn {
+      width: 100%;
+      justify-content: center;
+      min-height: 44px;
+    }
+  }
 `;
 
 const DoctorsPage = () => {

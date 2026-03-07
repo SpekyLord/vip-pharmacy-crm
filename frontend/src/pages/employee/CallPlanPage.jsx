@@ -516,6 +516,41 @@ const pageStyles = `
       padding: 8px 6px;
     }
   }
+
+  @media (max-width: 480px) {
+    .cpt-main {
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+    .cpt-page-header h1 {
+      font-size: 22px;
+    }
+    .cpt-summary-card {
+      min-width: 100px;
+    }
+    .cpt-summary-value {
+      font-size: 18px;
+    }
+    .cpt-tab-btn {
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+    .cpt-perf-stats-row {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .cpt-perf-stat-card .stat-value {
+      font-size: 24px;
+    }
+    .cpt-perf-two-col {
+      grid-template-columns: 1fr;
+    }
+    .cpt-perf-section {
+      padding: 16px;
+    }
+    .cpt-perf-table {
+      font-size: 12px;
+    }
+  }
 `;
 
 /* =============================================================================

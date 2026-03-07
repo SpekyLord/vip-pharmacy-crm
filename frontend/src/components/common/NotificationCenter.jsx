@@ -407,15 +407,86 @@ const styles = `
     border-color: #d1d5db;
   }
 
-  /* Responsive */
+  /* Responsive - Mobile: Full-screen overlay */
   @media (max-width: 480px) {
     .nc-dropdown {
       position: fixed;
-      top: 60px;
-      left: 10px;
-      right: 10px;
-      width: auto;
-      max-height: calc(100vh - 80px);
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100%;
+      max-height: 100vh;
+      border-radius: 0;
+      z-index: 1100;
+      animation: ncSlideUp 0.25s ease-out;
+    }
+
+    @keyframes ncSlideUp {
+      from {
+        transform: translateY(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .nc-header {
+      padding: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    .nc-list {
+      max-height: none;
+      flex: 1;
+    }
+
+    .nc-item {
+      padding: 16px;
+    }
+
+    .nc-item-title {
+      font-size: 15px;
+    }
+
+    .nc-item-message {
+      font-size: 14px;
+      -webkit-line-clamp: 3;
+    }
+
+    .nc-footer {
+      padding: 12px 16px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+      position: sticky;
+      bottom: 0;
+    }
+
+    .nc-footer-btn {
+      min-height: 48px;
+      font-size: 15px;
+    }
+
+    .nc-close-mobile {
+      display: flex;
+      width: 36px;
+      height: 36px;
+      align-items: center;
+      justify-content: center;
+      background: #f3f4f6;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #374151;
+    }
+  }
+
+  @media (min-width: 481px) {
+    .nc-close-mobile {
+      display: none;
     }
   }
 `;
@@ -584,14 +655,23 @@ const NotificationCenter = () => {
               Notifications
               {unreadCount > 0 && <span className="count">{unreadCount} new</span>}
             </div>
-            <button
-              className="nc-mark-all"
-              onClick={handleMarkAllAsRead}
-              disabled={unreadCount === 0}
-            >
-              <CheckCheck size={14} />
-              Mark all read
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                className="nc-mark-all"
+                onClick={handleMarkAllAsRead}
+                disabled={unreadCount === 0}
+              >
+                <CheckCheck size={14} />
+                Mark all read
+              </button>
+              <button
+                className="nc-close-mobile"
+                onClick={() => setIsOpen(false)}
+                aria-label="Close notifications"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           {/* List */}

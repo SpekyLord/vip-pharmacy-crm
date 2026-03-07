@@ -1099,6 +1099,42 @@ const toggleMessage = async (msgOrId) => {
             box-shadow: 0 0 0 4px rgba(147, 197, 253, 0.25);
           }
 
+          @media (max-width: 480px) {
+            .main-content {
+              padding: 16px;
+              padding-bottom: 80px;
+            }
+            .page-header {
+              flex-direction: column;
+              align-items: flex-start;
+            }
+            .header-left h1 {
+              font-size: 22px;
+            }
+            .header-right {
+              width: 100%;
+            }
+            .header-right .btn {
+              width: 100%;
+              min-height: 44px;
+              text-align: center;
+            }
+            .filter-group select,
+            .filter-group input {
+              min-height: 44px;
+            }
+            .filter-actions .btn {
+              flex: 1;
+              min-height: 44px;
+            }
+            .inbox-list {
+              padding: 8px;
+              gap: 10px;
+            }
+            .pagination .btn {
+              min-height: 44px;
+            }
+          }
 
       `}</style>
     </div>

@@ -170,6 +170,34 @@ const pageStyles = `
     color: #6b7280;
     margin-top: 2px;
   }
+
+  @media (max-width: 480px) {
+    .activity-monitor-main {
+      padding: 16px;
+      padding-bottom: 80px;
+    }
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .page-header h1 {
+      font-size: 22px;
+    }
+    .stats-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .stat-card {
+      padding: 12px;
+    }
+    .stat-value {
+      font-size: 18px;
+    }
+    .live-indicator {
+      padding: 8px 12px;
+    }
+  }
 `;
 
 /* =============================================================================
