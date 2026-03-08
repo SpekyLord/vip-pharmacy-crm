@@ -436,6 +436,34 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
           .def-form { padding: 12px 16px 16px; }
           .def-header { padding: 16px 16px 10px; }
           .def-row { grid-template-columns: 1fr; }
+
+          .def-field input,
+          .def-field select,
+          .def-field textarea {
+            min-height: 44px;
+            font-size: 16px;
+          }
+
+          .def-btn {
+            min-height: 44px;
+            width: 100%;
+          }
+
+          .def-close {
+            min-width: 44px;
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+
+          .def-actions {
+            flex-direction: column-reverse;
+          }
+
+          .def-checkbox-label {
+            min-height: 36px;
+          }
         }
       `}</style>
     </div>

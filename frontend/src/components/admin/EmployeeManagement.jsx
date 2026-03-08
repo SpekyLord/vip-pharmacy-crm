@@ -426,6 +426,18 @@ const employeeManagementStyles = `
     justify-content: center;
   }
 
+  /* Responsive - Tablet */
+  @media (max-width: 1024px) {
+    .employee-management {
+      padding: 16px;
+    }
+
+    .data-table th:nth-child(3),
+    .data-table td:nth-child(3) {
+      display: none;
+    }
+  }
+
   /* Responsive - Mobile */
   @media (max-width: 480px) {
     .employee-management {

@@ -291,6 +291,62 @@ const performanceStyles = `
       padding: 8px 6px;
     }
   }
+
+  @media (max-width: 480px) {
+    .main-content h1 {
+      font-size: 22px;
+    }
+
+    .perf-header {
+      padding: 0;
+    }
+
+    .perf-month-picker select {
+      min-height: 44px;
+      font-size: 16px;
+      width: 100%;
+    }
+
+    .stats-row {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .stat-card {
+      padding: 14px 10px;
+    }
+
+    .stat-card .stat-value {
+      font-size: 24px;
+    }
+
+    .dashboard-section {
+      padding: 16px;
+    }
+
+    .dashboard-section h2 {
+      font-size: 17px;
+    }
+
+    .perf-table th,
+    .perf-table td {
+      padding: 6px 4px;
+      font-size: 12px;
+    }
+
+    /* Hide Specialization (2nd) and Engagement (5th) columns on phone */
+    .perf-table th:nth-child(2),
+    .perf-table td:nth-child(2),
+    .perf-table th:nth-child(5),
+    .perf-table td:nth-child(5) {
+      display: none;
+    }
+
+    .engagement-level {
+      min-width: 60px;
+      font-size: 11px;
+    }
+  }
 `;
 
 /**

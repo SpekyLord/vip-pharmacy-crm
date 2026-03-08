@@ -214,6 +214,52 @@ const pageStyles = `
   .btn-primary:hover {
     background: #7c3aed;
   }
+
+  @media (max-width: 480px) {
+    .main-content {
+      padding: 16px;
+    }
+
+    .page-header {
+      flex-direction: column;
+    }
+
+    .page-header h1 {
+      font-size: 22px;
+    }
+
+    .back-link {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .form-body {
+      padding: 16px;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      min-height: 44px;
+      font-size: 16px;
+    }
+
+    .submit-btn {
+      width: 100%;
+      min-height: 44px;
+    }
+
+    .btn {
+      width: 100%;
+      min-height: 44px;
+      text-align: center;
+    }
+
+    .limit-stats {
+      flex-direction: column;
+      gap: 8px;
+    }
+  }
 `;
 
 const NewClientVisitPage = () => {

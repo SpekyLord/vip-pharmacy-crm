@@ -485,6 +485,150 @@ const pmStyles = `
     justify-content: center;
     gap: 10px;
   }
+
+  /* Mobile card list — hidden by default, shown on mobile */
+  .pm-mobile-cards {
+    display: none;
+  }
+
+  .pm-mobile-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .pm-mobile-card-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .pm-mobile-card-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .pm-mobile-card-name {
+    font-weight: 600;
+    font-size: 15px;
+    color: #1f2937;
+    margin: 0 0 2px 0;
+  }
+
+  .pm-mobile-card-sub {
+    font-size: 12px;
+    color: #6b7280;
+    margin: 0;
+  }
+
+  .pm-mobile-card-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .pm-mobile-card-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .pm-mobile-card-actions .pm-action-btn {
+    flex: 1;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  @media (max-width: 1024px) {
+    .pm-table th:nth-child(4),
+    .pm-table td:nth-child(4) {
+      display: none;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .pm-filters {
+      flex-direction: column;
+    }
+
+    .pm-search {
+      min-width: 0;
+      width: 100%;
+    }
+
+    .pm-search input {
+      min-height: 44px;
+      font-size: 16px;
+    }
+
+    .pm-filter-select {
+      width: 100%;
+      min-height: 44px;
+      font-size: 16px;
+    }
+
+    .pm-add-btn {
+      width: 100%;
+      min-height: 44px;
+      justify-content: center;
+    }
+
+    .pm-table-wrap {
+      display: none;
+    }
+
+    .pm-mobile-cards {
+      display: block;
+    }
+
+    .pm-modal {
+      width: 100%;
+      max-width: 100%;
+      height: 100vh;
+      max-height: 100vh;
+      border-radius: 0;
+    }
+
+    .pm-modal-body {
+      padding: 16px;
+    }
+
+    .pm-field input[type="text"],
+    .pm-field input[type="number"],
+    .pm-field select,
+    .pm-field textarea {
+      min-height: 44px;
+      font-size: 16px;
+    }
+
+    .pm-field-row {
+      grid-template-columns: 1fr;
+    }
+
+    .pm-modal-footer {
+      flex-direction: column-reverse;
+      padding: 16px;
+    }
+
+    .pm-modal-footer .btn {
+      width: 100%;
+      min-height: 48px;
+    }
+
+    .pm-confirm-actions {
+      flex-direction: column-reverse;
+    }
+
+    .pm-confirm-actions .btn {
+      width: 100%;
+      min-height: 48px;
+    }
+  }
 `;
 
 const ProductManagement = ({
@@ -757,6 +901,49 @@ const ProductManagement = ({
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Card List */}
+      <div className="pm-mobile-cards">
+        {products.length === 0 ? (
+          <div className="pm-empty">
+            {loading ? 'Loading...' : 'No products found. Click "Add Product" to create one.'}
+          </div>
+        ) : (
+          products.map((product) => (
+            <div key={product._id} className="pm-mobile-card">
+              <div className="pm-mobile-card-top">
+                {product.image ? (
+                  <img className="pm-thumb" src={product.image} alt={product.name} />
+                ) : (
+                  <div className="pm-thumb-placeholder">&#128138;</div>
+                )}
+                <div className="pm-mobile-card-info">
+                  <p className="pm-mobile-card-name">{product.name}</p>
+                  <p className="pm-mobile-card-sub">
+                    {[product.genericName, product.dosage].filter(Boolean).join(' - ') || product.category}
+                  </p>
+                </div>
+              </div>
+              <div className="pm-mobile-card-meta">
+                <span style={{ fontSize: 13, color: '#6b7280' }}>{product.category}</span>
+                <span className={`pm-status-badge ${product.isActive !== false ? 'pm-status-active' : 'pm-status-inactive'}`}>
+                  {product.isActive !== false ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+              <div className="pm-mobile-card-actions">
+                <button className="pm-action-btn" onClick={() => openEdit(product)} title="Edit">
+                  <Edit2 size={16} /> <span style={{ marginLeft: 4, fontSize: 13 }}>Edit</span>
+                </button>
+                {product.isActive !== false && (
+                  <button className="pm-action-btn delete" onClick={() => setConfirmDelete(product)} title="Deactivate">
+                    <Trash2 size={16} /> <span style={{ marginLeft: 4, fontSize: 13 }}>Deactivate</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {/* Pagination */}

@@ -550,6 +550,14 @@ const pageStyles = `
     .cpt-perf-table {
       font-size: 12px;
     }
+
+    /* Hide Specialization (2nd) and Engagement (5th) columns on phone */
+    .cpt-perf-table th:nth-child(2),
+    .cpt-perf-table td:nth-child(2),
+    .cpt-perf-table th:nth-child(5),
+    .cpt-perf-table td:nth-child(5) {
+      display: none;
+    }
   }
 `;
 

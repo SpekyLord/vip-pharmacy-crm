@@ -171,6 +171,21 @@ const pageStyles = `
     margin-top: 2px;
   }
 
+  @media (max-width: 768px) {
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .stat-card {
+      padding: 14px;
+    }
+
+    .stat-value {
+      font-size: 20px;
+    }
+  }
+
   @media (max-width: 480px) {
     .activity-monitor-main {
       padding: 16px;

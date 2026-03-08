@@ -919,6 +919,49 @@ const [editingId, setEditingId] = useState(null);
           }
         }
 
+        @media (max-width: 480px) {
+          .header-left h1 {
+            font-size: 22px;
+          }
+
+          .page-header {
+            flex-direction: column;
+            gap: 8px;
+          }
+
+          .header-right .btn {
+            width: 100%;
+            min-height: 44px;
+          }
+
+          .filter-group select,
+          .filter-group input {
+            min-height: 44px;
+            font-size: 16px;
+          }
+
+          .filter-actions .btn {
+            min-height: 44px;
+          }
+
+          .tab {
+            min-height: 44px;
+          }
+
+          .inbox-item {
+            padding: 12px;
+          }
+
+          .reply-textarea {
+            font-size: 16px;
+            min-height: 44px;
+          }
+
+          .reply-actions .btn {
+            min-height: 44px;
+          }
+        }
+
         /* collapsed preview */
         .preview {
           color: #6b7280;

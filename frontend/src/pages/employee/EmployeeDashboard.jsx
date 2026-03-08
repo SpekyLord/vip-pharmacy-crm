@@ -224,6 +224,34 @@ const dashboardStyles = `
     }
   }
 
+  .mobile-show-more {
+    text-align: center;
+    padding: 16px 0 8px;
+  }
+
+  .mobile-show-count {
+    font-size: 13px;
+    color: #6b7280;
+    margin: 0 0 8px 0;
+  }
+
+  .mobile-show-more-btn {
+    padding: 12px 32px;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+    cursor: pointer;
+    min-height: 44px;
+    transition: all 0.15s;
+  }
+
+  .mobile-show-more-btn:hover {
+    background: #e5e7eb;
+  }
+
   @media (max-width: 480px) {
     .main-content {
       padding: 16px !important;
@@ -281,6 +309,8 @@ const dashboardStyles = `
   }
 `;
 
+const MOBILE_PAGE_SIZE = 10;
+
 const EmployeeDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -292,6 +322,8 @@ const EmployeeDashboard = () => {
   const [dailyClientVisitCount, setDailyClientVisitCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [mobileShowCount, setMobileShowCount] = useState(MOBILE_PAGE_SIZE);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 480);
   const [stats, setStats] = useState({
     visitsToday: 0,
     visitsThisWeek: 0,
@@ -401,6 +433,13 @@ const EmployeeDashboard = () => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
+  // Track mobile viewport for "Show More" pagination
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 480);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Handle doctor selection - navigate to info page
   const handleSelectDoctor = (doctor) => {
     navigate(`/employee/doctor/${doctor._id}`);
@@ -477,12 +516,30 @@ const EmployeeDashboard = () => {
           <section className="dashboard-section" style={{ marginBottom: '24px' }}>
             <h2>My VIP Clients</h2>
             <DoctorList
-              doctors={doctors}
+              doctors={isMobile ? doctors.slice(0, mobileShowCount) : doctors}
               loading={loading}
               onSelectDoctor={handleSelectDoctor}
               onLogVisit={handleLogVisit}
               onEditDoctor={handleEditDoctor}
             />
+            {isMobile && doctors.length > mobileShowCount && (
+              <div className="mobile-show-more">
+                <p className="mobile-show-count">
+                  Showing {Math.min(mobileShowCount, doctors.length)} of {doctors.length} VIP Clients
+                </p>
+                <button
+                  className="mobile-show-more-btn"
+                  onClick={() => setMobileShowCount(prev => prev + MOBILE_PAGE_SIZE)}
+                >
+                  Show More
+                </button>
+              </div>
+            )}
+            {isMobile && doctors.length > 0 && mobileShowCount >= doctors.length && doctors.length > MOBILE_PAGE_SIZE && (
+              <p className="mobile-show-count" style={{ textAlign: 'center', marginTop: 12 }}>
+                Showing all {doctors.length} VIP Clients
+              </p>
+            )}
           </section>
 
           {todaySchedule.length > 0 && (

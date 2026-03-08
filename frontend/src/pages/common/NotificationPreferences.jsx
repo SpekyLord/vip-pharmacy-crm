@@ -68,8 +68,8 @@ const styles = `
   }
 
   .np-back-btn {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-radius: 10px;
     border: none;
     background: white;

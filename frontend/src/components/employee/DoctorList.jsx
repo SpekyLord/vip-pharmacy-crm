@@ -291,22 +291,42 @@ const doctorListStyles = `
       min-height: 44px;
       font-size: 16px;
     }
+    .doctor-list-grid {
+      gap: 12px;
+    }
     .doctor-card {
-      padding: 16px;
+      padding: 12px;
     }
     .doctor-card-header h3 {
-      font-size: 16px;
+      font-size: 15px;
+    }
+    /* Hide address on mobile to save space */
+    .doctor-hospital {
+      display: none;
+    }
+    /* Inline engagement badge next to specialization */
+    .engagement-badge {
+      margin-bottom: 8px;
+      font-size: 11px;
+      padding: 2px 6px;
+    }
+    .visit-status {
+      margin-bottom: 10px;
     }
     .doctor-card-actions {
-      flex-wrap: wrap;
+      margin-top: 10px;
+      gap: 8px;
     }
     .log-visit-btn {
       min-height: 44px;
+      flex: 1;
     }
+    /* Make Edit and Products icon-sized on mobile */
     .products-btn,
     .edit-btn {
-      min-height: 44px;
-      flex: 1;
+      min-height: 36px;
+      padding: 8px 12px;
+      font-size: 12px;
     }
   }
 `;

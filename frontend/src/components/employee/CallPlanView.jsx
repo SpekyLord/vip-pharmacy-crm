@@ -95,6 +95,10 @@ const viewStyles = `
   }
 
   /* Grid table */
+  .cpv-grid-mobile {
+    display: none;
+  }
+
   .cpv-grid-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -364,6 +368,133 @@ const viewStyles = `
     padding: 48px 20px;
     color: #6b7280;
   }
+
+  /* Week tabs for mobile */
+  .cpv-week-tabs {
+    display: none;
+    gap: 4px;
+    margin-bottom: 12px;
+    background: white;
+    padding: 4px;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+  }
+
+  .cpv-week-tab-btn {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .cpv-week-tab-btn:hover {
+    color: #374151;
+    background: #f3f4f6;
+  }
+
+  .cpv-week-tab-btn.active {
+    background: #1e293b;
+    color: white;
+  }
+
+  /* Tablet: show all 20 days but compact */
+  @media (min-width: 481px) and (max-width: 1024px) {
+    .cpv-grid {
+      min-width: 750px;
+      font-size: 11px;
+    }
+    .cpv-grid th, .cpv-grid td {
+      padding: 4px 2px;
+    }
+    .cpv-grid .col-name {
+      min-width: 100px;
+    }
+    .cpv-grid .col-spec {
+      display: none;
+    }
+    .cpv-grid .col-name {
+      left: 32px;
+    }
+    .cpv-md-table {
+      min-width: 480px;
+      font-size: 12px;
+    }
+    .cpv-md-table th, .cpv-md-table td {
+      padding: 6px 4px;
+    }
+  }
+
+  /* Mobile: show week tabs + mobile grid, hide desktop grid */
+  @media (max-width: 480px) {
+    .cpv-week-tabs {
+      display: flex;
+    }
+    .cpv-grid-desktop {
+      display: none;
+    }
+    .cpv-grid-mobile {
+      display: table;
+    }
+    .cpv-grid {
+      min-width: unset;
+      font-size: 11px;
+    }
+    .cpv-grid th, .cpv-grid td {
+      padding: 4px 2px;
+    }
+    .cpv-grid .col-no {
+      min-width: 24px;
+    }
+    .cpv-grid .col-name {
+      left: 24px;
+      min-width: 90px;
+      max-width: 90px;
+      font-size: 10px;
+    }
+    .cpv-grid .col-spec {
+      display: none;
+    }
+    .cpv-cell {
+      min-width: 24px;
+      min-height: 24px;
+    }
+    .cpv-grid .col-count {
+      min-width: 28px;
+    }
+    .cpv-header {
+      padding: 12px;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .cpv-stat {
+      font-size: 11px;
+    }
+    .cpv-legend {
+      font-size: 11px;
+    }
+    .cpv-md-table {
+      min-width: 400px;
+      font-size: 11px;
+    }
+    .cpv-md-table th, .cpv-md-table td {
+      padding: 6px 4px;
+    }
+    .cpv-md-section {
+      padding: 12px;
+    }
+    .cpv-section-title {
+      font-size: 14px;
+    }
+    .cpv-extra-section {
+      padding: 12px;
+    }
+  }
 `;
 
 const CELL_SYMBOLS = {
@@ -375,6 +506,11 @@ const CELL_SYMBOLS = {
 
 const CallPlanView = ({ cptData, loading = false }) => {
   const [expandedExtraDays, setExpandedExtraDays] = useState({});
+  const [activeWeek, setActiveWeek] = useState(() => {
+    // Default to current cycle week or 1
+    if (cptData?.currentWeek) return cptData.currentWeek;
+    return 1;
+  });
 
   const {
     doctors = [],
@@ -386,6 +522,14 @@ const CallPlanView = ({ cptData, loading = false }) => {
     currentWeek,
     currentDay,
   } = cptData || {};
+
+  // Sync activeWeek with cptData.currentWeek when data loads
+  const effectiveActiveWeek = activeWeek;
+
+  // Mobile day columns for the active week (5 columns)
+  const mobileStartIdx = (effectiveActiveWeek - 1) * 5;
+  const mobileDayLabels = DAY_LABELS.slice(mobileStartIdx, mobileStartIdx + 5);
+  const mobileDayIndices = [0, 1, 2, 3, 4].map(i => mobileStartIdx + i);
 
   // Compute frequency counts
   const freqCounts = useMemo(() => {
@@ -470,9 +614,23 @@ const CallPlanView = ({ cptData, loading = false }) => {
         </div>
       </div>
 
+      {/* Week Tabs (mobile only, shown via CSS) */}
+      <div className="cpv-week-tabs">
+        {[1, 2, 3, 4].map((w) => (
+          <button
+            key={w}
+            className={`cpv-week-tab-btn ${effectiveActiveWeek === w ? 'active' : ''}`}
+            onClick={() => setActiveWeek(w)}
+          >
+            W{w}
+          </button>
+        ))}
+      </div>
+
       {/* CPT Grid */}
       <div className="cpv-grid-wrap">
-        <table className="cpv-grid">
+        {/* Desktop grid: all 20 days (hidden cols via CSS on mobile) */}
+        <table className="cpv-grid cpv-grid-desktop">
           <thead>
             {/* Week header row */}
             <tr className="week-header">
@@ -488,7 +646,7 @@ const CallPlanView = ({ cptData, loading = false }) => {
             {/* Day header row */}
             <tr className="day-header">
               {DAY_LABELS.map((label, idx) => (
-                <th key={idx} className={isCurrentDay(idx) ? 'status-current-day' : ''}>
+                <th key={idx} className={`${isCurrentDay(idx) ? 'status-current-day' : ''} cpv-day-col cpv-day-w${Math.floor(idx / 5) + 1}`}>
                   {label}
                 </th>
               ))}
@@ -509,6 +667,7 @@ const CallPlanView = ({ cptData, loading = false }) => {
                     key={dayIdx}
                     className={[
                       'cpv-cell',
+                      `cpv-day-col cpv-day-w${Math.floor(dayIdx / 5) + 1}`,
                       cell.status ? `status-${cell.status}` : '',
                       isCurrentDay(dayIdx) ? 'status-current-day' : '',
                     ].filter(Boolean).join(' ')}
@@ -525,9 +684,63 @@ const CallPlanView = ({ cptData, loading = false }) => {
             <tr className="daily-count-row">
               <td className="col-no" colSpan={3} style={{ textAlign: 'right' }}>Daily VIP</td>
               {dailyVIPFromGrid.map((count, idx) => (
-                <td key={idx}>{count || ''}</td>
+                <td key={idx} className={`cpv-day-col cpv-day-w${Math.floor(idx / 5) + 1}`}>{count || ''}</td>
               ))}
               <td>{summary.total || 0}</td>
+              <td>{summary.completed || 0}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* Mobile grid: only 5 days for activeWeek (shown via CSS) */}
+        <table className="cpv-grid cpv-grid-mobile">
+          <thead>
+            <tr className="week-header">
+              <th className="col-no" rowSpan={2}>No.</th>
+              <th className="col-name" rowSpan={2}>Name</th>
+              {mobileDayLabels.map((label, i) => (
+                <th key={i}>{`D${(i % 5) + 1}`}</th>
+              ))}
+              <th rowSpan={2}>Done</th>
+            </tr>
+            <tr className="day-header">
+              {mobileDayLabels.map((label, i) => (
+                <th key={i} className={isCurrentDay(mobileDayIndices[i]) ? 'status-current-day' : ''}>
+                  {['M', 'T', 'W', 'T', 'F'][i]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {doctors.map((doc, docIdx) => (
+              <tr key={doc._id}>
+                <td className="col-no">{docIdx + 1}</td>
+                <td className="col-name" title={`${doc.lastName}, ${doc.firstName}`}>
+                  {doc.lastName}
+                </td>
+                {mobileDayIndices.map((dayIdx, i) => {
+                  const cell = doc.grid[dayIdx] || {};
+                  return (
+                    <td
+                      key={i}
+                      className={[
+                        'cpv-cell',
+                        cell.status ? `status-${cell.status}` : '',
+                        isCurrentDay(dayIdx) ? 'status-current-day' : '',
+                      ].filter(Boolean).join(' ')}
+                    >
+                      {cell.status ? (CELL_SYMBOLS[cell.status] || '') : ''}
+                    </td>
+                  );
+                })}
+                <td className="col-count">{doc.totalCompleted}</td>
+              </tr>
+            ))}
+            <tr className="daily-count-row">
+              <td className="col-no" colSpan={2} style={{ textAlign: 'right' }}>VIP</td>
+              {mobileDayIndices.map((idx, i) => (
+                <td key={i}>{dailyVIPFromGrid[idx] || ''}</td>
+              ))}
               <td>{summary.completed || 0}</td>
             </tr>
           </tbody>

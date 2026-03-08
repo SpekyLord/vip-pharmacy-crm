@@ -82,6 +82,28 @@ const tableStyles = `
     align-items: center;
     gap: 8px;
   }
+
+  .dcr-hdr-short {
+    display: none;
+  }
+
+  @media (max-width: 480px) {
+    .dcr-hdr-full { display: none; }
+    .dcr-hdr-short { display: inline; }
+    .dcr-table {
+      min-width: 480px;
+      font-size: 11px;
+    }
+    .dcr-table th, .dcr-table td {
+      padding: 6px 4px;
+    }
+    .dcr-table thead th {
+      font-size: 10px;
+    }
+    .dcr-section-title {
+      font-size: 14px;
+    }
+  }
 `;
 
 const getRateClass = (rate) => {
@@ -104,12 +126,12 @@ const DCRSummaryTable = ({ dcrSummary = [], dcrTotal = {} }) => {
               <th>Day</th>
               <th>Target</th>
               <th>Total</th>
-              <th>Call Rate</th>
-              <th>TXT</th>
-              <th>MES/GIF</th>
-              <th>PIC</th>
-              <th>SIGNED</th>
-              <th>VOICE</th>
+              <th>Rate</th>
+              <th><span className="dcr-hdr-full">TXT</span><span className="dcr-hdr-short">TXT</span></th>
+              <th><span className="dcr-hdr-full">MES/GIF</span><span className="dcr-hdr-short">M/G</span></th>
+              <th><span className="dcr-hdr-full">PIC</span><span className="dcr-hdr-short">PIC</span></th>
+              <th><span className="dcr-hdr-full">SIGNED</span><span className="dcr-hdr-short">SGN</span></th>
+              <th><span className="dcr-hdr-full">VOICE</span><span className="dcr-hdr-short">VOC</span></th>
             </tr>
           </thead>
           <tbody>

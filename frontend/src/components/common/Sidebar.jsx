@@ -296,7 +296,6 @@ const sidebarStyles = `
     bottom: 0;
     left: 0;
     right: 0;
-    height: 64px;
     background: #0f172a;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     z-index: 200;
@@ -308,8 +307,6 @@ const sidebarStyles = `
     align-items: center;
     justify-content: space-around;
     height: 64px;
-    max-width: 500px;
-    margin: 0 auto;
   }
 
   .mobile-tab-item {
@@ -509,7 +506,14 @@ const sidebarStyles = `
     /* Add bottom padding to main content for tab bar */
     .admin-main,
     .main-content,
-    .page-main {
+    .page-main,
+    .cpt-main,
+    .np-main,
+    .statistics-main,
+    .reports-main,
+    .ie-content,
+    .activity-monitor-main,
+    .gps-page-main {
       padding-bottom: 80px !important;
     }
   }

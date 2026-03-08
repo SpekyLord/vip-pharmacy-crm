@@ -30,6 +30,18 @@ const ForgotPasswordPage = () => {
 
   return (
     <div className="login-page">
+      <style>{`
+        @media (max-width: 480px) {
+          .login-form .form-group input {
+            min-height: 44px;
+            font-size: 16px;
+          }
+          .login-form .btn {
+            min-height: 44px;
+            width: 100%;
+          }
+        }
+      `}</style>
       <div className="login-container">
         <div className="login-header">
           <h1>VIP CRM</h1>

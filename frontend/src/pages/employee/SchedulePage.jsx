@@ -254,6 +254,65 @@ const pageStyles = `
       font-size: 22px;
     }
   }
+
+  @media (max-width: 480px) {
+    .schedule-page .main-content {
+      padding: 16px;
+    }
+
+    .schedule-page .main-content h1 {
+      font-size: 22px;
+      margin-bottom: 16px;
+    }
+
+    .cycle-nav {
+      gap: 8px;
+    }
+
+    .cycle-nav-btn {
+      min-height: 44px;
+      padding: 8px 12px;
+    }
+
+    .cycle-nav-label {
+      min-width: 140px;
+      font-size: 14px;
+    }
+
+    .schedule-summary {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .summary-stat {
+      padding: 12px 8px;
+    }
+
+    .summary-stat .stat-num {
+      font-size: 20px;
+    }
+
+    .today-schedule {
+      padding: 14px;
+    }
+
+    .today-cards {
+      grid-template-columns: 1fr;
+    }
+
+    .today-card .log-btn {
+      min-height: 44px;
+      padding: 10px 14px;
+    }
+
+    .calendar-section {
+      padding: 14px;
+    }
+
+    .schedule-legend {
+      gap: 10px;
+    }
+  }
 `;
 
 const SchedulePage = () => {
