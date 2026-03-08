@@ -440,37 +440,62 @@ const viewStyles = `
     }
     .cpv-grid-mobile {
       display: table;
-    }
-    .cpv-grid {
+      width: 100%;
+      table-layout: fixed;
       min-width: unset;
       font-size: 11px;
     }
-    .cpv-grid th, .cpv-grid td {
+    .cpv-grid-mobile th,
+    .cpv-grid-mobile td {
       padding: 4px 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .cpv-grid .col-no {
-      min-width: 24px;
+    /* Remove sticky on mobile grid */
+    .cpv-grid-mobile .col-no,
+    .cpv-grid-mobile .col-name {
+      position: static;
+      left: auto;
     }
-    .cpv-grid .col-name {
-      left: 24px;
-      min-width: 90px;
-      max-width: 90px;
-      font-size: 10px;
+    .cpv-grid-mobile .col-no {
+      width: 22px;
+      min-width: unset;
+    }
+    .cpv-grid-mobile .col-name {
+      min-width: unset;
+      max-width: unset;
+      font-size: 11px;
+      text-align: left;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .cpv-grid .col-spec {
       display: none;
     }
-    .cpv-cell {
-      min-width: 24px;
+    .cpv-grid-mobile .cpv-cell {
+      min-width: unset;
       min-height: 24px;
+      width: 28px;
     }
-    .cpv-grid .col-count {
-      min-width: 28px;
+    .cpv-grid-mobile .col-count {
+      min-width: unset;
+      width: 36px;
+    }
+    .cpv-grid-wrap {
+      overflow-x: hidden;
+    }
+    .cpv-md-table-wrap {
+      overflow-x: hidden;
     }
     .cpv-header {
       padding: 12px;
       flex-direction: column;
       align-items: flex-start;
+    }
+    .cpv-container {
+      border-radius: 8px;
+      overflow: hidden;
     }
     .cpv-stat {
       font-size: 11px;
@@ -479,7 +504,9 @@ const viewStyles = `
       font-size: 11px;
     }
     .cpv-md-table {
-      min-width: 400px;
+      min-width: unset;
+      width: 100%;
+      table-layout: fixed;
       font-size: 11px;
     }
     .cpv-md-table th, .cpv-md-table td {
@@ -694,6 +721,16 @@ const CallPlanView = ({ cptData, loading = false }) => {
 
         {/* Mobile grid: only 5 days for activeWeek (shown via CSS) */}
         <table className="cpv-grid cpv-grid-mobile">
+          <colgroup>
+            <col style={{ width: '20px' }} />
+            <col style={{ width: '55px' }} />
+            <col style={{ width: '26px' }} />
+            <col style={{ width: '26px' }} />
+            <col style={{ width: '26px' }} />
+            <col style={{ width: '26px' }} />
+            <col style={{ width: '26px' }} />
+            <col style={{ width: '34px' }} />
+          </colgroup>
           <thead>
             <tr className="week-header">
               <th className="col-no" rowSpan={2}>No.</th>

@@ -86,6 +86,7 @@ html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  height: 100%;
 }
 
 body {
@@ -94,6 +95,7 @@ body {
   line-height: 1.5;
   color: var(--gray-800);
   background-color: var(--gray-50);
+  min-height: 100%;
 }
 
 a {

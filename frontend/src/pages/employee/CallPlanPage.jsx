@@ -518,22 +518,59 @@ const pageStyles = `
   }
 
   @media (max-width: 480px) {
+    .cpt-layout {
+      overflow-x: hidden;
+      max-width: 100vw;
+    }
     .cpt-main {
       padding: 16px;
       padding-bottom: 80px;
+      overflow-x: hidden;
+      max-width: 100vw;
+    }
+    .cpt-page-header {
+      gap: 8px;
+      margin-bottom: 16px;
     }
     .cpt-page-header h1 {
-      font-size: 22px;
+      font-size: 20px;
+    }
+    .cpt-page-header p {
+      font-size: 12px;
+    }
+    .cpt-summary-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
     }
     .cpt-summary-card {
-      min-width: 100px;
+      min-width: unset;
+      padding: 8px 10px;
+      gap: 6px;
     }
     .cpt-summary-value {
       font-size: 18px;
     }
+    .cpt-summary-label {
+      font-size: 10px;
+    }
+    .cpt-summary-dot {
+      width: 8px;
+      height: 8px;
+    }
     .cpt-tab-btn {
       padding: 8px 12px;
       font-size: 13px;
+    }
+    .cpt-cycle-nav {
+      padding: 4px 8px;
+    }
+    .cpt-cycle-label {
+      font-size: 12px;
+      min-width: 70px;
+    }
+    .cpt-cycle-dates {
+      font-size: 10px;
     }
     .cpt-perf-stats-row {
       grid-template-columns: repeat(2, 1fr);

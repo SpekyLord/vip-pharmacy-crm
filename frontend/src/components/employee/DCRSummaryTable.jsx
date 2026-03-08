@@ -90,14 +90,24 @@ const tableStyles = `
   @media (max-width: 480px) {
     .dcr-hdr-full { display: none; }
     .dcr-hdr-short { display: inline; }
+    .dcr-table-wrap {
+      overflow-x: hidden;
+    }
     .dcr-table {
-      min-width: 480px;
+      min-width: unset;
+      width: 100%;
+      table-layout: fixed;
       font-size: 11px;
     }
     .dcr-table th, .dcr-table td {
-      padding: 6px 4px;
+      padding: 5px 2px;
+      white-space: nowrap;
     }
     .dcr-table thead th {
+      font-size: 9px;
+      letter-spacing: 0;
+    }
+    .dcr-table tbody td:first-child {
       font-size: 10px;
     }
     .dcr-section-title {

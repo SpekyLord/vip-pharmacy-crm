@@ -1156,7 +1156,36 @@ const MyVisits = () => {
           }
 
           .visits-list {
-            overflow-x: auto;
+            overflow-x: hidden;
+          }
+
+          /* Hide Type, Week, and Photos columns on mobile */
+          .data-table th:nth-child(2),
+          .data-table td:nth-child(2),
+          .data-table th:nth-child(3),
+          .data-table td:nth-child(3),
+          .data-table th:nth-child(6),
+          .data-table td:nth-child(6) {
+            display: none;
+          }
+
+          .data-table {
+            table-layout: fixed;
+            width: 100%;
+          }
+
+          .data-table th,
+          .data-table td {
+            padding: 8px 4px;
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .data-table .btn-link {
+            font-size: 12px;
+            padding: 4px 0;
           }
 
           .modal-overlay {

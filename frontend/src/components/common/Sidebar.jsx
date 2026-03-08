@@ -174,6 +174,7 @@ const sidebarStyles = `
     margin-bottom: 4px;
     border-radius: 10px;
     color: rgba(255, 255, 255, 0.6);
+    background: transparent;
     text-decoration: none;
     font-size: 14px;
     font-weight: 500;
@@ -298,7 +299,7 @@ const sidebarStyles = `
     right: 0;
     background: #0f172a;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
-    z-index: 200;
+    z-index: 1000;
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
@@ -503,6 +504,12 @@ const sidebarStyles = `
       pointer-events: auto;
     }
 
+    /* Paint the html background dark on mobile so any gap between
+       the fixed tab bar and viewport bottom shows dark, not white */
+    html {
+      background-color: #0f172a;
+    }
+
     /* Add bottom padding to main content for tab bar */
     .admin-main,
     .main-content,
@@ -514,7 +521,7 @@ const sidebarStyles = `
     .ie-content,
     .activity-monitor-main,
     .gps-page-main {
-      padding-bottom: 80px !important;
+      padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
     }
   }
 `;
