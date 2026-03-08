@@ -214,14 +214,55 @@ const dashboardStyles = `
     background: #1d4ed8;
   }
 
-  @media (max-width: 768px) {
-    .stats-row {
-      grid-template-columns: repeat(2, 1fr);
-    }
+  /* Mobile section tabs */
+  .dash-section-tabs {
+    display: none;
+  }
 
-    .stat-card .stat-value {
-      font-size: 28px;
-    }
+  .dash-tab-btn {
+    flex: 1;
+    padding: 10px 8px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+  }
+
+  .dash-tab-btn:hover {
+    color: #374151;
+    background: #f3f4f6;
+  }
+
+  .dash-tab-btn.active {
+    background: #2563eb;
+    color: white;
+  }
+
+  .dash-tab-badge {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: #ef4444;
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dash-tab-btn.active .dash-tab-badge {
+    background: white;
+    color: #2563eb;
   }
 
   .mobile-show-more {
@@ -252,6 +293,23 @@ const dashboardStyles = `
     background: #e5e7eb;
   }
 
+  .today-empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: #9ca3af;
+    font-size: 14px;
+  }
+
+  @media (max-width: 768px) {
+    .stats-row {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .stat-card .stat-value {
+      font-size: 28px;
+    }
+  }
+
   @media (max-width: 480px) {
     .main-content {
       padding: 16px !important;
@@ -279,6 +337,21 @@ const dashboardStyles = `
 
     .stat-card .stat-label {
       font-size: 12px;
+    }
+
+    .dash-section-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      background: white;
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+    }
+
+    /* On mobile, hide desktop-only sections (controlled by JS) */
+    .desktop-only-section {
+      display: none;
     }
 
     .dashboard-section {
@@ -324,6 +397,7 @@ const EmployeeDashboard = () => {
   const [error, setError] = useState(null);
   const [mobileShowCount, setMobileShowCount] = useState(MOBILE_PAGE_SIZE);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 480);
+  const [dashboardTab, setDashboardTab] = useState('vip');
   const [stats, setStats] = useState({
     visitsToday: 0,
     visitsThisWeek: 0,
@@ -513,75 +587,119 @@ const EmployeeDashboard = () => {
             </div>
           )}
 
-          <section className="dashboard-section" style={{ marginBottom: '24px' }}>
-            <h2>My VIP Clients</h2>
-            <DoctorList
-              doctors={isMobile ? doctors.slice(0, mobileShowCount) : doctors}
-              loading={loading}
-              onSelectDoctor={handleSelectDoctor}
-              onLogVisit={handleLogVisit}
-              onEditDoctor={handleEditDoctor}
-            />
-            {isMobile && doctors.length > mobileShowCount && (
-              <div className="mobile-show-more">
-                <p className="mobile-show-count">
-                  Showing {Math.min(mobileShowCount, doctors.length)} of {doctors.length} VIP Clients
-                </p>
-                <button
-                  className="mobile-show-more-btn"
-                  onClick={() => setMobileShowCount(prev => prev + MOBILE_PAGE_SIZE)}
-                >
-                  Show More
-                </button>
-              </div>
-            )}
-            {isMobile && doctors.length > 0 && mobileShowCount >= doctors.length && doctors.length > MOBILE_PAGE_SIZE && (
-              <p className="mobile-show-count" style={{ textAlign: 'center', marginTop: 12 }}>
-                Showing all {doctors.length} VIP Clients
-              </p>
-            )}
-          </section>
+          {/* Mobile section tabs - only visible on phones */}
+          {isMobile && (
+            <div className="dash-section-tabs">
+              <button
+                className={`dash-tab-btn${dashboardTab === 'vip' ? ' active' : ''}`}
+                onClick={() => setDashboardTab('vip')}
+              >
+                VIP Clients
+                {doctors.length > 0 && (
+                  <span className="dash-tab-badge">{doctors.length}</span>
+                )}
+              </button>
+              <button
+                className={`dash-tab-btn${dashboardTab === 'today' ? ' active' : ''}`}
+                onClick={() => setDashboardTab('today')}
+              >
+                Today
+                {todaySchedule.length > 0 && (
+                  <span className="dash-tab-badge">{todaySchedule.length}</span>
+                )}
+              </button>
+              <button
+                className={`dash-tab-btn${dashboardTab === 'regular' ? ' active' : ''}`}
+                onClick={() => setDashboardTab('regular')}
+              >
+                Regular
+                {clients.length > 0 && (
+                  <span className="dash-tab-badge">{clients.length}</span>
+                )}
+              </button>
+            </div>
+          )}
 
-          {todaySchedule.length > 0 && (
+          {/* VIP Clients section */}
+          {(!isMobile || dashboardTab === 'vip') && (
+            <section className="dashboard-section" style={{ marginBottom: '24px' }}>
+              <h2>My VIP Clients</h2>
+              <DoctorList
+                doctors={isMobile ? doctors.slice(0, mobileShowCount) : doctors}
+                loading={loading}
+                onSelectDoctor={handleSelectDoctor}
+                onLogVisit={handleLogVisit}
+                onEditDoctor={handleEditDoctor}
+              />
+              {isMobile && doctors.length > mobileShowCount && (
+                <div className="mobile-show-more">
+                  <p className="mobile-show-count">
+                    Showing {Math.min(mobileShowCount, doctors.length)} of {doctors.length} VIP Clients
+                  </p>
+                  <button
+                    className="mobile-show-more-btn"
+                    onClick={() => setMobileShowCount(prev => prev + MOBILE_PAGE_SIZE)}
+                  >
+                    Show More
+                  </button>
+                </div>
+              )}
+              {isMobile && doctors.length > 0 && mobileShowCount >= doctors.length && doctors.length > MOBILE_PAGE_SIZE && (
+                <p className="mobile-show-count" style={{ textAlign: 'center', marginTop: 12 }}>
+                  Showing all {doctors.length} VIP Clients
+                </p>
+              )}
+            </section>
+          )}
+
+          {/* Today's Schedule section */}
+          {(!isMobile || dashboardTab === 'today') && (
             <div className="today-sched-section">
               <h2>
                 Today&apos;s Schedule
                 <span className="sched-badge">{todaySchedule.length}</span>
               </h2>
-              <div className="today-sched-cards">
-                {todaySchedule.map((entry) => (
-                  <div key={entry._id} className="today-sched-card">
-                    <div className="sched-info">
-                      <h4>{entry.doctor?.firstName} {entry.doctor?.lastName}</h4>
-                      <p>{entry.doctor?.specialization || 'N/A'} — {entry.scheduledLabel}</p>
-                      {entry.status === 'carried' && (
-                        <span className="carried-tag">Carried from W{entry.scheduledWeek}</span>
-                      )}
+              {todaySchedule.length > 0 ? (
+                <div className="today-sched-cards">
+                  {todaySchedule.map((entry) => (
+                    <div key={entry._id} className="today-sched-card">
+                      <div className="sched-info">
+                        <h4>{entry.doctor?.firstName} {entry.doctor?.lastName}</h4>
+                        <p>{entry.doctor?.specialization || 'N/A'} — {entry.scheduledLabel}</p>
+                        {entry.status === 'carried' && (
+                          <span className="carried-tag">Carried from W{entry.scheduledWeek}</span>
+                        )}
+                      </div>
+                      <button
+                        className="sched-log-btn"
+                        onClick={() => navigate(`/employee/visit/new?doctorId=${entry.doctor?._id}`)}
+                      >
+                        Log Visit
+                      </button>
                     </div>
-                    <button
-                      className="sched-log-btn"
-                      onClick={() => navigate(`/employee/visit/new?doctorId=${entry.doctor?._id}`)}
-                    >
-                      Log Visit
-                    </button>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="today-empty">No scheduled visits for today</p>
+              )}
             </div>
           )}
 
-          <section className="dashboard-section" style={{ marginTop: '24px' }}>
-            <h2>Regular Clients (Extra Calls)</h2>
-            <ClientList
-              clients={clients}
-              loading={loading}
-              onLogVisit={(client) => navigate(`/employee/regular-visit/new?clientId=${client._id}`)}
-              onAddClient={() => setShowAddClient(true)}
-              onEditClient={(client) => setEditClient(client)}
-              dailyVisitCount={dailyClientVisitCount}
-              dailyLimit={30}
-            />
-          </section>
+          {/* Regular Clients section */}
+          {(!isMobile || dashboardTab === 'regular') && (
+            <section className="dashboard-section" style={{ marginTop: '24px' }}>
+              <h2>Regular Clients (Extra Calls)</h2>
+              <ClientList
+                clients={clients}
+                loading={loading}
+                onLogVisit={(client) => navigate(`/employee/regular-visit/new?clientId=${client._id}`)}
+                onAddClient={() => setShowAddClient(true)}
+                onEditClient={(client) => setEditClient(client)}
+                dailyVisitCount={dailyClientVisitCount}
+                dailyLimit={30}
+              />
+            </section>
+          )}
 
           {(showAddClient || editClient) && (
             <ClientAddModal
