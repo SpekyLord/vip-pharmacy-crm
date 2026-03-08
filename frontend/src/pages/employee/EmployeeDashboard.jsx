@@ -112,6 +112,7 @@ const dashboardStyles = `
     border-radius: 12px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     border: 1px solid #e5e7eb;
+    overflow-x: hidden;
   }
 
   .dashboard-section h2 {
@@ -214,9 +215,15 @@ const dashboardStyles = `
     background: #1d4ed8;
   }
 
-  /* Mobile section tabs */
+  /* Section tabs - visible on all screens */
   .dash-section-tabs {
-    display: none;
+    display: flex;
+    gap: 6px;
+    margin-bottom: 24px;
+    background: white;
+    padding: 6px;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
   }
 
   .dash-tab-btn {
@@ -340,18 +347,10 @@ const dashboardStyles = `
     }
 
     .dash-section-tabs {
-      display: flex;
       gap: 4px;
       margin-bottom: 16px;
-      background: white;
       padding: 4px;
       border-radius: 10px;
-      border: 1px solid #e5e7eb;
-    }
-
-    /* On mobile, hide desktop-only sections (controlled by JS) */
-    .desktop-only-section {
-      display: none;
     }
 
     .dashboard-section {
@@ -587,41 +586,39 @@ const EmployeeDashboard = () => {
             </div>
           )}
 
-          {/* Mobile section tabs - only visible on phones */}
-          {isMobile && (
-            <div className="dash-section-tabs">
-              <button
-                className={`dash-tab-btn${dashboardTab === 'vip' ? ' active' : ''}`}
-                onClick={() => setDashboardTab('vip')}
-              >
-                VIP Clients
-                {doctors.length > 0 && (
-                  <span className="dash-tab-badge">{doctors.length}</span>
-                )}
-              </button>
-              <button
-                className={`dash-tab-btn${dashboardTab === 'today' ? ' active' : ''}`}
-                onClick={() => setDashboardTab('today')}
-              >
-                Today
-                {todaySchedule.length > 0 && (
-                  <span className="dash-tab-badge">{todaySchedule.length}</span>
-                )}
-              </button>
-              <button
-                className={`dash-tab-btn${dashboardTab === 'regular' ? ' active' : ''}`}
-                onClick={() => setDashboardTab('regular')}
-              >
-                Regular
-                {clients.length > 0 && (
-                  <span className="dash-tab-badge">{clients.length}</span>
-                )}
-              </button>
-            </div>
-          )}
+          {/* Section tabs - visible on all screens */}
+          <div className="dash-section-tabs">
+            <button
+              className={`dash-tab-btn${dashboardTab === 'vip' ? ' active' : ''}`}
+              onClick={() => setDashboardTab('vip')}
+            >
+              VIP Clients
+              {doctors.length > 0 && (
+                <span className="dash-tab-badge">{doctors.length}</span>
+              )}
+            </button>
+            <button
+              className={`dash-tab-btn${dashboardTab === 'today' ? ' active' : ''}`}
+              onClick={() => setDashboardTab('today')}
+            >
+              Today
+              {todaySchedule.length > 0 && (
+                <span className="dash-tab-badge">{todaySchedule.length}</span>
+              )}
+            </button>
+            <button
+              className={`dash-tab-btn${dashboardTab === 'regular' ? ' active' : ''}`}
+              onClick={() => setDashboardTab('regular')}
+            >
+              Regular
+              {clients.length > 0 && (
+                <span className="dash-tab-badge">{clients.length}</span>
+              )}
+            </button>
+          </div>
 
           {/* VIP Clients section */}
-          {(!isMobile || dashboardTab === 'vip') && (
+          {dashboardTab === 'vip' && (
             <section className="dashboard-section" style={{ marginBottom: '24px' }}>
               <h2>My VIP Clients</h2>
               <DoctorList
@@ -653,7 +650,7 @@ const EmployeeDashboard = () => {
           )}
 
           {/* Today's Schedule section */}
-          {(!isMobile || dashboardTab === 'today') && (
+          {dashboardTab === 'today' && (
             <div className="today-sched-section">
               <h2>
                 Today&apos;s Schedule
@@ -686,7 +683,7 @@ const EmployeeDashboard = () => {
           )}
 
           {/* Regular Clients section */}
-          {(!isMobile || dashboardTab === 'regular') && (
+          {dashboardTab === 'regular' && (
             <section className="dashboard-section" style={{ marginTop: '24px' }}>
               <h2>Regular Clients (Extra Calls)</h2>
               <ClientList

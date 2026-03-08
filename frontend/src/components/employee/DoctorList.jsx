@@ -15,9 +15,73 @@ import visitService from '../../services/visitService';
 import TargetProductsModal from './TargetProductsModal';
 import DoctorEditForm from './DoctorEditForm';
 
+// Custom dropdown component for mobile
+const CustomDropdown = ({ label, value, options, onChange, placeholder }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleSelect = (optionValue) => {
+    onChange(optionValue);
+    setIsOpen(false);
+  };
+
+  const selectedOption = options.find(opt => opt.value === value);
+  const displayText = selectedOption?.label || placeholder;
+
+  return (
+    <>
+      <button
+        type="button"
+        className="custom-dropdown-trigger"
+        onClick={() => setIsOpen(true)}
+      >
+        <span className="custom-dropdown-label">{label}</span>
+        <span className="custom-dropdown-value">{displayText}</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M4 6l4 4 4-4z"/>
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="custom-dropdown-overlay" onClick={() => setIsOpen(false)}>
+          <div className="custom-dropdown-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="custom-dropdown-header">
+              <h3>{label}</h3>
+              <button
+                type="button"
+                className="custom-dropdown-close"
+                onClick={() => setIsOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="custom-dropdown-options">
+              {options.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`custom-dropdown-option${value === option.value ? ' selected' : ''}`}
+                  onClick={() => handleSelect(option.value)}
+                >
+                  {option.label}
+                  {value === option.value && (
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
+                    </svg>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
 const doctorListStyles = `
   .doctor-list {
     padding: 0;
+    overflow-x: hidden;
   }
 
   .doctor-list-filters {
@@ -269,6 +333,207 @@ const doctorListStyles = `
     font-size: 15px;
   }
 
+  .filter-toggle-row {
+    display: none;
+  }
+
+  .filter-toggle-btn {
+    padding: 10px 16px;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.15s;
+    margin-top: 12px;
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .filter-toggle-btn:hover {
+    background: #e5e7eb;
+  }
+
+  .filter-toggle-btn.active {
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1d4ed8;
+  }
+
+  .filter-dropdown-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .frequency-select option {
+    padding: 12px;
+  }
+
+  .desktop-filter-selects {
+    display: contents;
+  }
+
+  /* Custom Dropdown Styles */
+  .custom-dropdown-trigger {
+    width: 100%;
+    padding: 10px 16px;
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    position: relative;
+    min-height: 56px;
+    transition: border-color 0.15s;
+  }
+
+  .custom-dropdown-trigger:hover {
+    border-color: #9ca3af;
+  }
+
+  .custom-dropdown-trigger > svg {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6b7280;
+    pointer-events: none;
+  }
+
+  .custom-dropdown-label {
+    font-size: 11px;
+    color: #6b7280;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+
+  .custom-dropdown-value {
+    color: #1f2937;
+    font-weight: 500;
+    font-size: 15px;
+    padding-right: 24px;
+  }
+
+  .custom-dropdown-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    display: flex;
+    align-items: flex-end;
+    animation: fadeIn 0.15s;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .custom-dropdown-modal {
+    width: 100%;
+    max-height: 70vh;
+    background: white;
+    border-radius: 16px 16px 0 0;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.2s ease-out;
+  }
+
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  .custom-dropdown-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .custom-dropdown-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .custom-dropdown-close {
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: #f3f4f6;
+    border-radius: 8px;
+    font-size: 28px;
+    color: #6b7280;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    transition: background 0.15s;
+  }
+
+  .custom-dropdown-close:hover {
+    background: #e5e7eb;
+  }
+
+  .custom-dropdown-options {
+    overflow-y: auto;
+    flex: 1;
+    padding: 8px;
+  }
+
+  .custom-dropdown-option {
+    width: 100%;
+    padding: 16px 20px;
+    background: white;
+    border: none;
+    border-radius: 8px;
+    text-align: left;
+    font-size: 15px;
+    color: #1f2937;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background 0.15s;
+    min-height: 52px;
+  }
+
+  .custom-dropdown-option:hover {
+    background: #f3f4f6;
+  }
+
+  .custom-dropdown-option.selected {
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-weight: 600;
+  }
+
+  .custom-dropdown-option svg {
+    flex-shrink: 0;
+  }
+
   @media (max-width: 640px) {
     .doctor-list-filters {
       flex-direction: column;
@@ -285,6 +550,30 @@ const doctorListStyles = `
   }
 
   @media (max-width: 480px) {
+    .doctor-list-filters {
+      flex-direction: column;
+      gap: 0;
+      margin-bottom: 12px;
+      overflow: visible;
+      position: relative;
+    }
+
+    .desktop-filter-selects {
+      display: none;
+    }
+
+    .filter-toggle-row {
+      display: block;
+    }
+
+    .filter-dropdown-group {
+      display: none;
+    }
+
+    .filter-dropdown-group.show {
+      display: flex;
+    }
+
     .search-input,
     .frequency-select {
       min-width: unset;
@@ -356,6 +645,7 @@ const DoctorList = memo(function DoctorList({
   const [frequencyFilter, setFrequencyFilter] = useState('all');
   const [supportFilter, setSupportFilter] = useState('');
   const [programFilter, setProgramFilter] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   const [visitStatus, setVisitStatus] = useState({});
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [productsDoctor, setProductsDoctor] = useState(null);
@@ -467,38 +757,98 @@ const DoctorList = memo(function DoctorList({
           onChange={(e) => setSearchTerm(e.target.value)}
           className="search-input"
         />
-        <select
-          value={frequencyFilter}
-          onChange={(e) => setFrequencyFilter(e.target.value)}
-          className="frequency-select"
-        >
-          <option value="all">All Frequencies</option>
-          <option value="2">2x per month</option>
-          <option value="4">4x per month</option>
-        </select>
-        <select
-          value={supportFilter}
-          onChange={(e) => setSupportFilter(e.target.value)}
-          className="frequency-select"
-        >
-          <option value="">All Support Types</option>
-          <option value="STARTER DOSES">STARTER DOSES</option>
-          <option value="PROMATS">PROMATS</option>
-          <option value="FULL DOSE">FULL DOSE</option>
-          <option value="PATIENT DISCOUNT">PATIENT DISCOUNT</option>
-          <option value="AIR FRESHENER">AIR FRESHENER</option>
-        </select>
-        <select
-          value={programFilter}
-          onChange={(e) => setProgramFilter(e.target.value)}
-          className="frequency-select"
-        >
-          <option value="">All Programs</option>
-          <option value="CME GRANT">CME GRANT</option>
-          <option value="REBATES / MONEY">REBATES / MONEY</option>
-          <option value="REST AND RECREATION">REST AND RECREATION</option>
-          <option value="MED SOCIETY PARTICIPATION">MED SOCIETY PARTICIPATION</option>
-        </select>
+
+        {/* Desktop: show all filters inline */}
+        <div className="desktop-filter-selects">
+          <select
+            value={frequencyFilter}
+            onChange={(e) => setFrequencyFilter(e.target.value)}
+            className="frequency-select"
+          >
+            <option value="all">All Frequencies</option>
+            <option value="2">2x per month</option>
+            <option value="4">4x per month</option>
+          </select>
+          <select
+            value={supportFilter}
+            onChange={(e) => setSupportFilter(e.target.value)}
+            className="frequency-select"
+          >
+            <option value="">All Support Types</option>
+            <option value="STARTER DOSES">STARTER DOSES</option>
+            <option value="PROMATS">PROMATS</option>
+            <option value="FULL DOSE">FULL DOSE</option>
+            <option value="PATIENT DISCOUNT">PATIENT DISCOUNT</option>
+            <option value="AIR FRESHENER">AIR FRESHENER</option>
+          </select>
+          <select
+            value={programFilter}
+            onChange={(e) => setProgramFilter(e.target.value)}
+            className="frequency-select"
+          >
+            <option value="">All Programs</option>
+            <option value="CME GRANT">CME GRANT</option>
+            <option value="REBATES / MONEY">REBATES / MONEY</option>
+            <option value="REST AND RECREATION">REST AND RECREATION</option>
+            <option value="MED SOCIETY PARTICIPATION">MED SOCIETY PARTICIPATION</option>
+          </select>
+        </div>
+
+        {/* Mobile: toggle button and collapsible dropdown group */}
+        <div className="filter-toggle-row">
+          <button
+            className={`filter-toggle-btn${showFilters ? ' active' : ''}`}
+            onClick={() => setShowFilters(!showFilters)}
+            type="button"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M0 2h16v2H0V2zm3 5h10v2H3V7zm2 5h6v2H5v-2z"/>
+            </svg>
+            {showFilters ? 'Hide Filters' : 'Show Filters'}
+          </button>
+          {showFilters && (
+            <div className="filter-dropdown-group show">
+              <CustomDropdown
+                label="Visit Frequency"
+                value={frequencyFilter}
+                options={[
+                  { value: 'all', label: 'All Frequencies' },
+                  { value: '2', label: '2x per month' },
+                  { value: '4', label: '4x per month' },
+                ]}
+                onChange={setFrequencyFilter}
+                placeholder="All Frequencies"
+              />
+              <CustomDropdown
+                label="Support Type"
+                value={supportFilter}
+                options={[
+                  { value: '', label: 'All Support Types' },
+                  { value: 'STARTER DOSES', label: 'STARTER DOSES' },
+                  { value: 'PROMATS', label: 'PROMATS' },
+                  { value: 'FULL DOSE', label: 'FULL DOSE' },
+                  { value: 'PATIENT DISCOUNT', label: 'PATIENT DISCOUNT' },
+                  { value: 'AIR FRESHENER', label: 'AIR FRESHENER' },
+                ]}
+                onChange={setSupportFilter}
+                placeholder="All Support Types"
+              />
+              <CustomDropdown
+                label="Program"
+                value={programFilter}
+                options={[
+                  { value: '', label: 'All Programs' },
+                  { value: 'CME GRANT', label: 'CME GRANT' },
+                  { value: 'REBATES / MONEY', label: 'REBATES / MONEY' },
+                  { value: 'REST AND RECREATION', label: 'REST AND RECREATION' },
+                  { value: 'MED SOCIETY PARTICIPATION', label: 'MED SOCIETY PARTICIPATION' },
+                ]}
+                onChange={setProgramFilter}
+                placeholder="All Programs"
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {loadingStatus && (

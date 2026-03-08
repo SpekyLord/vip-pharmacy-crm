@@ -574,7 +574,7 @@ const getMenuConfig = (role) => {
     default:
       return {
         roleTitle: 'Field Employee',
-        roleSubtitle: 'BDM / Sales Rep',
+        roleSubtitle: 'BDM',
         roleIcon: UserCog,
         sections: [
           {
@@ -594,8 +594,8 @@ const getMenuConfig = (role) => {
         ],
         bottomTabs: [
           { path: '/employee', label: 'Home', icon: LayoutDashboard },
+          { path: '/employee/cpt', label: 'Call Plan', icon: CalendarRange },
           { path: '/employee/visits', label: 'Visits', icon: ClipboardCheck },
-          { path: '/employee/visit/new', label: 'New Visit', icon: PlusCircle },
           { path: '/employee/inbox', label: 'Inbox', icon: Inbox, badge: 2 },
         ],
       };
