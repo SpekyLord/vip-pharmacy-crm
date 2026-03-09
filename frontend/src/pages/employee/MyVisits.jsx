@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import VisitDetailModal from '../../components/common/VisitDetailModal';
 import visitService from '../../services/visitService';
 import clientService from '../../services/clientService';
 import useDebounce from '../../hooks/useDebounce';
@@ -44,8 +45,6 @@ const MyVisits = () => {
 
   // Modal state
   const [selectedVisit, setSelectedVisit] = useState(null);
-  const [fullImageUrl, setFullImageUrl] = useState(null);
-  const [refreshingPhotos, setRefreshingPhotos] = useState(false);
 
   // Debounce search input to avoid excessive API calls
   const debouncedSearch = useDebounce(doctorSearch, 400);
@@ -184,25 +183,6 @@ const MyVisits = () => {
     });
   };
 
-  // Format photo taken date (full date + time for visit review)
-  const formatPhotoDate = (dateString) => {
-    if (!dateString) return null;
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return null;
-      return date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      });
-    } catch {
-      return null;
-    }
-  };
-
   // Handle page change
   const changePage = (delta) => {
     setPagination(prev => ({
@@ -236,52 +216,6 @@ const MyVisits = () => {
         return 'status-badge status-pending';
       default:
         return 'status-badge';
-    }
-  };
-
-  // Open full image in modal
-  const openFullImage = (url) => {
-    setFullImageUrl(url);
-  };
-
-  // Close full image modal
-  const closeFullImage = () => {
-    setFullImageUrl(null);
-  };
-
-  // Handle image load error (expired presigned URL)
-  const handleImageError = async (e, visitId) => {
-    // Prevent infinite loops - only try once
-    if (e.target.dataset.retried) return;
-    e.target.dataset.retried = 'true';
-
-    // Don't refresh if already refreshing
-    if (refreshingPhotos) return;
-
-    setRefreshingPhotos(true);
-    try {
-      const response = await visitService.refreshPhotos(visitId);
-      if (response.success && response.data?.photos) {
-        // Update the selected visit's photos with fresh URLs
-        setSelectedVisit(prev => ({
-          ...prev,
-          photos: response.data.photos
-        }));
-
-        // Also update in the visits list
-        setVisits(prev => prev.map(v =>
-          v._id === visitId
-            ? { ...v, photos: response.data.photos }
-            : v
-        ));
-
-        toast.success('Photos refreshed');
-      }
-    } catch (err) {
-      console.error('Failed to refresh photo URLs:', err);
-      toast.error('Failed to load photos. Please try again.');
-    } finally {
-      setRefreshingPhotos(false);
     }
   };
 
@@ -513,223 +447,16 @@ const MyVisits = () => {
           </div>
 
           {/* Visit Details Modal */}
-          {selectedVisit && (
-            <div className="modal-overlay" onClick={() => setSelectedVisit(null)}>
-              <div className="modal-content visit-detail-modal" onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header">
-                  <h2>Visit Details</h2>
-                  <button
-                    onClick={() => setSelectedVisit(null)}
-                    className="modal-close"
-                  >
-                    &times;
-                  </button>
-                </div>
-
-                <div className="modal-body">
-                  {/* Visit Info */}
-                  <div className="visit-info-section">
-                    <h3>Visit Information</h3>
-                    <div className="info-grid">
-                      <div className="info-item">
-                        <label>Date & Time</label>
-                        <span>{formatDate(selectedVisit.visitDate)} at {formatTime(selectedVisit.visitDate)}</span>
-                      </div>
-                      {selectedVisit._visitCategory !== 'extra' && (
-                        <div className="info-item">
-                          <label>Week Label</label>
-                          <span className="week-label">{selectedVisit.weekLabel || '-'}</span>
-                        </div>
-                      )}
-                      <div className="info-item">
-                        <label>Category</label>
-                        <span className={`visit-type-badge ${selectedVisit._visitCategory === 'extra' ? 'type-extra' : 'type-vip'}`}>
-                          {selectedVisit._visitCategory === 'extra' ? 'Extra Call' : 'VIP Visit'}
-                        </span>
-                      </div>
-                      <div className="info-item">
-                        <label>Status</label>
-                        <span className={getStatusBadgeClass(selectedVisit.status)}>
-                          {selectedVisit.status}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Client Info — adapts based on category */}
-                  <div className="visit-info-section">
-                    <h3>{selectedVisit._visitCategory === 'extra' ? 'Regular Client' : 'VIP Client'}</h3>
-                    {selectedVisit._visitCategory === 'extra' ? (
-                      <div className="info-grid">
-                        <div className="info-item">
-                          <label>Name</label>
-                          <span>{selectedVisit.client?.fullName || `${selectedVisit.client?.firstName || ''} ${selectedVisit.client?.lastName || ''}`.trim() || 'Unknown'}</span>
-                        </div>
-                        <div className="info-item">
-                          <label>Specialization</label>
-                          <span>{selectedVisit.client?.specialization || '-'}</span>
-                        </div>
-                        <div className="info-item">
-                          <label>Address</label>
-                          <span>{selectedVisit.client?.clinicOfficeAddress || '-'}</span>
-                        </div>
-                        {selectedVisit.client?.phone && (
-                          <div className="info-item">
-                            <label>Phone</label>
-                            <span>{selectedVisit.client.phone}</span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="info-grid">
-                        <div className="info-item">
-                          <label>Name</label>
-                          <span>{selectedVisit.doctor?.fullName || selectedVisit.doctor?.name || 'Unknown'}</span>
-                        </div>
-                        <div className="info-item">
-                          <label>Specialization</label>
-                          <span>{selectedVisit.doctor?.specialization || '-'}</span>
-                        </div>
-                        <div className="info-item">
-                          <label>Hospital/Clinic</label>
-                          <span>{selectedVisit.doctor?.clinicOfficeAddress || selectedVisit.doctor?.hospital || '-'}</span>
-                        </div>
-                        <div className="info-item">
-                          <label>Visit Frequency</label>
-                          <span>{selectedVisit.doctor?.visitFrequency || 4}x per month</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Visit Notes */}
-                  <div className="visit-info-section">
-                    <h3>Notes & Feedback</h3>
-                    <div className="info-grid full-width">
-                      <div className="info-item">
-                        <label>Purpose</label>
-                        <span>{selectedVisit.purpose || 'N/A'}</span>
-                      </div>
-                      <div className="info-item">
-                        <label>VIP Client Feedback</label>
-                        <span>{selectedVisit.doctorFeedback || 'N/A'}</span>
-                      </div>
-                      <div className="info-item">
-                        <label>Notes</label>
-                        <span>{selectedVisit.notes || 'N/A'}</span>
-                      </div>
-                      {selectedVisit.nextVisitDate && (
-                        <div className="info-item">
-                          <label>Next Visit Date</label>
-                          <span>{formatDate(selectedVisit.nextVisitDate)}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* GPS Location */}
-                  <div className="visit-info-section">
-                    <h3>Location</h3>
-                    <div className="info-grid">
-                      <div className="info-item">
-                        <label>Coordinates</label>
-                        <span>
-                          {selectedVisit.location?.latitude?.toFixed(6) || '-'},
-                          {selectedVisit.location?.longitude?.toFixed(6) || '-'}
-                        </span>
-                      </div>
-                      <div className="info-item">
-                        <label>Accuracy</label>
-                        <span>{selectedVisit.location?.accuracy ? `${Math.round(selectedVisit.location.accuracy)}m` : '-'}</span>
-                      </div>
-                      {selectedVisit.location?.latitude && selectedVisit.location?.longitude && (
-                        <div className="info-item">
-                          <label>Map</label>
-                          <a
-                            href={`https://www.google.com/maps?q=${selectedVisit.location.latitude},${selectedVisit.location.longitude}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn btn-link"
-                          >
-                            View on Google Maps
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Products Discussed (VIP visits only) */}
-                  {selectedVisit._visitCategory !== 'extra' && selectedVisit.productsDiscussed?.length > 0 && (
-                    <div className="visit-info-section">
-                      <h3>Products Discussed</h3>
-                      <ul className="products-list">
-                        {selectedVisit.productsDiscussed.map((item, index) => (
-                          <li key={index}>
-                            <span className="product-name">{item.product?.name || 'Unknown Product'}</span>
-                            {item.feedback && <span className="product-feedback"> - {item.feedback}</span>}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Photos */}
-                  <div className="visit-info-section">
-                    <h3>
-                      Photos ({selectedVisit.photos?.length || 0})
-                      {refreshingPhotos && <span className="refreshing-indicator"> Refreshing...</span>}
-                    </h3>
-                    {selectedVisit.photos?.length > 0 ? (
-                      <div className="photo-grid">
-                        {selectedVisit.photos.map((photo, index) => (
-                          <div key={index} className="photo-item" onClick={() => openFullImage(photo.url)}>
-                            <img
-                              src={photo.url}
-                              alt={`Visit photo ${index + 1}`}
-                              onError={(e) => handleImageError(e, selectedVisit._id)}
-                            />
-                            <div className="photo-meta-overlay">
-                              {photo.source && (
-                                <span className={`photo-source-tag photo-src-${photo.source}`}>
-                                  {photo.source === 'gallery' ? 'Gallery' : photo.source === 'clipboard' ? 'Clipboard' : 'Camera'}
-                                </span>
-                              )}
-                              {photo.capturedAt && (
-                                <span className="photo-taken-date">
-                                  {formatPhotoDate(photo.capturedAt)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="no-photos">No photos available</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="modal-footer">
-                  <button
-                    onClick={() => setSelectedVisit(null)}
-                    className="btn btn-secondary"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Full Image Modal */}
-          {fullImageUrl && (
-            <div className="modal-overlay image-modal" onClick={closeFullImage}>
-              <div className="full-image-container">
-                <img src={fullImageUrl} alt="Full size" />
-                <button className="modal-close" onClick={closeFullImage}>&times;</button>
-              </div>
-            </div>
-          )}
+          <VisitDetailModal
+            visit={selectedVisit}
+            onClose={() => setSelectedVisit(null)}
+            onPhotosRefreshed={(visitId, newPhotos) => {
+              setSelectedVisit(prev => prev ? { ...prev, photos: newPhotos } : prev);
+              setVisits(prev => prev.map(v =>
+                v._id === visitId ? { ...v, photos: newPhotos } : v
+              ));
+            }}
+          />
         </main>
       </div>
 
@@ -929,223 +656,7 @@ const MyVisits = () => {
           padding: 2rem;
         }
 
-        /* Modal Styles */
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          z-index: 1000;
-          padding: 1rem;
-        }
-
-        .modal-content {
-          background: white;
-          border-radius: 8px;
-          max-width: 800px;
-          width: 100%;
-          max-height: 90vh;
-          overflow-y: auto;
-        }
-
-        .modal-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 1rem 1.5rem;
-          border-bottom: 1px solid #eee;
-        }
-
-        .modal-header h2 {
-          margin: 0;
-          font-size: 1.25rem;
-        }
-
-        .modal-close {
-          background: none;
-          border: none;
-          font-size: 1.5rem;
-          cursor: pointer;
-          color: #666;
-        }
-
-        .modal-body {
-          padding: 1.5rem;
-        }
-
-        .modal-footer {
-          padding: 1rem 1.5rem;
-          border-top: 1px solid #eee;
-          display: flex;
-          justify-content: flex-end;
-        }
-
-        .visit-info-section {
-          margin-bottom: 1.5rem;
-        }
-
-        .visit-info-section h3 {
-          font-size: 1rem;
-          color: #333;
-          margin-bottom: 0.75rem;
-          padding-bottom: 0.5rem;
-          border-bottom: 1px solid #eee;
-        }
-
-        .info-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 1rem;
-        }
-
-        .info-grid.full-width .info-item {
-          grid-column: span 2;
-        }
-
-        .info-item {
-          display: flex;
-          flex-direction: column;
-          gap: 0.25rem;
-        }
-
-        .info-item label {
-          font-size: 0.75rem;
-          color: #666;
-          font-weight: 500;
-        }
-
-        .info-item span {
-          font-size: 0.875rem;
-        }
-
-        .products-list {
-          list-style: none;
-          padding: 0;
-          margin: 0;
-        }
-
-        .products-list li {
-          padding: 0.5rem 0;
-          border-bottom: 1px solid #eee;
-        }
-
-        .products-list li:last-child {
-          border-bottom: none;
-        }
-
-        .product-name {
-          font-weight: 500;
-        }
-
-        .product-feedback {
-          color: #666;
-          font-size: 0.875rem;
-        }
-
-        .photo-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-          gap: 1rem;
-        }
-
-        .photo-item {
-          position: relative;
-          cursor: pointer;
-          border-radius: 8px;
-          overflow: hidden;
-        }
-
-        .photo-item img {
-          width: 100%;
-          height: 150px;
-          object-fit: cover;
-        }
-
-        .photo-item:hover {
-          opacity: 0.9;
-        }
-
-        .photo-meta-overlay {
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          background: rgba(0,0,0,0.7);
-          color: white;
-          font-size: 0.7rem;
-          padding: 4px 6px;
-          display: flex;
-          flex-direction: column;
-          gap: 1px;
-        }
-
-        .photo-source-tag {
-          display: inline-block;
-          font-size: 9px;
-          padding: 1px 5px;
-          border-radius: 3px;
-          font-weight: 600;
-          text-transform: uppercase;
-          width: fit-content;
-        }
-
-        .photo-src-camera {
-          background: #2563eb;
-          color: white;
-        }
-
-        .photo-src-gallery {
-          background: #7c3aed;
-          color: white;
-        }
-
-        .photo-src-clipboard {
-          background: #0891b2;
-          color: white;
-        }
-
-        .photo-taken-date {
-          color: #d1d5db;
-          font-size: 10px;
-        }
-
-        .no-photos {
-          color: #999;
-          font-style: italic;
-        }
-
-        .refreshing-indicator {
-          font-size: 0.75rem;
-          color: #1976d2;
-          font-weight: normal;
-          margin-left: 0.5rem;
-        }
-
-        .image-modal .full-image-container {
-          position: relative;
-          max-width: 90vw;
-          max-height: 90vh;
-        }
-
-        .image-modal img {
-          max-width: 100%;
-          max-height: 90vh;
-          object-fit: contain;
-        }
-
-        .image-modal .modal-close {
-          position: absolute;
-          top: -40px;
-          right: 0;
-          color: white;
-          font-size: 2rem;
-        }
-
+        /* Modal responsive overrides */
         @media (max-width: 768px) {
           .filters-row {
             flex-direction: column;
@@ -1158,18 +669,6 @@ const MyVisits = () => {
           .filter-group select,
           .filter-group input {
             width: 100%;
-          }
-
-          .info-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .info-grid.full-width .info-item {
-            grid-column: span 1;
-          }
-
-          .photo-grid {
-            grid-template-columns: repeat(2, 1fr);
           }
         }
 

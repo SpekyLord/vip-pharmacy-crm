@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const employeeManagementStyles = `
   .employee-management {
@@ -538,6 +539,7 @@ const EmployeeManagement = ({
   onPageChange,
 }) => {
   const [showModal, setShowModal] = useState(false);
+  const navigate = useNavigate();
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [formData, setFormData] = useState({
@@ -724,6 +726,12 @@ const EmployeeManagement = ({
                       </td>
                       <td className="actions">
                         <button
+                          onClick={() => navigate(`/admin/employees/${employee._id}/visits`)}
+                          className="btn btn-primary btn-sm"
+                        >
+                          Visits
+                        </button>
+                        <button
                           onClick={() => handleEdit(employee)}
                           className="btn btn-secondary btn-sm"
                         >
@@ -771,6 +779,12 @@ const EmployeeManagement = ({
                     )}
                   </div>
                   <div className="mobile-card-actions">
+                    <button
+                      onClick={() => navigate(`/admin/employees/${employee._id}/visits`)}
+                      className="btn btn-primary btn-sm"
+                    >
+                      Visits
+                    </button>
                     <button
                       onClick={() => handleEdit(employee)}
                       className="btn btn-secondary btn-sm"
