@@ -231,13 +231,74 @@ const initEmailScheduler = () => {
     timezone: 'Asia/Manila',
   });
 
+  // Scheduled reports — every hour, check for due reports
+  cron.schedule('0 * * * *', runScheduledReports, {
+    timezone: 'Asia/Manila',
+  });
+
   console.log('[EmailScheduler] Email scheduler initialized.');
   console.log('[EmailScheduler] Weekly compliance: Monday 7:00 AM (Asia/Manila)');
   console.log('[EmailScheduler] Behind-schedule alerts: Weekdays 8:00 AM (Asia/Manila)');
+  console.log('[EmailScheduler] Scheduled reports: Every hour (Asia/Manila)');
+};
+
+/**
+ * Run due scheduled reports
+ */
+const runScheduledReports = async () => {
+  try {
+    const ScheduledReport = require('../models/ScheduledReport');
+    const { generateReport, calculateNextRun, getScheduledDateRange } = require('../services/reportGenerator');
+
+    const dueReports = await ScheduledReport.find({
+      status: 'active',
+      nextRunAt: { $lte: new Date() },
+    });
+
+    if (dueReports.length === 0) return;
+
+    console.log(`[EmailScheduler] Running ${dueReports.length} scheduled report(s)...`);
+
+    for (const scheduled of dueReports) {
+      try {
+        const dateRange = getScheduledDateRange(scheduled.frequency);
+
+        await generateReport({
+          type: scheduled.type,
+          format: scheduled.format,
+          filters: {
+            ...scheduled.filters,
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+          },
+          generatedBy: scheduled.createdBy,
+          name: scheduled.name,
+          scheduledReportId: scheduled._id,
+        });
+
+        scheduled.lastRunAt = new Date();
+        scheduled.lastRunStatus = 'success';
+        scheduled.nextRunAt = calculateNextRun(scheduled.frequency);
+        await scheduled.save();
+
+        console.log(`[EmailScheduler] Scheduled report "${scheduled.name}" generated successfully.`);
+      } catch (err) {
+        scheduled.lastRunAt = new Date();
+        scheduled.lastRunStatus = 'failed';
+        scheduled.nextRunAt = calculateNextRun(scheduled.frequency);
+        await scheduled.save();
+
+        console.error(`[EmailScheduler] Scheduled report "${scheduled.name}" failed:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('[EmailScheduler] Scheduled reports error:', err.message);
+  }
 };
 
 module.exports = {
   initEmailScheduler,
   runWeeklyCompliance,
   runBehindScheduleAlerts,
+  runScheduledReports,
 };

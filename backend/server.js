@@ -273,6 +273,7 @@ app.use('/api/schedules', userLimiter, require('./routes/scheduleRoutes'));
 app.use('/api/imports', userLimiter, require('./routes/importRoutes'));
 app.use('/api/audit-logs', userLimiter, require('./routes/auditLogRoutes'));
 app.use('/api/notification-preferences', userLimiter, require('./routes/notificationPreferenceRoutes'));
+app.use('/api/reports', userLimiter, require('./routes/reportRoutes'));
 
 // 404 handler for undefined routes
 app.use(notFound);

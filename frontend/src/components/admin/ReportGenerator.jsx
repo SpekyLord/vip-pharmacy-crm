@@ -17,49 +17,25 @@
  * - Schedule recurring reports
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   X,
   Calendar,
   Download,
   FileText,
   Users,
-  MapPin,
   Package,
   TrendingUp,
-  Clock,
   CheckCircle,
   Loader2,
   FileSpreadsheet,
-  File,
-  Mail,
   Bell,
   CalendarClock,
-  ChevronDown,
   AlertCircle,
 } from 'lucide-react';
-
-/* =============================================================================
-   MOCK DATA
-   ============================================================================= */
-
-const MOCK_REGIONS = [
-  { id: 'all', name: 'All Regions' },
-  { id: 'ncr', name: 'NCR - National Capital Region' },
-  { id: 'region-3', name: 'Region III - Central Luzon' },
-  { id: 'region-4a', name: 'Region IV-A - CALABARZON' },
-  { id: 'region-6', name: 'Region VI - Western Visayas' },
-  { id: 'region-7', name: 'Region VII - Central Visayas' },
-];
-
-const MOCK_EMPLOYEES = [
-  { id: 'all', name: 'All Employees' },
-  { id: 'emp-001', name: 'Juan Dela Cruz', region: 'region-6' },
-  { id: 'emp-002', name: 'Maria Garcia', region: 'ncr' },
-  { id: 'emp-003', name: 'Pedro Martinez', region: 'region-7' },
-  { id: 'emp-004', name: 'Ana Lopez', region: 'region-3' },
-  { id: 'emp-005', name: 'Carlos Santos', region: 'region-4a' },
-];
+import userService from '../../services/userService';
+import reportService from '../../services/reportService';
+import toast from 'react-hot-toast';
 
 /* =============================================================================
    STYLES
@@ -555,22 +531,31 @@ const ReportGenerator = ({
   const [endDate, setEndDate] = useState(() => {
     return new Date().toISOString().split('T')[0];
   });
-  const [selectedRegion, setSelectedRegion] = useState('all');
   const [selectedEmployee, setSelectedEmployee] = useState('all');
-  const [exportFormat, setExportFormat] = useState('pdf');
-  
+  const [exportFormat, setExportFormat] = useState('excel');
+
   // Schedule state
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleFrequency, setScheduleFrequency] = useState('weekly');
-  const [scheduleEmail, setScheduleEmail] = useState('');
-  
+
   // Loading state
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Filter employees by region
-  const filteredEmployees = selectedRegion === 'all'
-    ? MOCK_EMPLOYEES
-    : MOCK_EMPLOYEES.filter(e => e.id === 'all' || e.region === selectedRegion);
+  // Real data
+  const [employees, setEmployees] = useState([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const fetchData = async () => {
+      try {
+        const empRes = await userService.getEmployees({ limit: 0 });
+        setEmployees(empRes.data || []);
+      } catch (err) {
+        console.error('Failed to fetch employees:', err);
+      }
+    };
+    fetchData();
+  }, [isOpen]);
 
   // Get report type info
   const getReportInfo = () => {
@@ -597,37 +582,30 @@ const ReportGenerator = ({
   const handleGenerate = async () => {
     setIsGenerating(true);
 
-    const reportData = {
-      type: reportType,
-      dateRange: { start: startDate, end: endDate },
-      region: selectedRegion,
-      employee: selectedEmployee,
-      format: exportFormat,
-      schedule: scheduleEnabled ? {
-        frequency: scheduleFrequency,
-        email: scheduleEmail,
-      } : null,
-    };
+    try {
+      await reportService.generateReport({
+        type: reportType,
+        format: exportFormat,
+        filters: {
+          startDate,
+          endDate,
+          employeeId: selectedEmployee !== 'all' ? selectedEmployee : undefined,
+        },
+        schedule: scheduleEnabled ? { frequency: scheduleFrequency } : undefined,
+      });
 
-    console.log('📊 Generating Report:', reportData);
+      toast.success('Report generated successfully');
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
+      if (onGenerate) {
+        onGenerate();
+      }
 
-    console.log('✅ Report generated successfully!');
-    console.log(`📄 Export format: ${exportFormat.toUpperCase()}`);
-    
-    if (scheduleEnabled) {
-      console.log(`📅 Scheduled: ${scheduleFrequency} to ${scheduleEmail}`);
+      onClose();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to generate report');
+    } finally {
+      setIsGenerating(false);
     }
-
-    setIsGenerating(false);
-
-    if (onGenerate) {
-      onGenerate(reportData);
-    }
-
-    onClose();
   };
 
   if (!isOpen) return null;
@@ -690,29 +668,15 @@ const ReportGenerator = ({
             </div>
             <div className="rg-row">
               <div className="rg-field">
-                <label className="rg-label">Region</label>
-                <select
-                  className="rg-select"
-                  value={selectedRegion}
-                  onChange={(e) => {
-                    setSelectedRegion(e.target.value);
-                    setSelectedEmployee('all');
-                  }}
-                >
-                  {MOCK_REGIONS.map(r => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="rg-field">
-                <label className="rg-label">Employee</label>
+                <label className="rg-label">BDM / Employee</label>
                 <select
                   className="rg-select"
                   value={selectedEmployee}
                   onChange={(e) => setSelectedEmployee(e.target.value)}
                 >
-                  {filteredEmployees.map(e => (
-                    <option key={e.id} value={e.id}>{e.name}</option>
+                  <option value="all">All Employees</option>
+                  {employees.map(e => (
+                    <option key={e._id} value={e._id}>{e.name}</option>
                   ))}
                 </select>
               </div>
@@ -727,13 +691,13 @@ const ReportGenerator = ({
             </div>
             <div className="rg-export-options">
               <div
-                className={`rg-export-option pdf ${exportFormat === 'pdf' ? 'selected' : ''}`}
-                onClick={() => setExportFormat('pdf')}
+                className={`rg-export-option excel ${exportFormat === 'excel' ? 'selected' : ''}`}
+                onClick={() => setExportFormat('excel')}
               >
                 <div className="icon">
-                  <File size={20} />
+                  <FileSpreadsheet size={20} />
                 </div>
-                <span>PDF</span>
+                <span>Excel</span>
               </div>
               <div
                 className={`rg-export-option csv ${exportFormat === 'csv' ? 'selected' : ''}`}
@@ -743,15 +707,6 @@ const ReportGenerator = ({
                   <FileText size={20} />
                 </div>
                 <span>CSV</span>
-              </div>
-              <div
-                className={`rg-export-option excel ${exportFormat === 'excel' ? 'selected' : ''}`}
-                onClick={() => setExportFormat('excel')}
-              >
-                <div className="icon">
-                  <FileSpreadsheet size={20} />
-                </div>
-                <span>Excel</span>
               </div>
             </div>
           </div>
@@ -783,29 +738,17 @@ const ReportGenerator = ({
             </div>
 
             {scheduleEnabled && (
-              <>
-                <div className="rg-schedule-options">
-                  {['daily', 'weekly', 'monthly'].map(freq => (
-                    <div
-                      key={freq}
-                      className={`rg-schedule-opt ${scheduleFrequency === freq ? 'selected' : ''}`}
-                      onClick={() => setScheduleFrequency(freq)}
-                    >
-                      <span>{freq.charAt(0).toUpperCase() + freq.slice(1)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="rg-field rg-email-field">
-                  <label className="rg-label">Email Recipients</label>
-                  <input
-                    type="email"
-                    className="rg-input"
-                    placeholder="Enter email address"
-                    value={scheduleEmail}
-                    onChange={(e) => setScheduleEmail(e.target.value)}
-                  />
-                </div>
-              </>
+              <div className="rg-schedule-options">
+                {['daily', 'weekly', 'monthly'].map(freq => (
+                  <div
+                    key={freq}
+                    className={`rg-schedule-opt ${scheduleFrequency === freq ? 'selected' : ''}`}
+                    onClick={() => setScheduleFrequency(freq)}
+                  >
+                    <span>{freq.charAt(0).toUpperCase() + freq.slice(1)}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
@@ -817,20 +760,17 @@ const ReportGenerator = ({
             </div>
             <div className="rg-preview-list">
               <span className="rg-preview-item">
-                📅 {startDate} to {endDate}
+                Date: {startDate} to {endDate}
               </span>
               <span className="rg-preview-item">
-                🗺️ {MOCK_REGIONS.find(r => r.id === selectedRegion)?.name}
+                BDM: {selectedEmployee === 'all' ? 'All Employees' : employees.find(e => e._id === selectedEmployee)?.name || 'Selected'}
               </span>
               <span className="rg-preview-item">
-                👤 {MOCK_EMPLOYEES.find(e => e.id === selectedEmployee)?.name || 'All Employees'}
-              </span>
-              <span className="rg-preview-item">
-                📄 {exportFormat.toUpperCase()}
+                Format: {exportFormat.toUpperCase()}
               </span>
               {scheduleEnabled && (
                 <span className="rg-preview-item">
-                  🔄 {scheduleFrequency}
+                  Schedule: {scheduleFrequency}
                 </span>
               )}
             </div>

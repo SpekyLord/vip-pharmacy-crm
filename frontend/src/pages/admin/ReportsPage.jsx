@@ -26,26 +26,19 @@ import {
   Calendar,
   Download,
   MapPin,
-  Eye,
   CheckCircle,
   TrendingUp,
   Users,
   Package,
   Clock,
   BarChart3,
-  PieChart,
   FileSpreadsheet,
-  File,
   Search,
-  Filter,
   Plus,
   Trash2,
   RefreshCw,
   CalendarClock,
   ChevronRight,
-  Building,
-  Target,
-  Award,
   Zap,
   ChevronDown,
   ChevronUp,
@@ -60,10 +53,11 @@ import userService from '../../services/userService';
 import visitService from '../../services/visitService';
 import scheduleService from '../../services/scheduleService';
 import { exportEmployeeReportToExcel, exportEmployeeReportToCSV } from '../../utils/exportEmployeeReport';
+import reportService from '../../services/reportService';
 import toast from 'react-hot-toast';
 
 /* =============================================================================
-   MOCK DATA
+   REPORT TYPE DEFINITIONS (UI-only — icons, colors, descriptions)
    ============================================================================= */
 
 const REPORT_TYPES = [
@@ -74,7 +68,6 @@ const REPORT_TYPES = [
     icon: CheckCircle,
     color: '#22c55e',
     bgColor: '#dcfce7',
-    stats: { generated: 24, lastRun: '2 hours ago' },
   },
   {
     id: 'visits',
@@ -83,7 +76,6 @@ const REPORT_TYPES = [
     icon: Calendar,
     color: '#3b82f6',
     bgColor: '#dbeafe',
-    stats: { generated: 12, lastRun: '1 day ago' },
   },
   {
     id: 'performance',
@@ -92,7 +84,6 @@ const REPORT_TYPES = [
     icon: TrendingUp,
     color: '#8b5cf6',
     bgColor: '#f3e8ff',
-    stats: { generated: 18, lastRun: '3 hours ago' },
   },
   {
     id: 'regional',
@@ -101,7 +92,6 @@ const REPORT_TYPES = [
     icon: MapPin,
     color: '#f59e0b',
     bgColor: '#fef3c7',
-    stats: { generated: 8, lastRun: '5 days ago' },
   },
   {
     id: 'products',
@@ -110,98 +100,7 @@ const REPORT_TYPES = [
     icon: Package,
     color: '#ec4899',
     bgColor: '#fce7f3',
-    stats: { generated: 15, lastRun: '12 hours ago' },
   },
-];
-
-const RECENT_REPORTS = [
-  {
-    id: 'rep-001',
-    name: 'Weekly Compliance - Region VI',
-    type: 'compliance',
-    generatedAt: '2025-12-30 14:30',
-    generatedBy: 'System Administrator',
-    format: 'PDF',
-    size: '2.4 MB',
-    status: 'ready',
-  },
-  {
-    id: 'rep-002',
-    name: 'December Visit Summary',
-    type: 'visits',
-    generatedAt: '2025-12-29 09:15',
-    generatedBy: 'System Administrator',
-    format: 'Excel',
-    size: '5.1 MB',
-    status: 'ready',
-  },
-  {
-    id: 'rep-003',
-    name: 'Q4 Performance Report - Juan Dela Cruz',
-    type: 'performance',
-    generatedAt: '2025-12-28 16:45',
-    generatedBy: 'System Administrator',
-    format: 'PDF',
-    size: '3.2 MB',
-    status: 'ready',
-  },
-  {
-    id: 'rep-004',
-    name: 'Regional Comparison - All Regions',
-    type: 'regional',
-    generatedAt: '2025-12-25 11:00',
-    generatedBy: 'System Administrator',
-    format: 'CSV',
-    size: '1.8 MB',
-    status: 'ready',
-  },
-  {
-    id: 'rep-005',
-    name: 'Product Performance - CardioMax',
-    type: 'products',
-    generatedAt: '2025-12-24 08:30',
-    generatedBy: 'System Administrator',
-    format: 'PDF',
-    size: '2.1 MB',
-    status: 'ready',
-  },
-];
-
-const SCHEDULED_REPORTS = [
-  {
-    id: 'sch-001',
-    name: 'Weekly Compliance Summary',
-    type: 'compliance',
-    frequency: 'Weekly',
-    nextRun: '2025-01-06 08:00',
-    recipients: 'admin@company.com',
-    status: 'active',
-  },
-  {
-    id: 'sch-002',
-    name: 'Monthly Visit Report',
-    type: 'visits',
-    frequency: 'Monthly',
-    nextRun: '2025-01-01 09:00',
-    recipients: 'management@company.com',
-    status: 'active',
-  },
-  {
-    id: 'sch-003',
-    name: 'Daily Performance Snapshot',
-    type: 'performance',
-    frequency: 'Daily',
-    nextRun: '2025-12-31 07:00',
-    recipients: 'supervisors@company.com',
-    status: 'paused',
-  },
-];
-
-const QUICK_STATS = [
-  { label: 'Reports Generated', value: '156', icon: FileText, color: '#3b82f6', trend: '+12%' },
-  { label: 'Scheduled Reports', value: '8', icon: CalendarClock, color: '#8b5cf6', trend: 'Active' },
-  { label: 'Data Coverage', value: '98%', icon: Target, color: '#22c55e', trend: '+3%' },
-  { label: 'Avg. Generation Time', value: '4.2s', icon: Zap, color: '#f59e0b', trend: '-0.8s' },
 ];
 
 
@@ -1102,6 +1001,12 @@ const ReportsPage = () => {
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [selectedReportType, setSelectedReportType] = useState(null);
 
+  // Report system state (real data)
+  const [reports, setReports] = useState([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
+  const [scheduledReports, setScheduledReports] = useState([]);
+  const [reportStats, setReportStats] = useState({ totalReports: 0, scheduledCount: 0, avgTime: '0s' });
+
   // BDM Visit Report State
   const [bdmSectionExpanded, setBdmSectionExpanded] = useState(true);
   const [selectedBdm, setSelectedBdm] = useState('');
@@ -1113,15 +1018,52 @@ const ReportsPage = () => {
   const [reportData, setReportData] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
 
-  // Filter recent reports
+  // Fetch reports, scheduled reports, and stats
+  const fetchReports = useCallback(async () => {
+    try {
+      setReportsLoading(true);
+      const res = await reportService.getReports({ limit: 20 });
+      setReports(res.data?.reports || []);
+    } catch (err) {
+      console.error('Failed to fetch reports:', err);
+    } finally {
+      setReportsLoading(false);
+    }
+  }, []);
+
+  const fetchScheduledReports = useCallback(async () => {
+    try {
+      const res = await reportService.getScheduledReports();
+      setScheduledReports(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch scheduled reports:', err);
+    }
+  }, []);
+
+  const fetchReportStats = useCallback(async () => {
+    try {
+      const res = await reportService.getReportStats();
+      setReportStats(res.data || { totalReports: 0, scheduledCount: 0, avgTime: '0s' });
+    } catch (err) {
+      console.error('Failed to fetch report stats:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchReports();
+    fetchScheduledReports();
+    fetchReportStats();
+  }, [fetchReports, fetchScheduledReports, fetchReportStats]);
+
+  // Filter recent reports by search
   const filteredReports = useMemo(() => {
-    if (!searchQuery) return RECENT_REPORTS;
+    if (!searchQuery) return reports;
     const q = searchQuery.toLowerCase();
-    return RECENT_REPORTS.filter(r =>
+    return reports.filter(r =>
       r.name.toLowerCase().includes(q) ||
       r.type.toLowerCase().includes(q)
     );
-  }, [searchQuery]);
+  }, [searchQuery, reports]);
 
   // Get report type info
   const getReportTypeInfo = (typeId) => {
@@ -1134,22 +1076,70 @@ const ReportsPage = () => {
     setGeneratorOpen(true);
   };
 
-  // Handle report generation
-  const handleReportGenerated = (reportData) => {
-    console.log('Report generated:', reportData);
-    // In real app, would add to recent reports list
+  // Handle report generation callback — refresh lists
+  const handleReportGenerated = () => {
+    fetchReports();
+    fetchReportStats();
+    fetchScheduledReports();
   };
 
-  // Handle download
-  const handleDownload = (report) => {
-    console.log('Downloading:', report.name);
-    alert(`Downloading ${report.name} (${report.format})`);
+  // Handle download via signed S3 URL
+  const handleDownload = async (report) => {
+    try {
+      const res = await reportService.downloadReport(report._id);
+      window.open(res.data.url, '_blank');
+    } catch (err) {
+      toast.error('Failed to download report');
+    }
   };
 
   // Handle delete
-  const handleDelete = (reportId) => {
-    if (confirm('Are you sure you want to delete this report?')) {
-      console.log('Deleting:', reportId);
+  const handleDelete = async (reportId) => {
+    if (!confirm('Are you sure you want to delete this report?')) return;
+    try {
+      await reportService.deleteReport(reportId);
+      setReports(prev => prev.filter(r => r._id !== reportId));
+      fetchReportStats();
+      toast.success('Report deleted');
+    } catch (err) {
+      toast.error('Failed to delete report');
+    }
+  };
+
+  // Scheduled report actions
+  const handleRunScheduledNow = async (id) => {
+    try {
+      toast.loading('Generating report...', { id: 'run-scheduled' });
+      await reportService.runScheduledNow(id);
+      toast.success('Report generated successfully', { id: 'run-scheduled' });
+      fetchReports();
+      fetchScheduledReports();
+      fetchReportStats();
+    } catch (err) {
+      toast.error('Failed to run report', { id: 'run-scheduled' });
+    }
+  };
+
+  const handleToggleScheduledStatus = async (scheduled) => {
+    try {
+      const newStatus = scheduled.status === 'active' ? 'paused' : 'active';
+      await reportService.updateScheduledReport(scheduled._id, { status: newStatus });
+      setScheduledReports(prev => prev.map(s => s._id === scheduled._id ? { ...s, status: newStatus } : s));
+      fetchReportStats();
+    } catch (err) {
+      toast.error('Failed to update scheduled report');
+    }
+  };
+
+  const handleDeleteScheduled = async (id) => {
+    if (!confirm('Delete this scheduled report?')) return;
+    try {
+      await reportService.deleteScheduledReport(id);
+      setScheduledReports(prev => prev.filter(s => s._id !== id));
+      fetchReportStats();
+      toast.success('Scheduled report deleted');
+    } catch (err) {
+      toast.error('Failed to delete scheduled report');
     }
   };
 
@@ -1254,24 +1244,33 @@ const ReportsPage = () => {
 
           {/* Quick Stats */}
           <div className="quick-stats">
-            {QUICK_STATS.map((stat, i) => {
-              const Icon = stat.icon;
-              return (
-                <div key={i} className="quick-stat-card">
-                  <div
-                    className="quick-stat-icon"
-                    style={{ background: `${stat.color}15`, color: stat.color }}
-                  >
-                    <Icon size={24} />
-                  </div>
-                  <div className="quick-stat-content">
-                    <div className="quick-stat-label">{stat.label}</div>
-                    <div className="quick-stat-value">{stat.value}</div>
-                    <div className="quick-stat-trend">{stat.trend}</div>
-                  </div>
-                </div>
-              );
-            })}
+            <div className="quick-stat-card">
+              <div className="quick-stat-icon" style={{ background: '#3b82f615', color: '#3b82f6' }}>
+                <FileText size={24} />
+              </div>
+              <div className="quick-stat-content">
+                <div className="quick-stat-label">Reports Generated</div>
+                <div className="quick-stat-value">{reportStats.totalReports}</div>
+              </div>
+            </div>
+            <div className="quick-stat-card">
+              <div className="quick-stat-icon" style={{ background: '#8b5cf615', color: '#8b5cf6' }}>
+                <CalendarClock size={24} />
+              </div>
+              <div className="quick-stat-content">
+                <div className="quick-stat-label">Scheduled Reports</div>
+                <div className="quick-stat-value">{reportStats.scheduledCount}</div>
+              </div>
+            </div>
+            <div className="quick-stat-card">
+              <div className="quick-stat-icon" style={{ background: '#f59e0b15', color: '#f59e0b' }}>
+                <Zap size={24} />
+              </div>
+              <div className="quick-stat-content">
+                <div className="quick-stat-label">Avg. Generation Time</div>
+                <div className="quick-stat-value">{reportStats.avgTime}</div>
+              </div>
+            </div>
           </div>
 
           {/* Report Types Section */}
@@ -1308,12 +1307,8 @@ const ReportsPage = () => {
                   <div className="report-type-desc">{type.description}</div>
                   <div className="report-type-stats">
                     <span className="report-type-stat">
-                      <FileText size={12} />
-                      <strong>{type.stats.generated}</strong> generated
-                    </span>
-                    <span className="report-type-stat">
-                      <Clock size={12} />
-                      Last: {type.stats.lastRun}
+                      <Plus size={12} />
+                      Click to generate
                     </span>
                   </div>
                 </div>
@@ -1514,7 +1509,7 @@ const ReportsPage = () => {
               >
                 <Clock size={16} />
                 Recent Reports
-                <span className="badge">{RECENT_REPORTS.length}</span>
+                <span className="badge">{reports.length}</span>
               </button>
               <button
                 className={`tab-btn ${activeTab === 'scheduled' ? 'active' : ''}`}
@@ -1522,7 +1517,7 @@ const ReportsPage = () => {
               >
                 <CalendarClock size={16} />
                 Scheduled Reports
-                <span className="badge">{SCHEDULED_REPORTS.length}</span>
+                <span className="badge">{scheduledReports.length}</span>
               </button>
             </div>
 
@@ -1544,13 +1539,20 @@ const ReportsPage = () => {
               {/* Recent Reports Tab */}
               {activeTab === 'recent' && (
                 <>
-                  {filteredReports.length === 0 ? (
+                  {reportsLoading ? (
+                    <div className="empty-state">
+                      <div className="empty-state-icon">
+                        <RefreshCw size={28} style={{ animation: 'spin 1s linear infinite' }} />
+                      </div>
+                      <h3>Loading reports...</h3>
+                    </div>
+                  ) : filteredReports.length === 0 ? (
                     <div className="empty-state">
                       <div className="empty-state-icon">
                         <FileText size={28} />
                       </div>
                       <h3>No reports found</h3>
-                      <p>Try adjusting your search or generate a new report</p>
+                      <p>{searchQuery ? 'Try adjusting your search' : 'Generate a report using the Report Types above'}</p>
                     </div>
                   ) : (
                     <table className="reports-table">
@@ -1569,7 +1571,7 @@ const ReportsPage = () => {
                           const typeInfo = getReportTypeInfo(report.type);
                           const TypeIcon = typeInfo.icon;
                           return (
-                            <tr key={report.id}>
+                            <tr key={report._id}>
                               <td>
                                 <div className="report-name-cell">
                                   <div
@@ -1580,45 +1582,41 @@ const ReportsPage = () => {
                                   </div>
                                   <div>
                                     <div className="report-name">{report.name}</div>
-                                    <div className="report-meta">by {report.generatedBy}</div>
+                                    <div className="report-meta">by {report.generatedBy?.name || 'System'}</div>
                                   </div>
                                 </div>
                               </td>
-                              <td>{report.generatedAt}</td>
+                              <td>{new Date(report.createdAt).toLocaleString()}</td>
                               <td>
-                                <span className={`format-badge ${report.format.toLowerCase()}`}>
-                                  {report.format === 'PDF' && <File size={12} />}
-                                  {report.format === 'CSV' && <FileText size={12} />}
-                                  {report.format === 'Excel' && <FileSpreadsheet size={12} />}
-                                  {report.format}
+                                <span className={`format-badge ${report.format}`}>
+                                  {report.format === 'csv' && <FileText size={12} />}
+                                  {report.format === 'excel' && <FileSpreadsheet size={12} />}
+                                  {report.format === 'csv' ? 'CSV' : 'Excel'}
                                 </span>
                               </td>
-                              <td>{report.size}</td>
+                              <td>{report.fileSize || '—'}</td>
                               <td>
                                 <span className={`status-badge ${report.status}`}>
-                                  <CheckCircle size={12} />
-                                  Ready
+                                  {report.status === 'ready' && <><CheckCircle size={12} /> Ready</>}
+                                  {report.status === 'generating' && <><RefreshCw size={12} /> Generating</>}
+                                  {report.status === 'failed' && <><Clock size={12} /> Failed</>}
                                 </span>
                               </td>
                               <td>
                                 <div className="action-btns">
-                                  <button
-                                    className="action-btn download"
-                                    title="Download"
-                                    onClick={() => handleDownload(report)}
-                                  >
-                                    <Download size={16} />
-                                  </button>
-                                  <button
-                                    className="action-btn"
-                                    title="View"
-                                  >
-                                    <Eye size={16} />
-                                  </button>
+                                  {report.status === 'ready' && (
+                                    <button
+                                      className="action-btn download"
+                                      title="Download"
+                                      onClick={() => handleDownload(report)}
+                                    >
+                                      <Download size={16} />
+                                    </button>
+                                  )}
                                   <button
                                     className="action-btn delete"
                                     title="Delete"
-                                    onClick={() => handleDelete(report.id)}
+                                    onClick={() => handleDelete(report._id)}
                                   >
                                     <Trash2 size={16} />
                                   </button>
@@ -1635,69 +1633,102 @@ const ReportsPage = () => {
 
               {/* Scheduled Reports Tab */}
               {activeTab === 'scheduled' && (
-                <table className="reports-table">
-                  <thead>
-                    <tr>
-                      <th>Report Name</th>
-                      <th>Frequency</th>
-                      <th>Next Run</th>
-                      <th>Recipients</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {SCHEDULED_REPORTS.map((report) => {
-                      const typeInfo = getReportTypeInfo(report.type);
-                      const TypeIcon = typeInfo.icon;
-                      return (
-                        <tr key={report.id}>
-                          <td>
-                            <div className="report-name-cell">
-                              <div
-                                className="report-icon-small"
-                                style={{ background: typeInfo.bgColor, color: typeInfo.color }}
-                              >
-                                <TypeIcon size={16} />
-                              </div>
-                              <div>
-                                <div className="report-name">{report.name}</div>
-                                <div className="report-meta">{typeInfo.name}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <span style={{ fontWeight: 500 }}>{report.frequency}</span>
-                          </td>
-                          <td>{report.nextRun}</td>
-                          <td>{report.recipients}</td>
-                          <td>
-                            <span className={`status-badge ${report.status}`}>
-                              {report.status === 'active' ? (
-                                <><CheckCircle size={12} /> Active</>
-                              ) : (
-                                <><Clock size={12} /> Paused</>
-                              )}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="action-btns">
-                              <button className="action-btn" title="Run Now">
-                                <RefreshCw size={16} />
-                              </button>
-                              <button className="action-btn" title="Edit">
-                                <Eye size={16} />
-                              </button>
-                              <button className="action-btn delete" title="Delete">
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </td>
+                <>
+                  {scheduledReports.length === 0 ? (
+                    <div className="empty-state">
+                      <div className="empty-state-icon">
+                        <CalendarClock size={28} />
+                      </div>
+                      <h3>No scheduled reports</h3>
+                      <p>Create a report with scheduling enabled to see it here</p>
+                    </div>
+                  ) : (
+                    <table className="reports-table">
+                      <thead>
+                        <tr>
+                          <th>Report Name</th>
+                          <th>Frequency</th>
+                          <th>Next Run</th>
+                          <th>Last Run</th>
+                          <th>Status</th>
+                          <th>Actions</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody>
+                        {scheduledReports.map((scheduled) => {
+                          const typeInfo = getReportTypeInfo(scheduled.type);
+                          const TypeIcon = typeInfo.icon;
+                          return (
+                            <tr key={scheduled._id}>
+                              <td>
+                                <div className="report-name-cell">
+                                  <div
+                                    className="report-icon-small"
+                                    style={{ background: typeInfo.bgColor, color: typeInfo.color }}
+                                  >
+                                    <TypeIcon size={16} />
+                                  </div>
+                                  <div>
+                                    <div className="report-name">{scheduled.name}</div>
+                                    <div className="report-meta">{typeInfo.name}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td>
+                                <span style={{ fontWeight: 500, textTransform: 'capitalize' }}>{scheduled.frequency}</span>
+                              </td>
+                              <td>{scheduled.nextRunAt ? new Date(scheduled.nextRunAt).toLocaleString() : '—'}</td>
+                              <td>
+                                {scheduled.lastRunAt ? (
+                                  <span>
+                                    {new Date(scheduled.lastRunAt).toLocaleString()}
+                                    {scheduled.lastRunStatus && (
+                                      <span className={`status-badge ${scheduled.lastRunStatus === 'success' ? 'ready' : 'failed'}`} style={{ marginLeft: 8 }}>
+                                        {scheduled.lastRunStatus === 'success' ? <CheckCircle size={10} /> : <Clock size={10} />}
+                                      </span>
+                                    )}
+                                  </span>
+                                ) : '—'}
+                              </td>
+                              <td>
+                                <span
+                                  className={`status-badge ${scheduled.status}`}
+                                  style={{ cursor: 'pointer' }}
+                                  onClick={() => handleToggleScheduledStatus(scheduled)}
+                                  title={`Click to ${scheduled.status === 'active' ? 'pause' : 'resume'}`}
+                                >
+                                  {scheduled.status === 'active' ? (
+                                    <><CheckCircle size={12} /> Active</>
+                                  ) : (
+                                    <><Clock size={12} /> Paused</>
+                                  )}
+                                </span>
+                              </td>
+                              <td>
+                                <div className="action-btns">
+                                  <button
+                                    className="action-btn"
+                                    title="Run Now"
+                                    onClick={() => handleRunScheduledNow(scheduled._id)}
+                                  >
+                                    <RefreshCw size={16} />
+                                  </button>
+                                  <button
+                                    className="action-btn delete"
+                                    title="Delete"
+                                    onClick={() => handleDeleteScheduled(scheduled._id)}
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </>
               )}
             </div>
           </div>
