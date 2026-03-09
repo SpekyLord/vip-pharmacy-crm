@@ -593,6 +593,38 @@ const PendingApprovalsPage = () => {
 };
 
 /* =============================================================================
+   HELPER FUNCTIONS
+   ============================================================================= */
+
+/**
+ * Calculate the date range for a given cycle number
+ * Each cycle = 4 weeks (Mon-Fri only), 20 work days total
+ * @param {number|string} cycleNum - The cycle number (0, 1, 2, etc.)
+ * @returns {string} Formatted date range (e.g., "Jan 5 - 30" for Cycle 0)
+ */
+const getCycleDateRange = (cycleNum) => {
+  const num = parseInt(cycleNum, 10);
+  if (isNaN(num) || num < 0) return '';
+
+  const anchor = new Date(2026, 0, 5); // January 5, 2026 (Monday)
+
+  // Each cycle starts 4 weeks apart (28 calendar days, Monday to Monday)
+  const startDate = new Date(anchor);
+  startDate.setDate(startDate.getDate() + (num * 28));
+
+  // End date is the Friday of the 4th week (25 days after Monday start)
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + 25);
+
+  const formatDate = (date) => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[date.getMonth()]} ${date.getDate()}`;
+  };
+
+  return `${formatDate(startDate)} - ${formatDate(endDate)}`;
+};
+
+/* =============================================================================
    IMPORT TAB
    ============================================================================= */
 
@@ -764,7 +796,11 @@ const ImportTab = () => {
             <div className="ie-field">
               <label>&nbsp;</label>
               <div style={{ fontSize: 12, color: '#94a3b8', paddingTop: 10 }}>
-                Cycle 0 = Jan 5–Feb 1, 2026. Each cycle = 28 days.
+                {cycleNumber !== '' && getCycleDateRange(cycleNumber) ? (
+                  <>Cycle {cycleNumber} = {getCycleDateRange(cycleNumber)}. Each cycle = 4 weeks (20 work days, Mon-Fri only).</>
+                ) : (
+                  <>Enter a cycle number (e.g., Cycle 0 = Jan 5 - Feb 1). Each cycle = 4 weeks (20 work days, Mon-Fri only).</>
+                )}
               </div>
             </div>
           </div>
@@ -1100,6 +1136,19 @@ const ExportTab = () => {
               onChange={(e) => { setCycleNumber(e.target.value); setPreviewStats(null); }}
               placeholder="e.g., 2"
             />
+          </div>
+        </div>
+
+        <div className="ie-form-row">
+          <div className="ie-field">
+            <label>&nbsp;</label>
+            <div style={{ fontSize: 12, color: '#94a3b8', paddingTop: 10 }}>
+              {cycleNumber !== '' && getCycleDateRange(cycleNumber) ? (
+                <>Cycle {cycleNumber} = {getCycleDateRange(cycleNumber)}. Each cycle = 4 weeks (20 work days, Mon-Fri only).</>
+              ) : (
+                <>Enter a cycle number (e.g., Cycle 0 = Jan 5 - Feb 1). Each cycle = 4 weeks (20 work days, Mon-Fri only).</>
+              )}
+            </div>
           </div>
         </div>
 
