@@ -3,10 +3,10 @@
  *
  * Compliance API calls for Task 2.1:
  * - Get compliance alerts
- * - Get behind-schedule employees
+ * - Get behind-schedule BDMs
  * - Get quota dumping alerts
  * - Get weekly/monthly compliance reports
- * - Send notification to employee
+ * - Send notification to BDM
  */
 
 import api from './api';
@@ -14,7 +14,7 @@ import api from './api';
 const complianceService = {
   /**
    * Get all compliance alerts
-   * Returns employees who are behind schedule or have compliance issues
+   * Returns BDMs who are behind schedule or have compliance issues
    */
   getComplianceAlerts: async (params = {}) => {
     const response = await api.get('/compliance/alerts', { params });
@@ -22,7 +22,7 @@ const complianceService = {
   },
 
   /**
-   * Get employees who are behind their weekly visit schedule
+   * Get BDMs who are behind their weekly visit schedule
    * Threshold: < 80% of weekly target = "Behind Schedule"
    */
   getBehindScheduleEmployees: async (params = {}) => {

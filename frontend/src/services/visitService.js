@@ -115,7 +115,7 @@ const visitService = {
     return response.data;
   },
 
-  // Get compliance alerts (behind-schedule employees)
+  // Get compliance alerts (behind-schedule BDMs)
   getComplianceAlerts: async (params = {}) => {
     const response = await api.get('/visits/compliance', { params });
     return response.data;

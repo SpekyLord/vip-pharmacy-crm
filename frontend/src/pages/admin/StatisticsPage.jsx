@@ -7,9 +7,9 @@
  * Features:
  * - Tabbed interface with three sections
  * - Overview: High-level metrics and monthly trends
- * - Behind-Schedule: Employee compliance tracking table
+ * - Behind-Schedule: BDM compliance tracking table
  * - Alerts: Quota dumping and irregularity detection
- * - Notify Modal: Send alerts to non-compliant employees
+ * - Notify Modal: Send alerts to non-compliant BDMs
  *
  * @requires complianceService - API calls for compliance data
  * @requires Recharts - For charts in Overview tab
@@ -1385,7 +1385,7 @@ const StatisticsPage = () => {
   }, [selectedBdmId, bdmCycleNumber]);
 
   /* ---------------------------------------------------------------------------
-     Filtered Employees
+     Filtered BDMs
      Memoized filtering for performance.
      --------------------------------------------------------------------------- */
 
@@ -1555,7 +1555,7 @@ const StatisticsPage = () => {
                 onClick={() => setActiveTab('behind-schedule')}
               >
                 <Users size={18} />
-                Behind-Schedule Employees
+                Behind-Schedule BDMs
                 {behindCount > 0 && <span className="tab-badge">{behindCount}</span>}
               </button>
               <button
@@ -1648,7 +1648,7 @@ const StatisticsPage = () => {
    ============================================================================= */
 
 const OverviewTab = ({ stats }) => {
-  // Prepare pie chart data: on-track vs behind
+  // Prepare pie chart data: on-track vs behind BDMs
   const statusPieData = [
     { name: 'On Track', value: stats.onTrackEmployees },
     { name: 'Behind', value: stats.behindScheduleEmployees },
@@ -1930,7 +1930,7 @@ const BehindScheduleTab = ({
             <tbody>
               {employees.map((employee) => (
                 <tr key={employee._id}>
-                  {/* Employee Name & Email */}
+                  {/* BDM Name & Email */}
                   <td>
                     <div className="employee-cell">
                       <span className="employee-name">{employee.name}</span>
@@ -2004,8 +2004,8 @@ const BehindScheduleTab = ({
           <div className="empty-state-icon">
             <Users size={28} />
           </div>
-          <h3>No Employees Found</h3>
-          <p>No employees match your current filters.</p>
+          <h3>No BDMs Found</h3>
+          <p>No BDMs match your current filters.</p>
         </div>
       )}
     </div>
