@@ -11,6 +11,7 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, Edit2, Trash2, X, Tag } from 'lucide-react';
 import Pagination from '../common/Pagination';
+import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import productService from '../../services/productService';
 import useDebounce from '../../hooks/useDebounce';
 import doctorService from '../../services/doctorService';
@@ -459,33 +460,6 @@ const pmStyles = `
     border-top: 1px solid #e5e7eb;
   }
 
-  .pm-confirm {
-    background: white;
-    border-radius: 16px;
-    padding: 24px;
-    max-width: 400px;
-    width: 100%;
-    text-align: center;
-  }
-
-  .pm-confirm h4 {
-    margin: 0 0 8px;
-    font-size: 18px;
-    color: #111827;
-  }
-
-  .pm-confirm p {
-    color: #6b7280;
-    font-size: 14px;
-    margin: 0 0 20px;
-  }
-
-  .pm-confirm-actions {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-  }
-
   /* Mobile card list — hidden by default, shown on mobile */
   .pm-mobile-cards {
     display: none;
@@ -616,15 +590,6 @@ const pmStyles = `
     }
 
     .pm-modal-footer .btn {
-      width: 100%;
-      min-height: 48px;
-    }
-
-    .pm-confirm-actions {
-      flex-direction: column-reverse;
-    }
-
-    .pm-confirm-actions .btn {
       width: 100%;
       min-height: 48px;
     }
@@ -1135,21 +1100,19 @@ const ProductManagement = ({
       )}
 
       {/* Delete Confirmation */}
-      {confirmDelete && (
-        <div className="pm-overlay" onClick={() => setConfirmDelete(null)}>
-          <div className="pm-confirm" onClick={(e) => e.stopPropagation()}>
-            <h4>Deactivate Product?</h4>
-            <p>
-              Are you sure you want to deactivate <strong>{confirmDelete.name}</strong>?
-              This product will no longer be visible to BDMs.
-            </p>
-            <div className="pm-confirm-actions">
-              <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>Cancel</button>
-              <button className="btn btn-danger" onClick={handleConfirmDelete}>Deactivate</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDeleteModal
+        isOpen={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title="Deactivate Product"
+        message={
+          <p>
+            Are you sure you want to deactivate <strong>{confirmDelete?.name}</strong>?
+            This product will no longer be visible to BDMs.
+          </p>
+        }
+        confirmButtonText="Deactivate"
+      />
     </div>
   );
 };

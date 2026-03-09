@@ -158,6 +158,19 @@ const DoctorsPage = () => {
     }
   };
 
+  // Handle mass delete by BDM
+  const handleMassDeleteByUser = async (userId) => {
+    try {
+      const response = await doctorService.deleteByUser(userId);
+      toast.success(response.message || 'VIP Clients deactivated successfully');
+      fetchDoctors();
+      return true;
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to mass deactivate');
+      return false;
+    }
+  };
+
   // Handle filter changes
   const handleFilterChange = (newFilters) => {
     setFilters(newFilters);
@@ -197,6 +210,7 @@ const DoctorsPage = () => {
             loading={loading}
             onSave={handleSaveDoctor}
             onDelete={handleDeleteDoctor}
+            onMassDeleteByUser={handleMassDeleteByUser}
             onFilterChange={handleFilterChange}
             onPageChange={handlePageChange}
           />

@@ -35,6 +35,18 @@ const doctorService = {
     return response.data;
   },
 
+  // Mass deactivate all VIP Clients assigned to a BDM
+  deleteByUser: async (userId) => {
+    const response = await api.delete(`/doctors/by-user/${userId}`);
+    return response.data;
+  },
+
+  // Get count of active VIP Clients assigned to a BDM (for preview)
+  countByUser: async (userId) => {
+    const response = await api.get(`/doctors/count-by-user/${userId}`);
+    return response.data;
+  },
+
   getVisitHistory: async (doctorId) => {
     const response = await api.get(`/doctors/${doctorId}/visits`);
     return response.data;

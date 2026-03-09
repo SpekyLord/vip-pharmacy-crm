@@ -9,6 +9,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 
 const employeeManagementStyles = `
   .employee-management {
@@ -342,23 +343,6 @@ const employeeManagementStyles = `
     pointer-events: none;
   }
 
-  /* Confirm modal */
-  .confirm-modal-content {
-    max-width: 400px;
-    text-align: center;
-  }
-
-  .confirm-modal-content p {
-    margin: 0 0 24px 0;
-    color: #374151;
-  }
-
-  .confirm-actions {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-  }
-
   /* Password hint */
   .password-hint {
     font-size: 12px;
@@ -515,14 +499,6 @@ const employeeManagementStyles = `
     .form-actions .btn {
       width: 100%;
       min-height: 48px;
-    }
-
-    .confirm-modal-content {
-      width: 90%;
-      max-width: 90%;
-      height: auto;
-      max-height: 90vh;
-      border-radius: 16px;
     }
   }
 `;
@@ -940,39 +916,19 @@ const EmployeeManagement = ({
       )}
 
       {/* Delete Confirmation Modal */}
-      {showConfirmDelete && (
-        <div className="modal-overlay" onClick={() => setShowConfirmDelete(false)}>
-          <div
-            className="modal-content confirm-modal-content"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h3>Confirm Deactivation</h3>
-              <button
-                className="modal-close"
-                onClick={() => setShowConfirmDelete(false)}
-              >
-                &times;
-              </button>
-            </div>
-            <p>
-              Are you sure you want to deactivate <strong>{selectedEmployee?.name}</strong>?
-              They will no longer be able to log in.
-            </p>
-            <div className="confirm-actions">
-              <button
-                onClick={() => setShowConfirmDelete(false)}
-                className="btn btn-secondary"
-              >
-                Cancel
-              </button>
-              <button onClick={handleConfirmDelete} className="btn btn-danger">
-                Deactivate
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDeleteModal
+        isOpen={showConfirmDelete}
+        onClose={() => { setShowConfirmDelete(false); setSelectedEmployee(null); }}
+        onConfirm={handleConfirmDelete}
+        title="Deactivate BDM Account"
+        message={
+          <p>
+            Are you sure you want to deactivate <strong>{selectedEmployee?.name}</strong>?
+            They will no longer be able to log in.
+          </p>
+        }
+        confirmButtonText="Deactivate"
+      />
     </div>
   );
 };

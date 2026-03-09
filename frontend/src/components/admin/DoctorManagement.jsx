@@ -10,6 +10,8 @@
 
 import { useState, useEffect } from 'react';
 import doctorService from '../../services/doctorService';
+import userService from '../../services/userService';
+import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 
 // Enum options for programs and support types (matching backend Doctor.js)
 const PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
@@ -350,21 +352,94 @@ const doctorManagementStyles = `
     pointer-events: none;
   }
 
-  /* Confirm modal */
-  .confirm-modal-content {
-    max-width: 400px;
+  /* Mass delete styles */
+  .dm-mass-delete-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .dm-mass-delete-content {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    width: 90%;
+    max-width: 460px;
+  }
+
+  .dm-mass-delete-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .dm-mass-delete-header h3 {
+    margin: 0;
+    font-size: 18px;
+    color: #1f2937;
+  }
+
+  .dm-mass-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #6b7280;
+    line-height: 1;
+  }
+
+  .dm-mass-close:hover {
+    color: #1f2937;
+  }
+
+  .dm-mass-select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+
+  .dm-mass-count {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 16px;
     text-align: center;
   }
 
-  .confirm-modal-content p {
-    margin: 0 0 24px 0;
-    color: #374151;
+  .dm-mass-zero {
+    background: #f3f4f6;
+    color: #6b7280;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 16px;
+    text-align: center;
   }
 
-  .confirm-actions {
+  .dm-mass-actions {
     display: flex;
-    justify-content: center;
     gap: 12px;
+    justify-content: flex-end;
+  }
+
+  .dm-mass-actions .btn {
+    min-width: 100px;
   }
 
   /* Mobile Card View */
@@ -523,17 +598,17 @@ const doctorManagementStyles = `
       min-height: 48px;
     }
 
-    .confirm-modal-content {
-      width: 90%;
-      max-width: 90%;
-      height: auto;
-      max-height: 90vh;
-      border-radius: 16px;
+    .dm-mass-delete-content {
+      width: 92%;
     }
 
-    .confirm-actions .btn {
+    .dm-mass-actions {
+      flex-direction: column-reverse;
+    }
+
+    .dm-mass-actions .btn {
+      width: 100%;
       min-height: 44px;
-      flex: 1;
     }
   }
 `;
@@ -545,12 +620,21 @@ const DoctorManagement = ({
   loading = false,
   onSave,
   onDelete,
+  onMassDeleteByUser,
   onFilterChange,
   onPageChange,
 }) => {
   const [showModal, setShowModal] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
+
+  // Mass delete state
+  const [showMassDelete, setShowMassDelete] = useState(false);
+  const [showMassDeleteConfirm, setShowMassDeleteConfirm] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [selectedBdmId, setSelectedBdmId] = useState('');
+  const [massDeleteCount, setMassDeleteCount] = useState(null);
+  const [massDeleteLoading, setMassDeleteLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     specialization: '',
@@ -571,6 +655,24 @@ const DoctorManagement = ({
       .then((res) => setSpecializations(res.data || []))
       .catch(() => setSpecializations([]));
   }, []);
+
+  // Fetch employees list for mass delete BDM dropdown
+  useEffect(() => {
+    userService.getEmployees()
+      .then((res) => setEmployees(res.data || []))
+      .catch(() => setEmployees([]));
+  }, []);
+
+  // Fetch count when BDM is selected for mass delete
+  useEffect(() => {
+    if (!selectedBdmId) {
+      setMassDeleteCount(null);
+      return;
+    }
+    doctorService.countByUser(selectedBdmId)
+      .then((res) => setMassDeleteCount(res.data?.count ?? 0))
+      .catch(() => setMassDeleteCount(null));
+  }, [selectedBdmId]);
 
   // Debounce search
   useEffect(() => {
@@ -651,6 +753,36 @@ const DoctorManagement = ({
       setShowConfirmDelete(false);
       setSelectedDoctor(null);
     }
+  };
+
+  const handleOpenMassDelete = () => {
+    setSelectedBdmId('');
+    setMassDeleteCount(null);
+    setShowMassDelete(true);
+  };
+
+  const handleMassDeleteProceed = () => {
+    setShowMassDelete(false);
+    setShowMassDeleteConfirm(true);
+  };
+
+  const handleMassDeleteConfirm = async () => {
+    if (!selectedBdmId) return;
+    setMassDeleteLoading(true);
+    try {
+      await onMassDeleteByUser?.(selectedBdmId);
+      setShowMassDeleteConfirm(false);
+      setSelectedBdmId('');
+      setMassDeleteCount(null);
+    } finally {
+      setMassDeleteLoading(false);
+    }
+  };
+
+  const handleMassDeleteCancel = () => {
+    setShowMassDeleteConfirm(false);
+    setSelectedBdmId('');
+    setMassDeleteCount(null);
   };
 
   const handleFormChange = (e) => {
@@ -740,9 +872,16 @@ const DoctorManagement = ({
 
       <div className="management-header">
         <h2>VIP Clients ({pagination.total || doctors.length})</h2>
-        <button onClick={handleCreate} className="btn btn-primary">
-          + Add VIP Client
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {onMassDeleteByUser && (
+            <button onClick={handleOpenMassDelete} className="btn btn-danger">
+              Mass Deactivate
+            </button>
+          )}
+          <button onClick={handleCreate} className="btn btn-primary">
+            + Add VIP Client
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -1187,39 +1326,84 @@ const DoctorManagement = ({
       )}
 
       {/* Delete Confirmation Modal */}
-      {showConfirmDelete && (
-        <div className="modal-overlay" onClick={() => setShowConfirmDelete(false)}>
-          <div
-            className="modal-content confirm-modal-content"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h3>Confirm Delete</h3>
-              <button
-                className="modal-close"
-                onClick={() => setShowConfirmDelete(false)}
-              >
-                &times;
-              </button>
+      <ConfirmDeleteModal
+        isOpen={showConfirmDelete}
+        onClose={() => { setShowConfirmDelete(false); setSelectedDoctor(null); }}
+        onConfirm={handleConfirmDelete}
+        title="Deactivate VIP Client"
+        message={
+          <p>
+            Are you sure you want to deactivate <strong>{selectedDoctor?.fullName || `${selectedDoctor?.firstName} ${selectedDoctor?.lastName}`}</strong>?
+            This action can be undone later.
+          </p>
+        }
+        confirmButtonText="Deactivate"
+      />
+
+      {/* Mass Delete - Step 1: BDM Picker */}
+      {showMassDelete && (
+        <div className="dm-mass-delete-modal" onClick={() => setShowMassDelete(false)}>
+          <div className="dm-mass-delete-content" onClick={(e) => e.stopPropagation()}>
+            <div className="dm-mass-delete-header">
+              <h3>Mass Deactivate VIP Clients</h3>
+              <button className="dm-mass-close" onClick={() => setShowMassDelete(false)}>&times;</button>
             </div>
-            <p>
-              Are you sure you want to deactivate <strong>{selectedDoctor?.fullName || `${selectedDoctor?.firstName} ${selectedDoctor?.lastName}`}</strong>?
-              This action can be undone later.
+            <p style={{ color: '#374151', marginBottom: '16px' }}>
+              Select a BDM to deactivate all their assigned VIP Clients.
             </p>
-            <div className="confirm-actions">
-              <button
-                onClick={() => setShowConfirmDelete(false)}
-                className="btn btn-secondary"
-              >
+            <select
+              className="dm-mass-select"
+              value={selectedBdmId}
+              onChange={(e) => setSelectedBdmId(e.target.value)}
+            >
+              <option value="">-- Select a BDM --</option>
+              {employees.map((emp) => (
+                <option key={emp._id} value={emp._id}>{emp.name}</option>
+              ))}
+            </select>
+            {selectedBdmId && massDeleteCount !== null && massDeleteCount > 0 && (
+              <div className="dm-mass-count">
+                {massDeleteCount} active VIP Client{massDeleteCount !== 1 ? 's' : ''} assigned to this BDM
+              </div>
+            )}
+            {selectedBdmId && massDeleteCount === 0 && (
+              <div className="dm-mass-zero">
+                No active VIP Clients assigned to this BDM
+              </div>
+            )}
+            <div className="dm-mass-actions">
+              <button onClick={() => setShowMassDelete(false)} className="btn btn-secondary">
                 Cancel
               </button>
-              <button onClick={handleConfirmDelete} className="btn btn-danger">
-                Deactivate
+              <button
+                onClick={handleMassDeleteProceed}
+                className="btn btn-danger"
+                disabled={!selectedBdmId || !massDeleteCount}
+              >
+                Proceed
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Mass Delete - Step 2: Type to Confirm */}
+      <ConfirmDeleteModal
+        isOpen={showMassDeleteConfirm}
+        onClose={handleMassDeleteCancel}
+        onConfirm={handleMassDeleteConfirm}
+        title="Confirm Mass Deactivation"
+        message={
+          <p>
+            This will deactivate <strong>all active VIP Clients</strong> assigned to{' '}
+            <strong>{employees.find((e) => e._id === selectedBdmId)?.name || 'this BDM'}</strong>.
+            This action can be undone later by reactivating individual VIP Clients.
+          </p>
+        }
+        confirmButtonText="Deactivate All"
+        loading={massDeleteLoading}
+        itemCount={massDeleteCount}
+      />
     </div>
   );
 };

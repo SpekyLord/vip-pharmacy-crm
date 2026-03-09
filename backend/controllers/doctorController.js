@@ -313,6 +313,59 @@ const deleteDoctor = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    Get count of active doctors assigned to a specific user (BDM)
+ * @route   GET /api/doctors/count-by-user/:userId
+ * @access  Admin only
+ */
+const countDoctorsByUser = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new NotFoundError('Invalid user ID');
+  }
+
+  const count = await Doctor.countDocuments({ assignedTo: userId, isActive: true });
+
+  res.status(200).json({
+    success: true,
+    data: { count, userId },
+  });
+});
+
+/**
+ * @desc    Batch deactivate all active doctors assigned to a specific user (BDM)
+ * @route   DELETE /api/doctors/by-user/:userId
+ * @access  Admin only
+ */
+const deleteDoctorsByUser = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new NotFoundError('Invalid user ID');
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  const result = await Doctor.updateMany(
+    { assignedTo: userId, isActive: true },
+    { $set: { isActive: false } }
+  );
+
+  res.status(200).json({
+    success: true,
+    message: `${result.modifiedCount} VIP Client(s) deactivated successfully`,
+    data: {
+      deactivatedCount: result.modifiedCount,
+      userId: userId,
+      userName: user.name,
+    },
+  });
+});
+
+/**
  * @desc    Get doctors by region
  * @route   GET /api/doctors/region/:regionId
  * @access  All authenticated users
@@ -583,6 +636,8 @@ module.exports = {
   createDoctor,
   updateDoctor,
   deleteDoctor,
+  deleteDoctorsByUser,
+  countDoctorsByUser,
   getDoctorsByRegion,
   getDoctorVisits,
   getDoctorProducts,

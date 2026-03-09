@@ -21,6 +21,8 @@ const {
   createDoctor,
   updateDoctor,
   deleteDoctor,
+  deleteDoctorsByUser,
+  countDoctorsByUser,
   getDoctorVisits,
   getDoctorProducts,
   updateTargetProducts,
@@ -36,6 +38,7 @@ router.use(protect);
 
 // Public routes (accessible by all authenticated users with region filtering)
 router.get('/specializations', getSpecializations);
+router.get('/count-by-user/:userId', adminOnly, countDoctorsByUser);
 router.get('/', getAllDoctors);
 router.get('/:id', getDoctorById);
 router.get('/:id/visits', getDoctorVisits);
@@ -49,6 +52,7 @@ router.put('/:id', adminOrEmployee, updateDoctorValidation, updateDoctor);
 
 // Admin only routes
 router.post('/', adminOnly, createDoctorValidation, createDoctor);
+router.delete('/by-user/:userId', adminOnly, deleteDoctorsByUser);
 router.delete('/:id', adminOnly, deleteDoctor);
 
 module.exports = router;
