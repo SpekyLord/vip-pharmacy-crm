@@ -87,6 +87,11 @@ validateEnv();
 // Initialize Express app
 const app = express();
 
+// Trust first proxy (nginx) so req.ip returns the real client IP
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Security middleware with HSTS for HTTPS enforcement
 app.use(
   helmet({

@@ -800,7 +800,7 @@ const getEmployeeReport = catchAsync(async (req, res) => {
     assignedTo: userId,
     isActive: true,
   })
-    .select('name specialization clinicOfficeAddress visitFrequency')
+    .select('firstName lastName specialization clinicOfficeAddress visitFrequency')
     .lean();
 
   // Fetch all visits by this employee for the selected month
@@ -921,6 +921,7 @@ const getEmployeeReport = catchAsync(async (req, res) => {
         name: employee.name,
         email: employee.email,
       },
+      areaAssigned: '',
       monthYear: monthYear,
       doctors: doctorsWithVisits,
       summary: {

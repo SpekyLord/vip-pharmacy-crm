@@ -276,6 +276,21 @@ const sidebarStyles = `
     margin-left: 0;
   }
 
+  .sidebar-badge-text {
+    margin-left: auto;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    background: rgba(251, 191, 36, 0.15);
+    color: #f59e0b;
+    white-space: nowrap;
+  }
+
+  .sidebar.collapsed .sidebar-badge-text {
+    display: none;
+  }
+
   /* Scrollbar */
   .sidebar-nav::-webkit-scrollbar {
     width: 4px;
@@ -354,6 +369,18 @@ const sidebarStyles = `
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .mobile-tab-item .tab-badge-text {
+    position: absolute;
+    top: 2px;
+    right: 4px;
+    padding: 1px 4px;
+    background: rgba(251, 191, 36, 0.2);
+    color: #f59e0b;
+    font-size: 8px;
+    font-weight: 700;
+    border-radius: 3px;
   }
 
   /* ===== MOBILE DRAWER ===== */
@@ -478,6 +505,9 @@ const sidebarStyles = `
       padding: 0 4px;
       font-size: 10px;
       margin-left: 0;
+    }
+    .sidebar .sidebar-badge-text {
+      display: none;
     }
     .sidebar .sidebar-link:hover .sidebar-tooltip {
       opacity: 1;
@@ -737,7 +767,7 @@ const Sidebar = () => {
                     </span>
                     <span className="sidebar-link-label">{item.label}</span>
                     {item.badge && (
-                      <span className="sidebar-badge">{item.badge}</span>
+                      <span className={typeof item.badge === 'string' ? 'sidebar-badge-text' : 'sidebar-badge'}>{item.badge}</span>
                     )}
                     <span className="sidebar-tooltip">{item.label}</span>
                   </NavLink>
@@ -762,7 +792,7 @@ const Sidebar = () => {
               >
                 <Icon size={22} />
                 <span>{tab.label}</span>
-                {tab.badge && <span className="tab-badge">{tab.badge}</span>}
+                {tab.badge && <span className={typeof tab.badge === 'string' ? 'tab-badge-text' : 'tab-badge'}>{tab.badge}</span>}
               </NavLink>
             );
           })}
@@ -817,7 +847,7 @@ const Sidebar = () => {
                       {item.label}
                     </span>
                     {item.badge && (
-                      <span className="sidebar-badge">{item.badge}</span>
+                      <span className={typeof item.badge === 'string' ? 'sidebar-badge-text' : 'sidebar-badge'}>{item.badge}</span>
                     )}
                   </button>
                 );

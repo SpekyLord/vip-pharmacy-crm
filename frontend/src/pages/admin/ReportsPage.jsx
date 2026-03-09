@@ -28,7 +28,6 @@ import {
   MapPin,
   Eye,
   CheckCircle,
-  AlertTriangle,
   TrendingUp,
   Users,
   Package,
@@ -55,11 +54,12 @@ import {
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import ReportGenerator from '../../components/admin/ReportGenerator';
-import VisitLocationMap from '../../components/admin/VisitLocationMap';
-import EmployeeAnalytics from '../../components/admin/EmployeeAnalytics';
 import CallPlanView from '../../components/employee/CallPlanView';
+import EmployeeVisitReport from '../../components/admin/EmployeeVisitReport';
 import userService from '../../services/userService';
+import visitService from '../../services/visitService';
 import scheduleService from '../../services/scheduleService';
+import { exportEmployeeReportToExcel, exportEmployeeReportToCSV } from '../../utils/exportEmployeeReport';
 import toast from 'react-hot-toast';
 
 /* =============================================================================
@@ -204,76 +204,6 @@ const QUICK_STATS = [
   { label: 'Avg. Generation Time', value: '4.2s', icon: Zap, color: '#f59e0b', trend: '-0.8s' },
 ];
 
-// BDM Visit Report Data (Task 2.10)
-const MOCK_BDMS = [
-  { id: 'bdm-001', name: 'Juan Dela Cruz', region: 'Region VI' },
-  { id: 'bdm-002', name: 'Maria Garcia', region: 'NCR' },
-  { id: 'bdm-003', name: 'Pedro Martinez', region: 'Region VII' },
-  { id: 'bdm-004', name: 'Ana Lopez', region: 'Region III' },
-];
-
-const MOCK_VISITS = [
-  {
-    id: 'visit-001',
-    bdmId: 'bdm-001',
-    bdmName: 'Juan Dela Cruz',
-    doctorName: 'Dr. Maria Santos',
-    clinicName: 'Santos Medical Clinic',
-    date: '2025-12-02',
-    time: '09:30 AM',
-    clinicLat: 10.6969,
-    clinicLng: 122.5648,
-    employeeLat: 10.6975,
-    employeeLng: 122.5652,
-    accuracy: 10,
-    gpsStatus: 'verified',
-  },
-  {
-    id: 'visit-002',
-    bdmId: 'bdm-001',
-    bdmName: 'Juan Dela Cruz',
-    doctorName: 'Dr. Jose Rizal',
-    clinicName: 'Rizal Health Center',
-    date: '2025-12-05',
-    time: '02:00 PM',
-    clinicLat: 10.7006,
-    clinicLng: 122.5656,
-    employeeLat: 10.7050,
-    employeeLng: 122.5700,
-    accuracy: 15,
-    gpsStatus: 'warning',
-  },
-  {
-    id: 'visit-003',
-    bdmId: 'bdm-002',
-    bdmName: 'Maria Garcia',
-    doctorName: 'Dr. Chen Wei',
-    clinicName: 'Wei Medical Arts',
-    date: '2025-12-03',
-    time: '11:00 AM',
-    clinicLat: 14.5995,
-    clinicLng: 120.9842,
-    employeeLat: 14.6050,
-    employeeLng: 120.9900,
-    accuracy: 20,
-    gpsStatus: 'warning',
-  },
-  {
-    id: 'visit-004',
-    bdmId: 'bdm-001',
-    bdmName: 'Juan Dela Cruz',
-    doctorName: 'Dr. Ana Reyes',
-    clinicName: 'Reyes Family Clinic',
-    date: '2025-12-10',
-    time: '10:00 AM',
-    clinicLat: 10.6980,
-    clinicLng: 122.5660,
-    employeeLat: 10.6982,
-    employeeLng: 122.5658,
-    accuracy: 8,
-    gpsStatus: 'verified',
-  },
-];
 
 /* =============================================================================
    STYLES
@@ -1172,18 +1102,16 @@ const ReportsPage = () => {
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [selectedReportType, setSelectedReportType] = useState(null);
 
-  // BDM Visit Report State (Task 2.10)
+  // BDM Visit Report State
   const [bdmSectionExpanded, setBdmSectionExpanded] = useState(true);
   const [selectedBdm, setSelectedBdm] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState('2025-12');
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [reportGenerated, setReportGenerated] = useState(false);
-  const [selectedVisit, setSelectedVisit] = useState(null);
-
-  // Filter visits by selected BDM
-  const filteredVisits = useMemo(() => {
-    if (!selectedBdm) return [];
-    return MOCK_VISITS.filter((v) => v.bdmId === selectedBdm);
-  }, [selectedBdm]);
+  const [reportData, setReportData] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
 
   // Filter recent reports
   const filteredReports = useMemo(() => {
@@ -1276,18 +1204,32 @@ const ReportsPage = () => {
   };
 
   // BDM Visit Report handlers
-  const handleGenerateReport = () => {
+  const handleGenerateReport = async () => {
     if (!selectedBdm) {
-      alert('Please select a BDM first');
+      toast.error('Please select a BDM first');
       return;
     }
-    setReportGenerated(true);
-    setSelectedVisit(null);
+    setReportLoading(true);
+    setReportGenerated(false);
+    setReportData(null);
+    try {
+      const response = await visitService.getEmployeeReport(selectedBdm, selectedMonth);
+      setReportData(response.data);
+      setReportGenerated(true);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to generate report');
+    } finally {
+      setReportLoading(false);
+    }
   };
 
   const handleExport = (format) => {
-    console.log(`Exporting ${format.toUpperCase()} report for ${MOCK_BDMS.find(b => b.id === selectedBdm)?.name}`);
-    alert(`Exporting ${format.toUpperCase()} report`);
+    if (!reportData) return;
+    if (format === 'excel') {
+      exportEmployeeReportToExcel(reportData, selectedMonth);
+    } else {
+      exportEmployeeReportToCSV(reportData, selectedMonth);
+    }
   };
 
   return (
@@ -1411,13 +1353,13 @@ const ReportsPage = () => {
                       onChange={(e) => {
                         setSelectedBdm(e.target.value);
                         setReportGenerated(false);
-                        setSelectedVisit(null);
+                        setReportData(null);
                       }}
                     >
                       <option value="">Select Employee</option>
-                      {MOCK_BDMS.map((bdm) => (
-                        <option key={bdm.id} value={bdm.id}>
-                          {bdm.name} ({bdm.region})
+                      {realBdms.map((bdm) => (
+                        <option key={bdm._id} value={bdm._id}>
+                          {bdm.name}
                         </option>
                       ))}
                     </select>
@@ -1450,102 +1392,32 @@ const ReportsPage = () => {
                   )}
                 </div>
 
-                {/* Visit Table or Empty State */}
-                {!reportGenerated ? (
+                {/* Report Content */}
+                {reportLoading ? (
+                  <div className="bdm-empty-state">
+                    <div className="bdm-empty-icon">
+                      <RefreshCw size={28} style={{ animation: 'spin 1s linear infinite' }} />
+                    </div>
+                    <h3>Generating Report...</h3>
+                    <p>Fetching visit data for the selected BDM and month</p>
+                  </div>
+                ) : !reportGenerated ? (
                   <div className="bdm-empty-state">
                     <div className="bdm-empty-icon">
                       <BarChart3 size={28} />
                     </div>
                     <h3>No Report Generated</h3>
-                    <p>Select a BDM and month, then click "Generate Report" to view visits and analytics</p>
+                    <p>Select a BDM and month, then click &quot;Generate Report&quot;</p>
                   </div>
                 ) : (
-                  <>
-                    <table className="visit-table">
-                      <thead>
-                        <tr>
-                          <th>Date</th>
-                          <th>Time</th>
-                          <th>Doctor / Clinic</th>
-                          <th>GPS Status</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredVisits.map((visit) => (
-                          <tr 
-                            key={visit.id} 
-                            className={selectedVisit?.id === visit.id ? 'selected' : ''}
-                          >
-                            <td>{visit.date}</td>
-                            <td>{visit.time}</td>
-                            <td>
-                              <div className="doctor-cell">
-                                <span className="doctor-name">{visit.doctorName}</span>
-                                <span className="clinic-name">{visit.clinicName}</span>
-                              </div>
-                            </td>
-                            <td>
-                              <span className={`gps-badge ${visit.gpsStatus}`}>
-                                {visit.gpsStatus === 'verified' ? (
-                                  <><CheckCircle size={14} /> Verified</>
-                                ) : (
-                                  <><AlertTriangle size={14} /> Warning</>
-                                )}
-                              </span>
-                            </td>
-                            <td>
-                              <button 
-                                className="btn-view-gps"
-                                onClick={() => setSelectedVisit(visit)}
-                              >
-                                <Eye size={14} />
-                                View GPS
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-
-                    {/* GPS Verification Section */}
-                    {selectedVisit && (
-                      <div className="gps-section">
-                        <div className="gps-section-header">
-                          <div className="gps-section-title">
-                            <div className="icon">
-                              <MapPin size={18} />
-                            </div>
-                            GPS Location Verification
-                          </div>
-                          <span className="gps-visit-info">
-                            {selectedVisit.clinicName} • {selectedVisit.doctorName}
-                          </span>
-                        </div>
-                        <VisitLocationMap
-                          clinicCoords={{ lat: selectedVisit.clinicLat, lng: selectedVisit.clinicLng }}
-                          employeeCoords={{ lat: selectedVisit.employeeLat, lng: selectedVisit.employeeLng }}
-                          allowedRadius={400}
-                          accuracy={selectedVisit.accuracy}
-                        />
-                      </div>
-                    )}
-                  </>
+                  <EmployeeVisitReport
+                    reportData={reportData}
+                    monthYear={selectedMonth}
+                  />
                 )}
               </div>
             )}
           </div>
-
-          {/* Employee Performance Analytics (Task 2.10) */}
-          {reportGenerated && selectedBdm && (
-            <EmployeeAnalytics
-              employeeId={selectedBdm}
-              employeeName={MOCK_BDMS.find(b => b.id === selectedBdm)?.name || 'Unknown'}
-              month={selectedMonth}
-              visits={filteredVisits}
-              allEmployees={MOCK_BDMS}
-            />
-          )}
 
           {/* CPT View Section */}
           <div className="bdm-report-section" style={{ marginTop: '24px' }}>
