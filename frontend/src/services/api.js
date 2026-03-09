@@ -13,21 +13,16 @@
 
 import axios from 'axios';
 
-// Determine API URL based on how the frontend is accessed
-// If accessed via network IP (phone), use the same host for API
+// Determine API URL based on environment
 const getApiUrl = () => {
-  // Check if custom API URL is set
+  // Check if custom API URL is set (production)
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
 
-  // If accessing from localhost, use localhost
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'http://localhost:5000/api';
-  }
-
-  // If accessing from network IP (phone), use the same IP for backend
-  return `http://${window.location.hostname}:5000/api`;
+  // In development, use relative URL so Vite's proxy handles it.
+  // This way phone/network access only needs port 5173 (Vite proxies /api → localhost:5000)
+  return '/api';
 };
 
 const API_URL = getApiUrl();
