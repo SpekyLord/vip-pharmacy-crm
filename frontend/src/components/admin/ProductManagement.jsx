@@ -13,7 +13,7 @@ import { Search, Plus, Edit2, Trash2, X, Tag } from 'lucide-react';
 import Pagination from '../common/Pagination';
 import productService from '../../services/productService';
 import useDebounce from '../../hooks/useDebounce';
-import VIP_SPECIALTIES from '../../constants/specializations';
+import doctorService from '../../services/doctorService';
 
 const pmStyles = `
   .pm-filters {
@@ -664,6 +664,14 @@ const ProductManagement = ({
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
   const [specDropdownOpen, setSpecDropdownOpen] = useState(false);
+  const [specializations, setSpecializations] = useState([]);
+
+  // Fetch distinct specializations from database
+  useEffect(() => {
+    doctorService.getSpecializations()
+      .then((res) => setSpecializations(res.data || []))
+      .catch(() => setSpecializations([]));
+  }, []);
 
   // Fetch categories for dropdown
   useEffect(() => {
@@ -818,7 +826,7 @@ const ProductManagement = ({
           onChange={(e) => onFilterChange?.({ ...filters, specialization: e.target.value })}
         >
           <option value="">All Specializations</option>
-          {VIP_SPECIALTIES.map((spec) => (
+          {specializations.map((spec) => (
             <option key={spec} value={spec}>{spec}</option>
           ))}
         </select>
@@ -1085,7 +1093,7 @@ const ProductManagement = ({
                   </button>
                   {specDropdownOpen && (
                     <div className="pm-spec-dropdown">
-                      {VIP_SPECIALTIES.map((s) => (
+                      {specializations.map((s) => (
                         <label key={s} className="pm-spec-dropdown-item">
                           <input
                             type="checkbox"

@@ -24,6 +24,7 @@ const {
   getDoctorVisits,
   getDoctorProducts,
   updateTargetProducts,
+  getSpecializations,
 } = require('../controllers/doctorController');
 
 const { protect } = require('../middleware/auth');
@@ -34,6 +35,7 @@ const { createDoctorValidation, updateDoctorValidation } = require('../middlewar
 router.use(protect);
 
 // Public routes (accessible by all authenticated users with region filtering)
+router.get('/specializations', getSpecializations);
 router.get('/', getAllDoctors);
 router.get('/:id', getDoctorById);
 router.get('/:id/visits', getDoctorVisits);

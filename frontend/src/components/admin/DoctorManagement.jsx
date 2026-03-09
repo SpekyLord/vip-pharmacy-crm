@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import VIP_SPECIALTIES from '../../constants/specializations';
+import doctorService from '../../services/doctorService';
 
 // Enum options for programs and support types (matching backend Doctor.js)
 const PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
@@ -563,6 +563,14 @@ const DoctorManagement = ({
   });
   const [saving, setSaving] = useState(false);
   const [localFilters, setLocalFilters] = useState(filters);
+  const [specializations, setSpecializations] = useState([]);
+
+  // Fetch distinct specializations from database
+  useEffect(() => {
+    doctorService.getSpecializations()
+      .then((res) => setSpecializations(res.data || []))
+      .catch(() => setSpecializations([]));
+  }, []);
 
   // Debounce search
   useEffect(() => {
@@ -961,7 +969,7 @@ const DoctorManagement = ({
                     onChange={handleFormChange}
                   >
                     <option value="">— Select —</option>
-                    {VIP_SPECIALTIES.map((s) => (
+                    {specializations.map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>

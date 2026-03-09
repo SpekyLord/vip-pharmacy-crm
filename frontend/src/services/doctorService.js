@@ -58,6 +58,12 @@ const doctorService = {
     });
     return response.data;
   },
+
+  // Get distinct specializations from all VIP Clients
+  getSpecializations: async () => {
+    const response = await api.get('/doctors/specializations');
+    return response.data;
+  },
 };
 
 export default doctorService;

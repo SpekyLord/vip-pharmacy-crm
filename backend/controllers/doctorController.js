@@ -554,6 +554,29 @@ const updateTargetProducts = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Get distinct specialization values from all doctors
+ */
+const getSpecializations = catchAsync(async (req, res) => {
+  const specializations = await Doctor.distinct('specialization', {
+    isActive: { $ne: false },
+    specialization: { $ne: null, $ne: '' },
+  });
+
+  // Filter empty, deduplicate case-insensitively (keep first occurrence), sort
+  const seen = new Map();
+  specializations.filter(Boolean).forEach((s) => {
+    const key = s.trim().toLowerCase();
+    if (!seen.has(key)) seen.set(key, s.trim());
+  });
+  const filtered = Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+
+  res.status(200).json({
+    success: true,
+    data: filtered,
+  });
+});
+
 module.exports = {
   getAllDoctors,
   getDoctorById,
@@ -565,4 +588,5 @@ module.exports = {
   getDoctorProducts,
   assignEmployee,
   updateTargetProducts,
+  getSpecializations,
 };
