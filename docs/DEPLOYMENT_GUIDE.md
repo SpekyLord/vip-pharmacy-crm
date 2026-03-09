@@ -62,13 +62,15 @@ Follow these steps in order to deploy to production:
 - Comment: "Lightsail Production"
 
 **4. Configure DNS** (5 minutes, but propagation takes hours)
-- Go to your domain registrar (Namecheap, GoDaddy, etc.)
+- **If your domain is on Squarespace**: *See [Section 12.1](#121-using-squarespace-domain) for detailed Squarespace DNS steps*
+- **If your domain is elsewhere** (Namecheap, GoDaddy, etc.): *See [Section 12.2](#122-using-other-domain-registrars)*
 - Add A records pointing to your Lightsail static IP:
   ```
   A Record: @ → YOUR_STATIC_IP
   A Record: www → YOUR_STATIC_IP
   ```
-- Wait for DNS propagation (check with: `dig yourdomain.com`)
+- Wait for DNS propagation (Squarespace: 5-30 min, others: up to 48 hours)
+- Verify with: `nslookup yourdomain.com`
 
 **5. Install Server Software** (15 minutes)
 - SSH into Lightsail: *See [Section 5.4](#54-connect-via-ssh)*
@@ -846,9 +848,71 @@ chmod 600 /var/www/vip-crm/backend/.env
 
 ## 12. Domain & DNS Setup
 
-### 12.1 Using Custom Domain
+### 12.1 Using Squarespace Domain
 
-1. **Get Static IP** from Lightsail (Section 4.2)
+If your domain is registered with Squarespace, follow these steps:
+
+1. **Get Static IP** from Lightsail (Section 5.2) - Save this IP address
+
+2. **Log in to Squarespace**:
+   - Go to [squarespace.com](https://www.squarespace.com)
+   - Log in to your account
+
+3. **Navigate to DNS Settings**:
+   - Click **Settings** → **Domains**
+   - Click on your domain name
+   - Click **DNS Settings** (or **Advanced Settings**)
+
+4. **Add A Records**:
+   - Scroll to **Custom Records** section
+   - Click **Add Record**
+
+   **First A Record (root domain):**
+   - Type: `A`
+   - Host: `@` (or leave blank)
+   - Data: `YOUR_LIGHTSAIL_STATIC_IP`
+   - TTL: `3600` (default)
+   - Click **Add**
+
+   **Second A Record (www subdomain):**
+   - Click **Add Record** again
+   - Type: `A`
+   - Host: `www`
+   - Data: `YOUR_LIGHTSAIL_STATIC_IP`
+   - TTL: `3600`
+   - Click **Add**
+
+5. **Remove Conflicting Records** (if present):
+   - If there are existing A records for `@` or `www` pointing to Squarespace IPs, **delete them**
+   - Squarespace may show a warning that the domain won't point to your site anymore - this is expected
+
+6. **Wait for DNS Propagation** (5 minutes - 2 hours):
+   - Squarespace DNS is usually fast (5-30 minutes)
+
+7. **Verify DNS** from your local computer:
+   ```bash
+   # Check root domain
+   nslookup yourdomain.com
+   # Should show your Lightsail IP
+
+   # Check www subdomain
+   nslookup www.yourdomain.com
+   # Should also show your Lightsail IP
+   ```
+
+**Important Notes for Squarespace:**
+- ⚠️ **Do NOT use Squarespace website builder** while pointing DNS to Lightsail - your Squarespace site will not be accessible
+- If you want to keep your Squarespace site AND run the CRM, use a **subdomain** instead:
+  - Keep `@` and `www` pointing to Squarespace
+  - Create a new A record: `crm` → `YOUR_LIGHTSAIL_IP`
+  - Access CRM at: `crm.yourdomain.com`
+  - Update Nginx config to use `crm.yourdomain.com` instead of `yourdomain.com`
+
+### 12.2 Using Other Domain Registrars
+
+If your domain is with a different registrar (Namecheap, GoDaddy, etc.):
+
+1. **Get Static IP** from Lightsail (Section 5.2)
 
 2. **Configure DNS** at your registrar:
    ```
@@ -864,7 +928,7 @@ chmod 600 /var/www/vip-crm/backend/.env
    # Should return your static IP
    ```
 
-### 12.2 Using Lightsail Domain (Alternative)
+### 12.3 Using Lightsail Domain (Alternative)
 1. Go to Lightsail → Domains & DNS
 2. Create DNS zone
 3. Add A record pointing to your instance
