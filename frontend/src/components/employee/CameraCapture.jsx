@@ -280,6 +280,37 @@ const cameraStyles = `
   }
 `;
 
+// Compress and resize an image data URL.
+// Scales down to fit within maxDimension (preserving aspect ratio),
+// re-encodes as JPEG at the given quality.
+const compressImage = (dataUrl, maxDimension = 1024, quality = 0.5) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => reject(new Error('Failed to load image for compression'));
+    img.src = dataUrl;
+  });
+};
+
 const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
   const [photos, setPhotos] = useState([]);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -454,9 +485,9 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
         // Validate file type
         if (!file.type.startsWith('image/')) continue;
 
-        // Validate file size (5MB max)
-        if (file.size > 5 * 1024 * 1024) {
-          setError(`File "${file.name}" exceeds 5MB limit and was skipped.`);
+        // Reject raw files over 10MB (compressed output will be much smaller)
+        if (file.size > 10 * 1024 * 1024) {
+          setError(`File "${file.name}" is too large (over 10MB) and was skipped.`);
           continue;
         }
 
@@ -465,11 +496,14 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
           getExifMetadata(file),
         ]);
 
+        // Compress the image (resize to max 1024px, JPEG 50%)
+        const compressedData = await compressImage(dataUrl);
+
         // Use device GPS if available, fall back to EXIF GPS from photo
         const photoLocation = cachedLocation || exifMeta.exifLocation || null;
 
         newPhotoEntries.push({
-          data: dataUrl,
+          data: compressedData,
           location: photoLocation,
           capturedAt: exifMeta.capturedAt,
           source,
@@ -570,13 +604,16 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
       // Use cached GPS if available — not required
       const location = cachedLocation || null;
 
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      const ctx = canvas.getContext('2d');
+      // Capture at native resolution
+      const rawCanvas = document.createElement('canvas');
+      rawCanvas.width = videoRef.current.videoWidth;
+      rawCanvas.height = videoRef.current.videoHeight;
+      const ctx = rawCanvas.getContext('2d');
       ctx.drawImage(videoRef.current, 0, 0);
+      const rawData = rawCanvas.toDataURL('image/jpeg', 0.9);
 
-      const photoData = canvas.toDataURL('image/jpeg', 0.8);
+      // Compress: resize to max 1024px, JPEG 50% quality
+      const photoData = await compressImage(rawData);
 
       const photoWithGps = {
         data: photoData,
