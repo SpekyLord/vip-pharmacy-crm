@@ -29,6 +29,7 @@ const createVisit = catchAsync(async (req, res) => {
     location,
     productsDiscussed,
     engagementTypes,
+    photoMetadata,
     purpose,
     doctorFeedback,
     notes,
@@ -106,28 +107,36 @@ const createVisit = catchAsync(async (req, res) => {
     });
   }
 
-  // Prepare photos array
-  const photos = req.uploadedPhotos.map((photo) => ({
-    url: photo.url,
-    capturedAt: photo.capturedAt || new Date(),
-  }));
+  // Parse photoMetadata if it's a JSON string (from FormData)
+  let parsedPhotoMeta = [];
+  if (photoMetadata) {
+    try {
+      parsedPhotoMeta = typeof photoMetadata === 'string' ? JSON.parse(photoMetadata) : photoMetadata;
+    } catch (e) {
+      parsedPhotoMeta = [];
+    }
+  }
+
+  // Prepare photos array — merge S3 upload result with frontend EXIF metadata
+  const photos = req.uploadedPhotos.map((photo, index) => {
+    const meta = parsedPhotoMeta[index] || {};
+    return {
+      url: photo.url,
+      capturedAt: meta.capturedAt ? new Date(meta.capturedAt) : (photo.capturedAt || new Date()),
+      source: meta.source || 'camera',
+    };
+  });
 
   // Create visit with race condition protection
   // The unique index on (doctor, user, yearWeekKey) prevents duplicate visits
   // but we need to handle the case where two requests arrive simultaneously
   let visit;
   try {
-    visit = await Visit.create({
+    const visitData = {
       doctor: doctorId,
       user: req.user._id,
       visitDate: visitDateObj,
       visitType: visitType || 'regular',
-      location: {
-        latitude: locationData.latitude,
-        longitude: locationData.longitude,
-        accuracy: locationData.accuracy,
-        capturedAt: new Date(),
-      },
       photos,
       productsDiscussed: productsData,
       engagementTypes: engagementData || [],
@@ -137,7 +146,19 @@ const createVisit = catchAsync(async (req, res) => {
       duration,
       nextVisitDate,
       status: 'completed',
-    });
+    };
+
+    // Add location only if GPS data is available
+    if (locationData && locationData.latitude != null && locationData.longitude != null) {
+      visitData.location = {
+        latitude: locationData.latitude,
+        longitude: locationData.longitude,
+        accuracy: locationData.accuracy,
+        capturedAt: new Date(),
+      };
+    }
+
+    visit = await Visit.create(visitData);
   } catch (error) {
     // Handle duplicate key error (race condition - another visit was created first)
     if (error.code === 11000) {

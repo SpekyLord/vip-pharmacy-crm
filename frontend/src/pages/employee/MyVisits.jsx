@@ -184,6 +184,25 @@ const MyVisits = () => {
     });
   };
 
+  // Format photo taken date (full date + time for visit review)
+  const formatPhotoDate = (dateString) => {
+    if (!dateString) return null;
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return null;
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
+    } catch {
+      return null;
+    }
+  };
+
   // Handle page change
   const changePage = (delta) => {
     setPagination(prev => ({
@@ -669,9 +688,18 @@ const MyVisits = () => {
                               alt={`Visit photo ${index + 1}`}
                               onError={(e) => handleImageError(e, selectedVisit._id)}
                             />
-                            <span className="photo-time">
-                              {photo.capturedAt ? formatTime(photo.capturedAt) : ''}
-                            </span>
+                            <div className="photo-meta-overlay">
+                              {photo.source && (
+                                <span className={`photo-source-tag photo-src-${photo.source}`}>
+                                  {photo.source === 'gallery' ? 'Gallery' : photo.source === 'clipboard' ? 'Clipboard' : 'Camera'}
+                                </span>
+                              )}
+                              {photo.capturedAt && (
+                                <span className="photo-taken-date">
+                                  {formatPhotoDate(photo.capturedAt)}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1042,16 +1070,48 @@ const MyVisits = () => {
           opacity: 0.9;
         }
 
-        .photo-time {
+        .photo-meta-overlay {
           position: absolute;
           bottom: 0;
           left: 0;
           right: 0;
-          background: rgba(0,0,0,0.6);
+          background: rgba(0,0,0,0.7);
           color: white;
-          font-size: 0.75rem;
-          padding: 0.25rem;
-          text-align: center;
+          font-size: 0.7rem;
+          padding: 4px 6px;
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+        }
+
+        .photo-source-tag {
+          display: inline-block;
+          font-size: 9px;
+          padding: 1px 5px;
+          border-radius: 3px;
+          font-weight: 600;
+          text-transform: uppercase;
+          width: fit-content;
+        }
+
+        .photo-src-camera {
+          background: #2563eb;
+          color: white;
+        }
+
+        .photo-src-gallery {
+          background: #7c3aed;
+          color: white;
+        }
+
+        .photo-src-clipboard {
+          background: #0891b2;
+          color: white;
+        }
+
+        .photo-taken-date {
+          color: #d1d5db;
+          font-size: 10px;
         }
 
         .no-photos {

@@ -348,12 +348,10 @@ const createVisitValidation = [
     .withMessage('Invalid date format')
     .custom(isWorkDay),
   body('location.latitude')
-    .notEmpty()
-    .withMessage('GPS latitude is required')
+    .optional()
     .custom(isValidLatitude),
   body('location.longitude')
-    .notEmpty()
-    .withMessage('GPS longitude is required')
+    .optional()
     .custom(isValidLongitude),
   body('visitType')
     .optional()
@@ -566,12 +564,10 @@ const createClientVisitValidation = [
     .withMessage('Invalid date format')
     .custom(isWorkDay),
   body('location.latitude')
-    .notEmpty()
-    .withMessage('GPS latitude is required')
+    .optional()
     .custom(isValidLatitude),
   body('location.longitude')
-    .notEmpty()
-    .withMessage('GPS longitude is required')
+    .optional()
     .custom(isValidLongitude),
   body('purpose')
     .optional()

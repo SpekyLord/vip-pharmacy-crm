@@ -66,17 +66,15 @@ const visitSchema = new mongoose.Schema(
       type: String, // "2024-W52" - ISO week format for unique constraint
     },
 
-    // Location (REQUIRED for proof of visit)
+    // Location (optional — attached when available for extra verification)
     location: {
       latitude: {
         type: Number,
-        required: [true, 'GPS latitude is required'],
         min: -90,
         max: 90,
       },
       longitude: {
         type: Number,
-        required: [true, 'GPS longitude is required'],
         min: -180,
         max: 180,
       },
@@ -85,7 +83,6 @@ const visitSchema = new mongoose.Schema(
       },
       capturedAt: {
         type: Date,
-        required: true,
         default: Date.now,
       },
     },
@@ -96,6 +93,7 @@ const visitSchema = new mongoose.Schema(
         {
           url: { type: String, required: true }, // S3 URL
           capturedAt: { type: Date, required: true },
+          source: { type: String, enum: ['camera', 'gallery', 'clipboard'], default: 'camera' },
           thumbnailUrl: { type: String },
         },
       ],

@@ -349,12 +349,8 @@ const VisitLogger = ({ doctor, onSuccess }) => {
       return;
     }
 
-    // Get GPS location - prefer first photo, fall back to any photo with GPS
+    // Get GPS location if available - prefer first photo with GPS, not required
     const visitLocation = photos.find(p => p.location)?.location;
-    if (!visitLocation) {
-      toast.error('GPS location required. Please enable location services and try again.');
-      return;
-    }
 
     setLoading(true);
 
@@ -367,13 +363,24 @@ const VisitLogger = ({ doctor, onSuccess }) => {
       submitData.append('doctorFeedback', formData.doctorFeedback);
       submitData.append('notes', formData.notes);
 
-      // Add location as JSON string
-      submitData.append('location', JSON.stringify({
-        latitude: visitLocation.latitude,
-        longitude: visitLocation.longitude,
-        accuracy: visitLocation.accuracy,
-        capturedAt: photos[0].capturedAt,
+      // Add location as JSON string (optional — attached when available)
+      if (visitLocation) {
+        submitData.append('location', JSON.stringify({
+          latitude: visitLocation.latitude,
+          longitude: visitLocation.longitude,
+          accuracy: visitLocation.accuracy,
+          capturedAt: photos[0].capturedAt,
+        }));
+      }
+
+      // Add photo metadata (capturedAt, source per photo)
+      const photoMeta = photos.map((p, i) => ({
+        index: i,
+        capturedAt: p.capturedAt,
+        source: p.source || 'camera',
+        hasGps: !!p.location,
       }));
+      submitData.append('photoMetadata', JSON.stringify(photoMeta));
 
       // Add products discussed
       if (formData.productsDiscussed.length > 0) {
@@ -423,9 +430,9 @@ const VisitLogger = ({ doctor, onSuccess }) => {
       <style>{visitLoggerStyles}</style>
       {/* Doctor Info Header */}
       <div className="doctor-info-header">
-        <h2>{doctor?.name}</h2>
+        <h2>{doctor?.firstName} {doctor?.lastName}</h2>
         <p className="doctor-details">
-          {doctor?.specialization} | {doctor?.hospital}
+          {[doctor?.specialization, doctor?.clinicOfficeAddress].filter(Boolean).join(' — ')}
         </p>
         <span className="visit-frequency-badge">
           {doctor?.visitFrequency}x per month
