@@ -25,11 +25,9 @@ import {
   FileText,
   Calendar,
   Download,
-  MapPin,
   CheckCircle,
   TrendingUp,
   Users,
-  Package,
   Clock,
   BarChart3,
   FileSpreadsheet,
@@ -79,27 +77,11 @@ const REPORT_TYPES = [
   },
   {
     id: 'performance',
-    name: 'Employee Performance Report',
+    name: 'BDM Performance Report',
     description: 'Individual and team performance metrics, KPIs, and achievement tracking',
     icon: TrendingUp,
     color: '#8b5cf6',
     bgColor: '#f3e8ff',
-  },
-  {
-    id: 'regional',
-    name: 'Regional Comparison Report',
-    description: 'Compare performance across regions, identify trends and opportunities',
-    icon: MapPin,
-    color: '#f59e0b',
-    bgColor: '#fef3c7',
-  },
-  {
-    id: 'products',
-    name: 'Product Presentation Report',
-    description: 'Product detailing metrics, presentation frequency, and doctor feedback',
-    icon: Package,
-    color: '#ec4899',
-    bgColor: '#fce7f3',
   },
 ];
 
@@ -1328,7 +1310,7 @@ const ReportsPage = () => {
                 </div>
                 <div>
                   <h3>BDM Visit Report & Analytics</h3>
-                  <p>Generate individual employee performance reports with GPS verification</p>
+                  <p>Generate individual BDM performance reports with GPS verification</p>
                 </div>
               </div>
               <div className="bdm-report-toggle">
@@ -1341,7 +1323,7 @@ const ReportsPage = () => {
                 {/* Controls */}
                 <div className="bdm-report-controls">
                   <div className="bdm-control-group">
-                    <label>BDM / Employee</label>
+                    <label>BDM</label>
                     <select
                       className="bdm-select"
                       value={selectedBdm}
@@ -1351,7 +1333,7 @@ const ReportsPage = () => {
                         setReportData(null);
                       }}
                     >
-                      <option value="">Select Employee</option>
+                      <option value="">Select BDM</option>
                       {realBdms.map((bdm) => (
                         <option key={bdm._id} value={bdm._id}>
                           {bdm.name}
@@ -1439,7 +1421,7 @@ const ReportsPage = () => {
                 {/* Controls */}
                 <div className="bdm-report-controls">
                   <div className="bdm-control-group">
-                    <label>BDM / Employee</label>
+                    <label>BDM</label>
                     <select
                       className="bdm-select"
                       value={cptBdmId}
@@ -1449,7 +1431,7 @@ const ReportsPage = () => {
                         setCptCycleNumber(null);
                       }}
                     >
-                      <option value="">Select Employee</option>
+                      <option value="">Select BDM</option>
                       {realBdms.map((bdm) => (
                         <option key={bdm._id} value={bdm._id}>
                           {bdm.name}
@@ -1488,7 +1470,7 @@ const ReportsPage = () => {
                       <Calendar size={28} />
                     </div>
                     <h3>No BDM Selected</h3>
-                    <p>Select an employee to view their Call Plan</p>
+                    <p>Select a BDM to view their Call Plan</p>
                   </div>
                 ) : (
                   <CallPlanView

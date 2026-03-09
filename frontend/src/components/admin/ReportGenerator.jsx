@@ -565,11 +565,7 @@ const ReportGenerator = ({
       case 'visits':
         return { title: 'Monthly Visit Summary', icon: Calendar, color: '#3b82f6' };
       case 'performance':
-        return { title: 'Employee Performance Report', icon: TrendingUp, color: '#8b5cf6' };
-      case 'regional':
-        return { title: 'Regional Comparison Report', icon: MapPin, color: '#f59e0b' };
-      case 'products':
-        return { title: 'Product Presentation Report', icon: Package, color: '#ec4899' };
+        return { title: 'BDM Performance Report', icon: TrendingUp, color: '#8b5cf6' };
       default:
         return { title: 'Generate Report', icon: FileText, color: '#6b7280' };
     }
@@ -668,13 +664,13 @@ const ReportGenerator = ({
             </div>
             <div className="rg-row">
               <div className="rg-field">
-                <label className="rg-label">BDM / Employee</label>
+                <label className="rg-label">BDM</label>
                 <select
                   className="rg-select"
                   value={selectedEmployee}
                   onChange={(e) => setSelectedEmployee(e.target.value)}
                 >
-                  <option value="all">All Employees</option>
+                  <option value="all">All BDMs</option>
                   {employees.map(e => (
                     <option key={e._id} value={e._id}>{e.name}</option>
                   ))}
@@ -763,7 +759,7 @@ const ReportGenerator = ({
                 Date: {startDate} to {endDate}
               </span>
               <span className="rg-preview-item">
-                BDM: {selectedEmployee === 'all' ? 'All Employees' : employees.find(e => e._id === selectedEmployee)?.name || 'Selected'}
+                BDM: {selectedEmployee === 'all' ? 'All BDMs' : employees.find(e => e._id === selectedEmployee)?.name || 'Selected'}
               </span>
               <span className="rg-preview-item">
                 Format: {exportFormat.toUpperCase()}

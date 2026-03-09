@@ -9,7 +9,7 @@ const scheduledReportSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['compliance', 'visits', 'performance', 'regional', 'products'],
+      enum: ['compliance', 'visits', 'performance'],
       required: [true, 'Report type is required'],
     },
     frequency: {

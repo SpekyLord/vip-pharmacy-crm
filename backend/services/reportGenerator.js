@@ -146,10 +146,6 @@ async function gatherData(type, filters) {
       return gatherVisits(visitQuery, filters);
     case 'performance':
       return gatherPerformance(visitQuery, filters);
-    case 'regional':
-      return gatherRegional(visitQuery, filters);
-    case 'products':
-      return gatherProducts(visitQuery, filters);
     default:
       throw new Error(`Unknown report type: ${type}`);
   }
@@ -251,100 +247,6 @@ async function gatherPerformance(visitQuery, filters) {
   });
 }
 
-async function gatherRegional(visitQuery) {
-  // Group visits by doctor → aggregate by assignedTo employee
-  const visits = await Visit.aggregate([
-    { $match: visitQuery },
-    {
-      $lookup: {
-        from: 'doctors',
-        localField: 'doctor',
-        foreignField: '_id',
-        as: 'doctorInfo',
-      },
-    },
-    { $unwind: '$doctorInfo' },
-    {
-      $lookup: {
-        from: 'users',
-        localField: 'user',
-        foreignField: '_id',
-        as: 'userInfo',
-      },
-    },
-    { $unwind: '$userInfo' },
-    {
-      $group: {
-        _id: '$user',
-        bdmName: { $first: '$userInfo.name' },
-        totalVisits: { $sum: 1 },
-        uniqueDoctors: { $addToSet: '$doctor' },
-        visitDays: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$visitDate' } } },
-      },
-    },
-    {
-      $project: {
-        bdmName: 1,
-        totalVisits: 1,
-        uniqueDoctors: { $size: '$uniqueDoctors' },
-        activeDays: { $size: '$visitDays' },
-      },
-    },
-    { $sort: { totalVisits: -1 } },
-  ]);
-
-  return visits;
-}
-
-async function gatherProducts(visitQuery) {
-  // Get visits with products discussed
-  const visits = await Visit.find({ ...visitQuery, 'productsDiscussed.0': { $exists: true } })
-    .populate('doctor', 'firstName lastName specialization')
-    .populate('user', 'name')
-    .select('productsDiscussed visitDate doctor user')
-    .lean();
-
-  // Collect all product IDs
-  const productIds = [...new Set(visits.flatMap((v) => v.productsDiscussed.map((p) => p.product?.toString()).filter(Boolean)))];
-
-  // Fetch products from website DB
-  let productMap = new Map();
-  if (productIds.length > 0) {
-    try {
-      const Product = getWebsiteProductModel();
-      const products = await Product.find({ _id: { $in: productIds } }).select('name category').lean();
-      productMap = new Map(products.map((p) => [p._id.toString(), p]));
-    } catch {
-      // If website DB not available, try CRM products
-      const CrmProduct = require('../models/CrmProduct');
-      const products = await CrmProduct.find({ _id: { $in: productIds } }).select('name category').lean();
-      productMap = new Map(products.map((p) => [p._id.toString(), p]));
-    }
-  }
-
-  // Count product discussions
-  const productStats = {};
-  visits.forEach((visit) => {
-    visit.productsDiscussed.forEach((pd) => {
-      const pid = pd.product?.toString();
-      if (!pid) return;
-      const prod = productMap.get(pid);
-      const name = prod?.name || 'Unknown Product';
-      if (!productStats[pid]) {
-        productStats[pid] = { name, category: prod?.category || '', timesDiscussed: 0, timesPresented: 0, uniqueDoctors: new Set() };
-      }
-      productStats[pid].timesDiscussed++;
-      if (pd.presented) productStats[pid].timesPresented++;
-      if (visit.doctor?._id) productStats[pid].uniqueDoctors.add(visit.doctor._id.toString());
-    });
-  });
-
-  return Object.values(productStats).map((s) => ({
-    ...s,
-    uniqueDoctors: s.uniqueDoctors.size,
-  }));
-}
-
 // ──────────────────────────────────────────────────────────────
 // Format data into flat rows for spreadsheet
 // ──────────────────────────────────────────────────────────────
@@ -388,23 +290,6 @@ function formatSheet(type, data) {
         'Active Days': r.activeDays,
         'Avg Visits/Day': r.avgVisitsPerDay,
         'Coverage %': `${r.coveragePercent}%`,
-      }));
-
-    case 'regional':
-      return data.map((r) => ({
-        'BDM Name': r.bdmName,
-        'Total Visits': r.totalVisits,
-        'Unique VIP Clients': r.uniqueDoctors,
-        'Active Days': r.activeDays,
-      }));
-
-    case 'products':
-      return data.map((r) => ({
-        'Product Name': r.name,
-        Category: r.category,
-        'Times Discussed': r.timesDiscussed,
-        'Times Presented': r.timesPresented,
-        'Unique VIP Clients': r.uniqueDoctors,
       }));
 
     default:
