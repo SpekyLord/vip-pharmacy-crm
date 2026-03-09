@@ -26,6 +26,191 @@ This guide covers deploying the VIP CRM to AWS Lightsail with S3 for image stora
 
 ---
 
+## Quick Start: Production Deployment Path
+
+**Current Status:** Phase 1-5 complete ✅. System is feature-complete and ready for deployment.
+
+**Time Estimate:** 2-4 hours (depending on domain/DNS propagation)
+
+### Step-by-Step Deployment Order
+
+Follow these steps in order to deploy to production:
+
+#### ✅ Already Done (Verify These First)
+1. ✅ **AWS Account** - You have this
+2. ✅ **IAM User with S3 + SES access** - Created with access keys
+3. ✅ **S3 Bucket** - `vip-pharmacy-crm-devs` configured with CORS
+4. ✅ **SES Setup** - Sender email verified, currently in sandbox mode
+5. ✅ **MongoDB Atlas** - Cluster connected and working
+
+#### 🔄 Do These Now (In Order)
+
+**1. Request SES Production Access** (Do this first - takes 24-48 hours)
+- Go to: AWS SES Console → Account dashboard → **Request production access**
+- Fill form: *See [Section 4.3](#43-request-production-access) for exact details*
+- While waiting for approval, continue with other steps
+
+**2. Provision AWS Lightsail Instance** (30 minutes)
+- Create Ubuntu 22.04 instance: *See [Section 5.1](#51-create-lightsail-instance)*
+- Attach static IP: *See [Section 5.2](#52-create-static-ip)*
+- Configure firewall (ports 22, 80, 443): *See [Section 5.3](#53-configure-firewall)*
+- **Save your static IP** for next steps
+
+**3. Update MongoDB Network Access** (5 minutes)
+- Go to MongoDB Atlas → Network Access
+- Add your Lightsail static IP: `YOUR_STATIC_IP/32`
+- Comment: "Lightsail Production"
+
+**4. Configure DNS** (5 minutes, but propagation takes hours)
+- Go to your domain registrar (Namecheap, GoDaddy, etc.)
+- Add A records pointing to your Lightsail static IP:
+  ```
+  A Record: @ → YOUR_STATIC_IP
+  A Record: www → YOUR_STATIC_IP
+  ```
+- Wait for DNS propagation (check with: `dig yourdomain.com`)
+
+**5. Install Server Software** (15 minutes)
+- SSH into Lightsail: *See [Section 5.4](#54-connect-via-ssh)*
+- Run these commands in order:
+```bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Node.js 20
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Install Nginx, PM2, Git, Certbot
+sudo apt install nginx git -y
+sudo npm install -g pm2
+sudo apt install certbot python3-certbot-nginx -y
+
+# Verify installations
+node --version  # Should show v20.x.x
+nginx -v
+pm2 --version
+```
+
+**6. Deploy Application Code** (20 minutes)
+```bash
+# Clone repository
+sudo mkdir -p /var/www
+cd /var/www
+sudo git clone https://github.com/YOUR_USERNAME/vip-crm.git
+cd vip-crm
+sudo chown -R ubuntu:ubuntu /var/www/vip-crm
+
+# Install backend dependencies
+cd backend
+npm install --production
+
+# Build frontend (IMPORTANT: Use your production domain)
+cd ../frontend
+npm install
+VITE_API_URL=https://yourdomain.com/api npm run build
+```
+
+**7. Configure Environment Variables** (10 minutes)
+```bash
+cd /var/www/vip-crm/backend
+nano .env
+```
+- Copy from [Section 11.1](#111-production-env-file)
+- **Update these values:**
+  - `MONGO_URI` - Your MongoDB connection string
+  - `JWT_SECRET` - Generate with: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
+  - `JWT_REFRESH_SECRET` - Generate another one
+  - `AWS_ACCESS_KEY_ID` - Your IAM user access key
+  - `AWS_SECRET_ACCESS_KEY` - Your IAM secret key
+  - `AWS_REGION` - Same region as your S3 bucket (e.g., `ap-southeast-1`)
+  - `S3_BUCKET_NAME` - Your bucket name
+  - `SES_FROM_EMAIL` - Your verified sender email (e.g., `sales@vippharmacy.online`)
+  - `SES_SANDBOX_MODE` - Set to `false` (after SES production approval)
+  - `FRONTEND_URL` - Your production domain (e.g., `https://yourdomain.com`)
+  - `CORS_ORIGINS` - Your domains (e.g., `https://yourdomain.com,https://www.yourdomain.com`)
+- Save and secure: `chmod 600 .env`
+
+**8. Configure Nginx** (15 minutes)
+```bash
+# Create Nginx config
+sudo nano /etc/nginx/sites-available/vip-crm
+```
+- Copy config from [Section 9.1](#91-create-nginx-configuration)
+- **Replace `yourdomain.com` with your actual domain** (3 places)
+- Save and enable:
+```bash
+sudo ln -s /etc/nginx/sites-available/vip-crm /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+**9. Obtain SSL Certificate** (5 minutes)
+```bash
+# Get SSL certificate (replace with your domain)
+sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+# Follow prompts, choose to redirect HTTP → HTTPS
+```
+
+**10. Start Application with PM2** (10 minutes)
+```bash
+cd /var/www/vip-crm
+
+# Create PM2 config
+nano ecosystem.config.js
+```
+- Copy from [Section 10.1](#101-create-pm2-ecosystem-file)
+- Save and start:
+```bash
+mkdir -p logs
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup
+# Copy and run the command it outputs
+```
+
+**11. Verify Deployment** (10 minutes)
+```bash
+# Check PM2 status
+pm2 status
+pm2 logs --lines 50
+
+# Test health endpoint
+curl https://yourdomain.com/api/health
+# Should return: {"success":true,"dependencies":{"mongodb":"connected","s3":"configured","ses":"configured"}}
+
+# Check Nginx
+sudo systemctl status nginx
+
+# Check SSL
+curl -I https://yourdomain.com
+```
+
+**12. Test the Application** (15 minutes)
+- Visit: `https://yourdomain.com`
+- Login with admin credentials: `admin@vipcrm.com` / `Admin123!@#`
+- Test:
+  - Dashboard loads
+  - VIP Client list loads
+  - Upload a test visit photo (checks S3)
+  - Try password reset (checks SES - will only work after production access)
+
+#### 🎉 Post-Deployment
+
+**Once SES Production Access is Approved:**
+1. Update `.env`: `SES_SANDBOX_MODE=false`
+2. Restart: `pm2 restart all`
+3. Test password reset with any email address
+
+**Ongoing Maintenance:**
+- Update code: `git pull && npm install && pm2 reload all`
+- Monitor: `pm2 monit` or Lightsail console metrics
+- View logs: `pm2 logs`
+- System updates: `sudo apt update && sudo apt upgrade -y` (monthly)
+
+---
+
 ## 1. Prerequisites
 
 ### 1.1 Required Accounts
