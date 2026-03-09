@@ -27,7 +27,7 @@ const {
   updatePassword,
 } = require('../controllers/authController');
 
-const { protect } = require('../middleware/auth');
+const { protect, verifyRefreshToken } = require('../middleware/auth');
 const { adminOnly } = require('../middleware/roleCheck');
 const {
   loginValidation,
@@ -46,6 +46,18 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Separate rate limiter for refresh-token (higher limit since frontend may fire multiple parallel requests)
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 60, // Allow more since each page load can trigger multiple refreshes
+  message: {
+    success: false,
+    message: 'Too many refresh attempts. Please try again later.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5, // 5 attempts per hour
@@ -59,7 +71,7 @@ const passwordResetLimiter = rateLimit({
 
 // Public routes with rate limiting
 router.post('/login', authLimiter, loginValidation, login);
-router.post('/refresh-token', authLimiter, refreshToken);
+router.post('/refresh-token', refreshLimiter, verifyRefreshToken, refreshToken);
 router.post('/forgot-password', passwordResetLimiter, forgotPassword);
 router.post('/reset-password/:token', passwordResetLimiter, resetPassword);
 

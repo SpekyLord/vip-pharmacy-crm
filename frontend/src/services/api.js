@@ -48,6 +48,11 @@ api.interceptors.request.use(
   }
 );
 
+// Refresh mutex: ensures only ONE refresh request fires at a time
+// All other 401'd requests wait for the same refresh promise
+let isRefreshing = false;
+let refreshPromise = null;
+
 // Response interceptor - handle token refresh via cookies
 api.interceptors.response.use(
   (response) => response,
@@ -64,18 +69,33 @@ api.interceptors.response.use(
 
       originalRequest._retry = true;
 
-      try {
-        // Refresh token is in httpOnly cookie, sent automatically
-        await axios.post(`${API_URL}/auth/refresh-token`, {}, {
-          withCredentials: true, // Send refresh token cookie
-        });
+      // If a refresh is already in progress, wait for it instead of firing another
+      if (isRefreshing) {
+        try {
+          await refreshPromise;
+          return api(originalRequest);
+        } catch {
+          return Promise.reject(error);
+        }
+      }
 
+      // Start a new refresh
+      isRefreshing = true;
+      refreshPromise = axios.post(`${API_URL}/auth/refresh-token`, {}, {
+        withCredentials: true,
+      });
+
+      try {
+        await refreshPromise;
         // Retry original request - new access token cookie will be sent automatically
         return api(originalRequest);
       } catch (refreshError) {
         // Refresh failed - dispatch logout event for AuthContext to handle
         window.dispatchEvent(new CustomEvent('auth:logout'));
         return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+        refreshPromise = null;
       }
     }
 

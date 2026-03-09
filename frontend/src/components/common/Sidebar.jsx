@@ -563,7 +563,7 @@ const getMenuConfig = (role) => {
           },
         ],
         bottomTabs: [
-          { path: '/admin', label: 'Home', icon: LayoutDashboard },
+          { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
           { path: '/admin/approvals', label: 'Import', icon: FileSpreadsheet },
           { path: '/admin/doctors', label: 'Clients', icon: Stethoscope },
           { path: '/admin/reports', label: 'Reports', icon: FileText },
@@ -593,7 +593,7 @@ const getMenuConfig = (role) => {
           },
         ],
         bottomTabs: [
-          { path: '/employee', label: 'Home', icon: LayoutDashboard },
+          { path: '/employee', label: 'Dashboard', icon: LayoutDashboard, end: true },
           { path: '/employee/cpt', label: 'Call Plan', icon: CalendarRange },
           { path: '/employee/visits', label: 'Visits', icon: ClipboardCheck },
           { path: '/employee/inbox', label: 'Inbox', icon: Inbox, badge: 2 },
@@ -643,6 +643,43 @@ const Sidebar = () => {
       document.body.style.overflow = '';
     }
     return () => { document.body.style.overflow = ''; };
+  }, [drawerOpen]);
+
+  // Swipe gesture to open/close drawer
+  useEffect(() => {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const SWIPE_THRESHOLD = 50;
+
+    const handleTouchStart = (e) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    };
+
+    const handleTouchEnd = (e) => {
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      const deltaX = touchEndX - touchStartX;
+      const deltaY = Math.abs(touchEndY - touchStartY);
+
+      // Only count horizontal swipes (deltaX > threshold, deltaY small)
+      if (Math.abs(deltaX) > SWIPE_THRESHOLD && deltaY < 100) {
+        if (deltaX > 0 && !drawerOpen) {
+          // Swipe right anywhere → open menu
+          setDrawerOpen(true);
+        } else if (deltaX < 0 && drawerOpen) {
+          // Swipe left while open → close menu
+          setDrawerOpen(false);
+        }
+      }
+    };
+
+    document.addEventListener('touchstart', handleTouchStart, { passive: true });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
   }, [drawerOpen]);
 
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
@@ -720,6 +757,7 @@ const Sidebar = () => {
               <NavLink
                 key={tab.path}
                 to={tab.path}
+                end={tab.end}
                 className={`mobile-tab-item ${isActive(tab.path) ? 'active' : ''}`}
               >
                 <Icon size={22} />
@@ -728,12 +766,12 @@ const Sidebar = () => {
               </NavLink>
             );
           })}
-          {/* Menu overflow tab */}
+          {/* Menu overflow tab — toggles drawer open/close */}
           <button
             className={`mobile-tab-item ${drawerOpen ? 'active' : ''}`}
-            onClick={() => setDrawerOpen(true)}
+            onClick={() => setDrawerOpen(prev => !prev)}
           >
-            <Menu size={22} />
+            {drawerOpen ? <X size={22} /> : <Menu size={22} />}
             <span>Menu</span>
           </button>
         </div>
