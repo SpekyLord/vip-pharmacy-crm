@@ -21,12 +21,13 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
+const path = require('path');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
-// Load environment variables
-dotenv.config();
+// Load environment variables from the backend directory (works regardless of CWD)
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 // Validate required environment variables at startup
 const validateEnv = () => {
@@ -201,6 +202,7 @@ const userLimiter = rateLimit({
     // Use user ID if authenticated, fall back to IP
     return req.user?._id?.toString() || req.ip;
   },
+  validate: { keyGeneratorIpFallback: false },
   message: {
     success: false,
     message: 'Too many requests from your account, please try again later.',
