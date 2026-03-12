@@ -603,7 +603,7 @@ const getMenuConfig = (role) => {
     case 'employee':
     default:
       return {
-        roleTitle: 'Field Employee',
+        roleTitle: 'Field BDM',
         roleSubtitle: 'BDM',
         roleIcon: UserCog,
         sections: [
