@@ -124,9 +124,9 @@ const corsOptions = {
   origin: function (origin, callback) {
     // In production, use explicit allowed origins from env
     if (process.env.NODE_ENV === 'production') {
-      // In production, require Origin header (prevents CORS bypass)
+      // Allow requests with no Origin (server-side curl, health checks, same-origin)
       if (!origin) {
-        return callback(new Error('Origin header required in production'));
+        return callback(null, true);
       }
       if (process.env.CORS_ORIGINS) {
         const allowedOrigins = process.env.CORS_ORIGINS.split(',').map((o) => o.trim());
