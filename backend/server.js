@@ -74,7 +74,7 @@ const validateEnv = () => {
     missingRecommended.forEach((key) => console.warn(`  - ${key}`));
   }
 
-  const emailRecommended = ['SES_FROM_EMAIL', 'FRONTEND_URL'];
+  const emailRecommended = ['RESEND_API_KEY', 'RESEND_FROM_EMAIL', 'FRONTEND_URL'];
   const missingEmail = emailRecommended.filter((key) => !process.env[key]);
   if (missingEmail.length > 0) {
     console.warn('Warning: Missing email environment variables (email notifications disabled):');
@@ -248,7 +248,7 @@ app.get('/api/health', async (req, res) => {
     dependencies: {
       mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
       s3: process.env.S3_BUCKET_NAME ? 'configured' : 'not_configured',
-      ses: process.env.SES_FROM_EMAIL ? (process.env.SES_SANDBOX_MODE !== 'false' ? 'sandbox' : 'configured') : 'not_configured',
+      email: process.env.RESEND_API_KEY ? (process.env.SES_SANDBOX_MODE !== 'false' ? 'sandbox' : 'configured') : 'not_configured',
     },
   };
 

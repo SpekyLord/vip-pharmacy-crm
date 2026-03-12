@@ -1,30 +1,25 @@
 /**
- * AWS SES Configuration
+ * Email Configuration (Resend)
  *
- * This file handles:
- * - AWS SES client initialization
- * - Email sending operations
- * - Sandbox mode for development (logs instead of sending)
+ * Drop-in replacement for the previous AWS SES config.
+ * Exports the same interface: sendEmail, isConfigured, fromEmail, isSandbox
  *
- * Reuses same AWS credentials as S3 (IAM user needs ses:SendEmail permission)
+ * Setup:
+ * 1. Sign up at https://resend.com
+ * 2. Verify your sending domain in the Resend dashboard
+ * 3. Create an API key and set RESEND_API_KEY in .env
+ * 4. Set RESEND_FROM_EMAIL to a verified sender (e.g. noreply@yourdomain.com)
  */
 
-const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
+const { Resend } = require('resend');
 
-// Initialize SES Client
-const sesClient = new SESClient({
-  region: process.env.AWS_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-const fromEmail = process.env.SES_FROM_EMAIL || 'noreply@vipcrm.com';
+const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@vipcrm.com';
 const isSandbox = process.env.SES_SANDBOX_MODE !== 'false';
 
 /**
- * Send an email via AWS SES (or log in sandbox mode)
+ * Send an email via Resend (or log in sandbox mode)
  * @param {Object} options
  * @param {string} options.to - Recipient email address
  * @param {string} options.subject - Email subject
@@ -34,46 +29,38 @@ const isSandbox = process.env.SES_SANDBOX_MODE !== 'false';
  */
 const sendEmail = async ({ to, subject, html, text }) => {
   if (isSandbox) {
-    console.log('=== SES SANDBOX MODE (email not sent) ===');
+    console.log('=== EMAIL SANDBOX MODE (email not sent) ===');
     console.log(`To: ${to}`);
     console.log(`Subject: ${subject}`);
     console.log(`Text: ${text?.substring(0, 200)}...`);
-    console.log('==========================================');
+    console.log('===========================================');
     return { messageId: null };
   }
 
-  const command = new SendEmailCommand({
-    Source: fromEmail,
-    Destination: {
-      ToAddresses: [to],
-    },
-    Message: {
-      Subject: { Data: subject, Charset: 'UTF-8' },
-      Body: {
-        Html: { Data: html, Charset: 'UTF-8' },
-        Text: { Data: text, Charset: 'UTF-8' },
-      },
-    },
+  const { data, error } = await resend.emails.send({
+    from: fromEmail,
+    to: [to],
+    subject,
+    html,
+    text,
   });
 
-  const result = await sesClient.send(command);
-  return { messageId: result.MessageId };
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return { messageId: data.id };
 };
 
 /**
- * Check if SES configuration is valid
+ * Check if email configuration is valid
  * @returns {boolean}
  */
 const isConfigured = () => {
-  return !!(
-    process.env.AWS_ACCESS_KEY_ID &&
-    process.env.AWS_SECRET_ACCESS_KEY &&
-    process.env.SES_FROM_EMAIL
-  );
+  return !!(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
 };
 
 module.exports = {
-  sesClient,
   sendEmail,
   isConfigured,
   fromEmail,
