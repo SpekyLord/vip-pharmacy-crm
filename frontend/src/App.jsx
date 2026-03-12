@@ -27,7 +27,6 @@ import StatisticsPage from './pages/admin/StatisticsPage';
 import ActivityMonitor from './pages/admin/ActivityMonitor';
 import PendingApprovalsPage from './pages/admin/PendingApprovalsPage';
 import GPSVerificationPage from './pages/admin/GPSVerificationPage';
-import NotificationPreferences from './pages/common/NotificationPreferences';
 
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
@@ -179,16 +178,6 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['admin']}>
               <GPSVerificationPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Notification Preferences (All Roles) */}
-        <Route
-          path="/notifications/preferences"
-          element={
-            <ProtectedRoute allowedRoles={['employee', 'admin']}>
-              <NotificationPreferences />
             </ProtectedRoute>
           }
         />

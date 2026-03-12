@@ -25,7 +25,7 @@ const loginPageStyles = `
 
   .login-container {
     background: white;
-    padding: 40px 32px;
+    padding: 28px 32px 28px;
     border-radius: 20px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
     width: 100%;
@@ -34,22 +34,23 @@ const loginPageStyles = `
 
   .login-header {
     text-align: center;
-    margin-bottom: 32px;
+    margin-bottom: 16px;
   }
 
-  .login-header .login-logo {
-    width: 56px;
-    height: 56px;
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-    border-radius: 16px;
+  .login-logo-clip {
+    height: 80px;
+    overflow: hidden;
     display: flex;
-    align-items: center;
     justify-content: center;
-    color: white;
-    font-weight: 800;
-    font-size: 22px;
-    margin: 0 auto 16px;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    margin: 0 auto 0;
+  }
+
+  .login-logo {
+    height: 220px;
+    width: auto;
+    flex-shrink: 0;
+    margin-top: -72px;
+    margin-left: 12px;
   }
 
   .login-header h1 {
@@ -128,8 +129,10 @@ const LoginPage = () => {
       <style>{loginPageStyles}</style>
       <div className="login-container">
         <div className="login-header">
-          <div className="login-logo">VP</div>
-          <h1>VIP CRM</h1>
+          <div className="login-logo-clip">
+            <img src="/VIP_LOGO-removebg.svg" alt="VIP" className="login-logo" />
+          </div>
+          <h1>CRM</h1>
           <p>Customer Relationship Management System</p>
         </div>
         <LoginForm />

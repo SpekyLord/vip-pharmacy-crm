@@ -13,7 +13,6 @@
  */
 
 import { useAuth } from '../../hooks/useAuth';
-import NotificationCenter from './NotificationCenter';
 import { LogOut, Menu } from 'lucide-react';
 
 /* =============================================================================
@@ -43,17 +42,9 @@ const navbarStyles = `
   }
 
   .navbar-logo {
-    width: 42px;
-    height: 42px;
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: 800;
-    font-size: 18px;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+    height: 80px;
+    width: auto;
+    object-fit: contain;
   }
 
   .navbar-brand h1 {
@@ -216,10 +207,8 @@ const navbarStyles = `
     }
 
     .navbar-logo {
-      width: 36px;
-      height: 36px;
-      font-size: 15px;
-      border-radius: 10px;
+      height: 75px;
+      width: auto;
     }
 
     .navbar-profile {
@@ -308,7 +297,7 @@ const Navbar = () => {
         </button>
 
         <div className="navbar-brand">
-          <div className="navbar-logo">VP</div>
+          <img src="/VIP_LOGO-removebg.svg" alt="VIP" className="navbar-logo" />
           <h1>VIP <span>Pharmacy</span> CRM</h1>
         </div>
       </div>
@@ -317,9 +306,6 @@ const Navbar = () => {
       <div className="navbar-menu">
         {user && (
           <>
-            {/* Notifications */}
-            <NotificationCenter />
-
             <div className="navbar-divider" />
 
             {/* Mobile Avatar */}

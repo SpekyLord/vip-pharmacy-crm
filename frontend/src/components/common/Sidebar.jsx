@@ -12,6 +12,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import messageService from '../../services/messageInboxService';
 import {
   LayoutDashboard,
   Users,
@@ -560,7 +561,7 @@ const sidebarStyles = `
    MENU CONFIGURATION
    ============================================================================= */
 
-const getMenuConfig = (role) => {
+const getMenuConfig = (role, unreadCount = 0) => {
   switch (role) {
     case 'admin':
       return {
@@ -617,7 +618,7 @@ const getMenuConfig = (role) => {
             title: 'Work',
             items: [
               { path: '/employee/cpt', label: 'Call Plan', icon: CalendarRange },
-              { path: '/employee/inbox', label: 'Mail', icon: Inbox, badge: 2 },
+              { path: '/employee/inbox', label: 'Mail', icon: Inbox, badge: unreadCount || null },
               { path: '/employee/visits', label: 'My Visits', icon: ClipboardCheck },
             ],
           },
@@ -626,7 +627,7 @@ const getMenuConfig = (role) => {
           { path: '/employee', label: 'Dashboard', icon: LayoutDashboard, end: true },
           { path: '/employee/cpt', label: 'Call Plan', icon: CalendarRange },
           { path: '/employee/visits', label: 'Visits', icon: ClipboardCheck },
-          { path: '/employee/inbox', label: 'Inbox', icon: Inbox, badge: 2 },
+          { path: '/employee/inbox', label: 'Inbox', icon: Inbox, badge: unreadCount || null },
         ],
       };
   }
@@ -643,7 +644,31 @@ const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const menuConfig = getMenuConfig(user?.role);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Fetch unread message count for employee role
+  const fetchUnreadCount = useCallback(async () => {
+    if (user?.role !== 'employee') return;
+    try {
+      const res = await messageService.getAll({ limit: 100 });
+      const messages = res.data || res.messages || [];
+      const count = messages.filter(
+        (m) => !m.readBy?.includes(user._id) && !m.read
+      ).length;
+      setUnreadCount(count);
+    } catch {
+      // silently fail — badge just won't show
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchUnreadCount();
+    // Refresh when inbox marks messages as read
+    window.addEventListener('inbox:updated', fetchUnreadCount);
+    return () => window.removeEventListener('inbox:updated', fetchUnreadCount);
+  }, [fetchUnreadCount]);
+
+  const menuConfig = getMenuConfig(user?.role, unreadCount);
   const RoleIcon = menuConfig.roleIcon;
 
   const isActive = (path) => {
