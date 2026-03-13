@@ -58,8 +58,8 @@ const isValidEmail = (value) => {
 };
 
 const isValidPhone = (value) => {
-  if (value && !/^[0-9+\-() ]{10,20}$/.test(value)) {
-    throw new Error('Invalid phone number format');
+  if (value && !/^[0-9+\-() ]{4,20}$/.test(value)) {
+    throw new Error('Phone number must be 4-20 characters');
   }
   return true;
 };
@@ -511,10 +511,6 @@ const createClientValidation = [
     .optional()
     .isLength({ max: 500 })
     .withMessage('Clinic/Office address cannot exceed 500 characters'),
-  body('region')
-    .notEmpty()
-    .withMessage('Region is required')
-    .custom(isValidObjectId),
   body('phone')
     .optional()
     .custom(isValidPhone),

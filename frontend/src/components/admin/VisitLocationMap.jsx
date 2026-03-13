@@ -381,7 +381,7 @@ const VisitLocationMap = ({
       {
         position: employee,
         color: 'red',
-        label: 'Employee Photo Location',
+        label: 'BDM Photo Location',
       },
     ];
   }, [clinic, employee]);
@@ -455,7 +455,7 @@ const VisitLocationMap = ({
         </div>
         <div className="vlm-legend-item">
           <span className="vlm-legend-dot red" />
-          Employee Location
+          BDM Location
         </div>
         <div className="vlm-legend-item">
           <span className="vlm-legend-line" />

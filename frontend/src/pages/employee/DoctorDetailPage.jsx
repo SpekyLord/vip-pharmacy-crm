@@ -525,7 +525,7 @@ const DoctorDetailPage = () => {
   }, [fetchData]);
 
   const handleLogVisit = () => {
-    navigate(`/employee/visit/new?doctorId=${id}`);
+    navigate(`/bdm/visit/new?doctorId=${id}`);
   };
 
   const handleEditSaved = () => {
@@ -824,7 +824,7 @@ const DoctorDetailPage = () => {
                   {visits.length > 10 && (
                     <button
                       className="ddp-view-all"
-                      onClick={() => navigate(`/employee/visits?doctorId=${id}`)}
+                      onClick={() => navigate(`/bdm/visits?doctorId=${id}`)}
                     >
                       View all {visits.length} visits &rarr;
                     </button>

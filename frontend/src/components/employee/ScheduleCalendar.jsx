@@ -318,7 +318,7 @@ const ScheduleCalendar = ({ entries = [], currentWeek, currentDay, onLogVisit, l
     if (onLogVisit) {
       onLogVisit(entry);
     } else {
-      navigate(`/employee/visit/new?doctorId=${entry.doctor?._id}`);
+      navigate(`/bdm/visit/new?doctorId=${entry.doctor?._id}`);
     }
   };
 

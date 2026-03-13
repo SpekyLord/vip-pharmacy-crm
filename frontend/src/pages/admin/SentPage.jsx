@@ -333,7 +333,7 @@ const [editingId, setEditingId] = useState(null);
               <button
                 className="btn btn-secondary"
                 onClick={() => navigate('/bdm')}
-                title="Back to employee dashboard"
+                title="Back to BDM dashboard"
               >
                 Back
               </button>

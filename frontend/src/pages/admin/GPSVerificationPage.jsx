@@ -509,7 +509,7 @@ const GPSVerificationPage = () => {
             <div className="info-banner-content">
               <div className="info-banner-title">Verification Threshold: 400 meters</div>
               <div className="info-banner-text">
-                Visits with employee photo taken within 400m of the clinic are marked as VERIFIED.
+                Visits with BDM photo taken within 400m of the clinic are marked as VERIFIED.
                 Beyond 400m is flagged as SUSPICIOUS.
               </div>
             </div>

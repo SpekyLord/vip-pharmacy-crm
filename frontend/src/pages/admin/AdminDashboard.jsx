@@ -304,7 +304,7 @@ const AdminDashboard = () => {
                 <span className="quick-action-icon">
                   <Users size={18} />
                 </span>
-                Employees
+                BDMs
               </Link>
               <Link to="/admin/reports" className="quick-action-btn">
                 <span className="quick-action-icon">

@@ -590,7 +590,7 @@ const LiveActivityFeed = ({
             <Search size={16} />
             <input
               type="text"
-              placeholder="Search by employee name..."
+              placeholder="Search by BDM name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />

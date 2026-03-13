@@ -376,7 +376,7 @@ const SchedulePage = () => {
   };
 
   const handleLogVisit = (entry) => {
-    navigate(`/employee/visit/new?doctorId=${entry.doctor?._id}`);
+    navigate(`/bdm/visit/new?doctorId=${entry.doctor?._id}`);
   };
 
   const formatCycleDate = (dateStr) => {

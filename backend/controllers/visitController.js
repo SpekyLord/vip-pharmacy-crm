@@ -913,6 +913,59 @@ const getEmployeeReport = catchAsync(async (req, res) => {
   const count4x = doctors.filter((d) => d.visitFrequency === 4 || !d.visitFrequency).length;
   const totalVisits = visits.length;
 
+  // Fetch regular client visits for this BDM and month
+  const ClientVisit = require('../models/ClientVisit');
+  const Client = require('../models/Client');
+
+  const clientVisits = await ClientVisit.find({
+    user: userId,
+    monthYear: monthYear,
+    status: 'completed',
+  })
+    .select('client visitDate purpose engagementTypes weekOfMonth dayOfWeek')
+    .lean();
+
+  // Get unique client IDs and fetch client details
+  const clientIds = [...new Set(clientVisits.map(cv => cv.client.toString()))];
+  const clients = await Client.find({ _id: { $in: clientIds } })
+    .select('firstName lastName specialization clinicOfficeAddress')
+    .lean();
+  const clientMap = new Map(clients.map(c => [c._id.toString(), c]));
+
+  // Build regular client data grouped by client
+  const regularClientData = [];
+  const visitsByClient = new Map();
+  clientVisits.forEach(cv => {
+    const cid = cv.client.toString();
+    if (!visitsByClient.has(cid)) {
+      visitsByClient.set(cid, []);
+    }
+    visitsByClient.get(cid).push(cv);
+  });
+
+  visitsByClient.forEach((cvList, cid) => {
+    const client = clientMap.get(cid);
+    if (!client) return;
+    regularClientData.push({
+      _id: cid,
+      firstName: client.firstName,
+      lastName: client.lastName,
+      specialization: client.specialization || '',
+      clinicOfficeAddress: client.clinicOfficeAddress || '',
+      visitCount: cvList.length,
+      visits: cvList.map(cv => ({
+        visitDate: cv.visitDate,
+        purpose: cv.purpose || '',
+        engagementTypes: cv.engagementTypes || [],
+        weekOfMonth: cv.weekOfMonth,
+        dayOfWeek: cv.dayOfWeek,
+      })),
+    });
+  });
+
+  // Sort alphabetically
+  regularClientData.sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
+
   res.json({
     success: true,
     data: {
@@ -924,11 +977,13 @@ const getEmployeeReport = catchAsync(async (req, res) => {
       areaAssigned: '',
       monthYear: monthYear,
       doctors: doctorsWithVisits,
+      regularClients: regularClientData,
       summary: {
         totalDoctors: doctors.length,
         count2x: count2x,
         count4x: count4x,
         totalVisits: totalVisits,
+        totalRegularClientVisits: clientVisits.length,
         dailyVIPCounts: dailyVIPCounts,
       },
     },

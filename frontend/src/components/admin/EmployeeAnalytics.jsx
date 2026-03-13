@@ -641,7 +641,7 @@ const EmployeeAnalytics = ({
               value={compareEmployeeId}
               onChange={(e) => setCompareEmployeeId(e.target.value)}
             >
-              <option value="">Select Employee...</option>
+              <option value="">Select BDM...</option>
               <option value="dept-avg">Department Average</option>
               {allEmployees
                 .filter(e => e.id !== employeeId)

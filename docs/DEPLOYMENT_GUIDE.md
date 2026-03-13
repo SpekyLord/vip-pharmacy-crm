@@ -4,7 +4,9 @@
 **Version:** 4.0
 **Last Updated:** March 2026 (Email Notifications + SES Update)
 
-This guide covers deploying the VIP CRM to AWS Lightsail with S3 for image storage and SES for email notifications.
+This guide covers deploying the VIP CRM to AWS Lightsail with S3 for image storage and Resend for email notifications.
+
+> **Note:** The email service was migrated from AWS SES to **Resend API**. Some section titles still reference SES for historical context, but the code uses Resend (`backend/config/ses.js`).
 
 ---
 
@@ -28,51 +30,32 @@ This guide covers deploying the VIP CRM to AWS Lightsail with S3 for image stora
 
 ## Quick Start: Production Deployment Path
 
-**Current Status:** Phase 1-5 complete ✅. System is feature-complete and ready for deployment.
+**Current Status:** DEPLOYED AND LIVE at `viosintegrated.net` ✅
 
-**Time Estimate:** 2-4 hours (depending on domain/DNS propagation)
+**Production Domain:** `https://viosintegrated.net`
 
 ### Step-by-Step Deployment Order
 
-Follow these steps in order to deploy to production:
+All steps completed. This section is kept for reference if re-deploying or setting up a new environment.
 
-#### ✅ Already Done (Verify These First)
-1. ✅ **AWS Account** - You have this
-2. ✅ **IAM User with S3 + SES access** - Created with access keys
+#### ✅ All Steps Complete
+
+1. ✅ **AWS Account** - Active
+2. ✅ **IAM User with S3 access** - Created with access keys
 3. ✅ **S3 Bucket** - `vip-pharmacy-crm-devs` configured with CORS
-4. ✅ **SES Setup** - Sender email verified, currently in sandbox mode
-5. ✅ **MongoDB Atlas** - Cluster connected and working
+4. ✅ **Email Service** - Using Resend API (replaced AWS SES)
+5. ✅ **MongoDB Atlas** - Cluster connected and working (`cluster0.wv27nfk.mongodb.net`)
+6. ✅ **AWS Lightsail Instance** - Provisioned with static IP
+7. ✅ **MongoDB Network Access** - Lightsail IP whitelisted
+8. ✅ **DNS Configured** - `viosintegrated.net` pointing to Lightsail
+9. ✅ **Server Software Installed** - Node.js 20, Nginx, PM2, Git, Certbot
+10. ✅ **Application Deployed** - Code cloned, dependencies installed, frontend built
+11. ✅ **Environment Variables** - Production `.env` configured
+12. ✅ **Nginx Configured** - Reverse proxy with gzip, static file caching
+13. ✅ **SSL Certificate** - Let's Encrypt via Certbot (auto-renewal)
+14. ✅ **PM2 Running** - 2 cluster instances, auto-restart on boot
 
-#### 🔄 Do These Now (In Order)
-
-**1. Request SES Production Access** (Do this first - takes 24-48 hours)
-- Go to: AWS SES Console → Account dashboard → **Request production access**
-- Fill form: *See [Section 4.3](#43-request-production-access) for exact details*
-- While waiting for approval, continue with other steps
-
-**2. Provision AWS Lightsail Instance** (30 minutes)
-- Create Ubuntu 22.04 instance: *See [Section 5.1](#51-create-lightsail-instance)*
-- Attach static IP: *See [Section 5.2](#52-create-static-ip)*
-- Configure firewall (ports 22, 80, 443): *See [Section 5.3](#53-configure-firewall)*
-- **Save your static IP** for next steps
-
-**3. Update MongoDB Network Access** (5 minutes)
-- Go to MongoDB Atlas → Network Access
-- Add your Lightsail static IP: `YOUR_STATIC_IP/32`
-- Comment: "Lightsail Production"
-
-**4. Configure DNS** (5 minutes, but propagation takes hours)
-- **If your domain is on Squarespace**: *See [Section 12.1](#121-using-squarespace-domain) for detailed Squarespace DNS steps*
-- **If your domain is elsewhere** (Namecheap, GoDaddy, etc.): *See [Section 12.2](#122-using-other-domain-registrars)*
-- Add A records pointing to your Lightsail static IP:
-  ```
-  A Record: @ → YOUR_STATIC_IP
-  A Record: www → YOUR_STATIC_IP
-  ```
-- Wait for DNS propagation (Squarespace: 5-30 min, others: up to 48 hours)
-- Verify with: `nslookup yourdomain.com`
-
-**5. Install Server Software** (15 minutes)
+#### Reference: Install Server Software
 - SSH into Lightsail: *See [Section 5.4](#54-connect-via-ssh)*
 - Run these commands in order:
 ```bash
@@ -198,12 +181,7 @@ curl -I https://yourdomain.com
   - Upload a test visit photo (checks S3)
   - Try password reset (checks SES - will only work after production access)
 
-#### 🎉 Post-Deployment
-
-**Once SES Production Access is Approved:**
-1. Update `.env`: `SES_SANDBOX_MODE=false`
-2. Restart: `pm2 restart all`
-3. Test password reset with any email address
+#### 🎉 Post-Deployment (Complete)
 
 **Ongoing Maintenance:**
 - Update code: `git pull && npm install && pm2 reload all`
@@ -216,10 +194,10 @@ curl -I https://yourdomain.com
 ## 1. Prerequisites
 
 ### 1.1 Required Accounts
-- [ ] AWS Account (free tier available)
-- [ ] Domain name registered (or use Lightsail static IP)
-- [ ] MongoDB Atlas account (free tier available)
-- [ ] GitHub/GitLab account for code repository
+- [x] AWS Account
+- [x] Domain name registered (`viosintegrated.net`)
+- [x] MongoDB Atlas account
+- [x] GitHub account for code repository
 
 ### 1.2 Recommended Lightsail Instance
 | Resource | Development | Production |
@@ -1130,35 +1108,34 @@ chmod 600 /var/www/vip-crm/backend/.env
 Before deploying to production, verify these security requirements:
 
 ### Authentication Security
-- [ ] JWT secrets are at least 64 characters (server validates at startup)
-- [ ] Access token expiry is 15 minutes or less
-- [ ] Refresh token expiry is 7 days or less
-- [ ] CORS_ORIGINS environment variable is set (required in production)
-- [ ] httpOnly cookies are being used (not localStorage)
+- [x] JWT secrets are at least 64 characters (server validates at startup)
+- [x] Access token expiry is 15 minutes or less
+- [x] Refresh token expiry is 7 days or less
+- [x] CORS_ORIGINS environment variable is set (required in production)
+- [x] httpOnly cookies are being used (not localStorage)
 
 ### Account Security
-- [ ] Account lockout is enabled (5 attempts = 15 min lockout)
-- [ ] Password complexity is enforced (upper, lower, number, special char)
-- [ ] Audit logging is enabled (check AuditLog collection)
+- [x] Account lockout is enabled (5 attempts = 15 min lockout)
+- [x] Password complexity is enforced (upper, lower, number, special char)
+- [x] Audit logging is enabled (check AuditLog collection)
 
 ### API Security
-- [ ] Rate limiting is configured (500 req/15min general, 50 req/15min auth)
-- [ ] HSTS headers are enabled via helmet
-- [ ] S3 signed URL expiry is 1 hour (not 24 hours)
+- [x] Rate limiting is configured (100 req/15min general, 20 req/15min auth)
+- [x] HSTS headers are enabled via helmet
+- [x] S3 signed URL expiry is 1 hour (not 24 hours)
 
 ### Email Security
-- [ ] SES_FROM_EMAIL is verified in AWS SES
-- [ ] SES_SANDBOX_MODE is set to `false` for production
-- [ ] SES production access approved (can send to any email)
-- [ ] FRONTEND_URL points to production domain (for password reset links)
-- [ ] EmailLog TTL index active (90-day auto-cleanup)
+- [x] Email service configured (Resend API)
+- [x] SES_SANDBOX_MODE is set to `false` for production
+- [x] FRONTEND_URL points to production domain (`https://viosintegrated.net`)
+- [x] EmailLog TTL index active (90-day auto-cleanup)
 
 ### Monitoring
-- [ ] Audit logs are being written to MongoDB
-- [ ] Email logs are being written to MongoDB
-- [ ] TTL index on AuditLog and EmailLog collections (90 day expiry)
-- [ ] Failed login attempts are logged with IP address
-- [ ] Email cron jobs running (check PM2 logs for `[EmailScheduler]` entries)
+- [x] Audit logs are being written to MongoDB
+- [x] Email logs are being written to MongoDB
+- [x] TTL index on AuditLog and EmailLog collections (90 day expiry)
+- [x] Failed login attempts are logged with IP address
+- [x] Email cron jobs running (check PM2 logs for `[EmailScheduler]` entries)
 
 For detailed security documentation, see `docs/SECURITY_CHECKLIST.md`.
 
@@ -1167,60 +1144,59 @@ For detailed security documentation, see `docs/SECURITY_CHECKLIST.md`.
 ## Deployment Checklist
 
 ### AWS Setup
-- [ ] AWS account created
-- [ ] IAM user with S3 + SES access created
-- [ ] Access keys saved securely
+- [x] AWS account created
+- [x] IAM user with S3 access created
+- [x] Access keys saved securely
 
 ### S3 Setup
-- [ ] S3 bucket created
-- [ ] CORS configured for production domain
-- [ ] Folder structure created (optional)
+- [x] S3 bucket created (`vip-pharmacy-crm-devs`)
+- [x] CORS configured for production domain
+- [x] Folder structure created (visits/, products/, avatars/)
 
-### SES Setup
-- [ ] Sender email verified
-- [ ] Sending domain verified (DKIM + DMARC DNS records)
-- [ ] Production access requested and approved
-- [ ] Test email sent successfully
+### Email Setup (Resend)
+- [x] Resend API key configured
+- [x] Sender email verified
+- [x] Email logging active (EmailLog model with 90-day TTL)
+- [x] Cron jobs running (weekly compliance, behind-schedule alerts)
 
 ### Lightsail Setup
-- [ ] Instance created (Ubuntu 22.04)
-- [ ] Static IP attached
-- [ ] Firewall rules configured (22, 80, 443)
+- [x] Instance created (Ubuntu 22.04)
+- [x] Static IP attached
+- [x] Firewall rules configured (22, 80, 443)
 
 ### Database Setup
-- [ ] MongoDB Atlas cluster created
-- [ ] Database user created
-- [ ] Network access configured (Lightsail IP)
-- [ ] Connection string saved
+- [x] MongoDB Atlas cluster created (`cluster0.wv27nfk.mongodb.net`)
+- [x] Database user created
+- [x] Network access configured (Lightsail IP)
+- [x] Connection string saved
 
 ### Server Setup
-- [ ] Node.js 20 LTS installed
-- [ ] Nginx installed
-- [ ] PM2 installed
-- [ ] Git installed
-- [ ] Certbot installed
+- [x] Node.js 20 LTS installed
+- [x] Nginx installed
+- [x] PM2 installed (2 cluster instances)
+- [x] Git installed
+- [x] Certbot installed
 
 ### Application Setup
-- [ ] Repository cloned
-- [ ] Backend dependencies installed
-- [ ] Frontend built with `VITE_API_URL=https://yourdomain.com/api`
-- [ ] Environment variables configured (including SES vars)
-- [ ] PM2 ecosystem file created
-- [ ] Application started with PM2
+- [x] Repository cloned
+- [x] Backend dependencies installed
+- [x] Frontend built
+- [x] Environment variables configured
+- [x] PM2 ecosystem file created
+- [x] Application started with PM2
 
 ### Nginx & SSL
-- [ ] Nginx site configured
-- [ ] SSL certificate obtained
-- [ ] Auto-renewal verified
+- [x] Nginx site configured (reverse proxy + static files)
+- [x] SSL certificate obtained (Let's Encrypt)
+- [x] Auto-renewal verified
 
 ### Final Verification
-- [ ] Application accessible via HTTPS
-- [ ] API endpoints working (`/api/health` returns SES: configured)
-- [ ] Image uploads working
-- [ ] Authentication working
-- [ ] Password reset email sending
-- [ ] Email cron jobs initialized (check PM2 logs)
-- [ ] PM2 starts on boot
+- [x] Application accessible via HTTPS (`https://viosintegrated.net`)
+- [x] API endpoints working
+- [x] Image uploads working (S3)
+- [x] Authentication working (httpOnly cookies)
+- [x] PM2 starts on boot
+- [x] Email cron jobs initialized
 
 ---
 

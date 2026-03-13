@@ -772,7 +772,7 @@ const ImportTab = () => {
 
           <div className="ie-form-row">
             <div className="ie-field">
-              <label>BDM (Employee)</label>
+              <label>BDM</label>
               <select value={selectedBDM} onChange={(e) => setSelectedBDM(e.target.value)}>
                 <option value="">Select BDM...</option>
                 {employees.map((emp) => (
@@ -1119,7 +1119,7 @@ const ExportTab = () => {
 
         <div className="ie-form-row">
           <div className="ie-field">
-            <label>BDM (Employee)</label>
+            <label>BDM</label>
             <select value={selectedBDM} onChange={(e) => { setSelectedBDM(e.target.value); setPreviewStats(null); }}>
               <option value="">Select BDM...</option>
               {employees.map((emp) => (

@@ -33,7 +33,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
   const location = useLocation();
-  const newPath = location.pathname.replace('/employee', '/bdm');
+  const newPath = location.pathname.replace('/employee', '/bdm') + location.search;
   return <Navigate to={newPath} replace />;
 };
 

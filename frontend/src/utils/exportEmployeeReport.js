@@ -192,6 +192,60 @@ const applyStyles = (ws) => {
 };
 
 /**
+ * Build the Regular Clients worksheet data
+ */
+const buildRegularClientsData = (regularClients, monthYear) => {
+  if (!regularClients || regularClients.length === 0) return null;
+
+  const wsData = [];
+
+  // Title row
+  wsData.push(['REGULAR CLIENTS - EXTRA CALLS', '', '', '', '', formatMonthYear(monthYear)]);
+  wsData.push([]); // Empty row
+
+  // Header row
+  wsData.push([
+    'NO.',
+    'LASTNAME',
+    'FIRSTNAME',
+    'SPECIALIZATION',
+    'CLINIC/OFFICE ADDRESS',
+    'TOTAL VISITS',
+    'VISIT DATES',
+    'PURPOSE',
+    'ENGAGEMENT TYPES',
+  ]);
+
+  // Data rows
+  regularClients.forEach((client, idx) => {
+    const visitDates = client.visits
+      .map(v => new Date(v.visitDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
+      .join(', ');
+    const purposes = [...new Set(client.visits.map(v => v.purpose).filter(Boolean))].join(', ');
+    const engagements = [...new Set(client.visits.flatMap(v => v.engagementTypes || []))].join(', ');
+
+    wsData.push([
+      idx + 1,
+      client.lastName,
+      client.firstName,
+      client.specialization || '',
+      client.clinicOfficeAddress || '',
+      client.visitCount,
+      visitDates,
+      purposes,
+      engagements,
+    ]);
+  });
+
+  // Summary row
+  wsData.push([]);
+  const totalVisits = regularClients.reduce((sum, c) => sum + c.visitCount, 0);
+  wsData.push(['', '', '', '', 'TOTAL:', totalVisits]);
+
+  return wsData;
+};
+
+/**
  * Export employee report to Excel file
  */
 export const exportEmployeeReportToExcel = (reportData, monthYear) => {
@@ -204,13 +258,31 @@ export const exportEmployeeReportToExcel = (reportData, monthYear) => {
   // Apply styling
   applyStyles(ws);
 
-  // Add worksheet to workbook
-  XLSX.utils.book_append_sheet(wb, ws, 'Employee Report');
+  // Add VIP Client worksheet
+  XLSX.utils.book_append_sheet(wb, ws, 'BDM Visit Report');
+
+  // Add Regular Clients sheet if data exists
+  const regularClientsData = buildRegularClientsData(reportData.regularClients, monthYear);
+  if (regularClientsData) {
+    const ws2 = XLSX.utils.aoa_to_sheet(regularClientsData);
+    ws2['!cols'] = [
+      { wch: 5 },   // NO.
+      { wch: 15 },  // LASTNAME
+      { wch: 15 },  // FIRSTNAME
+      { wch: 15 },  // SPECIALIZATION
+      { wch: 25 },  // ADDRESS
+      { wch: 12 },  // TOTAL VISITS
+      { wch: 30 },  // VISIT DATES
+      { wch: 25 },  // PURPOSE
+      { wch: 25 },  // ENGAGEMENT TYPES
+    ];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Regular Clients');
+  }
 
   // Generate filename
   const employeeName = reportData.employee.name.replace(/\s+/g, '_');
   const formattedMonth = formatMonthYear(monthYear).replace(/\s+/g, '_');
-  const fileName = `Employee_Report_${employeeName}_${formattedMonth}.xlsx`;
+  const fileName = `BDM_Report_${employeeName}_${formattedMonth}.xlsx`;
 
   // Generate file and download
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
@@ -288,7 +360,7 @@ export const exportEmployeeReportToCSV = (reportData, monthYear) => {
   // Generate filename
   const employeeName = employee.name.replace(/\s+/g, '_');
   const formattedMonth = formatMonthYear(monthYear).replace(/\s+/g, '_');
-  const fileName = `Employee_Report_${employeeName}_${formattedMonth}.csv`;
+  const fileName = `BDM_Report_${employeeName}_${formattedMonth}.csv`;
 
   // Download
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });

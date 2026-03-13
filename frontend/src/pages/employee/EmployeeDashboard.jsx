@@ -515,12 +515,23 @@ const EmployeeDashboard = () => {
 
   // Handle doctor selection - navigate to info page
   const handleSelectDoctor = (doctor) => {
-    navigate(`/employee/doctor/${doctor._id}`);
+    navigate(`/bdm/doctor/${doctor._id}`);
   };
 
   // Handle log visit button click
   const handleLogVisit = (doctor) => {
-    navigate(`/employee/visit/new?doctorId=${doctor._id}`);
+    navigate(`/bdm/visit/new?doctorId=${doctor._id}`);
+  };
+
+  // Handle delete regular client
+  const handleDeleteClient = async (client) => {
+    try {
+      await clientService.delete(client._id);
+      setClients(prev => prev.filter(c => c._id !== client._id));
+    } catch (err) {
+      console.error('Failed to delete client:', err);
+      alert(err.response?.data?.message || 'Failed to delete client');
+    }
   };
 
   // Handle edit doctor - refresh dashboard data after save
@@ -669,7 +680,7 @@ const EmployeeDashboard = () => {
                       </div>
                       <button
                         className="sched-log-btn"
-                        onClick={() => navigate(`/employee/visit/new?doctorId=${entry.doctor?._id}`)}
+                        onClick={() => navigate(`/bdm/visit/new?doctorId=${entry.doctor?._id}`)}
                       >
                         Log Visit
                       </button>
@@ -689,9 +700,10 @@ const EmployeeDashboard = () => {
               <ClientList
                 clients={clients}
                 loading={loading}
-                onLogVisit={(client) => navigate(`/employee/regular-visit/new?clientId=${client._id}`)}
+                onLogVisit={(client) => navigate(`/bdm/regular-visit/new?clientId=${client._id}`)}
                 onAddClient={() => setShowAddClient(true)}
                 onEditClient={(client) => setEditClient(client)}
+                onDeleteClient={handleDeleteClient}
                 dailyVisitCount={dailyClientVisitCount}
                 dailyLimit={30}
               />

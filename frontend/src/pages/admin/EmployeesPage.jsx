@@ -104,7 +104,7 @@ const EmployeesPage = () => {
       }));
     } catch (err) {
       console.error('Failed to fetch employees:', err);
-      setError('Failed to load employees. Please try again.');
+      setError('Failed to load BDMs. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -120,17 +120,17 @@ const EmployeesPage = () => {
       if (employeeData._id) {
         // Update existing employee
         await userService.update(employeeData._id, employeeData);
-        toast.success('Employee updated successfully');
+        toast.success('BDM updated successfully');
       } else {
         // Create new employee
         await userService.create(employeeData);
-        toast.success('Employee created successfully');
+        toast.success('BDM created successfully');
       }
       fetchEmployees();
       return true;
     } catch (err) {
       console.error('Failed to save employee:', err);
-      toast.error(err.response?.data?.message || 'Failed to save employee');
+      toast.error(err.response?.data?.message || 'Failed to save BDM');
       return false;
     }
   };
@@ -139,12 +139,12 @@ const EmployeesPage = () => {
   const handleDeleteEmployee = async (employeeId) => {
     try {
       await userService.delete(employeeId);
-      toast.success('Employee deactivated successfully');
+      toast.success('BDM deactivated successfully');
       fetchEmployees();
       return true;
     } catch (err) {
       console.error('Failed to delete employee:', err);
-      toast.error(err.response?.data?.message || 'Failed to delete employee');
+      toast.error(err.response?.data?.message || 'Failed to delete BDM');
       return false;
     }
   };
@@ -153,7 +153,7 @@ const EmployeesPage = () => {
   const handleToggleStatus = async (employee) => {
     try {
       await userService.update(employee._id, { isActive: !employee.isActive });
-      toast.success(`Employee ${employee.isActive ? 'deactivated' : 'activated'} successfully`);
+      toast.success(`BDM ${employee.isActive ? 'deactivated' : 'activated'} successfully`);
       fetchEmployees();
       return true;
     } catch (err) {

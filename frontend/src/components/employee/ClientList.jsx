@@ -185,6 +185,23 @@ const clientListStyles = `
     border-color: #9ca3af;
   }
 
+  .client-delete-btn {
+    padding: 12px 16px;
+    border: 1px solid #fca5a5;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #fff;
+    color: #dc2626;
+  }
+
+  .client-delete-btn:hover {
+    background: #fef2f2;
+    border-color: #dc2626;
+  }
+
   .client-no-results {
     text-align: center;
     padding: 40px 20px;
@@ -214,6 +231,7 @@ const ClientList = memo(function ClientList({
   onLogVisit,
   onAddClient,
   onEditClient,
+  onDeleteClient,
   dailyVisitCount = 0,
   dailyLimit = 30,
 }) {
@@ -301,6 +319,17 @@ const ClientList = memo(function ClientList({
                 title="Edit client details"
               >
                 Edit
+              </button>
+              <button
+                className="client-delete-btn"
+                onClick={() => {
+                  if (window.confirm(`Delete ${client.firstName} ${client.lastName}?`)) {
+                    onDeleteClient?.(client);
+                  }
+                }}
+                title="Delete client"
+              >
+                Delete
               </button>
             </div>
           </div>

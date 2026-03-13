@@ -440,7 +440,7 @@ const MyVisits = () => {
                 <p className="hint">
                   {statusFilter !== 'all' || dateRange.start || dateRange.end || doctorSearch || visitCategory !== 'all'
                     ? 'Try adjusting your filters or category'
-                    : 'Start logging visits from the Employee Dashboard'}
+                    : 'Start logging visits from the BDM Dashboard'}
                 </p>
               </div>
             )}

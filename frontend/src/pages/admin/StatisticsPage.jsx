@@ -1917,7 +1917,7 @@ const BehindScheduleTab = ({
           <table className="data-table">
             <thead>
               <tr>
-                <th>Employee</th>
+                <th>BDM</th>
                 <th>Region</th>
                 <th>Weekly Target</th>
                 <th>Completed</th>
