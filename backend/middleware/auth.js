@@ -78,6 +78,13 @@ const protect = async (req, res, next) => {
 
     // Attach user to request
     req.user = user;
+
+    // Update lastActivity (throttled — at most once per minute)
+    const now = new Date();
+    if (!user.lastActivity || (now - user.lastActivity) > 60000) {
+      User.updateOne({ _id: user._id }, { lastActivity: now }).catch(() => {});
+    }
+
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {

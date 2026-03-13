@@ -72,6 +72,11 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Track last activity (updated on each authenticated request, throttled to 1/min)
+    lastActivity: {
+      type: Date,
+      default: null,
+    },
     // Refresh token for JWT auth
     refreshToken: {
       type: String,

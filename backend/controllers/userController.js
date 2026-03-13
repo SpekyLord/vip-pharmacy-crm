@@ -12,6 +12,29 @@ const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/err
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 
 /**
+ * @desc    Get currently active users (lastActivity within 15 minutes)
+ * @route   GET /api/users/active
+ * @access  Admin only
+ */
+const getActiveUsers = catchAsync(async (req, res) => {
+  const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+  const users = await User.find({
+    isActive: true,
+    role: 'employee',
+    lastActivity: { $gte: fifteenMinAgo },
+  })
+    .select('name email lastActivity')
+    .sort({ lastActivity: -1 });
+
+  res.status(200).json({
+    success: true,
+    data: users,
+    count: users.length,
+  });
+});
+
+/**
  * @desc    Get all users with pagination and filters
  * @route   GET /api/users
  * @access  Admin only
@@ -254,6 +277,7 @@ const updateProfile = catchAsync(async (req, res) => {
 });
 
 module.exports = {
+  getActiveUsers,
   getAllUsers,
   getUserById,
   createUser,

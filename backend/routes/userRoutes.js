@@ -16,6 +16,7 @@ const express = require('express');
 const router = express.Router();
 
 const {
+  getActiveUsers,
   getAllUsers,
   getEmployees,
   getUserById,
@@ -40,6 +41,9 @@ router.put('/profile', uploadSingle('avatar'), processAvatar, updateProfile);
 
 // Employee list (admin only)
 router.get('/employees', adminOnly, getEmployees);
+
+// Active users (admin only)
+router.get('/active', adminOnly, getActiveUsers);
 
 // Admin only routes
 router.get('/', adminOnly, getAllUsers);

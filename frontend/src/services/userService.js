@@ -15,6 +15,12 @@ const userService = {
     return response.data;
   },
 
+  // Get currently active BDMs (admin only)
+  getActiveUsers: async () => {
+    const response = await api.get('/users/active');
+    return response.data;
+  },
+
   // Get employees only (admin)
   getEmployees: async (params = {}) => {
     const response = await api.get('/users/employees', { params });
