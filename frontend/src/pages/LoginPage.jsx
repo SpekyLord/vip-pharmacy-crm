@@ -119,7 +119,7 @@ const LoginPage = () => {
           navigate('/admin');
           break;
         default:
-          navigate('/employee');
+          navigate('/bdm');
       }
     }
   }, [isAuthenticated, user, navigate]);

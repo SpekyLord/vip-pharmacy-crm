@@ -611,7 +611,7 @@ const NotificationCenter = () => {
         navigate('/admin/gps-verification');
         break;
       case 'message':
-        navigate('/employee/inbox');
+        navigate('/bdm/inbox');
         break;
       default:
         // Just mark as read

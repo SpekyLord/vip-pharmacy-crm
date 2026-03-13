@@ -42,7 +42,7 @@ function App() {
 
         {/* Employee Routes */}
         <Route
-          path="/employee"
+          path="/bdm"
           element={
             <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <EmployeeDashboard />
@@ -50,7 +50,7 @@ function App() {
           }
         />
         <Route
-          path="/employee/visits"
+          path="/bdm/visits"
           element={
             <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <MyVisits />
@@ -58,7 +58,7 @@ function App() {
           }
         />
         <Route
-          path="/employee/visit/new"
+          path="/bdm/visit/new"
           element={
             <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <NewVisitPage />
@@ -66,7 +66,7 @@ function App() {
           }
         />
         <Route
-          path="/employee/regular-visit/new"
+          path="/bdm/regular-visit/new"
           element={
             <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <NewClientVisitPage />
@@ -74,25 +74,25 @@ function App() {
           }
         />
         <Route
-          path="/employee/inbox"
+          path="/bdm/inbox"
           element={
             <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <EmployeeInbox />
             </ProtectedRoute>
           }
         />
-        <Route path="/employee/performance" element={<Navigate to="/employee/cpt" replace />} />
+        <Route path="/bdm/performance" element={<Navigate to="/bdm/cpt" replace />} />
         <Route
-          path="/employee/doctor/:id"
+          path="/bdm/doctor/:id"
           element={
             <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <DoctorDetailPage />
             </ProtectedRoute>
           }
         />
-        <Route path="/employee/schedule" element={<Navigate to="/employee/cpt" replace />} />
+        <Route path="/bdm/schedule" element={<Navigate to="/bdm/cpt" replace />} />
         <Route
-          path="/employee/cpt"
+          path="/bdm/cpt"
           element={
             <ProtectedRoute allowedRoles={['employee', 'admin']}>
               <CallPlanPage />

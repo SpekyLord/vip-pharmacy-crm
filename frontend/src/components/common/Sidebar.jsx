@@ -611,23 +611,23 @@ const getMenuConfig = (role, unreadCount = 0) => {
           {
             title: 'Main',
             items: [
-              { path: '/employee', label: 'Dashboard', icon: LayoutDashboard },
+              { path: '/bdm', label: 'Dashboard', icon: LayoutDashboard },
             ],
           },
           {
             title: 'Work',
             items: [
-              { path: '/employee/cpt', label: 'Call Plan', icon: CalendarRange },
-              { path: '/employee/inbox', label: 'Mail', icon: Inbox, badge: unreadCount || null },
-              { path: '/employee/visits', label: 'My Visits', icon: ClipboardCheck },
+              { path: '/bdm/cpt', label: 'Call Plan', icon: CalendarRange },
+              { path: '/bdm/inbox', label: 'Mail', icon: Inbox, badge: unreadCount || null },
+              { path: '/bdm/visits', label: 'My Visits', icon: ClipboardCheck },
             ],
           },
         ],
         bottomTabs: [
-          { path: '/employee', label: 'Dashboard', icon: LayoutDashboard, end: true },
-          { path: '/employee/cpt', label: 'Call Plan', icon: CalendarRange },
-          { path: '/employee/visits', label: 'Visits', icon: ClipboardCheck },
-          { path: '/employee/inbox', label: 'Inbox', icon: Inbox, badge: unreadCount || null },
+          { path: '/bdm', label: 'Dashboard', icon: LayoutDashboard, end: true },
+          { path: '/bdm/cpt', label: 'Call Plan', icon: CalendarRange },
+          { path: '/bdm/visits', label: 'Visits', icon: ClipboardCheck },
+          { path: '/bdm/inbox', label: 'Inbox', icon: Inbox, badge: unreadCount || null },
         ],
       };
   }
@@ -672,7 +672,7 @@ const Sidebar = () => {
   const RoleIcon = menuConfig.roleIcon;
 
   const isActive = (path) => {
-    if (path === '/admin' || path === '/employee') {
+    if (path === '/admin' || path === '/bdm') {
       return location.pathname === path;
     }
     return location.pathname.startsWith(path);

@@ -374,7 +374,7 @@ const NewClientVisitPage = () => {
 
       await clientService.createVisit(submitData);
       toast.success('Extra call logged successfully!');
-      navigate('/employee');
+      navigate('/bdm');
     } catch (err) {
       const message = err.response?.data?.message || 'Failed to log visit';
       toast.error(message);
@@ -397,7 +397,7 @@ const NewClientVisitPage = () => {
         <Sidebar />
         <main className="main-content">
           <div className="page-header">
-            <Link to="/employee" className="back-link">
+            <Link to="/bdm" className="back-link">
               &larr; Back to Dashboard
             </Link>
             <h1>Log Extra Call</h1>
@@ -406,7 +406,7 @@ const NewClientVisitPage = () => {
           {error && (
             <div className="error-message">
               <p>{error}</p>
-              <Link to="/employee" className="btn btn-primary">
+              <Link to="/bdm" className="btn btn-primary">
                 Go to Dashboard
               </Link>
             </div>
@@ -419,7 +419,7 @@ const NewClientVisitPage = () => {
               <div className="limit-stats">
                 <span>Today&apos;s calls: {dailyCount}/{dailyLimit}</span>
               </div>
-              <Link to="/employee" className="btn btn-primary">
+              <Link to="/bdm" className="btn btn-primary">
                 Back to Dashboard
               </Link>
             </div>

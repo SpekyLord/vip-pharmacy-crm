@@ -233,7 +233,7 @@ const MyVisits = () => {
           <div className="page-header">
             <h1>My Visits</h1>
             <button
-              onClick={() => navigate('/employee')}
+              onClick={() => navigate('/bdm')}
               className="btn btn-primary"
               title="Go to dashboard to select a doctor"
             >

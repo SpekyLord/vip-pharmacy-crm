@@ -28,7 +28,7 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     // Redirect to appropriate dashboard based on user role instead of showing error
     const roleRedirects = {
       admin: '/admin',
-      employee: '/employee',
+      employee: '/bdm',
     };
     const redirectTo = roleRedirects[user?.role] || '/login';
     return <Navigate to={redirectTo} replace />;

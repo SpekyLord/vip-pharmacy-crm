@@ -599,7 +599,7 @@ const DoctorDetailPage = () => {
         <main className="main-content">
           {/* Back button */}
           <div className="ddp-back-row">
-            <button className="ddp-back-btn" onClick={() => navigate('/employee')}>
+            <button className="ddp-back-btn" onClick={() => navigate('/bdm')}>
               &larr; Back to Dashboard
             </button>
           </div>

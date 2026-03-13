@@ -194,7 +194,7 @@ const NewVisitPage = () => {
 
   // Handle successful visit submission
   const handleVisitSuccess = () => {
-    navigate('/employee/visits');
+    navigate('/bdm/visits');
   };
 
   if (loading) {
@@ -209,7 +209,7 @@ const NewVisitPage = () => {
         <Sidebar />
         <main className="main-content">
           <div className="page-header">
-            <Link to="/employee" className="back-link">
+            <Link to="/bdm" className="back-link">
               &larr; Back to Dashboard
             </Link>
             <h1>Log Visit</h1>
@@ -218,7 +218,7 @@ const NewVisitPage = () => {
           {error && (
             <div className="error-message">
               <p>{error}</p>
-              <Link to="/employee" className="btn btn-primary">
+              <Link to="/bdm" className="btn btn-primary">
                 Go to Dashboard
               </Link>
             </div>
@@ -232,7 +232,7 @@ const NewVisitPage = () => {
                 <span>Weekly visits: {canVisit?.weeklyCount || 0}</span>
                 <span>Monthly visits: {canVisit?.monthlyCount || 0} / {canVisit?.monthlyLimit || doctor.visitFrequency}</span>
               </div>
-              <Link to="/employee" className="btn btn-primary">
+              <Link to="/bdm" className="btn btn-primary">
                 Back to Dashboard
               </Link>
             </div>

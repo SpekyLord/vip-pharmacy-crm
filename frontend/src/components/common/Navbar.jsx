@@ -320,7 +320,7 @@ const Navbar = () => {
               </div>
               <div className="navbar-profile-info">
                 <div className="navbar-profile-name">{user.name}</div>
-                <div className="navbar-profile-role">{user.role}</div>
+                <div className="navbar-profile-role">{user.role === 'employee' ? 'BDM' : user.role}</div>
               </div>
             </div>
 
