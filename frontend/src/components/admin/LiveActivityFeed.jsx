@@ -424,6 +424,10 @@ const feedStyles = `
     color: #f1f5f9;
   }
 
+  body.dark-mode .activity-feed-header .header-icon {
+    color: #fbbf24;
+  }
+
   body.dark-mode .view-all-btn:hover {
     background: #451a03;
   }
@@ -507,9 +511,18 @@ const feedStyles = `
 
   /* Dark mode activity icon backgrounds */
   body.dark-mode .activity-icon.bg-blue-100 { background: #1e3a5f; }
-  body.dark-mode .activity-icon.bg-green-100 { background: #052e16; }
+  body.dark-mode .activity-icon.bg-green-100 { background: #451a03; }
   body.dark-mode .activity-icon.bg-purple-100 { background: #2e1065; }
   body.dark-mode .activity-icon.bg-amber-100 { background: #451a03; }
+
+  /* Dark mode activity icon colors - make icons white */
+  body.dark-mode .activity-icon svg,
+  body.dark-mode .activity-icon .text-blue-600,
+  body.dark-mode .activity-icon .text-green-600,
+  body.dark-mode .activity-icon .text-purple-600,
+  body.dark-mode .activity-icon .text-amber-600 {
+    color: white !important;
+  }
 `;
 
 /* =============================================================================

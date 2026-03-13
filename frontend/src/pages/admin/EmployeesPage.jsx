@@ -9,6 +9,7 @@
 
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
+import { Users, UserCheck, UserX, RefreshCw } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import EmployeeManagement from '../../components/admin/EmployeeManagement';
@@ -16,51 +17,261 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import userService from '../../services/userService';
 
 const employeesPageStyles = `
-  .dashboard-layout {
-    min-height: 100vh;
-    background: #f3f4f6;
-  }
-
-  .dashboard-content {
+  .employees-layout {
+    height: 100vh;
     display: flex;
+    flex-direction: column;
+    background: #f3f4f6;
+    overflow: hidden;
   }
 
-  .main-content {
+  .employees-content {
+    display: flex;
     flex: 1;
-    padding: 24px;
-    max-width: 1400px;
+    min-height: 0;
+    overflow: hidden;
   }
 
+  .employees-main {
+    flex: 1;
+    padding: 20px 24px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Page Header */
   .page-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-shrink: 0;
+  }
+
+  .page-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .page-header-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
   }
 
   .page-header h1 {
     margin: 0;
-    font-size: 28px;
+    font-size: 24px;
+    font-weight: 700;
     color: #1f2937;
+  }
+
+  .page-header-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .header-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    background: white;
+    color: #6b7280;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .header-action-btn:hover {
+    background: #f9fafb;
+    color: #374151;
+    border-color: #d1d5db;
+  }
+
+  /* Stats Cards */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-shrink: 0;
+  }
+
+  .stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px 20px;
+    border: 1px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .stat-icon.total { background: #dbeafe; color: #2563eb; }
+  .stat-icon.active { background: #dcfce7; color: #16a34a; }
+  .stat-icon.inactive { background: #fee2e2; color: #dc2626; }
+
+  .stat-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1f2937;
+    line-height: 1.2;
+  }
+
+  .stat-label {
+    font-size: 13px;
+    color: #6b7280;
+    margin-top: 2px;
+  }
+
+  /* Main content area */
+  .employees-main > :last-child {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .error-banner {
     background: #fee2e2;
     color: #dc2626;
-    padding: 16px;
+    padding: 12px 16px;
     border-radius: 8px;
-    margin-bottom: 24px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .stats-row {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .stat-card {
+      padding: 12px 14px;
+      flex-direction: column;
+      text-align: center;
+      gap: 8px;
+    }
+    .stat-icon {
+      width: 40px;
+      height: 40px;
+    }
+    .stat-value {
+      font-size: 22px;
+    }
+    .stat-label {
+      font-size: 11px;
+    }
   }
 
   @media (max-width: 480px) {
-    .main-content {
+    .employees-layout {
+      height: auto;
+      min-height: 100vh;
+      overflow: auto;
+    }
+    .employees-content {
+      overflow: visible;
+    }
+    .employees-main {
       padding: 16px;
-      padding-bottom: 80px;
+      overflow: visible;
     }
-
+    .employees-main > :last-child {
+      flex: none;
+      overflow: visible;
+    }
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .page-header-actions {
+      width: 100%;
+      justify-content: flex-end;
+    }
     .page-header h1 {
-      font-size: 22px;
+      font-size: 20px;
     }
+    .stats-row {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .stat-card {
+      padding: 10px;
+    }
+    .stat-value {
+      font-size: 18px;
+    }
+  }
+
+  /* ===== DARK MODE ===== */
+  body.dark-mode .employees-layout {
+    background: #0a0f1e;
+  }
+
+  body.dark-mode .page-header h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .header-action-btn {
+    background: #0f172a;
+    border-color: #1e293b;
+    color: #94a3b8;
+  }
+
+  body.dark-mode .header-action-btn:hover {
+    background: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .stat-card {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .stat-value {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .stat-label {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .stat-icon.total { background: #1e3a5f; color: #60a5fa; }
+  body.dark-mode .stat-icon.active { background: #052e16; color: #4ade80; }
+  body.dark-mode .stat-icon.inactive { background: #450a0a; color: #f87171; }
+
+  body.dark-mode .error-banner {
+    background: #450a0a;
+    color: #fca5a5;
   }
 `;
 
@@ -79,6 +290,13 @@ const EmployeesPage = () => {
     role: '',
     isActive: '',
   });
+
+  // Calculate stats
+  const stats = {
+    total: employees.length,
+    active: employees.filter(e => e.isActive).length,
+    inactive: employees.filter(e => !e.isActive).length,
+  };
 
   // Fetch employees with current filters and pagination
   const fetchEmployees = async () => {
@@ -118,11 +336,9 @@ const EmployeesPage = () => {
   const handleSaveEmployee = async (employeeData) => {
     try {
       if (employeeData._id) {
-        // Update existing employee
         await userService.update(employeeData._id, employeeData);
         toast.success('BDM updated successfully');
       } else {
-        // Create new employee
         await userService.create(employeeData);
         toast.success('BDM created successfully');
       }
@@ -166,7 +382,7 @@ const EmployeesPage = () => {
   // Handle filter changes
   const handleFilterChange = (newFilters) => {
     setFilters(newFilters);
-    setPagination((prev) => ({ ...prev, page: 1 })); // Reset to first page
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
   // Handle page change
@@ -174,19 +390,68 @@ const EmployeesPage = () => {
     setPagination((prev) => ({ ...prev, page: newPage }));
   };
 
+  // Handle refresh
+  const handleRefresh = () => {
+    fetchEmployees();
+    toast.success('Data refreshed');
+  };
+
   if (loading && employees.length === 0) {
     return <LoadingSpinner fullScreen />;
   }
 
   return (
-    <div className="dashboard-layout">
+    <div className="employees-layout">
       <style>{employeesPageStyles}</style>
       <Navbar />
-      <div className="dashboard-content">
+      <div className="employees-content">
         <Sidebar />
-        <main className="main-content">
+        <main className="employees-main">
+          {/* Page Header */}
           <div className="page-header">
-            <h1>BDM Management</h1>
+            <div className="page-header-left">
+              <div className="page-header-icon">
+                <Users size={20} />
+              </div>
+              <h1>BDM Management</h1>
+            </div>
+            <div className="page-header-actions">
+              <button className="header-action-btn" onClick={handleRefresh} title="Refresh">
+                <RefreshCw size={16} />
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="stats-row">
+            <div className="stat-card">
+              <div className="stat-icon total">
+                <Users size={22} />
+              </div>
+              <div className="stat-info">
+                <span className="stat-value">{pagination.total || stats.total}</span>
+                <span className="stat-label">Total BDMs</span>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon active">
+                <UserCheck size={22} />
+              </div>
+              <div className="stat-info">
+                <span className="stat-value">{stats.active}</span>
+                <span className="stat-label">Active</span>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon inactive">
+                <UserX size={22} />
+              </div>
+              <div className="stat-info">
+                <span className="stat-value">{stats.inactive}</span>
+                <span className="stat-label">Inactive</span>
+              </div>
+            </div>
           </div>
 
           {error && (
