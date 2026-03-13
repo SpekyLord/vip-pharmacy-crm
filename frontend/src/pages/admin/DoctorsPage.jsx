@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
+import { Stethoscope, RefreshCw } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import DoctorManagement from '../../components/admin/DoctorManagement';
@@ -18,51 +19,245 @@ import doctorService from '../../services/doctorService';
 import clientService from '../../services/clientService';
 
 const doctorsPageStyles = `
-  .dashboard-layout {
-    min-height: 100vh;
-    background: #f3f4f6;
-  }
-
-  .dashboard-content {
+  .doctors-layout {
+    height: 100vh;
     display: flex;
+    flex-direction: column;
+    background: #f3f4f6;
+    overflow: hidden;
   }
 
-  .main-content {
+  .doctors-content {
+    display: flex;
     flex: 1;
-    padding: 24px;
-    max-width: 1400px;
+    min-height: 0;
+    overflow: hidden;
   }
 
+  .doctors-main {
+    flex: 1;
+    padding: 20px 24px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Page Header */
   .page-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-shrink: 0;
+  }
+
+  .page-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .page-header-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
   }
 
   .page-header h1 {
     margin: 0;
-    font-size: 28px;
+    font-size: 24px;
+    font-weight: 700;
     color: #1f2937;
+  }
+
+  .page-header-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .header-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    background: white;
+    color: #6b7280;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .header-action-btn:hover {
+    background: #f9fafb;
+    color: #374151;
+    border-color: #d1d5db;
+  }
+
+  /* Page Search Bar */
+  .page-search-bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-shrink: 0;
+  }
+
+  .page-search-icon {
+    position: absolute;
+    left: 14px;
+    color: #9ca3af;
+    pointer-events: none;
+  }
+
+  .page-search-input {
+    width: 100%;
+    padding: 12px 40px 12px 44px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    font-size: 15px;
+    background: white;
+    color: #374151;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .page-search-input::placeholder {
+    color: #9ca3af;
+  }
+
+  .page-search-input:focus {
+    outline: none;
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+  }
+
+  .page-search-clear {
+    position: absolute;
+    right: 12px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #9ca3af;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .page-search-clear:hover {
+    color: #6b7280;
+    background: #f3f4f6;
+  }
+
+  /* Main content area */
+  .doctors-main > :last-child {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .error-banner {
     background: #fee2e2;
     color: #dc2626;
-    padding: 16px;
+    padding: 12px 16px;
     border-radius: 8px;
-    margin-bottom: 24px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 900px) {
+    .doctors-layout { height: auto; min-height: 100vh; overflow-y: auto; }
+    .doctors-content { overflow: visible; }
+    .doctors-main { overflow: visible; }
+    .doctors-main > :last-child { flex: none; overflow: visible; }
+  }
+
+  @media (max-width: 768px) {
   }
 
   @media (max-width: 480px) {
-    .main-content {
+    .doctors-layout {
+      height: auto;
+      min-height: 100vh;
+      overflow: auto;
+    }
+    .doctors-content {
+      overflow: visible;
+    }
+    .doctors-main {
       padding: 16px;
-      padding-bottom: 80px;
+      overflow: visible;
     }
-
+    .doctors-main > :last-child {
+      flex: none;
+      overflow: visible;
+    }
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .page-header-actions {
+      width: 100%;
+      justify-content: flex-end;
+    }
     .page-header h1 {
-      font-size: 22px;
+      font-size: 20px;
     }
+  }
+
+  /* ===== DARK MODE ===== */
+  body.dark-mode .doctors-layout {
+    background: #0a0f1e;
+  }
+
+  body.dark-mode .page-header h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .header-action-btn {
+    background: #0f172a;
+    border-color: #1e293b;
+    color: #94a3b8;
+  }
+
+  body.dark-mode .header-action-btn:hover {
+    background: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .page-search-input {
+    background: #0f172a;
+    border-color: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .page-search-input:focus {
+    border-color: #f59e0b;
+  }
+
+  body.dark-mode .page-search-input::placeholder {
+    color: #475569;
+  }
+
+  body.dark-mode .page-search-clear:hover {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+
+  body.dark-mode .error-banner {
+    background: #450a0a;
+    color: #fca5a5;
   }
 `;
 
@@ -82,10 +277,18 @@ const DoctorsPage = () => {
     specialization: '',
     supportDuringCoverage: '',
     programsToImplement: '',
-    clientType: '', // '' = VIP only, 'all' = All, 'regular' = Regular only
+    clientType: '',
   });
+  const [searchInput, setSearchInput] = useState('');
 
-  // Regular client state
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFilters(prev => ({ ...prev, search: searchInput }));
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
   const [regularClients, setRegularClients] = useState([]);
   const [regularLoading, setRegularLoading] = useState(false);
   const [regularPagination, setRegularPagination] = useState({
@@ -95,7 +298,6 @@ const DoctorsPage = () => {
     pages: 0,
   });
 
-  // Fetch doctors with current filters and pagination
   const fetchDoctors = useCallback(async () => {
     try {
       setLoading(true);
@@ -131,7 +333,6 @@ const DoctorsPage = () => {
     fetchDoctors();
   }, [fetchDoctors]);
 
-  // Fetch regular clients when clientType filter includes them
   const fetchRegularClients = useCallback(async () => {
     try {
       setRegularLoading(true);
@@ -154,7 +355,7 @@ const DoctorsPage = () => {
         pages: response.pagination?.pages || 0,
       }));
     } catch {
-      // Silent fail - regular clients are supplementary
+      // Silent fail
     } finally {
       setRegularLoading(false);
     }
@@ -168,35 +369,29 @@ const DoctorsPage = () => {
     }
   }, [filters.clientType, fetchRegularClients]);
 
-  // Compute merged display list
   const displayList = useMemo(() => {
     if (filters.clientType === 'regular') return regularClients;
     if (filters.clientType === 'all') return [...doctors, ...regularClients];
-    return doctors; // default: VIP only
+    return doctors;
   }, [filters.clientType, doctors, regularClients]);
 
-  // Compute active pagination based on view
   const activePagination = useMemo(() => {
     if (filters.clientType === 'regular') return regularPagination;
     return pagination;
   }, [filters.clientType, regularPagination, pagination]);
 
-  // Handle create doctor
   const handleSaveDoctor = async (doctorData) => {
     try {
       if (doctorData._id) {
-        // Update existing doctor
         await doctorService.update(doctorData._id, doctorData);
         toast.success('Doctor updated successfully');
       } else {
-        // Create new doctor
         await doctorService.create(doctorData);
         toast.success('Doctor created successfully');
       }
       fetchDoctors();
       return true;
     } catch (err) {
-      // Show validation errors if available
       const errors = err.response?.data?.errors;
       if (errors && errors.length > 0) {
         const errorMessages = errors.map(e => `${e.field}: ${e.message}`).join(', ');
@@ -208,7 +403,6 @@ const DoctorsPage = () => {
     }
   };
 
-  // Handle delete doctor
   const handleDeleteDoctor = async (doctorId) => {
     try {
       await doctorService.delete(doctorId);
@@ -221,7 +415,6 @@ const DoctorsPage = () => {
     }
   };
 
-  // Handle mass delete by BDM
   const handleMassDeleteByUser = async (userId) => {
     try {
       const response = await doctorService.deleteByUser(userId);
@@ -234,14 +427,12 @@ const DoctorsPage = () => {
     }
   };
 
-  // Handle upgrade regular client to VIP
   const handleUpgradeToVIP = async (regularClient) => {
     if (!confirm(`Upgrade "${regularClient.firstName} ${regularClient.lastName}" to a VIP Client? This will create a new VIP Client record with the same info.`)) {
       return;
     }
 
     try {
-      // Build VIP Client data from regular client fields
       const doctorData = {
         firstName: regularClient.firstName,
         lastName: regularClient.lastName,
@@ -262,11 +453,9 @@ const DoctorsPage = () => {
       if (regularClient.birthday) doctorData.birthday = regularClient.birthday;
       if (regularClient.anniversary) doctorData.anniversary = regularClient.anniversary;
       if (regularClient.otherDetails) doctorData.otherDetails = regularClient.otherDetails;
-      // Carry over assignedTo if the regular client has an owner BDM
       if (regularClient.createdBy?._id) doctorData.assignedTo = regularClient.createdBy._id;
 
       await doctorService.create(doctorData);
-      // Soft-delete the regular client
       await clientService.delete(regularClient._id);
 
       toast.success(`${regularClient.firstName} ${regularClient.lastName} upgraded to VIP Client`);
@@ -277,20 +466,25 @@ const DoctorsPage = () => {
     }
   };
 
-  // Handle filter changes
   const handleFilterChange = (newFilters) => {
     setFilters(newFilters);
-    setPagination((prev) => ({ ...prev, page: 1 })); // Reset to first page
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
-  // Handle page change
   const handlePageChange = (newPage) => {
     setPagination((prev) => ({ ...prev, page: newPage }));
   };
 
-  // Handle regular client page change
   const handleRegularPageChange = (newPage) => {
     setRegularPagination((prev) => ({ ...prev, page: newPage }));
+  };
+
+  const handleRefresh = () => {
+    fetchDoctors();
+    if (filters.clientType === 'all' || filters.clientType === 'regular') {
+      fetchRegularClients();
+    }
+    toast.success('Data refreshed');
   };
 
   if (loading && doctors.length === 0) {
@@ -298,14 +492,26 @@ const DoctorsPage = () => {
   }
 
   return (
-    <div className="dashboard-layout">
+    <div className="doctors-layout">
       <style>{doctorsPageStyles}</style>
       <Navbar />
-      <div className="dashboard-content">
+      <div className="doctors-content">
         <Sidebar />
-        <main className="main-content">
+        <main className="doctors-main">
+          {/* Page Header */}
           <div className="page-header">
-            <h1>VIP Client Management</h1>
+            <div className="page-header-left">
+              <div className="page-header-icon">
+                <Stethoscope size={20} />
+              </div>
+              <h1>VIP Client Management</h1>
+            </div>
+            <div className="page-header-actions">
+              <button className="header-action-btn" onClick={handleRefresh}>
+                <RefreshCw size={16} />
+                Refresh
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -319,12 +525,14 @@ const DoctorsPage = () => {
             filters={filters}
             pagination={activePagination}
             loading={loading || regularLoading}
+            searchInput={searchInput}
             onSave={handleSaveDoctor}
             onDelete={handleDeleteDoctor}
             onMassDeleteByUser={handleMassDeleteByUser}
             onUpgradeToVIP={handleUpgradeToVIP}
             onFilterChange={handleFilterChange}
             onPageChange={filters.clientType === 'regular' ? handleRegularPageChange : handlePageChange}
+            onSearchChange={setSearchInput}
           />
         </main>
       </div>

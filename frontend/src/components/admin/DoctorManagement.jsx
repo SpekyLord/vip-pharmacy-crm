@@ -8,7 +8,8 @@
  * - Add/Edit modal
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, Edit2, Trash2, ArrowUpCircle, AlertTriangle, X, ChevronDown } from 'lucide-react';
 import doctorService from '../../services/doctorService';
 import userService from '../../services/userService';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
@@ -28,123 +29,306 @@ const doctorManagementStyles = `
   .doctor-management {
     background: white;
     border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
-  .management-header {
+  /* Filters Bar — split into two sections */
+  .dm-filters-bar {
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 20px;
+    border-bottom: 1px solid #e5e7eb;
+    flex-shrink: 0;
+  }
+
+  .dm-search-actions-row {
+    display: flex;
+    gap: 10px;
     align-items: center;
-    margin-bottom: 24px;
+    flex-wrap: nowrap;
   }
 
-  .management-header h2 {
-    margin: 0;
-    font-size: 20px;
-    color: #1f2937;
-  }
-
-  .btn {
-    padding: 10px 20px;
-    border: none;
-    border-radius: 8px;
-    font-size: 14px;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .btn-primary {
-    background: #2563eb;
-    color: white;
-  }
-
-  .btn-primary:hover {
-    background: #1d4ed8;
-  }
-
-  .btn-secondary {
-    background: #6b7280;
-    color: white;
-  }
-
-  .btn-secondary:hover {
-    background: #4b5563;
-  }
-
-  .btn-danger {
-    background: #dc2626;
-    color: white;
-  }
-
-  .btn-danger:hover {
-    background: #b91c1c;
-  }
-
-  .btn-sm {
-    padding: 6px 12px;
-    font-size: 12px;
-  }
-
-  /* Filters */
-  .filters-bar {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-  }
-
-  .filters-bar input,
-  .filters-bar select {
-    padding: 10px 12px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 14px;
-  }
-
-  .filters-bar input {
-    flex: 1;
-    min-width: 200px;
-  }
-
-  .filters-bar select {
+  .dm-search-input-wrapper {
+    position: relative;
+    flex: 3;
     min-width: 150px;
   }
 
-  .filters-bar input:focus,
-  .filters-bar select:focus {
-    outline: none;
-    border-color: #2563eb;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  .dm-buttons-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
   }
 
-  /* Table */
+  .dm-dropdowns-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .dm-search-input-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    pointer-events: none;
+  }
+
+  .dm-search-input {
+    width: 100%;
+    padding: 10px 12px 10px 38px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #f9fafb;
+    color: #374151;
+  }
+
+  .dm-search-input::placeholder {
+    color: #9ca3af;
+  }
+
+  .dm-search-input:focus {
+    outline: none;
+    border-color: #f59e0b;
+    background: white;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+  }
+
+  /* Content wrapper — fills remaining height between filters bar and pagination */
+  .dm-content-wrapper {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .dm-filter-select {
+    padding: 10px 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 13px;
+    background: #f9fafb;
+    min-width: 120px;
+    cursor: pointer;
+  }
+
+  .dm-filter-select:focus {
+    outline: none;
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+  }
+
+  /* Custom Dropdown */
+  .dm-custom-select-wrapper {
+    position: relative;
+    flex: 1;
+    min-width: 100px;
+  }
+
+  .dm-custom-select-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 13px;
+    background: #f9fafb;
+    cursor: pointer;
+    color: #374151;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    text-align: left;
+  }
+
+  .dm-custom-select-trigger:hover {
+    border-color: #d1d5db;
+    background: #f3f4f6;
+  }
+
+  .dm-custom-select-trigger.dm-cs-open {
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+    background: white;
+  }
+
+  .dm-cs-chevron {
+    transition: transform 0.2s;
+    flex-shrink: 0;
+    color: #9ca3af;
+  }
+
+  .dm-cs-chevron.dm-cs-chevron-open {
+    transform: rotate(180deg);
+    color: #f59e0b;
+  }
+
+  .dm-custom-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 100%;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.12), 0 4px 10px rgba(0,0,0,0.06);
+    z-index: 200;
+    overflow: hidden;
+    animation: dm-dropdown-in 0.13s ease;
+  }
+
+  @keyframes dm-dropdown-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .dm-custom-option {
+    padding: 10px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    color: #374151;
+    transition: background 0.1s, color 0.1s;
+    white-space: nowrap;
+  }
+
+  .dm-custom-option:hover {
+    background: #fffbeb;
+    color: #d97706;
+  }
+
+  .dm-custom-option.dm-co-active {
+    background: #fef3c7;
+    color: #d97706;
+    font-weight: 600;
+  }
+
+  .dm-custom-option.dm-co-active:hover {
+    background: #fde68a;
+  }
+
+  .dm-add-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex: 1;
+    min-width: 0;
+    justify-content: center;
+    white-space: nowrap;
+  }
+
+  .dm-add-btn:hover {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+  }
+
+  .dm-mass-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: #fee2e2;
+    color: #dc2626;
+    border: none;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex: 1;
+    min-width: 0;
+    justify-content: center;
+    white-space: nowrap;
+  }
+
+  .dm-mass-btn:hover {
+    background: #fecaca;
+  }
+
+  /* Table Container */
+  .dm-table-container {
+    flex: 1;
+    overflow: auto;
+  }
+
+  /* Clean Table */
   .data-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 14px;
   }
 
-  .data-table th,
-  .data-table td {
-    padding: 12px;
+  .data-table th {
+    padding: 12px 16px;
     text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #6b7280;
+    background: #f9fafb;
     border-bottom: 1px solid #e5e7eb;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
 
-  .data-table th {
-    background: #f9fafb;
-    font-weight: 600;
+  .data-table td {
+    padding: 13px 16px;
+    border-bottom: 1px solid #f3f4f6;
     color: #374151;
   }
 
-  .data-table tr:hover {
-    background: #f9fafb;
+  .doctor-name {
+    font-weight: 600;
+    color: #1f2937;
   }
 
-  .data-table .actions {
-    display: flex;
-    gap: 8px;
+  .data-table tr:hover {
+    background: #fefce8;
+  }
+
+  .data-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .client-type-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .client-type-badge.vip {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .client-type-badge.regular {
+    background: #fef3c7;
+    color: #92400e;
   }
 
   .visit-freq-badge {
@@ -188,19 +372,67 @@ const doctorManagementStyles = `
     color: #16a34a;
   }
 
+  /* Action Buttons */
+  .actions-cell {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .action-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: none;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .action-btn.edit {
+    background: #fef3c7;
+    color: #d97706;
+  }
+
+  .action-btn.edit:hover {
+    background: #fde68a;
+  }
+
+  .action-btn.delete {
+    background: #fee2e2;
+    color: #dc2626;
+  }
+
+  .action-btn.delete:hover {
+    background: #fecaca;
+  }
+
+  .action-btn.upgrade {
+    background: #ede9fe;
+    color: #7c3aed;
+  }
+
+  .action-btn.upgrade:hover {
+    background: #ddd6fe;
+  }
+
   /* Pagination */
   .pagination {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 20px;
-    padding-top: 20px;
+    padding: 14px 20px;
     border-top: 1px solid #e5e7eb;
+    background: #f9fafb;
   }
 
   .pagination-info {
     color: #6b7280;
-    font-size: 14px;
+    font-size: 13px;
   }
 
   .pagination-buttons {
@@ -209,21 +441,32 @@ const doctorManagementStyles = `
   }
 
   .pagination-btn {
-    padding: 8px 16px;
-    border: 1px solid #d1d5db;
+    padding: 8px 14px;
+    border: 1px solid #e5e7eb;
     background: white;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+    transition: all 0.2s;
   }
 
   .pagination-btn:hover:not(:disabled) {
     background: #f3f4f6;
+    border-color: #d1d5db;
   }
 
   .pagination-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .pagination-page-indicator {
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
   }
 
   /* Modal */
@@ -234,47 +477,65 @@ const doctorManagementStyles = `
     right: 0;
     bottom: 0;
     background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 1000;
+    padding: 20px;
   }
 
   .modal-content {
     background: white;
-    border-radius: 12px;
-    padding: 24px;
-    width: 90%;
-    max-width: 600px;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 620px;
     max-height: 90vh;
-    overflow-y: auto;
+    overflow: hidden;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
   }
 
   .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 16px;
+    padding: 20px 24px;
     border-bottom: 1px solid #e5e7eb;
+    flex-shrink: 0;
   }
 
   .modal-header h3 {
     margin: 0;
     font-size: 18px;
+    font-weight: 600;
     color: #1f2937;
   }
 
   .modal-close {
-    background: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
     border: none;
-    font-size: 24px;
-    cursor: pointer;
+    background: #f3f4f6;
     color: #6b7280;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
   }
 
   .modal-close:hover {
-    color: #1f2937;
+    background: #e5e7eb;
+    color: #374151;
+  }
+
+  .modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
   }
 
   /* Form */
@@ -306,18 +567,20 @@ const doctorManagementStyles = `
   .form-group textarea {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
     font-size: 14px;
     box-sizing: border-box;
+    background: #f9fafb;
   }
 
   .form-group input:focus,
   .form-group select:focus,
   .form-group textarea:focus {
     outline: none;
-    border-color: #2563eb;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    border-color: #f59e0b;
+    background: white;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
   }
 
   .form-group textarea {
@@ -329,21 +592,79 @@ const doctorManagementStyles = `
     display: flex;
     justify-content: flex-end;
     gap: 12px;
-    margin-top: 24px;
-    padding-top: 16px;
+    padding: 16px 24px;
     border-top: 1px solid #e5e7eb;
+    background: #f9fafb;
+    flex-shrink: 0;
+  }
+
+  .btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-cancel {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #e5e7eb;
+  }
+
+  .btn-cancel:hover {
+    background: #e5e7eb;
+  }
+
+  .btn-save {
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    color: white;
+  }
+
+  .btn-save:hover {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+  }
+
+  .btn-save:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Checkboxes */
+  .checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #374151;
+    cursor: pointer;
+  }
+
+  .checkbox-item input[type="checkbox"] {
+    width: auto;
+    padding: 0;
+    cursor: pointer;
   }
 
   /* Empty state */
   .empty-state {
     text-align: center;
-    padding: 48px;
+    padding: 60px 20px;
     color: #6b7280;
   }
 
   .empty-state p {
     margin: 0;
-    font-size: 16px;
+    font-size: 15px;
   }
 
   /* Loading overlay */
@@ -352,108 +673,76 @@ const doctorManagementStyles = `
     pointer-events: none;
   }
 
-  /* Mass delete styles */
+  /* Mass delete modal */
   .dm-mass-delete-modal {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 2000;
+    padding: 20px;
   }
 
-  .dm-mass-delete-content {
+  .dm-mass-delete-box {
     background: white;
-    border-radius: 12px;
-    padding: 24px;
-    width: 90%;
-    max-width: 460px;
+    border-radius: 16px;
+    padding: 28px;
+    width: 100%;
+    max-width: 440px;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
   }
 
-  .dm-mass-delete-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #e5e7eb;
-  }
-
-  .dm-mass-delete-header h3 {
-    margin: 0;
+  .dm-mass-delete-box h3 {
+    margin: 0 0 8px;
     font-size: 18px;
+    font-weight: 600;
     color: #1f2937;
   }
 
-  .dm-mass-close {
-    background: none;
-    border: none;
-    font-size: 24px;
-    cursor: pointer;
+  .dm-mass-delete-box p {
+    margin: 0 0 16px;
+    font-size: 14px;
     color: #6b7280;
-    line-height: 1;
   }
 
-  .dm-mass-close:hover {
-    color: #1f2937;
-  }
-
-  .dm-mass-select {
+  .dm-mass-delete-box select {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
     font-size: 14px;
+    background: #f9fafb;
     margin-bottom: 16px;
   }
 
-  .dm-mass-count {
-    background: #fef3c7;
-    color: #92400e;
-    padding: 10px 14px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 16px;
-    text-align: center;
+  .dm-mass-delete-box select:focus {
+    outline: none;
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
   }
 
-  .dm-mass-zero {
-    background: #f3f4f6;
-    color: #6b7280;
-    padding: 10px 14px;
-    border-radius: 6px;
-    font-size: 14px;
-    margin-bottom: 16px;
-    text-align: center;
-  }
-
-  .dm-mass-actions {
+  .dm-mass-delete-actions {
     display: flex;
-    gap: 12px;
+    gap: 10px;
     justify-content: flex-end;
   }
 
-  .dm-mass-actions .btn {
-    min-width: 100px;
-  }
-
   /* Mobile Card View */
-  .mobile-card-list {
-    display: none;
-  }
+  .mobile-card-list { display: none; }
 
   .mobile-card {
     background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 16px;
-    margin-bottom: 12px;
+    border-bottom: 1px solid #f3f4f6;
+    padding: 16px 20px;
   }
+
+  .mobile-card:last-child { border-bottom: none; }
 
   .mobile-card-header {
     display: flex;
@@ -494,136 +783,434 @@ const doctorManagementStyles = `
     border-top: 1px solid #f3f4f6;
   }
 
-  .mobile-card-actions .btn {
+  .mobile-card-actions .action-btn {
     flex: 1;
-    text-align: center;
-    min-height: 44px;
-    display: flex;
-    align-items: center;
     justify-content: center;
+    padding: 10px 8px;
   }
 
-  /* Responsive - Tablet */
+  /* Responsive */
+  @media (max-width: 1200px) {
+    .data-table th:nth-child(5),
+    .data-table td:nth-child(5) { display: none; }
+  }
+
   @media (max-width: 1024px) {
-    .data-table th:nth-child(3),
-    .data-table td:nth-child(3) {
-      display: none;
-    }
-    .doctor-management {
-      padding: 16px;
-    }
+    .data-table th:nth-child(4),
+    .data-table td:nth-child(4) { display: none; }
   }
 
-  /* Responsive - Mobile */
-  @media (max-width: 480px) {
-    .doctor-management {
-      padding: 12px;
-      border-radius: 10px;
-    }
+  @media (max-width: 900px) {
+    .doctor-management { overflow: visible; }
+    .dm-content-wrapper { flex: none; overflow: visible; }
+    .dm-filters-bar { padding: 12px 16px; gap: 12px; }
+    .dm-search-actions-row { gap: 8px; flex-wrap: wrap; }
+    .dm-buttons-group { gap: 6px; }
+    .dm-dropdowns-row { gap: 8px; flex-wrap: wrap; }
+    .dm-search-input-wrapper { flex: 3; min-width: 120px; }
+    .dm-filter-select { flex: 1; min-width: 0; }
+    .dm-custom-select-wrapper { flex: 1; min-width: 0; }
+    .dm-custom-select-trigger { width: 100%; }
+  }
 
-    .management-header {
-      flex-direction: column;
-      gap: 12px;
-      align-items: stretch;
-    }
+  @media (max-width: 768px) {
+    .dm-add-btn { font-size: 11px; }
+    .dm-mass-btn { font-size: 11px; }
+    .dm-search-input { font-size: 13px; padding: 9px 10px 9px 34px; }
+    .action-btn { font-size: 11px; padding: 6px 10px; }
+    .data-table th { font-size: 10px; }
+  }
 
-    .management-header .btn {
-      width: 100%;
-      min-height: 44px;
-      text-align: center;
-    }
-
-    .filters-bar {
-      flex-direction: column;
-    }
-
-    .filters-bar input,
-    .filters-bar select {
-      min-width: 0;
-      width: 100%;
-      min-height: 44px;
-    }
-
-    .data-table {
-      display: none;
-    }
-
-    .mobile-card-list {
-      display: block;
-    }
-
-    .pagination {
-      flex-direction: column;
-      gap: 12px;
-      align-items: center;
-    }
-
-    .pagination-info {
-      font-size: 13px;
-    }
-
-    .pagination-btn {
-      min-height: 44px;
-      padding: 10px 20px;
-    }
-
-    /* Modal full-screen on mobile */
-    .modal-content {
-      width: 100%;
-      max-width: 100%;
-      height: 100vh;
-      max-height: 100vh;
-      border-radius: 0;
-      padding: 16px;
-    }
-
-    .form-row {
-      grid-template-columns: 1fr;
-      gap: 0;
-    }
-
+  @media (max-width: 640px) {
+    .dm-search-actions-row { gap: 6px; flex-wrap: wrap; }
+    .dm-buttons-group { gap: 5px; width: 100%; }
+    .dm-add-btn { font-size: 10px; }
+    .dm-mass-btn { font-size: 10px; }
+    .dm-search-input-wrapper { width: 100%; flex: none; }
+    .dm-dropdowns-row { gap: 6px; }
+    .dm-filter-select { flex: 1; min-width: 0; }
+    .dm-custom-select-wrapper { flex: 1; min-width: 0; }
+    .dm-table-container { display: none; }
+    .mobile-card-list { display: block; }
+    .pagination { flex-direction: column; gap: 12px; align-items: center; }
+    .modal-content { max-width: 100%; max-height: 100%; border-radius: 0; }
+    .modal-body { max-height: calc(100vh - 140px); }
+    .form-row { grid-template-columns: 1fr; gap: 0; }
     .form-group input,
     .form-group select,
-    .form-group textarea {
-      min-height: 44px;
-      font-size: 16px;
-    }
+    .form-group textarea { min-height: 44px; font-size: 16px; }
+    .form-actions { flex-direction: column-reverse; }
+    .form-actions .btn { width: 100%; min-height: 48px; }
+  }
 
-    .form-actions {
-      flex-direction: column-reverse;
-    }
+  @media (max-width: 480px) {
+    .dm-search-input { font-size: 12px; }
+    .dm-add-btn { font-size: 9px; }
+    .dm-mass-btn { font-size: 9px; }
+    .dm-custom-select-trigger { padding: 8px 10px; font-size: 12px; }
+    .dm-filter-select { padding: 8px; font-size: 12px; }
+    .mobile-card-name { font-size: 14px; }
+    .action-btn { font-size: 10px; padding: 5px 8px; }
+    .pagination { gap: 8px; }
+  }
 
-    .form-actions .btn {
-      width: 100%;
-      min-height: 48px;
-    }
+  /* ===== DARK MODE ===== */
+  body.dark-mode .doctor-management {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
 
-    .dm-mass-delete-content {
-      width: 92%;
-    }
+  body.dark-mode .dm-filters-bar {
+    border-color: #1e293b;
+  }
 
-    .dm-mass-actions {
-      flex-direction: column-reverse;
-    }
+  body.dark-mode .dm-search-input {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
 
-    .dm-mass-actions .btn {
-      width: 100%;
-      min-height: 44px;
-    }
+  body.dark-mode .dm-search-input::placeholder {
+    color: #64748b;
+  }
+
+  body.dark-mode .dm-search-input:focus {
+    background: #0f172a;
+    border-color: #f59e0b;
+  }
+
+  body.dark-mode .dm-search-input-icon {
+    color: #64748b;
+  }
+
+  body.dark-mode .dm-filter-select {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .dm-filter-select:focus {
+    border-color: #f59e0b;
+  }
+
+  body.dark-mode .dm-custom-select-trigger {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .dm-custom-select-trigger:hover {
+    border-color: #475569;
+    background: #273548;
+  }
+
+  body.dark-mode .dm-custom-select-trigger.dm-cs-open {
+    border-color: #f59e0b;
+    background: #0f172a;
+  }
+
+  body.dark-mode .dm-custom-dropdown {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.5);
+  }
+
+  body.dark-mode .dm-custom-option {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .dm-custom-option:hover {
+    background: #1e3a5f;
+    color: #fbbf24;
+  }
+
+  body.dark-mode .dm-custom-option.dm-co-active {
+    background: #2d2a1a;
+    color: #fbbf24;
+  }
+
+  body.dark-mode .dm-custom-option.dm-co-active:hover {
+    background: #3d3818;
+  }
+
+  body.dark-mode .dm-mass-btn {
+    background: #450a0a;
+    color: #f87171;
+  }
+
+  body.dark-mode .dm-mass-btn:hover {
+    background: #7f1d1d;
+  }
+
+  body.dark-mode .data-table th {
+    background: #1e293b;
+    color: #94a3b8;
+    border-color: #334155;
+  }
+
+  body.dark-mode .data-table td {
+    color: #e2e8f0;
+    border-color: #1e293b;
+    background: #0f172a;
+  }
+
+  body.dark-mode .data-table tbody tr {
+    background: #0f172a;
+  }
+
+  body.dark-mode .data-table td.col-index {
+    color: #64748b;
+  }
+
+  body.dark-mode .data-table tr:hover td {
+    background: #1e293b;
+  }
+
+  body.dark-mode .doctor-name {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .client-type-badge.vip {
+    background: #1e3a5f;
+    color: #60a5fa;
+  }
+
+  body.dark-mode .client-type-badge.regular {
+    background: #451a03;
+    color: #fbbf24;
+  }
+
+  body.dark-mode .visit-freq-badge.freq-2 {
+    background: #1e3a5f;
+    color: #60a5fa;
+  }
+
+  body.dark-mode .visit-freq-badge.freq-4 {
+    background: #052e16;
+    color: #4ade80;
+  }
+
+  body.dark-mode .eng-badge.eng-low {
+    background: #450a0a;
+    color: #f87171;
+  }
+
+  body.dark-mode .eng-badge.eng-mid {
+    background: #451a03;
+    color: #fbbf24;
+  }
+
+  body.dark-mode .eng-badge.eng-high {
+    background: #052e16;
+    color: #4ade80;
+  }
+
+  body.dark-mode .action-btn.edit {
+    background: #451a03;
+    color: #fbbf24;
+  }
+
+  body.dark-mode .action-btn.edit:hover {
+    background: #78350f;
+  }
+
+  body.dark-mode .action-btn.delete {
+    background: #450a0a;
+    color: #f87171;
+  }
+
+  body.dark-mode .action-btn.delete:hover {
+    background: #7f1d1d;
+  }
+
+  body.dark-mode .action-btn.upgrade {
+    background: #2e1065;
+    color: #a78bfa;
+  }
+
+  body.dark-mode .action-btn.upgrade:hover {
+    background: #4c1d95;
+  }
+
+  body.dark-mode .pagination {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  body.dark-mode .pagination-info {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .pagination-btn {
+    background: #0f172a;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .pagination-btn:hover:not(:disabled) {
+    background: #334155;
+  }
+
+  body.dark-mode .pagination-page-indicator {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .modal-overlay {
+    background: rgba(0, 0, 0, 0.7);
+  }
+
+  body.dark-mode .modal-content,
+  body.dark-mode .dm-mass-delete-box {
+    background: #0f172a;
+  }
+
+  body.dark-mode .modal-header {
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .modal-header h3,
+  body.dark-mode .dm-mass-delete-box h3 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .dm-mass-delete-box p {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .dm-mass-delete-box select {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .modal-close {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+
+  body.dark-mode .modal-close:hover {
+    background: #334155;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .form-group label {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .form-group input,
+  body.dark-mode .form-group select,
+  body.dark-mode .form-group textarea {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .form-group input:focus,
+  body.dark-mode .form-group select:focus,
+  body.dark-mode .form-group textarea:focus {
+    background: #0f172a;
+    border-color: #f59e0b;
+  }
+
+  body.dark-mode .form-actions {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  body.dark-mode .btn-cancel {
+    background: #334155;
+    border-color: #475569;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .btn-cancel:hover {
+    background: #475569;
+  }
+
+  body.dark-mode .checkbox-item {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .empty-state {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .mobile-card {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .mobile-card-name {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .mobile-card-row {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .mobile-card-row span:last-child {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .mobile-card-actions {
+    border-color: #1e293b;
   }
 `;
+
+function FilterDropdown({ value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find(o => o.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  return (
+    <div className="dm-custom-select-wrapper" ref={ref}>
+      <button
+        type="button"
+        className={`dm-custom-select-trigger${open ? ' dm-cs-open' : ''}`}
+        onClick={() => setOpen(v => !v)}
+      >
+        <span>{selected ? selected.label : options[0]?.label}</span>
+        <ChevronDown size={14} className={`dm-cs-chevron${open ? ' dm-cs-chevron-open' : ''}`} />
+      </button>
+      {open && (
+        <div className="dm-custom-dropdown">
+          {options.map(opt => (
+            <div
+              key={opt.value}
+              className={`dm-custom-option${opt.value === value ? ' dm-co-active' : ''}`}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+            >
+              {opt.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const DoctorManagement = ({
   doctors = [],
   filters = {},
   pagination = {},
   loading = false,
+  searchInput = '',
   onSave,
   onDelete,
   onMassDeleteByUser,
   onUpgradeToVIP,
   onFilterChange,
   onPageChange,
+  onSearchChange,
 }) => {
   const [showModal, setShowModal] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
@@ -648,7 +1235,6 @@ const DoctorManagement = ({
     assignedTo: '',
   });
   const [saving, setSaving] = useState(false);
-  const [localFilters, setLocalFilters] = useState(filters);
   const [specializations, setSpecializations] = useState([]);
 
   // Fetch distinct specializations from database
@@ -676,22 +1262,10 @@ const DoctorManagement = ({
       .catch(() => setMassDeleteCount(null));
   }, [selectedBdmId]);
 
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (localFilters.search !== filters.search) {
-        onFilterChange?.({ ...filters, search: localFilters.search });
-      }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [localFilters.search]);
+  // Debounce search is handled at the page level
 
   const handleFilterChange = (field, value) => {
-    if (field === 'search') {
-      setLocalFilters((prev) => ({ ...prev, search: value }));
-    } else {
-      onFilterChange?.({ ...filters, [field]: value });
-    }
+    onFilterChange?.({ ...filters, [field]: value });
   };
 
   const handleCreate = () => {
@@ -881,87 +1455,93 @@ const DoctorManagement = ({
     <div className="doctor-management">
       <style>{doctorManagementStyles}</style>
 
-      <div className="management-header">
-        <h2>
-          {filters.clientType === 'regular'
-            ? `Regular Clients (${pagination.total || doctors.length})`
-            : filters.clientType === 'all'
-              ? `All Clients (${pagination.total || doctors.length})`
-              : `VIP Clients (${pagination.total || doctors.length})`}
-        </h2>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {onMassDeleteByUser && (
-            <button onClick={handleOpenMassDelete} className="btn btn-danger">
-              Mass Deactivate
+      {/* Filters Bar */}
+      <div className="dm-filters-bar">
+        {/* Search and Action Buttons */}
+        <div className="dm-search-actions-row">
+          <div className="dm-search-input-wrapper">
+            <svg className="dm-search-input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <input
+              type="text"
+              className="dm-search-input"
+              placeholder="Search by name or address..."
+              value={searchInput}
+              onChange={(e) => onSearchChange?.(e.target.value)}
+            />
+          </div>
+          <div className="dm-buttons-group">
+            {onMassDeleteByUser && (
+              <button onClick={handleOpenMassDelete} className="dm-mass-btn">
+                <AlertTriangle size={16} />
+                Mass Deactivate
+              </button>
+            )}
+            <button onClick={handleCreate} className="dm-add-btn">
+              <Plus size={18} />
+              Add VIP Client
             </button>
-          )}
-          <button onClick={handleCreate} className="btn btn-primary">
-            + Add VIP Client
-          </button>
+          </div>
+        </div>
+
+        {/* Filter Dropdowns */}
+        <div className="dm-dropdowns-row">
+          <FilterDropdown
+            value={filters.clientType || ''}
+            onChange={(val) => handleFilterChange('clientType', val)}
+            options={[
+              { value: '', label: 'VIP Clients Only' },
+              { value: 'all', label: 'All (VIP + Regular)' },
+              { value: 'regular', label: 'Regular Clients Only' },
+            ]}
+          />
+          {filters.clientType !== 'regular' && (
+            <>
+              <FilterDropdown
+                value={filters.visitFrequency || ''}
+                onChange={(val) => handleFilterChange('visitFrequency', val)}
+                options={[
+                  { value: '', label: 'All Frequencies' },
+                  { value: '2', label: '2x per month' },
+                  { value: '4', label: '4x per month' },
+                ]}
+              />
+              <FilterDropdown
+                value={filters.supportDuringCoverage || ''}
+                onChange={(val) => handleFilterChange('supportDuringCoverage', val)}
+                options={[
+                  { value: '', label: 'All Support Types' },
+                  ...SUPPORT_TYPES.map(t => ({ value: t, label: t })),
+                ]}
+              />
+              <FilterDropdown
+                value={filters.programsToImplement || ''}
+                onChange={(val) => handleFilterChange('programsToImplement', val)}
+                options={[
+                { value: '', label: 'All Programs' },
+                ...PROGRAMS.map(p => ({ value: p, label: p })),
+              ]}
+            />
+          </>
+        )}
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="filters-bar">
-        <select
-          value={filters.clientType || ''}
-          onChange={(e) => handleFilterChange('clientType', e.target.value)}
-        >
-          <option value="">VIP Clients Only</option>
-          <option value="all">All (VIP + Regular)</option>
-          <option value="regular">Regular Clients Only</option>
-        </select>
-        <input
-          type="text"
-          placeholder="Search by name or address..."
-          value={localFilters.search || ''}
-          onChange={(e) => handleFilterChange('search', e.target.value)}
-        />
-        {filters.clientType !== 'regular' && (
-          <>
-            <select
-              value={filters.visitFrequency || ''}
-              onChange={(e) => handleFilterChange('visitFrequency', e.target.value)}
-            >
-              <option value="">All Frequencies</option>
-              <option value="2">2x per month</option>
-              <option value="4">4x per month</option>
-            </select>
-            <select
-              value={filters.supportDuringCoverage || ''}
-              onChange={(e) => handleFilterChange('supportDuringCoverage', e.target.value)}
-            >
-              <option value="">All Support Types</option>
-              {SUPPORT_TYPES.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-            <select
-              value={filters.programsToImplement || ''}
-              onChange={(e) => handleFilterChange('programsToImplement', e.target.value)}
-            >
-              <option value="">All Programs</option>
-              {PROGRAMS.map((prog) => (
-                <option key={prog} value={prog}>{prog}</option>
-              ))}
-            </select>
-          </>
-        )}
-      </div>
-
-      {/* Table (Desktop/Tablet) + Card List (Mobile) */}
-      <div className={loading ? 'table-loading' : ''}>
+      {/* Table (Desktop) + Card List (Mobile) */}
+      <div className={`dm-content-wrapper${loading ? ' table-loading' : ''}`}>
         {doctors.length > 0 ? (
           <>
-            {/* Desktop Table */}
-            <div style={{ overflowX: 'auto' }}>
+            <div className="dm-table-container">
               <table className="data-table">
                 <thead>
                   <tr>
+                    <th>#</th>
                     <th>Name</th>
                     <th>Type</th>
                     <th>Specialization</th>
-                    <th>Hospital</th>
+                    <th>Hospital / Address</th>
                     <th>Assigned BDM</th>
                     <th>Visit Freq</th>
                     <th>Engagement</th>
@@ -969,58 +1549,59 @@ const DoctorManagement = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {doctors.map((doctor) => (
+                  {doctors.map((doctor, index) => (
                     <tr key={doctor._id}>
-                      <td>{doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}</td>
-                      <td>
-                        {doctor._clientType === 'regular' ? (
-                          <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, background: '#fef3c7', color: '#92400e' }}>Regular</span>
-                        ) : (
-                          <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, background: '#dbeafe', color: '#1d4ed8' }}>VIP</span>
-                        )}
-                      </td>
-                      <td>{doctor.specialization || '-'}</td>
-                      <td>{doctor.clinicOfficeAddress || '-'}</td>
-                      <td>{doctor.assignedTo?.name || doctor._ownerName || '-'}</td>
-                      <td>
-                        {doctor.visitFrequency ? (
-                          <span className={`visit-freq-badge freq-${doctor.visitFrequency}`}>
-                            {doctor.visitFrequency}x/mo
-                          </span>
-                        ) : '-'}
+                      <td className="col-index">
+                        {(pagination.page - 1) * pagination.limit + index + 1}
                       </td>
                       <td>
-                        {doctor.levelOfEngagement ? (
-                          <span className={`eng-badge ${doctor.levelOfEngagement <= 2 ? 'eng-low' : doctor.levelOfEngagement === 3 ? 'eng-mid' : 'eng-high'}`}>
-                            {doctor.levelOfEngagement}/5
-                          </span>
-                        ) : '-'}
+                        <span className="doctor-name">
+                          {doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}
+                        </span>
                       </td>
-                      <td className="actions">
-                        {doctor._clientType !== 'regular' ? (
-                          <>
+                      <td>
+                        <span className={`client-type-badge ${doctor._clientType === 'regular' ? 'regular' : 'vip'}`}>
+                          {doctor._clientType === 'regular' ? 'Regular' : 'VIP'}
+                        </span>
+                      </td>
+                      <td>{doctor.specialization || '—'}</td>
+                      <td>{doctor.clinicOfficeAddress || doctor.hospital || '—'}</td>
+                      <td>{doctor.assignedTo?.name || doctor._ownerName || '—'}</td>
+                      <td>
+                        <span className={`visit-freq-badge freq-${doctor.visitFrequency || 2}`}>
+                          {doctor.visitFrequency || 2}x/mo
+                        </span>
+                      </td>
+                      <td>{doctor.levelOfEngagement || doctor.engagementLevel || '—'}</td>
+                      <td>
+                        <div className="actions-cell">
+                          {doctor._clientType !== 'regular' ? (
+                            <>
+                              <button
+                                onClick={() => handleEdit(doctor)}
+                                className="action-btn edit"
+                              >
+                                <Edit2 size={14} />
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteClick(doctor)}
+                                className="action-btn delete"
+                              >
+                                <Trash2 size={14} />
+                                Delete
+                              </button>
+                            </>
+                          ) : (
                             <button
-                              onClick={() => handleEdit(doctor)}
-                              className="btn btn-secondary btn-sm"
+                              onClick={() => onUpgradeToVIP?.(doctor)}
+                              className="action-btn upgrade"
                             >
-                              Edit
+                              <ArrowUpCircle size={14} />
+                              Upgrade to VIP
                             </button>
-                            <button
-                              onClick={() => handleDeleteClick(doctor)}
-                              className="btn btn-danger btn-sm"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            onClick={() => onUpgradeToVIP?.(doctor)}
-                            className="btn btn-sm"
-                            style={{ background: '#8b5cf6', color: 'white', fontSize: '12px' }}
-                          >
-                            Upgrade to VIP
-                          </button>
-                        )}
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1030,18 +1611,17 @@ const DoctorManagement = ({
 
             {/* Mobile Card List */}
             <div className="mobile-card-list">
-              {doctors.map((doctor) => (
+              {doctors.map((doctor, index) => (
                 <div key={doctor._id} className="mobile-card">
                   <div className="mobile-card-header">
                     <span className="mobile-card-name">
+                      #{(pagination.page - 1) * pagination.limit + index + 1}{' '}
                       {doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}
                     </span>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      {doctor._clientType === 'regular' ? (
-                        <span style={{ padding: '2px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 600, background: '#fef3c7', color: '#92400e' }}>Regular</span>
-                      ) : (
-                        <span style={{ padding: '2px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 600, background: '#dbeafe', color: '#1d4ed8' }}>VIP</span>
-                      )}
+                      <span className={`client-type-badge ${doctor._clientType === 'regular' ? 'regular' : 'vip'}`}>
+                        {doctor._clientType === 'regular' ? 'Regular' : 'VIP'}
+                      </span>
                       {doctor.visitFrequency && (
                         <span className={`visit-freq-badge freq-${doctor.visitFrequency}`}>
                           {doctor.visitFrequency}x/mo
@@ -1077,32 +1657,22 @@ const DoctorManagement = ({
                       </div>
                     )}
                   </div>
-                  {doctor._clientType !== 'regular' ? (
-                    <div className="mobile-card-actions">
-                      <button
-                        onClick={() => handleEdit(doctor)}
-                        className="btn btn-secondary btn-sm"
-                      >
-                        Edit
+                  <div className="mobile-card-actions">
+                    {doctor._clientType !== 'regular' ? (
+                      <>
+                        <button onClick={() => handleEdit(doctor)} className="action-btn edit">
+                          <Edit2 size={16} /> Edit
+                        </button>
+                        <button onClick={() => handleDeleteClick(doctor)} className="action-btn delete">
+                          <Trash2 size={16} /> Delete
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={() => onUpgradeToVIP?.(doctor)} className="action-btn upgrade">
+                        <ArrowUpCircle size={16} /> Upgrade to VIP
                       </button>
-                      <button
-                        onClick={() => handleDeleteClick(doctor)}
-                        className="btn btn-danger btn-sm"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="mobile-card-actions">
-                      <button
-                        onClick={() => onUpgradeToVIP?.(doctor)}
-                        className="btn btn-sm"
-                        style={{ background: '#8b5cf6', color: 'white', fontSize: '12px', width: '100%' }}
-                      >
-                        Upgrade to VIP
-                      </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1110,16 +1680,14 @@ const DoctorManagement = ({
         ) : (
           <div className="empty-state">
             <p>
-              {filters.clientType === 'regular'
-                ? 'No Regular Clients found'
-                : 'No VIP Clients found'}
+              {filters.clientType === 'regular' ? 'No Regular Clients found' : 'No VIP Clients found'}
             </p>
           </div>
         )}
       </div>
 
       {/* Pagination */}
-      {pagination.pages > 1 && (
+      {pagination.total > 0 && (
         <div className="pagination">
           <div className="pagination-info">
             Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
@@ -1134,6 +1702,9 @@ const DoctorManagement = ({
             >
               Previous
             </button>
+            <span className="pagination-page-indicator">
+              Page {pagination.page} of {pagination.pages || 1}
+            </span>
             <button
               className="pagination-btn"
               onClick={() => onPageChange?.(pagination.page + 1)}
@@ -1152,11 +1723,12 @@ const DoctorManagement = ({
             <div className="modal-header">
               <h3>{selectedDoctor ? 'Edit VIP Client' : 'Add New VIP Client'}</h3>
               <button className="modal-close" onClick={handleCloseModal}>
-                &times;
+                <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit}>
+            <div className="modal-body">
+              <form onSubmit={handleSubmit}>
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="lastName">Last Name *</label>
@@ -1403,23 +1975,14 @@ const DoctorManagement = ({
                 />
               </div>
 
-              <div className="form-actions">
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="btn btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={saving}
-                >
-                  {saving ? 'Saving...' : selectedDoctor ? 'Update VIP Client' : 'Add VIP Client'}
-                </button>
-              </div>
             </form>
+            </div>
+            <div className="form-actions">
+              <button type="button" onClick={handleCloseModal} className="btn btn-cancel">Cancel</button>
+              <button type="submit" onClick={handleSubmit} className="btn btn-save" disabled={saving}>
+                {saving ? 'Saving...' : selectedDoctor ? 'Update VIP Client' : 'Add VIP Client'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1442,16 +2005,10 @@ const DoctorManagement = ({
       {/* Mass Delete - Step 1: BDM Picker */}
       {showMassDelete && (
         <div className="dm-mass-delete-modal" onClick={() => setShowMassDelete(false)}>
-          <div className="dm-mass-delete-content" onClick={(e) => e.stopPropagation()}>
-            <div className="dm-mass-delete-header">
-              <h3>Mass Deactivate VIP Clients</h3>
-              <button className="dm-mass-close" onClick={() => setShowMassDelete(false)}>&times;</button>
-            </div>
-            <p style={{ color: '#374151', marginBottom: '16px' }}>
-              Select a BDM to deactivate all their assigned VIP Clients.
-            </p>
+          <div className="dm-mass-delete-box" onClick={(e) => e.stopPropagation()}>
+            <h3>Mass Deactivate VIP Clients</h3>
+            <p>Select a BDM to deactivate all their assigned VIP Clients.</p>
             <select
-              className="dm-mass-select"
               value={selectedBdmId}
               onChange={(e) => setSelectedBdmId(e.target.value)}
             >
@@ -1461,22 +2018,23 @@ const DoctorManagement = ({
               ))}
             </select>
             {selectedBdmId && massDeleteCount !== null && massDeleteCount > 0 && (
-              <div className="dm-mass-count">
+              <div style={{ background: '#fef3c7', color: '#92400e', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
                 {massDeleteCount} active VIP Client{massDeleteCount !== 1 ? 's' : ''} assigned to this BDM
               </div>
             )}
             {selectedBdmId && massDeleteCount === 0 && (
-              <div className="dm-mass-zero">
+              <div style={{ background: '#f3f4f6', color: '#6b7280', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
                 No active VIP Clients assigned to this BDM
               </div>
             )}
-            <div className="dm-mass-actions">
-              <button onClick={() => setShowMassDelete(false)} className="btn btn-secondary">
+            <div className="dm-mass-delete-actions">
+              <button onClick={() => setShowMassDelete(false)} className="btn btn-cancel">
                 Cancel
               </button>
               <button
                 onClick={handleMassDeleteProceed}
-                className="btn btn-danger"
+                className="btn"
+                style={{ background: '#dc2626', color: 'white' }}
                 disabled={!selectedBdmId || !massDeleteCount}
               >
                 Proceed
