@@ -1,15 +1,14 @@
 /**
  * Dashboard Component (Admin)
- *
- * Clean admin dashboard with:
- * - 4 stat cards showing real data only
- * - Active BDMs widget
- * - Recent activity feed
+ * Layout inspired by Hireism HR dashboard
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Stethoscope, Users, MapPin, Calendar } from 'lucide-react';
-import LiveActivityFeed from './LiveActivityFeed';
+import { useNavigate } from 'react-router-dom';
+import {
+  Stethoscope, Users,
+  MapPin, Calendar, ChevronLeft, ChevronRight, ChevronDown, FileText,
+} from 'lucide-react';
 import userService from '../../services/userService';
 
 /* =============================================================================
@@ -17,401 +16,797 @@ import userService from '../../services/userService';
    ============================================================================= */
 
 const dashboardStyles = `
-  .dashboard {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
+  :root {
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --text: #0f172a;
+    --sub: #64748b;
+    --border: #e2e8f0;
+    --shadow: 0 1px 4px rgba(0,0,0,0.08);
   }
 
-  /* Stats Grid */
-  .stats-grid {
+  body.dark-mode {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --text: #f1f5f9;
+    --sub: #94a3b8;
+    --border: #334155;
+    --shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+
+  /* ---- Page shell ---- */
+  .db-shell {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    height: calc(100vh - 64px);
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  /* ---- Main left column ---- */
+  .db-main {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    min-height: 0;
+    padding: 12px 20px 24px 28px;
+    gap: 14px;
+  }
+
+  .db-main::-webkit-scrollbar { width: 4px; }
+  .db-main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Greeting card */
+  .db-greeting {
+    background: linear-gradient(135deg, #3b82f6 0%, #6366f1 60%, #8b5cf6 100%);
+    border-radius: 16px;
+    padding: 40px 44px;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 160px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .db-greeting::after {
+    content: '';
+    position: absolute;
+    right: -20px;
+    top: -30px;
+    width: 200px;
+    height: 200px;
+    background: rgba(255,255,255,0.07);
+    border-radius: 50%;
+  }
+
+  .db-greeting::before {
+    content: '';
+    position: absolute;
+    right: 60px;
+    bottom: -40px;
+    width: 150px;
+    height: 150px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 50%;
+  }
+
+  .db-greeting-text h2 {
+    margin: 0 0 6px 0;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+
+  .db-greeting-text p {
+    margin: 0;
+    font-size: 13px;
+    opacity: 0.85;
+    max-width: 300px;
+  }
+
+  .db-greeting-action {
+    margin-top: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 8px;
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.2s;
+    backdrop-filter: blur(4px);
+  }
+
+  .db-greeting-action:hover { background: rgba(255,255,255,0.3); }
+
+  .db-greeting-illustration {
+    font-size: 72px;
+    opacity: 0.15;
+    position: absolute;
+    right: 180px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 0;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* Greeting quick actions */
+  .db-greeting-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 1;
+    flex-shrink: 0;
+  }
+
+  .db-quick-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    text-decoration: none;
+    border: 1px solid rgba(255,255,255,0.35);
+    background: rgba(255,255,255,0.15);
+    color: white;
+    backdrop-filter: blur(4px);
+  }
+
+  .db-quick-btn:hover {
+    background: rgba(255,255,255,0.28);
+    border-color: rgba(255,255,255,0.55);
+  }
+
+  .db-quick-btn.primary {
+    background: rgba(255,255,255,0.9);
+    color: #3b82f6;
+    border-color: transparent;
+  }
+
+  .db-quick-btn.primary:hover {
+    background: white;
+  }
+
+  /* Section header */
+  .db-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .db-section-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0;
+  }
+
+  .db-view-all {
+    font-size: 12px;
+    color: #3b82f6;
+    cursor: pointer;
+    font-weight: 500;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .db-view-all:hover { text-decoration: underline; }
+
+  /* Stat boxes */
+  .db-stats {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
+    gap: 12px;
   }
 
-  .stat-card {
-    background: white;
-    border-radius: 16px;
-    padding: 24px;
-    border: 1px solid #e5e7eb;
+  .db-stat-box {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    transition: all 0.2s;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    transition: transform 0.2s, box-shadow 0.2s;
   }
 
-  .stat-card:hover {
-    border-color: #d1d5db;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  .db-stat-box:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   }
 
-  .stat-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
+  .db-stat-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  .stat-icon.blue { background: #dbeafe; color: #2563eb; }
-  .stat-icon.purple { background: #f3e8ff; color: #7c3aed; }
-  .stat-icon.green { background: #dcfce7; color: #16a34a; }
-  .stat-icon.cyan { background: #cffafe; color: #0891b2; }
+  .db-stat-icon.blue  { background: #dbeafe; color: #2563eb; }
+  .db-stat-icon.purple{ background: #ede9fe; color: #7c3aed; }
+  .db-stat-icon.green { background: #dcfce7; color: #16a34a; }
+  .db-stat-icon.amber { background: #fef3c7; color: #d97706; }
 
-  .stat-content {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
+  body.dark-mode .db-stat-icon.blue   { background: #1e3a8a; color: #93c5fd; }
+  body.dark-mode .db-stat-icon.purple { background: #4c1d95; color: #c4b5fd; }
+  body.dark-mode .db-stat-icon.green  { background: #14532d; color: #86efac; }
+  body.dark-mode .db-stat-icon.amber  { background: #78350f; color: #fcd34d; }
 
-  .stat-value {
-    font-size: 32px;
-    font-weight: 700;
-    color: #1f2937;
+  .db-stat-value {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--text);
     line-height: 1;
   }
 
-  .stat-label {
-    font-size: 14px;
-    color: #6b7280;
+  .db-stat-label {
+    font-size: 11px;
+    color: var(--sub);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
   }
 
-  .stat-breakdown {
-    font-size: 12px;
-    color: #9ca3af;
-    margin-top: 6px;
+  .db-stat-sub {
+    font-size: 10px;
+    color: var(--sub);
+    margin-top: 2px;
     display: flex;
-    gap: 12px;
+    justify-content: center;
+    gap: 8px;
   }
 
-  .stat-breakdown span {
-    display: inline-flex;
+  .db-stat-sub .dot-vip {
+    display: inline-flex; align-items: center; gap: 3px;
+  }
+  .db-stat-sub .dot-vip::before {
+    content: ''; width: 5px; height: 5px;
+    background: #fbbf24; border-radius: 50%;
+  }
+
+  .db-stat-sub .dot-reg {
+    display: inline-flex; align-items: center; gap: 3px;
+  }
+  .db-stat-sub .dot-reg::before {
+    content: ''; width: 5px; height: 5px;
+    background: #60a5fa; border-radius: 50%;
+  }
+
+  /* ---- Right sidebar ---- */
+  .db-sidebar {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    min-height: 0;
+    padding: 24px 20px 24px 8px;
+    gap: 10px;
+    border-left: 1px solid var(--border);
+
+    /* YouTube-style scrollbar: hidden until hover */
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .db-sidebar:hover {
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .db-sidebar::-webkit-scrollbar { width: 5px; }
+  .db-sidebar::-webkit-scrollbar-track { background: transparent; }
+  .db-sidebar::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 3px;
+  }
+  .db-sidebar:hover::-webkit-scrollbar-thumb {
+    background: var(--border);
+  }
+  .db-sidebar::-webkit-scrollbar-thumb:hover {
+    background: var(--sub);
+  }
+
+  /* Sidebar card */
+  .db-sidebar-card {
+    background: var(--card);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  /* Collapsible section toggle header */
+  .db-card-toggle {
+    width: 100%;
+    display: flex;
     align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text);
+    text-align: left;
+  }
+
+  .db-card-toggle:hover { background: var(--bg); }
+
+  .db-toggle-label {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .db-toggle-chevron {
+    color: var(--sub);
+    transition: transform 0.28s ease;
+    flex-shrink: 0;
+  }
+
+  .db-toggle-chevron.open { transform: rotate(0deg); }
+  .db-toggle-chevron.closed { transform: rotate(-90deg); }
+
+  /* CSS grid row animation — smoother than max-height */
+  .db-collapse-wrap {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.28s ease;
+  }
+
+  .db-collapse-wrap.closed {
+    grid-template-rows: 0fr;
+  }
+
+  .db-collapse-inner {
+    overflow: hidden;
+    padding: 0 14px 14px;
+  }
+
+  /* Calendar */
+  .cal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .cal-month {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--sub);
+  }
+
+  .cal-nav {
+    display: flex;
     gap: 4px;
   }
 
-  .stat-breakdown .vip-badge {
-    width: 8px;
-    height: 8px;
-    background: #fbbf24;
-    border-radius: 50%;
-  }
-
-  .stat-breakdown .regular-badge {
-    width: 8px;
-    height: 8px;
-    background: #60a5fa;
-    border-radius: 50%;
-  }
-
-  /* Activity Section */
-  .activity-section {
-    grid-column: span 2;
-  }
-
-  /* Active Now Widget */
-  .active-now-card {
-    background: white;
-    border-radius: 16px;
-    border: 1px solid #e5e7eb;
-    padding: 20px 24px;
-  }
-
-  .active-now-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-
-  .active-now-dot {
-    width: 10px;
-    height: 10px;
-    background: #22c55e;
-    border-radius: 50%;
-    animation: pulse-dot 2s infinite;
-  }
-
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
-    50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
-  }
-
-  .active-now-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #1f2937;
-  }
-
-  .active-now-count {
-    margin-left: auto;
-    background: #f0fdf4;
-    color: #16a34a;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 12px;
-  }
-
-  .active-now-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .active-user-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 0;
-  }
-
-  .active-user-avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-    color: #2563eb;
+  .cal-nav-btn {
+    width: 22px;
+    height: 22px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--sub);
+    transition: all 0.15s;
+  }
+
+  .cal-nav-btn:hover { background: #3b82f6; color: white; border-color: #3b82f6; }
+
+  .cal-days-header {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    margin-bottom: 4px;
+  }
+
+  .cal-day-name {
+    text-align: center;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--sub);
+    text-transform: uppercase;
+    padding: 2px 0;
+  }
+
+  .cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+
+  .cal-cell {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-size: 10px;
+    color: var(--sub);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .cal-cell:hover { background: #dbeafe; color: #2563eb; }
+  .cal-cell.today { background: #3b82f6; color: white; font-weight: 700; }
+  .cal-cell.empty { cursor: default; }
+  .cal-cell.empty:hover { background: transparent; }
+
+  /* Online BDMs */
+  .db-online-dot {
+    width: 7px;
+    height: 7px;
+    background: #22c55e;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px rgba(34,197,94,0.25);
+  }
+
+  .db-online-count {
+    font-size: 10px;
     font-weight: 600;
+    color: #22c55e;
+    background: #dcfce7;
+    padding: 2px 7px;
+    border-radius: 20px;
+  }
+
+  body.dark-mode .db-online-count { background: #14532d; }
+
+  .db-users-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .db-user-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 4px 7px;
+    border-radius: 8px;
+    background: var(--bg);
+    transition: background 0.15s;
+  }
+
+  .db-user-row:hover { background: #dbeafe; }
+  body.dark-mode .db-user-row:hover { background: #1e3a8a; }
+
+  .db-user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
     flex-shrink: 0;
     position: relative;
   }
 
-  .active-user-avatar::after {
-    content: '';
+  .db-user-avatar .online-dot {
     position: absolute;
     bottom: 0;
     right: 0;
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     background: #22c55e;
     border-radius: 50%;
-    border: 2px solid white;
+    border: 2px solid var(--card);
   }
 
-  .active-user-info {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
+  .db-user-info { flex: 1; min-width: 0; }
 
-  .active-user-name {
-    font-size: 14px;
-    font-weight: 500;
-    color: #1f2937;
+  .db-user-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .active-user-time {
-    font-size: 12px;
-    color: #9ca3af;
+  .db-user-role {
+    font-size: 10px;
+    color: var(--sub);
   }
 
-  .active-now-empty {
+  .db-no-users {
     text-align: center;
-    padding: 16px 0;
-    color: #9ca3af;
-    font-size: 14px;
+    font-size: 11px;
+    color: var(--sub);
+    padding: 8px 0;
   }
 
   /* Responsive */
-  @media (max-width: 1200px) {
-    .stats-grid {
+  @media (max-width: 1400px) {
+    .db-stats {
       grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 1100px) {
+    .db-shell {
+      grid-template-columns: 1fr;
+      height: auto;
+      overflow-y: auto;
+    }
+
+    .db-main {
+      padding: 16px;
+    }
+
+    .db-sidebar {
+      padding: 0 16px 16px;
+      border-left: none;
+      border-top: 1px solid var(--border);
+    }
+
+    .db-stats {
+      grid-template-columns: repeat(4, 1fr);
     }
   }
 
   @media (max-width: 768px) {
-    .stats-grid {
+    .db-stats {
       grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
     }
-    .activity-section {
-      grid-column: span 1;
-    }
+    .db-greeting-text h2 { font-size: 20px; }
+    .db-greeting { padding: 28px 28px; min-height: 130px; }
   }
 
   @media (max-width: 480px) {
-    .stats-grid {
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-    }
-    .stat-card {
-      padding: 16px;
-      gap: 10px;
-    }
-    .stat-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-    }
-    .stat-value {
-      font-size: 24px;
-    }
-    .stat-label {
-      font-size: 13px;
-    }
-    .dashboard {
-      gap: 16px;
+    .db-stats {
+      grid-template-columns: 1fr 1fr;
     }
   }
 `;
 
 /* =============================================================================
-   COMPONENT
+   HELPERS
    ============================================================================= */
 
-const getInitials = (name) => {
+const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+const initials = (name) => {
   if (!name) return '?';
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 };
 
-const getTimeAgo = (date) => {
-  const diff = Math.floor((Date.now() - new Date(date)) / 1000);
-  if (diff < 60) return 'just now';
-  const mins = Math.floor(diff / 60);
-  return `${mins}m ago`;
-};
+/* =============================================================================
+   COMPONENT
+   ============================================================================= */
 
-const Dashboard = ({ stats = {}, onViewAllActivity = null, onActivityClick = null }) => {
+const Dashboard = ({ user, stats = {} }) => {
+  const navigate = useNavigate();
   const [activeUsers, setActiveUsers] = useState([]);
+  const [calDate, setCalDate] = useState(new Date());
+  const [calOpen, setCalOpen] = useState(true);
+  const [bdmsOpen, setBdmsOpen] = useState(true);
 
   const fetchActiveUsers = useCallback(async () => {
     try {
       const res = await userService.getActiveUsers();
       setActiveUsers(res.data || []);
-    } catch {
-      // Silently fail — not critical
-    }
+    } catch { /* silent */ }
   }, []);
 
   useEffect(() => {
     fetchActiveUsers();
-    const interval = setInterval(fetchActiveUsers, 30000);
-    return () => clearInterval(interval);
+    const t = setInterval(fetchActiveUsers, 30000);
+    return () => clearInterval(t);
   }, [fetchActiveUsers]);
+
   const {
-    totalDoctors = 0,
-    totalEmployees = 0,
-    totalVisits = 0,
-    vipVisits = 0,
-    regularVisits = 0,
-    visitsThisWeek = 0,
-    vipVisitsThisWeek = 0,
-    regularVisitsThisWeek = 0,
+    totalDoctors = 0, totalEmployees = 0,
+    totalVisits = 0, vipVisits = 0, regularVisits = 0,
+    visitsThisWeek = 0, vipVisitsThisWeek = 0, regularVisitsThisWeek = 0,
   } = stats;
 
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good Morning';
+    if (h < 18) return 'Good Afternoon';
+    return 'Good Evening';
+  })();
+
+  const firstName = user?.name?.split(' ')[0] || 'Admin';
+
+  /* Calendar helpers */
+  const year = calDate.getFullYear();
+  const month = calDate.getMonth();
+  const today = new Date().getDate();
+  const isThisMonth =
+    new Date().getMonth() === month && new Date().getFullYear() === year;
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const prevMonth = () => setCalDate(new Date(year, month - 1, 1));
+  const nextMonth = () => setCalDate(new Date(year, month + 1, 1));
+
   return (
-    <div className="dashboard">
+    <div className="db-shell">
       <style>{dashboardStyles}</style>
 
-      {/* Stat Cards */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon blue">
-            <Stethoscope size={24} />
+      {/* ────── MAIN CONTENT ────── */}
+      <div className="db-main">
+
+        {/* Greeting card */}
+        <div className="db-greeting">
+          <div className="db-greeting-text">
+            <h2>{greeting}, {firstName} 👋</h2>
+            <p>Here's what's happening with your pharmacy today.</p>
+            <a className="db-greeting-action" href="/admin/activity">
+              View Activity <ChevronRight size={13} />
+            </a>
           </div>
-          <div className="stat-content">
-            <span className="stat-value">{totalDoctors}</span>
-            <span className="stat-label">VIP Clients</span>
+          <div className="db-greeting-illustration" aria-hidden>💊</div>
+          <div className="db-greeting-actions">
+            <button className="db-quick-btn primary" onClick={() => navigate('/admin/doctors')}>
+              <Stethoscope size={14} /> Manage Clients
+            </button>
+            <button className="db-quick-btn" onClick={() => navigate('/admin/employees')}>
+              <Users size={14} /> BDMs
+            </button>
+            <button className="db-quick-btn" onClick={() => navigate('/admin/reports')}>
+              <FileText size={14} /> Reports
+            </button>
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-icon purple">
-            <Users size={24} />
+        {/* Stats section */}
+        <div>
+          <div className="db-section-head" style={{ marginBottom: 12 }}>
+            <h3 className="db-section-title">Overview</h3>
           </div>
-          <div className="stat-content">
-            <span className="stat-value">{totalEmployees}</span>
-            <span className="stat-label">BDMs</span>
-          </div>
-        </div>
+          <div className="db-stats">
 
-        <div className="stat-card">
-          <div className="stat-icon green">
-            <MapPin size={24} />
-          </div>
-          <div className="stat-content">
-            <span className="stat-value">{totalVisits}</span>
-            <span className="stat-label">Total Visits</span>
-            <div className="stat-breakdown">
-              <span>
-                <span className="vip-badge"></span>
-                VIP: {vipVisits}
-              </span>
-              <span>
-                <span className="regular-badge"></span>
-                Regular: {regularVisits}
-              </span>
+            <div className="db-stat-box">
+              <div className="db-stat-icon blue"><Stethoscope size={18} /></div>
+              <div>
+                <div className="db-stat-value">{totalDoctors}</div>
+                <div className="db-stat-label">VIP Clients</div>
+              </div>
             </div>
-          </div>
-        </div>
 
-        <div className="stat-card">
-          <div className="stat-icon cyan">
-            <Calendar size={24} />
-          </div>
-          <div className="stat-content">
-            <span className="stat-value">{visitsThisWeek}</span>
-            <span className="stat-label">This Week</span>
-            <div className="stat-breakdown">
-              <span>
-                <span className="vip-badge"></span>
-                VIP: {vipVisitsThisWeek}
-              </span>
-              <span>
-                <span className="regular-badge"></span>
-                Regular: {regularVisitsThisWeek}
-              </span>
+            <div className="db-stat-box">
+              <div className="db-stat-icon purple"><Users size={18} /></div>
+              <div>
+                <div className="db-stat-value">{totalEmployees}</div>
+                <div className="db-stat-label">BDMs</div>
+              </div>
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Active Now */}
-      <div className="active-now-card">
-        <div className="active-now-header">
-          <span className="active-now-dot"></span>
-          <span className="active-now-title">Active Now</span>
-          <span className="active-now-count">{activeUsers.length} online</span>
-        </div>
-        {activeUsers.length > 0 ? (
-          <div className="active-now-list">
-            {activeUsers.map((u) => (
-              <div key={u._id} className="active-user-item">
-                <div className="active-user-avatar">
-                  {getInitials(u.name)}
-                </div>
-                <div className="active-user-info">
-                  <span className="active-user-name">{u.name}</span>
-                  <span className="active-user-time">{getTimeAgo(u.lastActivity)}</span>
+            <div className="db-stat-box">
+              <div className="db-stat-icon green"><MapPin size={18} /></div>
+              <div>
+                <div className="db-stat-value">{totalVisits}</div>
+                <div className="db-stat-label">Total Visits</div>
+                <div className="db-stat-sub">
+                  <span className="dot-vip">{vipVisits} VIP</span>
+                  <span className="dot-reg">{regularVisits} Regular</span>
                 </div>
               </div>
-            ))}
+            </div>
+
+            <div className="db-stat-box">
+              <div className="db-stat-icon amber"><Calendar size={18} /></div>
+              <div>
+                <div className="db-stat-value">{visitsThisWeek}</div>
+                <div className="db-stat-label">This Week</div>
+                <div className="db-stat-sub">
+                  <span className="dot-vip">{vipVisitsThisWeek} VIP</span>
+                  <span className="dot-reg">{regularVisitsThisWeek} Reg</span>
+                </div>
+              </div>
+            </div>
+
           </div>
-        ) : (
-          <div className="active-now-empty">No BDMs currently active</div>
-        )}
+        </div>
+
       </div>
 
-      {/* Activity Feed */}
-      <div className="activity-section">
-        <LiveActivityFeed
-          compact={true}
-          limit={5}
-          showFilters={false}
-          onViewAll={onViewAllActivity}
-          onActivityClick={onActivityClick}
-        />
+      {/* ────── RIGHT SIDEBAR ────── */}
+      <div className="db-sidebar">
+
+        {/* Calendar — collapsible */}
+        <div className="db-sidebar-card">
+          <button className="db-card-toggle" onClick={() => setCalOpen(o => !o)}>
+            <ChevronDown
+              size={13}
+              className={`db-toggle-chevron ${calOpen ? 'open' : 'closed'}`}
+            />
+            <span className="db-toggle-label">Calendar</span>
+            <span className="cal-month">{MONTHS[month]} {year}</span>
+            <div className="cal-nav" onClick={e => e.stopPropagation()}>
+              <button className="cal-nav-btn" onClick={prevMonth}><ChevronLeft size={11} /></button>
+              <button className="cal-nav-btn" onClick={nextMonth}><ChevronRight size={11} /></button>
+            </div>
+          </button>
+          <div className={`db-collapse-wrap${calOpen ? '' : ' closed'}`}>
+            <div className="db-collapse-inner">
+              <div className="cal-days-header">
+                {DAYS.map(d => <div key={d} className="cal-day-name">{d}</div>)}
+              </div>
+              <div className="cal-grid">
+                {Array.from({ length: firstDay }).map((_, i) => (
+                  <div key={`e-${i}`} className="cal-cell empty" />
+                ))}
+                {Array.from({ length: daysInMonth }).map((_, i) => (
+                  <div
+                    key={i + 1}
+                    className={`cal-cell${isThisMonth && i + 1 === today ? ' today' : ''}`}
+                  >
+                    {i + 1}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Online BDMs — collapsible */}
+        <div className="db-sidebar-card">
+          <button className="db-card-toggle" onClick={() => setBdmsOpen(o => !o)}>
+            <ChevronDown
+              size={13}
+              className={`db-toggle-chevron ${bdmsOpen ? 'open' : 'closed'}`}
+            />
+            <span className="db-online-dot" />
+            <span className="db-toggle-label">Online Users</span>
+            <span className="db-online-count">{activeUsers.length} online</span>
+          </button>
+          <div className={`db-collapse-wrap${bdmsOpen ? '' : ' closed'}`}>
+            <div className="db-collapse-inner">
+              {activeUsers.length === 0 ? (
+                <div className="db-no-users">No BDMs currently online</div>
+              ) : (
+                <div className="db-users-list">
+                  {activeUsers.map((u) => (
+                    <div key={u._id || u.id} className="db-user-row">
+                      <div className="db-user-avatar">
+                        {initials(u.name)}
+                        <span className="online-dot" />
+                      </div>
+                      <div className="db-user-info">
+                        <div className="db-user-name">{u.name}</div>
+                        <div className="db-user-role">BDM</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
       </div>
+
     </div>
   );
 };

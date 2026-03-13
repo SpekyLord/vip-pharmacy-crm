@@ -79,62 +79,6 @@ const sidebarStyles = `
     transform: scale(1.1);
   }
 
-  /* Role Badge */
-  .sidebar-role {
-    padding: 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  }
-
-  .sidebar-role-badge {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px;
-    background: rgba(59, 130, 246, 0.15);
-    border: 1px solid rgba(59, 130, 246, 0.2);
-    border-radius: 12px;
-    transition: all 0.25s;
-  }
-
-  .sidebar.collapsed .sidebar-role-badge {
-    padding: 10px;
-    justify-content: center;
-    background: rgba(59, 130, 246, 0.1);
-  }
-
-  .sidebar-role-icon {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-  }
-
-  .sidebar-role-info {
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  .sidebar.collapsed .sidebar-role-info {
-    display: none;
-  }
-
-  .sidebar-role-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: white;
-  }
-
-  .sidebar-role-subtitle {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.5);
-    margin-top: 2px;
-  }
-
   /* Navigation */
   .sidebar-nav {
     flex: 1;
@@ -761,19 +705,6 @@ const Sidebar = () => {
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
 
-        {/* Role Badge */}
-        <div className="sidebar-role">
-          <div className="sidebar-role-badge">
-            <div className="sidebar-role-icon">
-              <RoleIcon size={18} />
-            </div>
-            <div className="sidebar-role-info">
-              <div className="sidebar-role-title">{menuConfig.roleTitle}</div>
-              <div className="sidebar-role-subtitle">{menuConfig.roleSubtitle}</div>
-            </div>
-          </div>
-        </div>
-
         {/* Navigation */}
         <nav className="sidebar-nav">
           {menuConfig.sections.map((section, sectionIndex) => (
@@ -839,15 +770,6 @@ const Sidebar = () => {
       />
       <div className={`mobile-drawer ${drawerOpen ? 'open' : ''}`}>
         <div className="mobile-drawer-header">
-          <div className="sidebar-role-badge" style={{ border: 'none', background: 'transparent', padding: 0 }}>
-            <div className="sidebar-role-icon">
-              <RoleIcon size={18} />
-            </div>
-            <div className="sidebar-role-info" style={{ display: 'block' }}>
-              <div className="sidebar-role-title">{menuConfig.roleTitle}</div>
-              <div className="sidebar-role-subtitle">{menuConfig.roleSubtitle}</div>
-            </div>
-          </div>
           <button className="mobile-drawer-close" onClick={closeDrawer}>
             <X size={20} />
           </button>

@@ -12,8 +12,9 @@
  * Desktop: full layout
  */
 
+import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { LogOut, Menu } from 'lucide-react';
+import { LogOut, Menu, Moon, Sun } from 'lucide-react';
 
 /* =============================================================================
    STYLES
@@ -56,7 +57,7 @@ const navbarStyles = `
   }
 
   .navbar-brand h1 span {
-    color: #3b82f6;
+    color: #E8AF30;
   }
 
   /* Hamburger */
@@ -172,6 +173,64 @@ const navbarStyles = `
     margin: 0 8px;
   }
 
+  /* Dark Mode Toggle */
+  .navbar-theme-btn {    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    cursor: pointer;
+    color: #6b7280;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .navbar-theme-btn:hover {
+    background: #f3f4f6;
+    color: #1f2937;
+    border-color: #d1d5db;
+  }
+
+  body.dark-mode .navbar-theme-btn {
+    background: #1e293b;
+    border-color: #334155;
+    color: #94a3b8;
+  }
+
+  body.dark-mode .navbar-theme-btn:hover {
+    background: #334155;
+    color: #f1f5f9;
+  }
+
+  /* Dark mode — navbar shell */
+  body.dark-mode .navbar {
+    background: #0f172a;
+    border-bottom-color: #1e293b;
+  }
+  body.dark-mode .navbar-brand h1 { color: #f1f5f9; }
+  body.dark-mode .navbar-hamburger { color: #94a3b8; }
+  body.dark-mode .navbar-hamburger:hover { background: #1e293b; }
+  body.dark-mode .navbar-profile {
+    background: #1e293b;
+    border-color: #334155;
+  }
+  body.dark-mode .navbar-profile-name { color: #f1f5f9; }
+  body.dark-mode .navbar-profile-role { color: #94a3b8; }
+  body.dark-mode .navbar-divider { background: #334155; }
+  body.dark-mode .navbar-logout {
+    background: #1e293b;
+    border-color: #334155;
+    color: #94a3b8;
+  }
+  body.dark-mode .navbar-logout:hover {
+    background: #450a0a;
+    border-color: #7f1d1d;
+    color: #f87171;
+  }
+
   /* ===== TABLET ===== */
   @media (max-width: 1024px) {
     .navbar {
@@ -265,6 +324,14 @@ const navbarStyles = `
 
 const Navbar = () => {
   const { user, logout } = useAuth();
+  const [isDark, setIsDark] = useState(() => document.body.classList.contains('dark-mode'));
+
+  const toggleTheme = () => {
+    const next = !isDark;
+    setIsDark(next);
+    document.body.classList.toggle('dark-mode', next);
+    localStorage.setItem('darkMode', next);
+  };
 
   // Get user initials
   const getInitials = (name) => {
@@ -304,6 +371,11 @@ const Navbar = () => {
 
       {/* Right Menu */}
       <div className="navbar-menu">
+        {/* Dark mode toggle */}
+        <button className="navbar-theme-btn" onClick={toggleTheme} aria-label="Toggle dark mode">
+          {isDark ? <Sun size={17} /> : <Moon size={17} />}
+        </button>
+
         {user && (
           <>
             <div className="navbar-divider" />

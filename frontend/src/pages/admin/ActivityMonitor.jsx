@@ -19,7 +19,6 @@ import {
   MapPin,
   LogIn,
   UserCog,
-  Package,
   TrendingUp,
   Clock,
   Users,
@@ -37,30 +36,41 @@ import visitService from '../../services/visitService';
 
 const pageStyles = `
   .activity-monitor-layout {
-    min-height: 100vh;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
     background: #f3f4f6;
+    overflow: hidden;
   }
 
   .activity-monitor-content {
     display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .activity-monitor-main {
     flex: 1;
-    padding: 24px;
-    max-width: 1400px;
+    padding: 20px 24px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .page-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
+    flex-shrink: 0;
   }
 
   .page-header h1 {
     margin: 0;
-    font-size: 28px;
+    font-size: 24px;
+    font-weight: 700;
     color: #1f2937;
     display: flex;
     align-items: center;
@@ -68,43 +78,44 @@ const pageStyles = `
   }
 
   .page-header-icon {
-    width: 40px;
-    height: 40px;
-    background: linear-gradient(135deg, #22c55e, #16a34a);
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
     border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
+    flex-shrink: 0;
   }
 
   .live-indicator {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 16px;
+    padding: 8px 14px;
     background: white;
     border-radius: 10px;
     border: 1px solid #e5e7eb;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    flex-shrink: 0;
   }
 
   .live-dot {
     width: 8px;
     height: 8px;
-    background: #22c55e;
+    background: #f59e0b;
     border-radius: 50%;
     animation: pulse 2s infinite;
   }
 
   @keyframes pulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+    50% { opacity: 0.4; }
   }
 
   .live-time {
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     color: #374151;
   }
 
@@ -113,83 +124,109 @@ const pageStyles = `
     color: #9ca3af;
   }
 
-  /* Stats Grid */
+  /* Stats Row - 6 cards */
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 16px;
-    margin-bottom: 24px;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 14px;
+    margin-bottom: 20px;
+    flex-shrink: 0;
   }
 
   .stat-card {
     background: white;
     border-radius: 12px;
-    padding: 16px;
+    padding: 14px 16px;
     border: 1px solid #e5e7eb;
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
     transition: all 0.2s;
   }
 
   .stat-card:hover {
-    transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   }
 
   .stat-icon {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
     border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
   }
 
-  .stat-icon.green { background: #dcfce7; color: #16a34a; }
-  .stat-icon.blue { background: #dbeafe; color: #2563eb; }
+  .stat-icon.green   { background: #dcfce7; color: #16a34a; }
+  .stat-icon.blue    { background: #dbeafe; color: #2563eb; }
   .stat-icon.emerald { background: #d1fae5; color: #059669; }
-  .stat-icon.purple { background: #f3e8ff; color: #9333ea; }
-  .stat-icon.amber { background: #fef3c7; color: #d97706; }
-  .stat-icon.gray { background: #f3f4f6; color: #6b7280; }
+  .stat-icon.purple  { background: #f3e8ff; color: #9333ea; }
+  .stat-icon.amber   { background: #fef3c7; color: #d97706; }
+  .stat-icon.gray    { background: #f3f4f6; color: #6b7280; }
 
   .stat-info {
     display: flex;
     flex-direction: column;
+    min-width: 0;
   }
 
   .stat-value {
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 700;
     color: #1f2937;
     line-height: 1.2;
   }
 
   .stat-label {
-    font-size: 13px;
+    font-size: 12px;
     color: #6b7280;
     margin-top: 2px;
+  }
+
+  /* Activity feed fills remaining space */
+  .activity-monitor-main > :last-child {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Responsive */
+  @media (max-width: 1200px) {
+    .stats-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
   }
 
   @media (max-width: 768px) {
     .stats-grid {
       grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
+      gap: 10px;
     }
-
     .stat-card {
-      padding: 14px;
+      padding: 12px 14px;
     }
-
     .stat-value {
-      font-size: 20px;
+      font-size: 18px;
     }
   }
 
   @media (max-width: 480px) {
+    .activity-monitor-layout {
+      height: auto;
+      min-height: 100vh;
+      overflow: auto;
+    }
+    .activity-monitor-content {
+      overflow: visible;
+    }
     .activity-monitor-main {
       padding: 16px;
-      padding-bottom: 80px;
+      overflow: visible;
+    }
+    .activity-monitor-main > :last-child {
+      flex: none;
+      overflow: visible;
     }
     .page-header {
       flex-direction: column;
@@ -197,22 +234,65 @@ const pageStyles = `
       gap: 12px;
     }
     .page-header h1 {
-      font-size: 22px;
+      font-size: 20px;
     }
     .stats-grid {
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
     }
     .stat-card {
-      padding: 12px;
+      padding: 10px 12px;
     }
     .stat-value {
-      font-size: 18px;
-    }
-    .live-indicator {
-      padding: 8px 12px;
+      font-size: 16px;
     }
   }
+
+  /* ===== DARK MODE ===== */
+  body.dark-mode .activity-monitor-layout {
+    background: #0a0f1e;
+  }
+
+  body.dark-mode .page-header h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .live-indicator {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .live-time {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .live-date {
+    color: #64748b;
+  }
+
+  body.dark-mode .stat-card {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .stat-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+
+  body.dark-mode .stat-value {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .stat-label {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .stat-icon.green   { background: #052e16; color: #4ade80; }
+  body.dark-mode .stat-icon.blue    { background: #1e3a5f; color: #60a5fa; }
+  body.dark-mode .stat-icon.emerald { background: #022c22; color: #34d399; }
+  body.dark-mode .stat-icon.purple  { background: #2e1065; color: #c084fc; }
+  body.dark-mode .stat-icon.amber   { background: #451a03; color: #fbbf24; }
+  body.dark-mode .stat-icon.gray    { background: #1e293b; color: #94a3b8; }
 `;
 
 /* =============================================================================
@@ -334,7 +414,7 @@ const ActivityMonitor = () => {
             </div>
           </div>
 
-          {/* Stats Cards */}
+          {/* Stats Row - 6 cards */}
           <div className="stats-grid">
             <StatCard
               icon={TrendingUp}
@@ -375,7 +455,7 @@ const ActivityMonitor = () => {
             />
           </div>
 
-          {/* Activity Feed - passes click handler */}
+          {/* Activity Feed */}
           <LiveActivityFeed
             compact={false}
             limit={50}
