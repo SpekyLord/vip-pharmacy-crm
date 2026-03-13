@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
 // Components
@@ -29,6 +29,13 @@ import PendingApprovalsPage from './pages/admin/PendingApprovalsPage';
 import GPSVerificationPage from './pages/admin/GPSVerificationPage';
 
 import ProtectedRoute from './components/auth/ProtectedRoute';
+
+// Redirect legacy /employee/* paths to /bdm/*
+const EmployeeRedirect = () => {
+  const location = useLocation();
+  const newPath = location.pathname.replace('/employee', '/bdm');
+  return <Navigate to={newPath} replace />;
+};
 
 function App() {
   return (
@@ -181,6 +188,10 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+        {/* Legacy /employee redirects → /bdm */}
+        <Route path="/employee/*" element={<EmployeeRedirect />} />
+        <Route path="/employee" element={<Navigate to="/bdm" replace />} />
 
         {/* Default Route */}
         <Route path="/" element={<LoginPage />} />
