@@ -378,10 +378,7 @@ const MyVisits = () => {
                             </span>
                           </td>
                           <td>
-                            {isExtra
-                              ? <span style={{ color: '#9ca3af' }}>&mdash;</span>
-                              : <span className="week-label">{visit.weekLabel || '-'}</span>
-                            }
+                            <span className="week-label">{visit.weekLabel || '-'}</span>
                           </td>
                           <td>
                             <div className="doctor-cell">

@@ -518,10 +518,16 @@ const createClientValidation = [
     .optional()
     .isLength({ max: 1000 })
     .withMessage('Notes cannot exceed 1000 characters'),
+  body('schedulingMode')
+    .optional()
+    .isIn(['flexible', 'strict'])
+    .withMessage('Scheduling mode must be flexible or strict'),
   body('visitFrequency')
     .optional()
     .isIn([2, 4])
     .withMessage('Visit frequency must be 2 or 4'),
+  body('weekSchedule')
+    .optional(),
   body('weekSchedule.w1')
     .optional()
     .isInt({ min: 1, max: 5 })
@@ -576,10 +582,16 @@ const updateClientValidation = [
     .optional()
     .isLength({ max: 1000 })
     .withMessage('Notes cannot exceed 1000 characters'),
+  body('schedulingMode')
+    .optional()
+    .isIn(['flexible', 'strict'])
+    .withMessage('Scheduling mode must be flexible or strict'),
   body('visitFrequency')
     .optional()
     .isIn([2, 4])
     .withMessage('Visit frequency must be 2 or 4'),
+  body('weekSchedule')
+    .optional(),
   body('weekSchedule.w1')
     .optional()
     .isInt({ min: 1, max: 5 })

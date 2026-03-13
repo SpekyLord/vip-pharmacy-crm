@@ -216,6 +216,33 @@ const reportStyles = `
     font-weight: 600;
     color: #6b7280;
   }
+
+  .regular-section-header {
+    background: #ede9fe;
+    padding: 14px 20px;
+    border-top: 2px solid #8b5cf6;
+    border-bottom: 1px solid #c4b5fd;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .regular-section-header h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #5b21b6;
+  }
+
+  .regular-section-header .regular-count {
+    font-size: 13px;
+    color: #7c3aed;
+    font-weight: 500;
+  }
+
+  .report-table th.regular-header {
+    background: #6d28d9;
+  }
 `;
 
 const dayNames = ['mon', 'tue', 'wed', 'thu', 'fri'];
@@ -234,6 +261,24 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
     if (!reportData?.doctors) return [];
     return [...reportData.doctors]
       .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
+  }, [reportData]);
+
+  // Sort regular clients and build visit grids
+  const sortedRegularClients = useMemo(() => {
+    if (!reportData?.regularClients) return [];
+    return [...reportData.regularClients]
+      .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''))
+      .map((client) => {
+        // Build a 20-day visit grid (4 weeks x 5 days) like VIP doctors
+        const visitGrid = Array(20).fill(0);
+        (client.visits || []).forEach((v) => {
+          if (v.weekOfMonth >= 1 && v.weekOfMonth <= 4 && v.dayOfWeek >= 1 && v.dayOfWeek <= 5) {
+            const idx = (v.weekOfMonth - 1) * 5 + (v.dayOfWeek - 1);
+            visitGrid[idx] = 1;
+          }
+        });
+        return { ...client, visitGrid };
+      });
   }, [reportData]);
 
   if (!reportData) {
@@ -338,7 +383,9 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
             {sortedDoctors.length === 0 ? (
               <tr>
                 <td colSpan={30} style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
-                  No VIP Clients found for this BDM.
+                  {sortedRegularClients.length > 0
+                    ? 'No VIP Clients — see Regular Clients below.'
+                    : 'No VIP Clients found for this BDM.'}
                 </td>
               </tr>
             ) : (
@@ -397,6 +444,79 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
           </tbody>
         </table>
       </div>
+
+      {/* Regular Clients Section */}
+      {sortedRegularClients.length > 0 && (
+        <>
+          <div className="regular-section-header">
+            <h3>Regular Clients (Extra Calls)</h3>
+            <span className="regular-count">
+              {sortedRegularClients.length} client{sortedRegularClients.length !== 1 ? 's' : ''} &middot;{' '}
+              {reportData.summary?.totalRegularClientVisits || sortedRegularClients.reduce((s, c) => s + c.visitCount, 0)} visit{(reportData.summary?.totalRegularClientVisits || 0) !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="report-table-wrapper">
+            <table className="report-table">
+              <thead>
+                <tr>
+                  <th className="col-no regular-header">NO.</th>
+                  <th className="col-name regular-header">LASTNAME</th>
+                  <th className="col-name regular-header">FIRSTNAME</th>
+                  <th className="col-specialty regular-header">SPECIALIZATION</th>
+                  {[0, 1, 2, 3].map((week) =>
+                    dayNames.map((day, dayIdx) => (
+                      <th
+                        key={`r-${week}-${dayIdx}`}
+                        className={`col-day regular-header ${dayIdx === 0 && week > 0 ? 'week-separator' : ''}`}
+                      >
+                        <div className="day-header-cell">
+                          <span className="day-name">{day}</span>
+                          <span className="day-num">{week * 5 + dayIdx + 1}</span>
+                        </div>
+                      </th>
+                    ))
+                  )}
+                  <th className="col-freq regular-header">TOTAL</th>
+                  <th className="col-address regular-header">CLINIC/OFFICE ADDRESS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedRegularClients.map((client, idx) => (
+                  <tr key={client._id}>
+                    <td>{idx + 1}</td>
+                    <td className="text-left">{client.lastName}</td>
+                    <td className="text-left">{client.firstName}</td>
+                    <td className="text-left">{client.specialization || '-'}</td>
+                    {client.visitGrid.map((hasVisit, dayIdx) => (
+                      <td
+                        key={dayIdx}
+                        className={`visit-cell ${hasVisit ? 'has-visit' : 'no-visit'} ${
+                          dayIdx % 5 === 0 && dayIdx > 0 ? 'week-separator' : ''
+                        }`}
+                      >
+                        {hasVisit ? '1' : ''}
+                      </td>
+                    ))}
+                    <td>{client.visitCount}</td>
+                    <td className="text-left">{client.clinicOfficeAddress || '-'}</td>
+                  </tr>
+                ))}
+                <tr className="end-row">
+                  <td>END</td>
+                  <td>END</td>
+                  <td>END</td>
+                  <td>END</td>
+                  {Array(20).fill(null).map((_, idx) => (
+                    <td key={idx}>END</td>
+                  ))}
+                  <td>END</td>
+                  <td>END</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 };
@@ -426,11 +546,23 @@ EmployeeVisitReport.propTypes = {
         ),
       })
     ),
+    regularClients: PropTypes.arrayOf(
+      PropTypes.shape({
+        _id: PropTypes.string,
+        firstName: PropTypes.string,
+        lastName: PropTypes.string,
+        specialization: PropTypes.string,
+        clinicOfficeAddress: PropTypes.string,
+        visitCount: PropTypes.number,
+        visits: PropTypes.array,
+      })
+    ),
     summary: PropTypes.shape({
       totalDoctors: PropTypes.number,
       count2x: PropTypes.number,
       count4x: PropTypes.number,
       totalVisits: PropTypes.number,
+      totalRegularClientVisits: PropTypes.number,
       dailyVIPCounts: PropTypes.arrayOf(PropTypes.number),
     }),
   }),

@@ -161,9 +161,53 @@ const modalStyles = `
     margin-bottom: 1rem;
   }
 
+  .chip-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .chip-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1.5px solid #d1d5db;
+    background: #fff;
+    color: #4b5563;
+    user-select: none;
+  }
+
+  .chip-btn:hover {
+    border-color: #8b5cf6;
+    color: #6d28d9;
+  }
+
+  .chip-btn.selected {
+    background: #8b5cf6;
+    border-color: #8b5cf6;
+    color: #fff;
+  }
+
+  .chip-btn.selected:hover {
+    background: #7c3aed;
+    border-color: #7c3aed;
+    color: #fff;
+  }
+
   @media (max-width: 640px) {
     .client-form-row {
       grid-template-columns: 1fr;
+    }
+
+    .chip-btn {
+      font-size: 0.75rem;
+      padding: 5px 12px;
     }
   }
 `;
@@ -398,42 +442,51 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
               />
             </div>
 
-            <div className="client-form-row">
-              <div className="client-form-group">
-                <label>Programs to Implement</label>
-                <select
-                  multiple
-                  value={formData.programsToImplement}
-                  onChange={(e) =>
-                    handleChange(
-                      'programsToImplement',
-                      Array.from(e.target.selectedOptions, (o) => o.value)
-                    )
-                  }
-                  style={{ minHeight: '80px' }}
-                >
-                  {PROGRAMS.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
+            <div className="client-form-group">
+              <label>Programs to Implement</label>
+              <div className="chip-group">
+                {PROGRAMS.map((p) => {
+                  const isSelected = formData.programsToImplement.includes(p);
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      className={`chip-btn${isSelected ? ' selected' : ''}`}
+                      onClick={() => {
+                        const updated = isSelected
+                          ? formData.programsToImplement.filter((v) => v !== p)
+                          : [...formData.programsToImplement, p];
+                        handleChange('programsToImplement', updated);
+                      }}
+                    >
+                      {isSelected ? '\u2713 ' : ''}{p}
+                    </button>
+                  );
+                })}
               </div>
-              <div className="client-form-group">
-                <label>Support During Coverage</label>
-                <select
-                  multiple
-                  value={formData.supportDuringCoverage}
-                  onChange={(e) =>
-                    handleChange(
-                      'supportDuringCoverage',
-                      Array.from(e.target.selectedOptions, (o) => o.value)
-                    )
-                  }
-                  style={{ minHeight: '80px' }}
-                >
-                  {SUPPORT_TYPES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+            </div>
+
+            <div className="client-form-group">
+              <label>Support During Coverage</label>
+              <div className="chip-group">
+                {SUPPORT_TYPES.map((s) => {
+                  const isSelected = formData.supportDuringCoverage.includes(s);
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      className={`chip-btn${isSelected ? ' selected' : ''}`}
+                      onClick={() => {
+                        const updated = isSelected
+                          ? formData.supportDuringCoverage.filter((v) => v !== s)
+                          : [...formData.supportDuringCoverage, s];
+                        handleChange('supportDuringCoverage', updated);
+                      }}
+                    >
+                      {isSelected ? '\u2713 ' : ''}{s}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
