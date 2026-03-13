@@ -518,6 +518,36 @@ const createClientValidation = [
     .optional()
     .isLength({ max: 1000 })
     .withMessage('Notes cannot exceed 1000 characters'),
+  body('visitFrequency')
+    .optional()
+    .isIn([2, 4])
+    .withMessage('Visit frequency must be 2 or 4'),
+  body('weekSchedule.w1')
+    .optional()
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Week 1 day must be 1-5 (Mon-Fri)'),
+  body('weekSchedule.w2')
+    .optional()
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Week 2 day must be 1-5 (Mon-Fri)'),
+  body('weekSchedule.w3')
+    .optional()
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Week 3 day must be 1-5 (Mon-Fri)'),
+  body('weekSchedule.w4')
+    .optional()
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Week 4 day must be 1-5 (Mon-Fri)'),
+  body('email').optional().isEmail().withMessage('Invalid email'),
+  body('outletIndicator').optional().isString(),
+  body('programsToImplement').optional().isArray(),
+  body('supportDuringCoverage').optional().isArray(),
+  body('levelOfEngagement').optional().isInt({ min: 1, max: 5 }),
+  body('secretaryName').optional().isString(),
+  body('secretaryPhone').optional().isString(),
+  body('birthday').optional().isISO8601().withMessage('Invalid date'),
+  body('anniversary').optional().isISO8601().withMessage('Invalid date'),
+  body('otherDetails').optional().isLength({ max: 2000 }),
   validate,
 ];
 
@@ -546,6 +576,36 @@ const updateClientValidation = [
     .optional()
     .isLength({ max: 1000 })
     .withMessage('Notes cannot exceed 1000 characters'),
+  body('visitFrequency')
+    .optional()
+    .isIn([2, 4])
+    .withMessage('Visit frequency must be 2 or 4'),
+  body('weekSchedule.w1')
+    .optional()
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Week 1 day must be 1-5 (Mon-Fri)'),
+  body('weekSchedule.w2')
+    .optional()
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Week 2 day must be 1-5 (Mon-Fri)'),
+  body('weekSchedule.w3')
+    .optional()
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Week 3 day must be 1-5 (Mon-Fri)'),
+  body('weekSchedule.w4')
+    .optional()
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Week 4 day must be 1-5 (Mon-Fri)'),
+  body('email').optional().isEmail().withMessage('Invalid email'),
+  body('outletIndicator').optional().isString(),
+  body('programsToImplement').optional().isArray(),
+  body('supportDuringCoverage').optional().isArray(),
+  body('levelOfEngagement').optional().isInt({ min: 1, max: 5 }),
+  body('secretaryName').optional().isString(),
+  body('secretaryPhone').optional().isString(),
+  body('birthday').optional().isISO8601().withMessage('Invalid date'),
+  body('anniversary').optional().isISO8601().withMessage('Invalid date'),
+  body('otherDetails').optional().isLength({ max: 2000 }),
   validate,
 ];
 

@@ -154,13 +154,55 @@ const buildWorksheetData = (reportData, monthYear) => {
     wsData.push(dataRow);
   });
 
-  // End row
+  // End row for VIP section
   const endRow = [
     'END', 'END', 'END', 'END',
     ...Array(20).fill('END'),
     'END', 'END', 'END', 'END', 'END', 'END', 'END', 'END', 'END',
   ];
   wsData.push(endRow);
+
+  // EXTRA CALL section — regular client visits below VIP section
+  wsData.push([]);
+  wsData.push([
+    'EXTRA CALL (VIP NOT INCLUDED IN THE LIST)',
+    '', '', '', '', '',
+    'TYPE OF ENGAGEMENT',
+  ]);
+  wsData.push([
+    'NO.', 'LASTNAME', 'FIRSTNAME', 'SPECIALIZATION', 'ADDRESS', '',
+    'TXT/ PROMATS', 'MES/ VIBER GIF', 'PICTURE', 'SIGNED CALL', 'VOICE CALL',
+    '', '', 'TOTAL VISITS', 'VISIT DATES',
+  ]);
+
+  if (reportData.regularClients && reportData.regularClients.length > 0) {
+    const sortedRegulars = [...reportData.regularClients]
+      .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
+
+    sortedRegulars.forEach((client, idx) => {
+      const visitDates = (client.visits || [])
+        .map(v => new Date(v.visitDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
+        .join(', ');
+
+      wsData.push([
+        idx + 1,
+        client.lastName,
+        client.firstName,
+        client.specialization || '',
+        client.clinicOfficeAddress || '',
+        '',
+        '', '', '', '', '',
+        '', '',
+        client.visitCount,
+        visitDates,
+      ]);
+    });
+  } else {
+    // 5 empty rows for manual entry if no data
+    for (let i = 0; i < 5; i++) {
+      wsData.push([]);
+    }
+  }
 
   return wsData;
 };
@@ -192,60 +234,6 @@ const applyStyles = (ws) => {
 };
 
 /**
- * Build the Regular Clients worksheet data
- */
-const buildRegularClientsData = (regularClients, monthYear) => {
-  if (!regularClients || regularClients.length === 0) return null;
-
-  const wsData = [];
-
-  // Title row
-  wsData.push(['REGULAR CLIENTS - EXTRA CALLS', '', '', '', '', formatMonthYear(monthYear)]);
-  wsData.push([]); // Empty row
-
-  // Header row
-  wsData.push([
-    'NO.',
-    'LASTNAME',
-    'FIRSTNAME',
-    'SPECIALIZATION',
-    'CLINIC/OFFICE ADDRESS',
-    'TOTAL VISITS',
-    'VISIT DATES',
-    'PURPOSE',
-    'ENGAGEMENT TYPES',
-  ]);
-
-  // Data rows
-  regularClients.forEach((client, idx) => {
-    const visitDates = client.visits
-      .map(v => new Date(v.visitDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
-      .join(', ');
-    const purposes = [...new Set(client.visits.map(v => v.purpose).filter(Boolean))].join(', ');
-    const engagements = [...new Set(client.visits.flatMap(v => v.engagementTypes || []))].join(', ');
-
-    wsData.push([
-      idx + 1,
-      client.lastName,
-      client.firstName,
-      client.specialization || '',
-      client.clinicOfficeAddress || '',
-      client.visitCount,
-      visitDates,
-      purposes,
-      engagements,
-    ]);
-  });
-
-  // Summary row
-  wsData.push([]);
-  const totalVisits = regularClients.reduce((sum, c) => sum + c.visitCount, 0);
-  wsData.push(['', '', '', '', 'TOTAL:', totalVisits]);
-
-  return wsData;
-};
-
-/**
  * Export employee report to Excel file
  */
 export const exportEmployeeReportToExcel = (reportData, monthYear) => {
@@ -258,26 +246,8 @@ export const exportEmployeeReportToExcel = (reportData, monthYear) => {
   // Apply styling
   applyStyles(ws);
 
-  // Add VIP Client worksheet
+  // Add VIP Client worksheet (includes regular clients at bottom)
   XLSX.utils.book_append_sheet(wb, ws, 'BDM Visit Report');
-
-  // Add Regular Clients sheet if data exists
-  const regularClientsData = buildRegularClientsData(reportData.regularClients, monthYear);
-  if (regularClientsData) {
-    const ws2 = XLSX.utils.aoa_to_sheet(regularClientsData);
-    ws2['!cols'] = [
-      { wch: 5 },   // NO.
-      { wch: 15 },  // LASTNAME
-      { wch: 15 },  // FIRSTNAME
-      { wch: 15 },  // SPECIALIZATION
-      { wch: 25 },  // ADDRESS
-      { wch: 12 },  // TOTAL VISITS
-      { wch: 30 },  // VISIT DATES
-      { wch: 25 },  // PURPOSE
-      { wch: 25 },  // ENGAGEMENT TYPES
-    ];
-    XLSX.utils.book_append_sheet(wb, ws2, 'Regular Clients');
-  }
 
   // Generate filename
   const employeeName = reportData.employee.name.replace(/\s+/g, '_');

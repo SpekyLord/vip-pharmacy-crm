@@ -25,10 +25,13 @@ const {
   createClientVisit,
   getClientVisits,
   getMyClientVisits,
+  getClientVisitsByUser,
   getTodayClientVisitCount,
+  getClientVisitStats,
 } = require('../controllers/clientController');
 
 const { protect } = require('../middleware/auth');
+const { adminOnly } = require('../middleware/roleCheck');
 const {
   createClientValidation,
   updateClientValidation,
@@ -41,7 +44,9 @@ router.use(protect);
 
 // Static routes BEFORE parameterized /:id routes
 router.get('/visit-count/today', getTodayClientVisitCount);
+router.get('/visits/stats', getClientVisitStats);
 router.get('/visits/my', getMyClientVisits);
+router.get('/visits/by-user/:userId', adminOnly, getClientVisitsByUser);
 
 // Client CRUD
 router.get('/', getAllClients);

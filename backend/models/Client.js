@@ -1,14 +1,8 @@
 /**
  * Client Model (Regular / Non-VIP Client)
  *
- * Simplified Doctor-like schema for regular clients that BDMs visit
- * as "extra calls" — clients NOT on the VIP Client list.
- *
- * Key differences from Doctor:
- * - No visitFrequency, no clinicSchedule, no targetProducts
- * - Owned by BDM who created (createdBy), not admin-assignable
- * - No engagement level, no programs, no support types
- * - Daily limit: 30 extra calls per day (enforced at controller level)
+ * Mirrors the Doctor (VIP) schema so regular clients can be upgraded
+ * to VIP without re-entering data.
  */
 
 const mongoose = require('mongoose');
@@ -40,7 +34,11 @@ const clientSchema = new mongoose.Schema(
     phone: {
       type: String,
       trim: true,
-      match: [/^[0-9+\-() ]{10,20}$/, 'Please enter a valid phone number'],
+    },
+    email: {
+      type: String,
+      lowercase: true,
+      trim: true,
     },
     // BDM who created this client — always the owner
     createdBy: {
@@ -51,6 +49,75 @@ const clientSchema = new mongoose.Schema(
     notes: {
       type: String,
       maxlength: [1000, 'Notes cannot exceed 1000 characters'],
+    },
+    // Visit scheduling — same rules as VIP clients
+    visitFrequency: {
+      type: Number,
+      enum: [2, 4],
+      default: 4,
+    },
+    weekSchedule: {
+      w1: { type: Number, min: 1, max: 5 },
+      w2: { type: Number, min: 1, max: 5 },
+      w3: { type: Number, min: 1, max: 5 },
+      w4: { type: Number, min: 1, max: 5 },
+    },
+    // --- Fields matching Doctor model for seamless VIP upgrade ---
+    outletIndicator: {
+      type: String,
+      trim: true,
+    },
+    programsToImplement: [
+      {
+        type: String,
+        enum: {
+          values: [
+            'CME GRANT',
+            'REBATES / MONEY',
+            'REST AND RECREATION',
+            'MED SOCIETY PARTICIPATION',
+          ],
+          message: 'Invalid program type',
+        },
+      },
+    ],
+    supportDuringCoverage: [
+      {
+        type: String,
+        enum: {
+          values: [
+            'STARTER DOSES',
+            'PROMATS',
+            'FULL DOSE',
+            'PATIENT DISCOUNT',
+            'AIR FRESHENER',
+          ],
+          message: 'Invalid support type',
+        },
+      },
+    ],
+    levelOfEngagement: {
+      type: Number,
+      min: [1, 'Level of engagement must be at least 1'],
+      max: [5, 'Level of engagement cannot exceed 5'],
+    },
+    secretaryName: {
+      type: String,
+      trim: true,
+    },
+    secretaryPhone: {
+      type: String,
+      trim: true,
+    },
+    birthday: {
+      type: Date,
+    },
+    anniversary: {
+      type: Date,
+    },
+    otherDetails: {
+      type: String,
+      maxlength: [2000, 'Other details cannot exceed 2000 characters'],
     },
     isActive: {
       type: Boolean,

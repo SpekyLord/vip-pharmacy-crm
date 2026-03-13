@@ -38,6 +38,12 @@ const clientService = {
     return response.data;
   },
 
+  // Get regular client visit stats
+  getStats: async (params = {}) => {
+    const response = await api.get('/clients/visits/stats', { params });
+    return response.data;
+  },
+
   // Create an extra call visit (FormData with photos)
   createVisit: async (formData) => {
     const response = await api.post('/clients/visits', formData, {
@@ -51,6 +57,12 @@ const clientService = {
   // Get current user's extra call visit history
   getMyVisits: async (params = {}, options = {}) => {
     const response = await api.get('/clients/visits/my', { params, ...options });
+    return response.data;
+  },
+
+  // Admin: get a BDM's regular client visits
+  getVisitsByUser: async (userId, params = {}) => {
+    const response = await api.get(`/clients/visits/by-user/${userId}`, { params });
     return response.data;
   },
 };

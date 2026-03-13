@@ -621,6 +621,7 @@ const DoctorManagement = ({
   onSave,
   onDelete,
   onMassDeleteByUser,
+  onUpgradeToVIP,
   onFilterChange,
   onPageChange,
 }) => {
@@ -644,6 +645,7 @@ const DoctorManagement = ({
     email: '',
     visitFrequency: 4,
     notes: '',
+    assignedTo: '',
   });
   const [saving, setSaving] = useState(false);
   const [localFilters, setLocalFilters] = useState(filters);
@@ -712,6 +714,7 @@ const DoctorManagement = ({
       birthday: '',
       anniversary: '',
       otherDetails: '',
+      assignedTo: '',
     });
     setShowModal(true);
   };
@@ -737,6 +740,7 @@ const DoctorManagement = ({
       birthday: doctor.birthday ? doctor.birthday.split('T')[0] : '',
       anniversary: doctor.anniversary ? doctor.anniversary.split('T')[0] : '',
       otherDetails: doctor.otherDetails || '',
+      assignedTo: doctor.assignedTo?._id || doctor.assignedTo || '',
     });
 
     setShowModal(true);
@@ -848,6 +852,13 @@ const DoctorManagement = ({
       doctorData.otherDetails = formData.otherDetails.trim();
     }
 
+    // Assign BDM (or explicitly unassign)
+    if (formData.assignedTo) {
+      doctorData.assignedTo = formData.assignedTo;
+    } else {
+      doctorData.assignedTo = null;
+    }
+
     if (selectedDoctor) {
       doctorData._id = selectedDoctor._id;
     }
@@ -871,7 +882,13 @@ const DoctorManagement = ({
       <style>{doctorManagementStyles}</style>
 
       <div className="management-header">
-        <h2>VIP Clients ({pagination.total || doctors.length})</h2>
+        <h2>
+          {filters.clientType === 'regular'
+            ? `Regular Clients (${pagination.total || doctors.length})`
+            : filters.clientType === 'all'
+              ? `All Clients (${pagination.total || doctors.length})`
+              : `VIP Clients (${pagination.total || doctors.length})`}
+        </h2>
         <div style={{ display: 'flex', gap: '8px' }}>
           {onMassDeleteByUser && (
             <button onClick={handleOpenMassDelete} className="btn btn-danger">
@@ -886,38 +903,50 @@ const DoctorManagement = ({
 
       {/* Filters */}
       <div className="filters-bar">
+        <select
+          value={filters.clientType || ''}
+          onChange={(e) => handleFilterChange('clientType', e.target.value)}
+        >
+          <option value="">VIP Clients Only</option>
+          <option value="all">All (VIP + Regular)</option>
+          <option value="regular">Regular Clients Only</option>
+        </select>
         <input
           type="text"
-          placeholder="Search by name or hospital..."
+          placeholder="Search by name or address..."
           value={localFilters.search || ''}
           onChange={(e) => handleFilterChange('search', e.target.value)}
         />
-        <select
-          value={filters.visitFrequency || ''}
-          onChange={(e) => handleFilterChange('visitFrequency', e.target.value)}
-        >
-          <option value="">All Frequencies</option>
-          <option value="2">2x per month</option>
-          <option value="4">4x per month</option>
-        </select>
-        <select
-          value={filters.supportDuringCoverage || ''}
-          onChange={(e) => handleFilterChange('supportDuringCoverage', e.target.value)}
-        >
-          <option value="">All Support Types</option>
-          {SUPPORT_TYPES.map((type) => (
-            <option key={type} value={type}>{type}</option>
-          ))}
-        </select>
-        <select
-          value={filters.programsToImplement || ''}
-          onChange={(e) => handleFilterChange('programsToImplement', e.target.value)}
-        >
-          <option value="">All Programs</option>
-          {PROGRAMS.map((prog) => (
-            <option key={prog} value={prog}>{prog}</option>
-          ))}
-        </select>
+        {filters.clientType !== 'regular' && (
+          <>
+            <select
+              value={filters.visitFrequency || ''}
+              onChange={(e) => handleFilterChange('visitFrequency', e.target.value)}
+            >
+              <option value="">All Frequencies</option>
+              <option value="2">2x per month</option>
+              <option value="4">4x per month</option>
+            </select>
+            <select
+              value={filters.supportDuringCoverage || ''}
+              onChange={(e) => handleFilterChange('supportDuringCoverage', e.target.value)}
+            >
+              <option value="">All Support Types</option>
+              {SUPPORT_TYPES.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+            <select
+              value={filters.programsToImplement || ''}
+              onChange={(e) => handleFilterChange('programsToImplement', e.target.value)}
+            >
+              <option value="">All Programs</option>
+              {PROGRAMS.map((prog) => (
+                <option key={prog} value={prog}>{prog}</option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
 
       {/* Table (Desktop/Tablet) + Card List (Mobile) */}
@@ -930,8 +959,10 @@ const DoctorManagement = ({
                 <thead>
                   <tr>
                     <th>Name</th>
+                    <th>Type</th>
                     <th>Specialization</th>
                     <th>Hospital</th>
+                    <th>Assigned BDM</th>
                     <th>Visit Freq</th>
                     <th>Engagement</th>
                     <th>Actions</th>
@@ -941,12 +972,22 @@ const DoctorManagement = ({
                   {doctors.map((doctor) => (
                     <tr key={doctor._id}>
                       <td>{doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}</td>
+                      <td>
+                        {doctor._clientType === 'regular' ? (
+                          <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, background: '#fef3c7', color: '#92400e' }}>Regular</span>
+                        ) : (
+                          <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, background: '#dbeafe', color: '#1d4ed8' }}>VIP</span>
+                        )}
+                      </td>
                       <td>{doctor.specialization || '-'}</td>
                       <td>{doctor.clinicOfficeAddress || '-'}</td>
+                      <td>{doctor.assignedTo?.name || doctor._ownerName || '-'}</td>
                       <td>
-                        <span className={`visit-freq-badge freq-${doctor.visitFrequency}`}>
-                          {doctor.visitFrequency}x/mo
-                        </span>
+                        {doctor.visitFrequency ? (
+                          <span className={`visit-freq-badge freq-${doctor.visitFrequency}`}>
+                            {doctor.visitFrequency}x/mo
+                          </span>
+                        ) : '-'}
                       </td>
                       <td>
                         {doctor.levelOfEngagement ? (
@@ -956,18 +997,30 @@ const DoctorManagement = ({
                         ) : '-'}
                       </td>
                       <td className="actions">
-                        <button
-                          onClick={() => handleEdit(doctor)}
-                          className="btn btn-secondary btn-sm"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteClick(doctor)}
-                          className="btn btn-danger btn-sm"
-                        >
-                          Delete
-                        </button>
+                        {doctor._clientType !== 'regular' ? (
+                          <>
+                            <button
+                              onClick={() => handleEdit(doctor)}
+                              className="btn btn-secondary btn-sm"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClick(doctor)}
+                              className="btn btn-danger btn-sm"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => onUpgradeToVIP?.(doctor)}
+                            className="btn btn-sm"
+                            style={{ background: '#8b5cf6', color: 'white', fontSize: '12px' }}
+                          >
+                            Upgrade to VIP
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -983,9 +1036,18 @@ const DoctorManagement = ({
                     <span className="mobile-card-name">
                       {doctor.fullName || `${doctor.firstName} ${doctor.lastName}`}
                     </span>
-                    <span className={`visit-freq-badge freq-${doctor.visitFrequency}`}>
-                      {doctor.visitFrequency}x/mo
-                    </span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {doctor._clientType === 'regular' ? (
+                        <span style={{ padding: '2px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 600, background: '#fef3c7', color: '#92400e' }}>Regular</span>
+                      ) : (
+                        <span style={{ padding: '2px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 600, background: '#dbeafe', color: '#1d4ed8' }}>VIP</span>
+                      )}
+                      {doctor.visitFrequency && (
+                        <span className={`visit-freq-badge freq-${doctor.visitFrequency}`}>
+                          {doctor.visitFrequency}x/mo
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="mobile-card-meta">
                     {doctor.specialization && (
@@ -1000,6 +1062,12 @@ const DoctorManagement = ({
                         <span>{doctor.clinicOfficeAddress}</span>
                       </div>
                     )}
+                    {(doctor.assignedTo?.name || doctor._ownerName) && (
+                      <div className="mobile-card-row">
+                        <span>BDM</span>
+                        <span>{doctor.assignedTo?.name || doctor._ownerName}</span>
+                      </div>
+                    )}
                     {doctor.levelOfEngagement && (
                       <div className="mobile-card-row">
                         <span>Engagement</span>
@@ -1009,27 +1077,43 @@ const DoctorManagement = ({
                       </div>
                     )}
                   </div>
-                  <div className="mobile-card-actions">
-                    <button
-                      onClick={() => handleEdit(doctor)}
-                      className="btn btn-secondary btn-sm"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteClick(doctor)}
-                      className="btn btn-danger btn-sm"
-                    >
-                      Delete
-                    </button>
-                  </div>
+                  {doctor._clientType !== 'regular' ? (
+                    <div className="mobile-card-actions">
+                      <button
+                        onClick={() => handleEdit(doctor)}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteClick(doctor)}
+                        className="btn btn-danger btn-sm"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mobile-card-actions">
+                      <button
+                        onClick={() => onUpgradeToVIP?.(doctor)}
+                        className="btn btn-sm"
+                        style={{ background: '#8b5cf6', color: 'white', fontSize: '12px', width: '100%' }}
+                      >
+                        Upgrade to VIP
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </>
         ) : (
           <div className="empty-state">
-            <p>No VIP Clients found</p>
+            <p>
+              {filters.clientType === 'regular'
+                ? 'No Regular Clients found'
+                : 'No VIP Clients found'}
+            </p>
           </div>
         )}
       </div>
@@ -1040,7 +1124,7 @@ const DoctorManagement = ({
           <div className="pagination-info">
             Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
             {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
-            {pagination.total} VIP Clients
+            {pagination.total} {filters.clientType === 'regular' ? 'Clients' : 'VIP Clients'}
           </div>
           <div className="pagination-buttons">
             <button
@@ -1201,6 +1285,21 @@ const DoctorManagement = ({
                     <option value={4}>4x per month</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="form-group full-width">
+                <label htmlFor="assignedTo">Assigned BDM</label>
+                <select
+                  id="assignedTo"
+                  name="assignedTo"
+                  value={formData.assignedTo}
+                  onChange={handleFormChange}
+                >
+                  <option value="">-- No BDM Assigned --</option>
+                  {employees.map((emp) => (
+                    <option key={emp._id} value={emp._id}>{emp.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="form-group full-width">

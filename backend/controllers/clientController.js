@@ -1,11 +1,11 @@
 /**
- * Client Controller (Regular / Non-VIP Clients)
+ * Client Controller (Regular Clients)
  *
- * Handles CRUD for regular clients and their visits (extra calls).
+ * Handles CRUD for regular clients and their visits.
  * Key rules:
  * - BDMs can only see/edit their own clients (createdBy check)
  * - Admin can see all clients
- * - Daily limit: 30 extra calls per day (hard block)
+ * - Same visit enforcement as VIP: weekly unique constraint + monthly limit
  * - Photo + GPS required per visit
  */
 
@@ -14,8 +14,6 @@ const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { signVisitPhotos } = require('../config/s3');
-
-const DAILY_EXTRA_CALL_LIMIT = 30;
 
 /**
  * Build access filter based on user role
@@ -124,10 +122,22 @@ const createClient = catchAsync(async (req, res) => {
     specialization,
     clinicOfficeAddress,
     phone,
+    email,
     notes,
+    visitFrequency,
+    weekSchedule,
+    outletIndicator,
+    programsToImplement,
+    supportDuringCoverage,
+    levelOfEngagement,
+    secretaryName,
+    secretaryPhone,
+    birthday,
+    anniversary,
+    otherDetails,
   } = req.body;
 
-  const client = await Client.create({
+  const clientData = {
     firstName,
     lastName,
     specialization,
@@ -135,7 +145,22 @@ const createClient = catchAsync(async (req, res) => {
     phone,
     notes,
     createdBy: req.user._id,
-  });
+  };
+
+  if (email) clientData.email = email;
+  if (visitFrequency) clientData.visitFrequency = visitFrequency;
+  if (weekSchedule) clientData.weekSchedule = weekSchedule;
+  if (outletIndicator) clientData.outletIndicator = outletIndicator;
+  if (programsToImplement) clientData.programsToImplement = programsToImplement;
+  if (supportDuringCoverage) clientData.supportDuringCoverage = supportDuringCoverage;
+  if (levelOfEngagement) clientData.levelOfEngagement = levelOfEngagement;
+  if (secretaryName) clientData.secretaryName = secretaryName;
+  if (secretaryPhone) clientData.secretaryPhone = secretaryPhone;
+  if (birthday) clientData.birthday = birthday;
+  if (anniversary) clientData.anniversary = anniversary;
+  if (otherDetails) clientData.otherDetails = otherDetails;
+
+  const client = await Client.create(clientData);
 
   await client.populate('createdBy', 'name email');
 
@@ -171,7 +196,19 @@ const updateClient = catchAsync(async (req, res) => {
     'specialization',
     'clinicOfficeAddress',
     'phone',
+    'email',
     'notes',
+    'visitFrequency',
+    'weekSchedule',
+    'outletIndicator',
+    'programsToImplement',
+    'supportDuringCoverage',
+    'levelOfEngagement',
+    'secretaryName',
+    'secretaryPhone',
+    'birthday',
+    'anniversary',
+    'otherDetails',
   ];
 
   allowedFields.forEach((field) => {
@@ -251,18 +288,26 @@ const createClientVisit = catchAsync(async (req, res) => {
     }
   }
 
-  // Enforce 30 daily extra call limit
+  // Enforce weekly/monthly visit limits (same rules as VIP)
   const visitDateObj = visitDate ? new Date(visitDate) : new Date();
-  const dailyCount = await ClientVisit.countDailyVisits(req.user._id, visitDateObj);
+  const visitMonth = `${visitDateObj.getFullYear()}-${String(visitDateObj.getMonth() + 1).padStart(2, '0')}`;
 
-  if (dailyCount >= DAILY_EXTRA_CALL_LIMIT) {
+  // Count how many times this client has been visited this month
+  const monthlyCount = await ClientVisit.countDocuments({
+    client: clientId,
+    user: req.user._id,
+    monthYear: visitMonth,
+    status: 'completed',
+  });
+
+  const clientFreq = client.visitFrequency || 4;
+  if (monthlyCount >= clientFreq) {
     return res.status(400).json({
       success: false,
-      message: `Daily extra call limit reached (${DAILY_EXTRA_CALL_LIMIT}/day). You cannot log more extra calls today.`,
+      message: `Monthly visit limit reached for this client (${clientFreq}x/month)`,
       data: {
-        dailyCount,
-        dailyLimit: DAILY_EXTRA_CALL_LIMIT,
-        remaining: 0,
+        monthlyCount,
+        monthlyLimit: clientFreq,
       },
     });
   }
@@ -435,6 +480,55 @@ const getMyClientVisits = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    Get a BDM's regular client visits (admin only)
+ * @route   GET /api/clients/visits/by-user/:userId
+ * @access  Admin
+ */
+const getClientVisitsByUser = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+  const { page = 1, limit = 20, monthYear, dateFrom, dateTo } = req.query;
+
+  const query = { user: userId };
+
+  if (monthYear) query.monthYear = monthYear;
+
+  if (dateFrom || dateTo) {
+    query.visitDate = {};
+    if (dateFrom) query.visitDate.$gte = new Date(dateFrom);
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      query.visitDate.$lte = toDate;
+    }
+  }
+
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  const [visits, total] = await Promise.all([
+    ClientVisit.find(query)
+      .populate('client', 'firstName lastName specialization clinicOfficeAddress phone')
+      .populate('user', 'name email')
+      .sort({ visitDate: -1 })
+      .skip(skip)
+      .limit(parseInt(limit)),
+    ClientVisit.countDocuments(query),
+  ]);
+
+  const signedVisits = await Promise.all(visits.map((visit) => signVisitPhotos(visit)));
+
+  res.status(200).json({
+    success: true,
+    data: signedVisits,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / parseInt(limit)),
+    },
+  });
+});
+
+/**
  * @desc    Get today's client visit count for current user
  * @route   GET /api/clients/visit-count/today
  * @access  Private
@@ -446,8 +540,83 @@ const getTodayClientVisitCount = catchAsync(async (req, res) => {
     success: true,
     data: {
       dailyCount,
-      dailyLimit: DAILY_EXTRA_CALL_LIMIT,
-      remaining: Math.max(0, DAILY_EXTRA_CALL_LIMIT - dailyCount),
+    },
+  });
+});
+
+/**
+ * @desc    Get regular client visit statistics
+ * @route   GET /api/clients/visits/stats
+ * @access  Private
+ */
+const getClientVisitStats = catchAsync(async (req, res) => {
+  const { monthYear, userId } = req.query;
+  const mongoose = require('mongoose');
+
+  const matchQuery = {};
+
+  // Role-based filtering
+  if (req.user.role === 'employee') {
+    matchQuery.user = req.user._id;
+  } else if (userId) {
+    matchQuery.user = new mongoose.Types.ObjectId(userId);
+  }
+
+  // Month/year filtering
+  if (monthYear) {
+    matchQuery.monthYear = monthYear;
+  }
+
+  // Aggregation to get stats
+  const [result] = await ClientVisit.aggregate([
+    { $match: matchQuery },
+    {
+      $facet: {
+        summary: [
+          {
+            $group: {
+              _id: null,
+              totalVisits: { $sum: 1 },
+              uniqueClients: { $addToSet: '$client' },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              totalVisits: 1,
+              uniqueClientsCount: { $size: '$uniqueClients' },
+            },
+          },
+        ],
+        weeklyBreakdown: [
+          {
+            $group: {
+              _id: '$weekOfMonth',
+              count: { $sum: 1 },
+              uniqueClients: { $addToSet: '$client' },
+            },
+          },
+          {
+            $project: {
+              week: '$_id',
+              visitCount: '$count',
+              clientCount: { $size: '$uniqueClients' },
+            },
+          },
+          { $sort: { week: 1 } },
+        ],
+      },
+    },
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      summary: result?.summary[0] || {
+        totalVisits: 0,
+        uniqueClientsCount: 0,
+      },
+      weeklyBreakdown: result?.weeklyBreakdown || [],
     },
   });
 });
@@ -461,5 +630,7 @@ module.exports = {
   createClientVisit,
   getClientVisits,
   getMyClientVisits,
+  getClientVisitsByUser,
   getTodayClientVisitCount,
+  getClientVisitStats,
 };

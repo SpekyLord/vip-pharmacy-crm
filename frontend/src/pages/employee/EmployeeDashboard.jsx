@@ -64,6 +64,36 @@ const dashboardStyles = `
     font-weight: 500;
   }
 
+  .stat-card .stat-breakdown {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-top: 6px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .stat-card .stat-breakdown span {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .stat-card .stat-breakdown .vip-badge {
+    width: 6px;
+    height: 6px;
+    background: #fbbf24;
+    border-radius: 50%;
+  }
+
+  .stat-card .stat-breakdown .regular-badge {
+    width: 6px;
+    height: 6px;
+    background: #60a5fa;
+    border-radius: 50%;
+  }
+
   .compliance-bar {
     background: white;
     padding: 20px;
@@ -399,7 +429,11 @@ const EmployeeDashboard = () => {
   const [dashboardTab, setDashboardTab] = useState('vip');
   const [stats, setStats] = useState({
     visitsToday: 0,
+    vipVisitsToday: 0,
+    regularVisitsToday: 0,
     visitsThisWeek: 0,
+    vipVisitsThisWeek: 0,
+    regularVisitsThisWeek: 0,
     totalDoctors: 0,
     doctorsVisitedThisMonth: 0,
     compliancePercentage: 0,
@@ -428,11 +462,12 @@ const EmployeeDashboard = () => {
         visitService.getWeeklyCompliance(monthYear),
         clientService.getAll({ limit: 0 }),
         clientService.getTodayVisitCount(),
+        clientService.getStats({ monthYear }),
         scheduleService.getToday(),
       ]);
 
       // Extract results with fallbacks for failed requests
-      const [doctorsResult, todayResult, statsResult, weeklyResult, clientsResult, clientCountResult, scheduleResult] = results;
+      const [doctorsResult, todayResult, statsResult, weeklyResult, clientsResult, clientCountResult, clientStatsResult, scheduleResult] = results;
 
       // Process doctors - critical, show error if fails
       const doctorsList = doctorsResult.status === 'fulfilled'
@@ -444,8 +479,8 @@ const EmployeeDashboard = () => {
         console.error('Failed to fetch doctors:', doctorsResult.reason);
       }
 
-      // Process today's visits - non-critical, use fallback
-      const todayCount = todayResult.status === 'fulfilled'
+      // Process today's VIP visits - non-critical, use fallback
+      const vipTodayCount = todayResult.status === 'fulfilled'
         ? (todayResult.value.count || todayResult.value.data?.length || 0)
         : 0;
 
@@ -475,6 +510,13 @@ const EmployeeDashboard = () => {
         : 0;
       setDailyClientVisitCount(clientDailyCount);
 
+      // Process regular client stats
+      const clientStatsData = clientStatsResult.status === 'fulfilled'
+        ? (clientStatsResult.value.data || {})
+        : {};
+      const clientWeeklyBreakdown = clientStatsData.weeklyBreakdown || [];
+      const clientThisWeekData = clientWeeklyBreakdown.find(w => w.week === currentWeek) || {};
+
       // Process today's schedule - non-critical, use fallback
       const scheduleData = scheduleResult.status === 'fulfilled'
         ? (scheduleResult.value.data || [])
@@ -482,8 +524,12 @@ const EmployeeDashboard = () => {
       setTodaySchedule(scheduleData);
 
       setStats({
-        visitsToday: todayCount,
-        visitsThisWeek: thisWeekData.visitCount || 0,
+        visitsToday: vipTodayCount + clientDailyCount,
+        vipVisitsToday: vipTodayCount,
+        regularVisitsToday: clientDailyCount,
+        visitsThisWeek: (thisWeekData.visitCount || 0) + (clientThisWeekData.visitCount || 0),
+        vipVisitsThisWeek: thisWeekData.visitCount || 0,
+        regularVisitsThisWeek: clientThisWeekData.visitCount || 0,
         totalDoctors: doctorsList.length,
         doctorsVisitedThisMonth: weeklyData.uniqueDoctorsVisited || statsData.summary?.uniqueDoctorsCount || 0,
         compliancePercentage: weeklyData.compliancePercentage || 0,
@@ -563,10 +609,30 @@ const EmployeeDashboard = () => {
             <div className="stat-card">
               <span className="stat-value">{stats.visitsToday}</span>
               <span className="stat-label">Visits Today</span>
+              <div className="stat-breakdown">
+                <span>
+                  <span className="vip-badge"></span>
+                  VIP: {stats.vipVisitsToday}
+                </span>
+                <span>
+                  <span className="regular-badge"></span>
+                  Regular: {stats.regularVisitsToday}
+                </span>
+              </div>
             </div>
             <div className="stat-card">
               <span className="stat-value">{stats.visitsThisWeek}</span>
               <span className="stat-label">This Week</span>
+              <div className="stat-breakdown">
+                <span>
+                  <span className="vip-badge"></span>
+                  VIP: {stats.vipVisitsThisWeek}
+                </span>
+                <span>
+                  <span className="regular-badge"></span>
+                  Regular: {stats.regularVisitsThisWeek}
+                </span>
+              </div>
             </div>
             <div className="stat-card">
               <span className="stat-value">{stats.doctorsVisitedThisMonth}</span>

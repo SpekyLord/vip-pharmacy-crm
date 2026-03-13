@@ -996,6 +996,7 @@ const ReportsPage = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
+  const [clientTypeFilter, setClientTypeFilter] = useState('all');
   const [reportGenerated, setReportGenerated] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
@@ -1204,6 +1205,26 @@ const ReportsPage = () => {
     }
   };
 
+  // Filter report data based on client type
+  const filteredReportData = useMemo(() => {
+    if (!reportData) return null;
+
+    if (clientTypeFilter === 'all') {
+      return reportData;
+    } else if (clientTypeFilter === 'vip') {
+      return {
+        ...reportData,
+        regularClients: [], // Hide regular clients
+      };
+    } else if (clientTypeFilter === 'regular') {
+      return {
+        ...reportData,
+        doctors: [], // Hide VIP clients
+      };
+    }
+    return reportData;
+  }, [reportData, clientTypeFilter]);
+
   return (
     <div className="reports-layout">
       <style>{styles}</style>
@@ -1350,6 +1371,18 @@ const ReportsPage = () => {
                       onChange={(e) => setSelectedMonth(e.target.value)}
                     />
                   </div>
+                  <div className="bdm-control-group">
+                    <label>Client Type</label>
+                    <select
+                      className="bdm-select"
+                      value={clientTypeFilter}
+                      onChange={(e) => setClientTypeFilter(e.target.value)}
+                    >
+                      <option value="all">All (VIP + Regular)</option>
+                      <option value="vip">VIP Only</option>
+                      <option value="regular">Regular Only</option>
+                    </select>
+                  </div>
                   <button className="bdm-btn-generate" onClick={handleGenerateReport}>
                     <Play size={16} />
                     Generate Report
@@ -1388,7 +1421,7 @@ const ReportsPage = () => {
                   </div>
                 ) : (
                   <EmployeeVisitReport
-                    reportData={reportData}
+                    reportData={filteredReportData}
                     monthYear={selectedMonth}
                   />
                 )}

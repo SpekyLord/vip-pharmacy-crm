@@ -75,6 +75,34 @@ const dashboardStyles = `
     color: #6b7280;
   }
 
+  .stat-breakdown {
+    font-size: 12px;
+    color: #9ca3af;
+    margin-top: 6px;
+    display: flex;
+    gap: 12px;
+  }
+
+  .stat-breakdown span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .stat-breakdown .vip-badge {
+    width: 8px;
+    height: 8px;
+    background: #fbbf24;
+    border-radius: 50%;
+  }
+
+  .stat-breakdown .regular-badge {
+    width: 8px;
+    height: 8px;
+    background: #60a5fa;
+    border-radius: 50%;
+  }
+
   /* Activity Section */
   .activity-section {
     grid-column: span 2;
@@ -132,7 +160,11 @@ const Dashboard = ({ stats = {}, onViewAllActivity = null, onActivityClick = nul
     totalDoctors = 0,
     totalEmployees = 0,
     totalVisits = 0,
+    vipVisits = 0,
+    regularVisits = 0,
     visitsThisWeek = 0,
+    vipVisitsThisWeek = 0,
+    regularVisitsThisWeek = 0,
   } = stats;
 
   return (
@@ -168,6 +200,16 @@ const Dashboard = ({ stats = {}, onViewAllActivity = null, onActivityClick = nul
           <div className="stat-content">
             <span className="stat-value">{totalVisits}</span>
             <span className="stat-label">Total Visits</span>
+            <div className="stat-breakdown">
+              <span>
+                <span className="vip-badge"></span>
+                VIP: {vipVisits}
+              </span>
+              <span>
+                <span className="regular-badge"></span>
+                Regular: {regularVisits}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -178,6 +220,16 @@ const Dashboard = ({ stats = {}, onViewAllActivity = null, onActivityClick = nul
           <div className="stat-content">
             <span className="stat-value">{visitsThisWeek}</span>
             <span className="stat-label">This Week</span>
+            <div className="stat-breakdown">
+              <span>
+                <span className="vip-badge"></span>
+                VIP: {vipVisitsThisWeek}
+              </span>
+              <span>
+                <span className="regular-badge"></span>
+                Regular: {regularVisitsThisWeek}
+              </span>
+            </div>
           </div>
         </div>
       </div>

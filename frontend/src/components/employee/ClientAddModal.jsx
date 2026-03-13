@@ -168,6 +168,16 @@ const modalStyles = `
   }
 `;
 
+const PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
+const SUPPORT_TYPES = ['STARTER DOSES', 'PROMATS', 'FULL DOSE', 'PATIENT DISCOUNT', 'AIR FRESHENER'];
+const ENGAGEMENT_LEVELS = [
+  { value: 1, label: '1 - Visited 4 times' },
+  { value: 2, label: '2 - Knows BDM/products' },
+  { value: 3, label: '3 - Tried products' },
+  { value: 4, label: '4 - In group chat' },
+  { value: 5, label: '5 - Active partner' },
+];
+
 const ClientAddModal = ({ client, onClose, onSaved }) => {
   const isEdit = !!client;
 
@@ -180,7 +190,25 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
     specialization: client?.specialization || '',
     clinicOfficeAddress: client?.clinicOfficeAddress || '',
     phone: client?.phone || '',
+    email: client?.email || '',
     notes: client?.notes || '',
+    visitFrequency: client?.visitFrequency || 4,
+    weekPattern: client?.weekSchedule?.w2 != null && client?.weekSchedule?.w4 != null && client?.weekSchedule?.w1 == null ? 'w2w4' : 'w1w3',
+    weekSchedule: {
+      w1: client?.weekSchedule?.w1 || '',
+      w2: client?.weekSchedule?.w2 || '',
+      w3: client?.weekSchedule?.w3 || '',
+      w4: client?.weekSchedule?.w4 || '',
+    },
+    outletIndicator: client?.outletIndicator || '',
+    programsToImplement: client?.programsToImplement || [],
+    supportDuringCoverage: client?.supportDuringCoverage || [],
+    levelOfEngagement: client?.levelOfEngagement || '',
+    secretaryName: client?.secretaryName || '',
+    secretaryPhone: client?.secretaryPhone || '',
+    birthday: client?.birthday ? client.birthday.split('T')[0] : '',
+    anniversary: client?.anniversary ? client.anniversary.split('T')[0] : '',
+    otherDetails: client?.otherDetails || '',
   });
 
   const handleChange = (field, value) => {
@@ -199,12 +227,52 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
     setSaving(true);
     setError('');
 
+    // Build submission data
+    const submitData = {
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      specialization: formData.specialization,
+      clinicOfficeAddress: formData.clinicOfficeAddress,
+      phone: formData.phone,
+      notes: formData.notes,
+      visitFrequency: parseInt(formData.visitFrequency),
+    };
+
+    if (formData.email) submitData.email = formData.email;
+    if (formData.outletIndicator) submitData.outletIndicator = formData.outletIndicator;
+    if (formData.programsToImplement.length > 0) submitData.programsToImplement = formData.programsToImplement;
+    if (formData.supportDuringCoverage.length > 0) submitData.supportDuringCoverage = formData.supportDuringCoverage;
+    if (formData.levelOfEngagement) submitData.levelOfEngagement = parseInt(formData.levelOfEngagement);
+    if (formData.secretaryName) submitData.secretaryName = formData.secretaryName;
+    if (formData.secretaryPhone) submitData.secretaryPhone = formData.secretaryPhone;
+    if (formData.birthday) submitData.birthday = formData.birthday;
+    if (formData.anniversary) submitData.anniversary = formData.anniversary;
+    if (formData.otherDetails) submitData.otherDetails = formData.otherDetails;
+
+    // Build weekSchedule based on frequency and pattern
+    const ws = {};
+    if (parseInt(formData.visitFrequency) === 2) {
+      if (formData.weekPattern === 'w1w3') {
+        if (formData.weekSchedule.w1) ws.w1 = parseInt(formData.weekSchedule.w1);
+        if (formData.weekSchedule.w3) ws.w3 = parseInt(formData.weekSchedule.w3);
+      } else {
+        if (formData.weekSchedule.w2) ws.w2 = parseInt(formData.weekSchedule.w2);
+        if (formData.weekSchedule.w4) ws.w4 = parseInt(formData.weekSchedule.w4);
+      }
+    } else {
+      if (formData.weekSchedule.w1) ws.w1 = parseInt(formData.weekSchedule.w1);
+      if (formData.weekSchedule.w2) ws.w2 = parseInt(formData.weekSchedule.w2);
+      if (formData.weekSchedule.w3) ws.w3 = parseInt(formData.weekSchedule.w3);
+      if (formData.weekSchedule.w4) ws.w4 = parseInt(formData.weekSchedule.w4);
+    }
+    submitData.weekSchedule = ws;
+
     try {
       if (isEdit) {
-        await clientService.update(client._id, formData);
+        await clientService.update(client._id, submitData);
         toast.success('Client updated successfully');
       } else {
-        await clientService.create(formData);
+        await clientService.create(submitData);
         toast.success('Client added successfully');
       }
       onSaved?.();
@@ -277,6 +345,27 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
               </div>
             </div>
 
+            <div className="client-form-row">
+              <div className="client-form-group">
+                <label>Email</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleChange('email', e.target.value)}
+                  placeholder="email@example.com"
+                />
+              </div>
+              <div className="client-form-group">
+                <label>Outlet Indicator</label>
+                <input
+                  type="text"
+                  value={formData.outletIndicator}
+                  onChange={(e) => handleChange('outletIndicator', e.target.value)}
+                  placeholder="e.g. MMC, AMC, PHC"
+                />
+              </div>
+            </div>
+
             <div className="client-form-group">
               <label>Clinic/Office Address</label>
               <input
@@ -297,6 +386,184 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                 maxLength={1000}
               />
             </div>
+
+            <div className="client-form-row">
+              <div className="client-form-group">
+                <label>Programs to Implement</label>
+                <select
+                  multiple
+                  value={formData.programsToImplement}
+                  onChange={(e) =>
+                    handleChange(
+                      'programsToImplement',
+                      Array.from(e.target.selectedOptions, (o) => o.value)
+                    )
+                  }
+                  style={{ minHeight: '80px' }}
+                >
+                  {PROGRAMS.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="client-form-group">
+                <label>Support During Coverage</label>
+                <select
+                  multiple
+                  value={formData.supportDuringCoverage}
+                  onChange={(e) =>
+                    handleChange(
+                      'supportDuringCoverage',
+                      Array.from(e.target.selectedOptions, (o) => o.value)
+                    )
+                  }
+                  style={{ minHeight: '80px' }}
+                >
+                  {SUPPORT_TYPES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="client-form-row">
+              <div className="client-form-group">
+                <label>Level of Engagement</label>
+                <select
+                  value={formData.levelOfEngagement}
+                  onChange={(e) => handleChange('levelOfEngagement', e.target.value)}
+                >
+                  <option value="">-- Select --</option>
+                  {ENGAGEMENT_LEVELS.map((lvl) => (
+                    <option key={lvl.value} value={lvl.value}>{lvl.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="client-form-row">
+              <div className="client-form-group">
+                <label>Secretary Name</label>
+                <input
+                  type="text"
+                  value={formData.secretaryName}
+                  onChange={(e) => handleChange('secretaryName', e.target.value)}
+                />
+              </div>
+              <div className="client-form-group">
+                <label>Secretary Phone</label>
+                <input
+                  type="text"
+                  value={formData.secretaryPhone}
+                  onChange={(e) => handleChange('secretaryPhone', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="client-form-row">
+              <div className="client-form-group">
+                <label>Birthday</label>
+                <input
+                  type="date"
+                  value={formData.birthday}
+                  onChange={(e) => handleChange('birthday', e.target.value)}
+                />
+              </div>
+              <div className="client-form-group">
+                <label>Anniversary</label>
+                <input
+                  type="date"
+                  value={formData.anniversary}
+                  onChange={(e) => handleChange('anniversary', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="client-form-group">
+              <label>Other Details</label>
+              <textarea
+                value={formData.otherDetails}
+                onChange={(e) => handleChange('otherDetails', e.target.value)}
+                placeholder="Any other relevant information"
+                maxLength={2000}
+              />
+            </div>
+
+            <div className="client-form-row">
+              <div className="client-form-group">
+                <label>Visit Frequency</label>
+                <select
+                  value={formData.visitFrequency}
+                  onChange={(e) => handleChange('visitFrequency', parseInt(e.target.value))}
+                >
+                  <option value={4}>4x / month (every week)</option>
+                  <option value={2}>2x / month (alternating weeks)</option>
+                </select>
+              </div>
+
+              {parseInt(formData.visitFrequency) === 2 && (
+                <div className="client-form-group">
+                  <label>Week Pattern</label>
+                  <select
+                    value={formData.weekPattern}
+                    onChange={(e) => handleChange('weekPattern', e.target.value)}
+                  >
+                    <option value="w1w3">Week 1 + Week 3</option>
+                    <option value="w2w4">Week 2 + Week 4</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {parseInt(formData.visitFrequency) === 4 ? (
+              <div className="client-form-row">
+                {['w1', 'w2', 'w3', 'w4'].map((wk) => (
+                  <div className="client-form-group" key={wk}>
+                    <label>{wk.toUpperCase()} Day</label>
+                    <select
+                      value={formData.weekSchedule[wk]}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          weekSchedule: { ...prev.weekSchedule, [wk]: e.target.value },
+                        }))
+                      }
+                    >
+                      <option value="">-- Select --</option>
+                      <option value="1">Monday</option>
+                      <option value="2">Tuesday</option>
+                      <option value="3">Wednesday</option>
+                      <option value="4">Thursday</option>
+                      <option value="5">Friday</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="client-form-row">
+                {(formData.weekPattern === 'w1w3' ? ['w1', 'w3'] : ['w2', 'w4']).map((wk) => (
+                  <div className="client-form-group" key={wk}>
+                    <label>{wk.toUpperCase()} Day</label>
+                    <select
+                      value={formData.weekSchedule[wk]}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          weekSchedule: { ...prev.weekSchedule, [wk]: e.target.value },
+                        }))
+                      }
+                    >
+                      <option value="">-- Select --</option>
+                      <option value="1">Monday</option>
+                      <option value="2">Tuesday</option>
+                      <option value="3">Wednesday</option>
+                      <option value="4">Thursday</option>
+                      <option value="5">Friday</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="client-modal-footer">

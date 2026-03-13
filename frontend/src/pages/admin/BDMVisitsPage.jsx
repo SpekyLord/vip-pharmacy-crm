@@ -15,6 +15,7 @@ import Sidebar from '../../components/common/Sidebar';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import VisitDetailModal from '../../components/common/VisitDetailModal';
 import visitService from '../../services/visitService';
+import clientService from '../../services/clientService';
 import userService from '../../services/userService';
 import toast from 'react-hot-toast';
 
@@ -33,6 +34,7 @@ const BDMVisitsPage = () => {
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('all');
+  const [visitTypeFilter, setVisitTypeFilter] = useState('all');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
   // Pagination
@@ -95,13 +97,67 @@ const BDMVisitsPage = () => {
         params.dateTo = dateRange.end;
       }
 
-      const response = await visitService.getAll(params);
-      setVisits(response.data || []);
-      setPagination(prev => ({
-        ...prev,
-        total: response.pagination?.total || 0,
-        pages: response.pagination?.pages || 1,
-      }));
+      // Fetch VIP visits
+      let vipVisits = [];
+      if (visitTypeFilter !== 'regular') {
+        const response = await visitService.getAll(params);
+        vipVisits = (response.data || []).map(v => ({ ...v, _visitType: 'vip' }));
+        setPagination(prev => ({
+          ...prev,
+          total: response.pagination?.total || 0,
+          pages: response.pagination?.pages || 1,
+        }));
+      }
+
+      // Fetch regular client visits
+      let regularVisits = [];
+      if (visitTypeFilter !== 'vip') {
+        try {
+          const regularParams = {};
+          if (dateRange.start) regularParams.dateFrom = dateRange.start;
+          if (dateRange.end) regularParams.dateTo = dateRange.end;
+          const regularResponse = await clientService.getVisitsByUser(id, {
+            page: pagination.page,
+            limit: pagination.limit,
+            ...regularParams,
+          });
+          regularVisits = (regularResponse.data || []).map(v => ({
+            ...v,
+            _visitType: 'regular',
+            doctor: v.client ? {
+              firstName: v.client.firstName,
+              lastName: v.client.lastName,
+              fullName: `${v.client.firstName || ''} ${v.client.lastName || ''}`.trim(),
+              specialization: v.client.specialization,
+              clinicOfficeAddress: v.client.clinicOfficeAddress,
+            } : null,
+          }));
+
+          if (visitTypeFilter === 'regular') {
+            setPagination(prev => ({
+              ...prev,
+              total: regularResponse.pagination?.total || 0,
+              pages: regularResponse.pagination?.pages || 1,
+            }));
+          }
+        } catch {
+          // Silent fail for regular visits
+        }
+      }
+
+      // Merge and sort
+      let merged;
+      if (visitTypeFilter === 'vip') {
+        merged = vipVisits;
+      } else if (visitTypeFilter === 'regular') {
+        merged = regularVisits;
+      } else {
+        merged = [...vipVisits, ...regularVisits].sort(
+          (a, b) => new Date(b.visitDate) - new Date(a.visitDate)
+        );
+      }
+
+      setVisits(merged);
     } catch (err) {
       if (err.name === 'AbortError' || err.name === 'CanceledError') return;
       setError('Failed to load visits. Please try again.');
@@ -109,7 +165,7 @@ const BDMVisitsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, pagination.page, pagination.limit, statusFilter, dateRange]);
+  }, [id, pagination.page, pagination.limit, statusFilter, dateRange, visitTypeFilter]);
 
   useEffect(() => {
     fetchVisits();
@@ -173,6 +229,7 @@ const BDMVisitsPage = () => {
 
   const clearFilters = () => {
     setStatusFilter('all');
+    setVisitTypeFilter('all');
     setDateRange({ start: '', end: '' });
     setPagination(prev => ({ ...prev, page: 1 }));
   };
@@ -214,6 +271,22 @@ const BDMVisitsPage = () => {
                   <option value="all">All Status</option>
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+
+              <div className="bvp-filter-group">
+                <label htmlFor="bvp-visit-type">Type</label>
+                <select
+                  id="bvp-visit-type"
+                  value={visitTypeFilter}
+                  onChange={(e) => {
+                    setVisitTypeFilter(e.target.value);
+                    setPagination(prev => ({ ...prev, page: 1 }));
+                  }}
+                >
+                  <option value="all">All Types</option>
+                  <option value="vip">VIP Clients</option>
+                  <option value="regular">Regular Clients</option>
                 </select>
               </div>
 
@@ -270,7 +343,8 @@ const BDMVisitsPage = () => {
                     <tr>
                       <th>Date</th>
                       <th>Week</th>
-                      <th>VIP Client</th>
+                      <th>Client</th>
+                      <th>Type</th>
                       <th>Status</th>
                       <th>Photos</th>
                       <th>Actions</th>
@@ -299,6 +373,11 @@ const BDMVisitsPage = () => {
                               <span className="bvp-doctor-name">{doctorName}</span>
                               <span className="bvp-doctor-spec">{spec}</span>
                             </div>
+                          </td>
+                          <td>
+                            <span className={`bvp-type-badge ${visit._visitType === 'regular' ? 'bvp-type-regular' : 'bvp-type-vip'}`}>
+                              {visit._visitType === 'regular' ? 'Regular' : 'VIP'}
+                            </span>
                           </td>
                           <td>
                             <span className={getStatusBadgeClass(visit.status)}>
@@ -340,9 +419,14 @@ const BDMVisitsPage = () => {
                             <div className="bvp-card-doctor">{doctorName}</div>
                             {spec && <div className="bvp-card-spec">{spec}</div>}
                           </div>
-                          <span className={getStatusBadgeClass(visit.status)}>
-                            {visit.status}
-                          </span>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <span className={`bvp-type-badge ${visit._visitType === 'regular' ? 'bvp-type-regular' : 'bvp-type-vip'}`}>
+                              {visit._visitType === 'regular' ? 'Regular' : 'VIP'}
+                            </span>
+                            <span className={getStatusBadgeClass(visit.status)}>
+                              {visit.status}
+                            </span>
+                          </div>
                         </div>
                         <div className="bvp-card-meta">
                           <div className="bvp-card-row">
@@ -598,6 +682,26 @@ const pageStyles = `
   .bvp-status-cancelled {
     background: #ffebee;
     color: #c62828;
+  }
+
+  .bvp-type-badge {
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: inline-block;
+  }
+
+  .bvp-type-vip {
+    background: #fef3c7;
+    color: #d97706;
+  }
+
+  .bvp-type-regular {
+    background: #dbeafe;
+    color: #2563eb;
   }
 
   .bvp-photo-count {

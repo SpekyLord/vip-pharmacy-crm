@@ -1,18 +1,40 @@
 /**
- * ClientVisit Model (Regular Client Visit / Extra Call)
+ * ClientVisit Model (Regular Client Visit)
  *
- * Simplified Visit schema for non-VIP client visits.
- * No weekly tracking, no products discussed, no unique weekly constraint.
- *
- * Key differences from Visit:
- * - No weekNumber, weekOfMonth, weekLabel, yearWeekKey
- * - No productsDiscussed
- * - No compound unique index (no weekly limit)
- * - Daily limit: 30 per BDM per day (enforced at controller level)
+ * Visit schema for regular client visits with the same weekly tracking
+ * and enforcement as VIP visits (weekly unique constraint, monthly limits).
  */
 
 const mongoose = require('mongoose');
 const { getWeekOfMonth } = require('../utils/scheduleCycleUtils');
+
+// Cycle anchor: Monday, January 5, 2026
+const CYCLE_ANCHOR = new Date(Date.UTC(2026, 0, 5));
+
+/**
+ * Calculate ISO 8601 week number
+ */
+function getISOWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNumber = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  const weekYear = d.getUTCFullYear();
+  return { weekNumber, weekYear };
+}
+
+/**
+ * Get cycle position (W1-W4, day 1-7) based on anchor date
+ */
+function getCyclePosition(date) {
+  const diffMs = date.getTime() - CYCLE_ANCHOR.getTime();
+  const diffDays = Math.floor(diffMs / 86400000);
+  const dayInCycle = ((diffDays % 28) + 28) % 28;
+  const weekInCycle = Math.floor(dayInCycle / 7) + 1;
+  const dayOfWeek = date.getDay();
+  const dayOfWeekInCycle = dayOfWeek === 0 ? 7 : dayOfWeek;
+  return { weekInCycle, dayOfWeekInCycle };
+}
 
 const clientVisitSchema = new mongoose.Schema(
   {
@@ -88,7 +110,12 @@ const clientVisitSchema = new mongoose.Schema(
       enum: ['completed', 'cancelled'],
       default: 'completed',
     },
-    // Auto-computed for CPT reporting
+    // Auto-computed for CPT reporting and enforcement
+    weekNumber: {
+      type: Number, // ISO week 1-53
+      min: 1,
+      max: 53,
+    },
     monthYear: {
       type: String, // "2026-02"
     },
@@ -102,6 +129,12 @@ const clientVisitSchema = new mongoose.Schema(
       min: 1,
       max: 4,
     },
+    weekLabel: {
+      type: String, // "W1D1", "W2D3", etc.
+    },
+    yearWeekKey: {
+      type: String, // "2026-W11" — for unique constraint
+    },
   },
   {
     timestamps: true,
@@ -114,8 +147,19 @@ const clientVisitSchema = new mongoose.Schema(
 clientVisitSchema.index({ user: 1, visitDate: -1 });
 clientVisitSchema.index({ client: 1, visitDate: -1 });
 clientVisitSchema.index({ user: 1, monthYear: 1 });
+clientVisitSchema.index({ yearWeekKey: 1 });
+clientVisitSchema.index({ client: 1, user: 1, monthYear: 1 });
 
-// Pre-save hook: compute monthYear, dayOfWeek, enforce work-day-only
+// Compound unique index: ONE visit per client per week per user
+clientVisitSchema.index(
+  { client: 1, user: 1, yearWeekKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: 'completed', yearWeekKey: { $exists: true, $ne: null } },
+  }
+);
+
+// Pre-save hook: compute all weekly tracking fields
 clientVisitSchema.pre('save', function (next) {
   if (this.isNew || this.isModified('visitDate')) {
     const date = this.visitDate;
@@ -126,16 +170,25 @@ clientVisitSchema.pre('save', function (next) {
       return next(new Error('Visits can only be logged on work days (Monday-Friday)'));
     }
 
-    // Compute dayOfWeek (1=Mon, 5=Fri)
-    this.dayOfWeek = jsDay;
+    // ISO week number
+    const { weekNumber, weekYear } = getISOWeek(date);
+    this.weekNumber = weekNumber;
 
-    // Compute weekOfMonth (1-4, cycle-based)
-    this.weekOfMonth = getWeekOfMonth(date);
+    // Cycle position (W1-W4, day 1-5)
+    const { weekInCycle, dayOfWeekInCycle } = getCyclePosition(date);
+    this.weekOfMonth = weekInCycle;
+    this.dayOfWeek = dayOfWeekInCycle;
 
-    // Compute monthYear
-    const year = date.getFullYear();
+    // Week label
+    this.weekLabel = `W${this.weekOfMonth}D${this.dayOfWeek}`;
+
+    // Month-year
     const month = String(date.getMonth() + 1).padStart(2, '0');
-    this.monthYear = `${year}-${month}`;
+    this.monthYear = `${date.getFullYear()}-${month}`;
+
+    // Year-week key for unique constraint
+    const week = String(weekNumber).padStart(2, '0');
+    this.yearWeekKey = `${weekYear}-W${week}`;
   }
   next();
 });

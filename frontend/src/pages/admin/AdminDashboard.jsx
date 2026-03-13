@@ -18,6 +18,7 @@ import ActivityDetailModal from '../../components/admin/ActivityDetailModal';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
+import clientService from '../../services/clientService';
 import api from '../../services/api';
 import {
   Stethoscope,
@@ -206,7 +207,11 @@ const AdminDashboard = () => {
     totalDoctors: 0,
     totalEmployees: 0,
     totalVisits: 0,
+    vipVisits: 0,
+    regularVisits: 0,
     visitsThisWeek: 0,
+    vipVisitsThisWeek: 0,
+    regularVisitsThisWeek: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -247,17 +252,27 @@ const AdminDashboard = () => {
         setLoading(true);
         setError(null);
 
-        const [doctorsRes, visitStatsRes, usersRes] = await Promise.all([
+        const [doctorsRes, visitStatsRes, clientStatsRes, usersRes] = await Promise.all([
           doctorService.getAll({ limit: 0 }),
           visitService.getStats(),
+          clientService.getStats(),
           api.get('/users', { params: { limit: 0 } }),
         ]);
+
+        const vipVisitsTotal = visitStatsRes.data?.summary?.totalVisits || 0;
+        const regularVisitsTotal = clientStatsRes.data?.summary?.totalVisits || 0;
+        const vipWeeklyVisits = visitStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0;
+        const regularWeeklyVisits = clientStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0;
 
         setStats({
           totalDoctors: doctorsRes.pagination?.total || 0,
           totalEmployees: usersRes.data?.pagination?.total || 0,
-          totalVisits: visitStatsRes.data?.summary?.totalVisits || 0,
-          visitsThisWeek: visitStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0,
+          totalVisits: vipVisitsTotal + regularVisitsTotal,
+          vipVisits: vipVisitsTotal,
+          regularVisits: regularVisitsTotal,
+          visitsThisWeek: vipWeeklyVisits + regularWeeklyVisits,
+          vipVisitsThisWeek: vipWeeklyVisits,
+          regularVisitsThisWeek: regularWeeklyVisits,
         });
       } catch {
         setError('Failed to load dashboard data. Please try again.');
