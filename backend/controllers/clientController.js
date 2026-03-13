@@ -671,7 +671,7 @@ const getScheduledToday = catchAsync(async (req, res) => {
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
     const weekNumber = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
     const weekYear = d.getUTCFullYear();
-    const yearWeekKey = `${weekYear}-W${weekNumber}`;
+    const yearWeekKey = `${weekYear}-W${String(weekNumber).padStart(2, '0')}`;
 
     const visits = await ClientVisit.find({
       client: { $in: clientIds },
