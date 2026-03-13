@@ -216,7 +216,7 @@ function getISOWeek(date) {
  * 4-week cycle anchor: January 5, 2026 (Monday) = W1D1
  * Cycles repeat every 28 calendar days from this anchor.
  */
-const CYCLE_ANCHOR = new Date(2026, 0, 5); // Jan 5, 2026
+const CYCLE_ANCHOR = new Date(Date.UTC(2026, 0, 5)); // Jan 5, 2026 (UTC)
 
 /**
  * Calculate cycle position based on the Jan 5, 2026 anchor.

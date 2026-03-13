@@ -10,6 +10,7 @@
  */
 
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const User = require('../models/User');
 
 // Common error messages (DRY principle)
@@ -151,7 +152,7 @@ const verifyRefreshToken = async (req, res, next) => {
     // Verify refresh token (locked to HS256)
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, { algorithms: ['HS256'] });
 
-    // Get user and check if refresh token matches
+    // Get user and check if refresh token matches (compare hashed values)
     const user = await User.findById(decoded.id).select('+refreshToken');
 
     if (!user) {
@@ -161,7 +162,8 @@ const verifyRefreshToken = async (req, res, next) => {
       });
     }
 
-    if (user.refreshToken !== refreshToken) {
+    const hashedIncoming = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    if (user.refreshToken !== hashedIncoming) {
       return res.status(401).json({
         success: false,
         message: 'Invalid refresh token.',

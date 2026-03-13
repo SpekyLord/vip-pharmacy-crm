@@ -44,6 +44,10 @@ const generateS3Key = (originalName, folder = 'uploads') => {
  * @returns {Promise<string>} Public URL of uploaded file
  */
 const uploadToS3 = async (buffer, key, contentType) => {
+  if (!isConfigured()) {
+    throw new Error('S3 is not configured. Check AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET_NAME environment variables.');
+  }
+
   const command = new PutObjectCommand({
     Bucket: bucketName,
     Key: key,
@@ -107,6 +111,10 @@ const uploadAvatar = async (buffer, originalName, contentType) => {
  * @returns {Promise<void>}
  */
 const deleteFromS3 = async (key) => {
+  if (!isConfigured()) {
+    throw new Error('S3 is not configured. Check AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET_NAME environment variables.');
+  }
+
   const command = new DeleteObjectCommand({
     Bucket: bucketName,
     Key: key,
@@ -121,10 +129,14 @@ const deleteFromS3 = async (key) => {
  * @returns {Promise<void>}
  */
 const deleteByUrl = async (url) => {
-  // Extract key from URL
-  const urlObj = new URL(url);
-  const key = urlObj.pathname.slice(1); // Remove leading slash
-  await deleteFromS3(key);
+  try {
+    const urlObj = new URL(url);
+    const key = urlObj.pathname.slice(1); // Remove leading slash
+    await deleteFromS3(key);
+  } catch (error) {
+    if (error.message.includes('S3 is not configured')) throw error;
+    throw new Error(`Invalid S3 URL: ${url}`);
+  }
 };
 
 /**

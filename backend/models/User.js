@@ -95,6 +95,8 @@ const userSchema = new mongoose.Schema(
         delete ret.refreshToken;
         delete ret.passwordResetToken;
         delete ret.passwordResetExpires;
+        delete ret.failedLoginAttempts;
+        delete ret.lockoutUntil;
         delete ret.__v;
         return ret;
       },

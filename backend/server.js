@@ -164,9 +164,11 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// Request logging (only in development)
+// Request logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined'));
 }
 
 // Rate limiting - protect against brute force and DoS attacks
@@ -195,6 +197,7 @@ const authLimiter = rateLimit({
 });
 
 // Per-user rate limiting for authenticated endpoints (prevents abuse behind shared IPs/NAT)
+// Note: Applied at route level after protect middleware, so req.user is available
 const userLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 300, // Limit each user to 300 requests per window
@@ -202,7 +205,7 @@ const userLimiter = rateLimit({
     // Use user ID if authenticated, fall back to IP
     return req.user?._id?.toString() || req.ip;
   },
-  validate: { keyGeneratorIpFallback: false },
+  validate: { xForwardedForHeader: false },
   message: {
     success: false,
     message: 'Too many requests from your account, please try again later.',
@@ -230,10 +233,12 @@ app.use(mongoSanitize());
 // Request timeout middleware (30 seconds)
 app.use((req, res, next) => {
   req.setTimeout(30000, () => {
-    res.status(408).json({
-      success: false,
-      message: 'Request timeout',
-    });
+    if (!res.headersSent) {
+      res.status(408).json({
+        success: false,
+        message: 'Request timeout',
+      });
+    }
   });
   next();
 });
@@ -287,6 +292,7 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 
 // Connect to database and start server
+let server;
 const startServer = async () => {
   try {
     // Connect to CRM database
@@ -296,7 +302,7 @@ const startServer = async () => {
     require('./jobs/emailScheduler').initEmailScheduler();
 
     // Listen on all network interfaces (0.0.0.0) to allow access from phone
-    app.listen(PORT, '0.0.0.0', () => {
+    server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`
 ╔═══════════════════════════════════════════════════════╗
 ║       VIP CRM - API Server                   ║
@@ -315,11 +321,38 @@ const startServer = async () => {
   }
 };
 
+// Graceful shutdown handler
+const gracefulShutdown = async (signal) => {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+  if (server) {
+    server.close(async () => {
+      console.log('HTTP server closed.');
+      try {
+        await mongoose.connection.close();
+        console.log('MongoDB connection closed.');
+      } catch (err) {
+        console.error('Error closing MongoDB connection:', err.message);
+      }
+      process.exit(0);
+    });
+    // Force shutdown after 10 seconds if graceful shutdown hangs
+    setTimeout(() => {
+      console.error('Graceful shutdown timed out, forcing exit.');
+      process.exit(1);
+    }, 10000);
+  } else {
+    process.exit(0);
+  }
+};
+
+// Handle termination signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Promise Rejection:', err.message);
-  // Close server gracefully
-  process.exit(1);
+  gracefulShutdown('unhandledRejection');
 });
 
 // Handle uncaught exceptions

@@ -19,6 +19,13 @@ const { logAuditEvent, AuditActions } = require('../utils/auditLogger');
 const { sendPasswordResetEmail } = require('../services/emailService');
 
 /**
+ * Hash a refresh token with SHA-256 for secure storage.
+ * We store the hash in the DB, send the raw token in the cookie.
+ */
+const hashRefreshToken = (token) =>
+  crypto.createHash('sha256').update(token).digest('hex');
+
+/**
  * @desc    Register a new user
  * @route   POST /api/auth/register
  * @access  Public (or Admin only in production)
@@ -47,22 +54,22 @@ const register = catchAsync(async (req, res) => {
   // Generate tokens
   const tokens = generateTokens(user);
 
-  // Save refresh token to user
-  user.refreshToken = tokens.refreshToken;
+  // Save hashed refresh token to user (never store raw token in DB)
+  user.refreshToken = hashRefreshToken(tokens.refreshToken);
   await user.save();
 
   // Set httpOnly cookies for security
   res.cookie('accessToken', tokens.accessToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax',
     maxAge: 15 * 60 * 1000, // 15 mins
   });
 
   res.cookie('refreshToken', tokens.refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 
@@ -188,8 +195,8 @@ const login = catchAsync(async (req, res) => {
   // Generate tokens
   const tokens = generateTokens(user);
 
-  // Update refresh token and last login
-  user.refreshToken = tokens.refreshToken;
+  // Update hashed refresh token and last login
+  user.refreshToken = hashRefreshToken(tokens.refreshToken);
   user.lastLogin = new Date();
   await user.save();
 
@@ -200,14 +207,14 @@ const login = catchAsync(async (req, res) => {
 res.cookie('accessToken', tokens.accessToken, {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  sameSite: 'lax',
   maxAge: 15 * 60 * 1000, // 15 mins (adjust to your access token expiry)
 });
 
 res.cookie('refreshToken', tokens.refreshToken, {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  sameSite: 'lax',
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days (adjust)
 });
 
@@ -239,8 +246,8 @@ const logout = catchAsync(async (req, res) => {
     });
   }
 
-  res.clearCookie('accessToken', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' });
-  res.clearCookie('refreshToken', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' });
+  res.clearCookie('accessToken', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
+  res.clearCookie('refreshToken', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
 
   res.json({
     success: true,
@@ -264,7 +271,7 @@ const refreshToken = catchAsync(async (req, res) => {
   res.cookie('accessToken', accessToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax',
     maxAge: 15 * 60 * 1000,
   });
 
@@ -411,21 +418,21 @@ const updatePassword = catchAsync(async (req, res) => {
 
   // Generate new tokens
   const tokens = generateTokens(user);
-  user.refreshToken = tokens.refreshToken;
+  user.refreshToken = hashRefreshToken(tokens.refreshToken);
   await user.save();
 
   // Set new httpOnly cookies
   res.cookie('accessToken', tokens.accessToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax',
     maxAge: 15 * 60 * 1000, // 15 mins
   });
 
   res.cookie('refreshToken', tokens.refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 

@@ -14,4 +14,21 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          charts: ['recharts'],
+          excel: ['xlsx'],
+          maps: ['leaflet', 'react-leaflet'],
+          icons: ['lucide-react', 'react-icons'],
+        },
+      },
+    },
+  },
+  esbuild: {
+    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
+  },
 });
