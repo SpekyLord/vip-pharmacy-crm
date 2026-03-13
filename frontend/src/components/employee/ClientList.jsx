@@ -115,11 +115,36 @@ const clientListStyles = `
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   }
 
+  .client-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
   .client-card-header h3 {
     margin: 0 0 8px 0;
     font-size: 18px;
     font-weight: 600;
     color: #1f2937;
+  }
+
+  .sched-mode-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+  }
+
+  .sched-mode-badge.flexible {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
+  .sched-mode-badge.strict {
+    background: #ede9fe;
+    color: #6d28d9;
   }
 
   .client-specialization {
@@ -292,6 +317,9 @@ const ClientList = memo(function ClientList({
           <div key={client._id} className="client-card">
             <div className="client-card-header">
               <h3>{client.fullName || `${client.firstName} ${client.lastName}`}</h3>
+              <span className={`sched-mode-badge ${client.schedulingMode === 'strict' ? 'strict' : 'flexible'}`}>
+                {client.schedulingMode === 'strict' ? 'Strict' : 'Flexible'}
+              </span>
             </div>
 
             {client.specialization && (

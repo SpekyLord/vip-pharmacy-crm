@@ -28,6 +28,7 @@ const {
   getClientVisitsByUser,
   getTodayClientVisitCount,
   getClientVisitStats,
+  getScheduledToday,
 } = require('../controllers/clientController');
 
 const { protect } = require('../middleware/auth');
@@ -44,6 +45,7 @@ router.use(protect);
 
 // Static routes BEFORE parameterized /:id routes
 router.get('/visit-count/today', getTodayClientVisitCount);
+router.get('/scheduled/today', getScheduledToday);
 router.get('/visits/stats', getClientVisitStats);
 router.get('/visits/my', getMyClientVisits);
 router.get('/visits/by-user/:userId', adminOnly, getClientVisitsByUser);

@@ -14,6 +14,7 @@ const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { signVisitPhotos } = require('../config/s3');
+const { getWeekOfMonth, getDayOfWeek, isWorkDay } = require('../utils/scheduleCycleUtils');
 
 /**
  * Build access filter based on user role
@@ -124,6 +125,7 @@ const createClient = catchAsync(async (req, res) => {
     phone,
     email,
     notes,
+    schedulingMode,
     visitFrequency,
     weekSchedule,
     outletIndicator,
@@ -148,6 +150,7 @@ const createClient = catchAsync(async (req, res) => {
   };
 
   if (email) clientData.email = email;
+  if (schedulingMode) clientData.schedulingMode = schedulingMode;
   if (visitFrequency) clientData.visitFrequency = visitFrequency;
   if (weekSchedule) clientData.weekSchedule = weekSchedule;
   if (outletIndicator) clientData.outletIndicator = outletIndicator;
@@ -198,6 +201,7 @@ const updateClient = catchAsync(async (req, res) => {
     'phone',
     'email',
     'notes',
+    'schedulingMode',
     'visitFrequency',
     'weekSchedule',
     'outletIndicator',
@@ -288,28 +292,30 @@ const createClientVisit = catchAsync(async (req, res) => {
     }
   }
 
-  // Enforce weekly/monthly visit limits (same rules as VIP)
+  // Enforce weekly/monthly visit limits (only for strict mode)
   const visitDateObj = visitDate ? new Date(visitDate) : new Date();
   const visitMonth = `${visitDateObj.getFullYear()}-${String(visitDateObj.getMonth() + 1).padStart(2, '0')}`;
 
-  // Count how many times this client has been visited this month
-  const monthlyCount = await ClientVisit.countDocuments({
-    client: clientId,
-    user: req.user._id,
-    monthYear: visitMonth,
-    status: 'completed',
-  });
-
-  const clientFreq = client.visitFrequency || 4;
-  if (monthlyCount >= clientFreq) {
-    return res.status(400).json({
-      success: false,
-      message: `Monthly visit limit reached for this client (${clientFreq}x/month)`,
-      data: {
-        monthlyCount,
-        monthlyLimit: clientFreq,
-      },
+  if (client.schedulingMode === 'strict') {
+    // Count how many times this client has been visited this month
+    const monthlyCount = await ClientVisit.countDocuments({
+      client: clientId,
+      user: req.user._id,
+      monthYear: visitMonth,
+      status: 'completed',
     });
+
+    const clientFreq = client.visitFrequency || 4;
+    if (monthlyCount >= clientFreq) {
+      return res.status(400).json({
+        success: false,
+        message: `Monthly visit limit reached for this client (${clientFreq}x/month)`,
+        data: {
+          monthlyCount,
+          monthlyLimit: clientFreq,
+        },
+      });
+    }
   }
 
   // Check photos
@@ -621,6 +627,74 @@ const getClientVisitStats = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get strict-mode regular clients scheduled for today
+ * @route   GET /api/clients/scheduled/today
+ * @access  Private (Employee, Admin)
+ */
+const getScheduledToday = catchAsync(async (req, res) => {
+  const now = new Date();
+
+  // Only return results on work days
+  if (!isWorkDay(now)) {
+    return res.json({ success: true, data: [], count: 0 });
+  }
+
+  const currentWeek = getWeekOfMonth(now); // 1-4
+  const currentDay = getDayOfWeek(now);    // 1-5 (Mon-Fri)
+  const weekKey = `w${currentWeek}`;       // e.g. "w2"
+
+  // Find strict-mode clients owned by this BDM whose weekSchedule matches today
+  const filter = {
+    isActive: true,
+    schedulingMode: 'strict',
+    [`weekSchedule.${weekKey}`]: currentDay,
+  };
+
+  // BDMs see only their own; admin sees all
+  if (req.user.role !== 'admin') {
+    filter.createdBy = req.user._id;
+  }
+
+  const clients = await Client.find(filter)
+    .populate('createdBy', 'name email')
+    .sort({ lastName: 1, firstName: 1 })
+    .lean();
+
+  // Check which clients have already been visited this week
+  if (clients.length > 0) {
+    const clientIds = clients.map(c => c._id);
+
+    // Compute yearWeekKey the same way ClientVisit pre-save does (ISO week)
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const weekNumber = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+    const weekYear = d.getUTCFullYear();
+    const yearWeekKey = `${weekYear}-W${weekNumber}`;
+
+    const visits = await ClientVisit.find({
+      client: { $in: clientIds },
+      user: req.user._id,
+      yearWeekKey,
+      status: 'completed',
+    }).select('client').lean();
+    const visitedIds = new Set(visits.map(v => v.client.toString()));
+
+    // Annotate each client with visitedThisWeek flag
+    clients.forEach(c => {
+      c.visitedThisWeek = visitedIds.has(c._id.toString());
+      c.scheduledLabel = `W${currentWeek}D${currentDay}`;
+    });
+  }
+
+  res.json({
+    success: true,
+    data: clients,
+    count: clients.length,
+  });
+});
+
 module.exports = {
   getAllClients,
   getClientById,
@@ -633,4 +707,5 @@ module.exports = {
   getClientVisitsByUser,
   getTodayClientVisitCount,
   getClientVisitStats,
+  getScheduledToday,
 };

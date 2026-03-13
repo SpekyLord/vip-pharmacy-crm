@@ -38,6 +38,12 @@ const clientService = {
     return response.data;
   },
 
+  // Get strict-mode regular clients scheduled for today
+  getScheduledToday: async () => {
+    const response = await api.get('/clients/scheduled/today');
+    return response.data;
+  },
+
   // Get regular client visit stats
   getStats: async (params = {}) => {
     const response = await api.get('/clients/visits/stats', { params });

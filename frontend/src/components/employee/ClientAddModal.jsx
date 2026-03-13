@@ -192,6 +192,7 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
     phone: client?.phone || '',
     email: client?.email || '',
     notes: client?.notes || '',
+    schedulingMode: client?.schedulingMode || 'flexible',
     visitFrequency: client?.visitFrequency || 4,
     weekPattern: client?.weekSchedule?.w2 != null && client?.weekSchedule?.w4 != null && client?.weekSchedule?.w1 == null ? 'w2w4' : 'w1w3',
     weekSchedule: {
@@ -235,8 +236,13 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
       clinicOfficeAddress: formData.clinicOfficeAddress,
       phone: formData.phone,
       notes: formData.notes,
-      visitFrequency: parseInt(formData.visitFrequency),
+      schedulingMode: formData.schedulingMode,
     };
+
+    // Only include visit frequency for strict mode
+    if (formData.schedulingMode === 'strict') {
+      submitData.visitFrequency = parseInt(formData.visitFrequency);
+    }
 
     if (formData.email) submitData.email = formData.email;
     if (formData.outletIndicator) submitData.outletIndicator = formData.outletIndicator;
@@ -249,23 +255,28 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
     if (formData.anniversary) submitData.anniversary = formData.anniversary;
     if (formData.otherDetails) submitData.otherDetails = formData.otherDetails;
 
-    // Build weekSchedule based on frequency and pattern
-    const ws = {};
-    if (parseInt(formData.visitFrequency) === 2) {
-      if (formData.weekPattern === 'w1w3') {
-        if (formData.weekSchedule.w1) ws.w1 = parseInt(formData.weekSchedule.w1);
-        if (formData.weekSchedule.w3) ws.w3 = parseInt(formData.weekSchedule.w3);
+    // Build weekSchedule based on frequency and pattern (only for strict mode)
+    if (formData.schedulingMode === 'strict') {
+      const ws = {};
+      if (parseInt(formData.visitFrequency) === 2) {
+        if (formData.weekPattern === 'w1w3') {
+          if (formData.weekSchedule.w1) ws.w1 = parseInt(formData.weekSchedule.w1);
+          if (formData.weekSchedule.w3) ws.w3 = parseInt(formData.weekSchedule.w3);
+        } else {
+          if (formData.weekSchedule.w2) ws.w2 = parseInt(formData.weekSchedule.w2);
+          if (formData.weekSchedule.w4) ws.w4 = parseInt(formData.weekSchedule.w4);
+        }
       } else {
+        if (formData.weekSchedule.w1) ws.w1 = parseInt(formData.weekSchedule.w1);
         if (formData.weekSchedule.w2) ws.w2 = parseInt(formData.weekSchedule.w2);
+        if (formData.weekSchedule.w3) ws.w3 = parseInt(formData.weekSchedule.w3);
         if (formData.weekSchedule.w4) ws.w4 = parseInt(formData.weekSchedule.w4);
       }
+      submitData.weekSchedule = ws;
     } else {
-      if (formData.weekSchedule.w1) ws.w1 = parseInt(formData.weekSchedule.w1);
-      if (formData.weekSchedule.w2) ws.w2 = parseInt(formData.weekSchedule.w2);
-      if (formData.weekSchedule.w3) ws.w3 = parseInt(formData.weekSchedule.w3);
-      if (formData.weekSchedule.w4) ws.w4 = parseInt(formData.weekSchedule.w4);
+      // Clear week schedule for flexible mode
+      submitData.weekSchedule = {};
     }
-    submitData.weekSchedule = ws;
 
     try {
       if (isEdit) {
@@ -489,80 +500,100 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
               />
             </div>
 
-            <div className="client-form-row">
-              <div className="client-form-group">
-                <label>Visit Frequency</label>
-                <select
-                  value={formData.visitFrequency}
-                  onChange={(e) => handleChange('visitFrequency', parseInt(e.target.value))}
-                >
-                  <option value={4}>4x / month (every week)</option>
-                  <option value={2}>2x / month (alternating weeks)</option>
-                </select>
-              </div>
-
-              {parseInt(formData.visitFrequency) === 2 && (
-                <div className="client-form-group">
-                  <label>Week Pattern</label>
-                  <select
-                    value={formData.weekPattern}
-                    onChange={(e) => handleChange('weekPattern', e.target.value)}
-                  >
-                    <option value="w1w3">Week 1 + Week 3</option>
-                    <option value="w2w4">Week 2 + Week 4</option>
-                  </select>
-                </div>
-              )}
+            <div className="client-form-group">
+              <label>Scheduling Mode</label>
+              <select
+                value={formData.schedulingMode}
+                onChange={(e) => handleChange('schedulingMode', e.target.value)}
+              >
+                <option value="flexible">Flexible — Visit anytime, no schedule enforcement</option>
+                <option value="strict">Strict — Enforced schedule (appears in Today tab)</option>
+              </select>
+              <p style={{ fontSize: '12px', color: '#6b7280', margin: '4px 0 0 0' }}>
+                {formData.schedulingMode === 'flexible'
+                  ? 'No weekly limits or missed visit tracking. Visit this client whenever needed.'
+                  : 'Uses visit frequency and weekly schedule like VIP clients. Appears in your Today schedule.'}
+              </p>
             </div>
 
-            {parseInt(formData.visitFrequency) === 4 ? (
-              <div className="client-form-row">
-                {['w1', 'w2', 'w3', 'w4'].map((wk) => (
-                  <div className="client-form-group" key={wk}>
-                    <label>{wk.toUpperCase()} Day</label>
+            {formData.schedulingMode === 'strict' && (
+              <>
+                <div className="client-form-row">
+                  <div className="client-form-group">
+                    <label>Visit Frequency</label>
                     <select
-                      value={formData.weekSchedule[wk]}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          weekSchedule: { ...prev.weekSchedule, [wk]: e.target.value },
-                        }))
-                      }
+                      value={formData.visitFrequency}
+                      onChange={(e) => handleChange('visitFrequency', parseInt(e.target.value))}
                     >
-                      <option value="">-- Select --</option>
-                      <option value="1">Monday</option>
-                      <option value="2">Tuesday</option>
-                      <option value="3">Wednesday</option>
-                      <option value="4">Thursday</option>
-                      <option value="5">Friday</option>
+                      <option value={4}>4x / month (every week)</option>
+                      <option value={2}>2x / month (alternating weeks)</option>
                     </select>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="client-form-row">
-                {(formData.weekPattern === 'w1w3' ? ['w1', 'w3'] : ['w2', 'w4']).map((wk) => (
-                  <div className="client-form-group" key={wk}>
-                    <label>{wk.toUpperCase()} Day</label>
-                    <select
-                      value={formData.weekSchedule[wk]}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          weekSchedule: { ...prev.weekSchedule, [wk]: e.target.value },
-                        }))
-                      }
-                    >
-                      <option value="">-- Select --</option>
-                      <option value="1">Monday</option>
-                      <option value="2">Tuesday</option>
-                      <option value="3">Wednesday</option>
-                      <option value="4">Thursday</option>
-                      <option value="5">Friday</option>
-                    </select>
+
+                  {parseInt(formData.visitFrequency) === 2 && (
+                    <div className="client-form-group">
+                      <label>Week Pattern</label>
+                      <select
+                        value={formData.weekPattern}
+                        onChange={(e) => handleChange('weekPattern', e.target.value)}
+                      >
+                        <option value="w1w3">Week 1 + Week 3</option>
+                        <option value="w2w4">Week 2 + Week 4</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {parseInt(formData.visitFrequency) === 4 ? (
+                  <div className="client-form-row">
+                    {['w1', 'w2', 'w3', 'w4'].map((wk) => (
+                      <div className="client-form-group" key={wk}>
+                        <label>{wk.toUpperCase()} Day</label>
+                        <select
+                          value={formData.weekSchedule[wk]}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              weekSchedule: { ...prev.weekSchedule, [wk]: e.target.value },
+                            }))
+                          }
+                        >
+                          <option value="">-- Select --</option>
+                          <option value="1">Monday</option>
+                          <option value="2">Tuesday</option>
+                          <option value="3">Wednesday</option>
+                          <option value="4">Thursday</option>
+                          <option value="5">Friday</option>
+                        </select>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                ) : (
+                  <div className="client-form-row">
+                    {(formData.weekPattern === 'w1w3' ? ['w1', 'w3'] : ['w2', 'w4']).map((wk) => (
+                      <div className="client-form-group" key={wk}>
+                        <label>{wk.toUpperCase()} Day</label>
+                        <select
+                          value={formData.weekSchedule[wk]}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              weekSchedule: { ...prev.weekSchedule, [wk]: e.target.value },
+                            }))
+                          }
+                        >
+                          <option value="">-- Select --</option>
+                          <option value="1">Monday</option>
+                          <option value="2">Tuesday</option>
+                          <option value="3">Wednesday</option>
+                          <option value="4">Thursday</option>
+                          <option value="5">Friday</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
 

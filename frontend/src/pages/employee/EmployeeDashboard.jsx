@@ -421,6 +421,7 @@ const EmployeeDashboard = () => {
   const [showAddClient, setShowAddClient] = useState(false);
   const [editClient, setEditClient] = useState(null);
   const [todaySchedule, setTodaySchedule] = useState([]);
+  const [todayStrictClients, setTodayStrictClients] = useState([]);
   const [dailyClientVisitCount, setDailyClientVisitCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -464,10 +465,11 @@ const EmployeeDashboard = () => {
         clientService.getTodayVisitCount(),
         clientService.getStats({ monthYear }),
         scheduleService.getToday(),
+        clientService.getScheduledToday(),
       ]);
 
       // Extract results with fallbacks for failed requests
-      const [doctorsResult, todayResult, statsResult, weeklyResult, clientsResult, clientCountResult, clientStatsResult, scheduleResult] = results;
+      const [doctorsResult, todayResult, statsResult, weeklyResult, clientsResult, clientCountResult, clientStatsResult, scheduleResult, strictClientsResult] = results;
 
       // Process doctors - critical, show error if fails
       const doctorsList = doctorsResult.status === 'fulfilled'
@@ -522,6 +524,12 @@ const EmployeeDashboard = () => {
         ? (scheduleResult.value.data || [])
         : [];
       setTodaySchedule(scheduleData);
+
+      // Process today's strict regular clients - non-critical, use fallback
+      const strictClientsData = strictClientsResult.status === 'fulfilled'
+        ? (strictClientsResult.value.data || [])
+        : [];
+      setTodayStrictClients(strictClientsData);
 
       setStats({
         visitsToday: vipTodayCount + clientDailyCount,
@@ -679,8 +687,8 @@ const EmployeeDashboard = () => {
               onClick={() => setDashboardTab('today')}
             >
               Today
-              {todaySchedule.length > 0 && (
-                <span className="dash-tab-badge">{todaySchedule.length}</span>
+              {(todaySchedule.length + todayStrictClients.length) > 0 && (
+                <span className="dash-tab-badge">{todaySchedule.length + todayStrictClients.length}</span>
               )}
             </button>
             <button
@@ -728,35 +736,71 @@ const EmployeeDashboard = () => {
 
           {/* Today's Schedule section */}
           {dashboardTab === 'today' && (
-            <div className="today-sched-section">
-              <h2>
-                Today&apos;s Schedule
-                <span className="sched-badge">{todaySchedule.length}</span>
-              </h2>
-              {todaySchedule.length > 0 ? (
-                <div className="today-sched-cards">
-                  {todaySchedule.map((entry) => (
-                    <div key={entry._id} className="today-sched-card">
-                      <div className="sched-info">
-                        <h4>{entry.doctor?.firstName} {entry.doctor?.lastName}</h4>
-                        <p>{entry.doctor?.specialization || 'N/A'} — {entry.scheduledLabel}</p>
-                        {entry.status === 'carried' && (
-                          <span className="carried-tag">Carried from W{entry.scheduledWeek}</span>
-                        )}
+            <>
+              <div className="today-sched-section">
+                <h2>
+                  VIP Clients
+                  <span className="sched-badge">{todaySchedule.length}</span>
+                </h2>
+                {todaySchedule.length > 0 ? (
+                  <div className="today-sched-cards">
+                    {todaySchedule.map((entry) => (
+                      <div key={entry._id} className="today-sched-card">
+                        <div className="sched-info">
+                          <h4>{entry.doctor?.firstName} {entry.doctor?.lastName}</h4>
+                          <p>{entry.doctor?.specialization || 'N/A'} — {entry.scheduledLabel}</p>
+                          {entry.status === 'carried' && (
+                            <span className="carried-tag">Carried from W{entry.scheduledWeek}</span>
+                          )}
+                        </div>
+                        <button
+                          className="sched-log-btn"
+                          onClick={() => navigate(`/bdm/visit/new?doctorId=${entry.doctor?._id}`)}
+                        >
+                          Log Visit
+                        </button>
                       </div>
-                      <button
-                        className="sched-log-btn"
-                        onClick={() => navigate(`/bdm/visit/new?doctorId=${entry.doctor?._id}`)}
-                      >
-                        Log Visit
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="today-empty">No scheduled visits for today</p>
-              )}
-            </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="today-empty">No scheduled VIP visits for today</p>
+                )}
+              </div>
+
+              <div className="today-sched-section" style={{ marginTop: '16px' }}>
+                <h2>
+                  Regular Clients (Scheduled)
+                  <span className="sched-badge" style={{ background: '#8b5cf6' }}>{todayStrictClients.length}</span>
+                </h2>
+                {todayStrictClients.length > 0 ? (
+                  <div className="today-sched-cards">
+                    {todayStrictClients.map((client) => (
+                      <div key={client._id} className="today-sched-card" style={{ borderLeft: '3px solid #8b5cf6' }}>
+                        <div className="sched-info">
+                          <h4>{client.firstName} {client.lastName}</h4>
+                          <p>{client.specialization || 'N/A'} — {client.scheduledLabel}</p>
+                          {client.visitedThisWeek && (
+                            <span className="carried-tag" style={{ background: '#d1fae5', color: '#065f46' }}>
+                              Visited this week
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          className="sched-log-btn"
+                          style={{ background: client.visitedThisWeek ? '#9ca3af' : '#8b5cf6' }}
+                          onClick={() => navigate(`/bdm/regular-visit/new?clientId=${client._id}`)}
+                          disabled={client.visitedThisWeek}
+                        >
+                          {client.visitedThisWeek ? 'Done' : 'Log Visit'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="today-empty">No scheduled regular client visits for today</p>
+                )}
+              </div>
+            </>
           )}
 
           {/* Regular Clients section */}

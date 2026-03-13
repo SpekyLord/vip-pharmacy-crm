@@ -104,6 +104,7 @@ const styles = `
     flex: 1;
     padding: 24px;
     max-width: 1600px;
+    overflow-x: hidden;
   }
 
   /* Page Header */
@@ -431,9 +432,15 @@ const styles = `
   }
 
   /* Table */
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .reports-table {
     width: 100%;
     border-collapse: collapse;
+    min-width: 600px;
   }
 
   .reports-table th {
@@ -587,6 +594,16 @@ const styles = `
     }
   }
 
+  @media (max-width: 1024px) {
+    .bdm-report-controls {
+      gap: 12px;
+    }
+    .bdm-select,
+    .bdm-input {
+      min-width: 140px;
+    }
+  }
+
   @media (max-width: 768px) {
     .quick-stats {
       grid-template-columns: 1fr;
@@ -601,6 +618,27 @@ const styles = `
     }
     .tabs-header {
       overflow-x: auto;
+    }
+    .bdm-report-controls {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .bdm-control-group {
+      width: 100%;
+    }
+    .bdm-select,
+    .bdm-input {
+      width: 100%;
+    }
+    .bdm-btn-generate {
+      width: 100%;
+      justify-content: center;
+    }
+    .bdm-export-btns {
+      width: 100%;
+    }
+    .bdm-btn-export {
+      flex: 1;
     }
   }
 
@@ -688,6 +726,8 @@ const styles = `
     display: flex;
     flex-direction: column;
     gap: 6px;
+    min-width: 0;
+    flex: 0 1 auto;
   }
 
   .bdm-control-group label {
@@ -696,6 +736,7 @@ const styles = `
     color: #6b7280;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    white-space: nowrap;
   }
 
   .bdm-select,
@@ -704,7 +745,7 @@ const styles = `
     border: 1px solid #e5e7eb;
     border-radius: 10px;
     font-size: 14px;
-    min-width: 180px;
+    min-width: 160px;
     transition: all 0.2s;
   }
 
@@ -728,6 +769,7 @@ const styles = `
     align-items: center;
     gap: 8px;
     transition: all 0.2s;
+    white-space: nowrap;
   }
 
   .bdm-btn-generate:hover {
@@ -738,7 +780,7 @@ const styles = `
   .bdm-export-btns {
     display: flex;
     gap: 8px;
-    margin-left: auto;
+    flex-wrap: wrap;
   }
 
   .bdm-btn-export {
@@ -970,8 +1012,45 @@ const styles = `
       align-items: flex-start;
       gap: 8px;
     }
+    .bdm-report-controls {
+      gap: 12px;
+    }
+    .bdm-control-group {
+      width: 100%;
+      flex: 1 1 100%;
+    }
+    .bdm-select,
+    .bdm-input {
+      width: 100%;
+      min-width: 0;
+    }
+    .bdm-btn-generate {
+      width: 100%;
+      justify-content: center;
+    }
+    .bdm-export-btns {
+      width: 100%;
+      flex-direction: column;
+    }
+    .bdm-btn-export {
+      width: 100%;
+      justify-content: center;
+    }
+    .bdm-report-header {
+      padding: 16px;
+    }
+    .bdm-report-header h3 {
+      font-size: 16px;
+    }
+    .bdm-report-header p {
+      font-size: 12px;
+    }
+    .bdm-report-content {
+      padding: 16px;
+    }
   }
 `;
+
 
 /* =============================================================================
    COMPONENT
@@ -1570,78 +1649,80 @@ const ReportsPage = () => {
                       <p>{searchQuery ? 'Try adjusting your search' : 'Generate a report using the Report Types above'}</p>
                     </div>
                   ) : (
-                    <table className="reports-table">
-                      <thead>
-                        <tr>
-                          <th>Report Name</th>
-                          <th>Generated</th>
-                          <th>Format</th>
-                          <th>Size</th>
-                          <th>Status</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredReports.map((report) => {
-                          const typeInfo = getReportTypeInfo(report.type);
-                          const TypeIcon = typeInfo.icon;
-                          return (
-                            <tr key={report._id}>
-                              <td>
-                                <div className="report-name-cell">
-                                  <div
-                                    className="report-icon-small"
-                                    style={{ background: typeInfo.bgColor, color: typeInfo.color }}
-                                  >
-                                    <TypeIcon size={16} />
-                                  </div>
-                                  <div>
-                                    <div className="report-name">{report.name}</div>
-                                    <div className="report-meta">by {report.generatedBy?.name || 'System'}</div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td>{new Date(report.createdAt).toLocaleString()}</td>
-                              <td>
-                                <span className={`format-badge ${report.format}`}>
-                                  {report.format === 'csv' && <FileText size={12} />}
-                                  {report.format === 'excel' && <FileSpreadsheet size={12} />}
-                                  {report.format === 'csv' ? 'CSV' : 'Excel'}
-                                </span>
-                              </td>
-                              <td>{report.fileSize || '—'}</td>
-                              <td>
-                                <span className={`status-badge ${report.status}`}>
-                                  {report.status === 'ready' && <><CheckCircle size={12} /> Ready</>}
-                                  {report.status === 'generating' && <><RefreshCw size={12} /> Generating</>}
-                                  {report.status === 'failed' && <><Clock size={12} /> Failed</>}
-                                </span>
-                              </td>
-                              <td>
-                                <div className="action-btns">
-                                  {report.status === 'ready' && (
-                                    <button
-                                      className="action-btn download"
-                                      title="Download"
-                                      onClick={() => handleDownload(report)}
+                    <div className="table-wrapper">
+                      <table className="reports-table">
+                        <thead>
+                          <tr>
+                            <th>Report Name</th>
+                            <th>Generated</th>
+                            <th>Format</th>
+                            <th>Size</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredReports.map((report) => {
+                            const typeInfo = getReportTypeInfo(report.type);
+                            const TypeIcon = typeInfo.icon;
+                            return (
+                              <tr key={report._id}>
+                                <td>
+                                  <div className="report-name-cell">
+                                    <div
+                                      className="report-icon-small"
+                                      style={{ background: typeInfo.bgColor, color: typeInfo.color }}
                                     >
-                                      <Download size={16} />
+                                      <TypeIcon size={16} />
+                                    </div>
+                                    <div>
+                                      <div className="report-name">{report.name}</div>
+                                      <div className="report-meta">by {report.generatedBy?.name || 'System'}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td>{new Date(report.createdAt).toLocaleString()}</td>
+                                <td>
+                                  <span className={`format-badge ${report.format}`}>
+                                    {report.format === 'csv' && <FileText size={12} />}
+                                    {report.format === 'excel' && <FileSpreadsheet size={12} />}
+                                    {report.format === 'csv' ? 'CSV' : 'Excel'}
+                                  </span>
+                                </td>
+                                <td>{report.fileSize || '—'}</td>
+                                <td>
+                                  <span className={`status-badge ${report.status}`}>
+                                    {report.status === 'ready' && <><CheckCircle size={12} /> Ready</>}
+                                    {report.status === 'generating' && <><RefreshCw size={12} /> Generating</>}
+                                    {report.status === 'failed' && <><Clock size={12} /> Failed</>}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div className="action-btns">
+                                    {report.status === 'ready' && (
+                                      <button
+                                        className="action-btn download"
+                                        title="Download"
+                                        onClick={() => handleDownload(report)}
+                                      >
+                                        <Download size={16} />
+                                      </button>
+                                    )}
+                                    <button
+                                      className="action-btn delete"
+                                      title="Delete"
+                                      onClick={() => handleDelete(report._id)}
+                                    >
+                                      <Trash2 size={16} />
                                     </button>
-                                  )}
-                                  <button
-                                    className="action-btn delete"
-                                    title="Delete"
-                                    onClick={() => handleDelete(report._id)}
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </>
               )}
@@ -1658,90 +1739,92 @@ const ReportsPage = () => {
                       <p>Create a report with scheduling enabled to see it here</p>
                     </div>
                   ) : (
-                    <table className="reports-table">
-                      <thead>
-                        <tr>
-                          <th>Report Name</th>
-                          <th>Frequency</th>
-                          <th>Next Run</th>
-                          <th>Last Run</th>
-                          <th>Status</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {scheduledReports.map((scheduled) => {
-                          const typeInfo = getReportTypeInfo(scheduled.type);
-                          const TypeIcon = typeInfo.icon;
-                          return (
-                            <tr key={scheduled._id}>
-                              <td>
-                                <div className="report-name-cell">
-                                  <div
-                                    className="report-icon-small"
-                                    style={{ background: typeInfo.bgColor, color: typeInfo.color }}
+                    <div className="table-wrapper">
+                      <table className="reports-table">
+                        <thead>
+                          <tr>
+                            <th>Report Name</th>
+                            <th>Frequency</th>
+                            <th>Next Run</th>
+                            <th>Last Run</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {scheduledReports.map((scheduled) => {
+                            const typeInfo = getReportTypeInfo(scheduled.type);
+                            const TypeIcon = typeInfo.icon;
+                            return (
+                              <tr key={scheduled._id}>
+                                <td>
+                                  <div className="report-name-cell">
+                                    <div
+                                      className="report-icon-small"
+                                      style={{ background: typeInfo.bgColor, color: typeInfo.color }}
+                                    >
+                                      <TypeIcon size={16} />
+                                    </div>
+                                    <div>
+                                      <div className="report-name">{scheduled.name}</div>
+                                      <div className="report-meta">{typeInfo.name}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 500, textTransform: 'capitalize' }}>{scheduled.frequency}</span>
+                                </td>
+                                <td>{scheduled.nextRunAt ? new Date(scheduled.nextRunAt).toLocaleString() : '—'}</td>
+                                <td>
+                                  {scheduled.lastRunAt ? (
+                                    <span>
+                                      {new Date(scheduled.lastRunAt).toLocaleString()}
+                                      {scheduled.lastRunStatus && (
+                                        <span className={`status-badge ${scheduled.lastRunStatus === 'success' ? 'ready' : 'failed'}`} style={{ marginLeft: 8 }}>
+                                          {scheduled.lastRunStatus === 'success' ? <CheckCircle size={10} /> : <Clock size={10} />}
+                                        </span>
+                                      )}
+                                    </span>
+                                  ) : '—'}
+                                </td>
+                                <td>
+                                  <span
+                                    className={`status-badge ${scheduled.status}`}
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => handleToggleScheduledStatus(scheduled)}
+                                    title={`Click to ${scheduled.status === 'active' ? 'pause' : 'resume'}`}
                                   >
-                                    <TypeIcon size={16} />
-                                  </div>
-                                  <div>
-                                    <div className="report-name">{scheduled.name}</div>
-                                    <div className="report-meta">{typeInfo.name}</div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td>
-                                <span style={{ fontWeight: 500, textTransform: 'capitalize' }}>{scheduled.frequency}</span>
-                              </td>
-                              <td>{scheduled.nextRunAt ? new Date(scheduled.nextRunAt).toLocaleString() : '—'}</td>
-                              <td>
-                                {scheduled.lastRunAt ? (
-                                  <span>
-                                    {new Date(scheduled.lastRunAt).toLocaleString()}
-                                    {scheduled.lastRunStatus && (
-                                      <span className={`status-badge ${scheduled.lastRunStatus === 'success' ? 'ready' : 'failed'}`} style={{ marginLeft: 8 }}>
-                                        {scheduled.lastRunStatus === 'success' ? <CheckCircle size={10} /> : <Clock size={10} />}
-                                      </span>
+                                    {scheduled.status === 'active' ? (
+                                      <><CheckCircle size={12} /> Active</>
+                                    ) : (
+                                      <><Clock size={12} /> Paused</>
                                     )}
                                   </span>
-                                ) : '—'}
-                              </td>
-                              <td>
-                                <span
-                                  className={`status-badge ${scheduled.status}`}
-                                  style={{ cursor: 'pointer' }}
-                                  onClick={() => handleToggleScheduledStatus(scheduled)}
-                                  title={`Click to ${scheduled.status === 'active' ? 'pause' : 'resume'}`}
-                                >
-                                  {scheduled.status === 'active' ? (
-                                    <><CheckCircle size={12} /> Active</>
-                                  ) : (
-                                    <><Clock size={12} /> Paused</>
-                                  )}
-                                </span>
-                              </td>
-                              <td>
-                                <div className="action-btns">
-                                  <button
-                                    className="action-btn"
-                                    title="Run Now"
-                                    onClick={() => handleRunScheduledNow(scheduled._id)}
-                                  >
-                                    <RefreshCw size={16} />
-                                  </button>
-                                  <button
-                                    className="action-btn delete"
-                                    title="Delete"
-                                    onClick={() => handleDeleteScheduled(scheduled._id)}
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                </td>
+                                <td>
+                                  <div className="action-btns">
+                                    <button
+                                      className="action-btn"
+                                      title="Run Now"
+                                      onClick={() => handleRunScheduledNow(scheduled._id)}
+                                    >
+                                      <RefreshCw size={16} />
+                                    </button>
+                                    <button
+                                      className="action-btn delete"
+                                      title="Delete"
+                                      onClick={() => handleDeleteScheduled(scheduled._id)}
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </>
               )}

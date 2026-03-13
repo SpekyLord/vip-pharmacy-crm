@@ -50,7 +50,13 @@ const clientSchema = new mongoose.Schema(
       type: String,
       maxlength: [1000, 'Notes cannot exceed 1000 characters'],
     },
-    // Visit scheduling — same rules as VIP clients
+    // Scheduling mode: flexible (visit anytime) vs strict (enforced schedule)
+    schedulingMode: {
+      type: String,
+      enum: ['flexible', 'strict'],
+      default: 'flexible',
+    },
+    // Visit scheduling — same rules as VIP clients (only enforced in strict mode)
     visitFrequency: {
       type: Number,
       enum: [2, 4],
@@ -136,6 +142,7 @@ clientSchema.index({ createdBy: 1 });
 clientSchema.index({ isActive: 1 });
 clientSchema.index({ firstName: 'text', lastName: 'text', clinicOfficeAddress: 'text' });
 clientSchema.index({ createdBy: 1, isActive: 1 });
+clientSchema.index({ createdBy: 1, isActive: 1, schedulingMode: 1 });
 clientSchema.index({ lastName: 1, firstName: 1 });
 
 // Virtual: Full name
