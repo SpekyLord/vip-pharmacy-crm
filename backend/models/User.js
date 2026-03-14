@@ -110,7 +110,7 @@ const userSchema = new mongoose.Schema(
 );
 
 // Indexes for performance
-userSchema.index({ email: 1 });
+// email index already created by `unique: true` on field definition
 userSchema.index({ role: 1 });
 userSchema.index({ isActive: 1 });
 // Compound indexes for common query patterns
