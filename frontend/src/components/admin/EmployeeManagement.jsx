@@ -7,9 +7,9 @@
  * - Account activation/deactivation
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, Eye, Edit2, Power, X } from 'lucide-react';
+import { Search, Plus, Eye, Edit2, Power, X, ChevronDown } from 'lucide-react';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 
 const employeeManagementStyles = `
@@ -76,6 +76,105 @@ const employeeManagementStyles = `
     outline: none;
     border-color: #f59e0b;
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+  }
+
+  .filter-select option {
+    padding: 10px 12px;
+    background: #ffffff;
+    color: #111827;
+  }
+
+  .filter-select option:checked {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  /* Custom Dropdown (Employee Management) */
+  .em-custom-select-wrapper {
+    position: relative;
+    min-width: 130px;
+  }
+
+  .em-custom-select-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #f9fafb;
+    cursor: pointer;
+    color: #374151;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    text-align: left;
+  }
+
+  .em-custom-select-trigger:hover {
+    border-color: #d1d5db;
+    background: #f3f4f6;
+  }
+
+  .em-custom-select-trigger.em-cs-open {
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+    background: white;
+  }
+
+  .em-cs-chevron {
+    transition: transform 0.2s;
+    flex-shrink: 0;
+    color: #9ca3af;
+  }
+
+  .em-cs-chevron.em-cs-chevron-open {
+    transform: rotate(180deg);
+    color: #f59e0b;
+  }
+
+  .em-custom-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 100%;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12), 0 4px 10px rgba(0, 0, 0, 0.06);
+    z-index: 200;
+    overflow: hidden;
+    animation: em-dropdown-in 0.13s ease;
+  }
+
+  @keyframes em-dropdown-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .em-custom-option {
+    padding: 10px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    color: #374151;
+    transition: background 0.1s, color 0.1s;
+    white-space: nowrap;
+  }
+
+  .em-custom-option:hover {
+    background: #fffbeb;
+    color: #d97706;
+  }
+
+  .em-custom-option.em-co-active {
+    background: #fef3c7;
+    color: #d97706;
+    font-weight: 600;
+  }
+
+  .em-custom-option.em-co-active:hover {
+    background: #fde68a;
   }
 
   .add-btn {
@@ -432,6 +531,21 @@ const employeeManagementStyles = `
     background: #f9fafb;
   }
 
+  .form-group .em-custom-select-wrapper {
+    width: 100%;
+  }
+
+  .form-group select option {
+    padding: 10px 12px;
+    background: #ffffff;
+    color: #111827;
+  }
+
+  .form-group select option:checked {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
   .form-group input:focus,
   .form-group select:focus {
     outline: none;
@@ -592,7 +706,8 @@ const employeeManagementStyles = `
       order: 1;
     }
 
-    .filter-select {
+    .filter-select,
+    .em-custom-select-wrapper {
       flex: 1;
       min-width: 0;
     }
@@ -639,7 +754,8 @@ const employeeManagementStyles = `
     }
 
     .form-group input,
-    .form-group select {
+    .form-group select,
+    .form-group .em-custom-select-trigger {
       min-height: 44px;
       font-size: 16px;
     }
@@ -691,6 +807,56 @@ const employeeManagementStyles = `
 
   body.dark-mode .filter-select:focus {
     border-color: #f59e0b;
+  }
+
+  body.dark-mode .filter-select option {
+    background: #0f172a;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .filter-select option:checked {
+    background: #1e293b;
+    color: #fbbf24;
+  }
+
+  body.dark-mode .em-custom-select-trigger {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .em-custom-select-trigger:hover {
+    border-color: #475569;
+    background: #273548;
+  }
+
+  body.dark-mode .em-custom-select-trigger.em-cs-open {
+    border-color: #f59e0b;
+    background: #0f172a;
+  }
+
+  body.dark-mode .em-custom-dropdown {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+  }
+
+  body.dark-mode .em-custom-option {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .em-custom-option:hover {
+    background: #1e3a5f;
+    color: #fbbf24;
+  }
+
+  body.dark-mode .em-custom-option.em-co-active {
+    background: #2d2a1a;
+    color: #fbbf24;
+  }
+
+  body.dark-mode .em-custom-option.em-co-active:hover {
+    background: #3d3818;
   }
 
   body.dark-mode .data-table th {
@@ -851,6 +1017,16 @@ const employeeManagementStyles = `
     border-color: #f59e0b;
   }
 
+  body.dark-mode .form-group select option {
+    background: #0f172a;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .form-group select option:checked {
+    background: #1e293b;
+    color: #fbbf24;
+  }
+
   body.dark-mode .form-group input:disabled {
     background: #334155;
     color: #64748b;
@@ -900,6 +1076,50 @@ const employeeManagementStyles = `
     border-color: #1e293b;
   }
 `;
+
+function EmployeeDropdown({ value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find((option) => option.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  return (
+    <div className="em-custom-select-wrapper" ref={ref}>
+      <button
+        type="button"
+        className={`em-custom-select-trigger${open ? ' em-cs-open' : ''}`}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <span>{selected ? selected.label : options[0]?.label}</span>
+        <ChevronDown size={14} className={`em-cs-chevron${open ? ' em-cs-chevron-open' : ''}`} />
+      </button>
+      {open && (
+        <div className="em-custom-dropdown">
+          {options.map((option) => (
+            <div
+              key={option.value}
+              className={`em-custom-option${option.value === value ? ' em-co-active' : ''}`}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              {option.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const EmployeeManagement = ({
   employees = [],
@@ -1040,24 +1260,24 @@ const EmployeeManagement = ({
             onChange={(e) => handleFilterChange('search', e.target.value)}
           />
         </div>
-        <select
-          className="filter-select"
+        <EmployeeDropdown
           value={filters.role || ''}
-          onChange={(e) => handleFilterChange('role', e.target.value)}
-        >
-          <option value="">All Roles</option>
-          <option value="admin">Admin</option>
-          <option value="employee">BDM</option>
-        </select>
-        <select
-          className="filter-select"
+          onChange={(value) => handleFilterChange('role', value)}
+          options={[
+            { value: '', label: 'All Roles' },
+            { value: 'admin', label: 'Admin' },
+            { value: 'employee', label: 'BDM' },
+          ]}
+        />
+        <EmployeeDropdown
           value={filters.isActive === '' ? '' : filters.isActive}
-          onChange={(e) => handleFilterChange('isActive', e.target.value)}
-        >
-          <option value="">All Status</option>
-          <option value="true">Active</option>
-          <option value="false">Inactive</option>
-        </select>
+          onChange={(value) => handleFilterChange('isActive', value)}
+          options={[
+            { value: '', label: 'All Status' },
+            { value: 'true', label: 'Active' },
+            { value: 'false', label: 'Inactive' },
+          ]}
+        />
         <button onClick={handleCreate} className="add-btn">
           <Plus size={18} />
           Add BDM
@@ -1307,16 +1527,14 @@ const EmployeeManagement = ({
 
                 <div className="form-group">
                   <label htmlFor="role">Role *</label>
-                  <select
-                    id="role"
-                    name="role"
+                  <EmployeeDropdown
                     value={formData.role}
-                    onChange={handleFormChange}
-                    required
-                  >
-                    <option value="employee">BDM (Field Rep)</option>
-                    <option value="admin">Admin</option>
-                  </select>
+                    onChange={(value) => setFormData((prev) => ({ ...prev, role: value }))}
+                    options={[
+                      { value: 'employee', label: 'BDM (Field Rep)' },
+                      { value: 'admin', label: 'Admin' },
+                    ]}
+                  />
                 </div>
               </form>
             </div>
