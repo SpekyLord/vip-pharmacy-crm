@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    strictPort: true,
     host: true, // Allow access from network (phone)
     proxy: {
       '/api': {

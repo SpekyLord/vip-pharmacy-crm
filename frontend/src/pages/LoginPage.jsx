@@ -36,12 +36,17 @@ const loginPageStyles = `
     font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
       "Segoe UI Emoji";
 
-    /* Fallback if image is missing */
-    background:
-      radial-gradient(1100px 680px at 30% 18%, rgba(250, 204, 21, 0.52) 0%, rgba(250, 204, 21, 0) 60%),
-      radial-gradient(900px 560px at 78% 28%, rgba(59, 130, 246, 0.14) 0%, rgba(59, 130, 246, 0) 62%),
-      radial-gradient(950px 640px at 80% 65%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 62%),
-      linear-gradient(135deg, #0b1020 0%, #0b1227 55%, #070b16 100%);
+    /* Palette (from your reference): yellow/gold/cream + white + black */
+    --p-y1: 255 199 0; /* rich gold */
+    --p-y2: 255 214 74; /* warm yellow */
+    --p-y3: 255 226 120; /* soft yellow */
+    --p-y4: 255 243 207; /* cream */
+    --p-white: 255 255 255;
+    --p-off: 250 248 242;
+    --p-black: 11 11 11;
+
+    /* Cream page background (reference palette) */
+    background: #fffbeb;
   }
 
   .login-page::before {
@@ -50,14 +55,13 @@ const loginPageStyles = `
     inset: 0;
     z-index: -1;
 
-     /* Blurred photo background.
-       Place your image at: frontend/public/login-bg.jpg
-       It will be served as: /login-bg.jpg */
-    background-image: url('/login-bg.jpg');
-    background-size: cover;
-    background-position: center;
-    filter: blur(6px) saturate(1.1) brightness(0.90);
-    transform: scale(1.04);
+    /* Soft orange glow (top-left) */
+    background: radial-gradient(
+      640px 640px at 10% 12%,
+      rgba(245, 158, 11, 0.24) 0%,
+      rgba(245, 158, 11, 0) 62%
+    );
+    filter: blur(18px);
     opacity: 1;
   }
 
@@ -67,50 +71,55 @@ const loginPageStyles = `
     inset: 0;
     z-index: -1;
 
-    /* Yellow/white overlay + readability */
-    background:
-      radial-gradient(1000px 600px at 18% 16%, rgba(250, 204, 21, 0.26) 0%, rgba(250, 204, 21, 0) 62%),
-      radial-gradient(850px 540px at 82% 28%, rgba(59, 130, 246, 0.10) 0%, rgba(59, 130, 246, 0) 62%),
-      radial-gradient(920px 600px at 78% 58%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 62%),
-      linear-gradient(180deg, rgba(2, 6, 23, 0.24) 0%, rgba(2, 6, 23, 0.62) 100%);
+    background: none;
   }
 
   .login-container {
-    position: relative;
-    padding: 36px 38px 30px;
-    border-radius: 22px;
-    width: 100%;
-    max-width: 560px;
-    max-height: calc(100dvh - 32px);
-    overflow: hidden;
+  position: relative;
+  padding: 36px 38px 30px;
+  border-radius: 22px;
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
 
-    /* Yellow/white glass card */
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.16) 100%),
-      radial-gradient(900px 340px at 10% 0%, rgba(250, 204, 21, 0.12) 0%, rgba(250, 204, 21, 0) 60%);
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    backdrop-filter: blur(24px) saturate(145%);
-    -webkit-backdrop-filter: blur(24px) saturate(145%);
-    box-shadow:
-      0 28px 90px rgba(0, 0, 0, 0.48),
-      inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  /* Pale orange / cream glass card (reference palette) */
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 247, 237, 0.92) 0%,
+      rgba(255, 255, 255, 0.72) 100%
+    );
 
-    color: rgba(255, 255, 255, 0.94);
-  }
+  border: 1px solid rgba(255, 255, 255, 0.86);
 
-  .login-container::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: 22px;
-    pointer-events: none;
-    background: radial-gradient(900px 340px at 12% 0%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 60%);
-  }
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
 
-  .login-container > * {
-    position: relative;
-  }
+  box-shadow:
+    0 22px 60px rgba(245, 158, 11, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
 
+  color: rgba(39, 39, 42, 0.92); /* dark text for readability */
+}
+
+.login-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 22px;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      900px 380px at 18% 0%,
+      rgba(255, 255, 255, 0.70) 0%,
+      rgba(255, 255, 255, 0) 62%
+    );
+}
+
+.login-container > * {
+  position: relative;
+}
   .login-header {
     text-align: center;
     margin-bottom: 22px;
@@ -129,7 +138,7 @@ const loginPageStyles = `
     height: 100%;
     object-fit: cover;
     object-position: center;
-    filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.35));
+    filter: drop-shadow(0 10px 26px rgba(245, 158, 11, 0.16));
   }
 
   .login-header h1 {
@@ -137,14 +146,14 @@ const loginPageStyles = `
     font-size: 42px;
     font-weight: 700;
     letter-spacing: -0.02em;
-    color: rgba(255, 255, 255, 0.96);
+    color: #d97706;
   }
 
   .login-header .login-subtitle {
     margin-top: 8px;
     font-size: 13px;
     line-height: 1.4;
-    color: rgba(255, 255, 255, 0.72);
+    color: rgba(120, 83, 50, 0.82);
     max-width: 420px;
     margin-left: auto;
     margin-right: auto;
@@ -162,24 +171,25 @@ const loginPageStyles = `
     display: block;
     margin-bottom: 8px;
     font-size: 13px;
-    color: rgba(226, 232, 240, 0.72);
+    color: rgba(39, 39, 42, 0.86);
   }
 
   .login-form input[type='email'],
-  .login-form input[type='password'] {
+  .login-form .password-field input {
     width: 100%;
     min-height: 48px;
     padding: 12px 18px;
     border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.38);
-    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(245, 158, 11, 0.30);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.86) 0%, rgba(255, 247, 237, 0.74) 100%);
     backdrop-filter: blur(14px) saturate(140%);
     -webkit-backdrop-filter: blur(14px) saturate(140%);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-      0 10px 28px rgba(0, 0, 0, 0.18);
-    color: rgba(255, 255, 255, 0.94);
-    caret-color: rgba(255, 255, 255, 0.92);
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      0 12px 26px rgba(245, 158, 11, 0.10);
+    color: rgba(39, 39, 42, 0.92);
+    caret-color: rgba(39, 39, 42, 0.92);
     outline: none;
     transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
   }
@@ -188,23 +198,23 @@ const loginPageStyles = `
   .login-form input[type='email']:-webkit-autofill,
   .login-form input[type='email']:-webkit-autofill:hover,
   .login-form input[type='email']:-webkit-autofill:focus,
-  .login-form input[type='password']:-webkit-autofill,
-  .login-form input[type='password']:-webkit-autofill:hover,
-  .login-form input[type='password']:-webkit-autofill:focus {
-    -webkit-text-fill-color: rgba(255, 255, 255, 0.94) !important;
-    caret-color: rgba(255, 255, 255, 0.92) !important;
-    border: 1px solid rgba(255, 255, 255, 0.38) !important;
+  .login-form .password-field input:-webkit-autofill,
+  .login-form .password-field input:-webkit-autofill:hover,
+  .login-form .password-field input:-webkit-autofill:focus {
+    -webkit-text-fill-color: rgba(39, 39, 42, 0.92) !important;
+    caret-color: rgba(39, 39, 42, 0.92) !important;
+    border: 1px solid rgba(245, 158, 11, 0.30) !important;
 
     /* Force our glass background on top of autofill */
-    background-color: rgba(255, 255, 255, 0.10) !important;
+    background-color: rgba(255, 255, 255, 0.86) !important;
     -webkit-box-shadow:
-      0 0 0px 1000px rgba(255, 255, 255, 0.10) inset,
-      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-      0 10px 28px rgba(0, 0, 0, 0.18) !important;
+      0 0 0px 1000px rgba(255, 255, 255, 0.86) inset,
+      inset 0 1px 0 rgba(255, 255, 255, 0.48),
+      0 12px 26px rgba(245, 158, 11, 0.10) !important;
     box-shadow:
-      0 0 0px 1000px rgba(255, 255, 255, 0.10) inset,
-      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-      0 10px 28px rgba(0, 0, 0, 0.18) !important;
+      0 0 0px 1000px rgba(255, 255, 255, 0.86) inset,
+      inset 0 1px 0 rgba(255, 255, 255, 0.48),
+      0 12px 26px rgba(245, 158, 11, 0.10) !important;
 
     -webkit-background-clip: padding-box;
     background-clip: padding-box;
@@ -214,19 +224,64 @@ const loginPageStyles = `
   }
 
   .login-form input[type='email']:hover,
-  .login-form input[type='password']:hover {
-    border-color: rgba(255, 255, 255, 0.52);
-    background: rgba(255, 255, 255, 0.12);
+  .login-form .password-field input:hover {
+    border-color: rgba(245, 158, 11, 0.42);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.90) 0%, rgba(255, 247, 237, 0.78) 100%);
   }
 
   .login-form input::placeholder {
-    color: rgba(226, 232, 240, 0.52);
+    color: rgba(120, 83, 50, 0.55);
   }
 
-  .login-form input:focus {
-    border-color: rgba(250, 204, 21, 0.62);
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.18);
-    background: rgba(255, 255, 255, 0.14);
+  .login-form input[type='email']:focus,
+  .login-form .password-field input:focus {
+    border-color: rgba(245, 158, 11, 0.55);
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 247, 237, 0.82) 100%);
+  }
+
+  .login-form .password-field:focus-within input {
+    border-color: rgba(245, 158, 11, 0.55);
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 247, 237, 0.82) 100%);
+  }
+
+  .login-form .password-field {
+    position: relative;
+  }
+
+  .login-form .password-field input {
+    padding-right: 54px;
+  }
+
+  .login-form .password-toggle {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(245, 158, 11, 0.22);
+    background: rgba(255, 255, 255, 0.62);
+    color: rgba(120, 83, 50, 0.78);
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .login-form .password-toggle:hover {
+    border-color: rgba(245, 158, 11, 0.32);
+    background: rgba(255, 255, 255, 0.74);
+  }
+
+  .login-form .password-toggle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px rgb(var(--p-y2) / 0.22);
   }
 
   .login-form .form-options {
@@ -242,24 +297,25 @@ const loginPageStyles = `
     align-items: center;
     gap: 8px;
     font-size: 13px;
-    color: rgba(226, 232, 240, 0.75);
+    color: rgba(120, 83, 50, 0.86);
     user-select: none;
   }
 
   .login-form .remember-me input {
     width: 16px;
     height: 16px;
-    accent-color: #facc15;
+    accent-color: rgba(245, 158, 11, 1);
   }
 
   .login-form .forgot-link {
     font-size: 13px;
-    color: rgba(191, 219, 254, 0.95);
+    color: rgba(120, 83, 50, 0.86);
     text-decoration: none;
   }
 
   .login-form .forgot-link:hover {
     text-decoration: underline;
+    color: rgba(217, 119, 6, 0.92);
   }
 
   .login-form .form-error {
@@ -280,13 +336,14 @@ const loginPageStyles = `
   }
 
   .login-form .btn-primary {
-    background: rgba(255, 255, 255, 0.92);
-    color: rgba(2, 6, 23, 0.92);
+    background: #f59e0b;
+    color: rgba(255, 255, 255, 0.98);
   }
 
   .login-form .btn-primary:hover {
-    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 18px 44px rgba(245, 158, 11, 0.28);
     filter: brightness(1.02);
+    background: #d97706;
   }
 
   .login-form .btn-primary:active {
