@@ -84,6 +84,222 @@ const statisticsPageStyles = `
     --shadow-hover: 0 14px 36px rgba(15, 23, 42, 0.12);
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .statistics-layout {
+    --page-bg: #0b1220;
+    --card-bg: #0f172a;
+    --ink-900: #f1f5f9;
+    --ink-700: #e2e8f0;
+    --ink-500: #94a3b8;
+    --line-200: #1e293b;
+    --shadow-soft: none;
+    --shadow-hover: none;
+    background: #0b1220;
+  }
+
+  /* Dark-mode fixes for elements that used fixed light colors */
+  body.dark-mode .statistics-layout .refresh-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: #334155;
+  }
+
+  body.dark-mode .statistics-layout .tabs-container {
+    border-color: var(--line-200);
+  }
+
+  body.dark-mode .statistics-layout .tabs-header {
+    background: rgba(255, 255, 255, 0.03);
+      background: transparent;
+  }
+
+  body.dark-mode .statistics-layout .tab-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--ink-700);
+  }
+
+  body.dark-mode .statistics-layout .tab-btn.active {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--line-200);
+    box-shadow: none;
+  }
+
+  body.dark-mode .statistics-layout .stat-card,
+  body.dark-mode .statistics-layout .chart-card,
+  body.dark-mode .statistics-layout .alert-card {
+    border-color: var(--line-200);
+    box-shadow: none;
+  }
+
+  body.dark-mode .statistics-layout .risk-factor-item {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--line-200);
+  }
+
+  body.dark-mode .statistics-layout .search-box {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  body.dark-mode .statistics-layout .search-box input {
+    color: var(--ink-700);
+  }
+
+  body.dark-mode .statistics-layout .search-box input::placeholder {
+    color: var(--ink-500);
+  }
+
+  body.dark-mode .statistics-layout .filter-select {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--ink-700);
+    border-color: var(--line-200);
+  }
+
+  body.dark-mode .statistics-layout .data-table th {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--ink-700);
+    border-bottom-color: var(--line-200);
+  }
+
+  body.dark-mode .statistics-layout .data-table-container {
+    background: var(--card-bg);
+    border: 1px solid var(--line-200);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  body.dark-mode .statistics-layout .data-table {
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+    overflow: visible;
+  }
+
+  body.dark-mode .statistics-layout .data-table tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  body.dark-mode .statistics-layout .data-table td {
+    color: var(--ink-700);
+    border-bottom-color: var(--line-200);
+  }
+
+  body.dark-mode .statistics-layout .data-table tbody tr:hover {
+    background: transparent;
+  }
+
+  body.dark-mode .statistics-layout .last-visit {
+    color: var(--ink-500);
+  }
+
+  body.dark-mode .statistics-layout .employee-email,
+  body.dark-mode .statistics-layout .progress-text,
+  body.dark-mode .statistics-layout .alert-timestamp,
+  body.dark-mode .statistics-layout .char-count {
+    color: var(--ink-500);
+  }
+
+  body.dark-mode .statistics-layout .alert-description {
+    color: var(--ink-700);
+  }
+
+  body.dark-mode .statistics-layout .alert-visits {
+    background: rgba(255, 255, 255, 0.03);
+      background: transparent;
+  }
+
+  body.dark-mode .statistics-layout .alert-visits-title {
+    color: var(--ink-500);
+  }
+
+  body.dark-mode .statistics-layout .alert-visit-tag {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--line-200);
+    color: var(--ink-700);
+  }
+
+  body.dark-mode .statistics-layout .btn-secondary {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--line-200);
+    color: var(--ink-700);
+  }
+
+  body.dark-mode .statistics-layout .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  body.dark-mode .statistics-layout .modal-header {
+    border-bottom-color: var(--line-200);
+  }
+
+  body.dark-mode .statistics-layout .modal-header h3 {
+    color: var(--ink-900);
+  }
+
+  body.dark-mode .statistics-layout .modal-close {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--ink-500);
+  }
+
+  body.dark-mode .statistics-layout .modal-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--ink-700);
+  }
+
+  body.dark-mode .statistics-layout .channel-badge {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--ink-700);
+  }
+
+  body.dark-mode .statistics-layout .form-group label {
+    color: var(--ink-700);
+  }
+
+  body.dark-mode .statistics-layout .form-group textarea {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--line-200);
+    color: var(--ink-900);
+  }
+
+  body.dark-mode .statistics-layout .form-group textarea::placeholder {
+    color: var(--ink-500);
+  }
+
+  body.dark-mode .statistics-layout .modal-footer {
+    background: rgba(255, 255, 255, 0.03);
+    border-top-color: var(--line-200);
+  }
+
+  body.dark-mode .statistics-layout .cycle-nav-btn {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--line-200);
+    color: var(--ink-700);
+  }
+
+  body.dark-mode .statistics-layout .cycle-nav-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: #334155;
+  }
+
+  body.dark-mode .statistics-layout .cycle-nav-label,
+  body.dark-mode .statistics-layout .status-bar-item {
+    color: var(--ink-700);
+  }
+
+  body.dark-mode .statistics-layout .coverage-row,
+  body.dark-mode .statistics-layout .eng-type-row {
+    border-bottom-color: var(--line-200);
+  }
+
+  body.dark-mode .statistics-layout .progress-bar-bg,
+  body.dark-mode .statistics-layout .coverage-bar-bg,
+  body.dark-mode .statistics-layout .eng-type-bar-bg {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  body.dark-mode .statistics-layout .empty-state-icon {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--ink-500);
+  }
+
   /* Layout */
   .statistics-layout {
     min-height: 100vh;
@@ -594,6 +810,10 @@ const statisticsPageStyles = `
     white-space: nowrap;
   }
 
+  .data-table thead tr:hover {
+    background: transparent;
+  }
+
   .data-table td {
     padding: 14px 16px;
     border-bottom: 1px solid #f3f4f6;
@@ -605,7 +825,7 @@ const statisticsPageStyles = `
   }
 
   .data-table tbody tr:hover {
-    background: #f6f8fb;
+    background: transparent;
   }
 
   .employee-cell {
@@ -2093,7 +2313,7 @@ const BehindScheduleTab = ({
                   </td>
 
                   {/* Last Visit */}
-                  <td style={{ fontSize: '13px', color: '#6b7280' }}>
+                  <td className="last-visit" style={{ fontSize: '13px' }}>
                     {formatDate(employee.lastVisitDate)}
                   </td>
 

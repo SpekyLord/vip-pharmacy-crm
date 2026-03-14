@@ -53,6 +53,20 @@ const productsPageStyles = `
     margin-bottom: 24px;
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .dashboard-layout {
+    background: #0b1220;
+  }
+
+  body.dark-mode .page-header h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .error-banner {
+    background: #450a0a;
+    color: #fca5a5;
+  }
+
   @media (max-width: 480px) {
     .main-content {
       padding: 16px;

@@ -572,6 +572,135 @@ const [editingId, setEditingId] = useState(null);
           gap: 0.5rem;
         }
 
+        /* ===== DARK MODE ===== */
+        body.dark-mode .dashboard-layout {
+          background: #0b1220;
+        }
+
+        body.dark-mode .header-left h1 {
+          color: #f1f5f9;
+        }
+
+        body.dark-mode .subtle {
+          color: #94a3b8;
+        }
+
+        body.dark-mode .unread-pill {
+          background: #1e293b;
+          color: #c7d2fe;
+        }
+
+        body.dark-mode .filters-section {
+          background: #0f172a;
+          box-shadow: none;
+        }
+
+        body.dark-mode .filter-group label {
+          color: #94a3b8;
+        }
+
+        body.dark-mode .filter-group select,
+        body.dark-mode .filter-group input {
+          background: #0b1220;
+          border-color: #1e293b;
+          color: #e2e8f0;
+        }
+
+        body.dark-mode .inbox-row {
+          background: #0f172a;
+          border-color: #1e293b;
+          box-shadow: none;
+        }
+
+        body.dark-mode .inbox-item {
+          background: transparent;
+        }
+
+        body.dark-mode .inbox-item:hover {
+          background: #1e293b;
+        }
+
+        body.dark-mode .inbox-row.is-open {
+          border-color: #334155;
+          box-shadow: none;
+        }
+
+        body.dark-mode .inbox-row.is-open .inbox-dropdown,
+        body.dark-mode .inbox-dropdown,
+        body.dark-mode .inbox-expand,
+        body.dark-mode .inbox-inline {
+          background: #0b1220;
+        }
+
+        body.dark-mode .inbox-expand,
+        body.dark-mode .inbox-inline {
+          border-top-color: #1e293b;
+        }
+
+        body.dark-mode .from,
+        body.dark-mode .title,
+        body.dark-mode .reply-from {
+          color: #f1f5f9;
+        }
+
+        body.dark-mode .preview,
+        body.dark-mode .time,
+        body.dark-mode .pagination-info,
+        body.dark-mode .no-data,
+        body.dark-mode .no-data .hint,
+        body.dark-mode .preview.preview-expanded,
+        body.dark-mode .replying-as,
+        body.dark-mode .reply-meta {
+          color: #94a3b8;
+        }
+
+        body.dark-mode .pagination {
+          background: #0b1220;
+        }
+
+        body.dark-mode .chip {
+          background: #1e293b;
+          color: #e2e8f0;
+        }
+
+        body.dark-mode .tab {
+          background: #0b1220;
+          border-color: #1e293b;
+          color: #cbd5e1;
+        }
+
+        body.dark-mode .tab.active {
+          background: #1e3a8a;
+          border-color: #1e3a8a;
+          color: #bfdbfe;
+        }
+
+        body.dark-mode .reply-box,
+        body.dark-mode .reply-bubble {
+          background: #0b1220;
+          border-color: #1e293b;
+          box-shadow: none;
+        }
+
+        body.dark-mode .reply-textarea {
+          background: #0b1220;
+          border-color: #1e293b;
+          color: #e2e8f0;
+        }
+
+        body.dark-mode .reply-text {
+          color: #e2e8f0;
+        }
+
+        body.dark-mode .reply-x:hover {
+          background: #1e293b;
+          color: #f1f5f9;
+        }
+
+        body.dark-mode .micro-link {
+          color: #94a3b8;
+        }
+
         /* --- Inbox shell (list + preview) --- */
        
         .inbox-shell {

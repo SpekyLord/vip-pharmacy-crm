@@ -431,6 +431,70 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
           background: #e5e7eb;
         }
 
+        /* ===== DARK MODE ===== */
+        body.dark-mode .def-modal {
+          background: #0f172a;
+        }
+
+        body.dark-mode .def-header {
+          border-bottom-color: #1e293b;
+        }
+
+        body.dark-mode .def-header h3 {
+          color: #f1f5f9;
+        }
+
+        body.dark-mode .def-subtitle {
+          color: #94a3b8;
+        }
+
+        body.dark-mode .def-close {
+          color: #94a3b8;
+        }
+        body.dark-mode .def-close:hover {
+          color: #e2e8f0;
+        }
+
+        body.dark-mode .def-error {
+          background: #450a0a;
+          border-color: #7f1d1d;
+          color: #fca5a5;
+        }
+
+        body.dark-mode .def-field label {
+          color: #cbd5e1;
+        }
+
+        body.dark-mode .def-field input,
+        body.dark-mode .def-field select,
+        body.dark-mode .def-field textarea {
+          background: #0b1220;
+          border-color: #1e293b;
+          color: #e2e8f0;
+        }
+
+        body.dark-mode .def-field select:disabled,
+        body.dark-mode .def-field input:disabled {
+          background: #111827;
+        }
+
+        body.dark-mode .def-checkbox-label {
+          color: #cbd5e1;
+        }
+
+        body.dark-mode .def-actions {
+          border-top-color: #1e293b;
+        }
+
+        body.dark-mode .def-btn-secondary {
+          background: #1e293b;
+          color: #e2e8f0;
+        }
+
+        body.dark-mode .def-btn-secondary:hover {
+          background: #334155;
+        }
+
         @media (max-width: 480px) {
           .def-modal { max-width: 100%; border-radius: 12px; }
           .def-form { padding: 12px 16px 16px; }

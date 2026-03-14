@@ -596,6 +596,57 @@ const pageStyles = `
       display: none;
     }
   }
+
+  /* ===== DARK MODE ===== */
+  body.dark-mode .cpt-layout {
+    background: #0b1220;
+  }
+
+  body.dark-mode .cpt-page-header h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .cpt-page-header p {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .cpt-cycle-nav,
+  body.dark-mode .cpt-tabs {
+    background: #0f172a;
+    border-color: #1e293b;
+    box-shadow: none;
+  }
+
+  body.dark-mode .cpt-cycle-btn {
+    background: #1e293b;
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .cpt-cycle-btn:hover {
+    background: #334155;
+  }
+
+  body.dark-mode .cpt-cycle-label {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .cpt-cycle-dates {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .cpt-tab-btn {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .cpt-tab-btn:hover {
+    background: #1e293b;
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .cpt-tab-btn.active {
+    background: #1e3a8a;
+    color: #bfdbfe;
+  }
 `;
 
 /* =============================================================================

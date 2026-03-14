@@ -83,6 +83,31 @@ const tableStyles = `
     gap: 8px;
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .dcr-section-title {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .dcr-table th,
+  body.dark-mode .dcr-table td {
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .dcr-table tbody td {
+    background: #0b1220;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .dcr-table tbody td:first-child {
+    background: #0f172a;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .dcr-table .total-row td {
+    background: #0f172a;
+    border-top-color: #334155;
+  }
+
   .dcr-hdr-short {
     display: none;
   }

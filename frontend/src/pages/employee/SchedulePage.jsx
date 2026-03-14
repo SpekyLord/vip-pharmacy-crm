@@ -243,6 +243,65 @@ const pageStyles = `
   .legend-dot.dot-carried { background: #fef3c7; border: 1px solid #f59e0b; }
   .legend-dot.dot-missed { background: #fecaca; border: 1px solid #ef4444; }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .schedule-page .main-content h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .cycle-nav-btn {
+    background: #0f172a;
+    border-color: #1e293b;
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .cycle-nav-btn:hover {
+    background: #1e293b;
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .cycle-nav-label {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .cycle-nav-label small {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .summary-stat,
+  body.dark-mode .today-schedule,
+  body.dark-mode .calendar-section {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .summary-stat .stat-lbl,
+  body.dark-mode .legend-item {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .today-card {
+    background: #0b1220;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .today-card:hover {
+    border-color: #60a5fa;
+  }
+
+  body.dark-mode .today-card-info h4,
+  body.dark-mode .today-schedule h2,
+  body.dark-mode .calendar-section h2 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .today-card-info p {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .today-empty {
+    color: #64748b;
+  }
+
   @media (max-width: 768px) {
     .schedule-page .main-content h1 {
       font-size: 22px;

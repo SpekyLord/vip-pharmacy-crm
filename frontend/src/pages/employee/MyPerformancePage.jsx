@@ -270,6 +270,71 @@ const performanceStyles = `
     font-size: 14px;
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .main-content h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .perf-month-picker select {
+    background: #0b1220;
+    border-color: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .stat-card,
+  body.dark-mode .dashboard-section {
+    background: #0f172a;
+    border-color: #1e293b;
+    box-shadow: none;
+  }
+
+  body.dark-mode .stat-card .stat-label {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .dashboard-section h2 {
+    color: #f1f5f9;
+    border-bottom-color: #1e293b;
+  }
+
+  body.dark-mode .coverage-item {
+    border-bottom-color: #1e293b;
+  }
+
+  body.dark-mode .coverage-label,
+  body.dark-mode .coverage-fraction,
+  body.dark-mode .engagement-count {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .coverage-bar-wrap,
+  body.dark-mode .engagement-bar-wrap {
+    background: #1e293b;
+  }
+
+  body.dark-mode .engagement-level {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .perf-table th {
+    background: #0b1220;
+    color: #94a3b8;
+    border-bottom-color: #1e293b;
+  }
+
+  body.dark-mode .perf-table td {
+    color: #e2e8f0;
+    border-bottom-color: #1e293b;
+  }
+
+  body.dark-mode .perf-table tr:hover td {
+    background: #1e293b;
+  }
+
+  body.dark-mode .perf-empty {
+    color: #64748b;
+  }
+
   @media (max-width: 768px) {
     .perf-two-col {
       grid-template-columns: 1fr;

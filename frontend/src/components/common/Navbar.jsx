@@ -12,7 +12,7 @@
  * Desktop: full layout
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { LogOut, Menu, Moon, Sun } from 'lucide-react';
 
@@ -324,13 +324,29 @@ const navbarStyles = `
 
 const Navbar = () => {
   const { user, logout } = useAuth();
-  const [isDark, setIsDark] = useState(() => document.body.classList.contains('dark-mode'));
+  const [isDark, setIsDark] = useState(() => {
+    try {
+      const stored = localStorage.getItem('darkMode');
+      if (stored === 'true' || stored === 'false') {
+        return stored === 'true';
+      }
+    } catch {
+      // Ignore
+    }
+    return document.body.classList.contains('dark-mode');
+  });
+
+  useEffect(() => {
+    document.body.classList.toggle('dark-mode', isDark);
+    try {
+      localStorage.setItem('darkMode', String(isDark));
+    } catch {
+      // Ignore
+    }
+  }, [isDark]);
 
   const toggleTheme = () => {
-    const next = !isDark;
-    setIsDark(next);
-    document.body.classList.toggle('dark-mode', next);
-    localStorage.setItem('darkMode', next);
+    setIsDark((prev) => !prev);
   };
 
   // Get user initials

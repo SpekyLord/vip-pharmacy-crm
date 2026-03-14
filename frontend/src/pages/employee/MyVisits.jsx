@@ -653,6 +653,89 @@ const MyVisits = () => {
           padding: 2rem;
         }
 
+        /* ===== DARK MODE ===== */
+        body.dark-mode .category-tabs {
+          background: #0f172a;
+          box-shadow: none;
+          border: 1px solid #1e293b;
+        }
+
+        body.dark-mode .category-tab {
+          background: transparent;
+          color: #94a3b8;
+        }
+
+        body.dark-mode .category-tab:hover {
+          background: #1e293b;
+          color: #f1f5f9;
+        }
+
+        body.dark-mode .category-tab.active {
+          color: #bfdbfe;
+          border-bottom-color: #60a5fa;
+          background: #1e3a8a;
+        }
+
+        body.dark-mode .filters-section {
+          background: #0f172a;
+          box-shadow: none;
+          border: 1px solid #1e293b;
+        }
+
+        body.dark-mode .filter-group label {
+          color: #94a3b8;
+        }
+
+        body.dark-mode .filter-group select,
+        body.dark-mode .filter-group input {
+          background: #0b1220;
+          border-color: #1e293b;
+          color: #e2e8f0;
+        }
+
+        body.dark-mode .filter-group input::placeholder {
+          color: #64748b;
+        }
+
+        body.dark-mode .date-cell .time,
+        body.dark-mode .doctor-cell .doctor-spec,
+        body.dark-mode .photo-count,
+        body.dark-mode .pagination-info,
+        body.dark-mode .no-data,
+        body.dark-mode .no-data .hint {
+          color: #94a3b8;
+        }
+
+        body.dark-mode .week-label {
+          background: #1e3a8a;
+          color: #bfdbfe;
+        }
+
+        body.dark-mode .type-vip {
+          background: #1e3a8a;
+          color: #bfdbfe;
+        }
+
+        body.dark-mode .type-extra {
+          background: #2e1065;
+          color: #ddd6fe;
+        }
+
+        body.dark-mode .status-completed {
+          background: #052e16;
+          color: #86efac;
+        }
+
+        body.dark-mode .status-cancelled {
+          background: #450a0a;
+          color: #fca5a5;
+        }
+
+        body.dark-mode .status-pending {
+          background: #451a03;
+          color: #fcd34d;
+        }
+
         /* Modal responsive overrides */
         @media (max-width: 768px) {
           .filters-row {

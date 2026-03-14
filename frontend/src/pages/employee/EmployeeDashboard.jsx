@@ -409,6 +409,65 @@ const dashboardStyles = `
       padding: 16px;
     }
   }
+
+  /* ===== DARK MODE ===== */
+  body.dark-mode .main-content h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .stat-card,
+  body.dark-mode .compliance-bar,
+  body.dark-mode .dashboard-section,
+  body.dark-mode .today-sched-section {
+    background: #0f172a;
+    border-color: #1e293b;
+    box-shadow: none;
+  }
+
+  body.dark-mode .stat-card .stat-label,
+  body.dark-mode .stat-card .stat-breakdown,
+  body.dark-mode .today-sched-card .sched-info p {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .compliance-header span:first-child,
+  body.dark-mode .dashboard-section h2,
+  body.dark-mode .today-sched-section h2,
+  body.dark-mode .today-sched-card .sched-info h4 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .progress-track {
+    background: #1e293b;
+  }
+
+  body.dark-mode .today-sched-card {
+    background: #0b1220;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .today-sched-card:hover {
+    border-color: #3b82f6;
+  }
+
+  body.dark-mode .dash-section-tabs {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .dash-tab-btn {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .dash-tab-btn:hover {
+    background: #1e293b;
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .dash-tab-btn.active {
+    background: #1e3a8a;
+    color: #bfdbfe;
+  }
 `;
 
 const MOBILE_PAGE_SIZE = 10;

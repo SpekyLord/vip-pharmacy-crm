@@ -417,6 +417,118 @@ const pageStyles = `
     white-space: pre-wrap;
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .dashboard-layout,
+  body.dark-mode .main-content {
+    background: #0b1220;
+  }
+
+  body.dark-mode .ddp-back-btn {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .ddp-back-btn:hover {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  body.dark-mode .ddp-header-card,
+  body.dark-mode .ddp-section {
+    background: #0f172a;
+    border-color: #1e293b;
+    box-shadow: none;
+  }
+
+  body.dark-mode .ddp-header-info h1,
+  body.dark-mode .ddp-section h2 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .ddp-header-info .ddp-spec {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .ddp-section h2 {
+    border-bottom-color: #1e293b;
+  }
+
+  body.dark-mode .ddp-detail-label {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .ddp-detail-value {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .ddp-detail-value.empty,
+  body.dark-mode .ddp-empty-text {
+    color: #64748b;
+  }
+
+  body.dark-mode .ddp-day-dot .dot.unavailable {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+
+  body.dark-mode .ddp-chip {
+    background: #1e3a8a;
+    color: #bfdbfe;
+  }
+
+  body.dark-mode .ddp-chip.support {
+    background: #064e3b;
+    color: #a7f3d0;
+  }
+
+  body.dark-mode .ddp-product-item {
+    background: #0b1220;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .ddp-product-item:hover {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  body.dark-mode .ddp-product-name,
+  body.dark-mode .ddp-notes-text {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .ddp-product-view-hint {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .ddp-visit-table th {
+    color: #94a3b8;
+    border-bottom-color: #1e293b;
+  }
+
+  body.dark-mode .ddp-visit-table td {
+    color: #e2e8f0;
+    border-bottom-color: #1e293b;
+  }
+
+  body.dark-mode .ddp-view-all {
+    color: #93c5fd;
+  }
+
+  body.dark-mode .ddp-btn-secondary {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .ddp-btn-secondary:hover {
+    background: #1e293b;
+  }
+
+  body.dark-mode .ddp-section hr {
+    border-top-color: #1e293b !important;
+  }
+
   @media (max-width: 768px) {
     .ddp-grid {
       grid-template-columns: 1fr;

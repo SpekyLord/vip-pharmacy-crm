@@ -240,6 +240,47 @@ const reportStyles = `
     font-weight: 500;
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .report-container {
+    background: #0f172a;
+    box-shadow: none;
+  }
+
+  body.dark-mode .report-table td {
+    border-bottom-color: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .report-table tr:nth-child(even) {
+    background: #0b1220;
+  }
+
+  body.dark-mode .report-table tr:hover {
+    background: #1e293b;
+  }
+
+  body.dark-mode .daily-count-cell {
+    background: #0b1220;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .no-data {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .no-data h3 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .week-separator {
+    border-left-color: #334155;
+  }
+
+  body.dark-mode .end-row td {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+
   .report-table th.regular-header {
     background: #6d28d9;
   }

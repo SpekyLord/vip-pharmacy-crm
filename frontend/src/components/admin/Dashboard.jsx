@@ -131,6 +131,16 @@ const dashboardStyles = `
 
   .db-greeting-action:hover { background: rgba(255,255,255,0.3); }
 
+  body.dark-mode .db-greeting-action {
+    background: rgba(255,255,255,0.92);
+    border-color: transparent;
+    color: #0f172a;
+  }
+
+  body.dark-mode .db-greeting-action:hover {
+    background: #ffffff;
+  }
+
   .db-greeting-illustration {
     font-size: clamp(56px, 5vw, 96px);
     opacity: 0.15;

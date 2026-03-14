@@ -42,6 +42,33 @@ const modalStyles = `
     overflow: hidden;
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .pdm-container {
+    background: #0f172a;
+  }
+
+  body.dark-mode .pdm-image-section {
+    background: #0b1220;
+  }
+
+  body.dark-mode .pdm-product-name {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .pdm-generic-name,
+  body.dark-mode .pdm-info-label,
+  body.dark-mode .pdm-counter {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .pdm-info-text {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .pdm-counter {
+    border-top-color: #1e293b;
+  }
+
   .pdm-close-btn {
     position: absolute;
     top: 12px;

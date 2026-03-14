@@ -139,6 +139,47 @@ const newVisitStyles = `
       min-height: 44px;
     }
   }
+
+  /* ===== DARK MODE ===== */
+  body.dark-mode .dashboard-layout {
+    background: #0b1220;
+  }
+
+  body.dark-mode .page-header h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .back-link {
+    color: #60a5fa;
+  }
+
+  body.dark-mode .visit-stats span {
+    background: #0f172a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+  }
+
+  body.dark-mode .error-message {
+    background: #450a0a;
+    border-color: #7f1d1d;
+  }
+
+  body.dark-mode .error-message p {
+    color: #fca5a5;
+  }
+
+  body.dark-mode .limit-reached-message {
+    background: #451a03;
+    border-color: #92400e;
+  }
+
+  body.dark-mode .limit-reached-message h2 {
+    color: #fcd34d;
+  }
+
+  body.dark-mode .limit-reached-message p {
+    color: #fde68a;
+  }
 `;
 
 const NewVisitPage = () => {

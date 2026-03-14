@@ -587,6 +587,80 @@ const styles = `
     color: #6b7280;
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .reports-layout {
+    background: #0b1220;
+  }
+
+  body.dark-mode .page-header h1,
+  body.dark-mode .section-title,
+  body.dark-mode .empty-state h3 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .page-header p,
+  body.dark-mode .quick-stat-label,
+  body.dark-mode .empty-state p {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .quick-stat-card,
+  body.dark-mode .report-type-card,
+  body.dark-mode .recent-reports,
+  body.dark-mode .scheduled-reports,
+  body.dark-mode .report-generator {
+    background: #0f172a;
+    border-color: #1e293b;
+    box-shadow: none;
+  }
+
+  body.dark-mode .section-title .count {
+    background: #1e293b;
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .tabs-header {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .tab-btn {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .tab-btn:hover {
+    background: #1e293b;
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .tab-btn.active {
+    background: #1e3a8a;
+    color: #bfdbfe;
+  }
+
+  body.dark-mode .bdm-select,
+  body.dark-mode .bdm-input {
+    background: #0b1220;
+    border-color: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .action-btn {
+    background: #0b1220;
+    border-color: #1e293b;
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .action-btn:hover {
+    background: #1e293b;
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .empty-state-icon {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+
   /* Responsive */
   @media (max-width: 1200px) {
     .quick-stats {

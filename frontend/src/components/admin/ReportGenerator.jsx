@@ -484,6 +484,112 @@ const styles = `
     border: 1px solid #d1fae5;
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .rg-modal {
+    background: #0f172a;
+    box-shadow: none;
+  }
+
+  body.dark-mode .rg-body {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .rg-section-title {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .rg-label {
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .rg-input,
+  body.dark-mode .rg-select {
+    background: #0b1220;
+    border-color: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .rg-export-option {
+    background: #0b1220;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .rg-export-option:hover {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  body.dark-mode .rg-export-option.selected {
+    background: #1e3a8a;
+    border-color: #1e3a8a;
+  }
+
+  body.dark-mode .rg-export-option span {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .rg-schedule-toggle {
+    background: #0b1220;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .rg-schedule-info h4 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .rg-schedule-info p {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .rg-switch-slider {
+    background: #334155;
+  }
+
+  body.dark-mode .rg-schedule-options {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  body.dark-mode .rg-schedule-opt {
+    background: #0b1220;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .rg-footer {
+    background: #0b1220;
+    border-top-color: #1e293b;
+  }
+
+  body.dark-mode .rg-footer-info {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .rg-btn.cancel {
+    background: #0f172a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+  }
+
+  body.dark-mode .rg-btn.cancel:hover {
+    background: #1e293b;
+  }
+
+  body.dark-mode .rg-preview {
+    background: #052e16;
+    border-color: #14532d;
+  }
+
+  body.dark-mode .rg-preview-header {
+    color: #4ade80;
+  }
+
+  body.dark-mode .rg-preview-item {
+    background: #0b1220;
+    border-color: #14532d;
+    color: #e2e8f0;
+  }
+
   @media (max-width: 600px) {
     .rg-modal {
       max-height: 100vh;

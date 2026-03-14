@@ -302,6 +302,7 @@
 }
 
 .login-container {
+  position: relative;
   background: var(--white);
   padding: var(--spacing-8);
   border-radius: var(--radius-2xl);
@@ -323,6 +324,66 @@
 .login-header p {
   color: var(--gray-500);
 }
+
+/* Theme toggle on auth pages */
+.auth-theme-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.auth-theme-btn:hover {
+  background: white;
+  color: #111827;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+body.dark-mode .login-page {
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+}
+
+body.dark-mode .login-container {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+}
+
+body.dark-mode .login-header h1 {
+  color: #f1f5f9;
+}
+
+body.dark-mode .login-header p {
+  color: #94a3b8;
+}
+
+body.dark-mode .auth-theme-btn {
+  background: #1e293b;
+  border-color: #334155;
+  color: #94a3b8;
+}
+
+body.dark-mode .auth-theme-btn:hover {
+  background: #334155;
+  color: #f1f5f9;
+}
+
+/* Shared auth text helpers (Forgot/Reset pages) */
+.auth-title { color: #1f2937; }
+.auth-text { color: #6b7280; }
+.auth-link { color: #2563eb; }
+body.dark-mode .auth-title { color: #f1f5f9; }
+body.dark-mode .auth-text { color: #94a3b8; }
+body.dark-mode .auth-link { color: #60a5fa; }
 
 /* Loading Spinner */
 .loading-spinner {

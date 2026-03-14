@@ -183,6 +183,52 @@ const calendarStyles = `
     cursor: not-allowed;
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .schedule-grid {
+    background: #1e293b;
+  }
+
+  body.dark-mode .schedule-cell {
+    background: #0b1220;
+  }
+
+  body.dark-mode .schedule-cell.is-past {
+    background: #0f172a;
+  }
+
+  body.dark-mode .schedule-cell.is-today {
+    background: #0b1220;
+  }
+
+  body.dark-mode .schedule-popover {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    box-shadow: none;
+  }
+
+  body.dark-mode .schedule-popover h4 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .schedule-popover .popover-spec {
+    color: #94a3b8;
+  }
+
+  @media (max-width: 768px) {
+    body.dark-mode .schedule-mobile-week-header {
+      background: #0f172a;
+      color: #f1f5f9;
+    }
+
+    body.dark-mode .schedule-mobile-day-label {
+      color: #94a3b8;
+    }
+
+    body.dark-mode .schedule-mobile-empty {
+      color: #64748b;
+    }
+  }
+
   /* Mobile: stacked list */
   .schedule-mobile-list {
     display: none;

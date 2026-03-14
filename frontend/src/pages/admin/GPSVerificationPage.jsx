@@ -213,6 +213,35 @@ const pageStyles = `
     align-items: start;
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .gps-page-layout {
+    background: #0b1220;
+  }
+
+  body.dark-mode .page-header h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .gps-filter-bar select {
+    background: #0b1220;
+    border-color: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .gps-visit-list,
+  body.dark-mode .gps-map-card,
+  body.dark-mode .gps-details-card {
+    background: #0f172a;
+    border-color: #1e293b;
+    box-shadow: none;
+  }
+
+  body.dark-mode .gps-visit-list-header {
+    background: #0b1220;
+    border-bottom-color: #1e293b;
+    color: #f1f5f9;
+  }
+
   @media (max-width: 960px) {
     .gps-two-col {
       grid-template-columns: 1fr;

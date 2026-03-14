@@ -489,6 +489,63 @@ const styles = `
     opacity: 0.5;
   }
 
+  /* ===== DARK MODE ===== */
+  body.dark-mode .ie-page {
+    background: #0b1220;
+  }
+
+  body.dark-mode .ie-header h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .ie-header p {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .ie-tabs {
+    background: #0f172a;
+  }
+
+  body.dark-mode .ie-tab {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .ie-tab:hover {
+    color: #f1f5f9;
+    background: #1e293b;
+  }
+
+  body.dark-mode .ie-tab.active {
+    background: #1e293b;
+    color: #f1f5f9;
+    box-shadow: none;
+  }
+
+  body.dark-mode .ie-card {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .ie-card-title,
+  body.dark-mode .ie-dialog h3 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .ie-card input,
+  body.dark-mode .ie-card select,
+  body.dark-mode .ie-card textarea,
+  body.dark-mode .ie-filter-select,
+  body.dark-mode .ie-dialog textarea {
+    background: #0b1220;
+    border-color: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .ie-dialog {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
+
   @media (max-width: 768px) {
     .ie-content {
       padding: 16px;
