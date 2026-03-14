@@ -495,7 +495,9 @@ const sidebarStyles = `
     .reports-main,
     .ie-content,
     .activity-monitor-main,
-    .gps-page-main {
+    .gps-page-main,
+    .doctors-main,
+    .employees-main {
       padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
     }
   }

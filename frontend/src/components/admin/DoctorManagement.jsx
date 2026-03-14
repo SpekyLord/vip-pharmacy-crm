@@ -268,7 +268,8 @@ const doctorManagementStyles = `
   /* Table Container */
   .dm-table-container {
     flex: 1;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   /* Clean Table */
@@ -276,6 +277,7 @@ const doctorManagementStyles = `
     width: 100%;
     border-collapse: collapse;
     font-size: 14px;
+    table-layout: fixed;
   }
 
   .data-table th {
@@ -298,6 +300,7 @@ const doctorManagementStyles = `
     padding: 13px 16px;
     border-bottom: 1px solid #f3f4f6;
     color: #374151;
+    word-break: break-word;
   }
 
   .doctor-name {
@@ -811,6 +814,33 @@ const doctorManagementStyles = `
     .dm-filter-select { flex: 1; min-width: 0; }
     .dm-custom-select-wrapper { flex: 1; min-width: 0; }
     .dm-custom-select-trigger { width: 100%; }
+    .dm-table-container { display: none; }
+    .mobile-card-list { display: block; }
+    .pagination {
+      flex-direction: column;
+      gap: 10px;
+      align-items: stretch;
+      padding: 12px 16px;
+    }
+    .pagination-info {
+      text-align: center;
+      font-size: 12px;
+    }
+    .pagination-buttons {
+      width: 100%;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .pagination-page-indicator {
+      flex: 1;
+      text-align: center;
+      padding: 8px 6px;
+      font-size: 12px;
+    }
+    .pagination-btn {
+      padding: 8px 10px;
+      min-width: 90px;
+    }
   }
 
   @media (max-width: 768px) {
@@ -830,9 +860,6 @@ const doctorManagementStyles = `
     .dm-dropdowns-row { gap: 6px; }
     .dm-filter-select { flex: 1; min-width: 0; }
     .dm-custom-select-wrapper { flex: 1; min-width: 0; }
-    .dm-table-container { display: none; }
-    .mobile-card-list { display: block; }
-    .pagination { flex-direction: column; gap: 12px; align-items: center; }
     .modal-content { max-width: 100%; max-height: 100%; border-radius: 0; }
     .modal-body { max-height: calc(100vh - 140px); }
     .form-row { grid-template-columns: 1fr; gap: 0; }
