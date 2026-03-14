@@ -624,6 +624,15 @@ const styles = `
     border-color: #1e293b;
   }
 
+  body.dark-mode .tabs-container {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .tabs-content {
+    background: #0f172a;
+  }
+
   body.dark-mode .tab-btn {
     color: #94a3b8;
   }
@@ -638,11 +647,132 @@ const styles = `
     color: #bfdbfe;
   }
 
+  body.dark-mode .tab-btn .badge {
+    background: #1e293b;
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .tab-btn.active .badge {
+    background: #1e40af;
+    color: #bfdbfe;
+  }
+
+  body.dark-mode .search-input-wrapper svg {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .search-input {
+    background: #0b1220;
+    border-color: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .search-input::placeholder {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .reports-table th {
+    background: #0b1220;
+    border-bottom-color: #1e293b;
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .reports-table td {
+    border-bottom-color: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .reports-table tr:hover {
+    background: #1e293b;
+  }
+
+  body.dark-mode .report-name {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .report-meta {
+    color: #94a3b8;
+  }
+
   body.dark-mode .bdm-select,
   body.dark-mode .bdm-input {
     background: #0b1220;
     border-color: #1e293b;
     color: #e2e8f0;
+  }
+
+  body.dark-mode .bdm-control-group label {
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .bdm-report-section {
+    background: #0f172a;
+    border-color: #1e293b;
+    box-shadow: none;
+  }
+
+  body.dark-mode .bdm-report-controls {
+    border-bottom-color: #1e293b;
+  }
+
+  body.dark-mode .bdm-btn-export.csv {
+    background: #0b1220;
+    color: #e2e8f0;
+    border-color: #1e293b;
+  }
+
+  body.dark-mode .bdm-btn-export.csv:hover {
+    background: #1e293b;
+  }
+
+  body.dark-mode .visit-table th {
+    background: #0b1220;
+    border-bottom-color: #1e293b;
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .visit-table td {
+    border-bottom-color: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .visit-table tr:hover {
+    background: #1e293b;
+  }
+
+  body.dark-mode .visit-table tr.selected {
+    background: #1e3a8a;
+  }
+
+  body.dark-mode .doctor-name {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .clinic-name {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .btn-view-gps {
+    background: #0b1220;
+    border-color: #1e293b;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .btn-view-gps:hover {
+    background: #1e293b;
+  }
+
+  body.dark-mode .gps-section {
+    border-top-color: #1e293b;
+  }
+
+  body.dark-mode .gps-section-title {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .gps-visit-info {
+    background: #1e3a8a;
+    color: #bfdbfe;
   }
 
   body.dark-mode .action-btn {
@@ -656,9 +786,58 @@ const styles = `
     color: #f1f5f9;
   }
 
+  body.dark-mode .action-btn.download:hover,
+  body.dark-mode .action-btn.delete:hover {
+    background: #1e293b;
+    border-color: #1e293b;
+    color: #f1f5f9;
+  }
+
   body.dark-mode .empty-state-icon {
     background: #1e293b;
     color: #94a3b8;
+  }
+
+  body.dark-mode .bdm-empty-icon {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+
+  body.dark-mode .bdm-empty-state h3 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .bdm-empty-state p {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .quick-stat-value {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .report-type-name {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .report-type-desc {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .report-type-stats {
+    border-top-color: #1e293b;
+  }
+
+  body.dark-mode .report-type-stat {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .report-type-stat strong {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .report-type-arrow {
+    background: #1e293b;
+    color: #cbd5e1;
   }
 
   /* Responsive */
