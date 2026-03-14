@@ -66,13 +66,12 @@ const auditLogSchema = new mongoose.Schema({
   timestamp: {
     type: Date,
     default: Date.now,
-    index: true,
   },
 }, {
   timestamps: false, // We use our own timestamp field
 });
 
-// TTL index to auto-delete logs after 90 days
+// TTL index to auto-delete logs after 90 days (also serves as the timestamp index)
 auditLogSchema.index({ timestamp: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 
 // Compound indexes for common queries

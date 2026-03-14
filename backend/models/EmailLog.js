@@ -52,13 +52,12 @@ const emailLogSchema = new mongoose.Schema({
   sentAt: {
     type: Date,
     default: Date.now,
-    index: true,
   },
 }, {
   timestamps: false,
 });
 
-// TTL index to auto-delete logs after 90 days
+// TTL index to auto-delete logs after 90 days (also serves as the sentAt index)
 emailLogSchema.index({ sentAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 
 // Compound indexes for common queries
