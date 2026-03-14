@@ -1418,31 +1418,26 @@ const StatisticsPage = () => {
       // Set quota dumping alerts
       setQuotaDumpingAlerts(alertsRes.data || []);
 
-      // Derive overview stats from CPT grid data per BDM
+      // Derive overview stats from bulk CPT grid summary (single API call)
       let totalTarget = 0;
       let totalActual = 0;
       let onTrack = 0;
       let behind = 0;
       const perBdmCallRates = [];
 
-      // Fetch CPT grid for each BDM in parallel (limited concurrency)
-      const cptPromises = employees.map((emp) =>
-        scheduleService.getCPTGrid(null, emp._id).catch(() => null)
-      );
-      const cptResults = await Promise.all(cptPromises);
+      const cptSummaryRes = await scheduleService.getCPTGridSummary().catch(() => ({ data: [] }));
+      const cptResults = cptSummaryRes.data || [];
 
-      cptResults.forEach((result, i) => {
-        if (!result?.data) return;
-        const d = result.data;
-        const target = d.dcrTotal?.targetEngagements || 0;
-        const actual = d.dcrTotal?.totalEngagements || 0;
-        const rate = d.dcrTotal?.callRate || 0;
+      cptResults.forEach((bdm) => {
+        const target = bdm.dcrTotal?.targetEngagements || 0;
+        const actual = bdm.dcrTotal?.totalEngagements || 0;
+        const rate = bdm.dcrTotal?.callRate || 0;
         totalTarget += target;
         totalActual += actual;
         if (rate >= 80) onTrack++;
         else behind++;
         perBdmCallRates.push({
-          name: employees[i]?.firstName || employees[i]?.name?.split(' ')[0] || `BDM ${i + 1}`,
+          name: bdm.firstName || bdm.name?.split(' ')[0] || 'BDM',
           callRate: rate,
         });
       });

@@ -28,21 +28,24 @@ const { getCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getD
  * @param {Array|null} prefetchedEntries - Optional pre-fetched unresolved entries to avoid redundant query
  * @returns {Promise<boolean>} true if any entries were updated
  */
-const reconcileEntries = async (userId, cycleNumber, prefetchedEntries = null) => {
+const reconcileEntries = async (userId, cycleNumber, prefetchedEntries = null, prefetchedVisits = null) => {
   const now = new Date();
   const currentCycle = getCycleNumber(now);
   const currentWeek = getWeekOfMonth(now);
   const cycleEnd = getCycleEndDate(cycleNumber);
   const cycleStart = getCycleStartDate(cycleNumber);
 
-  // Parallel fetch: unresolved entries + visits (if entries not pre-fetched)
+  // Resolve entries + visits from pre-fetched data or DB
   let entries;
   let visits;
 
-  if (prefetchedEntries) {
+  if (prefetchedEntries && prefetchedVisits) {
     entries = prefetchedEntries;
-    if (entries.length === 0) return false;
-    // Still need visits
+    visits = prefetchedVisits;
+    if (entries.length === 0) return { changed: false };
+  } else if (prefetchedEntries) {
+    entries = prefetchedEntries;
+    if (entries.length === 0) return { changed: false };
     visits = await Visit.find({
       user: userId,
       visitDate: { $gte: cycleStart, $lte: cycleEnd },
@@ -66,7 +69,7 @@ const reconcileEntries = async (userId, cycleNumber, prefetchedEntries = null) =
     visits = fetchedVisits;
   }
 
-  if (entries.length === 0) return false;
+  if (entries.length === 0) return { changed: false };
 
   // Build visit lookup: doctorId → array of visit dates
   const visitsByDoctor = new Map();
@@ -79,7 +82,7 @@ const reconcileEntries = async (userId, cycleNumber, prefetchedEntries = null) =
   const bulkOps = [];
 
   for (const entry of entries) {
-    const did = entry.doctor.toString();
+    const did = (entry.doctor._id || entry.doctor).toString();
     const doctorVisits = visitsByDoctor.get(did) || [];
 
     // Check if any visit matches this entry's scheduled week
@@ -89,48 +92,52 @@ const reconcileEntries = async (userId, cycleNumber, prefetchedEntries = null) =
     });
 
     if (matchingVisit) {
-      // Mark completed
+      const update = {
+        status: 'completed',
+        completedAt: matchingVisit.visitDate,
+        completedInWeek: getWeekOfMonth(matchingVisit.visitDate),
+        visit: matchingVisit._id,
+      };
       bulkOps.push({
         updateOne: {
           filter: { _id: entry._id },
-          update: {
-            status: 'completed',
-            completedAt: matchingVisit.visitDate,
-            completedInWeek: getWeekOfMonth(matchingVisit.visitDate),
-            visit: matchingVisit._id,
-          },
+          update,
         },
       });
+      // Apply in-memory so caller doesn't need to re-fetch
+      Object.assign(entry, update);
       // Remove used visit from pool to avoid double-matching
       const idx = doctorVisits.indexOf(matchingVisit);
       doctorVisits.splice(idx, 1);
     } else if (cycleNumber < currentCycle || now > cycleEnd) {
-      // Past cycle end → missed
+      const update = { status: 'missed' };
       bulkOps.push({
         updateOne: {
           filter: { _id: entry._id },
-          update: { status: 'missed' },
+          update,
         },
       });
+      Object.assign(entry, update);
     } else if (entry.status === 'planned' && entry.scheduledWeek < currentWeek) {
-      // Past scheduled week but still in cycle → carry forward
+      const update = {
+        status: 'carried',
+        carriedToWeek: currentWeek,
+      };
       bulkOps.push({
         updateOne: {
           filter: { _id: entry._id },
-          update: {
-            status: 'carried',
-            carriedToWeek: currentWeek,
-          },
+          update,
         },
       });
+      Object.assign(entry, update);
     }
   }
 
   if (bulkOps.length > 0) {
     await Schedule.bulkWrite(bulkOps);
-    return true;
+    return { changed: true };
   }
-  return false;
+  return { changed: false };
 };
 
 // ─── Schedule Looping ──────────────────────────────────────────────────────────
@@ -214,7 +221,7 @@ const getCycle = catchAsync(async (req, res) => {
   if (entries.length > 0) {
     const unresolvedEntries = entries.filter((e) => e.status === 'planned' || e.status === 'carried');
     if (unresolvedEntries.length > 0) {
-      const changed = await reconcileEntries(userId, requestedCycle, unresolvedEntries);
+      const { changed } = await reconcileEntries(userId, requestedCycle, unresolvedEntries);
       if (changed) {
         entries = await Schedule.getCycleSchedule(userId, requestedCycle);
       }
@@ -416,7 +423,7 @@ const adminGetCycle = catchAsync(async (req, res) => {
   if (entries.length > 0) {
     const unresolvedEntries = entries.filter((e) => e.status === 'planned' || e.status === 'carried');
     if (unresolvedEntries.length > 0) {
-      const changed = await reconcileEntries(userId, targetCycle, unresolvedEntries);
+      const { changed } = await reconcileEntries(userId, targetCycle, unresolvedEntries);
       if (changed) {
         entries = await Schedule.getCycleSchedule(userId, targetCycle);
       }
@@ -566,25 +573,31 @@ const getCPTGrid = catchAsync(async (req, res) => {
     }
   }
 
-  // Reconcile
+  // Fetch VIP visits + ClientVisits in parallel (both independent of reconciliation)
+  const [vipVisits, clientVisits] = await Promise.all([
+    Visit.find({
+      user: userId,
+      visitDate: { $gte: cycleStart, $lte: cycleEnd },
+      status: 'completed',
+    }).select('doctor visitDate weekOfMonth dayOfWeek engagementTypes').lean(),
+
+    ClientVisit.find({
+      user: userId,
+      visitDate: { $gte: cycleStart, $lte: cycleEnd },
+      status: 'completed',
+    }).select('client visitDate weekOfMonth dayOfWeek engagementTypes')
+      .populate('client', 'firstName lastName specialization')
+      .lean(),
+  ]);
+
+  // Reconcile with pre-fetched visits (no duplicate Visit query, no re-fetch of entries)
   if (entries.length > 0) {
     const unresolved = entries.filter((e) => e.status === 'planned' || e.status === 'carried');
     if (unresolved.length > 0) {
-      const changed = await reconcileEntries(userId, requestedCycle, unresolved);
-      if (changed) {
-        entries = await Schedule.find({ user: userId, cycleNumber: requestedCycle })
-          .populate('doctor', 'firstName lastName specialization visitFrequency')
-          .lean();
-      }
+      await reconcileEntries(userId, requestedCycle, unresolved, vipVisits);
+      // entries are mutated in-place by reconcileEntries, no re-fetch needed
     }
   }
-
-  // Fetch VIP visits in cycle range with engagement types
-  const vipVisits = await Visit.find({
-    user: userId,
-    visitDate: { $gte: cycleStart, $lte: cycleEnd },
-    status: 'completed',
-  }).select('doctor visitDate weekOfMonth dayOfWeek engagementTypes').lean();
 
   // Build visit lookup: doctorId+week → visit
   const visitLookup = new Map();
@@ -592,15 +605,6 @@ const getCPTGrid = catchAsync(async (req, res) => {
     const key = `${v.doctor.toString()}_W${v.weekOfMonth}`;
     visitLookup.set(key, v);
   });
-
-  // Fetch ClientVisits (extra calls) in cycle range
-  const clientVisits = await ClientVisit.find({
-    user: userId,
-    visitDate: { $gte: cycleStart, $lte: cycleEnd },
-    status: 'completed',
-  }).select('client visitDate weekOfMonth dayOfWeek engagementTypes')
-    .populate('client', 'firstName lastName specialization')
-    .lean();
 
   // Build doctor rows
   const doctorMap = new Map();
@@ -773,6 +777,92 @@ const getCPTGrid = catchAsync(async (req, res) => {
   });
 });
 
+// ─── Batch CPT Grid Summary (Admin) ──────────────────────────────────────────
+
+/**
+ * @desc    Get lightweight CPT grid summary for ALL active BDMs in one request
+ * @route   GET /api/schedules/cpt-grid-summary
+ * @access  Private (Admin)
+ * @query   cycleNumber (optional, defaults to current)
+ * @returns { success, data: [{ userId, name, dcrTotal, summary }] }
+ */
+const getCPTGridSummary = catchAsync(async (req, res) => {
+  const User = require('../models/User');
+
+  const now = new Date();
+  const requestedCycle = req.query.cycleNumber != null
+    ? parseInt(req.query.cycleNumber)
+    : getCycleNumber(now);
+
+  const cycleStart = getCycleStartDate(requestedCycle);
+  const cycleEnd = getCycleEndDate(requestedCycle);
+
+  // Fetch all active BDMs
+  const employees = await User.find({ role: 'employee', isActive: true })
+    .select('_id name firstName lastName')
+    .lean();
+
+  // Process all BDMs in parallel
+  const results = await Promise.all(
+    employees.map(async (emp) => {
+      // Fetch schedule entries
+      let entries = await Schedule.find({ user: emp._id, cycleNumber: requestedCycle })
+        .select('status scheduledWeek scheduledDay doctor visit')
+        .lean();
+
+      if (entries.length === 0) {
+        const looped = await loopScheduleFromPrevious(emp._id, requestedCycle);
+        if (looped.length > 0) {
+          entries = await Schedule.find({ user: emp._id, cycleNumber: requestedCycle })
+            .select('status scheduledWeek scheduledDay doctor visit')
+            .lean();
+        }
+      }
+
+      // Fetch visits for reconciliation
+      const vipVisits = await Visit.find({
+        user: emp._id,
+        visitDate: { $gte: cycleStart, $lte: cycleEnd },
+        status: 'completed',
+      }).select('doctor visitDate weekOfMonth dayOfWeek engagementTypes').lean();
+
+      // Reconcile
+      if (entries.length > 0) {
+        const unresolved = entries.filter((e) => e.status === 'planned' || e.status === 'carried');
+        if (unresolved.length > 0) {
+          await reconcileEntries(emp._id, requestedCycle, unresolved, vipVisits);
+        }
+      }
+
+      // Compute summary stats
+      const completed = entries.filter((e) => e.status === 'completed').length;
+      const carried = entries.filter((e) => e.status === 'carried').length;
+      const missed = entries.filter((e) => e.status === 'missed').length;
+      const planned = entries.filter((e) => e.status === 'planned').length;
+
+      // Compute dcrTotal: targetEngagements = all entries with a status, totalEngagements = completed
+      const targetEngagements = entries.length;
+      const totalEngagements = completed;
+      const callRate = targetEngagements > 0
+        ? Math.round((totalEngagements / targetEngagements) * 100)
+        : 0;
+
+      return {
+        userId: emp._id,
+        name: emp.name || `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+        firstName: emp.firstName,
+        dcrTotal: { targetEngagements, totalEngagements, callRate },
+        summary: { completed, carried, missed, planned, total: entries.length },
+      };
+    })
+  );
+
+  res.json({
+    success: true,
+    data: results,
+  });
+});
+
 module.exports = {
   getCycle,
   getToday,
@@ -782,4 +872,5 @@ module.exports = {
   adminCreate,
   adminClearCycle,
   getCPTGrid,
+  getCPTGridSummary,
 };
