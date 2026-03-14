@@ -623,19 +623,19 @@ const CallPlanView = ({ cptData, loading = false }) => {
         </div>
         <div className="cpv-legend">
           <span className="cpv-legend-item">
-            <span className="cpv-legend-dot" style={{ background: '#dcfce7', border: '1px solid #16a34a' }} />
+            <span className="cpv-legend-dot" style={{ background: '#dcfce7', border: '1px solid #16a34a', color: '#16a34a', fontSize: 9, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>✓</span>
             Completed
           </span>
           <span className="cpv-legend-item">
-            <span className="cpv-legend-dot" style={{ background: '#dbeafe', border: '1px solid #2563eb' }} />
+            <span className="cpv-legend-dot" style={{ background: '#dbeafe', border: '1px solid #2563eb', color: '#2563eb', fontSize: 9, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>1</span>
             Planned
           </span>
           <span className="cpv-legend-item">
-            <span className="cpv-legend-dot" style={{ background: '#fed7aa', border: '1px solid #c2410c' }} />
+            <span className="cpv-legend-dot" style={{ background: '#fed7aa', border: '1px solid #c2410c', color: '#c2410c', fontSize: 9, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>◆</span>
             Carried
           </span>
           <span className="cpv-legend-item">
-            <span className="cpv-legend-dot" style={{ background: '#fecaca', border: '1px solid #dc2626' }} />
+            <span className="cpv-legend-dot" style={{ background: '#fecaca', border: '1px solid #dc2626', color: '#dc2626', fontSize: 9, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>✕</span>
             Missed
           </span>
         </div>

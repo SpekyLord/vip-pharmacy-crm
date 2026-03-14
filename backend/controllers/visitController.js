@@ -518,22 +518,24 @@ const getComplianceAlerts = catchAsync(async (req, res) => {
   // Get all active employees
   const employees = await User.find({ role: 'employee', isActive: true });
 
-  const alerts = [];
-
-  for (const employee of employees) {
-    const result = await checkBehindSchedule(employee._id);
-
-    if (result.isBehind) {
-      alerts.push({
-        employee: {
-          _id: employee._id,
-          name: employee.name,
-          email: employee.email,
-        },
-        ...result.details,
-      });
-    }
-  }
+  // Check all employees in parallel instead of sequentially
+  const results = await Promise.all(
+    employees.map(async (employee) => {
+      const result = await checkBehindSchedule(employee._id);
+      if (result.isBehind) {
+        return {
+          employee: {
+            _id: employee._id,
+            name: employee.name,
+            email: employee.email,
+          },
+          ...result.details,
+        };
+      }
+      return null;
+    })
+  );
+  const alerts = results.filter(Boolean);
 
   res.json({
     success: true,

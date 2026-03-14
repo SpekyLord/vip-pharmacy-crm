@@ -28,6 +28,7 @@ const {
   adminCreate,
   adminClearCycle,
   getCPTGrid,
+  getCPTGridSummary,
 } = require('../controllers/scheduleController');
 
 // All routes require authentication
@@ -39,6 +40,7 @@ router.get('/today', adminOrEmployee, getToday);
 router.get('/cpt-grid', adminOrEmployee, getCPTGrid);
 
 // Admin-only routes
+router.get('/cpt-grid-summary', adminOnly, getCPTGridSummary);
 router.post('/generate', adminOnly, generateSchedule);
 router.post('/reconcile', adminOnly, reconcile);
 router.get('/admin/cycle', adminOnly, adminGetCycle);
