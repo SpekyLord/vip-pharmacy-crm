@@ -69,20 +69,44 @@ import visitService from '../../services/visitService';
    ============================================================================= */
 
 const statisticsPageStyles = `
+  :root {
+    --page-bg: #eef2f6;
+    --card-bg: #ffffff;
+    --ink-900: #111827;
+    --ink-700: #374151;
+    --ink-500: #6b7280;
+    --line-200: #e5e7eb;
+    --accent: #22c55e;
+    --accent-strong: #16a34a;
+    --secondary: #facc15;
+    --secondary-strong: #eab308;
+    --shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.08);
+    --shadow-hover: 0 14px 36px rgba(15, 23, 42, 0.12);
+  }
+
   /* Layout */
   .statistics-layout {
     min-height: 100vh;
-    background: #f3f4f6;
+    background: radial-gradient(1200px 600px at 20% -10%, #dff7ea 0%, rgba(223, 247, 234, 0) 60%),
+      radial-gradient(800px 500px at 110% 10%, #fff7d1 0%, rgba(255, 247, 209, 0) 65%),
+      var(--page-bg);
+    font-family: 'Manrope', 'Sora', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: var(--ink-700);
+    overflow-x: hidden;
   }
 
   .statistics-content {
     display: flex;
+    min-width: 0;
   }
 
   .statistics-main {
     flex: 1;
-    padding: 24px;
+    padding: 28px 32px 40px;
     max-width: 1400px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
   }
 
   /* Page Header */
@@ -96,21 +120,23 @@ const statisticsPageStyles = `
   .page-header h1 {
     margin: 0;
     font-size: 28px;
-    color: #1f2937;
+    color: var(--ink-900);
     display: flex;
     align-items: center;
     gap: 12px;
+    letter-spacing: -0.01em;
   }
 
   .page-header-icon {
-    width: 36px;
-    height: 36px;
-    background: linear-gradient(135deg, #22c55e, #16a34a);
-    border-radius: 10px;
+    width: 38px;
+    height: 38px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
+    box-shadow: 0 8px 16px rgba(34, 197, 94, 0.25);
   }
 
   .refresh-btn {
@@ -118,18 +144,20 @@ const statisticsPageStyles = `
     align-items: center;
     gap: 8px;
     padding: 10px 16px;
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
+    background: var(--card-bg);
+    border: 1px solid var(--line-200);
+    border-radius: 12px;
     font-size: 14px;
-    color: #374151;
+    color: var(--ink-700);
     cursor: pointer;
     transition: all 0.2s;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
   }
 
   .refresh-btn:hover {
-    background: #f9fafb;
+    background: #f8fafc;
     border-color: #d1d5db;
+    transform: translateY(-1px);
   }
 
   .refresh-btn.loading {
@@ -148,26 +176,31 @@ const statisticsPageStyles = `
 
   /* Tabs */
   .tabs-container {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    background: var(--card-bg);
+    border-radius: 18px;
+    box-shadow: var(--shadow-soft);
     overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    max-width: 100%;
   }
 
   .tabs-header {
     display: flex;
-    border-bottom: 1px solid #e5e7eb;
-    background: #fafafa;
+    border-bottom: 1px solid var(--line-200);
+    background: #f6f8fb;
+    padding: 10px;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .tab-btn {
-    flex: 1;
-    padding: 16px 24px;
+    flex: 0 0 auto;
+    padding: 10px 16px;
     background: transparent;
-    border: none;
+    border: 1px solid transparent;
     font-size: 14px;
     font-weight: 500;
-    color: #6b7280;
+    color: var(--ink-500);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -175,31 +208,29 @@ const statisticsPageStyles = `
     gap: 8px;
     transition: all 0.2s;
     position: relative;
+    border-radius: 10px;
+    min-width: 180px;
   }
 
   .tab-btn:hover {
-    color: #374151;
-    background: #f3f4f6;
+    color: var(--ink-700);
+    background: #eef2f7;
   }
 
   .tab-btn.active {
-    color: #16a34a;
-    background: white;
+    color: var(--accent-strong);
+    background: #ffffff;
+    font-weight: 600;
+    border-color: #e5e7eb;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
   }
 
   .tab-btn.active::after {
-    content: '';
-    position: absolute;
-    bottom: -1px;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, #22c55e, #16a34a);
-    border-radius: 3px 3px 0 0;
+    content: none;
   }
 
   .tab-badge {
-    background: #fee2e2;
+    background: #fff1f2;
     color: #dc2626;
     font-size: 11px;
     font-weight: 600;
@@ -210,20 +241,58 @@ const statisticsPageStyles = `
   }
 
   .tab-badge.warning {
-    background: #fef3c7;
-    color: #d97706;
+    background: #fef9c3;
+    color: #b45309;
   }
 
   .tabs-content {
-    padding: 24px;
+    padding: 26px;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   /* Overview Tab Styles */
+
+  .overview-layout {
+    display: grid;
+    gap: 20px;
+  }
+
+  .overview-shell {
+    display: grid;
+    grid-template-columns: 2.2fr 1fr;
+    gap: 20px;
+    align-items: start;
+    min-width: 0;
+  }
+
+  .overview-left,
+  .overview-right {
+    display: grid;
+    gap: 18px;
+    min-width: 0;
+  }
+
+  .overview-main-chart {
+    min-height: 320px;
+  }
+
+  .overview-top-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 18px;
+  }
+
+  .overview-bottom-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 18px;
+  }
+
   .overview-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
-    margin-bottom: 24px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
   }
 
   @media (max-width: 1200px) {
@@ -233,23 +302,30 @@ const statisticsPageStyles = `
   }
 
   @media (max-width: 768px) {
+    .overview-shell {
+      grid-template-columns: 1fr;
+    }
     .overview-grid {
       grid-template-columns: 1fr;
     }
   }
 
   .stat-card {
-    background: white;
-    border-radius: 12px;
+    background: var(--card-bg);
+    border-radius: 16px;
     padding: 20px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #edf2f7;
     transition: all 0.2s;
+    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.06);
+    position: relative;
+    overflow: hidden;
   }
 
   .stat-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-hover);
   }
+
 
   .stat-card-header {
     display: flex;
@@ -259,9 +335,9 @@ const statisticsPageStyles = `
   }
 
   .stat-card-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -278,8 +354,8 @@ const statisticsPageStyles = `
   }
 
   .stat-card-icon.yellow {
-    background: #fef3c7;
-    color: #d97706;
+    background: #fef9c3;
+    color: #b45309;
   }
 
   .stat-card-icon.blue {
@@ -310,13 +386,13 @@ const statisticsPageStyles = `
   .stat-card-value {
     font-size: 32px;
     font-weight: 700;
-    color: #1f2937;
+    color: var(--ink-900);
     line-height: 1.2;
   }
 
   .stat-card-label {
     font-size: 14px;
-    color: #6b7280;
+    color: var(--ink-500);
     margin-top: 4px;
   }
 
@@ -330,7 +406,7 @@ const statisticsPageStyles = `
   .charts-grid {
     display: grid;
     grid-template-columns: 2fr 1fr;
-    gap: 20px;
+    gap: 18px;
     margin-bottom: 24px;
   }
 
@@ -340,11 +416,29 @@ const statisticsPageStyles = `
     }
   }
 
+  @media (max-width: 1100px) {
+    .overview-shell {
+      grid-template-columns: 1fr;
+    }
+  }
+
   .chart-card {
-    background: white;
-    border-radius: 12px;
+    background: var(--card-bg);
+    border-radius: 16px;
     padding: 20px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #edf2f7;
+    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.06);
+    max-width: 100%;
+    position: relative;
+    min-width: 0;
+  }
+
+  .chart-card.compact {
+    padding: 18px;
+  }
+
+  .chart-card.scroll-safe {
+    overflow-x: auto;
   }
 
   .chart-card-header {
@@ -357,7 +451,7 @@ const statisticsPageStyles = `
   .chart-card-title {
     font-size: 16px;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--ink-900);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -394,7 +488,8 @@ const statisticsPageStyles = `
     justify-content: space-between;
     padding: 12px;
     background: #f9fafb;
-    border-radius: 8px;
+    border-radius: 10px;
+    border: 1px solid #f3f4f6;
   }
 
   .risk-factor-label {
@@ -416,7 +511,7 @@ const statisticsPageStyles = `
   .risk-factor-count {
     font-size: 18px;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--ink-900);
   }
 
   /* Behind Schedule Tab Styles */
@@ -435,8 +530,8 @@ const statisticsPageStyles = `
     gap: 8px;
     padding: 10px 14px;
     background: #f9fafb;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
+    border: 1px solid var(--line-200);
+    border-radius: 12px;
     min-width: 280px;
   }
 
@@ -461,10 +556,10 @@ const statisticsPageStyles = `
 
   .filter-select {
     padding: 10px 14px;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
+    border: 1px solid var(--line-200);
+    border-radius: 12px;
     font-size: 14px;
-    color: #374151;
+    color: var(--ink-700);
     background: white;
     cursor: pointer;
     min-width: 150px;
@@ -472,35 +567,37 @@ const statisticsPageStyles = `
 
   .filter-select:focus {
     outline: none;
-    border-color: #22c55e;
-    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.2);
   }
 
   /* Data Table */
   .data-table-container {
     overflow-x: auto;
+    max-width: 100%;
   }
 
   .data-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 14px;
+    min-width: 720px;
   }
 
   .data-table th {
     text-align: left;
     padding: 14px 16px;
-    background: #f9fafb;
+    background: #f7f9fc;
     font-weight: 600;
-    color: #374151;
-    border-bottom: 1px solid #e5e7eb;
+    color: var(--ink-700);
+    border-bottom: 1px solid var(--line-200);
     white-space: nowrap;
   }
 
   .data-table td {
     padding: 14px 16px;
     border-bottom: 1px solid #f3f4f6;
-    color: #374151;
+    color: var(--ink-700);
   }
 
   .data-table tbody tr {
@@ -508,7 +605,7 @@ const statisticsPageStyles = `
   }
 
   .data-table tbody tr:hover {
-    background: #f9fafb;
+    background: #f6f8fb;
   }
 
   .employee-cell {
@@ -518,8 +615,8 @@ const statisticsPageStyles = `
   }
 
   .employee-name {
-    font-weight: 500;
-    color: #1f2937;
+    font-weight: 600;
+    color: var(--ink-900);
   }
 
   .employee-email {
@@ -597,20 +694,20 @@ const statisticsPageStyles = `
   }
 
   .btn-primary {
-    background: linear-gradient(135deg, #22c55e, #16a34a);
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
     color: white;
   }
 
   .btn-primary:hover {
-    background: linear-gradient(135deg, #16a34a, #15803d);
+    background: linear-gradient(135deg, var(--accent-strong), #15803d);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+    box-shadow: 0 6px 16px rgba(34, 197, 94, 0.3);
   }
 
   .btn-secondary {
-    background: #f3f4f6;
-    color: #374151;
-    border: 1px solid #e5e7eb;
+    background: #f1f5f9;
+    color: var(--ink-700);
+    border: 1px solid var(--line-200);
   }
 
   .btn-secondary:hover {
@@ -639,15 +736,29 @@ const statisticsPageStyles = `
   }
 
   .alert-card {
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
+    background: var(--card-bg);
+    border: 1px solid #edf2f7;
+    border-radius: 16px;
     padding: 20px;
     transition: all 0.2s;
+    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.06);
+    position: relative;
+    overflow: hidden;
   }
 
   .alert-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-hover);
+  }
+
+  .alert-card::after {
+    content: '';
+    position: absolute;
+    top: -20px;
+    right: -20px;
+    width: 120px;
+    height: 120px;
+    background: radial-gradient(circle at 30% 30%, rgba(59, 130, 246, 0.18), rgba(59, 130, 246, 0));
+    pointer-events: none;
   }
 
   .alert-card.high {
@@ -679,7 +790,7 @@ const statisticsPageStyles = `
     margin: 0;
     font-size: 16px;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--ink-900);
   }
 
   .severity-badge {
@@ -771,13 +882,14 @@ const statisticsPageStyles = `
   }
 
   .modal-content {
-    background: white;
-    border-radius: 16px;
+    background: var(--card-bg);
+    border-radius: 18px;
     width: 90%;
-    max-width: 500px;
+    max-width: 520px;
     max-height: 90vh;
     overflow-y: auto;
     animation: slideUp 0.3s ease;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
   }
 
   @keyframes slideUp {
@@ -827,9 +939,9 @@ const statisticsPageStyles = `
   }
 
   .notify-recipient {
-    background: #f0fdf4;
-    border: 1px solid #bbf7d0;
-    border-radius: 10px;
+    background: linear-gradient(135deg, #f0fdf4, #fff7d1);
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
     padding: 16px;
     margin-bottom: 20px;
     display: flex;
@@ -840,7 +952,7 @@ const statisticsPageStyles = `
   .notify-recipient-icon {
     width: 40px;
     height: 40px;
-    background: #22c55e;
+    background: linear-gradient(135deg, var(--accent), var(--secondary));
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -879,7 +991,7 @@ const statisticsPageStyles = `
     background: #f3f4f6;
     border-radius: 8px;
     font-size: 13px;
-    color: #374151;
+    color: var(--ink-700);
   }
 
   .channel-badge svg {
@@ -912,8 +1024,8 @@ const statisticsPageStyles = `
 
   .form-group textarea:focus {
     outline: none;
-    border-color: #22c55e;
-    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.2);
   }
 
   .form-group textarea::placeholder {
@@ -934,14 +1046,14 @@ const statisticsPageStyles = `
     padding: 16px 24px;
     border-top: 1px solid #e5e7eb;
     background: #f9fafb;
-    border-radius: 0 0 16px 16px;
+    border-radius: 0 0 18px 18px;
   }
 
   /* Empty State */
   .empty-state {
     text-align: center;
     padding: 48px 24px;
-    color: #6b7280;
+    color: var(--ink-500);
   }
 
   .empty-state-icon {
@@ -958,7 +1070,7 @@ const statisticsPageStyles = `
 
   .empty-state h3 {
     margin: 0 0 8px;
-    color: #374151;
+    color: var(--ink-700);
     font-size: 18px;
   }
 
@@ -972,11 +1084,12 @@ const statisticsPageStyles = `
     background: #fee2e2;
     color: #dc2626;
     padding: 16px;
-    border-radius: 8px;
+    border-radius: 12px;
     margin-bottom: 24px;
     display: flex;
     align-items: center;
     gap: 10px;
+    border: 1px solid #fecaca;
   }
 
   /* Toast Success */
@@ -987,7 +1100,7 @@ const statisticsPageStyles = `
     padding: 12px 16px;
     background: #dcfce7;
     border: 1px solid #bbf7d0;
-    border-radius: 8px;
+    border-radius: 10px;
     color: #16a34a;
     font-size: 14px;
     margin-bottom: 16px;
@@ -1149,6 +1262,9 @@ const statisticsPageStyles = `
     .bdm-controls .filter-select {
       width: 100%;
     }
+    .data-table {
+      min-width: 640px;
+    }
   }
 
   @media (max-width: 480px) {
@@ -1203,6 +1319,9 @@ const statisticsPageStyles = `
     }
     .search-box input {
       min-height: 44px;
+    }
+    .data-table {
+      min-width: 560px;
     }
   }
 `;
@@ -1656,181 +1775,180 @@ const OverviewTab = ({ stats }) => {
   const STATUS_PIE_COLORS = [CHART_COLORS.primary, CHART_COLORS.danger];
 
   return (
-    <div>
-      {/* Stats Grid */}
-      <div className="overview-grid">
-        {/* Total Compliance Rate */}
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <div className="stat-card-icon green">
-              <Target size={22} />
-            </div>
-            <div className={`stat-card-trend ${stats.totalComplianceRate >= 80 ? 'up' : 'down'}`}>
-              {stats.totalComplianceRate >= 80 ? (
-                <TrendingUp size={14} />
-              ) : (
-                <TrendingDown size={14} />
-              )}
-              {stats.totalComplianceRate}%
-            </div>
-          </div>
-          <div className="stat-card-value">{stats.totalComplianceRate}%</div>
-          <div className="stat-card-label">Overall Call Rate</div>
-          <div className="stat-card-sublabel">Target: 80%</div>
-        </div>
-
-        {/* On Track Employees */}
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <div className="stat-card-icon green">
-              <CheckCircle size={22} />
-            </div>
-          </div>
-          <div className="stat-card-value">{stats.onTrackEmployees}</div>
-          <div className="stat-card-label">On Track</div>
-          <div className="stat-card-sublabel">of {stats.totalEmployees} BDMs</div>
-        </div>
-
-        {/* Behind Schedule */}
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <div className="stat-card-icon red">
-              <Clock size={22} />
-            </div>
-          </div>
-          <div className="stat-card-value">{stats.behindScheduleEmployees}</div>
-          <div className="stat-card-label">Behind Schedule</div>
-          <div className="stat-card-sublabel">Requires attention</div>
-        </div>
-
-        {/* Quota Dumping Alerts */}
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <div className="stat-card-icon yellow">
-              <AlertTriangle size={22} />
-            </div>
-          </div>
-          <div className="stat-card-value">{stats.criticalAlerts}</div>
-          <div className="stat-card-label">Quota Dumping Alerts</div>
-          <div className="stat-card-sublabel">Pending review</div>
-        </div>
-      </div>
-
-      {/* Charts Grid */}
-      <div className="charts-grid">
-        {/* Per-BDM Call Rates Chart */}
-        <div className="chart-card">
-          <div className="chart-card-header">
-            <div className="chart-card-title">
-              <Activity size={18} />
-              Per-BDM Call Rates (Current Cycle)
-            </div>
-          </div>
-          {stats.perBdmCallRates?.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={stats.perBdmCallRates} barGap={4}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                <YAxis axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
-                <Tooltip
-                  contentStyle={{
-                    background: 'white',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                  }}
-                  formatter={(value) => [`${value}%`, 'Call Rate']}
-                />
-                <Bar
-                  dataKey="callRate"
-                  fill={CHART_COLORS.primary}
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={50}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="empty-state">
-              <p>No BDM schedule data available</p>
-            </div>
-          )}
-        </div>
-
-        {/* On Track vs Behind Donut */}
-        <div className="chart-card">
-          <div className="chart-card-header">
-            <div className="chart-card-title">
-              <AlertCircle size={18} />
-              BDM Status
-            </div>
-          </div>
-          {stats.totalEmployees > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={180}>
-                <PieChart>
-                  <Pie
-                    data={statusPieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={70}
-                    paddingAngle={4}
-                    dataKey="value"
-                  >
-                    {statusPieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={STATUS_PIE_COLORS[index]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="risk-factors-list">
-                <div className="risk-factor-item">
-                  <div className="risk-factor-label">
-                    <div className="risk-factor-dot low" />
-                    <span>On Track (≥80%)</span>
-                  </div>
-                  <span className="risk-factor-count">{stats.onTrackEmployees}</span>
+    <div className="overview-layout">
+      <div className="overview-shell">
+        <div className="overview-left">
+          <div className="overview-grid">
+            {/* Total Compliance Rate */}
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon green">
+                  <Target size={22} />
                 </div>
-                <div className="risk-factor-item">
-                  <div className="risk-factor-label">
-                    <div className="risk-factor-dot high" />
-                    <span>Behind (&lt;80%)</span>
-                  </div>
-                  <span className="risk-factor-count">{stats.behindScheduleEmployees}</span>
+                <div className={`stat-card-trend ${stats.totalComplianceRate >= 80 ? 'up' : 'down'}`}>
+                  {stats.totalComplianceRate >= 80 ? (
+                    <TrendingUp size={14} />
+                  ) : (
+                    <TrendingDown size={14} />
+                  )}
+                  {stats.totalComplianceRate}%
                 </div>
               </div>
-            </>
-          ) : (
-            <div className="empty-state">
-              <p>No BDM data available</p>
+              <div className="stat-card-value">{stats.totalComplianceRate}%</div>
+              <div className="stat-card-label">Overall Call Rate</div>
+              <div className="stat-card-sublabel">Target: 80%</div>
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Visit Progress Summary */}
-      <div className="chart-card">
-        <div className="chart-card-header">
-          <div className="chart-card-title">
-            <TrendingUp size={18} />
-            Visit Progress (Current Cycle)
+            {/* On Track Employees */}
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon green">
+                  <CheckCircle size={22} />
+                </div>
+              </div>
+              <div className="stat-card-value">{stats.onTrackEmployees}</div>
+              <div className="stat-card-label">On Track</div>
+              <div className="stat-card-sublabel">of {stats.totalEmployees} BDMs</div>
+            </div>
+
+            {/* Behind Schedule */}
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon red">
+                  <Clock size={22} />
+                </div>
+              </div>
+              <div className="stat-card-value">{stats.behindScheduleEmployees}</div>
+              <div className="stat-card-label">Behind Schedule</div>
+              <div className="stat-card-sublabel">Requires attention</div>
+            </div>
+
+            {/* Quota Dumping Alerts */}
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon yellow">
+                  <AlertTriangle size={22} />
+                </div>
+              </div>
+              <div className="stat-card-value">{stats.criticalAlerts}</div>
+              <div className="stat-card-label">Quota Dumping Alerts</div>
+              <div className="stat-card-sublabel">Pending review</div>
+            </div>
+          </div>
+
+          <div className="chart-card overview-main-chart">
+            <div className="chart-card-header">
+              <div className="chart-card-title">
+                <Activity size={18} />
+                Per-BDM Call Rates (Current Cycle)
+              </div>
+            </div>
+            {stats.perBdmCallRates?.length > 0 ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={stats.perBdmCallRates} barGap={4}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                  <YAxis axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
+                  <Tooltip
+                    contentStyle={{
+                      background: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    }}
+                    formatter={(value) => [`${value}%`, 'Call Rate']}
+                  />
+                  <Bar
+                    dataKey="callRate"
+                    fill={CHART_COLORS.primary}
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={50}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="empty-state">
+                <p>No BDM schedule data available</p>
+              </div>
+            )}
           </div>
         </div>
-        <div style={{ padding: '16px 0', display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ fontSize: '28px', fontWeight: 700, color: '#1f2937' }}>{stats.totalVisitsThisMonth}</div>
-            <div style={{ fontSize: '14px', color: '#6b7280' }}>Completed Engagements</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '28px', fontWeight: 700, color: '#9ca3af' }}>{stats.targetVisitsThisMonth}</div>
-            <div style={{ fontSize: '14px', color: '#6b7280' }}>Target Engagements</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '28px', fontWeight: 700, color: stats.totalComplianceRate >= 80 ? '#16a34a' : '#dc2626' }}>
-              {stats.totalComplianceRate}%
+
+        <div className="overview-right">
+          <div className="chart-card compact">
+            <div className="chart-card-header">
+              <div className="chart-card-title">
+                <AlertCircle size={18} />
+                BDM Status
+              </div>
             </div>
-            <div style={{ fontSize: '14px', color: '#6b7280' }}>Completion Rate</div>
+            {stats.totalEmployees > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie
+                      data={statusPieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={70}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {statusPieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={STATUS_PIE_COLORS[index]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="risk-factors-list">
+                  <div className="risk-factor-item">
+                    <div className="risk-factor-label">
+                      <div className="risk-factor-dot low" />
+                      <span>On Track (≥80%)</span>
+                    </div>
+                    <span className="risk-factor-count">{stats.onTrackEmployees}</span>
+                  </div>
+                  <div className="risk-factor-item">
+                    <div className="risk-factor-label">
+                      <div className="risk-factor-dot high" />
+                      <span>Behind (&lt;80%)</span>
+                    </div>
+                    <span className="risk-factor-count">{stats.behindScheduleEmployees}</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="empty-state">
+                <p>No BDM data available</p>
+              </div>
+            )}
+          </div>
+
+          <div className="chart-card compact">
+            <div className="chart-card-header">
+              <div className="chart-card-title">
+                <TrendingUp size={18} />
+                Visit Progress (Current Cycle)
+              </div>
+            </div>
+            <div style={{ padding: '8px 0 4px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: '28px', fontWeight: 700, color: '#1f2937' }}>{stats.totalVisitsThisMonth}</div>
+                <div style={{ fontSize: '14px', color: '#6b7280' }}>Completed Engagements</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '28px', fontWeight: 700, color: '#9ca3af' }}>{stats.targetVisitsThisMonth}</div>
+                <div style={{ fontSize: '14px', color: '#6b7280' }}>Target Engagements</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '28px', fontWeight: 700, color: stats.totalComplianceRate >= 80 ? '#16a34a' : '#dc2626' }}>
+                  {stats.totalComplianceRate}%
+                </div>
+                <div style={{ fontSize: '14px', color: '#6b7280' }}>Completion Rate</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
