@@ -2061,16 +2061,31 @@ const OverviewTab = ({ stats }) => {
             {stats.perBdmCallRates?.length > 0 ? (
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={stats.perBdmCallRates} barGap={4}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                  <YAxis axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--line-200)" />
+                  <XAxis
+                    dataKey="name"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: 'var(--ink-500)' }}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    domain={[0, 100]}
+                    unit="%"
+                    tick={{ fill: 'var(--ink-500)' }}
+                  />
                   <Tooltip
                     contentStyle={{
-                      background: 'white',
-                      border: '1px solid #e5e7eb',
+                      backgroundColor: 'var(--card-bg)',
+                      border: '1px solid var(--line-200)',
                       borderRadius: '8px',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                      color: 'var(--ink-900)',
+                      boxShadow: 'var(--shadow-soft)',
                     }}
+                    labelStyle={{ color: 'var(--ink-500)', fontWeight: 600 }}
+                    itemStyle={{ color: 'var(--ink-900)' }}
+                    cursor={{ fill: 'rgba(148, 163, 184, 0.16)' }}
                     formatter={(value) => [`${value}%`, 'Call Rate']}
                   />
                   <Bar
@@ -2150,18 +2165,18 @@ const OverviewTab = ({ stats }) => {
             </div>
             <div style={{ padding: '8px 0 4px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <div>
-                <div style={{ fontSize: '28px', fontWeight: 700, color: '#1f2937' }}>{stats.totalVisitsThisMonth}</div>
-                <div style={{ fontSize: '14px', color: '#6b7280' }}>Completed Engagements</div>
+                <div style={{ fontSize: '28px', fontWeight: 700, color: 'var(--ink-900)' }}>{stats.totalVisitsThisMonth}</div>
+                <div style={{ fontSize: '14px', color: 'var(--ink-500)' }}>Completed Engagements</div>
               </div>
               <div>
-                <div style={{ fontSize: '28px', fontWeight: 700, color: '#9ca3af' }}>{stats.targetVisitsThisMonth}</div>
-                <div style={{ fontSize: '14px', color: '#6b7280' }}>Target Engagements</div>
+                <div style={{ fontSize: '28px', fontWeight: 700, color: 'var(--ink-500)' }}>{stats.targetVisitsThisMonth}</div>
+                <div style={{ fontSize: '14px', color: 'var(--ink-500)' }}>Target Engagements</div>
               </div>
               <div>
                 <div style={{ fontSize: '28px', fontWeight: 700, color: stats.totalComplianceRate >= 80 ? '#16a34a' : '#dc2626' }}>
                   {stats.totalComplianceRate}%
                 </div>
-                <div style={{ fontSize: '14px', color: '#6b7280' }}>Completion Rate</div>
+                <div style={{ fontSize: '14px', color: 'var(--ink-500)' }}>Completion Rate</div>
               </div>
             </div>
           </div>
