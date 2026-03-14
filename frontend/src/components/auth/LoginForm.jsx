@@ -17,13 +17,14 @@ const LoginForm = () => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
+    rememberMe: false,
   });
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, type, checked, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: type === 'checkbox' ? checked : value,
     }));
   };
 
@@ -66,15 +67,25 @@ const LoginForm = () => {
 
       {error && <p className="form-error">{error}</p>}
 
-      <button type="submit" disabled={loading} className="btn btn-primary">
-        {loading ? 'Logging in...' : 'Login'}
-      </button>
+      <div className="form-options">
+        <label className="remember-me">
+          <input
+            type="checkbox"
+            name="rememberMe"
+            checked={formData.rememberMe}
+            onChange={handleChange}
+          />
+          <span>Remember me</span>
+        </label>
 
-      <div style={{ textAlign: 'center', marginTop: '16px' }}>
-        <Link to="/forgot-password" style={{ color: '#2563eb', fontSize: '14px', textDecoration: 'none' }}>
-          Forgot Password?
+        <Link to="/forgot-password" className="forgot-link">
+          Forgot password?
         </Link>
       </div>
+
+      <button type="submit" disabled={loading} className="btn btn-primary">
+        {loading ? 'Logging in...' : 'Log In'}
+      </button>
     </form>
   );
 };
