@@ -37,20 +37,25 @@ const dashboardStyles = `
   /* ---- Page shell ---- */
   .db-shell {
     display: grid;
-    grid-template-columns: 1fr 300px;
-    height: calc(100vh - 64px);
+    grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 420px);
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
     overflow: hidden;
     background: var(--bg);
+    width: 100%;
   }
 
   /* ---- Main left column ---- */
   .db-main {
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    overflow: hidden;
     min-height: 0;
-    padding: 12px 20px 24px 28px;
-    gap: 14px;
+    height: 100%;
+    padding: clamp(12px, 1.2vw, 22px) clamp(20px, 2vw, 36px)
+      clamp(24px, 2.4vw, 40px) clamp(28px, 2.4vw, 44px);
+    gap: clamp(12px, 1.2vw, 20px);
   }
 
   .db-main::-webkit-scrollbar { width: 4px; }
@@ -60,12 +65,12 @@ const dashboardStyles = `
   .db-greeting {
     background: linear-gradient(135deg, #3b82f6 0%, #6366f1 60%, #8b5cf6 100%);
     border-radius: 16px;
-    padding: 40px 44px;
+    padding: clamp(28px, 3vw, 56px) clamp(28px, 3.2vw, 64px);
     color: white;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    min-height: 160px;
+    min-height: clamp(120px, 22vh, 220px);
     position: relative;
     overflow: hidden;
   }
@@ -94,16 +99,16 @@ const dashboardStyles = `
 
   .db-greeting-text h2 {
     margin: 0 0 6px 0;
-    font-size: 26px;
+    font-size: clamp(22px, 1.6vw, 32px);
     font-weight: 700;
     letter-spacing: -0.3px;
   }
 
   .db-greeting-text p {
     margin: 0;
-    font-size: 13px;
+    font-size: clamp(12px, 0.9vw, 15px);
     opacity: 0.85;
-    max-width: 300px;
+    max-width: clamp(300px, 25vw, 420px);
   }
 
   .db-greeting-action {
@@ -111,12 +116,12 @@ const dashboardStyles = `
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 18px;
+    padding: clamp(7px, 0.7vw, 10px) clamp(14px, 1.2vw, 22px);
     background: rgba(255,255,255,0.2);
     border: 1px solid rgba(255,255,255,0.3);
     border-radius: 8px;
     color: white;
-    font-size: 12px;
+    font-size: clamp(11px, 0.8vw, 13px);
     font-weight: 600;
     cursor: pointer;
     text-decoration: none;
@@ -127,7 +132,7 @@ const dashboardStyles = `
   .db-greeting-action:hover { background: rgba(255,255,255,0.3); }
 
   .db-greeting-illustration {
-    font-size: 72px;
+    font-size: clamp(56px, 5vw, 96px);
     opacity: 0.15;
     position: absolute;
     right: 180px;
@@ -142,7 +147,7 @@ const dashboardStyles = `
   .db-greeting-actions {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: clamp(8px, 0.9vw, 14px);
     z-index: 1;
     flex-shrink: 0;
   }
@@ -151,9 +156,9 @@ const dashboardStyles = `
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 9px 16px;
+    padding: clamp(8px, 0.8vw, 11px) clamp(12px, 1.1vw, 18px);
     border-radius: 10px;
-    font-size: 12px;
+    font-size: clamp(11px, 0.8vw, 13px);
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
@@ -180,6 +185,12 @@ const dashboardStyles = `
     background: white;
   }
 
+  .db-greeting-action svg,
+  .db-quick-btn svg {
+    width: clamp(12px, 1vw, 16px);
+    height: clamp(12px, 1vw, 16px);
+  }
+
   /* Section header */
   .db-section-head {
     display: flex;
@@ -188,14 +199,14 @@ const dashboardStyles = `
   }
 
   .db-section-title {
-    font-size: 15px;
+    font-size: clamp(14px, 1vw, 17px);
     font-weight: 700;
     color: var(--text);
     margin: 0;
   }
 
   .db-view-all {
-    font-size: 12px;
+    font-size: clamp(11px, 0.8vw, 13px);
     color: #3b82f6;
     cursor: pointer;
     font-weight: 500;
@@ -207,24 +218,37 @@ const dashboardStyles = `
   .db-view-all:hover { text-decoration: underline; }
 
   /* Stat boxes */
+  .db-overview {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
   .db-stats {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
+    gap: clamp(12px, 1.4vw, 18px);
+    flex: 1;
+    min-height: 0;
   }
 
   .db-stat-box {
     background: var(--card);
     border-radius: 12px;
-    padding: 16px;
+    padding: clamp(14px, 1.4vw, 20px);
+    min-height: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     text-align: center;
     gap: 10px;
     border: 1px solid var(--border);
     box-shadow: var(--shadow);
     transition: transform 0.2s, box-shadow 0.2s;
+    height: 100%;
   }
 
   .db-stat-box:hover {
@@ -233,12 +257,17 @@ const dashboardStyles = `
   }
 
   .db-stat-icon {
-    width: 40px;
-    height: 40px;
+    width: clamp(36px, 2.6vw, 46px);
+    height: clamp(36px, 2.6vw, 46px);
     border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .db-stat-icon svg {
+    width: clamp(16px, 1.4vw, 22px);
+    height: clamp(16px, 1.4vw, 22px);
   }
 
   .db-stat-icon.blue  { background: #dbeafe; color: #2563eb; }
@@ -252,14 +281,14 @@ const dashboardStyles = `
   body.dark-mode .db-stat-icon.amber  { background: #78350f; color: #fcd34d; }
 
   .db-stat-value {
-    font-size: 26px;
+    font-size: clamp(22px, 1.8vw, 30px);
     font-weight: 800;
     color: var(--text);
     line-height: 1;
   }
 
   .db-stat-label {
-    font-size: 11px;
+    font-size: clamp(10px, 0.8vw, 12px);
     color: var(--sub);
     font-weight: 600;
     text-transform: uppercase;
@@ -267,7 +296,7 @@ const dashboardStyles = `
   }
 
   .db-stat-sub {
-    font-size: 10px;
+    font-size: clamp(9px, 0.75vw, 11px);
     color: var(--sub);
     margin-top: 2px;
     display: flex;
@@ -295,10 +324,11 @@ const dashboardStyles = `
   .db-sidebar {
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    overflow: hidden;
     min-height: 0;
-    padding: 24px 20px 24px 8px;
-    gap: 10px;
+    padding: clamp(20px, 2vw, 32px) clamp(16px, 1.8vw, 28px)
+      clamp(20px, 2vw, 32px) clamp(6px, 1vw, 16px);
+    gap: clamp(8px, 1vw, 14px);
     border-left: 1px solid var(--border);
 
     /* YouTube-style scrollbar: hidden until hover */
@@ -338,7 +368,7 @@ const dashboardStyles = `
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 14px;
+    padding: clamp(10px, 1vw, 14px) clamp(12px, 1.2vw, 16px);
     background: none;
     border: none;
     cursor: pointer;
@@ -350,7 +380,7 @@ const dashboardStyles = `
 
   .db-toggle-label {
     flex: 1;
-    font-size: 12px;
+    font-size: clamp(11px, 0.85vw, 13px);
     font-weight: 700;
     color: var(--text);
   }
@@ -369,15 +399,38 @@ const dashboardStyles = `
     display: grid;
     grid-template-rows: 1fr;
     transition: grid-template-rows 0.28s ease;
+    overflow: hidden;
   }
 
   .db-collapse-wrap.closed {
     grid-template-rows: 0fr;
   }
 
+  .db-collapse-wrap.bdms.closed {
+    display: none;
+  }
+
+  .db-collapse-wrap.closed .db-collapse-inner {
+    padding: 0;
+    height: 0;
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .db-collapse-wrap.closed .db-users-list,
+  .db-collapse-wrap.closed .db-no-users {
+    display: none;
+  }
+
   .db-collapse-inner {
     overflow: hidden;
-    padding: 0 14px 14px;
+    padding: 0 clamp(12px, 1.2vw, 16px) clamp(12px, 1.2vw, 16px);
+  }
+
+  .db-collapse-wrap.bdms .db-collapse-inner {
+    padding-top: 8px;
   }
 
   /* Calendar */
@@ -389,7 +442,7 @@ const dashboardStyles = `
   }
 
   .cal-month {
-    font-size: 11px;
+    font-size: clamp(10px, 0.8vw, 12px);
     font-weight: 600;
     color: var(--sub);
   }
@@ -400,8 +453,8 @@ const dashboardStyles = `
   }
 
   .cal-nav-btn {
-    width: 22px;
-    height: 22px;
+    width: clamp(20px, 1.6vw, 24px);
+    height: clamp(20px, 1.6vw, 24px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -424,7 +477,7 @@ const dashboardStyles = `
 
   .cal-day-name {
     text-align: center;
-    font-size: 9px;
+    font-size: clamp(8px, 0.7vw, 10px);
     font-weight: 700;
     color: var(--sub);
     text-transform: uppercase;
@@ -443,7 +496,7 @@ const dashboardStyles = `
     align-items: center;
     justify-content: center;
     border-radius: 6px;
-    font-size: 10px;
+    font-size: clamp(9px, 0.75vw, 11px);
     color: var(--sub);
     cursor: pointer;
     transition: all 0.15s;
@@ -465,7 +518,7 @@ const dashboardStyles = `
   }
 
   .db-online-count {
-    font-size: 10px;
+    font-size: clamp(9px, 0.75vw, 11px);
     font-weight: 600;
     color: #22c55e;
     background: #dcfce7;
@@ -478,6 +531,7 @@ const dashboardStyles = `
   .db-users-list {
     display: flex;
     flex-direction: column;
+    margin-top: 8px;
     gap: 4px;
   }
 
@@ -495,15 +549,15 @@ const dashboardStyles = `
   body.dark-mode .db-user-row:hover { background: #1e3a8a; }
 
   .db-user-avatar {
-    width: 32px;
-    height: 32px;
+    width: clamp(28px, 2.2vw, 36px);
+    height: clamp(28px, 2.2vw, 36px);
     border-radius: 50%;
     background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: clamp(9px, 0.75vw, 11px);
     font-weight: 700;
     flex-shrink: 0;
     position: relative;
@@ -523,7 +577,7 @@ const dashboardStyles = `
   .db-user-info { flex: 1; min-width: 0; }
 
   .db-user-name {
-    font-size: 11px;
+    font-size: clamp(10px, 0.8vw, 12px);
     font-weight: 600;
     color: var(--text);
     white-space: nowrap;
@@ -532,29 +586,24 @@ const dashboardStyles = `
   }
 
   .db-user-role {
-    font-size: 10px;
+    font-size: clamp(9px, 0.75vw, 11px);
     color: var(--sub);
   }
 
   .db-no-users {
     text-align: center;
-    font-size: 11px;
+    font-size: clamp(10px, 0.8vw, 12px);
     color: var(--sub);
+    margin-top: 8px;
     padding: 8px 0;
   }
 
   /* Responsive */
-  @media (max-width: 1400px) {
-    .db-stats {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
   @media (max-width: 1100px) {
     .db-shell {
       grid-template-columns: 1fr;
-      height: auto;
-      overflow-y: auto;
+      height: 100%;
+      overflow: hidden;
     }
 
     .db-main {
@@ -568,7 +617,7 @@ const dashboardStyles = `
     }
 
     .db-stats {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(2, 1fr);
     }
   }
 
@@ -582,7 +631,7 @@ const dashboardStyles = `
 
   @media (max-width: 480px) {
     .db-stats {
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
     }
   }
 `;
@@ -680,7 +729,7 @@ const Dashboard = ({ user, stats = {} }) => {
         </div>
 
         {/* Stats section */}
-        <div>
+        <div className="db-overview">
           <div className="db-section-head" style={{ marginBottom: 12 }}>
             <h3 className="db-section-title">Overview</h3>
           </div>
@@ -781,28 +830,30 @@ const Dashboard = ({ user, stats = {} }) => {
             <span className="db-toggle-label">Online Users</span>
             <span className="db-online-count">{activeUsers.length} online</span>
           </button>
-          <div className={`db-collapse-wrap${bdmsOpen ? '' : ' closed'}`}>
-            <div className="db-collapse-inner">
-              {activeUsers.length === 0 ? (
-                <div className="db-no-users">No BDMs currently online</div>
-              ) : (
-                <div className="db-users-list">
-                  {activeUsers.map((u) => (
-                    <div key={u._id || u.id} className="db-user-row">
-                      <div className="db-user-avatar">
-                        {initials(u.name)}
-                        <span className="online-dot" />
+          {bdmsOpen && (
+            <div className="db-collapse-wrap bdms">
+              <div className="db-collapse-inner">
+                {activeUsers.length === 0 ? (
+                  <div className="db-no-users">No BDMs currently online</div>
+                ) : (
+                  <div className="db-users-list">
+                    {activeUsers.map((u) => (
+                      <div key={u._id || u.id} className="db-user-row">
+                        <div className="db-user-avatar">
+                          {initials(u.name)}
+                          <span className="online-dot" />
+                        </div>
+                        <div className="db-user-info">
+                          <div className="db-user-name">{u.name}</div>
+                          <div className="db-user-role">BDM</div>
+                        </div>
                       </div>
-                      <div className="db-user-info">
-                        <div className="db-user-name">{u.name}</div>
-                        <div className="db-user-role">BDM</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
       </div>

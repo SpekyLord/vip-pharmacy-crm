@@ -26,12 +26,20 @@ const pageStyles = `
 
   .admin-page {
     min-height: 100vh;
+    height: 100vh;
+    height: 100dvh;
     background: var(--page-bg);
     transition: background-color 0.3s;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .admin-content {
     display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .admin-main {
@@ -39,6 +47,13 @@ const pageStyles = `
     padding: 0;
     min-width: 0;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .admin-main .db-shell {
+    flex: 1;
+    min-height: 0;
   }
 
   .error-banner {
