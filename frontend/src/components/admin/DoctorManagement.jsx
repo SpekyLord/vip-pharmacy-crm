@@ -282,15 +282,23 @@ const doctorManagementStyles = `
 
   /* Column sizing for better distribution */
   .data-table th:nth-child(1),
-  .data-table td:nth-child(1) { width: 44px; }
-  .data-table th:nth-child(3),
-  .data-table td:nth-child(3) { width: 68px; }
+  .data-table td:nth-child(1) {
+    width: 1%;
+    min-width: 44px;
+    white-space: nowrap;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
   .data-table th:nth-child(7),
   .data-table td:nth-child(7) { width: 90px; }
   .data-table th:nth-child(8),
   .data-table td:nth-child(8) { width: 96px; }
   .data-table th:nth-child(9),
   .data-table td:nth-child(9) { width: 120px; }
+
+  .data-table th:nth-child(9) {
+    text-align: center;
+  }
 
   .data-table th {
     padding: 12px 16px;
@@ -313,6 +321,17 @@ const doctorManagementStyles = `
     border-bottom: 1px solid #f3f4f6;
     color: #374151;
     word-break: break-word;
+  }
+
+  .data-table th:nth-child(1),
+  .data-table td:nth-child(1) {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .data-table th:nth-child(2),
+  .data-table td:nth-child(2) {
+    padding-left: 20px;
   }
 
   .doctor-name {
@@ -807,13 +826,9 @@ const doctorManagementStyles = `
 
   /* Responsive */
   @media (max-width: 1200px) {
-    .data-table th:nth-child(5),
-    .data-table td:nth-child(5) { display: none; }
   }
 
   @media (max-width: 1024px) {
-    .data-table th:nth-child(4),
-    .data-table td:nth-child(4) { display: none; }
   }
 
   @media (max-width: 900px) {
