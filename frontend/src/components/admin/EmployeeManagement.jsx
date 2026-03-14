@@ -104,7 +104,14 @@ const employeeManagementStyles = `
   .table-container {
     flex: 1;
     overflow: auto;
-    max-height: 400px;
+  }
+
+  .em-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   /* Clean Table */
@@ -610,6 +617,11 @@ const employeeManagementStyles = `
       align-items: center;
     }
 
+    .em-body {
+      overflow: visible;
+      flex: none;
+    }
+
     .modal-content {
       max-width: 100%;
       max-height: 100%;
@@ -1053,7 +1065,7 @@ const EmployeeManagement = ({
       </div>
 
       {/* Table Container (Desktop) + Card List (Mobile) */}
-      <div className={loading ? 'table-loading' : ''}>
+      <div className={`em-body${loading ? ' table-loading' : ''}`}>
         {employees.length > 0 ? (
           <>
             <div className="table-container">
@@ -1198,7 +1210,7 @@ const EmployeeManagement = ({
       </div>
 
       {/* Pagination */}
-      {pagination.pages > 1 && (
+      {pagination.total > 0 && (
         <div className="pagination">
           <div className="pagination-info">
             Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}

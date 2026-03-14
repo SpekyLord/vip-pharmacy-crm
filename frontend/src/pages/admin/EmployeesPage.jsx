@@ -191,6 +191,13 @@ const employeesPageStyles = `
     }
   }
 
+  @media (max-width: 640px) {
+    .employees-layout { height: auto; min-height: 100vh; overflow-y: auto; }
+    .employees-content { overflow: visible; }
+    .employees-main { overflow: visible; }
+    .employees-main > :last-child { flex: none; overflow: visible; }
+  }
+
   @media (max-width: 480px) {
     .employees-layout {
       height: auto;
@@ -281,7 +288,7 @@ const EmployeesPage = () => {
   const [error, setError] = useState(null);
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 20,
+    limit: 10,
     total: 0,
     pages: 0,
   });
