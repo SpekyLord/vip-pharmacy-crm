@@ -280,6 +280,18 @@ const doctorManagementStyles = `
     table-layout: fixed;
   }
 
+  /* Column sizing for better distribution */
+  .data-table th:nth-child(1),
+  .data-table td:nth-child(1) { width: 44px; }
+  .data-table th:nth-child(3),
+  .data-table td:nth-child(3) { width: 68px; }
+  .data-table th:nth-child(7),
+  .data-table td:nth-child(7) { width: 90px; }
+  .data-table th:nth-child(8),
+  .data-table td:nth-child(8) { width: 96px; }
+  .data-table th:nth-child(9),
+  .data-table td:nth-child(9) { width: 120px; }
+
   .data-table th {
     padding: 12px 16px;
     text-align: left;
@@ -380,16 +392,17 @@ const doctorManagementStyles = `
     display: flex;
     justify-content: center;
     gap: 6px;
+    flex-wrap: wrap;
   }
 
   .action-btn {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 12px;
+    padding: 5px 10px;
     border-radius: 6px;
     border: none;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
