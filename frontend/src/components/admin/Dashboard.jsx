@@ -23,6 +23,12 @@ const dashboardStyles = `
     --sub: #64748b;
     --border: #e2e8f0;
     --shadow: 0 1px 4px rgba(0,0,0,0.08);
+
+    /* Login palette-inspired accents (gold/yellow/cream) */
+    --gold-1: #ffc700;
+    --gold-2: #ffd64a;
+    --cream-1: #fff3cf;
+    --cream-2: #fff7ed;
   }
 
   body.dark-mode {
@@ -36,25 +42,20 @@ const dashboardStyles = `
 
   /* ---- Page shell ---- */
   .db-shell {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 420px);
+    display: flex;
+    flex-direction: column;
+    width: 100%;
     height: 100%;
     min-height: 0;
-    max-height: 100%;
-    overflow: hidden;
     background: var(--bg);
-    width: 100%;
   }
 
   /* ---- Main left column ---- */
   .db-main {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    min-height: 0;
-    height: 100%;
     padding: clamp(12px, 1.2vw, 22px) clamp(20px, 2vw, 36px)
       clamp(24px, 2.4vw, 40px) clamp(28px, 2.4vw, 44px);
+    display: flex;
+    flex-direction: column;
     gap: clamp(12px, 1.2vw, 20px);
   }
 
@@ -63,16 +64,31 @@ const dashboardStyles = `
 
   /* Greeting card */
   .db-greeting {
-    background: linear-gradient(135deg, #3b82f6 0%, #6366f1 60%, #8b5cf6 100%);
+    background: linear-gradient(
+      135deg,
+      var(--gold-1) 0%,
+      var(--gold-2) 44%,
+      var(--cream-2) 100%
+    );
     border-radius: 16px;
     padding: clamp(28px, 3vw, 56px) clamp(28px, 3.2vw, 64px);
-    color: white;
+    color: rgba(11, 11, 11, 0.92);
     display: flex;
     align-items: center;
     justify-content: space-between;
     min-height: clamp(120px, 22vh, 220px);
     position: relative;
     overflow: hidden;
+  }
+
+  body.dark-mode .db-greeting {
+    background: linear-gradient(
+      135deg,
+      #f59e0b 0%,
+      #fde68a 52%,
+      rgba(255, 255, 255, 0.92) 100%
+    );
+    color: rgba(11, 11, 11, 0.92);
   }
 
   .db-greeting::after {
@@ -82,7 +98,7 @@ const dashboardStyles = `
     top: -30px;
     width: 200px;
     height: 200px;
-    background: rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.35);
     border-radius: 50%;
   }
 
@@ -93,7 +109,7 @@ const dashboardStyles = `
     bottom: -40px;
     width: 150px;
     height: 150px;
-    background: rgba(255,255,255,0.05);
+    background: rgba(255,255,255,0.22);
     border-radius: 50%;
   }
 
@@ -117,10 +133,10 @@ const dashboardStyles = `
     align-items: center;
     gap: 6px;
     padding: clamp(7px, 0.7vw, 10px) clamp(14px, 1.2vw, 22px);
-    background: rgba(255,255,255,0.2);
-    border: 1px solid rgba(255,255,255,0.3);
+    background: rgba(255,255,255,0.62);
+    border: 1px solid rgba(255,255,255,0.78);
     border-radius: 8px;
-    color: white;
+    color: rgba(11, 11, 11, 0.92);
     font-size: clamp(11px, 0.8vw, 13px);
     font-weight: 600;
     cursor: pointer;
@@ -129,12 +145,12 @@ const dashboardStyles = `
     backdrop-filter: blur(4px);
   }
 
-  .db-greeting-action:hover { background: rgba(255,255,255,0.3); }
+  .db-greeting-action:hover { background: rgba(255,255,255,0.82); }
 
   body.dark-mode .db-greeting-action {
     background: rgba(255,255,255,0.92);
-    border-color: transparent;
-    color: #0f172a;
+    border-color: rgba(255,255,255,0.85);
+    color: rgba(11, 11, 11, 0.92);
   }
 
   body.dark-mode .db-greeting-action:hover {
@@ -174,25 +190,25 @@ const dashboardStyles = `
     transition: all 0.2s;
     white-space: nowrap;
     text-decoration: none;
-    border: 1px solid rgba(255,255,255,0.35);
-    background: rgba(255,255,255,0.15);
-    color: white;
+    border: 1px solid rgba(255,255,255,0.70);
+    background: rgba(255,255,255,0.55);
+    color: rgba(11, 11, 11, 0.92);
     backdrop-filter: blur(4px);
   }
 
   .db-quick-btn:hover {
-    background: rgba(255,255,255,0.28);
-    border-color: rgba(255,255,255,0.55);
+    background: rgba(255,255,255,0.78);
+    border-color: rgba(255,255,255,0.88);
   }
 
   .db-quick-btn.primary {
-    background: rgba(255,255,255,0.9);
-    color: #3b82f6;
+    background: rgba(11, 11, 11, 0.92);
+    color: white;
     border-color: transparent;
   }
 
   .db-quick-btn.primary:hover {
-    background: white;
+    background: rgba(11, 11, 11, 1);
   }
 
   .db-greeting-action svg,
@@ -231,17 +247,16 @@ const dashboardStyles = `
   .db-overview {
     display: flex;
     flex-direction: column;
-    flex: 1;
     min-height: 0;
   }
 
   .db-stats {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(0, 1fr);
+    grid-auto-rows: auto;
     gap: clamp(12px, 1.4vw, 18px);
-    flex: 1;
     min-height: 0;
+    align-content: start;
   }
 
   .db-stat-box {
@@ -258,7 +273,7 @@ const dashboardStyles = `
     border: 1px solid var(--border);
     box-shadow: var(--shadow);
     transition: transform 0.2s, box-shadow 0.2s;
-    height: 100%;
+    height: auto;
   }
 
   .db-stat-box:hover {
@@ -332,35 +347,12 @@ const dashboardStyles = `
 
   /* ---- Right sidebar ---- */
   .db-sidebar {
+    padding: clamp(20px, 2vw, 32px) clamp(16px, 1.8vw, 28px)
+      clamp(20px, 2vw, 32px) clamp(16px, 1.8vw, 28px);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    min-height: 0;
-    padding: clamp(20px, 2vw, 32px) clamp(16px, 1.8vw, 28px)
-      clamp(20px, 2vw, 32px) clamp(6px, 1vw, 16px);
     gap: clamp(8px, 1vw, 14px);
     border-left: 1px solid var(--border);
-
-    /* YouTube-style scrollbar: hidden until hover */
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
-  }
-
-  .db-sidebar:hover {
-    scrollbar-color: var(--border) transparent;
-  }
-
-  .db-sidebar::-webkit-scrollbar { width: 5px; }
-  .db-sidebar::-webkit-scrollbar-track { background: transparent; }
-  .db-sidebar::-webkit-scrollbar-thumb {
-    background: transparent;
-    border-radius: 3px;
-  }
-  .db-sidebar:hover::-webkit-scrollbar-thumb {
-    background: var(--border);
-  }
-  .db-sidebar::-webkit-scrollbar-thumb:hover {
-    background: var(--sub);
   }
 
   /* Sidebar card */
@@ -609,13 +601,25 @@ const dashboardStyles = `
   }
 
   /* Responsive */
-  @media (max-width: 1100px) {
+  @media (min-width: 1025px) {
     .db-shell {
-      grid-template-columns: 1fr;
-      height: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) clamp(300px, 25vw, 420px);
       overflow: hidden;
     }
 
+    .db-main {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .db-sidebar {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+
+  @media (max-width: 1024px) {
     .db-main {
       padding: 16px;
     }
@@ -627,21 +631,35 @@ const dashboardStyles = `
     }
 
     .db-stats {
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     }
   }
 
   @media (max-width: 768px) {
-    .db-stats {
-      grid-template-columns: repeat(2, 1fr);
+    .db-greeting {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 20px;
+      padding: 24px;
     }
-    .db-greeting-text h2 { font-size: 20px; }
-    .db-greeting { padding: 28px 28px; min-height: 130px; }
-  }
 
-  @media (max-width: 480px) {
-    .db-stats {
-      grid-template-columns: 1fr;
+    .db-greeting-text h2 { font-size: 22px; }
+
+    .db-greeting-actions {
+      width: 100%;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .db-quick-btn {
+      width: 100%;
+      justify-content: center;
+      padding: 12px;
+      font-size: 14px;
+    }
+
+    .db-greeting-illustration {
+      display: none;
     }
   }
 `;
@@ -712,7 +730,7 @@ const Dashboard = ({ user, stats = {} }) => {
     <div className="db-shell">
       <style>{dashboardStyles}</style>
 
-      {/* ────── MAIN CONTENT ────── */}
+      {/* ────── On large screens, this is the left column ────── */}
       <div className="db-main">
 
         {/* Greeting card */}
@@ -790,12 +808,25 @@ const Dashboard = ({ user, stats = {} }) => {
 
       </div>
 
-      {/* ────── RIGHT SIDEBAR ────── */}
+      {/* ────── On large screens, this is the right column ────── */}
       <div className="db-sidebar">
 
         {/* Calendar — collapsible */}
         <div className="db-sidebar-card">
-          <button className="db-card-toggle" onClick={() => setCalOpen(o => !o)}>
+          <div
+            className="db-card-toggle"
+            role="button"
+            tabIndex={0}
+            aria-expanded={calOpen}
+            aria-controls="admin-dashboard-calendar"
+            onClick={() => setCalOpen(o => !o)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setCalOpen(o => !o);
+              }
+            }}
+          >
             <ChevronDown
               size={13}
               className={`db-toggle-chevron ${calOpen ? 'open' : 'closed'}`}
@@ -803,11 +834,11 @@ const Dashboard = ({ user, stats = {} }) => {
             <span className="db-toggle-label">Calendar</span>
             <span className="cal-month">{MONTHS[month]} {year}</span>
             <div className="cal-nav" onClick={e => e.stopPropagation()}>
-              <button className="cal-nav-btn" onClick={prevMonth}><ChevronLeft size={11} /></button>
-              <button className="cal-nav-btn" onClick={nextMonth}><ChevronRight size={11} /></button>
+              <button type="button" className="cal-nav-btn" onClick={prevMonth}><ChevronLeft size={11} /></button>
+              <button type="button" className="cal-nav-btn" onClick={nextMonth}><ChevronRight size={11} /></button>
             </div>
-          </button>
-          <div className={`db-collapse-wrap${calOpen ? '' : ' closed'}`}>
+          </div>
+          <div id="admin-dashboard-calendar" className={`db-collapse-wrap${calOpen ? '' : ' closed'}`}>
             <div className="db-collapse-inner">
               <div className="cal-days-header">
                 {DAYS.map(d => <div key={d} className="cal-day-name">{d}</div>)}

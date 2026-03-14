@@ -46,7 +46,8 @@ const pageStyles = `
     flex: 1;
     padding: 0;
     min-width: 0;
-    overflow: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     display: flex;
     flex-direction: column;
   }
