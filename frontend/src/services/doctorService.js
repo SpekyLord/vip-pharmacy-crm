@@ -30,8 +30,8 @@ const doctorService = {
     return response.data;
   },
 
-  delete: async (id) => {
-    const response = await api.delete(`/doctors/${id}`);
+  delete: async (id, permanent = false) => {
+    const response = await api.delete(`/doctors/${id}`, { params: permanent ? { permanent: true } : {} });
     return response.data;
   },
 

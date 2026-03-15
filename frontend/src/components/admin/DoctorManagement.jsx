@@ -1271,6 +1271,7 @@ const DoctorManagement = ({
   const [showModal, setShowModal] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const [hardDeleteTyped, setHardDeleteTyped] = useState('');
 
   // Mass delete state
   const [showMassDelete, setShowMassDelete] = useState(false);
@@ -1378,14 +1379,16 @@ const DoctorManagement = ({
 
   const handleDeleteClick = (doctor) => {
     setSelectedDoctor(doctor);
+    setHardDeleteTyped('');
     setShowConfirmDelete(true);
   };
 
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = async (permanent = false) => {
     if (selectedDoctor) {
-      await onDelete?.(selectedDoctor._id);
+      await onDelete?.(selectedDoctor._id, permanent);
       setShowConfirmDelete(false);
       setSelectedDoctor(null);
+      setHardDeleteTyped('');
     }
   };
 
@@ -2043,20 +2046,63 @@ const DoctorManagement = ({
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      <ConfirmDeleteModal
-        isOpen={showConfirmDelete}
-        onClose={() => { setShowConfirmDelete(false); setSelectedDoctor(null); }}
-        onConfirm={handleConfirmDelete}
-        title="Deactivate VIP Client"
-        message={
-          <p>
-            Are you sure you want to deactivate <strong>{selectedDoctor?.fullName || `${selectedDoctor?.firstName} ${selectedDoctor?.lastName}`}</strong>?
-            This action can be undone later.
-          </p>
-        }
-        confirmButtonText="Deactivate"
-      />
+      {/* Delete Options Modal */}
+      {showConfirmDelete && selectedDoctor && (
+        <div className="cdm-overlay" onClick={() => { setShowConfirmDelete(false); setSelectedDoctor(null); setHardDeleteTyped(''); }}>
+          <div className="cdm-content" style={{ maxWidth: 480, textAlign: 'left' }} onClick={(e) => e.stopPropagation()}>
+            <div className="cdm-header">
+              <h3>Delete VIP Client</h3>
+              <button className="cdm-close" onClick={() => { setShowConfirmDelete(false); setSelectedDoctor(null); setHardDeleteTyped(''); }}>&times;</button>
+            </div>
+
+            <p style={{ margin: '0 0 16px', color: '#374151', fontSize: 14 }}>
+              Choose how to delete <strong>{selectedDoctor?.fullName || `${selectedDoctor?.firstName} ${selectedDoctor?.lastName}`}</strong>:
+            </p>
+
+            {/* Option 1: Soft delete */}
+            <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: '12px 14px', marginBottom: 10 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#374151', marginBottom: 4 }}>Deactivate (Soft Delete)</div>
+              <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10 }}>Hides the VIP Client from all lists. Visit history and schedule are kept. Can be restored later.</div>
+              <button
+                style={{ background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                onClick={() => handleConfirmDelete(false)}
+              >
+                Deactivate
+              </button>
+            </div>
+
+            {/* Option 2: Hard delete */}
+            <div style={{ border: '1px solid #fecaca', borderRadius: 8, padding: '12px 14px', background: '#fff5f5' }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#b91c1c', marginBottom: 4 }}>Delete Permanently</div>
+              <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10 }}>
+                Removes the VIP Client <strong>and all related visits, schedules, and product assignments</strong>. This cannot be undone.
+              </div>
+              <input
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #fca5a5', borderRadius: 6, fontSize: 13, marginBottom: 8, boxSizing: 'border-box', background: hardDeleteTyped.toUpperCase() === 'DELETE' ? '#fef2f2' : '#fff' }}
+                placeholder='Type DELETE to confirm'
+                value={hardDeleteTyped}
+                onChange={(e) => setHardDeleteTyped(e.target.value)}
+              />
+              <button
+                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: hardDeleteTyped.toUpperCase() === 'DELETE' ? 'pointer' : 'not-allowed', opacity: hardDeleteTyped.toUpperCase() === 'DELETE' ? 1 : 0.4 }}
+                disabled={hardDeleteTyped.toUpperCase() !== 'DELETE'}
+                onClick={() => handleConfirmDelete(true)}
+              >
+                Delete Permanently
+              </button>
+            </div>
+
+            <div style={{ marginTop: 12, textAlign: 'right' }}>
+              <button
+                className="cdm-btn-cancel"
+                onClick={() => { setShowConfirmDelete(false); setSelectedDoctor(null); setHardDeleteTyped(''); }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mass Delete - Step 1: BDM Picker */}
       {showMassDelete && (

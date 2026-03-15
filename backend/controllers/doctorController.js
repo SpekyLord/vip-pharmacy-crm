@@ -11,6 +11,8 @@
 const mongoose = require('mongoose');
 const Doctor = require('../models/Doctor');
 const Visit = require('../models/Visit');
+const Schedule = require('../models/Schedule');
+const ProductAssignment = require('../models/ProductAssignment');
 const User = require('../models/User');
 const CrmProduct = require('../models/CrmProduct');
 const Specialization = require('../models/Specialization');
@@ -293,8 +295,9 @@ const updateDoctor = catchAsync(async (req, res) => {
 });
 
 /**
- * @desc    Deactivate doctor (soft delete)
+ * @desc    Delete doctor — soft (deactivate) or hard (permanent with cascade)
  * @route   DELETE /api/doctors/:id
+ * @route   DELETE /api/doctors/:id?permanent=true
  * @access  Admin only
  */
 const deleteDoctor = catchAsync(async (req, res) => {
@@ -304,12 +307,30 @@ const deleteDoctor = catchAsync(async (req, res) => {
     throw new NotFoundError('Doctor not found');
   }
 
+  if (req.query.permanent === 'true') {
+    const doctorId = doctor._id;
+
+    await Promise.all([
+      Visit.deleteMany({ doctor: doctorId }),
+      Schedule.deleteMany({ doctor: doctorId }),
+      ProductAssignment.deleteMany({ doctor: doctorId }),
+    ]);
+
+    await doctor.deleteOne();
+
+    return res.status(200).json({
+      success: true,
+      message: 'VIP Client and all related data deleted permanently',
+    });
+  }
+
+  // Soft delete (default)
   doctor.isActive = false;
   await doctor.save();
 
   res.status(200).json({
     success: true,
-    message: 'Doctor deactivated successfully',
+    message: 'VIP Client deactivated successfully',
   });
 });
 
@@ -334,7 +355,7 @@ const countDoctorsByUser = catchAsync(async (req, res) => {
 });
 
 /**
- * @desc    Batch deactivate all active doctors assigned to a specific user (BDM)
+ * @desc    Batch hard delete all doctors assigned to a specific user (BDM) and their related data
  * @route   DELETE /api/doctors/by-user/:userId
  * @access  Admin only
  */
@@ -350,16 +371,22 @@ const deleteDoctorsByUser = catchAsync(async (req, res) => {
     throw new NotFoundError('User not found');
   }
 
-  const result = await Doctor.updateMany(
-    { assignedTo: userId, isActive: true },
-    { $set: { isActive: false } }
-  );
+  const doctors = await Doctor.find({ assignedTo: userId }).select('_id');
+  const doctorIds = doctors.map((d) => d._id);
+
+  await Promise.all([
+    Visit.deleteMany({ doctor: { $in: doctorIds } }),
+    Schedule.deleteMany({ doctor: { $in: doctorIds } }),
+    ProductAssignment.deleteMany({ doctor: { $in: doctorIds } }),
+  ]);
+
+  const result = await Doctor.deleteMany({ assignedTo: userId });
 
   res.status(200).json({
     success: true,
-    message: `${result.modifiedCount} VIP Client(s) deactivated successfully`,
+    message: `${result.deletedCount} VIP Client(s) and all related data deleted permanently`,
     data: {
-      deactivatedCount: result.modifiedCount,
+      deletedCount: result.deletedCount,
       userId: userId,
       userName: user.name,
     },

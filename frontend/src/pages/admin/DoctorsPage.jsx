@@ -403,14 +403,14 @@ const DoctorsPage = () => {
     }
   };
 
-  const handleDeleteDoctor = async (doctorId) => {
+  const handleDeleteDoctor = async (doctorId, permanent = false) => {
     try {
-      await doctorService.delete(doctorId);
-      toast.success('Doctor deactivated successfully');
+      await doctorService.delete(doctorId, permanent);
+      toast.success(permanent ? 'VIP Client permanently deleted' : 'VIP Client deactivated');
       fetchDoctors();
       return true;
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to delete doctor');
+      toast.error(err.response?.data?.message || 'Failed to delete VIP Client');
       return false;
     }
   };
