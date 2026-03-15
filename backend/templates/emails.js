@@ -23,9 +23,9 @@ const baseLayout = (title, body) => `
         <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
           <!-- Header -->
           <tr>
-            <td style="background:#1e40af;padding:24px 32px;">
+            <td style="background:#d97706;padding:24px 32px;">
               <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">VIP CRM</h1>
-              <p style="margin:4px 0 0;color:#93c5fd;font-size:13px;">Pharmaceutical Field Sales Management</p>
+              <p style="margin:4px 0 0;color:#fde68a;font-size:13px;">Pharmaceutical Field Sales Management</p>
             </td>
           </tr>
           <!-- Body -->
@@ -68,7 +68,7 @@ const passwordResetTemplate = (resetUrl, userName) => {
     </p>
     <table cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
       <tr>
-        <td style="background:#2563eb;border-radius:8px;padding:14px 28px;">
+        <td style="background:#f59e0b;border-radius:8px;padding:14px 28px;">
           <a href="${resetUrl}" style="color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;">
             Reset Password
           </a>
@@ -79,7 +79,7 @@ const passwordResetTemplate = (resetUrl, userName) => {
       If you didn't request this, you can safely ignore this email.
     </p>
     <p style="margin:0;color:#6b7280;font-size:13px;">
-      Or copy this link: <span style="color:#2563eb;word-break:break-all;">${resetUrl}</span>
+      Or copy this link: <span style="color:#d97706;word-break:break-all;">${resetUrl}</span>
     </p>`;
 
   const text = `Hi ${userName},\n\nWe received a request to reset your password. Visit the following link to create a new password (expires in 1 hour):\n\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email.`;
