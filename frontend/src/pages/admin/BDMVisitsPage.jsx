@@ -188,7 +188,8 @@ const BDMVisitsPage = () => {
       const response = visit._visitType === 'regular'
         ? await clientService.getVisitById(visit._id)
         : await visitService.getById(visit._id);
-      setSelectedVisit(response.data);
+      // Preserve _visitType so VisitDetailModal uses the correct refresh endpoint
+      setSelectedVisit({ ...response.data, _visitType: visit._visitType });
     } catch (err) {
       console.error('Failed to fetch visit details:', err);
       toast.error('Failed to load visit details');
@@ -369,7 +370,7 @@ const BDMVisitsPage = () => {
                             </div>
                           </td>
                           <td>
-                            <span className="bvp-week-label">{visit.weekLabel || '-'}</span>
+                            <span className="bvp-week-label">{visit._visitType === 'regular' ? '-' : (visit.weekLabel || '-')}</span>
                           </td>
                           <td>
                             <div className="bvp-doctor-cell">
@@ -438,7 +439,7 @@ const BDMVisitsPage = () => {
                           </div>
                           <div className="bvp-card-row">
                             <span>Week</span>
-                            <span>{visit.weekLabel || '-'}</span>
+                            <span>{visit._visitType === 'regular' ? '-' : (visit.weekLabel || '-')}</span>
                           </div>
                           <div className="bvp-card-row">
                             <span>Photos</span>

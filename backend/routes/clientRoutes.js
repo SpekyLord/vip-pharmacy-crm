@@ -25,6 +25,7 @@ const {
   createClientVisit,
   getClientVisits,
   getClientVisitById,
+  refreshClientVisitPhotos,
   getMyClientVisits,
   getClientVisitsByUser,
   getTodayClientVisitCount,
@@ -50,6 +51,8 @@ router.get('/scheduled/today', getScheduledToday);
 router.get('/visits/stats', getClientVisitStats);
 router.get('/visits/my', getMyClientVisits);
 router.get('/visits/by-user/:userId', adminOnly, getClientVisitsByUser);
+router.get('/visits/:visitId', getClientVisitById); // Must be before /:id to avoid conflict
+router.get('/visits/:visitId/refresh-photos', refreshClientVisitPhotos);
 
 // Client CRUD
 router.get('/', getAllClients);
@@ -60,7 +63,6 @@ router.delete('/:id', deleteClient);
 
 // Client visits
 router.get('/:id/visits', getClientVisits);
-router.get('/visits/:visitId', getClientVisitById);
 router.post(
   '/visits',
   uploadMultiple('photos', 5),

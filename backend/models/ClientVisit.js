@@ -10,12 +10,14 @@ const { getWeekOfMonth } = require('../utils/scheduleCycleUtils');
 
 // Cycle anchor: Monday, January 5, 2026
 const CYCLE_ANCHOR = new Date(Date.UTC(2026, 0, 5));
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000; // UTC+8 (Asia/Manila)
 
 /**
  * Calculate ISO 8601 week number
+ * Expects a Manila-adjusted date; uses UTC methods for timezone-safe calculation.
  */
 function getISOWeek(date) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const weekNumber = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
@@ -24,15 +26,17 @@ function getISOWeek(date) {
 }
 
 /**
- * Get cycle position (W1-W4, day 1-7) based on anchor date
+ * Get cycle position (W1-W4, day 1-7) based on anchor date.
+ * Uses Manila time (UTC+8) so midnight visits in the Philippines get the correct day/week.
  */
 function getCyclePosition(date) {
-  const diffMs = date.getTime() - CYCLE_ANCHOR.getTime();
+  const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
+  const diffMs = manilaDate.getTime() - CYCLE_ANCHOR.getTime();
   const diffDays = Math.floor(diffMs / 86400000);
   const dayInCycle = ((diffDays % 28) + 28) % 28;
   const weekInCycle = Math.floor(dayInCycle / 7) + 1;
-  const dayOfWeek = date.getDay();
-  const dayOfWeekInCycle = dayOfWeek === 0 ? 7 : dayOfWeek;
+  const jsDay = manilaDate.getUTCDay();
+  const dayOfWeekInCycle = jsDay === 0 ? 7 : jsDay;
   return { weekInCycle, dayOfWeekInCycle };
 }
 
@@ -184,10 +188,11 @@ clientVisitSchema.index(
 clientVisitSchema.pre('save', function (next) {
   if (this.isNew || this.isModified('visitDate')) {
     const date = this.visitDate;
-    const jsDay = date.getDay();
+    // Use Manila time for all calendar calculations (UTC+8)
+    const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
 
-    // ISO week number
-    const { weekNumber, weekYear } = getISOWeek(date);
+    // ISO week number — pass Manila-adjusted date
+    const { weekNumber, weekYear } = getISOWeek(manilaDate);
     this.weekNumber = weekNumber;
 
     // Cycle position (W1-W4, day 1-7)
@@ -198,15 +203,16 @@ clientVisitSchema.pre('save', function (next) {
     // Week label
     this.weekLabel = `W${this.weekOfMonth}D${this.dayOfWeek}`;
 
-    // Month-year
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    this.monthYear = `${date.getFullYear()}-${month}`;
+    // Month-year using Manila date
+    const month = String(manilaDate.getUTCMonth() + 1).padStart(2, '0');
+    this.monthYear = `${manilaDate.getUTCFullYear()}-${month}`;
 
     // Year-week key for unique constraint
     const week = String(weekNumber).padStart(2, '0');
     this.yearWeekKey = `${weekYear}-W${week}`;
 
-    // Set weekend flag (Sat=6, Sun=0 in JS getDay())
+    // Set weekend flag using Manila day
+    const jsDay = manilaDate.getUTCDay();
     this.isWeekendVisit = jsDay === 0 || jsDay === 6;
   }
   next();

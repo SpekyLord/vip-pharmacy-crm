@@ -206,10 +206,6 @@ const createDoctorValidation = [
     .optional()
     .isLength({ max: 500 })
     .withMessage('Clinic/Office address cannot exceed 500 characters'),
-  body('region')
-    .notEmpty()
-    .withMessage('Region is required')
-    .custom(isValidObjectId),
   body('visitFrequency')
     .optional()
     .isIn([2, 4])

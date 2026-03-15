@@ -214,8 +214,8 @@ visitSchema.index({ photoFlags: 1 }, { sparse: true }); // For photo audit queri
  * @returns {Object} - { weekNumber, weekYear } where weekYear may differ from calendar year
  */
 function getISOWeek(date) {
-  // Create a copy in UTC to avoid timezone issues
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  // Create a copy in UTC to avoid timezone issues (date is already Manila-adjusted, use UTC methods)
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 
   // Set to nearest Thursday: current date + 4 - current day number
   // Make Sunday day 7 instead of 0
@@ -240,19 +240,24 @@ function getISOWeek(date) {
  * Cycles repeat every 28 calendar days from this anchor.
  */
 const CYCLE_ANCHOR = new Date(Date.UTC(2026, 0, 5)); // Jan 5, 2026 (UTC)
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000; // UTC+8 (Asia/Manila)
 
 /**
  * Calculate cycle position based on the Jan 5, 2026 anchor.
+ * Uses Manila time (UTC+8) so midnight visits in the Philippines get the correct day/week.
  * @param {Date} date
- * @returns {{ weekInCycle: number, dayInCycle: number }}
- *   weekInCycle: 1-4, dayInCycle: 1-7 (1=Mon, 5=Fri, 6=Sat, 7=Sun)
+ * @returns {{ weekInCycle: number, dayOfWeekInCycle: number }}
+ *   weekInCycle: 1-4, dayOfWeekInCycle: 1-7 (1=Mon, 5=Fri, 6=Sat, 7=Sun)
  */
 function getCyclePosition(date) {
-  const diffMs = date.getTime() - CYCLE_ANCHOR.getTime();
+  // Shift to Manila time so UTC-midnight visits (which are ~8h behind Manila) resolve correctly
+  const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
+  const diffMs = manilaDate.getTime() - CYCLE_ANCHOR.getTime();
   const diffDays = Math.floor(diffMs / 86400000);
-  const dayInCycle = ((diffDays % 28) + 28) % 28; // 0-27, handles pre-anchor dates
+  const dayInCycle = ((diffDays % 28) + 28) % 28; // 0-27
   const weekInCycle = Math.floor(dayInCycle / 7) + 1; // 1-4
-  const dayOfWeekInCycle = (dayInCycle % 7) + 1; // 1=Mon ... 7=Sun
+  const jsDay = manilaDate.getUTCDay(); // Use UTC methods on Manila-adjusted date
+  const dayOfWeekInCycle = jsDay === 0 ? 7 : jsDay; // 1=Mon ... 7=Sun
   return { weekInCycle, dayOfWeekInCycle };
 }
 
@@ -260,9 +265,11 @@ function getCyclePosition(date) {
 visitSchema.pre('save', function (next) {
   if (this.isNew || this.isModified('visitDate')) {
     const date = this.visitDate;
+    // Use Manila time for all calendar calculations (UTC+8)
+    const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
 
-    // Get ISO week number (1-53) and week year
-    const { weekNumber, weekYear } = getISOWeek(date);
+    // Get ISO week number (1-53) and week year — pass Manila-adjusted date
+    const { weekNumber, weekYear } = getISOWeek(manilaDate);
     this.weekNumber = weekNumber;
 
     // Get anchor-based cycle position (W1-W4, D1-D7)
@@ -273,17 +280,16 @@ visitSchema.pre('save', function (next) {
     // Generate week label (W1D1, W2D3, etc.)
     this.weekLabel = `W${this.weekOfMonth}D${this.dayOfWeek}`;
 
-    // monthYear = calendar month of the actual visit date
-    const monthStr = String(date.getMonth() + 1).padStart(2, '0');
-    this.monthYear = `${date.getFullYear()}-${monthStr}`;
+    // monthYear = Manila calendar month of the visit date
+    const monthStr = String(manilaDate.getUTCMonth() + 1).padStart(2, '0');
+    this.monthYear = `${manilaDate.getUTCFullYear()}-${monthStr}`;
 
-    // Generate yearWeekKey using ISO week year (handles year boundaries correctly)
-    // e.g., Dec 31, 2024 might be "2025-W01" if it falls in week 1 of 2025
+    // Generate yearWeekKey using ISO week year
     const week = String(weekNumber).padStart(2, '0');
     this.yearWeekKey = `${weekYear}-W${week}`;
 
-    // Set weekend flag (Sat=6, Sun=0 in JS getDay())
-    const jsDay = date.getDay();
+    // Set weekend flag using Manila day
+    const jsDay = manilaDate.getUTCDay();
     this.isWeekendVisit = jsDay === 0 || jsDay === 6;
   }
   next();

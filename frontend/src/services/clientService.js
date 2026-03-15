@@ -77,6 +77,12 @@ const clientService = {
     const response = await api.get(`/clients/visits/${visitId}`);
     return response.data;
   },
+
+  // Refresh photo URLs for a client visit
+  refreshVisitPhotos: async (visitId) => {
+    const response = await api.get(`/clients/visits/${visitId}/refresh-photos`);
+    return response.data;
+  },
 };
 
 export default clientService;

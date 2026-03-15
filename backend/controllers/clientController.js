@@ -784,11 +784,11 @@ const getScheduledToday = catchAsync(async (req, res) => {
 
 /**
  * @desc    Get client visit by ID
- * @route   GET /api/clients/visits/:id
+ * @route   GET /api/clients/visits/:visitId
  * @access  Private (ownership check for BDMs)
  */
 const getClientVisitById = catchAsync(async (req, res) => {
-  const visit = await ClientVisit.findById(req.params.id)
+  const visit = await ClientVisit.findById(req.params.visitId)
     .populate('client', 'firstName lastName specialization clinicOfficeAddress')
     .populate('user', 'name email');
 
@@ -804,13 +804,38 @@ const getClientVisitById = catchAsync(async (req, res) => {
   }
 
   // Sign photo URLs
-  if (visit.photos && visit.photos.length > 0) {
-    visit.photos = await signVisitPhotos(visit.photos);
-  }
+  const signedVisit = await signVisitPhotos(visit);
 
   res.status(200).json({
     success: true,
-    data: visit,
+    data: signedVisit,
+  });
+});
+
+/**
+ * @desc    Refresh photo URLs for a client visit (re-sign S3 URLs)
+ * @route   GET /api/clients/visits/:visitId/refresh-photos
+ * @access  Private (ownership check for BDMs)
+ */
+const refreshClientVisitPhotos = catchAsync(async (req, res) => {
+  const visit = await ClientVisit.findById(req.params.visitId);
+
+  if (!visit) {
+    throw new NotFoundError('Client visit not found');
+  }
+
+  // Check if user has access to this visit
+  if (req.user.role !== 'admin' && visit.user.toString() !== req.user._id.toString()) {
+    throw new ForbiddenError('You do not have permission to access this visit');
+  }
+
+  // Re-sign photo URLs
+  const signedVisit = await signVisitPhotos(visit);
+
+  res.status(200).json({
+    success: true,
+    message: 'Photo URLs refreshed successfully',
+    data: signedVisit,
   });
 });
 
@@ -823,6 +848,7 @@ module.exports = {
   createClientVisit,
   getClientVisits,
   getClientVisitById,
+  refreshClientVisitPhotos,
   getMyClientVisits,
   getClientVisitsByUser,
   getTodayClientVisitCount,

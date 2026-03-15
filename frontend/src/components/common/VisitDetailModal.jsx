@@ -14,6 +14,7 @@
 
 import { useState } from 'react';
 import visitService from '../../services/visitService';
+import clientService from '../../services/clientService';
 import toast from 'react-hot-toast';
 
 const modalStyles = `
@@ -379,7 +380,10 @@ const VisitDetailModal = ({ visit, onClose, onPhotosRefreshed }) => {
 
     setRefreshingPhotos(true);
     try {
-      const response = await visitService.refreshPhotos(visit._id);
+      // Use correct service based on visit type
+      const response = visit._visitType === 'regular'
+        ? await clientService.refreshVisitPhotos(visit._id)
+        : await visitService.refreshPhotos(visit._id);
       if (response.success && response.data?.photos) {
         onPhotosRefreshed?.(visit._id, response.data.photos);
         toast.success('Photos refreshed');
