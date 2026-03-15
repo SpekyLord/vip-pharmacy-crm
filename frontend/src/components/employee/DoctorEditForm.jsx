@@ -10,8 +10,9 @@
  * - onSaved: callback after successful save (receives updated doctor data)
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import doctorService from '../../services/doctorService';
+import specializationService from '../../services/specializationService';
 
 // Enum options matching backend Doctor.js
 const PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
@@ -27,6 +28,13 @@ const ENGAGEMENT_LEVELS = [
 const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [specializations, setSpecializations] = useState([]);
+
+  useEffect(() => {
+    specializationService.getAll({ isActive: true }).then((res) => {
+      setSpecializations(res.data || []);
+    }).catch(() => {});
+  }, []);
 
   const [formData, setFormData] = useState({
     firstName: doctor?.firstName || '',
@@ -136,13 +144,16 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
           <div className="def-row">
             <div className="def-field">
               <label>VIP Specialty</label>
-              <input
-                type="text"
+              <select
                 name="specialization"
                 value={formData.specialization}
                 onChange={handleFormChange}
-                placeholder="e.g. Pedia Hema, Im Car"
-              />
+              >
+                <option value="">Select specialty...</option>
+                {specializations.map((s) => (
+                  <option key={s._id} value={s.name}>{s.name}</option>
+                ))}
+              </select>
             </div>
             <div className="def-field">
               <label>Outlet Indicator</label>
