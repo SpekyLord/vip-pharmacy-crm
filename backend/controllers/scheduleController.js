@@ -14,7 +14,7 @@ const Doctor = require('../models/Doctor');
 const Visit = require('../models/Visit');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
-const { getCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getDayOfWeek } = require('../utils/scheduleCycleUtils');
+const { getCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getDayOfWeek, isWorkDay } = require('../utils/scheduleCycleUtils');
 
 // ─── Reconciliation ────────────────────────────────────────────────────────────
 
@@ -230,8 +230,9 @@ const getCycle = catchAsync(async (req, res) => {
 
   const cycleStart = getCycleStartDate(requestedCycle);
   const currentCycle = getCycleNumber(now);
-  const currentWeek = currentCycle === requestedCycle ? getWeekOfMonth(now) : null;
-  const currentDay = currentCycle === requestedCycle ? getDayOfWeek(now) : null;
+  const isCurrentCycle = currentCycle === requestedCycle;
+  const currentWeek = isCurrentCycle && isWorkDay(now) ? getWeekOfMonth(now) : null;
+  const currentDay = isCurrentCycle && isWorkDay(now) ? getDayOfWeek(now) : null;
 
   // Summary stats
   const completed = entries.filter((e) => e.status === 'completed').length;
@@ -433,8 +434,9 @@ const adminGetCycle = catchAsync(async (req, res) => {
   const cycleStart = getCycleStartDate(targetCycle);
   const now = new Date();
   const currentCycle = getCycleNumber(now);
-  const currentWeek = currentCycle === targetCycle ? getWeekOfMonth(now) : null;
-  const currentDay = currentCycle === targetCycle ? getDayOfWeek(now) : null;
+  const isCurrentCycle = currentCycle === targetCycle;
+  const currentWeek = isCurrentCycle && isWorkDay(now) ? getWeekOfMonth(now) : null;
+  const currentDay = isCurrentCycle && isWorkDay(now) ? getDayOfWeek(now) : null;
 
   const completed = entries.filter((e) => e.status === 'completed').length;
   const carried = entries.filter((e) => e.status === 'carried').length;
@@ -556,8 +558,9 @@ const getCPTGrid = catchAsync(async (req, res) => {
   const cycleStart = getCycleStartDate(requestedCycle);
   const cycleEnd = getCycleEndDate(requestedCycle);
   const currentCycle = getCycleNumber(now);
-  const currentWeek = currentCycle === requestedCycle ? getWeekOfMonth(now) : null;
-  const currentDay = currentCycle === requestedCycle ? getDayOfWeek(now) : null;
+  const isCurrentCycle = currentCycle === requestedCycle;
+  const currentWeek = isCurrentCycle && isWorkDay(now) ? getWeekOfMonth(now) : null;
+  const currentDay = isCurrentCycle && isWorkDay(now) ? getDayOfWeek(now) : null;
 
   // Fetch schedule entries (try loop if empty)
   let entries = await Schedule.find({ user: userId, cycleNumber: requestedCycle })
