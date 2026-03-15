@@ -398,12 +398,8 @@ const NewClientVisitPage = () => {
       return;
     }
 
-    // Get GPS location from first photo with location data
+    // Get GPS location from first photo if available (nice-to-have, not required)
     const visitLocation = photos.find((p) => p.location)?.location;
-    if (!visitLocation) {
-      toast.error('GPS location required. Please enable location services and try again.');
-      return;
-    }
 
     setSubmitting(true);
 
@@ -416,18 +412,28 @@ const NewClientVisitPage = () => {
         submitData.append('engagementTypes', JSON.stringify(engagementTypes));
       }
 
-      // Add location as JSON string
-      submitData.append(
-        'location',
-        JSON.stringify({
-          latitude: visitLocation.latitude,
-          longitude: visitLocation.longitude,
-          accuracy: visitLocation.accuracy,
-        })
-      );
+      // Add location as JSON string if available
+      if (visitLocation) {
+        submitData.append(
+          'location',
+          JSON.stringify({
+            latitude: visitLocation.latitude,
+            longitude: visitLocation.longitude,
+            accuracy: visitLocation.accuracy,
+          })
+        );
+      }
 
       // Add photos — CameraCapture stores photos as base64 data URLs in photo.data
+      // Also build photoMetadata for audit tracking
+      const photoMetadata = [];
       for (const photo of photos) {
+        const metadata = {
+          capturedAt: photo.capturedAt || new Date().toISOString(),
+          source: photo.source || 'camera',
+        };
+        photoMetadata.push(metadata);
+
         if (photo.file) {
           submitData.append('photos', photo.file);
         } else if (photo.blob) {
@@ -439,6 +445,9 @@ const NewClientVisitPage = () => {
           submitData.append('photos', blob, `photo_${Date.now()}.jpg`);
         }
       }
+
+      // Append photoMetadata for server-side audit
+      submitData.append('photoMetadata', JSON.stringify(photoMetadata));
 
       await clientService.createVisit(submitData);
       toast.success('Extra call logged successfully!');
@@ -513,7 +522,7 @@ const NewClientVisitPage = () => {
                 <div className="form-section">
                   <h3>Photos (Required)</h3>
                   <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px' }}>
-                    Take a photo or upload from gallery. GPS will be captured automatically.
+                    Take a photo or upload from gallery. GPS will be captured automatically if available.
                   </p>
                   <CameraCapture onCapture={handlePhotosChange} maxPhotos={5} />
                 </div>

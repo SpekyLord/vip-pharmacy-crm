@@ -53,17 +53,15 @@ const clientVisitSchema = new mongoose.Schema(
       required: [true, 'Visit date is required'],
       default: Date.now,
     },
-    // Location (required for proof of visit)
+    // Location (optional — attached when available for extra verification)
     location: {
       latitude: {
         type: Number,
-        required: [true, 'GPS latitude is required'],
         min: -90,
         max: 90,
       },
       longitude: {
         type: Number,
-        required: [true, 'GPS longitude is required'],
         min: -180,
         max: 180,
       },
@@ -72,7 +70,6 @@ const clientVisitSchema = new mongoose.Schema(
       },
       capturedAt: {
         type: Date,
-        required: true,
         default: Date.now,
       },
     },
@@ -82,6 +79,8 @@ const clientVisitSchema = new mongoose.Schema(
         {
           url: { type: String, required: true },
           capturedAt: { type: Date, required: true },
+          source: { type: String, enum: ['camera', 'gallery', 'clipboard'], default: 'camera' },
+          hash: { type: String }, // MD5 hash for duplicate detection
         },
       ],
       validate: {
@@ -91,6 +90,20 @@ const clientVisitSchema = new mongoose.Schema(
         message: 'Visits must have 1-10 photos as proof of visit',
       },
     },
+
+    // Photo audit flags (for admin review)
+    photoFlags: {
+      type: [String],
+      enum: ['date_mismatch', 'duplicate_photo'],
+      default: [],
+    },
+    photoFlagDetails: [
+      {
+        flag: { type: String, enum: ['date_mismatch', 'duplicate_photo'] },
+        photoIndex: { type: Number },
+        detail: { type: String },
+      },
+    ],
     // Engagement types (maps to Excel CPT day sheet columns G-K)
     engagementTypes: {
       type: [String],
@@ -120,9 +133,9 @@ const clientVisitSchema = new mongoose.Schema(
       type: String, // "2026-02"
     },
     dayOfWeek: {
-      type: Number, // 1-5 (Mon-Fri)
+      type: Number, // 1-7 (Mon-Sun, weekends allowed for regular clients)
       min: 1,
-      max: 5,
+      max: 7,
     },
     weekOfMonth: {
       type: Number, // 1-4 (cycle-based week)
@@ -134,6 +147,12 @@ const clientVisitSchema = new mongoose.Schema(
     },
     yearWeekKey: {
       type: String, // "2026-W11" — for unique constraint
+    },
+
+    // Weekend visit flag (for reporting)
+    isWeekendVisit: {
+      type: Boolean,
+      default: false,
     },
   },
   {
@@ -149,6 +168,8 @@ clientVisitSchema.index({ client: 1, visitDate: -1 });
 clientVisitSchema.index({ user: 1, monthYear: 1 });
 clientVisitSchema.index({ yearWeekKey: 1 });
 clientVisitSchema.index({ client: 1, user: 1, monthYear: 1 });
+clientVisitSchema.index({ 'photos.hash': 1 }, { sparse: true }); // For duplicate photo detection
+clientVisitSchema.index({ photoFlags: 1 }, { sparse: true }); // For photo audit queries
 
 // Compound unique index: ONE visit per client per week per user
 clientVisitSchema.index(
@@ -163,18 +184,13 @@ clientVisitSchema.index(
 clientVisitSchema.pre('save', function (next) {
   if (this.isNew || this.isModified('visitDate')) {
     const date = this.visitDate;
-
-    // Enforce work days only (Mon-Fri)
     const jsDay = date.getDay();
-    if (jsDay === 0 || jsDay === 6) {
-      return next(new Error('Visits can only be logged on work days (Monday-Friday)'));
-    }
 
     // ISO week number
     const { weekNumber, weekYear } = getISOWeek(date);
     this.weekNumber = weekNumber;
 
-    // Cycle position (W1-W4, day 1-5)
+    // Cycle position (W1-W4, day 1-7)
     const { weekInCycle, dayOfWeekInCycle } = getCyclePosition(date);
     this.weekOfMonth = weekInCycle;
     this.dayOfWeek = dayOfWeekInCycle;
@@ -189,6 +205,9 @@ clientVisitSchema.pre('save', function (next) {
     // Year-week key for unique constraint
     const week = String(weekNumber).padStart(2, '0');
     this.yearWeekKey = `${weekYear}-W${week}`;
+
+    // Set weekend flag (Sat=6, Sun=0 in JS getDay())
+    this.isWeekendVisit = jsDay === 0 || jsDay === 6;
   }
   next();
 });

@@ -315,12 +315,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
     setPhotos(capturedPhotos);
   };
 
-  // Check if today is a work day (Mon-Fri)
-  const isWorkDay = () => {
-    const day = new Date().getDay();
-    return day >= 1 && day <= 5;
-  };
-
   // Convert base64 to File object
   const base64ToFile = (base64Data, filename) => {
     const arr = base64Data.split(',');
@@ -340,12 +334,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
     // Validate photos
     if (photos.length === 0) {
       toast.error('At least 1 photo is required as proof of visit');
-      return;
-    }
-
-    // Validate work day
-    if (!isWorkDay()) {
-      toast.error('Visits can only be logged on work days (Monday-Friday)');
       return;
     }
 

@@ -54,7 +54,7 @@ const visitSchema = new mongoose.Schema(
     dayOfWeek: {
       type: Number,
       min: 1, // 1 = Monday
-      max: 5, // 5 = Friday
+      max: 7, // 7 = Sunday (weekends now allowed conditionally)
     },
     weekLabel: {
       type: String, // "W1D1", "W2D3", etc.
@@ -64,6 +64,12 @@ const visitSchema = new mongoose.Schema(
     },
     yearWeekKey: {
       type: String, // "2024-W52" - ISO week format for unique constraint
+    },
+
+    // Weekend visit flag (for reporting)
+    isWeekendVisit: {
+      type: Boolean,
+      default: false,
     },
 
     // Location (optional — attached when available for extra verification)
@@ -95,6 +101,7 @@ const visitSchema = new mongoose.Schema(
           capturedAt: { type: Date, required: true },
           source: { type: String, enum: ['camera', 'gallery', 'clipboard'], default: 'camera' },
           thumbnailUrl: { type: String },
+          hash: { type: String }, // MD5 hash for duplicate detection
         },
       ],
       validate: {
@@ -104,6 +111,20 @@ const visitSchema = new mongoose.Schema(
         message: 'Visits must have 1-10 photos as proof of visit',
       },
     },
+
+    // Photo audit flags (for admin review)
+    photoFlags: {
+      type: [String],
+      enum: ['date_mismatch', 'duplicate_photo'],
+      default: [],
+    },
+    photoFlagDetails: [
+      {
+        flag: { type: String, enum: ['date_mismatch', 'duplicate_photo'] },
+        photoIndex: { type: Number },
+        detail: { type: String },
+      },
+    ],
 
     // Products discussed during visit
     productsDiscussed: [
@@ -183,6 +204,8 @@ visitSchema.index({ status: 1, visitDate: -1 }); // Optimized for status + date 
 visitSchema.index({ visitDate: -1 });
 visitSchema.index({ yearWeekKey: 1 });
 visitSchema.index({ doctor: 1, user: 1, monthYear: 1 }); // For monthly visit count queries
+visitSchema.index({ 'photos.hash': 1 }, { sparse: true }); // For duplicate photo detection
+visitSchema.index({ photoFlags: 1 }, { sparse: true }); // For photo audit queries
 
 /**
  * Calculate ISO 8601 week number
@@ -258,15 +281,10 @@ visitSchema.pre('save', function (next) {
     // e.g., Dec 31, 2024 might be "2025-W01" if it falls in week 1 of 2025
     const week = String(weekNumber).padStart(2, '0');
     this.yearWeekKey = `${weekYear}-W${week}`;
-  }
-  next();
-});
 
-// Pre-save validation for work days only (Mon-Fri)
-visitSchema.pre('save', function (next) {
-  const jsDay = this.visitDate.getDay();
-  if (jsDay === 0 || jsDay === 6) {
-    return next(new Error('Visits can only be logged on work days (Monday-Friday)'));
+    // Set weekend flag (Sat=6, Sun=0 in JS getDay())
+    const jsDay = date.getDay();
+    this.isWeekendVisit = jsDay === 0 || jsDay === 6;
   }
   next();
 });

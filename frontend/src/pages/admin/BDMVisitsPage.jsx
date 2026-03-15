@@ -184,7 +184,10 @@ const BDMVisitsPage = () => {
   const handleViewDetails = async (visit) => {
     setDetailLoading(true);
     try {
-      const response = await visitService.getById(visit._id);
+      // Use correct service based on visit type
+      const response = visit._visitType === 'regular'
+        ? await clientService.getVisitById(visit._id)
+        : await visitService.getById(visit._id);
       setSelectedVisit(response.data);
     } catch (err) {
       console.error('Failed to fetch visit details:', err);

@@ -160,22 +160,13 @@ const getMonthlyVisitCount = async (doctorId, userId, monthYear) => {
  * @param {string} doctorId
  * @param {Object} user - User object (with _id and role)
  * @param {Date} visitDate - Optional date, defaults to today
- * @returns {Promise<{canVisit: boolean, reason?: string, weeklyCount: number, monthlyCount: number, monthlyLimit: number}>}
+ * @returns {Promise<{canVisit: boolean, reason?: string, weeklyCount: number, monthlyCount: number, monthlyLimit: number, isWeekend?: boolean}>}
  */
 const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
   // Handle both user object and userId for backward compatibility
   const userId = user._id || user;
-
-  // Check if it's a work day
-  if (!isWorkDay(visitDate)) {
-    return {
-      canVisit: false,
-      reason: 'Visits can only be logged on work days (Monday-Friday)',
-      weeklyCount: 0,
-      monthlyCount: 0,
-      monthlyLimit: 0,
-    };
-  }
+  const jsDay = visitDate.getDay();
+  const isWeekendDate = jsDay === 0 || jsDay === 6;
 
   // Get doctor's visit frequency (2x or 4x monthly)
   const doctor = await Doctor.findById(doctorId);
@@ -186,6 +177,7 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
       weeklyCount: 0,
       monthlyCount: 0,
       monthlyLimit: 0,
+      isWeekend: isWeekendDate,
     };
   }
 
@@ -198,6 +190,7 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
         weeklyCount: 0,
         monthlyCount: 0,
         monthlyLimit: doctor.visitFrequency || 4,
+        isWeekend: isWeekendDate,
       };
     }
   }
@@ -220,6 +213,7 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
       weeklyCount: 1,
       monthlyCount: await Visit.countDoctorVisitsInMonth(doctorId, userId, monthYear),
       monthlyLimit,
+      isWeekend: isWeekendDate,
     };
   }
 
@@ -233,6 +227,7 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
       weeklyCount: 0,
       monthlyCount,
       monthlyLimit,
+      isWeekend: isWeekendDate,
     };
   }
 
@@ -258,6 +253,27 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
       return false;
     });
 
+    // Weekend conditional logic for VIP clients (doctors with schedules)
+    // Weekends are only allowed if there are carried/overdue entries to clear
+    // On weekends, ANY visitable entry counts as "overdue" since weekdays (Mon-Fri) have passed
+    // - carried entries from previous weeks
+    // - planned entries for current or past weeks (they missed their Mon-Fri window)
+    if (isWeekendDate) {
+      // If there are visitable entries, they can catch up on weekend
+      // visitable already filters for carried OR planned with scheduledWeek <= currentWeek
+      if (visitable.length === 0) {
+        return {
+          canVisit: false,
+          reason: 'Weekend visits are only allowed for VIP Clients with carried or overdue visits.',
+          weeklyCount: 0,
+          monthlyCount,
+          monthlyLimit,
+          isWeekend: true,
+          scheduleInfo: { hasSchedule: true },
+        };
+      }
+    }
+
     if (visitable.length === 0) {
       // Check if all are completed
       const allCompleted = scheduleEntries.every((e) => e.status === 'completed');
@@ -270,6 +286,7 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
         weeklyCount: 0,
         monthlyCount,
         monthlyLimit,
+        isWeekend: isWeekendDate,
         scheduleInfo: { hasSchedule: true, entries: scheduleEntries },
       };
     }
@@ -279,16 +296,31 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
       weeklyCount: 0,
       monthlyCount,
       monthlyLimit,
+      isWeekend: isWeekendDate,
       scheduleInfo: { hasSchedule: true, visitableEntries: visitable },
     };
   }
 
-  // No schedule exists — fall through to existing monthly quota logic (backward compat)
+  // No schedule exists — VIP client without schedule
+  // On weekends, block unless there's schedule with carried entries (handled above)
+  if (isWeekendDate) {
+    return {
+      canVisit: false,
+      reason: 'Weekend visits are only allowed for VIP Clients with carried or overdue visits.',
+      weeklyCount: 0,
+      monthlyCount,
+      monthlyLimit,
+      isWeekend: true,
+    };
+  }
+
+  // Weekday with no schedule — fall through to existing monthly quota logic (backward compat)
   return {
     canVisit: true,
     weeklyCount: 0,
     monthlyCount,
     monthlyLimit,
+    isWeekend: false,
   };
 };
 
@@ -402,20 +434,11 @@ const checkBehindSchedule = async (userId, checkDate = new Date()) => {
  * @param {Array<string>} doctorIds - Array of doctor IDs
  * @param {Object} user - User object with _id and role
  * @param {Date} visitDate - Optional date, defaults to today
- * @returns {Promise<Array<{doctorId: string, canVisit: boolean, reason?: string, weeklyCount: number, monthlyCount: number, monthlyLimit: number}>>}
+ * @returns {Promise<Array<{doctorId: string, canVisit: boolean, reason?: string, weeklyCount: number, monthlyCount: number, monthlyLimit: number, isWeekend?: boolean}>>}
  */
 const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => {
-  // Check if it's a work day first
-  if (!isWorkDay(visitDate)) {
-    return doctorIds.map((doctorId) => ({
-      doctorId,
-      canVisit: false,
-      reason: 'Visits can only be logged on work days (Monday-Friday)',
-      weeklyCount: 0,
-      monthlyCount: 0,
-      monthlyLimit: 0,
-    }));
-  }
+  const jsDay = visitDate.getDay();
+  const isWeekendDate = jsDay === 0 || jsDay === 6;
 
   const userId = user._id || user;
   const monthYear = getEffectiveMonthYear(visitDate); // Use effective month (5th week → next month)
@@ -473,6 +496,7 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
         weeklyCount: 0,
         monthlyCount: 0,
         monthlyLimit: 0,
+        isWeekend: isWeekendDate,
       };
     }
 
@@ -489,6 +513,7 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
           weeklyCount: 0,
           monthlyCount,
           monthlyLimit,
+          isWeekend: isWeekendDate,
         };
       }
     }
@@ -502,6 +527,7 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
         weeklyCount: 1,
         monthlyCount,
         monthlyLimit,
+        isWeekend: isWeekendDate,
       };
     }
 
@@ -514,6 +540,7 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
         weeklyCount: 0,
         monthlyCount,
         monthlyLimit,
+        isWeekend: isWeekendDate,
       };
     }
 
@@ -523,34 +550,48 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
       weeklyCount: 0,
       monthlyCount,
       monthlyLimit,
+      isWeekend: isWeekendDate,
     };
   });
 
   // Schedule-aware batch validation (Task A.2 + C.1):
   // Overlay schedule constraints on results for doctors that have schedule entries.
-  if (scheduleEntries.length > 0) {
-    // Group schedule entries by doctor
-    const scheduleByDoctor = new Map();
-    scheduleEntries.forEach((e) => {
-      const did = e.doctor.toString();
-      if (!scheduleByDoctor.has(did)) scheduleByDoctor.set(did, []);
-      scheduleByDoctor.get(did).push(e);
-    });
+  // Group schedule entries by doctor
+  const scheduleByDoctor = new Map();
+  scheduleEntries.forEach((e) => {
+    const did = e.doctor.toString();
+    if (!scheduleByDoctor.has(did)) scheduleByDoctor.set(did, []);
+    scheduleByDoctor.get(did).push(e);
+  });
 
-    // Override canVisit for doctors that have schedule entries
-    return results.map((result) => {
-      const entries = scheduleByDoctor.get(result.doctorId);
-      if (!entries || entries.length === 0) return result;
+  // Override canVisit for doctors based on schedule AND weekend logic
+  return results.map((result) => {
+    const entries = scheduleByDoctor.get(result.doctorId);
+    const hasSchedule = entries && entries.length > 0;
 
-      // If already blocked by weekly/monthly/region check, keep that result
-      if (!result.canVisit) return result;
+    // If already blocked by weekly/monthly/region check, keep that result
+    if (!result.canVisit) return result;
 
+    if (hasSchedule) {
       const visitable = entries.filter((e) => {
         if (e.status === 'completed' || e.status === 'missed') return false;
         if (e.status === 'planned' && e.scheduledWeek <= currentWeek) return true;
         if (e.status === 'carried') return true;
         return false;
       });
+
+      // Weekend conditional logic for VIP clients with schedules
+      // On weekends, ANY visitable entry counts as "overdue" since weekdays have passed
+      if (isWeekendDate) {
+        if (visitable.length === 0) {
+          return {
+            ...result,
+            canVisit: false,
+            reason: 'Weekend visits are only allowed for VIP Clients with carried or overdue visits.',
+            scheduleInfo: { hasSchedule: true },
+          };
+        }
+      }
 
       if (visitable.length === 0) {
         const allCompleted = entries.every((e) => e.status === 'completed');
@@ -568,10 +609,20 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
         ...result,
         scheduleInfo: { hasSchedule: true, visitableCount: visitable.length },
       };
-    });
-  }
+    }
 
-  return results;
+    // No schedule — VIP client without schedule
+    // On weekends, block (no schedule = no carried/overdue to clear)
+    if (isWeekendDate) {
+      return {
+        ...result,
+        canVisit: false,
+        reason: 'Weekend visits are only allowed for VIP Clients with carried or overdue visits.',
+      };
+    }
+
+    return result;
+  });
 };
 
 /**

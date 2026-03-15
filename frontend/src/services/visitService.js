@@ -132,6 +132,12 @@ const visitService = {
     const response = await api.get('/visits/gps-review', { params });
     return response.data;
   },
+
+  // Get photo audit issues (visits with flagged photos) - Admin only
+  getPhotoAuditIssues: async (params = {}) => {
+    const response = await api.get('/visits/photo-audit', { params });
+    return response.data;
+  },
 };
 
 export default visitService;

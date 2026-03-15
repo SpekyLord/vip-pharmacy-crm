@@ -24,6 +24,7 @@ const {
   deleteClient,
   createClientVisit,
   getClientVisits,
+  getClientVisitById,
   getMyClientVisits,
   getClientVisitsByUser,
   getTodayClientVisitCount,
@@ -59,6 +60,7 @@ router.delete('/:id', deleteClient);
 
 // Client visits
 router.get('/:id/visits', getClientVisits);
+router.get('/visits/:visitId', getClientVisitById);
 router.post(
   '/visits',
   uploadMultiple('photos', 5),

@@ -34,6 +34,7 @@ const StatisticsPage = lazy(() => import('./pages/admin/StatisticsPage'));
 const ActivityMonitor = lazy(() => import('./pages/admin/ActivityMonitor'));
 const PendingApprovalsPage = lazy(() => import('./pages/admin/PendingApprovalsPage'));
 const GPSVerificationPage = lazy(() => import('./pages/admin/GPSVerificationPage'));
+const PhotoAuditPage = lazy(() => import('./pages/admin/PhotoAuditPage'));
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -191,6 +192,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <GPSVerificationPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/photo-audit"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <PhotoAuditPage />
               </ProtectedRoute>
             }
           />

@@ -71,6 +71,12 @@ const clientService = {
     const response = await api.get(`/clients/visits/by-user/${userId}`, { params });
     return response.data;
   },
+
+  // Get client visit by ID
+  getVisitById: async (visitId) => {
+    const response = await api.get(`/clients/visits/${visitId}`);
+    return response.data;
+  },
 };
 
 export default clientService;

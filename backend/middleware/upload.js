@@ -11,6 +11,7 @@
 
 const multer = require('multer');
 const path = require('path');
+const crypto = require('crypto');
 const { uploadVisitPhoto, uploadProductImage, uploadAvatar } = require('../config/s3');
 
 // Allowed MIME types
@@ -113,6 +114,7 @@ const handleUploadError = (err, req, res, next) => {
 /**
  * Middleware to upload visit photos to S3
  * Use after uploadMultiple('photos')
+ * Computes MD5 hash of each photo for duplicate detection
  */
 const processVisitPhotos = async (req, res, next) => {
   try {
@@ -127,6 +129,9 @@ const processVisitPhotos = async (req, res, next) => {
     const now = new Date();
 
     for (const file of req.files) {
+      // Compute MD5 hash for duplicate detection
+      const hash = crypto.createHash('md5').update(file.buffer).digest('hex');
+
       const result = await uploadVisitPhoto(
         file.buffer,
         file.originalname,
@@ -140,6 +145,7 @@ const processVisitPhotos = async (req, res, next) => {
         originalName: file.originalname,
         size: file.size,
         mimetype: file.mimetype,
+        hash, // MD5 hash for duplicate detection
       });
     }
 

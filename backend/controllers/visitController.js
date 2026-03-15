@@ -12,6 +12,7 @@
 const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
 const CrmProduct = require('../models/CrmProduct');
+const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, checkBehindSchedule, getMonthYear, getScheduleMatchForVisit } = require('../utils/validateWeeklyVisit');
 const { signVisitPhotos } = require('../config/s3');
@@ -124,8 +125,64 @@ const createVisit = catchAsync(async (req, res) => {
       url: photo.url,
       capturedAt: meta.capturedAt ? new Date(meta.capturedAt) : (photo.capturedAt || new Date()),
       source: meta.source || 'camera',
+      hash: photo.hash,
     };
   });
+
+  // Detect photo flags
+  const photoFlags = [];
+  const photoFlagDetails = [];
+  const visitDateStart = new Date(visitDateObj);
+  visitDateStart.setHours(0, 0, 0, 0);
+  const visitDateEnd = new Date(visitDateObj);
+  visitDateEnd.setHours(23, 59, 59, 999);
+
+  // Check for date mismatch (photo taken on different day than visit)
+  photos.forEach((photo, index) => {
+    if (photo.capturedAt) {
+      const photoDate = new Date(photo.capturedAt);
+      if (photoDate < visitDateStart || photoDate > visitDateEnd) {
+        if (!photoFlags.includes('date_mismatch')) {
+          photoFlags.push('date_mismatch');
+        }
+        photoFlagDetails.push({
+          flag: 'date_mismatch',
+          photoIndex: index,
+          detail: `Photo taken on ${photoDate.toISOString().split('T')[0]}, visit logged for ${visitDateObj.toISOString().split('T')[0]}`,
+        });
+      }
+    }
+  });
+
+  // Check for duplicate photos (hash matches existing visits)
+  const hashes = photos.map(p => p.hash).filter(Boolean);
+  if (hashes.length > 0) {
+    const [existingVisitPhotos, existingClientPhotos] = await Promise.all([
+      Visit.find({ 'photos.hash': { $in: hashes } }).select('photos.hash').lean(),
+      ClientVisit.find({ 'photos.hash': { $in: hashes } }).select('photos.hash').lean(),
+    ]);
+
+    const existingHashes = new Set();
+    existingVisitPhotos.forEach(v => v.photos.forEach(p => { if (p.hash) existingHashes.add(p.hash); }));
+    existingClientPhotos.forEach(v => v.photos.forEach(p => { if (p.hash) existingHashes.add(p.hash); }));
+
+    photos.forEach((photo, index) => {
+      if (photo.hash && existingHashes.has(photo.hash)) {
+        if (!photoFlags.includes('duplicate_photo')) {
+          photoFlags.push('duplicate_photo');
+        }
+        photoFlagDetails.push({
+          flag: 'duplicate_photo',
+          photoIndex: index,
+          detail: 'This photo has been used in a previous visit',
+        });
+      }
+    });
+  }
+
+  // Detect if this is a weekend visit
+  const jsDay = visitDateObj.getDay();
+  const isWeekendVisit = jsDay === 0 || jsDay === 6;
 
   // Create visit with race condition protection
   // The unique index on (doctor, user, yearWeekKey) prevents duplicate visits
@@ -146,7 +203,14 @@ const createVisit = catchAsync(async (req, res) => {
       duration,
       nextVisitDate,
       status: 'completed',
+      isWeekendVisit,
     };
+
+    // Add photo flags if any
+    if (photoFlags.length > 0) {
+      visitData.photoFlags = photoFlags;
+      visitData.photoFlagDetails = photoFlagDetails;
+    }
 
     // Add location only if GPS data is available
     if (locationData && locationData.latitude != null && locationData.longitude != null) {
@@ -1202,6 +1266,143 @@ const getGPSReview = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get photo audit issues (visits with flagged photos)
+ * @route   GET /api/visits/photo-audit
+ * @access  Private (Admin only)
+ */
+const getPhotoAuditIssues = catchAsync(async (req, res) => {
+  const {
+    page = 1,
+    limit = 20,
+    flagType,
+    userId,
+    dateFrom,
+    dateTo,
+  } = req.query;
+
+  const parsedPage = parseInt(page, 10) || 1;
+  const parsedLimit = parseInt(limit, 10) || 20;
+  const skip = (parsedPage - 1) * parsedLimit;
+
+  // Build filter for flagged visits
+  const baseFilter = { photoFlags: { $exists: true, $ne: [] } };
+
+  if (flagType && flagType !== 'all') {
+    baseFilter.photoFlags = flagType;
+  }
+
+  if (userId) {
+    baseFilter.user = userId;
+  }
+
+  if (dateFrom || dateTo) {
+    baseFilter.visitDate = {};
+    if (dateFrom) baseFilter.visitDate.$gte = new Date(dateFrom);
+    if (dateTo) {
+      const endDate = new Date(dateTo);
+      endDate.setHours(23, 59, 59, 999);
+      baseFilter.visitDate.$lte = endDate;
+    }
+  }
+
+  // Query both Visit and ClientVisit collections in parallel
+  const [
+    vipVisits,
+    vipTotal,
+    clientVisits,
+    clientTotal,
+  ] = await Promise.all([
+    Visit.find(baseFilter)
+      .populate('doctor', 'firstName lastName')
+      .populate('user', 'name email')
+      .sort({ visitDate: -1 })
+      .lean(),
+    Visit.countDocuments(baseFilter),
+    ClientVisit.find(baseFilter)
+      .populate('client', 'firstName lastName')
+      .populate('user', 'name email')
+      .sort({ visitDate: -1 })
+      .lean(),
+    ClientVisit.countDocuments(baseFilter),
+  ]);
+
+  // Count flags for summary stats
+  let dateMismatchCount = 0;
+  let duplicatePhotoCount = 0;
+
+  // Transform and merge results
+  const allIssues = [
+    ...vipVisits.map((v) => {
+      if (v.photoFlags.includes('date_mismatch')) dateMismatchCount++;
+      if (v.photoFlags.includes('duplicate_photo')) duplicatePhotoCount++;
+      return {
+        _id: v._id,
+        type: 'vip',
+        visitDate: v.visitDate,
+        user: v.user,
+        entity: v.doctor ? {
+          _id: v.doctor._id,
+          name: `${v.doctor.firstName} ${v.doctor.lastName}`,
+        } : null,
+        photoFlags: v.photoFlags,
+        photoFlagDetails: v.photoFlagDetails,
+        photos: v.photos,
+        createdAt: v.createdAt,
+      };
+    }),
+    ...clientVisits.map((v) => {
+      if (v.photoFlags.includes('date_mismatch')) dateMismatchCount++;
+      if (v.photoFlags.includes('duplicate_photo')) duplicatePhotoCount++;
+      return {
+        _id: v._id,
+        type: 'regular',
+        visitDate: v.visitDate,
+        user: v.user,
+        entity: v.client ? {
+          _id: v.client._id,
+          name: `${v.client.firstName} ${v.client.lastName}`,
+        } : null,
+        photoFlags: v.photoFlags,
+        photoFlagDetails: v.photoFlagDetails,
+        photos: v.photos,
+        createdAt: v.createdAt,
+      };
+    }),
+  ];
+
+  // Sort by visitDate descending
+  allIssues.sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate));
+
+  // Paginate combined results
+  const paginatedIssues = allIssues.slice(skip, skip + parsedLimit);
+
+  // Sign photo URLs for display
+  for (const issue of paginatedIssues) {
+    if (issue.photos && issue.photos.length > 0) {
+      issue.photos = await signVisitPhotos(issue.photos);
+    }
+  }
+
+  const total = vipTotal + clientTotal;
+
+  res.json({
+    success: true,
+    data: paginatedIssues,
+    summary: {
+      totalFlagged: total,
+      dateMismatch: dateMismatchCount,
+      duplicatePhoto: duplicatePhotoCount,
+    },
+    pagination: {
+      page: parsedPage,
+      limit: parsedLimit,
+      total,
+      pages: Math.ceil(total / parsedLimit),
+    },
+  });
+});
+
 module.exports = {
   createVisit,
   getAllVisits,
@@ -1220,4 +1421,5 @@ module.exports = {
   getEmployeeReport,
   getQuotaDumpingAlerts,
   getGPSReview,
+  getPhotoAuditIssues,
 };

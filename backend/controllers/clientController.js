@@ -292,8 +292,12 @@ const createClientVisit = catchAsync(async (req, res) => {
     }
   }
 
-  // Enforce weekly/monthly visit limits (only for strict mode)
+  // Regular clients can be visited any day (including weekends) - no weekend restrictions
   const visitDateObj = visitDate ? new Date(visitDate) : new Date();
+  const jsDay = visitDateObj.getDay();
+  const isWeekendVisit = jsDay === 0 || jsDay === 6;
+
+  // Enforce weekly/monthly visit limits (only for strict mode)
   const visitMonth = `${visitDateObj.getFullYear()}-${String(visitDateObj.getMonth() + 1).padStart(2, '0')}`;
 
   if (client.schedulingMode === 'strict') {
@@ -326,10 +330,80 @@ const createClientVisit = catchAsync(async (req, res) => {
     });
   }
 
-  const photos = req.uploadedPhotos.map((photo) => ({
-    url: photo.url,
-    capturedAt: photo.capturedAt || new Date(),
-  }));
+  // Parse photoMetadata if provided (from FormData)
+  let photoMetadata = [];
+  if (req.body.photoMetadata) {
+    try {
+      photoMetadata = typeof req.body.photoMetadata === 'string'
+        ? JSON.parse(req.body.photoMetadata)
+        : req.body.photoMetadata;
+    } catch (e) {
+      photoMetadata = [];
+    }
+  }
+
+  // Build photos array with hash and source
+  const photos = req.uploadedPhotos.map((photo, index) => {
+    const metadata = photoMetadata[index] || {};
+    return {
+      url: photo.url,
+      capturedAt: metadata.capturedAt ? new Date(metadata.capturedAt) : photo.capturedAt || new Date(),
+      source: metadata.source || 'camera',
+      hash: photo.hash,
+    };
+  });
+
+  // Detect photo flags
+  const photoFlags = [];
+  const photoFlagDetails = [];
+  const visitDateStart = new Date(visitDateObj);
+  visitDateStart.setHours(0, 0, 0, 0);
+  const visitDateEnd = new Date(visitDateObj);
+  visitDateEnd.setHours(23, 59, 59, 999);
+
+  // Check for date mismatch (photo taken on different day than visit)
+  photos.forEach((photo, index) => {
+    if (photo.capturedAt) {
+      const photoDate = new Date(photo.capturedAt);
+      if (photoDate < visitDateStart || photoDate > visitDateEnd) {
+        if (!photoFlags.includes('date_mismatch')) {
+          photoFlags.push('date_mismatch');
+        }
+        photoFlagDetails.push({
+          flag: 'date_mismatch',
+          photoIndex: index,
+          detail: `Photo taken on ${photoDate.toISOString().split('T')[0]}, visit logged for ${visitDateObj.toISOString().split('T')[0]}`,
+        });
+      }
+    }
+  });
+
+  // Check for duplicate photos (hash matches existing visits)
+  const hashes = photos.map(p => p.hash).filter(Boolean);
+  if (hashes.length > 0) {
+    const Visit = require('../models/Visit');
+    const [existingVisitPhotos, existingClientPhotos] = await Promise.all([
+      Visit.find({ 'photos.hash': { $in: hashes } }).select('photos.hash').lean(),
+      ClientVisit.find({ 'photos.hash': { $in: hashes } }).select('photos.hash').lean(),
+    ]);
+
+    const existingHashes = new Set();
+    existingVisitPhotos.forEach(v => v.photos.forEach(p => { if (p.hash) existingHashes.add(p.hash); }));
+    existingClientPhotos.forEach(v => v.photos.forEach(p => { if (p.hash) existingHashes.add(p.hash); }));
+
+    photos.forEach((photo, index) => {
+      if (photo.hash && existingHashes.has(photo.hash)) {
+        if (!photoFlags.includes('duplicate_photo')) {
+          photoFlags.push('duplicate_photo');
+        }
+        photoFlagDetails.push({
+          flag: 'duplicate_photo',
+          photoIndex: index,
+          detail: 'This photo has been used in a previous visit',
+        });
+      }
+    });
+  }
 
   // Parse engagementTypes if it's a JSON string (from FormData)
   let engagementData = engagementTypes;
@@ -341,22 +415,35 @@ const createClientVisit = catchAsync(async (req, res) => {
     }
   }
 
-  const visit = await ClientVisit.create({
+  const visitData = {
     client: clientId,
     user: req.user._id,
     visitDate: visitDateObj,
-    location: {
-      latitude: locationData.latitude,
-      longitude: locationData.longitude,
-      accuracy: locationData.accuracy,
-      capturedAt: new Date(),
-    },
     photos,
     engagementTypes: engagementData || [],
     purpose,
     notes,
     status: 'completed',
-  });
+    isWeekendVisit,
+  };
+
+  // Add photo flags if any
+  if (photoFlags.length > 0) {
+    visitData.photoFlags = photoFlags;
+    visitData.photoFlagDetails = photoFlagDetails;
+  }
+
+  // Attach location if provided (optional)
+  if (locationData && locationData.latitude != null && locationData.longitude != null) {
+    visitData.location = {
+      latitude: locationData.latitude,
+      longitude: locationData.longitude,
+      accuracy: locationData.accuracy,
+      capturedAt: new Date(),
+    };
+  }
+
+  const visit = await ClientVisit.create(visitData);
 
   await visit.populate('client', 'firstName lastName specialization clinicOfficeAddress');
 
@@ -695,6 +782,38 @@ const getScheduledToday = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get client visit by ID
+ * @route   GET /api/clients/visits/:id
+ * @access  Private (ownership check for BDMs)
+ */
+const getClientVisitById = catchAsync(async (req, res) => {
+  const visit = await ClientVisit.findById(req.params.id)
+    .populate('client', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('user', 'name email');
+
+  if (!visit) {
+    throw new NotFoundError('Client visit not found');
+  }
+
+  // Ownership check for BDMs
+  if (req.user.role === 'employee') {
+    if (visit.user._id.toString() !== req.user._id.toString()) {
+      throw new ForbiddenError('You can only view your own visits');
+    }
+  }
+
+  // Sign photo URLs
+  if (visit.photos && visit.photos.length > 0) {
+    visit.photos = await signVisitPhotos(visit.photos);
+  }
+
+  res.status(200).json({
+    success: true,
+    data: visit,
+  });
+});
+
 module.exports = {
   getAllClients,
   getClientById,
@@ -703,6 +822,7 @@ module.exports = {
   deleteClient,
   createClientVisit,
   getClientVisits,
+  getClientVisitById,
   getMyClientVisits,
   getClientVisitsByUser,
   getTodayClientVisitCount,

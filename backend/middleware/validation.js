@@ -345,8 +345,7 @@ const createVisitValidation = [
   body('visitDate')
     .optional()
     .isISO8601()
-    .withMessage('Invalid date format')
-    .custom(isWorkDay),
+    .withMessage('Invalid date format'),
   body('location.latitude')
     .optional()
     .custom(isValidLatitude),
@@ -629,8 +628,7 @@ const createClientVisitValidation = [
   body('visitDate')
     .optional()
     .isISO8601()
-    .withMessage('Invalid date format')
-    .custom(isWorkDay),
+    .withMessage('Invalid date format'),
   body('location.latitude')
     .optional()
     .custom(isValidLatitude),

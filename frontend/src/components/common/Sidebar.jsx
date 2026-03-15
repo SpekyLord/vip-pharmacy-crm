@@ -32,6 +32,7 @@ import {
   Menu,
   X,
   PlusCircle,
+  Camera,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -536,6 +537,7 @@ const getMenuConfig = (role, unreadCount = 0) => {
               { path: '/admin/approvals', label: 'Import / Export', icon: FileSpreadsheet },
               { path: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
               { path: '/admin/reports', label: 'Reports', icon: FileText },
+              { path: '/admin/photo-audit', label: 'Photo Audit', icon: Camera },
             ],
           },
         ],
