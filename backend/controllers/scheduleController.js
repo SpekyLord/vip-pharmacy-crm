@@ -14,7 +14,7 @@ const Doctor = require('../models/Doctor');
 const Visit = require('../models/Visit');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
-const { getCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getDayOfWeek, isWorkDay } = require('../utils/scheduleCycleUtils');
+const { getCycleNumber, getDisplayCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getDayOfWeek, isWorkDay } = require('../utils/scheduleCycleUtils');
 
 // ─── Reconciliation ────────────────────────────────────────────────────────────
 
@@ -244,6 +244,7 @@ const getCycle = catchAsync(async (req, res) => {
     success: true,
     data: {
       cycleNumber: requestedCycle,
+      displayCycleNumber: getDisplayCycleNumber(getCycleStartDate(requestedCycle)),
       cycleStart,
       currentWeek,
       currentDay,
@@ -447,6 +448,7 @@ const adminGetCycle = catchAsync(async (req, res) => {
     success: true,
     data: {
       cycleNumber: targetCycle,
+      displayCycleNumber: getDisplayCycleNumber(getCycleStartDate(targetCycle)),
       cycleStart,
       currentWeek,
       currentDay,
@@ -767,6 +769,7 @@ const getCPTGrid = catchAsync(async (req, res) => {
     success: true,
     data: {
       cycleNumber: requestedCycle,
+      displayCycleNumber: getDisplayCycleNumber(getCycleStartDate(requestedCycle)),
       cycleStart,
       currentWeek,
       currentDay,

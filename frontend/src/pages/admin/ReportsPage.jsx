@@ -1815,7 +1815,7 @@ const ReportsPage = () => {
                         &#8249;
                       </button>
                       <span style={{ fontSize: '14px', fontWeight: 600, minWidth: '80px', textAlign: 'center' }}>
-                        Cycle {cptData?.cycleNumber ?? cptCycleNumber ?? '...'}
+                        Cycle {cptData?.displayCycleNumber ?? cptData?.cycleNumber ?? cptCycleNumber ?? '...'}
                       </span>
                       <button
                         className="bdm-btn-generate"

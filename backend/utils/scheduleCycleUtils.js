@@ -46,7 +46,12 @@ const isWorkDay = (date) => {
 };
 
 /**
- * Get 0-based cycle number from anchor date.
+ * Cycles per year (13 cycles × 28 days = 364 days).
+ */
+const CYCLES_PER_YEAR = 13;
+
+/**
+ * Get absolute cycle number from anchor date (ever-increasing, used for DB storage).
  * @param {Date} date
  * @returns {number}
  */
@@ -57,8 +62,19 @@ const getCycleNumber = (date) => {
 };
 
 /**
+ * Get display cycle number (0-12), resets each year.
+ * Used for UI display only — DB queries should use getCycleNumber().
+ * @param {Date} date
+ * @returns {number} 0-12
+ */
+const getDisplayCycleNumber = (date) => {
+  const absolute = getCycleNumber(date);
+  return ((absolute % CYCLES_PER_YEAR) + CYCLES_PER_YEAR) % CYCLES_PER_YEAR;
+};
+
+/**
  * Get the Monday start date for a given cycle number.
- * @param {number} cycleNumber
+ * @param {number} cycleNumber - Absolute cycle number
  * @returns {Date}
  */
 const getCycleStartDate = (cycleNumber) => {
@@ -69,23 +85,25 @@ const getCycleStartDate = (cycleNumber) => {
 
 /**
  * Get the cycle end date (W4D5 = Friday of week 4).
- * @param {number} cycleNumber
+ * @param {number} cycleNumber - Absolute cycle number
  * @returns {Date}
  */
 const getCycleEndDate = (cycleNumber) => {
   const start = getCycleStartDate(cycleNumber);
   const end = new Date(start);
-  end.setDate(end.getDate() + 25); // 3 weeks + 5 weekdays = Friday of W4
+  end.setDate(end.getDate() + 25);
   end.setHours(23, 59, 59, 999);
   return end;
 };
 
 module.exports = {
   CYCLE_ANCHOR,
+  CYCLES_PER_YEAR,
   getWeekOfMonth,
   getDayOfWeek,
   isWorkDay,
   getCycleNumber,
+  getDisplayCycleNumber,
   getCycleStartDate,
   getCycleEndDate,
 };

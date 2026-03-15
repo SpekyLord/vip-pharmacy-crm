@@ -1596,6 +1596,7 @@ const StatisticsPage = () => {
   const [bdmEmployees, setBdmEmployees] = useState([]);
   const [selectedBdmId, setSelectedBdmId] = useState('');
   const [bdmCycleNumber, setBdmCycleNumber] = useState(null);
+  const [bdmDisplayCycleNumber, setBdmDisplayCycleNumber] = useState(null);
   const [bdmDcrSummary, setBdmDcrSummary] = useState([]);
   const [bdmDcrTotal, setBdmDcrTotal] = useState({});
   const [bdmSummary, setBdmSummary] = useState({});
@@ -1704,6 +1705,9 @@ const StatisticsPage = () => {
         setBdmDoctors(data.doctors || []);
         if (bdmCycleNumber == null && data.cycleNumber != null) {
           setBdmCycleNumber(data.cycleNumber);
+        }
+        if (data.displayCycleNumber != null) {
+          setBdmDisplayCycleNumber(data.displayCycleNumber);
         }
       } catch (err) {
         console.error('Failed to fetch BDM DCR:', err);
@@ -1946,7 +1950,7 @@ const StatisticsPage = () => {
                   employees={bdmEmployees}
                   selectedBdmId={selectedBdmId}
                   onBdmChange={handleBdmChange}
-                  cycleNumber={bdmCycleNumber}
+                  cycleNumber={bdmDisplayCycleNumber ?? bdmCycleNumber}
                   onCycleChange={handleBdmCycleChange}
                   dcrSummary={bdmDcrSummary}
                   dcrTotal={bdmDcrTotal}
