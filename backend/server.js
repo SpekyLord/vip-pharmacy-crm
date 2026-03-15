@@ -275,6 +275,7 @@ app.use('/api/visits', userLimiter, require('./routes/visitRoutes'));
 app.use('/api/messages', userLimiter, require('./routes/messageInbox'));
 app.use('/api/clients', userLimiter, require('./routes/clientRoutes'));
 app.use('/api/products', userLimiter, require('./routes/productRoutes'));
+app.use('/api/specializations', userLimiter, require('./routes/specializationRoutes'));
 app.use('/api/assignments', userLimiter, require('./routes/productAssignmentRoutes'));
 app.use('/api/schedules', userLimiter, require('./routes/scheduleRoutes'));
 app.use('/api/imports', userLimiter, require('./routes/importRoutes'));

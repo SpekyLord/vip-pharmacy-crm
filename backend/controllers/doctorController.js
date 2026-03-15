@@ -13,6 +13,7 @@ const Doctor = require('../models/Doctor');
 const Visit = require('../models/Visit');
 const User = require('../models/User');
 const CrmProduct = require('../models/CrmProduct');
+const Specialization = require('../models/Specialization');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 
@@ -611,22 +612,13 @@ const updateTargetProducts = catchAsync(async (req, res) => {
  * Get distinct specialization values from all doctors
  */
 const getSpecializations = catchAsync(async (req, res) => {
-  const specializations = await Doctor.distinct('specialization', {
-    isActive: { $ne: false },
-    specialization: { $ne: null, $ne: '' },
-  });
-
-  // Filter empty, deduplicate case-insensitively (keep first occurrence), sort
-  const seen = new Map();
-  specializations.filter(Boolean).forEach((s) => {
-    const key = s.trim().toLowerCase();
-    if (!seen.has(key)) seen.set(key, s.trim());
-  });
-  const filtered = Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+  const specializations = await Specialization.find({ isActive: true })
+    .sort({ name: 1 })
+    .lean();
 
   res.status(200).json({
     success: true,
-    data: filtered,
+    data: specializations.map((s) => s.name),
   });
 });
 

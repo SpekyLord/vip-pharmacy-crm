@@ -14,7 +14,7 @@ import Pagination from '../common/Pagination';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import productService from '../../services/productService';
 import useDebounce from '../../hooks/useDebounce';
-import doctorService from '../../services/doctorService';
+import specializationService from '../../services/specializationService';
 
 const pmStyles = `
   .pm-filters {
@@ -718,10 +718,10 @@ const ProductManagement = ({
   const [specDropdownOpen, setSpecDropdownOpen] = useState(false);
   const [specializations, setSpecializations] = useState([]);
 
-  // Fetch distinct specializations from database
+  // Fetch specializations from master list
   useEffect(() => {
-    doctorService.getSpecializations()
-      .then((res) => setSpecializations(res.data || []))
+    specializationService.getAll({ active: 'true' })
+      .then((res) => setSpecializations((res.data || []).map((s) => s.name)))
       .catch(() => setSpecializations([]));
   }, []);
 

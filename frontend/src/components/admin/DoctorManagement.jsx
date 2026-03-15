@@ -12,6 +12,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, ArrowUpCircle, AlertTriangle, X, ChevronDown } from 'lucide-react';
 import doctorService from '../../services/doctorService';
 import userService from '../../services/userService';
+import specializationService from '../../services/specializationService';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 
 // Enum options for programs and support types (matching backend Doctor.js)
@@ -1292,10 +1293,10 @@ const DoctorManagement = ({
   const [saving, setSaving] = useState(false);
   const [specializations, setSpecializations] = useState([]);
 
-  // Fetch distinct specializations from database
+  // Fetch specializations from master list
   useEffect(() => {
-    doctorService.getSpecializations()
-      .then((res) => setSpecializations(res.data || []))
+    specializationService.getAll({ active: 'true' })
+      .then((res) => setSpecializations((res.data || []).map((s) => s.name)))
       .catch(() => setSpecializations([]));
   }, []);
 

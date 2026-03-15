@@ -6,6 +6,7 @@
  * - Search and filter by category/specialization
  * - Image upload
  * - Specialization tagging
+ * - Specialization master list management (sub-tab)
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -13,6 +14,7 @@ import toast from 'react-hot-toast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import ProductManagement from '../../components/admin/ProductManagement';
+import SpecializationManagement from '../../components/admin/SpecializationManagement';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import productService from '../../services/productService';
 
@@ -53,6 +55,37 @@ const productsPageStyles = `
     margin-bottom: 24px;
   }
 
+  /* Tab Navigation */
+  .pp-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 24px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+
+  .pp-tab {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #6b7280;
+    background: none;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    bottom: -2px;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .pp-tab:hover {
+    color: #374151;
+  }
+
+  .pp-tab.active {
+    color: #2563eb;
+    border-bottom-color: #2563eb;
+  }
+
   /* ===== DARK MODE ===== */
   body.dark-mode .dashboard-layout {
     background: #0b1220;
@@ -65,6 +98,23 @@ const productsPageStyles = `
   body.dark-mode .error-banner {
     background: #450a0a;
     color: #fca5a5;
+  }
+
+  body.dark-mode .pp-tabs {
+    border-bottom-color: #334155;
+  }
+
+  body.dark-mode .pp-tab {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .pp-tab:hover {
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .pp-tab.active {
+    color: #60a5fa;
+    border-bottom-color: #3b82f6;
   }
 
   @media (max-width: 480px) {
@@ -84,6 +134,7 @@ const productsPageStyles = `
 `;
 
 const ProductsPage = () => {
+  const [activeTab, setActiveTab] = useState('products');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -129,8 +180,10 @@ const ProductsPage = () => {
   }, [pagination.page, pagination.limit, filters]);
 
   useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+    if (activeTab === 'products') {
+      fetchProducts();
+    }
+  }, [fetchProducts, activeTab]);
 
   const handleSaveProduct = async (formData, isEdit) => {
     try {
@@ -176,7 +229,7 @@ const ProductsPage = () => {
     setPagination((prev) => ({ ...prev, page: newPage }));
   };
 
-  if (loading && products.length === 0) {
+  if (activeTab === 'products' && loading && products.length === 0) {
     return <LoadingSpinner fullScreen />;
   }
 
@@ -191,18 +244,38 @@ const ProductsPage = () => {
             <h1>Product Management</h1>
           </div>
 
-          {error && <div className="error-banner">{error}</div>}
+          <div className="pp-tabs">
+            <button
+              className={`pp-tab ${activeTab === 'products' ? 'active' : ''}`}
+              onClick={() => setActiveTab('products')}
+            >
+              Products
+            </button>
+            <button
+              className={`pp-tab ${activeTab === 'specializations' ? 'active' : ''}`}
+              onClick={() => setActiveTab('specializations')}
+            >
+              Specializations
+            </button>
+          </div>
 
-          <ProductManagement
-            products={products}
-            filters={filters}
-            pagination={pagination}
-            loading={loading}
-            onSave={handleSaveProduct}
-            onDelete={handleDeleteProduct}
-            onFilterChange={handleFilterChange}
-            onPageChange={handlePageChange}
-          />
+          {activeTab === 'products' && (
+            <>
+              {error && <div className="error-banner">{error}</div>}
+              <ProductManagement
+                products={products}
+                filters={filters}
+                pagination={pagination}
+                loading={loading}
+                onSave={handleSaveProduct}
+                onDelete={handleDeleteProduct}
+                onFilterChange={handleFilterChange}
+                onPageChange={handlePageChange}
+              />
+            </>
+          )}
+
+          {activeTab === 'specializations' && <SpecializationManagement />}
         </main>
       </div>
     </div>
