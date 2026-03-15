@@ -471,7 +471,7 @@ const SchedulePage = () => {
           <div className="cycle-nav">
             <button className="cycle-nav-btn" onClick={handlePrevCycle}>&larr; Prev</button>
             <div className="cycle-nav-label">
-              Cycle {cycleData?.displayCycleNumber ?? cycleData?.cycleNumber ?? '—'}
+              Cycle {(cycleData?.displayCycleNumber ?? cycleData?.cycleNumber ?? 0) + 1}
               <small>
                 {cycleData?.cycleStart ? formatCycleDate(cycleData.cycleStart) : ''}
                 {isCurrentCycle && ' (Current)'}

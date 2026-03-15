@@ -413,7 +413,7 @@ const BatchDetailModal = ({ batch, onClose, onApproved }) => {
             </div>
             <div className="bdm-meta-item">
               <Calendar size={14} />
-              Cycle: <strong>{batch.cycleNumber}</strong>
+              Cycle: <strong>{(batch.cycleNumber ?? 0) + 1}</strong>
             </div>
             <div className="bdm-meta-item">
               <FileSpreadsheet size={14} />

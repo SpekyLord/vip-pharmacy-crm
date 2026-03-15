@@ -705,7 +705,7 @@ const PendingApprovalsPage = () => {
  * @returns {string} Formatted date range (e.g., "Jan 5 - 30" for Cycle 0)
  */
 const getCycleDateRange = (cycleNum) => {
-  const num = parseInt(cycleNum, 10);
+  const num = parseInt(cycleNum, 10) - 1;
   if (isNaN(num) || num < 0) return '';
 
   const anchor = new Date(2026, 0, 5); // January 5, 2026 (Monday)
@@ -787,7 +787,7 @@ const ImportTab = () => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('assignedToBDM', selectedBDM);
-      formData.append('cycleNumber', cycleNumber);
+      formData.append('cycleNumber', parseInt(cycleNumber, 10) - 1);
 
       const result = await importService.upload(formData);
       setSuccess(result.message);
@@ -889,7 +889,7 @@ const ImportTab = () => {
               <label>Cycle Number</label>
               <input
                 type="number"
-                min="0"
+                min="1"
                 value={cycleNumber}
                 onChange={(e) => setCycleNumber(e.target.value)}
                 placeholder="e.g., 2"
@@ -901,7 +901,7 @@ const ImportTab = () => {
                 {cycleNumber !== '' && getCycleDateRange(cycleNumber) ? (
                   <>Cycle {cycleNumber} = {getCycleDateRange(cycleNumber)}. Each cycle = 4 weeks (20 work days, Mon-Fri only).</>
                 ) : (
-                  <>Enter a cycle number (e.g., Cycle 0 = Jan 5 - Feb 1). Each cycle = 4 weeks (20 work days, Mon-Fri only).</>
+                  <>Enter a cycle number (e.g., Cycle 1 = Jan 5 - Feb 1). Each cycle = 4 weeks (20 work days, Mon-Fri only).</>
                 )}
               </div>
             </div>
@@ -1000,7 +1000,7 @@ const PreviewSection = ({ batch, expandedRows, toggleExpand, onApprove, onReject
 
         <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
           BDM: <strong>{batch.assignedToBDM?.name || batch.assignedToBDM?.email}</strong>
-          {' | '}Cycle: <strong>{batch.cycleNumber}</strong>
+          {' | '}Cycle: <strong>{(batch.cycleNumber ?? 0) + 1}</strong>
         </div>
 
         <div className="ie-stats">
@@ -1149,7 +1149,7 @@ const ExportTab = () => {
     if (!selectedBDM || !cycleNumber) return;
     setError('');
     try {
-      const gridRes = await scheduleService.getCPTGrid(parseInt(cycleNumber, 10), selectedBDM);
+      const gridRes = await scheduleService.getCPTGrid(parseInt(cycleNumber, 10) - 1, selectedBDM);
       const gridData = gridRes.data || gridRes;
       const doctorCount = gridData.doctors?.length || 0;
       const scheduledCount = gridData.doctors?.reduce(
@@ -1166,7 +1166,7 @@ const ExportTab = () => {
     setExporting(true);
     setError('');
     try {
-      const cycle = parseInt(cycleNumber, 10);
+      const cycle = parseInt(cycleNumber, 10) - 1;
 
       // Fetch data in parallel
       const [gridRes, doctorRes] = await Promise.all([
@@ -1233,7 +1233,7 @@ const ExportTab = () => {
             <label>Cycle Number</label>
             <input
               type="number"
-              min="0"
+              min="1"
               value={cycleNumber}
               onChange={(e) => { setCycleNumber(e.target.value); setPreviewStats(null); }}
               placeholder="e.g., 2"
@@ -1248,7 +1248,7 @@ const ExportTab = () => {
               {cycleNumber !== '' && getCycleDateRange(cycleNumber) ? (
                 <>Cycle {cycleNumber} = {getCycleDateRange(cycleNumber)}. Each cycle = 4 weeks (20 work days, Mon-Fri only).</>
               ) : (
-                <>Enter a cycle number (e.g., Cycle 0 = Jan 5 - Feb 1). Each cycle = 4 weeks (20 work days, Mon-Fri only).</>
+                <>Enter a cycle number (e.g., Cycle 1 = Jan 5 - Feb 1). Each cycle = 4 weeks (20 work days, Mon-Fri only).</>
               )}
             </div>
           </div>
@@ -1396,7 +1396,7 @@ const HistoryTab = () => {
                       {batch.fileName}
                     </td>
                     <td>{batch.assignedToBDM?.name || batch.assignedToBDM?.email || '—'}</td>
-                    <td>{batch.cycleNumber}</td>
+                    <td>{(batch.cycleNumber ?? 0) + 1}</td>
                     <td>
                       <span className={`ie-badge ie-badge-${batch.status}`}>
                         {batch.status === 'pending' && <Clock size={10} />}

@@ -846,7 +846,7 @@ const CallPlanPage = () => {
                   </button>
                   <div>
                     <div className="cpt-cycle-label">
-                      Cycle {cptData?.displayCycleNumber ?? cptData?.cycleNumber ?? cycleNumber ?? '...'}
+                      Cycle {(cptData?.displayCycleNumber ?? cptData?.cycleNumber ?? cycleNumber ?? 0) + 1}
                     </div>
                     {cptData?.cycleStart && (
                       <div className="cpt-cycle-dates">

@@ -632,7 +632,7 @@ export const exportCPTWorkbook = ({ doctors, cptGridData, config }) => {
   }
 
   // Generate and download
-  const fileName = `CPT_${bdmName.replace(/\s+/g, '_')}_Cycle${cycleNumber}_${monthYear.replace(/[\s/]+/g, '_')}.xlsx`;
+  const fileName = `CPT_${bdmName.replace(/\s+/g, '_')}_Cycle${cycleNumber + 1}_${monthYear.replace(/[\s/]+/g, '_')}.xlsx`;
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   const blob = new Blob([wbout], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

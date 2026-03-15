@@ -2550,7 +2550,7 @@ const BDMPerformanceTab = ({
               <ChevronLeft size={18} />
             </button>
             <span className="cycle-nav-label">
-              Cycle {cycleNumber != null ? cycleNumber : '...'}
+              Cycle {cycleNumber != null ? cycleNumber + 1 : '...'}
             </span>
             <button className="cycle-nav-btn" onClick={() => onCycleChange(1)}>
               <ChevronRight size={18} />
