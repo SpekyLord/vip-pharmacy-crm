@@ -22,6 +22,7 @@ const NewClientVisitPage = lazy(() => import('./pages/employee/NewClientVisitPag
 const EmployeeInbox = lazy(() => import('./pages/employee/EMP_InboxPage'));
 const CallPlanPage = lazy(() => import('./pages/employee/CallPlanPage'));
 const DoctorDetailPage = lazy(() => import('./pages/employee/DoctorDetailPage'));
+const ProductSpecPage = lazy(() => import('./pages/employee/ProductSpecPage'));
 
 // Admin pages
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
@@ -105,6 +106,14 @@ function App() {
             }
           />
           <Route path="/bdm/schedule" element={<Navigate to="/bdm/cpt" replace />} />
+          <Route
+            path="/bdm/products"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+                <ProductSpecPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/bdm/cpt"
             element={

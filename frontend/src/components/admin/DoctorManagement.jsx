@@ -2048,59 +2048,178 @@ const DoctorManagement = ({
 
       {/* Delete Options Modal */}
       {showConfirmDelete && selectedDoctor && (
-        <div className="cdm-overlay" onClick={() => { setShowConfirmDelete(false); setSelectedDoctor(null); setHardDeleteTyped(''); }}>
-          <div className="cdm-content" style={{ maxWidth: 480, textAlign: 'left' }} onClick={(e) => e.stopPropagation()}>
-            <div className="cdm-header">
-              <h3>Delete VIP Client</h3>
-              <button className="cdm-close" onClick={() => { setShowConfirmDelete(false); setSelectedDoctor(null); setHardDeleteTyped(''); }}>&times;</button>
-            </div>
+        <div className="del-overlay" onClick={() => { setShowConfirmDelete(false); setSelectedDoctor(null); setHardDeleteTyped(''); }}>
+          <div className="del-modal" onClick={(e) => e.stopPropagation()}>
 
-            <p style={{ margin: '0 0 16px', color: '#374151', fontSize: 14 }}>
-              Choose how to delete <strong>{selectedDoctor?.fullName || `${selectedDoctor?.firstName} ${selectedDoctor?.lastName}`}</strong>:
-            </p>
-
-            {/* Option 1: Soft delete */}
-            <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: '12px 14px', marginBottom: 10 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#374151', marginBottom: 4 }}>Deactivate (Soft Delete)</div>
-              <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10 }}>Hides the VIP Client from all lists. Visit history and schedule are kept. Can be restored later.</div>
-              <button
-                style={{ background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                onClick={() => handleConfirmDelete(false)}
-              >
-                Deactivate
-              </button>
-            </div>
-
-            {/* Option 2: Hard delete */}
-            <div style={{ border: '1px solid #fecaca', borderRadius: 8, padding: '12px 14px', background: '#fff5f5' }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#b91c1c', marginBottom: 4 }}>Delete Permanently</div>
-              <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10 }}>
-                Removes the VIP Client <strong>and all related visits, schedules, and product assignments</strong>. This cannot be undone.
+            {/* Header */}
+            <div className="del-header">
+              <div className="del-header-icon">🗑</div>
+              <div>
+                <div className="del-header-title">Remove VIP Client</div>
+                <div className="del-header-name">{selectedDoctor?.fullName || `${selectedDoctor?.firstName} ${selectedDoctor?.lastName}`}</div>
               </div>
-              <input
-                style={{ width: '100%', padding: '8px 10px', border: '1px solid #fca5a5', borderRadius: 6, fontSize: 13, marginBottom: 8, boxSizing: 'border-box', background: hardDeleteTyped.toUpperCase() === 'DELETE' ? '#fef2f2' : '#fff' }}
-                placeholder='Type DELETE to confirm'
-                value={hardDeleteTyped}
-                onChange={(e) => setHardDeleteTyped(e.target.value)}
-              />
-              <button
-                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: hardDeleteTyped.toUpperCase() === 'DELETE' ? 'pointer' : 'not-allowed', opacity: hardDeleteTyped.toUpperCase() === 'DELETE' ? 1 : 0.4 }}
-                disabled={hardDeleteTyped.toUpperCase() !== 'DELETE'}
-                onClick={() => handleConfirmDelete(true)}
-              >
-                Delete Permanently
-              </button>
+              <button className="del-close" onClick={() => { setShowConfirmDelete(false); setSelectedDoctor(null); setHardDeleteTyped(''); }}>&times;</button>
             </div>
 
-            <div style={{ marginTop: 12, textAlign: 'right' }}>
-              <button
-                className="cdm-btn-cancel"
-                onClick={() => { setShowConfirmDelete(false); setSelectedDoctor(null); setHardDeleteTyped(''); }}
-              >
+            <div className="del-body">
+              {/* Soft delete card */}
+              <div className="del-option del-option-soft">
+                <div className="del-option-left">
+                  <div className="del-option-title">Deactivate</div>
+                  <div className="del-option-desc">Hides from all lists. Visit history and schedule are kept. Can be restored later.</div>
+                </div>
+                <button className="del-btn del-btn-soft" onClick={() => handleConfirmDelete(false)}>
+                  Deactivate
+                </button>
+              </div>
+
+              <div className="del-divider"><span>or</span></div>
+
+              {/* Hard delete card */}
+              <div className="del-option del-option-hard">
+                <div className="del-option-title del-option-title-danger">Delete Permanently</div>
+                <div className="del-option-desc">Removes this VIP Client <strong>and all associated visits, schedules, and product assignments</strong>. Cannot be undone.</div>
+                <div className="del-confirm-row">
+                  <input
+                    className="del-confirm-input"
+                    placeholder="Type DELETE to confirm"
+                    value={hardDeleteTyped}
+                    onChange={(e) => setHardDeleteTyped(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <button
+                    className="del-btn del-btn-hard"
+                    disabled={hardDeleteTyped.toUpperCase() !== 'DELETE'}
+                    onClick={() => handleConfirmDelete(true)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="del-footer">
+              <button className="del-btn del-btn-cancel" onClick={() => { setShowConfirmDelete(false); setSelectedDoctor(null); setHardDeleteTyped(''); }}>
                 Cancel
               </button>
             </div>
           </div>
+
+          <style>{`
+            .del-overlay {
+              position: fixed; inset: 0;
+              background: rgba(0,0,0,.5);
+              display: flex; align-items: center; justify-content: center;
+              z-index: 1100; padding: 16px;
+            }
+            .del-modal {
+              background: #fff;
+              border-radius: 16px;
+              width: 100%; max-width: 460px;
+              box-shadow: 0 24px 64px rgba(0,0,0,.2);
+              overflow: hidden;
+            }
+            .del-header {
+              display: flex; align-items: center; gap: 12px;
+              padding: 20px 20px 16px;
+              border-bottom: 1px solid #f3f4f6;
+            }
+            .del-header-icon {
+              font-size: 22px; flex-shrink: 0;
+            }
+            .del-header-title {
+              font-size: 16px; font-weight: 700; color: #111827;
+            }
+            .del-header-name {
+              font-size: 13px; color: #6b7280; margin-top: 1px;
+            }
+            .del-close {
+              margin-left: auto; background: none; border: none;
+              font-size: 22px; color: #9ca3af; cursor: pointer; line-height: 1;
+              flex-shrink: 0;
+            }
+            .del-close:hover { color: #374151; }
+            .del-body {
+              padding: 16px 20px;
+              display: flex; flex-direction: column; gap: 4px;
+            }
+            .del-option {
+              border-radius: 10px;
+              padding: 14px 16px;
+            }
+            .del-option-soft {
+              background: #f9fafb;
+              border: 1px solid #e5e7eb;
+              display: flex; align-items: center; gap: 12px;
+            }
+            .del-option-hard {
+              background: #fff5f5;
+              border: 1px solid #fecaca;
+            }
+            .del-option-left { flex: 1; }
+            .del-option-title {
+              font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 3px;
+            }
+            .del-option-title-danger { color: #b91c1c; }
+            .del-option-desc {
+              font-size: 12px; color: #6b7280; line-height: 1.5;
+            }
+            .del-option-desc strong { color: #374151; }
+            .del-divider {
+              text-align: center; position: relative;
+              color: #9ca3af; font-size: 12px; margin: 4px 0;
+            }
+            .del-confirm-row {
+              display: flex; gap: 8px; margin-top: 10px;
+            }
+            .del-confirm-input {
+              flex: 1; padding: 8px 10px;
+              border: 1px solid #fca5a5; border-radius: 8px;
+              font-size: 13px; outline: none;
+              background: #fff;
+            }
+            .del-confirm-input:focus { border-color: #dc2626; }
+            .del-btn {
+              padding: 8px 16px; border: none; border-radius: 8px;
+              font-size: 13px; font-weight: 600; cursor: pointer;
+              white-space: nowrap; transition: all .15s;
+            }
+            .del-btn-soft {
+              background: #f59e0b; color: #fff; flex-shrink: 0;
+            }
+            .del-btn-soft:hover { background: #d97706; }
+            .del-btn-hard {
+              background: #dc2626; color: #fff; flex-shrink: 0;
+            }
+            .del-btn-hard:hover:not(:disabled) { background: #b91c1c; }
+            .del-btn-hard:disabled { opacity: .4; cursor: not-allowed; }
+            .del-footer {
+              padding: 12px 20px 16px;
+              display: flex; justify-content: flex-end;
+              border-top: 1px solid #f3f4f6;
+            }
+            .del-btn-cancel {
+              background: #f3f4f6; color: #374151;
+              border: 1px solid #e5e7eb;
+            }
+            .del-btn-cancel:hover { background: #e5e7eb; }
+
+            body.dark-mode .del-modal { background: #0f172a; }
+            body.dark-mode .del-header { border-bottom-color: #1e293b; }
+            body.dark-mode .del-header-title { color: #f1f5f9; }
+            body.dark-mode .del-header-name { color: #94a3b8; }
+            body.dark-mode .del-close { color: #64748b; }
+            body.dark-mode .del-close:hover { color: #e2e8f0; }
+            body.dark-mode .del-option-soft { background: #1e293b; border-color: #334155; }
+            body.dark-mode .del-option-hard { background: #2d1515; border-color: #7f1d1d; }
+            body.dark-mode .del-option-title { color: #e2e8f0; }
+            body.dark-mode .del-option-desc { color: #94a3b8; }
+            body.dark-mode .del-option-desc strong { color: #cbd5e1; }
+            body.dark-mode .del-confirm-input { background: #0f172a; border-color: #7f1d1d; color: #e2e8f0; }
+            body.dark-mode .del-footer { border-top-color: #1e293b; }
+            body.dark-mode .del-btn-cancel { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+            body.dark-mode .del-btn-cancel:hover { background: #334155; }
+          `}</style>
         </div>
       )}
 

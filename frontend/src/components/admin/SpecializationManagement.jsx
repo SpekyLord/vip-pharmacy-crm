@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Search, Plus, Edit2, Trash2, X, RefreshCw } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, RefreshCw, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
 import specializationService from '../../services/specializationService';
+import SpecializationProductsModal from '../common/SpecializationProductsModal';
 
 const smStyles = `
   .sm-container {
@@ -430,6 +431,7 @@ const SpecializationManagement = () => {
   const [formName, setFormName] = useState('');
   const [saving, setSaving] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [productsSpec, setProductsSpec] = useState(null);
 
   const fetchSpecializations = async () => {
     try {
@@ -593,6 +595,9 @@ const SpecializationManagement = () => {
                 </td>
                 <td>
                   <div className="sm-action-btns">
+                    <button className="sm-icon-btn" onClick={() => setProductsSpec(item)} title="Manage Products">
+                      <Package size={14} />
+                    </button>
                     <button className="sm-icon-btn" onClick={() => openEdit(item)} title="Edit">
                       <Edit2 size={14} />
                     </button>
@@ -611,6 +616,15 @@ const SpecializationManagement = () => {
             ))}
           </tbody>
         </table>
+      )}
+
+      {/* Products Modal */}
+      {productsSpec && (
+        <SpecializationProductsModal
+          specialization={productsSpec}
+          onClose={() => setProductsSpec(null)}
+          onSaved={() => toast.success('Product assignments updated')}
+        />
       )}
 
       {/* Add/Edit Modal */}

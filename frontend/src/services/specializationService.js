@@ -25,6 +25,16 @@ const specializationService = {
     const response = await api.post('/specializations/seed');
     return response.data;
   },
+
+  getProducts: async (id) => {
+    const response = await api.get(`/specializations/${id}/products`);
+    return response.data;
+  },
+
+  updateProducts: async (id, { addProductIds = [], removeProductIds = [] }) => {
+    const response = await api.put(`/specializations/${id}/products`, { addProductIds, removeProductIds });
+    return response.data;
+  },
 };
 
 export default specializationService;

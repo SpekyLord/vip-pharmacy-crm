@@ -182,10 +182,96 @@ const seedFromExisting = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * GET /api/specializations/:id/products
+ * Returns all active products annotated with isAssigned for this specialization.
+ * Accessible by admin and employee (BDM).
+ */
+const getProductsForSpecialization = catchAsync(async (req, res) => {
+  const specialization = await Specialization.findById(req.params.id);
+
+  if (!specialization) {
+    return res.status(404).json({
+      success: false,
+      message: 'Specialization not found',
+    });
+  }
+
+  const specName = specialization.name;
+  const specRegex = new RegExp(`^${specName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+
+  const products = await CrmProduct.find({ isActive: true })
+    .select('name genericName category targetSpecializations')
+    .sort({ name: 1 })
+    .lean();
+
+  const data = products.map((p) => ({
+    _id: p._id,
+    name: p.name,
+    genericName: p.genericName || '',
+    category: p.category || '',
+    isAssigned: (p.targetSpecializations || []).some((s) => specRegex.test(s)),
+  }));
+
+  res.json({
+    success: true,
+    data,
+    specialization: { _id: specialization._id, name: specName },
+  });
+});
+
+/**
+ * PUT /api/specializations/:id/products
+ * Update which products belong to this specialization.
+ * Body: { addProductIds: [...], removeProductIds: [...] }
+ * Accessible by admin and employee (BDM).
+ */
+const updateSpecializationProducts = catchAsync(async (req, res) => {
+  const specialization = await Specialization.findById(req.params.id);
+
+  if (!specialization) {
+    return res.status(404).json({
+      success: false,
+      message: 'Specialization not found',
+    });
+  }
+
+  const specName = specialization.name;
+  const { addProductIds = [], removeProductIds = [] } = req.body;
+
+  let addedCount = 0;
+  let removedCount = 0;
+
+  if (addProductIds.length > 0) {
+    const addResult = await CrmProduct.updateMany(
+      { _id: { $in: addProductIds }, isActive: true },
+      { $addToSet: { targetSpecializations: specName } }
+    );
+    addedCount = addResult.modifiedCount;
+  }
+
+  if (removeProductIds.length > 0) {
+    const specRegex = new RegExp(`^${specName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const removeResult = await CrmProduct.updateMany(
+      { _id: { $in: removeProductIds } },
+      { $pull: { targetSpecializations: specRegex } }
+    );
+    removedCount = removeResult.modifiedCount;
+  }
+
+  res.json({
+    success: true,
+    message: `Updated: ${addedCount} added, ${removedCount} removed`,
+    data: { addedCount, removedCount },
+  });
+});
+
 module.exports = {
   getAllSpecializations,
   createSpecialization,
   updateSpecialization,
   deleteSpecialization,
   seedFromExisting,
+  getProductsForSpecialization,
+  updateSpecializationProducts,
 };

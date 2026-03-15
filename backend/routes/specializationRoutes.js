@@ -7,16 +7,22 @@ const {
   updateSpecialization,
   deleteSpecialization,
   seedFromExisting,
+  getProductsForSpecialization,
+  updateSpecializationProducts,
 } = require('../controllers/specializationController');
 
 const { protect } = require('../middleware/auth');
-const { adminOnly } = require('../middleware/roleCheck');
+const { adminOnly, adminOrEmployee } = require('../middleware/roleCheck');
 
 // All routes require authentication
 router.use(protect);
 
 // All authenticated users can read
 router.get('/', getAllSpecializations);
+
+// Admin or BDM can manage specialization–product mapping
+router.get('/:id/products', adminOrEmployee, getProductsForSpecialization);
+router.put('/:id/products', adminOrEmployee, updateSpecializationProducts);
 
 // Admin only
 router.post('/', adminOnly, createSpecialization);

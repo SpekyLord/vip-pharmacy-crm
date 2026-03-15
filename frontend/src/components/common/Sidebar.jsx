@@ -566,6 +566,7 @@ const getMenuConfig = (role, unreadCount = 0) => {
             title: 'Work',
             items: [
               { path: '/bdm/cpt', label: 'Call Plan', icon: CalendarRange },
+              { path: '/bdm/products', label: 'Products', icon: Package },
               { path: '/bdm/inbox', label: 'Mail', icon: Inbox, badge: unreadCount || null },
               { path: '/bdm/visits', label: 'My Visits', icon: ClipboardCheck },
             ],
