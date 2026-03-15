@@ -152,9 +152,20 @@ const viewStyles = `
   .cpv-grid .col-name { left: 32px; min-width: 120px; text-align: left; }
   .cpv-grid .col-spec { left: 152px; min-width: 80px; }
 
+  .cpv-grid .col-sched,
+  .cpv-grid .col-done {
+    position: sticky;
+    z-index: 3;
+  }
+
+  .cpv-grid .col-sched { right: 35px; } /* 36px width of done col */
+  .cpv-grid .col-done { right: 0; }
+
   .cpv-grid thead .col-no,
   .cpv-grid thead .col-name,
-  .cpv-grid thead .col-spec {
+  .cpv-grid thead .col-spec,
+  .cpv-grid thead .col-sched,
+  .cpv-grid thead .col-done {
     z-index: 5;
   }
 
@@ -232,6 +243,10 @@ const viewStyles = `
     min-width: 36px;
     font-weight: 600;
     background: #f1f5f9;
+  }
+
+  .cpv-grid .col-sched {
+    border-left: 2px solid #bdc4d0;
   }
 
   /* Bottom row: daily VIP counts */

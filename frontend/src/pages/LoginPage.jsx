@@ -8,12 +8,55 @@
  * - Fully responsive (mobile-first)
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LoginForm from '../components/auth/LoginForm';
 import { useAuth } from '../hooks/useAuth';
+import { Sun, Moon } from 'lucide-react';
 
 const loginPageStyles = `
+  html,
+  body {
+    height: 100%;
+    transition: background-color 300ms ease-in-out;
+  }
+
+  body.dark-mode {
+    background-color: #0f172a;
+  }
+  
+  .theme-toggle-button {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 100;
+    background-color: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    color: #d97706;
+    transition: all 0.2s ease-in-out;
+  }
+
+  .theme-toggle-button:hover {
+    background-color: rgba(255, 255, 255, 0.7);
+    transform: scale(1.1);
+  }
+
+  body.dark-mode .theme-toggle-button {
+    background-color: rgba(30, 41, 59, 0.85);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #f59e0b;
+  }
+
+  body.dark-mode .theme-toggle-button:hover {
+    background-color: rgba(51, 65, 85, 0.9);
+  }
+  
   html,
   body {
     height: 100%;
@@ -47,6 +90,137 @@ const loginPageStyles = `
 
     /* Cream page background (reference palette) */
     background: #fffbeb;
+  }
+
+  body.dark-mode .login-page {
+    --p-black: 250 250, 250;
+    background: #0f172a;
+  }
+
+  body.dark-mode .login-page::before {
+    background: radial-gradient(
+      640px 640px at 10% 12%,
+      rgba(245, 158, 11, 0.15) 0%,
+      rgba(245, 158, 11, 0) 62%
+    );
+  }
+
+  body.dark-mode .login-container {
+    background: linear-gradient(
+      180deg,
+      rgba(30, 41, 59, 0.85) 0%,
+      rgba(51, 65, 85, 0.75) 100%
+    );
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    color: rgba(248, 250, 252, 0.92);
+  }
+
+  body.dark-mode .login-container::before {
+    background: radial-gradient(
+      900px 380px at 18% 0%,
+      rgba(255, 255, 255, 0.1) 0%,
+      rgba(255, 255, 255, 0) 62%
+    );
+  }
+
+  body.dark-mode .login-header h1 {
+    color: #f59e0b;
+  }
+
+  body.dark-mode .login-header .login-subtitle {
+    color: rgba(148, 163, 184, 0.82);
+  }
+
+  body.dark-mode .login-form label {
+    color: rgba(226, 232, 240, 0.86);
+  }
+
+  body.dark-mode .login-form input[type='email'],
+  body.dark-mode .login-form .password-field input {
+    border-color: rgba(245, 158, 11, 0.4);
+    background: linear-gradient(
+      180deg,
+      rgba(51, 65, 85, 0.8) 0%,
+      rgba(30, 41, 59, 0.7) 100%
+    );
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 12px 26px rgba(0, 0, 0, 0.2);
+    color: rgba(248, 250, 252, 0.92);
+    caret-color: rgba(248, 250, 252, 0.92);
+  }
+
+  body.dark-mode .login-form input[type='email']:-webkit-autofill,
+  body.dark-mode .login-form input[type='email']:-webkit-autofill:hover,
+  body.dark-mode .login-form input[type='email']:-webkit-autofill:focus,
+  body.dark-mode .login-form .password-field input:-webkit-autofill,
+  body.dark-mode .login-form .password-field input:-webkit-autofill:hover,
+  body.dark-mode .login-form .password-field input:-webkit-autofill:focus {
+    -webkit-text-fill-color: rgba(248, 250, 252, 0.92) !important;
+    caret-color: rgba(248, 250, 252, 0.92) !important;
+    border-color: rgba(245, 158, 11, 0.4) !important;
+    background-color: rgba(51, 65, 85, 0.8) !important;
+    -webkit-box-shadow: 0 0 0px 1000px rgba(51, 65, 85, 0.8) inset,
+      inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 12px 26px rgba(0, 0, 0, 0.2) !important;
+    box-shadow: 0 0 0px 1000px rgba(51, 65, 85, 0.8) inset,
+      inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 12px 26px rgba(0, 0, 0, 0.2) !important;
+  }
+
+  body.dark-mode .login-form input[type='email']:hover,
+  body.dark-mode .login-form .password-field input:hover {
+    border-color: rgba(245, 158, 11, 0.55);
+    background: linear-gradient(
+      180deg,
+      rgba(51, 65, 85, 0.9) 0%,
+      rgba(30, 41, 59, 0.8) 100%
+    );
+  }
+
+  body.dark-mode .login-form input::placeholder {
+    color: rgba(148, 163, 184, 0.55);
+  }
+
+  body.dark-mode .login-form input[type='email']:focus,
+  body.dark-mode .login-form .password-field input:focus {
+    border-color: rgba(245, 158, 11, 0.7);
+  }
+
+  body.dark-mode .login-form .password-field:focus-within input {
+    border-color: rgba(245, 158, 11, 0.7);
+  }
+
+  body.dark-mode .login-form .password-toggle {
+    border-color: rgba(245, 158, 11, 0.3);
+    background: rgba(30, 41, 59, 0.7);
+    color: rgba(226, 232, 240, 0.78);
+  }
+
+  body.dark-mode .login-form .password-toggle:hover {
+    border-color: rgba(245, 158, 11, 0.4);
+    background: rgba(51, 65, 85, 0.7);
+  }
+
+  body.dark-mode .login-form .remember-me {
+    color: rgba(148, 163, 184, 0.86);
+  }
+
+  body.dark-mode .login-form .forgot-link {
+    color: rgba(148, 163, 184, 0.86);
+  }
+
+  body.dark-mode .login-form .forgot-link:hover {
+    color: #f59e0b;
+  }
+
+  body.dark-mode .login-form .btn-primary {
+    background: #f59e0b;
+    color: rgba(11, 11, 11, 0.95);
+  }
+
+  body.dark-mode .login-form .btn-primary:hover {
+    filter: brightness(1.05);
+    background: #fbbf24;
   }
 
   .login-page::before {
@@ -404,6 +578,24 @@ const loginPageStyles = `
 const LoginPage = () => {
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    // Check for saved theme in local storage or default to system preference
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      return savedTheme === 'dark';
+    }
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.body.classList.add('dark-mode');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.body.classList.remove('dark-mode');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -424,9 +616,16 @@ const LoginPage = () => {
     }
   }, [isAuthenticated, user, navigate]);
 
+  const toggleTheme = () => {
+    setIsDarkMode(prevMode => !prevMode);
+  };
+
   return (
     <div className="login-page">
       <style>{loginPageStyles}</style>
+      <button className="theme-toggle-button" onClick={toggleTheme} aria-label="Toggle theme">
+        {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+      </button>
       <div className="login-container">
         <div className="login-header">
           <div className="login-logo-wrap">
