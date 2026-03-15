@@ -12,7 +12,7 @@
  */
 
 const mongoose = require('mongoose');
-const { CYCLE_ANCHOR, getWeekOfMonth, getDayOfWeek, isWorkDay } = require('../utils/scheduleCycleUtils');
+const { CYCLE_ANCHOR, MANILA_OFFSET_MS, getWeekOfMonth, getDayOfWeek, isWorkDay } = require('../utils/scheduleCycleUtils');
 
 const scheduleSchema = new mongoose.Schema(
   {
@@ -98,7 +98,8 @@ scheduleSchema.index(
  * Cycle 0 = Jan 5 – Feb 1, 2026.
  */
 scheduleSchema.statics.getCycleNumber = function (date) {
-  const diffMs = date.getTime() - CYCLE_ANCHOR.getTime();
+  const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
+  const diffMs = manilaDate.getTime() - CYCLE_ANCHOR.getTime();
   const diffDays = Math.floor(diffMs / 86400000);
   return Math.floor(diffDays / 28);
 };

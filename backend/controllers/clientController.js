@@ -14,7 +14,7 @@ const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { signVisitPhotos } = require('../config/s3');
-const { getWeekOfMonth, getDayOfWeek, isWorkDay } = require('../utils/scheduleCycleUtils');
+const { getWeekOfMonth, getDayOfWeek, isWorkDay, MANILA_OFFSET_MS } = require('../utils/scheduleCycleUtils');
 
 /**
  * Build access filter based on user role
@@ -294,8 +294,8 @@ const createClientVisit = catchAsync(async (req, res) => {
 
   // Regular clients can be visited any day (including weekends) - no weekend restrictions
   const visitDateObj = visitDate ? new Date(visitDate) : new Date();
-  const jsDay = visitDateObj.getDay();
-  const isWeekendVisit = jsDay === 0 || jsDay === 6;
+  const manilaVisitDate = new Date(visitDateObj.getTime() + MANILA_OFFSET_MS);
+  const isWeekendVisit = manilaVisitDate.getUTCDay() === 0 || manilaVisitDate.getUTCDay() === 6;
 
   // Enforce weekly/monthly visit limits (only for strict mode)
   const visitMonth = `${visitDateObj.getFullYear()}-${String(visitDateObj.getMonth() + 1).padStart(2, '0')}`;

@@ -9,39 +9,50 @@
  */
 
 /**
- * 4-week cycle anchor: January 5, 2026 (Monday) = W1D1
+ * 4-week cycle anchor: January 5, 2026 (Monday) = W1D1 (UTC midnight)
  */
-const CYCLE_ANCHOR = new Date(2026, 0, 5);
+const CYCLE_ANCHOR = new Date(Date.UTC(2026, 0, 5));
+
+/**
+ * Manila timezone offset (UTC+8).
+ * All day/week calculations use Manila local time so midnight PH visits
+ * don't flip to the previous UTC day.
+ */
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 /**
  * Get week in 4-week cycle (1-4) based on Jan 5, 2026 anchor.
+ * Uses Manila time (UTC+8) for correct local-date calculation.
  * @param {Date} date
  * @returns {number} Week in cycle (1-4)
  */
 const getWeekOfMonth = (date) => {
-  const diffMs = date.getTime() - CYCLE_ANCHOR.getTime();
+  const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
+  const diffMs = manilaDate.getTime() - CYCLE_ANCHOR.getTime();
   const diffDays = Math.floor(diffMs / 86400000);
   const dayInCycle = ((diffDays % 28) + 28) % 28;
   return Math.floor(dayInCycle / 7) + 1;
 };
 
 /**
- * Get day of week (1 = Monday, 5 = Friday)
+ * Get day of week (1 = Monday … 7 = Sunday) using Manila time.
  * @param {Date} date
- * @returns {number} Day of week (1-7, Monday-Sunday)
+ * @returns {number} Day of week (1-7)
  */
 const getDayOfWeek = (date) => {
-  const jsDay = date.getDay(); // 0 = Sunday
+  const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
+  const jsDay = manilaDate.getUTCDay(); // 0 = Sunday
   return jsDay === 0 ? 7 : jsDay;
 };
 
 /**
- * Check if a date is a work day (Monday-Friday)
+ * Check if a date is a work day (Monday-Friday) using Manila time.
  * @param {Date} date
  * @returns {boolean}
  */
 const isWorkDay = (date) => {
-  const day = date.getDay();
+  const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
+  const day = manilaDate.getUTCDay();
   return day >= 1 && day <= 5;
 };
 
@@ -52,11 +63,13 @@ const CYCLES_PER_YEAR = 13;
 
 /**
  * Get absolute cycle number from anchor date (ever-increasing, used for DB storage).
+ * Uses Manila time so cycle boundaries align with Philippine local dates.
  * @param {Date} date
  * @returns {number}
  */
 const getCycleNumber = (date) => {
-  const diffMs = date.getTime() - CYCLE_ANCHOR.getTime();
+  const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
+  const diffMs = manilaDate.getTime() - CYCLE_ANCHOR.getTime();
   const diffDays = Math.floor(diffMs / 86400000);
   return Math.floor(diffDays / 28);
 };
@@ -98,6 +111,7 @@ const getCycleEndDate = (cycleNumber) => {
 
 module.exports = {
   CYCLE_ANCHOR,
+  MANILA_OFFSET_MS,
   CYCLES_PER_YEAR,
   getWeekOfMonth,
   getDayOfWeek,

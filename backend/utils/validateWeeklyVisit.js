@@ -18,7 +18,7 @@ const mongoose = require('mongoose');
 const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
 const User = require('../models/User');
-const { CYCLE_ANCHOR, getWeekOfMonth, getDayOfWeek, isWorkDay: isWorkDayUtil, getCycleNumber } = require('./scheduleCycleUtils');
+const { CYCLE_ANCHOR, MANILA_OFFSET_MS, getWeekOfMonth, getDayOfWeek, isWorkDay: isWorkDayUtil, getCycleNumber } = require('./scheduleCycleUtils');
 
 /**
  * Get ISO week number for a date
@@ -26,7 +26,8 @@ const { CYCLE_ANCHOR, getWeekOfMonth, getDayOfWeek, isWorkDay: isWorkDayUtil, ge
  * @returns {number} Week number (1-53)
  */
 const getWeekNumber = (date) => {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
+  const d = new Date(Date.UTC(manilaDate.getUTCFullYear(), manilaDate.getUTCMonth(), manilaDate.getUTCDate()));
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
@@ -50,8 +51,9 @@ const getWeekLabel = (date) => {
  * @returns {string} Month-year string
  */
 const getMonthYear = (date) => {
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${date.getFullYear()}-${month}`;
+  const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
+  const month = String(manilaDate.getUTCMonth() + 1).padStart(2, '0');
+  return `${manilaDate.getUTCFullYear()}-${month}`;
 };
 
 /**
@@ -74,8 +76,9 @@ const getEffectiveMonthYear = (date) => {
  * @returns {string} Year-week key
  */
 const getYearWeekKey = (date) => {
+  const manilaDate = new Date(date.getTime() + MANILA_OFFSET_MS);
   // Calculate ISO year (may differ from calendar year at year boundaries)
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const d = new Date(Date.UTC(manilaDate.getUTCFullYear(), manilaDate.getUTCMonth(), manilaDate.getUTCDate()));
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const isoYear = d.getUTCFullYear();
@@ -165,7 +168,8 @@ const getMonthlyVisitCount = async (doctorId, userId, monthYear) => {
 const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
   // Handle both user object and userId for backward compatibility
   const userId = user._id || user;
-  const jsDay = visitDate.getDay();
+  const manilaVisitDate = new Date(visitDate.getTime() + MANILA_OFFSET_MS);
+  const jsDay = manilaVisitDate.getUTCDay();
   const isWeekendDate = jsDay === 0 || jsDay === 6;
 
   // Get doctor's visit frequency (2x or 4x monthly)
@@ -437,7 +441,8 @@ const checkBehindSchedule = async (userId, checkDate = new Date()) => {
  * @returns {Promise<Array<{doctorId: string, canVisit: boolean, reason?: string, weeklyCount: number, monthlyCount: number, monthlyLimit: number, isWeekend?: boolean}>>}
  */
 const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => {
-  const jsDay = visitDate.getDay();
+  const manilaVisitDate = new Date(visitDate.getTime() + MANILA_OFFSET_MS);
+  const jsDay = manilaVisitDate.getUTCDay();
   const isWeekendDate = jsDay === 0 || jsDay === 6;
 
   const userId = user._id || user;

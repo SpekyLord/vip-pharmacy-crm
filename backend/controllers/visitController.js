@@ -15,6 +15,7 @@ const CrmProduct = require('../models/CrmProduct');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, checkBehindSchedule, getMonthYear, getScheduleMatchForVisit } = require('../utils/validateWeeklyVisit');
+const { MANILA_OFFSET_MS } = require('../utils/scheduleCycleUtils');
 const { signVisitPhotos } = require('../config/s3');
 
 /**
@@ -180,9 +181,9 @@ const createVisit = catchAsync(async (req, res) => {
     });
   }
 
-  // Detect if this is a weekend visit
-  const jsDay = visitDateObj.getDay();
-  const isWeekendVisit = jsDay === 0 || jsDay === 6;
+  // Detect if this is a weekend visit (use Manila time)
+  const manilaVisitDate = new Date(visitDateObj.getTime() + MANILA_OFFSET_MS);
+  const isWeekendVisit = manilaVisitDate.getUTCDay() === 0 || manilaVisitDate.getUTCDay() === 6;
 
   // Create visit with race condition protection
   // The unique index on (doctor, user, yearWeekKey) prevents duplicate visits
