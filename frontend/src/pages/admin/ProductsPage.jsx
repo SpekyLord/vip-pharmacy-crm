@@ -148,6 +148,7 @@ const ProductsPage = () => {
     search: '',
     category: '',
     specialization: '',
+    sort: '',
   });
 
   const fetchProducts = useCallback(async () => {
@@ -164,6 +165,7 @@ const ProductsPage = () => {
       if (filters.search) params.search = filters.search;
       if (filters.category) params.category = filters.category;
       if (filters.specialization) params.specialization = filters.specialization;
+      if (filters.sort) params.sort = filters.sort;
 
       const response = await productService.getAll(params);
       setProducts(response.data || []);
@@ -190,11 +192,14 @@ const ProductsPage = () => {
       if (isEdit) {
         await productService.update(formData.get('_id'), formData);
         toast.success('Product updated successfully');
+        fetchProducts();
       } else {
         await productService.create(formData);
         toast.success('Product created successfully');
+        // Sort by newest and go to page 1 so user sees the new product at the top
+        setFilters((prev) => ({ ...prev, sort: 'newest' }));
+        setPagination((prev) => ({ ...prev, page: 1 }));
       }
-      fetchProducts();
       return true;
     } catch (err) {
       const errors = err.response?.data?.errors;

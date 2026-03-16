@@ -70,7 +70,9 @@ const getAllProducts = catchAsync(async (req, res) => {
     delete filter.isActive;
   }
 
-  let query = CrmProduct.find(filter).sort({ name: 1 });
+  // Sort: 'newest' = recently created first, default = alphabetical
+  const sortOption = req.query.sort === 'newest' ? { createdAt: -1 } : { name: 1 };
+  let query = CrmProduct.find(filter).sort(sortOption);
 
   if (limit > 0) {
     query = query.skip(skip).limit(limit);

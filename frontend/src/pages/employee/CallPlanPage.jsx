@@ -701,26 +701,37 @@ const CallPlanPage = () => {
   }, [cycleNumber, fetchCptData]);
 
   // --- Performance data fetch ---
+  // Fetch doctors only once (they don't change when month changes)
+  const [doctorsFetched, setDoctorsFetched] = useState(false);
   const fetchPerformanceData = useCallback(async (monthYear) => {
     try {
       setPerfLoading(true);
       setPerfError(null);
 
-      const [statsResult, complianceResult, doctorsResult, visitsResult] = await Promise.allSettled([
+      const promises = [
         visitService.getStats({ monthYear }),
         visitService.getWeeklyCompliance(monthYear),
-        doctorService.getAll({ limit: 0 }),
         visitService.getMy({ monthYear, limit: 0 }),
-      ]);
+      ];
 
+      // Only fetch doctors on first load (they don't vary by month)
+      if (!doctorsFetched) {
+        promises.push(doctorService.getAll({ limit: 0 }));
+      }
+
+      const results = await Promise.allSettled(promises);
+
+      const [statsResult, complianceResult, visitsResult] = results;
       setStatsData(statsResult.status === 'fulfilled' ? statsResult.value.data : null);
       setComplianceData(complianceResult.status === 'fulfilled' ? complianceResult.value.data : null);
-      setDoctors(doctorsResult.status === 'fulfilled' ? (doctorsResult.value.data || []) : []);
       setVisits(visitsResult.status === 'fulfilled' ? (visitsResult.value.data || []) : []);
 
-      const allFailed = [statsResult, complianceResult, doctorsResult, visitsResult].every(
-        (r) => r.status === 'rejected'
-      );
+      if (!doctorsFetched && results[3]) {
+        setDoctors(results[3].status === 'fulfilled' ? (results[3].value.data || []) : []);
+        setDoctorsFetched(true);
+      }
+
+      const allFailed = results.every((r) => r.status === 'rejected');
       if (allFailed) {
         setPerfError('Failed to load performance data. Please try again.');
       }
@@ -730,7 +741,7 @@ const CallPlanPage = () => {
     } finally {
       setPerfLoading(false);
     }
-  }, []);
+  }, [doctorsFetched]);
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);

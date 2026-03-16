@@ -265,17 +265,25 @@ app.get('/api/health', async (req, res) => {
   res.status(statusCode).json(healthStatus);
 });
 
+// Cache-Control headers for GET requests to reduce redundant downloads
+const cacheControl = (maxAge) => (req, res, next) => {
+  if (req.method === 'GET') {
+    res.set('Cache-Control', `private, max-age=${maxAge}`);
+  }
+  next();
+};
+
 // Mount route handlers
 // Apply stricter rate limiting to auth routes
 app.use('/api/auth', authLimiter, require('./routes/authRoutes'));
 // Apply per-user rate limiting to authenticated routes
 app.use('/api/users', userLimiter, require('./routes/userRoutes'));
-app.use('/api/doctors', userLimiter, require('./routes/doctorRoutes'));
+app.use('/api/doctors', userLimiter, cacheControl(60), require('./routes/doctorRoutes'));
 app.use('/api/visits', userLimiter, require('./routes/visitRoutes'));
 app.use('/api/messages', userLimiter, require('./routes/messageInbox'));
 app.use('/api/clients', userLimiter, require('./routes/clientRoutes'));
-app.use('/api/products', userLimiter, require('./routes/productRoutes'));
-app.use('/api/specializations', userLimiter, require('./routes/specializationRoutes'));
+app.use('/api/products', userLimiter, cacheControl(30), require('./routes/productRoutes'));
+app.use('/api/specializations', userLimiter, cacheControl(300), require('./routes/specializationRoutes'));
 app.use('/api/assignments', userLimiter, require('./routes/productAssignmentRoutes'));
 app.use('/api/schedules', userLimiter, require('./routes/scheduleRoutes'));
 app.use('/api/imports', userLimiter, require('./routes/importRoutes'));

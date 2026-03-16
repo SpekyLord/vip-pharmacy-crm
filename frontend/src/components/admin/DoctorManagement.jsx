@@ -1583,6 +1583,14 @@ const DoctorManagement = ({
                 ...PROGRAMS.map(p => ({ value: p, label: p })),
               ]}
             />
+              <FilterDropdown
+                value={filters.assignedTo || ''}
+                onChange={(val) => handleFilterChange('assignedTo', val)}
+                options={[
+                  { value: '', label: 'All BDMs' },
+                  ...employees.map(e => ({ value: e._id, label: e.name })),
+                ]}
+              />
           </>
         )}
         </div>

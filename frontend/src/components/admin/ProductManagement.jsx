@@ -883,10 +883,36 @@ const ProductManagement = ({
           ))}
         </select>
 
+        <select
+          className="pm-filter-select"
+          value={filters.sort || ''}
+          onChange={(e) => onFilterChange?.({ ...filters, sort: e.target.value })}
+        >
+          <option value="">Sort: A-Z</option>
+          <option value="newest">Sort: Newest</option>
+        </select>
+
         <button className="pm-add-btn" onClick={openCreate}>
           <Plus size={16} /> Add Product
         </button>
       </div>
+
+      {/* Result count + pagination shortcut */}
+      {pagination.total > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, fontSize: 13, color: '#6b7280' }}>
+          <span>
+            Showing {Math.min((pagination.page - 1) * (pagination.limit || 20) + 1, pagination.total)}–{Math.min(pagination.page * (pagination.limit || 20), pagination.total)} of {pagination.total} products
+          </span>
+          {pagination.pages > 1 && pagination.page < pagination.pages && (
+            <button
+              onClick={() => onPageChange?.(pagination.page + 1)}
+              style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: 6, padding: '4px 12px', fontSize: 13, color: '#2563eb', cursor: 'pointer', fontWeight: 500 }}
+            >
+              Next Page &rarr;
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Table */}
       <div className="pm-table-wrap">

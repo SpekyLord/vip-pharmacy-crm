@@ -319,12 +319,11 @@ const getAllVisits = catchAsync(async (req, res) => {
     Visit.countDocuments(query),
   ]);
 
-  // Sign photo URLs for private S3 access
-  const signedVisits = await Promise.all(visits.map((visit) => signVisitPhotos(visit)));
-
+  // Skip photo URL signing in list view (only photo count is shown).
+  // Photos are signed on-demand when viewing a single visit via getVisitById.
   res.json({
     success: true,
-    data: signedVisits,
+    data: visits,
     pagination: {
       page: parseInt(page),
       limit: parsedLimit,
@@ -707,13 +706,11 @@ const getTodayVisits = catchAsync(async (req, res) => {
     status: 'completed',
   }).populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
 
-  // Sign photo URLs for private S3 access
-  const signedVisits = await Promise.all(visits.map((visit) => signVisitPhotos(visit)));
-
+  // Skip photo signing in list view
   res.json({
     success: true,
-    data: signedVisits,
-    count: signedVisits.length,
+    data: visits,
+    count: visits.length,
   });
 });
 
@@ -785,14 +782,12 @@ const getMyVisits = catchAsync(async (req, res) => {
     );
   }
 
-  // Sign photo URLs for private S3 access
-  const signedVisits = await Promise.all(filteredVisits.map((visit) => signVisitPhotos(visit)));
-
-  const totalCount = search ? signedVisits.length : total;
+  // Skip photo signing in list view
+  const totalCount = search ? filteredVisits.length : total;
 
   res.json({
     success: true,
-    data: signedVisits,
+    data: filteredVisits,
     pagination: {
       page: parseInt(page),
       limit: parsedLimit,

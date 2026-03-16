@@ -278,6 +278,7 @@ const DoctorsPage = () => {
     supportDuringCoverage: '',
     programsToImplement: '',
     clientType: '',
+    assignedTo: '',
   });
   const [searchInput, setSearchInput] = useState('');
 
@@ -313,6 +314,7 @@ const DoctorsPage = () => {
       if (filters.specialization) params.specialization = filters.specialization;
       if (filters.supportDuringCoverage) params.supportDuringCoverage = filters.supportDuringCoverage;
       if (filters.programsToImplement) params.programsToImplement = filters.programsToImplement;
+      if (filters.assignedTo) params.assignedTo = filters.assignedTo;
 
       const response = await doctorService.getAll(params);
       const taggedDoctors = (response.data || []).map(doc => ({ ...doc, _clientType: 'vip' }));

@@ -492,12 +492,10 @@ const getClientVisits = catchAsync(async (req, res) => {
     ClientVisit.countDocuments(filter),
   ]);
 
-  // Sign photo URLs
-  const signedVisits = await Promise.all(visits.map((visit) => signVisitPhotos(visit)));
-
+  // Skip photo signing in list view — photos signed on-demand in getClientVisitById
   res.status(200).json({
     success: true,
-    data: signedVisits,
+    data: visits,
     pagination: {
       page,
       limit,
@@ -557,17 +555,15 @@ const getMyClientVisits = catchAsync(async (req, res) => {
     });
   }
 
-  // Sign photo URLs
-  const signedVisits = await Promise.all(filteredVisits.map((visit) => signVisitPhotos(visit)));
-
+  // Skip photo signing in list view — photos signed on-demand in getClientVisitById
   res.status(200).json({
     success: true,
-    data: signedVisits,
+    data: filteredVisits,
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
-      total: search ? signedVisits.length : total,
-      pages: Math.ceil((search ? signedVisits.length : total) / limit),
+      total: search ? filteredVisits.length : total,
+      pages: Math.ceil((search ? filteredVisits.length : total) / limit),
     },
   });
 });

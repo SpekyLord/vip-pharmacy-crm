@@ -12,7 +12,27 @@
 const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
+const sharp = require('sharp');
 const { uploadVisitPhoto, uploadProductImage, uploadAvatar } = require('../config/s3');
+
+/**
+ * Compress an image buffer using sharp.
+ * Resizes to fit within maxDim x maxDim and converts to JPEG at given quality.
+ * Returns { buffer, mimetype }.
+ */
+const compressImage = async (buffer, originalMimetype, { maxDim = 1920, quality = 80 } = {}) => {
+  try {
+    const compressed = await sharp(buffer)
+      .resize(maxDim, maxDim, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality, mozjpeg: true })
+      .toBuffer();
+    return { buffer: compressed, mimetype: 'image/jpeg' };
+  } catch (err) {
+    // If compression fails (corrupted image, unsupported format), upload original
+    console.warn('Image compression failed, uploading original:', err.message);
+    return { buffer, mimetype: originalMimetype || 'image/jpeg' };
+  }
+};
 
 // Allowed MIME types
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -129,13 +149,16 @@ const processVisitPhotos = async (req, res, next) => {
     const now = new Date();
 
     for (const file of req.files) {
-      // Compute MD5 hash for duplicate detection
-      const hash = crypto.createHash('md5').update(file.buffer).digest('hex');
+      // Compress image before upload (3-5 MB → ~300-500 KB)
+      const { buffer: compressed, mimetype: compressedMime } = await compressImage(file.buffer, file.mimetype);
+
+      // Compute MD5 hash on compressed buffer for duplicate detection
+      const hash = crypto.createHash('md5').update(compressed).digest('hex');
 
       const result = await uploadVisitPhoto(
-        file.buffer,
-        file.originalname,
-        file.mimetype
+        compressed,
+        file.originalname.replace(/\.\w+$/, '.jpg'),
+        compressedMime
       );
 
       uploadedPhotos.push({
@@ -143,9 +166,9 @@ const processVisitPhotos = async (req, res, next) => {
         key: result.key,
         capturedAt: now,
         originalName: file.originalname,
-        size: file.size,
-        mimetype: file.mimetype,
-        hash, // MD5 hash for duplicate detection
+        size: compressed.length,
+        mimetype: compressedMime,
+        hash,
       });
     }
 
@@ -175,10 +198,13 @@ const processProductImage = async (req, res, next) => {
       });
     }
 
+    // Compress product image (keep higher quality for tablet showcase)
+    const { buffer: compressed, mimetype: compressedMime } = await compressImage(req.file.buffer, req.file.mimetype, { maxDim: 1920, quality: 85 });
+
     const result = await uploadProductImage(
-      req.file.buffer,
-      req.file.originalname,
-      req.file.mimetype
+      compressed,
+      req.file.originalname.replace(/\.\w+$/, '.jpg'),
+      compressedMime
     );
 
     // Attach uploaded image URL to request
@@ -207,10 +233,13 @@ const processAvatar = async (req, res, next) => {
       return next();
     }
 
+    // Compress avatar (small profile picture)
+    const { buffer: compressed, mimetype: compressedMime } = await compressImage(req.file.buffer, req.file.mimetype, { maxDim: 512, quality: 80 });
+
     const result = await uploadAvatar(
-      req.file.buffer,
-      req.file.originalname,
-      req.file.mimetype
+      compressed,
+      req.file.originalname.replace(/\.\w+$/, '.jpg'),
+      compressedMime
     );
 
     // Attach uploaded avatar URL to request
@@ -239,10 +268,13 @@ const processProductImageOptional = async (req, res, next) => {
       return next();
     }
 
+    // Compress product image
+    const { buffer: compressed, mimetype: compressedMime } = await compressImage(req.file.buffer, req.file.mimetype, { maxDim: 1920, quality: 85 });
+
     const result = await uploadProductImage(
-      req.file.buffer,
-      req.file.originalname,
-      req.file.mimetype
+      compressed,
+      req.file.originalname.replace(/\.\w+$/, '.jpg'),
+      compressedMime
     );
 
     // Attach uploaded image URL to request
