@@ -278,7 +278,7 @@ const cacheControl = (maxAge) => (req, res, next) => {
 app.use('/api/auth', authLimiter, require('./routes/authRoutes'));
 // Apply per-user rate limiting to authenticated routes
 app.use('/api/users', userLimiter, require('./routes/userRoutes'));
-app.use('/api/doctors', userLimiter, cacheControl(60), require('./routes/doctorRoutes'));
+app.use('/api/doctors', userLimiter, require('./routes/doctorRoutes'));
 app.use('/api/visits', userLimiter, require('./routes/visitRoutes'));
 app.use('/api/messages', userLimiter, require('./routes/messageInbox'));
 app.use('/api/clients', userLimiter, require('./routes/clientRoutes'));
