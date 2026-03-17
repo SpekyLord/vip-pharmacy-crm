@@ -342,12 +342,7 @@ const createVisitValidation = [
     .optional()
     .isISO8601()
     .withMessage('Invalid date format'),
-  body('location.latitude')
-    .optional()
-    .custom(isValidLatitude),
-  body('location.longitude')
-    .optional()
-    .custom(isValidLongitude),
+  // GPS location validated in controller — invalid data silently discarded
   body('visitType')
     .optional()
     .isIn(['regular', 'follow-up', 'emergency'])
@@ -625,12 +620,7 @@ const createClientVisitValidation = [
     .optional()
     .isISO8601()
     .withMessage('Invalid date format'),
-  body('location.latitude')
-    .optional()
-    .custom(isValidLatitude),
-  body('location.longitude')
-    .optional()
-    .custom(isValidLongitude),
+  // GPS location validated in controller — invalid data silently discarded
   body('purpose')
     .optional()
     .isLength({ max: 500 })

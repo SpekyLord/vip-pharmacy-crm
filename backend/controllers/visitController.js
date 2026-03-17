@@ -45,10 +45,7 @@ const createVisit = catchAsync(async (req, res) => {
     try {
       locationData = JSON.parse(location);
     } catch (e) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid location data format',
-      });
+      locationData = null; // Discard unparseable GPS data, don't block the visit
     }
   }
 

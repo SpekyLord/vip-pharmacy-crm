@@ -67,7 +67,7 @@ const cameraStyles = `
   }
 
   .gps-failed {
-    color: #dc2626;
+    color: #f59e0b;
   }
 
   .camera-controls {
@@ -671,7 +671,7 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
         </div>
       )}
       {gpsStatus === 'failed' && (
-        <span className="gps-failed">GPS Unavailable</span>
+        <span className="gps-failed">GPS Unavailable — you can still log your visit</span>
       )}
     </div>
   );
