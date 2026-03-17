@@ -273,10 +273,16 @@ const createClientVisit = catchAsync(async (req, res) => {
     try {
       locationData = JSON.parse(location);
     } catch (e) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid location data format',
-      });
+      locationData = null; // Discard invalid GPS, don't block the visit
+    }
+  }
+
+  // Validate GPS coordinates bounds — skip silently if invalid (GPS is optional)
+  if (locationData) {
+    const lat = parseFloat(locationData.latitude);
+    const lng = parseFloat(locationData.longitude);
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      locationData = null;
     }
   }
 
