@@ -138,6 +138,12 @@ const visitService = {
     const response = await api.get('/visits/photo-audit', { params });
     return response.data;
   },
+
+  // Find all visits containing a specific photo hash (duplicate investigation)
+  findByPhotoHash: async (hash) => {
+    const response = await api.get('/visits/photo-audit/find-by-hash', { params: { hash } });
+    return response.data;
+  },
 };
 
 export default visitService;

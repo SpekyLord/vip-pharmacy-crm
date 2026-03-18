@@ -12,8 +12,11 @@ import Sidebar from '../../components/common/Sidebar';
 import Pagination from '../../components/common/Pagination';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import visitService from '../../services/visitService';
+import clientService from '../../services/clientService';
 import userService from '../../services/userService';
-import { Camera, AlertTriangle, Clock, Copy, User, Calendar, Filter, X } from 'lucide-react';
+import VisitDetailModal from '../../components/common/VisitDetailModal';
+import toast from 'react-hot-toast';
+import { Camera, AlertTriangle, Clock, Copy, User, Calendar, Filter, X, Eye } from 'lucide-react';
 
 const pageStyles = `
   .dashboard-layout {
@@ -339,6 +342,45 @@ const pageStyles = `
     color: #374151;
   }
 
+  .view-visit-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: #8b5cf6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .view-visit-btn:hover {
+    background: #7c3aed;
+  }
+
+  .view-visit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .matched-visit-link {
+    background: none;
+    border: none;
+    color: #2563eb;
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 13px;
+    margin-left: 6px;
+    padding: 0;
+  }
+
+  .matched-visit-link:hover {
+    color: #1d4ed8;
+  }
+
   /* Dark mode */
   body.dark-mode .dashboard-layout {
     background: #0b1220;
@@ -417,6 +459,14 @@ const pageStyles = `
     color: #e2e8f0;
   }
 
+  body.dark-mode .view-visit-btn {
+    background: #7c3aed;
+  }
+
+  body.dark-mode .matched-visit-link {
+    color: #93c5fd;
+  }
+
   @media (max-width: 768px) {
     .main-content {
       padding: 16px;
@@ -438,6 +488,11 @@ const pageStyles = `
     .photos-grid {
       grid-template-columns: repeat(2, 1fr);
     }
+
+    .view-visit-btn {
+      width: 100%;
+      justify-content: center;
+    }
   }
 `;
 
@@ -447,6 +502,14 @@ const PhotoAuditPage = () => {
   const [summary, setSummary] = useState({ totalFlagged: 0, dateMismatch: 0, duplicatePhoto: 0 });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, pages: 0 });
   const [users, setUsers] = useState([]);
+
+  // Visit detail modal
+  const [selectedVisit, setSelectedVisit] = useState(null);
+  const [loadingVisitId, setLoadingVisitId] = useState(null);
+
+  // Duplicate investigation
+  const [duplicateMatches, setDuplicateMatches] = useState({}); // keyed by issueId-photoIndex
+  const [loadingHash, setLoadingHash] = useState(null);
 
   // Filters
   const [flagType, setFlagType] = useState('all');
@@ -503,6 +566,42 @@ const PhotoAuditPage = () => {
     setUserId('');
     setDateFrom('');
     setDateTo('');
+  };
+
+  const handleViewVisit = async (visitId, visitType) => {
+    setLoadingVisitId(visitId);
+    try {
+      const res = visitType === 'regular'
+        ? await clientService.getVisitById(visitId)
+        : await visitService.getById(visitId);
+      if (res.success) {
+        setSelectedVisit({ ...res.data, _visitType: visitType });
+      }
+    } catch (err) {
+      console.error('Failed to fetch visit:', err);
+      toast.error('Visit not found or has been deleted');
+    } finally {
+      setLoadingVisitId(null);
+    }
+  };
+
+  const handleFindDuplicates = async (issue, detail) => {
+    const hash = issue.photos?.[detail.photoIndex]?.hash;
+    if (!hash) {
+      toast.error('No photo hash available for this photo');
+      return;
+    }
+    const key = `${issue._id}-${detail.photoIndex}`;
+    setLoadingHash(key);
+    try {
+      const res = await visitService.findByPhotoHash(hash);
+      setDuplicateMatches(prev => ({ ...prev, [key]: res.data || [] }));
+    } catch (err) {
+      console.error('Failed to find duplicates:', err);
+      toast.error('Failed to search for duplicate visits');
+    } finally {
+      setLoadingHash(null);
+    }
   };
 
   const formatDate = (dateStr) => {
@@ -653,6 +752,14 @@ const PhotoAuditPage = () => {
                           </span>
                         )}
                       </div>
+                      <button
+                        className="view-visit-btn"
+                        onClick={() => handleViewVisit(issue._id, issue.type)}
+                        disabled={loadingVisitId === issue._id}
+                      >
+                        <Eye size={16} />
+                        {loadingVisitId === issue._id ? 'Loading...' : 'View Visit'}
+                      </button>
                     </div>
                     <div className="issue-body">
                       {/* Photos */}
@@ -683,15 +790,73 @@ const PhotoAuditPage = () => {
                       {/* Flag Details */}
                       {issue.photoFlagDetails && issue.photoFlagDetails.length > 0 && (
                         <div className="flag-details">
-                          {issue.photoFlagDetails.map((detail, idx) => (
-                            <div key={idx} className="flag-detail-item">
-                              <AlertTriangle size={16} />
-                              <span>
-                                <strong>Photo {detail.photoIndex + 1}:</strong>{' '}
-                                {detail.detail}
-                              </span>
-                            </div>
-                          ))}
+                          {issue.photoFlagDetails.map((detail, idx) => {
+                            const matchKey = `${issue._id}-${detail.photoIndex}`;
+                            const matches = duplicateMatches[matchKey];
+                            return (
+                              <div key={idx} className="flag-detail-item" style={{ flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                                  <span>
+                                    <strong>Photo {detail.photoIndex + 1}:</strong>{' '}
+                                    {detail.detail}
+                                  </span>
+                                </div>
+                                {detail.flag === 'duplicate_photo' && (
+                                  <>
+                                    {detail.matchedVisitId ? (
+                                      <button
+                                        className="matched-visit-link"
+                                        onClick={() => handleViewVisit(detail.matchedVisitId, detail.matchedVisitType)}
+                                        style={{ marginLeft: '24px' }}
+                                      >
+                                        View original visit
+                                      </button>
+                                    ) : !matches ? (
+                                      <button
+                                        className="view-visit-btn"
+                                        style={{ marginLeft: '24px', fontSize: '12px', padding: '4px 12px', background: '#2563eb' }}
+                                        onClick={() => handleFindDuplicates(issue, detail)}
+                                        disabled={loadingHash === matchKey}
+                                      >
+                                        {loadingHash === matchKey ? 'Searching...' : 'Find Duplicate Visits'}
+                                      </button>
+                                    ) : null}
+                                    {matches && matches.length > 0 && (
+                                      <div style={{ marginLeft: '24px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        <span style={{ fontSize: '12px', fontWeight: 600 }}>
+                                          Found in {matches.length} visit{matches.length > 1 ? 's' : ''}:
+                                        </span>
+                                        {matches.map(m => (
+                                          <div key={m._id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                                            <span className={`type-badge ${m.type}`} style={{ fontSize: '10px', padding: '2px 6px' }}>
+                                              {m.type === 'vip' ? 'VIP' : 'Regular'}
+                                            </span>
+                                            <span>{m.entity?.name || 'Unknown'}</span>
+                                            <span style={{ color: '#6b7280' }}>
+                                              {m.user?.name} &middot; {formatDate(m.visitDate)}
+                                              {m.weekLabel ? ` (${m.weekLabel})` : ''}
+                                            </span>
+                                            <button
+                                              className="matched-visit-link"
+                                              onClick={() => handleViewVisit(m._id, m.type)}
+                                            >
+                                              View
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {matches && matches.length === 0 && (
+                                      <span style={{ marginLeft: '24px', fontSize: '12px', color: '#6b7280' }}>
+                                        No matching visits found (original may have been deleted)
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -712,6 +877,13 @@ const PhotoAuditPage = () => {
           )}
         </main>
       </div>
+
+      {selectedVisit && (
+        <VisitDetailModal
+          visit={selectedVisit}
+          onClose={() => setSelectedVisit(null)}
+        />
+      )}
     </div>
   );
 };

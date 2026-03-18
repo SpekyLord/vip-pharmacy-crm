@@ -119,6 +119,8 @@ const visitSchema = new mongoose.Schema(
         flag: { type: String, enum: ['date_mismatch', 'duplicate_photo'] },
         photoIndex: { type: Number },
         detail: { type: String },
+        matchedVisitId: { type: mongoose.Schema.Types.ObjectId },
+        matchedVisitType: { type: String, enum: ['vip', 'regular'] },
       },
     ],
 

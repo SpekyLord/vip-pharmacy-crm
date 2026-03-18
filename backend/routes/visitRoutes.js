@@ -35,6 +35,7 @@ const {
   getQuotaDumpingAlerts,
   getGPSReview,
   getPhotoAuditIssues,
+  findVisitsByPhotoHash,
 } = require('../controllers/visitController');
 
 const { protect } = require('../middleware/auth');
@@ -54,6 +55,7 @@ router.get('/compliance', adminOnly, getComplianceAlerts);
 router.get('/quota-dumping', adminOnly, getQuotaDumpingAlerts);
 router.get('/gps-review', adminOnly, getGPSReview);
 router.get('/photo-audit', adminOnly, getPhotoAuditIssues);
+router.get('/photo-audit/find-by-hash', adminOnly, findVisitsByPhotoHash);
 router.get('/employee-report/:userId', adminOnly, getEmployeeReport);
 router.get('/can-visit/:doctorId', checkCanVisit);
 router.post('/can-visit-batch', checkCanVisitBatch);

@@ -157,12 +157,21 @@ const createVisit = catchAsync(async (req, res) => {
       ClientVisit.find({ 'photos.hash': { $in: hashes } }).select('photos.hash').lean(),
     ]);
 
-    const existingHashes = new Set();
-    existingVisitPhotos.forEach(v => v.photos.forEach(p => { if (p.hash) existingHashes.add(p.hash); }));
-    existingClientPhotos.forEach(v => v.photos.forEach(p => { if (p.hash) existingHashes.add(p.hash); }));
+    const hashToVisit = new Map();
+    existingVisitPhotos.forEach(v => v.photos.forEach(p => {
+      if (p.hash && !hashToVisit.has(p.hash)) {
+        hashToVisit.set(p.hash, { visitId: v._id, visitType: 'vip' });
+      }
+    }));
+    existingClientPhotos.forEach(v => v.photos.forEach(p => {
+      if (p.hash && !hashToVisit.has(p.hash)) {
+        hashToVisit.set(p.hash, { visitId: v._id, visitType: 'regular' });
+      }
+    }));
 
     photos.forEach((photo, index) => {
-      if (photo.hash && existingHashes.has(photo.hash)) {
+      const match = photo.hash ? hashToVisit.get(photo.hash) : null;
+      if (match) {
         if (!photoFlags.includes('duplicate_photo')) {
           photoFlags.push('duplicate_photo');
         }
@@ -170,6 +179,8 @@ const createVisit = catchAsync(async (req, res) => {
           flag: 'duplicate_photo',
           photoIndex: index,
           detail: 'This photo has been used in a previous visit',
+          matchedVisitId: match.visitId,
+          matchedVisitType: match.visitType,
         });
       }
     });
@@ -1370,7 +1381,8 @@ const getPhotoAuditIssues = catchAsync(async (req, res) => {
   // Sign photo URLs for display
   for (const issue of paginatedIssues) {
     if (issue.photos && issue.photos.length > 0) {
-      issue.photos = await signVisitPhotos(issue.photos);
+      const signed = await signVisitPhotos({ photos: issue.photos });
+      issue.photos = signed.photos;
     }
   }
 
@@ -1393,6 +1405,54 @@ const getPhotoAuditIssues = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Find visits that contain a specific photo hash (for duplicate investigation)
+ * @route   GET /api/visits/photo-audit/find-by-hash?hash=abc123
+ * @access  Private (Admin only)
+ */
+const findVisitsByPhotoHash = catchAsync(async (req, res) => {
+  const { hash } = req.query;
+
+  if (!hash) {
+    return res.status(400).json({ success: false, message: 'Photo hash is required' });
+  }
+
+  const [vipVisits, clientVisits] = await Promise.all([
+    Visit.find({ 'photos.hash': hash })
+      .populate('doctor', 'firstName lastName')
+      .populate('user', 'name')
+      .select('visitDate photos user doctor weekLabel')
+      .sort({ visitDate: -1 })
+      .lean(),
+    ClientVisit.find({ 'photos.hash': hash })
+      .populate('client', 'firstName lastName')
+      .populate('user', 'name')
+      .select('visitDate photos user client')
+      .sort({ visitDate: -1 })
+      .lean(),
+  ]);
+
+  const matches = [
+    ...vipVisits.map(v => ({
+      _id: v._id,
+      type: 'vip',
+      visitDate: v.visitDate,
+      weekLabel: v.weekLabel,
+      user: v.user,
+      entity: v.doctor ? { name: `${v.doctor.firstName} ${v.doctor.lastName}` } : null,
+    })),
+    ...clientVisits.map(v => ({
+      _id: v._id,
+      type: 'regular',
+      visitDate: v.visitDate,
+      user: v.user,
+      entity: v.client ? { name: `${v.client.firstName} ${v.client.lastName}` } : null,
+    })),
+  ];
+
+  res.json({ success: true, data: matches });
+});
+
 module.exports = {
   createVisit,
   getAllVisits,
@@ -1412,4 +1472,5 @@ module.exports = {
   getQuotaDumpingAlerts,
   getGPSReview,
   getPhotoAuditIssues,
+  findVisitsByPhotoHash,
 };

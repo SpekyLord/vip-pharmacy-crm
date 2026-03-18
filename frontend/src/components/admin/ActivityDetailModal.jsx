@@ -13,6 +13,8 @@
  * @prop {object} activity - The selected activity data
  */
 
+import { useState, useEffect } from 'react';
+import visitService from '../../services/visitService';
 import {
   X,
   MapPin,
@@ -34,6 +36,7 @@ import {
   Building,
   Hash,
   Box,
+  Loader,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -57,6 +60,15 @@ const modalStyles = `
   @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .spinning {
+    animation: spin 1s linear infinite;
   }
 
   .modal-container {
@@ -299,6 +311,20 @@ const modalStyles = `
     color: #9ca3af;
   }
 
+  .photo-thumb {
+    aspect-ratio: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  .photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
   /* Timestamp footer */
   .modal-footer {
     padding: 16px 24px;
@@ -442,7 +468,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity }) => {
 
           {/* Type-specific details */}
           {activity.type === 'VISIT_LOG' && (
-            <VisitDetails details={activity.details} />
+            <VisitDetails details={activity.details} activityId={activity._id} />
           )}
 
           {activity.type === 'AUTH' && (
@@ -477,7 +503,35 @@ const ActivityDetailModal = ({ isOpen, onClose, activity }) => {
    SUB-COMPONENTS: Type-specific detail views
    ============================================================================= */
 
-const VisitDetails = ({ details }) => {
+const VisitDetails = ({ details, activityId }) => {
+  const [signedPhotos, setSignedPhotos] = useState(null);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+
+  // Extract visit ID from activity ID (format: "visit-<mongoId>")
+  const visitId = activityId?.startsWith('visit-') ? activityId.slice(6) : null;
+
+  const fetchSignedPhotos = async () => {
+    if (!visitId || loadingPhotos) return;
+    setLoadingPhotos(true);
+    try {
+      const res = await visitService.getById(visitId);
+      if (res.success && res.data?.photos) {
+        setSignedPhotos(res.data.photos.map(p => p.url));
+      }
+    } catch (err) {
+      console.error('Failed to fetch signed photos:', err);
+    } finally {
+      setLoadingPhotos(false);
+    }
+  };
+
+  // Fetch signed photos on mount
+  useEffect(() => {
+    if (details?.photos?.length > 0 && visitId) {
+      fetchSignedPhotos();
+    }
+  }, [visitId]);
+
   if (!details) return null;
 
   return (
@@ -514,7 +568,7 @@ const VisitDetails = ({ details }) => {
               <div className="detail-value small">{details.address || 'N/A'}</div>
               {details.coordinates && (
                 <div className="detail-value small" style={{ color: '#6b7280', marginTop: 4 }}>
-                  📍 {details.coordinates.lat}, {details.coordinates.lng}
+                  {details.coordinates.lat}, {details.coordinates.lng}
                 </div>
               )}
             </div>
@@ -539,11 +593,23 @@ const VisitDetails = ({ details }) => {
         <div className="detail-section">
           <div className="section-label">Photo Attachments ({details.photos.length})</div>
           <div className="photo-grid">
-            {details.photos.map((photo, idx) => (
-              <div key={idx} className="photo-placeholder">
-                <Camera size={20} />
+            {loadingPhotos ? (
+              <div className="photo-placeholder">
+                <Loader size={20} className="spinning" />
               </div>
-            ))}
+            ) : signedPhotos ? (
+              signedPhotos.map((url, idx) => (
+                <div key={idx} className="photo-thumb">
+                  <img src={url} alt={`Visit photo ${idx + 1}`} />
+                </div>
+              ))
+            ) : (
+              details.photos.map((photo, idx) => (
+                <div key={idx} className="photo-placeholder">
+                  <Camera size={20} />
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
