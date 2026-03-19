@@ -467,6 +467,224 @@ const pageStyles = `
     color: #93c5fd;
   }
 
+  /* Comparison Modal */
+  .comparison-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .comparison-modal {
+    background: white;
+    border-radius: 16px;
+    max-width: 950px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+  }
+
+  .comparison-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .comparison-header h2 {
+    margin: 0;
+    font-size: 18px;
+    color: #1f2937;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .comparison-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: #6b7280;
+    border-radius: 6px;
+  }
+
+  .comparison-close:hover {
+    background: #f3f4f6;
+    color: #1f2937;
+  }
+
+  .comparison-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .comparison-side {
+    padding: 20px 24px;
+  }
+
+  .comparison-side:first-child {
+    border-right: 1px solid #e5e7eb;
+  }
+
+  .comparison-side-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .comparison-side:first-child .comparison-side-label {
+    color: #dc2626;
+  }
+
+  .comparison-side:last-child .comparison-side-label {
+    color: #2563eb;
+  }
+
+  .comparison-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: #374151;
+  }
+
+  .comparison-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .comparison-meta-row label {
+    color: #6b7280;
+    min-width: 50px;
+    font-weight: 500;
+  }
+
+  .comparison-photo-wrapper {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 3px solid #e5e7eb;
+    position: relative;
+  }
+
+  .comparison-side:first-child .comparison-photo-wrapper {
+    border-color: #fca5a5;
+  }
+
+  .comparison-side:last-child .comparison-photo-wrapper {
+    border-color: #fca5a5;
+  }
+
+  .comparison-photo-wrapper img {
+    width: 100%;
+    height: 280px;
+    object-fit: cover;
+    display: block;
+  }
+
+  .comparison-photo-info {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .comparison-footer {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding: 16px 24px;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .compare-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: #dc2626;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .compare-btn:hover {
+    background: #b91c1c;
+  }
+
+  .compare-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Dark mode comparison */
+  body.dark-mode .comparison-modal {
+    background: #0f172a;
+  }
+
+  body.dark-mode .comparison-header {
+    border-bottom-color: #1e293b;
+  }
+
+  body.dark-mode .comparison-header h2 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .comparison-close {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .comparison-close:hover {
+    background: #1e293b;
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .comparison-side:first-child {
+    border-right-color: #1e293b;
+  }
+
+  body.dark-mode .comparison-meta {
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .comparison-meta-row label {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .comparison-photo-wrapper {
+    border-color: #334155;
+  }
+
+  body.dark-mode .comparison-photo-info {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .comparison-footer {
+    border-top-color: #1e293b;
+  }
+
   @media (max-width: 768px) {
     .main-content {
       padding: 16px;
@@ -493,6 +711,19 @@ const pageStyles = `
       width: 100%;
       justify-content: center;
     }
+
+    .comparison-columns {
+      grid-template-columns: 1fr;
+    }
+
+    .comparison-side:first-child {
+      border-right: none;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    body.dark-mode .comparison-side:first-child {
+      border-bottom-color: #1e293b;
+    }
   }
 `;
 
@@ -510,6 +741,10 @@ const PhotoAuditPage = () => {
   // Duplicate investigation
   const [duplicateMatches, setDuplicateMatches] = useState({}); // keyed by issueId-photoIndex
   const [loadingHash, setLoadingHash] = useState(null);
+
+  // Side-by-side comparison
+  const [comparisonData, setComparisonData] = useState(null);
+  const [loadingCompare, setLoadingCompare] = useState(null); // issueId-photoIndex key
 
   // Filters
   const [flagType, setFlagType] = useState('all');
@@ -601,6 +836,30 @@ const PhotoAuditPage = () => {
       toast.error('Failed to search for duplicate visits');
     } finally {
       setLoadingHash(null);
+    }
+  };
+
+  const handleCompare = async (issue, detail) => {
+    const key = `${issue._id}-${detail.photoIndex}`;
+    setLoadingCompare(key);
+    try {
+      const res = detail.matchedVisitType === 'regular'
+        ? await clientService.getVisitById(detail.matchedVisitId)
+        : await visitService.getById(detail.matchedVisitId);
+      if (res.success) {
+        setComparisonData({
+          currentVisit: issue,
+          originalVisit: res.data,
+          flaggedPhotoIndex: detail.photoIndex,
+          flaggedPhotoHash: issue.photos?.[detail.photoIndex]?.hash,
+          originalType: detail.matchedVisitType || 'vip',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to fetch original visit for comparison:', err);
+      toast.error('Could not load original visit for comparison');
+    } finally {
+      setLoadingCompare(null);
     }
   };
 
@@ -805,13 +1064,22 @@ const PhotoAuditPage = () => {
                                 {detail.flag === 'duplicate_photo' && (
                                   <>
                                     {detail.matchedVisitId ? (
-                                      <button
-                                        className="matched-visit-link"
-                                        onClick={() => handleViewVisit(detail.matchedVisitId, detail.matchedVisitType)}
-                                        style={{ marginLeft: '24px' }}
-                                      >
-                                        View original visit
-                                      </button>
+                                      <div style={{ marginLeft: '24px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                        <button
+                                          className="compare-btn"
+                                          onClick={() => handleCompare(issue, detail)}
+                                          disabled={loadingCompare === matchKey}
+                                        >
+                                          <Copy size={14} />
+                                          {loadingCompare === matchKey ? 'Loading...' : 'Compare Side-by-Side'}
+                                        </button>
+                                        <button
+                                          className="matched-visit-link"
+                                          onClick={() => handleViewVisit(detail.matchedVisitId, detail.matchedVisitType)}
+                                        >
+                                          View original visit
+                                        </button>
+                                      </div>
                                     ) : !matches ? (
                                       <button
                                         className="view-visit-btn"
@@ -884,6 +1152,154 @@ const PhotoAuditPage = () => {
           onClose={() => setSelectedVisit(null)}
         />
       )}
+
+      {/* Side-by-Side Comparison Modal */}
+      {comparisonData && (() => {
+        const { currentVisit, originalVisit, flaggedPhotoIndex, flaggedPhotoHash, originalType } = comparisonData;
+        const currentPhoto = currentVisit.photos?.[flaggedPhotoIndex];
+        // Find matching photo in original visit by hash
+        const originalPhoto = originalVisit.photos?.find(p => p.hash === flaggedPhotoHash) || originalVisit.photos?.[0];
+
+        const getClientName = (visit, type) => {
+          // Audit issues use entity.name (pre-formatted)
+          if (visit.entity?.name) return visit.entity.name;
+          // Full visit objects use doctor/client with firstName/lastName
+          if (type === 'regular' || visit.client) {
+            const c = visit.client || {};
+            return `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unknown';
+          }
+          const d = visit.doctor || {};
+          return `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'Unknown';
+        };
+
+        return (
+          <div className="comparison-overlay" onClick={() => setComparisonData(null)}>
+            <div className="comparison-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="comparison-header">
+                <h2>
+                  <Copy size={20} style={{ color: '#dc2626' }} />
+                  Duplicate Photo Comparison
+                </h2>
+                <button className="comparison-close" onClick={() => setComparisonData(null)}>
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="comparison-columns">
+                {/* Current (flagged) visit */}
+                <div className="comparison-side">
+                  <div className="comparison-side-label">
+                    <AlertTriangle size={14} />
+                    Flagged Visit
+                  </div>
+                  <div className="comparison-meta">
+                    <div className="comparison-meta-row">
+                      <span className={`type-badge ${currentVisit.type || 'vip'}`} style={{ marginRight: '4px' }}>
+                        {currentVisit.type === 'regular' ? 'Regular' : 'VIP'}
+                      </span>
+                      <strong>{getClientName(currentVisit, currentVisit.type)}</strong>
+                    </div>
+                    <div className="comparison-meta-row">
+                      <label>BDM:</label>
+                      <span>{currentVisit.user?.name || 'Unknown'}</span>
+                    </div>
+                    <div className="comparison-meta-row">
+                      <label>Date:</label>
+                      <span>{formatDate(currentVisit.visitDate)}</span>
+                    </div>
+                    {currentVisit.weekLabel && (
+                      <div className="comparison-meta-row">
+                        <label>Week:</label>
+                        <span>{currentVisit.weekLabel}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="comparison-photo-wrapper">
+                    {currentPhoto?.url ? (
+                      <img src={currentPhoto.url} alt="Flagged photo" />
+                    ) : (
+                      <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', background: '#f3f4f6' }}>
+                        Photo unavailable
+                      </div>
+                    )}
+                  </div>
+                  <div className="comparison-photo-info">
+                    <Clock size={12} />
+                    Taken: {formatDateTime(currentPhoto?.capturedAt)}
+                  </div>
+                </div>
+
+                {/* Original visit */}
+                <div className="comparison-side">
+                  <div className="comparison-side-label">
+                    <Eye size={14} />
+                    Original Visit
+                  </div>
+                  <div className="comparison-meta">
+                    <div className="comparison-meta-row">
+                      <span className={`type-badge ${originalType || 'vip'}`} style={{ marginRight: '4px' }}>
+                        {originalType === 'regular' ? 'Regular' : 'VIP'}
+                      </span>
+                      <strong>{getClientName(originalVisit, originalType)}</strong>
+                    </div>
+                    <div className="comparison-meta-row">
+                      <label>BDM:</label>
+                      <span>{originalVisit.user?.name || 'Unknown'}</span>
+                    </div>
+                    <div className="comparison-meta-row">
+                      <label>Date:</label>
+                      <span>{formatDate(originalVisit.visitDate)}</span>
+                    </div>
+                    {originalVisit.weekLabel && (
+                      <div className="comparison-meta-row">
+                        <label>Week:</label>
+                        <span>{originalVisit.weekLabel}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="comparison-photo-wrapper">
+                    {originalPhoto?.url ? (
+                      <img src={originalPhoto.url} alt="Original photo" />
+                    ) : (
+                      <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', background: '#f3f4f6' }}>
+                        Photo unavailable
+                      </div>
+                    )}
+                  </div>
+                  <div className="comparison-photo-info">
+                    <Clock size={12} />
+                    Taken: {formatDateTime(originalPhoto?.capturedAt)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="comparison-footer">
+                <button
+                  className="view-visit-btn"
+                  onClick={() => {
+                    setComparisonData(null);
+                    handleViewVisit(currentVisit._id, currentVisit.type);
+                  }}
+                >
+                  <Eye size={16} />
+                  View Flagged Visit
+                </button>
+                <button
+                  className="view-visit-btn"
+                  style={{ background: '#2563eb' }}
+                  onClick={() => {
+                    setComparisonData(null);
+                    handleViewVisit(originalVisit._id, originalType);
+                  }}
+                >
+                  <Eye size={16} />
+                  View Original Visit
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
