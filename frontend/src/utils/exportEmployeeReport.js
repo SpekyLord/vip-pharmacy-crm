@@ -184,6 +184,14 @@ const buildWorksheetData = (reportData, monthYear) => {
         .map(v => new Date(v.visitDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
         .join(', ');
 
+      // Tally engagement types across all visits for this client
+      const engagementCounts = { TXT_PROMATS: 0, MES_VIBER_GIF: 0, PICTURE: 0, SIGNED_CALL: 0, VOICE_CALL: 0 };
+      (client.visits || []).forEach(v => {
+        (v.engagementTypes || []).forEach(et => {
+          if (engagementCounts[et] !== undefined) engagementCounts[et]++;
+        });
+      });
+
       wsData.push([
         idx + 1,
         client.lastName,
@@ -191,7 +199,11 @@ const buildWorksheetData = (reportData, monthYear) => {
         client.specialization || '',
         client.clinicOfficeAddress || '',
         '',
-        '', '', '', '', '',
+        engagementCounts.TXT_PROMATS || '',
+        engagementCounts.MES_VIBER_GIF || '',
+        engagementCounts.PICTURE || '',
+        engagementCounts.SIGNED_CALL || '',
+        engagementCounts.VOICE_CALL || '',
         '', '',
         client.visitCount,
         visitDates,

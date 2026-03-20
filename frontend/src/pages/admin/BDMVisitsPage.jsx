@@ -370,7 +370,7 @@ const BDMVisitsPage = () => {
                             </div>
                           </td>
                           <td>
-                            <span className="bvp-week-label">{visit._visitType === 'regular' ? '-' : (visit.weekLabel || '-')}</span>
+                            <span className="bvp-week-label">{visit.weekLabel || '-'}</span>
                           </td>
                           <td>
                             <div className="bvp-doctor-cell">
@@ -439,7 +439,7 @@ const BDMVisitsPage = () => {
                           </div>
                           <div className="bvp-card-row">
                             <span>Week</span>
-                            <span>{visit._visitType === 'regular' ? '-' : (visit.weekLabel || '-')}</span>
+                            <span>{visit.weekLabel || '-'}</span>
                           </div>
                           <div className="bvp-card-row">
                             <span>Photos</span>

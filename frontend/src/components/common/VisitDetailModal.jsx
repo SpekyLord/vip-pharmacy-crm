@@ -396,7 +396,7 @@ const VisitDetailModal = ({ visit, onClose, onPhotosRefreshed }) => {
     }
   };
 
-  const isExtra = visit._visitCategory === 'extra';
+  const isExtra = visit._visitCategory === 'extra' || visit._visitType === 'regular';
 
   return (
     <>
@@ -418,12 +418,10 @@ const VisitDetailModal = ({ visit, onClose, onPhotosRefreshed }) => {
                   <label>Date & Time</label>
                   <span>{formatDate(visit.visitDate)} at {formatTime(visit.visitDate)}</span>
                 </div>
-                {!isExtra && (
-                  <div className="vdm-item">
-                    <label>Week Label</label>
-                    <span className="vdm-week-label">{visit.weekLabel || '-'}</span>
-                  </div>
-                )}
+                <div className="vdm-item">
+                  <label>Week Label</label>
+                  <span className="vdm-week-label">{visit.weekLabel || '-'}</span>
+                </div>
                 <div className="vdm-item">
                   <label>Category</label>
                   <span className={`vdm-type-badge ${isExtra ? 'vdm-type-extra' : 'vdm-type-vip'}`}>
