@@ -8,16 +8,13 @@
  * - Add/Edit modal
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Plus, Edit2, Trash2, ArrowUpCircle, AlertTriangle, X, ChevronDown } from 'lucide-react';
 import doctorService from '../../services/doctorService';
 import userService from '../../services/userService';
 import specializationService from '../../services/specializationService';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
-
-// Enum options for programs and support types (matching backend Doctor.js)
-const PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
-const SUPPORT_TYPES = ['STARTER DOSES', 'PROMATS', 'FULL DOSE', 'PATIENT DISCOUNT', 'AIR FRESHENER'];
+import useLookupData from '../../hooks/useLookupData';
 const ENGAGEMENT_LEVELS = [
   { value: 1, label: '1 - Visited 4 times' },
   { value: 2, label: '2 - Knows BDM/products' },
@@ -1268,6 +1265,19 @@ const DoctorManagement = ({
   onPageChange,
   onSearchChange,
 }) => {
+  const { programs: lookupPrograms, supportTypes: lookupSupportTypes } = useLookupData();
+
+  // Merge lookup data with unique values from loaded doctors as fallback
+  const PROGRAMS = useMemo(() => {
+    const fromDoctors = [...new Set(doctors.flatMap(d => d.programsToImplement || []).filter(Boolean))];
+    return [...new Set([...lookupPrograms, ...fromDoctors])].sort();
+  }, [lookupPrograms, doctors]);
+
+  const SUPPORT_TYPES = useMemo(() => {
+    const fromDoctors = [...new Set(doctors.flatMap(d => d.supportDuringCoverage || []).filter(Boolean))];
+    return [...new Set([...lookupSupportTypes, ...fromDoctors])].sort();
+  }, [lookupSupportTypes, doctors]);
+
   const [showModal, setShowModal] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState(null);

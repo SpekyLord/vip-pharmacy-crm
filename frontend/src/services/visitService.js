@@ -77,6 +77,12 @@ const visitService = {
     return response.data;
   },
 
+  // Get today's visit stats for admin dashboard
+  getAdminTodayStats: async () => {
+    const response = await api.get('/visits/admin/today-stats');
+    return response.data;
+  },
+
   // Get current user's visits
   getMy: async (params = {}, options = {}) => {
     const response = await api.get('/visits/my', { params, ...options });

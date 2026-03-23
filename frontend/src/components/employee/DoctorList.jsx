@@ -14,6 +14,7 @@ import LoadingSpinner from '../common/LoadingSpinner';
 import visitService from '../../services/visitService';
 import TargetProductsModal from './TargetProductsModal';
 import DoctorEditForm from './DoctorEditForm';
+import useLookupData from '../../hooks/useLookupData';
 
 // Custom dropdown component for mobile
 const CustomDropdown = ({ label, value, options, onChange, placeholder }) => {
@@ -641,6 +642,19 @@ const DoctorList = memo(function DoctorList({
   onLogVisit,
   onEditDoctor,
 }) {
+  const { programs: lookupPrograms, supportTypes: lookupSupportTypes } = useLookupData();
+
+  // Merge lookup data with unique values from loaded doctors as fallback
+  const programs = useMemo(() => {
+    const fromDoctors = [...new Set(doctors.flatMap(d => d.programsToImplement || []).filter(Boolean))];
+    return [...new Set([...lookupPrograms, ...fromDoctors])].sort();
+  }, [lookupPrograms, doctors]);
+
+  const supportTypes = useMemo(() => {
+    const fromDoctors = [...new Set(doctors.flatMap(d => d.supportDuringCoverage || []).filter(Boolean))];
+    return [...new Set([...lookupSupportTypes, ...fromDoctors])].sort();
+  }, [lookupSupportTypes, doctors]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [frequencyFilter, setFrequencyFilter] = useState('all');
   const [supportFilter, setSupportFilter] = useState('');
@@ -775,11 +789,9 @@ const DoctorList = memo(function DoctorList({
             className="frequency-select"
           >
             <option value="">All Support Types</option>
-            <option value="STARTER DOSES">STARTER DOSES</option>
-            <option value="PROMATS">PROMATS</option>
-            <option value="FULL DOSE">FULL DOSE</option>
-            <option value="PATIENT DISCOUNT">PATIENT DISCOUNT</option>
-            <option value="AIR FRESHENER">AIR FRESHENER</option>
+            {supportTypes.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
           </select>
           <select
             value={programFilter}
@@ -787,10 +799,9 @@ const DoctorList = memo(function DoctorList({
             className="frequency-select"
           >
             <option value="">All Programs</option>
-            <option value="CME GRANT">CME GRANT</option>
-            <option value="REBATES / MONEY">REBATES / MONEY</option>
-            <option value="REST AND RECREATION">REST AND RECREATION</option>
-            <option value="MED SOCIETY PARTICIPATION">MED SOCIETY PARTICIPATION</option>
+            {programs.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
           </select>
         </div>
 
@@ -824,11 +835,7 @@ const DoctorList = memo(function DoctorList({
                 value={supportFilter}
                 options={[
                   { value: '', label: 'All Support Types' },
-                  { value: 'STARTER DOSES', label: 'STARTER DOSES' },
-                  { value: 'PROMATS', label: 'PROMATS' },
-                  { value: 'FULL DOSE', label: 'FULL DOSE' },
-                  { value: 'PATIENT DISCOUNT', label: 'PATIENT DISCOUNT' },
-                  { value: 'AIR FRESHENER', label: 'AIR FRESHENER' },
+                  ...supportTypes.map((s) => ({ value: s, label: s })),
                 ]}
                 onChange={setSupportFilter}
                 placeholder="All Support Types"
@@ -838,10 +845,7 @@ const DoctorList = memo(function DoctorList({
                 value={programFilter}
                 options={[
                   { value: '', label: 'All Programs' },
-                  { value: 'CME GRANT', label: 'CME GRANT' },
-                  { value: 'REBATES / MONEY', label: 'REBATES / MONEY' },
-                  { value: 'REST AND RECREATION', label: 'REST AND RECREATION' },
-                  { value: 'MED SOCIETY PARTICIPATION', label: 'MED SOCIETY PARTICIPATION' },
+                  ...programs.map((p) => ({ value: p, label: p })),
                 ]}
                 onChange={setProgramFilter}
                 placeholder="All Programs"

@@ -1453,6 +1453,40 @@ const findVisitsByPhotoHash = catchAsync(async (req, res) => {
   res.json({ success: true, data: matches });
 });
 
+/**
+ * @desc    Get today's visits summary for admin dashboard
+ * @route   GET /api/visits/admin/today-stats
+ * @access  Private (Admin)
+ */
+const getAdminTodayStats = catchAsync(async (req, res) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const ClientVisit = require('../models/ClientVisit');
+
+  const [vipCount, regularCount] = await Promise.all([
+    Visit.countDocuments({
+      visitDate: { $gte: today, $lt: tomorrow },
+      status: 'completed',
+    }),
+    ClientVisit.countDocuments({
+      visitDate: { $gte: today, $lt: tomorrow },
+      status: 'completed',
+    }),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      vipVisitsToday: vipCount,
+      regularVisitsToday: regularCount,
+      totalVisitsToday: vipCount + regularCount,
+    },
+  });
+});
+
 module.exports = {
   createVisit,
   getAllVisits,
@@ -1473,4 +1507,5 @@ module.exports = {
   getGPSReview,
   getPhotoAuditIssues,
   findVisitsByPhotoHash,
+  getAdminTodayStats,
 };

@@ -73,35 +73,9 @@ const clientSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    programsToImplement: [
-      {
-        type: String,
-        enum: {
-          values: [
-            'CME GRANT',
-            'REBATES / MONEY',
-            'REST AND RECREATION',
-            'MED SOCIETY PARTICIPATION',
-          ],
-          message: 'Invalid program type',
-        },
-      },
-    ],
-    supportDuringCoverage: [
-      {
-        type: String,
-        enum: {
-          values: [
-            'STARTER DOSES',
-            'PROMATS',
-            'FULL DOSE',
-            'PATIENT DISCOUNT',
-            'AIR FRESHENER',
-          ],
-          message: 'Invalid support type',
-        },
-      },
-    ],
+    // Dynamic arrays — values managed via /api/programs and /api/support-types
+    programsToImplement: [{ type: String, trim: true }],
+    supportDuringCoverage: [{ type: String, trim: true }],
     levelOfEngagement: {
       type: Number,
       min: [1, 'Level of engagement must be at least 1'],

@@ -13,6 +13,7 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
 import clientService from '../../services/clientService';
+import scheduleService from '../../services/scheduleService';
 import api from '../../services/api';
 
 const pageStyles = `
@@ -90,6 +91,13 @@ const AdminDashboard = () => {
     visitsThisWeek: 0,
     vipVisitsThisWeek: 0,
     regularVisitsThisWeek: 0,
+    // Target vs Actual
+    targetVisits: 0,
+    actualVisits: 0,
+    // Today
+    visitsToday: 0,
+    vipVisitsToday: 0,
+    regularVisitsToday: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -106,16 +114,30 @@ const AdminDashboard = () => {
       try {
         setLoading(true);
         setError(null);
-        const [doctorsRes, visitStatsRes, clientStatsRes, usersRes] = await Promise.all([
+        const [doctorsRes, visitStatsRes, clientStatsRes, usersRes, cptSummaryRes, todayStatsRes] = await Promise.all([
           doctorService.getAll({ limit: 0 }),
           visitService.getStats(),
           clientService.getStats(),
           api.get('/users', { params: { limit: 0 } }),
+          scheduleService.getCPTGridSummary().catch(() => ({ data: [] })),
+          visitService.getAdminTodayStats().catch(() => ({ data: {} })),
         ]);
         const vipVisitsTotal = visitStatsRes.data?.summary?.totalVisits || 0;
         const regularVisitsTotal = clientStatsRes.data?.summary?.totalVisits || 0;
         const vipWeeklyVisits = visitStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0;
         const regularWeeklyVisits = clientStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0;
+
+        // Aggregate target vs actual from CPT summary
+        const cptData = cptSummaryRes.data || [];
+        let targetVisits = 0;
+        let actualVisits = 0;
+        cptData.forEach((bdm) => {
+          targetVisits += bdm.dcrTotal?.targetEngagements || 0;
+          actualVisits += bdm.dcrTotal?.totalEngagements || 0;
+        });
+
+        const todayData = todayStatsRes.data || {};
+
         setStats({
           totalDoctors: doctorsRes.pagination?.total || 0,
           totalEmployees: usersRes.data?.pagination?.total || 0,
@@ -125,6 +147,11 @@ const AdminDashboard = () => {
           visitsThisWeek: vipWeeklyVisits + regularWeeklyVisits,
           vipVisitsThisWeek: vipWeeklyVisits,
           regularVisitsThisWeek: regularWeeklyVisits,
+          targetVisits,
+          actualVisits,
+          visitsToday: todayData.totalVisitsToday || 0,
+          vipVisitsToday: todayData.vipVisitsToday || 0,
+          regularVisitsToday: todayData.regularVisitsToday || 0,
         });
       } catch {
         setError('Failed to load dashboard data. Please try again.');

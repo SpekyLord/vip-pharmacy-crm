@@ -139,6 +139,20 @@ const reportStyles = `
   .report-table th.col-address { min-width: 150px; text-align: left; }
   .report-table th.col-product { min-width: 100px; text-align: left; }
 
+  .report-table th.week-group-header {
+    background: #0f2940;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 6px 0;
+    border-left: 2px solid #94a3b8;
+    border-right: 2px solid #94a3b8;
+  }
+
+  .report-table th.week-group-header:first-of-type {
+    border-left: none;
+  }
+
   .day-header-cell {
     font-size: 11px;
   }
@@ -383,7 +397,11 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
       <div className="daily-counts">
         <span className="daily-counts-label">VIP CUSTOMER (VIP) per Day:</span>
         {summary.dailyVIPCounts.map((count, idx) => (
-          <span key={idx} className="daily-count-cell">
+          <span
+            key={idx}
+            className="daily-count-cell"
+            style={idx % 5 === 0 && idx > 0 ? { marginLeft: '6px', borderLeft: '2px solid #d4d4d8', paddingLeft: '6px' } : {}}
+          >
             {count}
           </span>
         ))}
@@ -393,12 +411,26 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
       <div className="report-table-wrapper">
         <table className="report-table">
           <thead>
+            {/* Week group header row */}
             <tr>
-              <th className="col-no">NO.</th>
-              <th className="col-name">LASTNAME</th>
-              <th className="col-name">FIRSTNAME</th>
-              <th className="col-specialty">VIP SPECIALTY</th>
-              {/* Day headers - 4 weeks x 5 days */}
+              <th rowSpan={2} className="col-no">NO.</th>
+              <th rowSpan={2} className="col-name">LASTNAME</th>
+              <th rowSpan={2} className="col-name">FIRSTNAME</th>
+              <th rowSpan={2} className="col-specialty">VIP SPECIALTY</th>
+              {[1, 2, 3, 4].map((week) => (
+                <th key={`w${week}`} colSpan={5} className="week-group-header">
+                  W{week}
+                </th>
+              ))}
+              <th rowSpan={2} className="col-freq">No. Of</th>
+              <th rowSpan={2} className="col-freq">SUM OF</th>
+              <th rowSpan={2} className="col-address">CLINIC/OFFICE ADDRESS</th>
+              <th rowSpan={2} className="col-product">TARGET PRODUCT 1</th>
+              <th rowSpan={2} className="col-product">TARGET PRODUCT 2</th>
+              <th rowSpan={2} className="col-product">TARGET PRODUCT 3</th>
+            </tr>
+            {/* Day name header row */}
+            <tr>
               {[0, 1, 2, 3].map((week) =>
                 dayNames.map((day, dayIdx) => (
                   <th
@@ -412,12 +444,6 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
                   </th>
                 ))
               )}
-              <th className="col-freq">No. Of</th>
-              <th className="col-freq">SUM OF</th>
-              <th className="col-address">CLINIC/OFFICE ADDRESS</th>
-              <th className="col-product">TARGET PRODUCT 1</th>
-              <th className="col-product">TARGET PRODUCT 2</th>
-              <th className="col-product">TARGET PRODUCT 3</th>
             </tr>
           </thead>
           <tbody>
@@ -499,11 +525,22 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
           <div className="report-table-wrapper">
             <table className="report-table">
               <thead>
+                {/* Week group header row */}
                 <tr>
-                  <th className="col-no regular-header">NO.</th>
-                  <th className="col-name regular-header">LASTNAME</th>
-                  <th className="col-name regular-header">FIRSTNAME</th>
-                  <th className="col-specialty regular-header">SPECIALIZATION</th>
+                  <th rowSpan={2} className="col-no regular-header">NO.</th>
+                  <th rowSpan={2} className="col-name regular-header">LASTNAME</th>
+                  <th rowSpan={2} className="col-name regular-header">FIRSTNAME</th>
+                  <th rowSpan={2} className="col-specialty regular-header">SPECIALIZATION</th>
+                  {[1, 2, 3, 4].map((week) => (
+                    <th key={`rw${week}`} colSpan={5} className="week-group-header" style={{ background: '#4c1d95' }}>
+                      W{week}
+                    </th>
+                  ))}
+                  <th rowSpan={2} className="col-freq regular-header">TOTAL</th>
+                  <th rowSpan={2} className="col-address regular-header">CLINIC/OFFICE ADDRESS</th>
+                </tr>
+                {/* Day name header row */}
+                <tr>
                   {[0, 1, 2, 3].map((week) =>
                     dayNames.map((day, dayIdx) => (
                       <th
@@ -517,8 +554,6 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
                       </th>
                     ))
                   )}
-                  <th className="col-freq regular-header">TOTAL</th>
-                  <th className="col-address regular-header">CLINIC/OFFICE ADDRESS</th>
                 </tr>
               </thead>
               <tbody>

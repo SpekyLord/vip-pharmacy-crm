@@ -497,6 +497,8 @@ const EmployeeDashboard = () => {
     totalDoctors: 0,
     doctorsVisitedThisMonth: 0,
     compliancePercentage: 0,
+    targetVisits: 0,
+    actualVisits: 0,
   });
 
   // Get current month-year for API calls
@@ -525,10 +527,11 @@ const EmployeeDashboard = () => {
         clientService.getStats({ monthYear }),
         scheduleService.getToday(),
         clientService.getScheduledToday(),
+        scheduleService.getCycleSchedule(),
       ]);
 
       // Extract results with fallbacks for failed requests
-      const [doctorsResult, todayResult, statsResult, weeklyResult, clientsResult, clientCountResult, clientStatsResult, scheduleResult, strictClientsResult] = results;
+      const [doctorsResult, todayResult, statsResult, weeklyResult, clientsResult, clientCountResult, clientStatsResult, scheduleResult, strictClientsResult, cycleResult] = results;
 
       // Process doctors - critical, show error if fails
       const doctorsList = doctorsResult.status === 'fulfilled'
@@ -590,6 +593,13 @@ const EmployeeDashboard = () => {
         : [];
       setTodayStrictClients(strictClientsData);
 
+      // Compute target vs actual from cycle schedule
+      const cycleEntries = cycleResult.status === 'fulfilled'
+        ? (cycleResult.value.data?.entries || [])
+        : [];
+      const targetVisits = cycleEntries.length;
+      const actualVisits = cycleEntries.filter(e => e.status === 'completed').length;
+
       setStats({
         visitsToday: vipTodayCount + clientDailyCount,
         vipVisitsToday: vipTodayCount,
@@ -600,6 +610,8 @@ const EmployeeDashboard = () => {
         totalDoctors: doctorsList.length,
         doctorsVisitedThisMonth: weeklyData.uniqueDoctorsVisited || statsData.summary?.uniqueDoctorsCount || 0,
         compliancePercentage: weeklyData.compliancePercentage || 0,
+        targetVisits,
+        actualVisits,
       });
 
       // Show error only if all requests failed
@@ -712,6 +724,19 @@ const EmployeeDashboard = () => {
             <div className="stat-card">
               <span className="stat-value">{dailyClientVisitCount}/30</span>
               <span className="stat-label">Extra Calls Today</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-value" style={{ color: stats.targetVisits > 0 && stats.actualVisits >= stats.targetVisits ? '#16a34a' : '#2563eb' }}>
+                {stats.actualVisits}/{stats.targetVisits}
+              </span>
+              <span className="stat-label">Cycle Target</span>
+              {stats.targetVisits > 0 && (
+                <div className="stat-breakdown">
+                  <span style={{ color: Math.round((stats.actualVisits / stats.targetVisits) * 100) >= 80 ? '#16a34a' : '#d97706', fontWeight: 600 }}>
+                    {Math.round((stats.actualVisits / stats.targetVisits) * 100)}% Complete
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

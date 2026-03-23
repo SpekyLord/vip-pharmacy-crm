@@ -13,6 +13,8 @@ const Doctor = require('../models/Doctor');
 const Schedule = require('../models/Schedule');
 const User = require('../models/User');
 const CrmProduct = require('../models/CrmProduct');
+const Program = require('../models/Program');
+const SupportType = require('../models/SupportType');
 const { parseCPTWorkbook, detectDuplicates } = require('../utils/excelParser');
 const { catchAsync, ApiError } = require('../middleware/errorHandler');
 const { getCycleStartDate } = require('../utils/scheduleCycleUtils');
@@ -159,7 +161,7 @@ const getById = catchAsync(async (req, res) => {
  * Build doctor fields object from parsed data.
  * Shared helper for the approve flow.
  */
-const buildDoctorFields = (parsed, bdmId, productMap) => {
+const buildDoctorFields = (parsed, bdmId, productMap, activePrograms, activeSupports) => {
   const doctorFields = {
     firstName: parsed.firstName,
     lastName: parsed.lastName,
@@ -171,23 +173,20 @@ const buildDoctorFields = (parsed, bdmId, productMap) => {
     isActive: true,
   };
 
-  // Programs
+  // Programs — match against admin-configured values from DB
   if (parsed.programs) {
-    const validPrograms = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
-    // Normalize: trim, collapse whitespace, and normalize slash spacing ("REBATES/ MONEY" → "REBATES / MONEY")
-    const normalizeProgram = (s) => s.trim().replace(/\s+/g, ' ').replace(/\s*\/\s*/g, ' / ').toLowerCase();
-    const program = validPrograms.find(
-      (p) => normalizeProgram(p) === normalizeProgram(parsed.programs)
+    const normalizeStr = (s) => s.trim().replace(/\s+/g, ' ').replace(/\s*\/\s*/g, ' / ').toLowerCase();
+    const program = activePrograms.find(
+      (p) => normalizeStr(p) === normalizeStr(parsed.programs)
     );
     if (program) {
       doctorFields.programsToImplement = [program];
     }
   }
 
-  // Support
+  // Support — match against admin-configured values from DB
   if (parsed.support) {
-    const validSupports = ['STARTER DOSES', 'PROMATS', 'FULL DOSE', 'PATIENT DISCOUNT', 'AIR FRESHENER'];
-    const support = validSupports.find(
+    const support = activeSupports.find(
       (s) => s.toLowerCase() === parsed.support.toLowerCase()
     );
     if (support) {
@@ -280,6 +279,12 @@ const approve = catchAsync(async (req, res) => {
     }
   }
 
+  // Pre-fetch active programs and support types for matching
+  const [activePrograms, activeSupports] = await Promise.all([
+    Program.find({ isActive: true }).distinct('name'),
+    SupportType.find({ isActive: true }).distinct('name'),
+  ]);
+
   let doctorsCreated = 0;
   let doctorsUpdated = 0;
   const doctorIdMap = new Map(); // rowNumber → doctorId
@@ -290,7 +295,7 @@ const approve = catchAsync(async (req, res) => {
   const updateOps = [];
 
   for (const parsed of batch.parsedDoctors) {
-    const fields = buildDoctorFields(parsed, bdmId, productMap);
+    const fields = buildDoctorFields(parsed, bdmId, productMap, activePrograms, activeSupports);
 
     if (parsed.isExisting && parsed.existingDoctorId) {
       // Queue update

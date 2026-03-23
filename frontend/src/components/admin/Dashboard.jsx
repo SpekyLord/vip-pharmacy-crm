@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Stethoscope, Users,
   MapPin, Calendar, ChevronLeft, ChevronRight, ChevronDown, FileText,
+  Target, Clock,
 } from 'lucide-react';
 import userService from '../../services/userService';
 
@@ -252,7 +253,7 @@ const dashboardStyles = `
 
   .db-stats {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-auto-rows: auto;
     gap: clamp(12px, 1.4vw, 18px);
     min-height: 0;
@@ -631,7 +632,7 @@ const dashboardStyles = `
     }
 
     .db-stats {
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     }
   }
 
@@ -704,7 +705,11 @@ const Dashboard = ({ user, stats = {} }) => {
     totalDoctors = 0, totalEmployees = 0,
     totalVisits = 0, vipVisits = 0, regularVisits = 0,
     visitsThisWeek = 0, vipVisitsThisWeek = 0, regularVisitsThisWeek = 0,
+    targetVisits = 0, actualVisits = 0,
+    visitsToday = 0, vipVisitsToday = 0, regularVisitsToday = 0,
   } = stats;
+
+  const callRate = targetVisits > 0 ? Math.round((actualVisits / targetVisits) * 100) : 0;
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -799,6 +804,31 @@ const Dashboard = ({ user, stats = {} }) => {
                 <div className="db-stat-sub">
                   <span className="dot-vip">{vipVisitsThisWeek} VIP</span>
                   <span className="dot-reg">{regularVisitsThisWeek} Reg</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="db-stat-box">
+              <div className="db-stat-icon" style={{ background: '#fce7f3', color: '#db2777' }}><Target size={18} /></div>
+              <div>
+                <div className="db-stat-value">{actualVisits}/{targetVisits}</div>
+                <div className="db-stat-label">Target vs Actual</div>
+                <div className="db-stat-sub">
+                  <span style={{ color: callRate >= 80 ? '#16a34a' : callRate >= 50 ? '#d97706' : '#dc2626', fontWeight: 600 }}>
+                    {callRate}% Call Rate
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="db-stat-box">
+              <div className="db-stat-icon" style={{ background: '#e0f2fe', color: '#0284c7' }}><Clock size={18} /></div>
+              <div>
+                <div className="db-stat-value">{visitsToday}</div>
+                <div className="db-stat-label">Today's Visits</div>
+                <div className="db-stat-sub">
+                  <span className="dot-vip">{vipVisitsToday} VIP</span>
+                  <span className="dot-reg">{regularVisitsToday} Reg</span>
                 </div>
               </div>
             </div>

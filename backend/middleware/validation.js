@@ -184,8 +184,8 @@ const updateUserValidation = [
 /**
  * Doctor validation rules
  */
-const VALID_PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
-const VALID_SUPPORT_TYPES = ['STARTER DOSES', 'PROMATS', 'FULL DOSE', 'PATIENT DISCOUNT', 'AIR FRESHENER'];
+// Programs and Support Types are now admin-configurable via /api/programs and /api/support-types
+// Validation is done at the controller level by checking against active DB values
 
 const createDoctorValidation = [
   body('firstName')
@@ -223,16 +223,16 @@ const createDoctorValidation = [
     .withMessage('Programs to implement must be an array'),
   body('programsToImplement.*')
     .optional()
-    .isIn(VALID_PROGRAMS)
-    .withMessage('Invalid program type'),
+    .isString()
+    .withMessage('Each program must be a string'),
   body('supportDuringCoverage')
     .optional()
     .isArray()
     .withMessage('Support during coverage must be an array'),
   body('supportDuringCoverage.*')
     .optional()
-    .isIn(VALID_SUPPORT_TYPES)
-    .withMessage('Invalid support type'),
+    .isString()
+    .withMessage('Each support type must be a string'),
   body('levelOfEngagement')
     .optional()
     .isInt({ min: 1, max: 5 })
@@ -294,16 +294,16 @@ const updateDoctorValidation = [
     .withMessage('Programs to implement must be an array'),
   body('programsToImplement.*')
     .optional()
-    .isIn(VALID_PROGRAMS)
-    .withMessage('Invalid program type'),
+    .isString()
+    .withMessage('Each program must be a string'),
   body('supportDuringCoverage')
     .optional()
     .isArray()
     .withMessage('Support during coverage must be an array'),
   body('supportDuringCoverage.*')
     .optional()
-    .isIn(VALID_SUPPORT_TYPES)
-    .withMessage('Invalid support type'),
+    .isString()
+    .withMessage('Each support type must be a string'),
   body('levelOfEngagement')
     .optional()
     .isInt({ min: 1, max: 5 })

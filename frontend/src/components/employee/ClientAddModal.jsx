@@ -14,6 +14,7 @@
 import { useState } from 'react';
 import clientService from '../../services/clientService';
 import toast from 'react-hot-toast';
+import useLookupData from '../../hooks/useLookupData';
 
 const modalStyles = `
   .client-modal-overlay {
@@ -212,8 +213,6 @@ const modalStyles = `
   }
 `;
 
-const PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
-const SUPPORT_TYPES = ['STARTER DOSES', 'PROMATS', 'FULL DOSE', 'PATIENT DISCOUNT', 'AIR FRESHENER'];
 const ENGAGEMENT_LEVELS = [
   { value: 1, label: '1 - Visited 4 times' },
   { value: 2, label: '2 - Knows BDM/products' },
@@ -223,6 +222,7 @@ const ENGAGEMENT_LEVELS = [
 ];
 
 const ClientAddModal = ({ client, onClose, onSaved }) => {
+  const { programs: PROGRAMS, supportTypes: SUPPORT_TYPES } = useLookupData();
   const isEdit = !!client;
 
   const [saving, setSaving] = useState(false);

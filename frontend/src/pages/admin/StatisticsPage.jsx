@@ -59,6 +59,8 @@ import DCRSummaryTable from '../../components/employee/DCRSummaryTable';
 import scheduleService from '../../services/scheduleService';
 import userService from '../../services/userService';
 import visitService from '../../services/visitService';
+import programService from '../../services/programService';
+import supportTypeService from '../../services/supportTypeService';
 
 /* Mock data removed — now fetched from real APIs */
 
@@ -1592,6 +1594,10 @@ const StatisticsPage = () => {
   const [notifySending, setNotifySending] = useState(false);
   const [notifySuccess, setNotifySuccess] = useState(false);
 
+  // State: Program Monitoring tab
+  const [programStats, setProgramStats] = useState([]);
+  const [supportTypeStats, setSupportTypeStats] = useState([]);
+
   // State: BDM Performance tab
   const [bdmEmployees, setBdmEmployees] = useState([]);
   const [selectedBdmId, setSelectedBdmId] = useState('');
@@ -1677,6 +1683,14 @@ const StatisticsPage = () => {
         targetVisitsThisMonth: totalTarget,
         perBdmCallRates,
       });
+
+      // Fetch program & support type stats
+      const [progStatsRes, supportStatsRes] = await Promise.all([
+        programService.getStats().catch(() => ({ data: [] })),
+        supportTypeService.getStats().catch(() => ({ data: [] })),
+      ]);
+      setProgramStats(progStatsRes.data || []);
+      setSupportTypeStats(supportStatsRes.data || []);
 
     } catch {
       setError('Failed to load compliance data. Please try again.');
@@ -1911,6 +1925,14 @@ const StatisticsPage = () => {
                 <UserCheck size={18} />
                 BDM Performance
               </button>
+              <button
+                className={`tab-btn ${activeTab === 'programs' ? 'active' : ''}`}
+                onClick={() => setActiveTab('programs')}
+              >
+                <Activity size={18} />
+                Programs
+                {programStats.length > 0 && <span className="tab-badge" style={{ background: '#8b5cf6' }}>{programStats.length}</span>}
+              </button>
             </div>
 
             {/* Tab Content */}
@@ -1957,6 +1979,14 @@ const StatisticsPage = () => {
                   summary={bdmSummary}
                   doctors={bdmDoctors}
                   loading={bdmLoading}
+                />
+              )}
+
+              {/* Programs Tab */}
+              {activeTab === 'programs' && (
+                <ProgramMonitoringTab
+                  programStats={programStats}
+                  supportTypeStats={supportTypeStats}
                 />
               )}
             </div>
@@ -2839,6 +2869,186 @@ const NotifyModal = ({
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+/* =============================================================================
+   COMPONENT: ProgramMonitoringTab
+   Shows program and support type implementation stats.
+   ============================================================================= */
+
+const programTabStyles = `
+  .prog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .prog-card {
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--line-200, #e5e7eb);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  body.dark-mode .prog-card {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  .prog-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .prog-card-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink-900, #111827);
+  }
+
+  body.dark-mode .prog-card-name {
+    color: #f1f5f9;
+  }
+
+  .prog-card-rate {
+    font-size: 20px;
+    font-weight: 800;
+    padding: 2px 10px;
+    border-radius: 8px;
+  }
+
+  .prog-card-rate.high { background: #dcfce7; color: #16a34a; }
+  .prog-card-rate.mid  { background: #fef3c7; color: #d97706; }
+  .prog-card-rate.low  { background: #fee2e2; color: #dc2626; }
+
+  body.dark-mode .prog-card-rate.high { background: #14532d; }
+  body.dark-mode .prog-card-rate.mid  { background: #78350f; }
+  body.dark-mode .prog-card-rate.low  { background: #7f1d1d; }
+
+  .prog-card-bar {
+    height: 8px;
+    background: var(--line-200, #e5e7eb);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  body.dark-mode .prog-card-bar {
+    background: #334155;
+  }
+
+  .prog-card-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+
+  .prog-card-detail {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--ink-500, #6b7280);
+  }
+
+  body.dark-mode .prog-card-detail {
+    color: #94a3b8;
+  }
+
+  .prog-section-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--ink-900, #111827);
+    margin: 24px 0 0 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--line-200, #e5e7eb);
+  }
+
+  body.dark-mode .prog-section-title {
+    color: #f1f5f9;
+    border-bottom-color: #334155;
+  }
+
+  .prog-section-title:first-child {
+    margin-top: 0;
+  }
+
+  .prog-empty {
+    text-align: center;
+    padding: 32px;
+    color: var(--ink-500, #6b7280);
+    font-size: 14px;
+  }
+`;
+
+const ProgramMonitoringTab = ({ programStats, supportTypeStats }) => {
+  const rateClass = (rate) => rate >= 70 ? 'high' : rate >= 40 ? 'mid' : 'low';
+  const barColor = (rate) => rate >= 70 ? '#22c55e' : rate >= 40 ? '#eab308' : '#ef4444';
+
+  return (
+    <div>
+      <style>{programTabStyles}</style>
+
+      <h3 className="prog-section-title">Programs</h3>
+      {programStats.length === 0 ? (
+        <p className="prog-empty">No programs configured. Go to Settings to add programs.</p>
+      ) : (
+        <div className="prog-grid">
+          {programStats.map((p) => (
+            <div key={p.programId} className="prog-card">
+              <div className="prog-card-header">
+                <span className="prog-card-name">{p.program}</span>
+                <span className={`prog-card-rate ${rateClass(p.coverageRate)}`}>
+                  {p.coverageRate}%
+                </span>
+              </div>
+              <div className="prog-card-bar">
+                <div
+                  className="prog-card-bar-fill"
+                  style={{ width: `${Math.min(p.coverageRate, 100)}%`, background: barColor(p.coverageRate) }}
+                />
+              </div>
+              <div className="prog-card-detail">
+                <span>Enrolled: {p.enrolledVipClients} VIP Clients</span>
+                <span>Visited: {p.visitedVipClients}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <h3 className="prog-section-title">Support Types</h3>
+      {supportTypeStats.length === 0 ? (
+        <p className="prog-empty">No support types configured. Go to Settings to add support types.</p>
+      ) : (
+        <div className="prog-grid">
+          {supportTypeStats.map((s) => (
+            <div key={s.supportTypeId} className="prog-card">
+              <div className="prog-card-header">
+                <span className="prog-card-name">{s.supportType}</span>
+                <span className={`prog-card-rate ${rateClass(s.coverageRate)}`}>
+                  {s.coverageRate}%
+                </span>
+              </div>
+              <div className="prog-card-bar">
+                <div
+                  className="prog-card-bar-fill"
+                  style={{ width: `${Math.min(s.coverageRate, 100)}%`, background: barColor(s.coverageRate) }}
+                />
+              </div>
+              <div className="prog-card-detail">
+                <span>Enrolled: {s.enrolledVipClients} VIP Clients</span>
+                <span>Visited: {s.visitedVipClients}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

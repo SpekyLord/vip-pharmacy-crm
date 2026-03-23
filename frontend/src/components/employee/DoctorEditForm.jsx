@@ -13,10 +13,7 @@
 import { useState, useEffect } from 'react';
 import doctorService from '../../services/doctorService';
 import specializationService from '../../services/specializationService';
-
-// Enum options matching backend Doctor.js
-const PROGRAMS = ['CME GRANT', 'REBATES / MONEY', 'REST AND RECREATION', 'MED SOCIETY PARTICIPATION'];
-const SUPPORT_TYPES = ['STARTER DOSES', 'PROMATS', 'FULL DOSE', 'PATIENT DISCOUNT', 'AIR FRESHENER'];
+import useLookupData from '../../hooks/useLookupData';
 const ENGAGEMENT_LEVELS = [
   { value: 1, label: '1 - Visited 4 times' },
   { value: 2, label: '2 - Knows BDM/products' },
@@ -26,6 +23,7 @@ const ENGAGEMENT_LEVELS = [
 ];
 
 const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
+  const { programs: PROGRAMS, supportTypes: SUPPORT_TYPES } = useLookupData();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [specializations, setSpecializations] = useState([]);
