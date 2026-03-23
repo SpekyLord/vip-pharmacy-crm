@@ -22,7 +22,6 @@ const ALLOWED_FIELDS = [
   'quietHoursEnabled',
   'quietHoursStart',
   'quietHoursEnd',
-  'behindScheduleAlertFrequency',
   'weeklyComplianceSummary',
 ];
 
@@ -49,7 +48,6 @@ const getPreferences = catchAsync(async (req, res) => {
       quietHoursEnabled: false,
       quietHoursStart: '22:00',
       quietHoursEnd: '07:00',
-      behindScheduleAlertFrequency: 'twice_weekly',
       weeklyComplianceSummary: true,
     };
   }

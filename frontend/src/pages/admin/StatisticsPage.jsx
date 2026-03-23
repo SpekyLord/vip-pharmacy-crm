@@ -1,40 +1,26 @@
 /**
  * StatisticsPage Component
  *
- * Dedicated statistics page for compliance monitoring (Task 2.1)
- * Separated from main dashboard to avoid clutter.
+ * Admin statistics page with tabbed interface.
  *
- * Features:
- * - Tabbed interface with three sections
- * - Overview: High-level metrics and monthly trends
- * - Behind-Schedule: BDM compliance tracking table
- * - Alerts: Quota dumping and irregularity detection
- * - Notify Modal: Send alerts to non-compliant BDMs
- *
- * @requires complianceService - API calls for compliance data
- * @requires Recharts - For charts in Overview tab
- * @requires Lucide React - For icons
+ * Tabs:
+ * - Overview: High-level metrics and per-BDM call rate chart
+ * - BDM Performance: Individual BDM DCR Summary with engagement breakdown
+ * - Programs: Program and support type implementation coverage stats
  */
 
 import { useState, useEffect, useMemo } from 'react';
 import {
   BarChart3,
   Users,
-  AlertTriangle,
-  Bell,
   TrendingUp,
   TrendingDown,
   Clock,
   CheckCircle,
-  XCircle,
-  Send,
-  X,
   ChevronRight,
   Activity,
   Target,
   AlertCircle,
-  Filter,
-  Search,
   Calendar,
   RefreshCw,
   UserCheck,
@@ -58,7 +44,6 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import DCRSummaryTable from '../../components/employee/DCRSummaryTable';
 import scheduleService from '../../services/scheduleService';
 import userService from '../../services/userService';
-import visitService from '../../services/visitService';
 import programService from '../../services/programService';
 import supportTypeService from '../../services/supportTypeService';
 
@@ -1570,35 +1555,16 @@ const PIE_COLORS = ['#22c55e', '#f59e0b', '#ef4444'];
    ============================================================================= */
 
 const StatisticsPage = () => {
-  // State: Active tab
   const [activeTab, setActiveTab] = useState('overview');
-
-  // State: Data from API
   const [overviewStats, setOverviewStats] = useState(null);
-  const [behindScheduleEmployees, setBehindScheduleEmployees] = useState([]);
-  const [quotaDumpingAlerts, setQuotaDumpingAlerts] = useState([]);
-
-  // State: Loading and error
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // State: Filters for Behind-Schedule tab
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [regionFilter, setRegionFilter] = useState('all');
-
-  // State: Notify Modal
-  const [showNotifyModal, setShowNotifyModal] = useState(false);
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [notifyMessage, setNotifyMessage] = useState('');
-  const [notifySending, setNotifySending] = useState(false);
-  const [notifySuccess, setNotifySuccess] = useState(false);
-
-  // State: Program Monitoring tab
+  // Program Monitoring tab
   const [programStats, setProgramStats] = useState([]);
   const [supportTypeStats, setSupportTypeStats] = useState([]);
 
-  // State: BDM Performance tab
+  // BDM Performance tab
   const [bdmEmployees, setBdmEmployees] = useState([]);
   const [selectedBdmId, setSelectedBdmId] = useState('');
   const [bdmCycleNumber, setBdmCycleNumber] = useState(null);
@@ -1610,7 +1576,7 @@ const StatisticsPage = () => {
   const [bdmLoading, setBdmLoading] = useState(false);
 
   /* ---------------------------------------------------------------------------
-     Data Fetching — real API calls
+     Data Fetching
      --------------------------------------------------------------------------- */
 
   const fetchAllData = async () => {
@@ -1618,34 +1584,11 @@ const StatisticsPage = () => {
       setLoading(true);
       setError(null);
 
-      // Fetch employees, compliance alerts, and quota dumping in parallel
-      const [empRes, complianceRes, alertsRes] = await Promise.all([
-        userService.getEmployees({ limit: 0 }),
-        visitService.getComplianceAlerts(),
-        visitService.getQuotaDumpingAlerts(),
-      ]);
-
+      const empRes = await userService.getEmployees({ limit: 0 });
       const employees = empRes.data || [];
       setBdmEmployees(employees);
 
-      // Map compliance alerts to behind-schedule table shape
-      const complianceData = (complianceRes.data || []).map((item, idx) => ({
-        _id: item.employee?._id || `comp-${idx}`,
-        userId: item.employee?._id,
-        name: item.employee?.name || 'Unknown',
-        email: item.employee?.email || '',
-        region: '',
-        weeklyTarget: item.expectedByNow || 0,
-        completedVisits: item.actualVisits || 0,
-        percentage: item.percentageComplete || 0,
-        status: (item.percentageComplete || 0) >= 80 ? 'on-track' : 'behind',
-      }));
-      setBehindScheduleEmployees(complianceData);
-
-      // Set quota dumping alerts
-      setQuotaDumpingAlerts(alertsRes.data || []);
-
-      // Derive overview stats from bulk CPT grid summary (single API call)
+      // Derive overview stats from bulk CPT grid summary
       let totalTarget = 0;
       let totalActual = 0;
       let onTrack = 0;
@@ -1678,7 +1621,6 @@ const StatisticsPage = () => {
         totalEmployees: employees.length,
         onTrackEmployees: onTrack,
         behindScheduleEmployees: behind,
-        criticalAlerts: (alertsRes.data || []).length,
         totalVisitsThisMonth: totalActual,
         targetVisitsThisMonth: totalTarget,
         perBdmCallRates,
@@ -1693,7 +1635,7 @@ const StatisticsPage = () => {
       setSupportTypeStats(supportStatsRes.data || []);
 
     } catch {
-      setError('Failed to load compliance data. Please try again.');
+      setError('Failed to load statistics data. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -1702,8 +1644,6 @@ const StatisticsPage = () => {
   useEffect(() => {
     fetchAllData();
   }, []);
-
-  // Employee list is fetched in fetchAllData above
 
   // Fetch DCR data when BDM or cycle changes
   useEffect(() => {
@@ -1737,92 +1677,11 @@ const StatisticsPage = () => {
   }, [selectedBdmId, bdmCycleNumber]);
 
   /* ---------------------------------------------------------------------------
-     Filtered BDMs
-     Memoized filtering for performance.
-     --------------------------------------------------------------------------- */
-
-  const filteredEmployees = useMemo(() => {
-    return behindScheduleEmployees.filter((employee) => {
-      // Search filter
-      const matchesSearch =
-        searchQuery === '' ||
-        employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        employee.email.toLowerCase().includes(searchQuery.toLowerCase());
-
-      // Status filter
-      const matchesStatus =
-        statusFilter === 'all' ||
-        employee.status === statusFilter;
-
-      // Region filter
-      const matchesRegion =
-        regionFilter === 'all' ||
-        employee.region.includes(regionFilter);
-
-      return matchesSearch && matchesStatus && matchesRegion;
-    });
-  }, [behindScheduleEmployees, searchQuery, statusFilter, regionFilter]);
-
-  /* ---------------------------------------------------------------------------
      Handlers
      --------------------------------------------------------------------------- */
 
   const handleRefresh = () => {
     fetchAllData();
-  };
-
-  const handleNotifyClick = (employee) => {
-    setSelectedEmployee(employee);
-    setNotifyMessage('');
-    setNotifySuccess(false);
-    setShowNotifyModal(true);
-  };
-
-  const handleCloseModal = () => {
-    setShowNotifyModal(false);
-    setSelectedEmployee(null);
-    setNotifyMessage('');
-    setNotifySuccess(false);
-  };
-
-  const handleSendNotification = async () => {
-    if (!selectedEmployee) return;
-
-    setNotifySending(true);
-
-    try {
-      const res = await fetch(`/api/messages/notify`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipientUserId: selectedEmployee.userId, // ✅ real Mongo user id
-          recipientRole: "employee",
-          category: "system",
-          priority: "important",
-          title: "Compliance Alert",
-          body: notifyMessage?.trim() || `Hi ${selectedEmployee.name}, please review your compliance status and submit pending visits.`,
-        }),
-      });
-
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(txt || "Failed to send alert");
-      }
-
-      setNotifySuccess(true);
-
-      setTimeout(() => {
-        handleCloseModal();
-      }, 2000);
-
-    } catch (err) {
-      console.error("Failed to send notification:", err);
-      setNotifySuccess(false);
-      // optional: setError(String(err?.message || "Failed to send alert"));
-    } finally {
-      setNotifySending(false);
-    }
   };
 
   const handleBdmChange = (e) => {
@@ -1838,25 +1697,13 @@ const StatisticsPage = () => {
     setBdmCycleNumber((prev) => (prev != null ? prev + delta : delta));
   };
 
-
   /* ---------------------------------------------------------------------------
-     Tab Count Badges
-     --------------------------------------------------------------------------- */
-
-  const behindCount = behindScheduleEmployees.filter((e) => e.status === 'behind').length;
-  const alertsCount = quotaDumpingAlerts.filter((a) => a.status === 'pending_review').length;
-
-  /* ---------------------------------------------------------------------------
-     Render: Loading State
+     Render
      --------------------------------------------------------------------------- */
 
   if (loading && !overviewStats) {
     return <LoadingSpinner fullScreen />;
   }
-
-  /* ---------------------------------------------------------------------------
-     Render: Main Component
-     --------------------------------------------------------------------------- */
 
   return (
     <div className="statistics-layout">
@@ -1871,7 +1718,7 @@ const StatisticsPage = () => {
               <div className="page-header-icon">
                 <BarChart3 size={20} />
               </div>
-              Compliance Statistics
+              Statistics
             </h1>
             <button
               className={`refresh-btn ${loading ? 'loading' : ''}`}
@@ -1893,7 +1740,6 @@ const StatisticsPage = () => {
 
           {/* Tabs Container */}
           <div className="tabs-container">
-            {/* Tab Headers */}
             <div className="tabs-header">
               <button
                 className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
@@ -1901,22 +1747,6 @@ const StatisticsPage = () => {
               >
                 <TrendingUp size={18} />
                 Overview
-              </button>
-              <button
-                className={`tab-btn ${activeTab === 'behind-schedule' ? 'active' : ''}`}
-                onClick={() => setActiveTab('behind-schedule')}
-              >
-                <Users size={18} />
-                Behind-Schedule BDMs
-                {behindCount > 0 && <span className="tab-badge">{behindCount}</span>}
-              </button>
-              <button
-                className={`tab-btn ${activeTab === 'alerts' ? 'active' : ''}`}
-                onClick={() => setActiveTab('alerts')}
-              >
-                <AlertTriangle size={18} />
-                Alerts & Quota Dumping
-                {alertsCount > 0 && <span className="tab-badge warning">{alertsCount}</span>}
               </button>
               <button
                 className={`tab-btn ${activeTab === 'bdm-performance' ? 'active' : ''}`}
@@ -1935,38 +1765,11 @@ const StatisticsPage = () => {
               </button>
             </div>
 
-            {/* Tab Content */}
             <div className="tabs-content">
-              {/* Overview Tab */}
               {activeTab === 'overview' && overviewStats && (
-                <OverviewTab
-                  stats={overviewStats}
-                />
+                <OverviewTab stats={overviewStats} />
               )}
 
-              {/* Behind-Schedule Tab */}
-              {activeTab === 'behind-schedule' && (
-                <BehindScheduleTab
-                  employees={filteredEmployees}
-                  searchQuery={searchQuery}
-                  setSearchQuery={setSearchQuery}
-                  statusFilter={statusFilter}
-                  setStatusFilter={setStatusFilter}
-                  regionFilter={regionFilter}
-                  setRegionFilter={setRegionFilter}
-                  onNotify={handleNotifyClick}
-                />
-              )}
-
-              {/* Alerts Tab */}
-              {activeTab === 'alerts' && (
-                <AlertsTab
-                  alerts={quotaDumpingAlerts}
-                  onNotify={handleNotifyClick}
-                />
-              )}
-
-              {/* BDM Performance Tab */}
               {activeTab === 'bdm-performance' && (
                 <BDMPerformanceTab
                   employees={bdmEmployees}
@@ -1982,7 +1785,6 @@ const StatisticsPage = () => {
                 />
               )}
 
-              {/* Programs Tab */}
               {activeTab === 'programs' && (
                 <ProgramMonitoringTab
                   programStats={programStats}
@@ -1993,19 +1795,6 @@ const StatisticsPage = () => {
           </div>
         </main>
       </div>
-
-      {/* Notify Modal */}
-      {showNotifyModal && selectedEmployee && (
-        <NotifyModal
-          employee={selectedEmployee}
-          message={notifyMessage}
-          setMessage={setNotifyMessage}
-          sending={notifySending}
-          success={notifySuccess}
-          onClose={handleCloseModal}
-          onSend={handleSendNotification}
-        />
-      )}
     </div>
   );
 };
@@ -2069,19 +1858,19 @@ const OverviewTab = ({ stats }) => {
               </div>
               <div className="stat-card-value">{stats.behindScheduleEmployees}</div>
               <div className="stat-card-label">Behind Schedule</div>
-              <div className="stat-card-sublabel">Requires attention</div>
+              <div className="stat-card-sublabel">Below 80% call rate</div>
             </div>
 
-            {/* Quota Dumping Alerts */}
+            {/* Total Visits */}
             <div className="stat-card">
               <div className="stat-card-header">
                 <div className="stat-card-icon yellow">
-                  <AlertTriangle size={22} />
+                  <Activity size={22} />
                 </div>
               </div>
-              <div className="stat-card-value">{stats.criticalAlerts}</div>
-              <div className="stat-card-label">Quota Dumping Alerts</div>
-              <div className="stat-card-sublabel">Pending review</div>
+              <div className="stat-card-value">{stats.totalVisitsThisMonth}</div>
+              <div className="stat-card-label">Total Engagements</div>
+              <div className="stat-card-sublabel">of {stats.targetVisitsThisMonth} target</div>
             </div>
           </div>
 
@@ -2220,287 +2009,6 @@ const OverviewTab = ({ stats }) => {
   );
 };
 
-/* =============================================================================
-   COMPONENT: BehindScheduleTab
-   Data table with employee compliance tracking.
-   ============================================================================= */
-
-const BehindScheduleTab = ({
-  employees,
-  searchQuery,
-  setSearchQuery,
-  statusFilter,
-  setStatusFilter,
-  regionFilter,
-  setRegionFilter,
-  onNotify,
-}) => {
-  // Get unique regions for filter dropdown
-  const uniqueRegions = [...new Set(employees.map((e) => e.region.split(' - ')[0]))];
-
-  // Get progress bar color based on percentage
-  const getProgressColor = (percentage) => {
-    if (percentage >= 80) return 'green';
-    if (percentage >= 60) return 'yellow';
-    return 'red';
-  };
-
-  // Format date
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  return (
-    <div>
-      {/* Table Controls */}
-      <div className="table-controls">
-        <div className="search-box">
-          <Search size={18} color="#9ca3af" />
-          <input
-            type="text"
-            placeholder="Search by name or email..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <div className="filter-group">
-          <select
-            className="filter-select"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="all">All Status</option>
-            <option value="behind">Behind Schedule</option>
-            <option value="on-track">On Track</option>
-          </select>
-          <select
-            className="filter-select"
-            value={regionFilter}
-            onChange={(e) => setRegionFilter(e.target.value)}
-          >
-            <option value="all">All Regions</option>
-            {uniqueRegions.map((region) => (
-              <option key={region} value={region}>
-                {region}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Data Table */}
-      {employees.length > 0 ? (
-        <div className="data-table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>BDM</th>
-                <th>Region</th>
-                <th>Weekly Target</th>
-                <th>Completed</th>
-                <th>Progress</th>
-                <th>Status</th>
-                <th>Last Visit</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {employees.map((employee) => (
-                <tr key={employee._id}>
-                  {/* BDM Name & Email */}
-                  <td>
-                    <div className="employee-cell">
-                      <span className="employee-name">{employee.name}</span>
-                      <span className="employee-email">{employee.email}</span>
-                    </div>
-                  </td>
-
-                  {/* Region */}
-                  <td>{employee.region}</td>
-
-                  {/* Weekly Target */}
-                  <td style={{ fontWeight: 500 }}>{employee.weeklyTarget}</td>
-
-                  {/* Completed Visits */}
-                  <td style={{ fontWeight: 500 }}>{employee.completedVisits}</td>
-
-                  {/* Progress Bar */}
-                  <td>
-                    <div className="progress-cell">
-                      <div className="progress-bar-bg">
-                        <div
-                          className={`progress-bar-fill ${getProgressColor(employee.percentage)}`}
-                          style={{ width: `${Math.min(employee.percentage, 100)}%` }}
-                        />
-                      </div>
-                      <span className="progress-text">
-                        {employee.percentage.toFixed(1)}%
-                      </span>
-                    </div>
-                  </td>
-
-                  {/* Status Badge */}
-                  <td>
-                    <span className={`status-badge ${employee.status}`}>
-                      {employee.status === 'on-track' ? (
-                        <>
-                          <CheckCircle size={14} />
-                          On Track
-                        </>
-                      ) : (
-                        <>
-                          <XCircle size={14} />
-                          Behind
-                        </>
-                      )}
-                    </span>
-                  </td>
-
-                  {/* Last Visit */}
-                  <td className="last-visit" style={{ fontSize: '13px' }}>
-                    {formatDate(employee.lastVisitDate)}
-                  </td>
-
-                  {/* Action Button */}
-                  <td>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => onNotify(employee)}
-                    >
-                      <Bell size={14} />
-                      Notify
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="empty-state">
-          <div className="empty-state-icon">
-            <Users size={28} />
-          </div>
-          <h3>No BDMs Found</h3>
-          <p>No BDMs match your current filters.</p>
-        </div>
-      )}
-    </div>
-  );
-};
-
-/* =============================================================================
-   COMPONENT: AlertsTab
-   Quota dumping and irregularity detection.
-   ============================================================================= */
-
-const AlertsTab = ({ alerts, onNotify }) => {
-  // Get employee object from alert for notify modal
-  const getEmployeeFromAlert = (alert) => ({
-    _id: alert.employeeId,
-    userId: alert.employeeId,
-    name: alert.employeeName,
-    email: alert.email,
-  });
-
-  // Format timestamp
-  const formatTimestamp = (dateString) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  if (alerts.length === 0) {
-    return (
-      <div className="empty-state">
-        <div className="empty-state-icon">
-          <CheckCircle size={28} />
-        </div>
-        <h3>No Alerts</h3>
-        <p>Great! No suspicious patterns detected.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="alerts-list">
-      {alerts.map((alert) => (
-        <div key={alert._id} className={`alert-card ${alert.severity}`}>
-          <div className="alert-header">
-            <div className="alert-title">
-              <AlertTriangle
-                size={20}
-                color={
-                  alert.severity === 'high'
-                    ? '#dc2626'
-                    : alert.severity === 'medium'
-                    ? '#f59e0b'
-                    : '#22c55e'
-                }
-              />
-              <h4>{alert.employeeName}</h4>
-              <span className={`severity-badge ${alert.severity}`}>
-                {alert.severity}
-              </span>
-              {alert.status === 'pending_review' && (
-                <span className="status-badge critical">Pending Review</span>
-              )}
-            </div>
-            <span className="alert-timestamp">
-              <Calendar size={14} style={{ marginRight: '4px' }} />
-              {formatTimestamp(alert.detectedAt)}
-            </span>
-          </div>
-
-          <p className="alert-description">{alert.description}</p>
-
-          {/* Visit Details */}
-          <div className="alert-visits">
-            <div className="alert-visits-title">
-              Visits ({alert.visitCount} in {alert.timeSpan})
-            </div>
-            <div className="alert-visits-list">
-              {alert.visits.map((visit, idx) => (
-                <span key={idx} className="alert-visit-tag">
-                  {visit.doctor} @ {visit.time}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="alert-actions">
-            <button
-              className="btn btn-primary"
-              onClick={() => onNotify(getEmployeeFromAlert(alert))}
-            >
-              <Bell size={14} />
-              Send Alert
-            </button>
-            <button className="btn btn-secondary">
-              <ChevronRight size={14} />
-              View Details
-            </button>
-            {alert.status === 'pending_review' && (
-              <button className="btn btn-danger">
-                Mark Reviewed
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
 
 /* =============================================================================
    COMPONENT: BDMPerformanceTab
@@ -2759,119 +2267,6 @@ const BDMPerformanceTab = ({
   );
 };
 
-/* =============================================================================
-   COMPONENT: NotifyModal
-   Modal for sending compliance alerts to employees.
-   ============================================================================= */
-
-const NotifyModal = ({
-  employee,
-  message,
-  setMessage,
-  sending,
-  success,
-  onClose,
-  onSend,
-}) => {
-  // Character limit for message
-  const MAX_CHARS = 500;
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="modal-header">
-          <h3>
-            <Bell size={20} color="#22c55e" />
-            Send Compliance Alert
-          </h3>
-          <button className="modal-close" onClick={onClose}>
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="modal-body">
-          {/* Success Message */}
-          {success && (
-            <div className="toast-success">
-              <CheckCircle size={18} />
-              Alert sent successfully to {employee.name}!
-            </div>
-          )}
-
-          {/* Recipient Info */}
-          <div className="notify-recipient">
-            <div className="notify-recipient-icon">
-              {employee.name.charAt(0).toUpperCase()}
-            </div>
-            <div className="notify-recipient-info">
-              <div className="notify-recipient-name">{employee.name}</div>
-              <div className="notify-recipient-email">{employee.email}</div>
-            </div>
-          </div>
-
-          {/* Notification Channels */}
-          <div className="notify-channels">
-            <div className="channel-badge">
-              <CheckCircle size={14} />
-              Email
-            </div>
-            <div className="channel-badge">
-              <CheckCircle size={14} />
-              Dashboard Inbox
-            </div>
-          </div>
-
-          {/* Message Input */}
-          <div className="form-group">
-            <label htmlFor="notify-message">
-              Custom Message (optional)
-            </label>
-            <textarea
-              id="notify-message"
-              placeholder="Add a personalized message to the compliance alert..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value.slice(0, MAX_CHARS))}
-              disabled={sending || success}
-            />
-            <div className="char-count">
-              {message.length}/{MAX_CHARS} characters
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="modal-footer">
-          <button
-            className="btn btn-secondary"
-            onClick={onClose}
-            disabled={sending}
-          >
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={onSend}
-            disabled={sending || success}
-          >
-            {sending ? (
-              <>
-                <RefreshCw size={14} className="spinning" />
-                Sending...
-              </>
-            ) : (
-              <>
-                <Send size={14} />
-                Send Alert
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 /* =============================================================================
    COMPONENT: ProgramMonitoringTab

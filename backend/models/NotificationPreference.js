@@ -37,11 +37,6 @@ const notificationPreferenceSchema = new mongoose.Schema({
   quietHoursEnd: { type: String, default: '07:00' },
 
   // Email scheduling preferences
-  behindScheduleAlertFrequency: {
-    type: String,
-    enum: ['daily', 'twice_weekly', 'weekly', 'never'],
-    default: 'twice_weekly',
-  },
   weeklyComplianceSummary: { type: Boolean, default: true },
 }, {
   timestamps: true,

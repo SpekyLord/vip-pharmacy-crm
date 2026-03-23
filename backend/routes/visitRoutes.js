@@ -26,13 +26,11 @@ const {
   cancelVisit,
   getVisitStats,
   getWeeklyCompliance,
-  getComplianceAlerts,
   checkCanVisit,
   checkCanVisitBatch,
   getTodayVisits,
   refreshPhotoUrls,
   getEmployeeReport,
-  getQuotaDumpingAlerts,
   getGPSReview,
   getPhotoAuditIssues,
   findVisitsByPhotoHash,
@@ -52,8 +50,6 @@ router.get('/my', getMyVisits);
 router.get('/today', getTodayVisits);
 router.get('/stats', getVisitStats);
 router.get('/weekly', getWeeklyCompliance);
-router.get('/compliance', adminOnly, getComplianceAlerts);
-router.get('/quota-dumping', adminOnly, getQuotaDumpingAlerts);
 router.get('/gps-review', adminOnly, getGPSReview);
 router.get('/photo-audit', adminOnly, getPhotoAuditIssues);
 router.get('/photo-audit/find-by-hash', adminOnly, findVisitsByPhotoHash);

@@ -14,7 +14,7 @@ const Doctor = require('../models/Doctor');
 const CrmProduct = require('../models/CrmProduct');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
-const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, checkBehindSchedule, getMonthYear, getScheduleMatchForVisit } = require('../utils/validateWeeklyVisit');
+const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, getMonthYear, getScheduleMatchForVisit } = require('../utils/validateWeeklyVisit');
 const { MANILA_OFFSET_MS } = require('../utils/scheduleCycleUtils');
 const { signVisitPhotos } = require('../config/s3');
 
@@ -577,43 +577,6 @@ const checkCanVisitBatch = catchAsync(async (req, res) => {
 });
 
 /**
- * @desc    Get compliance alerts (behind schedule employees)
- * @route   GET /api/visits/compliance-alerts
- * @access  Private (Admin)
- */
-const getComplianceAlerts = catchAsync(async (req, res) => {
-  const User = require('../models/User');
-
-  // Get all active employees
-  const employees = await User.find({ role: 'employee', isActive: true });
-
-  // Check all employees in parallel instead of sequentially
-  const results = await Promise.all(
-    employees.map(async (employee) => {
-      const result = await checkBehindSchedule(employee._id);
-      if (result.isBehind) {
-        return {
-          employee: {
-            _id: employee._id,
-            name: employee.name,
-            email: employee.email,
-          },
-          ...result.details,
-        };
-      }
-      return null;
-    })
-  );
-  const alerts = results.filter(Boolean);
-
-  res.json({
-    success: true,
-    data: alerts,
-    count: alerts.length,
-  });
-});
-
-/**
  * @desc    Get visit statistics
  * @route   GET /api/visits/stats
  * @access  Private
@@ -1071,110 +1034,6 @@ function calculateHaversine(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/**
- * @desc    Detect quota dumping (many visits in short time)
- * @route   GET /api/visits/quota-dumping
- * @access  Private (Admin)
- */
-const getQuotaDumpingAlerts = catchAsync(async (req, res) => {
-  const { dateFrom, dateTo } = req.query;
-
-  const matchStage = { status: 'completed' };
-  if (dateFrom || dateTo) {
-    matchStage.visitDate = {};
-    if (dateFrom) matchStage.visitDate.$gte = new Date(dateFrom);
-    if (dateTo) {
-      const d = new Date(dateTo);
-      d.setHours(23, 59, 59, 999);
-      matchStage.visitDate.$lte = d;
-    }
-  } else {
-    // Default: last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    matchStage.visitDate = { $gte: thirtyDaysAgo };
-  }
-
-  // Group visits by user+date, find days with 4+ visits
-  const dayGroups = await Visit.aggregate([
-    { $match: matchStage },
-    {
-      $group: {
-        _id: {
-          user: '$user',
-          date: { $dateToString: { format: '%Y-%m-%d', date: '$visitDate' } },
-        },
-        visits: {
-          $push: {
-            doctor: '$doctor',
-            visitDate: '$visitDate',
-          },
-        },
-        count: { $sum: 1 },
-        minTime: { $min: '$visitDate' },
-        maxTime: { $max: '$visitDate' },
-      },
-    },
-    { $match: { count: { $gte: 4 } } },
-    { $sort: { '_id.date': -1 } },
-  ]);
-
-  if (dayGroups.length === 0) {
-    return res.json({ success: true, data: [], count: 0 });
-  }
-
-  // Fetch user and doctor details
-  const User = require('../models/User');
-  const userIds = [...new Set(dayGroups.map((g) => g._id.user.toString()))];
-  const users = await User.find({ _id: { $in: userIds } })
-    .select('name email')
-    .lean();
-  const userMap = new Map(users.map((u) => [u._id.toString(), u]));
-
-  const allDoctorIds = new Set();
-  dayGroups.forEach((g) => g.visits.forEach((v) => allDoctorIds.add(v.doctor.toString())));
-  const doctors = await Doctor.find({ _id: { $in: [...allDoctorIds] } })
-    .select('firstName lastName')
-    .lean();
-  const doctorMap = new Map(doctors.map((d) => [d._id.toString(), d]));
-
-  const alerts = dayGroups.map((group, idx) => {
-    const user = userMap.get(group._id.user.toString()) || {};
-    const timeSpanMs = new Date(group.maxTime) - new Date(group.minTime);
-    const timeSpanHours = Math.round(timeSpanMs / (1000 * 60 * 60) * 10) / 10;
-
-    const visitDetails = group.visits.map((v) => {
-      const doc = doctorMap.get(v.doctor.toString());
-      const docName = doc ? `${doc.firstName} ${doc.lastName}` : 'Unknown';
-      const time = new Date(v.visitDate).toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      return { doctor: docName, time };
-    });
-
-    return {
-      _id: `alert-${idx}`,
-      employeeId: group._id.user.toString(),
-      employeeName: user.name || 'Unknown',
-      email: user.email || '',
-      alertType: 'quota_dumping',
-      severity: group.count >= 6 ? 'high' : group.count >= 5 ? 'medium' : 'low',
-      description: `${group.count} visits logged within ${timeSpanHours} hours on ${group._id.date}`,
-      visitCount: group.count,
-      timeSpan: `${timeSpanHours} hours`,
-      detectedAt: group.maxTime,
-      visits: visitDetails,
-      status: 'pending_review',
-    };
-  });
-
-  res.json({
-    success: true,
-    data: alerts,
-    count: alerts.length,
-  });
-});
 
 /**
  * @desc    Get visits with GPS data for verification review
@@ -1498,12 +1357,10 @@ module.exports = {
   getWeeklyCompliance,
   checkCanVisit,
   checkCanVisitBatch,
-  getComplianceAlerts,
   getVisitStats,
   getTodayVisits,
   refreshPhotoUrls,
   getEmployeeReport,
-  getQuotaDumpingAlerts,
   getGPSReview,
   getPhotoAuditIssues,
   findVisitsByPhotoHash,

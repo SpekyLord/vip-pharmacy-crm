@@ -678,7 +678,6 @@ const NotificationPreferences = () => {
     quietHoursEnd: '07:00',
 
     // Email scheduling
-    behindScheduleAlertFrequency: 'twice_weekly',
     weeklyComplianceSummary: true,
   });
 
@@ -1141,29 +1140,6 @@ const NotificationPreferences = () => {
                 </label>
               </div>
 
-              {user?.role === 'employee' && (
-                <div className="np-option">
-                  <div className="np-option-info">
-                    <div className="np-option-icon amber">
-                      <AlertTriangle size={18} />
-                    </div>
-                    <div className="np-option-text">
-                      <h4>Behind Schedule Alerts</h4>
-                      <p>Get notified when you fall behind on visits</p>
-                    </div>
-                  </div>
-                  <select
-                    className="np-select"
-                    value={preferences.behindScheduleAlertFrequency}
-                    onChange={(e) => updatePreference('behindScheduleAlertFrequency', e.target.value)}
-                  >
-                    <option value="daily">Daily</option>
-                    <option value="twice_weekly">Twice Weekly</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="never">Never</option>
-                  </select>
-                </div>
-              )}
             </div>
 
             {/* Save Button */}

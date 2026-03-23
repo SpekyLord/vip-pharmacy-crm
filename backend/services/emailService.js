@@ -12,7 +12,6 @@ const {
   passwordResetTemplate,
   adminWeeklySummaryTemplate,
   bdmWeeklyReportTemplate,
-  behindScheduleAlertTemplate,
 } = require('../templates/emails');
 
 /**
@@ -89,27 +88,8 @@ const sendBdmWeeklyReport = async (bdmUser, reportData) => {
   }
 };
 
-/**
- * Send behind-schedule alert
- * @param {Object} bdmUser - BDM user document
- * @param {Object} alertData - { actualVisits, expectedByNow, percentageComplete, currentWeek, totalMonthlyTarget, daysRemaining }
- */
-const sendBehindScheduleAlert = async (bdmUser, alertData) => {
-  try {
-    const data = { bdmName: bdmUser.name, ...alertData };
-    const { subject, html, text } = behindScheduleAlertTemplate(data);
-
-    const { messageId } = await sendEmail({ to: bdmUser.email, subject, html, text });
-    await logEmail(bdmUser.email, bdmUser._id, 'BEHIND_SCHEDULE_ALERT', subject, 'sent', messageId);
-  } catch (err) {
-    console.error('Failed to send behind-schedule alert:', err.message);
-    await logEmail(bdmUser.email, bdmUser._id, 'BEHIND_SCHEDULE_ALERT', 'Behind Schedule Alert', 'failed', null, err.message);
-  }
-};
-
 module.exports = {
   sendPasswordResetEmail,
   sendAdminWeeklyCompliance,
   sendBdmWeeklyReport,
-  sendBehindScheduleAlert,
 };

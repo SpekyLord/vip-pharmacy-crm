@@ -3,7 +3,7 @@
  *
  * Cron jobs for automated email notifications:
  * - Weekly compliance summary (Monday 7 AM Manila time)
- * - Behind-schedule alerts (Weekdays 8 AM Manila time)
+ * - Scheduled reports (Every hour)
  *
  * Initialized from server.js after DB connection.
  * Skips if SES is not configured.
@@ -17,7 +17,6 @@ const NotificationPreference = require('../models/NotificationPreference');
 const { isConfigured } = require('../config/ses');
 const {
   getComplianceReport,
-  checkBehindSchedule,
   getMonthYear,
   getWeekOfMonth,
   isWorkDay,
@@ -25,7 +24,6 @@ const {
 const {
   sendAdminWeeklyCompliance,
   sendBdmWeeklyReport,
-  sendBehindScheduleAlert,
 } = require('../services/emailService');
 
 /**
@@ -35,7 +33,6 @@ const getUserPrefs = async (userId) => {
   const prefs = await NotificationPreference.findOne({ user: userId }).lean();
   return {
     emailNotifications: true,
-    behindScheduleAlertFrequency: 'twice_weekly',
     weeklyComplianceSummary: true,
     ...prefs,
   };
@@ -166,51 +163,6 @@ const runWeeklyCompliance = async () => {
 };
 
 /**
- * Behind-schedule alert job — runs weekdays 8 AM
- * Checks each BDM's progress and sends alerts based on their frequency preference
- */
-const runBehindScheduleAlerts = async () => {
-  console.log('[EmailScheduler] Running behind-schedule alerts...');
-
-  try {
-    const now = new Date();
-    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri
-
-    // Get all active BDMs
-    const bdms = await User.find({ role: 'employee', isActive: true }).lean();
-    let alertsSent = 0;
-
-    for (const bdm of bdms) {
-      const prefs = await getUserPrefs(bdm._id);
-
-      // Skip if email notifications disabled
-      if (!prefs.emailNotifications) continue;
-
-      // Check frequency preference
-      const freq = prefs.behindScheduleAlertFrequency;
-      if (freq === 'never') continue;
-      if (freq === 'weekly' && dayOfWeek !== 1) continue; // Monday only
-      if (freq === 'twice_weekly' && dayOfWeek !== 1 && dayOfWeek !== 3) continue; // Mon + Wed
-
-      // Check if behind schedule
-      const { isBehind, details } = await checkBehindSchedule(bdm._id.toString(), now);
-
-      if (isBehind) {
-        await sendBehindScheduleAlert(bdm, {
-          ...details,
-          daysRemaining: getWorkDaysRemaining(),
-        });
-        alertsSent++;
-      }
-    }
-
-    console.log(`[EmailScheduler] Behind-schedule alerts done. ${alertsSent} alerts sent.`);
-  } catch (err) {
-    console.error('[EmailScheduler] Behind-schedule alerts error:', err.message);
-  }
-};
-
-/**
  * Initialize the email scheduler
  * Call this from server.js after DB connection
  */
@@ -226,11 +178,6 @@ const initEmailScheduler = () => {
     timezone: 'Asia/Manila',
   });
 
-  // Behind-schedule alerts — Weekdays 8 AM Manila time
-  cron.schedule('0 8 * * 1-5', runBehindScheduleAlerts, {
-    timezone: 'Asia/Manila',
-  });
-
   // Scheduled reports — every hour, check for due reports
   cron.schedule('0 * * * *', runScheduledReports, {
     timezone: 'Asia/Manila',
@@ -238,7 +185,6 @@ const initEmailScheduler = () => {
 
   console.log('[EmailScheduler] Email scheduler initialized.');
   console.log('[EmailScheduler] Weekly compliance: Monday 7:00 AM (Asia/Manila)');
-  console.log('[EmailScheduler] Behind-schedule alerts: Weekdays 8:00 AM (Asia/Manila)');
   console.log('[EmailScheduler] Scheduled reports: Every hour (Asia/Manila)');
 };
 

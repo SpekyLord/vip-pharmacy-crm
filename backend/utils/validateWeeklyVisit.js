@@ -383,56 +383,6 @@ const getComplianceReport = async (userId, monthYear) => {
 };
 
 /**
- * Check if an employee is behind schedule
- * @param {string} userId
- * @param {Date} checkDate - Optional date to check, defaults to today
- * @returns {Promise<{isBehind: boolean, details: object}>}
- */
-const checkBehindSchedule = async (userId, checkDate = new Date()) => {
-  const monthYear = getMonthYear(checkDate);
-  const weekOfMonth = getWeekOfMonth(checkDate);
-
-  // Parallelize independent queries
-  const [weeklyStats, user] = await Promise.all([
-    getWeeklyComplianceStats(userId, monthYear),
-    User.findById(userId),
-  ]);
-
-  if (!user || user.role !== 'employee') {
-    return { isBehind: false, details: {} };
-  }
-
-  // Get doctors assigned to this user
-  const doctors = await Doctor.find({
-    assignedTo: userId,
-    isActive: true,
-  });
-
-  // Calculate expected visits per week (simplified: total frequency / 4 weeks)
-  const totalMonthlyTarget = doctors.reduce((sum, d) => sum + (d.visitFrequency || 4), 0);
-  const expectedVisitsPerWeek = Math.ceil(totalMonthlyTarget / 4);
-  const expectedByNow = expectedVisitsPerWeek * weekOfMonth;
-
-  // Calculate actual visits so far
-  const actualVisits = weeklyStats.reduce((sum, w) => sum + w.visitCount, 0);
-
-  const isBehind = actualVisits < expectedByNow * 0.8; // 80% threshold
-
-  return {
-    isBehind,
-    details: {
-      currentWeek: weekOfMonth,
-      actualVisits,
-      expectedByNow,
-      percentageComplete: expectedByNow > 0
-        ? Math.round((actualVisits / expectedByNow) * 100)
-        : 100,
-      totalMonthlyTarget,
-    },
-  };
-};
-
-/**
  * Batch check if user can visit multiple doctors
  * OPTIMIZED: Loads all doctors and visits once, then checks in parallel
  * @param {Array<string>} doctorIds - Array of doctor IDs
@@ -735,7 +685,6 @@ module.exports = {
   canVisitDoctorsBatch,
   getWeeklyComplianceStats,
   getComplianceReport,
-  checkBehindSchedule,
   getScheduleMatchForVisit,
   CYCLE_ANCHOR,
 };

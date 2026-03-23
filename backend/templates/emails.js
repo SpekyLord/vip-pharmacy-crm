@@ -211,60 +211,8 @@ const bdmWeeklyReportTemplate = (data) => {
   return { subject, html: baseLayout(subject, body), text };
 };
 
-/**
- * Behind-schedule alert template
- * @param {Object} data
- * @param {string} data.bdmName
- * @param {number} data.actualVisits
- * @param {number} data.expectedByNow
- * @param {number} data.percentageComplete
- * @param {number} data.currentWeek
- * @param {number} data.totalMonthlyTarget
- * @param {number} data.daysRemaining
- * @returns {{ subject: string, html: string, text: string }}
- */
-const behindScheduleAlertTemplate = (data) => {
-  const { bdmName, actualVisits, expectedByNow, percentageComplete, currentWeek, totalMonthlyTarget, daysRemaining } = data;
-  const subject = 'VIP CRM - Behind Schedule Alert';
-
-  const urgencyColor = percentageComplete < 50 ? '#dc2626' : '#d97706';
-  const urgencyLabel = percentageComplete < 50 ? 'Critical' : 'Warning';
-  const urgencyBg = percentageComplete < 50 ? '#fee2e2' : '#fef3c7';
-
-  const body = `
-    <div style="background:${urgencyBg};border-radius:8px;padding:16px;margin-bottom:24px;text-align:center;">
-      <span style="display:inline-block;background:${urgencyColor};color:#ffffff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;text-transform:uppercase;">${urgencyLabel}</span>
-      <p style="margin:8px 0 0;color:${urgencyColor};font-size:15px;font-weight:600;">You are behind on your visit schedule</p>
-    </div>
-    <p style="margin:0 0 24px;color:#4b5563;font-size:15px;">Hi ${bdmName},</p>
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-      <tr>
-        <td width="50%" style="padding:16px;background:#f9fafb;border-radius:8px;text-align:center;">
-          <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:${urgencyColor};">${actualVisits} / ${expectedByNow}</p>
-          <p style="margin:0;font-size:12px;color:#6b7280;">Actual vs Expected (Week ${currentWeek})</p>
-        </td>
-        <td width="8"></td>
-        <td width="50%" style="padding:16px;background:#f9fafb;border-radius:8px;text-align:center;">
-          <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:#1f2937;">${daysRemaining}</p>
-          <p style="margin:0;font-size:12px;color:#6b7280;">Work Days Remaining</p>
-        </td>
-      </tr>
-    </table>
-    <p style="margin:0 0 8px;color:#4b5563;font-size:14px;">
-      Monthly target: <strong>${totalMonthlyTarget} visits</strong> | Progress: <strong>${percentageComplete}%</strong>
-    </p>
-    <p style="margin:0;color:#6b7280;font-size:13px;">
-      Log into VIP CRM to plan your remaining visits and catch up on your schedule.
-    </p>`;
-
-  const text = `Hi ${bdmName},\n\n${urgencyLabel.toUpperCase()}: You are behind on your visit schedule.\n\nProgress: ${actualVisits}/${expectedByNow} visits (${percentageComplete}%)\nCurrent Week: ${currentWeek}\nMonthly Target: ${totalMonthlyTarget}\nWork Days Remaining: ${daysRemaining}\n\nLog into VIP CRM to plan your remaining visits.`;
-
-  return { subject, html: baseLayout(subject, body), text };
-};
-
 module.exports = {
   passwordResetTemplate,
   adminWeeklySummaryTemplate,
   bdmWeeklyReportTemplate,
-  behindScheduleAlertTemplate,
 };
