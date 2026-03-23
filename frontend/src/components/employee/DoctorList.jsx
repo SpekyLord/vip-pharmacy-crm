@@ -247,11 +247,22 @@ const doctorListStyles = `
   }
 
   .visit-limit-reached {
-    display: block;
-    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
     color: #dc2626;
-    font-weight: 500;
-    margin-top: 4px;
+    font-weight: 600;
+    margin-top: 6px;
+    padding: 4px 10px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+  }
+
+  .doctor-card.visit-blocked {
+    border-color: #fca5a5;
+    background: #fffbfb;
   }
 
   .doctor-card-actions {
@@ -279,7 +290,8 @@ const doctorListStyles = `
 
   .log-visit-btn.disabled,
   .log-visit-btn:disabled {
-    background: #9ca3af;
+    background: #e5e7eb;
+    color: #9ca3af;
     cursor: not-allowed;
   }
 
@@ -867,7 +879,7 @@ const DoctorList = memo(function DoctorList({
           return (
             <div
               key={doctor._id}
-              className={`doctor-card ${statusDisplay?.isComplete ? 'completed' : ''}`}
+              className={`doctor-card ${statusDisplay?.isComplete ? 'completed' : ''} ${!canVisit ? 'visit-blocked' : ''}`}
               onClick={() => onSelectDoctor?.(doctor)}
             >
               <div className="doctor-card-header">
@@ -903,6 +915,9 @@ const DoctorList = memo(function DoctorList({
                   </div>
                   {!canVisit && (
                     <span className="visit-limit-reached">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+                      </svg>
                       {statusDisplay.reason?.includes('week')
                         ? 'Visited this week'
                         : 'Monthly limit reached'}

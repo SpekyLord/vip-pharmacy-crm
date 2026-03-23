@@ -381,7 +381,8 @@ const VisitDetailModal = ({ visit, onClose, onPhotosRefreshed }) => {
     setRefreshingPhotos(true);
     try {
       // Use correct service based on visit type
-      const response = visit._visitType === 'regular'
+      const isRegularVisit = visit._visitType === 'regular' || visit._visitCategory === 'extra';
+      const response = isRegularVisit
         ? await clientService.refreshVisitPhotos(visit._id)
         : await visitService.refreshPhotos(visit._id);
       if (response.success && response.data?.photos) {

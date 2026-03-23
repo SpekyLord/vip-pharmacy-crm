@@ -53,20 +53,6 @@ const getWeekLabel = () => {
 };
 
 /**
- * Calculate work days remaining in the month
- */
-const getWorkDaysRemaining = () => {
-  const now = new Date();
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  let count = 0;
-  for (let d = new Date(now); d <= lastDay; d.setDate(d.getDate() + 1)) {
-    const day = d.getDay();
-    if (day >= 1 && day <= 5) count++;
-  }
-  return count;
-};
-
-/**
  * Weekly compliance job — runs Monday 7 AM
  * Sends individual BDM reports and admin summary
  */
@@ -245,6 +231,5 @@ const runScheduledReports = async () => {
 module.exports = {
   initEmailScheduler,
   runWeeklyCompliance,
-  runBehindScheduleAlerts,
   runScheduledReports,
 };
