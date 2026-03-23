@@ -918,9 +918,17 @@ const DoctorList = memo(function DoctorList({
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
                       </svg>
-                      {statusDisplay.reason?.includes('week')
+                      {statusDisplay.reason?.toLowerCase().includes('weekend')
+                        ? 'Weekend — carried only'
+                        : statusDisplay.reason?.toLowerCase().includes('already visited')
                         ? 'Visited this week'
-                        : 'Monthly limit reached'}
+                        : statusDisplay.reason?.toLowerCase().includes('quota reached')
+                        ? 'Monthly limit reached'
+                        : statusDisplay.reason?.toLowerCase().includes('completed')
+                        ? 'All visits completed'
+                        : statusDisplay.reason?.toLowerCase().includes('scheduled for')
+                        ? 'Not scheduled this week'
+                        : 'Cannot visit'}
                     </span>
                   )}
                 </div>
