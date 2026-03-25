@@ -63,6 +63,7 @@ Documentation uses business terms. Code uses Doctor/Employee.
 - Manage products and product categories
 - Configure regions and territories
 - Access all visits and reports
+- Filter admin visit history by engagement type (TXT/PROMATS, MES/VIBER GIF, PICTURE, SIGNED CALL, VOICE CALL)
 - Upload and approve/reject Excel import batches
 - View any BDM's DCR Summary and performance metrics
 - Send messages to BDMs

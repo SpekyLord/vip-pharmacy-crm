@@ -13,6 +13,7 @@ const Client = require('../models/Client');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
+const { normalizeEngagementTypesQuery } = require('../utils/engagementTypes');
 const { signVisitPhotos } = require('../config/s3');
 const { getWeekOfMonth, getDayOfWeek, isWorkDay, MANILA_OFFSET_MS } = require('../utils/scheduleCycleUtils');
 
@@ -592,11 +593,17 @@ const getMyClientVisits = catchAsync(async (req, res) => {
  */
 const getClientVisitsByUser = catchAsync(async (req, res) => {
   const { userId } = req.params;
-  const { page = 1, limit = 20, monthYear, dateFrom, dateTo } = req.query;
+  const { page = 1, limit = 20, monthYear, dateFrom, dateTo, engagementTypes, status } = req.query;
 
   const query = { user: userId };
+  const parsedEngagementTypes = normalizeEngagementTypesQuery(engagementTypes);
 
   if (monthYear) query.monthYear = monthYear;
+  if (status) query.status = status;
+
+  if (parsedEngagementTypes.length > 0) {
+    query.engagementTypes = { $in: parsedEngagementTypes };
+  }
 
   if (dateFrom || dateTo) {
     query.visitDate = {};

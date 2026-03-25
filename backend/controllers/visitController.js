@@ -16,6 +16,7 @@ const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, getMonthYear, getScheduleMatchForVisit } = require('../utils/validateWeeklyVisit');
 const { MANILA_OFFSET_MS } = require('../utils/scheduleCycleUtils');
+const { normalizeEngagementTypesQuery } = require('../utils/engagementTypes');
 const { signVisitPhotos } = require('../config/s3');
 
 /**
@@ -269,9 +270,10 @@ const createVisit = catchAsync(async (req, res) => {
  * @access  Private (Admin sees all, Employee sees own)
  */
 const getAllVisits = catchAsync(async (req, res) => {
-  const { page = 1, limit = 20, status, monthYear, userId, doctorId } = req.query;
+  const { page = 1, limit = 20, status, monthYear, userId, doctorId, engagementTypes } = req.query;
 
   const query = {};
+  const parsedEngagementTypes = normalizeEngagementTypesQuery(engagementTypes);
 
   // Role-based filtering
   if (req.user.role === 'employee') {
@@ -293,6 +295,10 @@ const getAllVisits = catchAsync(async (req, res) => {
   // Filter by month-year
   if (monthYear) {
     query.monthYear = monthYear;
+  }
+
+  if (parsedEngagementTypes.length > 0) {
+    query.engagementTypes = { $in: parsedEngagementTypes };
   }
 
   // Filter by date range

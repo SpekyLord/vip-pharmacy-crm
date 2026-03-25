@@ -5,14 +5,7 @@
  * Maps to Excel CPT day sheet columns G-K.
  * Phone-friendly with 48px min tap targets.
  */
-
-const ENGAGEMENT_OPTIONS = [
-  { value: 'TXT_PROMATS', label: 'TXT/PROMATS' },
-  { value: 'MES_VIBER_GIF', label: 'MES/VIBER GIF' },
-  { value: 'PICTURE', label: 'PICTURE' },
-  { value: 'SIGNED_CALL', label: 'SIGNED CALL' },
-  { value: 'VOICE_CALL', label: 'VOICE CALL' },
-];
+import { ENGAGEMENT_TYPE_OPTIONS } from '../../constants/engagementTypes';
 
 const selectorStyles = `
   .engagement-selector {
@@ -54,6 +47,23 @@ const selectorStyles = `
     background: #1d4ed8;
     border-color: #1d4ed8;
   }
+
+  body.dark-mode .engagement-chip {
+    background: #0b1220;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+
+  body.dark-mode .engagement-chip:hover {
+    border-color: #60a5fa;
+    background: #172554;
+  }
+
+  body.dark-mode .engagement-chip.selected {
+    border-color: #60a5fa;
+    background: #2563eb;
+    color: white;
+  }
 `;
 
 const EngagementTypeSelector = ({ selected = [], onChange }) => {
@@ -67,7 +77,7 @@ const EngagementTypeSelector = ({ selected = [], onChange }) => {
   return (
     <div className="engagement-selector">
       <style>{selectorStyles}</style>
-      {ENGAGEMENT_OPTIONS.map((opt) => (
+      {ENGAGEMENT_TYPE_OPTIONS.map((opt) => (
         <button
           key={opt.value}
           type="button"

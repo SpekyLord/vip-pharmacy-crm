@@ -11,6 +11,7 @@
 
 const { body, param, query, validationResult } = require('express-validator');
 const mongoose = require('mongoose');
+const { VALID_ENGAGEMENT_TYPES } = require('../utils/engagementTypes');
 
 /**
  * Validate and return errors if any
@@ -33,8 +34,6 @@ const validate = (req, res, next) => {
 /**
  * Common validation rules
  */
-const VALID_ENGAGEMENT_TYPES = ['TXT_PROMATS', 'MES_VIBER_GIF', 'PICTURE', 'SIGNED_CALL', 'VOICE_CALL'];
-
 const isValidObjectId = (value) => {
   if (!mongoose.Types.ObjectId.isValid(value)) {
     throw new Error('Invalid ID format');

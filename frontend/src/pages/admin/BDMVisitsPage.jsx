@@ -3,13 +3,14 @@
  *
  * Admin page to view a specific BDM's visit history:
  * - Fetches BDM info and their visits
- * - Filters: status, date range
+ * - Filters: status, client type, engagement type, date range
  * - Visit table with pagination
  * - VisitDetailModal for full details
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import EngagementTypeSelector from '../../components/employee/EngagementTypeSelector';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -35,6 +36,7 @@ const BDMVisitsPage = () => {
   // Filters
   const [statusFilter, setStatusFilter] = useState('all');
   const [visitTypeFilter, setVisitTypeFilter] = useState('all');
+  const [engagementTypeFilter, setEngagementTypeFilter] = useState([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
   // Pagination
@@ -96,6 +98,9 @@ const BDMVisitsPage = () => {
       if (dateRange.end) {
         params.dateTo = dateRange.end;
       }
+      if (engagementTypeFilter.length > 0) {
+        params.engagementTypes = engagementTypeFilter.join(',');
+      }
 
       // Fetch VIP visits
       let vipVisits = [];
@@ -114,8 +119,12 @@ const BDMVisitsPage = () => {
       if (visitTypeFilter !== 'vip') {
         try {
           const regularParams = {};
+          if (statusFilter !== 'all') regularParams.status = statusFilter;
           if (dateRange.start) regularParams.dateFrom = dateRange.start;
           if (dateRange.end) regularParams.dateTo = dateRange.end;
+          if (engagementTypeFilter.length > 0) {
+            regularParams.engagementTypes = engagementTypeFilter.join(',');
+          }
           const regularResponse = await clientService.getVisitsByUser(id, {
             page: pagination.page,
             limit: pagination.limit,
@@ -165,7 +174,7 @@ const BDMVisitsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, pagination.page, pagination.limit, statusFilter, dateRange, visitTypeFilter]);
+  }, [id, pagination.page, pagination.limit, statusFilter, dateRange, visitTypeFilter, engagementTypeFilter]);
 
   useEffect(() => {
     fetchVisits();
@@ -234,6 +243,7 @@ const BDMVisitsPage = () => {
   const clearFilters = () => {
     setStatusFilter('all');
     setVisitTypeFilter('all');
+    setEngagementTypeFilter([]);
     setDateRange({ start: '', end: '' });
     setPagination(prev => ({ ...prev, page: 1 }));
   };
@@ -279,7 +289,7 @@ const BDMVisitsPage = () => {
               </div>
 
               <div className="bvp-filter-group">
-                <label htmlFor="bvp-visit-type">Type</label>
+                <label htmlFor="bvp-visit-type">Client Type</label>
                 <select
                   id="bvp-visit-type"
                   value={visitTypeFilter}
@@ -288,10 +298,21 @@ const BDMVisitsPage = () => {
                     setPagination(prev => ({ ...prev, page: 1 }));
                   }}
                 >
-                  <option value="all">All Types</option>
+                  <option value="all">All Client Types</option>
                   <option value="vip">VIP Clients</option>
                   <option value="regular">Regular Clients</option>
                 </select>
+              </div>
+
+              <div className="bvp-filter-group bvp-filter-group-wide">
+                <label>Engagement Type</label>
+                <EngagementTypeSelector
+                  selected={engagementTypeFilter}
+                  onChange={(types) => {
+                    setEngagementTypeFilter(types);
+                    setPagination(prev => ({ ...prev, page: 1 }));
+                  }}
+                />
               </div>
 
               <div className="bvp-filter-group">
@@ -483,7 +504,7 @@ const BDMVisitsPage = () => {
               <div className="bvp-empty">
                 <p>No visits found</p>
                 <p className="bvp-empty-hint">
-                  {statusFilter !== 'all' || dateRange.start || dateRange.end
+                  {statusFilter !== 'all' || engagementTypeFilter.length > 0 || dateRange.start || dateRange.end
                     ? 'Try adjusting your filters'
                     : 'This BDM has not logged any visits yet'}
                 </p>
@@ -564,10 +585,18 @@ const pageStyles = `
     gap: 0.25rem;
   }
 
+  .bvp-filter-group-wide {
+    flex: 1 1 100%;
+  }
+
   .bvp-filter-group label {
     font-size: 0.75rem;
     color: #666;
     font-weight: 500;
+  }
+
+  .bvp-filter-group-wide .engagement-selector {
+    width: 100%;
   }
 
   .bvp-filter-group select,
