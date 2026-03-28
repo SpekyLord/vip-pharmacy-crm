@@ -38,6 +38,10 @@ const GPSVerificationPage = lazy(() => import('./pages/admin/GPSVerificationPage
 const PhotoAuditPage = lazy(() => import('./pages/admin/PhotoAuditPage'));
 const SettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
 
+// ERP pages
+const ErpDashboard = lazy(() => import('./erp/pages/ErpDashboard'));
+const OcrTest = lazy(() => import('./erp/pages/OcrTest'));
+
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
   const location = useLocation();
@@ -223,6 +227,24 @@ function App() {
           />
 
           {/* Legacy /employee redirects → /bdm */}
+          {/* ERP Routes */}
+          <Route
+            path="/erp"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+                <ErpDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/ocr-test"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+                <OcrTest />
+              </ProtectedRoute>
+            }
+          />
+
           <Route path="/employee/*" element={<EmployeeRedirect />} />
           <Route path="/employee" element={<Navigate to="/bdm" replace />} />
 

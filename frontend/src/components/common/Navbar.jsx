@@ -4,17 +4,25 @@
  * Top navigation bar with:
  * - Logo/brand (left side)
  * - Hamburger menu (mobile/tablet)
- * - Notifications (Bell icon with dropdown)
- * - User profile dropdown
+ * - CRM/ERP platform switch
+ * - ERP quick tabs
+ * - User profile summary
  * - Logout button
- *
- * Mobile: hamburger + logo + notification bell + avatar
- * Desktop: full layout
  */
 
 import { useEffect, useState } from 'react';
-import { useAuth } from '../../hooks/useAuth';
+import { Link, useLocation } from 'react-router-dom';
 import { LogOut, Menu, Moon, Sun } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
+
+const ERP_TABS = [
+  { label: 'Dashboard', path: '/erp' },
+  { label: 'Sales', disabled: true },
+  { label: 'Inventory', disabled: true },
+  { label: 'Collections', disabled: true },
+  { label: 'Expenses', disabled: true },
+  { label: 'Reports', disabled: true },
+];
 
 /* =============================================================================
    STYLES
@@ -22,11 +30,12 @@ import { LogOut, Menu, Moon, Sun } from 'lucide-react';
 
 const navbarStyles = `
   .navbar {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
+    gap: 16px;
     padding: 0 24px;
-    height: 68px;
+    min-height: 68px;
     background: white;
     border-bottom: 1px solid #e5e7eb;
     position: sticky;
@@ -35,17 +44,117 @@ const navbarStyles = `
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
 
-  /* Logo Section */
+  .navbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .navbar-center {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    overflow: hidden;
+  }
+
+  .navbar-platform-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+
+  .navbar-platform-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 0 14px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #64748b;
+    transition: all 0.2s ease;
+  }
+
+  .navbar-platform-link.active {
+    background: #0f172a;
+    color: white;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+  }
+
+  .navbar-erp-tabs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .navbar-erp-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .navbar-erp-tab,
+  .navbar-erp-tab-disabled {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid #dbe3ef;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: all 0.18s ease;
+    flex-shrink: 0;
+  }
+
+  .navbar-erp-tab:hover {
+    border-color: #c7d7fe;
+    color: #1d4ed8;
+    background: #eef4ff;
+  }
+
+  .navbar-erp-tab.active {
+    border-color: #b9d0ff;
+    background: #e8efff;
+    color: #1d4ed8;
+  }
+
+  .navbar-erp-tab-disabled {
+    opacity: 0.75;
+    cursor: not-allowed;
+  }
+
   .navbar-brand {
     display: flex;
     align-items: center;
     gap: 12px;
+    min-width: 0;
   }
 
   .navbar-logo {
     height: 80px;
     width: auto;
     object-fit: contain;
+    flex-shrink: 0;
   }
 
   .navbar-brand h1 {
@@ -54,13 +163,13 @@ const navbarStyles = `
     font-weight: 700;
     color: #1f2937;
     letter-spacing: -0.5px;
+    white-space: nowrap;
   }
 
   .navbar-brand h1 span {
-    color: #E8AF30;
+    color: #e8af30;
   }
 
-  /* Hamburger */
   .navbar-hamburger {
     display: none;
     width: 44px;
@@ -74,6 +183,7 @@ const navbarStyles = `
     border-radius: 10px;
     -webkit-tap-highlight-color: transparent;
     transition: background 0.15s;
+    flex-shrink: 0;
   }
 
   .navbar-hamburger:hover {
@@ -84,21 +194,13 @@ const navbarStyles = `
     background: #e5e7eb;
   }
 
-  /* Left section with hamburger + brand */
-  .navbar-left {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  /* Right Menu */
   .navbar-menu {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-shrink: 0;
   }
 
-  /* User Profile */
   .navbar-profile {
     display: flex;
     align-items: center;
@@ -109,17 +211,29 @@ const navbarStyles = `
     border-radius: 12px;
   }
 
-  .navbar-avatar {
-    width: 36px;
-    height: 36px;
+  .navbar-avatar,
+  .navbar-avatar-mobile {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
     font-weight: 600;
+  }
+
+  .navbar-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
     font-size: 14px;
+  }
+
+  .navbar-avatar-mobile {
+    display: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    font-size: 12px;
   }
 
   .navbar-profile-info {
@@ -139,7 +253,6 @@ const navbarStyles = `
     text-transform: capitalize;
   }
 
-  /* Logout Button */
   .navbar-logout {
     display: flex;
     align-items: center;
@@ -165,7 +278,6 @@ const navbarStyles = `
     display: inline;
   }
 
-  /* Divider between elements */
   .navbar-divider {
     width: 1px;
     height: 32px;
@@ -173,8 +285,8 @@ const navbarStyles = `
     margin: 0 8px;
   }
 
-  /* Dark Mode Toggle */
-  .navbar-theme-btn {    width: 38px;
+  .navbar-theme-btn {
+    width: 38px;
     height: 38px;
     display: flex;
     align-items: center;
@@ -194,6 +306,85 @@ const navbarStyles = `
     border-color: #d1d5db;
   }
 
+  body.dark-mode .navbar {
+    background: #0f172a;
+    border-bottom-color: #1e293b;
+  }
+
+  body.dark-mode .navbar-platform-switch {
+    background: #111827;
+    border-color: #334155;
+  }
+
+  body.dark-mode .navbar-platform-link {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .navbar-platform-link.active {
+    background: #f8fafc;
+    color: #0f172a;
+  }
+
+  body.dark-mode .navbar-erp-tab,
+  body.dark-mode .navbar-erp-tab-disabled {
+    background: #111827;
+    border-color: #334155;
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .navbar-erp-tab:hover {
+    background: #16233b;
+    border-color: #3b82f6;
+    color: #93c5fd;
+  }
+
+  body.dark-mode .navbar-erp-tab.active {
+    background: #1d4ed8;
+    border-color: #60a5fa;
+    color: white;
+  }
+
+  body.dark-mode .navbar-brand h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .navbar-hamburger {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .navbar-hamburger:hover {
+    background: #1e293b;
+  }
+
+  body.dark-mode .navbar-profile {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  body.dark-mode .navbar-profile-name {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .navbar-profile-role {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .navbar-divider {
+    background: #334155;
+  }
+
+  body.dark-mode .navbar-logout {
+    background: #1e293b;
+    border-color: #334155;
+    color: #94a3b8;
+  }
+
+  body.dark-mode .navbar-logout:hover {
+    background: #450a0a;
+    border-color: #7f1d1d;
+    color: #f87171;
+  }
+
   body.dark-mode .navbar-theme-btn {
     background: #1e293b;
     border-color: #334155;
@@ -205,56 +396,65 @@ const navbarStyles = `
     color: #f1f5f9;
   }
 
-  /* Dark mode — navbar shell */
-  body.dark-mode .navbar {
-    background: #0f172a;
-    border-bottom-color: #1e293b;
-  }
-  body.dark-mode .navbar-brand h1 { color: #f1f5f9; }
-  body.dark-mode .navbar-hamburger { color: #94a3b8; }
-  body.dark-mode .navbar-hamburger:hover { background: #1e293b; }
-  body.dark-mode .navbar-profile {
-    background: #1e293b;
-    border-color: #334155;
-  }
-  body.dark-mode .navbar-profile-name { color: #f1f5f9; }
-  body.dark-mode .navbar-profile-role { color: #94a3b8; }
-  body.dark-mode .navbar-divider { background: #334155; }
-  body.dark-mode .navbar-logout {
-    background: #1e293b;
-    border-color: #334155;
-    color: #94a3b8;
-  }
-  body.dark-mode .navbar-logout:hover {
-    background: #450a0a;
-    border-color: #7f1d1d;
-    color: #f87171;
-  }
-
-  /* ===== TABLET ===== */
-  @media (max-width: 1024px) {
+  @media (max-width: 1280px) {
     .navbar {
       padding: 0 16px;
+      gap: 10px;
     }
+
+    .navbar-platform-link {
+      padding: 0 12px;
+    }
+
+    .navbar-erp-tab,
+    .navbar-erp-tab-disabled {
+      padding: 0 12px;
+      font-size: 12px;
+    }
+  }
+
+  @media (max-width: 1024px) {
     .navbar-profile-info {
       display: none;
     }
+
     .navbar-profile {
       padding: 6px;
     }
+
     .navbar-logout-text {
       display: none;
     }
+
     .navbar-logout {
       padding: 10px;
     }
+
+    .navbar-erp-tab-disabled {
+      display: none;
+    }
   }
 
-  /* ===== MOBILE ===== */
+  @media (max-width: 768px) {
+    .navbar-center {
+      justify-content: flex-start;
+    }
+
+    .navbar-erp-tabs {
+      gap: 6px;
+    }
+
+    .navbar-erp-tab {
+      min-height: 34px;
+      padding: 0 10px;
+    }
+  }
+
   @media (max-width: 480px) {
     .navbar {
       padding: 0 12px;
-      height: 60px;
+      min-height: 60px;
+      gap: 8px;
     }
 
     .navbar-hamburger {
@@ -267,7 +467,25 @@ const navbarStyles = `
 
     .navbar-logo {
       height: 75px;
-      width: auto;
+    }
+
+    .navbar-center {
+      justify-content: center;
+    }
+
+    .navbar-erp-tabs {
+      display: none;
+    }
+
+    .navbar-platform-switch {
+      width: 100%;
+      max-width: 138px;
+    }
+
+    .navbar-platform-link {
+      flex: 1;
+      padding: 0 8px;
+      font-size: 11px;
     }
 
     .navbar-profile {
@@ -284,36 +502,12 @@ const navbarStyles = `
       background: none;
     }
 
-    .navbar-logout-text {
-      display: none;
-    }
-
     .navbar-avatar-mobile {
-      width: 32px;
-      height: 32px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      border-radius: 8px;
       display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-weight: 600;
-      font-size: 12px;
     }
 
     .navbar-menu {
       gap: 4px;
-    }
-  }
-
-  /* Hide mobile avatar on desktop */
-  .navbar-avatar-mobile {
-    display: none;
-  }
-
-  @media (max-width: 480px) {
-    .navbar-avatar-mobile {
-      display: flex;
     }
   }
 `;
@@ -324,6 +518,7 @@ const navbarStyles = `
 
 const Navbar = () => {
   const { user, logout } = useAuth();
+  const location = useLocation();
   const [isDark, setIsDark] = useState(() => {
     try {
       const stored = localStorage.getItem('darkMode');
@@ -349,7 +544,6 @@ const Navbar = () => {
     setIsDark((prev) => !prev);
   };
 
-  // Get user initials
   const getInitials = (name) => {
     if (!name) return 'U';
     return name
@@ -360,16 +554,17 @@ const Navbar = () => {
       .slice(0, 2);
   };
 
-  // Dispatch event to open sidebar drawer
   const handleHamburgerClick = () => {
     window.dispatchEvent(new CustomEvent('sidebar:toggle'));
   };
+
+  const crmHome = user?.role === 'admin' ? '/admin' : '/bdm';
+  const isErpRoute = location.pathname.startsWith('/erp');
 
   return (
     <nav className="navbar">
       <style>{navbarStyles}</style>
 
-      {/* Left: Hamburger + Logo */}
       <div className="navbar-left">
         <button
           className="navbar-hamburger"
@@ -381,13 +576,59 @@ const Navbar = () => {
 
         <div className="navbar-brand">
           <img src="/VIP_LOGO-removebg.svg" alt="VIP" className="navbar-logo" />
-          <h1>VIP <span>Pharmacy</span> CRM</h1>
+          <h1>
+            VIP <span>Pharmacy</span> CRM
+          </h1>
         </div>
       </div>
 
-      {/* Right Menu */}
+      {user ? (
+        <div className="navbar-center">
+          <div className="navbar-platform-switch" aria-label="Platform switch">
+            <Link
+              to={crmHome}
+              className={`navbar-platform-link ${isErpRoute ? '' : 'active'}`.trim()}
+            >
+              CRM
+            </Link>
+            <Link
+              to="/erp"
+              className={`navbar-platform-link ${isErpRoute ? 'active' : ''}`.trim()}
+            >
+              ERP
+            </Link>
+          </div>
+
+          <div className="navbar-erp-tabs" aria-label="ERP tabs">
+            {ERP_TABS.map((tab) =>
+              tab.disabled ? (
+                <button
+                  key={tab.label}
+                  type="button"
+                  className="navbar-erp-tab-disabled"
+                  disabled
+                  aria-disabled="true"
+                  title={`${tab.label} coming soon`}
+                >
+                  {tab.label}
+                </button>
+              ) : (
+                <Link
+                  key={tab.label}
+                  to={tab.path}
+                  className={`navbar-erp-tab ${isErpRoute ? 'active' : ''}`.trim()}
+                >
+                  {tab.label}
+                </Link>
+              )
+            )}
+          </div>
+        </div>
+      ) : (
+        <div />
+      )}
+
       <div className="navbar-menu">
-        {/* Dark mode toggle */}
         <button className="navbar-theme-btn" onClick={toggleTheme} aria-label="Toggle dark mode">
           {isDark ? <Sun size={17} /> : <Moon size={17} />}
         </button>
@@ -396,23 +637,18 @@ const Navbar = () => {
           <>
             <div className="navbar-divider" />
 
-            {/* Mobile Avatar */}
-            <div className="navbar-avatar-mobile">
-              {getInitials(user.name)}
-            </div>
+            <div className="navbar-avatar-mobile">{getInitials(user.name)}</div>
 
-            {/* Desktop User Profile Display */}
             <div className="navbar-profile">
-              <div className="navbar-avatar">
-                {getInitials(user.name)}
-              </div>
+              <div className="navbar-avatar">{getInitials(user.name)}</div>
               <div className="navbar-profile-info">
                 <div className="navbar-profile-name">{user.name}</div>
-                <div className="navbar-profile-role">{user.role === 'employee' ? 'BDM' : user.role}</div>
+                <div className="navbar-profile-role">
+                  {user.role === 'employee' ? 'BDM' : user.role}
+                </div>
               </div>
             </div>
 
-            {/* Logout Button */}
             <button className="navbar-logout" onClick={logout}>
               <LogOut size={16} />
               <span className="navbar-logout-text">Logout</span>
