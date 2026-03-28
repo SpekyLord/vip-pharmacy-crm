@@ -293,6 +293,9 @@ app.use('/api/audit-logs', userLimiter, require('./routes/auditLogRoutes'));
 app.use('/api/notification-preferences', userLimiter, require('./routes/notificationPreferenceRoutes'));
 app.use('/api/reports', userLimiter, require('./routes/reportRoutes'));
 
+// ═══ ERP ROUTES ═══
+// app.use('/api/erp', require('./erp/routes'));
+
 // 404 handler for undefined routes
 app.use(notFound);
 
