@@ -170,6 +170,13 @@ Every ERP that scales uses a staged document lifecycle. We follow this universal
 
 **Key design principle:** Validation happens on-demand (when BDM clicks "Validate"), NOT per-keystroke. This is how SAP, NetSuite, and QuickBooks all work. Per-keystroke validation causes lag, uses stale data, and fights the platform. On-demand validation rebuilds state fresh and catches cross-row issues (duplicates, overselling) that per-keystroke checks miss.
 
+**Interpretation note for this PRD:**
+- **Current Live Baseline** = behavior already confirmed in the client's Excel + Apps Script ERP and that must be preserved in the MERN rebuild.
+- **Webapp Target** = the March 31, 2026 SAP-oriented design described in this PRD.
+- **Upgrade** = a target behavior that intentionally goes beyond the current workbook implementation.
+
+This PRD uses the webapp target as the primary design language. Where the live workbook behaves differently today, short baseline notes are included so implementation preserves the client's working process while moving to the cleaner target state.
+
 ---
 
 ## 3. MASTER DATA — MONGODB COLLECTIONS
@@ -530,6 +537,8 @@ DR → Consignment pool → Partial consumption tracking → CSI for consumed it
 
 BDMs encode 20-50 sales lines per cycle. The system prioritizes speed during data entry and accuracy at submission. Validation is on-demand, not per-keystroke.
 
+> **Current live baseline (Excel + Apps Script):** The client's current workbook uses a simpler visible row-state model: `OPEN -> VALID -> POSTED -> VOID/RE-OPEN`, with a basic re-open action that clears posting so rows can be edited again. The lifecycle in this PRD is the MERN/webapp target and intentionally upgrades that baseline with `DRAFT`, structured `validation_errors`, controlled deletion requests, audit metadata, and reversal-ready correction paths.
+
 #### Step 1 - TYPE FREELY (Status: DRAFT)
 - BDM enters sales, collections, inventory - no lag, no blocks, no popups
 - Auto-fills still work: BDM/Territory, Unit/Price, LineTotal, TaxTag
@@ -678,6 +687,8 @@ CollectionSchema.pre('save', function() {
 
 **Document lifecycle:** All transactional documents follow the SAP Park -> Check -> Post pattern. See Section 5.5 for the full workflow. Validate and Submit endpoints follow the same pattern as Sales.
 
+> **Current live baseline (Excel + Apps Script):** The workbook currently combines collection validation with `CompletionStatus` / document-proof gates (CSI photo, CR photo, CWT when applicable, deposit slip) and relies on accounting rebuild/posting side effects for downstream posting behavior. The MERN target keeps those hard gates but formalizes them as an explicit transactional lifecycle.
+
 ### 6.2 Collection Session Flow (Client PRD Section 9.5)
 
 Two entry modes:
@@ -699,6 +710,8 @@ Finance-only actions: add products, approve GRNs, approve physical count adjustm
 ---
 
 ## 8. MODULE 5 — BDM FIELD OPERATIONS (PNL)
+
+> **Current live baseline (Excel + Apps Script):** In the current PNL workbooks, reimbursement modules such as ORE, ACCESS, and Car Logbook use proof/compliance states like `COMPLETE` / `INCOMPLETE` to confirm OR/CALF/photo completeness. Those proof gates are preserved, but they are not the same thing as ERP posting status. In the MERN target, proof completeness remains a validation input while transactional posting follows the document lifecycle described above.
 
 ### 8.1 SMER Per Diem (Client PRD Section 11.1)
 ```javascript
@@ -936,6 +949,8 @@ const mdCount = todayVisits.length;  // auto-populates SMER
 
 The following client PRD modules are preserved in full but deferred to the Accounting phase:
 
+> **Current live baseline (Excel + Apps Script):** The client workbook already includes an operational accounting layer: Chart of Accounts, journal rebuild/posting-related controls, SALES/CORE export and push-to-PNL actions, SOA generation, and ERP month snapshot close / restore. It also uses separate controls for ERP period open/closed status and PNL backfill locking. The deferral below refers to the full MERN-native accounting and finance module, not the removal of these baseline behaviors.
+
 - **Purchasing and AP** (Client PRD Module 6) — PO, 3-way matching, AP aging, GRNI
 - **VIP Accounting Master** (Client PRD Module 7) — 6 books, chart of accounts, general ledger, trial balance, 4-view P&L
 - **VAT Filing and BIR Compliance** (Client PRD Module 11) — Finance tagging, 2550Q generation, VAT export
@@ -1061,6 +1076,8 @@ Persistent bottom tab bar for quick access to master data and reports.
 - **Phone (primary device):** Single-column stack — action buttons (2×2 grid) → summary cards (scrollable) → MTD section → bottom tab bar (fixed)
 - **Tablet:** Two-column layout for summary cards, wider bottom tabs
 - **Desktop:** Full dashboard with side-by-side sections
+
+**Current live baseline (Excel + Apps Script):** The workbook already supports SOA generation, SALES/CORE export and push-to-PNL workflows, and ERP month snapshot close / restore. In the MERN rebuild these are treated as preserved baseline capabilities. Snapshot close / restore, ERP period open/closed control, and PNL backfill lock remain separate controls and should not be collapsed into one generic "close month" action.
 
 ---
 

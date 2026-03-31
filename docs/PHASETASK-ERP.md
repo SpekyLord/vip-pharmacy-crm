@@ -12,6 +12,7 @@
 **UI Reference:** BOSS app (Play Store) — client wants this style for the ERP dashboard.
 **ERP Design Standard:** SAP, NetSuite, and QuickBooks are the standard references for all ERP patterns, workflows, and terminology. Every transactional module follows the Document Lifecycle: DRAFT -> VALIDATE -> POSTED -> RE-OPEN. See PRD Section 2.1 and Section 5.5.
 **Client Direction (March 31, 2026):** "need naton himuon nga standard reference ang SAP, NetSuite or Quickbooks para sa aton ERP."
+**Current Live Baseline:** The client already operates an Excel + Apps Script ERP with sales validate/submit/re-open, collection validation + proof gates, journal rebuild, SALES/CORE export to PNL, SOA generation, and ERP month snapshot close / restore. Tasks below formalize those proven behaviors in MERN and then add the March 31 SAP-style upgrades where specified.
 
 ---
 
@@ -424,7 +425,7 @@
 ---
 
 ## PHASE 3 — SALES MODULE (SAP Park -> Check -> Post)
-**Goal:** Sales invoice entry with live date partition, spreadsheet-speed draft entry, FIFO batch selection, on-demand validation, posting controls, and audit trail.
+**Goal:** Sales invoice entry that preserves the client's current validate/submit/re-open workbook behavior while upgrading it to the SAP-style webapp target: live date partition, spreadsheet-speed draft entry, FIFO batch selection, on-demand validation, posting controls, and audit trail.
 
 ### 3.1 — Inventory Ledger Model (needed for FIFO)
 - [ ] Create `backend/erp/models/InventoryLedger.js`:
@@ -587,7 +588,7 @@
 ---
 
 ## PHASE 5 — COLLECTIONS & AR + CREDIT LIMITS + DUNNING
-**Goal:** Collection session with hard gates, SAP-style document lifecycle, CWT, commission, partner insurance, AR aging, credit limits, dunning, and SOA.
+**Goal:** Collection session that preserves the client's current validation + proof-gate + SOA behavior, then formalizes it in MERN with a cleaner SAP-style document lifecycle, CWT, commission, partner insurance, AR aging, credit limits, and dunning.
 
 ### 5.1 — Collection Model & Services
 - [ ] Create `backend/erp/models/Collection.js` — full schema per PRD with DRAFT/VALID/ERROR/POSTED/DELETION_REQUESTED lifecycle fields
@@ -662,17 +663,17 @@
 ---
 
 ## PHASE 7 — INCOME, PROFIT SHARING, PNL & YEAR-END CLOSE
-**Goal:** Payslip, territory P&L, profit sharing gate, and fiscal year closing controls.
+**Goal:** Payslip, territory P&L, profit sharing gate, and fiscal year closing controls, while preserving the client's current live SALES/CORE -> PNL workflow and close-month snapshot behavior as MERN-native features.
 
 ### 7.1 — Income & PNL Models
 - [ ] Create `backend/erp/models/IncomeReport.js` — payslip per cycle
 - [ ] Create `backend/erp/models/PnlReport.js` — territory P&L per month
-- [ ] Create `backend/erp/models/MonthlyArchive.js` — monthly snapshots
+- [ ] Create `backend/erp/models/MonthlyArchive.js` — monthly snapshots / close-month restore state
 - [ ] Commit: `"feat(erp): income, pnl, and archive models"`
 
 ### 7.2 — Income & PNL Services
 - [ ] Create `backend/erp/services/incomeCalc.js` — earnings, deductions, net pay
-- [ ] Create `backend/erp/services/pnlCalc.js` — revenue, costs, profit gate
+- [ ] Create `backend/erp/services/pnlCalc.js` — revenue, costs, profit gate, and MERN-native replacement for the current SALES/CORE push-to-PNL workbook flow
 - [ ] Create `backend/erp/services/profitShareEngine.js` — simple territory-level gate
 - [ ] Commit: `"feat(erp): income, pnl, and profit sharing calculation services"`
 
@@ -699,11 +700,11 @@
 ---
 
 ## PHASE 8 — DASHBOARD & REPORTS
-**Goal:** CEO dashboard, monthly archive, summaries, audit viewer.
+**Goal:** CEO dashboard, monthly archive, summaries, and audit viewer, while formalizing the client's existing live month snapshot/archive behavior in MERN.
 
 ### 8.1 — Dashboard & Report Services
 - [ ] Create `backend/erp/services/dashboardService.js` — CEO KPIs
-- [ ] Create monthly archive auto-snapshot logic
+- [ ] Create monthly archive auto-snapshot logic — formalize the current workbook close-month snapshot behavior in MERN
 - [ ] Commit: `"feat(erp): dashboard and archive services"`
 
 ### 8.2 — Report Routes
@@ -812,8 +813,8 @@
 ### 10.4 — Cycle Report Workflow
 - [ ] GENERATED → REVIEWED → BDM_CONFIRMED → CREDITED
 
-### 10.5 — Accounting Module (Separate Contract)
-- [ ] COA, journals, 4-view P&L, VAT filing, AP module
+### 10.5 — Advanced Accounting Module (Separate Contract)
+- [ ] Full COA, journals, 4-view P&L, VAT filing, AP module beyond the baseline journal rebuild / PNL push behaviors already preserved in the core ERP roadmap
 
 ### 10.6 — Recurring Journal Templates (SAP FI Recurring Documents)
 - [ ] Template model: name, frequency (monthly/quarterly), line items, auto_post flag
