@@ -141,6 +141,35 @@ Every output and input VAT entry starts as PENDING. Finance tags: INCLUDE, EXCLU
 ### P7 — Four-View Financial Reporting
 Every journal entry has BIR_FLAG and VAT_FLAG. Four reports: Internal P&L, BIR Income Tax P&L, VAT Return 2550Q, Withholding Tax Summary.
 
+### 2.1 - ERP Design Reference Standards
+
+**Client Direction (March 31, 2026):** Use SAP, NetSuite, or QuickBooks as standard references for all ERP patterns and workflows.
+
+Every module in this system maps to established ERP conventions:
+
+| VIP-IP Module | SAP Equivalent | NetSuite Equivalent | QuickBooks Equivalent |
+|---------------|---------------|--------------------|-----------------------|
+| Sales (CSI) | SD Sales Order -> Billing Document | Sales Order -> Invoice | Invoice / Sales Receipt |
+| Collections (CR) | FI-AR Incoming Payment | Customer Payment | Receive Payment |
+| Inventory (GRN) | MM Goods Receipt | Item Receipt | Inventory Adjustment |
+| Expenses (SMER, ORE) | FI-AP Vendor Invoice | Vendor Bill | Expense / Bill |
+| Income / Payslip | HR Payroll Posting | Payroll Journal | Payroll |
+| PNL | CO Profitability Analysis | Financial Reports | Profit & Loss |
+| Journals (Phase 10) | FI General Ledger | GL Impact | Journal Entry |
+
+**Document Lifecycle Pattern (all transactional modules):**
+
+Every ERP that scales uses a staged document lifecycle. We follow this universal pattern:
+
+| Stage | SAP Term | NetSuite Term | QuickBooks Term | VIP-IP Term |
+|-------|----------|---------------|-----------------|-------------|
+| Data entry (free typing) | Park | Pending Saved | Draft | **DRAFT** |
+| Validation check | Check | Pending Approval | Review | **VALIDATE** |
+| Finalized / locked | Post | Approved | Save/Post | **POSTED** |
+| Correction after posting | Storno / Reverse | Void + Re-enter | Void + Re-enter | **RE-OPEN** |
+
+**Key design principle:** Validation happens on-demand (when BDM clicks "Validate"), NOT per-keystroke. This is how SAP, NetSuite, and QuickBooks all work. Per-keystroke validation causes lag, uses stale data, and fights the platform. On-demand validation rebuilds state fresh and catches cross-row issues (duplicates, overselling) that per-keystroke checks miss.
+
 ---
 
 ## 3. MASTER DATA — MONGODB COLLECTIONS
@@ -184,6 +213,8 @@ const HospitalSchema = new Schema({
   vat_status: { type: String, enum: ['VATABLE', 'EXEMPT', 'ZERO'], default: 'VATABLE' },
   cwt_rate: { type: Number, default: 0.01 },
   atc_code: { type: String, default: 'WC158' },
+  credit_limit: { type: Number, default: null },   // null = no limit
+  credit_limit_action: { type: String, enum: ['WARN', 'BLOCK'], default: 'WARN' },
   is_top_withholding_agent: { type: Boolean, default: false },
   // HEAT fields (from PNL Live)
   hospital_type: String,       // Private, Public
@@ -452,20 +483,31 @@ const SalesLineSchema = new Schema({
   invoice_total: Number,
   total_vat: Number,
   total_net_of_vat: Number,
-  // Status
-  status: { type: String, default: 'ACTIVE', enum: ['ACTIVE', 'DELETED'] },
+  // Document lifecycle
+  status: {
+    type: String,
+    default: 'DRAFT',
+    enum: ['DRAFT', 'VALID', 'ERROR', 'POSTED', 'DELETION_REQUESTED']
+  },
+  posted_at: { type: Date },
+  posted_by: { type: ObjectId, ref: 'User' },
+  reopen_count: { type: Number, default: 0 },
+  validation_errors: [{
+    row_index: Number,
+    field: String,
+    message: String,
+    severity: { type: String, enum: ['ERROR', 'WARNING'] }
+  }],
+  is_reversal: { type: Boolean, default: false },
+  reverses_sales_line_id: { type: ObjectId, ref: 'SalesLine' },
   deletion_event_id: ObjectId,
   created_at: { type: Date, default: Date.now, immutable: true }
 });
 
-// Auto-route based on live_date (P4)
+// Auto-route based on live_date (P4). Inventory movement happens only on Submit.
 SalesLineSchema.pre('save', async function() {
   const bdm = await User.findById(this.bdm_id);
   this.source = this.csi_date < bdm.live_date ? 'OPENING_AR' : 'SALES_LINE';
-  // Only create inventory movements for SALES_LINE
-  if (this.source === 'SALES_LINE') {
-    await createInventoryIssues(this);
-  }
 });
 ```
 
@@ -483,6 +525,77 @@ BDM requests deletion → Finance approves → DELETION_EVENT created → BDM re
 ### 5.4 Consignment Sales (Client PRD Section 8.4)
 
 DR → Consignment pool → Partial consumption tracking → CSI for consumed items. Aging per `consignment_terms` collection.
+
+### 5.5 BDM Sales Data Entry Workflow (SAP Park -> Check -> Post Pattern)
+
+BDMs encode 20-50 sales lines per cycle. The system prioritizes speed during data entry and accuracy at submission. Validation is on-demand, not per-keystroke.
+
+#### Step 1 - TYPE FREELY (Status: DRAFT)
+- BDM enters sales, collections, inventory - no lag, no blocks, no popups
+- Auto-fills still work: BDM/Territory, Unit/Price, LineTotal, TaxTag
+- All rows start as DRAFT
+- System does NOT validate individual keystrokes
+
+#### Step 2 - EDIT / DELETE (Status: DRAFT)
+- BDM can change any cell, delete rows, paste rows - everything works instantly
+- No ghost rows, no lock errors, no stale data
+- Rows remain DRAFT throughout editing
+
+#### Step 3 - VALIDATE (Status: VALID or ERROR)
+- BDM clicks "Validate Sales" when ready
+- System rebuilds inventory FRESH from InventoryLedger, then checks EVERY row:
+  - Stock available? (FIFO check against rebuilt inventory)
+  - No duplicates? (same doc_ref + hospital + product across all rows)
+  - All required fields filled?
+  - No future dates?
+  - CSI number in allocation range? (if allocations exist)
+  - DR=CR balance check on computed totals
+- Shows actionable error list: "Row 3: Qty exceeds stock", "Row 7: Duplicate"
+- Marks each row: VALID (green) or ERROR (red) in Status column
+- Validation runs against freshly rebuilt stock - 100% accurate
+- Catches cross-row issues (duplicates, overselling across multiple lines for the same item)
+
+#### Step 4 - FIX & RE-VALIDATE (Status: ERROR -> DRAFT -> re-validate)
+- BDM fixes flagged rows, clicks Validate again
+- Repeats until ALL rows are VALID
+- Re-validation rebuilds stock fresh each time
+
+#### Step 5 - SUBMIT (Status: VALID -> POSTED)
+- BDM clicks "Submit Sales"
+- **Hard gate:** only works if ALL rows are VALID (no bypass)
+- If any rows are ERROR or DRAFT, Submit runs Validate first automatically - if errors exist, it blocks submission. No way to bypass.
+- On success: marks all rows as POSTED, creates TransactionEvent entries, creates InventoryLedger entries (FIFO consumption), rebuilds journal
+- `posted_at` and `posted_by` are set
+- POSTED rows are read-only - BDM cannot edit
+
+#### Step 6 - RE-OPEN (Status: POSTED -> DRAFT)
+- Need to fix something after submit?
+- BDM or Finance clicks "Re-open Sales" -> clears POSTED flag -> rows return to DRAFT
+- BDM can now edit -> validate -> submit again
+- `reopen_count` increments
+- Audit log records: who re-opened, when, reason
+- This is how real ERPs handle corrections - not by blocking edits, but by allowing controlled revisions (SAP FI Storno equivalent)
+
+#### Workflow API Endpoints
+
+```javascript
+// POST /api/erp/sales/validate
+// Body: { sales_line_ids: [ObjectId] } OR { period: "2026-03-C1", bdm_id: ObjectId }
+// Returns: { valid_count, error_count, errors: [{ row_index, field, message }] }
+// Side effect: updates each SalesLine status to VALID or ERROR
+
+// POST /api/erp/sales/submit
+// Body: { sales_line_ids: [ObjectId] } OR { period: "2026-03-C1", bdm_id: ObjectId }
+// Pre-condition: ALL referenced rows must be VALID (auto-validates if not)
+// Returns: { posted_count, event_ids: [ObjectId] }
+// Side effect: status -> POSTED, creates TransactionEvents + InventoryLedger entries
+
+// POST /api/erp/sales/reopen
+// Body: { sales_line_ids: [ObjectId], reason: String }
+// Pre-condition: rows must be POSTED
+// Returns: { reopened_count }
+// Side effect: status -> DRAFT, reopen_count++, audit log entry
+```
 
 ---
 
@@ -534,7 +647,14 @@ const CollectionSchema = new Schema({
   total_csi_amount: Number,      // sum of all CSI amounts
   cr_amount: Number,             // total_csi_amount - cwt_amount
   // Status
-  status: { type: String, default: 'ACTIVE' },
+  status: {
+    type: String,
+    default: 'DRAFT',
+    enum: ['DRAFT', 'VALID', 'ERROR', 'POSTED', 'DELETION_REQUESTED']
+  },
+  posted_at: Date,
+  posted_by: ObjectId,
+  validation_errors: [{ field: String, message: String, severity: String }],
   // Document URLs (hard gate — all required)
   cr_photo_url: { type: String, required: true },
   created_at: { type: Date, default: Date.now, immutable: true }
@@ -555,6 +675,8 @@ CollectionSchema.pre('save', function() {
   }
 });
 ```
+
+**Document lifecycle:** All transactional documents follow the SAP Park -> Check -> Post pattern. See Section 5.5 for the full workflow. Validate and Submit endpoints follow the same pattern as Sales.
 
 ### 6.2 Collection Session Flow (Client PRD Section 9.5)
 
@@ -607,7 +729,11 @@ const SmerEntrySchema = new Schema({
   // Travel advance reconciliation
   travel_advance: Number,
   balance_on_hand: Number,  // advance - total_reimbursable
-  status: { type: String, default: 'DRAFT' }
+  status: {
+    type: String,
+    default: 'DRAFT',
+    enum: ['DRAFT', 'VALID', 'ERROR', 'POSTED']
+  }
 });
 
 // Per diem tier logic (Client PRD: MD count method)
@@ -617,6 +743,8 @@ function computePerdiemTier(mdCount, settings) {
   return 'ZERO';                                              // 0-2 MDs = 0%
 }
 ```
+
+**Document lifecycle:** All transactional documents follow the SAP Park -> Check -> Post pattern. See Section 5.5 for the full workflow. Validate and Submit endpoints follow the same pattern as Sales.
 
 ### 8.2 Car Logbook (Client PRD Section 11.2 — Two Captures Per Day)
 ```javascript
@@ -652,9 +780,16 @@ const CarLogbookEntrySchema = new Schema({
   actual_liters: Number,            // sum of fuel_entries.liters
   personal_gas_amount: Number,       // expected_personal_liters × avg_price
   efficiency_variance: Number,       // actual - (expected_official + expected_personal)
-  overconsumption_flag: Boolean      // actual > expected_total × threshold
+  overconsumption_flag: Boolean,     // actual > expected_total × threshold
+  status: {
+    type: String,
+    default: 'DRAFT',
+    enum: ['DRAFT', 'VALID', 'ERROR', 'POSTED']
+  }
 });
 ```
+
+**Document lifecycle:** All transactional documents follow the SAP Park -> Check -> Post pattern. See Section 5.5 for the full workflow. Validate and Submit endpoints follow the same pattern as Sales.
 
 ### 8.3 Other Expense Modules
 
@@ -662,6 +797,17 @@ const CarLogbookEntrySchema = new Schema({
 - **ACCESS:** Company-mode payments — credit card, GCash, bank transfer. OR required, CALF required for non-cash.
 - **PRF:** Payment requisition form — photo as proof, no OCR. Required for all partner rebate payments.
 - **CALF:** Cash advance & liquidation — photo as proof, no OCR. Required for all non-cash payments except: cash mode, President entries, ORE.
+
+```javascript
+// Applies to ORE, ACCESS, PRF, and CALF documents
+status: {
+  type: String,
+  default: 'DRAFT',
+  enum: ['DRAFT', 'VALID', 'ERROR', 'POSTED']
+},
+```
+
+**Document lifecycle:** All transactional documents follow the SAP Park -> Check -> Post pattern. See Section 5.5 for the full workflow. Validate and Submit endpoints follow the same pattern as Sales.
 
 ### 8.4 Partners' Insurance / Rebates (Client PRD Section 11.4)
 
@@ -850,7 +996,7 @@ Four key financial indicators displayed as large cards with amounts in PHP.
 
 | Order | Label | Source / Formula | Notes |
 |-------|-------|-----------------|-------|
-| 1 | **Total Sales** | `SalesLine.aggregate({ status: 'ACTIVE' }, sum: invoice_total)` | All-time or filtered by period |
+| 1 | **Total Sales** | `SalesLine.aggregate({ status: 'POSTED' }, sum: invoice_total)` | All-time or filtered by period |
 | 2 | **AR (Accounts Receivable)** | Total Sales − Total Collections | Computed from SalesLine and Collection aggregations |
 | 3 | **Value of Stocks on Hand** | `InventoryLedger.aggregate` (sum of running_balance × ProductMaster.purchase_price per BDM) | 3rd position per client request |
 | 4 | **Engagements** | Visited vs Target from CRM Schedule (completed entries / total entries for current cycle) | **CRM Integration** — reads from Schedule model |
@@ -863,8 +1009,8 @@ Four metrics showing current month performance, displayed below the summary card
 
 | Metric | Source | Query Filter |
 |--------|--------|-------------|
-| **Sales** | SalesLine sum (invoice_total) | `csi_date` in current calendar month, status = ACTIVE |
-| **Collections** | Collection sum (cr_amount) | `cr_date` in current calendar month, status = ACTIVE |
+| **Sales** | SalesLine sum (invoice_total) | `csi_date` in current calendar month, status = POSTED |
+| **Collections** | Collection sum (cr_amount) | `cr_date` in current calendar month, status = POSTED |
 | **Engagements** | CRM Schedule completed vs target | Current cycle's completed entries / total entries |
 | **Income** | Income calculation (earnings − deductions) | Current period (C1 or C2 of current month) |
 
@@ -918,7 +1064,105 @@ Persistent bottom tab bar for quick access to master data and reports.
 
 ---
 
-## 14. USER ROLES AND PERMISSIONS
+## 14. SAP-EQUIVALENT IMPROVEMENTS - PRIORITY MATRIX
+
+Based on SAP, NetSuite, and QuickBooks best practices, the following improvements are prioritized for implementation. Items #1-#7 target data integrity and audit readiness. Items #8-#15 add operational value and are deferred.
+
+| # | Improvement | Impact | Effort | SAP Equivalent | Target Phase |
+|---|-------------|--------|--------|----------------|--------------|
+| 1 | **Reversal journals** (stop deleting rows - reverse with contra-entry) | Critical | Medium | FI Storno | Phase 3 (Sales) |
+| 2 | **Year-end close + retained earnings** | Critical | Medium | FI Year-End Close | Phase 7 (PNL) |
+| 3 | **Pre-post DR=CR validation** (debits must equal credits before posting) | Critical | Low | FI Document Check | Phase 3 (Sales - part of Validate) |
+| 4 | **Audit log** (who changed what, when, old value -> new value) | High | Low | Change Documents | Phase 3 (Sales - ErpAuditLog) |
+| 5 | **Recurring journal templates** (monthly repeating entries) | High | Low | FI Recurring Documents | Phase 10+ |
+| 6 | **Cost center dimension** (tag transactions by cost center for reporting) | High | Low | CO Cost Centers | Phase 10+ |
+| 7 | **Budget vs actual** (set budgets per BDM/territory, compare to actuals) | High | Medium | CO Planning | Phase 10+ |
+| 8 | **Credit limit management** (cap AR per hospital) | Medium | Medium | SD Credit Management | Phase 5 (Collections) |
+| 9 | **Dunning / collection follow-up** (automated overdue reminders) | Medium | Medium | FI-AR Dunning | Phase 5 (Collections) |
+| 10 | **Three-way matching** (PO vs GRN vs Invoice reconciliation) | Medium | Medium | MM Invoice Verification | Phase 10+ |
+| 11 | **Document flow tracking** (trace CSI -> CR -> 2307 -> Deposit chain) | Medium | Low | Document Flow | Phase 9 (Integration) |
+| 12 | **Per-module period locks** (prevent posting to closed periods) | Low | Low | Posting Period Variant | Phase 10+ |
+| 13 | **Batch posting with IDs** (bulk post multiple documents at once) | Low | Medium | Batch Input | Phase 10+ |
+| 14 | **Opening balance migration** (structured import of historical data) | Low | Low | FI Opening Balances | Phase 9 (Excel Migration) |
+| 15 | **Data archival** (move old periods to archive, keep 2 months live) | Low | Medium | Data Archiving | Phase 10+ |
+
+**Implementation priority:** Start with #1, #2, #3, #4 - they're all about data integrity and audit readiness. Then #5, #6, #7 for operational value.
+
+### 14.1 Reversal Journals (Improvement #1 - Critical)
+
+Instead of deleting rows (which destroys audit trail), corrections create a **reversal entry** (contra-entry) that zeroes out the original, then a new corrective entry is created. This is SAP's "Storno" pattern.
+
+**Flow:**
+1. Original SalesLine posted (e.g., CSI #4719, PHP 1,900)
+2. BDM or Finance initiates correction
+3. System creates REVERSAL SalesLine: same fields, negative amounts (PHP -1,900), `corrects_event_id` pointing to original
+4. Original status stays POSTED (never deleted)
+5. BDM creates new corrected SalesLine (e.g., CSI #4719-R, PHP 1,850)
+6. Net effect: PHP 1,900 - PHP 1,900 + PHP 1,850 = PHP 1,850 (correct amount, full audit trail)
+
+**Impact on existing code:**
+- `TransactionEvent.corrects_event_id` already exists in schema - use it
+- Add `event_type: 'REVERSAL'` to TransactionEvent enum
+- SalesLine needs `is_reversal: Boolean` and `reverses_sales_line_id: ObjectId`
+- All aggregation queries must include reversal entries (they naturally net out)
+
+### 14.2 Pre-Post DR=CR Validation (Improvement #3 - Critical)
+
+Before any document posts, validate that computed debits equal computed credits. This is part of the Validate step (Section 5.5 Step 3).
+
+**For Sales:**
+- Debit: Accounts Receivable = invoice_total
+- Credit: Sales Revenue = net_of_vat + Output VAT = vat_amount
+- Check: AR == Revenue + VAT (must balance)
+
+**For Collections:**
+- Debit: Cash/Bank = cr_amount
+- Credit: Accounts Receivable = settled CSI amounts
+- Check: Cash == sum(settled CSIs) - CWT - discounts (must balance)
+
+### 14.3 Credit Limit Management (Improvement #8 - Medium)
+
+Add to Hospital schema:
+
+```javascript
+credit_limit: { type: Number, default: null },  // null = no limit
+credit_limit_action: { type: String, enum: ['WARN', 'BLOCK'], default: 'WARN' }
+```
+
+During Sales Validate: if hospital AR + new invoice > credit_limit -> WARNING (if WARN) or ERROR (if BLOCK).
+
+### 14.4 Dunning / Collection Follow-Up (Improvement #9 - Medium)
+
+Automated aging-based follow-up levels:
+
+| Level | Trigger | Action |
+|-------|---------|--------|
+| 1 | AR > 30 days | Dashboard indicator (yellow) |
+| 2 | AR > 60 days | Dashboard indicator (orange) + flag in AR aging |
+| 3 | AR > 90 days | Dashboard indicator (red) + SOA auto-generated |
+
+### 14.5 Document Flow Tracking (Improvement #11 - Medium)
+
+Link related documents into a traceable chain:
+
+```text
+CSI #4719 -> CR #2905 (partial) -> 2307 #TIN-001 -> Deposit Slip #DS-003
+```
+
+Add to TransactionEvent:
+
+```javascript
+linked_events: [{ event_id: ObjectId, relationship: String }]
+// relationship: 'SETTLES', 'CERTIFIES', 'DEPOSITS', 'REVERSES'
+```
+
+### 14.6 Data Archival (Improvement #15 - Low)
+
+Add a `var_archive_at_age_past_due` function that moves closed-period data to a separate "Archive" collection and logs the archive file ID. Keep only the current + prior 2 months live.
+
+---
+
+## 15. USER ROLES AND PERMISSIONS
 
 | Role | CRM Access | ERP Access | Special Rules |
 |------|-----------|-----------|---------------|
@@ -930,7 +1174,7 @@ Persistent bottom tab bar for quick access to master data and reports.
 
 ---
 
-## 15. DEVELOPMENT PHASES
+## 16. DEVELOPMENT PHASES
 
 ### Phase 1 — Core ERP Foundation (Months 1-3, target Aug 22 2026)
 
@@ -1033,7 +1277,7 @@ Persistent bottom tab bar for quick access to master data and reports.
 
 ---
 
-## 16. SUCCESS METRICS (FROM CLIENT PRD — ALL PRESERVED)
+## 17. SUCCESS METRICS (FROM CLIENT PRD — ALL PRESERVED)
 
 | Metric | Current | Target 12 Months |
 |--------|---------|-----------------|
@@ -1049,7 +1293,7 @@ Persistent bottom tab bar for quick access to master data and reports.
 
 ---
 
-## 17. DECISION LOG
+## 18. DECISION LOG
 
 All 69 decisions from Client PRD v3.3 Appendix A are honored. Key implementation adaptations:
 

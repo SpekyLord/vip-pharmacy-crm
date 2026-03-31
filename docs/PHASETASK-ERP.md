@@ -3,14 +3,15 @@
 
 **Branch:** `erp-integration`
 **Codebase:** `VIP-PHARMACY-CRM` (MERN stack)
-**Reference PRD:** `docs/VIP_IP_PRD_v4_MERN.md`
+**Reference PRD:** `docs/PRD-ERP.md`
 
 **Rule:** Complete ALL checkboxes in a phase before moving to the next phase. Each phase is self-contained and testable.
 
 **Key Principle:** DO NOT reorganize existing CRM files. All ERP code goes in NEW `erp/` directories. CRM code stays exactly where it is.
 
 **UI Reference:** BOSS app (Play Store) — client wants this style for the ERP dashboard.
-**Client Direction:** Use SAP, NetSuite, or QuickBooks as standard references for ERP patterns and workflows.
+**ERP Design Standard:** SAP, NetSuite, and QuickBooks are the standard references for all ERP patterns, workflows, and terminology. Every transactional module follows the Document Lifecycle: DRAFT -> VALIDATE -> POSTED -> RE-OPEN. See PRD Section 2.1 and Section 5.5.
+**Client Direction (March 31, 2026):** "need naton himuon nga standard reference ang SAP, NetSuite or Quickbooks para sa aton ERP."
 
 ---
 
@@ -422,8 +423,8 @@
 
 ---
 
-## PHASE 3 — SALES MODULE
-**Goal:** Sales invoice entry with live date partition, FIFO batch selection, auto-VAT, and audit trail.
+## PHASE 3 — SALES MODULE (SAP Park -> Check -> Post)
+**Goal:** Sales invoice entry with live date partition, spreadsheet-speed draft entry, FIFO batch selection, on-demand validation, posting controls, and audit trail.
 
 ### 3.1 — Inventory Ledger Model (needed for FIFO)
 - [ ] Create `backend/erp/models/InventoryLedger.js`:
@@ -449,23 +450,60 @@
   - hospital_id, csi_date, doc_ref
   - line_items array: product_id, item_key, batch_lot_no, qty, unit, unit_price, line_total, vat_amount, net_of_vat, fifo_override, override_reason
   - invoice_total, total_vat, total_net_of_vat
-  - status (ACTIVE/DELETED/DELETION_REQUESTED), deletion_event_id
+  - status (DRAFT/VALID/ERROR/POSTED/DELETION_REQUESTED), posted_at, posted_by, reopen_count, validation_errors, deletion_event_id
   - created_at (immutable)
 - [ ] Pre-save: auto-route source based on csi_date vs user.live_date
 - [ ] Pre-save: auto-compute line totals, VAT, net of VAT
-- [ ] Pre-save: if source=SALES_LINE, trigger FIFO consumption
+- [ ] Pre-save: do NOT trigger FIFO consumption yet; inventory moves only on submitSales
 - [ ] Commit: `"feat(erp): sales line model with live date partition and auto-vat"`
 
-### 3.4 — Sales Controller & Routes
+### 3.4 — Sales Controller & Routes (Validate -> Submit -> Re-open Pattern)
 - [ ] Create `backend/erp/controllers/salesController.js`:
-  - `createSale` — creates TransactionEvent + SalesLine + InventoryLedger entries
-  - `getSales` — list with entity/bdm/date filters
-  - `getSaleById` — single sale with line items
-  - `requestDeletion` — BDM sets status=DELETION_REQUESTED
-  - `approveDeletion` — Finance creates DELETION_EVENT, reverses inventory
-- [ ] Create `backend/erp/routes/salesRoutes.js`
-- [ ] Validation: no duplicate doc_ref, no future dates, stock check for SALES_LINE source
-- [ ] Commit: `"feat(erp): sales controller and routes with deletion workflow"`
+  - `createSale` — creates SalesLine(s) in DRAFT status (no inventory movement yet)
+  - `updateSale` — edit DRAFT rows only (POSTED rows blocked)
+  - `deleteDraftRow` — hard-delete rows in DRAFT status (not yet posted, safe to remove)
+  - `getSales` — list with entity/bdm/date/status filters
+  - `getSaleById` — single sale with line items and validation_errors
+  - `validateSales` — **THE CORE ENDPOINT:**
+    1. Rebuild inventory snapshot fresh from InventoryLedger
+    2. Check every row: stock available, no duplicates, required fields, no future dates, DR=CR balance
+    3. Mark each row VALID or ERROR with actionable error messages
+    4. Return: { valid_count, error_count, errors[] }
+  - `submitSales` — post all VALID rows:
+    1. Pre-check: if any rows not VALID, run validateSales first — block if errors
+    2. Create TransactionEvent entries (immutable)
+    3. Create InventoryLedger entries (FIFO consumption)
+    4. Set status=POSTED, posted_at, posted_by
+    5. Return: { posted_count, event_ids[] }
+  - `reopenSales` — un-post for corrections:
+    1. Set status=DRAFT, increment reopen_count
+    2. Reverse InventoryLedger entries (create reversal ledger entries, not delete)
+    3. Create audit log entry (who, when, reason)
+    4. Return: { reopened_count }
+  - `requestDeletion` — BDM flags POSTED row for Finance review (status=DELETION_REQUESTED)
+  - `approveDeletion` — Finance creates REVERSAL entry (SAP Storno pattern, not hard delete):
+    1. Create reversal SalesLine (negative amounts, corrects_event_id -> original)
+    2. Original stays POSTED (audit trail preserved)
+    3. Inventory reversed via reversal ledger entry
+- [ ] Create `backend/erp/routes/salesRoutes.js`:
+  - POST `/` — createSale
+  - PUT `/:id` — updateSale (DRAFT only)
+  - DELETE `/draft/:id` — deleteDraftRow
+  - GET `/` — getSales (with query filters)
+  - GET `/:id` — getSaleById
+  - POST `/validate` — validateSales
+  - POST `/submit` — submitSales
+  - POST `/reopen` — reopenSales
+  - POST `/:id/request-deletion` — requestDeletion
+  - POST `/:id/approve-deletion` — approveDeletion (Finance/Admin only)
+- [ ] Validation rules (in validateSales):
+  - No duplicate doc_ref + hospital + product combination across all rows in batch
+  - No future dates (csi_date <= today)
+  - Stock available for each line item (FIFO check against rebuilt InventoryLedger)
+  - All required fields present (hospital_id, csi_date, doc_ref, at least 1 line_item)
+  - DR=CR balance: invoice_total == sum(line_totals), VAT computed correctly
+  - CSI number in allocation range (if allocations exist for this BDM)
+- [ ] Commit: `"feat(erp): sales controller with validate-submit-reopen workflow (SAP pattern)"`
 
 ### 3.5 — Audit Log Model
 - [ ] Create `backend/erp/models/ErpAuditLog.js`:
@@ -475,17 +513,23 @@
 - [ ] Auto-log on sales modifications
 - [ ] Commit: `"feat(erp): erp audit log model"`
 
-### 3.6 — Sales Entry Page
+### 3.6 — Sales Entry Page (Spreadsheet-Speed Data Entry)
 - [ ] Create `frontend/src/erp/pages/SalesEntry.jsx`:
-  - Hospital dropdown (from Hospital model, filtered by BDM tags)
-  - Date picker (shows OPENING_AR or SALES_LINE routing indicator)
-  - CSI number input
-  - "Scan CSI" button → opens camera → runs OCR → pre-fills form (connects to Phase 1 OCR)
-  - Add line items: product dropdown → auto-fills unit + price → BDM enters qty → line_total auto-computes
-  - FIFO batch display: shows recommended batch, option to override with reason dropdown
-  - Totals: invoice total, VAT, net of VAT
-  - Submit
-- [ ] Commit: `"feat(ui): sales entry page with ocr, fifo, and auto-vat"`
+  - **Data entry grid** (spreadsheet-like table for fast encoding):
+    - Columns: Hospital, CSI Date, CSI#, Product, Qty, Unit, Unit Price, Line Total (auto), Status
+    - Auto-fills: BDM/Territory (from logged-in user), Unit/Price (from ProductMaster), LineTotal (qty × price), TaxTag (from product vat_status)
+    - Free typing — no per-keystroke validation, no lag, no popups
+    - Add row, delete row, paste rows — all instant
+  - **"Scan CSI" button** -> opens camera -> runs OCR -> pre-fills a new row (connects to Phase 1 OCR)
+  - **FIFO batch display:** shows recommended batch when product selected, option to override with reason dropdown
+  - **Status column:** color-coded per row — gray=DRAFT, green=VALID, red=ERROR, blue=POSTED
+  - **Action buttons (bottom bar):**
+    - "Validate Sales" -> POST /api/erp/sales/validate -> updates row colors + shows error list
+    - "Submit Sales" -> POST /api/erp/sales/submit -> only enabled when all rows VALID
+    - "Re-open Sales" -> POST /api/erp/sales/reopen -> only visible for POSTED rows
+  - **Error panel:** collapsible panel showing validation errors with row references (e.g., "Row 3: Qty exceeds stock for Dexavit — available: 15, requested: 20")
+  - **Mobile layout:** card-per-row on phone (each sales line is a card), swipe to delete draft rows
+- [ ] Commit: `"feat(ui): sales entry page with validate-submit-reopen workflow"`
 
 ### 3.7 — Sales List Page
 - [ ] Create `frontend/src/erp/pages/SalesList.jsx`:
@@ -542,11 +586,11 @@
 
 ---
 
-## PHASE 5 — COLLECTIONS & AR
-**Goal:** Collection session with hard gates, CWT, commission, partner insurance, AR aging, SOA.
+## PHASE 5 — COLLECTIONS & AR + CREDIT LIMITS + DUNNING
+**Goal:** Collection session with hard gates, SAP-style document lifecycle, CWT, commission, partner insurance, AR aging, credit limits, dunning, and SOA.
 
 ### 5.1 — Collection Model & Services
-- [ ] Create `backend/erp/models/Collection.js` — full schema per PRD
+- [ ] Create `backend/erp/models/Collection.js` — full schema per PRD with DRAFT/VALID/ERROR/POSTED/DELETION_REQUESTED lifecycle fields
 - [ ] Create `backend/erp/services/cwtCalc.js` — CWT formula
 - [ ] Create `backend/erp/services/commissionCalc.js` — commission per CSI
 - [ ] Create `backend/erp/services/arEngine.js` — AR open, aging, collection rate
@@ -556,11 +600,29 @@
 ### 5.2 — Collection Controller & Routes
 - [ ] Create `backend/erp/controllers/collectionController.js`
 - [ ] Create `backend/erp/routes/collectionRoutes.js`
-- [ ] Endpoints: GET open CSIs, POST collection session, GET collections, GET AR open, GET AR aging, POST SOA
+- [ ] Endpoints: GET open CSIs, POST collection session (draft), POST validate, POST submit, POST reopen, GET collections, GET AR open, GET AR aging, POST SOA
 - [ ] Hard gate validation: CR photo + CSI photos + CWT (or N/A) + deposit slip required
+- [ ] Follow the same Validate -> Submit -> Re-open lifecycle from PRD Section 5.5
 - [ ] Commit: `"feat(erp): collection routes with hard gate validation"`
 
-### 5.3 — Collection & AR Pages
+### 5.3 — Credit Limit Management (SAP SD Credit Management)
+- [ ] Add `credit_limit` and `credit_limit_action` fields to Hospital schema
+- [ ] In sales validateSales: check hospital AR + new invoice vs credit_limit
+  - WARN action: validation passes with WARNING severity (orange indicator)
+  - BLOCK action: validation fails with ERROR severity (red, blocks submit)
+- [ ] Admin/Finance UI to set credit limits per hospital
+- [ ] Commit: `"feat(erp): credit limit management per hospital"`
+
+### 5.4 — Dunning / Collection Follow-Up (SAP FI-AR Dunning)
+- [ ] Create `backend/erp/services/dunningService.js`:
+  - Level 1 (>30 days): yellow indicator on AR aging
+  - Level 2 (>60 days): orange indicator + flag
+  - Level 3 (>90 days): red indicator + auto-generate SOA
+- [ ] Add dunning level to AR aging endpoint response
+- [ ] Display dunning indicators on AccountsReceivable.jsx
+- [ ] Commit: `"feat(erp): dunning levels for overdue collections"`
+
+### 5.5 — Collection & AR Pages
 - [ ] Create `frontend/src/erp/pages/CollectionSession.jsx` — multi-step wizard
 - [ ] Create `frontend/src/erp/pages/AccountsReceivable.jsx` — AR aging table
 - [ ] Create `frontend/src/erp/pages/SoaGenerator.jsx` — select hospital, preview, export
@@ -569,13 +631,13 @@
 ---
 
 ## PHASE 6 — EXPENSES
-**Goal:** SMER, Car Logbook, ORE, ACCESS, PRF/CALF.
+**Goal:** SMER, Car Logbook, ORE, ACCESS, and PRF/CALF with SAP-style draft -> validate -> post lifecycle.
 
 ### 6.1 — Expense Models
-- [ ] Create `backend/erp/models/SmerEntry.js` — daily entries, per diem tiers, totals
-- [ ] Create `backend/erp/models/CarLogbookEntry.js` — morning/night odometer, fuel, km split
-- [ ] Create `backend/erp/models/ExpenseEntry.js` — ORE and ACCESS with CALF rules
-- [ ] Create `backend/erp/models/PrfCalf.js` — payment request / cash advance
+- [ ] Create `backend/erp/models/SmerEntry.js` — daily entries, per diem tiers, totals, status lifecycle
+- [ ] Create `backend/erp/models/CarLogbookEntry.js` — morning/night odometer, fuel, km split, status lifecycle
+- [ ] Create `backend/erp/models/ExpenseEntry.js` — ORE and ACCESS with CALF rules and status lifecycle
+- [ ] Create `backend/erp/models/PrfCalf.js` — payment request / cash advance with status lifecycle
 - [ ] Commit: `"feat(erp): expense models (smer, car logbook, ore, access, prf, calf)"`
 
 ### 6.2 — Expense Services
@@ -587,6 +649,7 @@
 ### 6.3 — Expense Controller & Routes
 - [ ] Create `backend/erp/controllers/expenseController.js`
 - [ ] Create `backend/erp/routes/expenseRoutes.js`
+- [ ] Endpoints follow Validate -> Submit -> Re-open pattern for transactional expense documents
 - [ ] Commit: `"feat(erp): expense routes"`
 
 ### 6.4 — Expense Pages
@@ -598,8 +661,8 @@
 
 ---
 
-## PHASE 7 — INCOME, PROFIT SHARING & PNL
-**Goal:** Payslip, territory P&L, profit sharing gate.
+## PHASE 7 — INCOME, PROFIT SHARING, PNL & YEAR-END CLOSE
+**Goal:** Payslip, territory P&L, profit sharing gate, and fiscal year closing controls.
 
 ### 7.1 — Income & PNL Models
 - [ ] Create `backend/erp/models/IncomeReport.js` — payslip per cycle
@@ -613,11 +676,21 @@
 - [ ] Create `backend/erp/services/profitShareEngine.js` — simple territory-level gate
 - [ ] Commit: `"feat(erp): income, pnl, and profit sharing calculation services"`
 
-### 7.3 — Income & PNL Routes
+### 7.3 — Year-End Close + Retained Earnings (SAP FI Year-End Close)
+- [ ] Create `backend/erp/services/yearEndClose.js`:
+  - Compute full-year PNL (Revenue − Expenses)
+  - Generate closing journal: zero out all revenue and expense accounts
+  - Transfer net income/loss to Retained Earnings
+  - Lock the closed fiscal year (prevent posting to closed year)
+- [ ] Admin trigger: "Close Year 20XX" button (requires Finance/Admin role)
+- [ ] Validation: all periods in the year must be POSTED before year-end close
+- [ ] Commit: `"feat(erp): year-end close with retained earnings transfer"`
+
+### 7.4 — Income & PNL Routes
 - [ ] Create controllers and routes for income, pnl, profit sharing
 - [ ] Commit: `"feat(erp): income and pnl routes"`
 
-### 7.4 — Income & PNL Pages
+### 7.5 — Income & PNL Pages
 - [ ] Create `frontend/src/erp/pages/Income.jsx` — payslip view
 - [ ] Create `frontend/src/erp/pages/Pnl.jsx` — territory P&L
 - [ ] Create `frontend/src/erp/pages/ProfitSharing.jsx` — per-product status
@@ -678,8 +751,8 @@
 
 ---
 
-## PHASE 9 — INTEGRATION & POLISH
-**Goal:** Wire up OCR to ERP forms, CRM data flows, Excel migration, end-to-end testing.
+## PHASE 9 — INTEGRATION, DOCUMENT FLOW & POLISH
+**Goal:** Wire up OCR to ERP forms, CRM data flows, document flow tracing, Excel migration, and end-to-end testing.
 
 ### 9.1 — OCR → ERP Form Connections
 - [ ] Sales entry: "Scan CSI" → OCR → pre-fill sales form
@@ -694,14 +767,28 @@
 - [ ] (Phase 3 CRM): SMER MD count from CRM visit logs (when CRM Phase C/D complete)
 - [ ] Commit: `"feat(integration): crm to erp data flows"`
 
-### 9.3 — Excel Migration Tools
+### 9.3 — Document Flow Tracking (SAP Document Flow)
+- [ ] Add `linked_events` array to TransactionEvent schema:
+  ```javascript
+  linked_events: [{ event_id: ObjectId, relationship: String }]
+  // relationship enum: 'SETTLES', 'CERTIFIES', 'DEPOSITS', 'REVERSES'
+  ```
+- [ ] Auto-link on collection: CR event -> CSI events it settles (SETTLES)
+- [ ] Auto-link on CWT: 2307 event -> CR event (CERTIFIES)
+- [ ] Auto-link on deposit: Deposit event -> CR event (DEPOSITS)
+- [ ] Auto-link on reversal: Reversal event -> original event (REVERSES)
+- [ ] Create `GET /api/erp/document-flow/:event_id` — returns full chain
+- [ ] UI: Document Flow view showing the linked chain visually (CSI -> CR -> 2307 -> Deposit)
+- [ ] Commit: `"feat(erp): document flow tracking with linked events"`
+
+### 9.4 — Excel Migration Tools
 - [ ] Admin page: bulk import Opening AR from Excel
 - [ ] Admin page: bulk import Product Master from Excel
 - [ ] Admin page: bulk import Inventory Opening Balances from Excel
 - [ ] Admin page: bulk import Hospital Master from Excel
 - [ ] Commit: `"feat(erp): excel migration import tools"`
 
-### 9.4 — End-to-End Testing
+### 9.5 — End-to-End Testing
 - [ ] Full flow: create sale → stock drops → create collection → AR drops → commission computed → SMER filled → income generated → PNL computed
 - [ ] Mobile responsiveness on all ERP pages
 - [ ] Permission checks: BDM=own territory, Admin=all, CEO=view only
@@ -710,7 +797,7 @@
 
 ---
 
-## PHASE 10+ — FUTURE (POST AUGUST 22)
+## PHASE 10+ — FUTURE (SAP-EQUIVALENT IMPROVEMENTS, POST AUGUST 22)
 
 ### 10.1 — Per-Product Profit Share Eligibility
 - [ ] 3 conditions: ≥2 hospitals, ≥1 MD tagged, 3 consecutive months
@@ -728,22 +815,58 @@
 ### 10.5 — Accounting Module (Separate Contract)
 - [ ] COA, journals, 4-view P&L, VAT filing, AP module
 
+### 10.6 — Recurring Journal Templates (SAP FI Recurring Documents)
+- [ ] Template model: name, frequency (monthly/quarterly), line items, auto_post flag
+- [ ] Scheduler: auto-generate journal entries on schedule
+- [ ] Admin UI to create/edit/deactivate templates
+
+### 10.7 — Cost Center Dimension (SAP CO Cost Centers)
+- [ ] Add optional `cost_center_id` to TransactionEvent and SalesLine schemas
+- [ ] Cost Center master: code, name, parent_cost_center, is_active
+- [ ] Reports filterable by cost center
+
+### 10.8 — Budget vs Actual (SAP CO Planning)
+- [ ] Budget model: cost_center/bdm, period, category, budgeted_amount
+- [ ] Actual aggregation from TransactionEvents
+- [ ] Variance report: budget − actual, % variance, alerts when >10% over
+
+### 10.9 — Three-Way Matching (SAP MM Invoice Verification)
+- [ ] Match PO (purchase order) -> GRN (goods received) -> Supplier Invoice
+- [ ] Discrepancy detection: qty mismatch, price mismatch
+- [ ] Approval workflow for unmatched items
+
+### 10.10 — Per-Module Period Locks (SAP Posting Period Variant)
+- [ ] PeriodLock model: module, year, month, is_locked, locked_by, locked_at
+- [ ] Enforce in all POST/PUT endpoints: reject posting to locked periods
+- [ ] Finance UI to lock/unlock periods per module
+
+### 10.11 — Batch Posting with IDs (SAP Batch Input)
+- [ ] Bulk submit endpoint: POST /api/erp/sales/batch-submit
+- [ ] Accept array of document IDs, validate all, post all atomically
+- [ ] Rollback on any failure (MongoDB transaction)
+
+### 10.12 — Data Archival (SAP Data Archiving)
+- [ ] Archive function: move closed-period data to Archive collection
+- [ ] Keep current + prior 2 months live
+- [ ] Log archive batch ID for traceability
+- [ ] Admin UI: trigger archive, view archive batches, restore if needed
+
 ---
 
 ## PHASE SUMMARY
 
 | Phase | Name | Tasks | Est. Duration |
 |-------|------|-------|--------------|
-| 0 | Add ERP Scaffold | 38 | 1-2 days |
+| 0 | Add ERP Scaffold | 38 | 1-2 days ✅ |
 | 1 | OCR Engine (client priority) | 90 | 2-3 weeks |
 | 2 | Shared Models & Settings | 43 | 1-2 weeks |
-| 3 | Sales Module | 21 | 2 weeks |
+| 3 | Sales Module (SAP Park→Check→Post) | 28 | 2-3 weeks |
 | 4 | Inventory Module | 13 | 1-2 weeks |
-| 5 | Collections & AR | 15 | 2-3 weeks |
-| 6 | Expenses | 17 | 2 weeks |
-| 7 | Income & PNL | 14 | 1-2 weeks |
-| 8 | Dashboard & Reports | 12 | 1 week |
-| 9 | Integration & Polish | 19 | 2 weeks |
-| 10+ | Future | 6 | Post-launch |
+| 5 | Collections & AR + Credit Limits + Dunning | 22 | 2-3 weeks |
+| 6 | Expenses (with document lifecycle) | 17 | 2 weeks |
+| 7 | Income, PNL & Year-End Close | 18 | 1-2 weeks |
+| 8 | Dashboard & Reports (BOSS-Style) | 12 | 1 week |
+| 9 | Integration, Document Flow & Polish | 24 | 2 weeks |
+| 10+ | Future (SAP-equivalent improvements) | 13 | Post-launch |
 
-**Total pre-launch: 282 tasks across 10 phases → ~16-20 weeks → August 22, 2026 target**
+**Total pre-launch: ~305 tasks across 10 phases → ~18-22 weeks → August 22, 2026 target**
