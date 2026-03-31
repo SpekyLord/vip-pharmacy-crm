@@ -776,6 +776,8 @@ const mdCount = todayVisits.length;  // auto-populates SMER
 - VIP Client (Doctor) profiles → MD partner validation for profit share
 - Hospital/outlet from Doctor profiles → shared Hospital master
 - Product assignments → product catalog context
+- **Schedule data → ERP Dashboard "Engagements" card** (completed vs target entries for current cycle)
+- **Doctor list → ERP Dashboard "VIP Clients" bottom tab** (filtered by BDM's assigned regions via `Region.getDescendantIds()`)
 
 **ERP → CRM data flows (same database):**
 - Stock on hand → BDM sees availability in CRM
@@ -823,6 +825,96 @@ The following client PRD modules are preserved in full but deferred to the Accou
 - Expense breakdown (5 components), commission per product
 - Profit share status per product, streak tracking
 - Combined CRM metrics (call rate, visit compliance) + ERP financials
+
+### 13.5 ERP Dashboard Layout (BOSS App Reference)
+
+> **UI Inspiration:** BOSS ERP app (Play Store). Adapted for VIP platform with CRM integration.
+> **Client Direction:** Use SAP, NetSuite, or QuickBooks as standard references for ERP patterns.
+
+The ERP dashboard is the central hub for BDMs and Admins. It follows a mobile-first card layout with four distinct sections.
+
+#### Section 1 — Top Action Buttons (4 quick-access)
+
+| Position | Label | Target | Icon Style |
+|----------|-------|--------|------------|
+| 1 | **CRM** | `/bdm` (BDM) or `/admin` (Admin) — link back to CRM dashboard | Arrow/link icon |
+| 2 | **Sales** | `/erp/sales` — Sales entry and list | Cart/invoice icon |
+| 3 | **Expenses** | `/erp/expenses` — SMER, Car Logbook, ORE, ACCESS | Wallet/pay icon |
+| 4 | **Collections** | `/erp/collections` — Collection session and AR | Receipt/accept icon |
+
+These replace the generic module cards from the Phase 0 placeholder.
+
+#### Section 2 — Summary Cards ("Remainders")
+
+Four key financial indicators displayed as large cards with amounts in PHP.
+
+| Order | Label | Source / Formula | Notes |
+|-------|-------|-----------------|-------|
+| 1 | **Total Sales** | `SalesLine.aggregate({ status: 'ACTIVE' }, sum: invoice_total)` | All-time or filtered by period |
+| 2 | **AR (Accounts Receivable)** | Total Sales − Total Collections | Computed from SalesLine and Collection aggregations |
+| 3 | **Value of Stocks on Hand** | `InventoryLedger.aggregate` (sum of running_balance × ProductMaster.purchase_price per BDM) | 3rd position per client request |
+| 4 | **Engagements** | Visited vs Target from CRM Schedule (completed entries / total entries for current cycle) | **CRM Integration** — reads from Schedule model |
+
+**Removed from BOSS layout:** "Total net assets" — not applicable to BDM-level view.
+
+#### Section 3 — Month-to-Date Metrics
+
+Four metrics showing current month performance, displayed below the summary cards.
+
+| Metric | Source | Query Filter |
+|--------|--------|-------------|
+| **Sales** | SalesLine sum (invoice_total) | `csi_date` in current calendar month, status = ACTIVE |
+| **Collections** | Collection sum (cr_amount) | `cr_date` in current calendar month, status = ACTIVE |
+| **Engagements** | CRM Schedule completed vs target | Current cycle's completed entries / total entries |
+| **Income** | Income calculation (earnings − deductions) | Current period (C1 or C2 of current month) |
+
+#### Section 4 — Bottom Navigation Tabs (4 data views)
+
+Persistent bottom tab bar for quick access to master data and reports.
+
+| Tab | Label | Content | Data Source |
+|-----|-------|---------|-------------|
+| 1 | **Product Master** | Available products in warehouse with stock levels | `ProductMaster` + `InventoryLedger` aggregation |
+| 2 | **Customer/Hospital (HEAT)** | Hospital list with HEAT fields (type, bed capacity, level, key contacts, engagement level) | `Hospital` model with HEAT fields |
+| 3 | **VIP Clients** | Current CRM client list for BDM's coverage area | **CRM Integration** — reads from `Doctor` model filtered by BDM's assigned regions |
+| 4 | **PNL** | Total Sales − Total Expenses (Year-to-Date) | `SalesLine` sum − all expense category sums, filtered by current calendar year |
+
+#### Dashboard API Endpoints (Phase 8)
+
+```javascript
+// GET /api/erp/dashboard/summary — Summary cards data
+{
+  total_sales: Number,           // SalesLine aggregate
+  accounts_receivable: Number,   // total_sales - total_collections
+  stock_on_hand_value: Number,   // InventoryLedger aggregate
+  engagements: {                 // CRM Schedule data
+    visited: Number,
+    target: Number,
+    rate: Number                 // percentage
+  }
+}
+
+// GET /api/erp/dashboard/mtd — Month-to-date metrics
+{
+  sales_mtd: Number,
+  collections_mtd: Number,
+  engagements_mtd: { visited: Number, target: Number, rate: Number },
+  income_mtd: Number
+}
+
+// GET /api/erp/dashboard/pnl-ytd — Year-to-date PNL
+{
+  total_sales_ytd: Number,
+  total_expenses_ytd: Number,
+  net_pnl_ytd: Number
+}
+```
+
+#### Mobile Layout
+
+- **Phone (primary device):** Single-column stack — action buttons (2×2 grid) → summary cards (scrollable) → MTD section → bottom tab bar (fixed)
+- **Tablet:** Two-column layout for summary cards, wider bottom tabs
+- **Desktop:** Full dashboard with side-by-side sections
 
 ---
 

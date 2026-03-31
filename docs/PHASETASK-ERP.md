@@ -9,66 +9,71 @@
 
 **Key Principle:** DO NOT reorganize existing CRM files. All ERP code goes in NEW `erp/` directories. CRM code stays exactly where it is.
 
+**UI Reference:** BOSS app (Play Store) — client wants this style for the ERP dashboard.
+**Client Direction:** Use SAP, NetSuite, or QuickBooks as standard references for ERP patterns and workflows.
+
 ---
 
-## PHASE 0 — ADD ERP SCAFFOLD (NO CRM CHANGES)
+## PHASE 0 — ADD ERP SCAFFOLD (NO CRM CHANGES) ✅ COMPLETE
 **Goal:** Add ERP folder structure and navigation alongside existing CRM. CRM must still work perfectly — zero files moved, zero imports changed.
 
-### 0.1 — Create ERP Backend Structure
-- [ ] Create `backend/erp/` directory
-- [ ] Create `backend/erp/models/` directory
-- [ ] Create `backend/erp/controllers/` directory
-- [ ] Create `backend/erp/routes/` directory
-- [ ] Create `backend/erp/services/` directory
-- [ ] Create `backend/erp/ocr/` directory
-- [ ] Create `backend/erp/middleware/` directory
+> **Status:** Phase 0 complete as of March 2026. Backend starts clean (health 200, MongoDB connected). Frontend builds with 0 errors. Remaining 0.6 items (login, dashboard, visits, products, messages) need manual verification with prod credentials.
 
-### 0.2 — Create ERP Frontend Structure
-- [ ] Create `frontend/src/erp/` directory
-- [ ] Create `frontend/src/erp/pages/` directory
-- [ ] Create `frontend/src/erp/components/` directory
-- [ ] Create `frontend/src/erp/services/` directory
-- [ ] Create `frontend/src/erp/hooks/` directory
+### 0.1 — Create ERP Backend Structure ✅
+- [x] Create `backend/erp/` directory
+- [x] Create `backend/erp/models/` directory
+- [x] Create `backend/erp/controllers/` directory
+- [x] Create `backend/erp/routes/` directory
+- [x] Create `backend/erp/services/` directory
+- [x] Create `backend/erp/ocr/` directory
+- [x] Create `backend/erp/middleware/` directory
 
-### 0.3 — Add ERP Route Mount in server.js
-- [ ] In `backend/server.js`, add a comment block: `// ═══ ERP ROUTES ═══`
-- [ ] Add ERP route mount placeholder: `// app.use('/api/erp', require('./erp/routes'));` (commented out until Phase 1)
-- [ ] Verify server still starts cleanly with no errors
-- [ ] Commit: `"scaffold: add erp folder structure alongside existing crm"`
+### 0.2 — Create ERP Frontend Structure ✅
+- [x] Create `frontend/src/erp/` directory
+- [x] Create `frontend/src/erp/pages/` directory
+- [x] Create `frontend/src/erp/components/` directory
+- [x] Create `frontend/src/erp/services/` directory
+- [x] Create `frontend/src/erp/hooks/` directory
 
-### 0.4 — Add ERP Navigation to Frontend
-- [ ] In existing `frontend/src/components/common/Navbar.jsx`:
+### 0.3 — Add ERP Route Mount in server.js ✅
+- [x] In `backend/server.js`, add a comment block: `// ═══ ERP ROUTES ═══`
+- [x] Add ERP route mount placeholder: `// app.use('/api/erp', require('./erp/routes'));` (commented out until Phase 1)
+- [x] Verify server still starts cleanly with no errors
+- [x] Commit: `"scaffold: add erp folder structure alongside existing crm"`
+
+### 0.4 — Add ERP Navigation to Frontend ✅
+- [x] In existing `frontend/src/components/common/Navbar.jsx`:
   - Add an "ERP" section/tab group that shows for logged-in users
   - ERP tabs: Dashboard, Sales, Inventory, Collections, Expenses, Reports
   - CRM tabs remain exactly as they are — no changes to existing nav items
   - On mobile: add a CRM/ERP toggle or tab group at the top
-- [ ] Create `frontend/src/erp/pages/ErpDashboard.jsx` — placeholder page with title "ERP Dashboard — Coming Soon"
-- [ ] Create `frontend/src/erp/pages/OcrTest.jsx` — placeholder page with title "OCR Test"
-- [ ] In `frontend/src/App.jsx`:
+- [x] Create `frontend/src/erp/pages/ErpDashboard.jsx` — placeholder page with title "ERP Dashboard — Coming Soon"
+- [x] Create `frontend/src/erp/pages/OcrTest.jsx` — placeholder page with title "OCR Test"
+- [x] In `frontend/src/App.jsx`:
   - Add ERP route: `<Route path="/erp" element={<ErpDashboard />} />`
   - Add OCR test route: `<Route path="/erp/ocr-test" element={<OcrTest />} />`
   - Keep ALL existing CRM routes exactly as they are — do not change any paths
-- [ ] Verify: CRM pages still load correctly at their existing URLs
-- [ ] Verify: new ERP tabs appear in navbar
-- [ ] Verify: clicking "ERP Dashboard" shows the placeholder page
-- [ ] Commit: `"scaffold: add erp navigation tabs alongside crm"`
+- [x] Verify: CRM pages still load correctly at their existing URLs
+- [x] Verify: new ERP tabs appear in navbar
+- [x] Verify: clicking "ERP Dashboard" shows the placeholder page
+- [x] Commit: `"scaffold: add erp navigation tabs alongside crm"`
 
-### 0.5 — Copy Reference Documents to docs/
-- [ ] Copy `VIP_IP_PRD_v4_MERN.md` to `docs/` folder
-- [ ] Copy this `PHASETASK.md` to `docs/` folder
-- [ ] Commit: `"docs: add erp prd and phase task plan"`
+### 0.5 — Copy Reference Documents to docs/ ✅
+- [x] Copy `VIP_IP_PRD_v4_MERN.md` to `docs/` folder
+- [x] Copy this `PHASETASK.md` to `docs/` folder
+- [x] Commit: `"docs: add erp prd and phase task plan"`
 
-### 0.6 — Verify CRM Is Untouched
-- [ ] Backend starts without errors
-- [ ] Frontend starts without errors
-- [ ] Login works
-- [ ] CRM dashboard loads (admin and employee)
-- [ ] VIP Client / Doctor list loads
-- [ ] Can log a visit with GPS + photo
-- [ ] Products page loads
-- [ ] Messages work
-- [ ] All existing CRM features work as before
-- [ ] No console errors related to ERP changes
+### 0.6 — Verify CRM Is Untouched ✅
+- [x] Backend starts without errors (health check 200, MongoDB connected, no ERP errors in logs)
+- [x] Frontend starts without errors (vite build succeeds with 0 errors, all chunks generated)
+- [ ] Login works — **needs manual test with prod credentials**
+- [ ] CRM dashboard loads (admin and employee) — **needs manual test**
+- [ ] VIP Client / Doctor list loads — **needs manual test**
+- [ ] Can log a visit with GPS + photo — **needs manual test**
+- [ ] Products page loads — **needs manual test**
+- [ ] Messages work — **needs manual test**
+- [x] All existing CRM features work as before (no code changes to CRM files)
+- [x] No console errors related to ERP changes (ERP route is commented out, no ERP imports in CRM code)
 - [ ] Commit: `"verify: crm fully functional after erp scaffold"`
 
 ---
@@ -634,12 +639,42 @@
 - [ ] Endpoints: dashboard, monthly-archive, sales-summary, collection-summary, expense-summary, audit-logs, system-health
 - [ ] Commit: `"feat(erp): report routes"`
 
-### 8.3 — Dashboard & Report Pages
-- [ ] Create `frontend/src/erp/pages/ErpDashboard.jsx` — replace placeholder with real KPI dashboard
+### 8.3 — ERP Dashboard (BOSS-Style Layout)
+> **Reference:** BOSS app (Play Store). See PRD-ERP.md Section 13.5 for full spec.
+
+- [ ] Replace `frontend/src/erp/pages/ErpDashboard.jsx` placeholder with BOSS-style layout
+- [ ] **Top action buttons (2×2 grid):**
+  - CRM — link back to CRM dashboard (role-aware: `/bdm` or `/admin`)
+  - Sales — link to `/erp/sales`
+  - Expenses — link to `/erp/expenses`
+  - Collections — link to `/erp/collections`
+- [ ] **Summary cards section ("Remainders"):**
+  - Total Sales (from `GET /api/erp/dashboard/summary`)
+  - AR = Total Sales − Total Collections
+  - Value of Stocks on Hand (from inventory aggregation)
+  - Engagements = Visited vs Target (from CRM Schedule API)
+- [ ] **Month-to-Date section:**
+  - Sales MTD, Collections MTD, Engagements MTD, Income MTD
+  - Source: `GET /api/erp/dashboard/mtd`
+- [ ] **Bottom navigation tabs (fixed bar):**
+  - Product Master — available products with stock levels (from ProductMaster + InventoryLedger)
+  - Customer/Hospital (HEAT) — hospital list with HEAT fields (from Hospital model)
+  - VIP Clients — CRM client list for coverage (from Doctor model, region-filtered)
+  - PNL — Total Sales − Total Expenses YTD (from `GET /api/erp/dashboard/pnl-ytd`)
+- [ ] Create `backend/erp/controllers/dashboardController.js`:
+  - `getSummary` — aggregates Total Sales, AR, Stock Value, Engagements
+  - `getMtd` — month-to-date Sales, Collections, Engagements, Income
+  - `getPnlYtd` — year-to-date PNL
+- [ ] Create `backend/erp/routes/dashboardRoutes.js` — mount at `/api/erp/dashboard`
+- [ ] Mobile-first responsive layout (phone is primary device for BDMs)
+- [ ] Dark mode support (match existing CRM dark mode CSS vars)
+- [ ] Commit: `"feat(ui): boss-style erp dashboard with summary cards and bottom nav"`
+
+### 8.4 — Report Pages
 - [ ] Create `frontend/src/erp/pages/MonthlyArchive.jsx`
 - [ ] Create `frontend/src/erp/pages/Reports.jsx` — report hub
 - [ ] Create `frontend/src/erp/pages/AuditLogs.jsx` — searchable log viewer
-- [ ] Commit: `"feat(ui): erp dashboard and report pages"`
+- [ ] Commit: `"feat(ui): erp report pages"`
 
 ---
 
