@@ -283,6 +283,7 @@
   - Odometer
   - Expense Receipt / OR
   - Undertaking of Receipt (GRN)
+  - Delivery Receipt / DR [v5 NEW]
 - [ ] Capture buttons:
   - "Take Photo" — `<input type="file" accept="image/*" capture="environment">` (opens camera on phone)
   - "Upload from Gallery" — `<input type="file" accept="image/*">` (opens file picker)
@@ -313,9 +314,23 @@
 - [ ] Fix any parsing issues found during testing
 - [ ] Commit: `"fix(ocr): parser adjustments from real document testing"`
 
-### 1.14 — Client Demo Ready
+### 1.15 — DR Parser (Delivery Receipt) [v5 UPGRADE]
+- [ ] Create `backend/erp/ocr/parsers/drParser.js`
+- [ ] Extract header fields:
+  - DR No: detect `DR No.` or `No.` followed by digits
+  - Date: detect `Date` followed by date pattern
+  - Hospital: detect delivery-to name
+- [ ] Extract line items using 3-line product parser (reuse CSI logic):
+  - Product name (brand, generic, dosage)
+  - Batch/Lot No, Expiry Date, Qty
+- [ ] Detect DR type: look for `SAMPLING` or `CONSIGNMENT` keywords/checkboxes
+- [ ] Add per-field confidence scoring
+- [ ] Test with actual VIP DR photos
+- [ ] Commit: `"feat(ocr): delivery receipt parser with sampling/consignment detection [v5]"`
+
+### 1.16 — Client Demo Ready
 - [ ] OCR test page is accessible at `/erp/ocr-test` after login
-- [ ] All 7 document types can be scanned
+- [ ] All 8 document types can be scanned
 - [ ] Confidence colors display correctly (black/orange/red)
 - [ ] Photo preview works on phone
 - [ ] Works on mobile (phone-first layout)
@@ -426,6 +441,49 @@
 - [ ] Create `frontend/src/erp/hooks/useErpApi.js` — wrapper around existing `useApi` hook with ERP base URL
 - [ ] Commit: `"feat(ui): erp frontend hooks for settings and api"`
 
+### 2.11 — Government Rates Collection [v5 NEW]
+- [ ] Create `backend/erp/models/GovernmentRates.js`:
+  - rate_type enum: SSS, PHILHEALTH, PAGIBIG, WITHHOLDING_TAX, EC, DE_MINIMIS
+  - effective_date, expiry_date (null = currently active)
+  - brackets array: [{ min_salary, max_salary, employee_share, employer_share, ec }]
+  - flat_rate, employee_split, employer_split, min_contribution, max_contribution
+  - benefit_limits array: [{ benefit_code, description, limit_amount, limit_period }]
+  - set_by, notes, created_at
+- [ ] Create seed script: `backend/erp/scripts/seedGovernmentRates.js`
+  - Seed SSS brackets (RA 11199 current schedule)
+  - Seed PhilHealth 5% rate with floor/ceiling (RA 11223)
+  - Seed PagIBIG rates (RA 9679)
+  - Seed BIR TRAIN withholding tax graduated brackets
+  - Seed De Minimis limits (rice ₱2,000/mo, clothing ₱6,000/yr, medical ₱1,500/mo, laundry ₱300/mo)
+- [ ] Create `backend/erp/controllers/governmentRatesController.js` — CRUD (Admin/Finance only)
+- [ ] Create `backend/erp/routes/governmentRatesRoutes.js`
+- [ ] Add to ERP router
+- [ ] Commit: `"feat(erp): government rates collection with philippine mandatories [v5]"`
+
+### 2.12 — Budget Allocation Collection [v5 NEW]
+- [ ] Create `backend/erp/models/BudgetAllocation.js`:
+  - entity_id, target_type enum: BDM, DEPARTMENT, EMPLOYEE
+  - target_id, target_name, period (YYYY-MM)
+  - components array: [{ component_code, budgeted_amount }]
+  - total_budget, approved_by, approved_at
+  - status enum: DRAFT, APPROVED, CLOSED
+- [ ] Create `backend/erp/controllers/budgetAllocationController.js` — CRUD (Admin/Finance only)
+- [ ] Create `backend/erp/routes/budgetAllocationRoutes.js`
+- [ ] Add to ERP router
+- [ ] Commit: `"feat(erp): budget allocation collection [v5]"`
+
+### 2.13 — Consignment Tracker Model [v5 NEW]
+- [ ] Create `backend/erp/models/ConsignmentTracker.js`:
+  - entity_id, bdm_id, hospital_id, hospital_name
+  - dr_ref, dr_date, product_id, item_key, batch_lot_no
+  - qty_delivered, qty_consumed (default 0), qty_remaining (auto-computed)
+  - conversions array: [{ csi_doc_ref, csi_date, qty_converted, sales_line_id }]
+  - days_outstanding (auto-computed), aging_status enum: OPEN, OVERDUE, COLLECTED, FORCE_CSI
+  - max_days_alert, max_days_force_csi
+  - dr_photo_url, status enum: ACTIVE, FULLY_CONSUMED, RETURNED, EXPIRED
+  - created_at (immutable), created_by
+- [ ] Commit: `"feat(erp): consignment tracker model for dr-csi reference chain [v5]"`
+
 ---
 
 ## PHASE 3 — SALES MODULE (SAP Park -> Check -> Post)
@@ -472,13 +530,15 @@
   - `validateSales` — **THE CORE ENDPOINT:**
     1. Rebuild inventory snapshot fresh from InventoryLedger
     2. Check every row: stock available, no duplicates, required fields, no future dates, DR=CR balance
-    3. Mark each row VALID or ERROR with actionable error messages
+    3. [v5] If CSI references DR (consignment sale): validate qty ≤ remaining consignment qty from ConsignmentTracker
+    4. Mark each row VALID or ERROR with actionable error messages
     4. Return: { valid_count, error_count, errors[] }
   - `submitSales` — post all VALID rows:
     1. Pre-check: if any rows not VALID, run validateSales first — block if errors
     2. Create TransactionEvent entries (immutable)
     3. Create InventoryLedger entries (FIFO consumption)
-    4. Set status=POSTED, posted_at, posted_by
+    4. [v5] CSI referencing DR (consigned items): skip inventory deduction (already deducted at DR stage), only create AR entry and update ConsignmentTracker qty_consumed
+    5. Set status=POSTED, posted_at, posted_by
     5. Return: { posted_count, event_ids[] }
   - `reopenSales` — un-post for corrections:
     1. Set status=DRAFT, increment reopen_count
@@ -588,6 +648,31 @@
   - Waybill photo upload (proof only)
   - Submit → pending Finance approval
 - [ ] Commit: `"feat(ui): grn entry page"`
+
+### 4.6 — Stock Visibility Rules (BDM Territory Isolation) [v5 NEW]
+- [ ] Enforce in stockService.js: BDM can ONLY see stock in their own territory (bdm_id filter auto-applied)
+- [ ] Admin/Finance can see all territories with territory filter dropdown
+- [ ] Inventory dashboard respects tenant filtering (bdm_id scope)
+- [ ] Commit: `"feat(erp): stock visibility isolation per bdm territory [v5]"`
+
+### 4.7 — DR Entry & Consignment Tracking [v5 NEW]
+- [ ] Create `backend/erp/controllers/consignmentController.js`:
+  - `createDR` — creates ConsignmentTracker entry + InventoryLedger DR_CONSIGNMENT or DR_SAMPLING movement
+  - `getDRsByBdm` — list DRs with aging status
+  - `getConsignmentPool` — open consignments per hospital
+  - `convertConsignment` — when CSI references DR, update qty_consumed, link sales_line_id
+- [ ] Create `backend/erp/routes/consignmentRoutes.js`
+- [ ] Add to ERP router
+- [ ] Create `frontend/src/erp/pages/DrEntry.jsx`:
+  - Hospital dropdown, product grid, qty, batch
+  - "Scan DR" button → OCR pre-fills (Phase 1.15)
+  - DR type toggle: Sampling vs Consignment
+  - Submit → creates ConsignmentTracker + inventory movement
+- [ ] Create `frontend/src/erp/pages/ConsignmentDashboard.jsx`:
+  - Open consignments per hospital with aging color coding
+  - OVERDUE highlighted red, FORCE_CSI highlighted orange
+  - Quick-action: "Convert to CSI" button per consignment line
+- [ ] Commit: `"feat(erp): dr entry and consignment tracking with csi-dr reference chain [v5]"`
 
 ---
 
@@ -802,55 +887,685 @@
 
 ---
 
-## PHASE 10+ — FUTURE (SAP-EQUIVALENT IMPROVEMENTS, POST AUGUST 22)
+## PHASE 10 — PEOPLE MASTER & PAYROLL [v5 NEW]
+**Goal:** Unified people directory covering all person types (BDMs, office staff, sales reps, consultants, directors), compensation profiles, payslip generation with Philippine government mandatories, and staging-then-post pattern.
 
-### 10.1 — Per-Product Profit Share Eligibility
+**Reference:** PRD v5 §10 (People Master & Payroll), §3.7 (Government Rates)
+
+### 10.1 — People Master Model
+- [ ] Create `backend/erp/models/PeopleMaster.js`:
+  - entity_id, person_type enum: BDM, EMPLOYEE, SALES_REP, CONSULTANT, DIRECTOR
+  - user_id (ref: User, optional — links to CRM user)
+  - full_name, first_name, last_name, position, department
+  - employment_type enum: REGULAR, PROBATIONARY, CONTRACTUAL, CONSULTANT, PARTNERSHIP
+  - date_hired, date_regularized, date_separated, date_of_birth
+  - civil_status enum: SINGLE, MARRIED, WIDOWED, SEPARATED
+  - government_ids: { sss_no, philhealth_no, pagibig_no, tin }
+  - bank_account: { bank, account_no, account_name }
+  - comp_profile_id (ref: CompProfile)
+  - is_active, status enum: ACTIVE, ON_LEAVE, SEPARATED
+  - created_at, created_by
+- [ ] Create seed script: `backend/erp/scripts/seedPeopleMaster.js` with sample data for each person_type
+- [ ] Commit: `"feat(erp): people master model covering all person types [v5]"`
+
+### 10.2 — Compensation Profile Model
+- [ ] Create `backend/erp/models/CompProfile.js`:
+  - person_id (ref: PeopleMaster), entity_id, effective_date
+  - salary_type enum: FIXED_SALARY, COMMISSION_BASED, HYBRID
+  - Fixed salary components: basic_salary, rice_allowance, clothing_allowance, medical_allowance, laundry_allowance, transport_allowance
+  - Incentive components: incentive_type enum (CASH, IN_KIND, COMMISSION, NONE), incentive_rate, incentive_description, incentive_cap
+  - BDM-specific: perdiem_rate, perdiem_days, km_per_liter, fuel_overconsumption_threshold
+  - tax_status enum: S, S1, S2, ME, ME1, ME2, ME3, ME4
+  - set_by, reason, created_at
+- [ ] Compensation history via new CompProfile documents with new effective_date
+- [ ] Commit: `"feat(erp): compensation profile model with three salary types [v5]"`
+
+### 10.3 — Government Deduction Calculators
+- [ ] Create `backend/erp/services/sssCalc.js`:
+  - `computeSSS(monthlySalary, effectiveDate)` — lookup SSS bracket from GovernmentRates, return { employee_share, employer_share, ec }
+- [ ] Create `backend/erp/services/philhealthCalc.js`:
+  - `computePhilHealth(monthlySalary, effectiveDate)` — 5% of salary, 50/50 split, floor/ceiling
+- [ ] Create `backend/erp/services/pagibigCalc.js`:
+  - `computePagIBIG(monthlySalary, effectiveDate)` — 1% or 2% employee, 2% employer, max MSC ₱5,000
+- [ ] Create `backend/erp/services/withholdingTaxCalc.js`:
+  - `computeWithholdingTax(annualTaxableIncome, taxStatus, effectiveDate)` — BIR TRAIN graduated rates
+  - Monthly application: divide annual brackets by 12
+  - Handle de minimis exemptions: amounts within limits are tax-exempt, excess added to taxable
+- [ ] Create `backend/erp/services/deMinimisCalc.js`:
+  - `computeDeMinimis(compProfile)` — return { taxable_excess, exempt_total } per benefit
+  - Compare allowance amounts vs limits from GovernmentRates (DE_MINIMIS type)
+- [ ] Test each calculator with known inputs/outputs from BIR tables
+- [ ] Commit: `"feat(erp): philippine government deduction calculators (sss, philhealth, pagibig, tax) [v5]"`
+
+### 10.4 — Payslip Model
+- [ ] Create `backend/erp/models/Payslip.js`:
+  - entity_id, person_id (ref: PeopleMaster), person_type, period (YYYY-MM), cycle (C1, C2, MONTHLY)
+  - earnings: { basic_salary, rice_allowance, clothing_allowance, medical_allowance, laundry_allowance, transport_allowance, incentive, overtime, smer, core_commission, profit_sharing, bonus, reimbursements, total_earnings }
+  - deductions: { sss_employee, philhealth_employee, pagibig_employee, withholding_tax, cash_advance, cc_payment, credit_payment, purchased_goods, other_deductions, over_payment, total_deductions }
+  - net_pay
+  - employer_contributions: { sss_employer, philhealth_employer, pagibig_employer, ec, total_employer }
+  - comp_profile_snapshot (Mixed — snapshot of rates used at computation time)
+  - gov_rates_snapshot (Mixed — snapshot of government rates applied)
+  - status enum: DRAFT, COMPUTED, REVIEWED, APPROVED, POSTED
+  - computed_at, reviewed_by, reviewed_at, approved_by, approved_at, posted_at
+  - created_at (immutable)
+- [ ] Commit: `"feat(erp): payslip model with earnings, deductions, employer contributions [v5]"`
+
+### 10.5 — Payslip Generation Service
+- [ ] Create `backend/erp/services/payslipGenerator.js`:
+  - `generateBdmPayslip(personId, period, cycle)` — pull SMER, CORE commission, profit sharing, reimbursements from existing ERP data; apply BDM deductions (cash advance, CC, etc.)
+  - `generateEmployeePayslip(personId, period)` — pull CompProfile, compute gross (basic + allowances + incentive), apply de minimis, compute government deductions (SSS, PhilHealth, PagIBIG, tax), compute net pay, compute employer contributions
+  - `generateSalesRepPayslip(personId, period)` — hybrid: basic + commission/incentive + government deductions
+  - `computeThirteenthMonth(personId, year)` — (total basic salary earned in year) / 12, pro-rata for < 12 months, tax-exempt up to ₱90,000
+  - Each generator snapshots comp_profile and gov_rates at computation time
+- [ ] Commit: `"feat(erp): payslip generation service for bdm, employee, and sales rep [v5]"`
+
+### 10.6 — Payroll Controller & Routes (Staging-Then-Post)
+- [ ] Create `backend/erp/controllers/payrollController.js`:
+  - `computePayroll` — generate payslips for all active people in period, status=COMPUTED
+  - `getPayrollStaging` — list all COMPUTED payslips for review
+  - `reviewPayslip` — Finance marks individual payslip as REVIEWED
+  - `approvePayslip` — Finance marks REVIEWED payslip as APPROVED
+  - `postPayroll` — post all APPROVED payslips: create journal entries (DR: Salaries/Allowances/PerDiem/Commission/ProfitShare, CR: SSS/PhilHealth/PagIBIG/Tax Payables + Cash/Bank)
+  - `getPayslip` — single payslip detail view
+  - `getPayslipHistory` — payslip history per person
+  - `computeThirteenthMonth` — year-end 13th month computation
+- [ ] Create `backend/erp/routes/payrollRoutes.js`:
+  - POST `/compute` — computePayroll (Admin/Finance)
+  - GET `/staging` — getPayrollStaging (Admin/Finance)
+  - POST `/:id/review` — reviewPayslip (Finance)
+  - POST `/:id/approve` — approvePayslip (Finance)
+  - POST `/post` — postPayroll (Finance)
+  - GET `/:id` — getPayslip
+  - GET `/history/:personId` — getPayslipHistory
+  - POST `/thirteenth-month` — computeThirteenthMonth (Finance, annual)
+- [ ] Add to ERP router
+- [ ] Commit: `"feat(erp): payroll controller with staging-then-post workflow [v5]"`
+
+### 10.7 — People & Payroll Frontend Pages
+- [ ] Create `frontend/src/erp/pages/PeopleList.jsx`:
+  - Table: name, type, department, position, status, compensation type
+  - Filters: person_type, department, status
+  - Click → detail view
+  - Add/edit person (Admin/Finance only)
+- [ ] Create `frontend/src/erp/pages/PersonDetail.jsx`:
+  - Personal info, government IDs, bank account
+  - Compensation profile history (timeline view)
+  - Payslip history list
+- [ ] Create `frontend/src/erp/pages/PayrollRun.jsx`:
+  - Period selector, "Compute Payroll" button
+  - Staging table: person, gross, deductions, net, status
+  - Row-level review/approve buttons (Finance)
+  - "Post All Approved" button
+  - Summary: total gross, total deductions, total net, total employer contributions
+- [ ] Create `frontend/src/erp/pages/PayslipView.jsx`:
+  - Formatted payslip display (printable)
+  - Earnings breakdown, deductions breakdown, employer contributions
+  - Snapshot of rates used (for audit)
+- [ ] Create `frontend/src/erp/pages/ThirteenthMonth.jsx`:
+  - Year selector, computation table, approve/post workflow
+- [ ] Add routes to App.jsx: `/erp/people`, `/erp/people/:id`, `/erp/payroll`, `/erp/payslip/:id`, `/erp/thirteenth-month`
+- [ ] Add navbar items: People, Payroll under ERP section
+- [ ] Commit: `"feat(ui): people master and payroll pages with staging workflow [v5]"`
+
+---
+
+## PHASE 11 — VIP ACCOUNTING ENGINE [v5 NEW]
+**Goal:** Full double-entry accounting with Chart of Accounts, Journal Entry engine, Trial Balance, 4-View P&L, VAT/CWT compliance, Cashflow Statement, Fixed Assets, Loans, Owner Equity, and Month-End Close procedure.
+
+**Reference:** PRD v5 §11 (VIP Accounting Engine), §3.8 (COA)
+
+### 11.1 — Chart of Accounts Model & Seed
+- [ ] Create `backend/erp/models/ChartOfAccounts.js`:
+  - entity_id, account_code (unique per entity), account_name
+  - account_type enum: ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+  - account_subtype (String), normal_balance enum: DEBIT, CREDIT
+  - bir_flag enum: BOTH, INTERNAL, BIR (default BOTH)
+  - is_active, parent_code
+  - Compound unique index: { entity_id, account_code }
+- [ ] Create seed script: `backend/erp/scripts/seedCOA.js`:
+  - Seed all accounts from PRD §11.1 ranges (1000-8200):
+    - 1000-1014: Cash & Bank (RCBC, SBC, MBTC, UB, Cash on Hand)
+    - 1100-1220: Receivables (AR Trade, AR BDM, Input VAT, CWT Receivable)
+    - 1200: Inventory
+    - 2000-2400: Liabilities (AP Trade, Output VAT, SSS/PhilHealth/PagIBIG/Tax Payables, CC lines)
+    - 3000-3200: Equity (Owner Capital, Drawings, Retained Earnings)
+    - 4000-4200: Revenue (Sales Vatable, Sales Exempt, Other Income)
+    - 5000-5300: Cost of Sales (COGS, BDM Commission, Profit Share)
+    - 6000-7100: Operating Expenses (Salaries, Allowances, Per Diem, Marketing, ACCESS, Transport, etc.)
+    - 8000-8200: BIR-Only (Personal Expense BIR, Owner Advance Exp, BDM Advance Exp)
+- [ ] Create `backend/erp/controllers/coaController.js` — CRUD (Finance only), list with filters
+- [ ] Create `backend/erp/routes/coaRoutes.js`
+- [ ] Add to ERP router
+- [ ] Commit: `"feat(erp): chart of accounts model with full account code seed [v5]"`
+
+### 11.2 — Journal Entry Model
+- [ ] Create `backend/erp/models/JournalEntry.js`:
+  - entity_id, bdm_id (optional — null for company-level)
+  - je_number (auto-increment per entity), je_date, period (YYYY-MM)
+  - description, source_module enum: SALES, COLLECTION, EXPENSE, COMMISSION, AP, PAYROLL, DEPRECIATION, INTEREST, PEOPLE_COMP, VAT, OWNER, MANUAL
+  - lines array: [{ account_code, account_name, debit, credit, description, bdm_id, cost_center }]
+  - bir_flag enum: BOTH, INTERNAL, BIR (default BOTH)
+  - vat_flag enum: VATABLE, EXEMPT, ZERO, N/A (default N/A)
+  - total_debit, total_credit
+  - status enum: DRAFT, POSTED, VOID
+  - posted_by, posted_at, corrects_je_id (ref: JournalEntry), is_reversal (Boolean)
+  - created_by, created_at (immutable)
+- [ ] Pre-save validation: when status=POSTED, |total_debit - total_credit| must be <= 0.01
+- [ ] JE number auto-increment service
+- [ ] Commit: `"feat(erp): journal entry model with double-entry validation [v5]"`
+
+### 11.3 — Journal Entry Engine Service
+- [ ] Create `backend/erp/services/journalEngine.js`:
+  - `createJournal(entityId, data)` — create JE in DRAFT
+  - `postJournal(jeId)` — validate DR=CR, set POSTED
+  - `reverseJournal(jeId, reason)` — SAP Storno: create new JE with opposite amounts, corrects_je_id pointing to original; original stays POSTED
+  - `getJournalsByPeriod(entityId, period)` — list with filters
+  - `getGeneralLedger(entityId, accountCode, dateRange)` — all JE lines for an account
+- [ ] Create `backend/erp/services/autoJournal.js`:
+  - `journalFromSale(salesLine)` — DR: 1100 AR Trade, CR: 4000 Sales Revenue + 2100 Output VAT
+  - `journalFromCollection(collection)` — DR: 1010-1014 Cash/Bank, CR: 1100 AR Trade
+  - `journalFromCWT(cwtEntry)` — DR: 1220 CWT Receivable, CR: 1100 AR Trade
+  - `journalFromExpense(expense, type)` — DR: 6XXX Expense, CR: 1110 AR BDM Advances
+  - `journalFromCommission(commission)` — DR: 5100 BDM Commission, CR: 1110 AR BDM Advances
+  - `journalFromPayroll(payslip)` — DR: 6000/6050/6100/5100/5200, CR: 2200-2230 + Cash/Bank
+  - `journalFromAP(supplierInvoice)` — DR: 1200 Inventory + 1210 Input VAT, CR: 2000 AP Trade
+  - `journalFromDepreciation(deprnEntry)` — DR: 7000 Depreciation Exp, CR: Accumulated Depreciation
+  - `journalFromInterest(interestEntry)` — DR: 7050 Interest Exp, CR: Loan Payable
+  - `journalFromOwnerEquity(equityEntry)` — infusion or drawing
+- [ ] Commit: `"feat(erp): journal entry engine with auto-journal from all modules [v5]"`
+
+### 11.4 — VAT Ledger & CWT Ledger Models
+- [ ] Create `backend/erp/models/VatLedger.js`:
+  - entity_id, period, vat_type enum: OUTPUT, INPUT
+  - source_module enum: COLLECTION, SUPPLIER_INVOICE
+  - source_doc_ref, source_event_id, hospital_or_vendor, tin
+  - gross_amount, vat_amount
+  - finance_tag enum: PENDING, INCLUDE, EXCLUDE, DEFER (default PENDING)
+  - tagged_by, tagged_at, created_at (immutable)
+- [ ] Create `backend/erp/models/CwtLedger.js`:
+  - entity_id, bdm_id, period, hospital_id, hospital_tin
+  - cr_no, cr_date, cr_amount, cwt_rate, cwt_amount, atc_code
+  - quarter enum: Q1, Q2, Q3, Q4; year
+  - created_at (immutable)
+- [ ] Commit: `"feat(erp): vat ledger and cwt ledger models [v5]"`
+
+### 11.5 — VAT & CWT Services
+- [ ] Create `backend/erp/services/vatService.js`:
+  - `createVatEntry(data)` — auto-created when collection or supplier invoice posted
+  - `tagVatEntry(entryId, tag, userId)` — Finance tags INCLUDE/EXCLUDE/DEFER
+  - `getVatLedger(entityId, period)` — list with finance_tag filter
+  - `computeVatReturn2550Q(entityId, quarter, year)` — Output VAT (INCLUDE) - Input VAT (INCLUDE) = Net VAT Payable
+- [ ] Create `backend/erp/services/cwtService.js`:
+  - `createCwtEntry(data)` — auto-created when collection with CWT posted
+  - `getCwtLedger(entityId, period)` — list
+  - `computeCwt2307Summary(entityId, quarter, year)` — per hospital per quarter
+- [ ] Commit: `"feat(erp): vat and cwt compliance services with finance tagging [v5]"`
+
+### 11.6 — Trial Balance Service
+- [ ] Create `backend/erp/services/trialBalanceService.js`:
+  - `generateTrialBalance(entityId, period)` — aggregate all POSTED JE lines by account_code
+  - Return: per account { account_code, account_name, total_debit, total_credit, net_balance, balance_direction }
+  - Balance status: NORMAL (matches expected normal_balance) or ABNORMAL
+  - Bottom-line check: sum(all debits) == sum(all credits)
+- [ ] Commit: `"feat(erp): trial balance generation from posted journal entries [v5]"`
+
+### 11.7 — Four-View P&L Service
+- [ ] Create `backend/erp/services/pnlService.js`:
+  - `generatePnlInternal(entityId, period)` — includes BIR_FLAG=BOTH and INTERNAL entries
+  - `generatePnlBir(entityId, period)` — includes BIR_FLAG=BOTH and BIR entries, adds 8000+ deductions
+  - `generateVatReturn(entityId, quarter, year)` — from VAT Ledger INCLUDE entries
+  - `generateCwtSummary(entityId, quarter, year)` — from CWT Ledger
+  - Each P&L: Revenue, Cost of Sales, Gross Profit (GP%), Operating Expenses, Operating Income (OP%), Other Income, Net Income (Net%)
+- [ ] Commit: `"feat(erp): four-view pnl (internal, bir, vat 2550q, cwt 2307) [v5]"`
+
+### 11.8 — Cashflow Statement Service
+- [ ] Create `backend/erp/services/cashflowService.js`:
+  - `generateCashflow(entityId, period)`:
+    - Operating: collections, supplier payments, expense payments, tax payments
+    - Investing: asset purchases, asset disposals
+    - Financing: owner infusions, owner drawings, loan proceeds, loan repayments
+    - Net change, opening cash, closing cash
+  - Source: aggregate from POSTED journal entries hitting cash/bank accounts (1010-1014)
+- [ ] Create `backend/erp/models/CashflowStatement.js` — persisted snapshot per period
+- [ ] Commit: `"feat(erp): cashflow statement generation [v5]"`
+
+### 11.9 — Fixed Assets & Depreciation
+- [ ] Create `backend/erp/models/FixedAsset.js`:
+  - entity_id, asset_code, asset_name, category
+  - acquisition_date, acquisition_cost, useful_life_months, salvage_value
+  - depreciation_method (default STRAIGHT_LINE)
+  - accumulated_depreciation, net_book_value
+  - status enum: ACTIVE, DISPOSED, FULLY_DEPRECIATED
+- [ ] Create `backend/erp/services/depreciationService.js`:
+  - `computeDepreciation(entityId, period)` — for all ACTIVE assets: monthly = (cost - salvage) / useful_life_months; output to staging
+  - `getDepreciationStaging(entityId, period)` — list pending entries
+  - `approveDepreciation(entryIds)` — mark approved
+  - `postDepreciation(entityId, period)` — create JEs for approved entries
+- [ ] Commit: `"feat(erp): fixed assets and depreciation with staging pattern [v5]"`
+
+### 11.10 — Loans & Amortization
+- [ ] Create `backend/erp/models/LoanMaster.js`:
+  - entity_id, loan_code, lender, purpose
+  - principal, annual_rate, term_months, start_date
+  - monthly_payment, total_interest, outstanding_balance
+  - status enum: ACTIVE, PAID, RESTRUCTURED
+- [ ] Create `backend/erp/services/loanService.js`:
+  - `computeInterest(entityId, period)` — for all ACTIVE loans: monthly interest and principal split; output to staging
+  - `getInterestStaging(entityId, period)` — list pending entries
+  - `approveInterest(entryIds)` — mark approved
+  - `postInterest(entityId, period)` — create JEs for approved entries
+- [ ] Commit: `"feat(erp): loans and amortization with staging pattern [v5]"`
+
+### 11.11 — Owner Equity Ledger
+- [ ] Create `backend/erp/models/OwnerEquityEntry.js`:
+  - entity_id, entry_type enum: INFUSION, DRAWING
+  - amount, bank_account, bir_flag, description
+  - entry_date, recorded_by, created_at (immutable)
+- [ ] Create `backend/erp/services/ownerEquityService.js`:
+  - `recordInfusion(data)` — DR: Cash/Bank, CR: 3000 Owner Capital
+  - `recordDrawing(data)` — DR: 3100 Owner Drawings, CR: Cash/Bank
+  - `getEquityLedger(entityId)` — running balance
+- [ ] Commit: `"feat(erp): owner equity ledger with journal posting [v5]"`
+
+### 11.12 — Month-End Close Controller (29-Step SOP)
+- [ ] Create `backend/erp/services/monthEndClose.js`:
+  - `runPhase1DataCollection(entityId, period)` — Steps 1-6: pull journals, GRN, stock, expenses, payslips, commissions
+  - `runPhase2Processing(entityId, period)` — Steps 7-9: match GRN→PO, rebuild FIFO, compute COGS
+  - `runPhase3JournalPosting(entityId, period)` — Steps 10-13: post expenses, commissions, AP, VAT journals
+  - `runPhase4TaxCompliance(entityId, period)` — Steps 14-15: build VAT + CWT ledgers
+  - `runPhase5FinancialReports(entityId, period)` — Steps 16-17: Trial Balance, P&L (Internal + BIR), AR, AP
+  - `runPhase6ReviewStaging(entityId, period)` — Steps 18-20: compute depreciation, interest, people comp staging
+  - `postStagedItems(entityId, period)` — Steps 23-25: post approved depreciation, interest, people comp
+  - `runPhase7Finalize(entityId, period)` — Steps 26-29: cashflow, bank recon, verify TB, lock period
+  - `runAutoClose(entityId, period)` — execute Steps 1-17 automatically with progress tracking
+  - `getCloseProgress(entityId, period)` — return step status (PENDING/RUNNING/COMPLETE/ERROR per step)
+- [ ] Create `backend/erp/controllers/monthEndCloseController.js`
+- [ ] Create `backend/erp/routes/monthEndCloseRoutes.js`
+- [ ] Commit: `"feat(erp): month-end close procedure (29-step sop) [v5]"`
+
+### 11.13 — Accounting Controller & Routes
+- [ ] Create `backend/erp/controllers/accountingController.js`:
+  - Journal entry CRUD, posting, reversal
+  - Trial Balance generation
+  - P&L generation (4 views)
+  - VAT Ledger with finance tagging
+  - CWT Ledger and 2307 summary
+  - Cashflow statement
+  - AR Consolidated, AP Consolidated
+- [ ] Create `backend/erp/routes/accountingRoutes.js`:
+  - POST `/journals` — create manual JE (Finance)
+  - GET `/journals` — list with filters
+  - POST `/journals/:id/post` — post JE (Finance)
+  - POST `/journals/:id/reverse` — reverse JE (Finance)
+  - GET `/trial-balance/:period` — generate trial balance
+  - GET `/pnl/:period?view=INTERNAL|BIR` — P&L views
+  - GET `/vat-ledger/:period` — VAT entries with tags
+  - POST `/vat-ledger/:id/tag` — Finance tags VAT entry
+  - GET `/vat-return/:quarter/:year` — 2550Q computation
+  - GET `/cwt-ledger/:period` — CWT entries
+  - GET `/cwt-summary/:quarter/:year` — 2307 summary
+  - GET `/cashflow/:period` — cashflow statement
+  - GET `/ar-consolidated` — AR across all BDMs
+  - GET `/ap-consolidated` — AP by due date
+- [ ] Add to ERP router
+- [ ] Commit: `"feat(erp): accounting routes for journals, tb, pnl, vat, cwt, cashflow [v5]"`
+
+### 11.14 — Accounting Frontend Pages
+- [ ] Create `frontend/src/erp/pages/ChartOfAccounts.jsx`:
+  - Hierarchical account list with code ranges
+  - Add/edit account (Finance only)
+  - Filter by type, subtype, active status
+- [ ] Create `frontend/src/erp/pages/JournalEntries.jsx`:
+  - List view with filters (period, source_module, status)
+  - Create manual JE form (balanced debit/credit lines)
+  - Post/Reverse actions
+  - Click → detail with all lines
+- [ ] Create `frontend/src/erp/pages/TrialBalance.jsx`:
+  - Period selector, account table with DR/CR/Net columns
+  - ABNORMAL balances highlighted in red
+  - Bottom-line balance check indicator
+- [ ] Create `frontend/src/erp/pages/ProfitAndLoss.jsx`:
+  - Period selector, view toggle (Internal / BIR / VAT 2550Q / CWT 2307)
+  - Revenue → COGS → Gross Profit → OpEx → Operating Income → Net Income
+  - Margin percentages displayed
+- [ ] Create `frontend/src/erp/pages/VatCompliance.jsx`:
+  - VAT Ledger table with PENDING/INCLUDE/EXCLUDE/DEFER tags
+  - Finance can click to tag entries
+  - VAT Return 2550Q computation view
+  - CWT Ledger and 2307 summary view
+- [ ] Create `frontend/src/erp/pages/CashflowStatement.jsx`:
+  - Period selector, Operating/Investing/Financing sections
+  - Net change and closing cash highlighted
+- [ ] Create `frontend/src/erp/pages/FixedAssets.jsx`:
+  - Asset register, depreciation schedule, staging view
+- [ ] Create `frontend/src/erp/pages/Loans.jsx`:
+  - Loan register, amortization schedule, staging view
+- [ ] Create `frontend/src/erp/pages/OwnerEquity.jsx`:
+  - Infusion/Drawing entry form, running balance ledger
+- [ ] Create `frontend/src/erp/pages/MonthEndClose.jsx`:
+  - 29-step checklist UI with progress indicators
+  - "Run Full Auto Close (Steps 1-17)" button
+  - Manual pause at Step 21 for Finance review
+  - Step-by-step execution with error display
+  - Period lock confirmation
+- [ ] Add routes to App.jsx: `/erp/coa`, `/erp/journals`, `/erp/trial-balance`, `/erp/pnl`, `/erp/vat`, `/erp/cashflow`, `/erp/fixed-assets`, `/erp/loans`, `/erp/owner-equity`, `/erp/month-end-close`
+- [ ] Add navbar items: Accounting section with sub-items
+- [ ] Commit: `"feat(ui): full accounting engine pages (coa, journals, tb, pnl, vat, cashflow, month-end close) [v5]"`
+
+---
+
+## PHASE 12 — PURCHASING & AP [v5 NEW]
+**Goal:** Vendor management, purchase orders, 3-way matching (PO → GRN → Supplier Invoice), AP ledger with aging, GRNI tracking, and AP payment recording.
+
+**Reference:** PRD v5 §15 (Purchasing & AP)
+
+### 12.1 — Vendor Master Model
+- [ ] Create `backend/erp/models/VendorMaster.js`:
+  - entity_id, vendor_code, vendor_name, tin, address
+  - contact_person, phone, email
+  - payment_terms (default 30), vat_status enum: VATABLE, EXEMPT, ZERO
+  - bank_account: { bank, account_no, account_name }
+  - is_active
+- [ ] Create seed script: `backend/erp/scripts/seedVendors.js` with sample vendors
+- [ ] Create `backend/erp/controllers/vendorController.js` — CRUD (Finance/Admin only)
+- [ ] Create `backend/erp/routes/vendorRoutes.js`
+- [ ] Add to ERP router
+- [ ] Commit: `"feat(erp): vendor master model [v5]"`
+
+### 12.2 — Purchase Order Model
+- [ ] Create `backend/erp/models/PurchaseOrder.js`:
+  - entity_id, po_number (auto-increment), vendor_id (ref: VendorMaster)
+  - po_date, expected_delivery_date
+  - line_items array: [{ product_id, item_key, qty_ordered, unit_price, line_total, qty_received (default 0), qty_invoiced (default 0) }]
+  - total_amount, vat_amount, net_amount
+  - status enum: DRAFT, APPROVED, PARTIALLY_RECEIVED, RECEIVED, CLOSED, CANCELLED
+  - approved_by, approved_at, created_by, created_at
+- [ ] Commit: `"feat(erp): purchase order model [v5]"`
+
+### 12.3 — Supplier Invoice Model & 3-Way Matching
+- [ ] Create `backend/erp/models/SupplierInvoice.js`:
+  - entity_id, vendor_id, invoice_ref, invoice_date, due_date
+  - po_id (ref: PurchaseOrder, optional for matching)
+  - line_items array: [{ product_id, item_key, qty_invoiced, unit_price, line_total, po_line_matched (Boolean), grn_line_matched (Boolean) }]
+  - total_amount, vat_amount, net_amount, input_vat
+  - match_status enum: UNMATCHED, PARTIAL_MATCH, FULL_MATCH, DISCREPANCY
+  - payment_status enum: UNPAID, PARTIAL, PAID
+  - status enum: DRAFT, VALIDATED, POSTED
+  - created_by, created_at
+- [ ] Create `backend/erp/services/threeWayMatch.js`:
+  - `matchInvoice(invoiceId)` — compare PO line → GRN line → Supplier Invoice line
+  - Check: qty match, price match (tolerance configurable)
+  - Return: { matched_lines[], discrepancy_lines[], unmatched_lines[] }
+  - Discrepancies require Finance approval before posting
+- [ ] Commit: `"feat(erp): supplier invoice model with 3-way matching engine [v5]"`
+
+### 12.4 — AP Ledger & Aging Service
+- [ ] Create `backend/erp/services/apService.js`:
+  - `getApLedger(entityId)` — all outstanding supplier invoices
+  - `getApAging(entityId)` — aging buckets: CURRENT, 1-30, 31-60, 61-90, 90+
+  - `getApConsolidated(entityId)` — grouped by vendor with totals
+  - `getGrni(entityId)` — goods received but not yet invoiced (GRN exists, no supplier invoice)
+- [ ] Commit: `"feat(erp): ap ledger, aging, and grni services [v5]"`
+
+### 12.5 — AP Payment Recording
+- [ ] Create `backend/erp/services/apPaymentService.js`:
+  - `recordApPayment(supplierInvoiceId, paymentData)` — creates payment record + JE: DR: 2000 AP Trade, CR: 1010-1014 Cash/Bank
+  - `getPaymentHistory(vendorId)` — payment history per vendor
+- [ ] Commit: `"feat(erp): ap payment recording with journal posting [v5]"`
+
+### 12.6 — Purchasing Controller & Routes
+- [ ] Create `backend/erp/controllers/purchasingController.js`:
+  - PO CRUD, PO approval, PO receipt (link to GRN)
+  - Supplier invoice CRUD, 3-way match trigger, posting
+  - AP ledger, aging, GRNI queries
+  - AP payment recording
+- [ ] Create `backend/erp/routes/purchasingRoutes.js`:
+  - POST `/vendors` — create vendor
+  - GET `/vendors` — list vendors
+  - PUT `/vendors/:id` — update vendor
+  - POST `/purchase-orders` — create PO
+  - GET `/purchase-orders` — list POs
+  - POST `/purchase-orders/:id/approve` — approve PO
+  - POST `/purchase-orders/:id/receive` — record receipt (links to GRN)
+  - POST `/supplier-invoices` — create supplier invoice
+  - POST `/supplier-invoices/:id/match` — trigger 3-way matching
+  - POST `/supplier-invoices/:id/post` — post invoice (creates AP + JE)
+  - GET `/ap-ledger` — AP outstanding
+  - GET `/ap-aging` — AP aging buckets
+  - GET `/grni` — goods received not invoiced
+  - POST `/ap-payments` — record payment
+- [ ] Add to ERP router
+- [ ] Commit: `"feat(erp): purchasing and ap routes [v5]"`
+
+### 12.7 — Purchasing & AP Frontend Pages
+- [ ] Create `frontend/src/erp/pages/VendorList.jsx`:
+  - Vendor table with search, add/edit vendor form
+- [ ] Create `frontend/src/erp/pages/PurchaseOrders.jsx`:
+  - PO list with status filter
+  - Create PO form: vendor dropdown, line items grid, totals
+  - Approve/Receive actions
+- [ ] Create `frontend/src/erp/pages/SupplierInvoices.jsx`:
+  - Invoice list, create form with PO linking
+  - 3-way match result display (matched/discrepancy indicators)
+  - Post action
+- [ ] Create `frontend/src/erp/pages/AccountsPayable.jsx`:
+  - AP aging table with color-coded buckets
+  - GRNI list
+  - Payment recording form
+- [ ] Add routes to App.jsx: `/erp/vendors`, `/erp/purchase-orders`, `/erp/supplier-invoices`, `/erp/accounts-payable`
+- [ ] Add navbar items under Purchasing section
+- [ ] Commit: `"feat(ui): purchasing and ap pages (vendors, pos, invoices, ap aging) [v5]"`
+
+---
+
+## PHASE 13 — BANKING & CASH [v5 NEW]
+**Goal:** Bank accounts master, bank reconciliation, credit card ledger, and bank statement import with auto-matching.
+
+**Reference:** PRD v5 §16 (Banking & Cash)
+
+### 13.1 — Bank Accounts Master (Enhance from Phase 2.6)
+- [ ] Verify `backend/erp/models/BankAccount.js` from Phase 2.6 has: entity_id, bank_code, bank_name, account_no, account_type, coa_code, is_active
+- [ ] Add fields if missing: opening_balance, current_balance (computed), statement_import_format
+- [ ] Create seed data for VIP banks: RCBC (1010), SBC (1011), MBTC (1012), UB (1013)
+- [ ] Commit: `"feat(erp): bank accounts master enhancement [v5]"`
+
+### 13.2 — Bank Reconciliation Model & Service
+- [ ] Create `backend/erp/models/BankStatement.js`:
+  - entity_id, bank_account_id, statement_date, period (YYYY-MM)
+  - entries array: [{ line_no, txn_date, description, reference, debit, credit, balance, match_status enum: UNMATCHED, MATCHED, RECONCILING_ITEM, je_id (ref: JournalEntry) }]
+  - closing_balance, uploaded_at, uploaded_by
+- [ ] Create `backend/erp/services/bankReconService.js`:
+  - `importStatement(bankAccountId, entries)` — parse and store bank statement
+  - `autoMatch(statementId)` — match bank entries to journal entries by: amount + date (±2 days) + reference
+  - `manualMatch(statementEntryIndex, jeId)` — Finance manually matches
+  - `getReconSummary(statementId)` — return: { matched[], unmatched_book[], unmatched_bank[], adjusted_book_balance, adjusted_bank_balance, difference }
+  - `finalizeRecon(statementId)` — lock reconciliation for period
+- [ ] Commit: `"feat(erp): bank reconciliation with auto-match [v5]"`
+
+### 13.3 — Credit Card Ledger
+- [ ] Verify `backend/erp/models/CreditCard.js` exists from Phase 2.6 (or create if not):
+  - entity_id, card_code, card_name, card_holder, bank, card_type, coa_code (2310-2315), credit_limit, is_active
+- [ ] Create `backend/erp/models/CreditCardTransaction.js`:
+  - entity_id, credit_card_id, txn_date, description
+  - amount, reference, linked_expense_id (ref: ExpenseEntry), linked_calf_id (ref: PrfCalf)
+  - status enum: PENDING, POSTED, PAID
+  - created_at
+- [ ] Create `backend/erp/services/creditCardService.js`:
+  - `getCardBalance(cardId)` — outstanding transactions
+  - `getCardLedger(cardId, period)` — transaction list
+  - `recordCardPayment(cardId, amount)` — creates JE: DR: 2310-2315 CC Payable, CR: 1010-1014 Cash/Bank
+- [ ] Commit: `"feat(erp): credit card ledger with payment tracking [v5]"`
+
+### 13.4 — Banking Controller & Routes
+- [ ] Create `backend/erp/controllers/bankingController.js`:
+  - Bank account CRUD, statement import, auto-match, manual match
+  - Reconciliation summary and finalization
+  - Credit card transactions, balances, payments
+- [ ] Create `backend/erp/routes/bankingRoutes.js`:
+  - GET `/bank-accounts` — list bank accounts
+  - POST `/bank-accounts` — create (Admin/Finance)
+  - POST `/statements/import` — upload bank statement CSV
+  - POST `/statements/:id/auto-match` — trigger auto-matching
+  - POST `/statements/:id/manual-match` — Finance manual match
+  - GET `/statements/:id/recon` — reconciliation summary
+  - POST `/statements/:id/finalize` — finalize recon
+  - GET `/credit-cards` — list cards with balances
+  - GET `/credit-cards/:id/ledger` — card transaction ledger
+  - POST `/credit-cards/:id/payment` — record card payment
+- [ ] Add to ERP router
+- [ ] Commit: `"feat(erp): banking and cash routes [v5]"`
+
+### 13.5 — Banking Frontend Pages
+- [ ] Create `frontend/src/erp/pages/BankAccounts.jsx`:
+  - Bank account list with balances, add/edit bank account
+- [ ] Create `frontend/src/erp/pages/BankReconciliation.jsx`:
+  - Period + bank selector
+  - Upload CSV button for bank statement
+  - "Auto-Match" button
+  - Side-by-side view: bank statement entries (left) vs book entries (right)
+  - Match status indicators: green=matched, red=unmatched
+  - Manual match: drag-drop or click-to-link
+  - Reconciliation summary: adjusted balances + difference
+  - "Finalize" button
+- [ ] Create `frontend/src/erp/pages/CreditCardLedger.jsx`:
+  - Card selector, transaction list, outstanding balance
+  - Link to related expense/CALF entries
+  - Payment recording form
+- [ ] Add routes to App.jsx: `/erp/bank-accounts`, `/erp/bank-recon`, `/erp/credit-cards`
+- [ ] Add navbar items under Banking section
+- [ ] Commit: `"feat(ui): banking pages (bank accounts, reconciliation, credit card ledger) [v5]"`
+
+---
+
+## PHASE 14 — NEW REPORTS & ANALYTICS [v5 NEW]
+**Goal:** Performance ranking, consolidated consignment aging, expense anomaly detection, fuel efficiency report, and cycle status dashboard.
+
+**Reference:** PRD v5 §14.6-14.10
+
+### 14.1 — Performance Ranking Report
+- [ ] Create `backend/erp/services/performanceRankingService.js`:
+  - `getNetCashRanking(entityId, period)` — ranks all BDMs and Sales Reps by Net Cash = Collections - Expenses; includes Sales, Collection %, Territory
+  - `getMomTrend(personId, periods?)` — 6-month rolling: Sales, Sales Growth %, Collections, Collection Growth %, Expenses, Expense Growth %
+  - `getSalesTracker(entityId, year)` — full year Jan-Dec by person, sorted by total descending
+  - `getCollectionsTracker(entityId, year)` — full year Jan-Dec by person, sorted by total descending
+- [ ] Commit: `"feat(erp): performance ranking service (net cash, mom trend, trackers) [v5]"`
+
+### 14.2 — Consolidated Consignment Aging Report
+- [ ] Create `backend/erp/services/consignmentReportService.js`:
+  - `getConsolidatedConsignmentAging(entityId)` — cross-BDM view: BDM, Territory, Hospital, DR#, DR Date, Product, Qty Delivered, Qty Consumed, Qty Remaining, Days Outstanding, Aging Status
+  - Sort: OVERDUE first, then FORCE_CSI, then OPEN, then COLLECTED
+  - Filterable by BDM, hospital, status
+  - Drill-down by BDM
+- [ ] Commit: `"feat(erp): consolidated consignment aging report [v5]"`
+
+### 14.3 — Expense Anomaly Detection
+- [ ] Create `backend/erp/services/expenseAnomalyService.js`:
+  - `detectAnomalies(entityId, period)` — compare current vs prior period per person per component (SMER, GasOfficial, Insurance, ACCESS, CoreComm)
+  - Flag >30% change (configurable via SETTINGS.EXPENSE_ANOMALY_THRESHOLD)
+  - `detectBudgetOverruns(entityId, period)` — for people with BudgetAllocation: actual vs budgeted per component, flag OVER_BUDGET
+  - Return: [{ person, component, prior_amount, current_amount, change_pct, flag: ALERT|OVER_BUDGET, budgeted (if applicable) }]
+  - Sorted by absolute change % descending
+- [ ] Commit: `"feat(erp): expense anomaly detection with budget tracking [v5]"`
+
+### 14.4 — Fuel Efficiency Report
+- [ ] Create `backend/erp/services/fuelEfficiencyService.js`:
+  - `getFuelEfficiency(entityId, period)` — per BDM: actual gas cost vs expected (official_km / km_per_liter * avg_price)
+  - Flag variance >30% as OVER_30_PCT
+  - Source: CarLogbookEntry data
+- [ ] Commit: `"feat(erp): fuel efficiency report [v5]"`
+
+### 14.5 — Cycle Status Dashboard Service
+- [ ] Create `backend/erp/services/cycleStatusService.js`:
+  - `getCycleStatus(entityId, period)` — per BDM: current payslip status (PENDING → GENERATED → REVIEWED → RETURNED → BDM_CONFIRMED → CREDITED)
+  - Completion % across all BDMs
+  - Behind-schedule list (not at expected status for date)
+  - Auto-timestamp tracking on status changes
+- [ ] Commit: `"feat(erp): cycle status dashboard service [v5]"`
+
+### 14.6 — New Report Routes
+- [ ] Add to `backend/erp/controllers/erpReportController.js`:
+  - `getPerformanceRanking` — net cash ranking + MoM trend + trackers
+  - `getConsignmentAging` — consolidated consignment aging
+  - `getExpenseAnomalies` — anomaly + budget overrun flags
+  - `getFuelEfficiency` — per-BDM fuel tracking
+  - `getCycleStatus` — payslip cycle progress
+- [ ] Add to `backend/erp/routes/erpReportRoutes.js`:
+  - GET `/performance-ranking/:period` — net cash ranking
+  - GET `/performance-ranking/trend/:personId` — MoM trend
+  - GET `/sales-tracker/:year` — annual sales tracker
+  - GET `/collections-tracker/:year` — annual collections tracker
+  - GET `/consignment-aging` — consolidated consignment aging
+  - GET `/expense-anomalies/:period` — anomaly detection
+  - GET `/fuel-efficiency/:period` — fuel efficiency
+  - GET `/cycle-status/:period` — cycle status dashboard
+- [ ] Add to ERP router
+- [ ] Commit: `"feat(erp): new report routes (ranking, consignment, anomaly, fuel, cycle) [v5]"`
+
+### 14.7 — New Report Frontend Pages
+- [ ] Create `frontend/src/erp/pages/PerformanceRanking.jsx`:
+  - Period selector, ranking table with Net Cash, Sales, Collection %
+  - Top 3 highlighted green, bottom 3 highlighted red
+  - Toggle: BDM vs Sales Rep filter
+  - MoM Trend: 6-month chart per person (expandable rows)
+  - Sales Tracker: full-year grid (Jan-Dec), sorted by total
+  - Collections Tracker: full-year grid (Jan-Dec), sorted by total
+- [ ] Create `frontend/src/erp/pages/ConsignmentAging.jsx`:
+  - Cross-BDM table with all consignment columns
+  - Color-coded aging: green=OPEN, orange=OVERDUE, red=FORCE_CSI
+  - BDM drill-down (click name → filtered view)
+  - Filters: BDM, hospital, aging status
+- [ ] Create `frontend/src/erp/pages/ExpenseAnomalies.jsx`:
+  - Period selector, anomaly table sorted by change %
+  - ALERT badge on >30% changes
+  - Budget vs Actual columns for budgeted people
+  - OVER_BUDGET badge
+- [ ] Create `frontend/src/erp/pages/FuelEfficiency.jsx`:
+  - Per-BDM table: actual vs expected gas cost, variance %
+  - >30% flagged in red
+- [ ] Create `frontend/src/erp/pages/CycleStatusDashboard.jsx`:
+  - Per-BDM status pipeline (visual progress indicators)
+  - Completion % bar chart
+  - Behind-schedule BDMs highlighted
+- [ ] Add routes to App.jsx: `/erp/performance-ranking`, `/erp/consignment-aging`, `/erp/expense-anomalies`, `/erp/fuel-efficiency`, `/erp/cycle-status`
+- [ ] Add navbar items under Reports section
+- [ ] Commit: `"feat(ui): new report pages (ranking, consignment aging, anomalies, fuel, cycle status) [v5]"`
+
+---
+
+## PHASE 15+ — FUTURE (SAP-EQUIVALENT IMPROVEMENTS, POST-LAUNCH)
+
+### 15.1 — Per-Product Profit Share Eligibility
 - [ ] 3 conditions: ≥2 hospitals, ≥1 MD tagged, 3 consecutive months
 - [ ] Streak tracking, deficit handling
 
-### 10.2 — CSI Allocation Control
+### 15.2 — CSI Allocation Control
 - [ ] Booklet master, weekly allocation, number validation
 
-### 10.3 — Consignment & DR Tracking
-- [ ] DR classification, consignment pool, aging alerts
-
-### 10.4 — Cycle Report Workflow
+### 15.3 — Cycle Report Workflow
 - [ ] GENERATED → REVIEWED → BDM_CONFIRMED → CREDITED
 
-### 10.5 — Advanced Accounting Module (Separate Contract)
-- [ ] Full COA, journals, 4-view P&L, VAT filing, AP module beyond the baseline journal rebuild / PNL push behaviors already preserved in the core ERP roadmap
-
-### 10.6 — Recurring Journal Templates (SAP FI Recurring Documents)
+### 15.4 — Recurring Journal Templates (SAP FI Recurring Documents)
 - [ ] Template model: name, frequency (monthly/quarterly), line items, auto_post flag
 - [ ] Scheduler: auto-generate journal entries on schedule
 - [ ] Admin UI to create/edit/deactivate templates
 
-### 10.7 — Cost Center Dimension (SAP CO Cost Centers)
+### 15.5 — Cost Center Dimension (SAP CO Cost Centers)
 - [ ] Add optional `cost_center_id` to TransactionEvent and SalesLine schemas
 - [ ] Cost Center master: code, name, parent_cost_center, is_active
 - [ ] Reports filterable by cost center
 
-### 10.8 — Budget vs Actual (SAP CO Planning)
-- [ ] Budget model: cost_center/bdm, period, category, budgeted_amount
-- [ ] Actual aggregation from TransactionEvents
-- [ ] Variance report: budget − actual, % variance, alerts when >10% over
-
-### 10.9 — Three-Way Matching (SAP MM Invoice Verification)
-- [ ] Match PO (purchase order) -> GRN (goods received) -> Supplier Invoice
-- [ ] Discrepancy detection: qty mismatch, price mismatch
-- [ ] Approval workflow for unmatched items
-
-### 10.10 — Per-Module Period Locks (SAP Posting Period Variant)
+### 15.6 — Per-Module Period Locks (SAP Posting Period Variant)
 - [ ] PeriodLock model: module, year, month, is_locked, locked_by, locked_at
 - [ ] Enforce in all POST/PUT endpoints: reject posting to locked periods
 - [ ] Finance UI to lock/unlock periods per module
 
-### 10.11 — Batch Posting with IDs (SAP Batch Input)
+### 15.7 — Batch Posting with IDs (SAP Batch Input)
 - [ ] Bulk submit endpoint: POST /api/erp/sales/batch-submit
 - [ ] Accept array of document IDs, validate all, post all atomically
 - [ ] Rollback on any failure (MongoDB transaction)
 
-### 10.12 — Data Archival (SAP Data Archiving)
+### 15.8 — Data Archival (SAP Data Archiving)
 - [ ] Archive function: move closed-period data to Archive collection
 - [ ] Keep current + prior 2 months live
 - [ ] Log archive batch ID for traceability
@@ -863,15 +1578,22 @@
 | Phase | Name | Tasks | Est. Duration |
 |-------|------|-------|--------------|
 | 0 | Add ERP Scaffold | 38 | 1-2 days ✅ |
-| 1 | OCR Engine (client priority) | 90 | 2-3 weeks |
-| 2 | Shared Models & Settings | 43 | 1-2 weeks |
-| 3 | Sales Module (SAP Park→Check→Post) | 28 | 2-3 weeks |
-| 4 | Inventory Module | 13 | 1-2 weeks |
+| 1 | OCR Engine (client priority) | ~97 | 2-3 weeks |
+| 2 | Shared Models & Settings | ~55 | 1-2 weeks |
+| 3 | Sales Module (SAP Park→Check→Post) | ~30 | 2-3 weeks |
+| 4 | Inventory Module + DR/Consignment | ~22 | 1-2 weeks |
 | 5 | Collections & AR + Credit Limits + Dunning | 22 | 2-3 weeks |
 | 6 | Expenses (with document lifecycle) | 17 | 2 weeks |
 | 7 | Income, PNL & Year-End Close | 18 | 1-2 weeks |
 | 8 | Dashboard & Reports (BOSS-Style) | 12 | 1 week |
 | 9 | Integration, Document Flow & Polish | 24 | 2 weeks |
-| 10+ | Future (SAP-equivalent improvements) | 13 | Post-launch |
+| 10 | People Master & Payroll [v5 NEW] | ~45 | 2-3 weeks |
+| 11 | VIP Accounting Engine [v5 NEW] | ~70 | 3-4 weeks |
+| 12 | Purchasing & AP [v5 NEW] | ~40 | 2-3 weeks |
+| 13 | Banking & Cash [v5 NEW] | ~30 | 1-2 weeks |
+| 14 | New Reports & Analytics [v5 NEW] | ~35 | 1-2 weeks |
+| 15+ | Future (SAP-equivalent improvements) | 8 | Post-launch |
 
-**Total pre-launch: ~305 tasks across 10 phases → ~18-22 weeks → August 22, 2026 target**
+**Total pre-launch: ~535 tasks across 15 phases → ~26-34 weeks**
+**Note: Phases 10-14 add ~220 tasks and ~10-14 weeks from PRD v5 (PNL Central live system integrations)**
+**Reference PRD:** `docs/VIP ERP PRD v5.md`
