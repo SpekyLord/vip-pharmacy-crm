@@ -83,48 +83,52 @@
 ## PHASE 1 — OCR ENGINE (CLIENT PRIORITY #1)
 **Goal:** Build a standalone OCR test page where the client can photograph VIP documents (CSI, CR, BIR 2307, gas receipts, odometer) and see extracted data. This is what the client wants to demo FIRST.
 
-**Prerequisites:** Google Vision API key, existing S3 bucket access (from CRM config/s3.js)
+**Prerequisites:** Google Cloud project with Vision API enabled, local ADC auth or service-account credentials, existing S3 bucket access (from CRM config/s3.js)
 
 ### 1.1 — Google Vision API Setup
-- [ ] Install `@google-cloud/vision` package: `cd backend && npm install @google-cloud/vision`
-- [ ] Add Google Vision credentials to `backend/.env`:
+- [x] Install `@google-cloud/vision` package: `cd backend && npm install @google-cloud/vision`
+- [x] Add Google Vision configuration to `backend/.env`:
   ```
-  GOOGLE_VISION_CREDENTIALS=path/to/service-account-key.json
+  GOOGLE_CLOUD_PROJECT_ID=your-project-id
+  GOOGLE_APPLICATION_CREDENTIALS=
+  GOOGLE_VISION_KEY_JSON=
+  GOOGLE_VISION_DEFAULT_FEATURE=DOCUMENT_TEXT_DETECTION
   ```
-  (or `GOOGLE_VISION_KEY_JSON` with inline JSON)
-- [ ] Create `backend/erp/ocr/visionClient.js`:
-  - Initialize Google Vision client from credentials
-  - Export `detectText(imageBuffer)` function that calls Vision API TEXT_DETECTION
+  Local development uses ADC (`gcloud auth application-default login`) by default; deployed environments can use `GOOGLE_APPLICATION_CREDENTIALS` or `GOOGLE_VISION_KEY_JSON`.
+- [x] Create `backend/erp/ocr/visionClient.js`:
+  - Initialize Google Vision client from ADC, service-account path, or inline JSON
+  - Export `detectText(imageBuffer)` function that calls the configured Vision OCR feature
+  - Default to `DOCUMENT_TEXT_DETECTION`, with per-request override support
   - Return: full text, words with bounding boxes, confidence scores per word
-- [ ] Test: call `detectText()` with a sample image, verify raw text returns
+- [x] Test: call `detectText()` with a sample image, verify raw text returns
 - [ ] Commit: `"feat(ocr): google vision api client setup"`
 
 ### 1.2 — S3 Document Upload for ERP
-- [ ] Create `backend/erp/services/documentUpload.js`:
+- [x] Create `backend/erp/services/documentUpload.js`:
   - Reuse existing `backend/config/s3.js` S3 client
   - Implement `uploadErpDocument(fileBuffer, fileName, bdmName, period, cycle, docType)`
   - S3 key format: `erp-documents/${bdmName}/${period}/${cycle}/${docType}/${fileName}`
   - Return the S3 URL
-- [ ] Test: upload a test image, verify it appears in S3 at correct path
+- [x] Test: upload a test image, verify it appears in S3 at correct path
 - [ ] Commit: `"feat(ocr): erp document upload service using existing s3 config"`
 
 ### 1.3 — Base OCR Processing Route
-- [ ] Create `backend/erp/routes/ocrRoutes.js`:
+- [x] Create `backend/erp/routes/ocrRoutes.js`:
   - POST `/process` — accepts multipart `photo` file + `docType` string
   - Uses existing `backend/middleware/auth.js` for authentication
-  - Uses existing `backend/middleware/upload.js` for file upload (or create new multer instance)
+  - Uses existing `backend/middleware/upload.js` for file upload
   - Flow: receive file → upload to S3 → send buffer to Vision API → return raw text + S3 URL
-- [ ] Create `backend/erp/routes/index.js` — ERP router that mounts all ERP sub-routes:
+- [x] Create `backend/erp/routes/index.js` — ERP router that mounts all ERP sub-routes:
   ```javascript
   const router = require('express').Router();
   router.use('/ocr', require('./ocrRoutes'));
   module.exports = router;
   ```
-- [ ] In `backend/server.js`, uncomment and add:
+- [x] In `backend/server.js`, uncomment and add:
   ```javascript
   app.use('/api/erp', require('./erp/routes'));
   ```
-- [ ] Test with Postman: POST `/api/erp/ocr/process` with a CSI photo, verify raw OCR text returns
+- [x] Test: POST `/api/erp/ocr/process` with a CSI photo, verify raw OCR text returns
 - [ ] Commit: `"feat(ocr): base ocr processing endpoint"`
 
 ### 1.4 — CSI Parser (Charge Sales Invoice)

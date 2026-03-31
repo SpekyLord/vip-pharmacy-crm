@@ -294,7 +294,7 @@ app.use('/api/notification-preferences', userLimiter, require('./routes/notifica
 app.use('/api/reports', userLimiter, require('./routes/reportRoutes'));
 
 // ═══ ERP ROUTES ═══
-// app.use('/api/erp', require('./erp/routes'));
+app.use('/api/erp', userLimiter, require('./erp/routes'));
 
 // 404 handler for undefined routes
 app.use(notFound);
