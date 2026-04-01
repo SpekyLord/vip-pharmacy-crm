@@ -75,13 +75,37 @@ function isSkipLine(line) {
 // ═══════════════════════════════════════════════════════════
 
 function extractInvoiceNo(lines) {
-  const text = lines.join('\n');
   // VIP: "Invoice N 004764", "Invoice No 008277"
-  const m1 = text.match(/Invoice\s*N[°o]?\s*[:.]?\s*(\d{3,})/i);
-  if (m1) return m1[1];
-  // MG: "No. 425", "⚫ No. 426", ". No. 424"
-  const m2 = text.match(/No\.?\s*(\d{3,})/i);
-  if (m2) return m2[1];
+  for (const line of lines) {
+    const m1 = line.match(/Invoice\s*N[°o]?\s*[:.]?\s*(\d{3,})/i);
+    if (m1) return m1[1];
+  }
+  // MG: "No. 425", "⚫ No. 426", ". No. 424" — but NOT BIR/accreditation/booklet lines
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (isBirLine(line)) continue;
+    if (/Accred|ATP|OCN|074AU|Bkl|Nos\.|Series/i.test(line)) continue;
+    const m2 = line.match(/No\.?\s*(\d{3,})/i);
+    if (m2) return m2[1];
+
+    // "No." on its own line — check previous and next lines for standalone number
+    if (/^\s*\.?\s*No\.?\s*$/i.test(line.trim())) {
+      // Check previous line
+      if (i > 0) {
+        const prevNum = lines[i - 1].trim().match(/(\d{3,})/);
+        if (prevNum && !isBirLine(lines[i - 1]) && !/Accred|ATP|OCN|074AU|Bkl/i.test(lines[i - 1])) {
+          return prevNum[1];
+        }
+      }
+      // Check next line
+      if (i + 1 < lines.length) {
+        const nextNum = lines[i + 1].trim().match(/(\d{3,})/);
+        if (nextNum && !isBirLine(lines[i + 1]) && !/Accred|ATP|OCN|074AU|Bkl|Date/i.test(lines[i + 1])) {
+          return nextNum[1];
+        }
+      }
+    }
+  }
   return null;
 }
 
@@ -100,37 +124,86 @@ function extractDate(lines) {
 }
 
 function extractHospital(lines) {
+  let chargedToValue = null;
+  let chargedToIdx = -1;
+
+  // Step 1: Find "Charged to" / "CHARGE TO:" and extract the name fragment
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/CHARGE[D]?\s*TO\s*[:;]?\s*(.*)/i);
+    const m = lines[i].match(/CHARGE[D]?\s*(?:TO|to)\s*[:;]?\s*(.*)/i);
     if (!m) continue;
-
-    const sameLine = m[1].trim();
-    // Same line: "Charged to Antique Medical Center"
-    if (sameLine.length > 3 && !/^(Invoice|Date|TIN|$)/i.test(sameLine)) {
-      // But skip if it's just a partial like "Antique" without "Medical Center"
-      return sameLine;
-    }
-
-    // Below — skip field labels, find hospital name
-    for (let j = i + 1; j <= Math.min(i + 10, lines.length - 1); j++) {
-      const c = lines[j].trim();
-      if (/^(Invoice|Date|TIN|Registered|Business|TERMS|_?Terms|N[°o]?\s*\d|No\.|CHARGE|Address|SC\/PWD|Qty|Unit|ARTICLES|Item\s*Desc|OSCA|San\s|Jose|aklan|Kalibo|Floilo|City|BS\s*AQUINO|DIPOLOG|OUNGAN)/i.test(c)) continue;
-      if (/^[:;.\s_-]*$/.test(c)) continue;
-      if (c.length < 3) continue;
-      if (/^\d+$/.test(c)) continue;
-
-      // Could be multi-line: "THE DOCTORS" + "HOSPITAL"
-      let hospital = c;
-      if (j + 1 < lines.length) {
-        const next = lines[j + 1].trim();
-        if (/^(HOSPITAL|MEDICAL|CLINIC|CENTER|INFIRMARY)/i.test(next)) {
-          hospital += ' ' + next;
-        }
-      }
-      return hospital;
-    }
+    chargedToValue = m[1].trim();
+    chargedToIdx = i;
     break;
   }
+
+  if (chargedToIdx < 0) return null;
+
+  // Step 2: Search ALL lines (not just adjacent) for hospital/medical/clinic keywords
+  // OCR two-column layout may put "Medical Center" many lines away from "Charged to"
+  const hospitalSuffixes = [];
+  for (let j = 0; j < lines.length; j++) {
+    if (j === chargedToIdx) continue;
+    const c = lines[j].trim();
+    // Match lines that ARE hospital name parts
+    if (/^(Medical\s*Center|Hospital|Clinic|Infirmary|Health\s*Care|Cooperative|Multi.?Purpose)/i.test(c)) {
+      hospitalSuffixes.push({ idx: j, text: c });
+    }
+    // Also match "XXX Medical Center", "XXX Hospital" etc. as standalone
+    if (/Medical\s*Center|Hospital|Clinic|Infirmary|Health\s*Care|Cooperative/i.test(c) &&
+        !/MG\s*AND|MILLIGRAM|INCORPORATED|Lawaan|Balantang|Jaro|Iloilo\s*City|Mandurriao|VAT|TIN/i.test(c)) {
+      // This line itself IS a hospital name
+      if (c.length > 5 && c.length < 80) {
+        hospitalSuffixes.push({ idx: j, text: c });
+      }
+    }
+  }
+
+  // Step 3: Combine "Charged to" value with the closest hospital suffix
+  if (chargedToValue && chargedToValue.length > 2 && !/^(Invoice|Date|TIN|$)/i.test(chargedToValue)) {
+    // Check if the chargedToValue already contains a full hospital name
+    if (/Hospital|Medical|Clinic|Infirmary|Health\s*Care|Cooperative/i.test(chargedToValue)) {
+      return chargedToValue;
+    }
+
+    // Find the closest hospital suffix and combine
+    if (hospitalSuffixes.length > 0) {
+      // Sort by distance from chargedTo line
+      hospitalSuffixes.sort((a, b) => Math.abs(a.idx - chargedToIdx) - Math.abs(b.idx - chargedToIdx));
+      const suffix = hospitalSuffixes[0];
+      // If the suffix starts with "Medical Center", "Hospital", etc., append to chargedToValue
+      if (/^(Medical|Hospital|Clinic|Infirmary|Health|Cooperative|Multi)/i.test(suffix.text)) {
+        return chargedToValue + ' ' + suffix.text;
+      }
+      // If the suffix is a full hospital name already, return it
+      return suffix.text;
+    }
+
+    // No suffix found — return the raw value
+    return chargedToValue;
+  }
+
+  // Step 4: Fallback — search for standalone hospital name lines
+  for (let j = chargedToIdx + 1; j <= Math.min(chargedToIdx + 15, lines.length - 1); j++) {
+    const c = lines[j].trim();
+    if (/^(Invoice|Date|TIN|Registered|Business|TERMS|_?Terms|N[°o]?\s*\d|No\.|CHARGE|SC\/PWD|Qty|Unit|ARTICLES|Item\s*Desc|OSCA|Address)/i.test(c)) continue;
+    if (/^(MG\s*AND|MILLIGRAM|B4\s*L7|Lawaan|Balantang|VAT\s*Reg|Vios|VIP\s*Inc)/i.test(c)) continue;
+    if (/^[:;.\s_-]*$/.test(c)) continue;
+    if (c.length < 3) continue;
+    if (/^\d+$/.test(c)) continue;
+
+    let hospital = c;
+    // Check next lines for continuation
+    for (let k = j + 1; k <= Math.min(j + 3, lines.length - 1); k++) {
+      const next = lines[k].trim();
+      if (/^(HOSPITAL|MEDICAL|CLINIC|CENTER|INFIRMARY|COOPERATIVE|MULTI.?PURPOSE|HEALTH\s*CARE)/i.test(next)) {
+        hospital += ' ' + next;
+      } else if (/Medical\s*Center|Health\s*Care/i.test(next)) {
+        hospital += ' ' + next;
+      } else break;
+    }
+    return hospital;
+  }
+
   return null;
 }
 
@@ -196,8 +269,8 @@ function extractProductBlocks(lines) {
       if (isSkipLine(c.line)) continue;
       if (/^\d[\d.,\s]*$/.test(c.line)) continue;
       if (isBirLine(c.line)) continue;
-      // Skip address/location lines
-      if (/^(San\s|Jose|aklan|Kalibo|Floilo|City|BS\s*AQUINO|Medical\s*Center|Antique$)/i.test(c.line)) continue;
+      // Skip address/location/hospital continuation lines
+      if (/^(San\s|Jose|aklan|Kalibo|Floilo|City|BS\s*AQUINO|Medical\s*Center|Antique$|HOSPITAL$|INFIRMARY$|CLINIC$|CENTER$|COOPERATIVE$)/i.test(c.line)) continue;
 
       // Try parentheses match
       let pMatch = c.line.match(RE_PRODUCT_PARENS) || c.line.match(RE_PRODUCT_BROKEN);
@@ -283,17 +356,32 @@ function assignProductNumbers(lines, blocks, footerIdx) {
   // Step 1: Collect ALL number entries before footer
   const numEntries = [];
 
+  // Track lines to skip (e.g., line after standalone "Exp:")
+  const skipLines = new Set();
+  for (let i = 0; i < footerIdx; i++) {
+    // If this line is just "Exp:" or "Exp", skip the next line too (it's a date like "11/2027")
+    if (/^\s*Exp(?:iry)?\.?\s*[-:]?\s*$/i.test(lines[i].trim()) && i + 1 < footerIdx) {
+      skipLines.add(i + 1);
+    }
+  }
+
   for (let i = 0; i < footerIdx; i++) {
     const line = lines[i].trim();
+    if (skipLines.has(i)) continue;
 
     // Skip TIN patterns
     if (/\d{3}[-\s]\d{3}[-\s]\d{3}/i.test(line)) continue;
-    // Skip batch/expiry lines
+    // Skip batch/expiry lines — including "Exp: 11/2027", "Exp. Date: 2029/11/29"
     if (RE_BATCH.test(line) || RE_LOT.test(line)) continue;
-    if (/^Exp/i.test(line)) continue;
+    if (/Exp(?:iry)?\.?\s*[-:]?\s*(?:Date)?/i.test(line)) continue;
+    // Skip date-like patterns: "11/2027", "2029/11/29", "17/06/2027"
+    if (/^\d{1,2}\/\d{2,4}$/.test(line) || /^\d{4}\/\d{1,2}\/\d{1,2}$/.test(line)) continue;
+    if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(line)) continue;
     // Skip label lines
     if (isSkipLine(line)) continue;
     if (isBirLine(line)) continue;
+    // Skip entity header lines (MG AND CO address, TIN, etc.)
+    if (/^(MG\s*AND|MILLIGRAM|B4\s*L7|Lawaan|VAT\s*Reg|Charged|Address|CHARGE\s*SALES|SC\/PWD|No\.$|Date\s|TIN$|Terms|OSCA|Medical\s*Center|San\s+Jose)/i.test(line)) continue;
     // Skip lines with substantial non-numeric text (>5 alpha chars)
     const alphaOnly = line.replace(/[\d₱P£#.,\-\s()/]/g, '').trim();
     if (alphaOnly.length > 5) continue;
@@ -321,8 +409,28 @@ function assignProductNumbers(lines, blocks, footerIdx) {
       blocks[p].unit_price = values[p * 3 + 1];
       blocks[p].amount = values[p * 3 + 2];
     }
+  } else if (values.length > productCount * 2 && values.length < productCount * 3) {
+    // Not enough for 3 per product, but more than 2 per product
+    // Strategy: give 3 numbers to first product(s), 2 to the rest
+    // E.g., 5 values for 2 products: [50, 540, 27000, 720, 36000] → product1 gets 3, product2 gets 2
+    const extraNumbers = values.length - productCount * 2;
+    let cursor = 0;
+    for (let p = 0; p < productCount; p++) {
+      if (p < extraNumbers) {
+        // This product gets 3 numbers (qty, price, amount)
+        blocks[p].qty = values[cursor];
+        blocks[p].unit_price = values[cursor + 1];
+        blocks[p].amount = values[cursor + 2];
+        cursor += 3;
+      } else {
+        // This product gets 2 numbers (price + amount, qty missing from OCR)
+        blocks[p].unit_price = values[cursor];
+        blocks[p].amount = values[cursor + 1];
+        cursor += 2;
+      }
+    }
   } else if (values.length >= productCount * 2) {
-    // 2 numbers per product (qty + amount, no unit price)
+    // Exactly 2 numbers per product (qty + amount, no unit price)
     for (let p = 0; p < productCount; p++) {
       blocks[p].qty = values[p * 2];
       blocks[p].amount = values[p * 2 + 1];
@@ -353,6 +461,36 @@ function assignProductNumbers(lines, blocks, footerIdx) {
       } else if (tv.length === 1) {
         block.amount = tv[0];
       }
+    }
+  }
+
+  // Step 3: Semantic validation — qty × unit_price should ≈ amount
+  // If mismatch, try to fix by swapping or recomputing
+  for (const block of blocks) {
+    if (block.qty != null && block.unit_price != null && block.amount != null) {
+      const expected = block.qty * block.unit_price;
+      const tolerance = block.amount * 0.05;
+      if (Math.abs(expected - block.amount) > tolerance && tolerance > 1) {
+        // Try: maybe amount and unit_price are swapped
+        if (block.qty > 0 && Math.abs(block.amount / block.qty - block.unit_price) > 10) {
+          // Check if amount is actually the unit_price and unit_price is the amount
+          const altExpected = block.qty * block.amount;
+          if (Math.abs(altExpected - block.unit_price) < block.unit_price * 0.05) {
+            // Swap unit_price and amount
+            const tmp = block.unit_price;
+            block.unit_price = block.amount;
+            block.amount = tmp;
+          }
+        }
+      }
+    }
+    // If we have qty and amount but no unit_price, compute it
+    if (block.qty != null && block.amount != null && block.unit_price == null && block.qty > 0) {
+      block.unit_price = parseFloat((block.amount / block.qty).toFixed(2));
+    }
+    // If we have qty and unit_price but no amount, compute it
+    if (block.qty != null && block.unit_price != null && block.amount == null) {
+      block.amount = parseFloat((block.qty * block.unit_price).toFixed(2));
     }
   }
 }

@@ -328,6 +328,25 @@
 - [ ] Test with actual VIP DR photos
 - [ ] Commit: `"feat(ocr): delivery receipt parser with sampling/consignment detection [v5]"`
 
+### 1.14 — OCR Smart Dropdowns (Fallback Lookups)
+**Goal:** When OCR returns LOW confidence or empty for key fields, replace the empty text input with a searchable dropdown populated from known data. Reduces manual typing and ensures data consistency.
+
+- [ ] Create `backend/erp/models/ProductMaster.js` lookup seed (minimal version — just brand_name, generic_name, dosage, is_active)
+  - Full ProductMaster schema is in Phase 2.4; this is a lightweight seed for OCR autocomplete only
+- [ ] Create `backend/erp/models/Hospital.js` lookup seed (minimal version — just name, aliases, is_active)
+  - Full Hospital schema is in Phase 2.3; this is a lightweight seed for OCR autocomplete only
+- [ ] Create seed scripts with initial product and hospital data from existing VIP records
+- [ ] Create lookup API endpoints:
+  - GET `/api/erp/lookups/products?q=nebu` — searchable product autocomplete
+  - GET `/api/erp/lookups/hospitals?q=metro` — searchable hospital autocomplete
+- [ ] Update `frontend/src/erp/pages/OcrTest.jsx`:
+  - When `hospital` field confidence is LOW or empty → render searchable dropdown (fetches from hospital lookup)
+  - When `brand_name` or `generic_name` field confidence is LOW or empty → render searchable dropdown (fetches from product lookup)
+  - Dropdown uses debounced search (300ms) with typeahead filtering
+  - Selected value replaces the OCR-extracted value and sets confidence to HIGH
+- [ ] Fuzzy matching: use case-insensitive substring match on backend; Phase 2 can upgrade to Levenshtein/FuseJS
+- [ ] Commit: `"feat(ocr): smart dropdown fallbacks for low-confidence hospital and product fields"`
+
 ### 1.16 — Client Demo Ready
 - [ ] OCR test page is accessible at `/erp/ocr-test` after login
 - [ ] All 8 document types can be scanned
@@ -336,6 +355,24 @@
 - [ ] Works on mobile (phone-first layout)
 - [ ] Brief user instructions shown on the page (e.g., "Select document type, take a photo or upload, review and correct extracted data")
 - [ ] Ready to demo to client: "Open the app → go to OCR Test → scan a CSI → see the magic"
+
+### 1.17 — OR Parser Extraction-Only Refactor
+**Goal:** Enforce clean Layer 1 (extraction-only) boundary. Remove all accounting classification logic from parsers. Parsers should NEVER know about COA codes, expense categories, or journal entries — they only extract what the document says.
+
+**Architecture principle:** Separation of extraction from classification follows SAP's pattern — SAP Document Capture (VIM) extracts fields, then Vendor Master + automatic account determination classifies. Our parsers = VIM extraction; classification moves to Phase 2.15.
+
+- [ ] Remove `EXPENSE_COA_MAP` constant from `backend/erp/ocr/parsers/orParser.js`
+- [ ] Remove `EXPENSE_CATEGORIES` constant and `PH_VAT_RATE` constant from `orParser.js`
+- [ ] Remove expense category auto-detection block (courier/parking/toll/hotel/food/office keyword matching)
+- [ ] Remove `expense_category`, `coa_code`, `coa_name`, `available_categories`, and `vat_computed` from parser return object
+- [ ] Keep `KNOWN_COURIERS` list — it aids supplier_name extraction accuracy, not classification
+- [ ] Move VAT auto-computation logic to classification layer (Phase 2.15) — parser should extract VAT if readable, return null if not
+- [ ] Fix remaining OR parser bugs:
+  - Series No. on previous line (OCR reads number above label)
+  - VATable Sales / VAT Amount two-column layout extraction
+  - Date picking printer's "Date Issued" instead of invoice date
+- [ ] Verify all 8 parsers return extraction-only fields (no accounting codes anywhere)
+- [ ] Commit: `"refactor(ocr): remove classification logic from OR parser — extraction-only layer"`
 
 ---
 
@@ -483,6 +520,105 @@
   - dr_photo_url, status enum: ACTIVE, FULLY_CONSUMED, RETURNED, EXPIRED
   - created_at (immutable), created_by
 - [ ] Commit: `"feat(erp): consignment tracker model for dr-csi reference chain [v5]"`
+
+### 2.14 — Vendor Master Model
+**Goal:** Supplier registry that maps vendors to default COA codes for automatic expense classification. Follows SAP Vendor Master (XK01) pattern — every vendor has a default G/L account for automatic account determination.
+
+**Architecture principle (SAP parallel):** In SAP, Vendor Master (FI side) stores default reconciliation accounts + expense accounts. When a vendor invoice is posted, SAP auto-suggests the expense account from Vendor Master. Our VendorMaster.default_coa_code does the same thing. The `vendor_aliases` array enables OCR fuzzy matching — SAP uses vendor search terms for the same purpose.
+
+- [ ] Create `backend/erp/models/VendorMaster.js`:
+  - entity_id (ref Entity), vendor_code (String, auto-generated or manual)
+  - vendor_name (String, required), vendor_aliases (String array — OCR name variations for fuzzy matching, e.g., ["AP CARGO", "AP CARGO LOGISTIC", "APCARGO"])
+  - tin (String), address (String), contact_person (String), phone (String), email (String)
+  - default_coa_code (String — maps to ChartOfAccounts.account_code when CoA is built in Phase 11)
+  - default_expense_category (String — human-readable label, e.g., "Courier / Shipping")
+  - payment_terms_days (Number, default 0 for cash vendors)
+  - is_active (Boolean, default true)
+  - created_by (ref User), updated_by (ref User)
+  - Compound unique index: `{ entity_id: 1, vendor_code: 1 }`
+  - Text index on vendor_name + vendor_aliases for search
+- [ ] Create seed script `backend/erp/scripts/seedVendors.js` with known VIP vendors:
+  - AP CARGO LOGISTIC NETWORK CORPORATION → 6200 (Courier / Shipping)
+  - JRS EXPRESS → 6200 (Courier / Shipping)
+  - LBC EXPRESS → 6200 (Courier / Shipping)
+  - Shell (all stations) → 6150 (Fuel & Oil)
+  - Petron (all stations) → 6150 (Fuel & Oil)
+  - Caltex / Phoenix / Seaoil → 6150 (Fuel & Oil)
+  - NLEX / SLEX / TPLEX / Skyway / Cavitex → 6160 (Parking & Tolls)
+- [ ] Create `backend/erp/controllers/vendorController.js`:
+  - CRUD: create, getAll (with search query), getById, update, deactivate
+  - `GET /api/erp/vendors/search?q=cargo` — search by name or alias (case-insensitive, substring)
+  - `POST /api/erp/vendors/:id/add-alias` — add new alias (from OCR override learning)
+  - Finance/Admin only for create/update; BDM can read/search
+- [ ] Create `backend/erp/routes/vendorRoutes.js`, mount on ERP router
+- [ ] Commit: `"feat(erp): vendor master model with default COA mapping (SAP XK01 pattern)"`
+
+### 2.15 — Expense Classification Service
+**Goal:** Takes raw OCR-extracted fields and returns an accounting classification suggestion. This is the bridge between Layer 1 (extraction) and Layer 3/4 (tax + journal). Follows SAP's automatic account determination — the system suggests, the user confirms or overrides.
+
+**Architecture principle (SAP parallel):** SAP's MM-FI integration uses a determination table: Vendor + Material Group + Plant → G/L Account. Our equivalent: Vendor (name match) + Receipt Type (keyword) → COA Code. The `match_method` field provides audit trail of HOW the classification was determined — required for BIR audit compliance.
+
+**4-step classification cascade:**
+```
+Step 1: EXACT_VENDOR  — supplier_name exact match in VendorMaster.vendor_name
+Step 2: ALIAS_MATCH   — fuzzy match against VendorMaster.vendor_aliases array
+Step 3: KEYWORD        — keyword patterns (courier/fuel/parking/toll/hotel/food/office)
+Step 4: FALLBACK       — "Miscellaneous Expense" (6900) with LOW confidence
+```
+
+- [ ] Create `backend/erp/services/expenseClassifier.js`:
+  - `classifyExpense(extractedFields)` — accepts raw OCR output (supplier_name, amount, etc.)
+  - Returns: `{ vendor_id, vendor_name, coa_code, coa_name, expense_category, confidence (HIGH/MEDIUM/LOW), match_method (EXACT_VENDOR/ALIAS_MATCH/KEYWORD/FALLBACK) }`
+  - Step 1 (EXACT_VENDOR): Case-insensitive exact match of `supplier_name.value` against `VendorMaster.vendor_name`
+  - Step 2 (ALIAS_MATCH): Case-insensitive substring match against `VendorMaster.vendor_aliases` array entries
+  - Step 3 (KEYWORD): Pattern-based detection using keyword lists:
+    - Courier: AP CARGO, JRS, LBC, J&T, 2GO, AIR21, NINJA VAN, GRAB EXPRESS → 6200
+    - Fuel: SHELL, PETRON, CALTEX, PHOENIX, SEAOIL, GASOLINE, FUEL → 6150
+    - Parking/Toll: PARKING, TOLL, NLEX, SLEX, TPLEX, SKYWAY, CAVITEX → 6160
+    - Accommodation: HOTEL, INN, LODGE, PENSION, AIRBNB → 6300
+    - Food/Meals: RESTAURANT, FOOD, MEAL, CAFE, JOLLIBEE, MCDONALDS → 6250
+    - Office: PRINTING, OFFICE, SUPPLIES, STATIONERY, NATIONAL BOOKSTORE → 6400
+    - Communication: GLOBE, SMART, PLDT, CONVERGE → 6350
+    - Transportation: GRAB, TAXI, ANGKAS, FERRY, BOAT → 6100
+  - Step 4 (FALLBACK): Return `6900 Miscellaneous Expense` with confidence LOW
+  - VAT auto-computation: if amount is present but VAT is null, compute `VAT = amount × 12/112` (PH VAT rate) and flag as `vat_computed: true`
+- [ ] Create `backend/erp/controllers/classificationController.js`:
+  - `POST /api/erp/classify` — accepts `{ supplier_name, amount, vat_amount }`, returns classification
+  - `POST /api/erp/classify/override` — user overrides classification: `{ vendor_id?, new_coa_code, new_category, save_as_default (Boolean) }`
+    - If `save_as_default` is true AND vendor_id exists: update `VendorMaster.default_coa_code`
+    - If `save_as_default` is true AND no vendor_id: create new VendorMaster entry with this supplier + default
+  - `GET /api/erp/classify/categories` — return list of available expense categories with COA codes (from seed or CoA collection)
+- [ ] Create `backend/erp/routes/classificationRoutes.js`, mount on ERP router
+- [ ] Unit tests: verify AP CARGO → 6200 (EXACT_VENDOR), unknown vendor → 6900 (FALLBACK), override saves to VendorMaster
+- [ ] Commit: `"feat(erp): expense classification service — vendor + keyword + fallback cascade (SAP auto-account pattern)"`
+
+### 2.16 — OCR-to-Classification Pipeline Integration
+**Goal:** Wire the extraction→classification pipeline so the OCR test page shows both extracted fields AND classification suggestion as separate auditable sections. User can override classification without changing extracted data.
+
+**Architecture principle:** Extraction output and classification output MUST be separate JSON objects in the API response. This ensures auditability — an auditor can see exactly what the document said (extraction) vs. how it was classified (classification), and whether the user overrode anything.
+
+- [ ] Update `backend/erp/ocr/ocrProcessor.js`:
+  - After OR/GAS_RECEIPT parser returns raw extracted fields, call `expenseClassifier.classifyExpense()` if doc type is an expense document (OR, GAS_RECEIPT)
+  - Attach classification as a separate `classification` key in response (NOT merged into `extracted`):
+    ```json
+    {
+      "doc_type": "OR",
+      "extracted": { "or_number": {...}, "supplier_name": {...}, "amount": {...}, ... },
+      "classification": { "coa_code": "6200", "coa_name": "Courier / Shipping", "confidence": "HIGH", "match_method": "EXACT_VENDOR", "vendor_id": "..." },
+      "validation_flags": [...],
+      "raw_ocr_text": "..."
+    }
+    ```
+  - Non-expense documents (CSI, CR, CWT, DR, UNDERTAKING) do NOT get classification — they flow to sales/collection/inventory modules directly
+- [ ] Update `frontend/src/erp/pages/OcrTest.jsx`:
+  - Below extracted fields section, add a "Classification" section (visually distinct separator)
+  - Display: suggested expense category, COA code + name, confidence badge (HIGH=green, MEDIUM=amber, LOW=red), match method label
+  - Add dropdown to override category — populated from `GET /api/erp/classify/categories`
+  - When user overrides: call `POST /api/erp/classify/override`
+  - "Save as vendor default" checkbox — visible only on override, calls override endpoint with `save_as_default: true`
+  - Confirm button sends both extracted data + final classification (original or overridden)
+- [ ] Ensure API response clearly separates `extracted` (Layer 1) from `classification` (Layer 2) — never mix them
+- [ ] Commit: `"feat(erp): connect OCR extraction → classification pipeline with override UI (SAP VIM pattern)"`
 
 ---
 
@@ -694,6 +830,19 @@
 - [ ] Hard gate validation: CR photo + CSI photos + CWT (or N/A) + deposit slip required
 - [ ] Follow the same Validate -> Submit -> Re-open lifecycle from PRD Section 5.5
 - [ ] Commit: `"feat(erp): collection routes with hard gate validation"`
+
+### 5.2b — OCR-to-AR CSI Auto-Population
+**Goal:** When a Collection Receipt (CR) is scanned via OCR, the hospital name detected by OCR is used to auto-fetch open/unpaid CSIs from Accounts Receivable for that hospital. The BDM sees a checklist of outstanding CSIs to settle instead of manually typing CSI numbers.
+
+- [ ] Add endpoint: GET `/api/erp/collections/open-csis?hospital_id=xxx` — returns unpaid CSIs for a hospital (from AR engine)
+- [ ] In CR OCR flow:
+  - After OCR extracts `hospital` field → auto-lookup hospital in Hospital collection (fuzzy match)
+  - If hospital matched → fetch open CSIs from AR for that hospital
+  - Display CSI list as checkboxes with invoice_no + amount + age (days overdue)
+  - BDM ticks which CSIs are being settled in this CR
+  - OCR-extracted `settled_csis` from the CR photo are pre-checked if they match AR records
+- [ ] Validation: total of selected CSI amounts should match CR total amount (warn if mismatch)
+- [ ] Commit: `"feat(erp): ocr cr auto-populates open csis from ar by hospital"`
 
 ### 5.3 — Credit Limit Management (SAP SD Credit Management)
 - [ ] Add `credit_limit` and `credit_limit_action` fields to Hospital schema
