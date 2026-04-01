@@ -31,6 +31,8 @@ const FUEL_TYPE_MAP = {
   'svp95': 'SHELL V-POWER 95',
   'fuelsave': 'SHELL FUELSAVE',
   'fuelsave diesel': 'SHELL FUELSAVE DIESEL',
+  'fsgasoline': 'SHELL FUELSAVE GASOLINE',
+  'fsdiesel': 'SHELL FUELSAVE DIESEL',
   // Petron
   'xcs': 'PETRON XCS',
   'ics': 'PETRON XCS',         // OCR may read XCS as ICS or *ICS
@@ -202,21 +204,30 @@ function parseGasReceipt(ocrResult) {
         }
       }
 
-      // Liters from QTY field — handles "QTY 4.363", "QTY\n4.363", and "QTY\n3 840" (space = decimal)
+      // Liters from QTY field — handles "QTY 4.363", "QTY\n4.363", "QTY\n3 840" (space = decimal),
+      // "QTY\n34:333" (colon = decimal from OCR misread)
       for (let i = 0; i < lines.length; i++) {
         if (/\bQTY\b/i.test(lines[i])) {
-          const sameLineMatch = lines[i].match(/QTY\s*[:\s]*([\d]+[.\s]\d+)/i);
+          // Same line: "QTY 4.363" or "QTY: 34:333"
+          const sameLineMatch = lines[i].match(/QTY\s*[:\s]*([\d]+[.:;\s]\d+)/i);
           if (sameLineMatch) {
-            liters = parseFloat(sameLineMatch[1].replace(/\s/g, '.'));
+            liters = parseFloat(sameLineMatch[1].replace(/[\s:;]/g, '.'));
           } else {
             if (i + 1 < lines.length) {
               const nextLine = lines[i + 1].trim();
-              const spaceDecimal = nextLine.match(/^(\d+)\s+(\d+)$/);
-              if (spaceDecimal) {
-                liters = parseFloat(spaceDecimal[1] + '.' + spaceDecimal[2]);
+              // "34:333" or "34;333" (colon/semicolon as decimal)
+              const colonDecimal = nextLine.match(/^(\d+)[:;](\d+)$/);
+              if (colonDecimal) {
+                liters = parseFloat(colonDecimal[1] + '.' + colonDecimal[2]);
               } else {
-                const simpleNum = nextLine.match(/^([\d.]+)$/);
-                if (simpleNum) liters = parseFloat(simpleNum[1]);
+                // "3 840" (space as decimal)
+                const spaceDecimal = nextLine.match(/^(\d+)\s+(\d+)$/);
+                if (spaceDecimal) {
+                  liters = parseFloat(spaceDecimal[1] + '.' + spaceDecimal[2]);
+                } else {
+                  const simpleNum = nextLine.match(/^([\d.]+)$/);
+                  if (simpleNum) liters = parseFloat(simpleNum[1]);
+                }
               }
             }
           }
