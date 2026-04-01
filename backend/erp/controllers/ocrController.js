@@ -1,5 +1,6 @@
 const { catchAsync, ApiError } = require('../../middleware/errorHandler');
 const { detectText } = require('../ocr/visionClient');
+const { processOcr, SUPPORTED_DOC_TYPES } = require('../ocr/ocrProcessor');
 const { uploadErpDocument } = require('../services/documentUpload');
 
 const processDocument = catchAsync(async (req, res) => {
@@ -28,21 +29,34 @@ const processDocument = catchAsync(async (req, res) => {
 
   const ocrResult = await detectText(req.file.buffer, { feature });
 
+  // Pass EXIF datetime from frontend (fallback for photos without GPS stamp)
+  const exifDateTime = String(req.body.exifDateTime || '').trim() || null;
+
+  // Route through document-type parser for structured extraction
+  const processed = processOcr(docType, ocrResult, { exifDateTime });
+
   res.status(200).json({
     success: true,
     message: 'OCR processed successfully.',
     data: {
-      docType,
-      sourceImageUrl: uploadResult.url,
-      sourceImageKey: uploadResult.key,
-      featureUsed: ocrResult.featureUsed,
-      fullText: ocrResult.fullText,
-      words: ocrResult.words,
-      raw: ocrResult.raw,
+      s3_url: uploadResult.url,
+      s3_key: uploadResult.key,
+      doc_type: processed.doc_type,
+      extracted: processed.extracted,
+      validation_flags: processed.validation_flags,
+      raw_ocr_text: processed.raw_ocr_text,
     },
+  });
+});
+
+const getSupportedTypes = catchAsync(async (req, res) => {
+  res.status(200).json({
+    success: true,
+    data: SUPPORTED_DOC_TYPES,
   });
 });
 
 module.exports = {
   processDocument,
+  getSupportedTypes,
 };

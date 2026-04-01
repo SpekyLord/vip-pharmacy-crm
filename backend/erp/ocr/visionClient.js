@@ -3,6 +3,8 @@ const vision = require('@google-cloud/vision');
 const DEFAULT_FEATURE =
   process.env.GOOGLE_VISION_DEFAULT_FEATURE || 'DOCUMENT_TEXT_DETECTION';
 
+const API_KEY = (process.env.GOOGLE_VISION_API_KEY || '').trim();
+
 let visionClient;
 
 function parseInlineCredentials() {
@@ -90,12 +92,45 @@ function buildOcrResult(response, featureUsed) {
   };
 }
 
-async function detectText(imageBuffer, options = {}) {
-  if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
-    throw new Error('detectText requires a non-empty image buffer.');
+/**
+ * Call Vision API via REST using an API key.
+ * Used when GOOGLE_VISION_API_KEY is set (no service account needed).
+ */
+async function detectTextViaApiKey(imageBuffer, featureUsed) {
+  const url = `https://vision.googleapis.com/v1/images:annotate?key=${API_KEY}`;
+
+  const body = {
+    requests: [{
+      image: { content: imageBuffer.toString('base64') },
+      features: [{ type: featureUsed }],
+    }],
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Google Vision API error (${res.status}): ${errBody}`);
   }
 
-  const featureUsed = options.feature || DEFAULT_FEATURE;
+  const data = await res.json();
+  const result = data.responses?.[0];
+
+  if (result?.error?.message) {
+    throw new Error(`Google Vision API error: ${result.error.message}`);
+  }
+
+  return result || {};
+}
+
+/**
+ * Call Vision API via the gRPC client library (service account / ADC).
+ */
+async function detectTextViaClient(imageBuffer, featureUsed) {
   const client = getVisionClient();
 
   const [result] = await client.annotateImage({
@@ -106,6 +141,21 @@ async function detectText(imageBuffer, options = {}) {
   if (result.error?.message) {
     throw new Error(`Google Vision API error: ${result.error.message}`);
   }
+
+  return result;
+}
+
+async function detectText(imageBuffer, options = {}) {
+  if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
+    throw new Error('detectText requires a non-empty image buffer.');
+  }
+
+  const featureUsed = options.feature || DEFAULT_FEATURE;
+
+  // Use API key (REST) if available, otherwise fall back to client library (gRPC)
+  const result = API_KEY
+    ? await detectTextViaApiKey(imageBuffer, featureUsed)
+    : await detectTextViaClient(imageBuffer, featureUsed);
 
   return buildOcrResult(result, featureUsed);
 }
