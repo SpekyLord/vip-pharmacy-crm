@@ -41,6 +41,9 @@ const SettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
 // ERP pages
 const ErpDashboard = lazy(() => import('./erp/pages/ErpDashboard'));
 const OcrTest = lazy(() => import('./erp/pages/OcrTest'));
+const SalesEntry = lazy(() => import('./erp/pages/SalesEntry'));
+const SalesList = lazy(() => import('./erp/pages/SalesList'));
+const MyStock = lazy(() => import('./erp/pages/MyStock'));
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -241,6 +244,30 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['employee', 'admin']}>
                 <OcrTest />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/sales"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+                <SalesList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/sales/entry"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+                <SalesEntry />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/my-stock"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+                <MyStock />
               </ProtectedRoute>
             }
           />
