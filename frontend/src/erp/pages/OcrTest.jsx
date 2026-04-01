@@ -269,9 +269,13 @@ const OcrTest = () => {
     const keys = path.split('.');
     let obj = updated.extracted;
     for (let i = 0; i < keys.length - 1; i++) {
+      if (!obj[keys[i]]) return;
       obj = obj[keys[i]];
     }
-    obj[keys[keys.length - 1]].value = value;
+    const target = obj[keys[keys.length - 1]];
+    if (target && typeof target === 'object' && 'value' in target) {
+      target.value = value;
+    }
     setResult(updated);
   }
 
@@ -396,24 +400,41 @@ const OcrTest = () => {
                 <div className="ocr-form-fields">
                   {Object.entries(extracted).map(([key, field]) => {
                     if (key === 'line_items') return null;
-                    if (key === 'totals' && typeof field === 'object' && !('confidence' in field)) {
-                      return Object.entries(field).map(([subKey, subField]) => (
-                        <OcrField
-                          key={`totals.${subKey}`}
-                          label={subKey.replace(/_/g, ' ')}
-                          field={subField}
-                          onChange={(val) => updateField(`totals.${subKey}`, val)}
-                        />
-                      ));
-                    }
                     if (key === 'settled_csis') return null;
+                    if (key === 'available_categories') return null;
+                    if (key === 'validation_flags') return null;
+                    // Skip null/undefined fields
+                    if (field == null) return null;
+                    // Totals sub-object
+                    if (key === 'totals' && typeof field === 'object' && field !== null && !('confidence' in field)) {
+                      return Object.entries(field).map(([subKey, subField]) => {
+                        if (subField == null) return null;
+                        return (
+                          <OcrField
+                            key={`totals.${subKey}`}
+                            label={subKey.replace(/_/g, ' ')}
+                            field={subField}
+                            onChange={(val) => updateField(`totals.${subKey}`, val)}
+                          />
+                        );
+                      });
+                    }
                     if (typeof field !== 'object' || !('confidence' in field)) {
-                      // Render simple values (e.g., price_computed, is_shell)
+                      // Render simple values (e.g., price_computed, is_shell, vat_computed)
                       if (typeof field === 'boolean') {
                         return (
                           <div key={key} className="ocr-field">
                             <label>{key.replace(/_/g, ' ')}</label>
                             <input type="text" value={field ? 'Yes' : 'No'} readOnly style={{ borderColor: 'var(--ocr-border)' }} />
+                          </div>
+                        );
+                      }
+                      // Render string/number values
+                      if (typeof field === 'string' || typeof field === 'number') {
+                        return (
+                          <div key={key} className="ocr-field">
+                            <label>{key.replace(/_/g, ' ')}</label>
+                            <input type="text" value={String(field)} readOnly style={{ borderColor: 'var(--ocr-border)' }} />
                           </div>
                         );
                       }
