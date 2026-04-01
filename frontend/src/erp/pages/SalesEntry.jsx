@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useSales from '../hooks/useSales';
 import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
+import { processDocument, extractExifDateTime } from '../services/ocrService';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },
@@ -57,6 +58,30 @@ const pageStyles = `
   .near-expiry-badge { background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; margin-left: 4px; }
   .add-row-btn { display: block; width: 100%; padding: 10px; text-align: center; color: var(--erp-accent); background: transparent; border: 2px dashed var(--erp-border); border-radius: 0 0 12px 12px; cursor: pointer; font-weight: 600; }
 
+  /* Scan CSI Modal */
+  .scan-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .scan-modal { background: var(--erp-panel, #fff); border-radius: 16px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 24px; position: relative; }
+  .scan-modal h2 { margin: 0 0 16px; font-size: 18px; color: var(--erp-text); }
+  .scan-modal .close-btn { position: absolute; top: 12px; right: 16px; background: none; border: none; font-size: 22px; cursor: pointer; color: var(--erp-muted); }
+  .scan-capture-btns { display: flex; gap: 10px; margin-bottom: 16px; }
+  .scan-capture-btns .btn { flex: 1; text-align: center; padding: 12px; font-size: 14px; }
+  .scan-preview { width: 100%; max-height: 200px; object-fit: contain; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--erp-border); }
+  .scan-progress { text-align: center; padding: 24px 0; }
+  .scan-progress .spinner { width: 36px; height: 36px; border: 3px solid var(--erp-border); border-top-color: var(--erp-accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .scan-results { margin-top: 12px; }
+  .scan-results .result-group { margin-bottom: 12px; }
+  .scan-results label { font-size: 11px; color: var(--erp-muted); font-weight: 600; text-transform: uppercase; display: block; margin-bottom: 2px; }
+  .scan-results .result-value { font-size: 14px; color: var(--erp-text); padding: 6px 10px; background: var(--erp-bg); border-radius: 6px; border: 1px solid var(--erp-border); }
+  .scan-results .match-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; margin-left: 6px; }
+  .scan-results .match-high { background: #dcfce7; color: #166534; }
+  .scan-results .match-medium { background: #fef3c7; color: #92400e; }
+  .scan-results .match-none { background: #fef2f2; color: #991b1b; }
+  .scan-item-table { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 8px; }
+  .scan-item-table th { text-align: left; padding: 4px 6px; background: var(--erp-bg); font-weight: 600; color: var(--erp-muted); }
+  .scan-item-table td { padding: 4px 6px; border-top: 1px solid var(--erp-border); }
+  .scan-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px; color: #991b1b; font-size: 13px; margin-bottom: 12px; }
+
   /* Mobile cards */
   @media (max-width: 768px) {
     .sales-table-wrapper { display: none; }
@@ -71,6 +96,316 @@ const pageStyles = `
   }
 `;
 
+// --- Fuzzy matching helpers for OCR → master data ---
+function normalizeStr(s) {
+  return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function matchHospital(ocrName, hospitals) {
+  if (!ocrName || !hospitals?.length) return null;
+  const cleaned = normalizeStr(ocrName);
+  if (!cleaned) return null;
+  // Exact normalized match
+  let match = hospitals.find(h => normalizeStr(h.hospital_name) === cleaned);
+  if (match) return { hospital: match, confidence: 'HIGH' };
+  // Substring match (OCR text contains hospital name or vice versa)
+  match = hospitals.find(h => {
+    const hn = normalizeStr(h.hospital_name);
+    return cleaned.includes(hn) || hn.includes(cleaned);
+  });
+  if (match) return { hospital: match, confidence: 'MEDIUM' };
+  // Word overlap scoring
+  const ocrWords = cleaned.match(/.{2,}/g) || [];
+  let best = null, bestScore = 0;
+  for (const h of hospitals) {
+    const hn = normalizeStr(h.hospital_name);
+    let score = 0;
+    for (const w of ocrWords) { if (hn.includes(w)) score++; }
+    if (score > bestScore) { bestScore = score; best = h; }
+  }
+  if (best && bestScore >= 2) return { hospital: best, confidence: 'MEDIUM' };
+  return null;
+}
+
+function matchProduct(ocrBrand, ocrDosage, productOptions) {
+  if (!ocrBrand || !productOptions?.length) return null;
+  const cleaned = normalizeStr(ocrBrand);
+  const dosage = normalizeStr(ocrDosage || '');
+  if (!cleaned) return null;
+  // Try brand+dosage combo first
+  if (dosage) {
+    const match = productOptions.find(p => {
+      const pn = normalizeStr(p.brand_name);
+      return pn === cleaned || (cleaned.includes(pn) && normalizeStr(p.label).includes(dosage));
+    });
+    if (match) return { product: match, confidence: 'HIGH' };
+  }
+  // Exact brand match
+  let match = productOptions.find(p => normalizeStr(p.brand_name) === cleaned);
+  if (match) return { product: match, confidence: 'HIGH' };
+  // Substring brand match
+  match = productOptions.find(p => {
+    const pn = normalizeStr(p.brand_name);
+    return cleaned.includes(pn) || pn.includes(cleaned);
+  });
+  if (match) return { product: match, confidence: 'MEDIUM' };
+  return null;
+}
+
+// Extract the value from a scored field (OCR returns {value, confidence} or plain string)
+function fieldVal(f) {
+  if (f == null) return '';
+  if (typeof f === 'object' && 'value' in f) return f.value ?? '';
+  return String(f);
+}
+
+// --- ScanCSIModal inline component ---
+function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
+  const [step, setStep] = useState('capture'); // capture | scanning | results | error
+  const [photo, setPhoto] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [ocrData, setOcrData] = useState(null);
+  const [matchedHospital, setMatchedHospital] = useState(null);
+  const [matchedItems, setMatchedItems] = useState([]);
+  const [errorMsg, setErrorMsg] = useState('');
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
+
+  const reset = () => {
+    setStep('capture');
+    setPhoto(null);
+    setPreview(null);
+    setOcrData(null);
+    setMatchedHospital(null);
+    setMatchedItems([]);
+    setErrorMsg('');
+  };
+
+  const handleClose = () => { reset(); onClose(); };
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    setPhoto(file);
+    setPreview(URL.createObjectURL(file));
+    setStep('scanning');
+    setErrorMsg('');
+
+    try {
+      const exif = await extractExifDateTime(file);
+      const result = await processDocument(file, 'CSI', exif);
+      setOcrData(result);
+
+      // Match hospital
+      const hospitalText = fieldVal(result.extracted?.hospital);
+      const hMatch = matchHospital(hospitalText, hospitals);
+      setMatchedHospital(hMatch);
+
+      // Match line items / products
+      const items = result.extracted?.line_items || [];
+      const matched = items.map(item => {
+        const brand = fieldVal(item.brand_name);
+        const dosage = fieldVal(item.dosage);
+        const pMatch = matchProduct(brand, dosage, productOptions);
+        return {
+          ocr_brand: brand,
+          ocr_generic: fieldVal(item.generic_name),
+          ocr_dosage: dosage,
+          ocr_qty: fieldVal(item.qty),
+          ocr_unit_price: fieldVal(item.unit_price),
+          ocr_amount: fieldVal(item.amount),
+          ocr_batch: fieldVal(item.batch_lot_no),
+          product_match: pMatch
+        };
+      });
+      setMatchedItems(matched);
+      setStep('results');
+    } catch (err) {
+      setErrorMsg(err?.response?.data?.message || err.message || 'OCR processing failed');
+      setStep('error');
+    }
+  };
+
+  const handleApply = () => {
+    const extracted = ocrData?.extracted;
+    if (!extracted) return;
+
+    const row = {
+      hospital_id: matchedHospital?.hospital?._id || '',
+      csi_date: (() => {
+        const d = fieldVal(extracted.date);
+        if (!d) return new Date().toISOString().split('T')[0];
+        // Try to parse various date formats into YYYY-MM-DD
+        const parsed = new Date(d);
+        if (!isNaN(parsed)) return parsed.toISOString().split('T')[0];
+        return new Date().toISOString().split('T')[0];
+      })(),
+      doc_ref: fieldVal(extracted.invoice_no),
+      line_items: matchedItems.length > 0
+        ? matchedItems.map(mi => ({
+            product_id: mi.product_match?.product?.product_id || '',
+            qty: String(parseFloat(mi.ocr_qty) || ''),
+            unit: mi.product_match?.product?.unit_code || '',
+            unit_price: mi.product_match?.product?.selling_price != null
+              ? String(mi.product_match.product.selling_price)
+              : String(parseFloat(mi.ocr_unit_price) || ''),
+            item_key: mi.product_match?.product?.item_key || ''
+          }))
+        : [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '' }]
+    };
+
+    onApply(row);
+    handleClose();
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="scan-modal-overlay" onClick={handleClose}>
+      <div className="scan-modal" onClick={e => e.stopPropagation()}>
+        <button className="close-btn" onClick={handleClose}>&times;</button>
+        <h2>Scan CSI Document</h2>
+
+        {/* Hidden file inputs */}
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+          onChange={e => handleFile(e.target.files?.[0])} />
+        <input ref={galleryRef} type="file" accept="image/*" style={{ display: 'none' }}
+          onChange={e => handleFile(e.target.files?.[0])} />
+
+        {step === 'capture' && (
+          <>
+            <p style={{ fontSize: 13, color: 'var(--erp-muted)', marginBottom: 16 }}>
+              Take a photo of a CSI (Charge Sales Invoice) or upload from gallery. OCR will extract the invoice details and pre-fill a sales row.
+            </p>
+            <div className="scan-capture-btns">
+              <button className="btn btn-primary" onClick={() => cameraRef.current?.click()}>
+                📷 Take Photo
+              </button>
+              <button className="btn btn-outline" onClick={() => galleryRef.current?.click()}>
+                🖼 Gallery
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === 'scanning' && (
+          <>
+            {preview && <img src={preview} alt="CSI preview" className="scan-preview" />}
+            <div className="scan-progress">
+              <div className="spinner" />
+              <div style={{ fontSize: 14, color: 'var(--erp-muted)' }}>Processing CSI with OCR...</div>
+            </div>
+          </>
+        )}
+
+        {step === 'error' && (
+          <>
+            {preview && <img src={preview} alt="CSI preview" className="scan-preview" />}
+            <div className="scan-error">{errorMsg}</div>
+            <div className="scan-capture-btns">
+              <button className="btn btn-primary" onClick={() => { reset(); cameraRef.current?.click(); }}>
+                Retry Photo
+              </button>
+              <button className="btn btn-outline" onClick={() => { reset(); galleryRef.current?.click(); }}>
+                Try Gallery
+              </button>
+              <button className="btn btn-outline" onClick={handleClose}>Cancel</button>
+            </div>
+          </>
+        )}
+
+        {step === 'results' && ocrData && (
+          <>
+            {preview && <img src={preview} alt="CSI preview" className="scan-preview" />}
+            <div className="scan-results">
+              {/* Header fields */}
+              <div className="result-group">
+                <label>CSI # (Invoice No.)</label>
+                <div className="result-value">{fieldVal(ocrData.extracted?.invoice_no) || '—'}</div>
+              </div>
+              <div className="result-group">
+                <label>Date</label>
+                <div className="result-value">{fieldVal(ocrData.extracted?.date) || '—'}</div>
+              </div>
+              <div className="result-group">
+                <label>Hospital</label>
+                <div className="result-value">
+                  {fieldVal(ocrData.extracted?.hospital) || '—'}
+                  {matchedHospital ? (
+                    <span className={`match-badge match-${matchedHospital.confidence.toLowerCase()}`}>
+                      → {matchedHospital.hospital.hospital_name}
+                    </span>
+                  ) : (
+                    <span className="match-badge match-none">No match</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Line items */}
+              {matchedItems.length > 0 && (
+                <div className="result-group">
+                  <label>Line Items ({matchedItems.length})</label>
+                  <table className="scan-item-table">
+                    <thead>
+                      <tr>
+                        <th>Product (OCR)</th>
+                        <th>Matched To</th>
+                        <th>Qty</th>
+                        <th>Price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matchedItems.map((mi, i) => (
+                        <tr key={i}>
+                          <td>
+                            {mi.ocr_brand}
+                            {mi.ocr_dosage && <span style={{ color: 'var(--erp-muted)', marginLeft: 4 }}>{mi.ocr_dosage}</span>}
+                          </td>
+                          <td>
+                            {mi.product_match ? (
+                              <span>
+                                {mi.product_match.product.brand_name}
+                                <span className={`match-badge match-${mi.product_match.confidence.toLowerCase()}`}>
+                                  {mi.product_match.confidence}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="match-badge match-none">No match</span>
+                            )}
+                          </td>
+                          <td>{mi.ocr_qty || '—'}</td>
+                          <td>{mi.ocr_unit_price || mi.product_match?.product?.selling_price || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Validation flags */}
+              {ocrData.validation_flags?.length > 0 && (
+                <div className="scan-error" style={{ marginTop: 12 }}>
+                  {ocrData.validation_flags.map((f, i) => (
+                    <div key={i}>{f.message || f.type}</div>
+                  ))}
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                <button className="btn btn-success" onClick={handleApply} style={{ flex: 1 }}>
+                  Apply to Sales Entry
+                </button>
+                <button className="btn btn-outline" onClick={reset}>Scan Another</button>
+                <button className="btn btn-outline" onClick={handleClose}>Cancel</button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SalesEntry() {
   const { user } = useAuth();
   const sales = useSales();
@@ -81,6 +416,7 @@ export default function SalesEntry() {
   const [stockProducts, setStockProducts] = useState([]);
   const [validationErrors, setValidationErrors] = useState([]);
   const [actionLoading, setActionLoading] = useState('');
+  const [scanModalOpen, setScanModalOpen] = useState(false);
 
   // Load stock on mount (only products with stock > 0)
   useEffect(() => {
@@ -135,6 +471,20 @@ export default function SalesEntry() {
   }, [productOptions]);
 
   const addRow = () => setRows(prev => [...prev, emptyRow()]);
+
+  // Apply OCR scan results as a new row
+  const handleScanApply = useCallback((scannedData) => {
+    const newRow = {
+      ...emptyRow(),
+      hospital_id: scannedData.hospital_id,
+      csi_date: scannedData.csi_date,
+      doc_ref: scannedData.doc_ref,
+      line_items: scannedData.line_items?.length
+        ? scannedData.line_items
+        : [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '' }]
+    };
+    setRows(prev => [...prev, newRow]);
+  }, []);
 
   const removeRow = (idx) => {
     setRows(prev => {
@@ -260,6 +610,7 @@ export default function SalesEntry() {
           <div className="sales-header">
             <h1>Sales Entry</h1>
             <div className="sales-actions">
+              <button className="btn btn-primary" onClick={() => setScanModalOpen(true)} style={{ background: '#7c3aed' }}>📷 Scan CSI</button>
               <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
               <button className="btn btn-primary" onClick={saveAll} disabled={actionLoading === 'save'}>
                 {actionLoading === 'save' ? 'Saving...' : 'Save Drafts'}
@@ -426,6 +777,15 @@ export default function SalesEntry() {
           )}
         </main>
       </div>
+
+      {/* Scan CSI Modal */}
+      <ScanCSIModal
+        open={scanModalOpen}
+        onClose={() => setScanModalOpen(false)}
+        onApply={handleScanApply}
+        hospitals={hospitals}
+        productOptions={productOptions}
+      />
     </div>
   );
 }

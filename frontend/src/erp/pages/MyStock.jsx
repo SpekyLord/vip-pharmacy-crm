@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -53,12 +53,167 @@ const pageStyles = `
   .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
   .btn-primary { background: var(--erp-accent, #1e5eff); color: #fff; }
 
+  /* Physical Count Modal */
+  .pc-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .pc-modal { background: var(--erp-panel, #fff); border-radius: 16px; width: 100%; max-width: 640px; max-height: 90vh; overflow-y: auto; padding: 24px; position: relative; }
+  .pc-modal h2 { margin: 0 0 4px; font-size: 18px; color: var(--erp-text); }
+  .pc-modal .subtitle { font-size: 13px; color: var(--erp-muted); margin-bottom: 16px; }
+  .pc-modal .close-btn { position: absolute; top: 12px; right: 16px; background: none; border: none; font-size: 22px; cursor: pointer; color: var(--erp-muted); }
+  .pc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pc-table th { text-align: left; padding: 8px 10px; background: var(--erp-bg); font-weight: 600; color: var(--erp-muted); font-size: 11px; text-transform: uppercase; }
+  .pc-table td { padding: 8px 10px; border-top: 1px solid var(--erp-border); }
+  .pc-table input[type="number"] { width: 80px; padding: 6px 8px; border: 1px solid var(--erp-border); border-radius: 6px; font-size: 13px; text-align: right; }
+  .pc-table input[type="number"]:focus { outline: none; border-color: var(--erp-accent); }
+  .pc-variance { font-weight: 700; font-size: 12px; }
+  .pc-variance.pos { color: #16a34a; }
+  .pc-variance.neg { color: #dc2626; }
+  .pc-variance.zero { color: var(--erp-muted); }
+  .pc-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+  .pc-summary { margin-top: 12px; padding: 12px; background: var(--erp-bg); border-radius: 8px; font-size: 13px; color: var(--erp-text); }
+
   @media (max-width: 768px) {
     .summary-bar { grid-template-columns: repeat(2, 1fr); }
     .stock-table { font-size: 12px; }
     .tab-btn { padding: 8px 12px; font-size: 13px; }
+    .pc-modal { padding: 16px; }
+    .pc-table input[type="number"] { width: 60px; }
   }
 `;
+
+// --- Physical Count Modal ---
+function PhysicalCountModal({ open, onClose, stockData, onSubmit, submitting }) {
+  const [counts, setCounts] = useState([]);
+
+  // Build editable rows from stockData batches when modal opens
+  useEffect(() => {
+    if (!open || !stockData?.length) { setCounts([]); return; }
+    const rows = [];
+    for (const item of stockData) {
+      if (!item.batches?.length) continue;
+      for (const batch of item.batches) {
+        rows.push({
+          product_id: item.product_id,
+          brand_name: item.product?.brand_name || 'Unknown',
+          dosage: item.product?.dosage_strength || '',
+          batch_lot_no: batch.batch_lot_no,
+          expiry_date: batch.expiry_date,
+          system_qty: batch.available_qty,
+          actual_qty: String(batch.available_qty) // pre-fill with system qty
+        });
+      }
+    }
+    setCounts(rows);
+  }, [open, stockData]);
+
+  const updateActual = (idx, val) => {
+    setCounts(prev => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], actual_qty: val };
+      return updated;
+    });
+  };
+
+  const getVariance = (row) => {
+    const actual = parseFloat(row.actual_qty);
+    if (isNaN(actual)) return null;
+    return actual - row.system_qty;
+  };
+
+  const adjustedRows = counts.filter(r => {
+    const v = getVariance(r);
+    return v !== null && Math.abs(v) >= 0.01;
+  });
+
+  const handleSubmit = () => {
+    const payload = adjustedRows.map(r => ({
+      product_id: r.product_id,
+      batch_lot_no: r.batch_lot_no,
+      expiry_date: r.expiry_date,
+      actual_qty: parseFloat(r.actual_qty)
+    }));
+    onSubmit(payload);
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="pc-modal-overlay" onClick={onClose}>
+      <div className="pc-modal" onClick={e => e.stopPropagation()}>
+        <button className="close-btn" onClick={onClose}>&times;</button>
+        <h2>Physical Count</h2>
+        <p className="subtitle">Enter actual quantities per batch. Variances will generate adjustment entries.</p>
+
+        {counts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>
+            No stock batches to count. Receive stock first via GRN.
+          </div>
+        ) : (
+          <>
+            <table className="pc-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Batch</th>
+                  <th>System</th>
+                  <th>Actual</th>
+                  <th>Variance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {counts.map((row, idx) => {
+                  const v = getVariance(row);
+                  return (
+                    <tr key={`${row.product_id}-${row.batch_lot_no}-${idx}`}>
+                      <td>
+                        <strong>{row.brand_name}</strong>
+                        {row.dosage && <span style={{ color: 'var(--erp-muted)', marginLeft: 4, fontSize: 11 }}>{row.dosage}</span>}
+                      </td>
+                      <td style={{ fontSize: 12 }}>{row.batch_lot_no}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{row.system_qty}</td>
+                      <td>
+                        <input
+                          type="number"
+                          min="0"
+                          value={row.actual_qty}
+                          onChange={e => updateActual(idx, e.target.value)}
+                        />
+                      </td>
+                      <td>
+                        {v !== null && (
+                          <span className={`pc-variance ${v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'}`}>
+                            {v > 0 ? '+' : ''}{v}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            <div className="pc-summary">
+              <strong>{adjustedRows.length}</strong> batch{adjustedRows.length !== 1 ? 'es' : ''} with variance
+              {adjustedRows.length === 0 && ' — no adjustments needed'}
+            </div>
+
+            <div className="pc-actions">
+              <button className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)' }} onClick={onClose}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSubmit}
+                disabled={adjustedRows.length === 0 || submitting}
+              >
+                {submitting ? 'Submitting...' : `Submit ${adjustedRows.length} Adjustment${adjustedRows.length !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function MyStock() {
   const { user } = useAuth();
@@ -72,6 +227,8 @@ export default function MyStock() {
   const [ledgerEntries, setLedgerEntries] = useState([]);
   const [varianceData, setVarianceData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [pcModalOpen, setPcModalOpen] = useState(false);
+  const [pcSubmitting, setPcSubmitting] = useState(false);
 
   // Load stock on mount
   useEffect(() => {
@@ -118,6 +275,38 @@ export default function MyStock() {
     else setLedgerEntries([]);
   };
 
+  // Load batch details for all products before opening the physical count modal
+  const openPhysicalCount = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Ensure batch data is loaded for each product
+      const enriched = await Promise.all(
+        stockData.map(async (item) => {
+          if (item.batches?.length) return item;
+          try {
+            const res = await inventory.getBatches(item.product_id);
+            return { ...item, batches: res?.data || [] };
+          } catch { return item; }
+        })
+      );
+      setStockData(enriched);
+      setPcModalOpen(true);
+    } catch {} finally { setLoading(false); }
+  }, [stockData, inventory]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePhysicalCountSubmit = useCallback(async (counts) => {
+    setPcSubmitting(true);
+    try {
+      await inventory.recordPhysicalCount(counts);
+      setPcModalOpen(false);
+      // Reload stock + variance to reflect adjustments
+      await loadStock();
+      if (activeTab === 2) await loadVariance();
+    } catch (err) {
+      console.error('Physical count error:', err);
+    } finally { setPcSubmitting(false); }
+  }, [inventory, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="admin-page erp-page mystock-page">
       <style>{pageStyles}</style>
@@ -125,9 +314,14 @@ export default function MyStock() {
       <div className="admin-layout">
         <Sidebar />
         <main className="admin-content mystock-main">
-          <div className="mystock-header">
-            <h1>My Stock</h1>
-            <p>Inventory on hand, transaction history, and variance tracking</p>
+          <div className="mystock-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+            <div>
+              <h1>My Stock</h1>
+              <p>Inventory on hand, transaction history, and variance tracking</p>
+            </div>
+            <button className="btn btn-primary" onClick={openPhysicalCount} disabled={!stockData.length || loading}>
+              Physical Count
+            </button>
           </div>
 
           {/* Summary Bar */}
@@ -305,6 +499,15 @@ export default function MyStock() {
           )}
         </main>
       </div>
+
+      {/* Physical Count Modal */}
+      <PhysicalCountModal
+        open={pcModalOpen}
+        onClose={() => setPcModalOpen(false)}
+        stockData={stockData}
+        onSubmit={handlePhysicalCountSubmit}
+        submitting={pcSubmitting}
+      />
     </div>
   );
 }
