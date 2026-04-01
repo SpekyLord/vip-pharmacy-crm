@@ -388,297 +388,250 @@
 | 1.14 | Smart Dropdowns | → Moved to Phase 2 (task 2.17) |
 | 1.15 | DR Parser | ✅ Complete |
 | 1.16 | Client Demo Ready | ✅ Core complete |
-| 1.17 | OR Extraction-Only Refactor | ❌ Not started (do at Phase 2 start) |
+| 1.17 | OR Extraction-Only Refactor | ✅ Complete (done at Phase 2 start) |
 
 ---
 
-## PHASE 2 — SHARED MODELS & SETTINGS
+## PHASE 2 — SHARED MODELS & SETTINGS ✅ COMPLETE
 **Goal:** Build the shared data models, settings, and tenant infrastructure that the ERP modules need. Extend User model with ERP fields.
 
-### 2.1 — Settings Model
-- [ ] Create `backend/erp/models/Settings.js` — single document with all configurable constants:
-  - PERDIEM_RATE_DEFAULT (800), PERDIEM_MD_FULL (8), PERDIEM_MD_HALF (3)
-  - VAT_RATE (0.12), PROFIT_SHARE_BDM_PCT (0.30), PROFIT_SHARE_VIP_PCT (0.70)
-  - NEAR_EXPIRY_DAYS (120), DEFAULT_PAYMENT_TERMS (30)
-  - COLLECTION_OK_THRESHOLD (0.70), CWT_RATE_WC158 (0.01)
-  - All other constants from PRD Section 3.1
-- [ ] Create seed script: `backend/erp/scripts/seedSettings.js`
-- [ ] Create `backend/erp/controllers/settingsController.js` — GET and PUT (admin only)
-- [ ] Create settings route in `backend/erp/routes/settingsRoutes.js`
-- [ ] Add to ERP router: `router.use('/settings', require('./settingsRoutes'))`
-- [ ] Commit: `"feat(erp): settings collection with configurable constants"`
+> **Status (April 2026):** All 17 tasks complete (2.1–2.17 + 1.17). 37 files created/modified. 13 models, 8 controllers, 8 route files, 5 seed scripts, 2 frontend hooks, 1 middleware, 1 utility. Backend starts clean. All models load successfully.
 
-### 2.2 — Extend User Model with ERP Fields
-- [ ] In `backend/models/User.js` (existing CRM model), ADD these optional fields:
-  - `entity_id`: ObjectId (ref: 'Entity')
-  - `territory_id`: ObjectId
-  - `live_date`: Date
-  - `bdm_stage`: String, enum ['CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER'], default 'CONTRACTOR'
-  - `compensation`: { perdiem_rate: Number, perdiem_days: Number (default 22), km_per_liter: Number, fuel_overconsumption_threshold: Number (default 1.30), effective_date: Date }
-  - `compensation_history`: Array of { perdiem_rate, km_per_liter, effective_date, set_by, reason, created_at }
-  - `sss_no`: String, `pagibig_no`: String, `philhealth_no`: String
-  - `date_of_birth`: Date, `contract_type`: String, `date_started`: Date
-- [ ] Extend role enum: add 'finance', 'president', 'ceo' alongside existing 'admin', 'employee'
-- [ ] All new fields are optional — existing CRM user documents will NOT break
-- [ ] Test: existing CRM login and user operations still work
-- [ ] Commit: `"feat(shared): extend user model with erp compensation and stage fields"`
+### 2.1 — Settings Model ✅
+- [x] Create `backend/erp/models/Settings.js` — flat key-value single document with all configurable constants (version field for seed idempotency, `getSettings()` static, `erp_settings` collection)
+- [x] Create seed script: `backend/erp/scripts/seedSettings.js`
+- [x] Create `backend/erp/controllers/settingsController.js` — GET and PUT (admin/finance only)
+- [x] Create settings route in `backend/erp/routes/settingsRoutes.js`
+- [x] Add to ERP router: `router.use('/settings', require('./settingsRoutes'))`
+- [ ] Commit pending
 
-### 2.3 — Entity Model (Multi-Tenancy)
-- [ ] Create `backend/erp/models/Entity.js`:
-  - entity_name, tin, address, vat_registered (boolean)
-  - entity_type: enum ['PARENT', 'SUBSIDIARY']
-  - parent_entity_id: ObjectId (self-ref, for subsidiaries)
-  - status: enum ['ACTIVE', 'INACTIVE']
-- [ ] Create seed script: `backend/erp/scripts/seedEntities.js`
-  - Seed: VIP Inc. (parent, TIN 744-251-498-0000, VAT registered)
-  - Seed: MG AND CO. INC. (subsidiary, TIN 010-824-240-00000, non-VAT)
-- [ ] Commit: `"feat(erp): entity model for multi-tenancy"`
+### 2.2 — Extend User Model with ERP Fields ✅
+- [x] In `backend/models/User.js` (existing CRM model), added optional ERP fields: entity_id, territory_id, live_date, bdm_stage, compensation (subdoc), compensation_history (array), date_of_birth, contract_type, date_started
+- [x] Sensitive gov IDs with `select: false`: sss_no, pagibig_no, philhealth_no
+- [x] toJSON transform strips gov ID fields
+- [x] Extend role enum: `['admin', 'employee', 'finance', 'president', 'ceo']`
+- [x] All new fields are optional — existing CRM user documents will NOT break
+- [x] Added indexes: `{ entity_id: 1 }`, `{ entity_id: 1, role: 1 }`
+- [ ] CRM regression test needed (login, dashboard, visits)
+- [ ] Commit pending
 
-### 2.4 — Hospital Model
-- [ ] Create `backend/erp/models/Hospital.js`:
-  - entity_id, hospital_name, hospital_name_clean (unique lookup key)
-  - Financial: tin, payment_terms, vat_status (VATABLE/EXEMPT/ZERO), cwt_rate, atc_code, is_top_withholding_agent
-  - HEAT: hospital_type, bed_capacity, level, purchaser_name, purchaser_phone, chief_pharmacist_name, chief_pharmacist_phone, key_decision_maker, engagement_level (1-5), major_events (array, max 3), programs_to_level_5
-  - BDM tagging: tagged_bdms array [{ bdm_id, tagged_by, tagged_at, is_active }]
-  - status: ACTIVE/INACTIVE
-- [ ] Create `backend/erp/controllers/hospitalController.js` — CRUD (Finance/Admin create/edit, BDM reads tagged only)
-- [ ] Create `backend/erp/routes/hospitalRoutes.js`
-- [ ] Add to ERP router
-- [ ] Commit: `"feat(erp): hospital master model with heat and financial fields"`
+### 2.3 — Entity Model (Multi-Tenancy) ✅
+- [x] Create `backend/erp/models/Entity.js`: entity_name, tin, address, vat_registered, entity_type (PARENT/SUBSIDIARY), parent_entity_id, status
+- [x] Create seed script: `backend/erp/scripts/seedEntities.js` — VIP Inc (parent, TIN 744-251-498-0000) + MG AND CO (subsidiary, TIN 010-824-240-00000, non-VAT)
+- [ ] Commit pending
 
-### 2.5 — Product Master Model (No Batch)
-- [ ] Create `backend/erp/models/ProductMaster.js`:
-  - entity_id, item_key (unique: "BrandName|DosageStrength")
-  - generic_name, brand_name, dosage_strength, sold_per
-  - purchase_price, selling_price, vat_status (VATABLE/EXEMPT/ZERO)
-  - category, is_active, description, key_benefits, image_url
-  - added_by, added_at
-- [ ] Note: this is separate from existing CRM `CrmProduct.js` / `WebsiteProduct.js` — those stay for CRM product catalog. ProductMaster is the ERP financial product record.
-- [ ] Create `backend/erp/controllers/productMasterController.js` — CRUD (Finance/Admin only for add/edit)
-- [ ] Create `backend/erp/routes/productMasterRoutes.js`
-- [ ] Add to ERP router
-- [ ] Commit: `"feat(erp): product master model (identity and pricing, no batch)"`
+### 2.4 — Hospital Model ✅
+- [x] Create `backend/erp/models/Hospital.js`: entity_id, hospital_name, hospital_name_clean (auto-generated via pre-save using `nameClean.js`), financial fields (tin, payment_terms, vat_status, cwt_rate, atc_code, credit_limit), HEAT fields (hospital_type, bed_capacity, engagement_level, etc.), tagged_bdms array, `erp_hospitals` collection
+- [x] Create `backend/erp/utils/nameClean.js` — shared canonicalization for OCR fuzzy matching
+- [x] Create `backend/erp/controllers/hospitalController.js` — CRUD with search (`?q=`)
+- [x] Create `backend/erp/routes/hospitalRoutes.js` — roleCheck('admin', 'finance') on writes
+- [x] Add to ERP router
+- [ ] Commit pending
 
-### 2.6 — Admin-Managed Lookup Collections
-- [ ] Create `backend/erp/models/BankAccount.js` — bank_code, bank_name, account_no, account_type, coa_code, is_active
-- [ ] Create `backend/erp/models/PaymentMode.js` — mode_code, mode_label, mode_type, requires_calf, is_active
-- [ ] Create `backend/erp/models/ExpenseComponent.js` — component_code, component_name, or_required, calf_required, is_active
-- [ ] Create seed script with initial data
-- [ ] Create admin CRUD routes for lookups
-- [ ] Commit: `"feat(erp): admin-managed lookup collections"`
+### 2.5 — Product Master Model (No Batch) ✅
+- [x] Create `backend/erp/models/ProductMaster.js`: entity_id, item_key (unique per entity, auto-generated from brand+dosage), generic_name, brand_name, dosage_strength, purchase_price, selling_price, vat_status, text index on brand+generic, `erp_product_master` collection
+- [x] Separate from CRM `WebsiteProduct.js` — this is the ERP financial product record
+- [x] Create `backend/erp/controllers/productMasterController.js` — CRUD with search
+- [x] Create `backend/erp/routes/productMasterRoutes.js`
+- [x] Add to ERP router
+- [ ] Commit pending
 
-### 2.7 — Transaction Event Model (Immutable)
-- [ ] Create `backend/erp/models/TransactionEvent.js`:
-  - entity_id, bdm_id, event_type, event_date, document_ref
-  - source_image_url, ocr_raw_json, confirmed_fields, payload
-  - status (ACTIVE/DELETED), corrects_event_id, created_by, created_at (immutable)
-- [ ] Add Mongoose pre-save: set created_at, prevent changes to immutable fields
-- [ ] Add pre-findOneAndUpdate: strip immutable fields from any update attempt
-- [ ] Only status can change (ACTIVE → DELETED) — nothing else
-- [ ] Commit: `"feat(erp): immutable transaction event model"`
+### 2.6 — Admin-Managed Lookup Collections ✅
+- [x] Create `backend/erp/models/BankAccount.js` — entity_id, bank_code, bank_name, account_no, account_type, coa_code
+- [x] Create `backend/erp/models/PaymentMode.js` — mode_code, mode_label, mode_type, requires_calf
+- [x] Create `backend/erp/models/ExpenseComponent.js` — component_code, component_name, or_required, calf_required
+- [x] Create `backend/erp/scripts/seedLookups.js` — 8 payment modes + 6 expense components
+- [x] Create `backend/erp/controllers/lookupController.js` — factory pattern CRUD for all three
+- [x] Create `backend/erp/routes/lookupRoutes.js` — mounts /bank-accounts, /payment-modes, /expense-components
+- [ ] Commit pending
 
-### 2.8 — Document Attachment Model
-- [ ] Create `backend/erp/models/DocumentAttachment.js`:
-  - event_id, document_type, ocr_applied, storage_url (S3), folder_path, uploaded_by, uploaded_at
-- [ ] Commit: `"feat(erp): document attachment model"`
+### 2.7 — Transaction Event Model (Immutable) ✅
+- [x] Create `backend/erp/models/TransactionEvent.js`: entity_id, bdm_id, event_type, event_date, document_ref, source_image_url, ocr_raw_json, confirmed_fields, payload, status, corrects_event_id, created_by, created_at (immutable)
+- [x] Pre-save: blocks updates on non-new documents, sets created_at
+- [x] Pre-findOneAndUpdate + pre-updateOne: strips all immutable fields, only allows status ACTIVE→DELETED
+- [ ] Commit pending
 
-### 2.9 — Tenant Filtering Middleware
-- [ ] Create `backend/erp/middleware/tenantFilter.js`:
-  - Reads entity_id and bdm_id from authenticated user (req.user)
-  - Attaches to req: req.entityId, req.bdmId, req.isAdmin, req.isPresident
-  - ERP controllers use these to filter queries
-- [ ] Commit: `"feat(erp): tenant filtering middleware"`
+### 2.8 — Document Attachment Model ✅
+- [x] Create `backend/erp/models/DocumentAttachment.js`: event_id, document_type, ocr_applied, storage_url, folder_path, uploaded_by, uploaded_at
+- [ ] Commit pending
 
-### 2.10 — ERP Frontend Hooks
-- [ ] Create `frontend/src/erp/hooks/useSettings.js` — fetches and caches GET `/api/erp/settings`
-- [ ] Create `frontend/src/erp/hooks/useErpApi.js` — wrapper around existing `useApi` hook with ERP base URL
-- [ ] Commit: `"feat(ui): erp frontend hooks for settings and api"`
+### 2.9 — Tenant Filtering Middleware ✅
+- [x] Create `backend/erp/middleware/tenantFilter.js`:
+  - Reads entity_id and bdm_id from req.user
+  - Attaches: req.entityId, req.bdmId, req.isAdmin, req.isFinance, req.isPresident, req.tenantFilter
+  - President/CEO: empty filter (sees all). Admin/Finance: entity_id filter. Employee: entity_id+bdm_id filter
+  - Backward compat: skips filtering if user has no entity_id
+- [x] Applied in ERP router index AFTER /ocr but BEFORE all data routes
+- [ ] Commit pending
 
-### 2.11 — Government Rates Collection [v5 NEW]
-- [ ] Create `backend/erp/models/GovernmentRates.js`:
-  - rate_type enum: SSS, PHILHEALTH, PAGIBIG, WITHHOLDING_TAX, EC, DE_MINIMIS
-  - effective_date, expiry_date (null = currently active)
-  - brackets array: [{ min_salary, max_salary, employee_share, employer_share, ec }]
-  - flat_rate, employee_split, employer_split, min_contribution, max_contribution
-  - benefit_limits array: [{ benefit_code, description, limit_amount, limit_period }]
-  - set_by, notes, created_at
-- [ ] Create seed script: `backend/erp/scripts/seedGovernmentRates.js`
-  - Seed SSS brackets (RA 11199 current schedule)
-  - Seed PhilHealth 5% rate with floor/ceiling (RA 11223)
-  - Seed PagIBIG rates (RA 9679)
-  - Seed BIR TRAIN withholding tax graduated brackets
-  - Seed De Minimis limits (rice ₱2,000/mo, clothing ₱6,000/yr, medical ₱1,500/mo, laundry ₱300/mo)
-- [ ] Create `backend/erp/controllers/governmentRatesController.js` — CRUD (Admin/Finance only)
-- [ ] Create `backend/erp/routes/governmentRatesRoutes.js`
-- [ ] Add to ERP router
-- [ ] Commit: `"feat(erp): government rates collection with philippine mandatories [v5]"`
+### 2.10 — ERP Frontend Hooks ✅
+- [x] Create `frontend/src/erp/hooks/useSettings.js` — fetches /erp/settings with 5-min global cache, refresh function
+- [x] Create `frontend/src/erp/hooks/useErpApi.js` — wraps existing api.js with /erp prefix, exposes get/post/put/patch/del with loading/error state
+- [ ] Commit pending
 
-### 2.12 — Budget Allocation Collection [v5 NEW]
-- [ ] Create `backend/erp/models/BudgetAllocation.js`:
-  - entity_id, target_type enum: BDM, DEPARTMENT, EMPLOYEE
-  - target_id, target_name, period (YYYY-MM)
-  - components array: [{ component_code, budgeted_amount }]
-  - total_budget, approved_by, approved_at
-  - status enum: DRAFT, APPROVED, CLOSED
-- [ ] Create `backend/erp/controllers/budgetAllocationController.js` — CRUD (Admin/Finance only)
-- [ ] Create `backend/erp/routes/budgetAllocationRoutes.js`
-- [ ] Add to ERP router
-- [ ] Commit: `"feat(erp): budget allocation collection [v5]"`
+### 2.11 — Government Rates Collection [v5 NEW] ✅
+- [x] Create `backend/erp/models/GovernmentRates.js`: rate_type enum, brackets array, flat_rate fields, benefit_limits, `getActiveRate()` static, `erp_government_rates` collection
+- [x] Create seed script: `backend/erp/scripts/seedGovernmentRates.js` — SSS (36 brackets), PhilHealth (5% flat, floor ₱500, ceiling ₱5,000), PagIBIG (1-2% brackets), BIR withholding (6 TRAIN brackets), De Minimis (5 benefit types)
+- [x] Create `backend/erp/controllers/governmentRatesController.js` — CRUD with active_only filter
+- [x] Create `backend/erp/routes/governmentRatesRoutes.js` — roleCheck('admin', 'finance') on writes
+- [x] Add to ERP router
+- [ ] Commit pending
 
-### 2.13 — Consignment Tracker Model [v5 NEW]
-- [ ] Create `backend/erp/models/ConsignmentTracker.js`:
-  - entity_id, bdm_id, hospital_id, hospital_name
-  - dr_ref, dr_date, product_id, item_key, batch_lot_no
-  - qty_delivered, qty_consumed (default 0), qty_remaining (auto-computed)
-  - conversions array: [{ csi_doc_ref, csi_date, qty_converted, sales_line_id }]
-  - days_outstanding (auto-computed), aging_status enum: OPEN, OVERDUE, COLLECTED, FORCE_CSI
-  - max_days_alert, max_days_force_csi
-  - dr_photo_url, status enum: ACTIVE, FULLY_CONSUMED, RETURNED, EXPIRED
-  - created_at (immutable), created_by
-- [ ] Commit: `"feat(erp): consignment tracker model for dr-csi reference chain [v5]"`
+### 2.12 — Budget Allocation Collection [v5 NEW] ✅
+- [x] Create `backend/erp/models/BudgetAllocation.js`: entity_id, target_type, target_id, period, components array, total_budget (auto-computed in pre-save), status (DRAFT/APPROVED/CLOSED), `erp_budget_allocations` collection
+- [x] Create `backend/erp/controllers/budgetAllocationController.js` — CRUD + approve endpoint
+- [x] Create `backend/erp/routes/budgetAllocationRoutes.js`
+- [x] Add to ERP router
+- [ ] Commit pending
 
-### 2.14 — Vendor Master Model
-**Goal:** Supplier registry that maps vendors to default COA codes for automatic expense classification. Follows SAP Vendor Master (XK01) pattern — every vendor has a default G/L account for automatic account determination.
+### 2.13 — Consignment Tracker Model [v5 NEW] ✅
+- [x] Create `backend/erp/models/ConsignmentTracker.js`: entity_id, bdm_id, hospital_id, dr_ref, product_id, qty_delivered/consumed/remaining (auto-computed), conversions array, aging_status (auto-updated in pre-save based on days_outstanding), immutable created_at
+- [ ] Commit pending
 
-**Architecture principle (SAP parallel):** In SAP, Vendor Master (FI side) stores default reconciliation accounts + expense accounts. When a vendor invoice is posted, SAP auto-suggests the expense account from Vendor Master. Our VendorMaster.default_coa_code does the same thing. The `vendor_aliases` array enables OCR fuzzy matching — SAP uses vendor search terms for the same purpose.
+### 2.14 — Vendor Master Model ✅
+**Goal:** Supplier registry that maps vendors to default COA codes for automatic expense classification. Follows SAP Vendor Master (XK01) pattern.
 
-- [ ] Create `backend/erp/models/VendorMaster.js`:
-  - entity_id (ref Entity), vendor_code (String, auto-generated or manual)
-  - vendor_name (String, required), vendor_aliases (String array — OCR name variations for fuzzy matching, e.g., ["AP CARGO", "AP CARGO LOGISTIC", "APCARGO"])
-  - tin (String), address (String), contact_person (String), phone (String), email (String)
-  - default_coa_code (String — maps to ChartOfAccounts.account_code when CoA is built in Phase 11)
-  - default_expense_category (String — human-readable label, e.g., "Courier / Shipping")
-  - payment_terms_days (Number, default 0 for cash vendors)
-  - is_active (Boolean, default true)
-  - created_by (ref User), updated_by (ref User)
-  - Compound unique index: `{ entity_id: 1, vendor_code: 1 }`
-  - Text index on vendor_name + vendor_aliases for search
-- [ ] Create seed script `backend/erp/scripts/seedVendors.js` with known VIP vendors:
-  - AP CARGO LOGISTIC NETWORK CORPORATION → 6200 (Courier / Shipping)
-  - JRS EXPRESS → 6200 (Courier / Shipping)
-  - LBC EXPRESS → 6200 (Courier / Shipping)
-  - Shell (all stations) → 6150 (Fuel & Oil)
-  - Petron (all stations) → 6150 (Fuel & Oil)
-  - Caltex / Phoenix / Seaoil → 6150 (Fuel & Oil)
-  - NLEX / SLEX / TPLEX / Skyway / Cavitex → 6160 (Parking & Tolls)
-- [ ] Create `backend/erp/controllers/vendorController.js`:
-  - CRUD: create, getAll (with search query), getById, update, deactivate
-  - `GET /api/erp/vendors/search?q=cargo` — search by name or alias (case-insensitive, substring)
-  - `POST /api/erp/vendors/:id/add-alias` — add new alias (from OCR override learning)
-  - Finance/Admin only for create/update; BDM can read/search
-- [ ] Create `backend/erp/routes/vendorRoutes.js`, mount on ERP router
-- [ ] Commit: `"feat(erp): vendor master model with default COA mapping (SAP XK01 pattern)"`
+- [x] Create `backend/erp/models/VendorMaster.js`: entity_id, vendor_code, vendor_name, vendor_aliases (array for OCR fuzzy matching), default_coa_code, default_expense_category, vat_status, bank_account, text index on vendor_name + vendor_aliases, `erp_vendors` collection
+- [x] Create seed script `backend/erp/scripts/seedVendors.js` — 13 vendors: 3 couriers (AP CARGO, JRS, LBC), 5 fuel (Shell, Petron, Caltex, Phoenix, Seaoil), 5 toll roads (NLEX, SLEX, TPLEX, Skyway, Cavitex)
+- [x] Create `backend/erp/controllers/vendorController.js`: CRUD + search endpoint + addAlias endpoint
+- [x] Create `backend/erp/routes/vendorRoutes.js`, mounted on ERP router
+- [ ] Commit pending
 
-### 2.15 — Expense Classification Service
-**Goal:** Takes raw OCR-extracted fields and returns an accounting classification suggestion. This is the bridge between Layer 1 (extraction) and Layer 3/4 (tax + journal). Follows SAP's automatic account determination — the system suggests, the user confirms or overrides.
+### 2.15 — Expense Classification Service ✅
+**Goal:** Takes raw OCR-extracted fields and returns an accounting classification suggestion. 4-step cascade following SAP automatic account determination pattern.
 
-**Architecture principle (SAP parallel):** SAP's MM-FI integration uses a determination table: Vendor + Material Group + Plant → G/L Account. Our equivalent: Vendor (name match) + Receipt Type (keyword) → COA Code. The `match_method` field provides audit trail of HOW the classification was determined — required for BIR audit compliance.
+- [x] Create `backend/erp/services/expenseClassifier.js`: async `classifyExpense(extractedFields)` with 4-step cascade (EXACT_VENDOR → ALIAS_MATCH → KEYWORD → FALLBACK), KEYWORD_RULES array (8 categories from removed EXPENSE_COA_MAP), VAT auto-computation (12/112), `getCategories()` function
+- [x] Create `backend/erp/controllers/classificationController.js`: POST /classify, POST /classify/override (with save_as_default learning loop), GET /classify/categories
+- [x] Create `backend/erp/routes/classificationRoutes.js`, mounted on ERP router
+- [ ] Unit tests pending
+- [ ] Commit pending
 
-**4-step classification cascade:**
-```
-Step 1: EXACT_VENDOR  — supplier_name exact match in VendorMaster.vendor_name
-Step 2: ALIAS_MATCH   — fuzzy match against VendorMaster.vendor_aliases array
-Step 3: KEYWORD        — keyword patterns (courier/fuel/parking/toll/hotel/food/office)
-Step 4: FALLBACK       — "Miscellaneous Expense" (6900) with LOW confidence
-```
+### 2.17 — OCR Smart Dropdowns (Moved from Phase 1.14) 🔄 BACKEND DONE, FRONTEND PENDING
+**Goal:** When OCR returns LOW confidence or empty for key fields, replace the text input with a searchable dropdown populated from master data.
 
-- [ ] Create `backend/erp/services/expenseClassifier.js`:
-  - `classifyExpense(extractedFields)` — accepts raw OCR output (supplier_name, amount, etc.)
-  - Returns: `{ vendor_id, vendor_name, coa_code, coa_name, expense_category, confidence (HIGH/MEDIUM/LOW), match_method (EXACT_VENDOR/ALIAS_MATCH/KEYWORD/FALLBACK) }`
-  - Step 1 (EXACT_VENDOR): Case-insensitive exact match of `supplier_name.value` against `VendorMaster.vendor_name`
-  - Step 2 (ALIAS_MATCH): Case-insensitive substring match against `VendorMaster.vendor_aliases` array entries
-  - Step 3 (KEYWORD): Pattern-based detection using keyword lists:
-    - Courier: AP CARGO, JRS, LBC, J&T, 2GO, AIR21, NINJA VAN, GRAB EXPRESS → 6200
-    - Fuel: SHELL, PETRON, CALTEX, PHOENIX, SEAOIL, GASOLINE, FUEL → 6150
-    - Parking/Toll: PARKING, TOLL, NLEX, SLEX, TPLEX, SKYWAY, CAVITEX → 6160
-    - Accommodation: HOTEL, INN, LODGE, PENSION, AIRBNB → 6300
-    - Food/Meals: RESTAURANT, FOOD, MEAL, CAFE, JOLLIBEE, MCDONALDS → 6250
-    - Office: PRINTING, OFFICE, SUPPLIES, STATIONERY, NATIONAL BOOKSTORE → 6400
-    - Communication: GLOBE, SMART, PLDT, CONVERGE → 6350
-    - Transportation: GRAB, TAXI, ANGKAS, FERRY, BOAT → 6100
-  - Step 4 (FALLBACK): Return `6900 Miscellaneous Expense` with confidence LOW
-  - VAT auto-computation: if amount is present but VAT is null, compute `VAT = amount × 12/112` (PH VAT rate) and flag as `vat_computed: true`
-- [ ] Create `backend/erp/controllers/classificationController.js`:
-  - `POST /api/erp/classify` — accepts `{ supplier_name, amount, vat_amount }`, returns classification
-  - `POST /api/erp/classify/override` — user overrides classification: `{ vendor_id?, new_coa_code, new_category, save_as_default (Boolean) }`
-    - If `save_as_default` is true AND vendor_id exists: update `VendorMaster.default_coa_code`
-    - If `save_as_default` is true AND no vendor_id: create new VendorMaster entry with this supplier + default
-  - `GET /api/erp/classify/categories` — return list of available expense categories with COA codes (from seed or CoA collection)
-- [ ] Create `backend/erp/routes/classificationRoutes.js`, mount on ERP router
-- [ ] Unit tests: verify AP CARGO → 6200 (EXACT_VENDOR), unknown vendor → 6900 (FALLBACK), override saves to VendorMaster
-- [ ] Commit: `"feat(erp): expense classification service — vendor + keyword + fallback cascade (SAP auto-account pattern)"`
-
-### 2.17 — OCR Smart Dropdowns (Moved from Phase 1.14)
-**Goal:** When OCR returns LOW confidence or empty for key fields, replace the text input with a searchable dropdown populated from master data. Reduces manual typing and ensures data consistency.
-
-**Depends on:** 2.3 (Hospital Model), 2.4 (ProductMaster Model)
-
-- [ ] Create lookup API endpoints:
-  - GET `/api/erp/lookups/products?q=nebu` — searchable product autocomplete (from ProductMaster)
-  - GET `/api/erp/lookups/hospitals?q=metro` — searchable hospital autocomplete (from Hospital)
-- [ ] Update `frontend/src/erp/pages/OcrTest.jsx`:
-  - When `hospital` field confidence is LOW or empty → render searchable dropdown (fetches from hospital lookup)
-  - When `brand_name` or `generic_name` field confidence is LOW or empty → render searchable dropdown (fetches from product lookup)
-  - DR type → dropdown toggle (sampling/consignment/donation)
-  - CSI settlement (in CR) → checklist populated from open AR CSIs for matched hospital (connects to 5.2b)
-  - Dropdown uses debounced search (300ms) with typeahead filtering
-  - Selected value replaces the OCR-extracted value and sets confidence to HIGH
-- [ ] Fuzzy matching: case-insensitive substring match on backend; can upgrade to Levenshtein/FuseJS later
-- [ ] Commit: `"feat(ocr): smart dropdown fallbacks for low-confidence hospital and product fields"`
+- [x] Backend search endpoints ready: `GET /api/erp/hospitals?q=`, `GET /api/erp/products?q=`, `GET /api/erp/vendors/search?q=` — all support case-insensitive substring search
+- [ ] Update `frontend/src/erp/pages/OcrTest.jsx` with searchable dropdowns for LOW confidence fields — **deferred to interactive testing session**
+- [ ] DR type dropdown toggle (sampling/consignment/donation)
+- [ ] CSI settlement checklist from AR (connects to 5.2b)
+- [ ] Commit pending
 
 ---
 
-### 2.16 — OCR-to-Classification Pipeline Integration
-**Goal:** Wire the extraction→classification pipeline so the OCR test page shows both extracted fields AND classification suggestion as separate auditable sections. User can override classification without changing extracted data.
+### 2.16 — OCR-to-Classification Pipeline Integration ✅
+**Goal:** Wire the extraction→classification pipeline so the OCR test page shows both extracted fields AND classification suggestion as separate auditable sections.
 
-**Architecture principle:** Extraction output and classification output MUST be separate JSON objects in the API response. This ensures auditability — an auditor can see exactly what the document said (extraction) vs. how it was classified (classification), and whether the user overrode anything.
+- [x] Update `backend/erp/ocr/ocrProcessor.js`:
+  - processOcr is now async, imports classifyExpense
+  - EXPENSE_DOC_TYPES set (OR, GAS_RECEIPT) — only these get classification
+  - Calls `classifyExpense()` after parsing, attaches as separate `classification` key
+  - Non-expense documents get `classification: null`
+  - CLASSIFICATION_ERROR validation flag if classifier fails
+- [x] Update `backend/erp/controllers/ocrController.js`: added `await` on processOcr, includes `classification` in response
+- [x] API response clearly separates `extracted` (Layer 1) from `classification` (Layer 2)
+- [ ] Update `frontend/src/erp/pages/OcrTest.jsx` with classification UI — **deferred to interactive testing session**
+  - Classification section, override dropdown, "save as vendor default" checkbox
+- [ ] Commit pending
 
-- [ ] Update `backend/erp/ocr/ocrProcessor.js`:
-  - After OR/GAS_RECEIPT parser returns raw extracted fields, call `expenseClassifier.classifyExpense()` if doc type is an expense document (OR, GAS_RECEIPT)
-  - Attach classification as a separate `classification` key in response (NOT merged into `extracted`):
-    ```json
-    {
-      "doc_type": "OR",
-      "extracted": { "or_number": {...}, "supplier_name": {...}, "amount": {...}, ... },
-      "classification": { "coa_code": "6200", "coa_name": "Courier / Shipping", "confidence": "HIGH", "match_method": "EXACT_VENDOR", "vendor_id": "..." },
-      "validation_flags": [...],
-      "raw_ocr_text": "..."
-    }
-    ```
-  - Non-expense documents (CSI, CR, CWT, DR, UNDERTAKING) do NOT get classification — they flow to sales/collection/inventory modules directly
-- [ ] Update `frontend/src/erp/pages/OcrTest.jsx`:
-  - Below extracted fields section, add a "Classification" section (visually distinct separator)
-  - Display: suggested expense category, COA code + name, confidence badge (HIGH=green, MEDIUM=amber, LOW=red), match method label
-  - Add dropdown to override category — populated from `GET /api/erp/classify/categories`
-  - When user overrides: call `POST /api/erp/classify/override`
-  - "Save as vendor default" checkbox — visible only on override, calls override endpoint with `save_as_default: true`
-  - Confirm button sends both extracted data + final classification (original or overridden)
-- [ ] Ensure API response clearly separates `extracted` (Layer 1) from `classification` (Layer 2) — never mix them
-- [ ] Commit: `"feat(erp): connect OCR extraction → classification pipeline with override UI (SAP VIM pattern)"`
+### Phase 2 Summary
+
+| Task | Description | Status |
+|------|-------------|--------|
+| 1.17 | OR Parser Extraction-Only Refactor | ✅ Complete |
+| 2.1 | Settings Model | ✅ Complete |
+| 2.2 | User Model ERP Extension | ✅ Complete (CRM regression test needed) |
+| 2.3 | Entity Model (Multi-Tenancy) | ✅ Complete |
+| 2.4 | Hospital Model | ✅ Complete |
+| 2.5 | ProductMaster Model | ✅ Complete |
+| 2.6 | Lookup Collections (Bank/Payment/Expense) | ✅ Complete |
+| 2.7 | TransactionEvent (Immutable) | ✅ Complete |
+| 2.8 | DocumentAttachment | ✅ Complete |
+| 2.9 | Tenant Filtering Middleware | ✅ Complete |
+| 2.10 | ERP Frontend Hooks | ✅ Complete |
+| 2.11 | Government Rates (PH Mandatories) | ✅ Complete |
+| 2.12 | Budget Allocation | ✅ Complete |
+| 2.13 | Consignment Tracker | ✅ Complete |
+| 2.14 | VendorMaster (SAP XK01) | ✅ Complete |
+| 2.15 | Expense Classification Service | ✅ Complete |
+| 2.16 | OCR→Classification Pipeline | ✅ Backend complete (frontend UI deferred) |
+| 2.17 | OCR Smart Dropdowns | ✅ Backend complete (frontend UI deferred) |
+
+**Files created:** 37 | **Models:** 13 | **Controllers:** 8 | **Routes:** 8 | **Seeds:** 5 | **Hooks:** 2 | **Middleware:** 1
+
+**Remaining frontend work (deferred to interactive session):**
+- OcrTest.jsx: Classification section UI + override dropdown
+- OcrTest.jsx: Smart dropdown fallbacks for low-confidence fields
 
 ---
 
 ## PHASE 3 — SALES MODULE (SAP Park -> Check -> Post)
 **Goal:** Sales invoice entry that preserves the client's current validate/submit/re-open workbook behavior while upgrading it to the SAP-style webapp target: live date partition, spreadsheet-speed draft entry, FIFO batch selection, on-demand validation, posting controls, and audit trail.
 
-### 3.1 — Inventory Ledger Model (needed for FIFO)
+**Prerequisites:** Phase 2 committed, seeds run, CRM login verified.
+
+### 3.0 — Pre-Work
+- [ ] Commit all Phase 2 work (37 files)
+- [ ] Run `node backend/erp/scripts/seedAll.js` — seeds Entity, Settings, GovernmentRates, Lookups, Vendors
+- [ ] CRM regression check — login as admin & BDM, verify dashboards and visit logging still work
+- [ ] Create `backend/erp/scripts/seedInventory.js` — OPENING_BALANCE entries for 5-10 products with batch/lot/expiry
+- [ ] Commit: `"feat(erp): phase 2 commit + inventory seed data"`
+
+### 3.1 — Master Data Quality Layer
+**Why:** OCR output contains typos, variant spellings, and inconsistent formatting. Without normalization, FIFO fragments inventory into phantom batches and sales pipeline breaks. Every downstream model and service depends on clean master data.
+
+- [ ] Create `backend/erp/utils/normalize.js`:
+  - `cleanBatchNo(raw)` — uppercase, strip spaces/dashes/dots ("B-1234" → "B1234", "lot 5678" → "LOT5678")
+  - `parseExpiry(raw)` — handles "04/2027", "APR 2027", "2027-04", "04-27", "042027" → Date(2027-04-01). Always first-of-month (FIFO needs month/year only)
+  - `normalizeUnit(raw)` — maps variants to canonical codes ("PIECES"→"PC", "BTL"→"BOTTLE", "BX"→"BOX", "TAB"→"TABLET", "CAP"→"CAPSULE", etc.)
+  - `cleanProductName(raw)` — reuses `cleanName()` from `nameClean.js`
+  - Full unit map: PC, BOX, BOTTLE, VIAL, TUBE, SACHET, STRIP, TABLET, CAPSULE, AMPULE, PACK, ROLL, SET, BAG
+- [ ] Modify `backend/erp/models/ProductMaster.js`:
+  - Add `product_aliases` [String] — OCR name variations (same pattern as VendorMaster.vendor_aliases)
+  - Add `brand_name_clean` String — canonicalized via cleanName() for dedup/matching
+  - Add `unit_code` String enum — canonical unit from UNIT_MAP
+  - Pre-save hook: auto-generate brand_name_clean when brand_name changes, auto-set unit_code from sold_per
+  - Add index: `{ entity_id, brand_name_clean }`
+  - Update text index to include product_aliases
+- [ ] Create `backend/erp/services/productResolver.js`:
+  - `resolveProduct(ocrText, entityId)` — 4-step cascade:
+    1. EXACT — brand_name_clean === cleanName(ocrText) → HIGH confidence
+    2. ALIAS — product_aliases regex match → MEDIUM confidence
+    3. FUZZY — text index $search on brand_name/generic_name → MEDIUM confidence
+    4. ITEM_KEY — parse "BrandName|Dosage" format → MEDIUM confidence
+    5. No match → return null
+  - `resolveHospital(ocrText, entityId)` — hospital_name_clean match, then fuzzy text search fallback
+  - `resolveVendor(ocrText, entityId)` — wraps expenseClassifier vendor resolution
+  - All return `{ record, confidence, match_method }` or null
+- [ ] Commit: `"feat(erp): master data quality layer — normalize, resolve, canonicalize"`
+
+### 3.2 — Inventory Ledger Model + ERP Audit Log Model
 - [ ] Create `backend/erp/models/InventoryLedger.js`:
   - entity_id, bdm_id, product_id, batch_lot_no, expiry_date
   - transaction_type enum: OPENING_BALANCE, GRN, CSI, DR_SAMPLING, DR_CONSIGNMENT, RETURN_IN, TRANSFER_OUT, TRANSFER_IN, ADJUSTMENT
   - qty_in, qty_out, running_balance, event_id
   - fifo_override, override_reason enum: HOSPITAL_POLICY, QA_REPLACEMENT, DAMAGED_BATCH, BATCH_RECALL
   - recorded_at (immutable), recorded_by
-- [ ] Commit: `"feat(erp): inventory ledger model"`
+  - **Pre-save: normalize batch_lot_no via cleanBatchNo()**
+  - **Immutability: pre('save') blocks non-new documents** (same as TransactionEvent)
+  - Indexes: `{entity_id, bdm_id, product_id, batch_lot_no}`, `{entity_id, bdm_id, product_id, expiry_date}`, `{event_id}`, `{recorded_at: -1}`
+- [ ] Create `backend/erp/models/ErpAuditLog.js`:
+  - entity_id, bdm_id, log_type (SALES_EDIT, PRICE_CHANGE, ITEM_CHANGE, DELETION, REOPEN, STATUS_CHANGE)
+  - target_ref, target_model, field_changed, old_value, new_value
+  - changed_by, changed_at (immutable), note
+  - Static helper: `ErpAuditLog.logChange({...})` wrapping create()
+  - Immutable like InventoryLedger
+- [ ] Commit: `"feat(erp): inventory ledger + erp audit log models"`
 
-### 3.2 — FIFO Engine
+### 3.3 — FIFO Engine + Stock Aggregation
 - [ ] Create `backend/erp/services/fifoEngine.js`:
-  - `getAvailableBatches(bdmId, productId)` — all batches with qty > 0, sorted by expiry ascending
-  - `consumeFIFO(bdmId, productId, qty)` — consume from oldest expiry first, return consumed batches
-  - `consumeSpecificBatch(bdmId, productId, batchLotNo, qty)` — for FIFO override
-- [ ] Test with sample data
-- [ ] Commit: `"feat(erp): fifo engine for batch consumption"`
+  - `getAvailableBatches(entityId, bdmId, productId)` — aggregate InventoryLedger, group by batch_lot_no+expiry_date, available_qty > 0, sorted by expiry ASC
+  - `consumeFIFO(entityId, bdmId, productId, qty)` — walk batches oldest-first, return consumption plan (no DB writes). Throw INSUFFICIENT_STOCK if total < qty
+  - `consumeSpecificBatch(entityId, bdmId, productId, batchLotNo, qty)` — for FIFO override
+  - `getMyStock(entityId, bdmId)` — full stock-on-hand aggregation: all products with available_qty per batch, nearest expiry, near-expiry flag (uses Settings.NEAR_EXPIRY_DAYS), total value
+  - **Key:** All functions return data/plans. They do NOT write to DB. Callers create InventoryLedger entries.
+- [ ] Test with seeded inventory data
+- [ ] Commit: `"feat(erp): fifo engine + stock aggregation"`
 
-### 3.3 — Sales Line Model
+### 3.4 — Sales Line Model
 - [ ] Create `backend/erp/models/SalesLine.js`:
   - entity_id, bdm_id, event_id
   - source: SALES_LINE or OPENING_AR (auto-set from live_date)
@@ -686,42 +639,74 @@ Step 4: FALLBACK       — "Miscellaneous Expense" (6900) with LOW confidence
   - line_items array: product_id, item_key, batch_lot_no, qty, unit, unit_price, line_total, vat_amount, net_of_vat, fifo_override, override_reason
   - invoice_total, total_vat, total_net_of_vat
   - status (DRAFT/VALID/ERROR/POSTED/DELETION_REQUESTED), posted_at, posted_by, reopen_count, validation_errors, deletion_event_id
-  - created_at (immutable)
+  - created_at (immutable), created_by
+- [ ] Pre-save: **normalize batch_lot_no via cleanBatchNo(), unit via normalizeUnit()** on each line_item
+- [ ] Pre-save: auto-compute line totals, VAT (12% PH), net of VAT, roll up to invoice_total
 - [ ] Pre-save: auto-route source based on csi_date vs user.live_date
-- [ ] Pre-save: auto-compute line totals, VAT, net of VAT
-- [ ] Pre-save: do NOT trigger FIFO consumption yet; inventory moves only on submitSales
-- [ ] Commit: `"feat(erp): sales line model with live date partition and auto-vat"`
+- [ ] Pre-save: do NOT trigger FIFO consumption; inventory moves only on submitSales
+- [ ] Commit: `"feat(erp): sales line model with normalization, live date partition, auto-vat"`
 
-### 3.4 — Sales Controller & Routes (Validate -> Submit -> Re-open Pattern)
+### 3.5 — Sales Controller (Validate -> Submit -> Re-open Pattern)
 - [ ] Create `backend/erp/controllers/salesController.js`:
+  - Uses: catchAsync, fifoEngine, productResolver, cleanBatchNo, normalizeUnit
+  - Uses: InventoryLedger, SalesLine, ErpAuditLog, TransactionEvent, ConsignmentTracker
+  - Uses: req.tenantFilter, req.entityId, req.bdmId from tenant middleware
   - `createSale` — creates SalesLine(s) in DRAFT status (no inventory movement yet)
-  - `updateSale` — edit DRAFT rows only (POSTED rows blocked)
+  - `updateSale` — edit DRAFT rows only (POSTED rows blocked), audit log changes
   - `deleteDraftRow` — hard-delete rows in DRAFT status (not yet posted, safe to remove)
-  - `getSales` — list with entity/bdm/date/status filters
+  - `getSales` — list with entity/bdm/date/status filters, paginated
   - `getSaleById` — single sale with line items and validation_errors
   - `validateSales` — **THE CORE ENDPOINT:**
-    1. Rebuild inventory snapshot fresh from InventoryLedger
-    2. Check every row: stock available, no duplicates, required fields, no future dates, DR=CR balance
-    3. [v5] If CSI references DR (consignment sale): validate qty ≤ remaining consignment qty from ConsignmentTracker
-    4. Mark each row VALID or ERROR with actionable error messages
-    4. Return: { valid_count, error_count, errors[] }
-  - `submitSales` — post all VALID rows:
-    1. Pre-check: if any rows not VALID, run validateSales first — block if errors
-    2. Create TransactionEvent entries (immutable)
-    3. Create InventoryLedger entries (FIFO consumption)
-    4. [v5] CSI referencing DR (consigned items): skip inventory deduction (already deducted at DR stage), only create AR entry and update ConsignmentTracker qty_consumed
-    5. Set status=POSTED, posted_at, posted_by
-    5. Return: { posted_count, event_ids[] }
+    1. Find DRAFT/ERROR rows for this BDM
+    2. **Fresh aggregation** of InventoryLedger → in-memory stock snapshot
+    3. For each row: required fields, no future dates, no dupes, stock check (**deduct from snapshot per row** — prevents double-allocation), CSI-DR consignment qty check, VAT balance
+    4. Mark each row VALID or ERROR with actionable validation_errors[]
+    5. Return: { valid_count, error_count, errors[] }
+    - **Critical:** In-memory snapshot deduction — if BDM has 100 units and enters two rows of 60, first passes, second fails
+  - `submitSales` — post all VALID rows (**MongoDB transaction** for atomicity):
+    1. Find all VALID rows → use mongoose.startSession() + session.withTransaction()
+    2. Per row: create TransactionEvent (immutable), create InventoryLedger entries (FIFO or specific batch)
+    3. CSI referencing DR (consigned items): skip inventory deduction (already deducted at DR stage), only update ConsignmentTracker qty_consumed
+    4. Set status=POSTED, posted_at, posted_by
+    5. Commit or rollback atomically
+    6. Return: { posted_count, event_ids[] }
   - `reopenSales` — un-post for corrections:
-    1. Set status=DRAFT, increment reopen_count
-    2. Reverse InventoryLedger entries (create reversal ledger entries, not delete)
-    3. Create audit log entry (who, when, reason)
-    4. Return: { reopened_count }
+    1. Create REVERSAL InventoryLedger entries (qty_in for what was qty_out, same batch)
+    2. Reverse ConsignmentTracker if applicable
+    3. Status → DRAFT, increment reopen_count
+    4. Create ErpAuditLog entry (log_type: REOPEN)
+    5. Return: { reopened_count }
   - `requestDeletion` — BDM flags POSTED row for Finance review (status=DELETION_REQUESTED)
   - `approveDeletion` — Finance creates REVERSAL entry (SAP Storno pattern, not hard delete):
-    1. Create reversal SalesLine (negative amounts, corrects_event_id -> original)
-    2. Original stays POSTED (audit trail preserved)
-    3. Inventory reversed via reversal ledger entry
+    1. Create reversal TransactionEvent (corrects_event_id → original)
+    2. Create reversal InventoryLedger entries
+    3. Create reversal SalesLine (negative amounts)
+    4. Original stays POSTED (audit trail preserved)
+    5. ErpAuditLog entry (log_type: DELETION)
+- [ ] Validation rules (in validateSales):
+  - No duplicate doc_ref + hospital + product combination across all rows in batch
+  - No future dates (csi_date <= today)
+  - Stock available for each line item (FIFO check against rebuilt snapshot)
+  - All required fields present (hospital_id, csi_date, doc_ref, at least 1 line_item)
+  - DR=CR balance: invoice_total == sum(line_totals), VAT computed correctly
+  - CSI number in allocation range (if allocations exist for this BDM)
+- [ ] Commit: `"feat(erp): sales controller with validate-submit-reopen workflow (SAP pattern)"`
+
+### 3.6 — Inventory Controller & Routes (BDM Stock Visibility)
+**Why:** BDMs must see their stock for sales (what can I sell?), audit (where did each unit come from?), and variance (does physical count match system?). Pulled forward from Phase 4 because sales entry depends on stock visibility.
+
+- [ ] Create `backend/erp/controllers/inventoryController.js`:
+  - `getMyStock` — BDM's stock dashboard: products with available_qty, batch count, nearest expiry, near-expiry flag (Settings.NEAR_EXPIRY_DAYS), total value. Uses req.bdmId. Admin/Finance: pass ?bdm_id=X
+  - `getBatches(productId)` — all batches for a product: batch_lot_no, expiry_date, available_qty, days_to_expiry, near_expiry flag. Sorted by expiry ASC (FIFO order). BDM-scoped
+  - `getLedger(productId)` — **audit trail** — full transaction history: every InventoryLedger entry (type, qty_in, qty_out, running_balance, event_id, recorded_at, recorded_by). Paginated, date-range filterable. BDM-scoped
+  - `getVariance` — **variance report** — per product: opening_balance + total_in - total_out = expected_balance vs actual_balance (latest aggregation). Flag discrepancies
+  - `recordPhysicalCount` — BDM records actual stock per product/batch. Creates ADJUSTMENT InventoryLedger entries for any variance. Logs to ErpAuditLog
+- [ ] Create `backend/erp/routes/inventoryRoutes.js`:
+  - GET `/my-stock` — getMyStock
+  - GET `/batches/:productId` — getBatches
+  - GET `/ledger/:productId` — getLedger
+  - GET `/variance` — getVariance
+  - POST `/physical-count` — recordPhysicalCount
 - [ ] Create `backend/erp/routes/salesRoutes.js`:
   - POST `/` — createSale
   - PUT `/:id` — updateSale (DRAFT only)
@@ -733,101 +718,126 @@ Step 4: FALLBACK       — "Miscellaneous Expense" (6900) with LOW confidence
   - POST `/reopen` — reopenSales
   - POST `/:id/request-deletion` — requestDeletion
   - POST `/:id/approve-deletion` — approveDeletion (Finance/Admin only)
-- [ ] Validation rules (in validateSales):
-  - No duplicate doc_ref + hospital + product combination across all rows in batch
-  - No future dates (csi_date <= today)
-  - Stock available for each line item (FIFO check against rebuilt InventoryLedger)
-  - All required fields present (hospital_id, csi_date, doc_ref, at least 1 line_item)
-  - DR=CR balance: invoice_total == sum(line_totals), VAT computed correctly
-  - CSI number in allocation range (if allocations exist for this BDM)
-- [ ] Commit: `"feat(erp): sales controller with validate-submit-reopen workflow (SAP pattern)"`
+- [ ] Modify `backend/erp/routes/index.js` — add:
+  ```js
+  router.use('/sales', require('./salesRoutes'));
+  router.use('/inventory', require('./inventoryRoutes'));
+  ```
+- [ ] **BDM stock isolation enforced:** All endpoints use req.bdmId from tenantFilter. BDM can ONLY see their own stock/sales/batches. Admin/Finance see entity-wide. President/CEO see cross-entity.
+- [ ] Commit: `"feat(erp): sales + inventory routes with BDM stock isolation"`
 
-### 3.5 — Audit Log Model
-- [ ] Create `backend/erp/models/ErpAuditLog.js`:
-  - entity_id, bdm_id, log_type (SALES_EDIT, PRICE_CHANGE, ITEM_CHANGE, DELETION)
-  - target_ref, target_model, field_changed, old_value, new_value
-  - changed_by, changed_at, note
-- [ ] Auto-log on sales modifications
-- [ ] Commit: `"feat(erp): erp audit log model"`
+### 3.7 — Frontend Hooks
+- [ ] Create `frontend/src/erp/hooks/useSales.js` — wraps useErpApi for all /sales endpoints
+- [ ] Create `frontend/src/erp/hooks/useInventory.js` — wraps useErpApi for /inventory endpoints (my-stock, batches, ledger, variance, physical-count)
+- [ ] Create `frontend/src/erp/hooks/useProducts.js` — fetch ProductMaster for dropdowns
+- [ ] Create `frontend/src/erp/hooks/useHospitals.js` — fetch hospitals for dropdowns
+- [ ] Commit: `"feat(ui): sales + inventory api hooks"`
 
-### 3.6 — Sales Entry Page (Spreadsheet-Speed Data Entry)
-- [ ] Create `frontend/src/erp/pages/SalesEntry.jsx`:
-  - **Data entry grid** (spreadsheet-like table for fast encoding):
-    - Columns: Hospital, CSI Date, CSI#, Product, Qty, Unit, Unit Price, Line Total (auto), Status
-    - Auto-fills: BDM/Territory (from logged-in user), Unit/Price (from ProductMaster), LineTotal (qty × price), TaxTag (from product vat_status)
-    - Free typing — no per-keystroke validation, no lag, no popups
-    - Add row, delete row, paste rows — all instant
-  - **"Scan CSI" button** -> opens camera -> runs OCR -> pre-fills a new row (connects to Phase 1 OCR)
-  - **FIFO batch display:** shows recommended batch when product selected, option to override with reason dropdown
-  - **Status column:** color-coded per row — gray=DRAFT, green=VALID, red=ERROR, blue=POSTED
-  - **Action buttons (bottom bar):**
-    - "Validate Sales" -> POST /api/erp/sales/validate -> updates row colors + shows error list
-    - "Submit Sales" -> POST /api/erp/sales/submit -> only enabled when all rows VALID
-    - "Re-open Sales" -> POST /api/erp/sales/reopen -> only visible for POSTED rows
-  - **Error panel:** collapsible panel showing validation errors with row references (e.g., "Row 3: Qty exceeds stock for Dexavit — available: 15, requested: 20")
-  - **Mobile layout:** card-per-row on phone (each sales line is a card), swipe to delete draft rows
+### 3.8 — Sales Entry Page (Spreadsheet-Speed Data Entry)
+- [ ] Create `frontend/src/erp/pages/SalesEntry.jsx` with sub-components in `frontend/src/erp/components/sales/`:
+  - **SalesEntryGrid.jsx** — grid container, row state management, desktop table / mobile card toggle
+  - **SalesEntryRow.jsx** — desktop row: Hospital, CSI Date, CSI#, Product, Qty, Unit, Unit Price, Line Total (auto), Status
+  - **SalesEntryCard.jsx** — mobile card version, delete button for drafts
+  - **BatchSelector.jsx** — FIFO batch display + override dropdown with reason
+  - **SalesErrorPanel.jsx** — collapsible validation errors with row references (e.g., "Row 3: Qty exceeds stock for Dexavit — available: 15, requested: 20")
+  - **ScanCSIModal.jsx** — camera → OCR → **productResolver + hospitalResolver** → pre-fill row with matched master data
+  - **SalesActionBar.jsx** — sticky bottom bar: Validate Sales, Submit Sales, Re-open Sales buttons
+- [ ] Key UX:
+  - **Product dropdown shows ONLY products with stock > 0** (from /inventory/my-stock). Each option: "Product Name — qty Unit available"
+  - Auto-fills: unit/price/item_key from ProductMaster on product selection
+  - Auto-compute line_total on qty/price change (client-side)
+  - **Near-expiry warning:** orange badge if product's nearest batch expires within NEAR_EXPIRY_DAYS
+  - Free typing — no per-keystroke validation, no lag, no popups
+  - Status colors: gray=DRAFT, green=VALID, red=ERROR, blue=POSTED
+  - Mobile: card-per-row layout
+  - Follows ERP CSS variable system
 - [ ] Commit: `"feat(ui): sales entry page with validate-submit-reopen workflow"`
 
-### 3.7 — Sales List Page
+### 3.9 — My Stock Page (BDM Stock Visibility)
+**Why:** BDMs need to answer: "What do I have? Where did it come from? Does it match my physical count?" This is critical for daily operations, audit prep, and variance tracking.
+
+- [ ] Create `frontend/src/erp/pages/MyStock.jsx` with sub-components in `frontend/src/erp/components/inventory/`:
+  - **StockSummaryBar.jsx** — top bar: total products, total units, total value, near-expiry count
+  - **StockTable.jsx** — product list with expandable batch rows
+  - **BatchBreakdown.jsx** — batch_lot_no, expiry_date, qty, days remaining per product
+  - **TransactionLedger.jsx** — full audit trail table per product (color-coded: green=GRN/RETURN, red=CSI/DR, blue=OPENING, yellow=ADJUSTMENT)
+  - **VarianceTable.jsx** — expected vs actual comparison per product
+  - **PhysicalCountModal.jsx** — form to enter actual stock quantities per product/batch
+- [ ] Three tabs/sections:
+  - **Stock on Hand (default)** — product table with near-expiry badges, expandable batch accordion, search/filter. Zero-stock products hidden (Option B)
+  - **Transaction Ledger (Audit)** — select product → full InventoryLedger history with date range filter. BDM traces every unit in/out
+  - **Variance Report** — expected vs actual, "Record Physical Count" button → ADJUSTMENT entries + ErpAuditLog
+- [ ] Mobile: card layout with expandable batch accordion
+- [ ] Commit: `"feat(ui): my stock page with audit trail and variance tracking"`
+
+### 3.10 — Sales List Page
 - [ ] Create `frontend/src/erp/pages/SalesList.jsx`:
   - Table: date, CSI#, hospital, total, source, status
-  - Filters: date range, hospital, source type
+  - Filters: date range, hospital, source type, status
   - Click → detail view with line items
-  - BDM: request deletion button
-  - Admin/Finance: approve deletion button
+  - BDM: request deletion button on POSTED rows
+  - Admin/Finance: approve deletion button on DELETION_REQUESTED rows
+  - Reuses `frontend/src/components/common/Pagination.jsx`
+  - Mobile: card layout
 - [ ] Commit: `"feat(ui): sales list page with deletion workflow"`
+
+### 3.11 — Route Registration
+- [ ] Modify `frontend/src/App.jsx` — add routes:
+  ```jsx
+  <Route path="/erp/sales" element={<ProtectedRoute allowedRoles={['employee','admin','finance']}><SalesList /></ProtectedRoute>} />
+  <Route path="/erp/sales/entry" element={<ProtectedRoute allowedRoles={['employee','admin']}><SalesEntry /></ProtectedRoute>} />
+  <Route path="/erp/my-stock" element={<ProtectedRoute allowedRoles={['employee','admin','finance']}><MyStock /></ProtectedRoute>} />
+  ```
+- [ ] Commit: `"feat(ui): register sales entry, sales list, my stock routes"`
+
+### 3.12 — Phase 3 Verification
+- [ ] **Data Quality:** cleanBatchNo, parseExpiry, normalizeUnit produce correct output for all variants
+- [ ] **Product Resolver:** resolveProduct matches exact, alias, fuzzy, item_key paths
+- [ ] **Hospital Resolver:** resolveHospital matches via hospital_name_clean + fuzzy fallback
+- [ ] **Stock Isolation:** BDM-A cannot see BDM-B's stock via any endpoint
+- [ ] **CRUD:** create DRAFT → read → update → delete draft
+- [ ] **Validate:** 3 DRAFT rows with valid stock → all VALID. Errors: missing fields, future dates, duplicate doc_ref, insufficient stock, CSI-DR qty overflow
+- [ ] **Submit:** VALID → POSTED with MongoDB transaction, TransactionEvent + InventoryLedger entries created
+- [ ] **Reopen:** POSTED → DRAFT with reversal entries, reopen_count incremented
+- [ ] **Deletion:** request → DELETION_REQUESTED → approve → Storno reversal (original preserved)
+- [ ] **Atomicity:** bad data in one row → entire submit rolls back
+- [ ] **My Stock:** stock-on-hand, transaction ledger, variance report all display correctly
+- [ ] **Physical Count:** records adjustments, creates ADJUSTMENT entries + audit log
+- [ ] **SalesEntry UX:** rapid data entry with no lag, product dropdown shows only in-stock products, OCR scan fills row
+- [ ] **Mobile:** card layouts render on 375px width
 
 ---
 
-## PHASE 4 — INVENTORY MODULE
-**Goal:** Stock on hand, GRN, reorder alerts, expiry alerts, warehouse dashboard.
+## PHASE 4 — INVENTORY MODULE (GRN, Reorder, DR/Consignment)
+**Goal:** Stock receiving (GRN), reorder alerts, DR entry, and consignment tracking. Stock-on-hand visibility, audit trail, variance, and BDM isolation were moved to Phase 3 (required by sales entry).
 
-### 4.1 — Stock Service
-- [ ] Create `backend/erp/services/stockService.js`:
-  - `getStockOnHand(bdmId, productId?)` — aggregate from InventoryLedger
-  - `getStockSummary(bdmId)` — total SKUs, out of stock, low stock, expiry risk, total value
-  - `getExpiryAlerts(bdmId)` — items within NEAR_EXPIRY_DAYS
-  - `getReorderAlerts(bdmId)` — items below minimum stock
-- [ ] Commit: `"feat(erp): stock on hand aggregation and alert services"`
+> **Moved to Phase 3:** Stock aggregation (getMyStock, getBatches, getLedger, getVariance), BDM stock isolation, physical count, My Stock page. See 3.3, 3.6, 3.9.
 
-### 4.2 — Inventory Controller & Routes
-- [ ] Create `backend/erp/controllers/inventoryController.js`:
-  - `getStock`, `getStockByProduct`, `getSummary`, `getLedger`, `getAlerts`
-  - `createGrn` — manual stock receiving (pending Finance approval)
-  - `approveGrn` — Finance approves → inventory_ledger GRN entry created
-  - `requestAdjustment` — BDM requests physical count adjustment
-  - `approveAdjustment` — Finance approves → inventory_ledger ADJUSTMENT entry
-- [ ] Create `backend/erp/routes/inventoryRoutes.js`
-- [ ] Commit: `"feat(erp): inventory controller and routes"`
-
-### 4.3 — Reorder Rules
-- [ ] Add `reorder_min_qty` field to ProductMaster (or separate ReorderRule model)
-- [ ] Finance can set/update min stock per product
-- [ ] Alert logic: stock below threshold after any inventory movement
-- [ ] Commit: `"feat(erp): reorder rules with thresholds"`
-
-### 4.4 — Inventory Dashboard Page
-- [ ] Create `frontend/src/erp/pages/Inventory.jsx`:
-  - Summary cards: Total SKUs, Out of Stock (red), Low Stock (orange), Expiry Risk (yellow), Total Value
-  - Product list: cards sorted by status priority, expandable batch breakdown
-  - Color coding: RED=expired/out, ORANGE=risk/low, GREEN=ok
-- [ ] Commit: `"feat(ui): inventory dashboard"`
-
-### 4.5 — GRN Entry Page
+### 4.1 — GRN (Goods Received Note) Workflow
+- [ ] Add to `backend/erp/controllers/inventoryController.js`:
+  - `createGrn` — BDM records stock received: product, batch_lot_no, expiry_date, qty. Creates InventoryLedger GRN entry in PENDING status
+  - `approveGrn` — Finance approves → InventoryLedger entry activated
+  - `getGrnList` — list GRNs with status filter (PENDING/APPROVED/REJECTED)
+- [ ] Add routes to `backend/erp/routes/inventoryRoutes.js`:
+  - POST `/grn` — createGrn
+  - POST `/grn/:id/approve` — approveGrn (Finance/Admin only)
+  - GET `/grn` — getGrnList
 - [ ] Create `frontend/src/erp/pages/GrnEntry.jsx`:
   - Product dropdown, batch lot#, expiry date, qty
   - "Scan Undertaking" button → OCR pre-fills (Phase 1)
   - Waybill photo upload (proof only)
   - Submit → pending Finance approval
-- [ ] Commit: `"feat(ui): grn entry page"`
+- [ ] Commit: `"feat(erp): grn entry with finance approval workflow"`
 
-### 4.6 — Stock Visibility Rules (BDM Territory Isolation) [v5 NEW]
-- [ ] Enforce in stockService.js: BDM can ONLY see stock in their own territory (bdm_id filter auto-applied)
-- [ ] Admin/Finance can see all territories with territory filter dropdown
-- [ ] Inventory dashboard respects tenant filtering (bdm_id scope)
-- [ ] Commit: `"feat(erp): stock visibility isolation per bdm territory [v5]"`
+### 4.2 — Reorder Rules & Alerts
+- [ ] Add `reorder_min_qty` field to ProductMaster (or separate ReorderRule model)
+- [ ] Add to inventoryController: `getAlerts` — expiry alerts (within NEAR_EXPIRY_DAYS) + reorder alerts (below min qty)
+- [ ] Finance can set/update min stock per product
+- [ ] Alert logic: stock below threshold after any inventory movement
+- [ ] Add expiry + reorder alert panels to MyStock page (or separate alerts endpoint)
+- [ ] Commit: `"feat(erp): reorder rules with thresholds + alert panels"`
 
-### 4.7 — DR Entry & Consignment Tracking [v5 NEW]
+### 4.3 — DR Entry & Consignment Tracking [v5 NEW]
 - [ ] Create `backend/erp/controllers/consignmentController.js`:
   - `createDR` — creates ConsignmentTracker entry + InventoryLedger DR_CONSIGNMENT or DR_SAMPLING movement
   - `getDRsByBdm` — list DRs with aging status

@@ -33,7 +33,7 @@ const processDocument = catchAsync(async (req, res) => {
   const exifDateTime = String(req.body.exifDateTime || '').trim() || null;
 
   // Route through document-type parser for structured extraction
-  const processed = processOcr(docType, ocrResult, { exifDateTime });
+  const processed = await processOcr(docType, ocrResult, { exifDateTime });
 
   res.status(200).json({
     success: true,
@@ -43,6 +43,7 @@ const processDocument = catchAsync(async (req, res) => {
       s3_key: uploadResult.key,
       doc_type: processed.doc_type,
       extracted: processed.extracted,
+      classification: processed.classification,
       validation_flags: processed.validation_flags,
       raw_ocr_text: processed.raw_ocr_text,
     },

@@ -13,6 +13,10 @@ const { parseOdometer } = require('./parsers/odometerParser');
 const { parseOR } = require('./parsers/orParser');
 const { parseUndertaking } = require('./parsers/undertakingParser');
 const { parseDR } = require('./parsers/drParser');
+const { classifyExpense } = require('../services/expenseClassifier');
+
+// Document types that should get expense classification (Layer 2)
+const EXPENSE_DOC_TYPES = new Set(['OR', 'GAS_RECEIPT']);
 
 const PARSERS = {
   CSI: parseCSI,
@@ -32,7 +36,7 @@ const PARSERS = {
  * @param {object} ocrResult – Output of visionClient.detectText()
  * @returns {{ doc_type, extracted, validation_flags, raw_ocr_text }}
  */
-function processOcr(docType, ocrResult, options = {}) {
+async function processOcr(docType, ocrResult, options = {}) {
   const normalised = (docType || '').toUpperCase().replace(/[\s-]+/g, '_');
   const parser = PARSERS[normalised];
 
@@ -40,6 +44,7 @@ function processOcr(docType, ocrResult, options = {}) {
     return {
       doc_type: docType,
       extracted: null,
+      classification: null,
       validation_flags: [{
         type: 'UNKNOWN_DOC_TYPE',
         message: `No parser for document type "${docType}". Raw text returned.`,
@@ -53,12 +58,27 @@ function processOcr(docType, ocrResult, options = {}) {
   // Separate validation_flags from extracted fields
   const { validation_flags = [], ...extracted } = parsed;
 
-  return {
+  const result = {
     doc_type: normalised,
     extracted,
+    classification: null,
     validation_flags,
     raw_ocr_text: ocrResult.fullText || '',
   };
+
+  // Layer 2: Expense classification for OR and GAS_RECEIPT doc types
+  if (EXPENSE_DOC_TYPES.has(normalised)) {
+    try {
+      result.classification = await classifyExpense(extracted);
+    } catch (err) {
+      result.validation_flags.push({
+        type: 'CLASSIFICATION_ERROR',
+        message: `Classification failed: ${err.message}`
+      });
+    }
+  }
+
+  return result;
 }
 
 /** List of supported document types. */
