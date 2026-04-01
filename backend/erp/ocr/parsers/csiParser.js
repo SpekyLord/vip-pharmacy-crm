@@ -277,7 +277,19 @@ function extractProductBlocks(lines) {
       if (pMatch) {
         let rawBrand = pMatch[1].trim();
         genericName = pMatch[2].trim();
-        dosage = pMatch[3].trim();
+        let rawDosage = pMatch[3].trim();
+
+        // Strip trailing quantity from dosage: "40 MG/ML 500" → dosage="40 MG/ML", inline qty=500
+        // Pattern: dosage text followed by a standalone integer (the qty)
+        const dosageQtyMatch = rawDosage.match(/^(.+?(?:mg|ml|mcg|iu|g)\s*(?:\/\s*\d*\s*(?:mg|ml|mcg|iu|g))?)\s+(\d+)\s*$/i);
+        if (dosageQtyMatch) {
+          rawDosage = dosageQtyMatch[1].trim();
+          // Store the inline qty for later number assignment
+          if (!blocks._inlineQtys) blocks._inlineQtys = [];
+          blocks._inlineQtys.push(parseInt(dosageQtyMatch[2], 10));
+        }
+        dosage = rawDosage;
+
         // Strip unit prefix: "50 vials Onitaz" → "Onitaz"
         rawBrand = rawBrand.replace(UNIT_WORDS, '').trim();
         brandName = rawBrand;
@@ -313,6 +325,12 @@ function extractProductBlocks(lines) {
       }
     }
 
+    // Check if an inline qty was extracted from the dosage line for this product
+    let inlineQty = null;
+    if (blocks._inlineQtys && blocks._inlineQtys.length > 0) {
+      inlineQty = blocks._inlineQtys.shift();
+    }
+
     blocks.push({
       batchLineIdx: i,
       brand_name: brandName,
@@ -320,7 +338,7 @@ function extractProductBlocks(lines) {
       dosage: dosage,
       batch_lot_no: batchLotNo,
       expiry_date: expiryDate,
-      qty: null,
+      qty: inlineQty,  // pre-filled from dosage line if found
       unit_price: null,
       amount: null,
     });
@@ -382,9 +400,18 @@ function assignProductNumbers(lines, blocks, footerIdx) {
     if (isBirLine(line)) continue;
     // Skip entity header lines (MG AND CO address, TIN, etc.)
     if (/^(MG\s*AND|MILLIGRAM|B4\s*L7|Lawaan|VAT\s*Reg|Charged|Address|CHARGE\s*SALES|SC\/PWD|No\.$|Date\s|TIN$|Terms|OSCA|Medical\s*Center|San\s+Jose)/i.test(line)) continue;
-    // Skip lines with substantial non-numeric text (>5 alpha chars)
+    // Skip handwritten BDM annotations: "20 Pap", "480 AMP", "10 AMP", "270 Amps to follow", "PDH 124472"
+    if (/^\d+\s+(?:Pap|AMP|amps?|vials?|pcs?|tabs?|boxes?)\b/i.test(line)) continue;
+    if (/\b(?:LACKING|to\s*follow|detriped|roop|PDH)\b/i.test(line)) continue;
+    // Skip lines with "Note:" annotations
+    if (/^Note\s*:/i.test(line)) continue;
+    // Skip lines that look like reference numbers with dates: "2307409 7/28"
+    if (/^\d{5,}\s+\d{1,2}\/\d{1,2}/.test(line)) continue;
+    // Skip lines with mixed large numbers and date fragments
+    if (/^\d{6,}/.test(line)) continue;
+    // Skip lines with substantial non-numeric text (>4 alpha chars)
     const alphaOnly = line.replace(/[\d₱P£#.,\-\s()/]/g, '').trim();
-    if (alphaOnly.length > 5) continue;
+    if (alphaOnly.length > 4) continue;
 
     const nums = extractNumbers(line);
     for (const n of nums) {
@@ -397,12 +424,44 @@ function assignProductNumbers(lines, blocks, footerIdx) {
 
   if (numEntries.length === 0) return;
 
-  // Step 2: Group into sets of 3 (qty, unit_price, amount) per product
-  // For N products, we expect N×3 numbers (or N×2 if unit_price missing)
+  // Step 2: Account for products that already have qty (from inline extraction)
+  // These products only need 2 numbers (price, amount) from the pool
   const values = numEntries.map(e => e.value);
   const productCount = blocks.length;
+  const prefilledQtyCount = blocks.filter(b => b.qty != null).length;
 
-  if (values.length >= productCount * 3) {
+  // If some products have inline qty, assign differently
+  if (prefilledQtyCount > 0) {
+    let cursor = 0;
+    for (let p = 0; p < productCount; p++) {
+      if (blocks[p].qty != null) {
+        // Already has qty — take 2 from pool (price, amount)
+        if (cursor + 1 < values.length) {
+          blocks[p].unit_price = values[cursor];
+          blocks[p].amount = values[cursor + 1];
+          cursor += 2;
+        } else if (cursor < values.length) {
+          blocks[p].amount = values[cursor];
+          cursor += 1;
+        }
+      } else {
+        // Needs qty — take 3 from pool (qty, price, amount)
+        if (cursor + 2 < values.length) {
+          blocks[p].qty = values[cursor];
+          blocks[p].unit_price = values[cursor + 1];
+          blocks[p].amount = values[cursor + 2];
+          cursor += 3;
+        } else if (cursor + 1 < values.length) {
+          blocks[p].qty = values[cursor];
+          blocks[p].amount = values[cursor + 1];
+          cursor += 2;
+        } else if (cursor < values.length) {
+          blocks[p].amount = values[cursor];
+          cursor += 1;
+        }
+      }
+    }
+  } else if (values.length >= productCount * 3) {
     // Perfect: 3 numbers per product
     for (let p = 0; p < productCount; p++) {
       blocks[p].qty = values[p * 3];
