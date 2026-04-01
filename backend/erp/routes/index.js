@@ -17,4 +17,8 @@ router.use('/lookups', require('./lookupRoutes'));
 router.use('/budget-allocations', require('./budgetAllocationRoutes'));
 router.use('/classify', require('./classificationRoutes'));
 
+// ═══ Phase 3 — Sales & Inventory ═══
+router.use('/sales', require('./salesRoutes'));
+router.use('/inventory', require('./inventoryRoutes'));
+
 module.exports = router;

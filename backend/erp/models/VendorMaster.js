@@ -51,7 +51,7 @@ const vendorMasterSchema = new mongoose.Schema({
 });
 
 // Indexes
-vendorMasterSchema.index({ entity_id: 1, vendor_code: 1 }, { unique: true, sparse: true });
+vendorMasterSchema.index({ entity_id: 1, vendor_code: 1 }, { unique: true, partialFilterExpression: { vendor_code: { $type: 'string' } } });
 vendorMasterSchema.index({ entity_id: 1, is_active: 1 });
 vendorMasterSchema.index({ vendor_name: 'text', vendor_aliases: 'text' });
 
