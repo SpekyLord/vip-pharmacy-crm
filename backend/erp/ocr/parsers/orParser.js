@@ -26,36 +26,9 @@ const KNOWN_COURIERS = [
   'DHL', 'FEDEX', 'UPS', 'PHLPost',
 ];
 
-// Philippine VAT rate (12%)
-const PH_VAT_RATE = 0.12;
-
-// Expense categories mapped to Chart of Accounts codes (6000-7100 range)
-// These serve as the dropdown options for expense_category
-const EXPENSE_COA_MAP = {
-  'COURIER/SHIPPING':   { code: '6200', name: 'Courier / Shipping' },
-  'FUEL':               { code: '6150', name: 'Fuel & Oil' },
-  'PARKING':            { code: '6160', name: 'Parking & Tolls' },
-  'TOLL':               { code: '6160', name: 'Parking & Tolls' },
-  'ACCOMMODATION':      { code: '6300', name: 'Travel & Accommodation' },
-  'FOOD/MEALS':         { code: '6250', name: 'Meals & Entertainment' },
-  'OFFICE SUPPLIES':    { code: '6400', name: 'Office Supplies' },
-  'PRINTING':           { code: '6410', name: 'Printing & Stationery' },
-  'COMMUNICATION':      { code: '6350', name: 'Communication (Phone/Internet)' },
-  'TRANSPORTATION':     { code: '6100', name: 'Transportation' },
-  'MEDICAL':            { code: '6500', name: 'Medical Expense' },
-  'MARKETING':          { code: '6450', name: 'Marketing & Promotion' },
-  'REPAIR/MAINTENANCE': { code: '6550', name: 'Repair & Maintenance' },
-  'UTILITIES':          { code: '6600', name: 'Utilities' },
-  'PROFESSIONAL FEES':  { code: '6700', name: 'Professional Fees' },
-  'MISCELLANEOUS':      { code: '6900', name: 'Miscellaneous Expense' },
-};
-
-// Export for frontend dropdown population
-const EXPENSE_CATEGORIES = Object.entries(EXPENSE_COA_MAP).map(([key, val]) => ({
-  value: key,
-  label: `${val.code} — ${val.name}`,
-  code: val.code,
-}));
+// NOTE: Classification logic (EXPENSE_COA_MAP, EXPENSE_CATEGORIES) removed in task 1.17.
+// Parsers are extraction-only (Layer 1). Classification is handled by
+// backend/erp/services/expenseClassifier.js (Phase 2.15).
 
 // OR/Receipt/Series number patterns
 const RE_OR_PATTERNS = [
@@ -102,24 +75,7 @@ function parseOR(ocrResult) {
   let amount = null;
   let vatAmount = null;
   let paymentMode = null;
-  let expenseCategory = null;
   const lineItems = [];
-
-  // --- Detect expense category ---
-  const fullTextLower = fullText.toLowerCase();
-  if (KNOWN_COURIERS.some(c => fullTextLower.includes(c.toLowerCase()))) {
-    expenseCategory = 'COURIER/SHIPPING';
-  } else if (/parking|park\b/i.test(fullText)) {
-    expenseCategory = 'PARKING';
-  } else if (/toll|expressway|nlex|slex|tplex|cavitex|skyway/i.test(fullText)) {
-    expenseCategory = 'TOLL';
-  } else if (/hotel|inn|lodge|pension|accommodation/i.test(fullText)) {
-    expenseCategory = 'ACCOMMODATION';
-  } else if (/restaurant|food|meal|dine|eatery|cafe|coffee/i.test(fullText)) {
-    expenseCategory = 'FOOD/MEALS';
-  } else if (/printing|office|supplies|stationery/i.test(fullText)) {
-    expenseCategory = 'OFFICE SUPPLIES';
-  }
 
   // --- Supplier name ---
   // Strategy: find the first line that looks like a company name
@@ -422,11 +378,11 @@ function parseOR(ocrResult) {
   if (vatAmount == null && amount != null) {
     // If we have VATable sales, compute VAT from that
     if (vatableSales != null && vatableSales > 0) {
-      vatAmount = parseFloat((vatableSales * PH_VAT_RATE).toFixed(2));
+      vatAmount = parseFloat((vatableSales * 0.12).toFixed(2));
       vatComputed = true;
     } else {
       // Assume total is VAT-inclusive → VAT = total × 12/112
-      vatAmount = parseFloat((amount * PH_VAT_RATE / (1 + PH_VAT_RATE)).toFixed(2));
+      vatAmount = parseFloat((amount * 0.12 / (1 + 0.12)).toFixed(2));
       vatComputed = true;
     }
     validationFlags.push(`VAT auto-computed (${vatAmount}) from ${vatableSales ? 'VATable Sales' : 'total (assumed VAT-inclusive)'} — please verify`);
@@ -435,7 +391,7 @@ function parseOR(ocrResult) {
   // --- Cross-validate VAT if both OCR-read and we can check ---
   if (amount != null && vatAmount != null && !vatComputed) {
     // Expected VAT = total × 12/112
-    const expectedVat = parseFloat((amount * PH_VAT_RATE / (1 + PH_VAT_RATE)).toFixed(2));
+    const expectedVat = parseFloat((amount * 0.12 / (1 + 0.12)).toFixed(2));
     const vatDiff = Math.abs(vatAmount - expectedVat);
     if (vatDiff > expectedVat * 0.10 && vatDiff > 2) {
       validationFlags.push(`VAT (${vatAmount}) differs from expected 12/112 of ${amount} = ${expectedVat} — verify if VAT-exempt items exist`);
@@ -458,9 +414,6 @@ function parseOR(ocrResult) {
     }
   }
 
-  // --- Map expense_category to CoA code ---
-  const coaMapping = expenseCategory ? EXPENSE_COA_MAP[expenseCategory] : null;
-
   const result = {
     or_number: scoredField(orNumber, getWordConfidencesForText(words, orNumber), !!orNumber),
     date: scoredField(date, getWordConfidencesForText(words, date), !!date),
@@ -469,11 +422,7 @@ function parseOR(ocrResult) {
     vatable_sales: scoredField(vatableSales, getWordConfidencesForText(words, String(vatableSales || '')), vatableSales != null),
     vat_amount: scoredField(vatAmount, getWordConfidencesForText(words, String(vatAmount || '')), vatAmount != null),
     vat_computed: vatComputed,
-    expense_category: scoredField(expenseCategory, [], !!expenseCategory),
-    coa_code: scoredField(coaMapping ? coaMapping.code : null, [], !!coaMapping),
-    coa_name: scoredField(coaMapping ? coaMapping.name : null, [], !!coaMapping),
     payment_mode: scoredField(paymentMode, getWordConfidencesForText(words, paymentMode), !!paymentMode),
-    available_categories: EXPENSE_CATEGORIES,
     validation_flags: validationFlags,
   };
 

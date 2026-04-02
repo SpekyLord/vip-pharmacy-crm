@@ -40,8 +40,8 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: {
-        values: ['admin', 'employee'],
-        message: 'Role must be admin or employee',
+        values: ['admin', 'employee', 'finance', 'president', 'ceo'],
+        message: 'Role must be admin, employee, finance, president, or ceo',
       },
       default: 'employee',
     },
@@ -91,6 +91,45 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    // ═══ ERP FIELDS (Phase 2 — all optional, CRM backward-compatible) ═══
+    entity_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Entity',
+    },
+    territory_id: {
+      type: mongoose.Schema.Types.ObjectId,
+    },
+    live_date: {
+      type: Date,
+    },
+    bdm_stage: {
+      type: String,
+      enum: ['CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER'],
+    },
+    compensation: {
+      perdiem_rate: { type: Number },
+      perdiem_days: { type: Number, default: 22 },
+      km_per_liter: { type: Number },
+      fuel_overconsumption_threshold: { type: Number, default: 1.30 },
+      effective_date: { type: Date },
+    },
+    compensation_history: [{
+      perdiem_rate: Number,
+      km_per_liter: Number,
+      effective_date: Date,
+      set_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      reason: String,
+      created_at: { type: Date, default: Date.now },
+    }],
+    // Government IDs (sensitive — excluded from default toJSON)
+    sss_no: { type: String, select: false },
+    pagibig_no: { type: String, select: false },
+    philhealth_no: { type: String, select: false },
+    // Personal & employment
+    date_of_birth: { type: Date },
+    contract_type: { type: String },
+    date_started: { type: Date },
   },
   {
     timestamps: true,
@@ -102,6 +141,9 @@ const userSchema = new mongoose.Schema(
         delete ret.passwordResetExpires;
         delete ret.failedLoginAttempts;
         delete ret.lockoutUntil;
+        delete ret.sss_no;
+        delete ret.pagibig_no;
+        delete ret.philhealth_no;
         delete ret.__v;
         return ret;
       },
@@ -117,6 +159,9 @@ userSchema.index({ isActive: 1 });
 userSchema.index({ role: 1, isActive: 1 });
 // TTL index to auto-expire password reset tokens
 userSchema.index({ passwordResetExpires: 1 }, { expireAfterSeconds: 0 });
+// ERP indexes
+userSchema.index({ entity_id: 1 });
+userSchema.index({ entity_id: 1, role: 1 });
 
 // Pre-save hook to hash password
 userSchema.pre('save', async function (next) {

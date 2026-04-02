@@ -135,6 +135,35 @@ select {
   font-size: inherit;
 }
 
+/* Shared page layout (used by Admin, BDM, and ERP pages) */
+.admin-page {
+  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--page-bg, var(--gray-50));
+  transition: background-color 0.3s;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.admin-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.admin-main {
+  flex: 1;
+  padding: 0;
+  min-width: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Utility classes */
 .container {
   width: 100%;
