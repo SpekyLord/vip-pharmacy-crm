@@ -9,46 +9,59 @@ import { processDocument, extractExifDateTime } from '../services/ocrService';
 
 const DR_TYPES = [
   { value: 'DR_CONSIGNMENT', label: 'Consignment' },
-  { value: 'DR_SAMPLING', label: 'Sampling' }
+  { value: 'DR_SAMPLING', label: 'Sampling' },
+  { value: 'DR_DONATION', label: 'Donation' }
 ];
 
-const emptyLine = () => ({ product_id: '', batch_lot_no: '', expiry_date: '', qty: '' });
+const TYPE_COLORS = {
+  DR_CONSIGNMENT: { bg: '#dbeafe', text: '#1e40af' },
+  DR_SAMPLING: { bg: '#f3e8ff', text: '#7c3aed' },
+  DR_DONATION: { bg: '#dcfce7', text: '#166534' }
+};
+
+const TYPE_LABELS = { DR_CONSIGNMENT: 'Consignment', DR_SAMPLING: 'Sampling', DR_DONATION: 'Donation' };
+
+const emptyRow = () => ({
+  _tempId: Date.now() + Math.random(),
+  hospital_id: '',
+  dr_ref: '',
+  dr_date: new Date().toISOString().split('T')[0],
+  dr_type: 'DR_CONSIGNMENT',
+  product_id: '',
+  batch_lot_no: '',
+  qty: '',
+  _isNew: true
+});
 
 const pageStyles = `
-  .dr-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .dr-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .dr-entry-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
+  .dr-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1400px; margin: 0 auto; }
   .dr-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
-  .dr-header h1 { font-size: 22px; color: var(--erp-text); margin: 0; }
-  .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .dr-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0; }
+  .dr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-primary { background: var(--erp-accent, #1e5eff); color: #fff; }
   .btn-success { background: #16a34a; color: #fff; }
-  .btn-danger { background: #dc2626; color: #fff; }
   .btn-outline { background: transparent; border: 1px solid var(--erp-border, #dbe4f0); color: var(--erp-text); }
+  .btn-danger { background: #dc2626; color: #fff; }
   .btn-sm { padding: 4px 10px; font-size: 12px; }
 
-  .dr-form { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-  .dr-form h2 { font-size: 16px; margin: 0 0 16px; color: var(--erp-text); }
-  .form-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
-  .form-group { flex: 1; min-width: 150px; }
-  .form-group label { display: block; font-size: 11px; color: var(--erp-muted); font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
-  .form-group input, .form-group select { width: 100%; padding: 8px 10px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 13px; background: var(--erp-panel); color: var(--erp-text); }
-  .type-toggle { display: flex; gap: 0; border: 1px solid var(--erp-border); border-radius: 8px; overflow: hidden; }
-  .type-toggle button { flex: 1; padding: 8px 16px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--erp-panel); color: var(--erp-muted); }
-  .type-toggle button.active { background: var(--erp-accent); color: #fff; }
-
-  .line-items-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }
-  .line-items-table th { background: var(--erp-bg); padding: 8px 10px; text-align: left; font-weight: 600; color: var(--erp-muted); font-size: 11px; text-transform: uppercase; }
-  .line-items-table td { padding: 6px 8px; border-top: 1px solid var(--erp-border); }
-  .line-items-table input, .line-items-table select { width: 100%; padding: 6px 8px; border: 1px solid var(--erp-border); border-radius: 6px; font-size: 13px; }
-  .add-line-btn { background: none; border: 2px dashed var(--erp-border); width: 100%; padding: 8px; text-align: center; color: var(--erp-accent); font-weight: 600; cursor: pointer; border-radius: 8px; }
-
-  .dr-list { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; overflow: hidden; }
-  .dr-list h2 { font-size: 16px; margin: 0; padding: 16px 20px 12px; }
+  .dr-grid { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 12px; overflow-x: auto; margin-bottom: 24px; }
   .dr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .dr-table th { padding: 10px 16px; text-align: left; font-weight: 600; color: var(--erp-muted); background: var(--erp-bg); }
-  .dr-table td { padding: 10px 16px; border-top: 1px solid var(--erp-border); }
+  .dr-table th { background: var(--erp-accent-soft, #e8efff); color: var(--erp-text); padding: 10px 8px; text-align: left; font-weight: 600; white-space: nowrap; }
+  .dr-table td { padding: 6px 8px; border-top: 1px solid var(--erp-border, #dbe4f0); vertical-align: top; }
+  .dr-table input, .dr-table select { width: 100%; padding: 6px 8px; border: 1px solid var(--erp-border, #dbe4f0); border-radius: 6px; font-size: 13px; background: var(--erp-panel, #fff); color: var(--erp-text); }
+  .dr-table input:focus, .dr-table select:focus { outline: none; border-color: var(--erp-accent, #1e5eff); }
+  .add-row-btn { display: block; width: 100%; padding: 10px; text-align: center; color: var(--erp-accent); background: transparent; border: 2px dashed var(--erp-border); border-radius: 0 0 12px 12px; cursor: pointer; font-weight: 600; }
+
   .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+
+  .dr-history { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border); border-radius: 12px; overflow: hidden; }
+  .dr-history h2 { font-size: 16px; margin: 0; padding: 16px 20px 12px; color: var(--erp-text); }
+  .history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .history-table th { padding: 10px 16px; text-align: left; font-weight: 600; color: var(--erp-muted); background: var(--erp-bg); }
+  .history-table td { padding: 10px 16px; border-top: 1px solid var(--erp-border); }
 
   .scan-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
   .scan-modal { background: var(--erp-panel, #fff); border-radius: 16px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 24px; position: relative; }
@@ -68,7 +81,11 @@ const pageStyles = `
   .match-medium { background: #fef3c7; color: #92400e; }
   .match-none { background: #fef2f2; color: #991b1b; }
 
-  @media (max-width: 768px) { .form-row { flex-direction: column; } }
+  @media (max-width: 768px) {
+    .dr-main { padding: 12px; }
+    .dr-table { font-size: 12px; }
+    .dr-table th, .dr-table td { padding: 4px 4px; }
+  }
 `;
 
 function normalizeStr(s) { return (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
@@ -97,7 +114,7 @@ function matchProduct(ocrBrand, stockProducts) {
 
 function fieldVal(f) { if (f == null) return ''; if (typeof f === 'object' && 'value' in f) return f.value ?? ''; return String(f); }
 
-// --- Scan DR Modal ---
+// --- Scan DR Modal (unchanged) ---
 function ScanDRModal({ open, onClose, onApply, hospitals, stockProducts }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
@@ -188,11 +205,7 @@ export default function DrEntry() {
   const inventory = useInventory();
   const { hospitals } = useHospitals();
 
-  const [hospitalId, setHospitalId] = useState('');
-  const [drRef, setDrRef] = useState('');
-  const [drDate, setDrDate] = useState(new Date().toISOString().split('T')[0]);
-  const [drType, setDrType] = useState('DR_CONSIGNMENT');
-  const [lineItems, setLineItems] = useState([emptyLine()]);
+  const [rows, setRows] = useState([emptyRow()]);
   const [stockProducts, setStockProducts] = useState([]);
   const [saving, setSaving] = useState(false);
   const [drList, setDrList] = useState([]);
@@ -212,38 +225,79 @@ export default function DrEntry() {
     } catch {}
   };
 
-  const updateLine = (idx, field, value) => {
-    setLineItems(prev => { const u = [...prev]; u[idx] = { ...u[idx], [field]: value }; return u; });
+  const addRow = () => setRows(prev => [...prev, emptyRow()]);
+  const removeRow = (idx) => setRows(prev => prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx));
+  const updateRow = (idx, field, value) => {
+    setRows(prev => { const u = [...prev]; u[idx] = { ...u[idx], [field]: value }; return u; });
   };
-  const addLine = () => setLineItems(prev => [...prev, emptyLine()]);
-  const removeLine = (idx) => setLineItems(prev => prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx));
 
-  const handleSubmit = async () => {
-    const validLines = lineItems.filter(li => li.product_id && li.qty);
-    if (!hospitalId || !drRef || !validLines.length) return;
-    setSaving(true);
-    try {
-      await consignment.createDR({
-        hospital_id: hospitalId, dr_ref: drRef, dr_date: drDate, dr_type: drType,
-        line_items: validLines.map(li => ({ product_id: li.product_id, batch_lot_no: li.batch_lot_no || undefined, qty: parseFloat(li.qty) }))
+  const handleSubmitAll = async () => {
+    const validRows = rows.filter(r => r.hospital_id && r.dr_ref && r.product_id && r.qty);
+    if (!validRows.length) return alert('Fill in at least one complete row (Hospital, DR#, Product, Qty)');
+
+    // Group by hospital_id + dr_ref + dr_date + dr_type → one DR per group
+    const groups = new Map();
+    for (const r of validRows) {
+      const key = `${r.hospital_id}|${r.dr_ref}|${r.dr_date}|${r.dr_type}`;
+      if (!groups.has(key)) groups.set(key, { ...r, line_items: [] });
+      groups.get(key).line_items.push({
+        product_id: r.product_id,
+        batch_lot_no: r.batch_lot_no || undefined,
+        qty: parseFloat(r.qty)
       });
-      setHospitalId(''); setDrRef(''); setLineItems([emptyLine()]);
+    }
+
+    setSaving(true);
+    let submitted = 0;
+    try {
+      for (const [, dr] of groups) {
+        await consignment.createDR({
+          hospital_id: dr.hospital_id,
+          dr_ref: dr.dr_ref,
+          dr_date: dr.dr_date,
+          dr_type: dr.dr_type,
+          line_items: dr.line_items
+        });
+        submitted++;
+      }
+      setRows([emptyRow()]);
       await loadDRs();
       inventory.getMyStock().then(res => { if (res?.data) setStockProducts(res.data); }).catch(() => {});
-    } catch (err) { console.error('DR save error:', err); }
-    finally { setSaving(false); }
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'DR submission failed');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleScanApply = (data) => {
-    if (data.hospital_id) setHospitalId(data.hospital_id);
-    if (data.dr_ref) setDrRef(data.dr_ref);
-    if (data.dr_date) setDrDate(data.dr_date);
-    if (data.dr_type) setDrType(data.dr_type);
-    if (data.line_items?.length) setLineItems(data.line_items.map(l => ({ ...emptyLine(), ...l })));
+    if (data.line_items?.length) {
+      const newRows = data.line_items.map(li => ({
+        ...emptyRow(),
+        hospital_id: data.hospital_id || '',
+        dr_ref: data.dr_ref || '',
+        dr_date: data.dr_date || new Date().toISOString().split('T')[0],
+        dr_type: data.dr_type || 'DR_CONSIGNMENT',
+        product_id: li.product_id || '',
+        batch_lot_no: li.batch_lot_no || '',
+        qty: li.qty || ''
+      }));
+      setRows(newRows);
+    } else {
+      setRows([{
+        ...emptyRow(),
+        hospital_id: data.hospital_id || '',
+        dr_ref: data.dr_ref || '',
+        dr_date: data.dr_date || new Date().toISOString().split('T')[0],
+        dr_type: data.dr_type || 'DR_CONSIGNMENT'
+      }]);
+    }
   };
 
+  const canSubmit = rows.some(r => r.hospital_id && r.dr_ref && r.product_id && r.qty);
+
   return (
-    <div className="admin-page erp-page dr-page">
+    <div className="admin-page erp-page dr-entry-page">
       <style>{pageStyles}</style>
       <Navbar />
       <div className="admin-layout">
@@ -251,46 +305,54 @@ export default function DrEntry() {
         <main className="dr-main">
           <div className="dr-header">
             <h1>Delivery Receipts</h1>
-            <button className="btn btn-primary" onClick={() => setScanOpen(true)} style={{ background: '#7c3aed' }}>Scan DR</button>
+            <div className="dr-actions">
+              <button className="btn btn-primary" onClick={() => setScanOpen(true)} style={{ background: '#7c3aed' }}>Scan DR</button>
+              <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
+              <button className="btn btn-success" onClick={handleSubmitAll} disabled={!canSubmit || saving}>
+                {saving ? 'Submitting...' : 'Submit DR'}
+              </button>
+            </div>
           </div>
 
-          <div className="dr-form">
-            <h2>New DR</h2>
-            <div className="form-row">
-              <div className="form-group">
-                <label>Hospital</label>
-                <select value={hospitalId} onChange={e => setHospitalId(e.target.value)}>
-                  <option value="">Select hospital...</option>
-                  {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>DR #</label>
-                <input value={drRef} onChange={e => setDrRef(e.target.value)} placeholder="DR reference" />
-              </div>
-              <div className="form-group">
-                <label>DR Date</label>
-                <input type="date" value={drDate} onChange={e => setDrDate(e.target.value)} />
-              </div>
-            </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label>DR Type</label>
-                <div className="type-toggle">
-                  {DR_TYPES.map(t => (
-                    <button key={t.value} className={drType === t.value ? 'active' : ''} onClick={() => setDrType(t.value)}>{t.label}</button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <table className="line-items-table">
-              <thead><tr><th>Product (from stock)</th><th>Batch</th><th>Qty</th><th style={{ width: 40 }}></th></tr></thead>
+          {/* Spreadsheet Grid */}
+          <div className="dr-grid">
+            <table className="dr-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 30 }}>#</th>
+                  <th style={{ width: 200 }}>Hospital</th>
+                  <th style={{ width: 100 }}>DR #</th>
+                  <th style={{ width: 120 }}>DR Date</th>
+                  <th style={{ width: 130 }}>Type</th>
+                  <th style={{ minWidth: 200 }}>Product (from stock)</th>
+                  <th style={{ width: 100 }}>Batch</th>
+                  <th style={{ width: 70 }}>Qty</th>
+                  <th style={{ width: 36 }}></th>
+                </tr>
+              </thead>
               <tbody>
-                {lineItems.map((li, idx) => (
-                  <tr key={idx}>
+                {rows.map((row, idx) => (
+                  <tr key={row._tempId}>
+                    <td style={{ color: 'var(--erp-muted)', fontWeight: 600, fontSize: 12 }}>{idx + 1}</td>
                     <td>
-                      <select value={li.product_id} onChange={e => updateLine(idx, 'product_id', e.target.value)}>
+                      <select value={row.hospital_id} onChange={e => updateRow(idx, 'hospital_id', e.target.value)}>
+                        <option value="">Select hospital...</option>
+                        {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <input value={row.dr_ref} onChange={e => updateRow(idx, 'dr_ref', e.target.value)} placeholder="DR #" />
+                    </td>
+                    <td>
+                      <input type="date" value={row.dr_date} onChange={e => updateRow(idx, 'dr_date', e.target.value)} />
+                    </td>
+                    <td>
+                      <select value={row.dr_type} onChange={e => updateRow(idx, 'dr_type', e.target.value)}>
+                        {DR_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <select value={row.product_id} onChange={e => updateRow(idx, 'product_id', e.target.value)}>
                         <option value="">Select...</option>
                         {productOptions.map(sp => (
                           <option key={sp.product_id} value={sp.product_id}>
@@ -299,37 +361,55 @@ export default function DrEntry() {
                         ))}
                       </select>
                     </td>
-                    <td><input value={li.batch_lot_no} onChange={e => updateLine(idx, 'batch_lot_no', e.target.value)} placeholder="Optional" /></td>
-                    <td><input type="number" min="1" value={li.qty} onChange={e => updateLine(idx, 'qty', e.target.value)} /></td>
-                    <td><button className="btn btn-danger btn-sm" onClick={() => removeLine(idx)}>&times;</button></td>
+                    <td>
+                      <input value={row.batch_lot_no} onChange={e => updateRow(idx, 'batch_lot_no', e.target.value)} placeholder="Optional" />
+                    </td>
+                    <td>
+                      <input type="number" min="1" value={row.qty} onChange={e => updateRow(idx, 'qty', e.target.value)} placeholder="0" />
+                    </td>
+                    <td>
+                      <button className="btn btn-danger btn-sm" onClick={() => removeRow(idx)} title="Remove">&times;</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <button className="add-line-btn" onClick={addLine}>+ Add Line</button>
-
-            <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn btn-success" onClick={handleSubmit} disabled={saving}>
-                {saving ? 'Submitting...' : 'Submit DR'}
-              </button>
-            </div>
+            <button className="add-row-btn" onClick={addRow}>+ Add Row</button>
           </div>
 
-          <div className="dr-list">
+          {/* DR History */}
+          <div className="dr-history">
             <h2>DR History</h2>
-            <table className="dr-table">
-              <thead><tr><th>Date</th><th>DR #</th><th>Type</th><th>Hospital</th><th>Items</th></tr></thead>
+            <table className="history-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>DR #</th>
+                  <th>Type</th>
+                  <th>Hospital</th>
+                  <th>Products</th>
+                  <th>Items</th>
+                </tr>
+              </thead>
               <tbody>
-                {drList.map(d => (
-                  <tr key={d._id}>
-                    <td>{new Date(d.event_date).toLocaleDateString('en-PH')}</td>
-                    <td>{d.document_ref}</td>
-                    <td><span className="badge" style={{ background: d.event_type === 'DR_CONSIGNMENT' ? '#dbeafe' : '#f3e8ff', color: d.event_type === 'DR_CONSIGNMENT' ? '#1e40af' : '#7c3aed' }}>{d.event_type === 'DR_CONSIGNMENT' ? 'Consignment' : 'Sampling'}</span></td>
-                    <td>{d.payload?.hospital_name || '—'}</td>
-                    <td>{d.payload?.line_items?.length || 0} item(s)</td>
-                  </tr>
-                ))}
-                {!drList.length && <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No DRs found</td></tr>}
+                {drList.map(d => {
+                  const tc = TYPE_COLORS[d.event_type] || {};
+                  return (
+                    <tr key={d._id}>
+                      <td>{new Date(d.event_date).toLocaleDateString('en-PH')}</td>
+                      <td style={{ fontWeight: 600 }}>{d.document_ref}</td>
+                      <td><span className="badge" style={{ background: tc.bg, color: tc.text }}>{TYPE_LABELS[d.event_type] || d.event_type}</span></td>
+                      <td>{d.payload?.hospital_name || '—'}</td>
+                      <td style={{ fontSize: 11 }}>
+                        {d.payload?.line_items?.map((li, i) => (
+                          <div key={i}>{li.item_key || li.product_id} × {li.qty}</div>
+                        ))}
+                      </td>
+                      <td>{d.payload?.line_items?.length || 0}</td>
+                    </tr>
+                  );
+                })}
+                {!drList.length && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No DRs found</td></tr>}
               </tbody>
             </table>
           </div>

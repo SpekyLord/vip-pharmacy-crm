@@ -22,8 +22,8 @@ const { cleanBatchNo, parseExpiry } = require('../utils/normalize');
 const createDR = catchAsync(async (req, res) => {
   const { hospital_id, dr_ref, dr_date, dr_type, line_items, dr_photo_url, ocr_data, notes } = req.body;
 
-  if (!['DR_SAMPLING', 'DR_CONSIGNMENT'].includes(dr_type)) {
-    return res.status(400).json({ success: false, message: 'dr_type must be DR_SAMPLING or DR_CONSIGNMENT' });
+  if (!['DR_SAMPLING', 'DR_CONSIGNMENT', 'DR_DONATION'].includes(dr_type)) {
+    return res.status(400).json({ success: false, message: 'dr_type must be DR_SAMPLING, DR_CONSIGNMENT, or DR_DONATION' });
   }
   if (!hospital_id || !dr_ref || !line_items?.length) {
     return res.status(400).json({ success: false, message: 'hospital_id, dr_ref, and line_items are required' });
@@ -148,7 +148,7 @@ const createDR = catchAsync(async (req, res) => {
  */
 const getDRsByBdm = catchAsync(async (req, res) => {
   const filter = { ...req.tenantFilter };
-  filter.event_type = { $in: ['DR_SAMPLING', 'DR_CONSIGNMENT'] };
+  filter.event_type = { $in: ['DR_SAMPLING', 'DR_CONSIGNMENT', 'DR_DONATION'] };
   if (req.query.dr_type) filter.event_type = req.query.dr_type;
 
   const page = parseInt(req.query.page) || 1;
