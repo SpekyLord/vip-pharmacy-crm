@@ -6,7 +6,8 @@
     "middleware/",
     "models/",
     "routes/",
-    "utils/"
+    "utils/",
+    "erp/"
   ],
   "ext": "js,json",
   "ignore": [

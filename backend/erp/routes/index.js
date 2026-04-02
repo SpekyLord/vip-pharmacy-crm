@@ -1,4 +1,5 @@
 const express = require('express');
+const { protect } = require('../../middleware/auth');
 const tenantFilter = require('../middleware/tenantFilter');
 
 const router = express.Router();
@@ -6,8 +7,9 @@ const router = express.Router();
 // ═══ Phase 1 — OCR (no tenant filter needed for OCR test) ═══
 router.use('/ocr', require('./ocrRoutes'));
 
-// ═══ Phase 2 — ERP Data Routes (tenant-filtered) ═══
-router.use(tenantFilter);
+// ═══ Phase 2+ — ERP Data Routes (auth + tenant-filtered) ═══
+// protect MUST run before tenantFilter so req.user is available
+router.use(protect, tenantFilter);
 router.use('/settings', require('./settingsRoutes'));
 router.use('/government-rates', require('./governmentRatesRoutes'));
 router.use('/hospitals', require('./hospitalRoutes'));
