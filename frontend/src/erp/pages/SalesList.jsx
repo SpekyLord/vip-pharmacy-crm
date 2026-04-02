@@ -105,6 +105,26 @@ export default function SalesList() {
     setFilters(prev => ({ ...prev, [key]: value }));
   };
 
+  const handleSubmit = async () => {
+    if (!window.confirm('Submit all validated sales? Stock will be deducted via FIFO.')) return;
+    try {
+      await sales.submitSales();
+      loadSales(pagination.page);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Submit failed');
+    }
+  };
+
+  const handleReopen = async (id) => {
+    if (!window.confirm('Re-open this posted sale? Stock will be reversed.')) return;
+    try {
+      await sales.reopenSales([id]);
+      loadSales(pagination.page);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Reopen failed');
+    }
+  };
+
   const handleRequestDeletion = async (id) => {
     if (!window.confirm('Request deletion for this sale?')) return;
     try {
@@ -189,9 +209,19 @@ export default function SalesList() {
                     </span>
                   </td>
                   <td onClick={e => e.stopPropagation()}>
+                    {sale.status === 'VALID' && (
+                      <button className="btn btn-sm" style={{ background: '#16a34a', color: '#fff' }} onClick={() => handleSubmit()}>
+                        Submit
+                      </button>
+                    )}
+                    {sale.status === 'POSTED' && (
+                      <button className="btn btn-warning btn-sm" onClick={() => handleReopen(sale._id)} style={{ marginRight: 4 }}>
+                        Re-open
+                      </button>
+                    )}
                     {sale.status === 'POSTED' && !isAdmin && (
-                      <button className="btn btn-warning btn-sm" onClick={() => handleRequestDeletion(sale._id)}>
-                        Request Delete
+                      <button className="btn btn-sm" style={{ background: '#991b1b', color: '#fff' }} onClick={() => handleRequestDeletion(sale._id)}>
+                        Req. Delete
                       </button>
                     )}
                     {sale.status === 'DELETION_REQUESTED' && isAdmin && (

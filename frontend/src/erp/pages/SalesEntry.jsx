@@ -564,9 +564,13 @@ export default function SalesEntry() {
 
   const loadSales = async () => {
     try {
-      const res = await sales.getSales({ status: 'DRAFT', limit: 100 });
-      if (res?.data?.length) {
-        setRows(res.data.map(s => ({ ...s, _isNew: false })));
+      // Load all non-final rows: DRAFT (editable), VALID (submittable), ERROR (fixable), POSTED (reopenable)
+      const res = await sales.getSales({ limit: 100 });
+      const activeRows = (res?.data || []).filter(s =>
+        ['DRAFT', 'VALID', 'ERROR', 'POSTED'].includes(s.status)
+      );
+      if (activeRows.length) {
+        setRows(activeRows.map(s => ({ ...s, _isNew: false })));
       } else {
         setRows([emptyRow()]);
       }
