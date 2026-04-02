@@ -20,7 +20,7 @@ const TYPE_COLORS = {
 
 const pageStyles = `
   .mystock-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .mystock-main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .mystock-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .mystock-header { margin-bottom: 16px; }
   .mystock-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0 0 4px; }
   .mystock-header p { color: var(--erp-muted, #5f7188); font-size: 14px; margin: 0; }
@@ -325,7 +325,7 @@ export default function MyStock() {
       <Navbar />
       <div className="admin-layout">
         <Sidebar />
-        <main className="admin-content mystock-main">
+        <main className="mystock-main">
           <div className="mystock-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
             <div>
               <h1>My Stock</h1>

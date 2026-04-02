@@ -15,36 +15,54 @@ const STATUS_COLORS = {
 };
 
 const pageStyles = `
-  .saleslist-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .saleslist-main { padding: 20px; max-width: 1200px; margin: 0 auto; }
-  .saleslist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+  .saleslist-page { background: var(--erp-bg, #f4f7fb); }
+  .saleslist-main {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 24px;
+  }
+  .saleslist-inner { max-width: 1200px; margin: 0 auto; }
+  .saleslist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
   .saleslist-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0; }
 
-  .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-  .filter-bar input, .filter-bar select { padding: 8px 12px; border: 1px solid var(--erp-border, #dbe4f0); border-radius: 8px; font-size: 13px; background: var(--erp-panel); color: var(--erp-text); }
+  .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; }
+  .filter-bar input, .filter-bar select {
+    padding: 8px 12px;
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 8px;
+    font-size: 13px;
+    background: var(--erp-panel, #fff);
+    color: var(--erp-text);
+    height: 38px;
+  }
 
-  .sales-list-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; overflow: hidden; }
-  .sales-list-table th { background: var(--erp-accent-soft, #e8efff); padding: 10px 12px; text-align: left; font-weight: 600; color: var(--erp-text); }
-  .sales-list-table td { padding: 10px 12px; border-top: 1px solid var(--erp-border); }
+  .sales-list-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--erp-panel, #fff); border: 1px solid var(--erp-border); border-radius: 12px; overflow: hidden; }
+  .sales-list-table th { background: var(--erp-accent-soft, #e8efff); padding: 10px 14px; text-align: left; font-weight: 600; color: var(--erp-text); white-space: nowrap; }
+  .sales-list-table td { padding: 10px 14px; border-top: 1px solid var(--erp-border); }
   .sales-list-table tr:hover { background: var(--erp-accent-soft); cursor: pointer; }
 
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-  .btn { padding: 6px 12px; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
   .btn-primary { background: var(--erp-accent, #1e5eff); color: #fff; }
+  .btn-primary:hover { opacity: 0.9; }
   .btn-danger { background: #dc2626; color: #fff; }
   .btn-warning { background: #d97706; color: #fff; }
-  .btn-sm { padding: 4px 8px; font-size: 11px; }
+  .btn-sm { padding: 4px 10px; font-size: 11px; }
 
   .detail-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-  .detail-panel { background: var(--erp-panel); border-radius: 16px; padding: 24px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; }
+  .detail-panel { background: var(--erp-panel, #fff); border-radius: 16px; padding: 24px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; }
   .detail-panel h2 { margin: 0 0 16px; font-size: 18px; }
   .detail-panel table { width: 100%; font-size: 13px; border-collapse: collapse; }
   .detail-panel table th { text-align: left; padding: 8px; background: var(--erp-bg); }
   .detail-panel table td { padding: 8px; border-top: 1px solid var(--erp-border); }
 
   @media (max-width: 768px) {
+    .saleslist-main { padding: 16px; }
     .sales-list-table { font-size: 12px; }
     .filter-bar { flex-direction: column; }
+    .filter-bar input, .filter-bar select { width: 100%; }
   }
 `;
 
@@ -110,7 +128,8 @@ export default function SalesList() {
       <Navbar />
       <div className="admin-layout">
         <Sidebar />
-        <main className="admin-content saleslist-main">
+        <main className="saleslist-main">
+          <div className="saleslist-inner">
           <div className="saleslist-header">
             <h1>Sales</h1>
             <Link to="/erp/sales/entry" className="btn btn-primary">+ New Sales Entry</Link>
@@ -244,6 +263,7 @@ export default function SalesList() {
               </div>
             </div>
           )}
+          </div>
         </main>
       </div>
     </div>

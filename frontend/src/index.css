@@ -147,6 +147,19 @@ select {
   overflow: hidden;
 }
 
+.admin-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .admin-page { height: auto; min-height: 100vh; overflow-y: auto; }
+  .admin-layout { overflow: visible; }
+  .admin-content { overflow: visible; }
+}
+
 .admin-content {
   display: flex;
   flex: 1;

@@ -16,7 +16,7 @@ const emptyLine = () => ({ product_id: '', batch_lot_no: '', expiry_date: '', qt
 
 const pageStyles = `
   .grn-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .grn-main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .grn-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .grn-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
   .grn-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0; }
   .grn-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -275,7 +275,7 @@ export default function GrnEntry() {
       <Navbar />
       <div className="admin-layout">
         <Sidebar />
-        <main className="admin-content grn-main">
+        <main className="grn-main">
           <div className="grn-header">
             <h1>Goods Received Notes</h1>
             <div className="grn-actions">

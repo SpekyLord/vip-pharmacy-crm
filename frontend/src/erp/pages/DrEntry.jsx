@@ -16,7 +16,7 @@ const emptyLine = () => ({ product_id: '', batch_lot_no: '', expiry_date: '', qt
 
 const pageStyles = `
   .dr-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .dr-main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .dr-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .dr-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
   .dr-header h1 { font-size: 22px; color: var(--erp-text); margin: 0; }
   .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -248,7 +248,7 @@ export default function DrEntry() {
       <Navbar />
       <div className="admin-layout">
         <Sidebar />
-        <main className="admin-content dr-main">
+        <main className="dr-main">
           <div className="dr-header">
             <h1>Delivery Receipts</h1>
             <button className="btn btn-primary" onClick={() => setScanOpen(true)} style={{ background: '#7c3aed' }}>Scan DR</button>

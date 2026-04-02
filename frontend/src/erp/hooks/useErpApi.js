@@ -14,7 +14,7 @@ export default function useErpApi() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api({ method, url, data, ...config });
+      const res = await api.request({ method, url, data, ...config });
       return res.data;
     } catch (err) {
       const msg = err.response?.data?.message || err.message || 'API error';

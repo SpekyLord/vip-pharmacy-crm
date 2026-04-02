@@ -17,11 +17,11 @@ import { useAuth } from '../../hooks/useAuth';
 
 const ERP_TABS = [
   { label: 'Dashboard', path: '/erp' },
-  { label: 'Sales', disabled: true },
-  { label: 'Inventory', disabled: true },
-  { label: 'Collections', disabled: true },
-  { label: 'Expenses', disabled: true },
-  { label: 'Reports', disabled: true },
+  { label: 'Sales', path: '/erp/sales' },
+  { label: 'Inventory', path: '/erp/my-stock' },
+  { label: 'Collections', path: '/erp/collections' },
+  { label: 'Expenses', path: '/erp/expenses' },
+  { label: 'Reports', path: '/erp/reports' },
 ];
 
 /* =============================================================================
@@ -600,28 +600,20 @@ const Navbar = () => {
           </div>
 
           <div className="navbar-erp-tabs" aria-label="ERP tabs">
-            {ERP_TABS.map((tab) =>
-              tab.disabled ? (
-                <button
-                  key={tab.label}
-                  type="button"
-                  className="navbar-erp-tab-disabled"
-                  disabled
-                  aria-disabled="true"
-                  title={`${tab.label} coming soon`}
-                >
-                  {tab.label}
-                </button>
-              ) : (
+            {ERP_TABS.map((tab) => {
+              const isActive = tab.path === '/erp'
+                ? location.pathname === '/erp'
+                : location.pathname.startsWith(tab.path);
+              return (
                 <Link
                   key={tab.label}
                   to={tab.path}
-                  className={`navbar-erp-tab ${isErpRoute ? 'active' : ''}`.trim()}
+                  className={`navbar-erp-tab ${isActive ? 'active' : ''}`.trim()}
                 >
                   {tab.label}
                 </Link>
-              )
-            )}
+              );
+            })}
           </div>
         </div>
       ) : (

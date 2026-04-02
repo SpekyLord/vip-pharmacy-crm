@@ -28,7 +28,7 @@ const emptyRow = () => ({
 
 const pageStyles = `
   .sales-entry-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .sales-main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .sales-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1400px; margin: 0 auto; }
   .sales-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
   .sales-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0; }
   .sales-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -606,7 +606,7 @@ export default function SalesEntry() {
       <Navbar />
       <div className="admin-layout">
         <Sidebar />
-        <main className="admin-content sales-main">
+        <main className="sales-main">
           <div className="sales-header">
             <h1>Sales Entry</h1>
             <div className="sales-actions">
