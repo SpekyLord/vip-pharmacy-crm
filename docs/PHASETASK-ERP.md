@@ -709,14 +709,14 @@
 - [x] **FIFO Engine:** getMyStock returned 9 batch entries, getAvailableBatches confirmed expiry-ascending sort
 - [x] **Backend smoke test:** all models load, FIFO aggregation works with seeded data
 - [x] **Frontend build:** 0 errors, all pages lazy-loaded
-- [ ] **Pending manual tests (blocked by opening stock import — deferred to pre-live):**
+- [ ] **Pending manual tests (opening stock now imported — ready to test):**
   - Stock isolation: BDM-A cannot see BDM-B's stock
   - Full CRUD cycle: DRAFT → VALID → POSTED → REOPEN
   - Submit atomicity (MongoDB transaction rollback)
   - Physical count adjustment
   - SalesEntry UX: rapid data entry, product dropdown, OCR scan
   - Mobile card layouts at 375px width
-  - **Note (April 2, 2026):** Sales Entry and DR pages load correctly. CSI and DR OCR scanning works (hospital + product matching confirmed with imported master data). Full sales flow testing blocked until opening stock balances are imported (FIFO engine requires InventoryLedger OPENING_BALANCE entries).
+  - **Note (April 2, 2026):** Sales Entry and DR pages load correctly. CSI and DR OCR scanning works (hospital + product matching confirmed with imported master data). Opening stock imported (251 entries, 9 BDMs, 56,476+ units) — full sales flow now unblocked. 3 missing BDM users created via `addMissingBdms.js`. Test: `/erp/my-stock` (real batch data), `/erp/sales/entry` (in-stock product dropdown + CSI OCR), full flow (create sale → validate → submit with FIFO deduction).
 
 ### Phase 3 Summary
 
@@ -770,7 +770,15 @@
 > - Entity created: VIP Pharmacy Inc. (entity_id assigned to all CRM users)
 > - 101 hospitals imported (deduplicated from 203 CSV rows across 11 BDMs) with BDM tags
 > - 238 products imported (deduplicated from 274 CSV rows) with 213 active
-> - **Opening stock import deferred to pre-live:** Stock-on-hand CSV (324 rows, 11 BDMs) available but data not yet finalized. Will re-import with clean data before go-live. Script: `backend/erp/scripts/importOpeningStock.js` (to be built at import time).
+>
+> **Opening stock import (April 2, 2026):**
+> - Script: `backend/erp/scripts/importOpeningStock.js`
+> - **251 opening balance entries** imported across 9 BDMs (56,476+ units total)
+> - **140 products auto-created** from stock CSV data not in Product Master
+> - BDM breakdown: Menivie Daniela (78/14,359), Edcel Mae Arespacochaga (33/2,609), Jenny Rose Jacosalem (29/11,444), Judy Mae Patrocinio (24/10,496), Roman Mabanag (23/2,973), Mae Navarro (20/5,223), Jake Montero (13/5,689), Jay Ann Protacio (11/1,570), Romela Shen Herrera (11/1,512)
+> - 3 missing BDMs created via `backend/erp/scripts/addMissingBdms.js`: Jay Ann Protacio (s22.vippharmacy@gmail.com), Jenny Rose Jacosalem (s26.vippharmacy@gmail.com), Judy Mae Patrocinio (s25.vippharmacy@gmail.com)
+> - Gregg Louie Vios account (yourpartner@viosintegrated.net, role: president) — test account, opening stock excluded
+> - Full sales flow now unblocked: My Stock shows real data, Sales Entry product dropdown populated, CSI OCR matching works with real master data, FIFO deduction operational
 
 ### 4.1 — GRN (Goods Received Note) Workflow ✅
 - [x] Create `backend/erp/models/GrnEntry.js` — entity_id, bdm_id, grn_date, line_items (product_id, item_key, batch_lot_no, expiry_date, qty), waybill_photo_url, undertaking_photo_url, ocr_data, status (PENDING/APPROVED/REJECTED), notes, rejection_reason, reviewed_by/at, event_id, created_by/at, pre-save cleanBatchNo, 3 indexes
@@ -1044,11 +1052,11 @@
 - [ ] Commit: `"feat(erp): document flow tracking with linked events"`
 
 ### 9.4 — Excel Migration Tools 🔄 SCRIPTS DONE, ADMIN UI PENDING
-> **Status (April 2, 2026):** Product Master and Hospital Master imported via CLI scripts from Google Sheets CSV exports. Opening stock and Opening AR deferred to pre-live (data not yet finalized by BDMs). Admin UI pages for self-service import are future work.
+> **Status (April 2, 2026):** Product Master (238 + 140 auto-created), Hospital Master (101), and Opening Stock (251 entries, 9 BDMs, 56,476+ units) imported via CLI scripts. 3 missing BDM users created via `addMissingBdms.js`. Opening AR deferred to pre-live. Admin UI pages for self-service import are future work.
 
 - [ ] Admin page: bulk import Opening AR from Excel
-- [x] ~~Admin page:~~ CLI script: bulk import Product Master from CSV — `backend/erp/scripts/seedErpMasterData.js` (238 products imported)
-- [ ] Admin page: bulk import Inventory Opening Balances from Excel — **deferred to pre-live** (stock-on-hand CSV available with 324 rows / 11 BDMs, but data not yet finalized; will re-import with clean data before go-live)
+- [x] ~~Admin page:~~ CLI script: bulk import Product Master from CSV — `backend/erp/scripts/seedErpMasterData.js` (238 products imported + 140 auto-created from stock CSV)
+- [x] ~~Admin page:~~ CLI script: bulk import Inventory Opening Balances from CSV — `backend/erp/scripts/importOpeningStock.js` (251 entries across 9 BDMs, 56,476+ units; 3 BDMs created via `addMissingBdms.js`, Gregg Louie Vios test account excluded)
 - [x] ~~Admin page:~~ CLI script: bulk import Hospital Master from CSV — `backend/erp/scripts/seedErpMasterData.js` (101 hospitals imported with BDM tags)
 - [ ] Admin UI pages for self-service import (future — scripts sufficient for now)
 - [ ] Commit: `"feat(erp): excel migration import tools"`
