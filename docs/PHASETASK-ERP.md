@@ -503,7 +503,7 @@
 - [x] Create `backend/erp/services/expenseClassifier.js`: async `classifyExpense(extractedFields)` with 4-step cascade (EXACT_VENDOR → ALIAS_MATCH → KEYWORD → FALLBACK), KEYWORD_RULES array (8 categories from removed EXPENSE_COA_MAP), VAT auto-computation (12/112), `getCategories()` function
 - [x] Create `backend/erp/controllers/classificationController.js`: POST /classify, POST /classify/override (with save_as_default learning loop), GET /classify/categories
 - [x] Create `backend/erp/routes/classificationRoutes.js`, mounted on ERP router
-- [ ] Unit tests pending
+- [ ] Unit tests pending (deferred — classification working in production via OCR pipeline)
 - [x] Committed: `ce0a8b7` (phase 2 batch commit)
 
 ### 2.17 — OCR Smart Dropdowns (Moved from Phase 1.14) 🔄 BACKEND DONE, FRONTEND PENDING
@@ -709,13 +709,14 @@
 - [x] **FIFO Engine:** getMyStock returned 9 batch entries, getAvailableBatches confirmed expiry-ascending sort
 - [x] **Backend smoke test:** all models load, FIFO aggregation works with seeded data
 - [x] **Frontend build:** 0 errors, all pages lazy-loaded
-- [ ] **Pending manual tests (need running server + browser):**
+- [ ] **Pending manual tests (blocked by opening stock import — deferred to pre-live):**
   - Stock isolation: BDM-A cannot see BDM-B's stock
   - Full CRUD cycle: DRAFT → VALID → POSTED → REOPEN
   - Submit atomicity (MongoDB transaction rollback)
   - Physical count adjustment
   - SalesEntry UX: rapid data entry, product dropdown, OCR scan
   - Mobile card layouts at 375px width
+  - **Note (April 2, 2026):** Sales Entry and DR pages load correctly. CSI and DR OCR scanning works (hospital + product matching confirmed with imported master data). Full sales flow testing blocked until opening stock balances are imported (FIFO engine requires InventoryLedger OPENING_BALANCE entries).
 
 ### Phase 3 Summary
 
@@ -756,6 +757,20 @@
 > - SAP-level reorder fields (reorder_min_qty, reorder_qty, safety_stock_qty, lead_time_days) added directly to ProductMaster — all optional with null defaults, zero impact on existing documents.
 > - ConsignmentTracker aging recomputed on read (not just at save-time) for live accuracy.
 > - Consignment conversion is dual-trigger: auto via submitSales (salesController:302) + manual via convertConsignment endpoint.
+>
+> **Testing session fixes (April 2, 2026):**
+> - **Auth loop fix:** `erp/routes/index.js` — `protect` middleware added at router level before `tenantFilter`. Without this, `req.user` was undefined in tenantFilter → 401 infinite loop on all ERP data endpoints.
+> - **CSS layout fix:** `.admin-page`, `.admin-content`, `.admin-main` base layout styles moved to global `index.css` — were previously only defined inline in AdminDashboard.jsx, causing blank ERP pages.
+> - **useHospitals infinite retry fix:** Added `fetchedRef` guard to prevent failed API calls from triggering re-render → re-fetch loops.
+> - **nodemon.json:** Added `erp/` to watch paths so ERP backend changes trigger auto-restart.
+> - **ErpDashboard.jsx:** Redesigned from "Coming Soon" placeholder to functional dashboard with quick actions, module grid, and tools section.
+>
+> **Master data import (April 2, 2026):**
+> - Created `backend/erp/scripts/seedErpMasterData.js` — reads Hospital List CSV + Product Master CSV from Google Sheets exports
+> - Entity created: VIP Pharmacy Inc. (entity_id assigned to all CRM users)
+> - 101 hospitals imported (deduplicated from 203 CSV rows across 11 BDMs) with BDM tags
+> - 238 products imported (deduplicated from 274 CSV rows) with 213 active
+> - **Opening stock import deferred to pre-live:** Stock-on-hand CSV (324 rows, 11 BDMs) available but data not yet finalized. Will re-import with clean data before go-live. Script: `backend/erp/scripts/importOpeningStock.js` (to be built at import time).
 
 ### 4.1 — GRN (Goods Received Note) Workflow ✅
 - [x] Create `backend/erp/models/GrnEntry.js` — entity_id, bdm_id, grn_date, line_items (product_id, item_key, batch_lot_no, expiry_date, qty), waybill_photo_url, undertaking_photo_url, ocr_data, status (PENDING/APPROVED/REJECTED), notes, rejection_reason, reviewed_by/at, event_id, created_by/at, pre-save cleanBatchNo, 3 indexes
@@ -1028,30 +1043,191 @@
 - [ ] UI: Document Flow view showing the linked chain visually (CSI -> CR -> 2307 -> Deposit)
 - [ ] Commit: `"feat(erp): document flow tracking with linked events"`
 
-### 9.4 — Excel Migration Tools
+### 9.4 — Excel Migration Tools 🔄 SCRIPTS DONE, ADMIN UI PENDING
+> **Status (April 2, 2026):** Product Master and Hospital Master imported via CLI scripts from Google Sheets CSV exports. Opening stock and Opening AR deferred to pre-live (data not yet finalized by BDMs). Admin UI pages for self-service import are future work.
+
 - [ ] Admin page: bulk import Opening AR from Excel
-- [ ] Admin page: bulk import Product Master from Excel
-- [ ] Admin page: bulk import Inventory Opening Balances from Excel
-- [ ] Admin page: bulk import Hospital Master from Excel
+- [x] ~~Admin page:~~ CLI script: bulk import Product Master from CSV — `backend/erp/scripts/seedErpMasterData.js` (238 products imported)
+- [ ] Admin page: bulk import Inventory Opening Balances from Excel — **deferred to pre-live** (stock-on-hand CSV available with 324 rows / 11 BDMs, but data not yet finalized; will re-import with clean data before go-live)
+- [x] ~~Admin page:~~ CLI script: bulk import Hospital Master from CSV — `backend/erp/scripts/seedErpMasterData.js` (101 hospitals imported with BDM tags)
+- [ ] Admin UI pages for self-service import (future — scripts sufficient for now)
 - [ ] Commit: `"feat(erp): excel migration import tools"`
 
 ### 9.5 — End-to-End Testing
 - [ ] Full flow: create sale → stock drops → create collection → AR drops → commission computed → SMER filled → income generated → PNL computed
 - [ ] Mobile responsiveness on all ERP pages
-- [ ] Permission checks: BDM=own territory, Admin=all, CEO=view only
+- [ ] Permission checks: Module-level ERP access (FULL/VIEW/NONE per module via erp_access — Phase 10.0), BDM=own territory data (tenantFilter), Admin=all, CEO=view only, role overrides for president/admin
 - [ ] Error handling and loading states on all pages
 - [ ] Commit: `"test: end-to-end erp flow verification"`
 
 ---
 
-## PHASE 10 — PEOPLE MASTER & PAYROLL [v5 NEW]
-**Goal:** Unified people directory covering all person types (BDMs, office staff, sales reps, consultants, directors), compensation profiles, payslip generation with Philippine government mandatories, and staging-then-post pattern.
+## PHASE 10 — ERP ACCESS CONTROL, PEOPLE MASTER & PAYROLL [v5 NEW]
+**Goal:** (1) ERP Access Control layer (10.0) that provides per-user, per-module permissions (FULL/VIEW/NONE across 10 modules) with admin-managed DB-stored templates, comparable to NetSuite role-based access. (2) Unified people directory covering all person types (BDMs, e-Commerce BDMs, office staff, sales reps, consultants, directors), compensation profiles, payslip generation with Philippine government mandatories, and staging-then-post pattern.
 
 **Reference:** PRD v5 §10 (People Master & Payroll), §3.7 (Government Rates)
 
+### 10.0 — ERP Access Control (NetSuite-style) [NEW]
+**Goal:** Per-user, per-module ERP permissions with admin-managed templates stored in DB. Comparable to NetSuite role-based access. CRM access (Doctor.assignedTo + role) remains completely separate.
+
+**Design principles:**
+- `erp_access` lives on User model (needed on every `req.user` for middleware checks)
+- `person_type` lives on PeopleMaster (HR/payroll classification — separate concern)
+- Templates stored in DB (admin creates new roles without code changes, multi-tenant ready)
+- Applying a template copies values to User — changing a template does NOT retroactively change users
+- Role overrides: `president` = always full, `ceo` = always view-only, `admin` without explicit erp_access = full (backward compat)
+
+**Permission levels:** `NONE` (hidden + 403), `VIEW` (read-only, GET allowed), `FULL` (all CRUD)
+
+**10 ERP modules** (covers Phases 3–14):
+
+| Module Key | Phases | Controls |
+|------------|--------|----------|
+| `sales` | 3, 9.1 | CSI entry, sales list, OCR scan CSI |
+| `inventory` | 4 | My Stock, GRN, DR, consignment, alerts |
+| `collections` | 5 | Collection sessions, AR, SOA, dunning, credit limits |
+| `expenses` | 6 | SMER, car logbook, ORE, ACCESS, PRF/CALF |
+| `reports` | 8, 14 | Dashboard, rankings, anomalies, cycle status |
+| `people` | 10 | People Master, compensation profiles |
+| `payroll` | 10 | Payslip generation, staging, posting, 13th month |
+| `accounting` | 11 | COA, journals, trial balance, P&L, VAT/CWT, cashflow, month-end close |
+| `purchasing` | 12 | Vendors, PO, supplier invoices, 3-way matching, AP |
+| `banking` | 13 | Bank accounts, bank recon, credit card ledger, statement import |
+
+#### 10.0a — AccessTemplate Model + Seed
+- [ ] Create `backend/erp/models/AccessTemplate.js`:
+  - entity_id (ref: Entity), template_name (unique per entity), description
+  - modules subdocument: { sales, inventory, collections, expenses, reports, people, payroll, accounting, purchasing, banking } — each enum `['NONE', 'VIEW', 'FULL']`
+  - can_approve: Boolean (GRN approval, deletion approval, payroll posting)
+  - is_system: Boolean (true = seed default, protected from deletion)
+  - is_active: Boolean, created_by, timestamps
+  - Compound unique index: `{ entity_id, template_name }`
+- [ ] Create `backend/erp/scripts/seedAccessTemplates.js` — 7 default templates per entity:
+
+| Template | Sales | Inv | Coll | Exp | Rep | People | Payroll | Acctg | Purch | Bank | Approve |
+|----------|-------|-----|------|-----|-----|--------|---------|-------|-------|------|---------|
+| Field BDM | FULL | VIEW | FULL | FULL | VIEW | NONE | NONE | NONE | NONE | NONE | NO |
+| e-Commerce BDM | FULL | VIEW | FULL | VIEW | VIEW | NONE | NONE | NONE | NONE | NONE | NO |
+| Office Encoder | FULL | VIEW | FULL | VIEW | VIEW | NONE | NONE | NONE | NONE | NONE | NO |
+| Finance | FULL | FULL | FULL | FULL | FULL | FULL | FULL | FULL | FULL | FULL | YES |
+| View Only (Probation) | VIEW | VIEW | VIEW | VIEW | VIEW | VIEW | VIEW | VIEW | VIEW | VIEW | NO |
+| Executive | VIEW | VIEW | VIEW | VIEW | FULL | VIEW | VIEW | FULL | VIEW | VIEW | NO |
+| No ERP Access | NONE | NONE | NONE | NONE | NONE | NONE | NONE | NONE | NONE | NONE | NO |
+
+- [ ] Commit: `"feat(erp): access template model with 7 seed templates [v5]"`
+
+#### 10.0b — User Model erp_access Subdocument
+- [ ] Add to `backend/models/User.js` (after existing ERP fields):
+  ```
+  erp_access: {
+    enabled: Boolean (default: false — master toggle),
+    template_id: ObjectId (ref: AccessTemplate, optional — tracks which template was applied),
+    modules: {
+      sales, inventory, collections, expenses, reports,
+      people, payroll, accounting, purchasing, banking
+      — each enum ['NONE', 'VIEW', 'FULL'], default 'NONE'
+    },
+    can_approve: Boolean (default: false),
+    updated_by: ObjectId (ref: User),
+    updated_at: Date,
+  }
+  ```
+- [ ] Add index: `{ 'erp_access.enabled': 1 }`
+- [ ] Backward compat: field is optional — missing = no ERP access for employee/finance, full access for admin/president/ceo via role override
+- [ ] Commit: `"feat(erp): user model erp_access subdocument (10 modules) [v5]"`
+
+#### 10.0c — erpAccessCheck Middleware
+- [ ] Create `backend/erp/middleware/erpAccessCheck.js`:
+  - `erpAccessCheck(module, requiredLevel = 'VIEW')` — middleware factory:
+    1. president/ceo → role override (full / view-only), skip check
+    2. admin without erp_access → allow all (backward compat)
+    3. erp_access.enabled === false → 403 "ERP access not enabled"
+    4. Check user.erp_access.modules[module] against requiredLevel
+    5. FULL satisfies VIEW, VIEW does not satisfy FULL
+  - `approvalCheck` — checks `erp_access.can_approve` (or president/admin override)
+- [ ] Commit: `"feat(erp): erp access check middleware with approval gate [v5]"`
+
+#### 10.0d — Wire Middleware into Existing ERP Routes
+- [ ] Modify `backend/erp/routes/salesRoutes.js` — add `erpAccessCheck('sales', 'VIEW')` for GET, `erpAccessCheck('sales', 'FULL')` for POST/PUT/DELETE
+- [ ] Modify `backend/erp/routes/inventoryRoutes.js` — add `erpAccessCheck('inventory', ...)`
+- [ ] Modify `backend/erp/routes/consignmentRoutes.js` — add `erpAccessCheck('inventory', ...)`
+- [ ] Master data routes (hospitals, products, vendors, settings, lookups, government-rates) — only require `erp_access.enabled === true`, no module-level check (shared reference data)
+- [ ] Future routes (collections, expenses, payroll, accounting, purchasing, banking) — add erpAccessCheck when those phases are built
+- [ ] Commit: `"feat(erp): wire erp access middleware into existing routes [v5]"`
+
+#### 10.0e — ERP Access Management API
+- [ ] Create `backend/erp/controllers/erpAccessController.js`:
+  - `getTemplates` — list templates for entity (for dropdown)
+  - `createTemplate` — admin creates custom template
+  - `updateTemplate` — admin edits template (block if is_system)
+  - `deleteTemplate` — admin deletes template (block if is_system)
+  - `getUserAccess(userId)` — get user's current erp_access
+  - `setUserAccess(userId)` — admin sets user's erp_access (with template_id tracking)
+  - `applyTemplateToUser(userId, templateId)` — copy template values to user's erp_access
+  - `getMyAccess` — current user's own erp_access (for frontend sidebar)
+- [ ] Create `backend/erp/routes/erpAccessRoutes.js`:
+  - GET `/templates` — list templates
+  - POST `/templates` — create (admin only)
+  - PUT `/templates/:id` — update (admin only)
+  - DELETE `/templates/:id` — delete (admin only, non-system)
+  - GET `/users/:userId` — get user access (admin only)
+  - PUT `/users/:userId` — set user access (admin only)
+  - POST `/users/:userId/apply-template` — apply template (admin only)
+  - GET `/my` — current user's own access
+- [ ] Mount in ERP router: `router.use('/access', require('./erpAccessRoutes'))`
+- [ ] Commit: `"feat(erp): erp access management api with template crud [v5]"`
+
+#### 10.0f — Frontend: ProtectedRoute + Sidebar + App.jsx
+- [ ] Modify `frontend/src/components/auth/ProtectedRoute.jsx`:
+  - Add optional `requiredErpModule` prop
+  - Helper `hasErpModuleAccess(user, module)` with same role overrides as backend
+  - If module required and no access → redirect to `/erp` (not login)
+- [ ] Modify `frontend/src/components/common/Sidebar.jsx`:
+  - Extend `getMenuConfig(role, unreadCount, erpAccess)` — third param
+  - Conditionally include ERP module links only where `erpAccess.modules[x] !== 'NONE'`
+  - ERP section appended to both admin and employee menus when `erpAccess?.enabled`
+- [ ] Modify `frontend/src/App.jsx`:
+  - Add `requiredErpModule` to all ERP route definitions (e.g. `/erp/sales` → `requiredErpModule="sales"`)
+  - Keep broad `allowedRoles` on ERP routes (fine-grained check is via requiredErpModule)
+- [ ] Commit: `"feat(ui): erp module access enforcement in sidebar, routes, and protected route [v5]"`
+
+#### 10.0g — Frontend: ErpAccessManager Component
+- [ ] Create `frontend/src/erp/components/ErpAccessManager.jsx`:
+  - Master toggle switch (ERP Enabled on/off)
+  - Template dropdown (fetches from API, "Apply" button populates grid)
+  - 10-row permission grid (one per module, radio buttons: NONE / VIEW / FULL)
+  - can_approve checkbox
+  - Save button → PUT `/api/erp/access/users/:userId`
+  - Shows current template_id reference ("Based on: Field BDM")
+- [ ] Integrate into existing admin employee detail page (`/admin/employees`) as "ERP Access" tab
+- [ ] Commit: `"feat(ui): erp access manager component in employee detail [v5]"`
+
+#### 10.0h — Frontend: AccessTemplateManager Page
+- [ ] Create `frontend/src/erp/pages/AccessTemplateManager.jsx`:
+  - Template list with name, description, module summary, is_system badge
+  - Create/Edit form: name, description, 10-module grid, can_approve
+  - System templates: edit blocked, delete blocked (visual indicator)
+  - Admin-only page
+- [ ] Add route: `/erp/access-templates` → ProtectedRoute admin only
+- [ ] Commit: `"feat(ui): access template management page for admin [v5]"`
+
+#### 10.0i — Migration Script for Existing Users
+- [ ] Create `backend/erp/scripts/migrateErpAccess.js`:
+  - Active employees with entity_id → apply Field BDM template
+  - Users with role 'finance' → apply Finance template
+  - Users with role 'admin' → no erp_access needed (role override)
+  - President/CEO → no erp_access needed (role override)
+  - Users without entity_id → skip (CRM-only)
+- [ ] Commit: `"feat(erp): migrate existing users to erp access profiles [v5]"`
+
+---
+
 ### 10.1 — People Master Model
+
+> **Note:** `person_type` (PeopleMaster) is for HR/payroll classification. ERP access is controlled separately via `User.erp_access` (Phase 10.0). A BDM in PeopleMaster may have any ERP access template — the two are independent.
+
 - [ ] Create `backend/erp/models/PeopleMaster.js`:
-  - entity_id, person_type enum: BDM, EMPLOYEE, SALES_REP, CONSULTANT, DIRECTOR
+  - entity_id, person_type enum: BDM, ECOMMERCE_BDM, EMPLOYEE, SALES_REP, CONSULTANT, DIRECTOR
   - user_id (ref: User, optional — links to CRM user)
   - full_name, first_name, last_name, position, department
   - employment_type enum: REGULAR, PROBATIONARY, CONTRACTUAL, CONSULTANT, PARTNERSHIP
@@ -1744,13 +1920,14 @@
 | 7 | Income, PNL & Year-End Close | 18 | 1-2 weeks |
 | 8 | Dashboard & Reports (BOSS-Style) | 12 | 1 week |
 | 9 | Integration, Document Flow & Polish | 24 | 2 weeks |
-| 10 | People Master & Payroll [v5 NEW] | ~45 | 2-3 weeks |
+| 10.0 | ERP Access Control (NetSuite-style) [v5 NEW] | ~25 | 1 week |
+| 10.1-10.7 | People Master & Payroll [v5 NEW] | ~45 | 2-3 weeks |
 | 11 | VIP Accounting Engine [v5 NEW] | ~70 | 3-4 weeks |
 | 12 | Purchasing & AP [v5 NEW] | ~40 | 2-3 weeks |
 | 13 | Banking & Cash [v5 NEW] | ~30 | 1-2 weeks |
 | 14 | New Reports & Analytics [v5 NEW] | ~35 | 1-2 weeks |
 | 15+ | Future (SAP-equivalent improvements) | 8 | Post-launch |
 
-**Total pre-launch: ~535 tasks across 15 phases → ~26-34 weeks**
+**Total pre-launch: ~560 tasks across 16 phases → ~27-35 weeks**
 **Note: Phases 10-14 add ~220 tasks and ~10-14 weeks from PRD v5 (PNL Central live system integrations)**
 **Reference PRD:** `docs/VIP ERP PRD v5.md`
