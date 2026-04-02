@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import useEntities from '../hooks/useEntities';
+import EntityBadge from '../components/EntityBadge';
 
 const pageStyles = `
   :root {
@@ -156,6 +158,8 @@ const pageStyles = `
 
 const ErpDashboard = () => {
   const { user } = useAuth();
+  const { getEntityById } = useEntities();
+  const userEntity = getEntityById(user?.entity_id);
   const crmHome = user?.role === 'admin' ? '/admin' : '/bdm';
 
   return (
@@ -168,7 +172,7 @@ const ErpDashboard = () => {
           <div className="erp-dash-inner">
 
             <div className="erp-dash-header">
-              <h1>ERP Dashboard</h1>
+              <h1>ERP Dashboard {userEntity && <EntityBadge entity={userEntity} />}</h1>
               <p>Sales, inventory, collections, and expense management</p>
             </div>
 

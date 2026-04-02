@@ -5,6 +5,8 @@ import Sidebar from '../../components/common/Sidebar';
 import Pagination from '../../components/common/Pagination';
 import { useAuth } from '../../hooks/useAuth';
 import useSales from '../hooks/useSales';
+import useEntities from '../hooks/useEntities';
+import EntityBadge from '../components/EntityBadge';
 
 function toTitleCase(str) {
   if (!str) return str;
@@ -77,6 +79,8 @@ const pageStyles = `
 export default function SalesList() {
   const { user } = useAuth();
   const sales = useSales();
+  const { getEntityById } = useEntities();
+  const isMultiEntity = ['president', 'ceo', 'admin'].includes(user?.role);
 
   const [data, setData] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
@@ -192,6 +196,7 @@ export default function SalesList() {
                 <th>Total</th>
                 <th>Source</th>
                 <th>Status</th>
+                {isMultiEntity && <th>Entity</th>}
                 <th>Products</th>
                 <th>Actions</th>
               </tr>
@@ -209,6 +214,9 @@ export default function SalesList() {
                       {sale.status}
                     </span>
                   </td>
+                  {isMultiEntity && (
+                    <td><EntityBadge entity={getEntityById(sale.entity_id)} size="sm" /></td>
+                  )}
                   <td style={{ fontSize: 11, maxWidth: 220, whiteSpace: 'pre-line' }}>
                     {sale.line_items?.map((li, i) => (
                       <div key={i}>{li.item_key || '—'} × {li.qty}</div>
@@ -239,7 +247,7 @@ export default function SalesList() {
                 </tr>
               ))}
               {!data.length && (
-                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>
+                <tr><td colSpan={isMultiEntity ? 9 : 8} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>
                   {loading ? 'Loading...' : 'No sales found'}
                 </td></tr>
               )}

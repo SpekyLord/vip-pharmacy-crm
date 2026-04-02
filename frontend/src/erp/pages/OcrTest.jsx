@@ -1,8 +1,10 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
+import useHospitals from '../hooks/useHospitals';
+import useProducts from '../hooks/useProducts';
 
 const DOC_TYPES = [
   { value: 'CSI', label: 'Charge Sales Invoice (CSI)' },
@@ -154,32 +156,59 @@ const pageStyles = `
   .hidden-input { display: none; }
 `;
 
-/* ─── Field renderer ─── */
-function OcrField({ label, field, onChange }) {
+/* ─── Field renderer with smart dropdown for LOW/MEDIUM confidence ─── */
+function OcrField({ label, field, onChange, suggestions }) {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [filter, setFilter] = useState('');
+
   if (!field) return null;
   const isDark = document.body.classList.contains('dark-mode');
   const colors = isDark ? CONFIDENCE_COLORS_DARK : CONFIDENCE_COLORS;
   const borderColor = colors[field.confidence] || colors.LOW;
 
+  const hasSuggestions = suggestions?.length > 0 && field.confidence !== 'HIGH';
+  const filtered = hasSuggestions
+    ? suggestions.filter(s => {
+        const q = (filter || field.value || '').toLowerCase();
+        return !q || s.label.toLowerCase().includes(q);
+      }).slice(0, 10)
+    : [];
+
   return (
-    <div className="ocr-field">
-      <label>{label}</label>
+    <div className="ocr-field" style={{ position: 'relative' }}>
+      <label>{label}{hasSuggestions && <span style={{ fontSize: 9, marginLeft: 4, color: '#f59e0b' }}>▼ lookup</span>}</label>
       <input
         type="text"
         value={field.value ?? ''}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => { onChange(e.target.value); setFilter(e.target.value); }}
+        onFocus={() => hasSuggestions && setShowDropdown(true)}
+        onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
         style={{ borderColor }}
         placeholder="Required — enter manually"
       />
       {field.confidence === 'LOW' && (
         <div className="verify-hint">Please verify</div>
       )}
+      {showDropdown && filtered.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          background: 'var(--ocr-panel, #fff)', border: '1px solid var(--ocr-border)',
+          borderRadius: 8, maxHeight: 180, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+        }}>
+          {filtered.map((s, i) => (
+            <div key={i} style={{ padding: '6px 10px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid var(--ocr-border)' }}
+              onMouseDown={() => { onChange(s.value); setShowDropdown(false); }}>
+              {s.label}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 /* ─── Line items renderer ─── */
-function LineItems({ items, onItemChange }) {
+function LineItems({ items, onItemChange, fieldSuggestions }) {
   if (!items || items.length === 0) return null;
 
   return (
@@ -199,6 +228,7 @@ function LineItems({ items, onItemChange }) {
                   label={key.replace(/_/g, ' ')}
                   field={field}
                   onChange={(val) => onItemChange(idx, key, val)}
+                  suggestions={fieldSuggestions?.[key]}
                 />
               );
             })}
@@ -222,6 +252,26 @@ const OcrTest = () => {
 
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
+
+  // Smart dropdown data for LOW/MEDIUM confidence fields
+  const { hospitals } = useHospitals();
+  const { products } = useProducts();
+
+  const hospitalSuggestions = useMemo(() =>
+    (hospitals || []).map(h => ({ label: h.hospital_name_display || h.hospital_name, value: h.hospital_name })),
+    [hospitals]
+  );
+  const productSuggestions = useMemo(() =>
+    (products || []).map(p => ({ label: `${p.brand_name} ${p.dosage_strength || ''} (${p.item_key || ''})`, value: p.brand_name })),
+    [products]
+  );
+
+  // Map field keys to suggestion lists
+  const fieldSuggestions = useMemo(() => ({
+    hospital: hospitalSuggestions,
+    supplier_name: hospitalSuggestions, // OR/expense supplier can match hospitals or vendors
+    brand_name: productSuggestions,
+  }), [hospitalSuggestions, productSuggestions]);
 
   async function handleFile(f) {
     if (!f) return;
@@ -446,13 +496,14 @@ const OcrTest = () => {
                         label={key.replace(/_/g, ' ')}
                         field={field}
                         onChange={(val) => updateField(key, val)}
+                        suggestions={fieldSuggestions[key]}
                       />
                     );
                   })}
 
                   {/* Line items */}
                   {extracted.line_items && (
-                    <LineItems items={extracted.line_items} onItemChange={updateLineItem} />
+                    <LineItems items={extracted.line_items} onItemChange={updateLineItem} fieldSuggestions={fieldSuggestions} />
                   )}
 
                   {/* Settled CSIs (CR) */}

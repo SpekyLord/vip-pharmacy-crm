@@ -3,6 +3,8 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useInventory from '../hooks/useInventory';
+import useEntities from '../hooks/useEntities';
+import EntityBadge from '../components/EntityBadge';
 
 const TABS = ['Stock on Hand', 'Transaction Ledger', 'Variance Report', 'Alerts'];
 
@@ -218,6 +220,8 @@ function PhysicalCountModal({ open, onClose, stockData, onSubmit, submitting }) 
 export default function MyStock() {
   const { user } = useAuth();
   const inventory = useInventory();
+  const { getEntityById } = useEntities();
+  const userEntity = getEntityById(user?.entity_id);
 
   const [activeTab, setActiveTab] = useState(0);
   const [stockData, setStockData] = useState([]);
@@ -328,7 +332,7 @@ export default function MyStock() {
         <main className="mystock-main">
           <div className="mystock-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
             <div>
-              <h1>My Stock</h1>
+              <h1>My Stock {userEntity && <EntityBadge entity={userEntity} size="sm" />}</h1>
               <p>Inventory on hand, transaction history, and variance tracking</p>
             </div>
             <button className="btn btn-primary" onClick={openPhysicalCount} disabled={!stockData.length || loading}>
