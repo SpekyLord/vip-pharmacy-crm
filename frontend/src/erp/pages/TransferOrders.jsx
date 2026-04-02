@@ -510,7 +510,7 @@ export default function TransferOrders() {
                             <option value="">Select batch...</option>
                             {batches.map(b => (
                               <option key={b.batch_lot_no} value={b.batch_lot_no}>
-                                {b.batch_lot_no} — {b.available_qty} avail (exp: {new Date(b.expiry_date).toLocaleDateString()})
+                                {b.batch_lot_no} — {b.available_qty} avail
                               </option>
                             ))}
                           </select>
@@ -607,7 +607,7 @@ export default function TransferOrders() {
                             <option value="">Select batch...</option>
                             {batches.map(b => (
                               <option key={b.batch_lot_no} value={b.batch_lot_no}>
-                                {b.batch_lot_no} — {b.available_qty} avail (exp: {new Date(b.expiry_date).toLocaleDateString()})
+                                {b.batch_lot_no} — {b.available_qty} avail
                               </option>
                             ))}
                           </select>

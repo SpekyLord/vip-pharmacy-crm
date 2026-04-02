@@ -669,7 +669,8 @@ export default function SalesEntry() {
                   <th style={{ width: 120 }}>CSI Date</th>
                   <th style={{ width: 100 }}>CSI #</th>
                   <th style={{ width: 200 }}>Product</th>
-                  <th style={{ width: 180 }}>Batch / Expiry</th>
+                  <th style={{ width: 160 }}>Batch / Lot</th>
+                  <th style={{ width: 100 }}>Expiry</th>
                   <th style={{ width: 70 }}>Qty</th>
                   <th style={{ width: 70 }}>Unit</th>
                   <th style={{ width: 90 }}>Unit Price</th>
@@ -717,15 +718,15 @@ export default function SalesEntry() {
                       {row.line_items?.map((item, li) => {
                         const prod = item.product_id ? productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id)) : null;
                         const batches = prod?.batches || [];
-                        if (!item.product_id || batches.length === 0) return <div key={li} className="readonly" style={{ fontSize: 11, padding: '6px 8px', color: 'var(--erp-muted)' }}>Select product first</div>;
-                        if (batches.length === 1) return <div key={li} style={{ fontSize: 11, padding: '4px 0' }}><span className="batch-single">{batches[0].batch_lot_no}</span> <span style={{ color: 'var(--erp-muted)' }}>Exp: {new Date(batches[0].expiry_date).toLocaleDateString()}</span></div>;
+                        if (!item.product_id || batches.length === 0) return <div key={li} style={{ fontSize: 11, padding: '6px 8px', color: 'var(--erp-muted)' }}>—</div>;
+                        if (batches.length === 1) return <div key={li} style={{ fontSize: 12, fontWeight: 600 }}>{batches[0].batch_lot_no} ({batches[0].available_qty})</div>;
                         return (
                           <div key={li}>
                             <select value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} disabled={row.status === 'POSTED'} className="batch-select">
                               <option value="">Auto (FIFO)</option>
                               {batches.map((b, bi) => (
                                 <option key={bi} value={b.batch_lot_no}>
-                                  {b.batch_lot_no} — Exp: {new Date(b.expiry_date).toLocaleDateString()} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
+                                  {b.batch_lot_no} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
                                 </option>
                               ))}
                             </select>
@@ -734,6 +735,19 @@ export default function SalesEntry() {
                             )}
                           </div>
                         );
+                      })}
+                    </td>
+                    <td>
+                      {row.line_items?.map((item, li) => {
+                        const prod = item.product_id ? productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id)) : null;
+                        const batches = prod?.batches || [];
+                        const selectedBatch = item.batch_lot_no
+                          ? batches.find(b => b.batch_lot_no === item.batch_lot_no)
+                          : batches[0]; // FIFO = first batch
+                        return <div key={li} style={{ fontSize: 12, color: 'var(--erp-muted)', whiteSpace: 'nowrap' }}>
+                          {selectedBatch?.expiry_date ? new Date(selectedBatch.expiry_date).toLocaleDateString() : '—'}
+                          {selectedBatch?.near_expiry && <span className="near-expiry-badge">Near</span>}
+                        </div>;
                       })}
                     </td>
                     <td>
