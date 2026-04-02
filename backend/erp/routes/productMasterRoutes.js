@@ -9,5 +9,6 @@ router.get('/:id', protect, c.getById);
 router.post('/', protect, roleCheck('admin', 'finance'), c.create);
 router.put('/:id', protect, roleCheck('admin', 'finance'), c.update);
 router.patch('/:id/deactivate', protect, roleCheck('admin', 'finance'), c.deactivate);
+router.patch('/:id/reorder-qty', protect, roleCheck('admin', 'finance'), c.updateReorderQty);
 
 module.exports = router;

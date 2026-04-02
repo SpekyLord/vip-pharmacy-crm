@@ -7,6 +7,8 @@
 const mongoose = require('mongoose');
 const InventoryLedger = require('../models/InventoryLedger');
 const ProductMaster = require('../models/ProductMaster');
+const GrnEntry = require('../models/GrnEntry');
+const TransactionEvent = require('../models/TransactionEvent');
 const Settings = require('../models/Settings');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
@@ -350,10 +352,283 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
   });
 });
 
+// ═══ Phase 4 — GRN Workflow ═══
+
+/**
+ * POST /grn — BDM creates a Goods Received Note (PENDING)
+ */
+const createGrn = catchAsync(async (req, res) => {
+  const { grn_date, line_items, waybill_photo_url, undertaking_photo_url, ocr_data, notes } = req.body;
+
+  if (!line_items?.length) {
+    return res.status(400).json({ success: false, message: 'At least one line item is required' });
+  }
+
+  // Validate products exist
+  const productIds = line_items.map(li => li.product_id);
+  const products = await ProductMaster.find({ _id: { $in: productIds } }).select('_id item_key').lean();
+  const productMap = new Map(products.map(p => [p._id.toString(), p]));
+
+  for (const li of line_items) {
+    if (!productMap.has(li.product_id?.toString())) {
+      return res.status(400).json({ success: false, message: `Product ${li.product_id} not found` });
+    }
+    if (!li.item_key) li.item_key = productMap.get(li.product_id.toString()).item_key;
+  }
+
+  const grn = await GrnEntry.create({
+    entity_id: req.entityId,
+    bdm_id: req.bdmId,
+    grn_date,
+    line_items,
+    waybill_photo_url,
+    undertaking_photo_url,
+    ocr_data,
+    notes,
+    created_by: req.user._id
+  });
+
+  await ErpAuditLog.logChange({
+    entity_id: req.entityId,
+    bdm_id: req.bdmId,
+    log_type: 'STATUS_CHANGE',
+    target_ref: grn._id.toString(),
+    target_model: 'GrnEntry',
+    field_changed: 'status',
+    new_value: 'PENDING',
+    changed_by: req.user._id,
+    note: `GRN created with ${line_items.length} item(s)`
+  });
+
+  res.status(201).json({ success: true, data: grn });
+});
+
+/**
+ * POST /grn/:id/approve — Finance/Admin approves or rejects a GRN
+ * On APPROVED: creates TransactionEvent + InventoryLedger entries atomically.
+ */
+const approveGrn = catchAsync(async (req, res) => {
+  const { action, rejection_reason } = req.body;
+
+  if (!['APPROVED', 'REJECTED'].includes(action)) {
+    return res.status(400).json({ success: false, message: 'Action must be APPROVED or REJECTED' });
+  }
+
+  const grn = await GrnEntry.findOne({ _id: req.params.id, status: 'PENDING' });
+  if (!grn) {
+    return res.status(404).json({ success: false, message: 'GRN not found or not in PENDING status' });
+  }
+
+  if (action === 'REJECTED') {
+    grn.status = 'REJECTED';
+    grn.rejection_reason = rejection_reason || '';
+    grn.reviewed_by = req.user._id;
+    grn.reviewed_at = new Date();
+    await grn.save();
+
+    await ErpAuditLog.logChange({
+      entity_id: grn.entity_id,
+      bdm_id: grn.bdm_id,
+      log_type: 'STATUS_CHANGE',
+      target_ref: grn._id.toString(),
+      target_model: 'GrnEntry',
+      field_changed: 'status',
+      old_value: 'PENDING',
+      new_value: 'REJECTED',
+      changed_by: req.user._id,
+      note: rejection_reason || 'GRN rejected'
+    });
+
+    return res.json({ success: true, message: 'GRN rejected', data: grn });
+  }
+
+  // APPROVED — atomic transaction
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      // Create TransactionEvent
+      const event = await TransactionEvent.create([{
+        entity_id: grn.entity_id,
+        bdm_id: grn.bdm_id,
+        event_type: 'GRN',
+        event_date: grn.grn_date,
+        document_ref: grn._id.toString(),
+        payload: { line_items: grn.line_items },
+        created_by: req.user._id
+      }], { session });
+
+      // Create InventoryLedger entries for each line item
+      for (const item of grn.line_items) {
+        await InventoryLedger.create([{
+          entity_id: grn.entity_id,
+          bdm_id: grn.bdm_id,
+          product_id: item.product_id,
+          batch_lot_no: item.batch_lot_no,
+          expiry_date: item.expiry_date,
+          transaction_type: 'GRN',
+          qty_in: item.qty,
+          qty_out: 0,
+          event_id: event[0]._id,
+          recorded_by: req.user._id
+        }], { session });
+      }
+
+      // Update GRN status
+      grn.status = 'APPROVED';
+      grn.reviewed_by = req.user._id;
+      grn.reviewed_at = new Date();
+      grn.event_id = event[0]._id;
+      await grn.save({ session });
+    });
+
+    await ErpAuditLog.logChange({
+      entity_id: grn.entity_id,
+      bdm_id: grn.bdm_id,
+      log_type: 'STATUS_CHANGE',
+      target_ref: grn._id.toString(),
+      target_model: 'GrnEntry',
+      field_changed: 'status',
+      old_value: 'PENDING',
+      new_value: 'APPROVED',
+      changed_by: req.user._id,
+      note: `GRN approved: ${grn.line_items.length} item(s) added to inventory`
+    });
+
+    res.json({ success: true, message: 'GRN approved — stock updated', data: grn });
+  } finally {
+    await session.endSession();
+  }
+});
+
+/**
+ * GET /grn — List GRNs with status filter
+ */
+const getGrnList = catchAsync(async (req, res) => {
+  const filter = { ...req.tenantFilter };
+  if (req.query.status) filter.status = req.query.status;
+
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 50;
+  const skip = (page - 1) * limit;
+
+  const [grns, total] = await Promise.all([
+    GrnEntry.find(filter)
+      .populate('bdm_id', 'name email')
+      .populate('reviewed_by', 'name')
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    GrnEntry.countDocuments(filter)
+  ]);
+
+  res.json({
+    success: true,
+    data: grns,
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+  });
+});
+
+// ═══ Phase 4 — Reorder & Expiry Alerts ═══
+
+/**
+ * GET /alerts — Expiry alerts + reorder alerts
+ * Enriched with SAP-level reorder data (min qty, suggested order, lead time, order-by date).
+ */
+const getAlerts = catchAsync(async (req, res) => {
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.bdm_id
+    ? req.query.bdm_id
+    : req.bdmId;
+
+  const settings = await Settings.getSettings();
+  const nearExpiryDays = settings.NEAR_EXPIRY_DAYS || 120;
+  const nearExpiryDate = new Date();
+  nearExpiryDate.setDate(nearExpiryDate.getDate() + nearExpiryDays);
+
+  // Get raw stock from FIFO engine
+  const rawStock = await getMyStockAgg(req.entityId, bdmId);
+
+  // 1. Expiry alerts: batches expiring within NEAR_EXPIRY_DAYS
+  const expiryAlerts = [];
+  for (const item of rawStock) {
+    if (item.available_qty > 0 && new Date(item.expiry_date) <= nearExpiryDate) {
+      expiryAlerts.push({
+        product_id: item.product_id,
+        batch_lot_no: item.batch_lot_no,
+        expiry_date: item.expiry_date,
+        days_remaining: Math.ceil((new Date(item.expiry_date) - new Date()) / (1000 * 60 * 60 * 24)),
+        available_qty: item.available_qty
+      });
+    }
+  }
+
+  // 2. Reorder alerts: aggregate stock by product, compare to reorder_min_qty
+  const productTotals = new Map();
+  for (const item of rawStock) {
+    const pid = item.product_id.toString();
+    productTotals.set(pid, (productTotals.get(pid) || 0) + item.available_qty);
+  }
+
+  // Fetch products with reorder rules configured
+  const productsWithReorder = await ProductMaster.find({
+    entity_id: req.entityId,
+    reorder_min_qty: { $ne: null },
+    is_active: true
+  }).select('brand_name generic_name item_key reorder_min_qty reorder_qty safety_stock_qty lead_time_days').lean();
+
+  const reorderAlerts = [];
+  const today = new Date();
+  for (const product of productsWithReorder) {
+    const currentQty = productTotals.get(product._id.toString()) || 0;
+    if (currentQty < product.reorder_min_qty) {
+      const orderByDate = product.lead_time_days
+        ? new Date(today.getTime() + product.lead_time_days * 24 * 60 * 60 * 1000)
+        : null;
+
+      reorderAlerts.push({
+        product_id: product._id,
+        product: { brand_name: product.brand_name, generic_name: product.generic_name, item_key: product.item_key },
+        current_qty: currentQty,
+        reorder_min_qty: product.reorder_min_qty,
+        reorder_qty: product.reorder_qty,
+        safety_stock_qty: product.safety_stock_qty,
+        lead_time_days: product.lead_time_days,
+        shortfall: product.reorder_min_qty - currentQty,
+        below_safety: product.safety_stock_qty != null && currentQty < product.safety_stock_qty,
+        order_by_date: orderByDate
+      });
+    }
+  }
+
+  // Enrich expiry alerts with product details
+  const expiryProductIds = [...new Set(expiryAlerts.map(a => a.product_id))];
+  const expiryProducts = await ProductMaster.find({ _id: { $in: expiryProductIds } })
+    .select('brand_name generic_name item_key').lean();
+  const expiryProductMap = new Map(expiryProducts.map(p => [p._id.toString(), p]));
+
+  for (const alert of expiryAlerts) {
+    alert.product = expiryProductMap.get(alert.product_id.toString()) || {};
+  }
+
+  // Sort: expiry by days remaining ASC, reorder by shortfall DESC
+  expiryAlerts.sort((a, b) => a.days_remaining - b.days_remaining);
+  reorderAlerts.sort((a, b) => b.shortfall - a.shortfall);
+
+  res.json({
+    success: true,
+    data: { expiry_alerts: expiryAlerts, reorder_alerts: reorderAlerts },
+    summary: { expiry_count: expiryAlerts.length, reorder_count: reorderAlerts.length }
+  });
+});
+
 module.exports = {
   getMyStock,
   getBatches,
   getLedger,
   getVariance,
-  recordPhysicalCount
+  recordPhysicalCount,
+  createGrn,
+  approveGrn,
+  getGrnList,
+  getAlerts
 };

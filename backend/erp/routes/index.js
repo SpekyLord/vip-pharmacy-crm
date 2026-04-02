@@ -21,4 +21,7 @@ router.use('/classify', require('./classificationRoutes'));
 router.use('/sales', require('./salesRoutes'));
 router.use('/inventory', require('./inventoryRoutes'));
 
+// ═══ Phase 4 — Consignment ═══
+router.use('/consignment', require('./consignmentRoutes'));
+
 module.exports = router;

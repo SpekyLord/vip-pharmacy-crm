@@ -8,9 +8,10 @@ export default function useInventory() {
   const getLedger = (productId, params = {}) => api.get(`/inventory/ledger/${productId}`, { params });
   const getVariance = (bdmId) => api.get('/inventory/variance', { params: bdmId ? { bdm_id: bdmId } : {} });
   const recordPhysicalCount = (counts) => api.post('/inventory/physical-count', { counts });
+  const getAlerts = (bdmId) => api.get('/inventory/alerts', { params: bdmId ? { bdm_id: bdmId } : {} });
 
   return {
     ...api,
-    getMyStock, getBatches, getLedger, getVariance, recordPhysicalCount
+    getMyStock, getBatches, getLedger, getVariance, recordPhysicalCount, getAlerts
   };
 }

@@ -4,7 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useInventory from '../hooks/useInventory';
 
-const TABS = ['Stock on Hand', 'Transaction Ledger', 'Variance Report'];
+const TABS = ['Stock on Hand', 'Transaction Ledger', 'Variance Report', 'Alerts'];
 
 const TYPE_COLORS = {
   OPENING_BALANCE: { bg: '#dbeafe', text: '#1e40af' },
@@ -229,6 +229,8 @@ export default function MyStock() {
   const [loading, setLoading] = useState(false);
   const [pcModalOpen, setPcModalOpen] = useState(false);
   const [pcSubmitting, setPcSubmitting] = useState(false);
+  const [alertData, setAlertData] = useState({ expiry_alerts: [], reorder_alerts: [] });
+  const [alertSummary, setAlertSummary] = useState({});
 
   // Load stock on mount
   useEffect(() => {
@@ -261,8 +263,18 @@ export default function MyStock() {
     } catch {} finally { setLoading(false); }
   };
 
+  const loadAlerts = async () => {
+    setLoading(true);
+    try {
+      const res = await inventory.getAlerts();
+      if (res?.data) setAlertData(res.data);
+      if (res?.summary) setAlertSummary(res.summary);
+    } catch {} finally { setLoading(false); }
+  };
+
   useEffect(() => {
     if (activeTab === 2) loadVariance();
+    if (activeTab === 3) loadAlerts();
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleExpand = (productId) => {
@@ -492,6 +504,63 @@ export default function MyStock() {
                 )}
               </tbody>
             </table>
+          )}
+
+          {/* Tab 4: Alerts */}
+          {activeTab === 3 && (
+            <div>
+              {/* Expiry Alerts */}
+              <h3 style={{ fontSize: 15, margin: '0 0 10px', color: 'var(--erp-text)' }}>
+                Expiry Alerts ({alertData.expiry_alerts?.length || 0})
+              </h3>
+              <table className="stock-table" style={{ marginBottom: 24 }}>
+                <thead>
+                  <tr><th>Product</th><th>Batch</th><th>Expiry</th><th>Days Left</th><th>Qty</th></tr>
+                </thead>
+                <tbody>
+                  {(alertData.expiry_alerts || []).map((a, i) => (
+                    <tr key={i} style={{ background: a.days_remaining < 30 ? '#fef2f2' : a.days_remaining < 120 ? '#fffbeb' : undefined }}>
+                      <td><strong>{a.product?.brand_name || 'Unknown'}</strong></td>
+                      <td>{a.batch_lot_no}</td>
+                      <td>{new Date(a.expiry_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' })}</td>
+                      <td style={{ color: a.days_remaining < 30 ? '#dc2626' : a.days_remaining < 120 ? '#d97706' : undefined, fontWeight: 700 }}>
+                        {a.days_remaining}d
+                      </td>
+                      <td>{a.available_qty}</td>
+                    </tr>
+                  ))}
+                  {!alertData.expiry_alerts?.length && (
+                    <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--erp-muted)' }}>No expiry alerts</td></tr>
+                  )}
+                </tbody>
+              </table>
+
+              {/* Reorder Alerts */}
+              <h3 style={{ fontSize: 15, margin: '0 0 10px', color: 'var(--erp-text)' }}>
+                Reorder Alerts ({alertData.reorder_alerts?.length || 0})
+              </h3>
+              <table className="stock-table">
+                <thead>
+                  <tr><th>Product</th><th>Current</th><th>Min Qty</th><th>Safety</th><th>Suggested Order</th><th>Lead Time</th><th>Order By</th></tr>
+                </thead>
+                <tbody>
+                  {(alertData.reorder_alerts || []).map((a, i) => (
+                    <tr key={i} style={{ background: a.below_safety ? '#fef2f2' : '#fffbeb' }}>
+                      <td><strong>{a.product?.brand_name || 'Unknown'}</strong></td>
+                      <td style={{ fontWeight: 700, color: a.below_safety ? '#dc2626' : '#d97706' }}>{a.current_qty}</td>
+                      <td>{a.reorder_min_qty}</td>
+                      <td>{a.safety_stock_qty ?? '—'}</td>
+                      <td style={{ fontWeight: 600 }}>{a.reorder_qty ?? '—'}</td>
+                      <td>{a.lead_time_days != null ? `${a.lead_time_days}d` : '—'}</td>
+                      <td>{a.order_by_date ? new Date(a.order_by_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '—'}</td>
+                    </tr>
+                  ))}
+                  {!alertData.reorder_alerts?.length && (
+                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--erp-muted)' }}>No reorder alerts</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           )}
 
           {loading && (

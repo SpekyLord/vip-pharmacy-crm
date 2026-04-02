@@ -50,6 +50,12 @@ const productMasterSchema = new mongoose.Schema({
     default: 'VATABLE'
   },
 
+  // SAP-level reorder fields (null = not configured)
+  reorder_min_qty: { type: Number, default: null, min: 0 },
+  reorder_qty: { type: Number, default: null, min: 1 },
+  safety_stock_qty: { type: Number, default: null, min: 0 },
+  lead_time_days: { type: Number, default: null, min: 0 },
+
   // Classification
   category: { type: String, trim: true },
   is_active: { type: Boolean, default: true },

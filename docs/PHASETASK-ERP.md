@@ -670,7 +670,7 @@
   - Validation error panel: collapsible, shows errors with CSI# references
   - No per-keystroke validation — free typing, validate on button click
   - **Note:** Sub-components (SalesEntryGrid, SalesEntryRow, SalesEntryCard, BatchSelector, SalesErrorPanel, ScanCSIModal, SalesActionBar) are inlined in SalesEntry.jsx for v1. Can be extracted to separate files later if needed.
-  - **Deferred:** ScanCSIModal (OCR camera integration) — backend resolver is ready, frontend modal needs Phase 1 OcrTest integration
+  - ✅ ScanCSIModal implemented: camera/gallery → processDocument('CSI') → fuzzy match hospital + products → pre-fill sales row. Commit `95562d9`.
 - [x] Committed in `f3239f8`
 
 ### 3.9 — My Stock Page (BDM Stock Visibility) ✅
@@ -680,7 +680,7 @@
   - **Tab 2: Transaction Ledger (Audit)** — product dropdown selector → full InventoryLedger history. Columns: date, type (color-coded badge by TYPE_COLORS), batch, qty_in (+green), qty_out (-red), running_balance
   - **Tab 3: Variance Report** — product table: opening_balance, total_in, total_out, expected_balance, actual_balance, variance, status (OK green / DISCREPANCY red)
   - **Note:** StockSummaryBar, StockTable, BatchBreakdown, TransactionLedger, VarianceTable, PhysicalCountModal are inlined in MyStock.jsx for v1.
-  - **Deferred:** PhysicalCountModal UI — backend recordPhysicalCount endpoint is ready
+  - ✅ PhysicalCountModal implemented: shows all batches with system qty, BDM enters actual counts, submits adjustments. Commit `95562d9`.
 - [x] Committed in `f3239f8`
 
 ### 3.10 — Sales List Page ✅
@@ -729,8 +729,8 @@
 | 3.5 | Sales Controller (10 endpoints) | ✅ Complete |
 | 3.6 | Inventory Controller & Routes (5 endpoints) | ✅ Complete |
 | 3.7 | Frontend Hooks (4 hooks) | ✅ Complete |
-| 3.8 | SalesEntry Page | ✅ Complete (ScanCSIModal deferred) |
-| 3.9 | MyStock Page (3 tabs) | ✅ Complete (PhysicalCountModal UI deferred) |
+| 3.8 | SalesEntry Page | ✅ Complete (ScanCSIModal done: `95562d9`) |
+| 3.9 | MyStock Page (3 tabs + Alerts) | ✅ Complete (PhysicalCountModal done: `95562d9`, Alerts tab added in Phase 4) |
 | 3.10 | SalesList Page | ✅ Complete |
 | 3.11 | Route Registration | ✅ Complete (build verified) |
 | 3.12 | Verification | ✅ Code verified (manual integration tests pending) |
@@ -738,59 +738,85 @@
 **Files created:** 22 new + 3 modified | **Models:** 3 | **Services:** 2 | **Controllers:** 2 | **Routes:** 2 | **Seeds:** 1 | **Hooks:** 4 | **Pages:** 3
 **Commits:** `881fb60` (backend), `f3239f8` (frontend)
 
-**Remaining frontend work (deferred to interactive session):**
-- SalesEntry: ScanCSIModal (camera → OCR → productResolver → pre-fill row)
-- MyStock: PhysicalCountModal UI (form to enter actual stock quantities)
+**Phase 3 deferred items — COMPLETED (commit `95562d9`):**
+- ✅ SalesEntry: ScanCSIModal (camera → OCR → productResolver → pre-fill row)
+- ✅ MyStock: PhysicalCountModal UI (form to enter actual stock quantities)
 
 ---
 
-## PHASE 4 — INVENTORY MODULE (GRN, Reorder, DR/Consignment)
+## PHASE 4 — INVENTORY MODULE (GRN, Reorder, DR/Consignment) ✅ COMPLETE
 **Goal:** Stock receiving (GRN), reorder alerts, DR entry, and consignment tracking. Stock-on-hand visibility, audit trail, variance, and BDM isolation were moved to Phase 3 (required by sales entry).
 
+> **Status (April 2026):** All 3 tasks complete (4.1–4.3). 8 new files + 9 modified. Backend: 1 model (GrnEntry), 1 controller (consignmentController), 1 route file (consignmentRoutes), 4 fields added to ProductMaster, 4 endpoints added to inventoryController, 1 endpoint added to productMasterController. Frontend: 2 hooks (useGrn, useConsignment), 3 pages (GrnEntry, DrEntry, ConsignmentDashboard), Alerts tab added to MyStock, 3 routes registered. Build: 0 errors.
+>
 > **Moved to Phase 3:** Stock aggregation (getMyStock, getBatches, getLedger, getVariance), BDM stock isolation, physical count, My Stock page. See 3.3, 3.6, 3.9.
+>
+> **Design decisions:**
+> - GrnEntry is a separate model (not InventoryLedger) because GRN needs mutable PENDING→APPROVED/REJECTED workflow while InventoryLedger is immutable. Ledger entries created atomically on approval via MongoDB transaction.
+> - SAP-level reorder fields (reorder_min_qty, reorder_qty, safety_stock_qty, lead_time_days) added directly to ProductMaster — all optional with null defaults, zero impact on existing documents.
+> - ConsignmentTracker aging recomputed on read (not just at save-time) for live accuracy.
+> - Consignment conversion is dual-trigger: auto via submitSales (salesController:302) + manual via convertConsignment endpoint.
 
-### 4.1 — GRN (Goods Received Note) Workflow
-- [ ] Add to `backend/erp/controllers/inventoryController.js`:
-  - `createGrn` — BDM records stock received: product, batch_lot_no, expiry_date, qty. Creates InventoryLedger GRN entry in PENDING status
-  - `approveGrn` — Finance approves → InventoryLedger entry activated
-  - `getGrnList` — list GRNs with status filter (PENDING/APPROVED/REJECTED)
-- [ ] Add routes to `backend/erp/routes/inventoryRoutes.js`:
+### 4.1 — GRN (Goods Received Note) Workflow ✅
+- [x] Create `backend/erp/models/GrnEntry.js` — entity_id, bdm_id, grn_date, line_items (product_id, item_key, batch_lot_no, expiry_date, qty), waybill_photo_url, undertaking_photo_url, ocr_data, status (PENDING/APPROVED/REJECTED), notes, rejection_reason, reviewed_by/at, event_id, created_by/at, pre-save cleanBatchNo, 3 indexes
+- [x] Add to `backend/erp/controllers/inventoryController.js`:
+  - `createGrn` — BDM records stock received, validates products exist, creates GrnEntry(PENDING), AuditLog
+  - `approveGrn` — Finance/Admin only. APPROVED: MongoDB transaction → TransactionEvent(GRN) + InventoryLedger entries (qty_in per line_item). REJECTED: sets rejection_reason
+  - `getGrnList` — paginated list with tenantFilter scoping, populates bdm_id and reviewed_by
+- [x] Add routes to `backend/erp/routes/inventoryRoutes.js`:
   - POST `/grn` — createGrn
-  - POST `/grn/:id/approve` — approveGrn (Finance/Admin only)
+  - POST `/grn/:id/approve` — approveGrn (roleCheck admin, finance)
   - GET `/grn` — getGrnList
-- [ ] Create `frontend/src/erp/pages/GrnEntry.jsx`:
-  - Product dropdown, batch lot#, expiry date, qty
-  - "Scan Undertaking" button → OCR pre-fills (Phase 1)
-  - Waybill photo upload (proof only)
-  - Submit → pending Finance approval
-- [ ] Commit: `"feat(erp): grn entry with finance approval workflow"`
+- [x] Create `frontend/src/erp/hooks/useGrn.js` — getGrnList, createGrn, approveGrn
+- [x] Create `frontend/src/erp/pages/GrnEntry.jsx`:
+  - GRN form: grn_date, product grid (product dropdown, batch, expiry, qty), notes
+  - ScanUndertakingModal: camera/gallery → processDocument('UNDERTAKING') → fuzzy match products → pre-fill line items
+  - GRN list with status filter tabs (All/PENDING/APPROVED/REJECTED), approve/reject buttons for Admin/Finance
+  - Status badges: PENDING=amber, APPROVED=green, REJECTED=red
+- [x] Route registered: `/erp/grn` (employee, admin, finance)
 
-### 4.2 — Reorder Rules & Alerts
-- [ ] Add `reorder_min_qty` field to ProductMaster (or separate ReorderRule model)
-- [ ] Add to inventoryController: `getAlerts` — expiry alerts (within NEAR_EXPIRY_DAYS) + reorder alerts (below min qty)
-- [ ] Finance can set/update min stock per product
-- [ ] Alert logic: stock below threshold after any inventory movement
-- [ ] Add expiry + reorder alert panels to MyStock page (or separate alerts endpoint)
-- [ ] Commit: `"feat(erp): reorder rules with thresholds + alert panels"`
+### 4.2 — Reorder Rules & Alerts ✅
+- [x] Add SAP-level reorder fields to `backend/erp/models/ProductMaster.js`:
+  - `reorder_min_qty` (Number, default: null) — reorder point threshold
+  - `reorder_qty` (Number, default: null) — suggested order quantity
+  - `safety_stock_qty` (Number, default: null) — SAP Safety Stock buffer
+  - `lead_time_days` (Number, default: null) — expected delivery lead time
+- [x] Add `getAlerts` to inventoryController — BDM-scoped, computes in parallel:
+  - Expiry alerts: batches expiring within NEAR_EXPIRY_DAYS with available_qty > 0
+  - Reorder alerts: products where total stock < reorder_min_qty, enriched with reorder_qty, safety_stock_qty, lead_time_days, order_by_date
+- [x] Add `updateReorderQty` to productMasterController — PATCH body accepts all 4 reorder fields, per-field AuditLog
+- [x] Routes: GET `/inventory/alerts`, PATCH `/products/:id/reorder-qty` (roleCheck admin, finance)
+- [x] Frontend: `useInventory.getAlerts()`, MyStock "Alerts" tab (4th tab) with expiry table (color-coded: red <30d, amber <120d) + reorder table (current qty, min qty, safety stock, suggested order, lead time, order-by date)
 
-### 4.3 — DR Entry & Consignment Tracking [v5 NEW]
-- [ ] Create `backend/erp/controllers/consignmentController.js`:
-  - `createDR` — creates ConsignmentTracker entry + InventoryLedger DR_CONSIGNMENT or DR_SAMPLING movement
-  - `getDRsByBdm` — list DRs with aging status
-  - `getConsignmentPool` — open consignments per hospital
-  - `convertConsignment` — when CSI references DR, update qty_consumed, link sales_line_id
-- [ ] Create `backend/erp/routes/consignmentRoutes.js`
-- [ ] Add to ERP router
-- [ ] Create `frontend/src/erp/pages/DrEntry.jsx`:
-  - Hospital dropdown, product grid, qty, batch
-  - "Scan DR" button → OCR pre-fills (Phase 1.15)
-  - DR type toggle: Sampling vs Consignment
-  - Submit → creates ConsignmentTracker + inventory movement
-- [ ] Create `frontend/src/erp/pages/ConsignmentDashboard.jsx`:
-  - Open consignments per hospital with aging color coding
-  - OVERDUE highlighted red, FORCE_CSI highlighted orange
-  - Quick-action: "Convert to CSI" button per consignment line
-- [ ] Commit: `"feat(erp): dr entry and consignment tracking with csi-dr reference chain [v5]"`
+### 4.3 — DR Entry & Consignment Tracking [v5 NEW] ✅
+- [x] Create `backend/erp/controllers/consignmentController.js`:
+  - `createDR` — MongoDB transaction → TransactionEvent + InventoryLedger(qty_out via consumeSpecificBatch or consumeFIFO) + ConsignmentTracker (if DR_CONSIGNMENT), AuditLog
+  - `getDRsByBdm` — queries TransactionEvent with dr_type filter, paginated
+  - `getConsignmentPool` — aggregates ConsignmentTracker by hospital, computes live days_outstanding and aging_status on read, returns summary (total_open, total_overdue, total_force_csi, total_value)
+  - `convertConsignment` — validates qty ≤ qty_remaining, updates conversions array + qty_consumed, pre-save hook recalculates aging, AuditLog. Does NOT create InventoryLedger (stock already deducted at DR creation)
+- [x] Create `backend/erp/routes/consignmentRoutes.js` — POST /dr, GET /dr, GET /pool, POST /convert
+- [x] Mount in `backend/erp/routes/index.js` at `/consignment`
+- [x] Create `frontend/src/erp/hooks/useConsignment.js` — createDR, getDRs, getConsignmentPool, convertConsignment
+- [x] Create `frontend/src/erp/pages/DrEntry.jsx`:
+  - DR form: hospital dropdown, DR#, DR date, DR type toggle (Sampling/Consignment), product grid (stock-filtered), batch
+  - ScanDRModal: camera/gallery → processDocument('DR') → fuzzy match hospital + products → pre-fill form
+  - DR list with type badges
+- [x] Create `frontend/src/erp/pages/ConsignmentDashboard.jsx`:
+  - Summary cards: Total Open, OVERDUE count, FORCE_CSI count, Value at Risk
+  - Hospital accordion cards with consignment rows inside
+  - Aging badges: OPEN=blue, OVERDUE=red, FORCE_CSI=orange, COLLECTED=green
+  - "Convert to CSI" inline form per row (qty, CSI doc ref)
+- [x] Routes registered: `/erp/dr` (employee, admin), `/erp/consignment` (employee, admin, finance)
+
+### Phase 4 Summary
+
+| Task | Description | Status |
+|------|-------------|--------|
+| 4.1 | GRN Workflow (model, controller, routes, frontend) | ✅ Complete |
+| 4.2 | Reorder Rules & Alerts (SAP-level fields, alerts endpoint, Alerts tab) | ✅ Complete |
+| 4.3 | DR Entry & Consignment Tracking (controller, routes, 2 pages) | ✅ Complete |
+
+**Files created:** 8 new + 9 modified | **Models:** 1 | **Controllers:** 1 new + 2 modified | **Routes:** 1 new + 3 modified | **Hooks:** 2 new + 1 modified | **Pages:** 3 new + 1 modified
 
 ---
 
