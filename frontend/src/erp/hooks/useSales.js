@@ -9,9 +9,9 @@ export default function useSales() {
   const updateSale = (id, data) => api.put(`/sales/${id}`, data);
   const deleteDraft = (id) => api.del(`/sales/draft/${id}`);
   const validateSales = (saleIds) => api.post('/sales/validate', { sale_ids: saleIds });
-  const submitSales = () => api.post('/sales/submit');
+  const submitSales = () => api.post('/sales/submit', {});
   const reopenSales = (saleIds) => api.post('/sales/reopen', { sale_ids: saleIds });
-  const requestDeletion = (id) => api.post(`/sales/${id}/request-deletion`);
+  const requestDeletion = (id) => api.post(`/sales/${id}/request-deletion`, {});
   const approveDeletion = (id, reason) => api.post(`/sales/${id}/approve-deletion`, { reason });
 
   return {

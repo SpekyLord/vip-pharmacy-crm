@@ -192,6 +192,7 @@ export default function SalesList() {
                 <th>Total</th>
                 <th>Source</th>
                 <th>Status</th>
+                <th>Products</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -207,6 +208,11 @@ export default function SalesList() {
                     <span className="badge" style={STATUS_COLORS[sale.status] || {}}>
                       {sale.status}
                     </span>
+                  </td>
+                  <td style={{ fontSize: 11, maxWidth: 220, whiteSpace: 'pre-line' }}>
+                    {sale.line_items?.map((li, i) => (
+                      <div key={i}>{li.item_key || '—'} × {li.qty}</div>
+                    ))}
                   </td>
                   <td onClick={e => e.stopPropagation()}>
                     {sale.status === 'VALID' && (
@@ -233,7 +239,7 @@ export default function SalesList() {
                 </tr>
               ))}
               {!data.length && (
-                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>
+                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>
                   {loading ? 'Loading...' : 'No sales found'}
                 </td></tr>
               )}
