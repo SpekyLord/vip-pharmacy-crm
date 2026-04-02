@@ -16,11 +16,15 @@ const getAll = catchAsync(async (req, res) => {
   }
 
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 50;
-  const skip = (page - 1) * limit;
+  const rawLimit = parseInt(req.query.limit);
+  const limit = rawLimit > 0 ? rawLimit : (rawLimit === 0 ? 0 : 50);
+  const skip = limit > 0 ? (page - 1) * limit : 0;
+
+  const query = ProductMaster.find(filter).sort({ brand_name: 1 });
+  if (limit > 0) query.skip(skip).limit(limit);
 
   const [products, total] = await Promise.all([
-    ProductMaster.find(filter).sort({ brand_name: 1 }).skip(skip).limit(limit).lean(),
+    query.lean(),
     ProductMaster.countDocuments(filter)
   ]);
 

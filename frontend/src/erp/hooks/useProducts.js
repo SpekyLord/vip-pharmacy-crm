@@ -15,7 +15,7 @@ export default function useProducts() {
       setProducts(cachedProducts);
       return cachedProducts;
     }
-    const res = await api.get('/products');
+    const res = await api.get('/products', { params: { limit: 0 } });
     const data = res?.data || [];
     cachedProducts = data;
     setProducts(data);
