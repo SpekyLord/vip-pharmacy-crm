@@ -25,9 +25,18 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   }
 
   if (allowedRoles.length > 0 && !allowedRoles.includes(user?.role)) {
+    // president/ceo/finance get admin-level access
+    const adminLikeRoles = ['president', 'ceo', 'finance'];
+    if (allowedRoles.includes('admin') && adminLikeRoles.includes(user?.role)) {
+      return children;
+    }
+
     // Redirect to appropriate dashboard based on user role instead of showing error
     const roleRedirects = {
       admin: '/admin',
+      president: '/admin',
+      ceo: '/admin',
+      finance: '/admin',
       employee: '/bdm',
     };
     const redirectTo = roleRedirects[user?.role] || '/login';

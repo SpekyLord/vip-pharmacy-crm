@@ -261,7 +261,7 @@ export default function DrEntry() {
                 <label>Hospital</label>
                 <select value={hospitalId} onChange={e => setHospitalId(e.target.value)}>
                   <option value="">Select hospital...</option>
-                  {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name}</option>)}
+                  {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
                 </select>
               </div>
               <div className="form-group">

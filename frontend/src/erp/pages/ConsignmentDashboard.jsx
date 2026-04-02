@@ -122,7 +122,7 @@ export default function ConsignmentDashboard() {
             <div className="hospital-card" key={h.hospital_id}>
               <div className="hospital-header" onClick={() => setExpandedHospital(prev => prev === h.hospital_id ? null : h.hospital_id)}>
                 <div>
-                  <span className="hospital-name">{h.hospital_name}</span>
+                  <span className="hospital-name">{h.hospital_name_display || h.hospital_name}</span>
                   <span className="hospital-meta" style={{ marginLeft: 12 }}>{h.consignments.length} consignment(s)</span>
                 </div>
                 <span style={{ fontSize: 18 }}>{expandedHospital === h.hospital_id ? '▾' : '▸'}</span>

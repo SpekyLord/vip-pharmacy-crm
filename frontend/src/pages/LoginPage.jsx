@@ -602,16 +602,19 @@ const LoginPage = () => {
       // Redirect based on role
       switch (user.role) {
         case 'admin':
+        case 'president':
+        case 'ceo':
+        case 'finance':
           navigate('/admin');
           break;
         case 'medrep':
           navigate('/medrep');
           break;
         case 'employee':
-          navigate('/employee');
+          navigate('/bdm');
           break;
         default:
-          navigate('/employee');
+          navigate('/bdm');
       }
     }
   }, [isAuthenticated, user, navigate]);

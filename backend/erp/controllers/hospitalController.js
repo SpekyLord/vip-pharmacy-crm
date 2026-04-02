@@ -9,12 +9,23 @@ const getAll = catchAsync(async (req, res) => {
     filter.hospital_name = { $regex: req.query.q, $options: 'i' };
   }
 
+  // BDM sees only their tagged hospitals; admin/president/finance/ceo see all
+  const bdmRoles = ['employee'];
+  if (bdmRoles.includes(req.user?.role) || req.query.my === 'true') {
+    filter.tagged_bdms = {
+      $elemMatch: { bdm_id: req.user._id, is_active: { $ne: false } }
+    };
+  }
+
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
   const skip = (page - 1) * limit;
 
+  const query = Hospital.find(filter).sort({ hospital_name: 1 });
+  if (limit > 0) query.skip(skip).limit(limit);
+
   const [hospitals, total] = await Promise.all([
-    Hospital.find(filter).sort({ hospital_name: 1 }).skip(skip).limit(limit).lean(),
+    query.lean(),
     Hospital.countDocuments(filter)
   ]);
 

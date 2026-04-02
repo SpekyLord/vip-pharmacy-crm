@@ -6,6 +6,14 @@ import Pagination from '../../components/common/Pagination';
 import { useAuth } from '../../hooks/useAuth';
 import useSales from '../hooks/useSales';
 
+function toTitleCase(str) {
+  if (!str) return str;
+  return str.toLowerCase()
+    .replace(/(?:^|\s|[-/])\S/g, c => c.toUpperCase())
+    .replace(/\b(Of|And|The|De|In|At|To|For|On)\b/g, w => w.toLowerCase())
+    .replace(/^\S/, c => c.toUpperCase());
+}
+
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
   VALID: { bg: '#dcfce7', text: '#166534' },
@@ -172,7 +180,7 @@ export default function SalesList() {
                 <tr key={sale._id} onClick={() => viewDetail(sale._id)}>
                   <td>{new Date(sale.csi_date).toLocaleDateString('en-PH')}</td>
                   <td><strong>{sale.doc_ref}</strong></td>
-                  <td>{sale.hospital_id?.hospital_name || '-'}</td>
+                  <td>{toTitleCase(sale.hospital_id?.hospital_name) || '-'}</td>
                   <td>P{(sale.invoice_total || 0).toLocaleString()}</td>
                   <td style={{ fontSize: 11 }}>{sale.source}</td>
                   <td>
@@ -216,7 +224,7 @@ export default function SalesList() {
                   <h2>CSI# {selectedSale.doc_ref}</h2>
                   <button className="btn" onClick={() => setSelectedSale(null)} style={{ background: 'none', fontSize: 20, padding: 4 }}>&times;</button>
                 </div>
-                <p><strong>Hospital:</strong> {selectedSale.hospital_id?.hospital_name || '-'}</p>
+                <p><strong>Hospital:</strong> {toTitleCase(selectedSale.hospital_id?.hospital_name) || '-'}</p>
                 <p><strong>Date:</strong> {new Date(selectedSale.csi_date).toLocaleDateString('en-PH')}</p>
                 <p><strong>Status:</strong> <span className="badge" style={STATUS_COLORS[selectedSale.status] || {}}>{selectedSale.status}</span></p>
                 <p><strong>Source:</strong> {selectedSale.source}</p>
@@ -227,6 +235,8 @@ export default function SalesList() {
                   <thead>
                     <tr>
                       <th>Product</th>
+                      <th>Batch</th>
+                      <th>Expiry</th>
                       <th>Qty</th>
                       <th>Unit</th>
                       <th>Unit Price</th>
@@ -237,9 +247,11 @@ export default function SalesList() {
                     {selectedSale.line_items?.map((li, i) => (
                       <tr key={i}>
                         <td>{li.item_key || li.product_id}</td>
+                        <td style={{ fontSize: 11 }}>{li.batch_lot_no || '-'}</td>
+                        <td style={{ fontSize: 11 }}>{li.expiry_date ? new Date(li.expiry_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' }) : '-'}</td>
                         <td>{li.qty}</td>
                         <td>{li.unit}</td>
-                        <td>P{li.unit_price}</td>
+                        <td>P{li.unit_price?.toLocaleString()}</td>
                         <td>P{li.line_total?.toFixed(2)}</td>
                       </tr>
                     ))}

@@ -20,7 +20,7 @@ const emptyRow = () => ({
   hospital_id: '',
   csi_date: new Date().toISOString().split('T')[0],
   doc_ref: '',
-  line_items: [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '' }],
+  line_items: [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }],
   status: 'DRAFT',
   validation_errors: [],
   _isNew: true
@@ -56,6 +56,10 @@ const pageStyles = `
   .error-panel li { font-size: 13px; color: #991b1b; margin-bottom: 4px; }
 
   .near-expiry-badge { background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; margin-left: 4px; }
+  .batch-select { font-size: 12px !important; }
+  .batch-single { font-weight: 600; color: var(--erp-text); }
+  .override-reason { margin-top: 4px; font-size: 11px !important; border-color: #f59e0b !important; background: #fffbeb !important; }
+  .override-reason::placeholder { color: #b45309; font-style: italic; }
   .add-row-btn { display: block; width: 100%; padding: 10px; text-align: center; color: var(--erp-accent); background: transparent; border: 2px dashed var(--erp-border); border-radius: 0 0 12px 12px; cursor: pointer; font-weight: 600; }
 
   /* Scan CSI Modal */
@@ -425,7 +429,7 @@ export default function SalesEntry() {
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Build product dropdown options from stock
+  // Build product dropdown options from stock (includes batches for FIFO selector)
   const productOptions = useMemo(() => {
     return stockProducts.map(sp => ({
       product_id: sp.product_id,
@@ -435,7 +439,8 @@ export default function SalesEntry() {
       selling_price: sp.product?.selling_price || 0,
       item_key: sp.product?.item_key || '',
       near_expiry: sp.near_expiry,
-      total_qty: sp.total_qty
+      total_qty: sp.total_qty,
+      batches: (sp.batches || []).sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date))
     }));
   }, [stockProducts]);
 
@@ -461,6 +466,25 @@ export default function SalesEntry() {
           items[itemIdx].unit = product.unit_code;
           items[itemIdx].unit_price = product.selling_price;
           items[itemIdx].item_key = product.item_key;
+          // Reset batch selection when product changes
+          items[itemIdx].batch_lot_no = '';
+          items[itemIdx].fifo_override = false;
+          items[itemIdx].override_reason = '';
+        }
+      }
+
+      // Handle batch selection — detect FIFO override
+      if (field === 'batch_lot_no') {
+        if (!value) {
+          // "Auto (FIFO)" selected — clear override
+          items[itemIdx].fifo_override = false;
+          items[itemIdx].override_reason = '';
+        } else {
+          // Specific batch selected — check if it's the FIFO-recommended batch (nearest expiry = first in sorted list)
+          const product = productOptions.find(p => p.product_id?.toString() === items[itemIdx].product_id?.toString() || p.product_id === items[itemIdx].product_id);
+          const fifoBatch = product?.batches?.[0]?.batch_lot_no; // First = nearest expiry
+          items[itemIdx].fifo_override = value !== fifoBatch;
+          if (value === fifoBatch) items[itemIdx].override_reason = '';
         }
       }
 
@@ -480,8 +504,8 @@ export default function SalesEntry() {
       csi_date: scannedData.csi_date,
       doc_ref: scannedData.doc_ref,
       line_items: scannedData.line_items?.length
-        ? scannedData.line_items
-        : [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '' }]
+        ? scannedData.line_items.map(li => ({ ...li, batch_lot_no: li.batch_lot_no || '', fifo_override: false, override_reason: '' }))
+        : [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }]
     };
     setRows(prev => [...prev, newRow]);
   }, []);
@@ -517,7 +541,9 @@ export default function SalesEntry() {
             item_key: li.item_key,
             qty: parseFloat(li.qty),
             unit: li.unit,
-            unit_price: parseFloat(li.unit_price)
+            unit_price: parseFloat(li.unit_price),
+            ...(li.batch_lot_no ? { batch_lot_no: li.batch_lot_no, fifo_override: li.fifo_override || false } : {}),
+            ...(li.fifo_override && li.override_reason ? { override_reason: li.override_reason } : {})
           }))
         };
 
@@ -639,6 +665,7 @@ export default function SalesEntry() {
                   <th style={{ width: 120 }}>CSI Date</th>
                   <th style={{ width: 100 }}>CSI #</th>
                   <th style={{ width: 200 }}>Product</th>
+                  <th style={{ width: 180 }}>Batch / Expiry</th>
                   <th style={{ width: 70 }}>Qty</th>
                   <th style={{ width: 70 }}>Unit</th>
                   <th style={{ width: 90 }}>Unit Price</th>
@@ -655,7 +682,7 @@ export default function SalesEntry() {
                       <select value={row.hospital_id?._id || row.hospital_id || ''} onChange={e => updateRow(idx, 'hospital_id', e.target.value)} disabled={row.status === 'POSTED'}>
                         <option value="">Select hospital...</option>
                         {hospitals.map(h => (
-                          <option key={h._id} value={h._id}>{h.hospital_name}</option>
+                          <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>
                         ))}
                       </select>
                     </td>
@@ -681,6 +708,29 @@ export default function SalesEntry() {
                           )}
                         </div>
                       ))}
+                    </td>
+                    <td>
+                      {row.line_items?.map((item, li) => {
+                        const prod = item.product_id ? productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id)) : null;
+                        const batches = prod?.batches || [];
+                        if (!item.product_id || batches.length === 0) return <div key={li} className="readonly" style={{ fontSize: 11, padding: '6px 8px', color: 'var(--erp-muted)' }}>Select product first</div>;
+                        if (batches.length === 1) return <div key={li} style={{ fontSize: 11, padding: '4px 0' }}><span className="batch-single">{batches[0].batch_lot_no}</span> <span style={{ color: 'var(--erp-muted)' }}>Exp: {new Date(batches[0].expiry_date).toLocaleDateString()}</span></div>;
+                        return (
+                          <div key={li}>
+                            <select value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} disabled={row.status === 'POSTED'} className="batch-select">
+                              <option value="">Auto (FIFO)</option>
+                              {batches.map((b, bi) => (
+                                <option key={bi} value={b.batch_lot_no}>
+                                  {b.batch_lot_no} — Exp: {new Date(b.expiry_date).toLocaleDateString()} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
+                                </option>
+                              ))}
+                            </select>
+                            {item.fifo_override && (
+                              <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} disabled={row.status === 'POSTED'} />
+                            )}
+                          </div>
+                        );
+                      })}
                     </td>
                     <td>
                       {row.line_items?.map((item, li) => (
@@ -732,26 +782,49 @@ export default function SalesEntry() {
                 <label>Hospital</label>
                 <select value={row.hospital_id?._id || row.hospital_id || ''} onChange={e => updateRow(idx, 'hospital_id', e.target.value)}>
                   <option value="">Select...</option>
-                  {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name}</option>)}
+                  {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
                 </select>
                 <label>CSI Date</label>
                 <input type="date" value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : '') : ''} onChange={e => updateRow(idx, 'csi_date', e.target.value)} />
                 <label>CSI #</label>
                 <input value={row.doc_ref || ''} onChange={e => updateRow(idx, 'doc_ref', e.target.value)} />
-                {row.line_items?.map((item, li) => (
+                {row.line_items?.map((item, li) => {
+                  const prod = item.product_id ? productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id)) : null;
+                  const batches = prod?.batches || [];
+                  return (
                   <div key={li}>
                     <label>Product</label>
                     <select value={item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)}>
                       <option value="">Select...</option>
                       {productOptions.map(p => <option key={p.product_id} value={p.product_id}>{p.label}</option>)}
                     </select>
+                    {item.product_id && batches.length > 1 && (
+                      <>
+                        <label>Batch / Expiry</label>
+                        <select value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} className="batch-select">
+                          <option value="">Auto (FIFO)</option>
+                          {batches.map((b, bi) => (
+                            <option key={bi} value={b.batch_lot_no}>
+                              {b.batch_lot_no} — Exp: {new Date(b.expiry_date).toLocaleDateString()} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {item.fifo_override && (
+                          <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} />
+                        )}
+                      </>
+                    )}
+                    {item.product_id && batches.length === 1 && (
+                      <div style={{ fontSize: 12, color: 'var(--erp-muted)', padding: '4px 0' }}>Batch: {batches[0].batch_lot_no} — Exp: {new Date(batches[0].expiry_date).toLocaleDateString()}</div>
+                    )}
                     <div style={{ display: 'flex', gap: 8 }}>
                       <div style={{ flex: 1 }}><label>Qty</label><input type="number" value={item.qty || ''} onChange={e => updateLineItem(idx, li, 'qty', e.target.value)} /></div>
                       <div style={{ flex: 1 }}><label>Price</label><input type="number" value={item.unit_price || ''} onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)} /></div>
                       <div style={{ flex: 1 }}><label>Total</label><input value={computeLineTotal(item)} readOnly /></div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
                 {row.status === 'DRAFT' && (
                   <div className="card-footer">
                     <button className="btn btn-danger btn-sm" onClick={() => removeRow(idx)}>Delete</button>

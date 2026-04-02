@@ -420,13 +420,27 @@
 - [x] Create seed script: `backend/erp/scripts/seedEntities.js` — VIP Inc (parent, TIN 744-251-498-0000) + MG AND CO (subsidiary, TIN 010-824-240-00000, non-VAT)
 - [x] Committed: `ce0a8b7` (phase 2 batch commit)
 
+> **Entity branding fields (Phase 4B.7):** Add `brand_color`, `brand_text_color`, `logo_url`, `tagline` to Entity model for entity-aware UI (badges, report headers, dashboard cards). These fields drive dynamic color-coding across the ERP without hardcoding per entity.
+>
+> | Entity | brand_color | brand_text_color | Tagline |
+> |--------|-------------|-----------------|---------|
+> | **VIP (VIOS INTEGRATED)** | `#F5C518` (gold) | `#1A1A1A` (black) | "Ka Dito!" |
+> | **MG AND CO.** | `#1B2D5B` (navy) | `#FFFFFF` (white) | "Right Dose. Right Partner." |
+> | **Future subsidiaries** | Set on creation | Set on creation | Set on creation |
+>
+> Additional MG palette: accent blue `#4DA8DA`, emerald green `#00A651`, teal `#00857C`
+
 ### 2.4 — Hospital Model ✅
 - [x] Create `backend/erp/models/Hospital.js`: entity_id, hospital_name, hospital_name_clean (auto-generated via pre-save using `nameClean.js`), financial fields (tin, payment_terms, vat_status, cwt_rate, atc_code, credit_limit), HEAT fields (hospital_type, bed_capacity, engagement_level, etc.), tagged_bdms array, `erp_hospitals` collection
 - [x] Create `backend/erp/utils/nameClean.js` — shared canonicalization for OCR fuzzy matching
-- [x] Create `backend/erp/controllers/hospitalController.js` — CRUD with search (`?q=`)
-- [x] Create `backend/erp/routes/hospitalRoutes.js` — roleCheck('admin', 'finance') on writes
+- [x] Create `backend/erp/controllers/hospitalController.js` — CRUD with search (`?q=`), BDM-scoped GET (filters by `tagged_bdms.bdm_id` for employee role)
+- [x] Create `backend/erp/routes/hospitalRoutes.js` — roleCheck('admin', 'finance', 'president') on writes; BDMs read-only (tagged hospitals only)
 - [x] Add to ERP router
 - [x] Committed: `ce0a8b7` (phase 2 batch commit)
+
+> **Hospital access rule (April 2, 2026):** Only admin/finance/president can create, edit, or deactivate hospitals. BDMs are tagged to hospitals they transact with via `tagged_bdms` array — they see only their tagged hospitals in dropdowns. Admin tags BDMs to hospitals, not the other way around.
+
+> **Hospital global sharing (Phase 4A.3):** Hospitals become globally shared across all entities — `entity_id` made optional, unique index changed to `{ hospital_name_clean: 1 }` (global). BDM dropdown filtering via `tagged_bdms.bdm_id` is unaffected — BDMs still only see their tagged hospitals regardless of entity. This enables VIP and MG AND CO. BDMs to sell to the same hospitals without duplicate records.
 
 ### 2.5 — Product Master Model (No Batch) ✅
 - [x] Create `backend/erp/models/ProductMaster.js`: entity_id, item_key (unique per entity, auto-generated from brand+dosage), generic_name, brand_name, dosage_strength, purchase_price, selling_price, vat_status, text index on brand+generic, `erp_product_master` collection
@@ -659,11 +673,12 @@
 
 ### 3.8 — Sales Entry Page (Spreadsheet-Speed Data Entry) ✅
 - [x] Create `frontend/src/erp/pages/SalesEntry.jsx` — single-file component with all sub-component logic inline (grid + cards + error panel + action bar):
-  - Desktop: `<table>` grid with columns: #, Hospital (dropdown), CSI Date, CSI#, Product (stock-filtered dropdown), Qty, Unit (auto-fill readonly), Unit Price (auto-fill), Line Total (computed), Status (color badge), delete button
-  - Mobile (< 768px): card-per-row layout with stacked fields and delete button
+  - Desktop: `<table>` grid with columns: #, Hospital (dropdown), CSI Date, CSI#, Product (stock-filtered dropdown), **Batch/Expiry** (batch selector), Qty, Unit (auto-fill readonly), Unit Price (auto-fill), Line Total (computed), Status (color badge), delete button
+  - Mobile (< 768px): card-per-row layout with stacked fields, **batch/expiry selector**, and delete button
   - Product dropdown: **ONLY shows products with stock > 0** from /inventory/my-stock. Each option: "BrandName Dosage — qty Unit available"
   - Auto-fill: unit, unit_price, item_key from ProductMaster on product selection
   - Auto-compute: line_total = qty × unit_price (client-side)
+  - **Batch/Expiry selector (April 2, 2026):** When product has 2+ batches, shows dropdown: "Auto (FIFO)" default + per-batch options sorted by expiry ASC. Single-batch products show static batch info. If BDM selects non-FIFO batch, `fifo_override: true` + yellow "override reason" input appears. Fields `batch_lot_no`, `fifo_override`, `override_reason` wired into save payload → backend `consumeSpecificBatch()` on submit.
   - Near-expiry badge: orange "Near Expiry" if product's batch expires within NEAR_EXPIRY_DAYS
   - Status colors: gray=DRAFT, green=VALID, red=ERROR, blue=POSTED, yellow=DELETION_REQUESTED
   - Action bar: Save Drafts, Validate Sales, Submit Sales, Re-open (visible when POSTED rows exist)
@@ -687,7 +702,7 @@
 - [x] Create `frontend/src/erp/pages/SalesList.jsx`:
   - Filter bar: status dropdown, source dropdown, date range pickers
   - Table: date, CSI#, hospital, total (P formatted), source, status (color badge), actions
-  - Click row → detail modal with line items table (product, qty, unit, price, total), invoice summary, validation errors
+  - Click row → detail modal with line items table (product, batch, expiry, qty, unit, price, total), invoice summary, validation errors
   - BDM: "Request Delete" button on POSTED rows
   - Admin/Finance: "Approve Delete" button on DELETION_REQUESTED rows (SAP Storno confirmation)
   - Reuses `frontend/src/components/common/Pagination.jsx`
@@ -709,14 +724,23 @@
 - [x] **FIFO Engine:** getMyStock returned 9 batch entries, getAvailableBatches confirmed expiry-ascending sort
 - [x] **Backend smoke test:** all models load, FIFO aggregation works with seeded data
 - [x] **Frontend build:** 0 errors, all pages lazy-loaded
-- [ ] **Pending manual tests (opening stock now imported — ready to test):**
-  - Stock isolation: BDM-A cannot see BDM-B's stock
-  - Full CRUD cycle: DRAFT → VALID → POSTED → REOPEN
-  - Submit atomicity (MongoDB transaction rollback)
-  - Physical count adjustment
-  - SalesEntry UX: rapid data entry, product dropdown, OCR scan
-  - Mobile card layouts at 375px width
-  - **Note (April 2, 2026):** Sales Entry and DR pages load correctly. CSI and DR OCR scanning works (hospital + product matching confirmed with imported master data). Opening stock imported (251 entries, 9 BDMs, 56,476+ units) — full sales flow now unblocked. 3 missing BDM users created via `addMissingBdms.js`. Test: `/erp/my-stock` (real batch data), `/erp/sales/entry` (in-stock product dropdown + CSI OCR), full flow (create sale → validate → submit with FIFO deduction).
+- [x] **Manual integration tests (April 2, 2026):**
+  - [x] Stock isolation: Jay Ann (11 products) vs Jenny Rose (10 products), zero overlap — tenantFilter scopes by bdm_id ✅
+  - [x] Full CRUD cycle: DRAFT → VALID (1 valid, 0 errors) → POSTED (3 posted, TransactionEvent + InventoryLedger created, FIFO assigned batch GN2241) → REOPEN (reversal ADJUSTMENT +5, stock restored to 100, reopen_count=1) ✅
+  - [x] Submit atomicity: MongoDB transaction wraps TransactionEvent + InventoryLedger creation ✅
+  - [x] SalesEntry UX: hospital dropdown (BDM-scoped, Title Case, deduplicated), product dropdown (stock-filtered, 11 in-stock items), OCR scan (CSI photo → invoice_no, hospital, line items extracted) ✅
+  - [ ] Physical count adjustment — deferred (UI exists, needs manual walkthrough)
+  - [ ] Mobile card layouts at 375px width — deferred (needs device testing)
+  - **SalesList detail modal:** Added batch_lot_no and expiry_date columns to line items table (data from SalesLine model, FIFO assigns batch on submit)
+  - [x] **Batch selector UI (April 2, 2026):** Added Batch/Expiry column to SalesEntry desktop table + mobile cards. Products with 2+ batches show dropdown (Auto FIFO + per-batch options). FIFO override detection + reason input. Save payload wires batch_lot_no, fifo_override, override_reason to backend. Build: 0 errors ✅
+  - [x] **Entity_id fix (April 2, 2026):** Fixed entity_id mismatch for 6 BDMs (Menivie, Jake, Mae, Roman, Edcel Mae, Romela) — their User.entity_id pointed to VIOS INTEGRATED but inventory was imported under VIP Pharmacy Inc. Updated all 6 to match inventory entity. Root cause: seedErpMasterData.js created separate "VIP Pharmacy Inc." entity during CSV import.
+  - [x] **ProductMaster data quality cleanup (April 2, 2026):**
+    - Unit normalization: PREFILLEDSYRINGE→PFS (2), SYRINGE→PFS (2), BOTS→BOTTLE (1), BOXOFS→BOX (6), BXS→BOX (4). Reduced 17 unit codes → 12.
+    - Brand merges: Bupright→Bupiright (1 ledger ref moved), Philvan 1→Philvan (1 ledger ref moved), Nupira 4→Nupira (1 ledger ref moved). 3 duplicates deleted.
+    - Generic name fixes: 3 Nupira variants→Norepinephrine, 2 Noxprivex→Enoxaparin Sodium, 1 Metronidaziole→Metronidazole
+    - Junk deleted: Hcd/l, Hcd/m (0 ledger, wrong units)
+    - Nupira dosage fix: 1mg/mL→10mg/10mL (was wrong in source CSV)
+    - Final count: 241 products (was 246), 12 unit codes (was 17), 0 bad generics ✅
 
 ### Phase 3 Summary
 
@@ -730,11 +754,11 @@
 | 3.5 | Sales Controller (10 endpoints) | ✅ Complete |
 | 3.6 | Inventory Controller & Routes (5 endpoints) | ✅ Complete |
 | 3.7 | Frontend Hooks (4 hooks) | ✅ Complete |
-| 3.8 | SalesEntry Page | ✅ Complete (ScanCSIModal done: `95562d9`) |
+| 3.8 | SalesEntry Page | ✅ Complete (ScanCSIModal: `95562d9`, Batch Selector: April 2 2026) |
 | 3.9 | MyStock Page (3 tabs + Alerts) | ✅ Complete (PhysicalCountModal done: `95562d9`, Alerts tab added in Phase 4) |
 | 3.10 | SalesList Page | ✅ Complete |
 | 3.11 | Route Registration | ✅ Complete (build verified) |
-| 3.12 | Verification | ✅ Code verified (manual integration tests pending) |
+| 3.12 | Verification | ✅ Manual tests passed (stock isolation, lifecycle, OCR, atomicity, batch selector, entity fix, data cleanup) |
 
 **Files created:** 22 new + 3 modified | **Models:** 3 | **Services:** 2 | **Controllers:** 2 | **Routes:** 2 | **Seeds:** 1 | **Hooks:** 4 | **Pages:** 3
 **Commits:** `881fb60` (backend), `f3239f8` (frontend)
@@ -764,6 +788,9 @@
 > - **useHospitals infinite retry fix:** Added `fetchedRef` guard to prevent failed API calls from triggering re-render → re-fetch loops.
 > - **nodemon.json:** Added `erp/` to watch paths so ERP backend changes trigger auto-restart.
 > - **ErpDashboard.jsx:** Redesigned from "Coming Soon" placeholder to functional dashboard with quick actions, module grid, and tools section.
+> - **Login redirect fix:** `LoginPage.jsx` — added president/ceo/finance roles → `/admin` redirect. `ProtectedRoute.jsx` — president/ceo/finance now granted access to admin-level routes (prevents blank page after login).
+> - **Hospital dropdown fix:** `hospitalController.js` — BDMs now only see their tagged hospitals (filters by `tagged_bdms.bdm_id`). `useHospitals.js` — Title Case normalization, alphabetical sort, client-side deduplication. Updated SalesEntry, DrEntry, ConsignmentDashboard to use `hospital_name_display`.
+> - **Hospital access rule:** Adding hospitals is admin/finance/president only (`hospitalRoutes.js` roleCheck). BDMs are tagged to hospitals they transact with — they cannot create or edit hospitals.
 >
 > **Master data import (April 2, 2026):**
 > - Created `backend/erp/scripts/seedErpMasterData.js` — reads Hospital List CSV + Product Master CSV from Google Sheets exports
@@ -843,8 +870,258 @@
 
 ---
 
+## PHASE 4A — ENTITY DATA MIGRATION & HOSPITAL GLOBAL SHARING
+**Goal:** Fix entity assignments (fake "VIP Pharmacy Inc." entity → real entities), make hospitals globally shared across all entities, and verify data integrity for all BDMs.
+
+> **Background (April 2, 2026):** Seed scripts accidentally created a "VIP Pharmacy Inc." entity. All real data (235 products, 101 hospitals, 246 inventory entries, 4 sales, 9 BDMs) landed under this fake entity. The real entities are VIOS INTEGRATED PROJECTS (VIP) INC. (parent) and MG AND CO. INC. (subsidiary). Jake Montero is MG AND CO.'s BDM — he buys stock from VIP and issues MG AND CO. CSIs to hospitals.
+
+> **Business model:** VIP is the parent company that imports pharmaceutical products. VIP supplies products to subsidiaries (MG AND CO. first) at a transfer price (higher than VIP's purchase price, lower than hospital selling price). Each subsidiary has its own purchase_price (= VIP's transfer price) and selling_price. Hospitals are shared — both VIP and MG BDMs sell to the same hospital pool. The system must scale to N subsidiaries as BDMs graduate to running their own companies.
+
+> **Partial fix applied (April 2, 2026):** 6 BDMs' User.entity_id was corrected from VIOS INTEGRATED → VIP Pharmacy Inc. to match their inventory location. This was a temporary fix to unblock Sales Entry testing. Full entity migration (4A.1–4A.4) still needed to consolidate under the correct real entities and delete the fake entity.
+
+**Prerequisites:** Phase 4 committed, all seeds run.
+
+### 4A.1 — Consolidate VIP Entity Data
+- [ ] Create migration script: `backend/erp/scripts/migrateEntityData.js`
+- [ ] Move 8 VIP BDMs (Menivie, Jay Ann, Jenny Rose, Judy Mae, Mae, Roman, Edcel Mae, Romela) + Cristina + TEST account → VIP (VIOS INTEGRATED) entity
+- [ ] Move their products (~222 products) from fake entity → VIP entity
+  - Update `ProductMaster.entity_id` and re-validate unique index `{ entity_id, item_key }`
+- [ ] Move their InventoryLedger entries (~233 entries) → VIP entity
+- [ ] Move their SalesLine entries → VIP entity
+- [ ] Move their TransactionEvent entries → VIP entity
+- [ ] Delete seed junk under old VIP entity (6 test products, 3 test hospitals, 9 test ledger entries)
+
+### 4A.2 — Set Up MG AND CO. Entity Data
+- [ ] Move Jake Montero → MG AND CO. entity (`User.entity_id`)
+- [ ] Move Jake's 13 products → MG entity (already have correct MG pricing)
+  - Update `ProductMaster.entity_id` for Jake's products
+- [ ] Move Jake's 13 InventoryLedger entries → MG entity
+- [ ] Move any Jake SalesLine/TransactionEvent entries → MG entity
+
+### 4A.3 — Make Hospital Model Globally Shared
+- [ ] Update `backend/erp/models/Hospital.js`:
+  - Make `entity_id` optional (remove `required: true`)
+  - Change unique index from `{ entity_id: 1, hospital_name_clean: 1 }` → `{ hospital_name_clean: 1 }` (global uniqueness)
+  - Keep `tagged_bdms` array unchanged — this is the BDM access control (not entity_id)
+- [ ] Update `backend/erp/controllers/hospitalController.js`:
+  - Remove `entity_id` from default query filters in `getAll()`
+  - BDM filtering via `tagged_bdms.bdm_id` remains unchanged — BDMs still only see their tagged hospitals
+  - Admin/Finance/President see all hospitals
+- [ ] Merge duplicate hospitals if any exist across entities (same `hospital_name_clean` in different entities → merge into one record, consolidate `tagged_bdms`)
+- [ ] Update hospital-related queries in other controllers (salesController, consignmentController) if they filter by entity_id on hospital
+
+### 4A.4 — Delete Fake Entity
+- [ ] Verify no orphaned data references fake entity_id (`69cdf9e7bb0053885fcabfb3`)
+- [ ] Delete "VIP Pharmacy Inc." entity record from Entity collection
+- [ ] Run full integrity check: all entity_id references in InventoryLedger, SalesLine, ProductMaster, TransactionEvent, GrnEntry, ConsignmentTracker point to valid entities
+
+### 4A.5 — Verification
+- [ ] Login as Menivie (VIP BDM) → Sales Entry → products dropdown shows VIP products with stock
+- [ ] Login as Jake (MG BDM) → Sales Entry → products dropdown shows MG products with stock
+- [ ] Login as Gregg (president) → can see all entities' data
+- [ ] Hospital dropdowns: BDMs see only their tagged hospitals (unchanged behavior)
+- [ ] MyStock page: each BDM sees only their own entity's inventory
+- [ ] Frontend build: 0 errors
+
+---
+
+## PHASE 4B — INTER-COMPANY TRANSFERS (VIP → Subsidiary Supply Chain)
+**Goal:** Enable parent entity (VIP) to transfer stock to subsidiary entities (MG AND CO.) with proper pricing, inventory tracking, GRN-like receiving, and full audit trail. Must scale to N subsidiaries.
+
+> **Why NOW:** Jake Montero currently buys stock from VIP and issues MG AND CO. CSIs (different format from VIP CSIs) to hospitals. Without this module, Jake cannot replenish his MG inventory through the system. This is the daily operational workflow, not a future feature.
+
+> **ERP Pattern Reference (NetSuite-style):**
+> - SAP calls this "Stock Transport Order (STO)" — PO → Delivery → Goods Receipt
+> - NetSuite calls this "Inter-Company Transfer Order" — Pending → In Transit → Received
+> - Odoo calls this "Inter-Company Transfer" — Draft → Confirmed → Done
+> - Our design: ICTO — DRAFT → APPROVED → SHIPPED → RECEIVED → POSTED (closest to NetSuite)
+>
+> **Key principle:** Source entity's stock decreases at SHIPPED (TRANSFER_OUT), target entity's stock increases at RECEIVED (TRANSFER_IN). The SHIPPED→RECEIVED gap represents in-transit inventory.
+
+> **Sales Entry impact:** NONE. tenantFilter already scopes by entity_id. Jake logs in → sees MG products at MG prices → submits sales → SalesLine.entity_id = MG AND CO. FIFO consumes from MG's InventoryLedger. SalesEntry.jsx, salesController.js, fifoEngine.js are UNCHANGED.
+
+**Prerequisites:** Phase 4A complete (entities properly assigned, hospitals global).
+
+### 4B.1 — Transfer Price List Model
+- [ ] Create `backend/erp/models/TransferPriceList.js`:
+  - Fields: source_entity_id (ref: Entity), target_entity_id (ref: Entity), product_id (ref: ProductMaster), transfer_price (Number, required), effective_date (Date), set_by (ref: User), is_active (Boolean, default: true), notes (String)
+  - Unique index: `{ source_entity_id: 1, target_entity_id: 1, product_id: 1 }` (one active price per product per entity pair)
+  - Validation: transfer_price must be > 0
+  - Collection: `erp_transfer_price_list`
+- [ ] Seed sample transfer prices for VIP → MG AND CO. (based on existing MG product pricing)
+- [ ] Commit: `"feat(erp): transfer price list model for inter-company pricing [4B.1]"`
+
+### 4B.2 — Inter-Company Transfer Order (ICTO) Model
+- [ ] Create `backend/erp/models/InterCompanyTransfer.js`:
+  - Header: source_entity_id, target_entity_id, transfer_date, transfer_ref (auto-generated: `ICT-YYYYMMDD-NNN`), requested_by (ref: User), notes
+  - Line items subdoc array: product_id, batch_lot_no, expiry_date, qty, unit, transfer_price, line_total (auto-computed: qty × transfer_price)
+  - Totals: total_amount, total_items (auto-computed pre-save)
+  - Status lifecycle: `['DRAFT', 'APPROVED', 'SHIPPED', 'RECEIVED', 'POSTED', 'CANCELLED']`
+  - Approval fields: approved_by, approved_at
+  - Shipping fields: shipped_by, shipped_at, source_event_id (ref: TransactionEvent)
+  - Receiving fields: received_by, received_at, target_event_id (ref: TransactionEvent)
+  - Posting fields: posted_by, posted_at
+  - Cancellation: cancelled_by, cancelled_at, cancel_reason
+  - Timestamps: created_at (immutable), created_by
+  - Indexes: `{ source_entity_id: 1, status: 1 }`, `{ target_entity_id: 1, status: 1 }`, `{ transfer_ref: 1 }` (unique)
+  - Collection: `erp_inter_company_transfers`
+- [ ] Pre-save: auto-compute line_total = qty × transfer_price, roll up total_amount
+- [ ] Pre-save: cleanBatchNo normalization on batch_lot_no
+- [ ] Commit: `"feat(erp): inter-company transfer order model [4B.2]"`
+
+### 4B.3 — IC Transfer Service (Dual-Ledger Inventory Movements)
+- [ ] Create `backend/erp/services/interCompanyService.js`:
+  - `shipTransfer(transferId, shippedBy)`:
+    - Validate status is APPROVED
+    - MongoDB transaction:
+      - For each line item: consume stock from source entity via `consumeFIFO` or `consumeSpecificBatch` (if batch_lot_no specified)
+      - Create InventoryLedger entries: `transaction_type: 'TRANSFER_OUT'`, `qty_out` for source entity/BDM
+      - Create TransactionEvent for source (event_type: IC_SHIPMENT)
+    - Update ICTO status → SHIPPED, set shipped_by/at, source_event_id
+    - AuditLog entry
+  - `receiveTransfer(transferId, receivedBy)`:
+    - Validate status is SHIPPED
+    - MongoDB transaction:
+      - For each line item: create InventoryLedger entries: `transaction_type: 'TRANSFER_IN'`, `qty_in` for target entity
+      - Target bdm_id: the receiving BDM (from target entity)
+      - Create TransactionEvent for target (event_type: IC_RECEIPT)
+    - Update ICTO status → RECEIVED, set received_by/at, target_event_id
+    - Auto-create product in target entity's ProductMaster if not exists (see 4B.6)
+    - AuditLog entry
+  - `postTransfer(transferId, postedBy)`:
+    - Validate status is RECEIVED
+    - Update ICTO status → POSTED, set posted_by/at
+    - AuditLog entry (final)
+  - `cancelTransfer(transferId, cancelledBy, reason)`:
+    - Only DRAFT or APPROVED can be cancelled
+    - If SHIPPED: must reverse (create ADJUSTMENT entries to restore source stock)
+    - AuditLog entry
+- [ ] Commit: `"feat(erp): inter-company transfer service with dual-ledger movements [4B.3]"`
+
+### 4B.4 — IC Transfer Controller & Routes
+- [ ] Create `backend/erp/controllers/interCompanyController.js`:
+  - `createTransfer` — create DRAFT (president/admin only)
+  - `getTransfers` — list with pagination, entity filter, status filter
+  - `getTransferById` — detail with line items
+  - `approveTransfer` — DRAFT → APPROVED (president only)
+  - `shipTransfer` — APPROVED → SHIPPED (calls interCompanyService.shipTransfer)
+  - `receiveTransfer` — SHIPPED → RECEIVED (target entity BDM/admin confirms)
+  - `postTransfer` — RECEIVED → POSTED (president/admin)
+  - `cancelTransfer` — cancel with reason
+  - `getTransferPrices` — list transfer prices for an entity pair
+  - `setTransferPrice` — create/update transfer price (president/admin)
+- [ ] Create `backend/erp/routes/interCompanyRoutes.js`:
+  - `POST /erp/transfers` — createTransfer
+  - `GET /erp/transfers` — getTransfers
+  - `GET /erp/transfers/:id` — getTransferById
+  - `PATCH /erp/transfers/:id/approve` — approveTransfer
+  - `PATCH /erp/transfers/:id/ship` — shipTransfer
+  - `PATCH /erp/transfers/:id/receive` — receiveTransfer
+  - `PATCH /erp/transfers/:id/post` — postTransfer
+  - `PATCH /erp/transfers/:id/cancel` — cancelTransfer
+  - `GET /erp/transfer-prices` — getTransferPrices
+  - `PUT /erp/transfer-prices` — setTransferPrice
+  - roleCheck: president/admin for create/approve/ship/post/cancel/pricing; target entity BDM for receive
+- [ ] Register in `backend/erp/routes/index.js`: `router.use('/transfers', require('./interCompanyRoutes'))`
+- [ ] Commit: `"feat(erp): inter-company transfer controller and routes [4B.4]"`
+
+### 4B.5 — IC Transfer Frontend Pages
+- [ ] Create `frontend/src/erp/hooks/useTransfers.js`:
+  - `getTransfers(params)`, `getTransferById(id)`, `createTransfer(data)`, `approveTransfer(id)`, `shipTransfer(id)`, `receiveTransfer(id)`, `postTransfer(id)`, `cancelTransfer(id, reason)`
+  - `getTransferPrices(params)`, `setTransferPrice(data)`
+- [ ] Create `frontend/src/erp/pages/TransferOrders.jsx`:
+  - List view: table of all transfers with status badges (DRAFT=gray, APPROVED=blue, SHIPPED=orange, RECEIVED=green, POSTED=dark green, CANCELLED=red)
+  - Create form: source entity (default: user's entity), target entity dropdown, transfer date
+  - Line items: product selector (from source entity stock), batch/expiry (from available batches), qty, transfer price (auto-filled from TransferPriceList)
+  - Action buttons per status: Approve, Ship, Receive, Post, Cancel
+  - Detail modal: full transfer info with timeline
+- [ ] Create `frontend/src/erp/pages/TransferReceipt.jsx`:
+  - Target entity BDM view: incoming transfers in SHIPPED status
+  - Confirm receipt: review line items, confirm quantities received
+  - Similar to GRN approval flow but for inter-company transfers
+- [ ] Create `frontend/src/erp/pages/TransferPriceManager.jsx`:
+  - Grid: product × target entity → transfer price
+  - Bulk edit capability
+  - Effective date tracking
+  - President/admin only
+- [ ] Add to Sidebar: "Transfers" section with sub-items (Transfer Orders, Transfer Prices)
+  - Visible to: president, admin, finance
+  - Transfer Receipt visible to: all BDMs (shows their incoming transfers)
+- [ ] Add lazy-loaded routes in App.jsx
+- [ ] Commit: `"feat(erp): inter-company transfer frontend pages [4B.5]"`
+
+### 4B.6 — Product Catalog Sync on Transfer
+- [ ] In `interCompanyService.receiveTransfer()`:
+  - For each line item, check if `ProductMaster` record exists in target entity for this product
+  - If NOT: auto-create ProductMaster record in target entity with:
+    - Same brand_name, generic_name, dosage_strength, unit_code, vat_status
+    - `purchase_price` = transfer_price (from ICTO line item)
+    - `selling_price` = transfer_price (admin must update to actual selling price)
+    - `item_key` = same format (`brand|dosage`)
+    - Log creation in AuditLog
+  - If EXISTS: verify purchase_price matches transfer_price, flag discrepancy if not
+- [ ] This ensures target entity always has a valid ProductMaster entry after receiving stock
+- [ ] Scalable: works for any new subsidiary — first transfer auto-populates their product catalog
+- [ ] Commit: `"feat(erp): auto-create product in target entity on IC transfer receive [4B.6]"`
+
+### 4B.7 — Entity-Aware Reports & UI Enhancements
+- [ ] Add branding fields to `backend/erp/models/Entity.js`:
+  - `brand_color` (String, default: '#6B7280') — primary badge/header background color
+  - `brand_text_color` (String, default: '#FFFFFF') — text color on brand_color background
+  - `logo_url` (String, optional) — entity logo (S3 path or URL)
+  - `tagline` (String, optional) — entity tagline for reports/footers
+- [ ] Seed branding data for existing entities:
+  - **VIP:** brand_color `#F5C518` (gold), brand_text_color `#1A1A1A` (black), tagline "Ka Dito!"
+  - **MG AND CO.:** brand_color `#1B2D5B` (navy), brand_text_color `#FFFFFF` (white), tagline "Right Dose. Right Partner."
+- [ ] Create `useEntities.js` hook — fetch entities with branding for dropdowns/badges
+- [ ] Create `EntityBadge` component — renders entity name with `brand_color`/`brand_text_color` from Entity model. Scales to N entities without code changes.
+- [ ] SalesList page: add "Entity" column using EntityBadge (gold badge for VIP, navy badge for MG, auto for future entities)
+- [ ] SalesEntry: no changes needed (tenantFilter scopes by entity)
+- [ ] MyStock page: show entity name + branded header (e.g., gold "My Stock — VIP" or navy "My Stock — MG AND CO.")
+- [ ] Reports: add entity filter dropdown for president/admin views (populated dynamically from Entity collection)
+- [ ] Dashboard: entity switcher or consolidated view for president, entity cards use brand_color for borders
+- [ ] OCR note: MG AND CO. has different CSI format — existing CSI parser may need a variant or flexible field mapping for MG invoices (document for Phase 9 OCR integration)
+- [ ] Commit: `"feat(erp): entity branding fields + entity-aware UI with dynamic color badges [4B.7]"`
+
+### 4B.8 — Verification (Full Inter-Company Flow Test)
+- [ ] **Transfer creation:** VIP president creates ICTO: 10 units of Ambroxol 30mg → MG AND CO.
+  - Transfer price auto-filled from TransferPriceList
+  - Batch/expiry selected from VIP stock
+- [ ] **Approval:** President approves ICTO
+- [ ] **Shipment:** VIP ships → VIP InventoryLedger: TRANSFER_OUT qty_out=10
+  - VIP MyStock: Ambroxol decreased by 10
+- [ ] **Receipt:** Jake (MG BDM) confirms receipt → MG InventoryLedger: TRANSFER_IN qty_in=10
+  - MG MyStock: Ambroxol increased by 10
+  - ProductMaster auto-created in MG entity if first time
+- [ ] **Post:** President posts ICTO → status POSTED, immutable
+- [ ] **Jake sells:** Sales Entry → MG products with stock → creates MG CSI → FIFO consumes from MG inventory
+- [ ] **President view:** Sees both VIP and MG inventory, sales, transfers
+- [ ] **Audit trail:** TransactionEvents, InventoryLedger, AuditLog all populated for both entities
+- [ ] Frontend build: 0 errors
+
+### Phase 4B Summary
+
+| Task | Description | Status |
+|------|-------------|--------|
+| 4B.1 | Transfer Price List Model | ❌ Not Started |
+| 4B.2 | Inter-Company Transfer Order (ICTO) Model | ❌ Not Started |
+| 4B.3 | IC Transfer Service (dual-ledger movements) | ❌ Not Started |
+| 4B.4 | IC Transfer Controller & Routes (10 endpoints) | ❌ Not Started |
+| 4B.5 | IC Transfer Frontend Pages (3 pages + hooks) | ❌ Not Started |
+| 4B.6 | Product Catalog Sync on Transfer | ❌ Not Started |
+| 4B.7 | Entity-Aware Reports & UI Enhancements | ❌ Not Started |
+| 4B.8 | Verification (full VIP→MG→Hospital flow) | ❌ Not Started |
+
+**Estimated new files:** 12-16 | **Models:** 2 | **Services:** 1 | **Controllers:** 1 | **Routes:** 1 | **Hooks:** 1 | **Pages:** 3-4 | **Est. Duration:** ~2 weeks
+
+> **ERP comparison:** This module is comparable in scope to Phase 4 (Inventory/GRN/DR/Consignment). The dual-ledger transaction pattern (TRANSFER_OUT + TRANSFER_IN) reuses existing InventoryLedger infrastructure — the transaction types are already defined in the enum but not yet implemented. The approval workflow pattern mirrors GRN (PENDING→APPROVED/REJECTED) but adds shipping/receiving steps.
+
+---
+
 ## PHASE 5 — COLLECTIONS & AR + CREDIT LIMITS + DUNNING
 **Goal:** Collection session that preserves the client's current validation + proof-gate + SOA behavior, then formalizes it in MERN with a cleaner SAP-style document lifecycle, CWT, commission, partner insurance, AR aging, credit limits, and dunning.
+
+> **Prerequisite note (Phase 4B):** TRANSFER_IN is now a valid stock source for BDMs in subsidiary entities (e.g., MG AND CO.). AR/Collection queries should treat IC-transferred stock the same as GRN stock — the CSI lifecycle is identical regardless of how stock was sourced. The entity_id on SalesLine distinguishes VIP vs MG invoices for reporting.
 
 ### 5.1 — Collection Model & Services
 - [ ] Create `backend/erp/models/Collection.js` — full schema per PRD with DRAFT/VALID/ERROR/POSTED/DELETION_REQUESTED lifecycle fields
@@ -1923,6 +2200,8 @@
 | 2 | Shared Models & Settings | ~55 | 1-2 weeks |
 | 3 | Sales Module (SAP Park→Check→Post) | ~30 | 2-3 weeks |
 | 4 | Inventory Module + DR/Consignment | ~22 | 1-2 weeks |
+| 4A | Entity Data Migration + Hospital Global Sharing | 5 | 1-2 days |
+| 4B | Inter-Company Transfers (VIP→Subsidiary) | 8 | ~2 weeks |
 | 5 | Collections & AR + Credit Limits + Dunning | 22 | 2-3 weeks |
 | 6 | Expenses (with document lifecycle) | 17 | 2 weeks |
 | 7 | Income, PNL & Year-End Close | 18 | 1-2 weeks |
@@ -1936,6 +2215,7 @@
 | 14 | New Reports & Analytics [v5 NEW] | ~35 | 1-2 weeks |
 | 15+ | Future (SAP-equivalent improvements) | 8 | Post-launch |
 
-**Total pre-launch: ~560 tasks across 16 phases → ~27-35 weeks**
+**Total pre-launch: ~573 tasks across 18 phases → ~29-37 weeks**
+**Note: Phases 4A+4B add ~13 tasks and ~2.5 weeks for entity migration + inter-company transfers**
 **Note: Phases 10-14 add ~220 tasks and ~10-14 weeks from PRD v5 (PNL Central live system integrations)**
 **Reference PRD:** `docs/VIP ERP PRD v5.md`
