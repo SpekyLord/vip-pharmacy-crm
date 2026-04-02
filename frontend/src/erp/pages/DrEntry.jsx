@@ -29,6 +29,7 @@ const emptyRow = () => ({
   dr_type: 'DR_CONSIGNMENT',
   product_id: '',
   batch_lot_no: '',
+  expiry_date: '',
   qty: '',
   _isNew: true
 });
@@ -141,6 +142,7 @@ function ScanDRModal({ open, onClose, onApply, hospitals, stockProducts }) {
       setMatchedItems(items.map(item => ({
         ocr_brand: fieldVal(item.brand_name), ocr_dosage: fieldVal(item.dosage),
         ocr_qty: fieldVal(item.qty), ocr_batch: fieldVal(item.batch_lot_no),
+        ocr_expiry: fieldVal(item.expiry_date),
         product_match: matchProduct(fieldVal(item.brand_name), stockProducts)
       })));
       setStep('results');
@@ -160,6 +162,7 @@ function ScanDRModal({ open, onClose, onApply, hospitals, stockProducts }) {
       line_items: matchedItems.map(mi => ({
         product_id: mi.product_match?.product?.product_id || '',
         batch_lot_no: mi.ocr_batch,
+        expiry_date: mi.ocr_expiry || '',
         qty: String(parseFloat(mi.ocr_qty) || '')
       }))
     });
@@ -225,10 +228,39 @@ export default function DrEntry() {
     } catch {}
   };
 
+  // Build batch lookup: { product_id: [{ batch_lot_no, expiry_date, available_qty }] }
+  const batchesByProduct = useMemo(() => {
+    const map = {};
+    for (const sp of stockProducts) {
+      if (sp.batches?.length) {
+        map[sp.product_id] = sp.batches.filter(b => b.available_qty > 0)
+          .sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date));
+      }
+    }
+    return map;
+  }, [stockProducts]);
+
   const addRow = () => setRows(prev => [...prev, emptyRow()]);
   const removeRow = (idx) => setRows(prev => prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx));
   const updateRow = (idx, field, value) => {
-    setRows(prev => { const u = [...prev]; u[idx] = { ...u[idx], [field]: value }; return u; });
+    setRows(prev => {
+      const u = [...prev];
+      u[idx] = { ...u[idx], [field]: value };
+      // When product changes, reset batch/expiry
+      if (field === 'product_id') {
+        u[idx].batch_lot_no = '';
+        u[idx].expiry_date = '';
+      }
+      // When batch is selected, auto-fill expiry from stock data
+      if (field === 'batch_lot_no' && value) {
+        const batches = batchesByProduct[u[idx].product_id] || [];
+        const match = batches.find(b => b.batch_lot_no === value);
+        if (match?.expiry_date) {
+          u[idx].expiry_date = new Date(match.expiry_date).toISOString().split('T')[0];
+        }
+      }
+      return u;
+    });
   };
 
   const handleSubmitAll = async () => {
@@ -280,6 +312,7 @@ export default function DrEntry() {
         dr_type: data.dr_type || 'DR_CONSIGNMENT',
         product_id: li.product_id || '',
         batch_lot_no: li.batch_lot_no || '',
+        expiry_date: li.expiry_date || '',
         qty: li.qty || ''
       }));
       setRows(newRows);
@@ -325,7 +358,8 @@ export default function DrEntry() {
                   <th style={{ width: 120 }}>DR Date</th>
                   <th style={{ width: 130 }}>Type</th>
                   <th style={{ minWidth: 200 }}>Product (from stock)</th>
-                  <th style={{ width: 100 }}>Batch</th>
+                  <th style={{ width: 160 }}>Batch / Lot</th>
+                  <th style={{ width: 110 }}>Expiry</th>
                   <th style={{ width: 70 }}>Qty</th>
                   <th style={{ width: 36 }}></th>
                 </tr>
@@ -362,7 +396,31 @@ export default function DrEntry() {
                       </select>
                     </td>
                     <td>
-                      <input value={row.batch_lot_no} onChange={e => updateRow(idx, 'batch_lot_no', e.target.value)} placeholder="Optional" />
+                      {(() => {
+                        const batches = batchesByProduct[row.product_id] || [];
+                        if (!row.product_id) return <select disabled><option>—</option></select>;
+                        if (batches.length === 0) return <input value={row.batch_lot_no} onChange={e => updateRow(idx, 'batch_lot_no', e.target.value)} placeholder="No batches" />;
+                        if (batches.length === 1) {
+                          // Auto-select single batch
+                          if (!row.batch_lot_no && batches[0].batch_lot_no) {
+                            setTimeout(() => updateRow(idx, 'batch_lot_no', batches[0].batch_lot_no), 0);
+                          }
+                          return <span style={{ fontSize: 12, fontWeight: 600 }}>{batches[0].batch_lot_no} ({batches[0].available_qty})</span>;
+                        }
+                        return (
+                          <select value={row.batch_lot_no} onChange={e => updateRow(idx, 'batch_lot_no', e.target.value)} style={{ fontSize: 12 }}>
+                            <option value="">Select batch...</option>
+                            {batches.map(b => (
+                              <option key={b.batch_lot_no} value={b.batch_lot_no}>
+                                {b.batch_lot_no} — {b.available_qty} avail (exp: {new Date(b.expiry_date).toLocaleDateString()})
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      })()}
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--erp-muted)', whiteSpace: 'nowrap' }}>
+                      {row.expiry_date ? new Date(row.expiry_date).toLocaleDateString() : '—'}
                     </td>
                     <td>
                       <input type="number" min="1" value={row.qty} onChange={e => updateRow(idx, 'qty', e.target.value)} placeholder="0" />
