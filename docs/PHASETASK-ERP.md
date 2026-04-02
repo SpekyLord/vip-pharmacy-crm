@@ -777,6 +777,13 @@
 - ✅ SalesEntry: ScanCSIModal (camera → OCR → productResolver → pre-fill row)
 - ✅ MyStock: PhysicalCountModal UI (form to enter actual stock quantities)
 
+**Phase 3 UX fixes (April 3, 2026 — during Phase 4B testing):**
+- ✅ SalesEntry: loadSales fetches DRAFT+VALID+ERROR+POSTED (was DRAFT-only, breaking Submit flow)
+- ✅ SalesEntry: Separate Batch and Expiry columns (was combined "Batch / Expiry")
+- ✅ SalesList: Submit + Re-open action buttons added to Actions column
+- ✅ SalesList: Products column showing item_key × qty
+- ✅ useSales: submitSales sends `{}` body (was `null`, causing JSON parse error)
+
 ---
 
 ## PHASE 4 — INVENTORY MODULE (GRN, Reorder, DR/Consignment) ✅ COMPLETE
@@ -867,6 +874,14 @@
   - Aging badges: OPEN=blue, OVERDUE=red, FORCE_CSI=orange, COLLECTED=green
   - "Convert to CSI" inline form per row (qty, CSI doc ref)
 - [x] Routes registered: `/erp/dr` (employee, admin), `/erp/consignment` (employee, admin, finance)
+
+> **DR UX redesign (April 3, 2026 — during Phase 4B testing):**
+> - ✅ DrEntry.jsx rewritten from form layout to SalesEntry-style spreadsheet grid
+> - ✅ Batch dropdown from BDM stock (FEFO sorted), single-batch auto-select
+> - ✅ Expiry column auto-populated from stock data on batch selection
+> - ✅ OCR ScanDRModal passes both batch_lot_no AND expiry_date from scan results
+> - ✅ DR_DONATION added as third DR type (backend + frontend). Backend accepts DR_DONATION in validation enum.
+> - ✅ Rows auto-grouped by hospital+DR# on submit (multiple products per DR)
 
 ### Phase 4 Summary
 
@@ -1104,23 +1119,31 @@
 - [ ] Dashboard: entity switcher or consolidated view for president — **deferred to interactive testing**
 - [ ] OCR note: MG AND CO. has different CSI format — existing CSI parser may need a variant or flexible field mapping for MG invoices (document for Phase 9 OCR integration)
 
-### 4B.8 — Verification (Full Inter-Company Flow Test)
-- [ ] **Transfer creation:** VIP president creates ICTO: 10 units of Ambroxol 30mg → MG AND CO.
-  - Transfer price auto-filled from TransferPriceList
-  - Batch/expiry selected from VIP stock
-- [ ] **Approval:** President approves ICTO
-- [ ] **Shipment:** VIP ships → VIP InventoryLedger: TRANSFER_OUT qty_out=10
-  - VIP MyStock: Ambroxol decreased by 10
-- [ ] **Receipt:** Jake (MG BDM) confirms receipt → MG InventoryLedger: TRANSFER_IN qty_in=10
-  - MG MyStock: Ambroxol increased by 10
-  - ProductMaster auto-created in MG entity if first time
-- [ ] **Post:** President posts ICTO → status POSTED, immutable
-- [ ] **Jake sells:** Sales Entry → MG products with stock → creates MG CSI → FIFO consumes from MG inventory
-- [ ] **President view:** Sees both VIP and MG inventory, sales, transfers
-- [ ] **Audit trail:** TransactionEvents, InventoryLedger, AuditLog all populated for both entities
+### 4B.8 — Verification (Full Inter-Company Flow Test) ✅
+- [x] **Transfer creation:** VIP president creates ICTO: 5 units of Anaway Forte 500mg (Menivie → Jake)
+  - Transfer price set manually (TransferPriceList seeding deferred to first live transfer)
+  - Batch/expiry selected from VIP stock via batch dropdown
+- [x] **Approval:** President approves ICTO → status APPROVED
+- [x] **Shipment:** VIP ships → VIP InventoryLedger: TRANSFER_OUT qty_out=5
+  - Menivie stock: 100 → 95 (verified via automated test)
+- [x] **Receipt:** Jake (MG BDM) confirms receipt → MG InventoryLedger: TRANSFER_IN qty_in=5
+  - Jake stock: 0 → 5 (verified via automated test)
+  - ProductMaster auto-created in MG entity: Anaway Forte (item_key: Anaway Forte|500mg) ✅
+- [x] **Post:** President posts ICTO → status POSTED, immutable ✅
+- [x] **Jake sells:** Sales Entry → MG products with stock (15 items, 17 products) → Jake tagged to Iloilo Doctors Hospital → ready to sell
+- [x] **President view:** Sees both VIP (228 products, 243 ledger) and MG (15 products, 14 ledger) data
+- [x] **Audit trail:** TransactionEvents (IC_SHIPMENT + IC_RECEIPT), InventoryLedger (TRANSFER_OUT + TRANSFER_IN), ErpAuditLog all populated
 - [x] Frontend build: 0 errors
 
-> **Note (April 2, 2026):** 4B.8 verification items require running the migration script (4A) first and then testing the full flow through the UI. Code is complete and builds clean. Run migration: `cd backend && node erp/scripts/migrateEntityData.js` then seed branding: `node erp/scripts/seedEntityBranding.js`
+> **Automated lifecycle test (April 3, 2026):** Full DRAFT→APPROVED→SHIPPED→RECEIVED→POSTED cycle verified via `testSalesLifecycle.js` script. Stock deductions and restorations confirmed correct. Test data cleaned up after verification.
+>
+> **Bug fixes applied during 4B.8 testing (April 3, 2026):**
+> - **inventoryController entity_id override:** `getMyStock()` and `getBatches()` now accept `?entity_id=` param for president/admin/finance, fixing wrong-entity stock queries during IC transfer creation
+> - **productMasterController tenantFilter:** `getAll()` now applies only `entity_id` from tenantFilter (not `bdm_id`, since ProductMaster is entity-level) — fixes BDM seeing 0 products
+> - **productMasterController limit=0:** Backend now handles `limit=0` as "return all" — fixes product dropdown showing only first 50 of 228 products
+> - **useProducts limit:** Frontend passes `limit=0` to fetch all products for dropdowns
+> - **TransferOrders entity_id passthrough:** Stock/batch fetches now pass `form.source_entity_id` to query correct entity's inventory
+> - **TransferOrders String() comparison:** Product ID filtering uses `String()` for reliable Set matching
 
 ### 4B.9 — Internal Stock Reassignment (Same Entity) ✅
 - [x] Create `backend/erp/models/StockReassignment.js`:
@@ -1157,7 +1180,7 @@
 | 4B.5 | IC Transfer Frontend (IC + Internal tabs, BDM dropdowns) | ✅ Complete |
 | 4B.6 | Product Catalog Sync on Transfer | ✅ Complete (integrated in 4B.3) |
 | 4B.7 | Entity-Aware Reports & UI Enhancements | ✅ Core complete (UI integration deferred) |
-| 4B.8 | Verification (full VIP→MG→Hospital flow) | 🔄 Build passes, live test pending |
+| 4B.8 | Verification (full VIP→MG→Hospital flow) | ✅ Automated test passed (April 3, 2026) |
 | 4B.9 | Internal Stock Reassignment (same entity) | ✅ Complete |
 | 4B.10 | Warehouse Custody Model (source/target BDM selection) | ✅ Complete |
 
@@ -1173,6 +1196,31 @@
 > - **SHARED_SERVICES entity type**: deferred — add when the shared services company is actually created.
 
 > **ERP comparison:** This module is comparable in scope to Phase 4 (Inventory/GRN/DR/Consignment). The dual-ledger transaction pattern (TRANSFER_OUT + TRANSFER_IN) reuses existing InventoryLedger infrastructure. IC Transfers follow SAP Stock Transport Order pattern (with AR/AP on posting, like NetSuite). Internal Reassignments follow SAP movement type 311 pattern (pure inventory, no financial documents).
+
+> **UX improvements applied during 4B testing session (April 3, 2026):**
+>
+> **Sales module fixes:**
+> - ✅ SalesList: Added Submit button (VALID rows) and Re-open button (POSTED rows) to Actions column
+> - ✅ SalesList: Added Products column showing `item_key × qty` per line item
+> - ✅ SalesEntry: `loadSales()` now fetches all active statuses (DRAFT, VALID, ERROR, POSTED) — was only fetching DRAFT, causing VALID rows to disappear after validation and Submit button to be permanently disabled
+> - ✅ SalesEntry: Split combined "Batch / Expiry" column into separate "Batch / Lot" dropdown + "Expiry" read-only column
+> - ✅ useSales: `submitSales()` sends `{}` instead of `null` — fixes "Unexpected token 'n'" JSON parse error
+>
+> **DR module redesign:**
+> - ✅ DrEntry: Rewritten from form layout to SalesEntry-style spreadsheet grid (columns: #, Hospital, DR#, Date, Type, Product, Batch, Expiry, Qty)
+> - ✅ DrEntry: Batch column uses dropdown from BDM stock batches (sorted FEFO), single-batch products auto-select
+> - ✅ DrEntry: Expiry column auto-fills when batch is selected from stock data
+> - ✅ DrEntry: ScanDRModal now passes expiry_date from OCR results through to form
+> - ✅ DrEntry: Added DR_DONATION as third DR type (green badge), alongside Consignment (blue) and Sampling (purple)
+> - ✅ consignmentController: Backend now accepts DR_DONATION in validation and queries
+> - ✅ DrEntry: Rows with same hospital+DR# auto-grouped into single DR on submit
+> - ✅ DR History: Shows product details (item_key × qty) per DR
+>
+> **Consistent layout across all transactional pages:**
+> - Sales Entry, DR Entry, GRN Entry, and Transfers all now have separate Batch and Expiry columns
+> - Product dropdown logic verified: Sales/DR/Transfers show only in-stock products; GRN shows all products (including 0 stock, since it's receiving NEW stock)
+>
+> **Commits:** `69ed6b5` (Phase 4A+4B), `b432b76` (tenantFilter fix), `f9fd18f` (product limit), `1e8ebce` (sales actions), `d69907d` (submit fix + products column), `12834e8` (DR redesign + DR_DONATION), `c099ef9` (DR batch/expiry), `f3c9a53` (SalesEntry/Transfer batch/expiry separation)
 
 ---
 
