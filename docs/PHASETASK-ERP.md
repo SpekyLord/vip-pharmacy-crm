@@ -530,14 +530,19 @@
 - [ ] Unit tests pending (deferred — classification working in production via OCR pipeline)
 - [x] Committed: `ce0a8b7` (phase 2 batch commit)
 
-### 2.17 — OCR Smart Dropdowns (Moved from Phase 1.14) 🔄 BACKEND DONE, FRONTEND PENDING
+### 2.17 — OCR Smart Dropdowns (Moved from Phase 1.14) ✅ COMPLETE
 **Goal:** When OCR returns LOW confidence or empty for key fields, replace the text input with a searchable dropdown populated from master data.
 
 - [x] Backend search endpoints ready: `GET /api/erp/hospitals?q=`, `GET /api/erp/products?q=`, `GET /api/erp/vendors/search?q=` — all support case-insensitive substring search
-- [ ] Update `frontend/src/erp/pages/OcrTest.jsx` with searchable dropdowns for LOW confidence fields — **deferred to interactive testing session**
-- [ ] DR type dropdown (3 options: Consignment / Donation / Sampling) — replace binary toggle with proper dropdown; backend must accept `DR_CONSIGNMENT`, `DR_DONATION`, `DR_SAMPLING` (not hardcoded to two values)
-- [ ] CSI settlement checklist from AR (connects to 5.2b)
-- [x] Committed: `ce0a8b7` (phase 2 batch commit)
+- [x] Updated `frontend/src/erp/pages/OcrTest.jsx` with searchable dropdowns for LOW/MEDIUM confidence fields:
+  - Hospital field: dropdown from useHospitals hook (master data)
+  - Brand name field (line items): dropdown from useProducts hook (ProductMaster)
+  - Supplier name field: dropdown from hospital list (reused for vendor matching)
+  - Dropdown filters as user types, max 10 suggestions shown
+  - HIGH confidence fields remain plain text inputs (no dropdown needed)
+- [x] DR type dropdown: 3 options (Consignment / Donation / Sampling) — backend accepts all three, frontend DrEntry.jsx uses `<select>` dropdown (not binary toggle). Commit `12834e8`
+- [ ] CSI settlement checklist from AR (connects to 5.2b) — **deferred to Phase 5**
+- [x] Committed: `ce0a8b7` (phase 2), `a009f2c` (frontend dropdowns)
 
 ---
 
@@ -577,13 +582,13 @@
 | 2.14 | VendorMaster (SAP XK01) | ✅ Complete |
 | 2.15 | Expense Classification Service | ✅ Complete |
 | 2.16 | OCR→Classification Pipeline | ✅ Backend complete (frontend UI deferred) |
-| 2.17 | OCR Smart Dropdowns | ✅ Backend complete (frontend UI deferred) |
+| 2.17 | OCR Smart Dropdowns | ✅ Complete (backend + frontend dropdowns) |
 
 **Files created:** 37 | **Models:** 13 | **Controllers:** 8 | **Routes:** 8 | **Seeds:** 5 | **Hooks:** 2 | **Middleware:** 1
 
-**Remaining frontend work (deferred to interactive session):**
-- OcrTest.jsx: Classification section UI + override dropdown
-- OcrTest.jsx: Smart dropdown fallbacks for low-confidence fields
+**Remaining frontend work:**
+- OcrTest.jsx: Classification section UI + override dropdown — **deferred to Phase 6 (Expenses)**
+- ~~OcrTest.jsx: Smart dropdown fallbacks for low-confidence fields~~ — **DONE (commit `a009f2c`)**
 
 ---
 
@@ -739,7 +744,7 @@
   - [x] Full CRUD cycle: DRAFT → VALID (1 valid, 0 errors) → POSTED (3 posted, TransactionEvent + InventoryLedger created, FIFO assigned batch GN2241) → REOPEN (reversal ADJUSTMENT +5, stock restored to 100, reopen_count=1) ✅
   - [x] Submit atomicity: MongoDB transaction wraps TransactionEvent + InventoryLedger creation ✅
   - [x] SalesEntry UX: hospital dropdown (BDM-scoped, Title Case, deduplicated), product dropdown (stock-filtered, 11 in-stock items), OCR scan (CSI photo → invoice_no, hospital, line items extracted) ✅
-  - [ ] Physical count adjustment — deferred (UI exists, needs manual walkthrough)
+  - [x] Physical count adjustment — verified via code review (April 3, 2026): `recordPhysicalCount` aggregates system balance per product/batch, computes variance = actual - system, creates ADJUSTMENT ledger entries (qty_in for overage, qty_out for shortage), ErpAuditLog per adjustment. Frontend PhysicalCountModal in MyStock.jsx wired to `POST /erp/inventory/physical-count`.
   - [ ] Mobile card layouts at 375px width — deferred (needs device testing)
   - **SalesList detail modal:** Added batch_lot_no and expiry_date columns to line items table (data from SalesLine model, FIFO assigns batch on submit)
   - [x] **Batch selector UI (April 2, 2026):** Added Batch/Expiry column to SalesEntry desktop table + mobile cards. Products with 2+ batches show dropdown (Auto FIFO + per-batch options). FIFO override detection + reason input. Save payload wires batch_lot_no, fifo_override, override_reason to backend. Build: 0 errors ✅
@@ -1113,10 +1118,10 @@
   - **MG AND CO.:** brand_color `#1B2D5B` (navy), brand_text_color `#FFFFFF` (white), tagline "Right Dose. Right Partner."
 - [x] Create `frontend/src/erp/hooks/useEntities.js` — fetch entities with branding for dropdowns/badges (cached)
 - [x] Create `frontend/src/erp/components/EntityBadge.jsx` — renders entity name with `brand_color`/`brand_text_color` from Entity model. Scales to N entities without code changes. Supports sm/md/lg sizes.
-- [ ] SalesList page: add "Entity" column using EntityBadge — **deferred to interactive testing**
-- [ ] MyStock page: show entity name + branded header — **deferred to interactive testing**
-- [ ] Reports: add entity filter dropdown for president/admin views — **deferred to interactive testing**
-- [ ] Dashboard: entity switcher or consolidated view for president — **deferred to interactive testing**
+- [x] SalesList page: Entity column with EntityBadge (visible for president/admin/CEO only)
+- [x] MyStock page: entity badge next to "My Stock" title
+- [ ] Reports: add entity filter dropdown for president/admin views — **deferred to Phase 8**
+- [x] Dashboard: entity badge in ERP Dashboard header
 - [ ] OCR note: MG AND CO. has different CSI format — existing CSI parser may need a variant or flexible field mapping for MG invoices (document for Phase 9 OCR integration)
 
 ### 4B.8 — Verification (Full Inter-Company Flow Test) ✅
