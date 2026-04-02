@@ -11,8 +11,8 @@ const taggedBdmSchema = new mongoose.Schema({
 const hospitalSchema = new mongoose.Schema({
   entity_id: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Entity',
-    required: true
+    ref: 'Entity'
+    // Optional — hospitals are globally shared across all entities (Phase 4A.3)
   },
   hospital_name: {
     type: String,
@@ -20,9 +20,12 @@ const hospitalSchema = new mongoose.Schema({
     trim: true
   },
   hospital_name_clean: {
-    type: String,
-    index: true
+    type: String
+    // Indexed via schema.index() below — do NOT use `index: true` here to avoid duplicate warning
   },
+
+  // Aliases for OCR fuzzy matching (same pattern as VendorMaster.vendor_aliases, ProductMaster.product_aliases)
+  hospital_aliases: { type: [String], default: [] },
 
   // Financial fields
   tin: { type: String, trim: true },
@@ -94,10 +97,10 @@ hospitalSchema.pre('findOneAndUpdate', function (next) {
   next();
 });
 
-// Indexes
-hospitalSchema.index({ entity_id: 1, status: 1 });
-hospitalSchema.index({ entity_id: 1, hospital_name_clean: 1 }, { unique: true });
+// Indexes — hospital_name_clean is globally unique (Phase 4A.3)
+hospitalSchema.index({ status: 1 });
+hospitalSchema.index({ hospital_name_clean: 1 }, { unique: true });
 hospitalSchema.index({ 'tagged_bdms.bdm_id': 1 });
-hospitalSchema.index({ hospital_name: 'text' });
+hospitalSchema.index({ hospital_name: 'text', hospital_aliases: 'text' });
 
 module.exports = mongoose.model('Hospital', hospitalSchema);

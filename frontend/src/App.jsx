@@ -50,6 +50,9 @@ const ConsignmentDashboard = lazy(() => import('./erp/pages/ConsignmentDashboard
 const Collections = lazy(() => import('./erp/pages/Collections'));
 const Expenses = lazy(() => import('./erp/pages/Expenses'));
 const ErpReports = lazy(() => import('./erp/pages/ErpReports'));
+const TransferOrders = lazy(() => import('./erp/pages/TransferOrders'));
+const TransferReceipt = lazy(() => import('./erp/pages/TransferReceipt'));
+const TransferPriceManager = lazy(() => import('./erp/pages/TransferPriceManager'));
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -322,6 +325,30 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['employee', 'admin']}>
                 <ErpReports />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/transfers"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+                <TransferOrders />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/transfers/receive"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+                <TransferReceipt />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/transfers/prices"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <TransferPriceManager />
               </ProtectedRoute>
             }
           />

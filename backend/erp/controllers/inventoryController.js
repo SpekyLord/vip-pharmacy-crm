@@ -26,6 +26,11 @@ const getMyStock = catchAsync(async (req, res) => {
     ? req.query.bdm_id
     : req.bdmId;
 
+  // Allow privileged users to query a different entity's stock (for IC transfers)
+  const entityId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.entity_id
+    ? req.query.entity_id
+    : req.entityId;
+
   if (!bdmId) {
     return res.status(400).json({ success: false, message: 'BDM ID required' });
   }
@@ -36,7 +41,7 @@ const getMyStock = catchAsync(async (req, res) => {
   nearExpiryDate.setDate(nearExpiryDate.getDate() + nearExpiryDays);
 
   // Get raw stock data from FIFO engine
-  const rawStock = await getMyStockAgg(req.entityId, bdmId);
+  const rawStock = await getMyStockAgg(entityId, bdmId);
 
   // Group by product
   const productMap = new Map();
@@ -125,12 +130,17 @@ const getBatches = catchAsync(async (req, res) => {
     ? req.query.bdm_id
     : req.bdmId;
 
+  // Allow privileged users to query a different entity's stock (for IC transfers)
+  const entityId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.entity_id
+    ? req.query.entity_id
+    : req.entityId;
+
   const settings = await Settings.getSettings();
   const nearExpiryDays = settings.NEAR_EXPIRY_DAYS || 120;
   const nearExpiryDate = new Date();
   nearExpiryDate.setDate(nearExpiryDate.getDate() + nearExpiryDays);
 
-  const batches = await getAvailableBatches(req.entityId, bdmId, req.params.productId);
+  const batches = await getAvailableBatches(entityId, bdmId, req.params.productId);
 
   const enriched = batches.map(b => ({
     ...b,

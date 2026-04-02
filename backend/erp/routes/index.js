@@ -26,4 +26,7 @@ router.use('/inventory', require('./inventoryRoutes'));
 // ═══ Phase 4 — Consignment ═══
 router.use('/consignment', require('./consignmentRoutes'));
 
+// ═══ Phase 4B — Inter-Company Transfers ═══
+router.use('/transfers', require('./interCompanyRoutes'));
+
 module.exports = router;

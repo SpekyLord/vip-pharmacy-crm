@@ -3,7 +3,7 @@ const ErpAuditLog = require('../models/ErpAuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
 
 const getAll = catchAsync(async (req, res) => {
-  const filter = {};
+  const filter = { ...req.tenantFilter };
   if (req.query.entity_id) filter.entity_id = req.query.entity_id;
   if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
   if (req.query.q) {

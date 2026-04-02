@@ -32,7 +32,13 @@ const entitySchema = new mongoose.Schema({
     type: String,
     enum: ['ACTIVE', 'INACTIVE'],
     default: 'ACTIVE'
-  }
+  },
+
+  // Branding (Phase 4B.7)
+  brand_color: { type: String, default: '#6B7280' },
+  brand_text_color: { type: String, default: '#FFFFFF' },
+  logo_url: { type: String },
+  tagline: { type: String, trim: true }
 }, {
   timestamps: true
 });

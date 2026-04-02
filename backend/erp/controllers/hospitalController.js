@@ -2,8 +2,8 @@ const Hospital = require('../models/Hospital');
 const { catchAsync } = require('../../middleware/errorHandler');
 
 const getAll = catchAsync(async (req, res) => {
+  // Hospitals are globally shared (Phase 4A.3) — no entity_id filter
   const filter = {};
-  if (req.query.entity_id) filter.entity_id = req.query.entity_id;
   if (req.query.status) filter.status = req.query.status;
   if (req.query.q) {
     filter.hospital_name = { $regex: req.query.q, $options: 'i' };
@@ -67,4 +67,30 @@ const deactivate = catchAsync(async (req, res) => {
   res.json({ success: true, message: 'Hospital deactivated', data: hospital });
 });
 
-module.exports = { getAll, getById, create, update, deactivate };
+const addAlias = catchAsync(async (req, res) => {
+  const { alias } = req.body;
+  if (!alias) return res.status(400).json({ success: false, message: 'Alias is required' });
+
+  const hospital = await Hospital.findByIdAndUpdate(
+    req.params.id,
+    { $addToSet: { hospital_aliases: alias.trim() } },
+    { new: true }
+  );
+  if (!hospital) return res.status(404).json({ success: false, message: 'Hospital not found' });
+  res.json({ success: true, data: hospital });
+});
+
+const removeAlias = catchAsync(async (req, res) => {
+  const { alias } = req.body;
+  if (!alias) return res.status(400).json({ success: false, message: 'Alias is required' });
+
+  const hospital = await Hospital.findByIdAndUpdate(
+    req.params.id,
+    { $pull: { hospital_aliases: alias.trim() } },
+    { new: true }
+  );
+  if (!hospital) return res.status(404).json({ success: false, message: 'Hospital not found' });
+  res.json({ success: true, data: hospital });
+});
+
+module.exports = { getAll, getById, create, update, deactivate, addAlias, removeAlias };

@@ -7,7 +7,7 @@
 const ProductMaster = require('../models/ProductMaster');
 const Hospital = require('../models/Hospital');
 const VendorMaster = require('../models/VendorMaster');
-const { cleanName } = require('../utils/nameClean');
+const { cleanName, expandAbbreviations } = require('../utils/nameClean');
 
 /**
  * Escape special regex characters
@@ -100,21 +100,22 @@ const resolveProduct = async (ocrText, entityId) => {
 
 /**
  * Resolve OCR text to a Hospital record.
- * 2-step: hospital_name_clean match → fuzzy text search
+ * 5-step cascade: EXACT → ABBREVIATION_EXPAND → ALIAS → ALIAS_SUBSTRING → PARTIAL → FUZZY
+ *
+ * Hospitals are globally shared (Phase 4A.3) — no entity_id filter.
  *
  * @param {string} ocrText - Raw hospital name from OCR
- * @param {ObjectId|string} entityId - Tenant entity
+ * @param {ObjectId|string} entityId - Tenant entity (unused — kept for API compat)
  * @returns {{ hospital, confidence, match_method } | null}
  */
-const resolveHospital = async (ocrText, entityId) => {
-  if (!ocrText || !entityId) return null;
+const resolveHospital = async (ocrText, _entityId) => {
+  if (!ocrText) return null;
 
   const cleaned = cleanName(ocrText);
   if (!cleaned) return null;
 
   // Step 1: EXACT — hospital_name_clean match
   let hospital = await Hospital.findOne({
-    entity_id: entityId,
     hospital_name_clean: cleaned,
     status: 'ACTIVE'
   }).lean();
@@ -123,25 +124,82 @@ const resolveHospital = async (ocrText, entityId) => {
     return { hospital, confidence: 'HIGH', match_method: 'EXACT' };
   }
 
-  // Step 1b: Partial — check if cleaned text contains or is contained by any hospital_name_clean
-  const hospitals = await Hospital.find({
-    entity_id: entityId,
-    status: 'ACTIVE'
-  }).select('hospital_name hospital_name_clean').lean();
-
-  for (const h of hospitals) {
-    if (h.hospital_name_clean && (
-      cleaned.includes(h.hospital_name_clean) ||
-      h.hospital_name_clean.includes(cleaned)
-    )) {
-      return { hospital: h, confidence: 'MEDIUM', match_method: 'PARTIAL' };
+  // Step 2: ABBREVIATION_EXPAND — expand PH abbreviations and try exact match on each variant
+  // e.g. "SAINT JUDE HOSPITAL" → also try "ST JUDE HOSPITAL"
+  const variants = expandAbbreviations(cleaned);
+  if (variants.length > 1) {
+    for (const variant of variants) {
+      if (variant === cleaned) continue; // already tried
+      hospital = await Hospital.findOne({
+        hospital_name_clean: variant,
+        status: 'ACTIVE'
+      }).lean();
+      if (hospital) {
+        return { hospital, confidence: 'HIGH', match_method: 'ABBREVIATION_EXPAND' };
+      }
     }
   }
 
-  // Step 2: FUZZY — text index search
+  // Step 3: ALIAS — check hospital_aliases array (exact match on cleaned alias)
+  const aliasRegex = new RegExp(escapeRegex(cleaned), 'i');
+  hospital = await Hospital.findOne({
+    hospital_aliases: aliasRegex,
+    status: 'ACTIVE'
+  }).lean();
+
+  if (hospital) {
+    return { hospital, confidence: 'MEDIUM', match_method: 'ALIAS' };
+  }
+
+  // Step 3b: ALIAS_SUBSTRING — substring match on aliases
+  const hospitalsWithAliases = await Hospital.find({
+    status: 'ACTIVE',
+    hospital_aliases: { $exists: true, $ne: [] }
+  }).select('hospital_name hospital_name_clean hospital_aliases').lean();
+
+  for (const h of hospitalsWithAliases) {
+    for (const alias of h.hospital_aliases) {
+      const cleanAlias = cleanName(alias);
+      if (cleaned.includes(cleanAlias) || cleanAlias.includes(cleaned)) {
+        return { hospital: h, confidence: 'MEDIUM', match_method: 'ALIAS_SUBSTRING' };
+      }
+      // Also try abbreviation expansion on the alias
+      const aliasVariants = expandAbbreviations(cleanAlias);
+      for (const av of aliasVariants) {
+        if (av === cleanAlias) continue;
+        if (cleaned.includes(av) || av.includes(cleaned)) {
+          return { hospital: h, confidence: 'MEDIUM', match_method: 'ALIAS_ABBREVIATION' };
+        }
+      }
+    }
+  }
+
+  // Step 4: PARTIAL — check if cleaned text contains or is contained by any hospital_name_clean
+  // Also try abbreviation-expanded variants
+  const allHospitals = await Hospital.find({
+    status: 'ACTIVE'
+  }).select('hospital_name hospital_name_clean').lean();
+
+  for (const h of allHospitals) {
+    if (!h.hospital_name_clean) continue;
+
+    // Direct substring
+    if (cleaned.includes(h.hospital_name_clean) || h.hospital_name_clean.includes(cleaned)) {
+      return { hospital: h, confidence: 'MEDIUM', match_method: 'PARTIAL' };
+    }
+
+    // Abbreviation-expanded partial: try all variants of OCR text against hospital name
+    for (const variant of variants) {
+      if (variant === cleaned) continue;
+      if (variant.includes(h.hospital_name_clean) || h.hospital_name_clean.includes(variant)) {
+        return { hospital: h, confidence: 'MEDIUM', match_method: 'PARTIAL_ABBREVIATION' };
+      }
+    }
+  }
+
+  // Step 5: FUZZY — text index search
   try {
     hospital = await Hospital.findOne({
-      entity_id: entityId,
       $text: { $search: ocrText },
       status: 'ACTIVE'
     }).lean();

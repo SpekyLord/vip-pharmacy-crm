@@ -19,6 +19,7 @@ const ERP_TABS = [
   { label: 'Dashboard', path: '/erp' },
   { label: 'Sales', path: '/erp/sales' },
   { label: 'Inventory', path: '/erp/my-stock' },
+  { label: 'Transfers', path: '/erp/transfers' },
   { label: 'Collections', path: '/erp/collections' },
   { label: 'Expenses', path: '/erp/expenses' },
   { label: 'Reports', path: '/erp/reports' },

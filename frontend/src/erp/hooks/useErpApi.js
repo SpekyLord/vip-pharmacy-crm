@@ -17,6 +17,11 @@ export default function useErpApi() {
       const res = await api.request({ method, url, data, ...config });
       return res.data;
     } catch (err) {
+      console.error('[useErpApi] ERROR on', method.toUpperCase(), url, {
+        status: err.response?.status,
+        data: err.response?.data,
+        message: err.message
+      });
       const msg = err.response?.data?.message || err.message || 'API error';
       setError(msg);
       throw err;

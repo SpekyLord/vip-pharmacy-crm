@@ -1,0 +1,81 @@
+const mongoose = require('mongoose');
+const { cleanBatchNo } = require('../utils/normalize');
+
+const reassignmentLineItemSchema = new mongoose.Schema({
+  product_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ProductMaster', required: true },
+  item_key: { type: String },
+  batch_lot_no: { type: String, required: [true, 'Batch/Lot number is required'] },
+  expiry_date: { type: Date, required: [true, 'Expiry date is required'] },
+  qty: { type: Number, required: [true, 'Quantity is required'], min: 1 }
+}, { _id: false });
+
+const stockReassignmentSchema = new mongoose.Schema({
+  reassignment_ref: {
+    type: String
+    // Auto-generated: TERRITORY-MMDDYY-SEQ (e.g. ILO-040226-001)
+  },
+  entity_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Entity',
+    required: true
+  },
+  source_bdm_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: [true, 'Source custodian is required']
+  },
+  target_bdm_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: [true, 'Target custodian is required']
+  },
+  reassignment_date: {
+    type: Date,
+    required: [true, 'Reassignment date is required']
+  },
+  line_items: {
+    type: [reassignmentLineItemSchema],
+    validate: [arr => arr.length > 0, 'At least one line item is required']
+  },
+
+  // Proof documents (same pattern as GrnEntry)
+  undertaking_photo_url: { type: String },
+  ocr_data: { type: mongoose.Schema.Types.Mixed },
+  notes: { type: String },
+
+  // Approval workflow (same pattern as GrnEntry)
+  status: {
+    type: String,
+    enum: ['PENDING', 'APPROVED', 'REJECTED'],
+    default: 'PENDING'
+  },
+  rejection_reason: { type: String },
+  reviewed_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  reviewed_at: { type: Date },
+
+  // Link to TransactionEvent on approval
+  event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+
+  created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  created_at: { type: Date, default: Date.now, immutable: true }
+}, {
+  timestamps: false,
+  collection: 'erp_stock_reassignments'
+});
+
+// Normalize batch numbers on save
+stockReassignmentSchema.pre('save', function (next) {
+  for (const item of this.line_items) {
+    if (item.batch_lot_no) {
+      item.batch_lot_no = cleanBatchNo(item.batch_lot_no);
+    }
+  }
+  next();
+});
+
+stockReassignmentSchema.index({ entity_id: 1, status: 1 });
+stockReassignmentSchema.index({ entity_id: 1, source_bdm_id: 1 });
+stockReassignmentSchema.index({ entity_id: 1, target_bdm_id: 1 });
+stockReassignmentSchema.index({ created_at: -1 });
+
+module.exports = mongoose.model('StockReassignment', stockReassignmentSchema);
