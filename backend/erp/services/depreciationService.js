@@ -62,18 +62,21 @@ async function getDepreciationStaging(entityId, period) {
     'depreciation_schedule.status': 'STAGING'
   }).lean();
 
-  return assets.map(a => {
-    const entry = a.depreciation_schedule.find(e => e.period === period && e.status === 'STAGING');
-    return {
-      asset_id: a._id,
-      asset_code: a.asset_code,
-      asset_name: a.asset_name,
-      entry_id: entry._id,
-      amount: entry.amount,
-      period: entry.period,
-      status: entry.status
-    };
-  });
+  return assets
+    .map(a => {
+      const entry = a.depreciation_schedule.find(e => e.period === period && e.status === 'STAGING');
+      if (!entry) return null;
+      return {
+        asset_id: a._id,
+        asset_code: a.asset_code,
+        asset_name: a.asset_name,
+        entry_id: entry._id,
+        amount: entry.amount,
+        period: entry.period,
+        status: entry.status
+      };
+    })
+    .filter(Boolean);
 }
 
 /**

@@ -58,6 +58,7 @@ router.use('/people', erpAccessCheck('people'), require('./peopleRoutes'));
 router.use('/payroll', erpAccessCheck('payroll'), require('./payrollRoutes'));
 
 // ═══ Phase 11 — Accounting Engine ═══
+router.use('/credit-cards', require('./creditCardRoutes'));
 router.use('/coa', erpAccessCheck('accounting'), require('./coaRoutes'));
 router.use('/accounting', erpAccessCheck('accounting'), require('./accountingRoutes'));
 router.use('/month-end-close', erpAccessCheck('accounting'), require('./monthEndCloseRoutes'));

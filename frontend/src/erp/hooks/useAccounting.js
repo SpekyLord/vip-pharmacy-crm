@@ -3,6 +3,15 @@ import useErpApi from './useErpApi';
 export default function useAccounting() {
   const api = useErpApi();
 
+  // ═══ Credit Cards ═══
+  const listCreditCards = (params) => api.get('/credit-cards', { params });
+  const getMyCards = () => api.get('/credit-cards/my-cards');
+  const createCreditCard = (data) => api.post('/credit-cards', data);
+  const updateCreditCard = (id, data) => api.put(`/credit-cards/${id}`, data);
+
+  // ═══ Bank Accounts (via lookups) ═══
+  const listBankAccounts = () => api.get('/lookups/bank-accounts');
+
   // ═══ COA ═══
   const listAccounts = (params) => api.get('/coa', { params });
   const createAccount = (data) => api.post('/coa', data);
@@ -66,6 +75,10 @@ export default function useAccounting() {
 
   return {
     ...api,
+    // Credit Cards
+    listCreditCards, getMyCards, createCreditCard, updateCreditCard,
+    // Bank Accounts
+    listBankAccounts,
     // COA
     listAccounts, createAccount, updateAccount,
     // Journals

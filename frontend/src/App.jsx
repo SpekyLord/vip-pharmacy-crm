@@ -73,7 +73,8 @@ const PersonDetail = lazy(() => import('./erp/pages/PersonDetail'));
 const PayrollRun = lazy(() => import('./erp/pages/PayrollRun'));
 const PayslipView = lazy(() => import('./erp/pages/PayslipView'));
 const ThirteenthMonth = lazy(() => import('./erp/pages/ThirteenthMonth'));
-// Phase 11 — Accounting Engine
+// Phase 11 — Accounting Engine + Card Management
+const CreditCardManager = lazy(() => import('./erp/pages/CreditCardManager'));
 const ChartOfAccounts = lazy(() => import('./erp/pages/ChartOfAccounts'));
 const JournalEntries = lazy(() => import('./erp/pages/JournalEntries'));
 const TrialBalance = lazy(() => import('./erp/pages/TrialBalance'));
@@ -538,7 +539,8 @@ function App() {
             }
           />
 
-          {/* Phase 11 — Accounting Engine */}
+          {/* Phase 11 — Accounting Engine + Card Management */}
+          <Route path="/erp/credit-cards" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><CreditCardManager /></ProtectedRoute>} />
           <Route path="/erp/coa" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><ChartOfAccounts /></ProtectedRoute>} />
           <Route path="/erp/journals" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><JournalEntries /></ProtectedRoute>} />
           <Route path="/erp/trial-balance" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><TrialBalance /></ProtectedRoute>} />

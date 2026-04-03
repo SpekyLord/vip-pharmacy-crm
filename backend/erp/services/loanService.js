@@ -56,20 +56,23 @@ async function getInterestStaging(entityId, period) {
     'amortization_schedule.status': 'STAGING'
   }).lean();
 
-  return loans.map(l => {
-    const entry = l.amortization_schedule.find(e => e.period === period && e.status === 'STAGING');
-    return {
-      loan_id: l._id,
-      loan_code: l.loan_code,
-      lender: l.lender,
-      entry_id: entry._id,
-      interest_amount: entry.interest_amount,
-      principal_amount: entry.principal_amount,
-      outstanding_balance: l.outstanding_balance,
-      period: entry.period,
-      status: entry.status
-    };
-  });
+  return loans
+    .map(l => {
+      const entry = l.amortization_schedule.find(e => e.period === period && e.status === 'STAGING');
+      if (!entry) return null;
+      return {
+        loan_id: l._id,
+        loan_code: l.loan_code,
+        lender: l.lender,
+        entry_id: entry._id,
+        interest_amount: entry.interest_amount,
+        principal_amount: entry.principal_amount,
+        outstanding_balance: l.outstanding_balance,
+        period: entry.period,
+        status: entry.status
+      };
+    })
+    .filter(Boolean);
 }
 
 /**

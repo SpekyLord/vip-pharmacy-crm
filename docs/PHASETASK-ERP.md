@@ -1611,34 +1611,22 @@
 > - NetSuite equivalent: Expense Report line with "Personal" funding source → AP journal → bank payment
 >
 > **Gap 2 — Payment method not linked to specific account (accounting engine can't auto-journal):**
-> Currently `payment_mode` on expense lines is just a string ("GCASH", "CARD", "CASH"). The accounting engine (Phase 11) needs to know **which specific account** was debited to generate the correct journal entry (DR: Expense, CR: **which bank/card?**).
+> ~~Currently `payment_mode` on expense lines is just a string ("GCASH", "CARD", "CASH"). The accounting engine (Phase 11) needs to know **which specific account** was debited.~~
 >
-> **What exists:**
-> - `BankAccount` model: has `coa_code` ✅ — but expense lines don't reference it
-> - `PaymentMode` model: has `mode_type` — but **missing `coa_code`** ❌
-> - `CreditCard` model: **never built** ❌ — PRD line 350 specifies `card_code, card_name, coa_code` but no model exists
+> **RESOLVED (April 4, 2026) — Gap 2 Fix implemented with Phase 11:**
 >
-> **Fix (implement before Phase 11):**
-> 1. Add `coa_code` to PaymentMode model (so CASH → 1010, GCASH → 1015, etc.)
-> 2. Create `CreditCard` model (covers all company-issued cards):
->    - entity_id, card_code, card_name, card_holder, bank, card_type enum (CREDIT_CARD, FLEET_CARD, DEBIT_CARD)
->    - card_brand enum (VISA, MASTERCARD, JCB, AMEX, FLEET — Shell fleet card = FLEET type)
->    - last_four (String), coa_code (→ 2301 BPI CC Payable, 2302 Shell Fleet Payable, etc.)
->    - credit_limit, statement_cycle_day, is_active
->    - **assigned_to** (ref: User) — which BDM/employee holds this card
->    - assigned_at, assigned_by (audit trail for card assignments)
->    - Notes: Shell Fleet Card is a FLEET_CARD type with its own COA. When BDM leaves, card is reassigned (not deleted).
->    - Collection: `erp_credit_cards`
-> 3. **BDM financial instrument assignment (client direction April 3, 2026):**
->    - Credit cards (BPI, BDO, etc.) → CreditCard model, `assigned_to: bdm_user_id`
->    - Shell Fleet Card → CreditCard model with `card_type: FLEET_CARD`, `card_brand: FLEET`
->    - Income Savings Account (salary deposit) → PeopleMaster `bank_account` field (Phase 10.1, already planned)
->    - CompProfile stays pure compensation rates — no financial instruments
->    - This separation means: Finance sees all cards company-wide, BDM expense form shows only their assigned cards in dropdown, accounting engine knows exact COA
-> 4. Add `funding_account_id` to expense lines (refs BankAccount or CreditCard) — so the journal knows CR: RCBC Savings (1010) vs CR: BPI CC (2301) vs CR: Shell Fleet (2302)
-> 5. Expense form: when payment_mode = CARD → show assigned credit card dropdown; when FLEET_CARD → show assigned fleet card; when BANK_TRANSFER → show bank account dropdown; when GCASH → auto-map to GCash COA
-> 6. Phase 11 auto-journal uses `funding_account_id.coa_code` for the CR side
-> 7. BDM profile view (Phase 10): shows all assigned cards + salary account in one panel for easy monitoring
+> **What was done:**
+> - [x] 1. Added `coa_code` to PaymentMode model — CASH→1000, CHECK→1011 (SBC CA), BANK_TRANSFER→1010 (SBC SA), GCASH→1015, CC_RCBC→2303, CC_SBC→2301, CC_MBTC→2301, CC_UB→2301
+> - [x] 2. Created `CreditCard` model (`erp_credit_cards`): entity_id, card_code, card_name, card_holder, bank, card_type (CREDIT_CARD/FLEET_CARD/DEBIT_CARD), card_brand (VISA/MASTERCARD/JCB/AMEX/FLEET), last_four, coa_code, credit_limit, statement_cycle_day, assigned_to (ref User), assigned_at, assigned_by, is_active
+> - [x] 3. Created CreditCard CRUD controller + routes (`/api/erp/credit-cards`): list, getMyCards, create, update, deactivate. Finance manages cards, BDMs see only assigned cards via `GET /my-cards`
+> - [x] 4. Created CreditCard Management page (`/erp/credit-cards`): card grid with type badges, assign-to-user dropdown, edit/deactivate. Accessible to Finance/Admin/President.
+> - [x] 5. Added `funding_card_id` (ref CreditCard) + `funding_account_id` (ref BankAccount) to ExpenseEntry line schema and PrfCalf schema. Added `funding_card_id` to CarLogbookEntry fuel schema. Added `bank_account_id` (ref BankAccount) to Collection schema.
+> - [x] 6. Card selection happens on **CALF form** (not expense/logbook forms) — when payment_mode=CARD, "Card Used" dropdown appears inline right of payment mode. When BANK_TRANSFER/GCASH, "Funding Bank" dropdown appears. Both route through CALF since all company-funded expenses require CALF.
+> - [x] 7. Collection form: replaced check_no/check_date/bank free-text fields with "Deposited At" BankAccount dropdown (hospital check details are on CR photo). Stores `bank_account_id` for journal posting.
+> - [x] 8. `autoJournal.js`: added `resolveFundingCoa()` helper — resolves COA from funding_card_id → funding_account_id → bank_account_id → PaymentMode.coa_code → fallback 1000.
+> - [x] 9. Seeded 6 bank accounts (SBC SA 1010, SBC CA 1011, RCBC CA 1012, MBTC CA 1014, GCash 1015, SBC CA MG 1016) and 4 credit cards (SBC MC 2301, RCBC Corp MC 2303, RCBC Plat Fleet 2302, BDO MC 2304).
+> - [x] 10. Updated COA seed: 1010=SBC Savings, 1011=SBC Current, 1012=RCBC Current, 1013=Reserved, 1014=MBTC Current, 1015=VIP GCash, 1016=SBC MG. Added 2303 RCBC Corp CC Payable, 2304 BDO CC Payable.
+> - [ ] 11. BDM profile view (Phase 10): shows all assigned cards + salary account in one panel — deferred to future enhancement
 >
 > ~~**Gap 3 — OCR not wired to expense forms**~~ **RESOLVED (April 3, 2026):**
 > OCR scan buttons added to all expense forms during Phase 6 testing — no longer deferred to Phase 9.1:
@@ -2485,7 +2473,7 @@
 |---------|-------|--------|
 | 11.1 COA Model + Seed | `ChartOfAccounts.js`, `seedCOA.js`, `coaController.js`, `coaRoutes.js` | ✅ |
 | 11.2 JE Model | `JournalEntry.js` | ✅ |
-| 11.3 JE Engine + Auto-Journal | `journalEngine.js`, `autoJournal.js` | ✅ |
+| 11.3 JE Engine + Auto-Journal | `journalEngine.js`, `autoJournal.js` (+ `resolveFundingCoa`) | ✅ |
 | 11.4 VAT/CWT Models | `VatLedger.js`, `CwtLedger.js` | ✅ |
 | 11.5 VAT/CWT Services | `vatService.js`, `cwtService.js` | ✅ |
 | 11.6 Trial Balance | `trialBalanceService.js` | ✅ |
@@ -2496,7 +2484,14 @@
 | 11.11 Owner Equity | `OwnerEquityEntry.js`, `ownerEquityService.js` | ✅ |
 | 11.12 Month-End Close | `monthEndClose.js`, `monthEndCloseController.js`, `monthEndCloseRoutes.js` | ✅ |
 | 11.13 Accounting API | `accountingController.js`, `accountingRoutes.js` | ✅ |
-| 11.14 Frontend Pages | 10 pages + `useAccounting.js` + App.jsx + Sidebar.jsx | ✅ |
+| 11.14 Frontend Pages | 10 accounting pages + `useAccounting.js` + App.jsx + Sidebar.jsx | ✅ |
+| Gap 2 — PaymentMode COA | `PaymentMode.js` (+coa_code), `seedLookups.js` (coa mapping) | ✅ |
+| Gap 2 — CreditCard | `CreditCard.js`, `creditCardController.js`, `creditCardRoutes.js`, `seedCreditCards.js` | ✅ |
+| Gap 2 — BankAccount Seed | `seedBankAccounts.js` (6 accounts: SBC SA/CA, RCBC, MBTC, GCash, SBC MG) | ✅ |
+| Gap 2 — Funding Refs | `ExpenseEntry.js`, `CarLogbookEntry.js`, `Collection.js`, `PrfCalf.js` (+funding_card_id/bank_account_id) | ✅ |
+| Gap 2 — COA Update | `seedCOA.js` (1010-1016 real banks, 2303/2304 new CC payables) | ✅ |
+| Gap 2 — Frontend Forms | `CollectionSession.jsx` (Deposited At), `PrfCalf.jsx` (Card Used / Funding Bank inline) | ✅ |
+| Credit Card Mgmt Page | `CreditCardManager.jsx` + route + sidebar item | ✅ |
 
 ---
 

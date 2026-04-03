@@ -13,12 +13,48 @@
  *   CALF POSTED:       DR 1110 AR BDM (clearing), CR Cash/Bank
  */
 
+const BankAccount = require('../models/BankAccount');
+const CreditCard = require('../models/CreditCard');
+const PaymentMode = require('../models/PaymentMode');
+
 /**
  * Helper: format period from Date
  */
 function dateToPeriod(d) {
   const dt = new Date(d);
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Resolve COA code from funding references.
+ * Priority: funding_card_id → funding_account_id → bank_account_id → payment_mode lookup → fallback
+ * @param {Object} doc — the source document (expense line, collection, etc.)
+ * @param {String} fallback — default COA code if nothing resolves (default '1000')
+ * @returns {Object} { coa_code, coa_name }
+ */
+async function resolveFundingCoa(doc, fallback = '1000') {
+  // 1. Credit card reference
+  if (doc.funding_card_id) {
+    const card = await CreditCard.findById(doc.funding_card_id).lean();
+    if (card?.coa_code) return { coa_code: card.coa_code, coa_name: card.card_name };
+  }
+
+  // 2. Bank account reference (funding_account_id or bank_account_id)
+  const bankRef = doc.funding_account_id || doc.bank_account_id;
+  if (bankRef) {
+    const bank = await BankAccount.findById(bankRef).lean();
+    if (bank?.coa_code) return { coa_code: bank.coa_code, coa_name: bank.bank_name };
+  }
+
+  // 3. PaymentMode lookup
+  if (doc.payment_mode) {
+    const pm = await PaymentMode.findOne({ mode_code: doc.payment_mode }).lean()
+      || await PaymentMode.findOne({ mode_type: doc.payment_mode }).lean();
+    if (pm?.coa_code) return { coa_code: pm.coa_code, coa_name: pm.mode_label };
+  }
+
+  // 4. Fallback
+  return { coa_code: fallback, coa_name: 'Cash on Hand' };
 }
 
 /**
@@ -344,6 +380,7 @@ function journalFromOwnerEquity(equityEntry, bankCoaCode, bankName, userId) {
 }
 
 module.exports = {
+  resolveFundingCoa,
   journalFromSale,
   journalFromCollection,
   journalFromCWT,

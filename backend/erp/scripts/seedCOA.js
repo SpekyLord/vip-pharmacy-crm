@@ -17,14 +17,15 @@ const Entity = require('../models/Entity');
 
 // ═══ Full COA Template ═══
 const COA_TEMPLATE = [
-  // ──── 1000-1014: Cash & Bank (ASSET) ────
+  // ──── 1000-1016: Cash & Bank (ASSET) ────
   { account_code: '1000', account_name: 'Cash on Hand', account_type: 'ASSET', account_subtype: 'Cash', normal_balance: 'DEBIT' },
-  { account_code: '1010', account_name: 'RCBC Savings', account_type: 'ASSET', account_subtype: 'Bank', normal_balance: 'DEBIT' },
-  { account_code: '1011', account_name: 'Security Bank', account_type: 'ASSET', account_subtype: 'Bank', normal_balance: 'DEBIT' },
-  { account_code: '1012', account_name: 'Metrobank', account_type: 'ASSET', account_subtype: 'Bank', normal_balance: 'DEBIT' },
-  { account_code: '1013', account_name: 'UnionBank', account_type: 'ASSET', account_subtype: 'Bank', normal_balance: 'DEBIT' },
-  { account_code: '1014', account_name: 'BPI', account_type: 'ASSET', account_subtype: 'Bank', normal_balance: 'DEBIT' },
-  { account_code: '1015', account_name: 'GCash', account_type: 'ASSET', account_subtype: 'E-Wallet', normal_balance: 'DEBIT' },
+  { account_code: '1010', account_name: 'Security Bank Savings', account_type: 'ASSET', account_subtype: 'Bank', normal_balance: 'DEBIT' },
+  { account_code: '1011', account_name: 'Security Bank Current', account_type: 'ASSET', account_subtype: 'Bank', normal_balance: 'DEBIT' },
+  { account_code: '1012', account_name: 'RCBC Current', account_type: 'ASSET', account_subtype: 'Bank', normal_balance: 'DEBIT' },
+  { account_code: '1013', account_name: 'Reserved', account_type: 'ASSET', account_subtype: 'Bank', normal_balance: 'DEBIT', is_active: false },
+  { account_code: '1014', account_name: 'MBTC Current', account_type: 'ASSET', account_subtype: 'Bank', normal_balance: 'DEBIT' },
+  { account_code: '1015', account_name: 'VIP GCash', account_type: 'ASSET', account_subtype: 'E-Wallet', normal_balance: 'DEBIT' },
+  { account_code: '1016', account_name: 'SBC Current — MG and CO.', account_type: 'ASSET', account_subtype: 'Bank', normal_balance: 'DEBIT' },
 
   // ──── 1100-1220: Receivables (ASSET) ────
   { account_code: '1100', account_name: 'Accounts Receivable — Trade', account_type: 'ASSET', account_subtype: 'Receivable', normal_balance: 'DEBIT' },
@@ -47,8 +48,10 @@ const COA_TEMPLATE = [
   { account_code: '2220', account_name: 'Pag-IBIG Payable', account_type: 'LIABILITY', account_subtype: 'Gov Payable', normal_balance: 'CREDIT' },
   { account_code: '2230', account_name: 'Withholding Tax Payable', account_type: 'LIABILITY', account_subtype: 'Tax Payable', normal_balance: 'CREDIT' },
   { account_code: '2300', account_name: 'Loans Payable', account_type: 'LIABILITY', account_subtype: 'Loan', normal_balance: 'CREDIT' },
-  { account_code: '2301', account_name: 'BPI Credit Card Payable', account_type: 'LIABILITY', account_subtype: 'CC Payable', normal_balance: 'CREDIT' },
+  { account_code: '2301', account_name: 'SBC Credit Card Payable', account_type: 'LIABILITY', account_subtype: 'CC Payable', normal_balance: 'CREDIT' },
   { account_code: '2302', account_name: 'Shell Fleet Card Payable', account_type: 'LIABILITY', account_subtype: 'CC Payable', normal_balance: 'CREDIT' },
+  { account_code: '2303', account_name: 'RCBC Corporate CC Payable', account_type: 'LIABILITY', account_subtype: 'CC Payable', normal_balance: 'CREDIT' },
+  { account_code: '2304', account_name: 'BDO CC Payable', account_type: 'LIABILITY', account_subtype: 'CC Payable', normal_balance: 'CREDIT' },
   { account_code: '2400', account_name: 'Other Payables', account_type: 'LIABILITY', account_subtype: 'Other', normal_balance: 'CREDIT' },
 
   // ──── 3000-3200: Equity ────
@@ -114,7 +117,7 @@ async function seedCOA() {
             entity_id: entity._id,
             ...acct,
             bir_flag: acct.bir_flag || 'BOTH',
-            is_active: true
+            is_active: acct.is_active !== undefined ? acct.is_active : true
           }
         },
         { upsert: true }

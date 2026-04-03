@@ -59,6 +59,7 @@ const collectionSchema = new mongoose.Schema({
   check_no: String,
   check_date: Date,
   bank: String,
+  bank_account_id: { type: mongoose.Schema.Types.ObjectId, ref: 'BankAccount' },
   deposit_date: Date,
   deposit_slip_url: String,
 

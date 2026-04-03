@@ -4,6 +4,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useExpenses from '../hooks/useExpenses';
+import useAccounting from '../hooks/useAccounting';
 import { processDocument } from '../services/ocrService';
 
 const STATUS_COLORS = {
@@ -14,12 +15,15 @@ const PAYMENT_MODES = ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'CARD', 'OTHER
 export default function PrfCalf() {
   const { user } = useAuth();
   const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines, loading } = useExpenses();
+  const { getMyCards, listBankAccounts } = useAccounting();
 
   const [docs, setDocs] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [pendingRebates, setPendingRebates] = useState([]);
   const [pendingCalfLines, setPendingCalfLines] = useState([]);
+  const [myCards, setMyCards] = useState([]);
+  const [bankAccounts, setBankAccounts] = useState([]);
   const [docTypeFilter, setDocTypeFilter] = useState('');
   const [period, setPeriod] = useState(() => {
     const d = new Date();
@@ -35,6 +39,7 @@ export default function PrfCalf() {
     rebate_amount: 0, amount: 0,
     calf_number: '', advance_amount: 0, liquidation_amount: 0,
     payment_mode: 'CASH', check_no: '', bank: '',
+    funding_card_id: null, funding_account_id: null,
     notes: ''
   });
 
@@ -48,6 +53,10 @@ export default function PrfCalf() {
   }, [period, docTypeFilter]);
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
+  useEffect(() => {
+    getMyCards().then(r => setMyCards(r?.data || [])).catch(() => {});
+    listBankAccounts().then(r => setBankAccounts(r?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load pending partner rebates + pending CALF lines
   const loadPendingData = useCallback(async () => {
@@ -363,12 +372,27 @@ export default function PrfCalf() {
               )}
 
               {/* Shared fields */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ fontSize: 13 }}>Payment Mode:
-                  <select value={form.payment_mode} onChange={e => setForm(p => ({ ...p, payment_mode: e.target.value }))} style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }}>
+                  <select value={form.payment_mode} onChange={e => setForm(p => ({ ...p, payment_mode: e.target.value, funding_card_id: null, funding_account_id: null }))} style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }}>
                     {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </label>
+                {/* Card Used — inline right of payment mode for CARD */}
+                {form.doc_type === 'CALF' && form.payment_mode === 'CARD' && myCards.length > 0 && (
+                  <select value={form.funding_card_id || ''} onChange={e => setForm(p => ({ ...p, funding_card_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #a78bfa', fontSize: 13, background: '#f5f3ff' }}>
+                    <option value="">Card Used…</option>
+                    {myCards.filter(c => c.card_type === 'CREDIT_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} ({c.bank})</option>)}
+                    {myCards.filter(c => c.card_type === 'FLEET_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} (Fleet)</option>)}
+                  </select>
+                )}
+                {/* Funding Bank — inline right for BANK_TRANSFER/GCASH */}
+                {form.doc_type === 'CALF' && (form.payment_mode === 'BANK_TRANSFER' || form.payment_mode === 'GCASH') && bankAccounts.length > 0 && (
+                  <select value={form.funding_account_id || ''} onChange={e => setForm(p => ({ ...p, funding_account_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #67e8f9', fontSize: 13, background: '#ecfeff' }}>
+                    <option value="">Funding Bank…</option>
+                    {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
+                  </select>
+                )}
               </div>
               {form.payment_mode === 'CHECK' && (
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>

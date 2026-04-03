@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useCollections from '../hooks/useCollections';
 import useHospitals from '../hooks/useHospitals';
 import useSettings from '../hooks/useSettings';
+import useAccounting from '../hooks/useAccounting';
 import doctorService from '../../services/doctorService';
 import { processDocument } from '../services/ocrService';
 
@@ -57,6 +58,7 @@ export default function CollectionSession() {
   const collections = useCollections();
   const { hospitals } = useHospitals();
   const { settings } = useSettings();
+  const { listBankAccounts } = useAccounting();
   const navigate = useNavigate();
 
   const [hospitalId, setHospitalId] = useState('');
@@ -69,6 +71,8 @@ export default function CollectionSession() {
   const [checkNo, setCheckNo] = useState('');
   const [checkDate, setCheckDate] = useState('');
   const [bank, setBank] = useState('');
+  const [bankAccountId, setBankAccountId] = useState('');
+  const [bankAccountsList, setBankAccountsList] = useState([]);
   const [cwtRate, setCwtRate] = useState('');
   const [cwtNa, setCwtNa] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -104,6 +108,11 @@ export default function CollectionSession() {
       setDoctorsLoaded(true);
     }).catch(() => setDoctorsLoaded(true));
   }, [doctorsLoaded]);
+
+  // Load bank accounts for "Deposited At" dropdown
+  useEffect(() => {
+    listBankAccounts().then(r => setBankAccountsList(r?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load open CSIs when hospital changes
   useEffect(() => {
@@ -228,6 +237,7 @@ export default function CollectionSession() {
         settled_csis: selectedList,
         cwt_rate: parseFloat(cwtRate) || 0, cwt_amount: computedCwt, cwt_na: cwtNa,
         payment_mode: paymentMode,
+        bank_account_id: bankAccountId || undefined,
         check_no: checkNo || undefined, check_date: checkDate || undefined, bank: bank || undefined,
         cr_photo_url: crPhotoUrl || undefined,
         csi_photo_urls: csiPhotoUrls.length ? csiPhotoUrls : undefined,
@@ -395,13 +405,13 @@ export default function CollectionSession() {
                     <option value="ONLINE">Online / Bank Transfer</option>
                   </select>
                 </div>
-                {paymentMode === 'CHECK' && (
-                  <>
-                    <div className="form-group"><label>Check No.</label><input value={checkNo} onChange={e => setCheckNo(e.target.value)} /></div>
-                    <div className="form-group"><label>Check Date</label><input type="date" value={checkDate} onChange={e => setCheckDate(e.target.value)} /></div>
-                    <div className="form-group"><label>Bank</label><input value={bank} onChange={e => setBank(e.target.value)} /></div>
-                  </>
-                )}
+                <div className="form-group">
+                  <label>Deposited At</label>
+                  <select value={bankAccountId} onChange={e => setBankAccountId(e.target.value)} style={{ width: '100%' }}>
+                    <option value="">Select bank account…</option>
+                    {bankAccountsList.map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
+                  </select>
+                </div>
               </div>
 
               {/* CWT */}
