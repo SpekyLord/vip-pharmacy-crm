@@ -512,6 +512,9 @@ const sidebarStyles = `
 const getMenuConfig = (role, unreadCount = 0) => {
   switch (role) {
     case 'admin':
+    case 'finance':
+    case 'president':
+    case 'ceo':
       return {
         roleTitle: 'Administrator',
         roleSubtitle: 'Full Access',
