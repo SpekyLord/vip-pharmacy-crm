@@ -15,6 +15,8 @@ import LoadingSpinner from '../common/LoadingSpinner';
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   const { user, loading, isAuthenticated } = useAuth();
   const location = useLocation();
+  const adminLikeRoles = ['admin', 'president', 'ceo', 'finance'];
+  const isAdminLike = adminLikeRoles.includes(user?.role);
 
   if (loading) {
     return <LoadingSpinner fullScreen text="Checking authentication..." />;
@@ -24,10 +26,14 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  // Keep admin-like users on admin routes to avoid mixed admin sidebar + BDM pages.
+  if (isAdminLike && (location.pathname.startsWith('/bdm') || location.pathname.startsWith('/employee'))) {
+    return <Navigate to="/admin" replace />;
+  }
+
   if (allowedRoles.length > 0 && !allowedRoles.includes(user?.role)) {
     // Allow finance/president/ceo to access admin-only routes
-    const adminLikeRoles = ['president', 'ceo', 'finance'];
-    if (allowedRoles.includes('admin') && adminLikeRoles.includes(user?.role)) {
+    if (allowedRoles.includes('admin') && isAdminLike && location.pathname.startsWith('/admin')) {
       return children;
     }
 
