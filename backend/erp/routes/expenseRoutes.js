@@ -40,7 +40,7 @@ router.post('/smer/submit', submitSmer);
 router.post('/smer/reopen', reopenSmer);
 router.get('/smer/:id', getSmerById);
 router.put('/smer/:id', updateSmer);
-router.delete('/smer/:id', deleteDraftSmer);
+router.delete('/smer/:id', deleteDraftSmer);  // DRAFT only — backend enforces status check
 router.post('/smer/:id/override-perdiem', roleCheck('admin', 'finance', 'president'), overridePerdiemDay);
 
 // ═══ Car Logbook ═══
@@ -51,7 +51,7 @@ router.post('/car-logbook/submit', submitCarLogbook);
 router.post('/car-logbook/reopen', reopenCarLogbook);
 router.get('/car-logbook/:id', getCarLogbookById);
 router.put('/car-logbook/:id', updateCarLogbook);
-router.delete('/car-logbook/:id', deleteDraftCarLogbook);
+router.delete('/car-logbook/:id', deleteDraftCarLogbook);  // DRAFT only
 
 // ═══ ORE / ACCESS Expenses ═══
 router.post('/ore-access', createExpense);
@@ -61,19 +61,20 @@ router.post('/ore-access/submit', submitExpenses);
 router.post('/ore-access/reopen', reopenExpenses);
 router.get('/ore-access/:id', getExpenseById);
 router.put('/ore-access/:id', updateExpense);
-router.delete('/ore-access/:id', deleteDraftExpense);
+router.delete('/ore-access/:id', deleteDraftExpense);  // DRAFT only
 
 // ═══ PRF / CALF ═══
-// BDM creates, Finance posts (payment processed / liquidation confirmed)
+// BDMs can post CALF (liquidation) and personal PRF. Partner rebate PRF still requires Finance.
+// Re-open requires admin/finance/president.
 router.get('/prf-calf/pending-rebates', getPendingPartnerRebates);
 router.get('/prf-calf/pending-calf', getPendingCalfLines);
 router.post('/prf-calf', createPrfCalf);
 router.get('/prf-calf', getPrfCalfList);
 router.post('/prf-calf/validate', validatePrfCalf);
-router.post('/prf-calf/submit', roleCheck('admin', 'finance', 'president'), submitPrfCalf);
+router.post('/prf-calf/submit', submitPrfCalf);
 router.post('/prf-calf/reopen', roleCheck('admin', 'finance', 'president'), reopenPrfCalf);
 router.get('/prf-calf/:id', getPrfCalfById);
 router.put('/prf-calf/:id', updatePrfCalf);
-router.delete('/prf-calf/:id', deleteDraftPrfCalf);
+router.delete('/prf-calf/:id', deleteDraftPrfCalf);  // DRAFT only
 
 module.exports = router;

@@ -493,11 +493,18 @@ const validateExpenses = catchAsync(async (req, res) => {
         errors.push(`Line ${i + 1}: OR photo or OR number required for ${line.expense_type} expense`);
       }
 
-      // CALF gate: ACCESS with non-cash requires CALF
-      if (line.calf_required && !line.calf_id) {
-        // President override — skip CALF requirement
-        if (req.user.role !== 'president') {
+      // CALF gate: ACCESS with non-cash requires CALF to be linked AND POSTED
+      if (line.calf_required && req.user.role !== 'president') {
+        if (!line.calf_id) {
           errors.push(`Line ${i + 1}: CALF required for non-cash ACCESS expense`);
+        } else {
+          // Verify linked CALF is POSTED (not just linked)
+          const linkedCalf = await PrfCalf.findById(line.calf_id).select('status').lean();
+          if (!linkedCalf) {
+            errors.push(`Line ${i + 1}: linked CALF not found`);
+          } else if (linkedCalf.status !== 'POSTED') {
+            errors.push(`Line ${i + 1}: linked CALF must be POSTED (current: ${linkedCalf.status})`);
+          }
         }
       }
     }
@@ -513,6 +520,21 @@ const validateExpenses = catchAsync(async (req, res) => {
 const submitExpenses = catchAsync(async (req, res) => {
   const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: 'VALID' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No VALID expenses to submit' });
+
+  // Pre-submit gate: verify all linked CALFs are POSTED
+  for (const entry of entries) {
+    for (const line of (entry.lines || [])) {
+      if (line.calf_required && line.calf_id && req.user.role !== 'president') {
+        const calf = await PrfCalf.findById(line.calf_id).select('status').lean();
+        if (!calf || calf.status !== 'POSTED') {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot post: expense line "${line.establishment || ''}" has CALF that is not POSTED (status: ${calf?.status || 'NOT_FOUND'}). Post the CALF first.`
+          });
+        }
+      }
+    }
+  }
 
   const session = await mongoose.startSession();
   await session.withTransaction(async () => {
@@ -676,24 +698,21 @@ const validatePrfCalf = catchAsync(async (req, res) => {
     if (!doc.period) errors.push('Period is required');
     if (!doc.cycle) errors.push('Cycle is required');
 
-    // Photo proof: required for PRF always. For CALF, check linked expense OR photos as fallback.
-    if (!doc.photo_urls?.length) {
-      if (doc.doc_type === 'CALF' && doc.linked_expense_id) {
-        // Check if linked expense lines already have OR photos (auto-inherited on create)
-        const linkedExp = await ExpenseEntry.findById(doc.linked_expense_id).lean();
-        const linkedPhotos = (linkedExp?.lines || [])
-          .filter(l => (doc.linked_expense_line_ids || []).some(lid => lid.toString() === l._id.toString()))
-          .map(l => l.or_photo_url)
-          .filter(Boolean);
-        if (!linkedPhotos.length) {
-          errors.push('Photo proof is required (upload OR photo on expense line or attach here)');
-        } else {
-          // Auto-copy linked OR photos to CALF
-          doc.photo_urls = linkedPhotos;
-        }
-      } else {
-        errors.push('Photo proof is required');
+    // Photo proof: required for PRF only. CALF inherits OR photos from linked expense lines.
+    if (doc.doc_type === 'PRF' && !doc.photo_urls?.length) {
+      errors.push('Photo proof is required for PRF');
+    }
+    if (doc.doc_type === 'CALF' && !doc.photo_urls?.length && doc.linked_expense_id) {
+      // Auto-inherit OR photos from linked expense lines
+      const linkedExp = await ExpenseEntry.findById(doc.linked_expense_id).lean();
+      const linkedPhotos = (linkedExp?.lines || [])
+        .filter(l => (doc.linked_expense_line_ids || []).some(lid => lid.toString() === l._id.toString()))
+        .map(l => l.or_photo_url)
+        .filter(Boolean);
+      if (linkedPhotos.length) {
+        doc.photo_urls = linkedPhotos;
       }
+      // No error if CALF has no photos — OR proof lives on the expense line, not the CALF
     }
 
     if (doc.doc_type === 'PRF') {

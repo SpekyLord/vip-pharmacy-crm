@@ -193,7 +193,7 @@ export default function PrfCalf() {
             <button onClick={() => handleNew('PRF')} style={{ padding: '6px 16px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New PRF</button>
             <button onClick={() => handleNew('CALF')} style={{ padding: '6px 16px', borderRadius: 6, background: '#0891b2', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New CALF</button>
             <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
-            {isFinance && <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Post</button>}
+            <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Post</button>
           </div>
 
           {/* Pending Partner Rebates */}
@@ -280,10 +280,10 @@ export default function PrfCalf() {
                       </td>
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         {['DRAFT', 'ERROR'].includes(d.status) && (
-                          <>
-                            <button onClick={() => handleEdit(d)} style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Edit</button>
-                            <button onClick={() => handleDelete(d._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
-                          </>
+                          <button onClick={() => handleEdit(d)} style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Edit</button>
+                        )}
+                        {d.status === 'DRAFT' && (
+                          <button onClick={() => handleDelete(d._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                         )}
                         {d.status === 'POSTED' && isFinance && <button onClick={() => handleReopen(d._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
                       </td>
@@ -378,36 +378,42 @@ export default function PrfCalf() {
               )}
               <label style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>Notes: <input value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} style={{ width: '100%', padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
 
-              {/* Photo Proof Upload (required for validation) */}
-              <div style={{ padding: 12, borderRadius: 8, border: '1px solid #dbe4f0', background: '#f9fafb', marginBottom: 16 }}>
-                <h3 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--erp-text, #132238)' }}>Photo Proof *</h3>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                  {(form.photo_urls || []).map((url, i) => (
-                    <div key={i} style={{ position: 'relative', width: 80, height: 80, borderRadius: 6, overflow: 'hidden', border: '1px solid #dbe4f0' }}>
-                      <img src={url} alt={`Proof ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      <button onClick={() => setForm(p => ({ ...p, photo_urls: p.photo_urls.filter((_, j) => j !== i) }))} style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 10, lineHeight: '18px', padding: 0 }}>X</button>
-                    </div>
-                  ))}
+              {/* Photo Proof — PRF only (CALF inherits OR photos from linked expense) */}
+              {form.doc_type === 'PRF' && (
+                <div style={{ padding: 12, borderRadius: 8, border: '1px solid #dbe4f0', background: '#f9fafb', marginBottom: 16 }}>
+                  <h3 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--erp-text, #132238)' }}>Photo Proof *</h3>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                    {(form.photo_urls || []).map((url, i) => (
+                      <div key={i} style={{ position: 'relative', width: 80, height: 80, borderRadius: 6, overflow: 'hidden', border: '1px solid #dbe4f0' }}>
+                        <img src={url} alt={`Proof ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <button onClick={() => setForm(p => ({ ...p, photo_urls: p.photo_urls.filter((_, j) => j !== i) }))} style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 10, lineHeight: '18px', padding: 0 }}>X</button>
+                      </div>
+                    ))}
+                  </div>
+                  <label style={{ padding: '6px 14px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'inline-block' }}>
+                    Upload Photo
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      e.target.value = '';
+                      try {
+                        const result = await processDocument(file, 'OR');
+                        setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), result.s3_url] }));
+                      } catch {
+                        setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), URL.createObjectURL(file)] }));
+                      }
+                    }} />
+                  </label>
+                  <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7280' }}>
+                    {(form.photo_urls || []).length} photo(s) attached {!(form.photo_urls || []).length && '— required for validation'}
+                  </span>
                 </div>
-                <label style={{ padding: '6px 14px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'inline-block' }}>
-                  Upload Photo
-                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    e.target.value = '';
-                    try {
-                      const docType = form.doc_type === 'PRF' ? 'OR' : 'OR';
-                      const result = await processDocument(file, docType);
-                      setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), result.s3_url] }));
-                    } catch {
-                      setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), URL.createObjectURL(file)] }));
-                    }
-                  }} />
-                </label>
-                <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7280' }}>
-                  {(form.photo_urls || []).length} photo(s) attached {!(form.photo_urls || []).length && '— required for validation'}
-                </span>
-              </div>
+              )}
+              {form.doc_type === 'CALF' && (form.photo_urls || []).length > 0 && (
+                <div style={{ padding: 12, borderRadius: 8, border: '1px solid #d1fae5', background: '#f0fdf4', marginBottom: 16, fontSize: 13 }}>
+                  <strong>OR photos inherited from linked expense</strong> — {form.photo_urls.length} photo(s)
+                </div>
+              )}
 
               <button onClick={handleSave} disabled={loading} style={{ padding: '8px 24px', borderRadius: 6, background: form.doc_type === 'PRF' ? '#7c3aed' : '#0891b2', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
                 {editingDoc ? 'Update' : 'Save as Draft'}

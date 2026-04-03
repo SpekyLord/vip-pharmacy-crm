@@ -6,7 +6,7 @@
  *   or:  <EntityBadge name="VIP" color="#F5C518" textColor="#1A1A1A" />
  */
 export default function EntityBadge({ entity, name, color, textColor, size = 'md' }) {
-  const displayName = name || entity?.entity_name || '—';
+  const displayName = name || entity?.short_name || entity?.entity_name || '—';
   const bgColor = color || entity?.brand_color || '#6B7280';
   const fgColor = textColor || entity?.brand_text_color || '#FFFFFF';
 

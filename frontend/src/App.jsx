@@ -61,6 +61,11 @@ const ErpReports = lazy(() => import('./erp/pages/ErpReports'));
 const TransferOrders = lazy(() => import('./erp/pages/TransferOrders'));
 const TransferReceipt = lazy(() => import('./erp/pages/TransferReceipt'));
 const TransferPriceManager = lazy(() => import('./erp/pages/TransferPriceManager'));
+const Income = lazy(() => import('./erp/pages/Income'));
+const Pnl = lazy(() => import('./erp/pages/Pnl'));
+const ProfitSharing = lazy(() => import('./erp/pages/ProfitSharing'));
+const MonthlyArchivePage = lazy(() => import('./erp/pages/MonthlyArchive'));
+const AuditLogs = lazy(() => import('./erp/pages/AuditLogs'));
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -421,6 +426,46 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <TransferPriceManager />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/income"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+                <Income />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/pnl"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+                <Pnl />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/profit-sharing"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+                <ProfitSharing />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/monthly-archive"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+                <MonthlyArchivePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/audit-logs"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'finance']}>
+                <AuditLogs />
               </ProtectedRoute>
             }
           />

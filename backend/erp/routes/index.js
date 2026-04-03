@@ -39,4 +39,10 @@ router.use('/ic-settlements', require('./icSettlementRoutes'));
 router.use('/territories', require('./territoryRoutes'));
 router.use('/expenses', require('./expenseRoutes'));
 
+// ═══ Phase 7 — Income, PNL & Year-End Close ═══
+router.use('/', require('./incomeRoutes'));
+
+// ═══ Phase 8 — Dashboard & Reports ═══
+router.use('/dashboard', require('./dashboardRoutes'));
+
 module.exports = router;

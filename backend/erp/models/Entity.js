@@ -6,6 +6,10 @@ const entitySchema = new mongoose.Schema({
     required: [true, 'Entity name is required'],
     trim: true
   },
+  short_name: {
+    type: String,
+    trim: true
+  },
   tin: {
     type: String,
     trim: true
