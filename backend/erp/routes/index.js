@@ -63,4 +63,7 @@ router.use('/coa', erpAccessCheck('accounting'), require('./coaRoutes'));
 router.use('/accounting', erpAccessCheck('accounting'), require('./accountingRoutes'));
 router.use('/month-end-close', erpAccessCheck('accounting'), require('./monthEndCloseRoutes'));
 
+// ═══ Phase 12 — Purchasing & AP ═══
+router.use('/purchasing', erpAccessCheck('purchasing'), require('./purchasingRoutes'));
+
 module.exports = router;

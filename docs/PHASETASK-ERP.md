@@ -2495,107 +2495,92 @@
 
 ---
 
-## PHASE 12 — PURCHASING & AP [v5 NEW]
+## PHASE 12 — PURCHASING & AP [v5 NEW] ✅ COMPLETE
+
 **Goal:** Vendor management, purchase orders, 3-way matching (PO → GRN → Supplier Invoice), AP ledger with aging, GRNI tracking, and AP payment recording.
 
 **Reference:** PRD v5 §15 (Purchasing & AP)
 
-### 12.1 — Vendor Master Model
-- [ ] Create `backend/erp/models/VendorMaster.js`:
-  - entity_id, vendor_code, vendor_name, tin, address
-  - contact_person, phone, email
-  - payment_terms (default 30), vat_status enum: VATABLE, EXEMPT, ZERO
-  - bank_account: { bank, account_no, account_name }
-  - is_active
-- [ ] Create seed script: `backend/erp/scripts/seedVendors.js` with sample vendors
-- [ ] Create `backend/erp/controllers/vendorController.js` — CRUD (Finance/Admin only)
-- [ ] Create `backend/erp/routes/vendorRoutes.js`
-- [ ] Add to ERP router
-- [ ] Commit: `"feat(erp): vendor master model [v5]"`
+### 12.1 — Vendor Master Model ✅ COMPLETE (built during Phase 2)
+- [x] Create `backend/erp/models/VendorMaster.js`: entity_id, vendor_code, vendor_name, tin, address, contact_person, phone, email, payment_terms_days, vat_status, bank_account, vendor_aliases, default_coa_code, default_expense_category, is_active
+- [x] Create seed script: `backend/erp/scripts/seedVendors.js` — 13 vendors (courier, fuel, tolls)
+- [x] Create `backend/erp/controllers/vendorController.js` — CRUD + search + alias + deactivate
+- [x] Create `backend/erp/routes/vendorRoutes.js`
+- [x] Add to ERP router (index.js line 20: `/vendors`)
 
-### 12.2 — Purchase Order Model
-- [ ] Create `backend/erp/models/PurchaseOrder.js`:
-  - entity_id, po_number (auto-increment), vendor_id (ref: VendorMaster)
-  - po_date, expected_delivery_date
+### 12.2 — Purchase Order Model ✅ COMPLETE
+- [x] Create `backend/erp/models/PurchaseOrder.js`:
+  - entity_id, bdm_id, po_number (String, auto via `generateDocNumber` format: `PO-{TERRITORY_CODE}{MMDDYY}-{NNN}`)
+  - vendor_id (ref: VendorMaster), po_date, expected_delivery_date
   - line_items array: [{ product_id, item_key, qty_ordered, unit_price, line_total, qty_received (default 0), qty_invoiced (default 0) }]
-  - total_amount, vat_amount, net_amount
+  - total_amount, vat_amount, net_amount (pre-save computed, 12/112 PH VAT)
   - status enum: DRAFT, APPROVED, PARTIALLY_RECEIVED, RECEIVED, CLOSED, CANCELLED
-  - approved_by, approved_at, created_by, created_at
-- [ ] Commit: `"feat(erp): purchase order model [v5]"`
+  - approved_by, approved_at, notes, created_by, created_at (immutable)
+  - Collection: `erp_purchase_orders`
 
-### 12.3 — Supplier Invoice Model & 3-Way Matching
-- [ ] Create `backend/erp/models/SupplierInvoice.js`:
-  - entity_id, vendor_id, invoice_ref, invoice_date, due_date
-  - po_id (ref: PurchaseOrder, optional for matching)
-  - line_items array: [{ product_id, item_key, qty_invoiced, unit_price, line_total, po_line_matched (Boolean), grn_line_matched (Boolean) }]
-  - total_amount, vat_amount, net_amount, input_vat
-  - match_status enum: UNMATCHED, PARTIAL_MATCH, FULL_MATCH, DISCREPANCY
-  - payment_status enum: UNPAID, PARTIAL, PAID
-  - status enum: DRAFT, VALIDATED, POSTED
-  - created_by, created_at
-- [ ] Create `backend/erp/services/threeWayMatch.js`:
-  - `matchInvoice(invoiceId)` — compare PO line → GRN line → Supplier Invoice line
-  - Check: qty match, price match (tolerance configurable)
-  - Return: { matched_lines[], discrepancy_lines[], unmatched_lines[] }
-  - Discrepancies require Finance approval before posting
-- [ ] Commit: `"feat(erp): supplier invoice model with 3-way matching engine [v5]"`
+### 12.3 — Supplier Invoice Model & 3-Way Matching ✅ COMPLETE
+- [x] Create `backend/erp/models/SupplierInvoice.js`:
+  - entity_id, vendor_id, vendor_name (denormalized), invoice_ref, invoice_date, due_date
+  - po_id (ref: PurchaseOrder, optional), po_number (denormalized), grn_id (ref: GrnEntry, optional)
+  - line_items array: [{ product_id, item_key, qty_invoiced, unit_price, line_total, po_line_matched, grn_line_matched }]
+  - total_amount, vat_amount, net_amount, input_vat (= vat_amount, for journalFromAP)
+  - match_status: UNMATCHED, PARTIAL_MATCH, FULL_MATCH, DISCREPANCY
+  - payment_status: UNPAID, PARTIAL, PAID | amount_paid
+  - status: DRAFT, VALIDATED, POSTED | event_id
+  - Collection: `erp_supplier_invoices`
+- [x] Create `backend/erp/services/threeWayMatch.js`:
+  - `matchInvoice(invoiceId, tolerancePct)` — compare PO → GRN → Invoice by product_id
+  - Qty match + price tolerance check (default 2%)
+  - Returns: { matched_lines[], discrepancy_lines[], unmatched_lines[], overall_status }
+  - Updates per-line po_line_matched/grn_line_matched flags + PO qty_invoiced
 
-### 12.4 — AP Ledger & Aging Service
-- [ ] Create `backend/erp/services/apService.js`:
-  - `getApLedger(entityId)` — all outstanding supplier invoices
-  - `getApAging(entityId)` — aging buckets: CURRENT, 1-30, 31-60, 61-90, 90+
-  - `getApConsolidated(entityId)` — grouped by vendor with totals
-  - `getGrni(entityId)` — goods received but not yet invoiced (GRN exists, no supplier invoice)
-- [ ] Commit: `"feat(erp): ap ledger, aging, and grni services [v5]"`
+### 12.4 — AP Ledger & Aging Service ✅ COMPLETE
+- [x] Create `backend/erp/services/apService.js`:
+  - `getApLedger(entityId)` — posted unpaid invoices with balance + days_outstanding
+  - `getApAging(entityId)` — aging buckets: CURRENT, 1-30, 31-60, 61-90, 90+ with vendor breakdown
+  - `getApConsolidated(entityId)` — aggregation grouped by vendor
+  - `getGrni(entityId)` — PO lines where qty_received > qty_invoiced with estimated value
 
-### 12.5 — AP Payment Recording
-- [ ] Create `backend/erp/services/apPaymentService.js`:
-  - `recordApPayment(supplierInvoiceId, paymentData)` — creates payment record + JE: DR: 2000 AP Trade, CR: 1010-1014 Cash/Bank
-  - `getPaymentHistory(vendorId)` — payment history per vendor
-- [ ] Commit: `"feat(erp): ap payment recording with journal posting [v5]"`
+### 12.5 — AP Payment Recording ✅ COMPLETE
+- [x] Create `backend/erp/models/ApPayment.js`:
+  - entity_id, supplier_invoice_id, vendor_id, payment_date, amount
+  - payment_mode (refs PaymentMode.mode_code), bank_account_id, funding_card_id
+  - check_no, check_date, reference, je_id, notes
+  - COA resolved at runtime via `resolveFundingCoa()` — no hardcoded COA codes
+  - Collection: `erp_ap_payments`
+- [x] Create `backend/erp/services/apPaymentService.js`:
+  - `recordApPayment(invoiceId, paymentData, entityId, userId)` — validates → creates ApPayment → resolves COA via resolveFundingCoa → builds JE (DR 2000 AP Trade, CR Cash/Bank) → createAndPostJournal → updates invoice amount_paid/payment_status
+  - `getPaymentHistory(entityId, vendorId)` — payment history with populated refs
 
-### 12.6 — Purchasing Controller & Routes
-- [ ] Create `backend/erp/controllers/purchasingController.js`:
-  - PO CRUD, PO approval, PO receipt (link to GRN)
-  - Supplier invoice CRUD, 3-way match trigger, posting
-  - AP ledger, aging, GRNI queries
-  - AP payment recording
-- [ ] Create `backend/erp/routes/purchasingRoutes.js`:
-  - POST `/vendors` — create vendor
-  - GET `/vendors` — list vendors
-  - PUT `/vendors/:id` — update vendor
-  - POST `/purchase-orders` — create PO
-  - GET `/purchase-orders` — list POs
-  - POST `/purchase-orders/:id/approve` — approve PO
-  - POST `/purchase-orders/:id/receive` — record receipt (links to GRN)
-  - POST `/supplier-invoices` — create supplier invoice
-  - POST `/supplier-invoices/:id/match` — trigger 3-way matching
-  - POST `/supplier-invoices/:id/post` — post invoice (creates AP + JE)
-  - GET `/ap-ledger` — AP outstanding
-  - GET `/ap-aging` — AP aging buckets
-  - GET `/grni` — goods received not invoiced
-  - POST `/ap-payments` — record payment
-- [ ] Add to ERP router
-- [ ] Commit: `"feat(erp): purchasing and ap routes [v5]"`
+### 12.6 — Purchasing Controller & Routes ✅ COMPLETE
+- [x] Create `backend/erp/controllers/purchasingController.js`:
+  - PO: createPO (with generateDocNumber), updatePO (DRAFT only), getPOs (paginated), getPOById, approvePO, cancelPO, receivePO
+  - Invoice: createInvoice (denormalizes vendor_name/po_number), updateInvoice (DRAFT only), getInvoices (paginated with multi-filter), getInvoiceById, validateInvoice (triggers 3-way match), postInvoice (journalFromAP + createAndPostJournal)
+  - AP: apLedger, apAging, apConsolidated, grni, recordPayment, paymentHistory
+- [x] Create `backend/erp/routes/purchasingRoutes.js`:
+  - Static routes first: GET `/ap/ledger`, `/ap/aging`, `/ap/consolidated`, `/ap/grni`, `/ap/payments`
+  - Invoice routes: GET/POST `/invoices`, GET/PUT `/invoices/:id`, POST `/invoices/:id/validate|post|pay`
+  - PO routes: GET/POST `/orders`, GET/PUT `/orders/:id`, POST `/orders/:id/approve|cancel|receive`
+  - Write ops gated by roleCheck('admin', 'finance', 'president')
+- [x] Add to ERP router: `router.use('/purchasing', erpAccessCheck('purchasing'), require('./purchasingRoutes'))`
 
-### 12.7 — Purchasing & AP Frontend Pages
-- [ ] Create `frontend/src/erp/pages/VendorList.jsx`:
-  - Vendor table with search, add/edit vendor form
-- [ ] Create `frontend/src/erp/pages/PurchaseOrders.jsx`:
-  - PO list with status filter
-  - Create PO form: vendor dropdown, line items grid, totals
-  - Approve/Receive actions
-- [ ] Create `frontend/src/erp/pages/SupplierInvoices.jsx`:
-  - Invoice list, create form with PO linking
-  - 3-way match result display (matched/discrepancy indicators)
-  - Post action
-- [ ] Create `frontend/src/erp/pages/AccountsPayable.jsx`:
-  - AP aging table with color-coded buckets
-  - GRNI list
-  - Payment recording form
-- [ ] Add routes to App.jsx: `/erp/vendors`, `/erp/purchase-orders`, `/erp/supplier-invoices`, `/erp/accounts-payable`
-- [ ] Add navbar items under Purchasing section
-- [ ] Commit: `"feat(ui): purchasing and ap pages (vendors, pos, invoices, ap aging) [v5]"`
+### 12.7 — Purchasing & AP Frontend Pages ✅ COMPLETE
+- [x] Create `frontend/src/erp/hooks/usePurchasing.js` — wraps useErpApi with PO, invoice, AP, vendor, product, bank, card endpoints
+- [x] Create `frontend/src/erp/pages/VendorList.jsx`:
+  - Vendor table with search, add/edit modal, deactivate
+- [x] Create `frontend/src/erp/pages/PurchaseOrders.jsx`:
+  - PO list with status filter, create/edit form with line items grid + totals
+  - Approve/Cancel/Receive actions with receive modal (per-line qty input)
+- [x] Create `frontend/src/erp/pages/SupplierInvoices.jsx`:
+  - Invoice list with status/match/payment filters
+  - Create form with vendor dropdown, PO linking, line items
+  - Validate (3-way match), Post (JE creation), Pay (payment modal with bank/card/check selection)
+- [x] Create `frontend/src/erp/pages/AccountsPayable.jsx`:
+  - 5-tab layout: AP Ledger | AP Aging | Consolidated | GRNI | Payment History
+  - Aging: color-coded bucket cards + vendor breakdown table
+  - GRNI: uninvoiced quantities with estimated values
+- [x] Add routes to App.jsx: `/erp/vendors`, `/erp/purchase-orders`, `/erp/supplier-invoices`, `/erp/accounts-payable` (requiredErpModule="purchasing")
+- [x] Add sidebar items under Purchasing section with Truck/ShoppingCart/FileInput/Wallet icons
 
 ---
 
@@ -2832,7 +2817,7 @@
 | 10.0 | ERP Access Control (NetSuite-style) [v5 NEW] | ~25 | 1 week |
 | 10.1-10.7 | People Master & Payroll [v5 NEW] | ~45 | 2-3 weeks |
 | 11 | VIP Accounting Engine [v5 NEW] | ~70 | 3-4 weeks |
-| 12 | Purchasing & AP [v5 NEW] | ~40 | 2-3 weeks |
+| 12 | Purchasing & AP [v5 NEW] ✅ | ~40 | 2-3 weeks |
 | 13 | Banking & Cash [v5 NEW] | ~30 | 1-2 weeks |
 | 14 | New Reports & Analytics [v5 NEW] | ~35 | 1-2 weeks |
 | 15+ | Future (SAP-equivalent improvements) | 8 | Post-launch |

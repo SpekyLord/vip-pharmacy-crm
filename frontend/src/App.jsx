@@ -86,6 +86,12 @@ const LoansPage = lazy(() => import('./erp/pages/Loans'));
 const OwnerEquity = lazy(() => import('./erp/pages/OwnerEquity'));
 const MonthEndClose = lazy(() => import('./erp/pages/MonthEndClose'));
 
+// Phase 12 — Purchasing & AP
+const VendorList = lazy(() => import('./erp/pages/VendorList'));
+const PurchaseOrders = lazy(() => import('./erp/pages/PurchaseOrders'));
+const SupplierInvoices = lazy(() => import('./erp/pages/SupplierInvoices'));
+const AccountsPayable = lazy(() => import('./erp/pages/AccountsPayable'));
+
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
   const location = useLocation();
@@ -551,6 +557,12 @@ function App() {
           <Route path="/erp/loans" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><LoansPage /></ProtectedRoute>} />
           <Route path="/erp/owner-equity" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><OwnerEquity /></ProtectedRoute>} />
           <Route path="/erp/month-end-close" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><MonthEndClose /></ProtectedRoute>} />
+
+          {/* Phase 12 — Purchasing & AP */}
+          <Route path="/erp/vendors" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="purchasing"><VendorList /></ProtectedRoute>} />
+          <Route path="/erp/purchase-orders" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="purchasing"><PurchaseOrders /></ProtectedRoute>} />
+          <Route path="/erp/supplier-invoices" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="purchasing"><SupplierInvoices /></ProtectedRoute>} />
+          <Route path="/erp/accounts-payable" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="purchasing"><AccountsPayable /></ProtectedRoute>} />
 
           <Route path="/employee/*" element={<EmployeeRedirect />} />
           <Route path="/employee" element={<Navigate to="/bdm" replace />} />

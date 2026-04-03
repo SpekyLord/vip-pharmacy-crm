@@ -7,6 +7,9 @@ const bankAccountSchema = new mongoose.Schema({
   account_no: { type: String, trim: true },
   account_type: { type: String, enum: ['SAVINGS', 'CHECKING', 'CURRENT'], default: 'SAVINGS' },
   coa_code: { type: String, trim: true },
+  opening_balance: { type: Number, default: 0 },
+  current_balance: { type: Number, default: 0 },
+  statement_import_format: { type: String, enum: ['CSV', 'OFX', 'MT940'], default: 'CSV' },
   is_active: { type: Boolean, default: true }
 }, { timestamps: true, collection: 'erp_bank_accounts' });
 

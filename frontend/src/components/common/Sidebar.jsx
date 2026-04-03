@@ -41,6 +41,9 @@ import {
   Receipt,
   Wallet,
   BookOpen,
+  ShoppingCart,
+  Truck,
+  FileInput,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -550,6 +553,12 @@ const getErpSection = (role, erpAccess) => {
     items.push({ path: '/erp/loans', label: 'Loans', icon: BookOpen });
     items.push({ path: '/erp/owner-equity', label: 'Owner Equity', icon: BookOpen });
     items.push({ path: '/erp/month-end-close', label: 'Month-End Close', icon: BookOpen });
+  }
+  if (hasModule('purchasing')) {
+    items.push({ path: '/erp/vendors', label: 'Vendors', icon: Truck });
+    items.push({ path: '/erp/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart });
+    items.push({ path: '/erp/supplier-invoices', label: 'Supplier Invoices', icon: FileInput });
+    items.push({ path: '/erp/accounts-payable', label: 'Accounts Payable', icon: Wallet });
   }
 
   // Only show section if at least ERP Home + 1 module
