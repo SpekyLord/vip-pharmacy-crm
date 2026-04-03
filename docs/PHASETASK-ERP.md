@@ -1234,57 +1234,118 @@
 
 > **Prerequisite note (Phase 4B):** TRANSFER_IN is now a valid stock source for BDMs in subsidiary entities (e.g., MG AND CO.). AR/Collection queries should treat IC-transferred stock the same as GRN stock — the CSI lifecycle is identical regardless of how stock was sourced. The entity_id on SalesLine distinguishes VIP vs MG invoices for reporting.
 
+> **Client clarifications (April 3, 2026):**
+> - **Commission rates** — admin-configurable dropdown via Settings, NOT hardcoded. Default: 0%, 0.5%, 1%, 2%, 3%, 4%, 5%. Admin can add/remove rates via Settings API.
+> - **Partner rebate rates** — admin-configurable dropdown via Settings, NOT hardcoded. Default: 1%, 2%, 3%, 5%, 20%, 25%. Admin can add/remove.
+> - **Partner tags from CRM** — dropdown from CRM Doctor model (VIP Clients). Both MDs and Non-MDs are CRM clients. Not all CSIs have partners — tagging is optional per CSI. Partner type (MD vs Non-MD) matters for future Profit Share Condition B (Phase 7).
+> - **Profit sharing** — Phase 5 captures data only (partner tags, commission, rebate). PS eligibility engine (Condition A/B/C streak, revenue computation) deferred to Phase 7.
+> - **P5 rule**: One CR = One Hospital (hard enforced)
+
 ### 5.1 — Collection Model & Services
-- [ ] Create `backend/erp/models/Collection.js` — full schema per PRD with DRAFT/VALID/ERROR/POSTED/DELETION_REQUESTED lifecycle fields
-- [ ] Create `backend/erp/services/cwtCalc.js` — CWT formula
-- [ ] Create `backend/erp/services/commissionCalc.js` — commission per CSI
-- [ ] Create `backend/erp/services/arEngine.js` — AR open, aging, collection rate
-- [ ] Create `backend/erp/services/soaGenerator.js` — SOA PDF/Excel export
-- [ ] Commit: `"feat(erp): collection model and financial services"`
+- [ ] Create `backend/erp/models/Collection.js`:
+  - entity_id, bdm_id, hospital_id (required — P5 one CR per hospital)
+  - cr_no, cr_date, cr_amount (the amount on the Collection Receipt)
+  - settled_csis subdoc array: sales_line_id (ref SalesLine), doc_ref, invoice_amount, source (SALES_LINE/OPENING_AR), commission_rate (from Settings dropdown), commission_amount (auto: net_of_vat × rate), partner_tags array (doctor_id ref CRM Doctor, doctor_name, rebate_pct from Settings dropdown, rebate_amount auto-computed)
+  - Totals (auto pre-save): total_csi_amount, total_net_of_vat, total_commission, total_partner_rebates
+  - CWT: cwt_rate, cwt_amount, cwt_na (Boolean N/A flag), cwt_certificate_url
+  - Payment: payment_mode (CHECK/CASH/ONLINE), check_no, check_date, bank, deposit_slip_url
+  - Hard gate URLs: cr_photo_url, csi_photo_urls[]
+  - Status lifecycle: DRAFT/VALID/ERROR/POSTED/DELETION_REQUESTED
+  - posted_at, posted_by, reopen_count, validation_errors[], event_id
+  - Indexes: entity+bdm+status, entity+hospital+date, settled_csis.sales_line_id
+  - Pre-save: auto-compute totals, commission amounts, CR formula validation (|cr_amount - (total_csi - cwt)| ≤ 1.00)
+  - Collection: `erp_collections`
+- [ ] Create `backend/erp/services/arEngine.js`:
+  - `getOpenCsis(entityId, bdmId, hospitalId)` — aggregation: POSTED SalesLines minus POSTED Collection settled amounts → returns CSIs with balance_due > 0
+  - `getArAging(entityId, bdmId, hospitalId)` — bucket open CSIs by days outstanding: CURRENT (0-30), 31-60, 61-90, 91-120, 120+
+  - `getCollectionRate(entityId, bdmId, dateRange)` — total_collections / total_sales × 100%, threshold 70%
+  - `getHospitalArBalance(hospitalId, entityId)` — simple sum for credit limit check
+  - AR is computed on-read, never stored on SalesLine
+- [ ] Create `backend/erp/services/cwtCalc.js` — `calculateCWT(totalCsiAmount, cwtRate, isNa)` formula
+- [ ] Create `backend/erp/services/commissionCalc.js` — `calculateCommission(netOfVat, commissionRate)`
+- [ ] Create `backend/erp/services/dunningService.js`:
+  - `computeDunningLevel(daysOutstanding)` — Level 0 green / Level 1 yellow (>30d) / Level 2 orange (>60d) / Level 3 red (>90d)
+  - `enrichArWithDunning(arData)` — adds dunning level to each AR item
+- [ ] Create `backend/erp/services/soaGenerator.js` — `generateSoaWorkbook(hospitalId, entityId, bdmId)` Excel per hospital using `xlsx`: invoices, collections, aging breakdown
+- [ ] Update `backend/erp/models/Settings.js` — add `COMMISSION_RATES` array (default: [0, 0.5, 1, 2, 3, 4, 5]) and `PARTNER_REBATE_RATES` array (default: [1, 2, 3, 5, 20, 25])
+- [ ] Update `backend/erp/scripts/seedSettings.js` — seed new rate arrays
 
 ### 5.2 — Collection Controller & Routes
-- [ ] Create `backend/erp/controllers/collectionController.js`
-- [ ] Create `backend/erp/routes/collectionRoutes.js`
-- [ ] Endpoints: GET open CSIs, POST collection session (draft), POST validate, POST submit, POST reopen, GET collections, GET AR open, GET AR aging, POST SOA
-- [ ] Hard gate validation: CR photo + CSI photos + CWT (or N/A) + deposit slip required
-- [ ] Follow the same Validate -> Submit -> Re-open lifecycle from PRD Section 5.5
-- [ ] Commit: `"feat(erp): collection routes with hard gate validation"`
+- [ ] Create `backend/erp/controllers/collectionController.js` — 14 endpoints:
+  - `createCollection` (POST /) — create DRAFT
+  - `updateCollection` (PUT /:id) — update DRAFT only
+  - `deleteDraftCollection` (DELETE /draft/:id) — delete DRAFT only
+  - `getCollections` (GET /) — list with filters (status, hospital, date range), pagination
+  - `getCollectionById` (GET /:id) — detail
+  - `getOpenCsis` (GET /open-csis?hospital_id=xxx) — unpaid CSIs from AR engine
+  - `validateCollections` (POST /validate) — hard gate: cr_photo + csi_photos + cwt_cert (or N/A) + deposit_slip + CR formula + no double-settlement
+  - `submitCollections` (POST /submit) — MongoDB transaction → TransactionEvent(CR), set POSTED
+  - `reopenCollections` (POST /reopen) — revert POSTED → DRAFT, increment reopen_count
+  - `getArAging` (GET /ar-aging) — AR aging with dunning levels
+  - `getCollectionRate` (GET /collection-rate) — collection efficiency metric
+  - `generateSoa` (POST /soa) — Excel SOA download
+  - `requestDeletion` (POST /:id/request-deletion)
+  - `approveDeletion` (POST /:id/approve-deletion) — roleCheck admin/finance
+- [ ] Create `backend/erp/routes/collectionRoutes.js` — all routes with protect, static before parameterized
+- [ ] Mount in `backend/erp/routes/index.js`: `router.use('/collections', require('./collectionRoutes'))`
 
 ### 5.2b — OCR-to-AR CSI Auto-Population
-**Goal:** When a Collection Receipt (CR) is scanned via OCR, the hospital name detected by OCR is used to auto-fetch open/unpaid CSIs from Accounts Receivable for that hospital. The BDM sees a checklist of outstanding CSIs to settle instead of manually typing CSI numbers.
+**Goal:** When a CR is scanned via OCR, auto-fetch open CSIs for the matched hospital.
 
-- [ ] Add endpoint: GET `/api/erp/collections/open-csis?hospital_id=xxx` — returns unpaid CSIs for a hospital (from AR engine)
-- [ ] In CR OCR flow:
-  - After OCR extracts `hospital` field → auto-lookup hospital in Hospital collection (fuzzy match)
-  - If hospital matched → fetch open CSIs from AR for that hospital
-  - Display CSI list as checkboxes with invoice_no + amount + age (days overdue)
-  - BDM ticks which CSIs are being settled in this CR
-  - OCR-extracted `settled_csis` from the CR photo are pre-checked if they match AR records
-- [ ] Validation: total of selected CSI amounts should match CR total amount (warn if mismatch)
-- [ ] Commit: `"feat(erp): ocr cr auto-populates open csis from ar by hospital"`
+- [ ] `getOpenCsis` endpoint (from 5.2) returns unpaid CSIs for a hospital
+- [ ] In CollectionSession.jsx CR OCR flow:
+  - After OCR extracts `hospital` → fuzzy match → fetch open CSIs for that hospital
+  - Display CSI checklist with invoice_no + amount + age (days overdue)
+  - BDM ticks which CSIs are being settled
+  - OCR-extracted `settled_csis` from CR photo are pre-checked if they match AR records
+  - Validation: total selected CSI amounts should match CR total amount (warn if mismatch)
 
-### 5.3 — Credit Limit Management (SAP SD Credit Management)
-- [ ] Add `credit_limit` and `credit_limit_action` fields to Hospital schema
-- [ ] In sales validateSales: check hospital AR + new invoice vs credit_limit
-  - WARN action: validation passes with WARNING severity (orange indicator)
-  - BLOCK action: validation fails with ERROR severity (red, blocks submit)
-- [ ] Admin/Finance UI to set credit limits per hospital
-- [ ] Commit: `"feat(erp): credit limit management per hospital"`
+### 5.3 — Credit Limit Enforcement (SAP SD Credit Management)
+- [ ] Hospital model already has `credit_limit` and `credit_limit_action` fields (added in Phase 2)
+- [ ] In `salesController.js` `validateSales`: add credit limit check block
+  - Query hospital AR balance via `arEngine.getHospitalArBalance()`
+  - If projectedAR (currentAR + invoice_total) > credit_limit:
+    - BLOCK mode: add ERROR, prevent submit
+    - WARN mode: add WARNING (orange), allow submit
+- [ ] Credit limit values are set by admin via existing Hospital CRUD (no new UI needed)
 
 ### 5.4 — Dunning / Collection Follow-Up (SAP FI-AR Dunning)
-- [ ] Create `backend/erp/services/dunningService.js`:
-  - Level 1 (>30 days): yellow indicator on AR aging
-  - Level 2 (>60 days): orange indicator + flag
-  - Level 3 (>90 days): red indicator + auto-generate SOA
-- [ ] Add dunning level to AR aging endpoint response
-- [ ] Display dunning indicators on AccountsReceivable.jsx
-- [ ] Commit: `"feat(erp): dunning levels for overdue collections"`
+- [ ] Dunning levels computed on-read by `dunningService.js` (not stored)
+- [ ] AR aging endpoint enriched with dunning indicators
+- [ ] Level 1 (>30d): yellow "FOLLOW UP" badge
+- [ ] Level 2 (>60d): orange "WARNING" badge
+- [ ] Level 3 (>90d): red "CRITICAL" badge
+- [ ] AccountsReceivable.jsx displays dunning badges per hospital row
 
-### 5.5 — Collection & AR Pages
-- [ ] Create `frontend/src/erp/pages/CollectionSession.jsx` — multi-step wizard
-- [ ] Create `frontend/src/erp/pages/AccountsReceivable.jsx` — AR aging table
-- [ ] Create `frontend/src/erp/pages/SoaGenerator.jsx` — select hospital, preview, export
-- [ ] Commit: `"feat(ui): collection wizard, ar aging, and soa pages"`
+### 5.5 — Collection & AR Frontend Pages
+- [ ] Create `frontend/src/erp/hooks/useCollections.js` — wraps all collection API endpoints
+- [ ] Create `frontend/src/erp/pages/CollectionSession.jsx` — Hospital-First wizard:
+  - Step 1: Select hospital → show hospital cwt_rate, payment_terms
+  - Step 2: Open CSIs checklist → per-CSI commission rate dropdown (from Settings) + optional partner tags (CRM Doctor dropdown + rebate % dropdown from Settings)
+  - Step 3: CR details (cr_no, cr_date, cr_amount, payment_mode, CWT)
+  - Step 4: Attach documents (CR photo, CSI photos, CWT cert/N/A, deposit slip)
+  - Step 5: Review + Save/Validate/Submit
+  - Scan CR button (crParser OCR pre-fills CR fields)
+  - Scan 2307 button (cwtParser OCR pre-fills CWT fields)
+- [ ] Replace `frontend/src/erp/pages/Collections.jsx` placeholder → real list page:
+  - Filters: status, hospital, date range
+  - Table: CR#, Hospital, CR Date, CR Amount, CWT, Status, Actions
+  - Detail modal with settled CSIs, documents, commission/rebate breakdown
+  - Submit/Reopen action buttons
+- [ ] Create `frontend/src/erp/pages/AccountsReceivable.jsx`:
+  - Summary cards: Total AR, Collection Rate (70% threshold), Avg Days Outstanding
+  - AR aging table: per-hospital rows with aging bucket columns (color-coded)
+  - Dunning badges per hospital (worst CSI level)
+  - Click row to expand → individual CSI detail
+  - "Generate SOA" button per hospital row
+- [ ] Create `frontend/src/erp/pages/SoaGenerator.jsx`:
+  - Hospital selector, date range filter
+  - AR summary preview for selected hospital
+  - "Generate SOA" button → Excel download
+  - Bulk mode: "Generate All" for hospitals with AR > 0
+- [ ] Update `frontend/src/App.jsx`:
+  - Add lazy routes: `/erp/collections/session`, `/erp/collections/ar`, `/erp/collections/soa`
+  - Roles: employee, admin, finance
 
 ---
 
