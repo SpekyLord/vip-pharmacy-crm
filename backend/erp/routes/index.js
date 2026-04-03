@@ -35,7 +35,8 @@ router.use('/collections', require('./collectionRoutes'));
 // ═══ Phase 5.6 — IC Settlements (VIP collects from subsidiaries) ═══
 router.use('/ic-settlements', require('./icSettlementRoutes'));
 
-// ═══ Phase 6 — Expenses (SMER, Car Logbook, ORE/ACCESS, PRF/CALF) ═══
+// ═══ Phase 6 — Territories & Expenses ═══
+router.use('/territories', require('./territoryRoutes'));
 router.use('/expenses', require('./expenseRoutes'));
 
 module.exports = router;

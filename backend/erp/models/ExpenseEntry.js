@@ -77,9 +77,11 @@ expenseEntrySchema.pre('save', function (next) {
     }
     line.net_of_vat = Math.round(((line.amount || 0) - (line.vat_amount || 0)) * 100) / 100;
 
-    // CALF flag: ACCESS with non-cash payment requires CALF
+    // CALF flag: ACCESS with non-cash payment requires CALF. ORE and cash ACCESS are always exempt.
     if (line.expense_type === 'ACCESS' && line.payment_mode !== 'CASH') {
       line.calf_required = true;
+    } else {
+      line.calf_required = false;
     }
 
     if (line.expense_type === 'ORE') {

@@ -1444,10 +1444,41 @@
 
 ---
 
-## PHASE 6 — EXPENSES ✅ COMPLETE
+## PHASE 6 — EXPENSES ✅ COMPLETE — 🟢 ACTIVE
 **Goal:** SMER, Car Logbook, ORE, ACCESS, and PRF/CALF with SAP-style draft -> validate -> post lifecycle.
 
-> **Status (April 2026):** All 4 tasks complete (6.1–6.4). 14 new files + 2 modified. Backend: 4 models (SmerEntry, CarLogbookEntry, ExpenseEntry, PrfCalf), 3 services (perdiemCalc, fuelTracker, expenseSummary), 1 controller (30+ endpoints), 1 route file. Frontend: 1 hook (useExpenses), 4 pages (Smer, CarLogbook, Expenses, PrfCalf). Build: 0 errors.
+> **Status (April 2026): 🟢 ACTIVE** — All 8 tasks complete (6.1–6.8). 22 new files + 5 modified. Live tested with Jake Montero (MG AND CO.), Gregg (President), and Angeline Marie Vios (BALAI LAWAAN President). CRM→SMER bridge verified with real visit data. Territory-based document numbering system operational. CALF/PRF auto-population from collections and expenses working. Build: 0 errors.
+>
+> **Backend test (April 3, 2026): 20 passed, 0 failed.** Full lifecycle verified:
+> - SMER: create → validate → submit (POSTED) → reopen ✅
+> - Car Logbook: create → validate → fuel efficiency auto-compute ✅
+> - ORE/ACCESS: create → CALF flags auto-set → VAT 12/112 → OR proof gate → president CALF override ✅
+> - PRF (PARTNER_REBATE): create → auto-number (PRF-BLW040326-xxx) → partner bank required ✅
+> - PRF (PERSONAL_REIMBURSEMENT): create → auto-number → no bank required → OR photo required ✅
+> - CALF: create → auto-number (CALF-BLW040326-xxx) → balance auto-computed → linked expense back-link ✅
+> - All test data cleaned up after verification.
+>
+> **Bug fixes applied (April 3, 2026 — post-testing review):**
+> - **OR proof validation gate (CRITICAL):** `validateExpenses()` was missing OR photo/number check — CASH ORE/ACCESS transactions could validate and post without any receipt proof. **Fixed:** Added hard gate requiring `or_photo_url` OR `or_number` on every expense line (PRD v5 §8.3). `ExpenseComponent.or_required: true` now enforced.
+> - **Photo persistence — blob URL → S3 URL:** ScanORModal was storing `URL.createObjectURL()` blob URLs instead of S3 URLs returned by backend OCR endpoint (`ocrData.s3_url`). Blob URLs are lost on page refresh. **Fixed:** `handleApply` now uses `ocrData.s3_url || preview`. Direct "Upload OR" button also uploads to S3 via processDocument.
+> - **PrfCalf.jsx missing photo upload UI (CRITICAL):** Backend `validatePrfCalf` requires `photo_urls` (line 668) but frontend had NO photo upload input. All PRF/CALF documents would fail validation with "Photo proof is required". **Fixed:** Added photo upload section with S3 upload, thumbnail preview, and remove button. Both PRF and CALF now have photo proof capability.
+> - **Direct "Upload OR" button added:** Expenses.jsx now has both "Scan OR" (OCR-assisted) and "Upload OR" (direct photo upload without OCR) buttons per expense line. Green "OR Photo ✓" badge when photo attached.
+> - **OR photo routing fix — scan ONCE on expense, CALF inherits:** OR photo belongs on the ACCESS expense line (the transaction proof). When CALF is created from a pending ACCESS card, it auto-inherits `or_photo_url` from linked expense lines into `photo_urls` — no double-scan needed. Backend `createPrfCalf` collects OR photos from linked lines. `validatePrfCalf` checks linked expense OR photos as fallback when CALF has no direct photos. Frontend `handleCreateFromCalfLines` passes linked OR photos into form.
+>
+> **Correct OR photo routing (April 3, 2026):**
+> ```
+> ACCESS Expense Line → Scan OR / Upload OR → or_photo_url stored on expense line
+>   ↓ (create CALF from pending card)
+> CALF → photo_urls auto-inherited from linked expense OR photos
+>   ↓ (validate)
+> CALF validation → checks own photo_urls OR linked expense OR photos
+> ```
+> **Rule:** Scan/upload OR **once** on the expense line. CALF gets it automatically. PRF still needs its own photo upload (different document — partner payment proof).
+>
+> **Verified concerns (April 3, 2026):**
+> - **CALF auto-number on pending card click:** By design — CALF Number field is readOnly with "Auto-generated on save" placeholder. Backend `PrfCalf.js` pre-save hook calls `docNumbering.generateDocNumber()` on `.save()`. Number appears after save, not on form load. Pre-fetching would waste sequence numbers if user cancels.
+> - **CALF payment_mode from ACCESS line:** Working correctly — `PrfCalf.jsx:87` reads `item.lines[0]?.payment_mode || 'CARD'` from the pending card data. If ACCESS line was CARD, CALF form opens with CARD. Default fallback is CARD, not CASH. If CASH appeared, check the ACCESS line's saved payment_mode.
+> - **ACCESS→CALF gate:** Working correctly — the ERROR when saving ACCESS expense without CALF is **correct behavior**. The validation gate in `expenseController.js` checks `calf_required && !calf_id` and blocks unless President override. BDM must create CALF first, then the back-link auto-updates the expense line's `calf_id`.
 >
 > **Architecture decisions:**
 > - All transactional documents follow DRAFT → VALID → ERROR → POSTED lifecycle (PRD Section 5.5)
@@ -1532,11 +1563,15 @@
 | Task | Description | Status |
 |------|-------------|--------|
 | 6.1 | Expense Models (SmerEntry, CarLogbookEntry, ExpenseEntry, PrfCalf) | ✅ Complete |
-| 6.2 | Expense Services (perdiemCalc, fuelTracker, expenseSummary) | ✅ Complete (tested) |
-| 6.3 | Expense Controller & Routes (30+ endpoints, MongoDB transactions) | ✅ Complete |
+| 6.2 | Expense Services (perdiemCalc, fuelTracker, expenseSummary, smerCrmBridge, docNumbering) | ✅ Complete (tested) |
+| 6.3 | Expense Controller & Routes (40+ endpoints, MongoDB transactions) | ✅ Complete |
 | 6.4 | Expense Pages (Smer, CarLogbook, Expenses, PrfCalf) + hooks | ✅ Complete (build verified) |
+| 6.5 | Territory-Based Document Numbering (Territory, DocSequence, docNumbering) | ✅ Complete |
+| 6.6 | CALF/PRF Fixes (5 issues from live testing) | ✅ Complete |
+| 6.7 | PRF/CALF Auto-Population (pending rebates + pending CALF cards) | ✅ Complete |
+| 6.8 | Frontend UX Fixes (scrolling, activity type, dates, error display) | ✅ Complete |
 
-**New files created:** 15 | **Models:** 4 | **Services:** 4 (incl. smerCrmBridge) | **Controllers:** 1 (36 endpoints incl. CRM bridge + override) | **Routes:** 1 (36 routes) | **Hooks:** 1 | **Pages:** 4 (1 replaced placeholder) | **Modified files:** 2 (App.jsx routes, ERP router index)
+**New files:** 22 | **Models:** 6 (SmerEntry, CarLogbookEntry, ExpenseEntry, PrfCalf, Territory, DocSequence) | **Services:** 5 (perdiemCalc, fuelTracker, expenseSummary, smerCrmBridge, docNumbering) | **Controllers:** 2 (expenseController 40+ endpoints, territoryController) | **Routes:** 2 (expenseRoutes 39 routes, territoryRoutes) | **Hooks:** 1 (useExpenses) | **Pages:** 4 | **Scripts:** 1 (seedTerritories) | **Docs:** 1 (TERRITORY_REGISTRY.csv) | **Modified:** 5 (App.jsx, ERP router, CarLogbookEntry, ExpenseEntry, PrfCalf)
 
 **Expense eligibility scalability plan (April 3, 2026 — client direction):**
 > **Current state:** All employees are SMER eligible. `md_count` field in SMER is generic — it counts "engagements" not just MD visits:
@@ -1564,6 +1599,113 @@
 >
 > Until Phase 10, all employees use the same Settings-level thresholds and manual entry is the primary input method. CRM pull is an optimization for field BDMs only.
 
+**Phase 6 gaps identified (April 3, 2026 — client review):**
+
+> ~~**Gap 1 — PRF scope too narrow (partner rebates only, no personal reimbursement):**~~ **RESOLVED (April 3, 2026):**
+> Added `prf_type` enum to PrfCalf model: `PARTNER_REBATE` | `PERSONAL_REIMBURSEMENT`
+> - **PARTNER_REBATE** (default): partner bank details required, linked to collection, BIR_FLAG=INTERNAL. Bank details auto-fill from last known PRF for same partner (via `last_bank` in `getPendingPartnerRebates` response).
+> - **PERSONAL_REIMBURSEMENT**: BDM/employee paid with own money, needs OR photo proof. `payee_type: 'EMPLOYEE'`, payee_name auto-filled from logged-in user. No partner bank details required — Finance uses employee's bank account (Phase 10 PeopleMaster).
+> - Frontend: PRF form shows type toggle (Partner Rebate / Personal Reimbursement). Partner rebate shows purple bank details section. Personal reimbursement shows orange section with simplified form.
+> - Backend: `validatePrfCalf` conditionally validates — partner bank details required only for PARTNER_REBATE; OR photo required for PERSONAL_REIMBURSEMENT.
+> - SAP equivalent: Employee Expense Report with reimbursement flag → AP → Payment
+> - NetSuite equivalent: Expense Report line with "Personal" funding source → AP journal → bank payment
+>
+> **Gap 2 — Payment method not linked to specific account (accounting engine can't auto-journal):**
+> Currently `payment_mode` on expense lines is just a string ("GCASH", "CARD", "CASH"). The accounting engine (Phase 11) needs to know **which specific account** was debited to generate the correct journal entry (DR: Expense, CR: **which bank/card?**).
+>
+> **What exists:**
+> - `BankAccount` model: has `coa_code` ✅ — but expense lines don't reference it
+> - `PaymentMode` model: has `mode_type` — but **missing `coa_code`** ❌
+> - `CreditCard` model: **never built** ❌ — PRD line 350 specifies `card_code, card_name, coa_code` but no model exists
+>
+> **Fix (implement before Phase 11):**
+> 1. Add `coa_code` to PaymentMode model (so CASH → 1010, GCASH → 1015, etc.)
+> 2. Create `CreditCard` model (covers all company-issued cards):
+>    - entity_id, card_code, card_name, card_holder, bank, card_type enum (CREDIT_CARD, FLEET_CARD, DEBIT_CARD)
+>    - card_brand enum (VISA, MASTERCARD, JCB, AMEX, FLEET — Shell fleet card = FLEET type)
+>    - last_four (String), coa_code (→ 2301 BPI CC Payable, 2302 Shell Fleet Payable, etc.)
+>    - credit_limit, statement_cycle_day, is_active
+>    - **assigned_to** (ref: User) — which BDM/employee holds this card
+>    - assigned_at, assigned_by (audit trail for card assignments)
+>    - Notes: Shell Fleet Card is a FLEET_CARD type with its own COA. When BDM leaves, card is reassigned (not deleted).
+>    - Collection: `erp_credit_cards`
+> 3. **BDM financial instrument assignment (client direction April 3, 2026):**
+>    - Credit cards (BPI, BDO, etc.) → CreditCard model, `assigned_to: bdm_user_id`
+>    - Shell Fleet Card → CreditCard model with `card_type: FLEET_CARD`, `card_brand: FLEET`
+>    - Income Savings Account (salary deposit) → PeopleMaster `bank_account` field (Phase 10.1, already planned)
+>    - CompProfile stays pure compensation rates — no financial instruments
+>    - This separation means: Finance sees all cards company-wide, BDM expense form shows only their assigned cards in dropdown, accounting engine knows exact COA
+> 4. Add `funding_account_id` to expense lines (refs BankAccount or CreditCard) — so the journal knows CR: RCBC Savings (1010) vs CR: BPI CC (2301) vs CR: Shell Fleet (2302)
+> 5. Expense form: when payment_mode = CARD → show assigned credit card dropdown; when FLEET_CARD → show assigned fleet card; when BANK_TRANSFER → show bank account dropdown; when GCASH → auto-map to GCash COA
+> 6. Phase 11 auto-journal uses `funding_account_id.coa_code` for the CR side
+> 7. BDM profile view (Phase 10): shows all assigned cards + salary account in one panel for easy monitoring
+>
+> ~~**Gap 3 — OCR not wired to expense forms**~~ **RESOLVED (April 3, 2026):**
+> OCR scan buttons added to all expense forms during Phase 6 testing — no longer deferred to Phase 9.1:
+> - ✅ **Expenses (ORE/ACCESS):** `ScanORModal` — camera → `OR` parser → pre-fills establishment, amount, or_number, date + expense classification from `classifyExpense()`. Green "Scan OR" button per expense line.
+> - ✅ **Car Logbook:** `ScanModal` (generic) — two instances:
+>   - "Scan Start" / "Scan End" buttons → `ODOMETER` parser → pre-fills starting_km or ending_km
+>   - "Scan Gas Receipt" button → `GAS_RECEIPT` parser → pre-fills station, fuel_type, liters, price_per_liter, total → adds as new fuel entry
+> - Same pattern as SalesEntry `ScanCSIModal`, DrEntry `ScanDRModal`, GrnEntry `ScanUndertakingModal`
+> - **Remaining for Phase 9.1b:** Photo persistence to S3 via DocumentAttachment (photos currently shown as preview but not saved as permanent records)
+
+### 6.5 — Territory-Based Document Numbering System ✅
+**Goal:** All ERP documents use territory codes in numbering: `{PREFIX}-{TERRITORY_CODE}{MMDDYY}-{SEQ}` (e.g., `CALF-ILO040326-001`). Finance can pinpoint territory + BDM from any document number. Territory codes admin-managed (not hardcoded).
+
+> **Client direction (April 3, 2026):** "We use Territory code + MMDDYY + sequence. ILO040326-001 format." Territory codes will also be used in future transfers, POs, and all transactional documents.
+
+- [x] Create `backend/erp/models/Territory.js` — entity_id, territory_code (unique 2-5 chars, uppercase), territory_name, region, assigned_bdms (array of User refs), is_active. Static: `getCodeForBdm(bdmId)`. Collection: `erp_territories`
+- [x] Create `backend/erp/models/DocSequence.js` — atomic counter for document numbering. key (unique, e.g., "CALF-ILO-040326"), current_seq. Static: `getNext(key)` uses `findOneAndUpdate` with `$inc` (collision-safe). Collection: `erp_doc_sequences`
+- [x] Create `backend/erp/services/docNumbering.js` — `generateDocNumber({ prefix, bdmId, date })` → resolves territory via `Territory.getCodeForBdm()` → `DocSequence.getNext()` → returns e.g., `CALF-ILO040326-001`. Reusable by all modules (CALF, PRF, future PO, IC transfers).
+- [x] Create `backend/erp/controllers/territoryController.js` — CRUD + `getForBdm` endpoint
+- [x] Create `backend/erp/routes/territoryRoutes.js` — `/api/erp/territories`. Admin/finance/president for writes.
+- [x] Create `backend/erp/scripts/seedTerritories.js` — seeds ILO territory with all BDMs assigned
+- [x] Mount in `backend/erp/routes/index.js`: `router.use('/territories', require('./territoryRoutes'))`
+- [x] PrfCalf.js pre-save: auto-generates `calf_number` and `prf_number` via `docNumbering.generateDocNumber()`
+
+> **Territory Registry (April 3, 2026):** See `docs/TERRITORY_REGISTRY.csv` for full BDM→territory mapping.
+>
+> | Code | Territory Name | Entity | Assigned To | Type |
+> |------|---------------|--------|-------------|------|
+> | DIG | VIP Davao | VIP | Menivie Daniela | Field BDM |
+> | BAC | VIP Bacolod | VIP | Mae Navarro | Field BDM |
+> | GSC | VIP Gensan | VIP | Cristina Salila | Field BDM |
+> | OZA | VIP Ozamiz | VIP | Roman Mabanag | Field BDM |
+> | PAN | VIP Panay | VIP | Romela Shen Herrera | Field BDM |
+> | DUM | VIP Dumaguete | VIP | Edcel Mae Arespacochaga | Field BDM |
+> | ILO1 | eBDM 1 Iloilo | VIP | Jay Ann Protacio | eBDM (no vehicle) |
+> | ILO2 | eBDM 2 Iloilo | VIP | Jenny Rose Jacosalem | eBDM (motorcycle) |
+> | ACC | Shared Services | VIP | Judy Mae Patrocinio | Office |
+> | MGO | MG and CO. Iloilo | MG AND CO. | Jake Montero | Field BDM (subsidiary) |
+> | ADM | Admin | VIP | Gregg Louie Vios | President |
+> | BLW | Balai Lawaan | BALAI LAWAAN | Angeline Marie Vios | Corporate Secretary |
+>
+> **CALF override users:** Gregg (President — override any gate), Angeline (Corporate Secretary — uses expenses + VAT, no CALF required). Per-person `calf_override` flag to be added to CompProfile in Phase 10.
+
+### 6.6 — CALF/PRF Fixes (from live testing April 3, 2026) ✅
+**Goal:** Fix 5 issues found during live testing with Jake Montero's account.
+
+- [x] **Fix 1 — CALF/PRF auto-numbering:** PrfCalf pre-save calls `docNumbering.generateDocNumber()`. Format: `CALF-ILO040326-001`, `PRF-DIG040326-002`. Uses territory code from BDM assignment + atomic sequence counter.
+- [x] **Fix 2 — CALF back-link to expense lines (core bug):** `createPrfCalf` now auto-updates linked expense/logbook lines' `calf_id` when CALF is created from pending card. Previously: CALF stored forward link (CALF→Expense) but validation checked back-link (Expense→CALF), so validation always failed even after CALF was created.
+- [x] **Fix 3 — Car Logbook fuel CALF gate:** Added `calf_id` to fuelEntrySchema. Pre-save auto-sets `calf_required=true` for non-cash fuel (SHELL_FLEET_CARD, CARD, GCASH). `validateCarLogbook` now checks fuel entries for CALF linkage (President override). Previously fuel posted without any CALF check.
+- [x] **Fix 4 — ORE/CASH exemption hardened:** ExpenseEntry pre-save now explicitly sets `calf_required = false` for ORE lines and cash ACCESS. Defensive reset prevents frontend bugs from setting calf_required on exempt lines.
+- [x] **Fix 5 — getPendingCalfLines fuel filter:** Fuel entries now filtered by individual `calf_id` (not just document-level). Pending CALF cards show both ACCESS expense lines AND non-cash fuel entries from Car Logbook.
+
+### 6.7 — PRF/CALF Auto-Population from Collections & Expenses ✅
+- [x] `GET /expenses/prf-calf/pending-rebates` — aggregates unpaid partner rebates from POSTED Collections, subtracts POSTED PRFs → returns partners with remaining balance. Frontend shows purple cards on PRF/CALF page → click to auto-fill PRF form.
+- [x] `GET /expenses/prf-calf/pending-calf` — returns company-funded items needing CALF: ACCESS expense lines (non-cash) + Car Logbook fuel entries (SHELL_FLEET_CARD, CARD, GCASH). Frontend shows teal cards with ACCESS/FUEL badges → click to auto-fill CALF form.
+
+### 6.8 — Frontend UX Fixes (from live testing) ✅
+- [x] **Scrolling:** All 4 expense pages use `className="admin-main"` (was inline `style={{ flex: 1 }}`). Matches existing CRM layout with `overflow-y: auto`.
+- [x] **SMER Activity column:** Replaced hospital dropdown with Activity type (Office/Field/Other) + Notes text field. Model: added `activity_type` enum. Validation: checks `activity_type` instead of `hospital_covered`.
+- [x] **SMER date format:** Fixed timezone bug — `formatLocalDate()` replaces `toISOString()` (was shifting dates -1 day in +08:00 Manila timezone). Display: MM/DD format in grid.
+- [x] **SMER MDs/Engagements label:** Column header "MDs/Eng." — covers MD visits, pharmacist visits, owner meetings.
+- [x] **SMER summary cards:** Moved above grid (was at bottom, not scrollable).
+- [x] **CRM pull button:** Only shows for field BDMs (role=employee). Green info box: "BDMs: Click Pull from CRM to auto-fill MDs/Engagements."
+- [x] **Error display:** SMER + Expenses list tables show validation errors as red rows below ERROR entries (using React.Fragment pattern).
+- [x] **Action feedback:** Car Logbook + Expenses pages show green/red message banner for validate/submit/delete actions (auto-dismiss 5s).
+- [x] **Save error handling:** SMER save shows specific error (e.g., "SMER already exists — use Edit") instead of silent failure.
+
 **COA / Journal Entry notes for Phase 11:**
 > When Phase 11 (VIP Accounting Engine) is built, the following auto-journals should be created from expense documents:
 > - **SMER POSTED:** DR: 6100 Per Diem Expense + 6150 Transport, CR: 1110 AR BDM Advances
@@ -1573,6 +1715,7 @@
 > - **PRF POSTED (partner rebate):** DR: 5200 Partner Rebate / Partners' Insurance, CR: Cash/Bank (payment to partner)
 > - **CALF POSTED (liquidation):** DR: 1110 AR BDM Advances (clearing), CR: Cash/Bank (advance return) or DR: 6XXX (shortfall reimbursement)
 > The `source_module: 'EXPENSE'` enum is already included in the JournalEntry model spec (Phase 11.2). Each expense model stores `event_id` linking to TransactionEvent for document flow tracing (Phase 9.3).
+
 
 ---
 
@@ -1669,12 +1812,15 @@
 ## PHASE 9 — INTEGRATION, DOCUMENT FLOW & POLISH
 **Goal:** Wire up OCR to ERP forms, CRM data flows, document flow tracing, Excel migration, and end-to-end testing.
 
-### 9.1 — OCR → ERP Form Connections
-- [ ] Sales entry: "Scan CSI" → OCR → pre-fill sales form
-- [ ] Collection session: "Scan CR" + "Scan 2307" + "Scan Deposit" → OCR → pre-fill
-- [ ] Car Logbook: "Scan Odometer" + "Scan Gas Receipt" → OCR → pre-fill
-- [ ] GRN: "Scan Undertaking" → OCR → pre-fill
-- [ ] Commit: `"feat(integration): connect ocr to all erp forms"`
+### 9.1 — OCR → ERP Form Connections ✅ COMPLETE (built during module phases)
+> **Status:** All OCR→form connections were built during their respective module phases, not deferred to Phase 9. The commit will be included in whatever batch covers this documentation update.
+
+- [x] Sales entry: "Scan CSI" → OCR → pre-fill sales form — ScanCSIModal in SalesEntry.jsx (Phase 3, commit `95562d9`)
+- [x] Collection session: "Scan CR" + "Scan 2307" → OCR → pre-fill — CollectionSession.jsx (Phase 5, commit `fe33072`)
+- [x] Car Logbook: "Scan Odometer" + "Scan Gas Receipt" → OCR → pre-fill — ScanModal in CarLogbook.jsx (Phase 6)
+- [x] GRN: "Scan Undertaking" → OCR → pre-fill — ScanUndertakingModal in GrnEntry.jsx (Phase 4)
+- [x] Expenses (ORE/ACCESS): "Scan OR" + "Upload OR" → OCR → pre-fill — ScanORModal + direct upload in Expenses.jsx (Phase 6). OR photo/number now **required for validation** (hard gate).
+- [ ] Commit: `"feat(integration): connect ocr to all erp forms"` — already done incrementally across Phases 3-6
 
 ### 9.1b — Scanned Document Photo Persistence (Digital Proof for All Document Types)
 > **Problem (April 2, 2026):** OCR modals (ScanCSIModal, ScanDRModal, ScanUndertakingModal, etc.) capture photos → send to OCR → extract data → pre-fill forms, but the **photos are discarded after extraction** — never saved to S3 as permanent records. The `DocumentAttachment` model (Phase 2.8) exists but is **not wired up** to any module. There is no permanent audit trail of the actual scanned documents — only extracted data.

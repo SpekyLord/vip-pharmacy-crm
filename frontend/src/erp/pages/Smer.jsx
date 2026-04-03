@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -125,19 +125,28 @@ export default function Smer() {
     });
   };
 
+  const [saveError, setSaveError] = useState(null);
+
   const handleSave = async () => {
+    if (loading) return; // prevent double-click
     const data = {
       period, cycle,
       perdiem_rate: perdiemRate,
       travel_advance: travelAdvance,
       daily_entries: dailyEntries
     };
+    setSaveError(null);
     try {
       if (editingSmer) { await updateSmer(editingSmer._id, data); }
       else { await createSmer(data); }
       setShowForm(false);
       loadSmers();
-    } catch { /* ignore */ }
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Save failed';
+      setSaveError(msg.includes('already exists')
+        ? `SMER for ${period} ${cycle} already exists. Use Edit on the existing entry instead of creating a new one.`
+        : msg);
+    }
   };
 
   // CRM pull — only for field BDMs with CRM visit data
@@ -145,9 +154,19 @@ export default function Smer() {
   const handlePullFromCrm = async () => {
     try {
       const res = await getSmerCrmMdCounts(period, cycle);
+      console.log('[SMER] CRM pull response:', res);
       const crmEntries = res?.data?.daily_entries || [];
+      console.log('[SMER] CRM entries:', crmEntries.length, 'Frontend entries:', dailyEntries.length);
+      if (!crmEntries.length) {
+        console.warn('[SMER] No CRM entries returned');
+        return;
+      }
+      // Log date matching
+      const crmMap = Object.fromEntries(crmEntries.map(e => [e.entry_date, e]));
+      console.log('[SMER] CRM dates:', Object.keys(crmMap));
+      console.log('[SMER] Frontend dates:', dailyEntries.map(e => e.entry_date));
+
       setDailyEntries(prev => {
-        const crmMap = Object.fromEntries(crmEntries.map(e => [e.entry_date, e]));
         return prev.map(entry => {
           const crm = crmMap[entry.entry_date];
           if (!crm) return entry;
@@ -159,7 +178,9 @@ export default function Smer() {
           return updated;
         });
       });
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.error('[SMER] CRM pull failed:', err.response?.data || err.message);
+    }
   };
 
   const handleValidate = async () => { try { await validateSmer(); loadSmers(); } catch {} };
@@ -245,7 +266,8 @@ export default function Smer() {
                 </thead>
                 <tbody>
                   {smers.map(s => (
-                    <tr key={s._id} style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
+                    <React.Fragment key={s._id}>
+                    <tr style={{ borderBottom: s.status === 'ERROR' ? 'none' : '1px solid var(--erp-border, #dbe4f0)' }}>
                       <td style={{ padding: 8 }}>{s.period}</td>
                       <td style={{ padding: 8 }}>{s.cycle}</td>
                       <td style={{ padding: 8, textAlign: 'right' }}>{s.working_days}</td>
@@ -267,6 +289,16 @@ export default function Smer() {
                         )}
                       </td>
                     </tr>
+                    {s.status === 'ERROR' && s.validation_errors?.length > 0 && (
+                      <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
+                        <td colSpan={8} style={{ padding: '4px 8px 8px', background: '#fef2f2' }}>
+                          <div style={{ fontSize: 12, color: '#dc2626' }}>
+                            {s.validation_errors.map((err, i) => <div key={i}>- {err}</div>)}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   ))}
                   {!smers.length && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>No SMER entries for this period</td></tr>}
                 </tbody>
@@ -396,6 +428,11 @@ export default function Smer() {
                 </table>
               </div>
 
+              {saveError && (
+                <div style={{ padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 13 }}>
+                  {saveError}
+                </div>
+              )}
               <button onClick={handleSave} disabled={loading} style={{ padding: '8px 24px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
                 {editingSmer ? 'Update SMER' : 'Save SMER as Draft'}
               </button>

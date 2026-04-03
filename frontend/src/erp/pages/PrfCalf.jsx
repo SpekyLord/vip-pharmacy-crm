@@ -4,6 +4,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useExpenses from '../hooks/useExpenses';
+import { processDocument } from '../services/ocrService';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -12,11 +13,13 @@ const PAYMENT_MODES = ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'CARD', 'OTHER
 
 export default function PrfCalf() {
   const { user } = useAuth();
-  const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, loading } = useExpenses();
+  const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines, loading } = useExpenses();
 
   const [docs, setDocs] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [pendingRebates, setPendingRebates] = useState([]);
+  const [pendingCalfLines, setPendingCalfLines] = useState([]);
   const [docTypeFilter, setDocTypeFilter] = useState('');
   const [period, setPeriod] = useState(() => {
     const d = new Date();
@@ -46,14 +49,77 @@ export default function PrfCalf() {
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
 
+  // Load pending partner rebates + pending CALF lines
+  const loadPendingData = useCallback(async () => {
+    try {
+      const [rebRes, calfRes] = await Promise.all([
+        getPendingPartnerRebates().catch(() => ({ data: [] })),
+        getPendingCalfLines().catch(() => ({ data: [] }))
+      ]);
+      setPendingRebates(rebRes?.data || []);
+      setPendingCalfLines(calfRes?.data || []);
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => { loadPendingData(); }, [loadPendingData]);
+
+  // Auto-fill PRF from a pending rebate (with last known bank details if available)
+  const handleCreateFromRebate = (partner) => {
+    const bank = partner.last_bank || {};
+    setEditingDoc(null);
+    setForm({
+      doc_type: 'PRF',
+      prf_type: 'PARTNER_REBATE',
+      purpose: `Partner rebate — ${partner.collections?.length || 0} collection(s)`,
+      payee_name: partner.doctor_name || '',
+      payee_type: 'MD',
+      partner_bank: bank.partner_bank || '',
+      partner_account_name: bank.partner_account_name || '',
+      partner_account_no: bank.partner_account_no || '',
+      rebate_amount: partner.remaining || 0,
+      amount: partner.remaining || 0,
+      calf_number: '', advance_amount: 0, liquidation_amount: 0,
+      payment_mode: 'BANK_TRANSFER', check_no: '', bank: '',
+      notes: `Auto-filled from pending rebates. Original total: ₱${partner.total_rebate}, already paid: ₱${partner.paid || 0}`,
+      photo_urls: []
+    });
+    setShowForm(true);
+  };
+
+  // Auto-fill CALF from pending company-funded items (ACCESS or FUEL)
+  const handleCreateFromCalfLines = (item) => {
+    const lineDetails = item.lines.map(l => `${l.description} ₱${l.amount} (${l.payment_mode})`).join(', ');
+    const sourceLabel = item.source === 'FUEL' ? 'Fuel (company card)' : 'ACCESS expenses';
+    // Use the payment mode from the first line (the company fund method used)
+    const primaryPaymentMode = item.lines[0]?.payment_mode || 'CARD';
+    // Auto-inherit OR photos from linked expense lines (no need to scan twice)
+    const linkedPhotos = item.lines.map(l => l.or_photo_url).filter(Boolean);
+    setEditingDoc(null);
+    setForm({
+      doc_type: 'CALF',
+      purpose: '', payee_name: '', payee_type: 'MD',
+      partner_bank: '', partner_account_name: '', partner_account_no: '',
+      rebate_amount: 0,
+      amount: item.total_amount,
+      calf_number: '', advance_amount: item.total_amount, liquidation_amount: item.total_amount,
+      payment_mode: primaryPaymentMode,
+      check_no: '', bank: '',
+      linked_expense_id: item.source_id,
+      linked_expense_line_ids: item.lines.map(l => l._id),
+      notes: `${sourceLabel}: ${lineDetails}`,
+      photo_urls: linkedPhotos
+    });
+    setShowForm(true);
+  };
+
   const resetForm = (docType = 'PRF') => setForm({
     doc_type: docType,
+    prf_type: 'PARTNER_REBATE',
     purpose: '', payee_name: '', payee_type: 'MD',
     partner_bank: '', partner_account_name: '', partner_account_no: '',
     rebate_amount: 0, amount: 0,
     calf_number: '', advance_amount: 0, liquidation_amount: 0,
     payment_mode: 'CASH', check_no: '', bank: '',
-    notes: ''
+    notes: '', photo_urls: []
   });
 
   const handleNew = (docType) => { setEditingDoc(null); resetForm(docType); setShowForm(true); };
@@ -65,12 +131,13 @@ export default function PrfCalf() {
       setEditingDoc(data);
       setForm({
         doc_type: data.doc_type,
+        prf_type: data.prf_type || 'PARTNER_REBATE',
         purpose: data.purpose || '', payee_name: data.payee_name || '', payee_type: data.payee_type || 'MD',
         partner_bank: data.partner_bank || '', partner_account_name: data.partner_account_name || '', partner_account_no: data.partner_account_no || '',
         rebate_amount: data.rebate_amount || 0, amount: data.amount || 0,
         calf_number: data.calf_number || '', advance_amount: data.advance_amount || 0, liquidation_amount: data.liquidation_amount || 0,
         payment_mode: data.payment_mode || 'CASH', check_no: data.check_no || '', bank: data.bank || '',
-        notes: data.notes || ''
+        notes: data.notes || '', photo_urls: data.photo_urls || []
       });
       setShowForm(true);
     } catch { /* ignore */ }
@@ -128,6 +195,52 @@ export default function PrfCalf() {
             <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
             {isFinance && <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Post</button>}
           </div>
+
+          {/* Pending Partner Rebates */}
+          {!showForm && pendingRebates.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <h3 style={{ fontSize: 14, margin: '0 0 8px', color: '#7c3aed' }}>Pending Partner Rebates</h3>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {pendingRebates.map((p, i) => (
+                  <div key={i} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e9d5ff', background: '#faf5ff', minWidth: 200, cursor: 'pointer' }} onClick={() => handleCreateFromRebate(p)}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: '#7c3aed' }}>{p.doctor_name}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: '#581c87' }}>₱{p.remaining?.toLocaleString()}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>
+                      {p.collections?.length} collection(s){p.paid > 0 && ` · ₱${p.paid.toLocaleString()} paid`}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#7c3aed', marginTop: 4 }}>Click to create PRF</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pending CALF — company-funded items needing documentation */}
+          {!showForm && pendingCalfLines.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <h3 style={{ fontSize: 14, margin: '0 0 8px', color: '#0891b2' }}>Company-Funded Items Needing CALF</h3>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {pendingCalfLines.map((item, i) => (
+                  <div key={i} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #a5f3fc', background: '#ecfeff', minWidth: 200, cursor: 'pointer' }} onClick={() => handleCreateFromCalfLines(item)}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
+                      <span style={{ padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, color: '#fff', background: item.source === 'FUEL' ? '#ea580c' : '#0891b2' }}>{item.source}</span>
+                      <span style={{ fontWeight: 600, fontSize: 12, color: '#0891b2' }}>{item.period} {item.cycle}</span>
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: '#164e63' }}>₱{item.total_amount?.toLocaleString()}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>
+                      {item.line_count} item(s) · {item.status}
+                    </div>
+                    {item.lines?.map((l, j) => (
+                      <div key={j} style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
+                        {l.description} — ₱{l.amount?.toLocaleString()} ({l.payment_mode})
+                      </div>
+                    ))}
+                    <div style={{ fontSize: 10, color: '#0891b2', marginTop: 4 }}>Click to create CALF</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Document List */}
           {!showForm && (
@@ -196,22 +309,39 @@ export default function PrfCalf() {
               {/* PRF Form */}
               {form.doc_type === 'PRF' && (
                 <div>
-                  <div style={{ padding: 12, borderRadius: 8, border: '1px solid #e9d5ff', background: '#faf5ff', marginBottom: 16 }}>
-                    <h3 style={{ margin: '0 0 8px', fontSize: 14, color: '#7c3aed' }}>Partner Details (for Finance)</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <input placeholder="Partner/Payee Name *" value={form.payee_name} onChange={e => setForm(p => ({ ...p, payee_name: e.target.value }))} style={{ flex: 1, minWidth: 200, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
-                        <select value={form.payee_type} onChange={e => setForm(p => ({ ...p, payee_type: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }}>
-                          <option value="MD">MD</option><option value="NON_MD">Non-MD</option>
-                        </select>
-                      </div>
-                      <input placeholder="Bank Name * (e.g., BPI, BDO, GCash)" value={form.partner_bank} onChange={e => setForm(p => ({ ...p, partner_bank: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
-                      <input placeholder="Account Holder Name *" value={form.partner_account_name} onChange={e => setForm(p => ({ ...p, partner_account_name: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
-                      <input placeholder="Account Number *" value={form.partner_account_no} onChange={e => setForm(p => ({ ...p, partner_account_no: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
-                    </div>
+                  {/* PRF Type Selector */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                    <button onClick={() => setForm(p => ({ ...p, prf_type: 'PARTNER_REBATE', payee_type: 'MD' }))} style={{ padding: '6px 14px', borderRadius: 6, border: form.prf_type === 'PARTNER_REBATE' ? '2px solid #7c3aed' : '1px solid #dbe4f0', background: form.prf_type === 'PARTNER_REBATE' ? '#faf5ff' : '#fff', color: form.prf_type === 'PARTNER_REBATE' ? '#7c3aed' : '#6b7280', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>Partner Rebate</button>
+                    <button onClick={() => setForm(p => ({ ...p, prf_type: 'PERSONAL_REIMBURSEMENT', payee_type: 'EMPLOYEE', payee_name: user?.name || '' }))} style={{ padding: '6px 14px', borderRadius: 6, border: form.prf_type === 'PERSONAL_REIMBURSEMENT' ? '2px solid #ea580c' : '1px solid #dbe4f0', background: form.prf_type === 'PERSONAL_REIMBURSEMENT' ? '#fff7ed' : '#fff', color: form.prf_type === 'PERSONAL_REIMBURSEMENT' ? '#ea580c' : '#6b7280', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>Personal Reimbursement</button>
                   </div>
+
+                  {form.prf_type === 'PARTNER_REBATE' && (
+                    <div style={{ padding: 12, borderRadius: 8, border: '1px solid #e9d5ff', background: '#faf5ff', marginBottom: 16 }}>
+                      <h3 style={{ margin: '0 0 8px', fontSize: 14, color: '#7c3aed' }}>Partner Details (for Finance)</h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <input placeholder="Partner/Payee Name *" value={form.payee_name} onChange={e => setForm(p => ({ ...p, payee_name: e.target.value }))} style={{ flex: 1, minWidth: 200, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
+                          <select value={form.payee_type} onChange={e => setForm(p => ({ ...p, payee_type: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }}>
+                            <option value="MD">MD</option><option value="NON_MD">Non-MD</option>
+                          </select>
+                        </div>
+                        <input placeholder="Bank Name * (e.g., BPI, BDO, GCash)" value={form.partner_bank} onChange={e => setForm(p => ({ ...p, partner_bank: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
+                        <input placeholder="Account Holder Name *" value={form.partner_account_name} onChange={e => setForm(p => ({ ...p, partner_account_name: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
+                        <input placeholder="Account Number *" value={form.partner_account_no} onChange={e => setForm(p => ({ ...p, partner_account_no: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {form.prf_type === 'PERSONAL_REIMBURSEMENT' && (
+                    <div style={{ padding: 12, borderRadius: 8, border: '1px solid #fed7aa', background: '#fff7ed', marginBottom: 16 }}>
+                      <h3 style={{ margin: '0 0 8px', fontSize: 14, color: '#ea580c' }}>Personal Reimbursement</h3>
+                      <p style={{ fontSize: 12, color: '#9a3412', margin: '0 0 8px' }}>For expenses paid with your own money. Upload OR photo as proof. Finance will reimburse you.</p>
+                      <input placeholder="Your Name *" value={form.payee_name} onChange={e => setForm(p => ({ ...p, payee_name: e.target.value }))} style={{ width: '100%', padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13, marginBottom: 8 }} />
+                    </div>
+                  )}
+
                   <label style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>Purpose: <input value={form.purpose} onChange={e => setForm(p => ({ ...p, purpose: e.target.value }))} style={{ width: '100%', padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
-                  <label style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>Rebate Amount (₱): <input type="number" min={0} value={form.rebate_amount} onChange={e => setForm(p => ({ ...p, rebate_amount: Number(e.target.value) }))} style={{ width: 150, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
+                  <label style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>{form.prf_type === 'PERSONAL_REIMBURSEMENT' ? 'Reimbursement' : 'Rebate'} Amount (₱): <input type="number" min={0} value={form.rebate_amount} onChange={e => setForm(p => ({ ...p, rebate_amount: Number(e.target.value) }))} style={{ width: 150, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
                 </div>
               )}
 
@@ -221,7 +351,7 @@ export default function PrfCalf() {
                   <div style={{ padding: 12, borderRadius: 8, border: '1px solid #a5f3fc', background: '#ecfeff', marginBottom: 16 }}>
                     <h3 style={{ margin: '0 0 8px', fontSize: 14, color: '#0891b2' }}>Company Fund Advance</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <label style={{ fontSize: 13 }}>CALF Number: <input value={form.calf_number} onChange={e => setForm(p => ({ ...p, calf_number: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
+                      <label style={{ fontSize: 13 }}>CALF Number: <input value={form.calf_number} readOnly placeholder="Auto-generated on save" style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#f9fafb', color: '#6b7280', fontStyle: 'italic' }} /></label>
                       <label style={{ fontSize: 13 }}>Advance Amount (₱): <input type="number" min={0} value={form.advance_amount} onChange={e => setForm(p => ({ ...p, advance_amount: Number(e.target.value) }))} style={{ width: 150, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
                       <label style={{ fontSize: 13 }}>Liquidation Amount (₱): <input type="number" min={0} value={form.liquidation_amount} onChange={e => setForm(p => ({ ...p, liquidation_amount: Number(e.target.value) }))} style={{ width: 150, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
                       <div style={{ fontSize: 14, fontWeight: 600, color: calfBalance >= 0 ? '#16a34a' : '#dc2626' }}>
@@ -247,6 +377,37 @@ export default function PrfCalf() {
                 </div>
               )}
               <label style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>Notes: <input value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} style={{ width: '100%', padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
+
+              {/* Photo Proof Upload (required for validation) */}
+              <div style={{ padding: 12, borderRadius: 8, border: '1px solid #dbe4f0', background: '#f9fafb', marginBottom: 16 }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--erp-text, #132238)' }}>Photo Proof *</h3>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {(form.photo_urls || []).map((url, i) => (
+                    <div key={i} style={{ position: 'relative', width: 80, height: 80, borderRadius: 6, overflow: 'hidden', border: '1px solid #dbe4f0' }}>
+                      <img src={url} alt={`Proof ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <button onClick={() => setForm(p => ({ ...p, photo_urls: p.photo_urls.filter((_, j) => j !== i) }))} style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 10, lineHeight: '18px', padding: 0 }}>X</button>
+                    </div>
+                  ))}
+                </div>
+                <label style={{ padding: '6px 14px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'inline-block' }}>
+                  Upload Photo
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    e.target.value = '';
+                    try {
+                      const docType = form.doc_type === 'PRF' ? 'OR' : 'OR';
+                      const result = await processDocument(file, docType);
+                      setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), result.s3_url] }));
+                    } catch {
+                      setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), URL.createObjectURL(file)] }));
+                    }
+                  }} />
+                </label>
+                <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7280' }}>
+                  {(form.photo_urls || []).length} photo(s) attached {!(form.photo_urls || []).length && '— required for validation'}
+                </span>
+              </div>
 
               <button onClick={handleSave} disabled={loading} style={{ padding: '8px 24px', borderRadius: 6, background: form.doc_type === 'PRF' ? '#7c3aed' : '#0891b2', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
                 {editingDoc ? 'Update' : 'Save as Draft'}

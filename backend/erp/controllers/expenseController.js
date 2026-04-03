@@ -119,8 +119,8 @@ const validateSmer = catchAsync(async (req, res) => {
 
     for (const entry of smer.daily_entries) {
       if (!entry.entry_date) errors.push(`Day ${entry.day}: date is required`);
-      if (entry.md_count > 0 && !entry.hospital_covered && !entry.perdiem_override) {
-        errors.push(`Day ${entry.day}: hospital required when MD count > 0`);
+      if (entry.md_count > 0 && !entry.activity_type && !entry.hospital_covered && !entry.perdiem_override) {
+        errors.push(`Day ${entry.day}: activity type required when engagements > 0`);
       }
       if (entry.perdiem_override && !entry.override_reason) {
         errors.push(`Day ${entry.day}: override reason required`);
@@ -335,12 +335,22 @@ const validateCarLogbook = catchAsync(async (req, res) => {
     if (entry.ending_km < entry.starting_km) errors.push('Ending KM must be >= Starting KM');
     if (entry.personal_km > entry.total_km) errors.push('Personal KM cannot exceed total KM');
 
-    // Overconsumption warning (not blocking)
-    if (entry.overconsumption_flag) {
-      entry.validation_errors = [...errors, `WARNING: Fuel overconsumption detected (variance: ${entry.efficiency_variance}L)`];
-    } else {
-      entry.validation_errors = errors;
+    // CALF gate: non-cash fuel entries require CALF
+    for (let j = 0; j < (entry.fuel_entries || []).length; j++) {
+      const fuel = entry.fuel_entries[j];
+      if (fuel.calf_required && !fuel.calf_id) {
+        if (req.user.role !== 'president') {
+          errors.push(`Fuel ${j + 1}: CALF required for ${fuel.payment_mode} fuel (${fuel.station_name || 'unknown station'})`);
+        }
+      }
     }
+
+    // Overconsumption warning (not blocking — appended after errors)
+    const warnings = [];
+    if (entry.overconsumption_flag) {
+      warnings.push(`WARNING: Fuel overconsumption detected (variance: ${entry.efficiency_variance}L)`);
+    }
+    entry.validation_errors = [...errors, ...warnings];
 
     entry.status = errors.length > 0 ? 'ERROR' : 'VALID';
     await entry.save();
@@ -478,6 +488,11 @@ const validateExpenses = catchAsync(async (req, res) => {
       if (!line.amount || line.amount <= 0) errors.push(`Line ${i + 1}: valid amount required`);
       if (!line.establishment) errors.push(`Line ${i + 1}: establishment is required`);
 
+      // OR proof gate: ORE and ACCESS lines require OR photo or OR number (PRD v5 §8.3)
+      if (!line.or_photo_url && !line.or_number) {
+        errors.push(`Line ${i + 1}: OR photo or OR number required for ${line.expense_type} expense`);
+      }
+
       // CALF gate: ACCESS with non-cash requires CALF
       if (line.calf_required && !line.calf_id) {
         // President override — skip CALF requirement
@@ -568,6 +583,42 @@ const createPrfCalf = catchAsync(async (req, res) => {
     created_by: req.user._id,
     status: 'DRAFT'
   });
+
+  // ── Back-link: update expense/logbook lines' calf_id when CALF is linked ──
+  // Also auto-copy OR photos from linked lines into CALF photo_urls (no double-scan needed)
+  if (doc.doc_type === 'CALF' && doc.linked_expense_id && doc.linked_expense_line_ids?.length) {
+    const collectedPhotos = [];
+
+    // Try ExpenseEntry first (ACCESS lines)
+    const expense = await ExpenseEntry.findById(doc.linked_expense_id);
+    if (expense) {
+      for (const line of expense.lines) {
+        if (doc.linked_expense_line_ids.some(lid => lid.toString() === line._id.toString())) {
+          line.calf_id = doc._id;
+          if (line.or_photo_url) collectedPhotos.push(line.or_photo_url);
+        }
+      }
+      await expense.save();
+    } else {
+      // Try CarLogbookEntry (fuel entries)
+      const logbook = await CarLogbookEntry.findById(doc.linked_expense_id);
+      if (logbook) {
+        for (const fuel of logbook.fuel_entries) {
+          if (doc.linked_expense_line_ids.some(lid => lid.toString() === fuel._id.toString())) {
+            fuel.calf_id = doc._id;
+          }
+        }
+        await logbook.save();
+      }
+    }
+
+    // Auto-populate CALF photo_urls from linked OR photos (if CALF has none)
+    if (collectedPhotos.length && (!doc.photo_urls || !doc.photo_urls.length)) {
+      doc.photo_urls = collectedPhotos;
+      await doc.save();
+    }
+  }
+
   res.status(201).json({ success: true, data: doc });
 });
 
@@ -624,16 +675,41 @@ const validatePrfCalf = catchAsync(async (req, res) => {
     if (!doc.amount || doc.amount <= 0) errors.push('Valid amount is required');
     if (!doc.period) errors.push('Period is required');
     if (!doc.cycle) errors.push('Cycle is required');
-    if (!doc.photo_urls?.length) errors.push('Photo proof is required');
+
+    // Photo proof: required for PRF always. For CALF, check linked expense OR photos as fallback.
+    if (!doc.photo_urls?.length) {
+      if (doc.doc_type === 'CALF' && doc.linked_expense_id) {
+        // Check if linked expense lines already have OR photos (auto-inherited on create)
+        const linkedExp = await ExpenseEntry.findById(doc.linked_expense_id).lean();
+        const linkedPhotos = (linkedExp?.lines || [])
+          .filter(l => (doc.linked_expense_line_ids || []).some(lid => lid.toString() === l._id.toString()))
+          .map(l => l.or_photo_url)
+          .filter(Boolean);
+        if (!linkedPhotos.length) {
+          errors.push('Photo proof is required (upload OR photo on expense line or attach here)');
+        } else {
+          // Auto-copy linked OR photos to CALF
+          doc.photo_urls = linkedPhotos;
+        }
+      } else {
+        errors.push('Photo proof is required');
+      }
+    }
 
     if (doc.doc_type === 'PRF') {
-      // PRF: partner bank details required for Finance to process payment
-      if (!doc.payee_name) errors.push('Partner/payee name is required');
+      if (!doc.payee_name) errors.push('Payee name is required');
       if (!doc.purpose) errors.push('Purpose is required');
-      if (!doc.partner_bank) errors.push('Partner bank name is required');
-      if (!doc.partner_account_name) errors.push('Partner account holder name is required');
-      if (!doc.partner_account_no) errors.push('Partner account number is required');
-      if (!doc.rebate_amount || doc.rebate_amount <= 0) errors.push('Rebate amount is required');
+
+      if (doc.prf_type === 'PERSONAL_REIMBURSEMENT') {
+        // Personal reimbursement: BDM/employee used own money, needs OR photo proof
+        if (!doc.photo_urls?.length) errors.push('OR photo required for personal reimbursement');
+      } else {
+        // Partner rebate (default): requires partner bank details for Finance to send payment
+        if (!doc.partner_bank) errors.push('Partner bank name is required');
+        if (!doc.partner_account_name) errors.push('Partner account holder name is required');
+        if (!doc.partner_account_no) errors.push('Partner account number is required');
+        if (!doc.rebate_amount || doc.rebate_amount <= 0) errors.push('Rebate amount is required');
+      }
     }
 
     if (doc.doc_type === 'CALF') {
@@ -835,6 +911,179 @@ const getSmerCrmVisitDetail = catchAsync(async (req, res) => {
   });
 });
 
+// ═══════════════════════════════════════════
+// PENDING PARTNER REBATES (for PRF auto-fill)
+// ═══════════════════════════════════════════
+
+/**
+ * GET /expenses/prf-calf/pending-rebates
+ * Returns partners with unpaid rebates from POSTED Collections.
+ * Aggregates by partner (doctor_id) across all POSTED collections,
+ * subtracts any POSTED PRFs for that partner to get remaining balance.
+ */
+const getPendingPartnerRebates = catchAsync(async (req, res) => {
+  const Collection = require('../models/Collection');
+
+  // Get all POSTED collections for this BDM with partner tags
+  const collections = await Collection.find({
+    ...req.tenantFilter,
+    status: 'POSTED',
+    'settled_csis.partner_tags.0': { $exists: true }
+  }).lean();
+
+  // Aggregate rebates by partner
+  const partnerMap = {};
+  for (const col of collections) {
+    for (const csi of col.settled_csis || []) {
+      for (const tag of csi.partner_tags || []) {
+        if (!tag.rebate_amount || tag.rebate_amount <= 0) continue;
+        const key = tag.doctor_id?.toString() || tag.doctor_name;
+        if (!partnerMap[key]) {
+          partnerMap[key] = {
+            doctor_id: tag.doctor_id,
+            doctor_name: tag.doctor_name,
+            total_rebate: 0,
+            collections: []
+          };
+        }
+        partnerMap[key].total_rebate += tag.rebate_amount;
+        partnerMap[key].collections.push({
+          collection_id: col._id,
+          cr_no: col.cr_no,
+          cr_date: col.cr_date,
+          doc_ref: csi.doc_ref,
+          rebate_pct: tag.rebate_pct,
+          rebate_amount: tag.rebate_amount
+        });
+      }
+    }
+  }
+
+  // Subtract POSTED PRFs for each partner + capture last known bank details
+  const allPrfs = await PrfCalf.find({
+    ...req.tenantFilter,
+    doc_type: 'PRF',
+    prf_type: { $ne: 'PERSONAL_REIMBURSEMENT' }
+  }).sort({ created_at: -1 }).lean();
+
+  for (const prf of allPrfs) {
+    const key = prf.partner_id?.toString() || prf.payee_name;
+    if (!partnerMap[key]) continue;
+
+    if (prf.status === 'POSTED') {
+      partnerMap[key].total_rebate -= (prf.rebate_amount || 0);
+      partnerMap[key].paid = (partnerMap[key].paid || 0) + (prf.rebate_amount || 0);
+    } else if (['DRAFT', 'VALID'].includes(prf.status)) {
+      partnerMap[key].pending_prf = (partnerMap[key].pending_prf || 0) + (prf.rebate_amount || 0);
+    }
+
+    // Capture last known bank details (from most recent PRF with bank info)
+    if (!partnerMap[key].last_bank && prf.partner_bank) {
+      partnerMap[key].last_bank = {
+        partner_bank: prf.partner_bank,
+        partner_account_name: prf.partner_account_name,
+        partner_account_no: prf.partner_account_no
+      };
+    }
+  }
+
+  // Filter to only partners with remaining balance > 0
+  const pending = Object.values(partnerMap)
+    .filter(p => p.total_rebate > 0.01)
+    .map(p => ({
+      ...p,
+      total_rebate: Math.round(p.total_rebate * 100) / 100,
+      paid: Math.round((p.paid || 0) * 100) / 100,
+      pending_prf: Math.round((p.pending_prf || 0) * 100) / 100,
+      remaining: Math.round(p.total_rebate * 100) / 100
+    }))
+    .sort((a, b) => b.remaining - a.remaining);
+
+  res.json({ success: true, data: pending });
+});
+
+/**
+ * GET /expenses/prf-calf/pending-calf
+ * Returns company-funded items needing CALF documentation:
+ * 1. ACCESS expense lines (non-cash: credit card, GCash, bank transfer)
+ * 2. Car Logbook fuel entries (Shell Fleet Card, company credit card — non-cash)
+ */
+const getPendingCalfLines = catchAsync(async (req, res) => {
+  const pending = [];
+
+  // 1. ACCESS expense lines needing CALF
+  const expenses = await ExpenseEntry.find({
+    ...req.tenantFilter,
+    'lines.calf_required': true
+  }).lean();
+
+  for (const exp of expenses) {
+    const accessLines = (exp.lines || []).filter(l => l.calf_required && !l.calf_id);
+    if (!accessLines.length) continue;
+
+    pending.push({
+      source: 'ACCESS',
+      source_id: exp._id,
+      source_model: 'ExpenseEntry',
+      period: exp.period,
+      cycle: exp.cycle,
+      status: exp.status,
+      total_amount: Math.round(accessLines.reduce((s, l) => s + (l.amount || 0), 0) * 100) / 100,
+      line_count: accessLines.length,
+      lines: accessLines.map(l => ({
+        _id: l._id,
+        date: l.expense_date,
+        description: l.establishment || l.particulars,
+        amount: l.amount,
+        payment_mode: l.payment_mode,
+        or_photo_url: l.or_photo_url || null
+      }))
+    });
+  }
+
+  // 2. Car Logbook fuel entries paid with company funds (non-cash)
+  const COMPANY_FUEL_MODES = ['SHELL_FLEET_CARD', 'CARD', 'GCASH'];
+  const logbooks = await CarLogbookEntry.find({
+    ...req.tenantFilter,
+    'fuel_entries.payment_mode': { $in: COMPANY_FUEL_MODES }
+  }).lean();
+
+  for (const lb of logbooks) {
+    const companyFuel = (lb.fuel_entries || []).filter(f => COMPANY_FUEL_MODES.includes(f.payment_mode) && !f.calf_id);
+    if (!companyFuel.length) continue;
+
+    pending.push({
+      source: 'FUEL',
+      source_id: lb._id,
+      source_model: 'CarLogbookEntry',
+      period: lb.period,
+      cycle: lb.cycle,
+      status: lb.status,
+      entry_date: lb.entry_date,
+      total_amount: Math.round(companyFuel.reduce((s, f) => s + ((f.liters || 0) * (f.price_per_liter || 0)), 0) * 100) / 100,
+      line_count: companyFuel.length,
+      lines: companyFuel.map(f => ({
+        _id: f._id,
+        date: lb.entry_date,
+        description: `${f.station_name || 'Gas'} — ${f.liters}L ${f.fuel_type || ''}`,
+        amount: Math.round((f.liters || 0) * (f.price_per_liter || 0) * 100) / 100,
+        payment_mode: f.payment_mode
+      }))
+    });
+  }
+
+  // Filter out items that already have CALF linked
+  const existingCalfs = await PrfCalf.find({
+    ...req.tenantFilter,
+    doc_type: 'CALF',
+    linked_expense_id: { $exists: true }
+  }).lean();
+  const calfedIds = new Set(existingCalfs.map(c => c.linked_expense_id?.toString()));
+  const filtered = pending.filter(p => !calfedIds.has(p.source_id.toString()));
+
+  res.json({ success: true, data: filtered });
+});
+
 module.exports = {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
@@ -848,7 +1097,7 @@ module.exports = {
   validateExpenses, submitExpenses, reopenExpenses,
   // PRF/CALF
   createPrfCalf, updatePrfCalf, getPrfCalfList, getPrfCalfById, deleteDraftPrfCalf,
-  validatePrfCalf, submitPrfCalf, reopenPrfCalf,
+  validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines,
   // Summary
   getExpenseSummary
 };

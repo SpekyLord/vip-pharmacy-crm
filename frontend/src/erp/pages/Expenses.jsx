@@ -1,8 +1,116 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useExpenses from '../hooks/useExpenses';
+import { processDocument, extractExifDateTime } from '../services/ocrService';
+
+// ── ScanORModal — camera → OR parser → pre-fill expense line ──
+function ScanORModal({ open, onClose, onApply }) {
+  const [step, setStep] = useState('capture');
+  const [preview, setPreview] = useState(null);
+  const [ocrData, setOcrData] = useState(null);
+  const [errorMsg, setErrorMsg] = useState('');
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
+
+  const reset = () => { setStep('capture'); setPreview(null); setOcrData(null); setErrorMsg(''); };
+  const handleClose = () => { reset(); onClose(); };
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    setPreview(URL.createObjectURL(file));
+    setStep('scanning');
+    try {
+      const exif = await extractExifDateTime(file);
+      const result = await processDocument(file, 'OR', exif);
+      setOcrData(result);
+      setStep('results');
+    } catch (err) {
+      setErrorMsg(err.message || 'OCR failed');
+      setStep('error');
+    }
+  };
+
+  const handleApply = () => {
+    if (!ocrData?.extracted) return;
+    const e = ocrData.extracted;
+    const val = (f) => (f && typeof f === 'object' && 'value' in f) ? f.value : (f || '');
+    onApply({
+      or_number: val(e.or_number) || val(e.series_number) || '',
+      expense_date: val(e.date) || '',
+      establishment: val(e.supplier_name) || '',
+      amount: parseFloat(val(e.total_amount) || val(e.amount)) || 0,
+      vat_amount: parseFloat(val(e.vat_amount)) || 0,
+      payment_mode: val(e.payment_mode) || 'CASH',
+      or_photo_url: ocrData.s3_url || preview,
+      classification: ocrData.classification || null
+    });
+    handleClose();
+  };
+
+  if (!open) return null;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#fff', borderRadius: 12, padding: 24, maxWidth: 500, width: '90%', maxHeight: '90vh', overflow: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h3 style={{ margin: 0 }}>Scan OR / Receipt</h3>
+          <button onClick={handleClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer' }}>✕</button>
+        </div>
+
+        {step === 'capture' && (
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>Take a photo of the Official Receipt or upload from gallery</p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <button onClick={() => cameraRef.current?.click()} style={{ padding: '10px 20px', borderRadius: 8, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>📷 Take Photo</button>
+              <button onClick={() => galleryRef.current?.click()} style={{ padding: '10px 20px', borderRadius: 8, background: '#6b7280', color: '#fff', border: 'none', cursor: 'pointer' }}>📁 Gallery</button>
+            </div>
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => handleFile(e.target.files?.[0])} />
+            <input ref={galleryRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleFile(e.target.files?.[0])} />
+          </div>
+        )}
+
+        {step === 'scanning' && (
+          <div style={{ textAlign: 'center', padding: 32 }}>
+            <div style={{ fontSize: 24, marginBottom: 8 }}>🔍</div>
+            <p>Scanning receipt...</p>
+          </div>
+        )}
+
+        {step === 'error' && (
+          <div style={{ textAlign: 'center', padding: 16 }}>
+            <p style={{ color: '#dc2626' }}>{errorMsg}</p>
+            <button onClick={reset} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Try Again</button>
+          </div>
+        )}
+
+        {step === 'results' && ocrData?.extracted && (
+          <div>
+            {preview && <img src={preview} alt="OR" style={{ width: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 8, marginBottom: 12 }} />}
+            <div style={{ fontSize: 13 }}>
+              {(() => { const e = ocrData.extracted; const val = (f) => (f && typeof f === 'object' && 'value' in f) ? f.value : (f || ''); return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div><strong>OR#:</strong> {val(e.or_number) || val(e.series_number) || '—'}</div>
+                  <div><strong>Date:</strong> {val(e.date) || '—'}</div>
+                  <div><strong>Supplier:</strong> {val(e.supplier_name) || '—'}</div>
+                  <div><strong>Amount:</strong> ₱{val(e.total_amount) || val(e.amount) || '—'}</div>
+                  <div><strong>VAT:</strong> ₱{val(e.vat_amount) || '—'}</div>
+                  <div><strong>Payment:</strong> {val(e.payment_mode) || 'CASH'}</div>
+                  {ocrData.classification && <div><strong>Category:</strong> {ocrData.classification.category} ({ocrData.classification.match_method})</div>}
+                </div>
+              ); })()}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+              <button onClick={reset} style={{ padding: '6px 16px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Re-scan</button>
+              <button onClick={handleApply} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Apply to Line</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -24,6 +132,20 @@ export default function Expenses() {
   });
   const [cycle, setCycle] = useState('C1');
   const [lines, setLines] = useState([]);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanTargetIdx, setScanTargetIdx] = useState(null);
+
+  const handleScanOR = (idx) => { setScanTargetIdx(idx); setScanOpen(true); };
+  const handleScanApply = (data) => {
+    if (scanTargetIdx !== null) {
+      updateLine(scanTargetIdx, 'or_number', data.or_number);
+      updateLine(scanTargetIdx, 'establishment', data.establishment);
+      updateLine(scanTargetIdx, 'amount', data.amount);
+      updateLine(scanTargetIdx, 'or_photo_url', data.or_photo_url);
+      if (data.expense_date) updateLine(scanTargetIdx, 'expense_date', data.expense_date);
+      if (data.classification?.category) updateLine(scanTargetIdx, 'expense_category', data.classification.category);
+    }
+  };
 
   const loadExpenses = useCallback(async () => {
     try {
@@ -88,10 +210,13 @@ export default function Expenses() {
     } catch { /* ignore */ }
   };
 
-  const handleValidate = async () => { try { await validateExpenses(); loadExpenses(); } catch {} };
-  const handleSubmit = async () => { try { await submitExpenses(); loadExpenses(); } catch {} };
-  const handleReopen = async (id) => { try { await reopenExpenses([id]); loadExpenses(); } catch {} };
-  const handleDelete = async (id) => { try { await deleteDraftExpense(id); loadExpenses(); } catch {} };
+  const [actionMsg, setActionMsg] = useState(null);
+  const showMsg = (msg, isError = false) => { setActionMsg({ msg, isError }); setTimeout(() => setActionMsg(null), 5000); };
+
+  const handleValidate = async () => { try { const r = await validateExpenses(); showMsg(r?.message || 'Validated'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); } };
+  const handleSubmit = async () => { try { const r = await submitExpenses(); showMsg(r?.message || 'Submitted'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Submit failed — are there VALID entries?', true); } };
+  const handleReopen = async (id) => { try { await reopenExpenses([id]); showMsg('Reopened'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Reopen failed', true); } };
+  const handleDelete = async (id) => { try { await deleteDraftExpense(id); showMsg('Deleted'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Delete failed', true); } };
 
   const totalOre = lines.filter(l => l.expense_type === 'ORE').reduce((s, l) => s + (l.amount || 0), 0);
   const totalAccess = lines.filter(l => l.expense_type === 'ACCESS').reduce((s, l) => s + (l.amount || 0), 0);
@@ -142,6 +267,12 @@ export default function Expenses() {
             <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
           </div>
 
+          {actionMsg && (
+            <div style={{ padding: '6px 12px', marginBottom: 12, borderRadius: 6, fontSize: 13, background: actionMsg.isError ? '#fef2f2' : '#f0fdf4', border: `1px solid ${actionMsg.isError ? '#fca5a5' : '#bbf7d0'}`, color: actionMsg.isError ? '#dc2626' : '#166534' }}>
+              {actionMsg.msg}
+            </div>
+          )}
+
           {/* Expense List */}
           {!showForm && (
             <div style={{ overflowX: 'auto' }}>
@@ -160,7 +291,8 @@ export default function Expenses() {
                 </thead>
                 <tbody>
                   {expenses.map(e => (
-                    <tr key={e._id} style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
+                    <React.Fragment key={e._id}>
+                    <tr style={{ borderBottom: e.status === 'ERROR' ? 'none' : '1px solid var(--erp-border, #dbe4f0)' }}>
                       <td style={{ padding: 8 }}>{e.period}</td>
                       <td style={{ padding: 8 }}>{e.cycle}</td>
                       <td style={{ padding: 8, textAlign: 'right' }}>{e.line_count || 0}</td>
@@ -180,6 +312,16 @@ export default function Expenses() {
                         {e.status === 'POSTED' && <button onClick={() => handleReopen(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
                       </td>
                     </tr>
+                    {e.status === 'ERROR' && e.validation_errors?.length > 0 && (
+                      <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
+                        <td colSpan={8} style={{ padding: '4px 8px 8px', background: '#fef2f2' }}>
+                          <div style={{ fontSize: 12, color: '#dc2626' }}>
+                            {e.validation_errors.map((err, i) => <div key={i}>- {err}</div>)}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   ))}
                   {!expenses.length && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>No expenses for this period</td></tr>}
                 </tbody>
@@ -215,6 +357,22 @@ export default function Expenses() {
                     <input placeholder="Particulars" value={line.particulars} onChange={e => updateLine(idx, 'particulars', e.target.value)} style={{ flex: 1, minWidth: 120, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
                     <input type="number" placeholder="Amount" value={line.amount || ''} onChange={e => updateLine(idx, 'amount', Number(e.target.value))} style={{ width: 90, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
                     <input placeholder="OR#" value={line.or_number} onChange={e => updateLine(idx, 'or_number', e.target.value)} style={{ width: 80, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
+                    <button onClick={() => handleScanOR(idx)} style={{ padding: '3px 8px', borderRadius: 4, background: '#16a34a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>Scan OR</button>
+                    <label style={{ padding: '3px 8px', borderRadius: 4, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, display: 'inline-block' }}>
+                      Upload OR
+                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        e.target.value = '';
+                        try {
+                          const result = await processDocument(file, 'OR');
+                          updateLine(idx, 'or_photo_url', result.s3_url || URL.createObjectURL(file));
+                        } catch {
+                          updateLine(idx, 'or_photo_url', URL.createObjectURL(file));
+                        }
+                      }} />
+                    </label>
+                    {line.or_photo_url && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600 }}>OR Photo ✓</span>}
                     <select value={line.payment_mode} onChange={e => updateLine(idx, 'payment_mode', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                       {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
@@ -247,6 +405,7 @@ export default function Expenses() {
           )}
         </main>
       </div>
+      <ScanORModal open={scanOpen} onClose={() => setScanOpen(false)} onApply={handleScanApply} />
     </div>
   );
 }

@@ -1,9 +1,84 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
+import { processDocument, extractExifDateTime } from '../services/ocrService';
+
+// ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
+function ScanModal({ open, onClose, onApply, docType, title }) {
+  const [step, setStep] = useState('capture');
+  const [preview, setPreview] = useState(null);
+  const [ocrData, setOcrData] = useState(null);
+  const [errorMsg, setErrorMsg] = useState('');
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
+
+  const reset = () => { setStep('capture'); setPreview(null); setOcrData(null); setErrorMsg(''); };
+  const handleClose = () => { reset(); onClose(); };
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    setPreview(URL.createObjectURL(file));
+    setStep('scanning');
+    try {
+      const exif = await extractExifDateTime(file);
+      const result = await processDocument(file, docType, exif);
+      setOcrData(result);
+      setStep('results');
+    } catch (err) {
+      setErrorMsg(err.message || 'OCR failed');
+      setStep('error');
+    }
+  };
+
+  if (!open) return null;
+  const val = (f) => (f && typeof f === 'object' && 'value' in f) ? f.value : (f || '');
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#fff', borderRadius: 12, padding: 24, maxWidth: 500, width: '90%', maxHeight: '90vh', overflow: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h3 style={{ margin: 0 }}>{title}</h3>
+          <button onClick={handleClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer' }}>✕</button>
+        </div>
+
+        {step === 'capture' && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <button onClick={() => cameraRef.current?.click()} style={{ padding: '10px 20px', borderRadius: 8, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>📷 Take Photo</button>
+              <button onClick={() => galleryRef.current?.click()} style={{ padding: '10px 20px', borderRadius: 8, background: '#6b7280', color: '#fff', border: 'none', cursor: 'pointer' }}>📁 Gallery</button>
+            </div>
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => handleFile(e.target.files?.[0])} />
+            <input ref={galleryRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleFile(e.target.files?.[0])} />
+          </div>
+        )}
+        {step === 'scanning' && <div style={{ textAlign: 'center', padding: 32 }}><div style={{ fontSize: 24 }}>🔍</div><p>Scanning...</p></div>}
+        {step === 'error' && <div style={{ textAlign: 'center' }}><p style={{ color: '#dc2626' }}>{errorMsg}</p><button onClick={reset} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Try Again</button></div>}
+        {step === 'results' && ocrData?.extracted && (
+          <div>
+            {preview && <img src={preview} alt="scan" style={{ width: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 8, marginBottom: 12 }} />}
+            <div style={{ fontSize: 13, marginBottom: 12 }}>
+              {docType === 'ODOMETER' && <div><strong>Reading:</strong> {val(ocrData.extracted.reading)} km</div>}
+              {docType === 'GAS_RECEIPT' && (<>
+                <div><strong>Station:</strong> {val(ocrData.extracted.station_name)}</div>
+                <div><strong>Fuel:</strong> {val(ocrData.extracted.fuel_type)}</div>
+                <div><strong>Liters:</strong> {val(ocrData.extracted.liters)}</div>
+                <div><strong>₱/L:</strong> {val(ocrData.extracted.price_per_liter)}</div>
+                <div><strong>Total:</strong> ₱{val(ocrData.extracted.total_amount)}</div>
+              </>)}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={reset} style={{ padding: '6px 16px', borderRadius: 6, border: '1px solid var(--erp-border)', background: '#fff', cursor: 'pointer' }}>Re-scan</button>
+              <button onClick={() => { onApply(ocrData); handleClose(); }} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Apply</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -45,6 +120,35 @@ export default function CarLogbook() {
     starting_km: 0, ending_km: 0, personal_km: 0,
     fuel_entries: [], notes: ''
   });
+
+  // OCR scan state
+  const [scanOdoOpen, setScanOdoOpen] = useState(false);
+  const [scanOdoTarget, setScanOdoTarget] = useState(null); // 'starting' or 'ending'
+  const [scanGasOpen, setScanGasOpen] = useState(false);
+
+  const handleScanOdometer = (target) => { setScanOdoTarget(target); setScanOdoOpen(true); };
+  const handleOdoApply = (ocrData) => {
+    const val = (f) => (f && typeof f === 'object' && 'value' in f) ? f.value : (f || '');
+    const reading = parseInt(val(ocrData.extracted?.reading)) || 0;
+    if (reading > 0) {
+      if (scanOdoTarget === 'starting') setForm(p => ({ ...p, starting_km: reading }));
+      else setForm(p => ({ ...p, ending_km: reading }));
+    }
+  };
+
+  const handleGasApply = (ocrData) => {
+    const val = (f) => (f && typeof f === 'object' && 'value' in f) ? f.value : (f || '');
+    const e = ocrData.extracted || {};
+    const newFuel = {
+      station_name: val(e.station_name) || '',
+      fuel_type: val(e.fuel_type) || 'UNLEADED',
+      liters: parseFloat(val(e.liters)) || 0,
+      price_per_liter: parseFloat(val(e.price_per_liter)) || 0,
+      total_amount: parseFloat(val(e.total_amount)) || 0,
+      payment_mode: 'CASH'
+    };
+    setForm(p => ({ ...p, fuel_entries: [...p.fuel_entries, newFuel] }));
+  };
 
   const handleNew = () => { setEditingEntry(null); resetForm(); setShowForm(true); };
 
@@ -97,10 +201,13 @@ export default function CarLogbook() {
     } catch { /* ignore */ }
   };
 
-  const handleValidate = async () => { try { await validateCarLogbook(); loadEntries(); } catch {} };
-  const handleSubmit = async () => { try { await submitCarLogbook(); loadEntries(); } catch {} };
-  const handleReopen = async (id) => { try { await reopenCarLogbook([id]); loadEntries(); } catch {} };
-  const handleDelete = async (id) => { try { await deleteDraftCarLogbook(id); loadEntries(); } catch {} };
+  const [actionMsg, setActionMsg] = useState(null);
+  const showMsg = (msg, isError = false) => { setActionMsg({ msg, isError }); setTimeout(() => setActionMsg(null), 5000); };
+
+  const handleValidate = async () => { try { const r = await validateCarLogbook(); showMsg(r?.message || 'Validated'); loadEntries(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); } };
+  const handleSubmit = async () => { try { const r = await submitCarLogbook(); showMsg(r?.message || 'Submitted'); loadEntries(); } catch (e) { showMsg(e.response?.data?.message || 'Submit failed — are there VALID entries?', true); } };
+  const handleReopen = async (id) => { try { await reopenCarLogbook([id]); showMsg('Reopened'); loadEntries(); } catch (e) { showMsg(e.response?.data?.message || 'Reopen failed', true); } };
+  const handleDelete = async (id) => { try { await deleteDraftCarLogbook(id); showMsg('Deleted'); loadEntries(); } catch (e) { showMsg(e.response?.data?.message || 'Delete failed — only DRAFT entries can be deleted', true); } };
 
   // Computed values
   const totalKm = Math.max(0, form.ending_km - form.starting_km);
@@ -131,6 +238,12 @@ export default function CarLogbook() {
             <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
             <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
           </div>
+
+          {actionMsg && (
+            <div style={{ padding: '6px 12px', marginBottom: 12, borderRadius: 6, fontSize: 13, background: actionMsg.isError ? '#fef2f2' : '#f0fdf4', border: `1px solid ${actionMsg.isError ? '#fca5a5' : '#bbf7d0'}`, color: actionMsg.isError ? '#dc2626' : '#166534' }}>
+              {actionMsg.msg}
+            </div>
+          )}
 
           {/* Entry List */}
           {!showForm && (
@@ -194,7 +307,9 @@ export default function CarLogbook() {
               <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
                 <label style={{ fontSize: 13 }}>Date: <input type="date" value={form.entry_date} onChange={e => setForm(p => ({ ...p, entry_date: e.target.value }))} style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
                 <label style={{ fontSize: 13 }}>Starting KM (Morning): <input type="number" value={form.starting_km} onChange={e => setForm(p => ({ ...p, starting_km: Number(e.target.value) }))} style={{ width: 100, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
+                <button onClick={() => handleScanOdometer('starting')} style={{ padding: '4px 10px', borderRadius: 4, background: '#16a34a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>Scan Start</button>
                 <label style={{ fontSize: 13 }}>Ending KM (Night): <input type="number" value={form.ending_km} onChange={e => setForm(p => ({ ...p, ending_km: Number(e.target.value) }))} style={{ width: 100, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
+                <button onClick={() => handleScanOdometer('ending')} style={{ padding: '4px 10px', borderRadius: 4, background: '#16a34a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>Scan End</button>
                 <label style={{ fontSize: 13 }}>Personal KM: <input type="number" value={form.personal_km} onChange={e => setForm(p => ({ ...p, personal_km: Number(e.target.value) }))} style={{ width: 80, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
               </div>
 
@@ -235,7 +350,10 @@ export default function CarLogbook() {
                   <button onClick={() => removeFuelEntry(idx)} style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #ef4444', color: '#ef4444', background: '#fff', cursor: 'pointer', fontSize: 12 }}>X</button>
                 </div>
               ))}
-              <button onClick={addFuelEntry} style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer', fontSize: 12, marginBottom: 16 }}>+ Add Fuel Entry</button>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <button onClick={addFuelEntry} style={{ padding: '4px 12px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer', fontSize: 12 }}>+ Add Fuel Entry</button>
+                <button onClick={() => setScanGasOpen(true)} style={{ padding: '4px 12px', borderRadius: 4, background: '#16a34a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Scan Gas Receipt</button>
+              </div>
 
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 13 }}>Notes: <input value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} style={{ width: 300, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
@@ -252,6 +370,8 @@ export default function CarLogbook() {
           )}
         </main>
       </div>
+      <ScanModal open={scanOdoOpen} onClose={() => setScanOdoOpen(false)} onApply={handleOdoApply} docType="ODOMETER" title="Scan Odometer" />
+      <ScanModal open={scanGasOpen} onClose={() => setScanGasOpen(false)} onApply={handleGasApply} docType="GAS_RECEIPT" title="Scan Gas Receipt" />
     </div>
   );
 }

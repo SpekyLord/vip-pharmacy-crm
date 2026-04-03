@@ -16,7 +16,8 @@ const dailyEntrySchema = new mongoose.Schema({
   day: { type: Number, required: true, min: 1, max: 31 },
   day_of_week: { type: String, enum: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] },
   entry_date: { type: Date, required: true },
-  hospital_covered: { type: String, trim: true },
+  activity_type: { type: String, enum: ['Office', 'Field', 'Other'], trim: true },
+  hospital_covered: { type: String, trim: true },  // legacy — kept for backward compat
   hospital_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' },
   md_count: { type: Number, default: 0, min: 0 },          // CRM actual count — always preserved for audit
   perdiem_tier: { type: String, enum: ['FULL', 'HALF', 'ZERO'], default: 'ZERO' },  // effective tier (CRM-computed or override)
@@ -94,7 +95,7 @@ smerEntrySchema.pre('save', function (next) {
     totalTranspo += entry.transpo_p2p || 0;
     totalSpecial += entry.transpo_special || 0;
     totalOre += entry.ore_amount || 0;
-    if (entry.md_count > 0 || entry.hospital_covered || entry.perdiem_override) workingDays++;
+    if (entry.md_count > 0 || entry.activity_type || entry.hospital_covered || entry.perdiem_override) workingDays++;
   }
 
   this.total_perdiem = Math.round(totalPerdiem * 100) / 100;

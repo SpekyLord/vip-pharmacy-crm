@@ -20,7 +20,7 @@ const {
   validateExpenses, submitExpenses, reopenExpenses,
   // PRF/CALF
   createPrfCalf, updatePrfCalf, getPrfCalfList, getPrfCalfById, deleteDraftPrfCalf,
-  validatePrfCalf, submitPrfCalf, reopenPrfCalf,
+  validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines,
   // Summary
   getExpenseSummary
 } = require('../controllers/expenseController');
@@ -65,6 +65,8 @@ router.delete('/ore-access/:id', deleteDraftExpense);
 
 // ═══ PRF / CALF ═══
 // BDM creates, Finance posts (payment processed / liquidation confirmed)
+router.get('/prf-calf/pending-rebates', getPendingPartnerRebates);
+router.get('/prf-calf/pending-calf', getPendingCalfLines);
 router.post('/prf-calf', createPrfCalf);
 router.get('/prf-calf', getPrfCalfList);
 router.post('/prf-calf/validate', validatePrfCalf);

@@ -48,6 +48,8 @@ export default function useExpenses() {
   const validatePrfCalf = () => api.post('/expenses/prf-calf/validate', {});
   const submitPrfCalf = () => api.post('/expenses/prf-calf/submit', {});
   const reopenPrfCalf = (ids) => api.post('/expenses/prf-calf/reopen', { prf_calf_ids: ids });
+  const getPendingPartnerRebates = () => api.get('/expenses/prf-calf/pending-rebates');
+  const getPendingCalfLines = () => api.get('/expenses/prf-calf/pending-calf');
 
   return {
     ...api,
@@ -64,6 +66,6 @@ export default function useExpenses() {
     validateExpenses, submitExpenses, reopenExpenses,
     // PRF/CALF
     getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf,
-    validatePrfCalf, submitPrfCalf, reopenPrfCalf
+    validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines
   };
 }

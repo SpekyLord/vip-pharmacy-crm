@@ -16,7 +16,8 @@ const fuelEntrySchema = new mongoose.Schema({
   receipt_url: String,
   receipt_ocr_data: { type: mongoose.Schema.Types.Mixed },
   payment_mode: { type: String, enum: ['CASH', 'SHELL_FLEET_CARD', 'GCASH', 'CARD', 'OTHER'], default: 'CASH' },
-  calf_required: { type: Boolean, default: false }
+  calf_required: { type: Boolean, default: false },
+  calf_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PrfCalf' }
 }, { _id: true });
 
 const carLogbookEntrySchema = new mongoose.Schema({
@@ -87,6 +88,8 @@ carLogbookEntrySchema.pre('save', function (next) {
   let actualLiters = 0, totalFuelAmount = 0;
   for (const fuel of this.fuel_entries) {
     fuel.total_amount = Math.round((fuel.liters || 0) * (fuel.price_per_liter || 0) * 100) / 100;
+    // Auto-set CALF required for non-cash fuel (company funds)
+    fuel.calf_required = fuel.payment_mode && fuel.payment_mode !== 'CASH';
     actualLiters += fuel.liters || 0;
     totalFuelAmount += fuel.total_amount;
   }

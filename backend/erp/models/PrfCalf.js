@@ -44,14 +44,17 @@ const prfCalfSchema = new mongoose.Schema({
   cycle: { type: String, enum: ['C1', 'C2', 'MONTHLY'], required: true },
 
   // ═══════════════════════════════════════════
-  // PRF fields — payment instruction for Finance to pay partner rebate
+  // PRF fields — payment instruction for Finance
   // ═══════════════════════════════════════════
   prf_number: { type: String, trim: true },
-  purpose: { type: String, trim: true },                       // e.g., "Partner rebate — CSI #004719, Iloilo Doctors Hospital"
+  prf_type: { type: String, enum: ['PARTNER_REBATE', 'PERSONAL_REIMBURSEMENT'], default: 'PARTNER_REBATE' },
+  // PARTNER_REBATE: pay partner (MD/Non-MD) their rebate — requires partner bank details
+  // PERSONAL_REIMBURSEMENT: reimburse BDM/employee who paid with own money — requires OR photo, payee = self
+  purpose: { type: String, trim: true },                       // e.g., "Partner rebate — CSI #004719" or "Personal reimbursement — hotel, parking"
 
-  // Partner/payee identification
-  payee_name: { type: String, trim: true },                    // partner full name
-  payee_type: { type: String, enum: ['MD', 'NON_MD'] },
+  // Payee identification (partner for PARTNER_REBATE, employee for PERSONAL_REIMBURSEMENT)
+  payee_name: { type: String, trim: true },                    // partner name or employee name
+  payee_type: { type: String, enum: ['MD', 'NON_MD', 'EMPLOYEE'] },
   partner_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' },  // CRM Doctor ref
 
   // Partner bank account — Finance needs this to send payment
@@ -112,12 +115,27 @@ const prfCalfSchema = new mongoose.Schema({
   collection: 'erp_prf_calf'
 });
 
-// Pre-save: compute CALF balance
-prfCalfSchema.pre('save', function (next) {
+// Pre-save: auto-number + compute CALF balance
+prfCalfSchema.pre('save', async function () {
+  // Auto-generate document number on creation
+  if (this.isNew) {
+    const { generateDocNumber } = require('../services/docNumbering');
+    if (this.doc_type === 'CALF' && !this.calf_number) {
+      this.calf_number = await generateDocNumber({
+        prefix: 'CALF', bdmId: this.bdm_id, date: this.created_at || new Date()
+      });
+    }
+    if (this.doc_type === 'PRF' && !this.prf_number) {
+      this.prf_number = await generateDocNumber({
+        prefix: 'PRF', bdmId: this.bdm_id, date: this.created_at || new Date()
+      });
+    }
+  }
+
+  // Compute CALF balance
   if (this.doc_type === 'CALF') {
     this.balance = Math.round(((this.advance_amount || 0) - (this.liquidation_amount || 0)) * 100) / 100;
   }
-  next();
 });
 
 // Indexes
