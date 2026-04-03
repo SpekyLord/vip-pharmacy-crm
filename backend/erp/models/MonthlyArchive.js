@@ -83,6 +83,19 @@ const monthlyArchiveSchema = new mongoose.Schema({
   fy_closed_at: { type: Date },
   fy_closed_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 
+  // ── Phase 11: Month-End Close Progress ──
+  close_progress: [{
+    step: { type: Number },
+    name: { type: String },
+    phase: { type: Number },
+    status: { type: String, enum: ['PENDING', 'RUNNING', 'COMPLETE', 'ERROR'], default: 'PENDING' },
+    started_at: { type: Date },
+    completed_at: { type: Date },
+    error: { type: String }
+  }],
+  trial_balance_snapshot: { type: mongoose.Schema.Types.Mixed },
+  pnl_snapshot: { type: mongoose.Schema.Types.Mixed },
+
   // ── Audit ──
   notes: { type: String },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

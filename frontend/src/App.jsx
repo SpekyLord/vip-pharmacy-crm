@@ -73,6 +73,17 @@ const PersonDetail = lazy(() => import('./erp/pages/PersonDetail'));
 const PayrollRun = lazy(() => import('./erp/pages/PayrollRun'));
 const PayslipView = lazy(() => import('./erp/pages/PayslipView'));
 const ThirteenthMonth = lazy(() => import('./erp/pages/ThirteenthMonth'));
+// Phase 11 — Accounting Engine
+const ChartOfAccounts = lazy(() => import('./erp/pages/ChartOfAccounts'));
+const JournalEntries = lazy(() => import('./erp/pages/JournalEntries'));
+const TrialBalance = lazy(() => import('./erp/pages/TrialBalance'));
+const ProfitAndLoss = lazy(() => import('./erp/pages/ProfitAndLoss'));
+const VatCompliance = lazy(() => import('./erp/pages/VatCompliance'));
+const CashflowStatement = lazy(() => import('./erp/pages/CashflowStatement'));
+const FixedAssetsPage = lazy(() => import('./erp/pages/FixedAssets'));
+const LoansPage = lazy(() => import('./erp/pages/Loans'));
+const OwnerEquity = lazy(() => import('./erp/pages/OwnerEquity'));
+const MonthEndClose = lazy(() => import('./erp/pages/MonthEndClose'));
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -526,6 +537,18 @@ function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* Phase 11 — Accounting Engine */}
+          <Route path="/erp/coa" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><ChartOfAccounts /></ProtectedRoute>} />
+          <Route path="/erp/journals" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><JournalEntries /></ProtectedRoute>} />
+          <Route path="/erp/trial-balance" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><TrialBalance /></ProtectedRoute>} />
+          <Route path="/erp/profit-loss" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><ProfitAndLoss /></ProtectedRoute>} />
+          <Route path="/erp/vat-compliance" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><VatCompliance /></ProtectedRoute>} />
+          <Route path="/erp/cashflow" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><CashflowStatement /></ProtectedRoute>} />
+          <Route path="/erp/fixed-assets" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><FixedAssetsPage /></ProtectedRoute>} />
+          <Route path="/erp/loans" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><LoansPage /></ProtectedRoute>} />
+          <Route path="/erp/owner-equity" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><OwnerEquity /></ProtectedRoute>} />
+          <Route path="/erp/month-end-close" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><MonthEndClose /></ProtectedRoute>} />
 
           <Route path="/employee/*" element={<EmployeeRedirect />} />
           <Route path="/employee" element={<Navigate to="/bdm" replace />} />

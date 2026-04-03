@@ -2230,15 +2230,15 @@
 
 **Reference:** PRD v5 §11 (VIP Accounting Engine), §3.8 (COA)
 
-### 11.1 — Chart of Accounts Model & Seed
-- [ ] Create `backend/erp/models/ChartOfAccounts.js`:
+### 11.1 — Chart of Accounts Model & Seed ✅ COMPLETE
+- [x] Create `backend/erp/models/ChartOfAccounts.js`:
   - entity_id, account_code (unique per entity), account_name
   - account_type enum: ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
   - account_subtype (String), normal_balance enum: DEBIT, CREDIT
   - bir_flag enum: BOTH, INTERNAL, BIR (default BOTH)
   - is_active, parent_code
   - Compound unique index: { entity_id, account_code }
-- [ ] Create seed script: `backend/erp/scripts/seedCOA.js`:
+- [x] Create seed script: `backend/erp/scripts/seedCOA.js`:
   - Seed all accounts from PRD §11.1 ranges (1000-8200):
     - 1000-1014: Cash & Bank (RCBC, SBC, MBTC, UB, Cash on Hand)
     - 1100-1220: Receivables (AR Trade, AR BDM, Input VAT, CWT Receivable)
@@ -2249,15 +2249,15 @@
     - 5000-5300: Cost of Sales (COGS, BDM Commission, Profit Share)
     - 6000-7100: Operating Expenses (Salaries, Allowances, Per Diem, Marketing, ACCESS, Transport, etc.)
     - 8000-8200: BIR-Only (Personal Expense BIR, Owner Advance Exp, BDM Advance Exp)
-- [ ] Create `backend/erp/controllers/coaController.js` — CRUD (Finance only), list with filters
-- [ ] Create `backend/erp/routes/coaRoutes.js`
-- [ ] Add to ERP router
+- [x] Create `backend/erp/controllers/coaController.js` — CRUD (Finance only), list with filters
+- [x] Create `backend/erp/routes/coaRoutes.js`
+- [x] Add to ERP router
 - [ ] Commit: `"feat(erp): chart of accounts model with full account code seed [v5]"`
 
-### 11.2 — Journal Entry Model
-- [ ] Create `backend/erp/models/JournalEntry.js`:
+### 11.2 — Journal Entry Model ✅ COMPLETE
+- [x] Create `backend/erp/models/JournalEntry.js`:
   - entity_id, bdm_id (optional — null for company-level)
-  - je_number (auto-increment per entity), je_date, period (YYYY-MM)
+  - je_number (auto-increment per entity via DocSequence), je_date, period (YYYY-MM)
   - description, source_module enum: SALES, COLLECTION, EXPENSE, COMMISSION, AP, PAYROLL, DEPRECIATION, INTEREST, PEOPLE_COMP, VAT, OWNER, MANUAL
   - lines array: [{ account_code, account_name, debit, credit, description, bdm_id, cost_center }]
   - bir_flag enum: BOTH, INTERNAL, BIR (default BOTH)
@@ -2265,19 +2265,21 @@
   - total_debit, total_credit
   - status enum: DRAFT, POSTED, VOID
   - posted_by, posted_at, corrects_je_id (ref: JournalEntry), is_reversal (Boolean)
+  - source_event_id for idempotency, source_doc_ref
   - created_by, created_at (immutable)
-- [ ] Pre-save validation: when status=POSTED, |total_debit - total_credit| must be <= 0.01
-- [ ] JE number auto-increment service
+- [x] Pre-save validation: when status=POSTED, |total_debit - total_credit| must be <= 0.01
+- [x] JE number auto-increment via DocSequence (key: `JE-{entityId}-{YYYY}`)
 - [ ] Commit: `"feat(erp): journal entry model with double-entry validation [v5]"`
 
-### 11.3 — Journal Entry Engine Service
-- [ ] Create `backend/erp/services/journalEngine.js`:
+### 11.3 — Journal Entry Engine Service ✅ COMPLETE
+- [x] Create `backend/erp/services/journalEngine.js`:
   - `createJournal(entityId, data)` — create JE in DRAFT
   - `postJournal(jeId)` — validate DR=CR, set POSTED
+  - `createAndPostJournal(entityId, data)` — convenience for auto-journals
   - `reverseJournal(jeId, reason)` — SAP Storno: create new JE with opposite amounts, corrects_je_id pointing to original; original stays POSTED
   - `getJournalsByPeriod(entityId, period)` — list with filters
-  - `getGeneralLedger(entityId, accountCode, dateRange)` — all JE lines for an account
-- [ ] Create `backend/erp/services/autoJournal.js`:
+  - `getGeneralLedger(entityId, accountCode, dateRange)` — all JE lines for an account with running balance
+- [x] Create `backend/erp/services/autoJournal.js`:
   - `journalFromSale(salesLine)` — DR: 1100 AR Trade, CR: 4000 Sales Revenue + 2100 Output VAT
   - `journalFromCollection(collection)` — DR: 1010-1014 Cash/Bank, CR: 1100 AR Trade
   - `journalFromCWT(cwtEntry)` — DR: 1220 CWT Receivable, CR: 1100 AR Trade
@@ -2290,43 +2292,43 @@
   - `journalFromOwnerEquity(equityEntry)` — infusion or drawing
 - [ ] Commit: `"feat(erp): journal entry engine with auto-journal from all modules [v5]"`
 
-### 11.4 — VAT Ledger & CWT Ledger Models
-- [ ] Create `backend/erp/models/VatLedger.js`:
+### 11.4 — VAT Ledger & CWT Ledger Models ✅ COMPLETE
+- [x] Create `backend/erp/models/VatLedger.js`:
   - entity_id, period, vat_type enum: OUTPUT, INPUT
   - source_module enum: COLLECTION, SUPPLIER_INVOICE
   - source_doc_ref, source_event_id, hospital_or_vendor, tin
   - gross_amount, vat_amount
   - finance_tag enum: PENDING, INCLUDE, EXCLUDE, DEFER (default PENDING)
   - tagged_by, tagged_at, created_at (immutable)
-- [ ] Create `backend/erp/models/CwtLedger.js`:
+- [x] Create `backend/erp/models/CwtLedger.js`:
   - entity_id, bdm_id, period, hospital_id, hospital_tin
   - cr_no, cr_date, cr_amount, cwt_rate, cwt_amount, atc_code
   - quarter enum: Q1, Q2, Q3, Q4; year
   - created_at (immutable)
 - [ ] Commit: `"feat(erp): vat ledger and cwt ledger models [v5]"`
 
-### 11.5 — VAT & CWT Services
-- [ ] Create `backend/erp/services/vatService.js`:
+### 11.5 — VAT & CWT Services ✅ COMPLETE
+- [x] Create `backend/erp/services/vatService.js`:
   - `createVatEntry(data)` — auto-created when collection or supplier invoice posted
   - `tagVatEntry(entryId, tag, userId)` — Finance tags INCLUDE/EXCLUDE/DEFER
   - `getVatLedger(entityId, period)` — list with finance_tag filter
   - `computeVatReturn2550Q(entityId, quarter, year)` — Output VAT (INCLUDE) - Input VAT (INCLUDE) = Net VAT Payable
-- [ ] Create `backend/erp/services/cwtService.js`:
+- [x] Create `backend/erp/services/cwtService.js`:
   - `createCwtEntry(data)` — auto-created when collection with CWT posted
   - `getCwtLedger(entityId, period)` — list
   - `computeCwt2307Summary(entityId, quarter, year)` — per hospital per quarter
 - [ ] Commit: `"feat(erp): vat and cwt compliance services with finance tagging [v5]"`
 
-### 11.6 — Trial Balance Service
-- [ ] Create `backend/erp/services/trialBalanceService.js`:
+### 11.6 — Trial Balance Service ✅ COMPLETE
+- [x] Create `backend/erp/services/trialBalanceService.js`:
   - `generateTrialBalance(entityId, period)` — aggregate all POSTED JE lines by account_code
   - Return: per account { account_code, account_name, total_debit, total_credit, net_balance, balance_direction }
   - Balance status: NORMAL (matches expected normal_balance) or ABNORMAL
   - Bottom-line check: sum(all debits) == sum(all credits)
 - [ ] Commit: `"feat(erp): trial balance generation from posted journal entries [v5]"`
 
-### 11.7 — Four-View P&L Service
-- [ ] Create `backend/erp/services/pnlService.js`:
+### 11.7 — Four-View P&L Service ✅ COMPLETE
+- [x] Create `backend/erp/services/pnlService.js`:
   - `generatePnlInternal(entityId, period)` — includes BIR_FLAG=BOTH and INTERNAL entries
   - `generatePnlBir(entityId, period)` — includes BIR_FLAG=BOTH and BIR entries, adds 8000+ deductions
   - `generateVatReturn(entityId, quarter, year)` — from VAT Ledger INCLUDE entries
@@ -2334,57 +2336,57 @@
   - Each P&L: Revenue, Cost of Sales, Gross Profit (GP%), Operating Expenses, Operating Income (OP%), Other Income, Net Income (Net%)
 - [ ] Commit: `"feat(erp): four-view pnl (internal, bir, vat 2550q, cwt 2307) [v5]"`
 
-### 11.8 — Cashflow Statement Service
-- [ ] Create `backend/erp/services/cashflowService.js`:
+### 11.8 — Cashflow Statement Service ✅ COMPLETE
+- [x] Create `backend/erp/services/cashflowService.js`:
   - `generateCashflow(entityId, period)`:
     - Operating: collections, supplier payments, expense payments, tax payments
     - Investing: asset purchases, asset disposals
     - Financing: owner infusions, owner drawings, loan proceeds, loan repayments
     - Net change, opening cash, closing cash
   - Source: aggregate from POSTED journal entries hitting cash/bank accounts (1010-1014)
-- [ ] Create `backend/erp/models/CashflowStatement.js` — persisted snapshot per period
+- [x] Create `backend/erp/models/CashflowStatement.js` — persisted snapshot per period
 - [ ] Commit: `"feat(erp): cashflow statement generation [v5]"`
 
-### 11.9 — Fixed Assets & Depreciation
-- [ ] Create `backend/erp/models/FixedAsset.js`:
+### 11.9 — Fixed Assets & Depreciation ✅ COMPLETE
+- [x] Create `backend/erp/models/FixedAsset.js`:
   - entity_id, asset_code, asset_name, category
   - acquisition_date, acquisition_cost, useful_life_months, salvage_value
   - depreciation_method (default STRAIGHT_LINE)
   - accumulated_depreciation, net_book_value
   - status enum: ACTIVE, DISPOSED, FULLY_DEPRECIATED
-- [ ] Create `backend/erp/services/depreciationService.js`:
+- [x] Create `backend/erp/services/depreciationService.js`:
   - `computeDepreciation(entityId, period)` — for all ACTIVE assets: monthly = (cost - salvage) / useful_life_months; output to staging
   - `getDepreciationStaging(entityId, period)` — list pending entries
   - `approveDepreciation(entryIds)` — mark approved
   - `postDepreciation(entityId, period)` — create JEs for approved entries
 - [ ] Commit: `"feat(erp): fixed assets and depreciation with staging pattern [v5]"`
 
-### 11.10 — Loans & Amortization
-- [ ] Create `backend/erp/models/LoanMaster.js`:
+### 11.10 — Loans & Amortization ✅ COMPLETE
+- [x] Create `backend/erp/models/LoanMaster.js`:
   - entity_id, loan_code, lender, purpose
   - principal, annual_rate, term_months, start_date
   - monthly_payment, total_interest, outstanding_balance
   - status enum: ACTIVE, PAID, RESTRUCTURED
-- [ ] Create `backend/erp/services/loanService.js`:
+- [x] Create `backend/erp/services/loanService.js`:
   - `computeInterest(entityId, period)` — for all ACTIVE loans: monthly interest and principal split; output to staging
   - `getInterestStaging(entityId, period)` — list pending entries
   - `approveInterest(entryIds)` — mark approved
   - `postInterest(entityId, period)` — create JEs for approved entries
 - [ ] Commit: `"feat(erp): loans and amortization with staging pattern [v5]"`
 
-### 11.11 — Owner Equity Ledger
-- [ ] Create `backend/erp/models/OwnerEquityEntry.js`:
+### 11.11 — Owner Equity Ledger ✅ COMPLETE
+- [x] Create `backend/erp/models/OwnerEquityEntry.js`:
   - entity_id, entry_type enum: INFUSION, DRAWING
   - amount, bank_account, bir_flag, description
   - entry_date, recorded_by, created_at (immutable)
-- [ ] Create `backend/erp/services/ownerEquityService.js`:
+- [x] Create `backend/erp/services/ownerEquityService.js`:
   - `recordInfusion(data)` — DR: Cash/Bank, CR: 3000 Owner Capital
   - `recordDrawing(data)` — DR: 3100 Owner Drawings, CR: Cash/Bank
   - `getEquityLedger(entityId)` — running balance
 - [ ] Commit: `"feat(erp): owner equity ledger with journal posting [v5]"`
 
-### 11.12 — Month-End Close Controller (29-Step SOP)
-- [ ] Create `backend/erp/services/monthEndClose.js`:
+### 11.12 — Month-End Close Controller (29-Step SOP) ✅ COMPLETE
+- [x] Create `backend/erp/services/monthEndClose.js`:
   - `runPhase1DataCollection(entityId, period)` — Steps 1-6: pull journals, GRN, stock, expenses, payslips, commissions
   - `runPhase2Processing(entityId, period)` — Steps 7-9: match GRN→PO, rebuild FIFO, compute COGS
   - `runPhase3JournalPosting(entityId, period)` — Steps 10-13: post expenses, commissions, AP, VAT journals
@@ -2395,12 +2397,12 @@
   - `runPhase7Finalize(entityId, period)` — Steps 26-29: cashflow, bank recon, verify TB, lock period
   - `runAutoClose(entityId, period)` — execute Steps 1-17 automatically with progress tracking
   - `getCloseProgress(entityId, period)` — return step status (PENDING/RUNNING/COMPLETE/ERROR per step)
-- [ ] Create `backend/erp/controllers/monthEndCloseController.js`
-- [ ] Create `backend/erp/routes/monthEndCloseRoutes.js`
+- [x] Create `backend/erp/controllers/monthEndCloseController.js`
+- [x] Create `backend/erp/routes/monthEndCloseRoutes.js`
 - [ ] Commit: `"feat(erp): month-end close procedure (29-step sop) [v5]"`
 
-### 11.13 — Accounting Controller & Routes
-- [ ] Create `backend/erp/controllers/accountingController.js`:
+### 11.13 — Accounting Controller & Routes ✅ COMPLETE
+- [x] Create `backend/erp/controllers/accountingController.js`:
   - Journal entry CRUD, posting, reversal
   - Trial Balance generation
   - P&L generation (4 views)
@@ -2408,7 +2410,7 @@
   - CWT Ledger and 2307 summary
   - Cashflow statement
   - AR Consolidated, AP Consolidated
-- [ ] Create `backend/erp/routes/accountingRoutes.js`:
+- [x] Create `backend/erp/routes/accountingRoutes.js`:
   - POST `/journals` — create manual JE (Finance)
   - GET `/journals` — list with filters
   - POST `/journals/:id/post` — post JE (Finance)
@@ -2421,52 +2423,80 @@
   - GET `/cwt-ledger/:period` — CWT entries
   - GET `/cwt-summary/:quarter/:year` — 2307 summary
   - GET `/cashflow/:period` — cashflow statement
-  - GET `/ar-consolidated` — AR across all BDMs
-  - GET `/ap-consolidated` — AP by due date
-- [ ] Add to ERP router
+  - GET `/general-ledger/:accountCode` — GL drill-down
+  - Fixed Assets CRUD + depreciation staging/approve/post
+  - Loans CRUD + interest staging/approve/post
+  - Owner Equity infusion/drawing endpoints
+- [x] Add to ERP router (accounting + coa + month-end-close mounted)
 - [ ] Commit: `"feat(erp): accounting routes for journals, tb, pnl, vat, cwt, cashflow [v5]"`
 
-### 11.14 — Accounting Frontend Pages
-- [ ] Create `frontend/src/erp/pages/ChartOfAccounts.jsx`:
+### 11.14 — Accounting Frontend Pages ✅ COMPLETE
+- [x] Create `frontend/src/erp/pages/ChartOfAccounts.jsx`:
   - Hierarchical account list with code ranges
   - Add/edit account (Finance only)
   - Filter by type, subtype, active status
-- [ ] Create `frontend/src/erp/pages/JournalEntries.jsx`:
+- [x] Create `frontend/src/erp/pages/JournalEntries.jsx`:
   - List view with filters (period, source_module, status)
   - Create manual JE form (balanced debit/credit lines)
   - Post/Reverse actions
   - Click → detail with all lines
-- [ ] Create `frontend/src/erp/pages/TrialBalance.jsx`:
+- [x] Create `frontend/src/erp/pages/TrialBalance.jsx`:
   - Period selector, account table with DR/CR/Net columns
   - ABNORMAL balances highlighted in red
   - Bottom-line balance check indicator
-- [ ] Create `frontend/src/erp/pages/ProfitAndLoss.jsx`:
+- [x] Create `frontend/src/erp/pages/ProfitAndLoss.jsx`:
   - Period selector, view toggle (Internal / BIR / VAT 2550Q / CWT 2307)
   - Revenue → COGS → Gross Profit → OpEx → Operating Income → Net Income
   - Margin percentages displayed
-- [ ] Create `frontend/src/erp/pages/VatCompliance.jsx`:
+- [x] Create `frontend/src/erp/pages/VatCompliance.jsx`:
   - VAT Ledger table with PENDING/INCLUDE/EXCLUDE/DEFER tags
   - Finance can click to tag entries
   - VAT Return 2550Q computation view
   - CWT Ledger and 2307 summary view
-- [ ] Create `frontend/src/erp/pages/CashflowStatement.jsx`:
+- [x] Create `frontend/src/erp/pages/CashflowStatement.jsx`:
   - Period selector, Operating/Investing/Financing sections
   - Net change and closing cash highlighted
-- [ ] Create `frontend/src/erp/pages/FixedAssets.jsx`:
+- [x] Create `frontend/src/erp/pages/FixedAssets.jsx`:
   - Asset register, depreciation schedule, staging view
-- [ ] Create `frontend/src/erp/pages/Loans.jsx`:
+- [x] Create `frontend/src/erp/pages/Loans.jsx`:
   - Loan register, amortization schedule, staging view
-- [ ] Create `frontend/src/erp/pages/OwnerEquity.jsx`:
+- [x] Create `frontend/src/erp/pages/OwnerEquity.jsx`:
   - Infusion/Drawing entry form, running balance ledger
-- [ ] Create `frontend/src/erp/pages/MonthEndClose.jsx`:
+- [x] Create `frontend/src/erp/pages/MonthEndClose.jsx`:
   - 29-step checklist UI with progress indicators
   - "Run Full Auto Close (Steps 1-17)" button
   - Manual pause at Step 21 for Finance review
   - Step-by-step execution with error display
   - Period lock confirmation
-- [ ] Add routes to App.jsx: `/erp/coa`, `/erp/journals`, `/erp/trial-balance`, `/erp/pnl`, `/erp/vat`, `/erp/cashflow`, `/erp/fixed-assets`, `/erp/loans`, `/erp/owner-equity`, `/erp/month-end-close`
-- [ ] Add navbar items: Accounting section with sub-items
+- [x] Create `frontend/src/erp/hooks/useAccounting.js` — wraps all accounting API endpoints
+- [x] Add routes to App.jsx: `/erp/coa`, `/erp/journals`, `/erp/trial-balance`, `/erp/profit-loss`, `/erp/vat-compliance`, `/erp/cashflow`, `/erp/fixed-assets`, `/erp/loans`, `/erp/owner-equity`, `/erp/month-end-close`
+- [x] Add sidebar items: 10 accounting sub-items under hasModule('accounting') guard
 - [ ] Commit: `"feat(ui): full accounting engine pages (coa, journals, tb, pnl, vat, cashflow, month-end close) [v5]"`
+
+> **Implementation notes (April 4, 2026):**
+> - JE numbers auto-increment via DocSequence model (key: `JE-{entityId}-{YYYY}`), reusing existing atomic counter pattern.
+> - MonthlyArchive model extended with `close_progress`, `trial_balance_snapshot`, `pnl_snapshot` fields for month-end close tracking.
+> - P&L Service (`pnlService.js`) is DISTINCT from existing `pnlCalc.js` — the new service derives P&L from journal entries, while the old one computes from source documents. Both coexist.
+> - Auto-journal functions return JE data objects (not persisted). The caller (monthEndClose or controller) handles creation+posting via journalEngine.
+> - Month-End Close auto-close runs Steps 1-17 automatically, pauses at Step 21 for Finance review. Steps 23-25 post staged items after approval. Steps 26-29 finalize and lock the period.
+
+### Phase 11 Summary
+| Subtask | Files | Status |
+|---------|-------|--------|
+| 11.1 COA Model + Seed | `ChartOfAccounts.js`, `seedCOA.js`, `coaController.js`, `coaRoutes.js` | ✅ |
+| 11.2 JE Model | `JournalEntry.js` | ✅ |
+| 11.3 JE Engine + Auto-Journal | `journalEngine.js`, `autoJournal.js` | ✅ |
+| 11.4 VAT/CWT Models | `VatLedger.js`, `CwtLedger.js` | ✅ |
+| 11.5 VAT/CWT Services | `vatService.js`, `cwtService.js` | ✅ |
+| 11.6 Trial Balance | `trialBalanceService.js` | ✅ |
+| 11.7 Four-View P&L | `pnlService.js` | ✅ |
+| 11.8 Cashflow | `cashflowService.js`, `CashflowStatement.js` | ✅ |
+| 11.9 Fixed Assets | `FixedAsset.js`, `depreciationService.js` | ✅ |
+| 11.10 Loans | `LoanMaster.js`, `loanService.js` | ✅ |
+| 11.11 Owner Equity | `OwnerEquityEntry.js`, `ownerEquityService.js` | ✅ |
+| 11.12 Month-End Close | `monthEndClose.js`, `monthEndCloseController.js`, `monthEndCloseRoutes.js` | ✅ |
+| 11.13 Accounting API | `accountingController.js`, `accountingRoutes.js` | ✅ |
+| 11.14 Frontend Pages | 10 pages + `useAccounting.js` + App.jsx + Sidebar.jsx | ✅ |
 
 ---
 

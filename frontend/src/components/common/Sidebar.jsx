@@ -538,7 +538,18 @@ const getErpSection = (role, erpAccess) => {
   if (hasModule('reports'))     items.push({ path: '/erp/reports', label: 'Reports', icon: BarChart3 });
   if (hasModule('people'))      items.push({ path: '/erp/people', label: 'People', icon: UserCheck });
   if (hasModule('payroll'))     items.push({ path: '/erp/payroll', label: 'Payroll', icon: DollarSign });
-  if (hasModule('accounting'))  items.push({ path: '/erp/pnl', label: 'Accounting', icon: BookOpen });
+  if (hasModule('accounting')) {
+    items.push({ path: '/erp/coa', label: 'Chart of Accounts', icon: BookOpen });
+    items.push({ path: '/erp/journals', label: 'Journal Entries', icon: BookOpen });
+    items.push({ path: '/erp/trial-balance', label: 'Trial Balance', icon: BookOpen });
+    items.push({ path: '/erp/profit-loss', label: 'P&L Statement', icon: BookOpen });
+    items.push({ path: '/erp/vat-compliance', label: 'VAT & CWT', icon: BookOpen });
+    items.push({ path: '/erp/cashflow', label: 'Cashflow', icon: BookOpen });
+    items.push({ path: '/erp/fixed-assets', label: 'Fixed Assets', icon: BookOpen });
+    items.push({ path: '/erp/loans', label: 'Loans', icon: BookOpen });
+    items.push({ path: '/erp/owner-equity', label: 'Owner Equity', icon: BookOpen });
+    items.push({ path: '/erp/month-end-close', label: 'Month-End Close', icon: BookOpen });
+  }
 
   // Only show section if at least ERP Home + 1 module
   if (items.length <= 1) return null;
