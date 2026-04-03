@@ -15,7 +15,7 @@ const {
   // Profit Sharing
   getProfitShareStatus, getProfitShareDetail,
   // Archive
-  closePeriod, getPeriodStatus, getArchiveList,
+  closePeriod, reopenPeriod, getPeriodStatus, getArchiveList,
   // Year-End
   validateYearEnd, executeYearEnd, getFiscalYearStatus
 } = require('../controllers/incomeController');
@@ -45,6 +45,7 @@ router.get('/profit-sharing/:productId', getProfitShareDetail);
 
 // ═══ Archive & Period Control ═══
 router.post('/archive/close-period', roleCheck('admin', 'finance', 'president'), closePeriod);
+router.post('/archive/reopen-period', roleCheck('admin', 'finance', 'president'), reopenPeriod);
 router.get('/archive/period-status', getPeriodStatus);
 router.get('/archive', getArchiveList);
 

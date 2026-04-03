@@ -11,6 +11,7 @@ const ExpenseEntry = require('../models/ExpenseEntry');
 const PrfCalf = require('../models/PrfCalf');
 const TransactionEvent = require('../models/TransactionEvent');
 const ErpAuditLog = require('../models/ErpAuditLog');
+const DocumentAttachment = require('../models/DocumentAttachment');
 const Settings = require('../models/Settings');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { computePerdiemAmount } = require('../services/perdiemCalc');
@@ -139,6 +140,10 @@ const submitSmer = catchAsync(async (req, res) => {
   const smers = await SmerEntry.find({ ...req.tenantFilter, status: 'VALID' });
   if (!smers.length) return res.status(400).json({ success: false, message: 'No VALID SMERs to submit' });
 
+  // Period lock check
+  const { checkPeriodOpen } = require('../utils/periodLock');
+  for (const smer of smers) { await checkPeriodOpen(smer.entity_id, smer.period); }
+
   const session = await mongoose.startSession();
   await session.withTransaction(async () => {
     for (const smer of smers) {
@@ -161,6 +166,16 @@ const submitSmer = catchAsync(async (req, res) => {
     }
   });
   session.endSession();
+
+  // Phase 9.1b: Link DocumentAttachments to events (non-blocking)
+  for (const smer of smers) {
+    if (smer.event_id) {
+      await DocumentAttachment.updateMany(
+        { source_model: 'SmerEntry', source_id: smer._id },
+        { $set: { event_id: smer.event_id } }
+      ).catch(() => {});
+    }
+  }
 
   res.json({ success: true, message: `Posted ${smers.length} SMER(s)` });
 });
@@ -335,12 +350,19 @@ const validateCarLogbook = catchAsync(async (req, res) => {
     if (entry.ending_km < entry.starting_km) errors.push('Ending KM must be >= Starting KM');
     if (entry.personal_km > entry.total_km) errors.push('Personal KM cannot exceed total KM');
 
-    // CALF gate: non-cash fuel entries require CALF
+    // CALF gate: non-cash fuel entries require CALF to be linked AND POSTED
     for (let j = 0; j < (entry.fuel_entries || []).length; j++) {
       const fuel = entry.fuel_entries[j];
-      if (fuel.calf_required && !fuel.calf_id) {
-        if (req.user.role !== 'president') {
+      if (fuel.calf_required && req.user.role !== 'president') {
+        if (!fuel.calf_id) {
           errors.push(`Fuel ${j + 1}: CALF required for ${fuel.payment_mode} fuel (${fuel.station_name || 'unknown station'})`);
+        } else {
+          const linkedCalf = await PrfCalf.findById(fuel.calf_id).select('status').lean();
+          if (!linkedCalf) {
+            errors.push(`Fuel ${j + 1}: linked CALF not found`);
+          } else if (linkedCalf.status !== 'POSTED') {
+            errors.push(`Fuel ${j + 1}: linked CALF must be POSTED (current: ${linkedCalf.status})`);
+          }
         }
       }
     }
@@ -362,6 +384,25 @@ const validateCarLogbook = catchAsync(async (req, res) => {
 const submitCarLogbook = catchAsync(async (req, res) => {
   const entries = await CarLogbookEntry.find({ ...req.tenantFilter, status: 'VALID' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No VALID logbook entries to submit' });
+
+  // Period lock check
+  const { checkPeriodOpen } = require('../utils/periodLock');
+  for (const entry of entries) { await checkPeriodOpen(entry.entity_id, entry.period); }
+
+  // Pre-submit gate: verify all linked CALFs are POSTED
+  for (const entry of entries) {
+    for (const fuel of (entry.fuel_entries || [])) {
+      if (fuel.calf_required && fuel.calf_id && req.user.role !== 'president') {
+        const calf = await PrfCalf.findById(fuel.calf_id).select('status').lean();
+        if (!calf || calf.status !== 'POSTED') {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot post: fuel entry "${fuel.station_name || ''}" has CALF that is not POSTED (status: ${calf?.status || 'NOT_FOUND'}). Post the CALF first.`
+          });
+        }
+      }
+    }
+  }
 
   const session = await mongoose.startSession();
   await session.withTransaction(async () => {
@@ -385,6 +426,16 @@ const submitCarLogbook = catchAsync(async (req, res) => {
     }
   });
   session.endSession();
+
+  // Phase 9.1b: Link DocumentAttachments to events (non-blocking)
+  for (const entry of entries) {
+    if (entry.event_id) {
+      await DocumentAttachment.updateMany(
+        { source_model: 'CarLogbookEntry', source_id: entry._id },
+        { $set: { event_id: entry.event_id } }
+      ).catch(() => {});
+    }
+  }
 
   res.json({ success: true, message: `Posted ${entries.length} logbook(s)` });
 });
@@ -521,6 +572,10 @@ const submitExpenses = catchAsync(async (req, res) => {
   const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: 'VALID' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No VALID expenses to submit' });
 
+  // Period lock check
+  const { checkPeriodOpen } = require('../utils/periodLock');
+  for (const entry of entries) { await checkPeriodOpen(entry.entity_id, entry.period); }
+
   // Pre-submit gate: verify all linked CALFs are POSTED
   for (const entry of entries) {
     for (const line of (entry.lines || [])) {
@@ -558,6 +613,16 @@ const submitExpenses = catchAsync(async (req, res) => {
     }
   });
   session.endSession();
+
+  // Phase 9.1b: Link DocumentAttachments to events (non-blocking)
+  for (const entry of entries) {
+    if (entry.event_id) {
+      await DocumentAttachment.updateMany(
+        { source_model: 'ExpenseEntry', source_id: entry._id },
+        { $set: { event_id: entry.event_id } }
+      ).catch(() => {});
+    }
+  }
 
   res.json({ success: true, message: `Posted ${entries.length} expense(s)` });
 });
@@ -753,6 +818,10 @@ const submitPrfCalf = catchAsync(async (req, res) => {
   const docs = await PrfCalf.find({ ...req.tenantFilter, status: 'VALID' });
   if (!docs.length) return res.status(400).json({ success: false, message: 'No VALID PRF/CALFs to submit' });
 
+  // Period lock check
+  const { checkPeriodOpen } = require('../utils/periodLock');
+  for (const doc of docs) { await checkPeriodOpen(doc.entity_id, doc.period); }
+
   const session = await mongoose.startSession();
   await session.withTransaction(async () => {
     for (const doc of docs) {
@@ -789,6 +858,16 @@ const submitPrfCalf = catchAsync(async (req, res) => {
     }
   });
   session.endSession();
+
+  // Phase 9.1b: Link DocumentAttachments to events (non-blocking)
+  for (const doc of docs) {
+    if (doc.event_id) {
+      await DocumentAttachment.updateMany(
+        { source_model: 'PrfCalf', source_id: doc._id },
+        { $set: { event_id: doc.event_id } }
+      ).catch(() => {});
+    }
+  }
 
   res.json({ success: true, message: `Posted ${docs.length} PRF/CALF(s)` });
 });

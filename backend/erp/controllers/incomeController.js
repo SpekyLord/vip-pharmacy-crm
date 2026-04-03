@@ -325,6 +325,39 @@ const getPeriodStatus = catchAsync(async (req, res) => {
   });
 });
 
+const reopenPeriod = catchAsync(async (req, res) => {
+  const { period } = req.body;
+  if (!period) {
+    return res.status(400).json({ success: false, message: 'period is required' });
+  }
+
+  const archive = await MonthlyArchive.findOne({
+    entity_id: req.entityId, period, record_type: 'MONTHLY'
+  });
+
+  if (!archive) {
+    return res.status(404).json({ success: false, message: `No archive found for period ${period}` });
+  }
+
+  if (archive.period_status === 'LOCKED') {
+    return res.status(400).json({
+      success: false,
+      message: `Period ${period} is LOCKED by year-end close. Cannot re-open.`
+    });
+  }
+
+  if (archive.period_status === 'OPEN') {
+    return res.json({ success: true, data: archive, message: `Period ${period} is already OPEN` });
+  }
+
+  archive.period_status = 'OPEN';
+  archive.closed_at = undefined;
+  archive.closed_by = undefined;
+  await archive.save();
+
+  res.json({ success: true, data: archive, message: `Period ${period} re-opened successfully` });
+});
+
 const getArchiveList = catchAsync(async (req, res) => {
   const filter = { entity_id: req.entityId };
   if (req.query.record_type) filter.record_type = req.query.record_type;
@@ -383,7 +416,7 @@ module.exports = {
   // Profit Sharing
   getProfitShareStatus, getProfitShareDetail,
   // Archive
-  closePeriod, getPeriodStatus, getArchiveList,
+  closePeriod, reopenPeriod, getPeriodStatus, getArchiveList,
   // Year-End
   validateYearEnd, executeYearEnd,
   getFiscalYearStatus: getFiscalYearStatusEndpoint

@@ -45,4 +45,8 @@ router.use('/', require('./incomeRoutes'));
 // ═══ Phase 8 — Dashboard & Reports ═══
 router.use('/dashboard', require('./dashboardRoutes'));
 
+// ═══ Phase 9 — Integration & Document Flow ═══
+router.use('/documents', require('./documentRoutes'));
+router.use('/crm-bridge', require('./crmBridgeRoutes'));
+
 module.exports = router;

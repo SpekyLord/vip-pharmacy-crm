@@ -123,6 +123,7 @@ export default function IcSettlement() {
       if (!url) throw new Error('No URL returned');
       if (type === 'cr_photo') setCrPhotoUrl(url);
       else if (type === 'deposit_slip') setDepositSlipUrl(url);
+      // Phase 9.1b: attachment_id tracked automatically on backend
     } catch (err) {
       alert('Upload failed: ' + (err.message || 'Unknown error'));
     } finally { setUploading(''); }

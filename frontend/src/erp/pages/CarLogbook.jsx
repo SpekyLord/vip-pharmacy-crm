@@ -145,7 +145,10 @@ export default function CarLogbook() {
       liters: parseFloat(val(e.liters)) || 0,
       price_per_liter: parseFloat(val(e.price_per_liter)) || 0,
       total_amount: parseFloat(val(e.total_amount)) || 0,
-      payment_mode: 'CASH'
+      payment_mode: 'CASH',
+      receipt_url: ocrData.s3_url || '',
+      receipt_attachment_id: ocrData.attachment_id || null,
+      receipt_ocr_data: ocrData.extracted || null
     };
     setForm(p => ({ ...p, fuel_entries: [...p.fuel_entries, newFuel] }));
   };
@@ -237,7 +240,16 @@ export default function CarLogbook() {
             <button onClick={handleNew} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New Entry</button>
             <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
             <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
+            <Link to="/erp/prf-calf" style={{ padding: '6px 14px', borderRadius: 6, background: '#f1f5f9', color: 'var(--erp-text, #132238)', textDecoration: 'none', fontSize: 13, border: '1px solid var(--erp-border, #dbe4f0)' }}>PRF / CALF</Link>
           </div>
+
+          {/* CALF Dependency Warning */}
+          {entries.some(e => (e.fuel_entries || []).some(f => f.calf_required && !f.calf_id)) && (
+            <div style={{ padding: 12, marginBottom: 16, borderRadius: 8, border: '1px solid #f59e0b', background: '#fffbeb', fontSize: 13 }}>
+              <strong style={{ color: '#92400e' }}>CALF Required:</strong> Some fuel entries use company funds (non-cash).
+              Create and post a CALF in <Link to="/erp/prf-calf" style={{ color: '#2563eb', fontWeight: 600 }}>PRF / CALF</Link> before submitting.
+            </div>
+          )}
 
           {actionMsg && (
             <div style={{ padding: '6px 12px', marginBottom: 12, borderRadius: 6, fontSize: 13, background: actionMsg.isError ? '#fef2f2' : '#f0fdf4', border: `1px solid ${actionMsg.isError ? '#fca5a5' : '#bbf7d0'}`, color: actionMsg.isError ? '#dc2626' : '#166534' }}>
@@ -277,6 +289,7 @@ export default function CarLogbook() {
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#fff', background: STATUS_COLORS[e.status] || '#6b7280' }}>{e.status}</span>
                         {e.overconsumption_flag && <span style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#dc2626', background: '#fef2f2', border: '1px solid #fca5a5' }}>OVER</span>}
+                        {(e.fuel_entries || []).some(f => f.calf_required && !f.calf_id) && <span style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#92400e', background: '#fef3c7', fontWeight: 600 }}>CALF</span>}
                       </td>
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         {['DRAFT', 'ERROR'].includes(e.status) && (
@@ -347,6 +360,23 @@ export default function CarLogbook() {
                   <select value={fuel.payment_mode} onChange={e => updateFuelEntry(idx, 'payment_mode', e.target.value)} style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                     {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
+                  <label style={{ padding: '2px 8px', borderRadius: 4, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, display: 'inline-block' }}>
+                    Upload Receipt
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      e.target.value = '';
+                      try {
+                        const result = await processDocument(file, 'GAS_RECEIPT');
+                        updateFuelEntry(idx, 'receipt_url', result.s3_url || URL.createObjectURL(file));
+                        if (result.attachment_id) updateFuelEntry(idx, 'receipt_attachment_id', result.attachment_id);
+                      } catch {
+                        updateFuelEntry(idx, 'receipt_url', URL.createObjectURL(file));
+                      }
+                    }} />
+                  </label>
+                  {fuel.receipt_url && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600 }}>Receipt ✓</span>}
+                  {fuel.payment_mode && fuel.payment_mode !== 'CASH' && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>CALF Required</span>}
                   <button onClick={() => removeFuelEntry(idx)} style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #ef4444', color: '#ef4444', background: '#fff', cursor: 'pointer', fontSize: 12 }}>X</button>
                 </div>
               ))}

@@ -10,6 +10,7 @@ const InventoryLedger = require('../models/InventoryLedger');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const TransactionEvent = require('../models/TransactionEvent');
 const ConsignmentTracker = require('../models/ConsignmentTracker');
+const DocumentAttachment = require('../models/DocumentAttachment');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { consumeFIFO, consumeSpecificBatch, buildStockSnapshot } = require('../services/fifoEngine');
 
@@ -292,6 +293,13 @@ const submitSales = catchAsync(async (req, res) => {
     });
   }
 
+  // Period lock check — prevent posting to closed/locked months
+  const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+  for (const row of validRows) {
+    const period = dateToPeriod(row.csi_date);
+    await checkPeriodOpen(row.entity_id, period);
+  }
+
   const session = await mongoose.startSession();
   const eventIds = [];
 
@@ -377,6 +385,14 @@ const submitSales = catchAsync(async (req, res) => {
         await row.save({ session });
       }
     });
+
+    // Phase 9.1b: Link DocumentAttachments to events (outside transaction — non-blocking)
+    for (let i = 0; i < validRows.length; i++) {
+      await DocumentAttachment.updateMany(
+        { source_model: 'SalesLine', source_id: validRows[i]._id },
+        { $set: { event_id: eventIds[i] } }
+      ).catch(() => {});
+    }
 
     res.json({
       success: true,

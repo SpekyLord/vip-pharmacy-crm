@@ -13,6 +13,8 @@ const IncomeReport = require('../models/IncomeReport');
 const SmerEntry = require('../models/SmerEntry');
 const ExpenseEntry = require('../models/ExpenseEntry');
 const CarLogbookEntry = require('../models/CarLogbookEntry');
+const Hospital = require('../models/Hospital');
+const Visit = require('../../models/Visit');
 
 /**
  * Get current month start/end dates
@@ -22,6 +24,40 @@ function currentMonthRange() {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return { start, end };
+}
+
+/**
+ * Phase 9.2: Compute engagements from CRM Visit data
+ * visited = unique CRM visit days in range, target = tagged hospital count
+ */
+async function computeEngagements(bdmId, start, end) {
+  if (!bdmId) return { visited: 0, target: 0, rate: 0 };
+
+  try {
+    const bdmObjectId = typeof bdmId === 'string'
+      ? new mongoose.Types.ObjectId(bdmId)
+      : bdmId;
+
+    // Count completed CRM visits in date range
+    const visitCount = await Visit.countDocuments({
+      user: bdmObjectId,
+      visitDate: { $gte: start, $lt: end },
+      status: 'completed'
+    }).catch(() => 0);
+
+    // Count tagged hospitals for this BDM (target)
+    const hospitalCount = await Hospital.countDocuments({
+      'tagged_bdms.bdm_id': bdmObjectId,
+      'tagged_bdms.is_active': true
+    }).catch(() => 0);
+
+    const target = hospitalCount || 0;
+    const rate = target > 0 ? Math.round((visitCount / target) * 100) / 100 : 0;
+
+    return { visited: visitCount, target, rate };
+  } catch {
+    return { visited: 0, target: 0, rate: 0 };
+  }
 }
 
 /**
@@ -96,8 +132,9 @@ async function getSummary(entityId, bdmId, isAdmin) {
   ]);
   const stockOnHandValue = Math.round((stockAgg[0]?.value || 0) * 100) / 100;
 
-  // 5. Engagements — placeholder (CRM Schedule not fully wired yet)
-  const engagements = { visited: 0, target: 0, rate: 0 };
+  // 5. Engagements — Phase 9.2: real CRM Visit counts
+  const { start: mStart, end: mEnd } = currentMonthRange();
+  const engagements = await computeEngagements(bdmId, mStart, mEnd);
 
   return {
     total_sales: Math.round(totalSales * 100) / 100,
@@ -145,8 +182,8 @@ async function getMtd(entityId, bdmId, isAdmin) {
   ]);
   const incomeMtd = incomeAgg[0]?.total || 0;
 
-  // Engagements MTD — placeholder
-  const engagementsMtd = { visited: 0, target: 0, rate: 0 };
+  // Engagements MTD — Phase 9.2: real CRM Visit counts
+  const engagementsMtd = await computeEngagements(bdmId, start, end);
 
   return {
     sales_mtd: Math.round(salesMtd * 100) / 100,

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import Pagination from '../../components/common/Pagination';
+import DocumentFlowChain from '../components/DocumentFlowChain';
 import { useAuth } from '../../hooks/useAuth';
 import useCollections from '../hooks/useCollections';
 
@@ -78,6 +79,10 @@ export default function Collections() {
     if (!window.confirm('Re-open this collection?')) return;
     try { await coll.reopenCollections([id]); loadData(pagination.page); } catch (err) { alert(err.response?.data?.message || 'Reopen failed'); }
   };
+  const handleDeleteDraft = async (id) => {
+    if (!window.confirm('Delete this draft collection?')) return;
+    try { await coll.deleteDraft(id); loadData(pagination.page); } catch (err) { alert(err.response?.data?.message || 'Delete failed'); }
+  };
   const viewDetail = async (id) => {
     try { const res = await coll.getCollectionById(id); if (res?.data) setSelected(res.data); } catch {}
   };
@@ -121,8 +126,9 @@ export default function Collections() {
                     <td style={{ color: '#7c3aed' }}>{c.total_partner_rebates ? `P${c.total_partner_rebates.toFixed(2)}` : '—'}</td>
                     <td>{c.settled_csis?.length || 0}</td>
                     <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span></td>
-                    <td onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 4 }}>
+                    <td onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {(c.status === 'DRAFT' || c.status === 'ERROR') && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
+                      {c.status === 'DRAFT' && <button className="btn btn-sm" style={{ border: '1px solid #ef4444', color: '#ef4444', background: '#fff' }} onClick={() => handleDeleteDraft(c._id)}>Del</button>}
                       {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={handleSubmit}>Submit</button>}
                       {c.status === 'POSTED' && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}
                     </td>
@@ -172,6 +178,12 @@ export default function Collections() {
                     )}
                   </div>
                 ))}
+                {/* Phase 9.3: Document Flow Chain */}
+                {selected.event_id && (
+                  <div style={{ marginTop: 16, borderTop: '1px solid var(--erp-border)', paddingTop: 12 }}>
+                    <DocumentFlowChain eventId={selected.event_id} />
+                  </div>
+                )}
               </div>
             </div>
           )}

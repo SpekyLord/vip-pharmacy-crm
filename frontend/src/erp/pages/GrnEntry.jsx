@@ -145,7 +145,7 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
       expiry_date: mi.ocr_expiry ? (() => { const d = new Date(mi.ocr_expiry); return isNaN(d) ? '' : d.toISOString().split('T')[0]; })() : '',
       qty: String(parseFloat(mi.ocr_qty) || '')
     }));
-    onApply(lines);
+    onApply(lines, { undertaking_attachment_id: ocrData?.attachment_id || null, undertaking_photo_url: ocrData?.s3_url || '' });
     handleClose();
   };
 
@@ -265,8 +265,9 @@ export default function GrnEntry() {
     } catch (err) { console.error('GRN approve error:', err); }
   };
 
-  const handleScanApply = (lines) => {
+  const handleScanApply = (lines, meta) => {
     if (lines.length) setLineItems(lines.map(l => ({ ...emptyLine(), ...l })));
+    if (meta?.undertaking_photo_url) setForm(p => ({ ...p, undertaking_photo_url: meta.undertaking_photo_url, undertaking_attachment_id: meta.undertaking_attachment_id }));
   };
 
   return (

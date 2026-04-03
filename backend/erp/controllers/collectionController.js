@@ -10,6 +10,7 @@ const SalesLine = require('../models/SalesLine');
 const TransactionEvent = require('../models/TransactionEvent');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const Hospital = require('../models/Hospital');
+const DocumentAttachment = require('../models/DocumentAttachment');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { getOpenCsis, getArAging, getCollectionRate, getHospitalArBalance } = require('../services/arEngine');
 const { enrichArWithDunning } = require('../services/dunningService');
@@ -202,6 +203,13 @@ const submitCollections = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No VALID collections to submit' });
   }
 
+  // Period lock check
+  const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+  for (const row of validRows) {
+    const period = dateToPeriod(row.cr_date);
+    await checkPeriodOpen(row.entity_id, period);
+  }
+
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
@@ -231,6 +239,53 @@ const submitCollections = catchAsync(async (req, res) => {
         await row.save({ session });
       }
     });
+
+    // Phase 9.1b: Link DocumentAttachments to events (outside transaction — non-blocking)
+    for (const row of validRows) {
+      if (row.event_id) {
+        await DocumentAttachment.updateMany(
+          { source_model: 'Collection', source_id: row._id },
+          { $set: { event_id: row.event_id } }
+        ).catch(() => {});
+      }
+    }
+
+    // Phase 9.3: Auto-link CR events to settled CSI events (document flow)
+    for (const row of validRows) {
+      if (!row.event_id || !row.settled_csis?.length) continue;
+      try {
+        // Find CSI events for the settled sales lines
+        const salesLineIds = row.settled_csis.map(c => c.sales_line_id);
+        const csiEvents = await TransactionEvent.find({
+          entity_id: row.entity_id,
+          event_type: 'CSI',
+          status: 'ACTIVE',
+          'payload.hospital_id': row.hospital_id
+        }).lean();
+
+        // Match CSI events by checking if their source SalesLine is in settled list
+        const csiSalesLines = await SalesLine.find({
+          _id: { $in: salesLineIds },
+          event_id: { $ne: null }
+        }).select('event_id').lean();
+
+        const csiEventIds = csiSalesLines
+          .map(sl => sl.event_id?.toString())
+          .filter(Boolean);
+
+        if (csiEventIds.length) {
+          const linkedEvents = csiEventIds.map(eid => ({
+            event_id: eid,
+            relationship: 'SETTLES'
+          }));
+          await TransactionEvent.findByIdAndUpdate(row.event_id, {
+            $push: { linked_events: { $each: linkedEvents } }
+          });
+        }
+      } catch (err) {
+        console.error('Document flow linking failed for CR:', row.cr_no, err.message);
+      }
+    }
 
     res.json({
       success: true,
@@ -304,6 +359,8 @@ const approveDeletion = catchAsync(async (req, res) => {
     event_type: 'CR_REVERSAL', event_date: new Date(),
     document_ref: `REV-${collection.cr_no}`,
     corrects_event_id: collection.event_id,
+    // Phase 9.3: Link reversal to original CR
+    linked_events: collection.event_id ? [{ event_id: collection.event_id, relationship: 'REVERSES' }] : [],
     payload: { original_cr_no: collection.cr_no, reason: req.body.reason },
     created_by: req.user._id
   }]);

@@ -44,6 +44,7 @@ function ScanORModal({ open, onClose, onApply }) {
       vat_amount: parseFloat(val(e.vat_amount)) || 0,
       payment_mode: val(e.payment_mode) || 'CASH',
       or_photo_url: ocrData.s3_url || preview,
+      or_attachment_id: ocrData.attachment_id || null,
       classification: ocrData.classification || null
     });
     handleClose();
@@ -142,6 +143,7 @@ export default function Expenses() {
       updateLine(scanTargetIdx, 'establishment', data.establishment);
       updateLine(scanTargetIdx, 'amount', data.amount);
       updateLine(scanTargetIdx, 'or_photo_url', data.or_photo_url);
+      if (data.or_attachment_id) updateLine(scanTargetIdx, 'or_attachment_id', data.or_attachment_id);
       if (data.expense_date) updateLine(scanTargetIdx, 'expense_date', data.expense_date);
       if (data.classification?.category) updateLine(scanTargetIdx, 'expense_category', data.classification.category);
     }
@@ -367,6 +369,7 @@ export default function Expenses() {
                         try {
                           const result = await processDocument(file, 'OR');
                           updateLine(idx, 'or_photo_url', result.s3_url || URL.createObjectURL(file));
+                          if (result.attachment_id) updateLine(idx, 'or_attachment_id', result.attachment_id);
                         } catch {
                           updateLine(idx, 'or_photo_url', URL.createObjectURL(file));
                         }

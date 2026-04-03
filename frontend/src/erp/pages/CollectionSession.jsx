@@ -78,6 +78,7 @@ export default function CollectionSession() {
   const [csiPhotoUrls, setCsiPhotoUrls] = useState([]);
   const [depositSlipUrl, setDepositSlipUrl] = useState('');
   const [cwtCertUrl, setCwtCertUrl] = useState('');
+  const [attachmentIds, setAttachmentIds] = useState([]);
   const [uploading, setUploading] = useState('');
   const fileInputRef = useRef(null);
   const [pendingUploadType, setPendingUploadType] = useState('');
@@ -196,6 +197,9 @@ export default function CollectionSession() {
       else if (uploadType === 'cwt_cert') setCwtCertUrl(url);
       else if (uploadType === 'deposit_slip') setDepositSlipUrl(url);
       else if (uploadType === 'csi_photo') setCsiPhotoUrls(prev => [...prev, url]);
+
+      // Phase 9.1b: collect attachment IDs for linking
+      if (result?.attachment_id) setAttachmentIds(prev => [...prev, result.attachment_id]);
     } catch (err) {
       alert('Upload failed: ' + (err.message || 'Unknown error'));
     } finally { setUploading(''); }
@@ -228,7 +232,8 @@ export default function CollectionSession() {
         cr_photo_url: crPhotoUrl || undefined,
         csi_photo_urls: csiPhotoUrls.length ? csiPhotoUrls : undefined,
         deposit_slip_url: depositSlipUrl || undefined,
-        cwt_certificate_url: cwtCertUrl || undefined
+        cwt_certificate_url: cwtCertUrl || undefined,
+        attachment_ids: attachmentIds.length ? attachmentIds : undefined
       });
       navigate('/erp/collections');
     } catch (err) {

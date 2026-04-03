@@ -26,6 +26,7 @@ export default function useIncome() {
 
   // ═══ Archive & Period Control ═══
   const closePeriod = (data) => api.post('/archive/close-period', data);
+  const reopenPeriod = (data) => api.post('/archive/reopen-period', data);
   const getPeriodStatus = (params) => api.get('/archive/period-status', { params });
   const getArchiveList = (params) => api.get('/archive', { params });
 
@@ -40,7 +41,7 @@ export default function useIncome() {
     reviewIncome, returnIncome, confirmIncome, creditIncome,
     generatePnl, getPnlList, getPnlById, updatePnlManual, postPnl,
     getProfitShareStatus, getProfitShareDetail,
-    closePeriod, getPeriodStatus, getArchiveList,
+    closePeriod, reopenPeriod, getPeriodStatus, getArchiveList,
     validateYearEnd, executeYearEnd, getFiscalYearStatus
   };
 }

@@ -244,6 +244,8 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
         return new Date().toISOString().split('T')[0];
       })(),
       doc_ref: fieldVal(extracted.invoice_no),
+      csi_photo_url: ocrData?.s3_url || '',
+      csi_attachment_id: ocrData?.attachment_id || null,
       line_items: matchedItems.length > 0
         ? matchedItems.map(mi => ({
             product_id: mi.product_match?.product?.product_id || '',

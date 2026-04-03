@@ -46,6 +46,11 @@ const transactionEventSchema = new mongoose.Schema({
     enum: ['ACTIVE', 'DELETED'],
     default: 'ACTIVE'
   },
+  // Phase 9.3: Document flow linking (CSI → CR → CWT → Deposit chain)
+  linked_events: [{
+    event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+    relationship: { type: String, enum: ['SETTLES', 'CERTIFIES', 'DEPOSITS', 'REVERSES'] }
+  }],
   corrects_event_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'TransactionEvent',
@@ -74,7 +79,7 @@ transactionEventSchema.pre('save', function (next) {
   next();
 });
 
-// Strip immutable fields from any update — only status can change
+// Strip immutable fields from any update — only status and linked_events can change
 transactionEventSchema.pre('findOneAndUpdate', function (next) {
   const update = this.getUpdate();
   if (update.$set) {
@@ -86,6 +91,7 @@ transactionEventSchema.pre('findOneAndUpdate', function (next) {
       return next(new Error('TransactionEvent status can only transition to DELETED'));
     }
   }
+  // $push on linked_events is always allowed (Phase 9.3 document flow)
   next();
 });
 
@@ -104,6 +110,7 @@ transactionEventSchema.index({ entity_id: 1, bdm_id: 1 });
 transactionEventSchema.index({ entity_id: 1, event_type: 1 });
 transactionEventSchema.index({ entity_id: 1, event_date: -1 });
 transactionEventSchema.index({ corrects_event_id: 1 });
+transactionEventSchema.index({ 'linked_events.event_id': 1 });
 transactionEventSchema.index({ status: 1 });
 
 module.exports = mongoose.model('TransactionEvent', transactionEventSchema);
