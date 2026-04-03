@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(node:*)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(powershell -Command \"\\(Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue\\).OwningProcess\")",
+      "Bash(npx vite:*)",
+      "Bash(NODE_OPTIONS=--max-old-space-size=4096 npx vite build)"
     ]
   }
 }

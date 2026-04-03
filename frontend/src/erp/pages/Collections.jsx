@@ -61,6 +61,15 @@ export default function Collections() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const handleValidate = async (ids) => {
+    try {
+      const res = await coll.validateCollections(ids);
+      const msg = `Validated: ${res?.valid_count || 0} valid, ${res?.error_count || 0} errors`;
+      if (res?.error_count) alert(msg + '\n\nCheck missing documents (CR photo, CSI photos, deposit slip, CWT cert) or CR formula mismatch.');
+      else alert(msg);
+      loadData(pagination.page);
+    } catch (err) { alert(err.response?.data?.message || 'Validation failed'); }
+  };
   const handleSubmit = async () => {
     if (!window.confirm('Submit all validated collections?')) return;
     try { await coll.submitCollections(); loadData(pagination.page); } catch (err) { alert(err.response?.data?.message || 'Submit failed'); }
@@ -97,7 +106,7 @@ export default function Collections() {
           </div>
 
           <table className="coll-table">
-            <thead><tr><th>CR #</th><th>Hospital</th><th>Date</th><th>Amount</th><th>CWT</th><th>CSIs</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>CR #</th><th>Hospital</th><th>Date</th><th>Amount</th><th>CWT</th><th>Comm</th><th>Rebates</th><th>CSIs</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {data.map(c => {
                 const sc = STATUS_COLORS[c.status] || {};
@@ -108,16 +117,19 @@ export default function Collections() {
                     <td>{new Date(c.cr_date).toLocaleDateString('en-PH')}</td>
                     <td>P{(c.cr_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td>{c.cwt_na ? 'N/A' : `P${(c.cwt_amount || 0).toFixed(2)}`}</td>
+                    <td style={{ color: '#16a34a' }}>{c.total_commission ? `P${c.total_commission.toFixed(2)}` : '—'}</td>
+                    <td style={{ color: '#7c3aed' }}>{c.total_partner_rebates ? `P${c.total_partner_rebates.toFixed(2)}` : '—'}</td>
                     <td>{c.settled_csis?.length || 0}</td>
                     <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span></td>
-                    <td onClick={e => e.stopPropagation()}>
+                    <td onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 4 }}>
+                      {(c.status === 'DRAFT' || c.status === 'ERROR') && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
                       {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={handleSubmit}>Submit</button>}
                       {c.status === 'POSTED' && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}
                     </td>
                   </tr>
                 );
               })}
-              {!data.length && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>{loading ? 'Loading...' : 'No collections found'}</td></tr>}
+              {!data.length && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>{loading ? 'Loading...' : 'No collections found'}</td></tr>}
             </tbody>
           </table>
           {pagination.pages > 1 && <Pagination currentPage={pagination.page} totalPages={pagination.pages} onPageChange={loadData} />}
@@ -135,19 +147,31 @@ export default function Collections() {
                 <p><strong>CWT:</strong> {selected.cwt_na ? 'N/A' : `P${(selected.cwt_amount || 0).toFixed(2)}`}</p>
                 <p><strong>Payment:</strong> {selected.payment_mode}{selected.check_no ? ` — #${selected.check_no}` : ''}</p>
                 <p><strong>Status:</strong> <span className="badge" style={STATUS_COLORS[selected.status] || {}}>{selected.status}</span></p>
+                <p><strong>Commission:</strong> P{(selected.total_commission || 0).toFixed(2)}</p>
+                <p><strong>Partner Rebates:</strong> P{(selected.total_partner_rebates || 0).toFixed(2)}</p>
                 <h3 style={{ marginTop: 16, fontSize: 14 }}>Settled CSIs ({selected.settled_csis?.length || 0})</h3>
-                <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-                  <thead><tr style={{ background: 'var(--erp-bg)' }}><th style={{ padding: 6 }}>CSI #</th><th>Amount</th><th>Comm</th></tr></thead>
-                  <tbody>
-                    {selected.settled_csis?.map((s, i) => (
-                      <tr key={i} style={{ borderTop: '1px solid var(--erp-border)' }}>
-                        <td style={{ padding: 6 }}>{s.doc_ref}</td>
-                        <td>P{(s.invoice_amount || 0).toFixed(2)}</td>
-                        <td>{((s.commission_rate || 0) * 100).toFixed(1)}% = P{(s.commission_amount || 0).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {selected.settled_csis?.map((s, i) => (
+                  <div key={i} style={{ border: '1px solid var(--erp-border)', borderRadius: 8, padding: 10, marginBottom: 8, fontSize: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                      <strong>CSI# {s.doc_ref}</strong>
+                      <span style={{ fontWeight: 600 }}>P{(s.invoice_amount || 0).toFixed(2)}</span>
+                    </div>
+                    <div style={{ color: 'var(--erp-muted)', marginTop: 4 }}>
+                      Commission: {((s.commission_rate || 0) * 100).toFixed(1)}% = P{(s.commission_amount || 0).toFixed(2)}
+                      {s.source === 'OPENING_AR' && <span style={{ marginLeft: 8, background: '#fef3c7', color: '#92400e', padding: '1px 6px', borderRadius: 4, fontSize: 10 }}>Opening AR</span>}
+                    </div>
+                    {s.partner_tags?.length > 0 && (
+                      <div style={{ marginTop: 6 }}>
+                        {s.partner_tags.map((t, j) => (
+                          <div key={j} style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 3 }}>
+                            <span style={{ background: '#ede9fe', color: '#5b21b6', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>{t.doctor_name}</span>
+                            <span style={{ fontSize: 11, color: '#16a34a' }}>Rebate: {t.rebate_pct}% = P{(t.rebate_amount || 0).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}

@@ -26,6 +26,9 @@ const roleCheck = (...allowedRoles) => {
       });
     }
 
+    // President always has full access (supersedes all role checks)
+    if (req.user.role === 'president') return next();
+
     // Check if user's role is in the allowed roles list
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({
