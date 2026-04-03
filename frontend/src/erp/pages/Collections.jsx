@@ -1,33 +1,156 @@
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
+import Pagination from '../../components/common/Pagination';
 import { useAuth } from '../../hooks/useAuth';
+import useCollections from '../hooks/useCollections';
+
+const STATUS_COLORS = {
+  DRAFT: { bg: '#e2e8f0', text: '#475569' },
+  VALID: { bg: '#dcfce7', text: '#166534' },
+  ERROR: { bg: '#fef2f2', text: '#991b1b' },
+  POSTED: { bg: '#dbeafe', text: '#1e40af' },
+  DELETION_REQUESTED: { bg: '#fef3c7', text: '#92400e' }
+};
+
+const pageStyles = `
+  .coll-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
+  .coll-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .coll-list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+  .coll-list-header h1 { font-size: 22px; color: var(--erp-text); margin: 0; }
+  .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn-primary { background: var(--erp-accent, #1e5eff); color: #fff; }
+  .btn-success { background: #16a34a; color: #fff; }
+  .btn-warning { background: #d97706; color: #fff; }
+  .btn-danger { background: #dc2626; color: #fff; }
+  .btn-sm { padding: 4px 10px; font-size: 11px; }
+  .btn-outline { background: transparent; border: 1px solid var(--erp-border); color: var(--erp-text); }
+  .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .filter-bar select { padding: 8px 12px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 13px; background: var(--erp-panel); height: 38px; }
+  .coll-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; overflow: hidden; }
+  .coll-table th { background: var(--erp-accent-soft, #e8efff); padding: 10px 14px; text-align: left; font-weight: 600; }
+  .coll-table td { padding: 10px 14px; border-top: 1px solid var(--erp-border); }
+  .coll-table tr:hover { background: var(--erp-accent-soft); cursor: pointer; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .detail-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+  .detail-panel { background: var(--erp-panel); border-radius: 16px; padding: 24px; max-width: 700px; width: 95%; max-height: 85vh; overflow-y: auto; }
+  @media(max-width: 768px) { .coll-main { padding: 12px; } }
+`;
 
 export default function Collections() {
   const { user } = useAuth();
+  const coll = useCollections();
+  const [data, setData] = useState([]);
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
+  const [filters, setFilters] = useState({ status: '' });
+  const [selected, setSelected] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const isAdmin = ['admin', 'finance', 'president', 'ceo'].includes(user?.role);
+
+  const loadData = useCallback(async (page = 1) => {
+    setLoading(true);
+    try {
+      const params = { page, limit: 20 };
+      if (filters.status) params.status = filters.status;
+      const res = await coll.getCollections(params);
+      setData(res?.data || []);
+      setPagination(res?.pagination || { page: 1, limit: 20, total: 0, pages: 0 });
+    } catch {} finally { setLoading(false); }
+  }, [filters]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleSubmit = async () => {
+    if (!window.confirm('Submit all validated collections?')) return;
+    try { await coll.submitCollections(); loadData(pagination.page); } catch (err) { alert(err.response?.data?.message || 'Submit failed'); }
+  };
+  const handleReopen = async (id) => {
+    if (!window.confirm('Re-open this collection?')) return;
+    try { await coll.reopenCollections([id]); loadData(pagination.page); } catch (err) { alert(err.response?.data?.message || 'Reopen failed'); }
+  };
+  const viewDetail = async (id) => {
+    try { const res = await coll.getCollectionById(id); if (res?.data) setSelected(res.data); } catch {}
+  };
 
   return (
-    <div className="admin-page erp-page">
+    <div className="admin-page erp-page coll-page">
+      <style>{pageStyles}</style>
       <Navbar />
       <div className="admin-layout">
         <Sidebar />
-        <main style={{ padding: 24, flex: 1 }}>
-          <h1 style={{ marginBottom: 8, color: 'var(--erp-text, #132238)' }}>Collections</h1>
-          <p style={{ color: 'var(--erp-muted, #5f7188)', marginBottom: 24 }}>
-            Collection sessions, AR tracking, and CWT management.
-          </p>
-          <div style={{
-            padding: 32,
-            borderRadius: 12,
-            border: '1px dashed var(--erp-border, #dbe4f0)',
-            textAlign: 'center',
-            color: 'var(--erp-muted, #5f7188)'
-          }}>
-            Coming in Phase 5 — Collection Receipt entry, hospital-first and CSI-first modes, AR aging, SOA generation.
+        <main className="coll-main">
+          <div className="coll-list-header">
+            <h1>Collections</h1>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Link to="/erp/collections/session" className="btn btn-primary">+ New Collection</Link>
+              <Link to="/erp/collections/ar" className="btn btn-outline">AR Aging</Link>
+              <Link to="/erp/collections/soa" className="btn btn-outline">SOA</Link>
+            </div>
           </div>
-          <Link to="/erp" style={{ display: 'inline-block', marginTop: 16, color: 'var(--erp-accent, #1e5eff)' }}>
-            &larr; Back to ERP Dashboard
-          </Link>
+
+          <div className="filter-bar">
+            <select value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
+              <option value="">All Status</option>
+              {['DRAFT', 'VALID', 'ERROR', 'POSTED'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          <table className="coll-table">
+            <thead><tr><th>CR #</th><th>Hospital</th><th>Date</th><th>Amount</th><th>CWT</th><th>CSIs</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+              {data.map(c => {
+                const sc = STATUS_COLORS[c.status] || {};
+                return (
+                  <tr key={c._id} onClick={() => viewDetail(c._id)}>
+                    <td style={{ fontWeight: 600 }}>{c.cr_no}</td>
+                    <td>{c.hospital_id?.hospital_name || '—'}</td>
+                    <td>{new Date(c.cr_date).toLocaleDateString('en-PH')}</td>
+                    <td>P{(c.cr_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td>{c.cwt_na ? 'N/A' : `P${(c.cwt_amount || 0).toFixed(2)}`}</td>
+                    <td>{c.settled_csis?.length || 0}</td>
+                    <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span></td>
+                    <td onClick={e => e.stopPropagation()}>
+                      {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={handleSubmit}>Submit</button>}
+                      {c.status === 'POSTED' && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!data.length && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>{loading ? 'Loading...' : 'No collections found'}</td></tr>}
+            </tbody>
+          </table>
+          {pagination.pages > 1 && <Pagination currentPage={pagination.page} totalPages={pagination.pages} onPageChange={loadData} />}
+
+          {selected && (
+            <div className="detail-modal" onClick={() => setSelected(null)}>
+              <div className="detail-panel" onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <h2>CR# {selected.cr_no}</h2>
+                  <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}>&times;</button>
+                </div>
+                <p><strong>Hospital:</strong> {selected.hospital_id?.hospital_name}</p>
+                <p><strong>Date:</strong> {new Date(selected.cr_date).toLocaleDateString('en-PH')}</p>
+                <p><strong>Amount:</strong> P{(selected.cr_amount || 0).toFixed(2)}</p>
+                <p><strong>CWT:</strong> {selected.cwt_na ? 'N/A' : `P${(selected.cwt_amount || 0).toFixed(2)}`}</p>
+                <p><strong>Payment:</strong> {selected.payment_mode}{selected.check_no ? ` — #${selected.check_no}` : ''}</p>
+                <p><strong>Status:</strong> <span className="badge" style={STATUS_COLORS[selected.status] || {}}>{selected.status}</span></p>
+                <h3 style={{ marginTop: 16, fontSize: 14 }}>Settled CSIs ({selected.settled_csis?.length || 0})</h3>
+                <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                  <thead><tr style={{ background: 'var(--erp-bg)' }}><th style={{ padding: 6 }}>CSI #</th><th>Amount</th><th>Comm</th></tr></thead>
+                  <tbody>
+                    {selected.settled_csis?.map((s, i) => (
+                      <tr key={i} style={{ borderTop: '1px solid var(--erp-border)' }}>
+                        <td style={{ padding: 6 }}>{s.doc_ref}</td>
+                        <td>P{(s.invoice_amount || 0).toFixed(2)}</td>
+                        <td>{((s.commission_rate || 0) * 100).toFixed(1)}% = P{(s.commission_amount || 0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </main>
       </div>
     </div>

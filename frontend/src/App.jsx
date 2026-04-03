@@ -48,6 +48,9 @@ const GrnEntry = lazy(() => import('./erp/pages/GrnEntry'));
 const DrEntry = lazy(() => import('./erp/pages/DrEntry'));
 const ConsignmentDashboard = lazy(() => import('./erp/pages/ConsignmentDashboard'));
 const Collections = lazy(() => import('./erp/pages/Collections'));
+const CollectionSession = lazy(() => import('./erp/pages/CollectionSession'));
+const AccountsReceivable = lazy(() => import('./erp/pages/AccountsReceivable'));
+const SoaGenerator = lazy(() => import('./erp/pages/SoaGenerator'));
 const Expenses = lazy(() => import('./erp/pages/Expenses'));
 const ErpReports = lazy(() => import('./erp/pages/ErpReports'));
 const TransferOrders = lazy(() => import('./erp/pages/TransferOrders'));
@@ -307,8 +310,32 @@ function App() {
           <Route
             path="/erp/collections"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
                 <Collections />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/collections/session"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+                <CollectionSession />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/collections/ar"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+                <AccountsReceivable />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/collections/soa"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+                <SoaGenerator />
               </ProtectedRoute>
             }
           />

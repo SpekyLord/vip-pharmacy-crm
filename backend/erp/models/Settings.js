@@ -33,6 +33,8 @@ const settingsSchema = new mongoose.Schema({
   // Collections
   DEFAULT_PAYMENT_TERMS: { type: Number, default: 30 },
   COLLECTION_OK_THRESHOLD: { type: Number, default: 0.70 },
+  COMMISSION_RATES: { type: [Number], default: [0, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05] },
+  PARTNER_REBATE_RATES: { type: [Number], default: [1, 2, 3, 5, 20, 25] },
 
   // Products
   MD_MAX_PRODUCT_TAGS: { type: Number, default: 3 },

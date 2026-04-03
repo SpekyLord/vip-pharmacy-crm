@@ -29,4 +29,7 @@ router.use('/consignment', require('./consignmentRoutes'));
 // ═══ Phase 4B — Inter-Company Transfers ═══
 router.use('/transfers', require('./interCompanyRoutes'));
 
+// ═══ Phase 5 — Collections & AR ═══
+router.use('/collections', require('./collectionRoutes'));
+
 module.exports = router;

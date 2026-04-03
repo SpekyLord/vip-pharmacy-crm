@@ -192,6 +192,26 @@ const validateSales = catchAsync(async (req, res) => {
       rowErrors.push('CSI date cannot be in the future');
     }
 
+    // Credit limit check
+    if (row.hospital_id) {
+      try {
+        const hospital = await require('../models/Hospital').findById(row.hospital_id).select('credit_limit credit_limit_action hospital_name').lean();
+        if (hospital?.credit_limit != null && hospital.credit_limit > 0) {
+          const { getHospitalArBalance } = require('../services/arEngine');
+          const currentAr = await getHospitalArBalance(row.hospital_id, row.entity_id);
+          const projectedAr = currentAr + (row.invoice_total || 0);
+          if (projectedAr > hospital.credit_limit) {
+            const msg = `Credit limit: AR P${currentAr.toFixed(2)} + invoice P${(row.invoice_total || 0).toFixed(2)} = P${projectedAr.toFixed(2)} exceeds limit P${hospital.credit_limit.toFixed(2)} for ${hospital.hospital_name}`;
+            if (hospital.credit_limit_action === 'BLOCK') {
+              rowErrors.push(msg);
+            } else {
+              rowErrors.push(`WARNING: ${msg}`);
+            }
+          }
+        }
+      } catch { /* AR engine not critical for validation */ }
+    }
+
     // Duplicate check: same doc_ref + hospital + any product in this batch
     const dupCheck = await SalesLine.findOne({
       _id: { $ne: row._id },
