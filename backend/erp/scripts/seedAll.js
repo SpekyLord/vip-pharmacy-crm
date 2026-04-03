@@ -13,29 +13,34 @@ const seedSettings = require('./seedSettings');
 const seedGovernmentRates = require('./seedGovernmentRates');
 const seedLookups = require('./seedLookups');
 const seedVendors = require('./seedVendors');
+const seedAccessTemplates = require('./seedAccessTemplates');
 
 const seedAll = async () => {
   await connectDB();
   console.log('═══ ERP Seed All ═══\n');
 
-  console.log('--- 1/5 Entities ---');
+  console.log('--- 1/6 Entities ---');
   await seedEntities();
   console.log('');
 
-  console.log('--- 2/5 Settings ---');
+  console.log('--- 2/6 Settings ---');
   await seedSettings();
   console.log('');
 
-  console.log('--- 3/5 Government Rates ---');
+  console.log('--- 3/6 Government Rates ---');
   await seedGovernmentRates();
   console.log('');
 
-  console.log('--- 4/5 Lookups (Payment Modes, Expense Components) ---');
+  console.log('--- 4/6 Lookups (Payment Modes, Expense Components) ---');
   await seedLookups();
   console.log('');
 
-  console.log('--- 5/5 Vendors ---');
+  console.log('--- 5/6 Vendors ---');
   await seedVendors();
+  console.log('');
+
+  console.log('--- 6/6 Access Templates ---');
+  await seedAccessTemplates();
   console.log('');
 
   console.log('═══ All ERP seeds complete ═══');

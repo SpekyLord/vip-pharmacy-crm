@@ -66,6 +66,13 @@ const Pnl = lazy(() => import('./erp/pages/Pnl'));
 const ProfitSharing = lazy(() => import('./erp/pages/ProfitSharing'));
 const MonthlyArchivePage = lazy(() => import('./erp/pages/MonthlyArchive'));
 const AuditLogs = lazy(() => import('./erp/pages/AuditLogs'));
+// Phase 10 — ERP Access Control, People & Payroll
+const AccessTemplateManager = lazy(() => import('./erp/pages/AccessTemplateManager'));
+const PeopleList = lazy(() => import('./erp/pages/PeopleList'));
+const PersonDetail = lazy(() => import('./erp/pages/PersonDetail'));
+const PayrollRun = lazy(() => import('./erp/pages/PayrollRun'));
+const PayslipView = lazy(() => import('./erp/pages/PayslipView'));
+const ThirteenthMonth = lazy(() => import('./erp/pages/ThirteenthMonth'));
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -466,6 +473,56 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['admin', 'finance']}>
                 <AuditLogs />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Phase 10 — ERP Access Control, People & Payroll */}
+          <Route
+            path="/erp/access-templates"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'president']}>
+                <AccessTemplateManager />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/people"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="people">
+                <PeopleList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/people/:id"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="people">
+                <PersonDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/payroll"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="payroll">
+                <PayrollRun />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/payslip/:id"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="payroll">
+                <PayslipView />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/thirteenth-month"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="payroll">
+                <ThirteenthMonth />
               </ProtectedRoute>
             }
           />

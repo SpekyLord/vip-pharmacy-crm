@@ -34,6 +34,13 @@ import {
   PlusCircle,
   Camera,
   Settings,
+  Briefcase,
+  DollarSign,
+  UserCheck,
+  CreditCard,
+  Receipt,
+  Wallet,
+  BookOpen,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -509,40 +516,72 @@ const sidebarStyles = `
    MENU CONFIGURATION
    ============================================================================= */
 
-const getMenuConfig = (role, unreadCount = 0) => {
+/**
+ * Build ERP sidebar section based on user's erp_access.
+ * Returns null if no ERP modules are accessible.
+ */
+const getErpSection = (role, erpAccess) => {
+  // Determine effective access per module
+  const hasModule = (mod) => {
+    if (role === 'president' || role === 'ceo') return true;
+    if (role === 'admin' && (!erpAccess || !erpAccess.enabled)) return true;
+    if (!erpAccess || !erpAccess.enabled) return false;
+    return erpAccess.modules?.[mod] && erpAccess.modules[mod] !== 'NONE';
+  };
+
+  const items = [];
+  items.push({ path: '/erp', label: 'ERP Home', icon: Briefcase });
+  if (hasModule('sales'))       items.push({ path: '/erp/sales', label: 'Sales', icon: Receipt });
+  if (hasModule('inventory'))   items.push({ path: '/erp/my-stock', label: 'Inventory', icon: Package });
+  if (hasModule('collections')) items.push({ path: '/erp/collections', label: 'Collections', icon: Wallet });
+  if (hasModule('expenses'))    items.push({ path: '/erp/expenses', label: 'Expenses', icon: CreditCard });
+  if (hasModule('reports'))     items.push({ path: '/erp/reports', label: 'Reports', icon: BarChart3 });
+  if (hasModule('people'))      items.push({ path: '/erp/people', label: 'People', icon: UserCheck });
+  if (hasModule('payroll'))     items.push({ path: '/erp/payroll', label: 'Payroll', icon: DollarSign });
+  if (hasModule('accounting'))  items.push({ path: '/erp/pnl', label: 'Accounting', icon: BookOpen });
+
+  // Only show section if at least ERP Home + 1 module
+  if (items.length <= 1) return null;
+  return { title: 'ERP', items };
+};
+
+const getMenuConfig = (role, unreadCount = 0, erpAccess = null) => {
   switch (role) {
-    case 'admin':
+    case 'admin': {
+      const erpSection = getErpSection(role, erpAccess);
+      const sections = [
+        {
+          title: 'Main',
+          items: [
+            { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+            { path: '/admin/activity', label: 'Activity', icon: Activity },
+          ],
+        },
+        {
+          title: 'Management',
+          items: [
+            { path: '/admin/doctors', label: 'VIP Clients', icon: Stethoscope },
+            { path: '/admin/employees', label: 'BDMs', icon: Users },
+            { path: '/admin/products', label: 'Products', icon: Package },
+          ],
+        },
+        {
+          title: 'Operations',
+          items: [
+            { path: '/admin/approvals', label: 'Import / Export', icon: FileSpreadsheet },
+            { path: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
+            { path: '/admin/reports', label: 'Reports', icon: FileText },
+            { path: '/admin/photo-audit', label: 'Photo Audit', icon: Camera },
+            { path: '/admin/settings', label: 'Programs', icon: Settings },
+          ],
+        },
+      ];
+      if (erpSection) sections.push(erpSection);
       return {
         roleTitle: 'Administrator',
         roleSubtitle: 'Full Access',
         roleIcon: Shield,
-        sections: [
-          {
-            title: 'Main',
-            items: [
-              { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-              { path: '/admin/activity', label: 'Activity', icon: Activity },
-            ],
-          },
-          {
-            title: 'Management',
-            items: [
-              { path: '/admin/doctors', label: 'VIP Clients', icon: Stethoscope },
-              { path: '/admin/employees', label: 'BDMs', icon: Users },
-              { path: '/admin/products', label: 'Products', icon: Package },
-            ],
-          },
-          {
-            title: 'Operations',
-            items: [
-              { path: '/admin/approvals', label: 'Import / Export', icon: FileSpreadsheet },
-              { path: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
-              { path: '/admin/reports', label: 'Reports', icon: FileText },
-              { path: '/admin/photo-audit', label: 'Photo Audit', icon: Camera },
-              { path: '/admin/settings', label: 'Programs', icon: Settings },
-            ],
-          },
-        ],
+        sections,
         bottomTabs: [
           { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
           { path: '/admin/approvals', label: 'Import', icon: FileSpreadsheet },
@@ -550,30 +589,34 @@ const getMenuConfig = (role, unreadCount = 0) => {
           { path: '/admin/reports', label: 'Reports', icon: FileText },
         ],
       };
+    }
 
     case 'employee':
-    default:
+    default: {
+      const erpSection = getErpSection(role, erpAccess);
+      const sections = [
+        {
+          title: 'Main',
+          items: [
+            { path: '/bdm', label: 'Dashboard', icon: LayoutDashboard },
+          ],
+        },
+        {
+          title: 'Work',
+          items: [
+            { path: '/bdm/cpt', label: 'Call Plan', icon: CalendarRange },
+            { path: '/bdm/products', label: 'Products', icon: Package },
+            { path: '/bdm/inbox', label: 'Mail', icon: Inbox, badge: unreadCount || null },
+            { path: '/bdm/visits', label: 'My Visits', icon: ClipboardCheck },
+          ],
+        },
+      ];
+      if (erpSection) sections.push(erpSection);
       return {
         roleTitle: 'Field BDM',
         roleSubtitle: 'BDM',
         roleIcon: UserCog,
-        sections: [
-          {
-            title: 'Main',
-            items: [
-              { path: '/bdm', label: 'Dashboard', icon: LayoutDashboard },
-            ],
-          },
-          {
-            title: 'Work',
-            items: [
-              { path: '/bdm/cpt', label: 'Call Plan', icon: CalendarRange },
-              { path: '/bdm/products', label: 'Products', icon: Package },
-              { path: '/bdm/inbox', label: 'Mail', icon: Inbox, badge: unreadCount || null },
-              { path: '/bdm/visits', label: 'My Visits', icon: ClipboardCheck },
-            ],
-          },
-        ],
+        sections,
         bottomTabs: [
           { path: '/bdm', label: 'Dashboard', icon: LayoutDashboard, end: true },
           { path: '/bdm/cpt', label: 'Call Plan', icon: CalendarRange },
@@ -581,6 +624,7 @@ const getMenuConfig = (role, unreadCount = 0) => {
           { path: '/bdm/inbox', label: 'Inbox', icon: Inbox, badge: unreadCount || null },
         ],
       };
+    }
   }
 };
 
@@ -619,7 +663,7 @@ const Sidebar = () => {
     return () => window.removeEventListener('inbox:updated', fetchUnreadCount);
   }, [fetchUnreadCount]);
 
-  const menuConfig = getMenuConfig(user?.role, unreadCount);
+  const menuConfig = getMenuConfig(user?.role, unreadCount, user?.erp_access);
   const RoleIcon = menuConfig.roleIcon;
 
   const isActive = (path) => {

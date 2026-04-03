@@ -130,6 +130,27 @@ const userSchema = new mongoose.Schema(
     date_of_birth: { type: Date },
     contract_type: { type: String },
     date_started: { type: Date },
+
+    // ═══ ERP ACCESS CONTROL (Phase 10) ═══
+    erp_access: {
+      enabled: { type: Boolean, default: false },
+      template_id: { type: mongoose.Schema.Types.ObjectId, ref: 'AccessTemplate' },
+      modules: {
+        sales:       { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        inventory:   { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        collections: { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        expenses:    { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        reports:     { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        people:      { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        payroll:     { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        accounting:  { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        purchasing:  { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        banking:     { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+      },
+      can_approve: { type: Boolean, default: false },
+      updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      updated_at: { type: Date },
+    },
   },
   {
     timestamps: true,
@@ -162,6 +183,8 @@ userSchema.index({ passwordResetExpires: 1 }, { expireAfterSeconds: 0 });
 // ERP indexes
 userSchema.index({ entity_id: 1 });
 userSchema.index({ entity_id: 1, role: 1 });
+// ERP access control index
+userSchema.index({ 'erp_access.enabled': 1 });
 
 // Pre-save hook to hash password
 userSchema.pre('save', async function (next) {
