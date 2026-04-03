@@ -77,7 +77,7 @@ const getMyStock = catchAsync(async (req, res) => {
   // Enrich with product details
   const productIds = [...productMap.keys()].map(id => new mongoose.Types.ObjectId(id));
   const products = await ProductMaster.find({ _id: { $in: productIds } })
-    .select('brand_name generic_name item_key selling_price unit_code vat_status')
+    .select('brand_name generic_name item_key dosage_strength selling_price unit_code vat_status')
     .lean();
 
   const productLookup = new Map(products.map(p => [p._id.toString(), p]));

@@ -390,7 +390,7 @@ export default function DrEntry() {
                         <option value="">Select...</option>
                         {productOptions.map(sp => (
                           <option key={sp.product_id} value={sp.product_id}>
-                            {sp.product?.brand_name} {sp.product?.dosage_strength || ''} — {sp.total_qty} {sp.product?.unit_code || 'PC'}
+                            {sp.product?.brand_name}{sp.product?.dosage_strength ? ` ${sp.product.dosage_strength}` : ''} — {sp.total_qty} {sp.product?.unit_code || 'PC'}
                           </option>
                         ))}
                       </select>

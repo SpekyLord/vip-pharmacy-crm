@@ -32,4 +32,10 @@ router.use('/transfers', require('./interCompanyRoutes'));
 // ═══ Phase 5 — Collections & AR ═══
 router.use('/collections', require('./collectionRoutes'));
 
+// ═══ Phase 5.6 — IC Settlements (VIP collects from subsidiaries) ═══
+router.use('/ic-settlements', require('./icSettlementRoutes'));
+
+// ═══ Phase 6 — Expenses (SMER, Car Logbook, ORE/ACCESS, PRF/CALF) ═══
+router.use('/expenses', require('./expenseRoutes'));
+
 module.exports = router;

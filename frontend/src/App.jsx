@@ -51,7 +51,12 @@ const Collections = lazy(() => import('./erp/pages/Collections'));
 const CollectionSession = lazy(() => import('./erp/pages/CollectionSession'));
 const AccountsReceivable = lazy(() => import('./erp/pages/AccountsReceivable'));
 const SoaGenerator = lazy(() => import('./erp/pages/SoaGenerator'));
+const IcArDashboard = lazy(() => import('./erp/pages/IcArDashboard'));
+const IcSettlement = lazy(() => import('./erp/pages/IcSettlement'));
 const Expenses = lazy(() => import('./erp/pages/Expenses'));
+const Smer = lazy(() => import('./erp/pages/Smer'));
+const CarLogbook = lazy(() => import('./erp/pages/CarLogbook'));
+const PrfCalf = lazy(() => import('./erp/pages/PrfCalf'));
 const ErpReports = lazy(() => import('./erp/pages/ErpReports'));
 const TransferOrders = lazy(() => import('./erp/pages/TransferOrders'));
 const TransferReceipt = lazy(() => import('./erp/pages/TransferReceipt'));
@@ -340,10 +345,50 @@ function App() {
             }
           />
           <Route
+            path="/erp/ic-settlements"
+            element={
+              <ProtectedRoute allowedRoles={['president', 'admin', 'finance']}>
+                <IcArDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/ic-settlements/new"
+            element={
+              <ProtectedRoute allowedRoles={['president', 'admin', 'finance']}>
+                <IcSettlement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/erp/expenses"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}>
                 <Expenses />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/smer"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}>
+                <Smer />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/car-logbook"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}>
+                <CarLogbook />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/prf-calf"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}>
+                <PrfCalf />
               </ProtectedRoute>
             }
           />

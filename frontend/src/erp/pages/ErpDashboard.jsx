@@ -227,7 +227,7 @@ const ErpDashboard = () => {
               <Link to="/erp/collections" className="erp-module-card">
                 <h3>Collections</h3>
                 <p>Collection receipts, AR aging, CWT, and SOA generation.</p>
-                <span className="erp-module-status status-placeholder">Phase 5</span>
+                <span className="erp-module-status status-active">Active</span>
               </Link>
               <Link to="/erp/expenses" className="erp-module-card">
                 <h3>Expenses</h3>

@@ -428,7 +428,7 @@ export default function MyStock() {
                   <option value="">Select a product...</option>
                   {stockData.map(item => (
                     <option key={item.product_id} value={item.product_id}>
-                      {item.product?.brand_name} {item.product?.dosage_strength || ''}
+                      {item.product?.brand_name}{item.product?.dosage_strength ? ` ${item.product.dosage_strength}` : ''} — {item.total_qty} {item.product?.unit_code || 'PC'}
                     </option>
                   ))}
                 </select>

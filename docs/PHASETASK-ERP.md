@@ -1360,36 +1360,219 @@
   - Add lazy routes: `/erp/collections/session`, `/erp/collections/ar`, `/erp/collections/soa`
   - Roles: employee, admin, finance
 
+### 5.6 — Inter-Company Settlement (VIP collects from subsidiaries)
+**Goal:** Separate model for VIP to collect from subsidiaries. IC Transfers generate real financial documents: **VIP issues CSI** (invoice to subsidiary), **subsidiary issues CR** (payment to VIP). Same CSI/CR document pattern as hospital collections, different parties.
+
+> **Business flow — real documents at each step:**
+> ```
+> VIP issues CSI to MG   ←──  IC Transfer POSTED (VIP's invoice, at transfer price)
+>   CSI ref = transfer's doc_ref or VIP-assigned CSI number
+>
+> MG BDM sells to hospital  →  MG CSI (MG's invoice to hospital)
+> Hospital pays MG           →  Hospital CR (settles MG CSI)  ← existing Collection engine
+>
+> MG pays VIP from collections  →  MG issues CR to VIP (settles VIP's CSI)
+>   CR ref = MG-assigned CR number
+>   This is the IC Settlement
+> ```
+>
+> **Document trail (both parties):**
+> | Party | Issues | Reference |
+> |-------|--------|-----------|
+> | VIP (creditor) | CSI to MG | IC Transfer = VIP's CSI (invoice at transfer price) |
+> | MG (debtor) | CR to VIP | IC Settlement = MG's CR (payment receipt) |
+>
+> **Why separate from hospital Collection:** Hospital CRs have per-CSI commission, partner MD rebate, and CRM Doctor tagging. IC settlements between entities don't involve MDs or commission — they're pure inter-company payable/receivable. CWT may apply depending on entity VAT registration status.
+>
+> **Scalability:** `creditor_entity_id` + `debtor_entity_id` pattern works for any parent→subsidiary relationship. Future subsidiaries use the same model. VIP (or any parent) sees all outstanding IC AR across all subsidiaries.
+
+- [x] Create `backend/erp/models/IcSettlement.js`: ✅ Full schema with settledTransferSchema subdoc, pre-save auto-compute totals, 2 indexes, `erp_ic_settlements`
+  - creditor_entity_id (VIP — who is owed), debtor_entity_id (MG — who owes)
+  - cr_no (MG's CR number — the payment document MG issues to VIP)
+  - cr_date, cr_amount
+  - settled_transfers[]: { transfer_id (ref InterCompanyTransfer), transfer_ref, vip_csi_ref (VIP's CSI number from the transfer), transfer_amount, amount_settled }
+  - Totals (auto pre-save): total_transfer_amount, total_settled
+  - CWT: cwt_rate, cwt_amount, cwt_na (depends on entity VAT status)
+  - Payment: payment_mode (CHECK/CASH/ONLINE), check_no, check_date, bank, deposit_slip_url
+  - Proof: cr_photo_url (photo of MG's CR document)
+  - Status lifecycle: DRAFT → POSTED (president/admin records directly)
+  - posted_at, posted_by, event_id
+  - Indexes: creditor+debtor+status, debtor+cr_date
+  - Collection: `erp_ic_settlements`
+- [x] Create `backend/erp/services/icArEngine.js`: ✅ Aggregation pipeline pattern mirrors arEngine.js — POSTED IC Transfers minus POSTED IC Settlements
+  - `getOpenIcTransfers(creditorEntityId, debtorEntityId)` — returns transfers with balance_due > 0, includes VIP CSI ref, debtor/creditor entity names
+  - `getIcArSummary(creditorEntityId)` — per-subsidiary totals: total owed, total settled, outstanding balance, worst_days
+  - `getIcArBySubsidiary(debtorEntityId)` — individual transfer-level detail for one subsidiary
+- [x] Create `backend/erp/controllers/icSettlementController.js`: ✅ 6 endpoints with MongoDB transaction on post
+  - `getOpenIcTransfers` (GET /open-transfers?debtor_entity_id=xxx) — VIP's unpaid CSIs to that subsidiary
+  - `createSettlement` (POST /) — record MG's CR against VIP's CSIs
+  - `getSettlements` (GET /) — list with filters (debtor, status, date range), populated entity names
+  - `getSettlementById` (GET /:id)
+  - `postSettlement` (POST /:id/post) — MongoDB transaction → IC_SETTLEMENT TransactionEvent, audit log
+  - `getIcArSummary` (GET /summary) — all subsidiaries overview for president dashboard
+- [x] Create `backend/erp/routes/icSettlementRoutes.js`: ✅ Static routes first, roleCheck president/admin/finance on writes
+- [x] Mount in `backend/erp/routes/index.js`: ✅ `router.use('/ic-settlements', require('./icSettlementRoutes'))`
+- [x] Create `frontend/src/erp/hooks/useIcSettlements.js`: ✅ 6 API wrapper functions
+- [x] Create `frontend/src/erp/pages/IcSettlement.jsx`: ✅ Card-based settlement form with document uploads
+  - Select subsidiary (debtor entity dropdown — filters SUBSIDIARY + ACTIVE)
+  - Open IC Transfers checklist (VIP CSI ref, transfer_ref, date, transfer amount, balance_due, editable amount_settled)
+  - MG's CR details: cr_no, cr_date, cr_amount, payment_mode, check info
+  - CWT section (rate, amount, N/A toggle)
+  - Document upload: CR photo, deposit slip (via OCR→S3 pipeline)
+  - Save as Draft
+- [x] Create `frontend/src/erp/pages/IcArDashboard.jsx`: ✅ President-level IC AR overview
+  - Summary cards: Total IC AR Outstanding, Open Transfers, Total Collected, Subsidiaries count
+  - Per-subsidiary cards with expandable IC Transfer detail (click to see individual transfers)
+  - Settlement history table with Post button for DRAFT settlements
+  - Link to New IC Settlement form
+- [x] Update `frontend/src/App.jsx`: ✅ Lazy routes `/erp/ic-settlements` (dashboard), `/erp/ic-settlements/new` (settlement form)
+  - Roles: president, admin, finance
+
+> **Live testing (April 3, 2026):** Full end-to-end verified:
+> - IC Transfer VIP → MG: Nupira 20pcs @ ₱600 = ₱12,000 (ICT-20260403-912) + earlier transfer ₱2,000
+> - IC AR Summary: ₱14,000 outstanding from MG AND CO. INC.
+> - IC Settlement: MG-IC-CR-001, ₱14,000, settled both transfers, POSTED
+> - IC AR post-settlement: ₱0 outstanding
+> - Entity collection name fix: `entities` (Mongoose default), not `erp_entities`
+> - IC Transfer product dropdown fixed: now shows `brand_name dosage — qty unit_code` format (matches SalesEntry)
+
+> **Client clarifications (April 3, 2026) — noted for future phases:**
+> 1. **Entity price lists**: ProductMaster already has per-entity `selling_price` (auto-fills on product select, overridable). TransferPriceList handles IC pricing. No new work needed for current scope.
+> 2. **Approval routing**: Framework exists (`ENFORCE_AUTHORITY_MATRIX` flag, approve/reject patterns on GRN, transfers, deletions). Full authority matrix enforcement deferred — enable when needed.
+> 3. **Mobile UI for BDMs**: Current pages are responsive but not mobile-optimized. BDMs need: Sales, Collection, GRN, DR, Expenses, Report, PNL — all in a mobile-first PWA with bottom tab nav. President/finance need: quick approval actions + dashboard cards. Target: Phase 10 or dedicated mobile sprint.
+> 4. **Product dropdown consistency**: All product dropdowns should show `brand_name dosage — qty unit_code` format. SalesEntry ✅, TransferOrders ✅ (fixed). Other pages to verify in future polish pass.
+
 ---
 
-## PHASE 6 — EXPENSES
+## PHASE 6 — EXPENSES ✅ COMPLETE
 **Goal:** SMER, Car Logbook, ORE, ACCESS, and PRF/CALF with SAP-style draft -> validate -> post lifecycle.
 
-### 6.1 — Expense Models
-- [ ] Create `backend/erp/models/SmerEntry.js` — daily entries, per diem tiers, totals, status lifecycle
-- [ ] Create `backend/erp/models/CarLogbookEntry.js` — morning/night odometer, fuel, km split, status lifecycle
-- [ ] Create `backend/erp/models/ExpenseEntry.js` — ORE and ACCESS with CALF rules and status lifecycle
-- [ ] Create `backend/erp/models/PrfCalf.js` — payment request / cash advance with status lifecycle
-- [ ] Commit: `"feat(erp): expense models (smer, car logbook, ore, access, prf, calf)"`
+> **Status (April 2026):** All 4 tasks complete (6.1–6.4). 14 new files + 2 modified. Backend: 4 models (SmerEntry, CarLogbookEntry, ExpenseEntry, PrfCalf), 3 services (perdiemCalc, fuelTracker, expenseSummary), 1 controller (30+ endpoints), 1 route file. Frontend: 1 hook (useExpenses), 4 pages (Smer, CarLogbook, Expenses, PrfCalf). Build: 0 errors.
+>
+> **Architecture decisions:**
+> - All transactional documents follow DRAFT → VALID → ERROR → POSTED lifecycle (PRD Section 5.5)
+> - Per diem: 3-tier system (FULL ≥8 MDs = 100%, HALF ≥3 MDs = 50%, ZERO = 0%) — rates from Settings
+> - Car Logbook: fuel efficiency computed in model pre-save hook, overconsumption flagged at 30% threshold
+> - ORE: cash-based reimbursable, no CALF required
+> - ACCESS: company-mode payments (credit card, GCash, bank transfer), CALF required for non-cash
+> - **PRF (Payment Requisition Form):** Payment instruction for partner rebates. BDM creates PRF with partner bank account details (bank name, account holder, account number) so Finance can process payment. Hard gate: partner does NOT get rebate without PRF. SAP equivalent: Payment Request (F-58). BIR_FLAG = INTERNAL.
+> - **CALF (Cash Advance & Liquidation Form):** Two-phase document tracking company funds. Phase 1: advance (company releases funds). Phase 2: liquidation (BDM accounts for spending). Required as attachment for expense ORs paid with company funds. SAP equivalent: FI-TV Travel Advance. NOT required for: cash/revolving fund, President entries, ORE. Tracks balance = advance - liquidation (+return to company, -reimburse BDM).
+> - President override: CALF never required, can override any gate
+> - PRF/CALF posting requires admin/finance/president role (Finance processes payment/confirms liquidation)
+> - Expense summary consolidates 5 categories: SMER Reimbursables, Gas (less Personal), Partners' Insurance, ACCESS, CORE Commission
+>
+> **Future phases:**
+> - Phase 9.1: OCR → expense form connections (Scan OR, Scan Gas Receipt, Scan Odometer)
+> - Phase 9.1b: Document photo persistence for all expense proofs
+> - Phase 11: Journal entries from expenses (DR: 6XXX Expense, CR: 1110 AR BDM Advances)
 
-### 6.2 — Expense Services
-- [ ] Create `backend/erp/services/perdiemCalc.js` — MD count → tier → amount
-- [ ] Create `backend/erp/services/fuelTracker.js` — km split, efficiency, overconsumption
-- [ ] Create `backend/erp/services/expenseSummary.js` — 5 categories consolidated
-- [ ] Commit: `"feat(erp): expense calculation services"`
+### 6.1 — Expense Models ✅
+- [x] Create `backend/erp/models/SmerEntry.js` — daily entries with per diem tiers (FULL/HALF/ZERO), transport (P2P + special), ORE amount, travel advance reconciliation, auto-computed totals (pre-save), unique index on entity+bdm+period+cycle, DRAFT→VALID→ERROR→POSTED lifecycle, `erp_smer_entries` collection. **Per diem override fields:** `perdiem_override` (Boolean), `override_tier` (FULL/HALF), `override_reason`, `overridden_by`, `overridden_at` — Finance/Manager/President can override CRM-computed tier for exceptions (meetings, training). CRM `md_count` preserved for audit. Pre-save counts overridden days as working days. Validation skips hospital requirement for overridden days but requires override_reason.
+- [x] Create `backend/erp/models/CarLogbookEntry.js` — morning/night odometer with photo URLs (S3), personal vs official KM split, fuel entries subdoc (station, type, liters, price, payment_mode, CALF flag), auto-computed efficiency (expected vs actual liters, overconsumption flag), gasoline split (personal vs official), DRAFT→VALID→ERROR→POSTED lifecycle, `erp_car_logbook_entries` collection
+- [x] Create `backend/erp/models/ExpenseEntry.js` — ORE and ACCESS expense lines subdoc (date, type, category, establishment, particulars, amount, VAT auto-compute 12/112, OR number, payment_mode, CALF required flag for ACCESS non-cash), auto-computed totals (total_ore, total_access, total_amount), DRAFT→VALID→ERROR→POSTED lifecycle, `erp_expense_entries` collection
+- [x] Create `backend/erp/models/PrfCalf.js` — PRF: partner payment instruction with bank details (payee_name, payee_type MD/NON_MD, partner_bank, partner_account_name, partner_account_no, rebate_amount, linked_collection_id). CALF: advance/liquidation tracking (advance_amount, liquidation_amount, balance auto-computed, linked_expense_id). Shared: photo_urls, bir_flag=INTERNAL, DRAFT→VALID→ERROR→POSTED lifecycle, `erp_prf_calf` collection
 
-### 6.3 — Expense Controller & Routes
-- [ ] Create `backend/erp/controllers/expenseController.js`
-- [ ] Create `backend/erp/routes/expenseRoutes.js`
-- [ ] Endpoints follow Validate -> Submit -> Re-open pattern for transactional expense documents
-- [ ] Commit: `"feat(erp): expense routes"`
+### 6.2 — Expense Services ✅
+- [x] Create `backend/erp/services/perdiemCalc.js` — `computePerdiemTier()` (3-tier from Settings), `computePerdiemAmount()` (tier × rate), `computeSmerPerdiem()` (batch). Tested: 8 MDs=FULL=₱800, 5 MDs=HALF=₱400, 1 MD=ZERO=₱0
+- [x] Create `backend/erp/services/smerCrmBridge.js` — **CRM → SMER integration**: `getDailyMdCount()` (single date), `getDailyMdCounts()` (date range aggregation pipeline, Manila timezone), `getDailyVisitDetails()` (drill-down with doctor names + engagement types). Queries CRM `Visit` model: counts `status: 'completed'` visits per BDM per day. Auto-populates SMER md_count instead of manual entry. Frontend "Pull MD Counts from CRM" button merges CRM data into SMER daily entries.
+  - **Live tested (April 3, 2026):** Jake Montero March C2 — 51 MD visits across 12 days. Mar 17: 10 MDs (FULL), Mar 18: 11 MDs (FULL), Mar 24: 9 MDs (FULL), Mar 25: 8 MDs (FULL), Mar 19: 6 (HALF), Mar 26: 5 (HALF). Total per diem: ₱4,000. Drill-down Mar 31: 17 MDs with names and specializations. April C1: 10 MDs on Apr 2 (FULL = ₱800).
+- [x] Create `backend/erp/services/fuelTracker.js` — `computeFuelEfficiency()` (km split, expected vs actual liters, overconsumption detection at threshold, personal gas = expected_personal_liters × avg_price), `computePeriodFuelSummary()` (period totals). Tested: 120km trip, 10L fuel, 12kpl = no overconsumption
+- [x] Create `backend/erp/services/expenseSummary.js` — `generateExpenseSummary()` aggregates 5 categories from SmerEntry, CarLogbookEntry, ExpenseEntry, Collection (partner rebates + commission), PrfCalf counts
 
-### 6.4 — Expense Pages
-- [ ] Create `frontend/src/erp/pages/Smer.jsx` — daily activity grid with per diem
-- [ ] Create `frontend/src/erp/pages/CarLogbook.jsx` — morning/night odometer, fuel
-- [ ] Create `frontend/src/erp/pages/Expenses.jsx` — ORE and ACCESS forms
-- [ ] Create `frontend/src/erp/pages/PrfCalf.jsx` — PRF and CALF forms
-- [ ] Commit: `"feat(ui): expense pages"`
+### 6.3 — Expense Controller & Routes ✅
+- [x] Create `backend/erp/controllers/expenseController.js` — 30+ endpoints:
+  - SMER: createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer, validateSmer, submitSmer, reopenSmer (8)
+  - Car Logbook: createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook, validateCarLogbook, submitCarLogbook, reopenCarLogbook (8)
+  - ORE/ACCESS: createExpense, updateExpense, getExpenseList, getExpenseById, deleteDraftExpense, validateExpenses, submitExpenses, reopenExpenses (8)
+  - PRF/CALF: createPrfCalf, updatePrfCalf, getPrfCalfList, getPrfCalfById, deleteDraftPrfCalf, validatePrfCalf (PRF validates partner bank details, CALF validates advance + linked expense), submitPrfCalf, reopenPrfCalf (8)
+  - CRM Bridge: getSmerCrmMdCounts (auto-pull MD visit counts from CRM visit logs), getSmerCrmVisitDetail (drill-down per date) (2)
+  - Override: overridePerdiemDay — Finance/Manager/President can override per diem tier for specific days (e.g., meeting with President, training day). CRM md_count preserved for audit. Override tracked with reason, overridden_by, overridden_at. roleCheck('admin', 'finance', 'president'). Can also remove override to revert to CRM-computed tier. (1)
+  - Summary: getExpenseSummary (1)
+  - All submit endpoints use MongoDB transactions → TransactionEvent creation
+  - All reopen endpoints create ErpAuditLog entries
+  - PRF validation: requires payee_name, purpose, partner_bank, partner_account_name, partner_account_no, rebate_amount, photo proof
+  - CALF validation: requires advance_amount, linked_expense_id, photo proof
+  - Expense validation: CALF gate — ACCESS non-cash lines require CALF attachment (President override)
+- [x] Create `backend/erp/routes/expenseRoutes.js` — mounted at `/api/erp/expenses/`. Sub-routes: /smer, /car-logbook, /ore-access, /prf-calf. PRF/CALF submit/reopen requires roleCheck('admin', 'finance', 'president')
+- [x] Mount in `backend/erp/routes/index.js`: `router.use('/expenses', require('./expenseRoutes'))`
+
+### 6.4 — Expense Pages ✅
+- [x] Create `frontend/src/erp/hooks/useExpenses.js` — wraps useErpApi for all 33 expense endpoints (SMER 8, Car Logbook 8, ORE/ACCESS 8, PRF/CALF 8, Summary 1)
+- [x] Create `frontend/src/erp/pages/Smer.jsx` — daily activity grid with per diem:
+  - Period/cycle selector, auto-generates work days (Mon-Fri) for selected cycle
+  - Per-day row: day, DOW, hospital dropdown (from useHospitals), MD count input, per diem tier badge (FULL green/HALF amber/ZERO gray), per diem amount (auto-computed), P2P transport, special transport, ORE amount
+  - Auto-compute totals in footer, summary cards (Total Reimbursable, Travel Advance, Balance on Hand)
+  - SMER list table with status badges, Edit/Delete/Re-open actions
+  - Validate and Submit action buttons
+- [x] Create `frontend/src/erp/pages/CarLogbook.jsx` — morning/night odometer, fuel:
+  - Date, starting KM (morning), ending KM (night), personal KM inputs
+  - KM summary cards (Total, Official, Expected L, Actual L with overconsumption highlight)
+  - Fuel entries: station, fuel type dropdown, liters, ₱/L, auto-compute total, payment mode
+  - Overconsumption flag (red highlight) on list entries
+  - Entry list with all KM/fuel columns, status badges, actions
+- [x] Replace `frontend/src/erp/pages/Expenses.jsx` placeholder → full ORE/ACCESS form:
+  - Module navigation links (SMER, Car Logbook, ORE/ACCESS, PRF/CALF)
+  - Expense summary cards from getExpenseSummary (6 categories)
+  - Expense line cards with: type (ORE/ACCESS), date, category dropdown, establishment, particulars, amount, OR#, payment mode
+  - CALF required badge auto-shown for ACCESS non-cash lines
+  - ACCESS lines highlighted (amber background)
+  - Totals: ORE Total, ACCESS Total, Grand Total
+- [x] Create `frontend/src/erp/pages/PrfCalf.jsx` — PRF and CALF forms:
+  - PRF form: purple-themed partner details section (payee name, MD/Non-MD type, bank name, account holder name, account number), purpose, rebate amount
+  - CALF form: teal-themed company fund section (CALF number, advance amount, liquidation amount, live balance with direction indicator)
+  - Shared: payment mode, check details, notes
+  - Doc type filter (All/PRF/CALF), list table with type badge, payee/purpose, amount, partner bank (masked), status, actions
+  - Finance-only Post button (admin/finance/president role check)
+- [x] Add lazy-loaded routes in `frontend/src/App.jsx`: `/erp/smer`, `/erp/car-logbook`, `/erp/prf-calf` (all employee+admin+finance+president)
+- [x] Updated existing `/erp/expenses` route to include finance+president roles
+- [x] Frontend build: 0 errors
+
+### Phase 6 Summary
+
+| Task | Description | Status |
+|------|-------------|--------|
+| 6.1 | Expense Models (SmerEntry, CarLogbookEntry, ExpenseEntry, PrfCalf) | ✅ Complete |
+| 6.2 | Expense Services (perdiemCalc, fuelTracker, expenseSummary) | ✅ Complete (tested) |
+| 6.3 | Expense Controller & Routes (30+ endpoints, MongoDB transactions) | ✅ Complete |
+| 6.4 | Expense Pages (Smer, CarLogbook, Expenses, PrfCalf) + hooks | ✅ Complete (build verified) |
+
+**New files created:** 15 | **Models:** 4 | **Services:** 4 (incl. smerCrmBridge) | **Controllers:** 1 (36 endpoints incl. CRM bridge + override) | **Routes:** 1 (36 routes) | **Hooks:** 1 | **Pages:** 4 (1 replaced placeholder) | **Modified files:** 2 (App.jsx routes, ERP router index)
+
+**Expense eligibility scalability plan (April 3, 2026 — client direction):**
+> **Current state:** All employees are SMER eligible. `md_count` field in SMER is generic — it counts "engagements" not just MD visits:
+> - **Field BDMs:** Engagements = MD visits → auto-pulled from CRM via "Pull MD Counts from CRM" button
+> - **eBDMs:** Engagements = pharmacist visits, owner meetings → manual entry (no CRM)
+> - **Admin/Managers:** Engagements = client meetings, site visits → manual entry (no CRM)
+>
+> The CRM pull button is only useful for field BDMs who log visits in CRM. All other roles enter engagement counts manually. The per diem tier logic (FULL/HALF/ZERO) applies to all — thresholds from Settings.
+>
+> **Phase 10 — per-person eligibility flags on CompProfile:**
+> When Phase 10 (People Master) is built, CompProfile should drive which expense modules each person can access:
+>
+> | CompProfile Flag | Type | Default | Description |
+> |---|---|---|---|
+> | `smer_eligible` | Boolean | true | Can submit SMER (all currently eligible, future salary employees may not be) |
+> | `perdiem_rate` | Number | Settings default | Per-person per diem rate (already on User.compensation) |
+> | `perdiem_engagement_threshold_full` | Number | 8 | Engagements for FULL tier (future: eBDMs may need 10) |
+> | `perdiem_engagement_threshold_half` | Number | 3 | Engagements for HALF tier |
+> | `logbook_eligible` | Boolean | true | Can submit Car/Motorcycle Logbook |
+> | `vehicle_type` | enum | CAR | CAR, MOTORCYCLE, COMPANY_CAR, NONE (drives logbook form fields) |
+> | `km_per_liter` | Number | Settings default | Per-person fuel efficiency (motorcycles ≠ cars) |
+> | `ore_eligible` | Boolean | true | Can submit ORE expenses |
+> | `access_eligible` | Boolean | true | Can submit ACCESS expenses (uses company resources) |
+> | `crm_linked` | Boolean | false | Has CRM visit data → shows "Pull from CRM" button on SMER |
+>
+> Until Phase 10, all employees use the same Settings-level thresholds and manual entry is the primary input method. CRM pull is an optimization for field BDMs only.
+
+**COA / Journal Entry notes for Phase 11:**
+> When Phase 11 (VIP Accounting Engine) is built, the following auto-journals should be created from expense documents:
+> - **SMER POSTED:** DR: 6100 Per Diem Expense + 6150 Transport, CR: 1110 AR BDM Advances
+> - **Car Logbook POSTED:** DR: 6200 Fuel/Gas (official portion), CR: 1110 AR BDM Advances
+> - **ORE POSTED:** DR: 6XXX (per category — courier 6500, parking 6600, etc.), CR: 1110 AR BDM Advances
+> - **ACCESS POSTED:** DR: 6XXX (per category), CR: 2000 AP Trade or Bank Account (company fund)
+> - **PRF POSTED (partner rebate):** DR: 5200 Partner Rebate / Partners' Insurance, CR: Cash/Bank (payment to partner)
+> - **CALF POSTED (liquidation):** DR: 1110 AR BDM Advances (clearing), CR: Cash/Bank (advance return) or DR: 6XXX (shortfall reimbursement)
+> The `source_module: 'EXPENSE'` enum is already included in the JournalEntry model spec (Phase 11.2). Each expense model stores `event_id` linking to TransactionEvent for document flow tracing (Phase 9.3).
 
 ---
 
@@ -1750,6 +1933,7 @@
   - Fixed salary components: basic_salary, rice_allowance, clothing_allowance, medical_allowance, laundry_allowance, transport_allowance
   - Incentive components: incentive_type enum (CASH, IN_KIND, COMMISSION, NONE), incentive_rate, incentive_description, incentive_cap
   - BDM-specific: perdiem_rate, perdiem_days, km_per_liter, fuel_overconsumption_threshold
+  - **Expense eligibility flags (April 3, 2026 — client direction):** smer_eligible (Boolean), perdiem_engagement_threshold_full (Number, default 8), perdiem_engagement_threshold_half (Number, default 3), logbook_eligible (Boolean), vehicle_type (enum: CAR, MOTORCYCLE, COMPANY_CAR, NONE), ore_eligible (Boolean), access_eligible (Boolean), crm_linked (Boolean — shows "Pull from CRM" button on SMER for field BDMs only). These flags drive which expense modules appear for each person. Until Phase 10, all employees use Settings-level defaults.
   - tax_status enum: S, S1, S2, ME, ME1, ME2, ME3, ME4
   - set_by, reason, created_at
 - [ ] Compensation history via new CompProfile documents with new effective_date

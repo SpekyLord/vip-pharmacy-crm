@@ -307,7 +307,7 @@ export default function GrnEntry() {
                     <td>
                       <select value={li.product_id} onChange={e => updateLine(idx, 'product_id', e.target.value)}>
                         <option value="">Select product...</option>
-                        {productOptions.map(p => <option key={p._id} value={p._id}>{p.brand_name} {p.dosage_strength || ''}</option>)}
+                        {productOptions.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.unit_code || 'PC'}</option>)}
                       </select>
                     </td>
                     <td><input value={li.batch_lot_no} onChange={e => updateLine(idx, 'batch_lot_no', e.target.value)} placeholder="Batch #" /></td>

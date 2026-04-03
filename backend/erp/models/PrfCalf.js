@@ -1,0 +1,129 @@
+/**
+ * PRF/CALF Model — Payment Requisition Form / Cash Advance & Liquidation Form
+ *
+ * ═══ PRF (Payment Requisition Form) ═══
+ * SAP equivalent: Payment Request (F-58). NetSuite: Vendor Bill + Vendor Payment.
+ * Purpose: Payment instruction for partner rebates. BDM submits PRF so Finance
+ *   can process rebate payment to the partner (MD or Non-MD).
+ * Hard gate: Partner does NOT receive rebate until BDM submits PRF with bank details.
+ * Flow: BDM creates PRF → validates → submits → Finance posts (= payment processed).
+ * Links upstream: Collection (which computed the rebate) + CRM Doctor (partner).
+ * Links downstream: Future Phase 11 journal entry (DR: Partner Rebate Expense, CR: Cash/Bank).
+ * BIR_FLAG = INTERNAL (not reported to BIR — internal company payment to partners).
+ *
+ * ═══ CALF (Cash Advance & Liquidation Form) ═══
+ * SAP equivalent: FI-TV Travel Advance + Expense Report clearing.
+ * NetSuite: Employee Advance + Expense Report offset.
+ * Purpose: Two-phase document tracking company funds advanced to BDM and their liquidation.
+ *   Phase 1 (Advance): Company releases funds (credit card, GCash, bank transfer) to BDM.
+ *   Phase 2 (Liquidation): BDM submits expense ORs that consume the advance.
+ * Required as attachment when BDM submits expense ORs paid with company funds (not revolving/cash).
+ * NOT required for: cash/revolving fund, President entries, ORE.
+ * Variance: advance_amount - liquidation_amount
+ *   Positive = BDM returns excess to company.
+ *   Negative = company reimburses BDM for shortfall.
+ * Links upstream: ExpenseEntry lines (which ORs used company funds).
+ * Links downstream: Future Phase 11 journal entry (clearing employee advance account).
+ *
+ * President override: CALF never required, can override any gate.
+ *
+ * Lifecycle: DRAFT → VALID → ERROR → POSTED
+ *   (PRD Section 5.5 & 8.3 — same SAP Park→Check→Post as all transactional docs)
+ */
+const mongoose = require('mongoose');
+
+const prfCalfSchema = new mongoose.Schema({
+  entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
+  bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+
+  // Document type
+  doc_type: { type: String, enum: ['PRF', 'CALF'], required: true },
+
+  // Period
+  period: { type: String, required: true, trim: true },       // "2026-04"
+  cycle: { type: String, enum: ['C1', 'C2', 'MONTHLY'], required: true },
+
+  // ═══════════════════════════════════════════
+  // PRF fields — payment instruction for Finance to pay partner rebate
+  // ═══════════════════════════════════════════
+  prf_number: { type: String, trim: true },
+  purpose: { type: String, trim: true },                       // e.g., "Partner rebate — CSI #004719, Iloilo Doctors Hospital"
+
+  // Partner/payee identification
+  payee_name: { type: String, trim: true },                    // partner full name
+  payee_type: { type: String, enum: ['MD', 'NON_MD'] },
+  partner_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' },  // CRM Doctor ref
+
+  // Partner bank account — Finance needs this to send payment
+  partner_bank: { type: String, trim: true },                  // bank name (BPI, BDO, GCash, UnionBank, etc.)
+  partner_account_name: { type: String, trim: true },          // account holder name
+  partner_account_no: { type: String, trim: true },            // account number
+
+  // Rebate details
+  rebate_amount: { type: Number, default: 0 },                 // total rebate to pay this partner
+  linked_collection_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Collection' },
+
+  // ═══════════════════════════════════════════
+  // CALF fields — company fund advance + liquidation
+  // ═══════════════════════════════════════════
+  calf_number: { type: String, trim: true },
+  advance_amount: { type: Number, default: 0 },                // company funds advanced to BDM
+  liquidation_amount: { type: Number, default: 0 },            // total expense ORs that consumed the advance
+  balance: { type: Number, default: 0 },                       // advance - liquidation (+ return to company, - reimburse BDM)
+
+  // Which expense ORs used company funds (linked to ExpenseEntry)
+  linked_expense_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ExpenseEntry' },
+  linked_expense_line_ids: [{ type: mongoose.Schema.Types.ObjectId }],
+
+  // ═══════════════════════════════════════════
+  // Shared fields
+  // ═══════════════════════════════════════════
+  amount: { type: Number, required: true, min: 0 },            // PRF: rebate_amount, CALF: advance_amount
+  payment_mode: { type: String, enum: ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'CARD', 'OTHER'], default: 'CASH' },
+  check_no: String,
+  bank: String,
+
+  // Document photos (S3 URLs — no OCR, photo as proof only)
+  photo_urls: [String],
+
+  // BIR flag
+  bir_flag: { type: String, enum: ['BOTH', 'INTERNAL', 'BIR'], default: 'INTERNAL' },
+
+  notes: { type: String, trim: true },
+
+  // Lifecycle: DRAFT → VALID → ERROR → POSTED
+  // POSTED = Finance approved and payment sent (PRF) / liquidation confirmed (CALF)
+  status: {
+    type: String,
+    default: 'DRAFT',
+    enum: ['DRAFT', 'VALID', 'ERROR', 'POSTED', 'DELETION_REQUESTED']
+  },
+  posted_at: Date,
+  posted_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  reopen_count: { type: Number, default: 0 },
+  validation_errors: [String],
+  event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+
+  // Audit
+  created_at: { type: Date, default: Date.now, immutable: true },
+  created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+}, {
+  timestamps: false,
+  collection: 'erp_prf_calf'
+});
+
+// Pre-save: compute CALF balance
+prfCalfSchema.pre('save', function (next) {
+  if (this.doc_type === 'CALF') {
+    this.balance = Math.round(((this.advance_amount || 0) - (this.liquidation_amount || 0)) * 100) / 100;
+  }
+  next();
+});
+
+// Indexes
+prfCalfSchema.index({ entity_id: 1, bdm_id: 1, doc_type: 1, period: 1 });
+prfCalfSchema.index({ entity_id: 1, bdm_id: 1, status: 1 });
+prfCalfSchema.index({ doc_type: 1, status: 1 });
+prfCalfSchema.index({ linked_collection_id: 1 });
+
+module.exports = mongoose.model('PrfCalf', prfCalfSchema);

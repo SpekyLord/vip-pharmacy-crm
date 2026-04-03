@@ -433,7 +433,7 @@ export default function SalesEntry() {
   const productOptions = useMemo(() => {
     return stockProducts.map(sp => ({
       product_id: sp.product_id,
-      label: `${sp.product?.brand_name || 'Unknown'} ${sp.product?.dosage_strength || ''} — ${sp.total_qty} ${sp.product?.unit_code || 'PC'}`,
+      label: `${sp.product?.brand_name || 'Unknown'}${sp.product?.dosage_strength ? ' ' + sp.product.dosage_strength : ''} — ${sp.total_qty} ${sp.product?.unit_code || 'PC'}`,
       brand_name: sp.product?.brand_name,
       unit_code: sp.product?.unit_code || 'PC',
       selling_price: sp.product?.selling_price || 0,

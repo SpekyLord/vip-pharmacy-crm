@@ -502,7 +502,12 @@ export default function TransferOrders() {
                         <td>
                           <select value={li.product_id} onChange={e => updateLineItem(i, 'product_id', e.target.value)}>
                             <option value="">Select...</option>
-                            {sourceProducts.map(p => <option key={p._id} value={p._id}>{p.brand_name} {p.dosage_strength || ''} ({p.item_key})</option>)}
+                            {sourceProducts.map(p => {
+                              const stock = sourceStock.find(s => String(s.product_id) === String(p._id));
+                              const qty = stock?.total_qty || 0;
+                              const unit = p.unit_code || stock?.product?.unit_code || '';
+                              return <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {qty} {unit}</option>;
+                            })}
                           </select>
                         </td>
                         <td>
@@ -599,7 +604,7 @@ export default function TransferOrders() {
                         <td>
                           <select value={li.product_id} onChange={e => updateReassignItem(i, 'product_id', e.target.value)}>
                             <option value="">Select...</option>
-                            {entityProducts.map(p => <option key={p._id} value={p._id}>{p.brand_name} {p.dosage_strength || ''}</option>)}
+                            {entityProducts.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.unit_code || 'PC'}</option>)}
                           </select>
                         </td>
                         <td>

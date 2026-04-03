@@ -5,7 +5,9 @@
       "Bash(tail:*)",
       "Bash(powershell -Command \"\\(Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue\\).OwningProcess\")",
       "Bash(npx vite:*)",
-      "Bash(NODE_OPTIONS=--max-old-space-size=4096 npx vite build)"
+      "Bash(NODE_OPTIONS=--max-old-space-size=4096 npx vite build)",
+      "Bash(npm run:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)"
     ]
   }
 }
