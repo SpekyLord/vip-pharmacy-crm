@@ -9,7 +9,11 @@
     "dev:frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
     "start": "cd backend && npm start",
-    "seed": "cd backend && npm run seed"
+    "seed": "cd backend && npm run seed",
+    "lint:risk": "node scripts/lintChangedRisk.js",
+    "test:backend:ci": "cd backend && npm run test:ci",
+    "test:backend:smoke": "cd backend && npm run test:smoke",
+    "startup:check": "cd backend && npm run startup:check"
   },
   "dependencies": {
     "lucide-react": "^0.577.0"

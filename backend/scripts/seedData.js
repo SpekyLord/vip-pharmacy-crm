@@ -188,6 +188,11 @@ function assignEntryStatus(docIndex, scheduledWeek, scheduledDay, cycleStart) {
 // ─── Main seed function ──────────────────────────────────────────────────────
 
 const seedDatabase = async () => {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_DATA_SCRIPTS !== 'true') {
+    console.error('Refusing to run seed in production. Set ALLOW_PROD_DATA_SCRIPTS=true to override.');
+    process.exit(1);
+  }
+
   try {
     await mongoose.connect(process.env.MONGO_URI);
     console.log('MongoDB Connected for seeding...');

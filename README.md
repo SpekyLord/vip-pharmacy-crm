@@ -94,6 +94,8 @@ cd frontend && npm run dev
 
 ## Test Credentials
 
+**Development only:** Never use these credentials in production-like or production environments. Rotate all seeded accounts immediately after deployment.
+
 | Role | Email | Password |
 |------|-------|----------|
 | Admin | admin@vipcrm.com | Admin123!@# |
@@ -103,6 +105,8 @@ cd frontend && npm run dev
 ## Documentation
 
 - [Development Guide](docs/DEVELOPMENT_GUIDE.md) - Setup and development instructions
+- [Production-Like Runbook](docs/PRODUCTION_LIKE_RUNBOOK.md) - Lightsail + Atlas ops, rollout, rollback
+- [Security Risk Register](docs/SECURITY_RISK_REGISTER.md) - Accepted risks and mitigation owners
 - [Phase Tasks](docs/PHASE-TASKS.md) - Project roadmap and task breakdown
 - [CLAUDE.md](CLAUDE.md) - AI assistant context and business rules
 

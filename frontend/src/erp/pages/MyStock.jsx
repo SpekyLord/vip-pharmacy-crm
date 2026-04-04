@@ -23,7 +23,16 @@ const TYPE_COLORS = {
 
 const pageStyles = `
   .mystock-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .mystock-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .mystock-main {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 20px;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    max-width: 1200px;
+    margin: 0 auto;
+  }
   .mystock-header { margin-bottom: 16px; }
   .mystock-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0 0 4px; }
   .mystock-header p { color: var(--erp-muted, #5f7188); font-size: 14px; margin: 0; }
@@ -80,6 +89,38 @@ const pageStyles = `
     .tab-btn { padding: 8px 12px; font-size: 13px; }
     .pc-modal { padding: 16px; }
     .pc-table input[type="number"] { width: 60px; }
+    .mystock-main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+
+    .stock-table { border: none; background: transparent; }
+    .stock-table thead { display: none; }
+    .stock-table tbody { display: block; }
+    .stock-table tr {
+      display: block;
+      background: var(--erp-panel, #fff);
+      border: 1px solid var(--erp-border);
+      border-radius: 12px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .stock-table tr.batch-row { border-style: dashed; }
+    .stock-table td {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-top: 1px solid var(--erp-border);
+      white-space: normal;
+    }
+    .stock-table td:first-child { border-top: none; }
+    .stock-table td::before {
+      content: attr(data-label);
+      font-weight: 600;
+      color: var(--erp-muted, #6b7280);
+      flex-shrink: 0;
+    }
+    .stock-table td[data-label=""]::before {
+      content: none;
+    }
   }
 `;
 
@@ -392,27 +433,27 @@ export default function MyStock() {
                 {stockData.map(item => (
                   <>
                     <tr key={item.product_id} className={`expandable ${item.near_expiry ? 'near-expiry' : ''}`} onClick={() => toggleExpand(item.product_id)}>
-                      <td>
+                      <td data-label="Product">
                         <strong>{item.product?.brand_name || 'Unknown'}</strong>
                         <br /><span style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{item.product?.generic_name}</span>
                         {item.near_expiry && <span className="badge badge-warn" style={{ marginLeft: 6 }}>Near Expiry</span>}
                       </td>
-                      <td>{item.product?.unit_code || '-'}</td>
-                      <td><strong>{item.total_qty}</strong></td>
-                      <td>{item.batch_count}</td>
-                      <td>{item.nearest_expiry ? new Date(item.nearest_expiry).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' }) : '-'}</td>
-                      <td>P{(item.value || 0).toLocaleString()}</td>
+                      <td data-label="Unit">{item.product?.unit_code || '-'}</td>
+                      <td data-label="Total Qty"><strong>{item.total_qty}</strong></td>
+                      <td data-label="Batches">{item.batch_count}</td>
+                      <td data-label="Nearest Expiry">{item.nearest_expiry ? new Date(item.nearest_expiry).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' }) : '-'}</td>
+                      <td data-label="Value">P{(item.value || 0).toLocaleString()}</td>
                     </tr>
                     {expandedProduct === item.product_id && item.batches?.map((batch, bi) => (
                       <tr key={`${item.product_id}-${bi}`} className="batch-row">
-                        <td colSpan={2}>Batch: <strong>{batch.batch_lot_no}</strong></td>
-                        <td>{batch.available_qty}</td>
-                        <td></td>
-                        <td>
+                        <td data-label="Batch" colSpan={2}>Batch: <strong>{batch.batch_lot_no}</strong></td>
+                        <td data-label="Qty">{batch.available_qty}</td>
+                        <td data-label=""></td>
+                        <td data-label="Expiry">
                           {new Date(batch.expiry_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' })}
                           {batch.near_expiry && <span className="badge badge-error" style={{ marginLeft: 6 }}>{batch.days_to_expiry}d</span>}
                         </td>
-                        <td></td>
+                        <td data-label=""></td>
                       </tr>
                     ))}
                   </>
@@ -452,16 +493,16 @@ export default function MyStock() {
                   <tbody>
                     {ledgerEntries.map((entry, i) => (
                       <tr key={entry._id || i}>
-                        <td>{new Date(entry.recorded_at).toLocaleDateString('en-PH')}</td>
-                        <td>
+                        <td data-label="Date">{new Date(entry.recorded_at).toLocaleDateString('en-PH')}</td>
+                        <td data-label="Type">
                           <span className="badge" style={TYPE_COLORS[entry.transaction_type] || {}}>
                             {entry.transaction_type}
                           </span>
                         </td>
-                        <td>{entry.batch_lot_no}</td>
-                        <td style={{ color: entry.qty_in > 0 ? '#16a34a' : undefined }}>{entry.qty_in > 0 ? `+${entry.qty_in}` : '-'}</td>
-                        <td style={{ color: entry.qty_out > 0 ? '#dc2626' : undefined }}>{entry.qty_out > 0 ? `-${entry.qty_out}` : '-'}</td>
-                        <td><strong>{entry.running_balance ?? '-'}</strong></td>
+                        <td data-label="Batch">{entry.batch_lot_no}</td>
+                        <td data-label="Qty In" style={{ color: entry.qty_in > 0 ? '#16a34a' : undefined }}>{entry.qty_in > 0 ? `+${entry.qty_in}` : '-'}</td>
+                        <td data-label="Qty Out" style={{ color: entry.qty_out > 0 ? '#dc2626' : undefined }}>{entry.qty_out > 0 ? `-${entry.qty_out}` : '-'}</td>
+                        <td data-label="Balance"><strong>{entry.running_balance ?? '-'}</strong></td>
                       </tr>
                     ))}
                     {!ledgerEntries.length && (
@@ -491,16 +532,16 @@ export default function MyStock() {
               <tbody>
                 {varianceData.map((item, i) => (
                   <tr key={item.product_id || i}>
-                    <td><strong>{item.product?.brand_name || 'Unknown'}</strong></td>
-                    <td>{item.opening_balance}</td>
-                    <td style={{ color: '#16a34a' }}>+{item.total_in}</td>
-                    <td style={{ color: '#dc2626' }}>-{item.total_out}</td>
-                    <td><strong>{item.expected_balance}</strong></td>
-                    <td><strong>{item.actual_balance}</strong></td>
-                    <td style={{ color: item.variance !== 0 ? '#dc2626' : '#16a34a', fontWeight: 700 }}>
+                    <td data-label="Product"><strong>{item.product?.brand_name || 'Unknown'}</strong></td>
+                    <td data-label="Opening">{item.opening_balance}</td>
+                    <td data-label="Total In" style={{ color: '#16a34a' }}>+{item.total_in}</td>
+                    <td data-label="Total Out" style={{ color: '#dc2626' }}>-{item.total_out}</td>
+                    <td data-label="Expected"><strong>{item.expected_balance}</strong></td>
+                    <td data-label="Actual"><strong>{item.actual_balance}</strong></td>
+                    <td data-label="Variance" style={{ color: item.variance !== 0 ? '#dc2626' : '#16a34a', fontWeight: 700 }}>
                       {item.variance > 0 ? '+' : ''}{item.variance}
                     </td>
-                    <td>
+                    <td data-label="Status">
                       <span className={`badge ${item.status === 'OK' ? 'badge-ok' : 'badge-error'}`}>
                         {item.status}
                       </span>
@@ -528,13 +569,13 @@ export default function MyStock() {
                 <tbody>
                   {(alertData.expiry_alerts || []).map((a) => (
                     <tr key={`${a.product_id || ''}-${a.batch_lot_no}`} style={{ background: a.days_remaining < 30 ? '#fef2f2' : a.days_remaining < 120 ? '#fffbeb' : undefined }}>
-                      <td><strong>{a.product?.brand_name || 'Unknown'}</strong></td>
-                      <td>{a.batch_lot_no}</td>
-                      <td>{new Date(a.expiry_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' })}</td>
-                      <td style={{ color: a.days_remaining < 30 ? '#dc2626' : a.days_remaining < 120 ? '#d97706' : undefined, fontWeight: 700 }}>
+                      <td data-label="Product"><strong>{a.product?.brand_name || 'Unknown'}</strong></td>
+                      <td data-label="Batch">{a.batch_lot_no}</td>
+                      <td data-label="Expiry">{new Date(a.expiry_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' })}</td>
+                      <td data-label="Days Left" style={{ color: a.days_remaining < 30 ? '#dc2626' : a.days_remaining < 120 ? '#d97706' : undefined, fontWeight: 700 }}>
                         {a.days_remaining}d
                       </td>
-                      <td>{a.available_qty}</td>
+                      <td data-label="Qty">{a.available_qty}</td>
                     </tr>
                   ))}
                   {!alertData.expiry_alerts?.length && (
@@ -554,13 +595,13 @@ export default function MyStock() {
                 <tbody>
                   {(alertData.reorder_alerts || []).map((a) => (
                     <tr key={a.product_id || a.product?.brand_name} style={{ background: a.below_safety ? '#fef2f2' : '#fffbeb' }}>
-                      <td><strong>{a.product?.brand_name || 'Unknown'}</strong></td>
-                      <td style={{ fontWeight: 700, color: a.below_safety ? '#dc2626' : '#d97706' }}>{a.current_qty}</td>
-                      <td>{a.reorder_min_qty}</td>
-                      <td>{a.safety_stock_qty ?? '—'}</td>
-                      <td style={{ fontWeight: 600 }}>{a.reorder_qty ?? '—'}</td>
-                      <td>{a.lead_time_days != null ? `${a.lead_time_days}d` : '—'}</td>
-                      <td>{a.order_by_date ? new Date(a.order_by_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '—'}</td>
+                      <td data-label="Product"><strong>{a.product?.brand_name || 'Unknown'}</strong></td>
+                      <td data-label="Current" style={{ fontWeight: 700, color: a.below_safety ? '#dc2626' : '#d97706' }}>{a.current_qty}</td>
+                      <td data-label="Min Qty">{a.reorder_min_qty}</td>
+                      <td data-label="Safety">{a.safety_stock_qty ?? '—'}</td>
+                      <td data-label="Suggested Order" style={{ fontWeight: 600 }}>{a.reorder_qty ?? '—'}</td>
+                      <td data-label="Lead Time">{a.lead_time_days != null ? `${a.lead_time_days}d` : '—'}</td>
+                      <td data-label="Order By">{a.order_by_date ? new Date(a.order_by_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '—'}</td>
                     </tr>
                   ))}
                   {!alertData.reorder_alerts?.length && (
