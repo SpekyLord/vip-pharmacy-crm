@@ -32,6 +32,7 @@ const pageStyles = `
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     padding: 24px;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
   .saleslist-inner { max-width: 1200px; margin: 0 auto; }
   .saleslist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
@@ -70,9 +71,37 @@ const pageStyles = `
 
   @media (max-width: 768px) {
     .saleslist-main { padding: 16px; }
+    .saleslist-main { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
     .sales-list-table { font-size: 12px; }
     .filter-bar { flex-direction: column; }
     .filter-bar input, .filter-bar select { width: 100%; }
+
+    .sales-list-table { border: none; background: transparent; }
+    .sales-list-table thead { display: none; }
+    .sales-list-table tbody { display: block; }
+    .sales-list-table tr {
+      display: block;
+      background: var(--erp-panel, #fff);
+      border: 1px solid var(--erp-border);
+      border-radius: 12px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .sales-list-table td {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-top: 1px solid var(--erp-border);
+      white-space: normal;
+    }
+    .sales-list-table td:first-child { border-top: none; }
+    .sales-list-table td::before {
+      content: attr(data-label);
+      font-weight: 600;
+      color: var(--erp-muted, #6b7280);
+      flex-shrink: 0;
+    }
   }
 `;
 
@@ -204,25 +233,25 @@ export default function SalesList() {
             <tbody>
               {data.map(sale => (
                 <tr key={sale._id} onClick={() => viewDetail(sale._id)}>
-                  <td>{new Date(sale.csi_date).toLocaleDateString('en-PH')}</td>
-                  <td><strong>{sale.doc_ref}</strong></td>
-                  <td>{toTitleCase(sale.hospital_id?.hospital_name) || '-'}</td>
-                  <td>P{(sale.invoice_total || 0).toLocaleString()}</td>
-                  <td style={{ fontSize: 11 }}>{sale.source}</td>
-                  <td>
+                  <td data-label="Date">{new Date(sale.csi_date).toLocaleDateString('en-PH')}</td>
+                  <td data-label="CSI #"><strong>{sale.doc_ref}</strong></td>
+                  <td data-label="Hospital">{toTitleCase(sale.hospital_id?.hospital_name) || '-'}</td>
+                  <td data-label="Total">P{(sale.invoice_total || 0).toLocaleString()}</td>
+                  <td data-label="Source" style={{ fontSize: 11 }}>{sale.source}</td>
+                  <td data-label="Status">
                     <span className="badge" style={STATUS_COLORS[sale.status] || {}}>
                       {sale.status}
                     </span>
                   </td>
                   {isMultiEntity && (
-                    <td><EntityBadge entity={getEntityById(sale.entity_id)} size="sm" /></td>
+                    <td data-label="Entity"><EntityBadge entity={getEntityById(sale.entity_id)} size="sm" /></td>
                   )}
-                  <td style={{ fontSize: 11, maxWidth: 220, whiteSpace: 'pre-line' }}>
+                  <td data-label="Products" style={{ fontSize: 11, maxWidth: 220, whiteSpace: 'pre-line' }}>
                     {sale.line_items?.map((li, i) => (
                       <div key={i}>{li.item_key || '—'} × {li.qty}</div>
                     ))}
                   </td>
-                  <td onClick={e => e.stopPropagation()}>
+                  <td data-label="Actions" onClick={e => e.stopPropagation()}>
                     {sale.status === 'VALID' && (
                       <button className="btn btn-sm" style={{ background: '#16a34a', color: '#fff' }} onClick={() => handleSubmit()}>
                         Submit
