@@ -3,10 +3,36 @@
  *
  * All functions are read-only (no DB writes). They return consumption PLANS.
  * The caller (salesController.submitSales) creates InventoryLedger entries.
+ *
+ * Phase 17: All functions accept optional opts.warehouseId.
+ * When provided, queries filter by warehouse_id instead of (or alongside) bdm_id.
+ * Backward-compatible: existing callers without opts keep working.
  */
 const mongoose = require('mongoose');
 const InventoryLedger = require('../models/InventoryLedger');
 const { cleanBatchNo } = require('../utils/normalize');
+
+/**
+ * Build the $match filter for inventory queries.
+ * Supports both legacy bdm_id filtering and new warehouse_id filtering.
+ * @param {string} entityId
+ * @param {string} bdmId
+ * @param {Object} [opts] - { warehouseId }
+ * @param {string} [productId]
+ */
+const buildStockMatch = (entityId, bdmId, opts, productId) => {
+  const match = { entity_id: new mongoose.Types.ObjectId(entityId) };
+  // Prefer warehouse_id if provided (Phase 17); fall back to bdm_id
+  if (opts?.warehouseId) {
+    match.warehouse_id = new mongoose.Types.ObjectId(opts.warehouseId);
+  } else if (bdmId) {
+    match.bdm_id = new mongoose.Types.ObjectId(bdmId);
+  }
+  if (productId) {
+    match.product_id = new mongoose.Types.ObjectId(productId);
+  }
+  return match;
+};
 
 /**
  * Get all batches with available stock for a specific product,
@@ -17,15 +43,9 @@ const { cleanBatchNo } = require('../utils/normalize');
  * @param {ObjectId|string} productId
  * @returns {Array<{ batch_lot_no, expiry_date, available_qty }>}
  */
-const getAvailableBatches = async (entityId, bdmId, productId) => {
+const getAvailableBatches = async (entityId, bdmId, productId, opts) => {
   const result = await InventoryLedger.aggregate([
-    {
-      $match: {
-        entity_id: new mongoose.Types.ObjectId(entityId),
-        bdm_id: new mongoose.Types.ObjectId(bdmId),
-        product_id: new mongoose.Types.ObjectId(productId)
-      }
-    },
+    { $match: buildStockMatch(entityId, bdmId, opts, productId) },
     {
       $group: {
         _id: { batch_lot_no: '$batch_lot_no', expiry_date: '$expiry_date' },
@@ -64,8 +84,8 @@ const getAvailableBatches = async (entityId, bdmId, productId) => {
  * @returns {Array<{ batch_lot_no, expiry_date, qty_consumed }>}
  * @throws {Error} INSUFFICIENT_STOCK if total available < qty
  */
-const consumeFIFO = async (entityId, bdmId, productId, qty) => {
-  const batches = await getAvailableBatches(entityId, bdmId, productId);
+const consumeFIFO = async (entityId, bdmId, productId, qty, opts) => {
+  const batches = await getAvailableBatches(entityId, bdmId, productId, opts);
 
   const totalAvailable = batches.reduce((sum, b) => sum + b.available_qty, 0);
   if (totalAvailable < qty) {
@@ -105,18 +125,14 @@ const consumeFIFO = async (entityId, bdmId, productId, qty) => {
  * @returns {{ batch_lot_no, expiry_date, qty_consumed }}
  * @throws {Error} INSUFFICIENT_STOCK if batch doesn't have enough
  */
-const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty) => {
+const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty, opts) => {
   const normalized = cleanBatchNo(batchLotNo);
 
+  const match = buildStockMatch(entityId, bdmId, opts, productId);
+  match.batch_lot_no = normalized;
+
   const result = await InventoryLedger.aggregate([
-    {
-      $match: {
-        entity_id: new mongoose.Types.ObjectId(entityId),
-        bdm_id: new mongoose.Types.ObjectId(bdmId),
-        product_id: new mongoose.Types.ObjectId(productId),
-        batch_lot_no: normalized
-      }
-    },
+    { $match: match },
     {
       $group: {
         _id: { batch_lot_no: '$batch_lot_no', expiry_date: '$expiry_date' },
@@ -155,9 +171,8 @@ const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty)
  * @param {ObjectId|string} bdmId
  * @returns {Array<{ product_id, batch_lot_no, expiry_date, available_qty }>}
  */
-const getMyStock = async (entityId, bdmId) => {
-  const match = { entity_id: new mongoose.Types.ObjectId(entityId) };
-  if (bdmId) match.bdm_id = new mongoose.Types.ObjectId(bdmId);
+const getMyStock = async (entityId, bdmId, opts) => {
+  const match = buildStockMatch(entityId, bdmId, opts);
 
   const result = await InventoryLedger.aggregate([
     { $match: match },
@@ -198,8 +213,8 @@ const getMyStock = async (entityId, bdmId) => {
  * Returns a Map: "productId|batchLotNo" → available_qty
  * Used by validateSales to deduct from snapshot per row.
  */
-const buildStockSnapshot = async (entityId, bdmId) => {
-  const stock = await getMyStock(entityId, bdmId);
+const buildStockSnapshot = async (entityId, bdmId, opts) => {
+  const stock = await getMyStock(entityId, bdmId, opts);
   const snapshot = new Map();
 
   for (const item of stock) {

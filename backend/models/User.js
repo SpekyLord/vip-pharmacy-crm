@@ -148,6 +148,11 @@ const userSchema = new mongoose.Schema(
         banking:     { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
       },
       can_approve: { type: Boolean, default: false },
+      // ═══ Sub-Module Permissions (Phase 16) ═══
+      // Dynamic map: { [module]: { [subKey]: Boolean } }
+      // Only modules with sub-permissions defined are gated; others fall through to module-level.
+      // If a module has FULL access and no sub_permissions entry, all sub-functions are granted.
+      sub_permissions: { type: mongoose.Schema.Types.Mixed, default: {} },
       updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       updated_at: { type: Date },
     },

@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useInventory from '../hooks/useInventory';
 import useEntities from '../hooks/useEntities';
 import EntityBadge from '../components/EntityBadge';
+import WarehousePicker from '../components/WarehousePicker';
 
 const TABS = ['Stock on Hand', 'Transaction Ledger', 'Variance Report', 'Alerts'];
 
@@ -223,6 +224,7 @@ export default function MyStock() {
   const { getEntityById } = useEntities();
   const userEntity = getEntityById(user?.entity_id);
 
+  const [warehouseId, setWarehouseId] = useState('');
   const [activeTab, setActiveTab] = useState(0);
   const [stockData, setStockData] = useState([]);
   const [summary, setSummary] = useState({});
@@ -236,15 +238,15 @@ export default function MyStock() {
   const [alertData, setAlertData] = useState({ expiry_alerts: [], reorder_alerts: [] });
   const [alertSummary, setAlertSummary] = useState({});
 
-  // Load stock on mount
+  // Load stock when warehouse changes
   useEffect(() => {
-    loadStock();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (warehouseId) loadStock();
+  }, [warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadStock = async () => {
     setLoading(true);
     try {
-      const res = await inventory.getMyStock();
+      const res = await inventory.getMyStock(null, null, warehouseId);
       if (res?.data) setStockData(res.data);
       if (res?.summary) setSummary(res.summary);
     } catch {} finally { setLoading(false); }
@@ -254,7 +256,7 @@ export default function MyStock() {
     if (!productId) return;
     setLoading(true);
     try {
-      const res = await inventory.getLedger(productId, { limit: 100 });
+      const res = await inventory.getLedger(productId, { limit: 100, warehouse_id: warehouseId });
       if (res?.data) setLedgerEntries(res.data);
     } catch {} finally { setLoading(false); }
   };
@@ -262,7 +264,7 @@ export default function MyStock() {
   const loadVariance = async () => {
     setLoading(true);
     try {
-      const res = await inventory.getVariance();
+      const res = await inventory.getVariance(null, warehouseId);
       if (res?.data) setVarianceData(res.data);
     } catch {} finally { setLoading(false); }
   };
@@ -270,7 +272,7 @@ export default function MyStock() {
   const loadAlerts = async () => {
     setLoading(true);
     try {
-      const res = await inventory.getAlerts();
+      const res = await inventory.getAlerts(null, warehouseId);
       if (res?.data) setAlertData(res.data);
       if (res?.summary) setAlertSummary(res.summary);
     } catch {} finally { setLoading(false); }
@@ -313,7 +315,7 @@ export default function MyStock() {
   const handlePhysicalCountSubmit = useCallback(async (counts) => {
     setPcSubmitting(true);
     try {
-      await inventory.recordPhysicalCount(counts);
+      await inventory.recordPhysicalCount(counts, warehouseId);
       setPcModalOpen(false);
       // Reload stock + variance to reflect adjustments
       await loadStock();
@@ -339,6 +341,8 @@ export default function MyStock() {
               Physical Count
             </button>
           </div>
+
+          <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" />
 
           {/* Summary Bar */}
           <div className="summary-bar">

@@ -33,6 +33,7 @@ const salesLineSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  warehouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' }, // Phase 17 — stock source warehouse
   event_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'TransactionEvent'
@@ -42,20 +43,40 @@ const salesLineSchema = new mongoose.Schema({
     enum: ['SALES_LINE', 'OPENING_AR'],
     default: 'SALES_LINE'
   },
+  // Phase 18: sale_type determines document flow and validation rules
+  sale_type: {
+    type: String,
+    enum: ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'],
+    default: 'CSI'
+  },
   hospital_id: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Hospital',
-    required: [true, 'Hospital is required']
+    ref: 'Hospital'
+    // No longer unconditionally required — CSI to hospitals requires it, others use customer_id
+  },
+  customer_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Customer'
+    // Phase 18: for non-hospital customers (PERSON, PHARMACY, INDUSTRIAL, etc.)
   },
   csi_date: {
     type: Date,
-    required: [true, 'CSI date is required']
+    required: [true, 'Invoice date is required']
   },
   doc_ref: {
     type: String,
-    required: [true, 'Document reference (CSI#) is required'],
     trim: true
+    // Required for CSI (booklet number), auto-generated for SERVICE_INVOICE/CASH_RECEIPT
   },
+  // Phase 18: system-generated invoice number for non-CSI sales
+  invoice_number: { type: String, trim: true },
+  // Phase 18: payment mode for non-CSI sales
+  payment_mode: {
+    type: String,
+    enum: ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'ONLINE']
+  },
+  // Phase 18: service description (SERVICE_INVOICE only — FNB, rental, consulting)
+  service_description: { type: String, trim: true },
 
   line_items: [lineItemSchema],
 
@@ -97,8 +118,16 @@ const salesLineSchema = new mongoose.Schema({
   collection: 'erp_sales_lines'
 });
 
-// Pre-save: normalize line items + auto-compute totals
+// Pre-save: validate customer reference + normalize line items + auto-compute totals
 salesLineSchema.pre('save', function (next) {
+  // Phase 18: at least one customer reference required
+  if (!this.hospital_id && !this.customer_id) {
+    return next(new Error('Either hospital_id or customer_id is required'));
+  }
+  // CSI requires doc_ref (booklet number)
+  if (this.sale_type === 'CSI' && !this.doc_ref) {
+    return next(new Error('Document reference (CSI#) is required for CSI sales'));
+  }
   // Default VAT rate (Philippines 12%)
   const VAT_RATE = 0.12;
 
@@ -142,5 +171,7 @@ salesLineSchema.index({ entity_id: 1, bdm_id: 1, status: 1 });
 salesLineSchema.index({ entity_id: 1, bdm_id: 1, csi_date: -1 });
 salesLineSchema.index({ entity_id: 1, doc_ref: 1, hospital_id: 1 });
 salesLineSchema.index({ status: 1 });
+salesLineSchema.index({ entity_id: 1, sale_type: 1, status: 1 });
+salesLineSchema.index({ entity_id: 1, customer_id: 1, csi_date: -1 });
 
 module.exports = mongoose.model('SalesLine', salesLineSchema);

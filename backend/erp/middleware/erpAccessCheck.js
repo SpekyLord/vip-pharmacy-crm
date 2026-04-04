@@ -69,6 +69,83 @@ const erpAccessCheck = (module, requiredLevel = 'VIEW') => {
 };
 
 /**
+ * Sub-module access check (Phase 16)
+ *
+ * Checks a specific sub-permission within a module.
+ * Requires at least VIEW on the parent module.
+ *
+ * Fall-through rules:
+ *   - President → always pass
+ *   - Admin w/o erp_access enabled ��� always pass (backward compat)
+ *   - Module = FULL with NO sub_permissions entry → all subs granted
+ *   - Module = FULL/VIEW with sub_permissions entry → check specific key
+ *
+ * @param {string} module - one of the 10 ERP module keys
+ * @param {string} subKey - specific sub-permission key (e.g. 'po_create')
+ */
+const erpSubAccessCheck = (module, subKey) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    const { role, erp_access } = req.user;
+
+    // President always passes
+    if (role === 'president') return next();
+
+    // CEO — view-only, block sub-permission writes
+    if (role === 'ceo') {
+      return res.status(403).json({
+        success: false,
+        message: 'CEO role is view-only for ERP modules',
+      });
+    }
+
+    // Backward compat: admin without erp_access enabled = full access
+    if (role === 'admin' && (!erp_access || !erp_access.enabled)) {
+      return next();
+    }
+
+    // If erp_access is not enabled, deny
+    if (!erp_access || !erp_access.enabled) {
+      return res.status(403).json({
+        success: false,
+        message: 'ERP access not enabled for your account',
+      });
+    }
+
+    // Must have at least VIEW on the parent module
+    const userLevel = erp_access.modules?.[module] || 'NONE';
+    if ((LEVELS[userLevel] || 0) < LEVELS['VIEW']) {
+      return res.status(403).json({
+        success: false,
+        message: `No access to ${module} module`,
+      });
+    }
+
+    // If no sub_permissions defined for this module:
+    // FULL → all subs granted; VIEW → deny (VIEW = read-only, no write sub-functions)
+    const moduleSubs = erp_access.sub_permissions?.[module];
+    if (!moduleSubs || Object.keys(moduleSubs).length === 0) {
+      if (userLevel === 'FULL') return next();
+      return res.status(403).json({
+        success: false,
+        message: `Access denied: ${module}.${subKey} permission required`,
+      });
+    }
+
+    // Check specific sub-permission
+    if (moduleSubs[subKey]) return next();
+
+    return res.status(403).json({
+      success: false,
+      message: `Access denied: ${module}.${subKey} permission required`,
+    });
+  };
+};
+
+/**
  * Approval gate — checks erp_access.can_approve
  * President and admin override (always allowed).
  */
@@ -90,4 +167,4 @@ const approvalCheck = (req, res, next) => {
   });
 };
 
-module.exports = { erpAccessCheck, approvalCheck };
+module.exports = { erpAccessCheck, erpSubAccessCheck, approvalCheck };

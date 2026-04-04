@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useGrn from '../hooks/useGrn';
 import useProducts from '../hooks/useProducts';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
+import WarehousePicker from '../components/WarehousePicker';
 
 const STATUS_COLORS = {
   PENDING: { bg: '#fef3c7', text: '#92400e', label: 'Pending' },
@@ -204,6 +205,7 @@ export default function GrnEntry() {
   const grn = useGrn();
   const { products } = useProducts();
 
+  const [warehouseId, setWarehouseId] = useState('');
   const [lineItems, setLineItems] = useState([emptyLine()]);
   const [grnDate, setGrnDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
@@ -243,6 +245,7 @@ export default function GrnEntry() {
     try {
       await grn.createGrn({
         grn_date: grnDate,
+        warehouse_id: warehouseId || undefined,
         line_items: validLines.map(li => ({
           product_id: li.product_id,
           batch_lot_no: li.batch_lot_no,
@@ -288,6 +291,9 @@ export default function GrnEntry() {
           <div className="grn-form">
             <h2>New GRN</h2>
             <div className="form-row">
+              <div className="form-group">
+                <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterGrn />
+              </div>
               <div className="form-group">
                 <label>GRN Date</label>
                 <input type="date" value={grnDate} onChange={e => setGrnDate(e.target.value)} />

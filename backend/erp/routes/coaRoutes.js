@@ -1,6 +1,9 @@
+/**
+ * Chart of Accounts Routes — Phase 11, updated Phase 16 (sub-module access)
+ */
 const express = require('express');
 const router = express.Router();
-const { roleCheck } = require('../../middleware/roleCheck');
+const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const {
   listAccounts,
   createAccount,
@@ -10,8 +13,8 @@ const {
 
 // ═══ Chart of Accounts ═══
 router.get('/', listAccounts);
-router.post('/', roleCheck('admin', 'finance', 'president'), createAccount);
-router.put('/:id', roleCheck('admin', 'finance', 'president'), updateAccount);
-router.delete('/:id', roleCheck('admin', 'finance', 'president'), deactivateAccount);
+router.post('/', erpSubAccessCheck('accounting', 'journal_entry'), createAccount);
+router.put('/:id', erpSubAccessCheck('accounting', 'journal_entry'), updateAccount);
+router.delete('/:id', erpSubAccessCheck('accounting', 'journal_entry'), deactivateAccount);
 
 module.exports = router;

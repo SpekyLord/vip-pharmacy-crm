@@ -18,6 +18,7 @@ const consignmentTrackerSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  warehouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' }, // Phase 17
   hospital_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Hospital',

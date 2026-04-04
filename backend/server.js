@@ -315,6 +315,9 @@ const startServer = async () => {
     // Initialize email scheduler (after DB connection)
     require('./jobs/emailScheduler').initEmailScheduler();
 
+    // Initialize AI agent scheduler (Phase 18-19: 6 free + 6 paid agents)
+    require('./agents/agentScheduler').initAgentScheduler();
+
     // Listen on all network interfaces (0.0.0.0) to allow access from phone
     server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`

@@ -33,6 +33,19 @@ const createSale = catchAsync(async (req, res) => {
       ? 'OPENING_AR' : 'SALES_LINE';
   }
 
+  // Phase 18: auto-generate invoice_number for non-CSI sales
+  if (saleData.sale_type && saleData.sale_type !== 'CSI' && !saleData.invoice_number) {
+    const { generateDocNumber } = require('../services/docNumbering');
+    const prefix = saleData.sale_type === 'SERVICE_INVOICE' ? 'SVC' : 'RCT';
+    saleData.invoice_number = await generateDocNumber({
+      prefix,
+      bdmId: req.bdmId,
+      date: saleData.csi_date || new Date()
+    });
+    // Also set doc_ref to invoice_number for non-CSI (used in displays)
+    if (!saleData.doc_ref) saleData.doc_ref = saleData.invoice_number;
+  }
+
   const sale = await SalesLine.create(saleData);
   res.status(201).json({ success: true, data: sale });
 });
@@ -104,6 +117,8 @@ const getSales = catchAsync(async (req, res) => {
 
   if (req.query.status) filter.status = req.query.status;
   if (req.query.hospital_id) filter.hospital_id = req.query.hospital_id;
+  if (req.query.customer_id) filter.customer_id = req.query.customer_id;
+  if (req.query.sale_type) filter.sale_type = req.query.sale_type;
   if (req.query.source) filter.source = req.query.source;
   if (req.query.csi_date_from || req.query.csi_date_to) {
     filter.csi_date = {};
@@ -118,6 +133,7 @@ const getSales = catchAsync(async (req, res) => {
   const [sales, total] = await Promise.all([
     SalesLine.find(filter)
       .populate('hospital_id', 'hospital_name')
+      .populate('customer_id', 'customer_name customer_type')
       .populate('bdm_id', 'name')
       .sort({ csi_date: -1 })
       .skip(skip)
@@ -139,6 +155,7 @@ const getSaleById = catchAsync(async (req, res) => {
     ...req.tenantFilter
   })
     .populate('hospital_id', 'hospital_name')
+    .populate('customer_id', 'customer_name customer_type')
     .populate('bdm_id', 'name')
     .lean();
 
@@ -170,7 +187,11 @@ const validateSales = catchAsync(async (req, res) => {
   }
 
   // Build fresh stock snapshot from InventoryLedger
-  const { productTotals } = await buildStockSnapshot(req.entityId, req.bdmId);
+  // Phase 17: If rows have warehouse_id, scope snapshot to that warehouse.
+  // For now, all rows for a BDM share one warehouse, so first row's warehouse is used.
+  const firstWarehouseId = rows[0]?.warehouse_id;
+  const snapOpts = firstWarehouseId ? { warehouseId: firstWarehouseId.toString() } : undefined;
+  const { productTotals } = await buildStockSnapshot(req.entityId, req.bdmId, snapOpts);
 
   // In-memory deduction tracker (prevents double-allocation across rows)
   const deducted = new Map(); // productId → qty deducted so far
@@ -182,11 +203,24 @@ const validateSales = catchAsync(async (req, res) => {
   for (const row of rows) {
     const rowErrors = [];
 
-    // Required fields
-    if (!row.hospital_id) rowErrors.push('Hospital is required');
-    if (!row.csi_date) rowErrors.push('CSI date is required');
-    if (!row.doc_ref) rowErrors.push('Document reference (CSI#) is required');
-    if (!row.line_items || row.line_items.length === 0) rowErrors.push('At least one line item is required');
+    // Phase 18: type-aware required field validation
+    const saleType = row.sale_type || 'CSI';
+
+    // At least one customer reference required
+    if (!row.hospital_id && !row.customer_id) {
+      rowErrors.push('Hospital or Customer is required');
+    }
+    if (!row.csi_date) rowErrors.push('Invoice date is required');
+
+    if (saleType === 'CSI') {
+      if (!row.doc_ref) rowErrors.push('Document reference (CSI#) is required');
+      if (!row.line_items || row.line_items.length === 0) rowErrors.push('At least one line item is required');
+    } else if (saleType === 'CASH_RECEIPT') {
+      if (!row.line_items || row.line_items.length === 0) rowErrors.push('At least one line item is required');
+    } else if (saleType === 'SERVICE_INVOICE') {
+      if (!row.service_description) rowErrors.push('Service description is required');
+      if (!row.invoice_total || row.invoice_total <= 0) rowErrors.push('Invoice total must be greater than 0');
+    }
 
     // No future dates
     if (row.csi_date && row.csi_date > new Date()) {
@@ -213,20 +247,27 @@ const validateSales = catchAsync(async (req, res) => {
       } catch { /* AR engine not critical for validation */ }
     }
 
-    // Duplicate check: same doc_ref + hospital + any product in this batch
-    const dupCheck = await SalesLine.findOne({
-      _id: { $ne: row._id },
-      entity_id: row.entity_id,
-      doc_ref: row.doc_ref,
-      hospital_id: row.hospital_id,
-      status: { $nin: ['DELETION_REQUESTED'] }
-    });
-    if (dupCheck) {
-      rowErrors.push(`Duplicate: CSI# ${row.doc_ref} already exists for this hospital`);
+    // Duplicate check: same doc_ref + hospital/customer (CSI and CASH_RECEIPT only)
+    if (saleType !== 'SERVICE_INVOICE' && row.doc_ref) {
+      const dupFilter = {
+        _id: { $ne: row._id },
+        entity_id: row.entity_id,
+        doc_ref: row.doc_ref,
+        status: { $nin: ['DELETION_REQUESTED'] }
+      };
+      if (row.hospital_id) dupFilter.hospital_id = row.hospital_id;
+      if (row.customer_id) dupFilter.customer_id = row.customer_id;
+
+      const dupCheck = await SalesLine.findOne(dupFilter);
+      if (dupCheck) {
+        rowErrors.push(`Duplicate: ${row.doc_ref} already exists for this customer`);
+      }
     }
 
-    // Stock check per line item
-    for (const item of row.line_items) {
+    // Stock check per line item (skip for SERVICE_INVOICE — no inventory)
+    if (saleType === 'SERVICE_INVOICE') {
+      // SERVICE_INVOICE: no stock check needed, skip line item validation
+    } else for (const item of row.line_items) {
       if (!item.product_id) {
         rowErrors.push('Product is required for each line item');
         continue;
@@ -306,17 +347,25 @@ const submitSales = catchAsync(async (req, res) => {
   try {
     await session.withTransaction(async () => {
       for (const row of validRows) {
+        const saleType = row.sale_type || 'CSI';
+
         // 1. Create TransactionEvent (immutable)
+        const eventType = saleType === 'SERVICE_INVOICE' ? 'SERVICE_INVOICE'
+          : saleType === 'CASH_RECEIPT' ? 'CASH_RECEIPT' : 'CSI';
+
         const [event] = await TransactionEvent.create([{
           entity_id: row.entity_id,
           bdm_id: row.bdm_id,
-          event_type: 'CSI',
+          event_type: eventType,
           event_date: row.csi_date,
-          document_ref: row.doc_ref,
+          document_ref: row.doc_ref || row.invoice_number,
           payload: {
             hospital_id: row.hospital_id,
+            customer_id: row.customer_id,
+            sale_type: saleType,
             line_items: row.line_items,
             invoice_total: row.invoice_total,
+            service_description: row.service_description,
             source: row.source
           },
           created_by: req.user._id
@@ -324,7 +373,17 @@ const submitSales = catchAsync(async (req, res) => {
 
         eventIds.push(event._id);
 
-        // 2. Create InventoryLedger entries per line item
+        // 2. SERVICE_INVOICE: no inventory deduction — skip to posting
+        if (saleType === 'SERVICE_INVOICE') {
+          row.status = 'POSTED';
+          row.posted_at = new Date();
+          row.posted_by = req.user._id;
+          row.event_id = event._id;
+          await row.save({ session });
+          continue;
+        }
+
+        // 3. Create InventoryLedger entries per line item (CSI + CASH_RECEIPT)
         for (const item of row.line_items) {
           // Check if this CSI references a DR (consignment)
           const consignment = await ConsignmentTracker.findOne({
@@ -347,14 +406,16 @@ const submitSales = catchAsync(async (req, res) => {
             await consignment.save({ session });
           } else {
             // Regular CSI: consume inventory via FIFO
+            // Phase 17: warehouse-scoped FIFO consumption
+            const fifoOpts = row.warehouse_id ? { warehouseId: row.warehouse_id.toString() } : undefined;
             let consumed;
             if (item.fifo_override && item.batch_lot_no) {
               consumed = [await consumeSpecificBatch(
-                row.entity_id, row.bdm_id, item.product_id, item.batch_lot_no, item.qty
+                row.entity_id, row.bdm_id, item.product_id, item.batch_lot_no, item.qty, fifoOpts
               )];
             } else {
               consumed = await consumeFIFO(
-                row.entity_id, row.bdm_id, item.product_id, item.qty
+                row.entity_id, row.bdm_id, item.product_id, item.qty, fifoOpts
               );
             }
 
@@ -363,6 +424,7 @@ const submitSales = catchAsync(async (req, res) => {
               await InventoryLedger.create([{
                 entity_id: row.entity_id,
                 bdm_id: row.bdm_id,
+                warehouse_id: row.warehouse_id || undefined,
                 product_id: item.product_id,
                 batch_lot_no: c.batch_lot_no,
                 expiry_date: c.expiry_date,
@@ -435,6 +497,7 @@ const reopenSales = catchAsync(async (req, res) => {
       await InventoryLedger.create({
         entity_id: entry.entity_id,
         bdm_id: entry.bdm_id,
+        warehouse_id: entry.warehouse_id || undefined,
         product_id: entry.product_id,
         batch_lot_no: entry.batch_lot_no,
         expiry_date: entry.expiry_date,
@@ -554,6 +617,7 @@ const approveDeletion = catchAsync(async (req, res) => {
     await InventoryLedger.create({
       entity_id: entry.entity_id,
       bdm_id: entry.bdm_id,
+      warehouse_id: entry.warehouse_id || undefined,
       product_id: entry.product_id,
       batch_lot_no: entry.batch_lot_no,
       expiry_date: entry.expiry_date,

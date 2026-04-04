@@ -26,12 +26,18 @@ const expenseLineSchema = new mongoose.Schema({
   calf_required: { type: Boolean, default: false },
   calf_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PrfCalf' },
   vendor_id: { type: mongoose.Schema.Types.ObjectId, ref: 'VendorMaster' },
+  // Phase 18: cost center allocation per expense line
+  cost_center_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CostCenter' },
   notes: { type: String, trim: true }
 }, { _id: true });
 
 const expenseEntrySchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+
+  // Phase 18: office staff can record expenses on behalf of president (no credential sharing)
+  // When set, CALF is never required (president override)
+  recorded_on_behalf_of: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 
   // Period
   period: { type: String, required: true, trim: true },       // "2026-04"
@@ -80,7 +86,10 @@ expenseEntrySchema.pre('save', function (next) {
     line.net_of_vat = Math.round(((line.amount || 0) - (line.vat_amount || 0)) * 100) / 100;
 
     // CALF flag: ACCESS with non-cash payment requires CALF. ORE and cash ACCESS are always exempt.
-    if (line.expense_type === 'ACCESS' && line.payment_mode !== 'CASH') {
+    // Phase 18: recorded_on_behalf_of (president override) = CALF never required
+    if (this.recorded_on_behalf_of) {
+      line.calf_required = false;
+    } else if (line.expense_type === 'ACCESS' && line.payment_mode !== 'CASH') {
       line.calf_required = true;
     } else {
       line.calf_required = false;

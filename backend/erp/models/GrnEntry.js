@@ -12,6 +12,7 @@ const grnLineItemSchema = new mongoose.Schema({
 const grnEntrySchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  warehouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' }, // Phase 17 — receiving warehouse
   grn_date: { type: Date, required: [true, 'GRN date is required'] },
   line_items: {
     type: [grnLineItemSchema],

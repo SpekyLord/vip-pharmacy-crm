@@ -7,6 +7,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import WarehousePicker from '../components/WarehousePicker';
 
 const pageStyles = `
   .aging-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -41,6 +42,7 @@ const BADGE_CLASS = { OPEN: 'badge-open', OVERDUE: 'badge-overdue', FORCE_CSI: '
 export default function ConsignmentAging() {
   const { user } = useAuth();
   const rpt = useReports();
+  const [warehouseId, setWarehouseId] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({ bdm_id: '', hospital_id: '', aging_status: '' });
@@ -65,6 +67,7 @@ export default function ConsignmentAging() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="aging-main">
+          <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
           <div className="aging-header">
             <h1>Consignment Aging</h1>
             <p>Consolidated cross-BDM consignment status with aging indicators</p>

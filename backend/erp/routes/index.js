@@ -21,6 +21,8 @@ router.use('/vendors', require('./vendorRoutes'));
 router.use('/lookups', require('./lookupRoutes'));
 router.use('/budget-allocations', require('./budgetAllocationRoutes'));
 router.use('/classify', require('./classificationRoutes'));
+router.use('/customers', require('./customerRoutes'));
+router.use('/print', require('./printRoutes'));
 
 // ═══ Phase 3 — Sales & Inventory ═══
 router.use('/sales', erpAccessCheck('sales'), require('./salesRoutes'));
@@ -71,6 +73,16 @@ router.use('/purchasing', erpAccessCheck('purchasing'), require('./purchasingRou
 
 // ═══ Phase 13 — Banking & Cash ═══
 router.use('/banking', erpAccessCheck('accounting'), require('./bankingRoutes'));
+
+// ═══ Phase 17 — Warehouse Management ═══
+router.use('/warehouse', erpAccessCheck('inventory'), require('./warehouseRoutes'));
+
+// ═══ Phase 18 — Service Revenue (routes already under shared infra: /customers, /print) ═══
+
+// ═══ Phase 19 — Petty Cash, Office Supplies & Collaterals ═══
+router.use('/petty-cash', erpAccessCheck('accounting'), require('./pettyCashRoutes'));
+router.use('/office-supplies', erpAccessCheck('accounting'), require('./officeSupplyRoutes'));
+router.use('/collaterals', erpAccessCheck('inventory'), require('./collateralRoutes'));
 
 // ═══ Phase 15 — SAP-Equivalent Improvements ═══
 router.use('/csi-booklets', erpAccessCheck('sales'), require('./csiBookletRoutes'));

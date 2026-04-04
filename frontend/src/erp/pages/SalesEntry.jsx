@@ -6,6 +6,7 @@ import useSales from '../hooks/useSales';
 import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
+import WarehousePicker from '../components/WarehousePicker';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },
@@ -418,18 +419,20 @@ export default function SalesEntry() {
   const inventory = useInventory();
   const { hospitals } = useHospitals();
 
+  const [warehouseId, setWarehouseId] = useState('');
   const [rows, setRows] = useState([emptyRow()]);
   const [stockProducts, setStockProducts] = useState([]);
   const [validationErrors, setValidationErrors] = useState([]);
   const [actionLoading, setActionLoading] = useState('');
   const [scanModalOpen, setScanModalOpen] = useState(false);
 
-  // Load stock on mount (only products with stock > 0)
+  // Load stock when warehouse is selected (auto-selected by WarehousePicker)
   useEffect(() => {
-    inventory.getMyStock().then(res => {
+    if (!warehouseId) return;
+    inventory.getMyStock(null, null, warehouseId).then(res => {
       if (res?.data) setStockProducts(res.data);
     }).catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build product dropdown options from stock (includes batches for FIFO selector)
   const productOptions = useMemo(() => {
@@ -538,6 +541,7 @@ export default function SalesEntry() {
           hospital_id: row.hospital_id,
           csi_date: row.csi_date,
           doc_ref: row.doc_ref,
+          warehouse_id: warehouseId || undefined,
           line_items: row.line_items.filter(li => li.product_id && li.qty).map(li => ({
             product_id: li.product_id,
             item_key: li.item_key,
@@ -639,6 +643,9 @@ export default function SalesEntry() {
       <div className="admin-layout">
         <Sidebar />
         <main className="sales-main">
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 8 }}>
+            <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
+          </div>
           <div className="sales-header">
             <h1>Sales Entry</h1>
             <div className="sales-actions">

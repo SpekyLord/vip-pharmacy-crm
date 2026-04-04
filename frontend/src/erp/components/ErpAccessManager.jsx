@@ -37,12 +37,22 @@ const styles = `
   .eam-msg-ok { color: #16a34a; }
   .eam-msg-err { color: #dc2626; }
   .eam-approve { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; }
+  .eam-sub-section { background: var(--erp-accent-soft, #f0f4ff); border-radius: 8px; padding: 8px 12px; margin: 4px 0 8px 110px; }
+  .eam-sub-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .eam-sub-header span { font-size: 11px; font-weight: 600; color: var(--erp-muted, #64748b); }
+  .eam-sub-all { font-size: 11px; color: var(--erp-accent, #1e5eff); cursor: pointer; text-decoration: underline; }
+  .eam-sub-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+  .eam-sub-row span { font-size: 12px; flex: 1; }
+  .eam-sub-row input { cursor: pointer; }
+  .eam-sub-badge { font-size: 10px; color: #22c55e; margin-left: 6px; }
 `;
 
 export default function ErpAccessManager({ userId, readOnly = false }) {
   const access = useErpAccess();
   const [enabled, setEnabled] = useState(false);
   const [modules, setModules] = useState({});
+  const [subPermissions, setSubPermissions] = useState({});
+  const [subPermKeys, setSubPermKeys] = useState({});
   const [canApprove, setCanApprove] = useState(false);
   const [templateId, setTemplateId] = useState('');
   const [templates, setTemplates] = useState([]);
@@ -51,14 +61,17 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
 
   const load = useCallback(async () => {
     try {
-      const [tplRes, userRes] = await Promise.all([
+      const [tplRes, userRes, spkRes] = await Promise.all([
         access.getTemplates(),
         access.getUserAccess(userId),
+        access.getSubPermissionKeys(),
       ]);
       setTemplates(tplRes?.data || []);
+      setSubPermKeys(spkRes?.data || {});
       const ua = userRes?.data?.erp_access || {};
       setEnabled(!!ua.enabled);
       setModules(ua.modules || {});
+      setSubPermissions(ua.sub_permissions || {});
       setCanApprove(!!ua.can_approve);
       setTemplateId(ua.template_id || '');
       setLoaded(true);
@@ -69,6 +82,34 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
 
   const handleModuleChange = (mod, level) => {
     setModules(prev => ({ ...prev, [mod]: level }));
+    // Clear sub-permissions if set to NONE
+    if (level === 'NONE') {
+      setSubPermissions(prev => {
+        const updated = { ...prev };
+        delete updated[mod];
+        return updated;
+      });
+    }
+  };
+
+  const toggleSubPerm = (modKey, subKey) => {
+    setSubPermissions(prev => {
+      const updated = { ...prev };
+      if (!updated[modKey]) updated[modKey] = {};
+      updated[modKey] = { ...updated[modKey], [subKey]: !updated[modKey][subKey] };
+      return updated;
+    });
+  };
+
+  const selectAllSubs = (modKey, value) => {
+    const keys = subPermKeys[modKey];
+    if (!keys) return;
+    setSubPermissions(prev => {
+      const updated = { ...prev };
+      updated[modKey] = {};
+      keys.forEach(k => { updated[modKey][k.key] = value; });
+      return updated;
+    });
   };
 
   const handleApplyTemplate = async () => {
@@ -78,6 +119,7 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
       const ua = res?.data?.erp_access || {};
       setEnabled(!!ua.enabled);
       setModules(ua.modules || {});
+      setSubPermissions(ua.sub_permissions || {});
       setCanApprove(!!ua.can_approve);
       setMsg({ type: 'ok', text: 'Template applied' });
     } catch (e) {
@@ -87,7 +129,13 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
 
   const handleSave = async () => {
     try {
-      await access.setUserAccess(userId, { enabled, modules, can_approve: canApprove, template_id: templateId || undefined });
+      await access.setUserAccess(userId, {
+        enabled,
+        modules,
+        sub_permissions: subPermissions,
+        can_approve: canApprove,
+        template_id: templateId || undefined,
+      });
       setMsg({ type: 'ok', text: 'Access saved' });
     } catch (e) {
       setMsg({ type: 'err', text: e.response?.data?.message || 'Failed to save' });
@@ -122,22 +170,57 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
             )}
           </div>
 
-          {MODULES.map(m => (
-            <div className="eam-row" key={m.key}>
-              <span className="eam-label">{m.label}</span>
-              <div className="eam-radios">
-                {LEVELS.map(lv => (
-                  <label key={lv}>
-                    <input type="radio" name={`eam-${m.key}`}
-                      checked={(modules[m.key] || 'NONE') === lv}
-                      disabled={readOnly}
-                      onChange={() => handleModuleChange(m.key, lv)} />
-                    {lv}
-                  </label>
-                ))}
-              </div>
-            </div>
-          ))}
+          {MODULES.map(m => {
+            const level = modules[m.key] || 'NONE';
+            const hasSubKeys = !!subPermKeys[m.key];
+            const showSubs = hasSubKeys && (level === 'VIEW' || level === 'FULL');
+            const modSubs = subPermissions[m.key] || {};
+            const keys = subPermKeys[m.key] || [];
+            const hasAnySubs = Object.keys(modSubs).length > 0;
+            const allEnabled = keys.length > 0 && keys.every(k => modSubs[k.key]);
+
+            return (
+              <React.Fragment key={m.key}>
+                <div className="eam-row">
+                  <span className="eam-label">
+                    {m.label}
+                    {hasSubKeys && level !== 'NONE' && !hasAnySubs && level === 'FULL' && (
+                      <span className="eam-sub-badge">All</span>
+                    )}
+                  </span>
+                  <div className="eam-radios">
+                    {LEVELS.map(lv => (
+                      <label key={lv}>
+                        <input type="radio" name={`eam-${m.key}`}
+                          checked={level === lv}
+                          disabled={readOnly}
+                          onChange={() => handleModuleChange(m.key, lv)} />
+                        {lv}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {showSubs && !readOnly && (
+                  <div className="eam-sub-section">
+                    <div className="eam-sub-header">
+                      <span>Sub-Permissions</span>
+                      <span className="eam-sub-all" onClick={() => selectAllSubs(m.key, !allEnabled)}>
+                        {allEnabled ? 'Deselect All' : 'Select All'}
+                      </span>
+                    </div>
+                    {keys.map(sk => (
+                      <div className="eam-sub-row" key={sk.key}>
+                        <span>{sk.label}</span>
+                        <input type="checkbox"
+                          checked={!!modSubs[sk.key]}
+                          onChange={() => toggleSubPerm(m.key, sk.key)} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
 
           <div className="eam-approve">
             <input type="checkbox" id="eam-approve" checked={canApprove} disabled={readOnly}

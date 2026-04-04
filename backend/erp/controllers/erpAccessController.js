@@ -2,6 +2,41 @@ const AccessTemplate = require('../models/AccessTemplate');
 const User = require('../../models/User');
 const { catchAsync } = require('../../middleware/errorHandler');
 
+// ═══ Sub-Permission Keys Definition (Phase 16) ═══
+// Served from backend so frontend never hardcodes these — add new keys here to auto-populate UI.
+const SUB_PERMISSION_KEYS = {
+  purchasing: [
+    { key: 'po_create', label: 'Create/Edit Purchase Orders' },
+    { key: 'po_approve', label: 'Approve Purchase Orders' },
+    { key: 'vendor_manage', label: 'Manage Vendors' },
+    { key: 'supplier_invoice', label: 'Supplier Invoices' },
+    { key: 'ap_payment', label: 'AP Payments' },
+  ],
+  accounting: [
+    { key: 'journal_entry', label: 'Journal Entries & COA' },
+    { key: 'check_writing', label: 'Check Writing / Payments' },
+    { key: 'month_end', label: 'Month-End Close' },
+    { key: 'vat_filing', label: 'VAT/CWT Compliance' },
+    { key: 'fixed_assets', label: 'Fixed Assets & Depreciation' },
+    { key: 'loans', label: 'Loan Management' },
+    { key: 'owner_equity', label: 'Owner Equity' },
+    { key: 'petty_cash', label: 'Petty Cash' },
+    { key: 'office_supplies', label: 'Office Supplies' },
+  ],
+  banking: [
+    { key: 'bank_accounts', label: 'Bank Accounts' },
+    { key: 'bank_recon', label: 'Bank Reconciliation' },
+    { key: 'statement_import', label: 'Statement Import' },
+    { key: 'credit_card', label: 'Credit Card Ledger' },
+    { key: 'cashflow', label: 'Cashflow Statement' },
+    { key: 'payments', label: 'Payment Processing' },
+  ],
+};
+
+const getSubPermissionKeys = (req, res) => {
+  res.json({ success: true, data: SUB_PERMISSION_KEYS });
+};
+
 // ═══ Template CRUD ═══
 
 const getTemplates = catchAsync(async (req, res) => {
@@ -16,7 +51,7 @@ const getTemplates = catchAsync(async (req, res) => {
 });
 
 const createTemplate = catchAsync(async (req, res) => {
-  const { template_name, description, modules, can_approve } = req.body;
+  const { template_name, description, modules, can_approve, sub_permissions } = req.body;
 
   if (!template_name) {
     return res.status(400).json({ success: false, message: 'Template name is required' });
@@ -28,6 +63,7 @@ const createTemplate = catchAsync(async (req, res) => {
     description,
     modules: modules || {},
     can_approve: can_approve || false,
+    sub_permissions: sub_permissions || {},
     is_system: false,
     created_by: req.user._id,
   });
@@ -44,7 +80,7 @@ const updateTemplate = catchAsync(async (req, res) => {
     return res.status(403).json({ success: false, message: 'System templates cannot be edited' });
   }
 
-  const { template_name, description, modules, can_approve, is_active } = req.body;
+  const { template_name, description, modules, can_approve, sub_permissions, is_active } = req.body;
   if (template_name !== undefined) template.template_name = template_name;
   if (description !== undefined) template.description = description;
   if (modules) {
@@ -53,6 +89,10 @@ const updateTemplate = catchAsync(async (req, res) => {
     }
   }
   if (can_approve !== undefined) template.can_approve = can_approve;
+  if (sub_permissions !== undefined) {
+    template.sub_permissions = sub_permissions;
+    template.markModified('sub_permissions');
+  }
   if (is_active !== undefined) template.is_active = is_active;
 
   await template.save();
@@ -89,7 +129,7 @@ const setUserAccess = catchAsync(async (req, res) => {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  const { enabled, modules, can_approve, template_id } = req.body;
+  const { enabled, modules, can_approve, template_id, sub_permissions } = req.body;
 
   if (!user.erp_access) user.erp_access = {};
 
@@ -101,6 +141,9 @@ const setUserAccess = catchAsync(async (req, res) => {
     for (const [key, val] of Object.entries(modules)) {
       user.erp_access.modules[key] = val;
     }
+  }
+  if (sub_permissions !== undefined) {
+    user.erp_access.sub_permissions = sub_permissions;
   }
   user.erp_access.updated_by = req.user._id;
   user.erp_access.updated_at = new Date();
@@ -132,6 +175,7 @@ const applyTemplateToUser = catchAsync(async (req, res) => {
     template_id: template._id,
     modules: { ...template.modules },
     can_approve: template.can_approve,
+    sub_permissions: template.sub_permissions || {},
     updated_by: req.user._id,
     updated_at: new Date(),
   };
@@ -157,6 +201,7 @@ const getMyAccess = catchAsync(async (req, res) => {
           reports: 'FULL', people: 'FULL', payroll: 'FULL', accounting: 'FULL',
           purchasing: 'FULL', banking: 'FULL',
         },
+        sub_permissions: {},
         can_approve: true,
       },
     });
@@ -172,6 +217,7 @@ const getMyAccess = catchAsync(async (req, res) => {
           reports: 'VIEW', people: 'VIEW', payroll: 'VIEW', accounting: 'VIEW',
           purchasing: 'VIEW', banking: 'VIEW',
         },
+        sub_permissions: {},
         can_approve: false,
       },
     });
@@ -187,6 +233,7 @@ const getMyAccess = catchAsync(async (req, res) => {
           reports: 'FULL', people: 'FULL', payroll: 'FULL', accounting: 'FULL',
           purchasing: 'FULL', banking: 'FULL',
         },
+        sub_permissions: {},
         can_approve: true,
       },
     });
@@ -204,4 +251,5 @@ module.exports = {
   setUserAccess,
   applyTemplateToUser,
   getMyAccess,
+  getSubPermissionKeys,
 };
