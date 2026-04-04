@@ -131,6 +131,16 @@ salesLineSchema.pre('save', function (next) {
   // Default VAT rate (Philippines 12%)
   const VAT_RATE = 0.12;
 
+  // SERVICE_INVOICE: preserve user-entered invoice_total (no line items to compute from)
+  if (this.sale_type === 'SERVICE_INVOICE') {
+    const gross = this.invoice_total || 0;
+    if (gross > 0 && (!this.total_vat || this.isModified('invoice_total'))) {
+      this.total_vat = Math.round(gross * (VAT_RATE / (1 + VAT_RATE)) * 100) / 100;
+      this.total_net_of_vat = Math.round((gross - this.total_vat) * 100) / 100;
+    }
+    return next();
+  }
+
   let invoiceTotal = 0;
   let totalVat = 0;
   let totalNetOfVat = 0;

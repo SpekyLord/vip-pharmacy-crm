@@ -185,10 +185,23 @@ export default function CustomerList() {
     if (!form.customer_name.trim()) return;
     setSaving(true);
     try {
+      // Only send non-empty fields to avoid validation errors
+      const payload = { customer_name: form.customer_name.trim() };
+      if (form.customer_type) payload.customer_type = form.customer_type;
+      if (form.default_sale_type) payload.default_sale_type = form.default_sale_type;
+      if (form.tin?.trim()) payload.tin = form.tin.trim();
+      if (form.vat_status) payload.vat_status = form.vat_status;
+      if (form.address?.trim()) payload.address = form.address.trim();
+      if (form.contact_person?.trim()) payload.contact_person = form.contact_person.trim();
+      if (form.contact_phone?.trim()) payload.contact_phone = form.contact_phone.trim();
+      if (form.contact_email?.trim()) payload.contact_email = form.contact_email.trim();
+      if (form.payment_terms != null) payload.payment_terms = form.payment_terms;
+      if (form.credit_limit) payload.credit_limit = form.credit_limit;
+
       if (editingCustomer) {
-        await customers.update(editingCustomer._id, form);
+        await customers.update(editingCustomer._id, payload);
       } else {
-        await customers.create(form);
+        await customers.create(payload);
       }
       closeModal();
       fetchCustomers();

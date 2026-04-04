@@ -1,0 +1,247 @@
+_id,brand_name,generic_name,dosage_strength,unit_code,selling_price,item_key,vat_status,is_active
+69cd78ff7f6beb5888bd1be6,"Dexavit","Multivitamins + Iron","500mg",,250,Dexavit|500mg,VATABLE,TRUE
+69cd78ff7f6beb5888bd1be7,"Ambroxol","Ambroxol HCl","30mg/5ml",,140,Ambroxol|30mg/5ml,VATABLE,TRUE
+69cd79007f6beb5888bd1be8,"Cefalexin","Cefalexin Monohydrate","500mg",,22,Cefalexin|500mg,VATABLE,TRUE
+69cd79007f6beb5888bd1be9,"Paracetamol","Paracetamol","500mg",,5,Paracetamol|500mg,EXEMPT,TRUE
+69cd79007f6beb5888bd1bea,"Losartan","Losartan Potassium","50mg",,15,Losartan|50mg,VATABLE,TRUE
+69cd79007f6beb5888bd1beb,"Surgical Gloves","Latex Gloves (Sterile)","Medium",,30,Surgical Gloves|Medium,VATABLE,TRUE
+69cdfa1c7d949500267e8b73,"Abhay-tox","Tetanus Toxoid","0.5ml",VIAL,0,Abhay-tox|0.5ml,VATABLE,TRUE
+69cdfa1c7d949500267e8b76,"Acrimet","Metoclopramide","5mg /ml",AMPULE,70,Acrimet|5mg /ml,VATABLE,FALSE
+69cdfa1c7d949500267e8b79,"Ambidol","Tramadol HCL","50mg/ml",AMPULE,70,Ambidol|50mg/ml,VATABLE,TRUE
+69cdfa1c7d949500267e8b7c,"Ambidol","Tramadol","50mg/mL",AMPULE,70,Ambidol|50mg/mL,VATABLE,TRUE
+69cdfa1c7d949500267e8b7f,"Ampinex","Ampicillin Sulbactam","1g",VIAL,120,Ampinex|1g,VATABLE,TRUE
+69cdfa1d7d949500267e8b82,"Anaway Forte","Sambong","500mg",TABLET,10,Anaway Forte|500mg,VATABLE,TRUE
+69cdfa1d7d949500267e8b85,"Arcicort","Lyophilized Hydrocortisone","100mg",VIAL,225,Arcicort|100mg,VATABLE,TRUE
+69cdfa1d7d949500267e8b88,"Arcimet","Metoclopramide","5mg/mL",AMPULE,70,Arcimet|5mg/mL,VATABLE,FALSE
+69cdfa1d7d949500267e8b8b,"Arcimet","Metoclopramide Hydrochloride","5mg/ml",AMPULE,70,Arcimet|5mg/ml,VATABLE,FALSE
+69cdfa1e7d949500267e8b8e,"Ascorsaph- Zee","Ascorbic Acid Zinc","500mg/10ml",CAPSULE,5,Ascorsaph- Zee|500mg/10ml,VATABLE,TRUE
+69cdfa1e7d949500267e8b91,"Atracurium","Atrium","25mg/2.5ml",AMPULE,350,Atracurium|25mg/2.5ml,VATABLE,TRUE
+69cdfa1e7d949500267e8b94,"Atrix","Atropine","1mg/mL",AMPULE,0,Atrix|1mg/mL,VATABLE,FALSE
+69cdfa1e7d949500267e8b97,"Atrix","Atropine","14mg/mL",AMPULE,570,Atrix|14mg/mL,VATABLE,FALSE
+69cdfa1f7d949500267e8b9a,"Axagyl","Metronedazole","",PC,0,Axagyl|,VATABLE,TRUE
+69cdfa1f7d949500267e8b9d,"Axagyl","Metronidazole","100ml",BOTTLE,130,Axagyl|100ml,VATABLE,TRUE
+69cdfa1f7d949500267e8ba0,"Axagyl","Metronidazole","500mg/100ml",BOTTLE,140,Axagyl|500mg/100ml,VATABLE,TRUE
+69cdfa1f7d949500267e8ba3,"Axalav","Co Amoxiclav","1.2g",VIAL,350,Axalav|1.2g,VATABLE,TRUE
+69cdfa1f7d949500267e8ba6,"Bronchonov","Salbutamol","1mg/mL",AMPULE,0,Bronchonov|1mg/mL,VATABLE,FALSE
+69cdfa207d949500267e8ba9,"Bupiright","Bupivacaine","5mg/mL",VIAL,490,Bupiright|5mg/mL,VATABLE,TRUE
+69cdfa207d949500267e8bac,"Bupiright","Bupivacaine HCL In 8% Dextrose","5mg/ml",AMPULE,490,Bupiright|5mg/ml,VATABLE,TRUE
+69cdfa207d949500267e8bb2,"Cardowin","Nicardipine","10mg/10ml",AMPULE,0,Cardowin|10mg/10ml,VATABLE,TRUE
+69cdfa207d949500267e8bb5,"Cardowin","Ampicillin","1mg/mL",AMPULE,45,Cardowin|1mg/mL,VATABLE,TRUE
+69cdfa217d949500267e8bb8,"Caress Diaper","Diaper","Xl",PC,50,Caress Diaper|Xl,VATABLE,TRUE
+69cdfa217d949500267e8bbb,"Cefazovit","Cafazolin","1g",VIAL,350,Cefazovit|1g,VATABLE,TRUE
+69cdfa217d949500267e8bbe,"Ceftazivit","Ceftazidime","1g",VIAL,750,Ceftazivit|1g,VATABLE,TRUE
+69cdfa217d949500267e8bc1,"Ceftrialis","Ceftriaxone","1g",VIAL,800,Ceftrialis|1g,VATABLE,TRUE
+69cdfa227d949500267e8bc4,"Ceftrinova","Ceftriaxone","1g",VIAL,100,Ceftrinova|1g,VATABLE,TRUE
+69cdfa227d949500267e8bc7,"Ceftrixone","Ceftriaxone","1g",VIAL,650,Ceftrixone|1g,VATABLE,TRUE
+69cdfa227d949500267e8bca,"Cefunova","Cefuroxime","750mg",VIAL,70,Cefunova|750mg,VATABLE,TRUE
+69cdfa227d949500267e8bcd,"Ciprogyl","Ciprofloxacin","200mg Mg/100ml",BOTTLE,550,Ciprogyl|200mg Mg/100ml,VATABLE,TRUE
+69cdfa227d949500267e8bd0,"Ciproson","Ciprofloxacin","200mg/100ml",BOTTLE,799.11,Ciproson|200mg/100ml,VATABLE,TRUE
+69cdfa237d949500267e8bd3,"Clindex 600","Clindamycin","600mg",AMPULE,650,Clindex 600|600mg,VATABLE,TRUE
+69cdfa237d949500267e8bd6,"Clindex-600","Clindamycin","600mg",AMPULE,650,Clindex-600|600mg,VATABLE,TRUE
+69cdfa237d949500267e8bd9,"Clonisur","Clonidine","150mcg/ ML",AMPULE,180,Clonisur|150mcg/ ML,VATABLE,TRUE
+69cdfa237d949500267e8bdc,"Clonisur","Clonidine","150mcg/mL",AMPULE,130,Clonisur|150mcg/mL,VATABLE,TRUE
+69cdfa237d949500267e8bdf,"Cocine","Amikacine","125mg/mL",VIAL,130,Cocine|125mg/mL,VATABLE,TRUE
+69cdfa237d949500267e8be2,"Cocine","Amikacine","250mg/500ml",VIAL,143,Cocine|250mg/500ml,VATABLE,TRUE
+69cdfa247d949500267e8be5,"Cocine 250","Amikacine","250mg/2ml",VIAL,130,Cocine 250|250mg/2ml,VATABLE,TRUE
+69cdfa247d949500267e8be8,"Cocine 500","Amikacine","500mg/2ml",VIAL,130,Cocine 500|500mg/2ml,VATABLE,TRUE
+69cdfa247d949500267e8beb,"Corpilyn","Ampicillin","500mg",VIAL,75,Corpilyn|500mg,VATABLE,TRUE
+69cdfa247d949500267e8bee,"Cort","Prenisone","20mg",TABLET,10,Cort|20mg,VATABLE,TRUE
+69cdfa247d949500267e8bf1,"Cyprox","Ciprofloxacin","500mg",CAPSULE,9.61,Cyprox|500mg,VATABLE,FALSE
+69cdfa247d949500267e8bf4,"Dexavit","Dexamethasone","4mg/mL",VIAL,102,Dexavit|4mg/mL,VATABLE,TRUE
+69cdfa247d949500267e8bf7,"Dixin","Digoxin","250mcg/mL",AMPULE,250,Dixin|250mcg/mL,VATABLE,TRUE
+69cdfa257d949500267e8bfa,"Dixin","Digoxin","250mg/mL",AMPULE,250,Dixin|250mg/mL,VATABLE,TRUE
+69cdfa257d949500267e8bfd,"Doburis","Dobutamine","50mg/mL",AMPULE,500,Doburis|50mg/mL,VATABLE,FALSE
+69cdfa257d949500267e8c00,"Doptrex","Dopamine","200mg//5ml",AMPULE,120,Doptrex|200mg//5ml,VATABLE,TRUE
+69cdfa257d949500267e8c03,"Doptrex","Dopamine","40mg/mL",AMPULE,120,Doptrex|40mg/mL,VATABLE,TRUE
+69cdfa257d949500267e8c06,"Emacif","Cefixime","100mg/5ml",BOTTLE,160,Emacif|100mg/5ml,VATABLE,TRUE
+69cdfa257d949500267e8c09,"Epix","Epinephrine","1mg/mL",AMPULE,35,Epix|1mg/mL,VATABLE,TRUE
+69cdfa267d949500267e8c0c,"Epokine 10000 IU","Epoetin Alfa","1.0mg",PFS,1,Epokine 10000 IU|1.0mg,VATABLE,FALSE
+69cdfa267d949500267e8c0f,"Epokine 4000 IU","Epoetin Alfa","0.4ml",PFS,873.45,Epokine 4000 IU|0.4ml,VATABLE,FALSE
+69cdfa267d949500267e8c12,"Eryssa","Epoetin Alfa","4000i.u",PFS,650,Eryssa|4000i.u,VATABLE,FALSE
+69cdfa267d949500267e8c15,"Execore","Cefuroxime","500mg",TABLET,35,Execore|500mg,VATABLE,TRUE
+69cdfa267d949500267e8c18,"Farsorbid","Isosorbide Dinarate","10mg/10ml",AMPULE,500,Farsorbid|10mg/10ml,VATABLE,TRUE
+69cdfa267d949500267e8c1b,"Flucysteine 600","Acetylcysteine","600mg",SACHET,0,Flucysteine 600|600mg,VATABLE,FALSE
+69cdfa267d949500267e8c1e,"Gentacare","Gentamicin","80mg/mL",AMPULE,0,Gentacare|80mg/mL,VATABLE,TRUE
+69cdfa277d949500267e8c21,"Gentacare","Gentamicin","80mg /ml",AMPULE,30,Gentacare|80mg /ml,VATABLE,TRUE
+69cdfa277d949500267e8c24,"Gentacare","Gentamicin","80mg/2ml",AMPULE,35,Gentacare|80mg/2ml,VATABLE,TRUE
+69cdfa277d949500267e8c27,"Gentam","Gentamicin","40mg /ml",AMPULE,30,Gentam|40mg /ml,VATABLE,TRUE
+69cdfa277d949500267e8c2a,"Glomed","Latex Gloves","Medium",BOX,200,Glomed|Medium,VATABLE,FALSE
+69cdfa277d949500267e8c2d,"Glomed Latex","Latex Gloves","Large",BOX,200,Glomed Latex|Large,VATABLE,TRUE
+69cdfa277d949500267e8c30,"Glomed Latex","Latex Gloves","Medium",BOX,200,Glomed Latex|Medium,VATABLE,TRUE
+69cdfa277d949500267e8c33,"Glomed Sterile","Gloves","6.5",BOX,19,Glomed Sterile|6.5,VATABLE,TRUE
+69cdfa287d949500267e8c36,"Glomed Sterile","Gloves","7",BOX,35,Glomed Sterile|7,VATABLE,TRUE
+69cdfa287d949500267e8c39,"Glycemet","Metformin","500mg",TABLET,5,Glycemet|500mg,VATABLE,TRUE
+69cdfa287d949500267e8c3c,"Haixone","Ceftriaxone","1g",VIAL,300,Haixone|1g,VATABLE,TRUE
+69cdfa287d949500267e8c3f,"Haizure","Phenytoin Sodium","50mg/mL",AMPULE,575,Haizure|50mg/mL,VATABLE,TRUE
+69cdfa287d949500267e8c42,"Hcd","Nitrile Gloves","Medium",BOX,0,Hcd|Medium,VATABLE,TRUE
+69cdfa287d949500267e8c45,"Hcd Nitrile","Nitrile Gloves","Large",BOX,180,Hcd Nitrile|Large,VATABLE,TRUE
+69cdfa297d949500267e8c48,"Hcd Nitrile","Nitrile Gloves","Medium",BOX,180,Hcd Nitrile|Medium,VATABLE,TRUE
+69cdfa297d949500267e8c4b,"Hcd Nitrile","Nitrile Gloves","Small",BOX,200,Hcd Nitrile|Small,VATABLE,TRUE
+69cdfa2a7d949500267e8c54,"Heparin","Nuparin","1000iu",VIAL,100,Heparin|1000iu,VATABLE,TRUE
+69cdfa2a7d949500267e8c57,"Hyphen","Diphenhydramine","50mg/mL",AMPULE,65,Hyphen|50mg/mL,VATABLE,TRUE
+69cdfa2a7d949500267e8c5a,"Kalyx","Potassium Chloride","2meq/mL",AMPULE,130,Kalyx|2meq/mL,VATABLE,TRUE
+69cdfa2a7d949500267e8c5d,"Kelxime","Cefotaxime","1g",VIAL,300,Kelxime|1g,VATABLE,TRUE
+69cdfa2a7d949500267e8c60,"Ketonix","Ketorolac Trometamol","3mg/mL",VIAL,130,Ketonix|3mg/mL,VATABLE,FALSE
+69cdfa2b7d949500267e8c63,"Ketonix","Ketorolac","30mg/ml",AMPULE,130,Ketonix|30mg/ml,VATABLE,TRUE
+69cdfa2b7d949500267e8c66,"Ketonix","Ketorolac Trometamol","30mg/mL",AMPULE,0,Ketonix|30mg/mL,VATABLE,FALSE
+69cdfa2b7d949500267e8c69,"Khrizvix","Clopidogrel","75mg",TABLET,5,Khrizvix|75mg,VATABLE,TRUE
+69cdfa2b7d949500267e8c6c,"Lazicare","Furosimide","20mg/2ml",AMPULE,45,Lazicare|20mg/2ml,VATABLE,TRUE
+69cdfa2b7d949500267e8c6f,"Liferzin","Ampicillin","250mg",VIAL,50,Liferzin|250mg,VATABLE,TRUE
+69cdfa2c7d949500267e8c72,"Losil","Hyoscine-n-butylbromide","20mg/ ML",AMPULE,120,Losil|20mg/ ML,VATABLE,TRUE
+69cdfa2c7d949500267e8c75,"Losil","Hyoscine-n Butylbromide","20mg/ml",AMPULE,350,Losil|20mg/ml,VATABLE,TRUE
+69cdfa2c7d949500267e8c78,"Losil","Hyoscine-n-butylbromide","20mg/mL",VIAL,100,Losil|20mg/mL,VATABLE,TRUE
+69cdfa2c7d949500267e8c7b,"Lozemed Plain","2,4- Dichlorobenzyl Alcohol Amylmetacresol","1.2/ 600mcg",TABLET,0,Lozemed Plain|1.2/ 600mcg,VATABLE,FALSE
+69cdfa2c7d949500267e8c7e,"Macro Drip","Infusion Set","20 Drops/ml",PC,0,Macro Drip|20 Drops/ml,VATABLE,TRUE
+69cdfa2d7d949500267e8c81,"Md-cid","Ranitidine","50mg/2ml",AMPULE,85,Md-cid|50mg/2ml,VATABLE,TRUE
+69cdfa2d7d949500267e8c84,"Md-cid","Ranitidine HCL","50mg/ml",AMPULE,65,Md-cid|50mg/ml,VATABLE,TRUE
+69cdfa2d7d949500267e8c87,"Md-uretic","Furosemide","20mg/2ml",AMPULE,45,Md-uretic|20mg/2ml,VATABLE,TRUE
+69cdfa2d7d949500267e8c8a,"Md-uritec","Furosemide","10mg/ml",AMPULE,45,Md-uritec|10mg/ml,VATABLE,TRUE
+69cdfa2d7d949500267e8c8d,"Melatonin","Medi -nite","3mg",TABLET,0,Melatonin|3mg,VATABLE,FALSE
+69cdfa2d7d949500267e8c90,"Metoclosil","Metoclopramide","10mg/2ml",AMPULE,45,Metoclosil|10mg/2ml,VATABLE,TRUE
+69cdfa2e7d949500267e8c93,"Metoclosil","Metoclopramide","5mg/ ML",AMPULE,0,Metoclosil|5mg/ ML,VATABLE,TRUE
+69cdfa2e7d949500267e8c96,"Metoclosil","Metoclopramide","5mg/mL",AMPULE,55,Metoclosil|5mg/mL,VATABLE,TRUE
+69cdfa2e7d949500267e8c99,"Micro Drip","Infusion Set","60 Drops/ml",PC,0,Micro Drip|60 Drops/ml,VATABLE,TRUE
+69cdfa2e7d949500267e8c9c,"Neostigmine","Neotalis","0.5mg /ml",AMPULE,200,Neostigmine|0.5mg /ml,VATABLE,TRUE
+69cdfa2e7d949500267e8c9f,"Neotalis","Neostigmine Methylsulfate","0.5mg/mL",AMPULE,200,Neotalis|0.5mg/mL,VATABLE,TRUE
+69cdfa2e7d949500267e8ca2,"Nestle Pre-nan","Milk","400g",CAN,1,Nestle Pre-nan|400g,VATABLE,TRUE
+69cdfa2e7d949500267e8ca5,"Noprivex 4000","Enoxaparin","4000 I.u",PFS,450,Noprivex 4000|4000 I.u,VATABLE,TRUE
+69cdfa2f7d949500267e8ca8,"Noprivex 6000","Enoxaparin","6000 I.u",PFS,600,Noprivex 6000|6000 I.u,VATABLE,TRUE
+69cdfa2f7d949500267e8cab,"Noxprivex 4000","Enoxaparin Sodium","4000iu",PFS,450,Noxprivex 4000|4000iu,VATABLE,TRUE
+69cdfa2f7d949500267e8cae,"Noxprivex 4000 IU","Enoxaparin Sodium","0.4ml",PFS,16,Noxprivex 4000 IU|0.4ml,VATABLE,TRUE
+69cdfa2f7d949500267e8cb1,"Noxprivex 6000 IU","Enoxaparin Sodium","0.6ml",PFS,450,Noxprivex 6000 IU|0.6ml,VATABLE,TRUE
+69cdfa2f7d949500267e8cb4,"Nupira","Norepinephrine","10mg/10mL",AMPULE,750,Nupira|10mg/10mL,VATABLE,TRUE
+69cdfa307d949500267e8cba,"Nupira","Norepinephrine","4mg/4mL",AMPULE,780,Nupira|4mg/4mL,VATABLE,TRUE
+69cdfa307d949500267e8cbd,"Onitaz","Piperacillin Tazobactam","4g/500ml",VIAL,720,Onitaz|4g/500ml,VATABLE,TRUE
+69cdfa307d949500267e8cc0,"Ormed Macroset","IV Infusion Set","20 Drops",PC,30,Ormed Macroset|20 Drops,VATABLE,TRUE
+69cdfa307d949500267e8cc3,"Ormed Microset","IV Infusion Set","60 Drops",PC,30,Ormed Microset|60 Drops,VATABLE,TRUE
+69cdfa317d949500267e8cc6,"Oxavin","Oxacillin","500mg",VIAL,75,Oxavin|500mg,VATABLE,TRUE
+69cdfa317d949500267e8cc9,"Pantrex","Tranexamic Acid","100mg/ml",AMPULE,160,Pantrex|100mg/ml,VATABLE,TRUE
+69cdfa317d949500267e8ccc,"Pantrex","Tranexamic Acid","100mg/mL",AMPULE,160,Pantrex|100mg/mL,VATABLE,TRUE
+69cdfa317d949500267e8ccf,"Pantrex","Tranexamic Acid","500mg/ ML",AMPULE,160,Pantrex|500mg/ ML,VATABLE,TRUE
+69cdfa317d949500267e8cd2,"Pantrex","Tranexamic Acid","500mg/5ml",VIAL,160,Pantrex|500mg/5ml,VATABLE,TRUE
+69cdfa327d949500267e8cd5,"Partners","Surgical Tape","1 Inch X 10 Yards",PC,0,Partners|1 Inch X 10 Yards,VATABLE,TRUE
+69cdfa327d949500267e8cd8,"Partners","Ecg Paper","50mm X 30m",ROLL,80,Partners|50mm X 30m,VATABLE,TRUE
+69cdfa327d949500267e8cdb,"Partners","Face Mask","Kn 95",PC,10,Partners|Kn 95,VATABLE,TRUE
+69cdfa327d949500267e8cde,"Partners 2 Inch X 5 Yards","Elastic Bandage","2 Inch X 5 Yards",PC,0,Partners 2 Inch X 5 Yards|2 Inch X 5 Yards,VATABLE,TRUE
+69cdfa337d949500267e8ce1,"Partners 2 X 10 Yards","Gauze Bandage","2 X 10 Yards",PC,0,Partners 2 X 10 Yards|2 X 10 Yards,VATABLE,TRUE
+69cdfa337d949500267e8ce4,"Partners 2x 2 X8 Ply","Gauze Bandage","2"" X2 X 8 Ply",PC,0,Partners 2x 2 X8 Ply|2" X2 X 8 Ply,VATABLE,TRUE
+69cdfa337d949500267e8ce7,"Partners 3 Inch X 5 Yards","Elastic Bandage","3 Inch X 5 Yards",PC,0,Partners 3 Inch X 5 Yards|3 Inch X 5 Yards,VATABLE,TRUE
+69cdfa337d949500267e8cea,"Partners 4 Inch X 5 Yards","Elastic Bandage","4 Inch X 5 Yards",PC,0,Partners 4 Inch X 5 Yards|4 Inch X 5 Yards,VATABLE,TRUE
+69cdfa337d949500267e8ced,"Partners 4 X 10 Yards","Gauze Bandage","4 X10 Yards",PC,0,Partners 4 X 10 Yards|4 X10 Yards,VATABLE,TRUE
+69cdfa347d949500267e8cf0,"Partners 4 X 4 X8 Ply","Gauze Bandage","4""x4"" X8 Ply",PC,0,Partners 4 X 4 X8 Ply|4"x4" X8 Ply,VATABLE,TRUE
+69cdfa347d949500267e8cf3,"Partners 6 Inch X 5 Yards","Elastic Bandage","6 Inch X 5 Yards",PC,0,Partners 6 Inch X 5 Yards|6 Inch X 5 Yards,VATABLE,TRUE
+69cdfa347d949500267e8cf6,"Partners Bouffant Cap","Bouffant Cap","Catterpilar Type 24",PC,190,Partners Bouffant Cap|Catterpilar Type 24,VATABLE,TRUE
+69cdfa347d949500267e8cf9,"Partners D Tube","Gastric Duodenal Tube","Fr 18",PC,185,Partners D Tube|Fr 18,VATABLE,TRUE
+69cdfa347d949500267e8cfc,"Partners Diaper","Diaper","Large",PC,30,Partners Diaper|Large,VATABLE,TRUE
+69cdfa357d949500267e8cff,"Partners Diaper","Diaper","Medium",PC,30,Partners Diaper|Medium,VATABLE,TRUE
+69cdfa357d949500267e8d02,"Partners E Tube","Endotrachea Tube","Fr 8",PC,55,Partners E Tube|Fr 8,VATABLE,TRUE
+69cdfa357d949500267e8d05,"Partners Elastic","Elastic Bandage","3x5",PC,30,Partners Elastic|3x5,VATABLE,TRUE
+69cdfa357d949500267e8d08,"Partners Elastic","Elastic Bandage","4x5",PC,30,Partners Elastic|4x5,VATABLE,TRUE
+69cdfa357d949500267e8d0b,"Partners Endo Tube","Endotracheal Tube","2",PC,55,Partners Endo Tube|2,VATABLE,TRUE
+69cdfa367d949500267e8d0e,"Partners Endo Tube","Endotracheal Tube","3",PC,55,Partners Endo Tube|3,VATABLE,TRUE
+69cdfa367d949500267e8d11,"Partners Endo Tube","Endotracheal Tube","3.5",PC,55,Partners Endo Tube|3.5,VATABLE,TRUE
+69cdfa367d949500267e8d14,"Partners Endo Tube","Endotracheal Tube","4",PC,55,Partners Endo Tube|4,VATABLE,TRUE
+69cdfa367d949500267e8d17,"Partners Endo Tube","Endotracheal Tube","4.5",PC,55,Partners Endo Tube|4.5,VATABLE,TRUE
+69cdfa377d949500267e8d1a,"Partners Endo Tube","Endotracheal Tube","5",PC,55,Partners Endo Tube|5,VATABLE,TRUE
+69cdfa377d949500267e8d1d,"Partners Endo Tube","Endotracheal Tube","5.5",PC,55,Partners Endo Tube|5.5,VATABLE,TRUE
+69cdfa377d949500267e8d20,"Partners Endo Tube","Endotracheal Tube","6",PC,55,Partners Endo Tube|6,VATABLE,TRUE
+69cdfa387d949500267e8d23,"Partners Endo Tube","Endotracheal Tube","6.5",PC,55,Partners Endo Tube|6.5,VATABLE,TRUE
+69cdfa387d949500267e8d26,"Partners Endo Tube","Endotracheal Tube","7",PC,60,Partners Endo Tube|7,VATABLE,TRUE
+69cdfa387d949500267e8d29,"Partners Endo Tube","Endotracheal Tube","7.5",PC,55,Partners Endo Tube|7.5,VATABLE,TRUE
+69cdfa397d949500267e8d2c,"Partners Endo Tube","Endotracheal Tube","8",PC,55,Partners Endo Tube|8,VATABLE,TRUE
+69cdfa397d949500267e8d2f,"Partners Face Mask","Surgical Face Mask","3 Ply",PC,95,Partners Face Mask|3 Ply,VATABLE,TRUE
+69cdfa397d949500267e8d32,"Partners Feed Tube","Feeding Tube","5",PC,15,Partners Feed Tube|5,VATABLE,TRUE
+69cdfa397d949500267e8d35,"Partners Feed Tube","Feeding Tube","8",PC,18,Partners Feed Tube|8,VATABLE,TRUE
+69cdfa3a7d949500267e8d38,"Partners Foley Cath","Foley Catheter","12",PC,50,Partners Foley Cath|12,VATABLE,TRUE
+69cdfa3a7d949500267e8d3b,"Partners Foley Cath","Foley Catheter","Fr 8",PC,55,Partners Foley Cath|Fr 8,VATABLE,TRUE
+69cdfa3a7d949500267e8d3e,"Partners Gauze Roll","Gauze Roll","36X100Y",PC,1,Partners Gauze Roll|36X100Y,VATABLE,TRUE
+69cdfa3b7d949500267e8d41,"Partners Ls","Lap Sponge","12 X 12",PC,60,Partners Ls|12 X 12,VATABLE,TRUE
+69cdfa3b7d949500267e8d44,"Partners Lubricating Jelly","Lubricating Jelly","5g",PC,0,Partners Lubricating Jelly|5g,VATABLE,TRUE
+69cdfa3b7d949500267e8d47,"Partners Nebulizer Kit/adult","Nebulizer Kit/mask","Adult",PC,45,Partners Nebulizer Kit/adult|Adult,VATABLE,TRUE
+69cdfa3b7d949500267e8d4a,"Partners Nebulizer Kit/pedia","Nebulizer Kit/mask","Pedia",PC,45,Partners Nebulizer Kit/pedia|Pedia,VATABLE,TRUE
+69cdfa3b7d949500267e8d4d,"Partners Ngt","Silicone","#16",PC,185,Partners Ngt|#16,VATABLE,TRUE
+69cdfa3c7d949500267e8d50,"Partners Ngt","Silicone","#18",PC,185,Partners Ngt|#18,VATABLE,TRUE
+69cdfa3c7d949500267e8d53,"Partners O2 Can","Oxygen Cannula","Adult",PC,19,Partners O2 Can|Adult,VATABLE,TRUE
+69cdfa3c7d949500267e8d56,"Partners O2 Can","Oxygen Cannula","Pedia",PC,19,Partners O2 Can|Pedia,VATABLE,TRUE
+69cdfa3c7d949500267e8d59,"Partners Penrose Tubing","Penrose Drainage Tubing","1""",PC,0,Partners Penrose Tubing|1",VATABLE,TRUE
+69cdfa3c7d949500267e8d5c,"Partners Resu Pvc","Manual Resuscitator","Adult",PC,880,Partners Resu Pvc|Adult,VATABLE,TRUE
+69cdfa3d7d949500267e8d5f,"Partners Resu Pvc","Manual Resuscitator","Pedia",PC,880,Partners Resu Pvc|Pedia,VATABLE,TRUE
+69cdfa3d7d949500267e8d62,"Partners S Cath","Suction Catheter","#10",PC,12,Partners S Cath|#10,VATABLE,TRUE
+69cdfa3d7d949500267e8d65,"Partners S Cath","Suction Catheter","#12",PC,12,Partners S Cath|#12,VATABLE,TRUE
+69cdfa3d7d949500267e8d68,"Partners S Cath","Suction Catheter","#14",PC,12,Partners S Cath|#14,VATABLE,TRUE
+69cdfa3d7d949500267e8d6b,"Partners S Cath","Suction Catheter","#16",PC,12,Partners S Cath|#16,VATABLE,TRUE
+69cdfa3d7d949500267e8d6e,"Partners S Tube","Stomach Tube","#14",PC,14,Partners S Tube|#14,VATABLE,TRUE
+69cdfa3e7d949500267e8d71,"Partners S Tube","Stomach Tube","#16",PC,14,Partners S Tube|#16,VATABLE,TRUE
+69cdfa3e7d949500267e8d74,"Partners S Tube","Stomach Tube","Fr 16",PC,16,Partners S Tube|Fr 16,VATABLE,TRUE
+69cdfa3e7d949500267e8d77,"Partners Stomach Tube","Stomach Tube","Fr 18",PC,15,Partners Stomach Tube|Fr 18,VATABLE,TRUE
+69cdfa3e7d949500267e8d7a,"Partners Stool Container","Stool Container","",PC,9,Partners Stool Container|,VATABLE,TRUE
+69cdfa3e7d949500267e8d7d,"Partners Suc Cath","Suction Cath","#14",PC,9,Partners Suc Cath|#14,VATABLE,TRUE
+69cdfa3e7d949500267e8d80,"Partners Suc Cath","Suction Catheter","10",PC,11,Partners Suc Cath|10,VATABLE,TRUE
+69cdfa3f7d949500267e8d83,"Partners Suc Cath","Suction Catheter","12",PC,11,Partners Suc Cath|12,VATABLE,TRUE
+69cdfa3f7d949500267e8d86,"Partners Suc Cath","Suction Catheter","5",PC,11,Partners Suc Cath|5,VATABLE,TRUE
+69cdfa3f7d949500267e8d89,"Partners Suc Cath","Suction Catheter","Fr 14",PC,12.22,Partners Suc Cath|Fr 14,VATABLE,TRUE
+69cdfa3f7d949500267e8d8c,"Partners Surgical Mask","Face Mask","Earloop",BOX,90,Partners Surgical Mask|Earloop,VATABLE,TRUE
+69cdfa3f7d949500267e8d8f,"Partners Thermometer","Digital Thermometer","0.1c/0.2F",PC,65,Partners Thermometer|0.1c/0.2F,VATABLE,TRUE
+69cdfa407d949500267e8d92,"Partners Underpads","Underpads","60x90",PACK,200,Partners Underpads|60x90,VATABLE,TRUE
+69cdfa407d949500267e8d95,"Phenerex","Promethazine","50mg/2ml",AMPULE,100,Phenerex|50mg/2ml,VATABLE,TRUE
+69cdfa407d949500267e8d98,"Philvan","Vancomycin","1g",AMPULE,720,Philvan|1g,VATABLE,TRUE
+69cdfa407d949500267e8d9b,"Philvan","Vancomycin","500mg",AMPULE,720,Philvan|500mg,VATABLE,TRUE
+69cdfa417d949500267e8da1,"Phytocare","Phytomenadione","10mg/mL",AMPULE,75,Phytocare|10mg/mL,VATABLE,FALSE
+69cdfa417d949500267e8da4,"Phytocore","Phytomenadione","10mg/2ml",AMPULE,75,Phytocore|10mg/2ml,VATABLE,TRUE
+69cdfa417d949500267e8da7,"Phytodone","Phytomedaione","10mg/mL",AMPULE,45,Phytodone|10mg/mL,VATABLE,TRUE
+69cdfa417d949500267e8daa,"Pletaxol","Cilostazol","100mg",AMPULE,0,Pletaxol|100mg,VATABLE,FALSE
+69cdfa417d949500267e8dad,"Porfever","Paracetamol","150mg",AMPULE,45,Porfever|150mg,VATABLE,TRUE
+69cdfa427d949500267e8db0,"Porfever","Paracetamol","150mg/mL",AMPULE,35,Porfever|150mg/mL,VATABLE,FALSE
+69cdfa427d949500267e8db3,"Porfever","Paracetamol","300mg/ 2ml",AMPULE,40,Porfever|300mg/ 2ml,VATABLE,TRUE
+69cdfa427d949500267e8db6,"Porfever","Paracetamol","300mg/2ml",AMPULE,35,Porfever|300mg/2ml,VATABLE,TRUE
+69cdfa427d949500267e8db9,"Profmax","Propofol","10mg/mL",VIAL,0,Profmax|10mg/mL,VATABLE,TRUE
+69cdfa427d949500267e8dbc,"Qualiprazole","Omeprazole","40mg",VIAL,450,Qualiprazole|40mg,VATABLE,TRUE
+69cdfa437d949500267e8dbf,"Ranicid","Ranitidine","25mg/mL",VIAL,85,Ranicid|25mg/mL,VATABLE,TRUE
+69cdfa437d949500267e8dc2,"Ranicid","Ranitidine HCL","25mg/ml",AMPULE,85,Ranicid|25mg/ml,VATABLE,TRUE
+69cdfa437d949500267e8dc5,"Ranicid","Ranitidine","50mg/2ml",AMPULE,95,Ranicid|50mg/2ml,VATABLE,TRUE
+69cdfa437d949500267e8dc8,"Ranitein","Ranitidine HCL","25mg/ml",AMPULE,65,Ranitein|25mg/ml,VATABLE,TRUE
+69cdfa437d949500267e8dcb,"Sedansenz Airway","Guedel Airway","80 Mm",PC,51,Sedansenz Airway|80 Mm,VATABLE,TRUE
+69cdfa447d949500267e8dce,"Sedansenz E Tt","Et Tube Cuffed","8.0 Mm",PC,72,Sedansenz E Tt|8.0 Mm,VATABLE,TRUE
+69cdfa447d949500267e8dd1,"Sedazenz E Tt Uncuffed","Et Tube (uncuffed)","3.5 Mm",PC,86,Sedazenz E Tt Uncuffed|3.5 Mm,VATABLE,TRUE
+69cdfa447d949500267e8dd4,"Seredol","Haloperidol","5mg/mL",AMPULE,1,Seredol|5mg/mL,VATABLE,TRUE
+69cdfa447d949500267e8dd7,"Simplex Muc Ex","Mucus Extractor","Dp",PC,93,Simplex Muc Ex|Dp,VATABLE,TRUE
+69cdfa447d949500267e8dda,"Simplex Muc Ex","Mucus Extractor","In",PC,93,Simplex Muc Ex|In,VATABLE,TRUE
+69cdfa447d949500267e8ddd,"Simplex Ngt Dou","Ngt Duodenal Tube","Fr 16",PC,14,Simplex Ngt Dou|Fr 16,VATABLE,TRUE
+69cdfa457d949500267e8de0,"Simplex Suc Cath","Suction Cath","Fr 16",PC,14,Simplex Suc Cath|Fr 16,VATABLE,TRUE
+69cdfa457d949500267e8de3,"Simplex T Drain","T-tube Drain","Fr 12",PC,145,Simplex T Drain|Fr 12,VATABLE,TRUE
+69cdfa457d949500267e8de6,"Simplex T Drain","T-tube Drain","Fr 14",PC,145,Simplex T Drain|Fr 14,VATABLE,TRUE
+69cdfa457d949500267e8de9,"Simplex T Drain","T-tube Drain","Fr 16",PC,145,Simplex T Drain|Fr 16,VATABLE,TRUE
+69cdfa457d949500267e8dec,"Simplex T Drain","T-tube Drain","Fr 18",PC,145,Simplex T Drain|Fr 18,VATABLE,TRUE
+69cdfa457d949500267e8def,"Sobinate","Sodium Bicarbonate","84mg",AMPULE,300,Sobinate|84mg,VATABLE,TRUE
+69cdfa467d949500267e8df2,"Sodicarb","Sodium Bicarbonate","84mg/mL",AMPULE,250,Sodicarb|84mg/mL,VATABLE,TRUE
+69cdfa467d949500267e8df5,"Speeda","Purified Rabies Vaccine","0.5ml",PC,700,Speeda|0.5ml,VATABLE,TRUE
+69cdfa467d949500267e8df8,"Stigmithyl","Neotalis","",PC,0,Stigmithyl|,VATABLE,FALSE
+69cdfa467d949500267e8dfb,"Stigmithyl","Neostigmine","500mcg/mL",AMPULE,200,Stigmithyl|500mcg/mL,VATABLE,TRUE
+69cdfa467d949500267e8dfe,"Tachyban","Adenosine","3mg/mL",AMPULE,570,Tachyban|3mg/mL,VATABLE,TRUE
+69cdfa477d949500267e8e01,"Tachyban","Adenosine","3mg/ml",AMPULE,570,Tachyban|3mg/ml,VATABLE,TRUE
+69cdfa477d949500267e8e04,"Tazacin","Piperacillin Tazobactam","4.5mg",VIAL,600,Tazacin|4.5mg,VATABLE,TRUE
+69cdfa477d949500267e8e07,"Telmibet","Telmisartan","80mg",TABLET,10,Telmibet|80mg,VATABLE,TRUE
+69cdfa477d949500267e8e0a,"Tetagam","Human Tetanus Immunoglobulin","1ml",BOX,1,Tetagam|1ml,VATABLE,TRUE
+69cdfa487d949500267e8e0d,"Tropin","Atropine","1mg/mL",AMPULE,0,Tropin|1mg/mL,VATABLE,TRUE
+69cdfa487d949500267e8e10,"Troysetron","Ondansetron","2mg/mL",AMPULE,285,Troysetron|2mg/mL,VATABLE,TRUE
+69cdfa487d949500267e8e13,"Truferacid","Iron Multivitamins","500mg",CAPSULE,0,Truferacid|500mg,VATABLE,FALSE
+69cdfa487d949500267e8e16,"Unimex Pen Drain","Penrose Drain","Fri Jan 02 2026 00:00:00 Gmt+0800 (philippine Standard Time)",PC,65,Unimex Pen Drain|Fri Jan 02 2026 00:00:00 Gmt+0800 (philippine Standard Time),VATABLE,TRUE
+69cdfa487d949500267e8e19,"Unimex Pen Drain","Penrose Drain","Sun Jan 04 2026 00:00:00 Gmt+0800 (philippine Standard Time)",PC,65,Unimex Pen Drain|Sun Jan 04 2026 00:00:00 Gmt+0800 (philippine Standard Time),VATABLE,TRUE
+69cdfa497d949500267e8e1c,"Viprazole","Omeprazole","40mg",VIAL,450,Viprazole|40mg,VATABLE,TRUE
+69cdfa497d949500267e8e1f,"Viptriaxone","Ceftriaxone","1g",VIAL,800,Viptriaxone|1g,VATABLE,TRUE
+69cdfa497d949500267e8e22,"Vitaroxima","Cefuroxime","750mg",VIAL,500,Vitaroxima|750mg,VATABLE,TRUE
+69cdfa497d949500267e8e25,"Vitaroxima","Cefuroxime Sodium","MG",VIAL,110,Vitaroxima|MG,VATABLE,TRUE
+69cdfa497d949500267e8e28,"Vitasone","Hydrocortisone","100mg",VIAL,225,Vitasone|100mg,VATABLE,TRUE
+69cdfa4a7d949500267e8e2b,"Vitazol","Metronidazole","5mg/mL",BOTTLE,140,Vitazol|5mg/mL,VATABLE,TRUE
+69cdfa4a7d949500267e8e2e,"Vitazol","Metronidazole","500mg/100ml",BOTTLE,190,Vitazol|500mg/100ml,VATABLE,FALSE
+69cdfa4a7d949500267e8e31,"Vitazol","Metronidazole","5mg/ml",BOTTLE,130,Vitazol|5mg/ml,VATABLE,TRUE
+69cdfa4a7d949500267e8e34,"Vitral","Tramadol","50mg/mL",AMPULE,110,Vitral|50mg/mL,VATABLE,TRUE
+69cdfa4a7d949500267e8e37,"Volumetric","Infusion Set","60 Drops/ml",PC,0,Volumetric|60 Drops/ml,VATABLE,TRUE
+69cdfa4a7d949500267e8e3a,"Xanginart","Trimetazidine","35mg",TABLET,15,Xanginart|35mg,VATABLE,TRUE
+69ce16a5f3d290aa2e398317,"Unimex","Penrose Drainage Tubing","1/4/2026",PC,0,Unimex|1/4/2026,VATABLE,TRUE
+69ce16a7f3d290aa2e39832d,"Caress","Diaper","XL",PC,0,Caress|XL,VATABLE,TRUE
+69ce7b08f98f0da281ad11fe,"Ceftrinova","Ceftriaxone","1g",VIAL,200,Ceftrinova|1g,VATABLE,TRUE
+69ce7ef7cd1c4693848b66af,"Axagyl","Metronedazole","",PC,40,Axagyl|,VATABLE,TRUE
+69ce9a1e490c9aae70bea1f6,"Anaway Forte","Sambong","500mg",TABLET,100,Anaway Forte|500mg,VATABLE,TRUE
+69cea0659f33132dd40cb56b,"Viprazole","Omeprazole","40mg",VIAL,450,Viprazole|40mg,VATABLE,TRUE
+69cf238c8417ee374d94f5dd,"Nupira","Norepinephrine","10mg/10mL",AMPULE,600,Nupira|10mg/10mL,VATABLE,TRUE

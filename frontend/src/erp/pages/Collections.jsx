@@ -111,14 +111,14 @@ export default function Collections() {
           </div>
 
           <table className="coll-table">
-            <thead><tr><th>CR #</th><th>Hospital</th><th>Date</th><th>Amount</th><th>CWT</th><th>Comm</th><th>Rebates</th><th>CSIs</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>CR #</th><th>Hospital / Customer</th><th>Date</th><th>Amount</th><th>CWT</th><th>Comm</th><th>Rebates</th><th>Invoices</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {data.map(c => {
                 const sc = STATUS_COLORS[c.status] || {};
                 return (
                   <tr key={c._id} onClick={() => viewDetail(c._id)}>
                     <td style={{ fontWeight: 600 }}>{c.cr_no}</td>
-                    <td>{c.hospital_id?.hospital_name || '—'}</td>
+                    <td>{c.hospital_id?.hospital_name || c.customer_id?.customer_name || '—'}</td>
                     <td>{new Date(c.cr_date).toLocaleDateString('en-PH')}</td>
                     <td>P{(c.cr_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td>{c.cwt_na ? 'N/A' : `P${(c.cwt_amount || 0).toFixed(2)}`}</td>
@@ -147,7 +147,7 @@ export default function Collections() {
                   <h2>CR# {selected.cr_no}</h2>
                   <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}>&times;</button>
                 </div>
-                <p><strong>Hospital:</strong> {selected.hospital_id?.hospital_name}</p>
+                <p><strong>Hospital / Customer:</strong> {selected.hospital_id?.hospital_name || selected.customer_id?.customer_name || '—'}</p>
                 <p><strong>Date:</strong> {new Date(selected.cr_date).toLocaleDateString('en-PH')}</p>
                 <p><strong>Amount:</strong> P{(selected.cr_amount || 0).toFixed(2)}</p>
                 <p><strong>CWT:</strong> {selected.cwt_na ? 'N/A' : `P${(selected.cwt_amount || 0).toFixed(2)}`}</p>

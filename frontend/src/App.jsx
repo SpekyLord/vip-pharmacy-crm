@@ -115,6 +115,7 @@ const CostCenters = lazy(() => import('./erp/pages/CostCenters'));
 const DataArchive = lazy(() => import('./erp/pages/DataArchive'));
 
 // Phase 18 — Service Revenue & Cost Center Expenses
+const HospitalList = lazy(() => import('./erp/pages/HospitalList'));
 const CustomerList = lazy(() => import('./erp/pages/CustomerList'));
 
 // Phase 19 — Petty Cash, Office Supplies & Collaterals
@@ -628,6 +629,7 @@ function App() {
           <Route path="/erp/data-archive" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><DataArchive /></ProtectedRoute>} />
 
           {/* Phase 18 — Service Revenue & Cost Center Expenses */}
+          <Route path="/erp/hospitals" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}><HospitalList /></ProtectedRoute>} />
           <Route path="/erp/customers" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}><CustomerList /></ProtectedRoute>} />
 
           {/* Phase 19 — Petty Cash, Office Supplies & Collaterals */}

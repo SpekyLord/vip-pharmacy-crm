@@ -214,6 +214,41 @@ const getTransactions = catchAsync(async (req, res) => {
 });
 
 /**
+ * GET /transactions — all transactions (global, not per-supply)
+ */
+const getAllTransactions = catchAsync(async (req, res) => {
+  const { page = 1, limit = 50 } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const [transactions, total] = await Promise.all([
+    OfficeSupplyTransaction.find({ ...req.tenantFilter })
+      .sort({ txn_date: -1, created_at: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .populate('supply_id', 'item_name item_code')
+      .lean(),
+    OfficeSupplyTransaction.countDocuments({ ...req.tenantFilter })
+  ]);
+
+  // Map supply_id → supply for frontend compatibility
+  const data = transactions.map(t => ({
+    ...t,
+    supply: t.supply_id || null
+  }));
+
+  res.json({
+    success: true,
+    data,
+    pagination: {
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      pages: Math.ceil(total / Number(limit))
+    }
+  });
+});
+
+/**
  * GET /reorder-alerts — items where qty_on_hand <= reorder_level
  */
 const getReorderAlerts = catchAsync(async (req, res) => {
@@ -241,5 +276,6 @@ module.exports = {
   updateSupply,
   recordTransaction,
   getTransactions,
+  getAllTransactions,
   getReorderAlerts
 };

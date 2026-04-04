@@ -11,11 +11,12 @@ const c = require('../controllers/officeSupplyController');
 // ═══ Supplies ═══
 router.get('/', c.getSupplies);
 router.get('/reorder-alerts', c.getReorderAlerts);
+router.get('/transactions', c.getAllTransactions); // global transaction list
 router.get('/:id', c.getSupplyById);
 router.post('/', c.createSupply);
 router.put('/:id', c.updateSupply);
 
-// ═══ Transactions ═══
+// ═══ Per-Supply Transactions ═══
 router.post('/:id/transactions', c.recordTransaction);
 router.get('/:id/transactions', c.getTransactions);
 

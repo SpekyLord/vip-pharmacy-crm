@@ -231,7 +231,8 @@ export default function OfficeSupplies() {
   };
 
   const handleRecordTxn = async (body) => {
-    await os.recordTransaction(body);
+    const supplyId = body.supply;
+    await os.recordTransaction(supplyId, body);
     loadSupplies();
     if (showTxns) loadTransactions();
   };

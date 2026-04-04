@@ -12,7 +12,7 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const PettyCashFund = require('../models/PettyCashFund');
 const Warehouse = require('../models/Warehouse');
-const User = require('../../../backend/models/User');
+const User = require('../../models/User');
 
 const FUNDS = [
   {

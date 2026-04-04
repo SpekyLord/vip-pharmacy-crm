@@ -196,15 +196,17 @@ const navbarStyles = `
   .navbar-brand {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 12px;
     min-width: 0;
   }
 
   .navbar-logo {
-    height: 80px;
-    width: auto;
+    height: 160px;
+    width: 160px;
     object-fit: contain;
     flex-shrink: 0;
+    margin: -45px -25px -45px 25px;
   }
 
   .navbar-brand h1 {
@@ -653,9 +655,6 @@ const Navbar = () => {
 
         <div className="navbar-brand">
           <img src="/VIP_LOGO-removebg.svg" alt="VIP" className="navbar-logo" />
-          <h1>
-            VIP <span>Pharmacy</span> CRM
-          </h1>
         </div>
       </div>
 

@@ -62,6 +62,8 @@ export default function CollectionSession() {
   const navigate = useNavigate();
 
   const [hospitalId, setHospitalId] = useState('');
+  const [customerId, setCustomerId] = useState('');
+  const [customerList, setCustomerList] = useState([]);
   const [openCsis, setOpenCsis] = useState([]);
   const [selectedCsis, setSelectedCsis] = useState(new Map());
   const [crNo, setCrNo] = useState('');
@@ -73,6 +75,8 @@ export default function CollectionSession() {
   const [bank, setBank] = useState('');
   const [bankAccountId, setBankAccountId] = useState('');
   const [bankAccountsList, setBankAccountsList] = useState([]);
+  const [pettyCashFundId, setPettyCashFundId] = useState('');
+  const [pettyCashFunds, setPettyCashFunds] = useState([]);
   const [cwtRate, setCwtRate] = useState('');
   const [cwtNa, setCwtNa] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -109,21 +113,36 @@ export default function CollectionSession() {
     }).catch(() => setDoctorsLoaded(true));
   }, [doctorsLoaded]);
 
-  // Load bank accounts for "Deposited At" dropdown
+  // Load bank accounts + petty cash funds for "Deposited At" dropdown
   useEffect(() => {
     listBankAccounts().then(r => setBankAccountsList(r?.data || [])).catch(() => {});
+    import('../../services/api').then(({ default: api }) => {
+      api.get('/erp/petty-cash/funds').then(res => setPettyCashFunds(res.data?.data || [])).catch(() => {});
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load open CSIs when hospital changes
+  // Load customers list
   useEffect(() => {
-    if (!hospitalId) { setOpenCsis([]); setSelectedCsis(new Map()); return; }
-    collections.getOpenCsis(hospitalId).then(res => {
+    import('../../services/api').then(({ default: api }) => {
+      api.get('/erp/customers', { params: { limit: 200, status: 'ACTIVE' } })
+        .then(res => setCustomerList(res.data?.data || []))
+        .catch(() => {});
+    });
+  }, []);
+
+  // Load open CSIs when hospital/customer changes
+  useEffect(() => {
+    const activeId = hospitalId || customerId;
+    if (!activeId) { setOpenCsis([]); setSelectedCsis(new Map()); return; }
+    collections.getOpenCsis(activeId).then(res => {
       setOpenCsis(res?.data || []);
       setSelectedCsis(new Map());
-      const h = hospitals.find(h => h._id === hospitalId);
-      if (h?.cwt_rate) setCwtRate(String(h.cwt_rate));
+      if (hospitalId) {
+        const h = hospitals.find(h => h._id === hospitalId);
+        if (h?.cwt_rate) setCwtRate(String(h.cwt_rate));
+      }
     }).catch(() => {});
-  }, [hospitalId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hospitalId, customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleCsi = (csi) => {
     setSelectedCsis(prev => {
@@ -226,18 +245,19 @@ export default function CollectionSession() {
   };
 
   const handleSave = async () => {
-    if (!hospitalId || !crNo || !selectedList.length) {
-      return alert('Select a hospital, enter CR#, and select at least one CSI');
+    if ((!hospitalId && !customerId) || !crNo || !selectedList.length) {
+      return alert('Select a hospital or customer, enter CR#, and select at least one invoice');
     }
     setSaving(true);
     try {
       await collections.createCollection({
-        hospital_id: hospitalId, cr_no: crNo, cr_date: crDate,
+        hospital_id: hospitalId || undefined, customer_id: customerId || undefined, cr_no: crNo, cr_date: crDate,
         cr_amount: parseFloat(crAmount) || expectedCr,
         settled_csis: selectedList,
         cwt_rate: parseFloat(cwtRate) || 0, cwt_amount: computedCwt, cwt_na: cwtNa,
         payment_mode: paymentMode,
         bank_account_id: bankAccountId || undefined,
+        petty_cash_fund_id: pettyCashFundId || undefined,
         check_no: checkNo || undefined, check_date: checkDate || undefined, bank: bank || undefined,
         cr_photo_url: crPhotoUrl || undefined,
         csi_photo_urls: csiPhotoUrls.length ? csiPhotoUrls : undefined,
@@ -268,10 +288,22 @@ export default function CollectionSession() {
             <h2>1. Select Hospital</h2>
             <div className="form-row">
               <div className="form-group" style={{ flex: 2 }}>
-                <label>Hospital (one CR per hospital)</label>
-                <select value={hospitalId} onChange={e => setHospitalId(e.target.value)}>
-                  <option value="">Select hospital...</option>
-                  {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
+                <label>Hospital / Customer (one CR per account)</label>
+                <select value={hospitalId || customerId || ''} onChange={e => {
+                  const val = e.target.value;
+                  const isCustomer = customerList.some(c => c._id === val);
+                  if (isCustomer) { setCustomerId(val); setHospitalId(''); }
+                  else { setHospitalId(val); setCustomerId(''); }
+                }}>
+                  <option value="">Select...</option>
+                  <optgroup label="Hospitals">
+                    {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
+                  </optgroup>
+                  {customerList.length > 0 && (
+                    <optgroup label="Customers">
+                      {customerList.map(c => <option key={c._id} value={c._id}>{c.customer_name}{c.customer_type ? ` (${c.customer_type})` : ''}</option>)}
+                    </optgroup>
+                  )}
                 </select>
               </div>
             </div>
@@ -384,8 +416,14 @@ export default function CollectionSession() {
               <h2>3. CR Details</h2>
               <div className="form-row">
                 <div className="form-group">
-                  <label>CR Number</label>
-                  <input value={crNo} onChange={e => setCrNo(e.target.value)} placeholder="e.g. 002905" />
+                  <label>CR Number {paymentMode === 'CASH' && !crNo && <span style={{ fontSize: 10, color: 'var(--erp-accent)', cursor: 'pointer', marginLeft: 8 }} onClick={async () => {
+                    try {
+                      const { default: api } = await import('../../services/api');
+                      const res = await api.post('/erp/sales', { sale_type: 'CASH_RECEIPT', hospital_id: hospitalId || undefined, customer_id: customerId || undefined, csi_date: crDate, line_items: [] });
+                      if (res.data?.data?.invoice_number) { setCrNo(res.data.data.invoice_number); await api.delete(`/erp/sales/draft/${res.data.data._id}`).catch(() => {}); }
+                    } catch {}
+                  }}>(auto-generate)</span>}</label>
+                  <input value={crNo} onChange={e => setCrNo(e.target.value)} placeholder={paymentMode === 'CASH' ? 'Click auto-generate or enter manually' : 'e.g. 002905'} />
                 </div>
                 <div className="form-group">
                   <label>CR Date</label>
@@ -406,10 +444,22 @@ export default function CollectionSession() {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Deposited At</label>
-                  <select value={bankAccountId} onChange={e => setBankAccountId(e.target.value)} style={{ width: '100%' }}>
-                    <option value="">Select bank account…</option>
-                    {bankAccountsList.map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
+                  <label>{paymentMode === 'CASH' ? 'Deposit To' : 'Deposited At'}</label>
+                  <select value={pettyCashFundId || bankAccountId || ''} onChange={e => {
+                    const val = e.target.value;
+                    const isPc = pettyCashFunds.some(f => f._id === val);
+                    if (isPc) { setPettyCashFundId(val); setBankAccountId(''); }
+                    else { setBankAccountId(val); setPettyCashFundId(''); }
+                  }} style={{ width: '100%' }}>
+                    <option value="">Select destination…</option>
+                    {pettyCashFunds.length > 0 && (
+                      <optgroup label="Petty Cash Funds">
+                        {pettyCashFunds.map(f => <option key={f._id} value={f._id}>{f.fund_code} — {f.fund_name}</option>)}
+                      </optgroup>
+                    )}
+                    <optgroup label="Bank Accounts">
+                      {bankAccountsList.map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
+                    </optgroup>
                   </select>
                 </div>
               </div>
@@ -451,7 +501,8 @@ export default function CollectionSession() {
               <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onFileSelected} />
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-                {/* CR Photo */}
+                {/* CR Photo — not required for CASH */}
+                {paymentMode !== 'CASH' && (
                 <div style={{ border: '1px solid var(--erp-border)', borderRadius: 10, padding: 12, background: crPhotoUrl ? '#f0fdf4' : 'var(--erp-bg)' }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', textTransform: 'uppercase', marginBottom: 6 }}>CR Photo *</div>
                   {crPhotoUrl ? (
@@ -465,8 +516,10 @@ export default function CollectionSession() {
                     </button>
                   )}
                 </div>
+                )}
 
-                {/* Deposit Slip */}
+                {/* Deposit Slip — not required for CASH */}
+                {paymentMode !== 'CASH' && (
                 <div style={{ border: '1px solid var(--erp-border)', borderRadius: 10, padding: 12, background: depositSlipUrl ? '#f0fdf4' : 'var(--erp-bg)' }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', textTransform: 'uppercase', marginBottom: 6 }}>Deposit Slip *</div>
                   {depositSlipUrl ? (
@@ -480,6 +533,7 @@ export default function CollectionSession() {
                     </button>
                   )}
                 </div>
+                )}
 
                 {/* CWT Certificate */}
                 <div style={{ border: '1px solid var(--erp-border)', borderRadius: 10, padding: 12, background: cwtCertUrl || cwtNa ? '#f0fdf4' : 'var(--erp-bg)' }}>

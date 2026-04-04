@@ -27,7 +27,7 @@ function renderSalesReceipt(sale, lineProducts = []) {
   } else if (sale.line_items?.length) {
     lineItemsHtml = sale.line_items.map((item, i) => {
       const prod = lineProducts.find(p => p._id?.toString() === item.product_id?.toString());
-      const productName = prod?.product_name || item.item_key || 'Item';
+      const productName = prod?.brand_name || prod?.product_name || item.item_key || 'Item';
       const batchInfo = item.batch_lot_no ? ` | Batch: ${item.batch_lot_no}` : '';
       const expiryInfo = item.expiry_date
         ? ` | Exp: ${new Date(item.expiry_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' })}`

@@ -27,7 +27,7 @@ const getReceiptHtml = catchAsync(async (req, res) => {
       const ProductMaster = require('../models/ProductMaster');
       const productIds = sale.line_items.map(li => li.product_id).filter(Boolean);
       lineProducts = await ProductMaster.find({ _id: { $in: productIds } })
-        .select('product_name')
+        .select('product_name brand_name')
         .lean();
     } catch { /* non-critical */ }
   }

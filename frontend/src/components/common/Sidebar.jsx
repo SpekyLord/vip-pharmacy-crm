@@ -48,6 +48,7 @@ import {
   Scale,
   Layers,
   Archive,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -544,9 +545,13 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   items.push({ path: '/erp', label: 'ERP Home', icon: Briefcase });
   if (hasModule('sales'))       items.push({ path: '/erp/sales', label: 'Sales', icon: Receipt });
   if (hasModule('sales'))       items.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
-  // Phase 18: Customers (shared infrastructure — no module gate)
+  // Shared infrastructure — no module gate
+  items.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
   items.push({ path: '/erp/customers', label: 'Customers', icon: Users });
   if (hasModule('inventory'))   items.push({ path: '/erp/my-stock', label: 'Inventory', icon: Package });
+  if (hasModule('inventory'))   items.push({ path: '/erp/grn', label: 'GRN Entry', icon: FileInput });
+  if (hasModule('inventory'))   items.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
+  if (hasModule('inventory'))   items.push({ path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight });
   if (hasModule('inventory') && ['admin', 'president'].includes(role)) items.push({ path: '/erp/warehouses', label: 'Warehouses', icon: Package });
   if (hasModule('inventory'))   items.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
   if (hasModule('collections')) items.push({ path: '/erp/collections', label: 'Collections', icon: Wallet });

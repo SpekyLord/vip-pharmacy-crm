@@ -251,12 +251,14 @@ export default function Collaterals() {
   };
 
   const handleDistribute = async (body) => {
-    await col.recordDistribution(body);
+    const collateralId = body.collateral;
+    await col.recordDistribution(collateralId, body);
     loadItems();
   };
 
   const handleReturn = async (body) => {
-    await col.recordReturn(body);
+    const collateralId = body.collateral;
+    await col.recordReturn(collateralId, body);
     loadItems();
   };
 
