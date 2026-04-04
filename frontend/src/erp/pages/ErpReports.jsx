@@ -117,6 +117,41 @@ export default function ErpReports() {
             </Link>
           </div>
 
+          {/* Phase 14 — New Reports & Analytics */}
+          <div className="section-label">Analytics & Tracking</div>
+          <div className="report-cards">
+            <Link to="/erp/performance-ranking" className="report-card">
+              <div className="icon">🏆</div>
+              <h3>Performance Ranking</h3>
+              <p>Net cash ranking, MoM trends, sales & collections trackers by BDM.</p>
+            </Link>
+            <Link to="/erp/consignment-aging" className="report-card">
+              <div className="icon">📦</div>
+              <h3>Consignment Aging</h3>
+              <p>Cross-BDM consignment status with aging indicators and drill-down.</p>
+            </Link>
+            <Link to="/erp/expense-anomalies" className="report-card">
+              <div className="icon">⚠️</div>
+              <h3>Expense Anomalies</h3>
+              <p>Period-over-period expense changes and budget overrun detection.</p>
+            </Link>
+            <Link to="/erp/fuel-efficiency" className="report-card">
+              <div className="icon">⛽</div>
+              <h3>Fuel Efficiency</h3>
+              <p>Per-BDM actual vs expected gas cost with variance flags.</p>
+            </Link>
+            <Link to="/erp/cycle-status" className="report-card">
+              <div className="icon">🔄</div>
+              <h3>Cycle Status</h3>
+              <p>Payslip cycle progress tracking with behind-schedule alerts.</p>
+            </Link>
+            <Link to="/erp/cycle-reports" className="report-card">
+              <div className="icon">📋</div>
+              <h3>Cycle Reports</h3>
+              <p>Generate, review, confirm, and credit cycle reports.</p>
+            </Link>
+          </div>
+
           {/* Quick Summary Reports */}
           <div className="section-label">Quick Summaries</div>
           <div className="controls">

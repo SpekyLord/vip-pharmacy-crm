@@ -44,6 +44,10 @@ import {
   ShoppingCart,
   Truck,
   FileInput,
+  Landmark,
+  Scale,
+  Layers,
+  Archive,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -535,6 +539,7 @@ const getErpSection = (role, erpAccess) => {
   const items = [];
   items.push({ path: '/erp', label: 'ERP Home', icon: Briefcase });
   if (hasModule('sales'))       items.push({ path: '/erp/sales', label: 'Sales', icon: Receipt });
+  if (hasModule('sales'))       items.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
   if (hasModule('inventory'))   items.push({ path: '/erp/my-stock', label: 'Inventory', icon: Package });
   if (hasModule('collections')) items.push({ path: '/erp/collections', label: 'Collections', icon: Wallet });
   if (hasModule('expenses'))    items.push({ path: '/erp/expenses', label: 'Expenses', icon: CreditCard });
@@ -553,6 +558,11 @@ const getErpSection = (role, erpAccess) => {
     items.push({ path: '/erp/loans', label: 'Loans', icon: BookOpen });
     items.push({ path: '/erp/owner-equity', label: 'Owner Equity', icon: BookOpen });
     items.push({ path: '/erp/month-end-close', label: 'Month-End Close', icon: BookOpen });
+    items.push({ path: '/erp/bank-accounts', label: 'Bank Accounts', icon: Landmark });
+    items.push({ path: '/erp/bank-recon', label: 'Bank Reconciliation', icon: Scale });
+    items.push({ path: '/erp/credit-card-ledger', label: 'CC Ledger', icon: CreditCard });
+    items.push({ path: '/erp/cost-centers', label: 'Cost Centers', icon: Layers });
+    items.push({ path: '/erp/data-archive', label: 'Data Archive', icon: Archive });
   }
   if (hasModule('purchasing')) {
     items.push({ path: '/erp/vendors', label: 'Vendors', icon: Truck });

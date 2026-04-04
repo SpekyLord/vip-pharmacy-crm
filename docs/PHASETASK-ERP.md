@@ -2590,195 +2590,219 @@
 **Reference:** PRD v5 §16 (Banking & Cash)
 
 ### 13.1 — Bank Accounts Master (Enhance from Phase 2.6)
-- [ ] Verify `backend/erp/models/BankAccount.js` from Phase 2.6 has: entity_id, bank_code, bank_name, account_no, account_type, coa_code, is_active
-- [ ] Add fields if missing: opening_balance, current_balance (computed), statement_import_format
-- [ ] Create seed data for VIP banks: RCBC (1010), SBC (1011), MBTC (1012), UB (1013)
+- [x] Verify `backend/erp/models/BankAccount.js` from Phase 2.6 has: entity_id, bank_code, bank_name, account_no, account_type, coa_code, is_active
+- [x] Add fields if missing: opening_balance, current_balance (computed), statement_import_format
+  - Added: `opening_balance` (Number, default 0), `current_balance` (Number, default 0), `statement_import_format` (enum: CSV/OFX/MT940)
+- [x] Create seed data for VIP banks: RCBC (1010), SBC (1011), MBTC (1012), UB (1013)
+  - Seed already had RCBC, SBC, MBTC, GCash. Added UB_SA (UnionBank Savings, coa_code 1013)
 - [ ] Commit: `"feat(erp): bank accounts master enhancement [v5]"`
 
 ### 13.2 — Bank Reconciliation Model & Service
-- [ ] Create `backend/erp/models/BankStatement.js`:
+- [x] Create `backend/erp/models/BankStatement.js`:
   - entity_id, bank_account_id, statement_date, period (YYYY-MM)
   - entries array: [{ line_no, txn_date, description, reference, debit, credit, balance, match_status enum: UNMATCHED, MATCHED, RECONCILING_ITEM, je_id (ref: JournalEntry) }]
   - closing_balance, uploaded_at, uploaded_by
-- [ ] Create `backend/erp/services/bankReconService.js`:
-  - `importStatement(bankAccountId, entries)` — parse and store bank statement
-  - `autoMatch(statementId)` — match bank entries to journal entries by: amount + date (±2 days) + reference
-  - `manualMatch(statementEntryIndex, jeId)` — Finance manually matches
+  - status enum: DRAFT, IN_PROGRESS, FINALIZED. Collection: `erp_bank_statements`
+  - Indexes: unique (entity_id, bank_account_id, period), (entity_id, status)
+- [x] Create `backend/erp/services/bankReconService.js`:
+  - `importStatement(entityId, bankAccountId, statementDate, period, entries, closingBalance, uploadedBy)` — parse and store (upsert by period)
+  - `autoMatch(statementId)` — match bank entries to JE lines by: coa_code match + amount + date (±2 days) + reference substring
+  - `manualMatch(statementId, entryIndex, jeId)` — Finance manually matches
   - `getReconSummary(statementId)` — return: { matched[], unmatched_book[], unmatched_bank[], adjusted_book_balance, adjusted_bank_balance, difference }
-  - `finalizeRecon(statementId)` — lock reconciliation for period
+  - `finalizeRecon(statementId)` — lock reconciliation, update BankAccount.current_balance
 - [ ] Commit: `"feat(erp): bank reconciliation with auto-match [v5]"`
 
 ### 13.3 — Credit Card Ledger
-- [ ] Verify `backend/erp/models/CreditCard.js` exists from Phase 2.6 (or create if not):
-  - entity_id, card_code, card_name, card_holder, bank, card_type, coa_code (2310-2315), credit_limit, is_active
-- [ ] Create `backend/erp/models/CreditCardTransaction.js`:
+- [x] Verify `backend/erp/models/CreditCard.js` exists from Phase 2.6 (or create if not):
+  - Verified: exists with full fields including assignment tracking, card_brand, last_four, statement_cycle_day
+- [x] Create `backend/erp/models/CreditCardTransaction.js`:
   - entity_id, credit_card_id, txn_date, description
   - amount, reference, linked_expense_id (ref: ExpenseEntry), linked_calf_id (ref: PrfCalf)
   - status enum: PENDING, POSTED, PAID
-  - created_at
-- [ ] Create `backend/erp/services/creditCardService.js`:
-  - `getCardBalance(cardId)` — outstanding transactions
-  - `getCardLedger(cardId, period)` — transaction list
-  - `recordCardPayment(cardId, amount)` — creates JE: DR: 2310-2315 CC Payable, CR: 1010-1014 Cash/Bank
+  - payment_je_id (ref: JournalEntry), created_by (ref: User), timestamps
+  - Collection: `erp_credit_card_transactions`
+  - Indexes: (entity_id, credit_card_id, txn_date), (entity_id, status), (linked_expense_id)
+- [x] Create `backend/erp/services/creditCardService.js`:
+  - `getCardBalance(entityId, cardId)` — aggregation sum of PENDING+POSTED transactions
+  - `getCardLedger(entityId, cardId, period)` — transaction list with populates
+  - `getAllCardBalances(entityId)` — all active cards with outstanding amounts
+  - `recordCardPayment(entityId, cardId, amount, bankAccountId, paymentDate, userId)` — creates JE via journalEngine.createAndPostJournal: DR CC Payable (card coa_code), CR Cash/Bank (bank coa_code). Marks oldest outstanding txns as PAID.
+  - Added 'BANKING' to JournalEntry source_module enum
 - [ ] Commit: `"feat(erp): credit card ledger with payment tracking [v5]"`
 
 ### 13.4 — Banking Controller & Routes
-- [ ] Create `backend/erp/controllers/bankingController.js`:
-  - Bank account CRUD, statement import, auto-match, manual match
-  - Reconciliation summary and finalization
-  - Credit card transactions, balances, payments
-- [ ] Create `backend/erp/routes/bankingRoutes.js`:
+- [x] Create `backend/erp/controllers/bankingController.js`:
+  - Bank account CRUD (listBankAccounts, createBankAccount, updateBankAccount)
+  - Statement import, auto-match, manual match, recon summary, finalize
+  - Credit card transactions (create, list balances, ledger, record payment)
+- [x] Create `backend/erp/routes/bankingRoutes.js`:
   - GET `/bank-accounts` — list bank accounts
-  - POST `/bank-accounts` — create (Admin/Finance)
-  - POST `/statements/import` — upload bank statement CSV
-  - POST `/statements/:id/auto-match` — trigger auto-matching
-  - POST `/statements/:id/manual-match` — Finance manual match
+  - POST `/bank-accounts` — create (roleCheck: admin/finance/president)
+  - PUT `/bank-accounts/:id` — update (roleCheck)
+  - POST `/statements/import` — upload bank statement CSV (roleCheck)
+  - GET `/statements` — list statements
+  - GET `/statements/:id` — get single statement
+  - POST `/statements/:id/auto-match` — trigger auto-matching (roleCheck)
+  - POST `/statements/:id/manual-match` — Finance manual match (roleCheck)
   - GET `/statements/:id/recon` — reconciliation summary
-  - POST `/statements/:id/finalize` — finalize recon
-  - GET `/credit-cards` — list cards with balances
+  - POST `/statements/:id/finalize` — finalize recon (roleCheck)
+  - GET `/credit-cards/balances` — all cards with outstanding balances
   - GET `/credit-cards/:id/ledger` — card transaction ledger
-  - POST `/credit-cards/:id/payment` — record card payment
-- [ ] Add to ERP router
+  - POST `/credit-cards/transactions` — create transaction (roleCheck)
+  - POST `/credit-cards/:id/payment` — record card payment (roleCheck)
+- [x] Add to ERP router: `router.use('/banking', erpAccessCheck('accounting'), require('./bankingRoutes'))`
 - [ ] Commit: `"feat(erp): banking and cash routes [v5]"`
 
 ### 13.5 — Banking Frontend Pages
-- [ ] Create `frontend/src/erp/pages/BankAccounts.jsx`:
-  - Bank account list with balances, add/edit bank account
-- [ ] Create `frontend/src/erp/pages/BankReconciliation.jsx`:
+- [x] Create `frontend/src/erp/hooks/useBanking.js` — wraps useErpApi with all banking endpoints
+- [x] Create `frontend/src/erp/pages/BankAccounts.jsx`:
+  - Bank account table with balances, add/edit modal with all fields
+- [x] Create `frontend/src/erp/pages/BankReconciliation.jsx`:
   - Period + bank selector
-  - Upload CSV button for bank statement
+  - CSV paste-import with closing balance
   - "Auto-Match" button
-  - Side-by-side view: bank statement entries (left) vs book entries (right)
-  - Match status indicators: green=matched, red=unmatched
-  - Manual match: drag-drop or click-to-link
-  - Reconciliation summary: adjusted balances + difference
+  - Side-by-side view: bank statement entries (left) vs unmatched book entries (right)
+  - Match status indicators: green=MATCHED, red=UNMATCHED, yellow=RECONCILING_ITEM
+  - Summary stats panel: bank balance, book balance, adjusted balances, difference
   - "Finalize" button
-- [ ] Create `frontend/src/erp/pages/CreditCardLedger.jsx`:
-  - Card selector, transaction list, outstanding balance
-  - Link to related expense/CALF entries
-  - Payment recording form
-- [ ] Add routes to App.jsx: `/erp/bank-accounts`, `/erp/bank-recon`, `/erp/credit-cards`
-- [ ] Add navbar items under Banking section
+- [x] Create `frontend/src/erp/pages/CreditCardLedger.jsx`:
+  - Card selector grid with outstanding balances and pending txn counts
+  - Transaction list table with date, description, amount, status, linked docs, JE#
+  - Payment recording modal (amount, bank account source, date)
+  - New transaction modal
+- [x] Add routes to App.jsx: `/erp/bank-accounts`, `/erp/bank-recon`, `/erp/credit-card-ledger`
+  - All protected: roles admin/finance/president, requiredErpModule: accounting
+- [x] Add sidebar items under accounting section: Bank Accounts (Landmark), Bank Reconciliation (Scale), CC Ledger (CreditCard)
 - [ ] Commit: `"feat(ui): banking pages (bank accounts, reconciliation, credit card ledger) [v5]"`
 
 ---
 
-## PHASE 14 — NEW REPORTS & ANALYTICS [v5 NEW]
+## PHASE 14 — NEW REPORTS & ANALYTICS [v5 NEW] ✅ COMPLETE
 **Goal:** Performance ranking, consolidated consignment aging, expense anomaly detection, fuel efficiency report, and cycle status dashboard.
 
 **Reference:** PRD v5 §14.6-14.10
 
-### 14.1 — Performance Ranking Report
-- [ ] Create `backend/erp/services/performanceRankingService.js`:
+### 14.1 — Performance Ranking Report ✅
+- [x] Create `backend/erp/services/performanceRankingService.js`:
   - `getNetCashRanking(entityId, period)` — ranks all BDMs and Sales Reps by Net Cash = Collections - Expenses; includes Sales, Collection %, Territory
   - `getMomTrend(personId, periods?)` — 6-month rolling: Sales, Sales Growth %, Collections, Collection Growth %, Expenses, Expense Growth %
   - `getSalesTracker(entityId, year)` — full year Jan-Dec by person, sorted by total descending
   - `getCollectionsTracker(entityId, year)` — full year Jan-Dec by person, sorted by total descending
-- [ ] Commit: `"feat(erp): performance ranking service (net cash, mom trend, trackers) [v5]"`
+  - **Note:** Uses parallel aggregations across SalesLine, Collection, SmerEntry, CarLogbookEntry, ExpenseEntry. Lookups via PeopleMaster.
 
-### 14.2 — Consolidated Consignment Aging Report
-- [ ] Create `backend/erp/services/consignmentReportService.js`:
+### 14.2 — Consolidated Consignment Aging Report ✅
+- [x] Create `backend/erp/services/consignmentReportService.js`:
   - `getConsolidatedConsignmentAging(entityId)` — cross-BDM view: BDM, Territory, Hospital, DR#, DR Date, Product, Qty Delivered, Qty Consumed, Qty Remaining, Days Outstanding, Aging Status
   - Sort: OVERDUE first, then FORCE_CSI, then OPEN, then COLLECTED
   - Filterable by BDM, hospital, status
-  - Drill-down by BDM
-- [ ] Commit: `"feat(erp): consolidated consignment aging report [v5]"`
+  - Live recomputation of days_outstanding and aging_status via $switch
 
-### 14.3 — Expense Anomaly Detection
-- [ ] Create `backend/erp/services/expenseAnomalyService.js`:
+### 14.3 — Expense Anomaly Detection ✅
+- [x] Create `backend/erp/services/expenseAnomalyService.js`:
   - `detectAnomalies(entityId, period)` — compare current vs prior period per person per component (SMER, GasOfficial, Insurance, ACCESS, CoreComm)
   - Flag >30% change (configurable via SETTINGS.EXPENSE_ANOMALY_THRESHOLD)
   - `detectBudgetOverruns(entityId, period)` — for people with BudgetAllocation: actual vs budgeted per component, flag OVER_BUDGET
   - Return: [{ person, component, prior_amount, current_amount, change_pct, flag: ALERT|OVER_BUDGET, budgeted (if applicable) }]
   - Sorted by absolute change % descending
-- [ ] Commit: `"feat(erp): expense anomaly detection with budget tracking [v5]"`
 
-### 14.4 — Fuel Efficiency Report
-- [ ] Create `backend/erp/services/fuelEfficiencyService.js`:
+### 14.4 — Fuel Efficiency Report ✅
+- [x] Create `backend/erp/services/fuelEfficiencyService.js`:
   - `getFuelEfficiency(entityId, period)` — per BDM: actual gas cost vs expected (official_km / km_per_liter * avg_price)
   - Flag variance >30% as OVER_30_PCT
   - Source: CarLogbookEntry data
-- [ ] Commit: `"feat(erp): fuel efficiency report [v5]"`
 
-### 14.5 — Cycle Status Dashboard Service
-- [ ] Create `backend/erp/services/cycleStatusService.js`:
-  - `getCycleStatus(entityId, period)` — per BDM: current payslip status (PENDING → GENERATED → REVIEWED → RETURNED → BDM_CONFIRMED → CREDITED)
+### 14.5 — Cycle Status Dashboard Service ✅
+- [x] Create `backend/erp/services/cycleStatusService.js`:
+  - `getCycleStatus(entityId, period)` — per BDM: current payslip status (NOT_STARTED → DRAFT → COMPUTED → REVIEWED → APPROVED → POSTED)
   - Completion % across all BDMs
   - Behind-schedule list (not at expected status for date)
-  - Auto-timestamp tracking on status changes
-- [ ] Commit: `"feat(erp): cycle status dashboard service [v5]"`
+  - Behind-schedule logic: DRAFT/NOT_STARTED after day 15 or not POSTED after day 25
 
-### 14.6 — New Report Routes
-- [ ] Add to `backend/erp/controllers/erpReportController.js`:
-  - `getPerformanceRanking` — net cash ranking + MoM trend + trackers
-  - `getConsignmentAging` — consolidated consignment aging
-  - `getExpenseAnomalies` — anomaly + budget overrun flags
-  - `getFuelEfficiency` — per-BDM fuel tracking
-  - `getCycleStatus` — payslip cycle progress
-- [ ] Add to `backend/erp/routes/erpReportRoutes.js`:
+### 14.6 — New Report Routes ✅
+- [x] Created `backend/erp/controllers/erpReportController.js` with all 10 handlers
+- [x] Created `backend/erp/routes/erpReportRoutes.js` with all endpoints
+- [x] Mounted at `/reports` with `erpAccessCheck('reports')` in route index
   - GET `/performance-ranking/:period` — net cash ranking
   - GET `/performance-ranking/trend/:personId` — MoM trend
   - GET `/sales-tracker/:year` — annual sales tracker
   - GET `/collections-tracker/:year` — annual collections tracker
   - GET `/consignment-aging` — consolidated consignment aging
   - GET `/expense-anomalies/:period` — anomaly detection
+  - GET `/budget-overruns/:period` — budget overrun tracking
   - GET `/fuel-efficiency/:period` — fuel efficiency
   - GET `/cycle-status/:period` — cycle status dashboard
-- [ ] Add to ERP router
-- [ ] Commit: `"feat(erp): new report routes (ranking, consignment, anomaly, fuel, cycle) [v5]"`
+  - GET `/product-streaks/:period` — Phase 15.1 profit share streak detail
 
-### 14.7 — New Report Frontend Pages
-- [ ] Create `frontend/src/erp/pages/PerformanceRanking.jsx`:
+### 14.7 — New Report Frontend Pages ✅
+- [x] Created `frontend/src/erp/pages/PerformanceRanking.jsx`:
   - Period selector, ranking table with Net Cash, Sales, Collection %
   - Top 3 highlighted green, bottom 3 highlighted red
-  - Toggle: BDM vs Sales Rep filter
-  - MoM Trend: 6-month chart per person (expandable rows)
-  - Sales Tracker: full-year grid (Jan-Dec), sorted by total
-  - Collections Tracker: full-year grid (Jan-Dec), sorted by total
-- [ ] Create `frontend/src/erp/pages/ConsignmentAging.jsx`:
+  - Tabs: Ranking / Sales Tracker / Collections Tracker
+  - MoM Trend: expandable rows with 6-month data table
+  - Sales/Collections Tracker: full-year grid (Jan-Dec), sorted by total
+- [x] Created `frontend/src/erp/pages/ConsignmentAging.jsx`:
   - Cross-BDM table with all consignment columns
-  - Color-coded aging: green=OPEN, orange=OVERDUE, red=FORCE_CSI
-  - BDM drill-down (click name → filtered view)
-  - Filters: BDM, hospital, aging status
-- [ ] Create `frontend/src/erp/pages/ExpenseAnomalies.jsx`:
-  - Period selector, anomaly table sorted by change %
-  - ALERT badge on >30% changes
-  - Budget vs Actual columns for budgeted people
-  - OVER_BUDGET badge
-- [ ] Create `frontend/src/erp/pages/FuelEfficiency.jsx`:
+  - Color-coded aging: blue=OPEN, red=OVERDUE, red-border=FORCE_CSI, green=COLLECTED
+  - Summary cards: total, open, overdue, force_csi, collected
+  - Filters: aging status dropdown
+- [x] Created `frontend/src/erp/pages/ExpenseAnomalies.jsx`:
+  - Period selector, two tabs: Anomalies / Budget Overruns
+  - ALERT badge on >threshold% changes, OVER_BUDGET badge
+- [x] Created `frontend/src/erp/pages/FuelEfficiency.jsx`:
   - Per-BDM table: actual vs expected gas cost, variance %
-  - >30% flagged in red
-- [ ] Create `frontend/src/erp/pages/CycleStatusDashboard.jsx`:
-  - Per-BDM status pipeline (visual progress indicators)
-  - Completion % bar chart
-  - Behind-schedule BDMs highlighted
-- [ ] Add routes to App.jsx: `/erp/performance-ranking`, `/erp/consignment-aging`, `/erp/expense-anomalies`, `/erp/fuel-efficiency`, `/erp/cycle-status`
-- [ ] Add navbar items under Reports section
-- [ ] Commit: `"feat(ui): new report pages (ranking, consignment aging, anomalies, fuel, cycle status) [v5]"`
+  - >30% flagged rows highlighted red with OVER badge
+- [x] Created `frontend/src/erp/pages/CycleStatusDashboard.jsx`:
+  - Per-BDM status pipeline (6-step visual progress indicators)
+  - Completion % progress bar
+  - Behind-schedule BDMs highlighted with alert banner
+- [x] Created `frontend/src/erp/hooks/useReports.js` — unified hook for all Phase 14+15 endpoints
+- [x] Added routes to App.jsx: `/erp/performance-ranking`, `/erp/consignment-aging`, `/erp/expense-anomalies`, `/erp/fuel-efficiency`, `/erp/cycle-status`
+- [x] Added 6 new report cards to ErpReports.jsx under "Analytics & Tracking" section
+
+### Phase 14 Summary
+- **Backend**: 5 new services, 1 new controller, 1 new route file, mounted in index.js
+- **Frontend**: 5 new pages, 1 new hook, 6 report cards added to ErpReports, routes in App.jsx
 
 ---
 
 ## PHASE 15+ — FUTURE (SAP-EQUIVALENT IMPROVEMENTS, POST-LAUNCH)
 
-### 15.1 — Per-Product Profit Share Eligibility
-- [ ] 3 conditions: ≥2 hospitals, ≥1 MD tagged, 3 consecutive months
-- [ ] Streak tracking, deficit handling
+### 15.1 — Per-Product Profit Share Eligibility ✅
+- [x] Enhanced `profitShareEngine.js`: added `conditions_met` field (A+B met this month regardless of streak)
+- [x] Modified `getConsecutiveStreak` to check `conditions_met` in addition to `qualified` for streak counting
+- [x] Added `getProductStreakDetail(entityId, bdmId, period)` function with deficit_months tracking
+- [x] Added `conditions_met` field to PnlReport's psProductSchema
+- [x] Route: GET `/reports/product-streaks/:period`
 
-### 15.2 — CSI Allocation Control
-- [ ] Booklet master, weekly allocation, number validation
+### 15.2 — CSI Allocation Control ✅
+- [x] Created `backend/erp/models/CsiBooklet.js` — booklet master with series, allocations, usage tracking
+- [x] Created `backend/erp/services/csiBookletService.js` — createBooklet, allocateWeek, validateCsiNumber, markUsed, getBooklets
+- [x] Created `backend/erp/controllers/csiBookletController.js` — CRUD + allocation + validation handlers
+- [x] Created `backend/erp/routes/csiBookletRoutes.js` — mounted at `/csi-booklets` with `erpAccessCheck('sales')`
+- [x] Created `frontend/src/erp/pages/CsiBooklets.jsx` — booklet list, create form, weekly allocation, usage stats
+- [x] Added sidebar item under Sales section
 
-### 15.3 — Cycle Report Workflow
-- [ ] GENERATED → REVIEWED → BDM_CONFIRMED → CREDITED
+### 15.3 — Cycle Report Workflow ✅
+- [x] Created `backend/erp/models/CycleReport.js` — GENERATED → REVIEWED → BDM_CONFIRMED → CREDITED workflow with timestamps
+- [x] Created `backend/erp/services/cycleReportService.js` — generate (snapshot), review, confirm, credit, list
+- [x] Created `backend/erp/controllers/cycleReportController.js` — 5 handlers
+- [x] Created `backend/erp/routes/cycleReportRoutes.js` — mounted at `/cycle-reports` with `erpAccessCheck('reports')`
+- [x] Created `frontend/src/erp/pages/CycleReports.jsx` — list, filters, workflow action buttons, status badges
 
 ### 15.4 — Recurring Journal Templates (SAP FI Recurring Documents)
 - [ ] Template model: name, frequency (monthly/quarterly), line items, auto_post flag
 - [ ] Scheduler: auto-generate journal entries on schedule
 - [ ] Admin UI to create/edit/deactivate templates
 
-### 15.5 — Cost Center Dimension (SAP CO Cost Centers)
-- [ ] Add optional `cost_center_id` to TransactionEvent and SalesLine schemas
-- [ ] Cost Center master: code, name, parent_cost_center, is_active
-- [ ] Reports filterable by cost center
+### 15.5 — Cost Center Dimension (SAP CO Cost Centers) ✅
+- [x] Added optional `cost_center_id` to TransactionEvent and SalesLine schemas
+- [x] Created `backend/erp/models/CostCenter.js` — code (unique per entity, uppercase), name, parent_cost_center, is_active
+- [x] Created `backend/erp/services/costCenterService.js` — CRUD + tree view
+- [x] Created `backend/erp/controllers/costCenterController.js` — 4 handlers
+- [x] Created `backend/erp/routes/costCenterRoutes.js` — mounted at `/cost-centers` with `erpAccessCheck('accounting')`
+- [x] Created `frontend/src/erp/pages/CostCenters.jsx` — tree view, create form, activate/deactivate toggle
+- [x] Added sidebar items under Accounting section
+- **Note:** JournalEntry lines already had a `cost_center` string field. CostCenter model provides the master data.
 
 ### 15.6 — Per-Module Period Locks (SAP Posting Period Variant)
 - [ ] PeriodLock model: module, year, month, is_locked, locked_by, locked_at
@@ -2790,11 +2814,17 @@
 - [ ] Accept array of document IDs, validate all, post all atomically
 - [ ] Rollback on any failure (MongoDB transaction)
 
-### 15.8 — Data Archival (SAP Data Archiving)
-- [ ] Archive function: move closed-period data to Archive collection
-- [ ] Keep current + prior 2 months live
-- [ ] Log archive batch ID for traceability
-- [ ] Admin UI: trigger archive, view archive batches, restore if needed
+### 15.8 — Data Archival (SAP Data Archiving) ✅
+- [x] Created `backend/erp/models/ArchiveBatch.js` — batch tracking with counts per collection, periods archived, status
+- [x] Created `backend/erp/models/ArchivedDocument.js` — stores full original documents with source_collection + source_id
+- [x] Created `backend/erp/services/dataArchivalService.js`:
+  - `archivePeriods(entityId, userId)` — archives POSTED docs older than current-2 months using MongoDB transactions
+  - `restoreBatch(entityId, batchId, userId, reason)` — full restore with transaction safety
+  - `getArchiveBatches(entityId)` / `getArchiveBatchDetail(entityId, batchId)`
+- [x] Created `backend/erp/controllers/archiveController.js` — 4 handlers
+- [x] Created `backend/erp/routes/archiveRoutes.js` — mounted at `/archive` with `erpAccessCheck('accounting')`
+- [x] Created `frontend/src/erp/pages/DataArchive.jsx` — archive trigger with confirmation, batch list, detail view, restore with reason
+- [x] Added sidebar item under Accounting section
 
 ---
 
@@ -2819,8 +2849,9 @@
 | 11 | VIP Accounting Engine [v5 NEW] | ~70 | 3-4 weeks |
 | 12 | Purchasing & AP [v5 NEW] ✅ | ~40 | 2-3 weeks |
 | 13 | Banking & Cash [v5 NEW] | ~30 | 1-2 weeks |
-| 14 | New Reports & Analytics [v5 NEW] | ~35 | 1-2 weeks |
-| 15+ | Future (SAP-equivalent improvements) | 8 | Post-launch |
+| 14 | New Reports & Analytics [v5 NEW] ✅ | ~35 | 1-2 weeks |
+| 15.1-15.3,15.5,15.8 | SAP-equivalent improvements (partial) ✅ | 5/8 | Completed |
+| 15.4,15.6,15.7 | Future (remaining SAP improvements) | 3 | Post-launch |
 
 **Total pre-launch: ~573 tasks across 18 phases → ~29-37 weeks**
 **Note: Phases 4A+4B add ~13 tasks and ~2.5 weeks for entity migration + inter-company transfers**

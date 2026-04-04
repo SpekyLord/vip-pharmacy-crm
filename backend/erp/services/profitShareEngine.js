@@ -143,7 +143,8 @@ async function getConsecutiveStreak(entityId, bdmId, productId, currentPeriod, l
       p => p.product_id?.toString() === pidStr
     );
 
-    if (prod?.qualified) {
+    // Phase 15.1: check conditions_met (A+B) for streak, fallback to qualified
+    if (prod?.conditions_met || prod?.qualified) {
       streak++;
     } else {
       break; // streak broken
@@ -219,7 +220,8 @@ async function evaluateEligibility(entityId, bdmId, period, pnlData) {
       hospital_count: hCount,
       md_count: mCount,
       consecutive_months: passesA && passesB ? streak + 1 : 0, // +1 for current month
-      qualified
+      qualified,
+      conditions_met: passesA && passesB  // Phase 15.1: track A+B regardless of streak
     });
   }
 
@@ -249,9 +251,73 @@ async function evaluateEligibility(entityId, bdmId, period, pnlData) {
   };
 }
 
+/**
+ * Phase 15.1: Per-product streak detail for eligibility dashboard
+ */
+async function getProductStreakDetail(entityId, bdmId, period) {
+  const settings = await Settings.getSettings();
+  const minHospitals = settings.PROFIT_SHARE_MIN_HOSPITALS || 2;
+  const maxProductsPerMd = settings.MD_MAX_PRODUCT_TAGS || 3;
+  const consecutiveMonths = settings.PS_CONSECUTIVE_MONTHS || 3;
+
+  const { start, end } = periodToDates(period);
+
+  const hospitalCounts = await getProductHospitalCount(entityId, bdmId, start, end);
+  const mdCounts = await getProductMdTags(entityId, bdmId, start, end, maxProductsPerMd);
+  const allProductIds = new Set([...hospitalCounts.keys(), ...mdCounts.keys()]);
+
+  const results = [];
+  for (const pid of allProductIds) {
+    const hCount = hospitalCounts.get(pid) || 0;
+    const mCount = mdCounts.get(pid) || 0;
+    const passesA = hCount >= minHospitals;
+    const passesB = mCount >= 1;
+    const conditionsMet = passesA && passesB;
+
+    let streak = 0;
+    if (conditionsMet) {
+      streak = await getConsecutiveStreak(entityId, bdmId, pid, period, consecutiveMonths + 3);
+    }
+
+    // Count deficit months from PnlReport history
+    let deficitMonths = 0;
+    if (conditionsMet) {
+      let [year, month] = period.split('-').map(Number);
+      for (let i = 0; i < streak; i++) {
+        month -= 1;
+        if (month < 1) { month = 12; year -= 1; }
+        const p = `${year}-${String(month).padStart(2, '0')}`;
+        const pnl = await PnlReport.findOne({
+          entity_id: new mongoose.Types.ObjectId(entityId),
+          bdm_id: new mongoose.Types.ObjectId(bdmId),
+          period: p
+        }).select('net_income').lean();
+        if (pnl && (pnl.net_income || 0) <= 0) deficitMonths++;
+      }
+    }
+
+    results.push({
+      product_id: pid,
+      product_name: '',
+      hospital_count: hCount,
+      md_count: mCount,
+      condition_a_met: passesA,
+      condition_b_met: passesB,
+      conditions_met: conditionsMet,
+      consecutive_months: conditionsMet ? streak + 1 : 0,
+      required_months: consecutiveMonths,
+      qualified: conditionsMet && streak >= consecutiveMonths,
+      deficit_months: deficitMonths
+    });
+  }
+
+  return results;
+}
+
 module.exports = {
   evaluateEligibility,
   getProductHospitalCount,
   getProductMdTags,
-  getConsecutiveStreak
+  getConsecutiveStreak,
+  getProductStreakDetail
 };

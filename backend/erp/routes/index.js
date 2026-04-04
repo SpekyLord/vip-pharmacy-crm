@@ -48,6 +48,9 @@ router.use('/', erpAccessCheck('reports'), require('./incomeRoutes'));
 // ═══ Phase 8 — Dashboard & Reports ═══
 router.use('/dashboard', erpAccessCheck('reports'), require('./dashboardRoutes'));
 
+// ═══ Phase 14 — New Reports & Analytics ═══
+router.use('/reports', erpAccessCheck('reports'), require('./erpReportRoutes'));
+
 // ═══ Phase 9 — Integration & Document Flow ═══
 router.use('/documents', erpAccessCheck('reports'), require('./documentRoutes'));
 router.use('/crm-bridge', require('./crmBridgeRoutes'));
@@ -65,5 +68,14 @@ router.use('/month-end-close', erpAccessCheck('accounting'), require('./monthEnd
 
 // ═══ Phase 12 — Purchasing & AP ═══
 router.use('/purchasing', erpAccessCheck('purchasing'), require('./purchasingRoutes'));
+
+// ═══ Phase 13 — Banking & Cash ═══
+router.use('/banking', erpAccessCheck('accounting'), require('./bankingRoutes'));
+
+// ═══ Phase 15 — SAP-Equivalent Improvements ═══
+router.use('/csi-booklets', erpAccessCheck('sales'), require('./csiBookletRoutes'));
+router.use('/cycle-reports', erpAccessCheck('reports'), require('./cycleReportRoutes'));
+router.use('/cost-centers', erpAccessCheck('accounting'), require('./costCenterRoutes'));
+router.use('/archive', erpAccessCheck('accounting'), require('./archiveRoutes'));
 
 module.exports = router;
