@@ -51,6 +51,9 @@ const transactionEventSchema = new mongoose.Schema({
     event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
     relationship: { type: String, enum: ['SETTLES', 'CERTIFIES', 'DEPOSITS', 'REVERSES'] }
   }],
+  // Phase 15.5: Cost Center dimension
+  cost_center_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CostCenter' },
+
   corrects_event_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'TransactionEvent',

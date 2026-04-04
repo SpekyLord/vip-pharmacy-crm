@@ -87,11 +87,29 @@ const LoansPage = lazy(() => import('./erp/pages/Loans'));
 const OwnerEquity = lazy(() => import('./erp/pages/OwnerEquity'));
 const MonthEndClose = lazy(() => import('./erp/pages/MonthEndClose'));
 
+// Phase 13 — Banking & Cash
+const BankAccounts = lazy(() => import('./erp/pages/BankAccounts'));
+const BankReconciliation = lazy(() => import('./erp/pages/BankReconciliation'));
+const CreditCardLedger = lazy(() => import('./erp/pages/CreditCardLedger'));
+
 // Phase 12 — Purchasing & AP
 const VendorList = lazy(() => import('./erp/pages/VendorList'));
 const PurchaseOrders = lazy(() => import('./erp/pages/PurchaseOrders'));
 const SupplierInvoices = lazy(() => import('./erp/pages/SupplierInvoices'));
 const AccountsPayable = lazy(() => import('./erp/pages/AccountsPayable'));
+
+// Phase 14 — New Reports & Analytics
+const PerformanceRanking = lazy(() => import('./erp/pages/PerformanceRanking'));
+const ConsignmentAging = lazy(() => import('./erp/pages/ConsignmentAging'));
+const ExpenseAnomalies = lazy(() => import('./erp/pages/ExpenseAnomalies'));
+const FuelEfficiency = lazy(() => import('./erp/pages/FuelEfficiency'));
+const CycleStatusDashboard = lazy(() => import('./erp/pages/CycleStatusDashboard'));
+
+// Phase 15 — SAP-Equivalent Improvements
+const CsiBooklets = lazy(() => import('./erp/pages/CsiBooklets'));
+const CycleReports = lazy(() => import('./erp/pages/CycleReports'));
+const CostCenters = lazy(() => import('./erp/pages/CostCenters'));
+const DataArchive = lazy(() => import('./erp/pages/DataArchive'));
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -570,6 +588,24 @@ function App() {
           <Route path="/erp/purchase-orders" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="purchasing"><PurchaseOrders /></ProtectedRoute>} />
           <Route path="/erp/supplier-invoices" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="purchasing"><SupplierInvoices /></ProtectedRoute>} />
           <Route path="/erp/accounts-payable" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="purchasing"><AccountsPayable /></ProtectedRoute>} />
+
+          {/* Phase 13 — Banking & Cash */}
+          <Route path="/erp/bank-accounts" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><BankAccounts /></ProtectedRoute>} />
+          <Route path="/erp/bank-recon" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><BankReconciliation /></ProtectedRoute>} />
+          <Route path="/erp/credit-card-ledger" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><CreditCardLedger /></ProtectedRoute>} />
+
+          {/* Phase 14 — New Reports & Analytics */}
+          <Route path="/erp/performance-ranking" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="reports"><PerformanceRanking /></ProtectedRoute>} />
+          <Route path="/erp/consignment-aging" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="reports"><ConsignmentAging /></ProtectedRoute>} />
+          <Route path="/erp/expense-anomalies" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="reports"><ExpenseAnomalies /></ProtectedRoute>} />
+          <Route path="/erp/fuel-efficiency" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="reports"><FuelEfficiency /></ProtectedRoute>} />
+          <Route path="/erp/cycle-status" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="reports"><CycleStatusDashboard /></ProtectedRoute>} />
+
+          {/* Phase 15 — SAP-Equivalent Improvements */}
+          <Route path="/erp/csi-booklets" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="sales"><CsiBooklets /></ProtectedRoute>} />
+          <Route path="/erp/cycle-reports" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="reports"><CycleReports /></ProtectedRoute>} />
+          <Route path="/erp/cost-centers" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><CostCenters /></ProtectedRoute>} />
+          <Route path="/erp/data-archive" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><DataArchive /></ProtectedRoute>} />
 
           <Route path="/employee/*" element={<EmployeeRedirect />} />
           <Route path="/employee" element={<EmployeeRedirect />} />

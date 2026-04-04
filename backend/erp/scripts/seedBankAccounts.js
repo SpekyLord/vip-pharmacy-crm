@@ -17,6 +17,7 @@ const VIP_ACCOUNTS = [
   { bank_code: 'SBC_CA', bank_name: 'Security Bank Current', account_type: 'CURRENT', coa_code: '1011' },
   { bank_code: 'RCBC_CA', bank_name: 'RCBC Current', account_type: 'CURRENT', coa_code: '1012' },
   { bank_code: 'MBTC_CA', bank_name: 'MBTC Current', account_type: 'CURRENT', coa_code: '1014' },
+  { bank_code: 'UB_SA', bank_name: 'UnionBank Savings', account_type: 'SAVINGS', coa_code: '1013' },
   { bank_code: 'GCASH', bank_name: 'VIP GCash', account_type: 'SAVINGS', coa_code: '1015' },
 ];
 

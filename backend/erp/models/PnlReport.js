@@ -13,7 +13,8 @@ const psProductSchema = new mongoose.Schema({
   hospital_count: { type: Number, default: 0 },    // Condition A
   md_count: { type: Number, default: 0 },           // Condition B
   consecutive_months: { type: Number, default: 0 },  // Condition C streak
-  qualified: { type: Boolean, default: false }
+  qualified: { type: Boolean, default: false },
+  conditions_met: { type: Boolean, default: false }  // Phase 15.1: A+B met this month
 }, { _id: false });
 
 const pnlReportSchema = new mongoose.Schema({
