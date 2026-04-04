@@ -12,17 +12,29 @@
 
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LogOut, Menu, Moon, Sun } from 'lucide-react';
+import {
+  BarChart3,
+  LayoutGrid,
+  LogOut,
+  Menu,
+  Moon,
+  Package,
+  Receipt,
+  Repeat,
+  ShoppingCart,
+  Sun,
+  Wallet,
+} from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const ERP_TABS = [
-  { label: 'Dashboard', path: '/erp' },
-  { label: 'Sales', path: '/erp/sales' },
-  { label: 'Inventory', path: '/erp/my-stock' },
-  { label: 'Transfers', path: '/erp/transfers' },
-  { label: 'Collections', path: '/erp/collections' },
-  { label: 'Expenses', path: '/erp/expenses' },
-  { label: 'Reports', path: '/erp/reports' },
+  { label: 'Dashboard', path: '/erp', icon: LayoutGrid },
+  { label: 'Sales', path: '/erp/sales', icon: ShoppingCart },
+  { label: 'Inventory', path: '/erp/my-stock', icon: Package },
+  { label: 'Transfers', path: '/erp/transfers', icon: Repeat },
+  { label: 'Collections', path: '/erp/collections', icon: Wallet },
+  { label: 'Expenses', path: '/erp/expenses', icon: Receipt },
+  { label: 'Reports', path: '/erp/reports', icon: BarChart3 },
 ];
 
 const ADMIN_LIKE_ROLES = ['admin', 'finance', 'president', 'ceo'];
@@ -115,13 +127,13 @@ const navbarStyles = `
     align-items: center;
     gap: 8px;
     min-width: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+    overflow: hidden;
   }
 
-  .navbar-erp-tabs::-webkit-scrollbar {
-    display: none;
+  .navbar-erp-tabs--fluid {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 8px;
   }
 
   .navbar-erp-tab,
@@ -141,6 +153,27 @@ const navbarStyles = `
     text-decoration: none;
     transition: all 0.18s ease;
     flex-shrink: 0;
+  }
+
+  .navbar-erp-tab--stacked {
+    flex-direction: column;
+    min-height: 54px;
+    padding: 6px 10px;
+    gap: 4px;
+    flex: 1 1 0;
+    min-width: 64px;
+  }
+
+  .navbar-erp-tab-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .navbar-erp-tab-label {
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.02em;
   }
 
   .navbar-erp-tab:hover {
@@ -431,6 +464,22 @@ const navbarStyles = `
   }
 
   @media (max-width: 1024px) {
+    .navbar-erp-tabs--fluid {
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .navbar-erp-tabs--fluid::-webkit-scrollbar {
+      display: none;
+    }
+
+    .navbar-erp-tab--stacked {
+      flex: 0 0 auto;
+    }
+
     .navbar-profile-info {
       display: none;
     }
@@ -625,16 +674,25 @@ const Navbar = () => {
             </Link>
           </div>
 
-          <div className="navbar-erp-tabs" aria-label={isErpRoute ? 'ERP tabs' : 'CRM tabs'}>
+          <div
+            className={`navbar-erp-tabs ${isErpRoute ? 'navbar-erp-tabs--fluid' : ''}`.trim()}
+            aria-label={isErpRoute ? 'ERP tabs' : 'CRM tabs'}
+          >
             {platformTabs.map((tab) => {
               const isActive = isTabActive(tab.path);
+              const Icon = tab.icon;
               return (
                 <Link
                   key={tab.label}
                   to={tab.path}
-                  className={`navbar-erp-tab ${isActive ? 'active' : ''}`.trim()}
+                  className={`navbar-erp-tab ${isErpRoute ? 'navbar-erp-tab--stacked' : ''} ${isActive ? 'active' : ''}`.trim()}
                 >
-                  {tab.label}
+                  {Icon && (
+                    <span className="navbar-erp-tab-icon" aria-hidden="true">
+                      <Icon size={18} />
+                    </span>
+                  )}
+                  <span className="navbar-erp-tab-label">{tab.label}</span>
                 </Link>
               );
             })}
