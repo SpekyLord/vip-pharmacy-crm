@@ -321,12 +321,13 @@ export default function TransferOrders() {
   };
 
   return (
-    <div className="transfers-page" style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="admin-page erp-page transfers-page">
       <style>{pageStyles}</style>
-      <Sidebar />
-      <div className="transfers-main">
-        <Navbar />
-        <div className="transfers-inner">
+      <Navbar />
+      <div className="admin-layout">
+        <Sidebar />
+        <div className="transfers-main">
+          <div className="transfers-inner">
           <div className="transfers-header">
             <h1>Stock Transfers</h1>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -422,7 +423,7 @@ export default function TransferOrders() {
           )}
         </div>
 
-        {/* ═══ IC TRANSFER CREATE MODAL ═══ */}
+          {/* ═══ IC TRANSFER CREATE MODAL ═══ */}
         {showCreate && (
           <div className="modal-overlay" onClick={() => setShowCreate(false)}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -540,7 +541,7 @@ export default function TransferOrders() {
           </div>
         )}
 
-        {/* ═══ INTERNAL REASSIGNMENT CREATE MODAL ═══ */}
+          {/* ═══ INTERNAL REASSIGNMENT CREATE MODAL ═══ */}
         {showCreateReassign && (
           <div className="modal-overlay" onClick={() => setShowCreateReassign(false)}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -636,7 +637,7 @@ export default function TransferOrders() {
           </div>
         )}
 
-        {/* ═══ IC TRANSFER DETAIL MODAL ═══ */}
+          {/* ═══ IC TRANSFER DETAIL MODAL ═══ */}
         {detail && (
           <div className="modal-overlay" onClick={() => setDetail(null)}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -699,6 +700,7 @@ export default function TransferOrders() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
