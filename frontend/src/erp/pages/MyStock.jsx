@@ -522,8 +522,8 @@ export default function MyStock() {
                   <tr><th>Product</th><th>Batch</th><th>Expiry</th><th>Days Left</th><th>Qty</th></tr>
                 </thead>
                 <tbody>
-                  {(alertData.expiry_alerts || []).map((a, i) => (
-                    <tr key={i} style={{ background: a.days_remaining < 30 ? '#fef2f2' : a.days_remaining < 120 ? '#fffbeb' : undefined }}>
+                  {(alertData.expiry_alerts || []).map((a) => (
+                    <tr key={`${a.product_id || ''}-${a.batch_lot_no}`} style={{ background: a.days_remaining < 30 ? '#fef2f2' : a.days_remaining < 120 ? '#fffbeb' : undefined }}>
                       <td><strong>{a.product?.brand_name || 'Unknown'}</strong></td>
                       <td>{a.batch_lot_no}</td>
                       <td>{new Date(a.expiry_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' })}</td>
@@ -548,8 +548,8 @@ export default function MyStock() {
                   <tr><th>Product</th><th>Current</th><th>Min Qty</th><th>Safety</th><th>Suggested Order</th><th>Lead Time</th><th>Order By</th></tr>
                 </thead>
                 <tbody>
-                  {(alertData.reorder_alerts || []).map((a, i) => (
-                    <tr key={i} style={{ background: a.below_safety ? '#fef2f2' : '#fffbeb' }}>
+                  {(alertData.reorder_alerts || []).map((a) => (
+                    <tr key={a.product_id || a.product?.brand_name} style={{ background: a.below_safety ? '#fef2f2' : '#fffbeb' }}>
                       <td><strong>{a.product?.brand_name || 'Unknown'}</strong></td>
                       <td style={{ fontWeight: 700, color: a.below_safety ? '#dc2626' : '#d97706' }}>{a.current_qty}</td>
                       <td>{a.reorder_min_qty}</td>

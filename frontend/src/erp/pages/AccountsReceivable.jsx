@@ -144,8 +144,8 @@ export default function AccountsReceivable() {
                             <table>
                               <thead><tr><th>CSI #</th><th>Date</th><th>Invoice</th><th>Collected</th><th>Balance</th><th>Days</th><th>Dunning</th></tr></thead>
                               <tbody>
-                                {h.csis.map((csi, i) => (
-                                  <tr key={i}>
+                                {h.csis.map((csi) => (
+                                  <tr key={csi._id || csi.doc_ref}>
                                     <td style={{ fontWeight: 600 }}>{csi.doc_ref}</td>
                                     <td>{new Date(csi.csi_date).toLocaleDateString('en-PH')}</td>
                                     <td>{fmt(csi.invoice_total)}</td>

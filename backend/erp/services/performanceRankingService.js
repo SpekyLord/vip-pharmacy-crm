@@ -44,7 +44,7 @@ async function aggregateByBdm(Model, entityId, dateField, amountField, start, en
 /**
  * Aggregate expenses across 3 sources for a period, grouped by bdm_id
  */
-async function aggregateExpenses(entityId, start, end) {
+async function aggregateExpenses(entityId, start) {
   const eId = new mongoose.Types.ObjectId(entityId);
   const periodStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
   const baseMatch = { entity_id: eId, status: 'POSTED' };
@@ -88,8 +88,8 @@ async function getNetCashRanking(entityId, period) {
   const [salesMap, collectionsMap, expensesMap, people] = await Promise.all([
     aggregateByBdm(SalesLine, entityId, 'csi_date', 'invoice_total', start, end),
     aggregateByBdm(Collection, entityId, 'cr_date', 'cr_amount', start, end),
-    aggregateExpenses(entityId, start, end),
-    PeopleMaster.find({ entity_id: eId, is_active: true, person_type: { $in: ['BDM', 'SALES_REP'] } })
+    aggregateExpenses(entityId, start),
+    PeopleMaster.find({ entity_id: eId, is_active: true, person_type: { $in: ['BDM', 'ECOMMERCE_BDM', 'SALES_REP'] } })
       .select('user_id full_name person_type position').lean()
   ]);
 
@@ -157,7 +157,7 @@ async function getMomTrend(entityId, personId, periods = 6) {
 
     const sales = bdmId ? (salesMap.get(bdmId) || 0) : 0;
     const collections = bdmId ? (collectionsMap.get(bdmId) || 0) : 0;
-    const expenses = expensesMap.get('total') || expensesMap.get(bdmId) || 0;
+    const expenses = expensesMap.get('total') || 0;
 
     trends.unshift({ period: p, sales: Math.round(sales * 100) / 100, collections: Math.round(collections * 100) / 100, expenses: Math.round(expenses * 100) / 100 });
   }

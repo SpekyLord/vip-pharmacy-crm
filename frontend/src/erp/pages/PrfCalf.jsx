@@ -210,8 +210,8 @@ export default function PrfCalf() {
             <div style={{ marginBottom: 16 }}>
               <h3 style={{ fontSize: 14, margin: '0 0 8px', color: '#7c3aed' }}>Pending Partner Rebates</h3>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {pendingRebates.map((p, i) => (
-                  <div key={i} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e9d5ff', background: '#faf5ff', minWidth: 200, cursor: 'pointer' }} onClick={() => handleCreateFromRebate(p)}>
+                {pendingRebates.map((p) => (
+                  <div key={p._id || p.doctor_name} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e9d5ff', background: '#faf5ff', minWidth: 200, cursor: 'pointer' }} onClick={() => handleCreateFromRebate(p)}>
                     <div style={{ fontWeight: 600, fontSize: 13, color: '#7c3aed' }}>{p.doctor_name}</div>
                     <div style={{ fontSize: 18, fontWeight: 700, color: '#581c87' }}>₱{p.remaining?.toLocaleString()}</div>
                     <div style={{ fontSize: 11, color: '#6b7280' }}>
@@ -229,8 +229,8 @@ export default function PrfCalf() {
             <div style={{ marginBottom: 16 }}>
               <h3 style={{ fontSize: 14, margin: '0 0 8px', color: '#0891b2' }}>Company-Funded Items Needing CALF</h3>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {pendingCalfLines.map((item, i) => (
-                  <div key={i} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #a5f3fc', background: '#ecfeff', minWidth: 200, cursor: 'pointer' }} onClick={() => handleCreateFromCalfLines(item)}>
+                {pendingCalfLines.map((item) => (
+                  <div key={item._id || `${item.source}-${item.period}`} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #a5f3fc', background: '#ecfeff', minWidth: 200, cursor: 'pointer' }} onClick={() => handleCreateFromCalfLines(item)}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
                       <span style={{ padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, color: '#fff', background: item.source === 'FUEL' ? '#ea580c' : '#0891b2' }}>{item.source}</span>
                       <span style={{ fontWeight: 600, fontSize: 12, color: '#0891b2' }}>{item.period} {item.cycle}</span>

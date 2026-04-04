@@ -65,6 +65,12 @@ async function generateCycleReport(entityId, bdmId, period, cycle, userId) {
     total: expenses_total
   };
 
+  // Guard: don't overwrite reports past GENERATED status
+  const existing = await CycleReport.findOne({ entity_id: eId, bdm_id: bId, period, cycle }).select('status').lean();
+  if (existing && ['REVIEWED', 'BDM_CONFIRMED', 'CREDITED'].includes(existing.status)) {
+    throw Object.assign(new Error(`Cannot regenerate report in ${existing.status} status. It must be reverted first.`), { statusCode: 400 });
+  }
+
   // Create or update cycle report
   const report = await CycleReport.findOneAndUpdate(
     { entity_id: eId, bdm_id: bId, period, cycle },

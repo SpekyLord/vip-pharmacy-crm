@@ -103,8 +103,8 @@ export default function PersonDetail() {
                 <table className="pd-comp-table">
                   <thead><tr><th>Effective</th><th>Type</th><th>Basic</th><th>Gross</th><th>Status</th></tr></thead>
                   <tbody>
-                    {person.comp_history.map((c, i) => (
-                      <tr key={i}>
+                    {person.comp_history.map((c) => (
+                      <tr key={c._id || c.effective_date}>
                         <td>{new Date(c.effective_date).toLocaleDateString()}</td>
                         <td>{c.salary_type?.replace(/_/g, ' ')}</td>
                         <td>{fmt(c.basic_salary)}</td>

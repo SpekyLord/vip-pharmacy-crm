@@ -127,8 +127,8 @@ export default function AccountsPayable() {
           <table className="ap-table">
             <thead><tr><th>Vendor</th><th>Outstanding</th><th>Invoices</th></tr></thead>
             <tbody>
-              {aging.vendor_breakdown.map((v, i) => (
-                <tr key={i}>
+              {aging.vendor_breakdown.map((v) => (
+                <tr key={v.vendor_name || v._id}>
                   <td style={{ fontWeight: 600 }}>{v.vendor_name || '—'}</td>
                   <td style={{ fontWeight: 600 }}>{fmt(v.total)}</td>
                   <td>{v.count}</td>
@@ -147,8 +147,8 @@ export default function AccountsPayable() {
       <table className="ap-table">
         <thead><tr><th>Vendor</th><th>Outstanding</th><th>Invoices</th><th>Oldest</th><th>Newest</th></tr></thead>
         <tbody>
-          {consolidated.map((v, i) => (
-            <tr key={i}>
+          {consolidated.map((v) => (
+            <tr key={v.vendor_name || v._id}>
               <td style={{ fontWeight: 600 }}>{v.vendor_name || '—'}</td>
               <td style={{ fontWeight: 600 }}>{fmt(v.total_outstanding)}</td>
               <td>{v.invoice_count}</td>
@@ -168,8 +168,8 @@ export default function AccountsPayable() {
       <table className="ap-table">
         <thead><tr><th>PO #</th><th>Vendor</th><th>Item</th><th>Received</th><th>Invoiced</th><th>Uninvoiced</th><th>Est. Value</th></tr></thead>
         <tbody>
-          {grniData.map((g, i) => (
-            <tr key={i}>
+          {grniData.map((g) => (
+            <tr key={g._id || `${g.po_number}-${g.item_key}`}>
               <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{g.po_number}</td>
               <td>{g.vendor_name || '—'}</td>
               <td>{g.item_key || g.product_id}</td>

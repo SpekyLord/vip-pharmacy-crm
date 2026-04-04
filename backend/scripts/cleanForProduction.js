@@ -157,6 +157,11 @@ async function cleanS3() {
 }
 
 async function main() {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_DATA_SCRIPTS !== 'true') {
+    console.error('Refusing to run cleanup in production. Set ALLOW_PROD_DATA_SCRIPTS=true to override.');
+    process.exit(1);
+  }
+
   console.log('\n╔══════════════════════════════════════════╗');
   console.log('║  CLEAN DATABASE & S3 FOR PRODUCTION      ║');
   console.log('╚══════════════════════════════════════════╝');

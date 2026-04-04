@@ -186,11 +186,11 @@ export default function ProfitSharing() {
                   {products.length === 0 && (
                     <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 24 }}>No product data for this period</td></tr>
                   )}
-                  {products.map((p, i) => {
+                  {products.map((p) => {
                     const passA = p.hospital_count >= 2;
                     const passB = p.md_count >= 1;
                     return (
-                      <tr key={i}>
+                      <tr key={p.product_id || p.product_name}>
                         <td>{p.product_name || p.product_id}</td>
                         <td style={{ textAlign: 'center' }}>
                           <span className={`cond ${passA ? 'cond-pass' : 'cond-fail'}`}>{passA ? '✓' : '✗'}</span>

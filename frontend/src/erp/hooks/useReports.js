@@ -37,6 +37,12 @@ export default function useReports() {
   const updateCostCenter = (id, data) => api.put(`/cost-centers/${id}`, data);
   const getCostCenterTree = () => api.get('/cost-centers/tree');
 
+  // ═══ Budget Allocations ═══
+  const getBudgetAllocations = (params) => api.get('/budget-allocations', { params });
+  const createBudgetAllocation = (data) => api.post('/budget-allocations', data);
+  const updateBudgetAllocation = (id, data) => api.put(`/budget-allocations/${id}`, data);
+  const approveBudgetAllocation = (id) => api.post(`/budget-allocations/${id}/approve`);
+
   // ═══ Phase 15.8 — Data Archive ═══
   const triggerArchive = () => api.post('/archive/trigger');
   const getArchiveBatches = () => api.get('/archive/batches');
@@ -56,6 +62,8 @@ export default function useReports() {
     // Phase 15.5
     getCostCenters, createCostCenter, updateCostCenter, getCostCenterTree,
     // Phase 15.8
-    triggerArchive, getArchiveBatches, getArchiveBatchDetail, restoreBatch
+    triggerArchive, getArchiveBatches, getArchiveBatchDetail, restoreBatch,
+    // Budget Allocations
+    getBudgetAllocations, createBudgetAllocation, updateBudgetAllocation, approveBudgetAllocation
   };
 }

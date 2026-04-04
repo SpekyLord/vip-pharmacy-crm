@@ -5,8 +5,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:worker": "node worker.js",
     "dev": "nodemon server.js",
     "test": "jest --watchAll --verbose",
+    "test:ci": "jest --ci --runInBand",
+    "test:smoke": "jest --ci --runInBand --testPathPattern=smoke",
+    "startup:check": "node scripts/startupCheck.js",
     "seed": "node scripts/seedData.js"
   },
   "keywords": [
@@ -32,7 +36,7 @@
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
     "express-mongo-sanitize": "^2.2.0",
-    "express-rate-limit": "^8.2.1",
+    "express-rate-limit": "^8.3.2",
     "express-validator": "^7.3.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
@@ -44,6 +48,12 @@
     "sharp": "^0.34.5",
     "uuid": "^11.0.3",
     "xlsx": "^0.18.5"
+  },
+  "overrides": {
+    "fast-xml-parser": "^5.5.10",
+    "path-to-regexp": "^0.1.13",
+    "qs": "^6.15.0",
+    "lodash": "^4.18.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",

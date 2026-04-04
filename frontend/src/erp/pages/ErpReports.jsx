@@ -150,6 +150,11 @@ export default function ErpReports() {
               <h3>Cycle Reports</h3>
               <p>Generate, review, confirm, and credit cycle reports.</p>
             </Link>
+            <Link to="/erp/budget-allocations" className="report-card">
+              <div className="icon">💰</div>
+              <h3>Budget Allocations</h3>
+              <p>Set per-BDM expense budgets by component. Feeds Budget Overruns report.</p>
+            </Link>
           </div>
 
           {/* Quick Summary Reports */}
@@ -170,8 +175,8 @@ export default function ErpReports() {
                 <thead><tr><th>Hospital</th><th>Invoices</th><th style={{ textAlign: 'right' }}>Total Sales</th><th style={{ textAlign: 'right' }}>VAT</th><th style={{ textAlign: 'right' }}>Net</th></tr></thead>
                 <tbody>
                   {salesData.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No sales data for this period</td></tr>}
-                  {salesData.map((r, i) => (
-                    <tr key={i}>
+                  {salesData.map((r) => (
+                    <tr key={r._id || r.hospital_name}>
                       <td style={{ fontWeight: 600 }}>{r.hospital_name}</td>
                       <td>{r.total_invoices}</td>
                       <td>{fmt(r.total_sales)}</td>
@@ -192,8 +197,8 @@ export default function ErpReports() {
                 <thead><tr><th>Hospital</th><th>CRs</th><th style={{ textAlign: 'right' }}>Collected</th><th style={{ textAlign: 'right' }}>Commission</th><th style={{ textAlign: 'right' }}>Rebates</th></tr></thead>
                 <tbody>
                   {collData.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No collection data for this period</td></tr>}
-                  {collData.map((r, i) => (
-                    <tr key={i}>
+                  {collData.map((r) => (
+                    <tr key={r._id || r.hospital_name}>
                       <td style={{ fontWeight: 600 }}>{r.hospital_name}</td>
                       <td>{r.total_crs}</td>
                       <td>{fmt(r.total_collected)}</td>
