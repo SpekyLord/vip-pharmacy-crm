@@ -544,14 +544,16 @@ const navbarStyles = `
     }
 
     .navbar-platform-switch {
-      width: 100%;
-      max-width: 138px;
+      width: auto;
+      max-width: 100%;
+      padding: 3px;
     }
 
     .navbar-platform-link {
       flex: 1;
-      padding: 0 8px;
-      font-size: 11px;
+      padding: 0 6px;
+      font-size: 10px;
+      letter-spacing: 0.05em;
     }
 
     .navbar-profile {
