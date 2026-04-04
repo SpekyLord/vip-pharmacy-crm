@@ -18,6 +18,7 @@ const CrmProduct = require('../models/CrmProduct');
 const Specialization = require('../models/Specialization');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
+const { isCrmAdminLike } = require('../utils/roleHelpers');
 
 /**
  * Build access filter based on user role
@@ -25,7 +26,7 @@ const { sanitizeSearchString } = require('../utils/controllerHelpers');
  * - Employee (BDM): only doctors assigned to them via assignedTo field
  */
 const getRegionFilter = (user) => {
-  if (user.role === 'admin') {
+  if (isCrmAdminLike(user.role)) {
     return {}; // No filter for admin
   }
 
@@ -273,7 +274,7 @@ const updateDoctor = catchAsync(async (req, res) => {
   const employeeAllowedFields = adminAllowedFields.filter(
     (f) => !['assignedTo', 'isActive', 'isVipAssociated'].includes(f)
   );
-  const allowedFields = req.user.role === 'admin' ? adminAllowedFields : employeeAllowedFields;
+  const allowedFields = isCrmAdminLike(req.user.role) ? adminAllowedFields : employeeAllowedFields;
 
   // Update only allowed fields
   allowedFields.forEach((field) => {

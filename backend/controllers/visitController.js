@@ -15,9 +15,10 @@ const CrmProduct = require('../models/CrmProduct');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, getMonthYear, getScheduleMatchForVisit } = require('../utils/validateWeeklyVisit');
-const { MANILA_OFFSET_MS } = require('../utils/scheduleCycleUtils');
+const { MANILA_OFFSET_MS, getCycleStartDate, getCycleEndDate } = require('../utils/scheduleCycleUtils');
 const { normalizeEngagementTypesQuery } = require('../utils/engagementTypes');
 const { signVisitPhotos } = require('../config/s3');
+const { isCrmAdminLike } = require('../utils/roleHelpers');
 
 /**
  * @desc    Create a new visit
@@ -588,7 +589,7 @@ const checkCanVisitBatch = catchAsync(async (req, res) => {
  * @access  Private
  */
 const getVisitStats = catchAsync(async (req, res) => {
-  const { monthYear, userId } = req.query;
+  const { monthYear, userId, cycleNumber, cycleWeek } = req.query;
   const mongoose = require('mongoose');
 
   const matchQuery = { status: 'completed' };
@@ -599,7 +600,25 @@ const getVisitStats = catchAsync(async (req, res) => {
     matchQuery.user = new mongoose.Types.ObjectId(userId);
   }
 
-  if (monthYear) {
+  const parsedCycleNumber = cycleNumber != null && `${cycleNumber}`.trim() !== ''
+    ? parseInt(cycleNumber, 10)
+    : null;
+  const parsedCycleWeek = cycleWeek != null && `${cycleWeek}`.trim() !== ''
+    ? parseInt(cycleWeek, 10)
+    : null;
+
+  // Filter precedence:
+  // 1) cycleNumber (+ optional cycleWeek), 2) monthYear, 3) default all-time
+  if (Number.isInteger(parsedCycleNumber)) {
+    matchQuery.visitDate = {
+      $gte: getCycleStartDate(parsedCycleNumber),
+      $lte: getCycleEndDate(parsedCycleNumber),
+    };
+
+    if (Number.isInteger(parsedCycleWeek) && parsedCycleWeek >= 1 && parsedCycleWeek <= 4) {
+      matchQuery.weekOfMonth = parsedCycleWeek;
+    }
+  } else if (monthYear) {
     matchQuery.monthYear = monthYear;
   }
 
@@ -784,7 +803,7 @@ const refreshPhotoUrls = catchAsync(async (req, res) => {
   }
 
   // Check if user has access to this visit
-  if (req.user.role !== 'admin' && visit.user.toString() !== req.user._id.toString()) {
+  if (!isCrmAdminLike(req.user.role) && visit.user.toString() !== req.user._id.toString()) {
     return res.status(403).json({
       success: false,
       message: 'You do not have permission to access this visit',

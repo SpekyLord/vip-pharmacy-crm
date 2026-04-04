@@ -15,6 +15,7 @@ const Visit = require('../models/Visit');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { getCycleNumber, getDisplayCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getDayOfWeek, isWorkDay } = require('../utils/scheduleCycleUtils');
+const { isCrmAdminLike } = require('../utils/roleHelpers');
 
 // ─── Reconciliation ────────────────────────────────────────────────────────────
 
@@ -197,7 +198,7 @@ const loopScheduleFromPrevious = async (userId, targetCycleNumber) => {
  * @query   cycleNumber (optional, defaults to current)
  */
 const getCycle = catchAsync(async (req, res) => {
-  const userId = req.query.userId && req.user.role === 'admin'
+  const userId = req.query.userId && isCrmAdminLike(req.user.role)
     ? req.query.userId
     : req.user._id;
 
@@ -548,7 +549,7 @@ const adminClearCycle = catchAsync(async (req, res) => {
  * @query   cycleNumber (optional), userId (optional, admin only)
  */
 const getCPTGrid = catchAsync(async (req, res) => {
-  const userId = req.query.userId && req.user.role === 'admin'
+  const userId = req.query.userId && isCrmAdminLike(req.user.role)
     ? req.query.userId
     : req.user._id;
 
