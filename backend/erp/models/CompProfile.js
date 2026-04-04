@@ -61,6 +61,7 @@ const compProfileSchema = new mongoose.Schema(
     },
     ore_eligible: { type: Boolean, default: false },
     access_eligible: { type: Boolean, default: false },
+    calf_override: { type: Boolean, default: false },    // Bypass CALF requirement
     crm_linked: { type: Boolean, default: false },
 
     // ═══ Tax Status ═══

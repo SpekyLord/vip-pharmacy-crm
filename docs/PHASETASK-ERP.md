@@ -1888,6 +1888,42 @@
 | 7 | Phase 7/8 pages not in top Navbar (accessible via Reports hub + Dashboard quick links) | Low | Phase 10 |
 | 8 | ~~Engagements in Dashboard is placeholder (0/0)~~ — **RESOLVED Phase 9.2**: real CRM Visit counts wired via `computeEngagements()` in dashboardService | ~~Medium~~ | ✅ Done |
 
+## SYSTEM AUDIT — FULL DEEP AUDIT (April 4, 2026)
+
+> Full Phase 0-15 audit: 178 backend files require-chain tested (178/178 pass), 2665 frontend modules built (0 errors), all route wiring verified.
+
+### Bugs Found & Fixed
+
+| # | File | Bug | Fix |
+|---|------|-----|-----|
+| 1 | `erpReportRoutes.js` | `/trend/:personId` unreachable — generic `/:period` captured "trend" | Swapped route order: specific before parameterized |
+| 2 | `dataArchivalService.js` | SalesLine listed with `periodField: 'period'` but model has no period field | Changed to `periodField: null, dateField: 'csi_date'` |
+| 3 | `cycleReportService.js` | `generateCycleReport` could overwrite REVIEWED/CREDITED reports | Added status guard — rejects if past GENERATED |
+| 4 | `dataArchivalService.js` | TransactionEvent missing from ARCHIVABLE_COLLECTIONS | Added with `dateField: 'event_date'`, `statuses: ['ACTIVE']` |
+| 5 | `expenseAnomalyService.js` | Fragile dual-ID mapping for budget overruns | Simplified — `target_id` is always User._id |
+| 6 | `performanceRankingService.js` | ECOMMERCE_BDM excluded from performance ranking | Added to person_type filter |
+| 7 | `csiBookletRoutes.js` | `/validate` after parameterized `/:id` routes | Moved before `/:id` routes |
+| 8 | `consignmentReportService.js` | `$ifNull` fallback used non-existent field | Changed to `'Unknown'` fallback |
+| 9 | `performanceRankingService.js` | Dead code + unused parameter | Removed |
+| 10 | `CsiBooklets.jsx` + `DataArchive.jsx` | React Fragments inside `<tbody>` | Replaced with array return pattern |
+| 11 | `PerformanceRanking.jsx` | No data on initial render (missing useEffect) | Added useEffect |
+| 12 | `ConsignmentAging/ExpenseAnomalies/FuelEfficiency.jsx` | Array index as React key | Changed to unique identifiers |
+
+### Known Technical Debt — React `key={i}` Anti-Pattern
+
+> 41 instances across 29 pre-existing pages use array index as React key. Not a regression. Low practical impact on read-only tables, but will cause bugs if interactive row features (expand/collapse, inline edit, row selection) are added.
+
+**Affected pages:** AccountsPayable, AccountsReceivable, BankReconciliation, CashflowStatement, Collections, CollectionSession, DrEntry, ErpDashboard, Expenses, GrnEntry, JournalEntries, MyStock, OcrTest, PeopleList, PersonDetail, PrfCalf, ProfitAndLoss, ProfitSharing, PurchaseOrders, SalesEntry, SalesList, Smer, SupplierInvoices, ThirteenthMonth, TransferOrders, TransferReceipt, VatCompliance, CsiBooklets (1 inner map), ErpReports (user-fixed)
+
+**Fix:** Replace `key={i}` with `key={r._id}` or composite key. Mechanical, no logic changes. Priority: Low — fix when touching these pages or before adding interactive row features.
+
+### Budget Allocation UI — Built
+
+- [x] Created `frontend/src/erp/pages/BudgetAllocations.jsx` — admin CRUD page with per-component budget cards, BDM selector, approval workflow
+- [x] Convention established: `target_id` = `User._id` (same as `bdm_id` in all transaction models)
+- [x] Added to `useReports.js`, `App.jsx`, `Sidebar.jsx`, `ErpReports.jsx`
+- [x] Backend already existed from Phase 2 (`budgetAllocationController.js` + `budgetAllocationRoutes.js`)
+
 ---
 
 ## PHASE 9 — INTEGRATION, DOCUMENT FLOW & POLISH
@@ -2826,6 +2862,26 @@
 - [x] Created `frontend/src/erp/pages/DataArchive.jsx` — archive trigger with confirmation, batch list, detail view, restore with reason
 - [x] Added sidebar item under Accounting section
 
+### 15.9 — React Key Prop Audit & Fix ✅
+- [x] Audited ~60 `key={i}` / `key={index}` / `key={idx}` instances across ~30 files
+- [x] Fixed 21 instances in 15 files — replaced index keys with stable unique identifiers:
+  - `AccountsPayable.jsx` — `vendor_name`, `_id`, `po_number-item_key`
+  - `AccountsReceivable.jsx` — `csi._id || csi.doc_ref`
+  - `BankReconciliation.jsx` — `e._id || bank-line_no`, `e._id || je_number`
+  - `ErpDashboard.jsx` — `p._id || product_id`, `h._id || hospital_name`
+  - `ErpReports.jsx` — `r._id || hospital_name`
+  - `ThirteenthMonth.jsx` — `r.emp_id || r.name`
+  - `ProfitSharing.jsx` — `p.product_id || product_name`
+  - `Collections.jsx` — `s._id || s.doc_ref`
+  - `MyStock.jsx` — `product_id-batch_lot_no`, `a.product_id`
+  - `PersonDetail.jsx` — `c._id || effective_date`
+  - `PrfCalf.jsx` — `p._id || doctor_name`, `item._id || source-period`
+  - `OcrTest.jsx` — `s.value`
+  - `PendingApprovalsPage.jsx` — `doc.rowNumber`
+  - `VisitApproval.jsx` — `doc.rowNumber`
+- [x] Verified remaining ~40 instances are safe (form line items edited by index, static arrays, read-only sub-docs with no row state)
+- **Why:** Index keys cause wrong DOM reuse when lists are sorted, filtered, or items deleted — breaks expandable rows, inline editing, checkboxes
+
 ---
 
 ## PHASE SUMMARY
@@ -2850,7 +2906,7 @@
 | 12 | Purchasing & AP [v5 NEW] ✅ | ~40 | 2-3 weeks |
 | 13 | Banking & Cash [v5 NEW] | ~30 | 1-2 weeks |
 | 14 | New Reports & Analytics [v5 NEW] ✅ | ~35 | 1-2 weeks |
-| 15.1-15.3,15.5,15.8 | SAP-equivalent improvements (partial) ✅ | 5/8 | Completed |
+| 15.1-15.3,15.5,15.8-15.9 | SAP-equivalent improvements + code quality (partial) ✅ | 6/8 | Completed |
 | 15.4,15.6,15.7 | Future (remaining SAP improvements) | 3 | Post-launch |
 
 **Total pre-launch: ~573 tasks across 18 phases → ~29-37 weeks**

@@ -281,8 +281,8 @@ export default function BankReconciliation() {
                       <tr><th>#</th><th>Date</th><th>Description</th><th>Debit</th><th>Credit</th><th>Status</th></tr>
                     </thead>
                     <tbody>
-                      {[...reconSummary.matched, ...reconSummary.unmatched_bank].sort((a, b) => (a.line_no || 0) - (b.line_no || 0)).map((e, i) => (
-                        <tr key={i}>
+                      {[...reconSummary.matched, ...reconSummary.unmatched_bank].sort((a, b) => (a.line_no || 0) - (b.line_no || 0)).map((e) => (
+                        <tr key={e._id || `bank-${e.line_no}`}>
                           <td>{e.line_no}</td>
                           <td>{e.txn_date ? new Date(e.txn_date).toLocaleDateString() : '—'}</td>
                           <td>{e.description || e.reference || '—'}</td>
@@ -302,8 +302,8 @@ export default function BankReconciliation() {
                         <tr><th>JE#</th><th>Date</th><th>Description</th><th>Debit</th><th>Credit</th></tr>
                       </thead>
                       <tbody>
-                        {reconSummary.unmatched_book.map((e, i) => (
-                          <tr key={i}>
+                        {reconSummary.unmatched_book.map((e) => (
+                          <tr key={e._id || e.je_number}>
                             <td>{e.je_number}</td>
                             <td>{e.je_date ? new Date(e.je_date).toLocaleDateString() : '—'}</td>
                             <td>{e.description || '—'}</td>

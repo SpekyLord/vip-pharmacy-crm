@@ -311,8 +311,8 @@ export default function ErpDashboard() {
                     </thead>
                     <tbody>
                       {tabData.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No stock data</td></tr>}
-                      {tabData.map((p, i) => (
-                        <tr key={i}>
+                      {tabData.map((p) => (
+                        <tr key={p._id || p.product_id}>
                           <td>
                             <div style={{ fontWeight: 600 }}>{p.brand_name}</div>
                             <div style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{p.dosage_strength} {p.sold_per && `— ${p.sold_per}`}</div>
@@ -335,8 +335,8 @@ export default function ErpDashboard() {
                     </thead>
                     <tbody>
                       {tabData.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No hospitals</td></tr>}
-                      {tabData.map((h, i) => (
-                        <tr key={i}>
+                      {tabData.map((h) => (
+                        <tr key={h._id || h.hospital_name}>
                           <td style={{ fontWeight: 600 }}>{h.hospital_name}</td>
                           <td>{h.hospital_type || '-'}</td>
                           <td>{h.bed_capacity || '-'}</td>

@@ -156,8 +156,8 @@ export default function Collections() {
                 <p><strong>Commission:</strong> P{(selected.total_commission || 0).toFixed(2)}</p>
                 <p><strong>Partner Rebates:</strong> P{(selected.total_partner_rebates || 0).toFixed(2)}</p>
                 <h3 style={{ marginTop: 16, fontSize: 14 }}>Settled CSIs ({selected.settled_csis?.length || 0})</h3>
-                {selected.settled_csis?.map((s, i) => (
-                  <div key={i} style={{ border: '1px solid var(--erp-border)', borderRadius: 8, padding: 10, marginBottom: 8, fontSize: 12 }}>
+                {selected.settled_csis?.map((s) => (
+                  <div key={s._id || s.doc_ref} style={{ border: '1px solid var(--erp-border)', borderRadius: 8, padding: 10, marginBottom: 8, fontSize: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                       <strong>CSI# {s.doc_ref}</strong>
                       <span style={{ fontWeight: 600 }}>P{(s.invoice_amount || 0).toFixed(2)}</span>

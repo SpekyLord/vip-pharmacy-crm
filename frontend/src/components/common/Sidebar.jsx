@@ -544,6 +544,7 @@ const getErpSection = (role, erpAccess) => {
   if (hasModule('collections')) items.push({ path: '/erp/collections', label: 'Collections', icon: Wallet });
   if (hasModule('expenses'))    items.push({ path: '/erp/expenses', label: 'Expenses', icon: CreditCard });
   if (hasModule('reports'))     items.push({ path: '/erp/reports', label: 'Reports', icon: BarChart3 });
+  if (hasModule('reports'))     items.push({ path: '/erp/budget-allocations', label: 'Budget Allocations', icon: DollarSign });
   if (hasModule('people'))      items.push({ path: '/erp/people', label: 'People', icon: UserCheck });
   if (hasModule('payroll'))     items.push({ path: '/erp/payroll', label: 'Payroll', icon: DollarSign });
   if (hasModule('accounting') || hasModule('expenses')) items.push({ path: '/erp/credit-cards', label: 'Credit Cards', icon: CreditCard });

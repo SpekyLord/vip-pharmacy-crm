@@ -15,7 +15,7 @@ const TransactionEvent = require('../models/TransactionEvent');
 
 // Collections and their period field + archivable statuses
 const ARCHIVABLE_COLLECTIONS = [
-  { Model: SalesLine, name: 'sales_lines', periodField: 'period', dateField: 'csi_date', statuses: ['POSTED'] },
+  { Model: SalesLine, name: 'sales_lines', periodField: null, dateField: 'csi_date', statuses: ['POSTED'] },
   { Model: Collection, name: 'collections', periodField: null, dateField: 'cr_date', statuses: ['POSTED'] },
   { Model: ExpenseEntry, name: 'expense_entries', periodField: 'period', statuses: ['POSTED'] },
   { Model: SmerEntry, name: 'smer_entries', periodField: 'period', statuses: ['POSTED'] },
@@ -159,11 +159,12 @@ async function restoreBatch(entityId, batchId, userId, reason) {
         byCollection[doc.source_collection].push(doc.document);
       }
 
-      // Re-insert into source collections
+      // Re-insert into source collections using raw driver to preserve
+      // exact document state (no hook recomputation on already-POSTED data)
       for (const [collName, docs] of Object.entries(byCollection)) {
         const collection = mongoose.connection.collection(collName);
         if (docs.length > 0) {
-          await collection.insertMany(docs, { session });
+          await collection.insertMany(docs, { ordered: false, session });
         }
       }
 

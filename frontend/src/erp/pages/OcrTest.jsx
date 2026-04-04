@@ -195,8 +195,8 @@ function OcrField({ label, field, onChange, suggestions }) {
           background: 'var(--ocr-panel, #fff)', border: '1px solid var(--ocr-border)',
           borderRadius: 8, maxHeight: 180, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
         }}>
-          {filtered.map((s, i) => (
-            <div key={i} style={{ padding: '6px 10px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid var(--ocr-border)' }}
+          {filtered.map((s) => (
+            <div key={s.value} style={{ padding: '6px 10px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid var(--ocr-border)' }}
               onMouseDown={() => { onChange(s.value); setShowDropdown(false); }}>
               {s.label}
             </div>

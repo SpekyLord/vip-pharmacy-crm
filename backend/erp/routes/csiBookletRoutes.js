@@ -6,8 +6,8 @@ const router = express.Router();
 const ctrl = require('../controllers/csiBookletController');
 
 router.get('/', ctrl.list);
+router.get('/validate', ctrl.validate);
 router.post('/', ctrl.create);
 router.post('/:id/allocate', ctrl.allocate);
-router.get('/validate', ctrl.validate);
 
 module.exports = router;

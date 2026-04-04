@@ -147,11 +147,11 @@ async function detectBudgetOverruns(entityId, period) {
     ACCESS: 'ACCESS', ORE: 'ORE', CORE_COMM: 'CORE_COMM'
   };
 
-  // Get people names
+  // All transaction models key by User._id (bdm_id). BudgetAllocation.target_id
+  // must also store User._id when target_type='BDM' for consistent lookups.
   const people = await PeopleMaster.find({ entity_id: eId })
     .select('user_id full_name').lean();
   const nameMap = new Map(people.map(p => [p.user_id?.toString(), p.full_name]));
-  const personIdToUserId = new Map(people.map(p => [p._id.toString(), p.user_id?.toString()]));
 
   // Pre-aggregate all components
   const components = ['SMER', 'GAS_OFFICIAL', 'INSURANCE', 'ACCESS', 'CORE_COMM'];
@@ -168,7 +168,8 @@ async function detectBudgetOverruns(entityId, period) {
 
   const overruns = [];
   for (const alloc of allocations) {
-    const userId = personIdToUserId.get(alloc.target_id?.toString()) || alloc.target_id?.toString();
+    // target_id is User._id (same as bdm_id in transaction models)
+    const userId = alloc.target_id?.toString();
     const personName = nameMap.get(userId) || alloc.target_name || 'Unknown';
 
     for (const comp of (alloc.components || [])) {

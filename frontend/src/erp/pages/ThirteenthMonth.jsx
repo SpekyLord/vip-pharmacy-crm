@@ -69,8 +69,8 @@ export default function ThirteenthMonth() {
                 </tr>
               </thead>
               <tbody>
-                {results.map((r, i) => (
-                  <tr key={i}>
+                {results.map((r) => (
+                  <tr key={r.emp_id || r.name}>
                     <td>{r.name}</td>
                     <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(r.thirteenth_month)}</td>
                   </tr>

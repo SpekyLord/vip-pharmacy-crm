@@ -104,6 +104,8 @@ const ExpenseAnomalies = lazy(() => import('./erp/pages/ExpenseAnomalies'));
 const FuelEfficiency = lazy(() => import('./erp/pages/FuelEfficiency'));
 const CycleStatusDashboard = lazy(() => import('./erp/pages/CycleStatusDashboard'));
 
+const BudgetAllocations = lazy(() => import('./erp/pages/BudgetAllocations'));
+
 // Phase 15 — SAP-Equivalent Improvements
 const CsiBooklets = lazy(() => import('./erp/pages/CsiBooklets'));
 const CycleReports = lazy(() => import('./erp/pages/CycleReports'));
@@ -593,6 +595,7 @@ function App() {
           <Route path="/erp/expense-anomalies" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="reports"><ExpenseAnomalies /></ProtectedRoute>} />
           <Route path="/erp/fuel-efficiency" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="reports"><FuelEfficiency /></ProtectedRoute>} />
           <Route path="/erp/cycle-status" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="reports"><CycleStatusDashboard /></ProtectedRoute>} />
+          <Route path="/erp/budget-allocations" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="reports"><BudgetAllocations /></ProtectedRoute>} />
 
           {/* Phase 15 — SAP-Equivalent Improvements */}
           <Route path="/erp/csi-booklets" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="sales"><CsiBooklets /></ProtectedRoute>} />

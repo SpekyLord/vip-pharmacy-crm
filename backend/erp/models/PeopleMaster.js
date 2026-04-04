@@ -23,6 +23,10 @@ const peopleMasterSchema = new mongoose.Schema(
     first_name: { type: String, required: [true, 'First name is required'], trim: true },
     last_name: { type: String, required: [true, 'Last name is required'], trim: true },
 
+    // ═══ BDM Code & Role ═══
+    bdm_code: { type: String, trim: true, default: '' },    // Short identifier e.g. "Mae Navarro"
+    role_notes: { type: String, trim: true, default: '' },   // e.g. "Field BDM", "eBDM", "President"
+
     // ═══ Position ═══
     position: { type: String, trim: true, default: '' },
     department: { type: String, trim: true, default: '' },

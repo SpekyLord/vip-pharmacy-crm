@@ -1043,7 +1043,7 @@ const PreviewSection = ({ batch, expandedRows, toggleExpand, onApprove, onReject
                     : 'row-new';
 
                 return (
-                  <tr key={idx} className={rowClass}>
+                  <tr key={doc.rowNumber} className={rowClass}>
                     <td>{doc.rowNumber}</td>
                     <td>
                       {doc.validationStatus === 'INVALID' ? (
