@@ -62,6 +62,17 @@ const pageStyles = `
   .btn-warning { background: #d97706; color: #fff; }
   .btn-sm { padding: 4px 10px; font-size: 11px; }
 
+  .sales-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .sales-actions .btn {
+    min-width: 86px;
+  }
+
   .detail-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
   .detail-panel { background: var(--erp-panel, #fff); border-radius: 16px; padding: 24px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; }
   .detail-panel h2 { margin: 0 0 16px; font-size: 18px; }
@@ -252,13 +263,14 @@ export default function SalesList() {
                     ))}
                   </td>
                   <td data-label="Actions" onClick={e => e.stopPropagation()}>
+                    <div className="sales-actions">
                     {sale.status === 'VALID' && (
                       <button className="btn btn-sm" style={{ background: '#16a34a', color: '#fff' }} onClick={() => handleSubmit()}>
                         Submit
                       </button>
                     )}
                     {sale.status === 'POSTED' && (
-                      <button className="btn btn-warning btn-sm" onClick={() => handleReopen(sale._id)} style={{ marginRight: 4 }}>
+                      <button className="btn btn-warning btn-sm" onClick={() => handleReopen(sale._id)}>
                         Re-open
                       </button>
                     )}
@@ -272,6 +284,7 @@ export default function SalesList() {
                         Approve Delete
                       </button>
                     )}
+                    </div>
                   </td>
                 </tr>
               ))}
