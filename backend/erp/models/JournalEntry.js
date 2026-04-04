@@ -53,7 +53,8 @@ const journalEntrySchema = new mongoose.Schema({
     enum: [
       'SALES', 'COLLECTION', 'EXPENSE', 'COMMISSION', 'AP',
       'PAYROLL', 'DEPRECIATION', 'INTEREST', 'PEOPLE_COMP',
-      'VAT', 'OWNER', 'BANKING', 'MANUAL'
+      'VAT', 'OWNER', 'BANKING', 'MANUAL',
+      'SERVICE_REVENUE', 'PETTY_CASH'
     ],
     required: true
   },

@@ -2,11 +2,13 @@
  * Consignment Aging Page — Phase 14.7
  * Cross-BDM consignment aging with color-coded status and drill-down
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 
@@ -42,7 +44,9 @@ const BADGE_CLASS = { OPEN: 'badge-open', OVERDUE: 'badge-overdue', FORCE_CSI: '
 
 export default function ConsignmentAging() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const rpt = useReports();
+  const [warehouseId, setWarehouseId] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({ bdm_id: '', hospital_id: '', aging_status: '' });
@@ -51,6 +55,7 @@ export default function ConsignmentAging() {
     setLoading(true);
     try {
       const params = {};
+      if (warehouseId) params.warehouse_id = warehouseId;
       if (filters.bdm_id) params.bdm_id = filters.bdm_id;
       if (filters.hospital_id) params.hospital_id = filters.hospital_id;
       if (filters.aging_status) params.aging_status = filters.aging_status;
@@ -58,7 +63,9 @@ export default function ConsignmentAging() {
       setData(res?.data || null);
     } catch {}
     setLoading(false);
-  }, [filters]);
+  }, [filters, warehouseId]);
+
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div className="aging-page">
@@ -67,6 +74,7 @@ export default function ConsignmentAging() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="aging-main">
+          <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
           <div className="aging-header">
             <h1>Consignment Aging</h1>
             <p>Consolidated cross-BDM consignment status with aging indicators</p>
@@ -103,7 +111,7 @@ export default function ConsignmentAging() {
                     <th>BDM</th><th>Hospital</th><th>DR#</th><th>DR Date</th>
                     <th>Product</th><th style={{ textAlign: 'right' }}>Delivered</th>
                     <th style={{ textAlign: 'right' }}>Consumed</th><th style={{ textAlign: 'right' }}>Remaining</th>
-                    <th style={{ textAlign: 'right' }}>Days</th><th>Status</th>
+                    <th style={{ textAlign: 'right' }}>Days</th><th>Status</th><th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -119,10 +127,20 @@ export default function ConsignmentAging() {
                       <td className="num">{r.qty_remaining}</td>
                       <td className="num">{r.days_outstanding}</td>
                       <td><span className={`badge ${BADGE_CLASS[r.aging_status] || ''}`}>{r.aging_status}</span></td>
+                      <td>
+                        {r.aging_status !== 'COLLECTED' && r.qty_remaining > 0 && (
+                          <button
+                            style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, background: '#1e5eff', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                            onClick={() => navigate('/erp/sales/entry', { state: { prefill: { hospital_id: r.hospital_id, hospital_name: r.hospital_name, product_id: r.product_id, product_name: r.product_name, qty: r.qty_remaining, warehouse_id: warehouseId } } })}
+                          >
+                            Issue CSI
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   {(!data.items || data.items.length === 0) && (
-                    <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No consignment data</td></tr>
+                    <tr><td colSpan={11} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No consignment data</td></tr>
                   )}
                 </tbody>
               </table>

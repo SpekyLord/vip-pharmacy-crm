@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useTransfers from '../hooks/useTransfers';
 import useProducts from '../hooks/useProducts';
 import useInventory from '../hooks/useInventory';
+import useWarehouses from '../hooks/useWarehouses';
 
 import SelectField from '../../components/common/Select';
 
@@ -107,8 +108,10 @@ export default function TransferOrders() {
   const [showCreateReassign, setShowCreateReassign] = useState(false);
   const [detail, setDetail] = useState(null);
 
+  const whApi = useWarehouses();
+
   // IC Transfer form state
-  const [form, setForm] = useState({ source_entity_id: '', target_entity_id: '', source_bdm_id: '', target_bdm_id: '', transfer_date: new Date().toISOString().slice(0, 10), csi_ref: '', notes: '' });
+  const [form, setForm] = useState({ source_entity_id: '', target_entity_id: '', source_bdm_id: '', target_bdm_id: '', source_warehouse_id: '', target_warehouse_id: '', transfer_date: new Date().toISOString().slice(0, 10), csi_ref: '', notes: '' });
   const [lineItems, setLineItems] = useState([{ product_id: '', qty: 1, transfer_price: 0, batch_lot_no: '', expiry_date: '' }]);
   const [sourceBdms, setSourceBdms] = useState([]);
   const [targetBdms, setTargetBdms] = useState([]);
@@ -117,12 +120,16 @@ export default function TransferOrders() {
   // Source custodian's stock (for product dropdown filtering)
   const [sourceStock, setSourceStock] = useState([]);  // IC form
   const [reassignStock, setReassignStock] = useState([]);  // Internal form
+  // Phase 17: warehouse lists for IC transfers
+  const [sourceWarehouses, setSourceWarehouses] = useState([]);
+  const [targetWarehouses, setTargetWarehouses] = useState([]);
 
   // Internal Reassignment form state
-  const [reassignForm, setReassignForm] = useState({ source_bdm_id: '', target_bdm_id: '', reassignment_date: new Date().toISOString().slice(0, 10), territory_code: '', notes: '' });
+  const [reassignForm, setReassignForm] = useState({ source_bdm_id: '', target_bdm_id: '', source_warehouse_id: '', target_warehouse_id: '', reassignment_date: new Date().toISOString().slice(0, 10), territory_code: '', notes: '' });
   const [reassignItems, setReassignItems] = useState([{ product_id: '', batch_lot_no: '', expiry_date: '', qty: 1 }]);
   const [entityBdms, setEntityBdms] = useState([]);
   const [reassignBatchCache, setReassignBatchCache] = useState({});
+  const [internalWarehouses, setInternalWarehouses] = useState([]);
 
   const isPresidentOrAdmin = ['president', 'ceo', 'admin'].includes(user?.role);
   const isFinanceOrAdmin = ['finance', 'admin'].includes(user?.role);
@@ -165,11 +172,31 @@ export default function TransferOrders() {
     (async () => { try { const r = await getBdmsByEntity(form.target_entity_id, true); setTargetBdms(r.data || []); } catch { /* */ } })();
   }, [form.target_entity_id]);
 
+  // Phase 17: Load warehouses when source/target entity changes (IC Transfer)
+  useEffect(() => {
+    if (!form.source_entity_id) { setSourceWarehouses([]); return; }
+    (async () => { try { const r = await whApi.getWarehousesByEntity(form.source_entity_id); setSourceWarehouses(r.data || []); } catch { /* */ } })();
+  }, [form.source_entity_id]);
+
+  useEffect(() => {
+    if (!form.target_entity_id) { setTargetWarehouses([]); return; }
+    (async () => { try { const r = await whApi.getWarehousesByEntity(form.target_entity_id); setTargetWarehouses(r.data || []); } catch { /* */ } })();
+  }, [form.target_entity_id]);
+
   // Load BDMs for internal reassignment (user's entity)
   useEffect(() => {
     const eid = user?.entity_id;
     if (!eid) return;
-    (async () => { try { const r = await getBdmsByEntity(eid); setEntityBdms(r.data || []); } catch { /* */ } })();
+    (async () => {
+      try {
+        const [bdmRes, whRes] = await Promise.all([
+          getBdmsByEntity(eid),
+          whApi.getWarehousesByEntity(eid),
+        ]);
+        setEntityBdms(bdmRes.data || []);
+        setInternalWarehouses(whRes.data || []);
+      } catch { /* */ }
+    })();
   }, [user?.entity_id]);
 
   // IC Transfer: show only products the source custodian has stock for
@@ -197,7 +224,7 @@ export default function TransferOrders() {
       if (!items.length) return alert('Add at least one line item');
       await createTransfer({ ...form, line_items: items });
       setShowCreate(false);
-      setForm({ source_entity_id: '', target_entity_id: '', source_bdm_id: '', target_bdm_id: '', transfer_date: new Date().toISOString().slice(0, 10), csi_ref: '', notes: '' });
+      setForm({ source_entity_id: '', target_entity_id: '', source_bdm_id: '', target_bdm_id: '', source_warehouse_id: '', target_warehouse_id: '', transfer_date: new Date().toISOString().slice(0, 10), csi_ref: '', notes: '' });
       setLineItems([{ product_id: '', qty: 1, transfer_price: 0, batch_lot_no: '', expiry_date: '' }]);
       fetchTransfers(1);
     } catch { /* */ }
@@ -240,7 +267,7 @@ export default function TransferOrders() {
       if (!items.length) return alert('Add at least one line item');
       await createReassignment({ ...reassignForm, entity_id: user?.entity_id, line_items: items });
       setShowCreateReassign(false);
-      setReassignForm({ source_bdm_id: '', target_bdm_id: '', reassignment_date: new Date().toISOString().slice(0, 10), territory_code: '', notes: '' });
+      setReassignForm({ source_bdm_id: '', target_bdm_id: '', source_warehouse_id: '', target_warehouse_id: '', reassignment_date: new Date().toISOString().slice(0, 10), territory_code: '', notes: '' });
       setReassignItems([{ product_id: '', batch_lot_no: '', expiry_date: '', qty: 1 }]);
       fetchReassignments();
     } catch (err) { alert(err.response?.data?.message || err.message); }
@@ -479,6 +506,23 @@ export default function TransferOrders() {
                   </SelectField>
                 </div>
               </div>
+              {/* Phase 17: Warehouse selection */}
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Source Warehouse</label>
+                  <select value={form.source_warehouse_id} onChange={e => setForm({ ...form, source_warehouse_id: e.target.value })}>
+                    <option value="">Select...</option>
+                    {sourceWarehouses.map(w => <option key={w._id} value={w._id}>{w.warehouse_code} — {w.warehouse_name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Target Warehouse</label>
+                  <select value={form.target_warehouse_id} onChange={e => setForm({ ...form, target_warehouse_id: e.target.value })}>
+                    <option value="">Select...</option>
+                    {targetWarehouses.map(w => <option key={w._id} value={w._id}>{w.warehouse_code} — {w.warehouse_name}</option>)}
+                  </select>
+                </div>
+              </div>
               <div className="form-row-3">
                 <div className="form-group">
                   <label>Transfer Date</label>
@@ -579,6 +623,23 @@ export default function TransferOrders() {
                     <option value="">Select...</option>
                     {entityBdms.filter(u => u._id !== reassignForm.source_bdm_id).map(u => <option key={u._id} value={u._id}>{formatBdmLabel(u)}</option>)}
                   </SelectField>
+                </div>
+              </div>
+              {/* Phase 17: Warehouse selection for internal reassignment */}
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Source Warehouse</label>
+                  <select value={reassignForm.source_warehouse_id} onChange={e => setReassignForm({ ...reassignForm, source_warehouse_id: e.target.value })}>
+                    <option value="">Select...</option>
+                    {internalWarehouses.map(w => <option key={w._id} value={w._id}>{w.warehouse_code} — {w.warehouse_name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Target Warehouse</label>
+                  <select value={reassignForm.target_warehouse_id} onChange={e => setReassignForm({ ...reassignForm, target_warehouse_id: e.target.value })}>
+                    <option value="">Select...</option>
+                    {internalWarehouses.filter(w => w._id !== reassignForm.source_warehouse_id).map(w => <option key={w._id} value={w._id}>{w.warehouse_code} — {w.warehouse_name}</option>)}
+                  </select>
                 </div>
               </div>
               <div className="form-row-3">

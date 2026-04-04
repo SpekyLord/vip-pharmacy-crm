@@ -48,6 +48,7 @@ import {
   Scale,
   Layers,
   Archive,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -544,7 +545,15 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   items.push({ path: '/erp', label: 'ERP Home', icon: Briefcase });
   if (hasModule('sales'))       items.push({ path: '/erp/sales', label: 'Sales', icon: Receipt });
   if (hasModule('sales'))       items.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
+  // Shared infrastructure — no module gate
+  items.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
+  items.push({ path: '/erp/customers', label: 'Customers', icon: Users });
   if (hasModule('inventory'))   items.push({ path: '/erp/my-stock', label: 'Inventory', icon: Package });
+  if (hasModule('inventory'))   items.push({ path: '/erp/grn', label: 'GRN Entry', icon: FileInput });
+  if (hasModule('inventory'))   items.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
+  if (hasModule('inventory'))   items.push({ path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight });
+  if (hasModule('inventory') && ['admin', 'president'].includes(role)) items.push({ path: '/erp/warehouses', label: 'Warehouses', icon: Package });
+  if (hasModule('inventory'))   items.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
   if (hasModule('collections')) items.push({ path: '/erp/collections', label: 'Collections', icon: Wallet });
   if (hasModule('expenses'))    items.push({ path: '/erp/expenses', label: 'Expenses', icon: CreditCard });
   if (hasModule('reports'))     items.push({ path: '/erp/reports', label: 'Reports', icon: BarChart3 });
@@ -567,6 +576,8 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     items.push({ path: '/erp/bank-recon', label: 'Bank Reconciliation', icon: Scale });
     items.push({ path: '/erp/credit-card-ledger', label: 'CC Ledger', icon: CreditCard });
     items.push({ path: '/erp/cost-centers', label: 'Cost Centers', icon: Layers });
+    items.push({ path: '/erp/petty-cash', label: 'Petty Cash', icon: Wallet });
+    items.push({ path: '/erp/office-supplies', label: 'Office Supplies', icon: Package });
     items.push({ path: '/erp/data-archive', label: 'Data Archive', icon: Archive });
   }
   if (hasModule('purchasing')) {

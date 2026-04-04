@@ -31,8 +31,12 @@ const collectionSchema = new mongoose.Schema({
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
-  // P5: One CR = One Hospital
-  hospital_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', required: true },
+  // P5: One CR = One Hospital or One Customer
+  hospital_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' },
+  // Phase 18: non-hospital customer support
+  customer_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
+  // Phase 19: cash collections can route to petty cash fund instead of bank
+  petty_cash_fund_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PettyCashFund' },
 
   // CR header
   cr_no: { type: String, required: true, trim: true },
@@ -90,8 +94,16 @@ const collectionSchema = new mongoose.Schema({
   collection: 'erp_collections'
 });
 
-// Pre-save: auto-compute totals and commission/rebate amounts
+// Pre-save: validate customer reference + auto-compute totals and commission/rebate amounts
 collectionSchema.pre('save', function () {
+  // Phase 18: at least one customer reference required
+  if (!this.hospital_id && !this.customer_id) {
+    throw new Error('Either hospital_id or customer_id is required');
+  }
+  // Phase 19: bank_account_id and petty_cash_fund_id are mutually exclusive
+  if (this.bank_account_id && this.petty_cash_fund_id) {
+    throw new Error('Cannot set both bank_account_id and petty_cash_fund_id — choose one payment destination');
+  }
   if (this.settled_csis?.length) {
     let totalCsi = 0, totalNet = 0, totalComm = 0, totalRebates = 0;
 
@@ -124,6 +136,8 @@ collectionSchema.pre('save', function () {
 // Indexes
 collectionSchema.index({ entity_id: 1, bdm_id: 1, status: 1 });
 collectionSchema.index({ entity_id: 1, hospital_id: 1, cr_date: -1 });
+collectionSchema.index({ entity_id: 1, customer_id: 1, cr_date: -1 });
+collectionSchema.index({ petty_cash_fund_id: 1 });
 collectionSchema.index({ 'settled_csis.sales_line_id': 1 });
 collectionSchema.index({ status: 1 });
 

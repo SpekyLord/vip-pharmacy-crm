@@ -18,7 +18,7 @@ const interCompanyService = require('../services/interCompanyService');
  * POST /transfers — Create DRAFT transfer (president/admin only)
  */
 const createTransfer = catchAsync(async (req, res) => {
-  const { source_entity_id, target_entity_id, transfer_date, line_items, notes, source_bdm_id, target_bdm_id, csi_ref } = req.body;
+  const { source_entity_id, target_entity_id, transfer_date, line_items, notes, source_bdm_id, target_bdm_id, source_warehouse_id, target_warehouse_id, csi_ref } = req.body;
 
   if (!source_entity_id || !target_entity_id) {
     return res.status(400).json({ success: false, message: 'Source and target entities are required' });
@@ -61,6 +61,8 @@ const createTransfer = catchAsync(async (req, res) => {
     notes,
     source_bdm_id: source_bdm_id || undefined,
     target_bdm_id: target_bdm_id || undefined,
+    source_warehouse_id: source_warehouse_id || undefined,
+    target_warehouse_id: target_warehouse_id || undefined,
     csi_ref: csi_ref || undefined,
     requested_by: req.user._id,
     created_by: req.user._id
@@ -333,7 +335,7 @@ const { consumeSpecificBatch } = require('../services/fifoEngine');
  * Same entity, different BDMs. Requires finance approval.
  */
 const createReassignment = catchAsync(async (req, res) => {
-  const { source_bdm_id, target_bdm_id, reassignment_date, line_items, undertaking_photo_url, ocr_data, notes, territory_code } = req.body;
+  const { source_bdm_id, target_bdm_id, source_warehouse_id, target_warehouse_id, reassignment_date, line_items, undertaking_photo_url, ocr_data, notes, territory_code } = req.body;
 
   if (!source_bdm_id || !target_bdm_id) {
     return res.status(400).json({ success: false, message: 'Source and target custodians are required' });
@@ -381,6 +383,8 @@ const createReassignment = catchAsync(async (req, res) => {
     entity_id: entityId,
     source_bdm_id,
     target_bdm_id,
+    source_warehouse_id: source_warehouse_id || undefined,
+    target_warehouse_id: target_warehouse_id || undefined,
     reassignment_date: refDate,
     line_items,
     undertaking_photo_url,
@@ -461,18 +465,24 @@ const approveReassignment = catchAsync(async (req, res) => {
         created_by: req.user._id
       }], { session });
 
+      // Phase 17: warehouse context for FIFO and ledger entries
+      const srcWhId = reassignment.source_warehouse_id;
+      const tgtWhId = reassignment.target_warehouse_id;
+      const fifoOpts = srcWhId ? { warehouseId: srcWhId.toString() } : undefined;
+
       // For each line item: consume from source, create in target
       for (const item of reassignment.line_items) {
         // Validate stock available via FIFO
         await consumeSpecificBatch(
           reassignment.entity_id, reassignment.source_bdm_id,
-          item.product_id, item.batch_lot_no, item.qty
+          item.product_id, item.batch_lot_no, item.qty, fifoOpts
         );
 
         // TRANSFER_OUT from source
         await InventoryLedger.create([{
           entity_id: reassignment.entity_id,
           bdm_id: reassignment.source_bdm_id,
+          warehouse_id: srcWhId || undefined,
           product_id: item.product_id,
           batch_lot_no: item.batch_lot_no,
           expiry_date: item.expiry_date,
@@ -487,6 +497,7 @@ const approveReassignment = catchAsync(async (req, res) => {
         await InventoryLedger.create([{
           entity_id: reassignment.entity_id,
           bdm_id: reassignment.target_bdm_id,
+          warehouse_id: tgtWhId || undefined,
           product_id: item.product_id,
           batch_lot_no: item.batch_lot_no,
           expiry_date: item.expiry_date,

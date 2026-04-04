@@ -29,6 +29,9 @@ const stockReassignmentSchema = new mongoose.Schema({
     ref: 'User',
     required: [true, 'Target custodian is required']
   },
+  // Phase 17 — warehouse-to-warehouse transfers
+  source_warehouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' },
+  target_warehouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' },
   reassignment_date: {
     type: Date,
     required: [true, 'Reassignment date is required']

@@ -42,7 +42,7 @@ const pageStyles = `
   .atm-btn-outline { background: transparent; border: 1px solid var(--erp-border, #d1d5db); }
   .atm-actions { display: flex; gap: 4px; justify-content: center; }
   .atm-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; align-items: center; justify-content: center; }
-  .atm-panel { background: var(--erp-panel, #fff); border-radius: 16px; padding: 24px; width: 95%; max-width: 600px; max-height: 85vh; overflow-y: auto; }
+  .atm-panel { background: var(--erp-panel, #fff); border-radius: 16px; padding: 24px; width: 95%; max-width: 700px; max-height: 85vh; overflow-y: auto; }
   .atm-panel h3 { margin: 0 0 16px; font-size: 16px; }
   .atm-field { margin-bottom: 12px; }
   .atm-field label { display: block; font-size: 12px; font-weight: 600; color: var(--erp-muted, #64748b); margin-bottom: 4px; }
@@ -52,26 +52,37 @@ const pageStyles = `
   .atm-grid label { font-size: 12px; text-align: center; cursor: pointer; }
   .atm-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
   .atm-check { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 8px 0; }
+  .atm-sub-section { background: var(--erp-accent-soft, #f0f4ff); border-radius: 8px; padding: 10px 14px; margin: 8px 0 16px; }
+  .atm-sub-section h4 { font-size: 12px; font-weight: 600; color: var(--erp-muted, #64748b); margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  .atm-sub-grid { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+  .atm-sub-grid span { font-size: 12px; }
+  .atm-sub-all { font-size: 11px; color: var(--erp-accent, #1e5eff); cursor: pointer; text-decoration: underline; }
+  .atm-sub-badge { font-size: 10px; color: #22c55e; font-weight: 500; margin-left: 8px; }
   @media(max-width: 768px) { .atm-main { padding: 12px; } .atm-table { font-size: 12px; } }
 `;
 
 export default function AccessTemplateManager() {
   const api = useErpAccess();
   const [templates, setTemplates] = useState([]);
-  const [editing, setEditing] = useState(null); // null | 'new' | template object
-  const [form, setForm] = useState({ template_name: '', description: '', modules: {}, can_approve: false });
+  const [subPermKeys, setSubPermKeys] = useState({});
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ template_name: '', description: '', modules: {}, can_approve: false, sub_permissions: {} });
 
   const load = useCallback(async () => {
     try {
-      const res = await api.getTemplates();
-      setTemplates(res?.data || []);
+      const [tplRes, spkRes] = await Promise.all([
+        api.getTemplates(),
+        api.getSubPermissionKeys(),
+      ]);
+      setTemplates(tplRes?.data || []);
+      setSubPermKeys(spkRes?.data || {});
     } catch {}
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   const openNew = () => {
-    setForm({ template_name: '', description: '', modules: {}, can_approve: false });
+    setForm({ template_name: '', description: '', modules: {}, can_approve: false, sub_permissions: {} });
     setEditing('new');
   };
 
@@ -81,6 +92,7 @@ export default function AccessTemplateManager() {
       description: tpl.description || '',
       modules: { ...tpl.modules },
       can_approve: tpl.can_approve || false,
+      sub_permissions: tpl.sub_permissions ? JSON.parse(JSON.stringify(tpl.sub_permissions)) : {},
     });
     setEditing(tpl);
   };
@@ -103,6 +115,48 @@ export default function AccessTemplateManager() {
       await api.deleteTemplate(id);
       load();
     } catch {}
+  };
+
+  const setModuleLevel = (modKey, level) => {
+    setForm(f => {
+      const updated = { ...f, modules: { ...f.modules, [modKey]: level } };
+      // Clear sub-permissions if module set to NONE
+      if (level === 'NONE' && f.sub_permissions[modKey]) {
+        const sp = { ...f.sub_permissions };
+        delete sp[modKey];
+        updated.sub_permissions = sp;
+      }
+      return updated;
+    });
+  };
+
+  const toggleSubPerm = (modKey, subKey) => {
+    setForm(f => {
+      const sp = { ...f.sub_permissions };
+      if (!sp[modKey]) sp[modKey] = {};
+      sp[modKey] = { ...sp[modKey], [subKey]: !sp[modKey][subKey] };
+      return { ...f, sub_permissions: sp };
+    });
+  };
+
+  const selectAllSubs = (modKey, value) => {
+    const keys = subPermKeys[modKey];
+    if (!keys) return;
+    setForm(f => {
+      const sp = { ...f.sub_permissions };
+      sp[modKey] = {};
+      keys.forEach(k => { sp[modKey][k.key] = value; });
+      return { ...f, sub_permissions: sp };
+    });
+  };
+
+  // Count how many sub-perms are enabled for a template's module
+  const subPermCount = (tpl, modKey) => {
+    const subs = tpl.sub_permissions?.[modKey];
+    if (!subs) return null;
+    const total = subPermKeys[modKey]?.length || 0;
+    const enabled = Object.values(subs).filter(Boolean).length;
+    return total > 0 ? `${enabled}/${total}` : null;
   };
 
   return (
@@ -136,9 +190,11 @@ export default function AccessTemplateManager() {
                   {MODULES.map(m => {
                     const lv = tpl.modules?.[m.key] || 'NONE';
                     const c = LEVEL_COLORS[lv];
+                    const spc = subPermCount(tpl, m.key);
                     return (
                       <td key={m.key}>
                         <span className="atm-badge" style={{ background: c.bg, color: c.text }}>{lv}</span>
+                        {spc && <span className="atm-sub-badge">{spc}</span>}
                       </td>
                     );
                   })}
@@ -187,12 +243,47 @@ export default function AccessTemplateManager() {
                         <label key={lv} style={{ textAlign: 'center' }}>
                           <input type="radio" name={`tpl-${m.key}`}
                             checked={(form.modules[m.key] || 'NONE') === lv}
-                            onChange={() => setForm(f => ({ ...f, modules: { ...f.modules, [m.key]: lv } }))} />
+                            onChange={() => setModuleLevel(m.key, lv)} />
                         </label>
                       ))}
                     </React.Fragment>
                   ))}
                 </div>
+
+                {/* Sub-Permissions for modules that have them and are VIEW or FULL */}
+                {MODULES.filter(m => subPermKeys[m.key] && (form.modules[m.key] === 'VIEW' || form.modules[m.key] === 'FULL')).map(m => {
+                  const keys = subPermKeys[m.key];
+                  const modSubs = form.sub_permissions[m.key] || {};
+                  const allEnabled = keys.every(k => modSubs[k.key]);
+                  const hasAnySubs = Object.keys(modSubs).length > 0;
+                  return (
+                    <div key={m.key} className="atm-sub-section">
+                      <h4>
+                        <span>{m.label} — Sub-Permissions</span>
+                        <span>
+                          {!hasAnySubs && form.modules[m.key] === 'FULL' && (
+                            <span style={{ fontSize: 11, color: '#22c55e', marginRight: 8 }}>All functions enabled</span>
+                          )}
+                          <span className="atm-sub-all" onClick={() => selectAllSubs(m.key, !allEnabled)}>
+                            {allEnabled ? 'Deselect All' : 'Select All'}
+                          </span>
+                        </span>
+                      </h4>
+                      <div className="atm-sub-grid">
+                        {keys.map(sk => (
+                          <React.Fragment key={sk.key}>
+                            <span>{sk.label}</span>
+                            <label style={{ textAlign: 'center', cursor: 'pointer' }}>
+                              <input type="checkbox"
+                                checked={!!modSubs[sk.key]}
+                                onChange={() => toggleSubPerm(m.key, sk.key)} />
+                            </label>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
 
                 <div className="atm-check">
                   <input type="checkbox" checked={form.can_approve}

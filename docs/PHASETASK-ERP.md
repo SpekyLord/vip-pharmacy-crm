@@ -2884,6 +2884,246 @@
 
 ---
 
+## PHASE 16 — Sub-Module Access (Granular Permissions) ✅
+
+**Goal:** Delegate specific functions within purchasing, accounting, and banking modules without giving full module access. Scalable — admin configures templates, no hardcoding.
+
+### 16.1 — Schema: sub_permissions on User + AccessTemplate ✅
+- [x] Added `sub_permissions: { type: Mixed, default: {} }` to `User.erp_access` (`backend/models/User.js`)
+- [x] Added `sub_permissions: { type: Mixed, default: {} }` to `AccessTemplate` (`backend/erp/models/AccessTemplate.js`)
+- **Shape:** `{ [module]: { [subKey]: Boolean } }` — dynamic, extensible, no schema migration for new keys
+
+### 16.2 — Middleware: erpSubAccessCheck ✅
+- [x] Created `erpSubAccessCheck(module, subKey)` middleware in `backend/erp/middleware/erpAccessCheck.js`
+- **Rules:** President always passes → admin w/o erp_access = full → module FULL w/o sub_permissions = all granted → check specific sub-key
+- Exported alongside existing `erpAccessCheck` and `approvalCheck`
+
+### 16.3 — Route Integration ✅
+Replaced `roleCheck('admin', 'finance', 'president')` with `erpSubAccessCheck` on write routes:
+- [x] `purchasingRoutes.js` — po_create, po_approve, vendor_manage, supplier_invoice, ap_payment
+- [x] `vendorRoutes.js` — vendor_manage
+- [x] `accountingRoutes.js` — journal_entry, vat_filing, fixed_assets, loans, owner_equity
+- [x] `coaRoutes.js` — journal_entry (COA management)
+- [x] `monthEndCloseRoutes.js` — month_end
+- [x] `bankingRoutes.js` — bank_accounts, bank_recon, statement_import, credit_card, cashflow, payments
+
+### 16.4 — Sub-Permission Keys API ✅
+- [x] Added `SUB_PERMISSION_KEYS` config in `erpAccessController.js` — defines available sub-keys per module with labels
+- [x] New endpoint `GET /erp/erp-access/sub-permission-keys` — frontend fetches keys from backend (not hardcoded)
+- [x] Updated `createTemplate`, `updateTemplate`, `setUserAccess`, `applyTemplateToUser` to handle `sub_permissions`
+
+### 16.5 — Frontend: AccessTemplateManager.jsx ✅
+- [x] Fetches sub-permission keys from API on load
+- [x] When module is VIEW/FULL, shows expandable sub-permissions panel with checkboxes
+- [x] Select All / Deselect All per module
+- [x] Shows "All functions enabled" badge when FULL with no sub-permissions customized
+- [x] Table shows sub-permission count badge (e.g., "3/5") per module
+
+### 16.6 — Frontend: ErpAccessManager.jsx ✅
+- [x] Sub-permission toggles below each module radio group (when VIEW/FULL)
+- [x] Select All / Deselect All per module
+- [x] "All" badge for FULL without granular restrictions
+- [x] Saves sub_permissions alongside modules
+- [x] Apply Template now copies sub_permissions from template
+
+### 16.7 — Frontend: useErpSubAccess Hook ✅
+- [x] Created `frontend/src/erp/hooks/useErpSubAccess.js`
+- [x] `hasSubPermission(module, subKey)` — mirrors backend middleware logic
+- [x] `hasGranularAccess(module)` — checks if module has granular restrictions
+- Use in pages to conditionally show/hide action buttons
+
+### Defined Sub-Keys (Phase 16 scope)
+
+| Module | Sub-Key | Description |
+|--------|---------|-------------|
+| purchasing | po_create | Create/Edit Purchase Orders |
+| purchasing | po_approve | Approve Purchase Orders |
+| purchasing | vendor_manage | Manage Vendors |
+| purchasing | supplier_invoice | Supplier Invoices |
+| purchasing | ap_payment | AP Payments |
+| accounting | journal_entry | Journal Entries & COA |
+| accounting | check_writing | Check Writing / Payments |
+| accounting | month_end | Month-End Close |
+| accounting | vat_filing | VAT/CWT Compliance |
+| accounting | fixed_assets | Fixed Assets & Depreciation |
+| accounting | loans | Loan Management |
+| accounting | owner_equity | Owner Equity |
+| accounting | petty_cash | Petty Cash (Phase 19) |
+| accounting | office_supplies | Office Supplies (Phase 19) |
+| banking | bank_accounts | Bank Accounts |
+| banking | bank_recon | Bank Reconciliation |
+| banking | statement_import | Statement Import |
+| banking | credit_card | Credit Card Ledger |
+| banking | cashflow | Cashflow Statement |
+| banking | payments | Payment Processing |
+
+---
+
+## PHASE 17 — Warehouse Model ✅
+
+**Goal:** Formalize physical warehouse locations. BDM territories = warehouses. ILO-MAIN = central receiving. Full rollout with WarehousePicker on all inventory pages. Locked-picker pattern: BDMs auto-locked to their warehouse; president can switch.
+
+### 17.1 — Warehouse Model + Schema Changes ✅
+- [x] Created `backend/erp/models/Warehouse.js` — warehouse_code, type (MAIN/TERRITORY/VIRTUAL), manager, assigned_users, draws_from, can_receive_grn, stock_type
+- [x] Added `warehouse_id` to: InventoryLedger, GrnEntry, StockReassignment, InterCompanyTransfer, SalesLine, ConsignmentTracker
+- [x] Added warehouse indexes to InventoryLedger
+
+### 17.2 — Warehouse CRUD ✅
+- [x] Created `backend/erp/controllers/warehouseController.js` — getWarehouses, getMyWarehouses, getWarehouse (with stock summary), create, update, getWarehousesByEntity
+- [x] Created `backend/erp/routes/warehouseRoutes.js` — mounted at `/erp/warehouse`
+- [x] `/warehouse/my` endpoint for WarehousePicker (access-filtered: BDM sees only their warehouse, president sees all)
+
+### 17.3 — FIFO Engine + Inventory Controller (Warehouse-Scoped) ✅
+- [x] Updated `fifoEngine.js` — added `buildStockMatch()` helper, all 5 functions accept `opts.warehouseId`
+- [x] Updated `inventoryController.js` — getMyStock, getBatches, getLedger, getVariance, getAlerts, createGrn, approveGrn, recordPhysicalCount all accept `warehouse_id` query param
+- [x] Updated `useInventory.js` hook — all functions pass warehouse_id
+
+### 17.4 — IC Transfer + Sales + Consignment (Warehouse-Aware) ✅
+- [x] `interCompanyService.js` — shipTransfer/receiveTransfer use warehouse_id on ledger entries + FIFO
+- [x] `interCompanyController.js` — createTransfer/createReassignment accept source/target warehouse_id; approveReassignment passes warehouse context
+- [x] `salesController.js` — CSI posting uses warehouse-scoped FIFO
+- [x] `consignmentController.js` — DR creation uses warehouse-scoped FIFO + ConsignmentTracker gets warehouse_id
+
+### 17.5 — Frontend: WarehousePicker Component ✅
+- [x] Created `frontend/src/erp/components/WarehousePicker.jsx` — shared component
+- [x] Created `frontend/src/erp/hooks/useWarehouses.js` — warehouse API hook
+- [x] Auto-selects user's primary warehouse; disabled if only 1 option; president can switch
+- [x] Supports filterType (PHARMA/FNB), filterGrn (only GRN-capable), compact mode
+
+### 17.6 — Frontend: 6 Pages Updated ✅
+- [x] `MyStock.jsx` — WarehousePicker at top, all stock/alert/variance queries scoped by warehouse
+- [x] `GrnEntry.jsx` — WarehousePicker in form (filterGrn=true), warehouse_id sent on create
+- [x] `TransferOrders.jsx` — Source/target warehouse dropdowns on IC and Internal modals
+- [x] `SalesEntry.jsx` — WarehousePicker (compact), stock loaded by warehouse, warehouse_id on save
+- [x] `DrEntry.jsx` — WarehousePicker (compact), stock + submit scoped by warehouse
+- [x] `ConsignmentDashboard.jsx` + `ConsignmentAging.jsx` — WarehousePicker filter
+
+### 17.7 — WarehouseManager Admin Page ✅
+- [x] Created `frontend/src/erp/pages/WarehouseManager.jsx` — card-based warehouse list, create/edit modal
+- [x] Route `/erp/warehouses` (admin only) in App.jsx
+- [x] Sidebar entry under Inventory section
+
+### 17.8 — Migration Scripts ✅
+- [x] `backend/erp/scripts/migrateWarehouses.js` — creates 13 warehouses from territory registry, backfills warehouse_id on InventoryLedger/GRN/Transfers
+- [x] `backend/erp/scripts/importStockOnHand.js` — imports CSV opening balances with WarehouseCode column
+
+### 13 Warehouses (Territory Registry Aligned)
+| Code | Name | Type | Entity | Stock |
+|------|------|------|--------|-------|
+| ILO-MAIN | Iloilo Main Warehouse | MAIN | VIP | PHARMA |
+| DIG | VIP Davao | TERRITORY | VIP | PHARMA |
+| BAC | VIP Bacolod | TERRITORY | VIP | PHARMA |
+| GSC | VIP Gensan | TERRITORY | VIP | PHARMA |
+| OZA | VIP Ozamiz | TERRITORY | VIP | PHARMA |
+| PAN | VIP Panay | TERRITORY | VIP | PHARMA |
+| DUM | VIP Dumaguete | TERRITORY | VIP | PHARMA |
+| CDO | VIP CDO | TERRITORY | VIP | PHARMA |
+| ILO1 | eBDM 1 Iloilo | TERRITORY | VIP | PHARMA |
+| ILO2 | eBDM 2 Iloilo | TERRITORY | VIP | PHARMA |
+| ACC | Shared Services | TERRITORY | VIP | PHARMA |
+| MGO | MG and CO. Iloilo | TERRITORY | MG AND CO. | PHARMA |
+| BLW | Balai Lawaan | TERRITORY | BALAI LAWAAN | FNB |
+
+---
+
+## PHASE 18 — Service Revenue & Cost Center Expenses ✅
+
+**Goal:** Add non-hospital customer support (PERSON, PHARMACY, DIAGNOSTIC_CENTER, INDUSTRIAL), enable 3 document types (CSI, SERVICE_INVOICE, CASH_RECEIPT), generalize Collection for non-hospital sales, printable receipts, cost center expense allocation.
+
+### 18.1 — Customer Model + CRUD ✅
+- [x] Created `backend/erp/models/Customer.js` — customer_name, customer_type (optional), default_sale_type, tagged_bdms, payment_terms, credit_limit, vat_status
+- [x] Created `backend/erp/controllers/customerController.js` — getAll (filterable by type/status/BDM), getById, create, update, deactivate, tagBdm, untagBdm
+- [x] Created `backend/erp/routes/customerRoutes.js` — mounted at `/erp/customers` (shared infrastructure, no module gate)
+
+### 18.2 — SalesLine Schema Changes ✅
+- [x] Added `sale_type` (CSI/SERVICE_INVOICE/CASH_RECEIPT), `customer_id`, `invoice_number`, `payment_mode`, `service_description` to SalesLine model
+- [x] Made `hospital_id` and `doc_ref` conditionally required (CSI only)
+- [x] Added pre-save validation: hospital_id OR customer_id required
+- [x] Added indexes: `{entity_id, sale_type, status}`, `{entity_id, customer_id, csi_date}`
+
+### 18.3 — Sales Controller Updates ✅
+- [x] `createSale` — accepts sale_type, auto-generates invoice_number for non-CSI via docNumbering (SVC/RCT prefix)
+- [x] `getSales` — filterable by sale_type, customer_id; populates customer_id
+- [x] `validateSales` — type-aware validation: CSI requires doc_ref; SERVICE_INVOICE requires description, no stock check; CASH_RECEIPT requires line_items
+- [x] `submitSales` — SERVICE_INVOICE skips inventory deduction; CASH_RECEIPT uses same flow as CSI
+
+### 18.4 — Printable Receipt System ✅
+- [x] Created `backend/erp/templates/salesReceipt.js` — flexible HTML: pharma (product+batch+expiry) vs BLW (description), mobile-friendly @media print
+- [x] Created `backend/erp/controllers/printController.js` — getReceiptHtml
+- [x] Created `backend/erp/routes/printRoutes.js` — GET `/erp/print/receipt/:id`
+
+### 18.5 — Collection Model Generalization ✅
+- [x] Made `hospital_id` optional, added `customer_id` (ref Customer) and `petty_cash_fund_id` (ref PettyCashFund)
+- [x] Added pre-save validation: hospital_id OR customer_id required
+- [x] Added indexes: `{entity_id, customer_id, cr_date}`, `{petty_cash_fund_id}`
+
+### 18.6 — AutoJournal + Accounting Integration ✅
+- [x] Updated `journalFromCollection()` — cash collections to petty cash use DR 1015 / CR 1100
+- [x] Added `journalFromServiceRevenue()` — DR 1100 AR / CR 4100 Service Revenue
+- [x] Added `journalFromPettyCash()` — for disbursements (DR expense / CR 1015) and remittances (DR 3100 / CR 1015)
+- [x] Added `SERVICE_REVENUE`, `PETTY_CASH` to JournalEntry source_module enum
+
+### 18.7 — Cost Center Expense + President Override ✅
+- [x] Added `cost_center_id` to ExpenseEntry line schema
+- [x] Added `recorded_on_behalf_of` field — office staff records president's expenses, CALF never required
+- [x] Updated CALF flag logic in pre-save to respect recorded_on_behalf_of
+
+### 18.8 — Service Revenue COA Seed ✅
+- [x] Created `backend/erp/scripts/seedServiceRevenueCoa.js` — accounts 4100-4103 (Consulting, FNB, Rental, Other) + 1015 (Petty Cash Fund)
+
+### 18.9 — Frontend ✅
+- [x] Created `frontend/src/erp/hooks/useCustomers.js`
+- [x] Created `frontend/src/erp/pages/CustomerList.jsx` — table with type/status filters, create/edit modal, BDM tagging
+- [x] Created `frontend/src/erp/components/CustomerPicker.jsx` — unified Hospital+Customer search
+- [x] Created `frontend/src/erp/components/CostCenterPicker.jsx`
+- [x] Updated `Sidebar.jsx` — added Customers entry under shared infrastructure
+- [x] Updated `App.jsx` — added `/erp/customers` route
+
+---
+
+## PHASE 19 — Petty Cash, Office Supplies & Collaterals ✅
+
+**Goal:** Revolving petty cash fund (cash deposits from collections, disbursements for expenses, ₱5,000 ceiling triggers remittance to owner), office supply tracking, marketing collateral tracking.
+
+### 19.1 — PettyCash Models ✅
+- [x] Created `backend/erp/models/PettyCashFund.js` — fund_name, fund_code, custodian_id, current_balance, balance_ceiling (default 5000)
+- [x] Created `backend/erp/models/PettyCashTransaction.js` — DEPOSIT/DISBURSEMENT/REMITTANCE/REPLENISHMENT/ADJUSTMENT, auto-numbering (PCF prefix), VAT computation
+- [x] Created `backend/erp/models/PettyCashRemittance.js` — REMITTANCE/REPLENISHMENT doc_type, custodian/owner signatures, JE link
+
+### 19.2 — PettyCash Controller + Routes ✅
+- [x] Created `backend/erp/controllers/pettyCashController.js` — 13 endpoints: fund CRUD, transaction CRUD+post, ceiling check, remittance/replenishment generation, signing, processing with JE
+- [x] Created `backend/erp/routes/pettyCashRoutes.js` — mounted at `/erp/petty-cash` with erpAccessCheck('accounting')
+
+### 19.3 — Printable Petty Cash Forms ✅
+- [x] Created `backend/erp/templates/pettyCashForm.js` — shared HTML for remittance + replenishment: transaction table, totals, signature lines (eBDM + Owner)
+- [x] Added `getPettyCashFormHtml` to printController — GET `/erp/print/petty-cash/:id`
+
+### 19.4 — OfficeSupply Models + CRUD ✅
+- [x] Created `backend/erp/models/OfficeSupply.js` — item_name, category (PAPER/INK_TONER/CLEANING/STATIONERY/ELECTRONICS/OTHER), qty_on_hand, reorder_level
+- [x] Created `backend/erp/models/OfficeSupplyTransaction.js` — PURCHASE/ISSUE/RETURN/ADJUSTMENT, auto-compute total_cost
+- [x] Created `backend/erp/controllers/officeSupplyController.js` — getSupplies, recordTransaction (atomic qty update), getReorderAlerts
+- [x] Created `backend/erp/routes/officeSupplyRoutes.js` — mounted at `/erp/office-supplies` with erpAccessCheck('accounting')
+
+### 19.5 — Collateral Model + CRUD ✅
+- [x] Created `backend/erp/models/Collateral.js` — collateral_type (BROCHURE/SAMPLE/BANNER/GIVEAWAY/POSTER/OTHER), distribution_log, assigned_to
+- [x] Created `backend/erp/controllers/collateralController.js` — getAll, recordDistribution, recordReturn
+- [x] Created `backend/erp/routes/collateralRoutes.js` — mounted at `/erp/collaterals` with erpAccessCheck('inventory')
+
+### 19.6 — Frontend ✅
+- [x] Created `frontend/src/erp/hooks/usePettyCash.js`
+- [x] Created `frontend/src/erp/pages/PettyCash.jsx` — 3 tabs: Fund Overview (ceiling progress bar), Transactions, Documents (with print/sign)
+- [x] Created `frontend/src/erp/hooks/useOfficeSupplies.js`
+- [x] Created `frontend/src/erp/pages/OfficeSupplies.jsx` — category filters, reorder alerts, transaction recording
+- [x] Created `frontend/src/erp/hooks/useCollaterals.js`
+- [x] Created `frontend/src/erp/pages/Collaterals.jsx` — type filter, distribution recording, returns
+- [x] Updated `Sidebar.jsx` — added Petty Cash + Office Supplies (accounting), Collaterals (inventory)
+- [x] Updated `App.jsx` — added `/erp/petty-cash`, `/erp/office-supplies`, `/erp/collaterals` routes
+
+### 19.7 — Seed Scripts ✅
+- [x] Created `backend/erp/scripts/seedPettyCashFunds.js` — PCF-ILO1 (Jay Ann, ₱5,000 ceiling) + PCF-ILO2 (Jenny Rose, ₱5,000 ceiling)
+
+---
+
 ## PHASE SUMMARY
 
 | Phase | Name | Tasks | Est. Duration |
@@ -2908,8 +3148,13 @@
 | 14 | New Reports & Analytics [v5 NEW] ✅ | ~35 | 1-2 weeks |
 | 15.1-15.3,15.5,15.8-15.9 | SAP-equivalent improvements + code quality (partial) ✅ | 6/8 | Completed |
 | 15.4,15.6,15.7 | Future (remaining SAP improvements) | 3 | Post-launch |
+| 16 | Sub-Module Access (Granular Permissions) ✅ | ~20 | 1 week |
+| 17 | Warehouse Model + Full Migration ✅ | ~25 | 2-3 weeks |
+| 18 | Service Revenue + Cost Center Expenses ✅ | ~25 | 2-3 weeks |
+| 19 | Petty Cash / Office Supplies / Collaterals ✅ | ~25 | 2-3 weeks |
 
 **Total pre-launch: ~573 tasks across 18 phases → ~29-37 weeks**
 **Note: Phases 4A+4B add ~13 tasks and ~2.5 weeks for entity migration + inter-company transfers**
 **Note: Phases 10-14 add ~220 tasks and ~10-14 weeks from PRD v5 (PNL Central live system integrations)**
+**Note: Phases 16-19 add ~95 tasks for warehouse, service revenue, petty cash, and sub-module access**
 **Reference PRD:** `docs/VIP ERP PRD v5.md`

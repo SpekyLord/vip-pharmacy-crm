@@ -31,8 +31,12 @@ const getMyStock = catchAsync(async (req, res) => {
     ? req.query.entity_id
     : req.entityId;
 
-  if (!bdmId) {
-    return res.status(400).json({ success: false, message: 'BDM ID required' });
+  // Phase 17: warehouse_id takes priority over bdm_id when provided
+  const warehouseId = req.query.warehouse_id;
+  const opts = warehouseId ? { warehouseId } : undefined;
+
+  if (!bdmId && !warehouseId) {
+    return res.status(400).json({ success: false, message: 'BDM ID or Warehouse ID required' });
   }
 
   const settings = await Settings.getSettings();
@@ -41,7 +45,7 @@ const getMyStock = catchAsync(async (req, res) => {
   nearExpiryDate.setDate(nearExpiryDate.getDate() + nearExpiryDays);
 
   // Get raw stock data from FIFO engine
-  const rawStock = await getMyStockAgg(entityId, bdmId);
+  const rawStock = await getMyStockAgg(entityId, bdmId, opts);
 
   // Group by product
   const productMap = new Map();
@@ -135,12 +139,16 @@ const getBatches = catchAsync(async (req, res) => {
     ? req.query.entity_id
     : req.entityId;
 
+  // Phase 17: warehouse_id takes priority
+  const warehouseId = req.query.warehouse_id;
+  const opts = warehouseId ? { warehouseId } : undefined;
+
   const settings = await Settings.getSettings();
   const nearExpiryDays = settings.NEAR_EXPIRY_DAYS || 120;
   const nearExpiryDate = new Date();
   nearExpiryDate.setDate(nearExpiryDate.getDate() + nearExpiryDays);
 
-  const batches = await getAvailableBatches(entityId, bdmId, req.params.productId);
+  const batches = await getAvailableBatches(entityId, bdmId, req.params.productId, opts);
 
   const enriched = batches.map(b => ({
     ...b,
@@ -164,7 +172,12 @@ const getLedger = catchAsync(async (req, res) => {
     entity_id: new mongoose.Types.ObjectId(req.entityId),
     product_id: new mongoose.Types.ObjectId(req.params.productId)
   };
-  if (bdmId) filter.bdm_id = new mongoose.Types.ObjectId(bdmId);
+  // Phase 17: warehouse_id filter takes priority
+  if (req.query.warehouse_id) {
+    filter.warehouse_id = new mongoose.Types.ObjectId(req.query.warehouse_id);
+  } else if (bdmId) {
+    filter.bdm_id = new mongoose.Types.ObjectId(bdmId);
+  }
 
   if (req.query.date_from || req.query.date_to) {
     filter.recorded_at = {};
@@ -202,7 +215,12 @@ const getVariance = catchAsync(async (req, res) => {
     : req.bdmId;
 
   const match = { entity_id: new mongoose.Types.ObjectId(req.entityId) };
-  if (bdmId) match.bdm_id = new mongoose.Types.ObjectId(bdmId);
+  // Phase 17: warehouse_id filter takes priority
+  if (req.query.warehouse_id) {
+    match.warehouse_id = new mongoose.Types.ObjectId(req.query.warehouse_id);
+  } else if (bdmId) {
+    match.bdm_id = new mongoose.Types.ObjectId(bdmId);
+  }
 
   const IN_TYPES = ['OPENING_BALANCE', 'GRN', 'RETURN_IN', 'TRANSFER_IN'];
   const OUT_TYPES = ['CSI', 'DR_SAMPLING', 'DR_CONSIGNMENT', 'TRANSFER_OUT'];
@@ -284,7 +302,7 @@ const getVariance = catchAsync(async (req, res) => {
  * Creates ADJUSTMENT InventoryLedger entries for any variance.
  */
 const recordPhysicalCount = catchAsync(async (req, res) => {
-  const { counts } = req.body;
+  const { counts, warehouse_id } = req.body;
   // counts: [{ product_id, batch_lot_no, expiry_date, actual_qty }]
 
   if (!counts || !counts.length) {
@@ -324,6 +342,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
     const entry = await InventoryLedger.create({
       entity_id: req.entityId,
       bdm_id: bdmId,
+      warehouse_id: warehouse_id || undefined,
       product_id: count.product_id,
       batch_lot_no: normalizedBatch,
       expiry_date: count.expiry_date,
@@ -368,7 +387,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
  * POST /grn — BDM creates a Goods Received Note (PENDING)
  */
 const createGrn = catchAsync(async (req, res) => {
-  const { grn_date, line_items, waybill_photo_url, undertaking_photo_url, ocr_data, notes } = req.body;
+  const { grn_date, line_items, waybill_photo_url, undertaking_photo_url, ocr_data, notes, warehouse_id } = req.body;
 
   if (!line_items?.length) {
     return res.status(400).json({ success: false, message: 'At least one line item is required' });
@@ -389,6 +408,7 @@ const createGrn = catchAsync(async (req, res) => {
   const grn = await GrnEntry.create({
     entity_id: req.entityId,
     bdm_id: req.bdmId,
+    warehouse_id: warehouse_id || undefined,
     grn_date,
     line_items,
     waybill_photo_url,
@@ -472,6 +492,7 @@ const approveGrn = catchAsync(async (req, res) => {
         await InventoryLedger.create([{
           entity_id: grn.entity_id,
           bdm_id: grn.bdm_id,
+          warehouse_id: grn.warehouse_id || undefined,
           product_id: item.product_id,
           batch_lot_no: item.batch_lot_no,
           expiry_date: item.expiry_date,
@@ -550,13 +571,17 @@ const getAlerts = catchAsync(async (req, res) => {
     ? req.query.bdm_id
     : req.bdmId;
 
+  // Phase 17: warehouse_id takes priority
+  const warehouseId = req.query.warehouse_id;
+  const opts = warehouseId ? { warehouseId } : undefined;
+
   const settings = await Settings.getSettings();
   const nearExpiryDays = settings.NEAR_EXPIRY_DAYS || 120;
   const nearExpiryDate = new Date();
   nearExpiryDate.setDate(nearExpiryDate.getDate() + nearExpiryDays);
 
   // Get raw stock from FIFO engine
-  const rawStock = await getMyStockAgg(req.entityId, bdmId);
+  const rawStock = await getMyStockAgg(req.entityId, bdmId, opts);
 
   // 1. Expiry alerts: batches expiring within NEAR_EXPIRY_DAYS
   const expiryAlerts = [];

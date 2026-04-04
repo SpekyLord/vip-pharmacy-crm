@@ -326,6 +326,14 @@ const initializeSchedulerIfEnabled = (runtimeMode) => {
     return false;
   }
   require('./jobs/emailScheduler').initEmailScheduler();
+
+  // Phase 18-19: AI agent scheduler (6 free + 6 paid agents)
+  try {
+    require('./agents/agentScheduler').initAgentScheduler();
+  } catch (err) {
+    logWarn('agent_scheduler_init_failed', { error: err.message });
+  }
+
   logInfo('scheduler_initialized', { runtimeMode });
   return true;
 };

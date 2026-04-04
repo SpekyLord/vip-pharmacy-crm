@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useConsignment from '../hooks/useConsignment';
+import WarehousePicker from '../components/WarehousePicker';
 
 const AGING_COLORS = {
   OPEN: { bg: '#dbeafe', text: '#1e40af' },
@@ -47,6 +48,7 @@ export default function ConsignmentDashboard() {
   const { user } = useAuth();
   const consignment = useConsignment();
 
+  const [warehouseId, setWarehouseId] = useState('');
   const [hospitals, setHospitals] = useState([]);
   const [summary, setSummary] = useState({});
   const [expandedHospital, setExpandedHospital] = useState(null);
@@ -87,6 +89,7 @@ export default function ConsignmentDashboard() {
       <div className="admin-layout">
         <Sidebar />
         <main className="consignment-main">
+          <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
           <div className="consignment-header">
             <h1>Consignment Tracking</h1>
           </div>

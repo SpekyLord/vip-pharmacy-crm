@@ -62,6 +62,7 @@ const ErpReports = lazy(() => import('./erp/pages/ErpReports'));
 const TransferOrders = lazy(() => import('./erp/pages/TransferOrders'));
 const TransferReceipt = lazy(() => import('./erp/pages/TransferReceipt'));
 const TransferPriceManager = lazy(() => import('./erp/pages/TransferPriceManager'));
+const WarehouseManager = lazy(() => import('./erp/pages/WarehouseManager'));
 const Income = lazy(() => import('./erp/pages/Income'));
 const Pnl = lazy(() => import('./erp/pages/Pnl'));
 const ProfitSharing = lazy(() => import('./erp/pages/ProfitSharing'));
@@ -112,6 +113,15 @@ const CsiBooklets = lazy(() => import('./erp/pages/CsiBooklets'));
 const CycleReports = lazy(() => import('./erp/pages/CycleReports'));
 const CostCenters = lazy(() => import('./erp/pages/CostCenters'));
 const DataArchive = lazy(() => import('./erp/pages/DataArchive'));
+
+// Phase 18 — Service Revenue & Cost Center Expenses
+const HospitalList = lazy(() => import('./erp/pages/HospitalList'));
+const CustomerList = lazy(() => import('./erp/pages/CustomerList'));
+
+// Phase 19 — Petty Cash, Office Supplies & Collaterals
+const PettyCash = lazy(() => import('./erp/pages/PettyCash'));
+const OfficeSupplies = lazy(() => import('./erp/pages/OfficeSupplies'));
+const Collaterals = lazy(() => import('./erp/pages/Collaterals'));
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -466,6 +476,14 @@ function App() {
             }
           />
           <Route
+            path="/erp/warehouses"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <WarehouseManager />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/erp/transfers/receive"
             element={
               <ProtectedRoute allowedRoles={['employee', 'admin']}>
@@ -609,6 +627,15 @@ function App() {
           <Route path="/erp/cycle-reports" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="reports"><CycleReports /></ProtectedRoute>} />
           <Route path="/erp/cost-centers" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><CostCenters /></ProtectedRoute>} />
           <Route path="/erp/data-archive" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><DataArchive /></ProtectedRoute>} />
+
+          {/* Phase 18 — Service Revenue & Cost Center Expenses */}
+          <Route path="/erp/hospitals" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}><HospitalList /></ProtectedRoute>} />
+          <Route path="/erp/customers" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}><CustomerList /></ProtectedRoute>} />
+
+          {/* Phase 19 — Petty Cash, Office Supplies & Collaterals */}
+          <Route path="/erp/petty-cash" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><PettyCash /></ProtectedRoute>} />
+          <Route path="/erp/office-supplies" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><OfficeSupplies /></ProtectedRoute>} />
+          <Route path="/erp/collaterals" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="inventory"><Collaterals /></ProtectedRoute>} />
 
           <Route path="/employee/*" element={<EmployeeRedirect />} />
           <Route path="/employee" element={<EmployeeRedirect />} />

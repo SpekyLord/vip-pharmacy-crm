@@ -62,6 +62,7 @@ const getCollections = catchAsync(async (req, res) => {
   const [data, total] = await Promise.all([
     Collection.find(filter).sort({ cr_date: -1 }).skip(skip).limit(limit)
       .populate('hospital_id', 'hospital_name')
+      .populate('customer_id', 'customer_name customer_type')
       .populate('bdm_id', 'name')
       .lean(),
     Collection.countDocuments(filter)
@@ -73,6 +74,7 @@ const getCollections = catchAsync(async (req, res) => {
 const getCollectionById = catchAsync(async (req, res) => {
   const collection = await Collection.findOne({ _id: req.params.id })
     .populate('hospital_id', 'hospital_name tin cwt_rate payment_terms')
+    .populate('customer_id', 'customer_name customer_type tin payment_terms')
     .populate('bdm_id', 'name')
     .lean();
   if (!collection) return res.status(404).json({ success: false, message: 'Collection not found' });
@@ -129,8 +131,8 @@ const validateCollections = catchAsync(async (req, res) => {
   for (const row of rows) {
     const errors = [];
 
-    // Required fields
-    if (!row.hospital_id) errors.push('Hospital is required');
+    // Required fields — Phase 18: hospital_id OR customer_id
+    if (!row.hospital_id && !row.customer_id) errors.push('Hospital or Customer is required');
     if (!row.cr_no) errors.push('CR number is required');
     if (!row.cr_date) errors.push('CR date is required');
     if (!row.cr_amount) errors.push('CR amount is required');
@@ -139,9 +141,10 @@ const validateCollections = catchAsync(async (req, res) => {
     // Future date check
     if (row.cr_date && row.cr_date > new Date()) errors.push('CR date cannot be in the future');
 
-    // Hard gate: required documents
-    if (!row.cr_photo_url) errors.push('CR photo is required');
-    if (!row.deposit_slip_url) errors.push('Deposit slip photo is required');
+    // Hard gate: required documents — CASH mode skips CR photo and deposit slip
+    const isCash = row.payment_mode === 'CASH';
+    if (!isCash && !row.cr_photo_url) errors.push('CR photo is required');
+    if (!isCash && !row.deposit_slip_url) errors.push('Deposit slip photo is required');
     if (!row.cwt_na && !row.cwt_certificate_url) errors.push('CWT certificate is required (or mark CWT as N/A)');
 
     // Validate settled CSIs reference valid POSTED SalesLines

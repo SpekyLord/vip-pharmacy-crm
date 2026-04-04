@@ -64,6 +64,9 @@ const interCompanyTransferSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  // Phase 17 — warehouse-to-warehouse IC transfers
+  source_warehouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' },
+  target_warehouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' },
   notes: { type: String, trim: true },
 
   // Line items

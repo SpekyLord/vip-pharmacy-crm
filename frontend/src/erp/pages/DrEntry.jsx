@@ -6,6 +6,7 @@ import useConsignment from '../hooks/useConsignment';
 import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
+import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 
@@ -210,16 +211,20 @@ export default function DrEntry() {
   const inventory = useInventory();
   const { hospitals } = useHospitals();
 
+  const [warehouseId, setWarehouseId] = useState('');
   const [rows, setRows] = useState([emptyRow()]);
   const [stockProducts, setStockProducts] = useState([]);
   const [saving, setSaving] = useState(false);
   const [drList, setDrList] = useState([]);
   const [scanOpen, setScanOpen] = useState(false);
 
+  // Load stock when warehouse selected
   useEffect(() => {
-    inventory.getMyStock().then(res => { if (res?.data) setStockProducts(res.data); }).catch(() => {});
+    if (warehouseId) {
+      inventory.getMyStock(null, null, warehouseId).then(res => { if (res?.data) setStockProducts(res.data); }).catch(() => {});
+    }
     loadDRs();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const productOptions = useMemo(() => stockProducts.filter(sp => sp.total_qty > 0), [stockProducts]);
 
@@ -290,13 +295,14 @@ export default function DrEntry() {
           dr_ref: dr.dr_ref,
           dr_date: dr.dr_date,
           dr_type: dr.dr_type,
+          warehouse_id: warehouseId || undefined,
           line_items: dr.line_items
         });
         submitted++;
       }
       setRows([emptyRow()]);
       await loadDRs();
-      inventory.getMyStock().then(res => { if (res?.data) setStockProducts(res.data); }).catch(() => {});
+      if (warehouseId) inventory.getMyStock(null, null, warehouseId).then(res => { if (res?.data) setStockProducts(res.data); }).catch(() => {});
     } catch (err) {
       alert(err.response?.data?.message || err.message || 'DR submission failed');
     } finally {
@@ -338,6 +344,7 @@ export default function DrEntry() {
       <div className="admin-layout">
         <Sidebar />
         <main className="dr-main">
+          <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
           <div className="dr-header">
             <h1>Delivery Receipts</h1>
             <div className="dr-actions">

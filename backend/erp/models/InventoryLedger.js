@@ -12,6 +12,11 @@ const inventoryLedgerSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  warehouse_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Warehouse',
+    // Optional during migration; new entries should always set this (Phase 17)
+  },
   product_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ProductMaster',
@@ -87,6 +92,8 @@ inventoryLedgerSchema.pre('save', function (next) {
 // Indexes
 inventoryLedgerSchema.index({ entity_id: 1, bdm_id: 1, product_id: 1, batch_lot_no: 1 });
 inventoryLedgerSchema.index({ entity_id: 1, bdm_id: 1, product_id: 1, expiry_date: 1 });
+inventoryLedgerSchema.index({ entity_id: 1, warehouse_id: 1, product_id: 1, batch_lot_no: 1 });
+inventoryLedgerSchema.index({ entity_id: 1, warehouse_id: 1, product_id: 1, expiry_date: 1 });
 inventoryLedgerSchema.index({ event_id: 1 });
 inventoryLedgerSchema.index({ recorded_at: -1 });
 

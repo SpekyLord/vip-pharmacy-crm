@@ -6,6 +6,7 @@
  */
 const ProductMaster = require('../models/ProductMaster');
 const Hospital = require('../models/Hospital');
+const Customer = require('../models/Customer');
 const VendorMaster = require('../models/VendorMaster');
 const { cleanName, expandAbbreviations } = require('../utils/nameClean');
 
@@ -285,4 +286,80 @@ const resolveVendor = async (ocrText, entityId) => {
   return null;
 };
 
-module.exports = { resolveProduct, resolveHospital, resolveVendor };
+/**
+ * Resolve customer name from OCR text — Phase 18
+ * Same cascade pattern as resolveHospital but searches Customer model (entity-scoped).
+ * Falls back to resolveHospital if no Customer match found (unified search).
+ *
+ * @param {string} ocrText - Raw customer/hospital name from OCR
+ * @param {ObjectId|string} entityId - Tenant entity
+ * @returns {{ customer, customer_type: 'customer'|'hospital', confidence, match_method } | null}
+ */
+const resolveCustomer = async (ocrText, entityId) => {
+  if (!ocrText) return null;
+
+  const cleaned = cleanName(ocrText);
+  if (!cleaned) return null;
+
+  // Step 1: Try Customer model first (entity-scoped)
+  if (entityId) {
+    // EXACT match
+    let customer = await Customer.findOne({
+      entity_id: entityId,
+      customer_name_clean: cleaned,
+      status: 'ACTIVE'
+    }).lean();
+    if (customer) {
+      return { customer, customer_type: 'customer', confidence: 'HIGH', match_method: 'EXACT' };
+    }
+
+    // ALIAS match
+    const aliasRegex = new RegExp(escapeRegex(cleaned), 'i');
+    customer = await Customer.findOne({
+      entity_id: entityId,
+      customer_aliases: aliasRegex,
+      status: 'ACTIVE'
+    }).lean();
+    if (customer) {
+      return { customer, customer_type: 'customer', confidence: 'MEDIUM', match_method: 'ALIAS' };
+    }
+
+    // PARTIAL match (starts with)
+    const partialRegex = new RegExp(`^${escapeRegex(cleaned.substring(0, Math.min(cleaned.length, 20)))}`, 'i');
+    customer = await Customer.findOne({
+      entity_id: entityId,
+      customer_name_clean: partialRegex,
+      status: 'ACTIVE'
+    }).lean();
+    if (customer) {
+      return { customer, customer_type: 'customer', confidence: 'LOW', match_method: 'PARTIAL' };
+    }
+
+    // TEXT SEARCH
+    try {
+      const textResults = await Customer.find(
+        { entity_id: entityId, status: 'ACTIVE', $text: { $search: ocrText } },
+        { score: { $meta: 'textScore' } }
+      ).sort({ score: { $meta: 'textScore' } }).limit(1).lean();
+
+      if (textResults.length && textResults[0].score > 1.5) {
+        return { customer: textResults[0], customer_type: 'customer', confidence: 'LOW', match_method: 'TEXT_SEARCH' };
+      }
+    } catch (_) { /* text index may not exist */ }
+  }
+
+  // Step 2: Fall back to Hospital resolution (global)
+  const hospitalResult = await resolveHospital(ocrText, entityId);
+  if (hospitalResult) {
+    return {
+      customer: hospitalResult.hospital,
+      customer_type: 'hospital',
+      confidence: hospitalResult.confidence,
+      match_method: hospitalResult.match_method
+    };
+  }
+
+  return null;
+};
+
+module.exports = { resolveProduct, resolveHospital, resolveVendor, resolveCustomer };

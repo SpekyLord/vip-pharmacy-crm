@@ -1,26 +1,32 @@
+/**
+ * Banking & Cash Routes — Phase 13, updated Phase 16 (sub-module access)
+ *
+ * Write operations gated by erpSubAccessCheck (replaces roleCheck).
+ * Read routes rely on module-level erpAccessCheck at mount.
+ */
 const express = require('express');
 const router = express.Router();
-const { roleCheck } = require('../../middleware/roleCheck');
+const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const ctrl = require('../controllers/bankingController');
 
 // ═══ Bank Accounts ═══
 router.get('/bank-accounts', ctrl.listBankAccounts);
-router.post('/bank-accounts', roleCheck('admin', 'finance', 'president'), ctrl.createBankAccount);
-router.put('/bank-accounts/:id', roleCheck('admin', 'finance', 'president'), ctrl.updateBankAccount);
+router.post('/bank-accounts', erpSubAccessCheck('banking', 'bank_accounts'), ctrl.createBankAccount);
+router.put('/bank-accounts/:id', erpSubAccessCheck('banking', 'bank_accounts'), ctrl.updateBankAccount);
 
 // ═══ Bank Statements & Reconciliation ═══
-router.post('/statements/import', roleCheck('admin', 'finance', 'president'), ctrl.importStatement);
+router.post('/statements/import', erpSubAccessCheck('banking', 'statement_import'), ctrl.importStatement);
 router.get('/statements', ctrl.listStatements);
 router.get('/statements/:id', ctrl.getStatement);
-router.post('/statements/:id/auto-match', roleCheck('admin', 'finance', 'president'), ctrl.autoMatchStatement);
-router.post('/statements/:id/manual-match', roleCheck('admin', 'finance', 'president'), ctrl.manualMatchEntry);
+router.post('/statements/:id/auto-match', erpSubAccessCheck('banking', 'bank_recon'), ctrl.autoMatchStatement);
+router.post('/statements/:id/manual-match', erpSubAccessCheck('banking', 'bank_recon'), ctrl.manualMatchEntry);
 router.get('/statements/:id/recon', ctrl.getReconSummary);
-router.post('/statements/:id/finalize', roleCheck('admin', 'finance', 'president'), ctrl.finalizeRecon);
+router.post('/statements/:id/finalize', erpSubAccessCheck('banking', 'bank_recon'), ctrl.finalizeRecon);
 
 // ═══ Credit Card Transactions & Payments ═══
 router.get('/credit-cards/balances', ctrl.getCardBalances);
 router.get('/credit-cards/:id/ledger', ctrl.getCardLedger);
-router.post('/credit-cards/transactions', roleCheck('admin', 'finance', 'president'), ctrl.createCreditCardTransaction);
-router.post('/credit-cards/:id/payment', roleCheck('admin', 'finance', 'president'), ctrl.recordCardPayment);
+router.post('/credit-cards/transactions', erpSubAccessCheck('banking', 'credit_card'), ctrl.createCreditCardTransaction);
+router.post('/credit-cards/:id/payment', erpSubAccessCheck('banking', 'credit_card'), ctrl.recordCardPayment);
 
 module.exports = router;

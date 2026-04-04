@@ -40,6 +40,13 @@ const accessTemplateSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Sub-Module Permissions (Phase 16)
+    // Dynamic map: { [module]: { [subKey]: Boolean } }
+    // When applied to a user, populates user.erp_access.sub_permissions
+    sub_permissions: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     is_system: {
       type: Boolean,
       default: false,

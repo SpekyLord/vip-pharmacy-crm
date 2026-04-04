@@ -18,8 +18,9 @@ const getAll = catchAsync(async (req, res) => {
   }
 
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 50;
-  const skip = (page - 1) * limit;
+  const rawLimit = req.query.limit;
+  const limit = rawLimit === '0' || rawLimit === 0 ? 0 : (parseInt(rawLimit) || 50);
+  const skip = (page - 1) * (limit || 1);
 
   const query = Hospital.find(filter).sort({ hospital_name: 1 });
   if (limit > 0) query.skip(skip).limit(limit);

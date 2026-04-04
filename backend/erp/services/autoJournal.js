@@ -99,8 +99,16 @@ function journalFromSale(salesLine, entityId, userId) {
  */
 function journalFromCollection(collection, bankCoaCode, bankName, userId) {
   const amount = collection.total_amount || collection.amount_collected || 0;
-  const coaCode = bankCoaCode || '1000';
-  const coaName = bankName || 'Cash on Hand';
+
+  // Phase 18/19: cash collections to petty cash use account 1015
+  let coaCode, coaName;
+  if (collection.petty_cash_fund_id) {
+    coaCode = '1015';
+    coaName = 'Petty Cash Fund';
+  } else {
+    coaCode = bankCoaCode || '1000';
+    coaName = bankName || 'Cash on Hand';
+  }
 
   return {
     je_date: collection.collection_date || collection.created_at || new Date(),
@@ -379,6 +387,103 @@ function journalFromOwnerEquity(equityEntry, bankCoaCode, bankName, userId) {
   };
 }
 
+/**
+ * Journal from Service Revenue (Phase 18)
+ * DR 1100 AR Trade (or Cash if paid)
+ * CR 4100 Service Revenue
+ */
+function journalFromServiceRevenue(salesLine, entityId, userId) {
+  const gross = salesLine.invoice_total || 0;
+  const vat = salesLine.total_vat || 0;
+  const net = gross - vat;
+  const docRef = salesLine.invoice_number || salesLine.doc_ref || '';
+
+  const lines = [
+    { account_code: '1100', account_name: 'Accounts Receivable — Trade', debit: gross, credit: 0, description: `Service: ${docRef}` },
+    { account_code: '4100', account_name: 'Service Revenue', debit: 0, credit: net, description: `Service: ${docRef}` },
+  ];
+
+  if (vat > 0) {
+    lines.push({ account_code: '2100', account_name: 'Output VAT', debit: 0, credit: vat, description: `VAT on ${docRef}` });
+  }
+
+  return {
+    je_date: salesLine.csi_date || salesLine.created_at || new Date(),
+    period: dateToPeriod(salesLine.csi_date || salesLine.created_at || new Date()),
+    description: `Service Revenue: ${docRef}`,
+    source_module: 'SERVICE_REVENUE',
+    source_event_id: salesLine.event_id || null,
+    source_doc_ref: docRef,
+    lines,
+    bir_flag: 'BOTH',
+    vat_flag: vat > 0 ? 'VATABLE' : 'EXEMPT',
+    bdm_id: salesLine.bdm_id || null,
+    created_by: userId
+  };
+}
+
+/**
+ * Journal from Petty Cash transaction (Phase 19)
+ * DISBURSEMENT: DR 6XXX Expense, CR 1015 Petty Cash Fund
+ * REMITTANCE:   DR 3100 Owner Drawings, CR 1015 Petty Cash Fund
+ * REPLENISHMENT: DR 1015 Petty Cash Fund, CR 3100 Owner Drawings
+ */
+function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId) {
+  const amount = txn.amount || 0;
+  const docRef = txn.txn_number || String(txn._id);
+
+  if (txn.txn_type === 'DISBURSEMENT') {
+    return {
+      je_date: txn.txn_date || new Date(),
+      period: dateToPeriod(txn.txn_date || new Date()),
+      description: `Petty Cash Disbursement: ${docRef}`,
+      source_module: 'PETTY_CASH',
+      source_doc_ref: docRef,
+      lines: [
+        { account_code: expenseCoaCode || '6900', account_name: expenseCoaName || 'Miscellaneous Expense', debit: amount, credit: 0, description: txn.particulars || '' },
+        { account_code: '1015', account_name: 'Petty Cash Fund', debit: 0, credit: amount, description: txn.particulars || '' }
+      ],
+      bir_flag: 'BOTH',
+      vat_flag: 'N/A',
+      bdm_id: txn.bdm_id || null,
+      created_by: userId
+    };
+  }
+
+  if (txn.txn_type === 'REMITTANCE') {
+    return {
+      je_date: txn.txn_date || new Date(),
+      period: dateToPeriod(txn.txn_date || new Date()),
+      description: `Petty Cash Remittance: ${docRef}`,
+      source_module: 'PETTY_CASH',
+      source_doc_ref: docRef,
+      lines: [
+        { account_code: '3100', account_name: 'Owner Drawings', debit: amount, credit: 0, description: 'Petty cash remittance to owner' },
+        { account_code: '1015', account_name: 'Petty Cash Fund', debit: 0, credit: amount, description: 'Petty cash remittance to owner' }
+      ],
+      bir_flag: 'INTERNAL',
+      vat_flag: 'N/A',
+      created_by: userId
+    };
+  }
+
+  // REPLENISHMENT
+  return {
+    je_date: txn.txn_date || new Date(),
+    period: dateToPeriod(txn.txn_date || new Date()),
+    description: `Petty Cash Replenishment: ${docRef}`,
+    source_module: 'PETTY_CASH',
+    source_doc_ref: docRef,
+    lines: [
+      { account_code: '1015', account_name: 'Petty Cash Fund', debit: amount, credit: 0, description: 'Owner replenishment' },
+      { account_code: '3100', account_name: 'Owner Drawings', debit: 0, credit: amount, description: 'Owner replenishment' }
+    ],
+    bir_flag: 'INTERNAL',
+    vat_flag: 'N/A',
+    created_by: userId
+  };
+}
+
 module.exports = {
   resolveFundingCoa,
   journalFromSale,
@@ -390,5 +495,7 @@ module.exports = {
   journalFromAP,
   journalFromDepreciation,
   journalFromInterest,
-  journalFromOwnerEquity
+  journalFromOwnerEquity,
+  journalFromServiceRevenue,
+  journalFromPettyCash
 };

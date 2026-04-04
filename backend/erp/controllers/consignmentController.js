@@ -73,12 +73,16 @@ const createDR = catchAsync(async (req, res) => {
         const normalizedBatch = item.batch_lot_no ? cleanBatchNo(item.batch_lot_no) : null;
         const qty = parseFloat(item.qty);
 
+        // Phase 17: warehouse-scoped FIFO
+        const warehouseId = req.body.warehouse_id;
+        const fifoOpts = warehouseId ? { warehouseId } : undefined;
+
         // Deduct stock via FIFO or specific batch
         let consumption;
         if (normalizedBatch) {
-          consumption = await consumeSpecificBatch(req.entityId, req.bdmId, item.product_id, normalizedBatch, qty);
+          consumption = await consumeSpecificBatch(req.entityId, req.bdmId, item.product_id, normalizedBatch, qty, fifoOpts);
         } else {
-          consumption = await consumeFIFO(req.entityId, req.bdmId, item.product_id, qty);
+          consumption = await consumeFIFO(req.entityId, req.bdmId, item.product_id, qty, fifoOpts);
         }
 
         // Create InventoryLedger entries for each consumed batch
@@ -87,6 +91,7 @@ const createDR = catchAsync(async (req, res) => {
           const [ledger] = await InventoryLedger.create([{
             entity_id: req.entityId,
             bdm_id: req.bdmId,
+            warehouse_id: warehouseId || undefined,
             product_id: item.product_id,
             batch_lot_no: cb.batch_lot_no,
             expiry_date: cb.expiry_date,
@@ -104,6 +109,7 @@ const createDR = catchAsync(async (req, res) => {
           const [tracker] = await ConsignmentTracker.create([{
             entity_id: req.entityId,
             bdm_id: req.bdmId,
+            warehouse_id: warehouseId || undefined,
             hospital_id,
             hospital_name: hospital.hospital_name,
             dr_ref,

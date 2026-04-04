@@ -3,12 +3,43 @@ import useErpApi from './useErpApi';
 export default function useInventory() {
   const api = useErpApi();
 
-  const getMyStock = (bdmId, entityId) => api.get('/inventory/my-stock', { params: { ...(bdmId && { bdm_id: bdmId }), ...(entityId && { entity_id: entityId }) } });
-  const getBatches = (productId, bdmId, entityId) => api.get(`/inventory/batches/${productId}`, { params: { ...(bdmId && { bdm_id: bdmId }), ...(entityId && { entity_id: entityId }) } });
+  // Phase 17: all functions accept optional warehouse_id param
+  const getMyStock = (bdmId, entityId, warehouseId) => api.get('/inventory/my-stock', {
+    params: {
+      ...(bdmId && { bdm_id: bdmId }),
+      ...(entityId && { entity_id: entityId }),
+      ...(warehouseId && { warehouse_id: warehouseId }),
+    }
+  });
+
+  const getBatches = (productId, bdmId, entityId, warehouseId) => api.get(`/inventory/batches/${productId}`, {
+    params: {
+      ...(bdmId && { bdm_id: bdmId }),
+      ...(entityId && { entity_id: entityId }),
+      ...(warehouseId && { warehouse_id: warehouseId }),
+    }
+  });
+
   const getLedger = (productId, params = {}) => api.get(`/inventory/ledger/${productId}`, { params });
-  const getVariance = (bdmId) => api.get('/inventory/variance', { params: bdmId ? { bdm_id: bdmId } : {} });
-  const recordPhysicalCount = (counts) => api.post('/inventory/physical-count', { counts });
-  const getAlerts = (bdmId) => api.get('/inventory/alerts', { params: bdmId ? { bdm_id: bdmId } : {} });
+
+  const getVariance = (bdmId, warehouseId) => api.get('/inventory/variance', {
+    params: {
+      ...(bdmId && { bdm_id: bdmId }),
+      ...(warehouseId && { warehouse_id: warehouseId }),
+    }
+  });
+
+  const recordPhysicalCount = (counts, warehouseId) => api.post('/inventory/physical-count', {
+    counts,
+    ...(warehouseId && { warehouse_id: warehouseId }),
+  });
+
+  const getAlerts = (bdmId, warehouseId) => api.get('/inventory/alerts', {
+    params: {
+      ...(bdmId && { bdm_id: bdmId }),
+      ...(warehouseId && { warehouse_id: warehouseId }),
+    }
+  });
 
   return {
     ...api,

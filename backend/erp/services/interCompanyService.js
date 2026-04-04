@@ -45,19 +45,23 @@ const shipTransfer = async (transferId, shippedBy) => {
     await session.withTransaction(async () => {
       const ledgerEntries = [];
 
+      // Phase 17: pass warehouse context to FIFO engine
+      const sourceWarehouseId = transfer.source_warehouse_id;
+      const fifoOpts = sourceWarehouseId ? { warehouseId: sourceWarehouseId.toString() } : undefined;
+
       for (const item of transfer.line_items) {
-        // Consume stock from source entity
+        // Consume stock from source entity/warehouse
         let consumptionPlan;
         if (item.batch_lot_no) {
           const plan = await consumeSpecificBatch(
             transfer.source_entity_id, sourceBdmId,
-            item.product_id, item.batch_lot_no, item.qty
+            item.product_id, item.batch_lot_no, item.qty, fifoOpts
           );
           consumptionPlan = [plan];
         } else {
           consumptionPlan = await consumeFIFO(
             transfer.source_entity_id, sourceBdmId,
-            item.product_id, item.qty
+            item.product_id, item.qty, fifoOpts
           );
         }
 
@@ -66,6 +70,7 @@ const shipTransfer = async (transferId, shippedBy) => {
           ledgerEntries.push({
             entity_id: transfer.source_entity_id,
             bdm_id: sourceBdmId,
+            warehouse_id: sourceWarehouseId || undefined,
             product_id: item.product_id,
             batch_lot_no: consumed.batch_lot_no,
             expiry_date: consumed.expiry_date,
@@ -162,6 +167,9 @@ const receiveTransfer = async (transferId, receivedBy) => {
     await session.withTransaction(async () => {
       const ledgerEntries = [];
 
+      // Phase 17: target warehouse context
+      const targetWarehouseId = transfer.target_warehouse_id;
+
       for (const item of transfer.line_items) {
         // Phase 4B.6 — Auto-create product in target entity if not exists
         await syncProductToTargetEntity(
@@ -182,6 +190,7 @@ const receiveTransfer = async (transferId, receivedBy) => {
         ledgerEntries.push({
           entity_id: transfer.target_entity_id,
           bdm_id: targetBdmId,
+          warehouse_id: targetWarehouseId || undefined,
           product_id: targetProductId,
           batch_lot_no: item.batch_lot_no || 'TRANSFER',
           expiry_date: item.expiry_date || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
@@ -335,6 +344,7 @@ const cancelTransfer = async (transferId, cancelledBy, reason) => {
       await InventoryLedger.create({
         entity_id: transfer.source_entity_id,
         bdm_id: sourceBdmId,
+        warehouse_id: transfer.source_warehouse_id || undefined,
         product_id: item.product_id,
         batch_lot_no: item.batch_lot_no || 'REVERSAL',
         expiry_date: item.expiry_date || new Date(),
@@ -360,6 +370,7 @@ const cancelTransfer = async (transferId, cancelledBy, reason) => {
       await InventoryLedger.create({
         entity_id: transfer.target_entity_id,
         bdm_id: targetBdmId,
+        warehouse_id: transfer.target_warehouse_id || undefined,
         product_id: item.product_id,
         batch_lot_no: item.batch_lot_no || 'REVERSAL',
         expiry_date: item.expiry_date || new Date(),
@@ -382,6 +393,7 @@ const cancelTransfer = async (transferId, cancelledBy, reason) => {
       await InventoryLedger.create({
         entity_id: transfer.source_entity_id,
         bdm_id: sourceBdmId,
+        warehouse_id: transfer.source_warehouse_id || undefined,
         product_id: item.product_id,
         batch_lot_no: item.batch_lot_no || 'REVERSAL',
         expiry_date: item.expiry_date || new Date(),

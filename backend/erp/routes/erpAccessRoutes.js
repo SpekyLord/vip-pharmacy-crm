@@ -10,10 +10,14 @@ const {
   setUserAccess,
   applyTemplateToUser,
   getMyAccess,
+  getSubPermissionKeys,
 } = require('../controllers/erpAccessController');
 
 // ═══ Self-service ═══
 router.get('/my', getMyAccess);
+
+// ═══ Sub-Permission Keys (Phase 16 — returns available sub-keys per module) ═══
+router.get('/sub-permission-keys', getSubPermissionKeys);
 
 // ═══ Template CRUD (admin/president only for mutations) ═══
 router.get('/templates', getTemplates);

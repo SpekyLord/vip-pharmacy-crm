@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useSales from '../hooks/useSales';
 import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
+import useCustomers from '../hooks/useCustomers';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
+import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 
@@ -47,7 +50,7 @@ const pageStyles = `
   .sales-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sales-table th { background: var(--erp-accent-soft, #e8efff); color: var(--erp-text); padding: 10px 8px; text-align: left; font-weight: 600; white-space: nowrap; position: sticky; top: 0; }
   .sales-table td { padding: 6px 8px; border-top: 1px solid var(--erp-border, #dbe4f0); vertical-align: top; }
-  .sales-table input, .sales-table select { width: 100%; padding: 6px 8px; border: 1px solid var(--erp-border, #dbe4f0); border-radius: 6px; font-size: 13px; background: var(--erp-panel, #fff); color: var(--erp-text); }
+  .sales-table input, .sales-table select { width: 100%; padding: 8px; border: 1px solid var(--erp-border, #dbe4f0); border-radius: 6px; font-size: 14px; background: var(--erp-panel, #fff); color: var(--erp-text); }
   .sales-table input:focus, .sales-table select:focus { outline: none; border-color: var(--erp-accent, #1e5eff); }
   .sales-table .readonly { background: var(--erp-bg, #f4f7fb); color: var(--erp-muted, #5f7188); border: none; }
 
@@ -63,6 +66,14 @@ const pageStyles = `
   .override-reason { margin-top: 4px; font-size: 11px !important; border-color: #f59e0b !important; background: #fffbeb !important; }
   .override-reason::placeholder { color: #b45309; font-style: italic; }
   .add-row-btn { display: block; width: 100%; padding: 10px; text-align: center; color: var(--erp-accent); background: transparent; border: 2px dashed var(--erp-border); border-radius: 0 0 12px 12px; cursor: pointer; font-weight: 600; }
+
+  .sale-type-tabs { display: flex; gap: 4px; margin-bottom: 12px; background: var(--erp-bg, #f4f7fb); padding: 4px; border-radius: 10px; width: fit-content; }
+  .sale-type-tab { padding: 8px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: var(--erp-muted, #5f7188); transition: all 0.15s; }
+  .sale-type-tab.active { background: var(--erp-accent, #1e5eff); color: #fff; }
+  .service-form { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 12px; padding: 20px; }
+  .service-form label { font-size: 12px; font-weight: 600; color: var(--erp-muted); text-transform: uppercase; display: block; margin-bottom: 4px; }
+  .service-form input, .service-form textarea, .service-form select { width: 100%; padding: 10px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 14px; margin-bottom: 14px; }
+  .service-form textarea { min-height: 80px; resize: vertical; }
 
   /* Scan CSI Modal */
   .scan-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -419,19 +430,65 @@ export default function SalesEntry() {
   const sales = useSales();
   const inventory = useInventory();
   const { hospitals } = useHospitals();
+  const customers = useCustomers();
 
+  const [saleType, setSaleType] = useState('CSI'); // CSI, CASH_RECEIPT, SERVICE_INVOICE
+  const [warehouseId, setWarehouseId] = useState('');
   const [rows, setRows] = useState([emptyRow()]);
   const [stockProducts, setStockProducts] = useState([]);
   const [validationErrors, setValidationErrors] = useState([]);
   const [actionLoading, setActionLoading] = useState('');
   const [scanModalOpen, setScanModalOpen] = useState(false);
+  const [customerList, setCustomerList] = useState([]);
 
-  // Load stock on mount (only products with stock > 0)
+  // Phase 18: Service Invoice state (no line items — just description + total)
+  const [serviceForm, setServiceForm] = useState({ customer_type: 'hospital', customer_ref: '', csi_date: new Date().toISOString().split('T')[0], service_description: '', invoice_total: '', payment_mode: 'CASH' });
+
+  // Prefill from navigation (e.g. "Issue CSI" from Consignment Aging)
+  const location = useLocation();
+  const prefillApplied = useRef(false);
   useEffect(() => {
-    inventory.getMyStock().then(res => {
+    const prefill = location.state?.prefill;
+    if (!prefill || prefillApplied.current) return;
+    prefillApplied.current = true;
+
+    // Set warehouse if provided
+    if (prefill.warehouse_id) setWarehouseId(prefill.warehouse_id);
+
+    // Prefill the first row with hospital + product
+    setRows([{
+      ...emptyRow(),
+      hospital_id: prefill.hospital_id || '',
+      csi_date: new Date().toISOString().split('T')[0],
+      line_items: [{
+        product_id: prefill.product_id || '',
+        qty: prefill.qty || '',
+        unit: '',
+        unit_price: '',
+        item_key: '',
+        batch_lot_no: '',
+        fifo_override: false,
+        override_reason: ''
+      }]
+    }]);
+  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load customers for non-CSI modes
+  useEffect(() => {
+    if (saleType !== 'CSI') {
+      customers.getAll({ limit: 200, status: 'ACTIVE' }).then(res => {
+        if (res?.data) setCustomerList(res.data);
+      }).catch(() => {});
+    }
+  }, [saleType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load stock when warehouse is selected (auto-selected by WarehousePicker)
+  useEffect(() => {
+    if (!warehouseId) return;
+    inventory.getMyStock(null, null, warehouseId).then(res => {
       if (res?.data) setStockProducts(res.data);
     }).catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build product dropdown options from stock (includes batches for FIFO selector)
   const productOptions = useMemo(() => {
@@ -537,9 +594,13 @@ export default function SalesEntry() {
         if (!row.hospital_id || !row.doc_ref) continue;
 
         const payload = {
-          hospital_id: row.hospital_id,
+          sale_type: saleType,
+          hospital_id: row.hospital_id || undefined,
+          customer_id: row.customer_id || undefined,
           csi_date: row.csi_date,
-          doc_ref: row.doc_ref,
+          doc_ref: row.doc_ref || undefined,
+          warehouse_id: warehouseId || undefined,
+          payment_mode: row.payment_mode || undefined,
           line_items: row.line_items.filter(li => li.product_id && li.qty).map(li => ({
             product_id: li.product_id,
             item_key: li.item_key,
@@ -641,30 +702,182 @@ export default function SalesEntry() {
       <div className="admin-layout">
         <Sidebar />
         <main className="sales-main">
-          <div className="sales-header">
-            <h1>Sales Entry</h1>
-            <div className="sales-actions">
-              <button className="btn btn-primary" onClick={() => setScanModalOpen(true)} style={{ background: '#7c3aed' }}>📷 Scan CSI</button>
-              <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
-              <button className="btn btn-primary" onClick={saveAll} disabled={actionLoading === 'save'}>
-                {actionLoading === 'save' ? 'Saving...' : 'Save Drafts'}
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 8 }}>
+            <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
+          </div>
+          {/* Phase 18: Sale Type Tabs */}
+          <div className="sale-type-tabs">
+            {[
+              { key: 'CSI', label: 'CSI (Booklet)' },
+              { key: 'CASH_RECEIPT', label: 'Cash Receipt' },
+              { key: 'SERVICE_INVOICE', label: 'Service Invoice' }
+            ].map(t => (
+              <button key={t.key} className={`sale-type-tab ${saleType === t.key ? 'active' : ''}`} onClick={() => setSaleType(t.key)}>
+                {t.label}
               </button>
-              <button className="btn btn-warning" onClick={handleValidate} disabled={!hasDraftOrError || !!actionLoading}>
-                {actionLoading === 'validate' ? 'Validating...' : 'Validate Sales'}
-              </button>
-              <button className="btn btn-success" onClick={handleSubmit} disabled={!allValid || !!actionLoading}>
-                {actionLoading === 'submit' ? 'Submitting...' : 'Submit Sales'}
-              </button>
-              {hasPosted && (
-                <button className="btn btn-danger" onClick={handleReopen} disabled={!!actionLoading}>
-                  {actionLoading === 'reopen' ? 'Reopening...' : 'Re-open'}
-                </button>
-              )}
-            </div>
+            ))}
           </div>
 
-          {/* Desktop Table */}
-          <div className="sales-grid sales-table-wrapper">
+          <div className="sales-header">
+            <h1>{saleType === 'SERVICE_INVOICE' ? 'Service Invoice' : saleType === 'CASH_RECEIPT' ? 'Cash Receipt' : 'Sales Entry'}</h1>
+            {saleType !== 'SERVICE_INVOICE' && (
+              <div className="sales-actions">
+                <button className="btn btn-primary" onClick={() => setScanModalOpen(true)} style={{ background: '#7c3aed' }}>📷 Scan CSI</button>
+                <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
+                <button className="btn btn-primary" onClick={saveAll} disabled={actionLoading === 'save'}>
+                  {actionLoading === 'save' ? 'Saving...' : 'Save Drafts'}
+                </button>
+                <button className="btn btn-warning" onClick={handleValidate} disabled={!hasDraftOrError || !!actionLoading}>
+                  {actionLoading === 'validate' ? 'Validating...' : 'Validate Sales'}
+                </button>
+                <button className="btn btn-success" onClick={handleSubmit} disabled={!allValid || !!actionLoading}>
+                  {actionLoading === 'submit' ? 'Submitting...' : 'Submit Sales'}
+                </button>
+                {hasPosted && (
+                  <button className="btn btn-danger" onClick={handleReopen} disabled={!!actionLoading}>
+                    {actionLoading === 'reopen' ? 'Reopening...' : 'Re-open'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Phase 18: Service Invoice Form (no line items — description + total) */}
+          {saleType === 'SERVICE_INVOICE' && (
+            <div className="service-form">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div>
+                  <label>Customer / Hospital</label>
+                  <select value={`${serviceForm.customer_type}:${serviceForm.customer_ref}`} onChange={e => {
+                    const [type, id] = e.target.value.split(':');
+                    setServiceForm(f => ({ ...f, customer_type: type, customer_ref: id }));
+                  }}>
+                    <option value=":">Select...</option>
+                    <optgroup label="Hospitals">
+                      {hospitals.map(h => <option key={h._id} value={`hospital:${h._id}`}>{h.hospital_name}</option>)}
+                    </optgroup>
+                    <optgroup label="Customers">
+                      {customerList.map(c => <option key={c._id} value={`customer:${c._id}`}>{c.customer_name}{c.customer_type ? ` (${c.customer_type})` : ''}</option>)}
+                    </optgroup>
+                  </select>
+                </div>
+                <div>
+                  <label>Invoice Date</label>
+                  <input type="date" value={serviceForm.csi_date} onChange={e => setServiceForm(f => ({ ...f, csi_date: e.target.value }))} />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label>Service Description</label>
+                  <textarea value={serviceForm.service_description} onChange={e => setServiceForm(f => ({ ...f, service_description: e.target.value }))} placeholder="e.g. Breakfast (20 pax), Room Rental (3 nights), Consulting fee..." />
+                </div>
+                <div>
+                  <label>Invoice Total (₱)</label>
+                  <input type="number" step="0.01" value={serviceForm.invoice_total} onChange={e => setServiceForm(f => ({ ...f, invoice_total: e.target.value }))} placeholder="0.00" />
+                </div>
+                <div>
+                  <label>Payment Mode</label>
+                  <select value={serviceForm.payment_mode} onChange={e => setServiceForm(f => ({ ...f, payment_mode: e.target.value }))}>
+                    <option value="CASH">Cash</option>
+                    <option value="CHECK">Check</option>
+                    <option value="GCASH">GCash</option>
+                    <option value="BANK_TRANSFER">Bank Transfer</option>
+                    <option value="ONLINE">Online</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" disabled={!!actionLoading} onClick={async () => {
+                  setActionLoading('save');
+                  try {
+                    const payload = {
+                      sale_type: 'SERVICE_INVOICE',
+                      hospital_id: serviceForm.customer_type === 'hospital' ? serviceForm.customer_ref : undefined,
+                      customer_id: serviceForm.customer_type === 'customer' ? serviceForm.customer_ref : undefined,
+                      csi_date: serviceForm.csi_date,
+                      service_description: serviceForm.service_description,
+                      invoice_total: parseFloat(serviceForm.invoice_total) || 0,
+                      payment_mode: serviceForm.payment_mode,
+                      line_items: []
+                    };
+                    await sales.createSale(payload);
+                    setServiceForm({ customer_type: 'hospital', customer_ref: '', csi_date: new Date().toISOString().split('T')[0], service_description: '', invoice_total: '', payment_mode: 'CASH' });
+                    await loadSales();
+                  } catch (err) { console.error('Service save error:', err); }
+                  finally { setActionLoading(''); }
+                }}>
+                  {actionLoading === 'save' ? 'Saving...' : 'Save Service Invoice'}
+                </button>
+              </div>
+
+              {/* Show recent service invoices with Print button */}
+              {rows.filter(r => r.sale_type === 'SERVICE_INVOICE').length > 0 && (
+                <div style={{ marginTop: 20, borderTop: '1px solid var(--erp-border)', paddingTop: 16 }}>
+                  <h3 style={{ fontSize: 14, marginBottom: 8, color: 'var(--erp-muted)' }}>Recent Service Invoices</h3>
+                  <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--erp-bg)' }}>
+                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>Invoice #</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>Customer</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>Description</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Total</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'center' }}>Status</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'center' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.filter(r => r.sale_type === 'SERVICE_INVOICE').map(r => (
+                        <tr key={r._id} style={{ borderTop: '1px solid var(--erp-border)' }}>
+                          <td style={{ padding: '6px 8px' }}>{r.invoice_number || r.doc_ref || '—'}</td>
+                          <td style={{ padding: '6px 8px' }}>{r.hospital_id?.hospital_name || r.customer_id?.customer_name || '—'}</td>
+                          <td style={{ padding: '6px 8px' }}>{r.service_description || '—'}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>₱{(r.invoice_total || 0).toLocaleString()}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                            <span className="status-badge" style={{ background: STATUS_COLORS[r.status]?.bg, color: STATUS_COLORS[r.status]?.text }}>
+                              {STATUS_COLORS[r.status]?.label}
+                            </span>
+                          </td>
+                          <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+                              {r.status === 'DRAFT' && (
+                                <button className="btn btn-warning btn-sm" disabled={!!actionLoading} onClick={async () => {
+                                  setActionLoading('validate');
+                                  try {
+                                    await sales.validateSales([r._id]);
+                                    await loadSales();
+                                  } catch {} finally { setActionLoading(''); }
+                                }}>Validate</button>
+                              )}
+                              {r.status === 'VALID' && (
+                                <button className="btn btn-success btn-sm" disabled={!!actionLoading} onClick={async () => {
+                                  setActionLoading('submit');
+                                  try {
+                                    await sales.submitSales();
+                                    await loadSales();
+                                  } catch {} finally { setActionLoading(''); }
+                                }}>Post</button>
+                              )}
+                              {r.status === 'POSTED' && (
+                                <button className="btn btn-outline btn-sm" onClick={() => window.open(`/api/erp/print/receipt/${r._id}`, '_blank')}>
+                                  🖨 Print
+                                </button>
+                              )}
+                              {r.status === 'DRAFT' && (
+                                <button className="btn btn-danger btn-sm" onClick={async () => {
+                                  try { await sales.deleteDraft(r._id); await loadSales(); } catch {}
+                                }}>✕</button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Desktop Table (CSI + Cash Receipt modes) */}
+          {saleType !== 'SERVICE_INVOICE' && <div className="sales-grid sales-table-wrapper">
             <table className="sales-table">
               <thead>
                 <tr>
@@ -675,7 +888,7 @@ export default function SalesEntry() {
                   <th style={{ width: 200 }}>Product</th>
                   <th style={{ width: 160 }}>Batch / Lot</th>
                   <th style={{ width: 100 }}>Expiry</th>
-                  <th style={{ width: 70 }}>Qty</th>
+                  <th style={{ width: 90 }}>Qty</th>
                   <th style={{ width: 70 }}>Unit</th>
                   <th style={{ width: 90 }}>Unit Price</th>
                   <th style={{ width: 100 }}>Line Total</th>
@@ -688,11 +901,25 @@ export default function SalesEntry() {
                   <tr key={row._id || row._tempId}>
                     <td style={{ color: 'var(--erp-muted)', fontSize: 12 }}>{idx + 1}</td>
                     <td>
-                      <SelectField value={row.hospital_id?._id || row.hospital_id || ''} onChange={e => updateRow(idx, 'hospital_id', e.target.value)} disabled={row.status === 'POSTED'}>
-                        <option value="">Select hospital...</option>
-                        {hospitals.map(h => (
-                          <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>
-                        ))}
+                      <SelectField value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {
+                        const val = e.target.value;
+                        const isCustomer = customerList.some(c => c._id === val);
+                        if (isCustomer) { updateRow(idx, 'customer_id', val); updateRow(idx, 'hospital_id', ''); }
+                        else { updateRow(idx, 'hospital_id', val); updateRow(idx, 'customer_id', ''); }
+                      }} disabled={row.status === 'POSTED'}>
+                        <option value="">Select {saleType === 'CSI' ? 'hospital' : 'customer'}...</option>
+                        <optgroup label="Hospitals">
+                          {hospitals.map(h => (
+                            <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>
+                          ))}
+                        </optgroup>
+                        {saleType !== 'CSI' && customerList.length > 0 && (
+                          <optgroup label="Customers">
+                            {customerList.map(c => (
+                              <option key={c._id} value={c._id}>{c.customer_name}{c.customer_type ? ` (${c.customer_type})` : ''}</option>
+                            ))}
+                          </optgroup>
+                        )}
                       </SelectField>
                     </td>
                     <td>
@@ -748,9 +975,9 @@ export default function SalesEntry() {
                         const selectedBatch = item.batch_lot_no
                           ? batches.find(b => b.batch_lot_no === item.batch_lot_no)
                           : batches[0]; // FIFO = first batch
-                        return <div key={li} style={{ fontSize: 12, color: 'var(--erp-muted)', whiteSpace: 'nowrap' }}>
-                          {selectedBatch?.expiry_date ? new Date(selectedBatch.expiry_date).toLocaleDateString() : '—'}
-                          {selectedBatch?.near_expiry && <span className="near-expiry-badge">Near</span>}
+                        return <div key={li} style={{ fontSize: 12, color: 'var(--erp-muted)' }}>
+                          <div>{selectedBatch?.expiry_date ? new Date(selectedBatch.expiry_date).toLocaleDateString() : '—'}</div>
+                          {selectedBatch?.near_expiry && <div><span className="near-expiry-badge">Near Expiry</span></div>}
                         </div>;
                       })}
                     </td>
@@ -789,10 +1016,10 @@ export default function SalesEntry() {
               </tbody>
             </table>
             <button className="add-row-btn" onClick={addRow}>+ Add Row</button>
-          </div>
+          </div>}
 
           {/* Mobile Cards */}
-          <div className="sales-cards">
+          {saleType !== 'SERVICE_INVOICE' && <div className="sales-cards">
             {rows.map((row, idx) => (
               <div className="sale-card" key={row._id || row._tempId}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -801,10 +1028,24 @@ export default function SalesEntry() {
                     {STATUS_COLORS[row.status]?.label}
                   </span>
                 </div>
-                <label>Hospital</label>
-                <SelectField value={row.hospital_id?._id || row.hospital_id || ''} onChange={e => updateRow(idx, 'hospital_id', e.target.value)}>
+                <label>{saleType === 'CSI' ? 'Hospital' : 'Customer'}</label>
+                <SelectField value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {
+                  const val = e.target.value;
+                  const isCustomer = customerList.some(c => c._id === val);
+                  if (isCustomer) { updateRow(idx, 'customer_id', val); updateRow(idx, 'hospital_id', ''); }
+                  else { updateRow(idx, 'hospital_id', val); updateRow(idx, 'customer_id', ''); }
+                }}>
                   <option value="">Select...</option>
-                  {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
+                  <optgroup label="Hospitals">
+                    {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
+                  </optgroup>
+                  {saleType !== 'CSI' && customerList.length > 0 && (
+                    <optgroup label="Customers">
+                      {customerList.map(c => (
+                        <option key={c._id} value={c._id}>{c.customer_name}{c.customer_type ? ` (${c.customer_type})` : ''}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </SelectField>
                 <label>CSI Date</label>
                 <input type="date" value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : '') : ''} onChange={e => updateRow(idx, 'csi_date', e.target.value)} />
@@ -854,16 +1095,16 @@ export default function SalesEntry() {
                 )}
               </div>
             ))}
-          </div>
+          </div>}
 
-          {/* Validation Error Panel */}
-          {validationErrors.length > 0 && (
+          {/* Validation Error Panel — only show for CSI/CASH_RECEIPT modes */}
+          {saleType !== 'SERVICE_INVOICE' && validationErrors.length > 0 && (
             <div className="error-panel">
               <h3>Validation Errors ({validationErrors.length})</h3>
               <ul>
                 {validationErrors.map((err, i) => (
                   <li key={i}>
-                    <strong>CSI# {err.doc_ref || err.sale_id}:</strong>{' '}
+                    <strong>{err.doc_ref || err.sale_id}:</strong>{' '}
                     {err.messages.join('; ')}
                   </li>
                 ))}
