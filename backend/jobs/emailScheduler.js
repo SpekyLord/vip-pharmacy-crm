@@ -6,7 +6,7 @@
  * - Scheduled reports (Every hour)
  *
  * Initialized from server.js after DB connection.
- * Skips if SES is not configured.
+ * Skips if email provider is not configured.
  */
 
 const cron = require('node-cron');
@@ -15,6 +15,8 @@ const Doctor = require('../models/Doctor');
 const Visit = require('../models/Visit');
 const NotificationPreference = require('../models/NotificationPreference');
 const { isConfigured } = require('../config/ses');
+const { sendOperationalAlert } = require('../utils/alerts');
+const { logInfo, logError } = require('../utils/logger');
 const {
   getComplianceReport,
   getMonthYear,
@@ -57,7 +59,7 @@ const getWeekLabel = () => {
  * Sends individual BDM reports and admin summary
  */
 const runWeeklyCompliance = async () => {
-  console.log('[EmailScheduler] Running weekly compliance job...');
+  logInfo('email_scheduler_weekly_compliance_started');
 
   try {
     const now = new Date();
@@ -67,7 +69,7 @@ const runWeeklyCompliance = async () => {
     // Get all active BDMs
     const bdms = await User.find({ role: 'employee', isActive: true }).lean();
     if (bdms.length === 0) {
-      console.log('[EmailScheduler] No active BDMs found, skipping.');
+      logInfo('email_scheduler_no_active_bdms');
       return;
     }
 
@@ -142,9 +144,18 @@ const runWeeklyCompliance = async () => {
       }
     }
 
-    console.log(`[EmailScheduler] Weekly compliance done. ${bdms.length} BDMs, ${admins.length} admins processed.`);
+    logInfo('email_scheduler_weekly_compliance_completed', {
+      bdmCount: bdms.length,
+      adminCount: admins.length,
+    });
   } catch (err) {
-    console.error('[EmailScheduler] Weekly compliance job error:', err.message);
+    logError('email_scheduler_weekly_compliance_failed', { error: err.message });
+    await sendOperationalAlert({
+      source: 'emailScheduler',
+      event: 'weekly_compliance_failed',
+      message: 'Weekly compliance job failed.',
+      error: err.message,
+    });
   }
 };
 
@@ -154,8 +165,8 @@ const runWeeklyCompliance = async () => {
  */
 const initEmailScheduler = () => {
   if (!isConfigured()) {
-    console.log('[EmailScheduler] SES not configured, skipping email scheduler initialization.');
-    console.log('[EmailScheduler] Set SES_FROM_EMAIL to enable email notifications.');
+    logInfo('email_scheduler_disabled_email_not_configured');
+    logInfo('set_RESEND_API_KEY_and_RESEND_FROM_EMAIL_to_enable_email_notifications');
     return;
   }
 
@@ -169,9 +180,10 @@ const initEmailScheduler = () => {
     timezone: 'Asia/Manila',
   });
 
-  console.log('[EmailScheduler] Email scheduler initialized.');
-  console.log('[EmailScheduler] Weekly compliance: Monday 7:00 AM (Asia/Manila)');
-  console.log('[EmailScheduler] Scheduled reports: Every hour (Asia/Manila)');
+  logInfo('email_scheduler_initialized', {
+    weeklyCompliance: 'Monday 7:00 AM (Asia/Manila)',
+    scheduledReports: 'Every hour (Asia/Manila)',
+  });
 };
 
 /**
@@ -189,7 +201,9 @@ const runScheduledReports = async () => {
 
     if (dueReports.length === 0) return;
 
-    console.log(`[EmailScheduler] Running ${dueReports.length} scheduled report(s)...`);
+    logInfo('email_scheduler_scheduled_reports_started', {
+      dueCount: dueReports.length,
+    });
 
     for (const scheduled of dueReports) {
       try {
@@ -213,18 +227,38 @@ const runScheduledReports = async () => {
         scheduled.nextRunAt = calculateNextRun(scheduled.frequency);
         await scheduled.save();
 
-        console.log(`[EmailScheduler] Scheduled report "${scheduled.name}" generated successfully.`);
+        logInfo('email_scheduler_scheduled_report_success', {
+          scheduledReportId: scheduled._id,
+          name: scheduled.name,
+        });
       } catch (err) {
         scheduled.lastRunAt = new Date();
         scheduled.lastRunStatus = 'failed';
         scheduled.nextRunAt = calculateNextRun(scheduled.frequency);
         await scheduled.save();
 
-        console.error(`[EmailScheduler] Scheduled report "${scheduled.name}" failed:`, err.message);
+        logError('email_scheduler_scheduled_report_failed', {
+          scheduledReportId: scheduled._id,
+          name: scheduled.name,
+          error: err.message,
+        });
+        await sendOperationalAlert({
+          source: 'emailScheduler',
+          event: 'scheduled_report_failed',
+          message: `Scheduled report "${scheduled.name}" failed.`,
+          error: err.message,
+          metadata: { scheduledReportId: String(scheduled._id) },
+        });
       }
     }
   } catch (err) {
-    console.error('[EmailScheduler] Scheduled reports error:', err.message);
+    logError('email_scheduler_scheduled_reports_failed', { error: err.message });
+    await sendOperationalAlert({
+      source: 'emailScheduler',
+      event: 'scheduled_reports_loop_failed',
+      message: 'Scheduled reports loop failed.',
+      error: err.message,
+    });
   }
 };
 
