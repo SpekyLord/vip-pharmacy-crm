@@ -6,6 +6,8 @@ import useGrn from '../hooks/useGrn';
 import useProducts from '../hooks/useProducts';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
+import SelectField from '../../components/common/Select';
+
 const STATUS_COLORS = {
   PENDING: { bg: '#fef3c7', text: '#92400e', label: 'Pending' },
   APPROVED: { bg: '#dcfce7', text: '#166534', label: 'Approved' },
@@ -306,10 +308,10 @@ export default function GrnEntry() {
                 {lineItems.map((li, idx) => (
                   <tr key={idx}>
                     <td>
-                      <select value={li.product_id} onChange={e => updateLine(idx, 'product_id', e.target.value)}>
+                      <SelectField value={li.product_id} onChange={e => updateLine(idx, 'product_id', e.target.value)}>
                         <option value="">Select product...</option>
                         {productOptions.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.unit_code || 'PC'}</option>)}
-                      </select>
+                      </SelectField>
                     </td>
                     <td><input value={li.batch_lot_no} onChange={e => updateLine(idx, 'batch_lot_no', e.target.value)} placeholder="Batch #" /></td>
                     <td><input type="date" value={li.expiry_date} onChange={e => updateLine(idx, 'expiry_date', e.target.value)} /></td>
@@ -373,7 +375,6 @@ export default function GrnEntry() {
           </div>
         </main>
       </div>
-
       <ScanUndertakingModal open={scanOpen} onClose={() => setScanOpen(false)} onApply={handleScanApply} products={productOptions} />
     </div>
   );

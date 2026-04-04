@@ -8,6 +8,8 @@ import useSales from '../hooks/useSales';
 import useEntities from '../hooks/useEntities';
 import EntityBadge from '../components/EntityBadge';
 
+import SelectField from '../../components/common/Select';
+
 function toTitleCase(str) {
   if (!str) return str;
   return str.toLowerCase()
@@ -47,6 +49,10 @@ const pageStyles = `
     background: var(--erp-panel, #fff);
     color: var(--erp-text);
     height: 38px;
+  }
+
+  .filter-bar select {
+    min-width: 140px;
   }
 
   .sales-list-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--erp-panel, #fff); border: 1px solid var(--erp-border); border-radius: 12px; overflow: hidden; }
@@ -209,19 +215,19 @@ export default function SalesList() {
 
           {/* Filters */}
           <div className="filter-bar">
-            <select value={filters.status} onChange={e => handleFilterChange('status', e.target.value)}>
+            <SelectField value={filters.status} onChange={e => handleFilterChange('status', e.target.value)}>
               <option value="">All Status</option>
               <option value="DRAFT">Draft</option>
               <option value="VALID">Valid</option>
               <option value="ERROR">Error</option>
               <option value="POSTED">Posted</option>
               <option value="DELETION_REQUESTED">Deletion Requested</option>
-            </select>
-            <select value={filters.source} onChange={e => handleFilterChange('source', e.target.value)}>
+            </SelectField>
+            <SelectField value={filters.source} onChange={e => handleFilterChange('source', e.target.value)}>
               <option value="">All Sources</option>
               <option value="SALES_LINE">Sales Line</option>
               <option value="OPENING_AR">Opening AR</option>
-            </select>
+            </SelectField>
             <input type="date" value={filters.csi_date_from} onChange={e => handleFilterChange('csi_date_from', e.target.value)} placeholder="From" />
             <input type="date" value={filters.csi_date_to} onChange={e => handleFilterChange('csi_date_to', e.target.value)} placeholder="To" />
           </div>

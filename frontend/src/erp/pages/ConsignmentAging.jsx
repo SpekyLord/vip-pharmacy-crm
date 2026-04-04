@@ -8,6 +8,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .aging-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .aging-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1400px; margin: 0 auto; }
@@ -71,13 +73,13 @@ export default function ConsignmentAging() {
           </div>
 
           <div className="controls">
-            <select value={filters.aging_status} onChange={e => setFilters(f => ({ ...f, aging_status: e.target.value }))}>
+            <SelectField value={filters.aging_status} onChange={e => setFilters(f => ({ ...f, aging_status: e.target.value }))}>
               <option value="">All Status</option>
               <option value="OPEN">Open</option>
               <option value="OVERDUE">Overdue</option>
               <option value="FORCE_CSI">Force CSI</option>
               <option value="COLLECTED">Collected</option>
-            </select>
+            </SelectField>
             <button className="btn btn-primary" onClick={load} disabled={loading}>Load Report</button>
           </div>
 

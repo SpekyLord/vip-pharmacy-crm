@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import useErpAccess from '../hooks/useErpAccess';
 
+import SelectField from '../../components/common/Select';
+
 const MODULES = [
   { key: 'sales', label: 'Sales' },
   { key: 'inventory', label: 'Inventory' },
@@ -99,23 +101,21 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
   return (
     <div className="eam-wrap">
       <style>{styles}</style>
-
       <div className="eam-toggle">
         <input type="checkbox" id="eam-enabled" checked={enabled} disabled={readOnly}
           onChange={e => setEnabled(e.target.checked)} />
         <label htmlFor="eam-enabled">ERP Access Enabled</label>
       </div>
-
       {enabled && (
         <>
           <div className="eam-tpl-row">
-            <select value={templateId} disabled={readOnly}
+            <SelectField value={templateId} disabled={readOnly}
               onChange={e => setTemplateId(e.target.value)}>
               <option value="">-- Select Template --</option>
               {templates.map(t => (
                 <option key={t._id} value={t._id}>{t.template_name}</option>
               ))}
-            </select>
+            </SelectField>
             {!readOnly && (
               <button className="eam-btn eam-btn-outline" onClick={handleApplyTemplate}
                 disabled={!templateId}>Apply</button>
@@ -146,13 +146,11 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
           </div>
         </>
       )}
-
       {!readOnly && (
         <div className="eam-actions">
           <button className="eam-btn eam-btn-primary" onClick={handleSave}>Save Access</button>
         </div>
       )}
-
       {msg && <div className={`eam-msg ${msg.type === 'ok' ? 'eam-msg-ok' : 'eam-msg-err'}`}>{msg.text}</div>}
     </div>
   );

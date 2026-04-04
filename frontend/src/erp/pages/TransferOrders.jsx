@@ -7,6 +7,8 @@ import useTransfers from '../hooks/useTransfers';
 import useProducts from '../hooks/useProducts';
 import useInventory from '../hooks/useInventory';
 
+import SelectField from '../../components/common/Select';
+
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
   APPROVED: { bg: '#dbeafe', text: '#1e40af' },
@@ -349,10 +351,10 @@ export default function TransferOrders() {
           {activeTab === 'ic' && (
             <>
               <div className="filter-bar">
-                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                <SelectField value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                   <option value="">All Statuses</option>
                   {['DRAFT', 'APPROVED', 'SHIPPED', 'RECEIVED', 'POSTED', 'CANCELLED'].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                </SelectField>
               </div>
               <table className="transfers-table">
                 <thead><tr><th>Ref #</th><th>CSI #</th><th>Date</th><th>From</th><th>To</th><th>Items</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
@@ -431,14 +433,14 @@ export default function TransferOrders() {
               <div className="form-row">
                 <div className="form-group">
                   <label>Source Entity</label>
-                  <select value={form.source_entity_id} onChange={e => setForm({ ...form, source_entity_id: e.target.value, source_bdm_id: '' })}>
+                  <SelectField value={form.source_entity_id} onChange={e => setForm({ ...form, source_entity_id: e.target.value, source_bdm_id: '' })}>
                     <option value="">Select...</option>
                     {entities.map(e => <option key={e._id} value={e._id}>{e.entity_name}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="form-group">
                   <label>Source Custodian</label>
-                  <select value={form.source_bdm_id} onChange={e => {
+                  <SelectField value={form.source_bdm_id} onChange={e => {
                     const newBdmId = e.target.value;
                     setForm(f => ({ ...f, source_bdm_id: newBdmId }));
                     setBatchCache({});
@@ -458,23 +460,23 @@ export default function TransferOrders() {
                   }}>
                     <option value="">Select...</option>
                     {sourceBdms.map(u => <option key={u._id} value={u._id}>{formatBdmLabel(u)}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
                   <label>Target Entity</label>
-                  <select value={form.target_entity_id} onChange={e => setForm({ ...form, target_entity_id: e.target.value, target_bdm_id: '' })}>
+                  <SelectField value={form.target_entity_id} onChange={e => setForm({ ...form, target_entity_id: e.target.value, target_bdm_id: '' })}>
                     <option value="">Select...</option>
                     {entities.filter(e => e._id !== form.source_entity_id).map(e => <option key={e._id} value={e._id}>{e.entity_name}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="form-group">
                   <label>Target Custodian</label>
-                  <select value={form.target_bdm_id} onChange={e => setForm({ ...form, target_bdm_id: e.target.value })}>
+                  <SelectField value={form.target_bdm_id} onChange={e => setForm({ ...form, target_bdm_id: e.target.value })}>
                     <option value="">Select...</option>
                     {targetBdms.map(u => <option key={u._id} value={u._id}>{formatBdmLabel(u)}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
               </div>
               <div className="form-row-3">
@@ -501,7 +503,7 @@ export default function TransferOrders() {
                     return (
                       <tr key={i}>
                         <td>
-                          <select value={li.product_id} onChange={e => updateLineItem(i, 'product_id', e.target.value)}>
+                          <SelectField value={li.product_id} onChange={e => updateLineItem(i, 'product_id', e.target.value)}>
                             <option value="">Select...</option>
                             {sourceProducts.map(p => {
                               const stock = sourceStock.find(s => String(s.product_id) === String(p._id));
@@ -509,17 +511,17 @@ export default function TransferOrders() {
                               const unit = p.unit_code || stock?.product?.unit_code || '';
                               return <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {qty} {unit}</option>;
                             })}
-                          </select>
+                          </SelectField>
                         </td>
                         <td>
-                          <select value={li.batch_lot_no} onChange={e => updateLineItem(i, 'batch_lot_no', e.target.value)}>
+                          <SelectField value={li.batch_lot_no} onChange={e => updateLineItem(i, 'batch_lot_no', e.target.value)}>
                             <option value="">Select batch...</option>
                             {batches.map(b => (
                               <option key={b.batch_lot_no} value={b.batch_lot_no}>
                                 {b.batch_lot_no} — {b.available_qty} avail
                               </option>
                             ))}
-                          </select>
+                          </SelectField>
                         </td>
                         <td style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>
                           {li.expiry_date ? new Date(li.expiry_date).toLocaleDateString() : '—'}
@@ -550,7 +552,7 @@ export default function TransferOrders() {
               <div className="form-row">
                 <div className="form-group">
                   <label>Source Custodian</label>
-                  <select value={reassignForm.source_bdm_id} onChange={e => {
+                  <SelectField value={reassignForm.source_bdm_id} onChange={e => {
                     const newBdmId = e.target.value;
                     setReassignForm(f => ({ ...f, source_bdm_id: newBdmId }));
                     setReassignBatchCache({});
@@ -569,14 +571,14 @@ export default function TransferOrders() {
                   }}>
                     <option value="">Select...</option>
                     {entityBdms.map(u => <option key={u._id} value={u._id}>{formatBdmLabel(u)}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="form-group">
                   <label>Target Custodian</label>
-                  <select value={reassignForm.target_bdm_id} onChange={e => setReassignForm({ ...reassignForm, target_bdm_id: e.target.value })}>
+                  <SelectField value={reassignForm.target_bdm_id} onChange={e => setReassignForm({ ...reassignForm, target_bdm_id: e.target.value })}>
                     <option value="">Select...</option>
                     {entityBdms.filter(u => u._id !== reassignForm.source_bdm_id).map(u => <option key={u._id} value={u._id}>{formatBdmLabel(u)}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
               </div>
               <div className="form-row-3">
@@ -603,20 +605,20 @@ export default function TransferOrders() {
                     return (
                       <tr key={i}>
                         <td>
-                          <select value={li.product_id} onChange={e => updateReassignItem(i, 'product_id', e.target.value)}>
+                          <SelectField value={li.product_id} onChange={e => updateReassignItem(i, 'product_id', e.target.value)}>
                             <option value="">Select...</option>
                             {entityProducts.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.unit_code || 'PC'}</option>)}
-                          </select>
+                          </SelectField>
                         </td>
                         <td>
-                          <select value={li.batch_lot_no} onChange={e => updateReassignItem(i, 'batch_lot_no', e.target.value)}>
+                          <SelectField value={li.batch_lot_no} onChange={e => updateReassignItem(i, 'batch_lot_no', e.target.value)}>
                             <option value="">Select batch...</option>
                             {batches.map(b => (
                               <option key={b.batch_lot_no} value={b.batch_lot_no}>
                                 {b.batch_lot_no} — {b.available_qty} avail
                               </option>
                             ))}
-                          </select>
+                          </SelectField>
                         </td>
                         <td style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>
                           {li.expiry_date ? new Date(li.expiry_date).toLocaleDateString() : '—'}

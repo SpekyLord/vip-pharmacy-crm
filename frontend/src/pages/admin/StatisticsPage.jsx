@@ -47,6 +47,8 @@ import userService from '../../services/userService';
 import programService from '../../services/programService';
 import supportTypeService from '../../services/supportTypeService';
 
+import SelectField from '../../components/common/Select';
+
 /* Mock data removed — now fetched from real APIs */
 
 /* =============================================================================
@@ -2068,7 +2070,7 @@ const BDMPerformanceTab = ({
     <div>
       {/* Controls: BDM selector + Cycle navigator */}
       <div className="bdm-controls">
-        <select
+        <SelectField
           className="filter-select"
           value={selectedBdmId}
           onChange={onBdmChange}
@@ -2080,7 +2082,7 @@ const BDMPerformanceTab = ({
               {emp.name}
             </option>
           ))}
-        </select>
+        </SelectField>
 
         {selectedBdmId && (
           <div className="cycle-nav">
@@ -2096,7 +2098,6 @@ const BDMPerformanceTab = ({
           </div>
         )}
       </div>
-
       {/* Empty state: no BDM selected */}
       {!selectedBdmId && (
         <div className="empty-state">
@@ -2107,14 +2108,12 @@ const BDMPerformanceTab = ({
           <p>Choose a Business Development Manager from the dropdown to view their DCR Summary and performance metrics.</p>
         </div>
       )}
-
       {/* Loading */}
       {selectedBdmId && loading && (
         <div style={{ textAlign: 'center', padding: '48px 0' }}>
           <LoadingSpinner />
         </div>
       )}
-
       {/* No schedule data */}
       {selectedBdmId && !loading && dcrSummary.length === 0 && (
         <div className="empty-state">
@@ -2125,7 +2124,6 @@ const BDMPerformanceTab = ({
           <p>This BDM has no schedule data for the selected cycle.</p>
         </div>
       )}
-
       {/* Main content */}
       {selectedBdmId && !loading && dcrSummary.length > 0 && (
         <>

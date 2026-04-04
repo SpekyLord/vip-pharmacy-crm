@@ -5,6 +5,8 @@ import Sidebar from '../../components/common/Sidebar';
 import useExpenses from '../hooks/useExpenses';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
+import SelectField from '../../components/common/Select';
+
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
 function ScanORModal({ open, onClose, onApply }) {
   const [step, setStep] = useState('capture');
@@ -261,9 +263,9 @@ export default function Expenses() {
           {/* Controls */}
           <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }} />
-            <select value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
+            <SelectField value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
               <option value="C1">Cycle 1</option><option value="C2">Cycle 2</option><option value="MONTHLY">Monthly</option>
-            </select>
+            </SelectField>
             <button onClick={handleNew} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New Expense</button>
             <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
             <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
@@ -344,14 +346,14 @@ export default function Expenses() {
                 <div key={idx} style={{ padding: 12, marginBottom: 8, borderRadius: 8, border: `1px solid ${line.calf_required ? '#f59e0b' : 'var(--erp-border, #dbe4f0)'}`, background: line.expense_type === 'ACCESS' ? '#fffbeb' : '#fff' }}>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--erp-muted)' }}>#{idx + 1}</span>
-                    <select value={line.expense_type} onChange={e => updateLine(idx, 'expense_type', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12, fontWeight: 600 }}>
+                    <SelectField value={line.expense_type} onChange={e => updateLine(idx, 'expense_type', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12, fontWeight: 600 }}>
                       {EXPENSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    </SelectField>
                     <input type="date" value={line.expense_date?.split('T')[0] || ''} onChange={e => updateLine(idx, 'expense_date', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
-                    <select value={line.expense_category} onChange={e => updateLine(idx, 'expense_category', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
+                    <SelectField value={line.expense_category} onChange={e => updateLine(idx, 'expense_category', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                       <option value="">Category...</option>
                       {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    </SelectField>
                     <button onClick={() => removeLine(idx)} style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #ef4444', color: '#ef4444', background: '#fff', cursor: 'pointer', fontSize: 11 }}>X</button>
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -376,9 +378,9 @@ export default function Expenses() {
                       }} />
                     </label>
                     {line.or_photo_url && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600 }}>OR Photo ✓</span>}
-                    <select value={line.payment_mode} onChange={e => updateLine(idx, 'payment_mode', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
+                    <SelectField value={line.payment_mode} onChange={e => updateLine(idx, 'payment_mode', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                       {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
+                    </SelectField>
                     {line.calf_required && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>CALF Required</span>}
                   </div>
                 </div>

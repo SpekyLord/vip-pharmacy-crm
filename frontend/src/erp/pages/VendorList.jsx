@@ -4,6 +4,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import usePurchasing from '../hooks/usePurchasing';
 
+import SelectField from '../../components/common/Select';
+
 const styles = `
   .vl-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .vl-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
@@ -224,11 +226,11 @@ export default function VendorList() {
                     </div>
                     <div className="form-group">
                       <label>VAT Status</label>
-                      <select value={form.vat_status} onChange={e => setField('vat_status', e.target.value)}>
+                      <SelectField value={form.vat_status} onChange={e => setField('vat_status', e.target.value)}>
                         <option value="VATABLE">Vatable</option>
                         <option value="EXEMPT">Exempt</option>
                         <option value="ZERO">Zero-rated</option>
-                      </select>
+                      </SelectField>
                     </div>
                   </div>
                   <h4 style={{ fontSize: 13, margin: '14px 0 8px', fontWeight: 600 }}>Bank Details</h4>

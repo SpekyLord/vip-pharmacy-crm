@@ -20,6 +20,8 @@ import clientService from '../../services/clientService';
 import userService from '../../services/userService';
 import toast from 'react-hot-toast';
 
+import SelectField from '../../components/common/Select';
+
 const BDMVisitsPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -274,7 +276,7 @@ const BDMVisitsPage = () => {
             <div className="bvp-filters-row">
               <div className="bvp-filter-group">
                 <label htmlFor="bvp-status">Status</label>
-                <select
+                <SelectField
                   id="bvp-status"
                   value={statusFilter}
                   onChange={(e) => {
@@ -285,12 +287,12 @@ const BDMVisitsPage = () => {
                   <option value="all">All Status</option>
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
-                </select>
+                </SelectField>
               </div>
 
               <div className="bvp-filter-group">
                 <label htmlFor="bvp-visit-type">Client Type</label>
-                <select
+                <SelectField
                   id="bvp-visit-type"
                   value={visitTypeFilter}
                   onChange={(e) => {
@@ -301,7 +303,7 @@ const BDMVisitsPage = () => {
                   <option value="all">All Client Types</option>
                   <option value="vip">VIP Clients</option>
                   <option value="regular">Regular Clients</option>
-                </select>
+                </SelectField>
               </div>
 
               <div className="bvp-filter-group bvp-filter-group-wide">

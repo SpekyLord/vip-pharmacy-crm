@@ -7,6 +7,8 @@ import useExpenses from '../hooks/useExpenses';
 import useAccounting from '../hooks/useAccounting';
 import { processDocument } from '../services/ocrService';
 
+import SelectField from '../../components/common/Select';
+
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
@@ -193,12 +195,12 @@ export default function PrfCalf() {
           {/* Controls */}
           <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }} />
-            <select value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
+            <SelectField value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
               <option value="C1">Cycle 1</option><option value="C2">Cycle 2</option><option value="MONTHLY">Monthly</option>
-            </select>
-            <select value={docTypeFilter} onChange={e => setDocTypeFilter(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
+            </SelectField>
+            <SelectField value={docTypeFilter} onChange={e => setDocTypeFilter(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
               <option value="">All Types</option><option value="PRF">PRF Only</option><option value="CALF">CALF Only</option>
-            </select>
+            </SelectField>
             <button onClick={() => handleNew('PRF')} style={{ padding: '6px 16px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New PRF</button>
             <button onClick={() => handleNew('CALF')} style={{ padding: '6px 16px', borderRadius: 6, background: '#0891b2', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New CALF</button>
             <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
@@ -330,9 +332,9 @@ export default function PrfCalf() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           <input placeholder="Partner/Payee Name *" value={form.payee_name} onChange={e => setForm(p => ({ ...p, payee_name: e.target.value }))} style={{ flex: 1, minWidth: 200, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
-                          <select value={form.payee_type} onChange={e => setForm(p => ({ ...p, payee_type: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }}>
+                          <SelectField value={form.payee_type} onChange={e => setForm(p => ({ ...p, payee_type: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }}>
                             <option value="MD">MD</option><option value="NON_MD">Non-MD</option>
-                          </select>
+                          </SelectField>
                         </div>
                         <input placeholder="Bank Name * (e.g., BPI, BDO, GCash)" value={form.partner_bank} onChange={e => setForm(p => ({ ...p, partner_bank: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
                         <input placeholder="Account Holder Name *" value={form.partner_account_name} onChange={e => setForm(p => ({ ...p, partner_account_name: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
@@ -374,24 +376,24 @@ export default function PrfCalf() {
               {/* Shared fields */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ fontSize: 13 }}>Payment Mode:
-                  <select value={form.payment_mode} onChange={e => setForm(p => ({ ...p, payment_mode: e.target.value, funding_card_id: null, funding_account_id: null }))} style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }}>
+                  <SelectField value={form.payment_mode} onChange={e => setForm(p => ({ ...p, payment_mode: e.target.value, funding_card_id: null, funding_account_id: null }))} style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }}>
                     {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
+                  </SelectField>
                 </label>
                 {/* Card Used — inline right of payment mode for CARD */}
                 {form.doc_type === 'CALF' && form.payment_mode === 'CARD' && myCards.length > 0 && (
-                  <select value={form.funding_card_id || ''} onChange={e => setForm(p => ({ ...p, funding_card_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #a78bfa', fontSize: 13, background: '#f5f3ff' }}>
+                  <SelectField value={form.funding_card_id || ''} onChange={e => setForm(p => ({ ...p, funding_card_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #a78bfa', fontSize: 13, background: '#f5f3ff' }}>
                     <option value="">Card Used…</option>
                     {myCards.filter(c => c.card_type === 'CREDIT_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} ({c.bank})</option>)}
                     {myCards.filter(c => c.card_type === 'FLEET_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} (Fleet)</option>)}
-                  </select>
+                  </SelectField>
                 )}
                 {/* Funding Bank — inline right for BANK_TRANSFER/GCASH */}
                 {form.doc_type === 'CALF' && (form.payment_mode === 'BANK_TRANSFER' || form.payment_mode === 'GCASH') && bankAccounts.length > 0 && (
-                  <select value={form.funding_account_id || ''} onChange={e => setForm(p => ({ ...p, funding_account_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #67e8f9', fontSize: 13, background: '#ecfeff' }}>
+                  <SelectField value={form.funding_account_id || ''} onChange={e => setForm(p => ({ ...p, funding_account_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #67e8f9', fontSize: 13, background: '#ecfeff' }}>
                     <option value="">Funding Bank…</option>
                     {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
-                  </select>
+                  </SelectField>
                 )}
               </div>
               {form.payment_mode === 'CHECK' && (

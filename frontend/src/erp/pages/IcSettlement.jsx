@@ -6,6 +6,8 @@ import { useAuth } from '../../hooks/useAuth';
 import useIcSettlements from '../hooks/useIcSettlements';
 import { processDocument } from '../services/ocrService';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .ics-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .ics-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1100px; margin: 0 auto; }
@@ -177,10 +179,10 @@ export default function IcSettlement() {
             <div className="form-row">
               <div className="form-group" style={{ flex: 2 }}>
                 <label>Subsidiary Entity</label>
-                <select value={debtorId} onChange={e => setDebtorId(e.target.value)}>
+                <SelectField value={debtorId} onChange={e => setDebtorId(e.target.value)}>
                   <option value="">Select subsidiary...</option>
                   {entities.map(e => <option key={e._id} value={e._id}>{e.entity_name}</option>)}
-                </select>
+                </SelectField>
               </div>
             </div>
           </div>
@@ -244,9 +246,9 @@ export default function IcSettlement() {
               <div className="form-row">
                 <div className="form-group">
                   <label>Payment Mode</label>
-                  <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
+                  <SelectField value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
                     <option value="CHECK">Check</option><option value="CASH">Cash</option><option value="ONLINE">Online / Bank Transfer</option>
-                  </select>
+                  </SelectField>
                 </div>
                 {paymentMode === 'CHECK' && (
                   <>

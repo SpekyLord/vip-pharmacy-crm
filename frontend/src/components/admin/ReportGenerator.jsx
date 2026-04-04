@@ -37,6 +37,8 @@ import userService from '../../services/userService';
 import reportService from '../../services/reportService';
 import toast from 'react-hot-toast';
 
+import SelectField from '../common/Select';
+
 /* =============================================================================
    STYLES
    ============================================================================= */
@@ -771,7 +773,7 @@ const ReportGenerator = ({
             <div className="rg-row">
               <div className="rg-field">
                 <label className="rg-label">BDM</label>
-                <select
+                <SelectField
                   className="rg-select"
                   value={selectedEmployee}
                   onChange={(e) => setSelectedEmployee(e.target.value)}
@@ -780,7 +782,7 @@ const ReportGenerator = ({
                   {employees.map(e => (
                     <option key={e._id} value={e._id}>{e.name}</option>
                   ))}
-                </select>
+                </SelectField>
               </div>
             </div>
           </div>

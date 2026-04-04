@@ -15,6 +15,8 @@ import Sidebar from '../../components/common/Sidebar';
 import MessageBox from '../../components/employee/MessageBox';
 import messageService from '../../services/messageInboxService';
 
+import SelectField from '../../components/common/Select';
+
 const EmployeeInbox = () => {
   const navigate = useNavigate();
 
@@ -304,7 +306,7 @@ const toggleMessage = async (msgOrId) => {
             <div className="filters-row">
               <div className="filter-group">
                 <label htmlFor="type-filter">Type</label>
-                <select
+                <SelectField
                   id="type-filter"
                   value={typeFilter}
                   onChange={(e) => {
@@ -318,12 +320,12 @@ const toggleMessage = async (msgOrId) => {
                   <option value="leave">Leave</option>
                   <option value="policy">Policy</option>
                   <option value="system">System</option>
-                </select>
+                </SelectField>
               </div>
 
               <div className="filter-group">
                 <label htmlFor="read-filter">Status</label>
-                <select
+                <SelectField
                   id="read-filter"
                   value={readFilter}
                   onChange={(e) => {
@@ -334,7 +336,7 @@ const toggleMessage = async (msgOrId) => {
                   <option value="all">All</option>
                   <option value="unread">Unread</option>
                   <option value="read">Read</option>
-                </select>
+                </SelectField>
               </div>
 
               <div className="filter-group grow">
@@ -419,7 +421,6 @@ const toggleMessage = async (msgOrId) => {
 
         </main>
       </div>
-
       <style>{`
         /* --- Header --- */
         .page-header {

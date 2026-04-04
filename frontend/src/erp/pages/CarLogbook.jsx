@@ -6,6 +6,8 @@ import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
+import SelectField from '../../components/common/Select';
+
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
 function ScanModal({ open, onClose, onApply, docType, title }) {
   const [step, setStep] = useState('capture');
@@ -234,9 +236,9 @@ export default function CarLogbook() {
           {/* Controls */}
           <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }} />
-            <select value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
+            <SelectField value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
               <option value="C1">Cycle 1</option><option value="C2">Cycle 2</option><option value="MONTHLY">Monthly</option>
-            </select>
+            </SelectField>
             <button onClick={handleNew} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New Entry</button>
             <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
             <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
@@ -351,15 +353,15 @@ export default function CarLogbook() {
               {form.fuel_entries.map((fuel, idx) => (
                 <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center', padding: 8, borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
                   <input placeholder="Station" value={fuel.station_name} onChange={e => updateFuelEntry(idx, 'station_name', e.target.value)} style={{ width: 120, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
-                  <select value={fuel.fuel_type} onChange={e => updateFuelEntry(idx, 'fuel_type', e.target.value)} style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
+                  <SelectField value={fuel.fuel_type} onChange={e => updateFuelEntry(idx, 'fuel_type', e.target.value)} style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                     {FUEL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  </SelectField>
                   <input type="number" placeholder="Liters" value={fuel.liters || ''} onChange={e => updateFuelEntry(idx, 'liters', Number(e.target.value))} style={{ width: 70, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
                   <input type="number" placeholder="₱/L" value={fuel.price_per_liter || ''} onChange={e => updateFuelEntry(idx, 'price_per_liter', Number(e.target.value))} style={{ width: 70, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
                   <span style={{ fontSize: 13, fontWeight: 600, minWidth: 80 }}>₱{(fuel.total_amount || 0).toLocaleString()}</span>
-                  <select value={fuel.payment_mode} onChange={e => updateFuelEntry(idx, 'payment_mode', e.target.value)} style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
+                  <SelectField value={fuel.payment_mode} onChange={e => updateFuelEntry(idx, 'payment_mode', e.target.value)} style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                     {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
+                  </SelectField>
                   <label style={{ padding: '2px 8px', borderRadius: 4, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, display: 'inline-block' }}>
                     Upload Receipt
                     <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {

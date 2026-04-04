@@ -7,6 +7,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useDashboard from '../hooks/useDashboard';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .audit-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .audit-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1300px; margin: 0 auto; }
@@ -79,7 +81,7 @@ export default function AuditLogs() {
           </div>
 
           <div className="filters">
-            <select value={filters.log_type} onChange={e => handleFilter('log_type', e.target.value)}>
+            <SelectField value={filters.log_type} onChange={e => handleFilter('log_type', e.target.value)}>
               <option value="">All Types</option>
               <option value="SALES_EDIT">Sales Edit</option>
               <option value="PRICE_CHANGE">Price Change</option>
@@ -87,15 +89,15 @@ export default function AuditLogs() {
               <option value="DELETION">Deletion</option>
               <option value="REOPEN">Re-open</option>
               <option value="STATUS_CHANGE">Status Change</option>
-            </select>
-            <select value={filters.target_model} onChange={e => handleFilter('target_model', e.target.value)}>
+            </SelectField>
+            <SelectField value={filters.target_model} onChange={e => handleFilter('target_model', e.target.value)}>
               <option value="">All Models</option>
               <option value="SalesLine">Sales</option>
               <option value="Collection">Collection</option>
               <option value="ExpenseEntry">Expense</option>
               <option value="SmerEntry">SMER</option>
               <option value="GrnEntry">GRN</option>
-            </select>
+            </SelectField>
             <input type="date" value={filters.from} onChange={e => handleFilter('from', e.target.value)} placeholder="From" />
             <input type="date" value={filters.to} onChange={e => handleFilter('to', e.target.value)} placeholder="To" />
           </div>

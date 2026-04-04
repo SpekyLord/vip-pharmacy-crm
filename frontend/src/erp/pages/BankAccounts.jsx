@@ -4,6 +4,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useBanking from '../hooks/useBanking';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .ba-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
   .ba-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; width: 100%; }
@@ -167,11 +169,11 @@ export default function BankAccounts() {
                   </div>
                   <div className="ba-fg">
                     <label>Account Type</label>
-                    <select value={form.account_type} onChange={e => f('account_type', e.target.value)}>
+                    <SelectField value={form.account_type} onChange={e => f('account_type', e.target.value)}>
                       <option value="SAVINGS">Savings</option>
                       <option value="CHECKING">Checking</option>
                       <option value="CURRENT">Current</option>
-                    </select>
+                    </SelectField>
                   </div>
                 </div>
                 <div className="ba-row">
@@ -186,11 +188,11 @@ export default function BankAccounts() {
                 </div>
                 <div className="ba-fg">
                   <label>Statement Import Format</label>
-                  <select value={form.statement_import_format} onChange={e => f('statement_import_format', e.target.value)}>
+                  <SelectField value={form.statement_import_format} onChange={e => f('statement_import_format', e.target.value)}>
                     <option value="CSV">CSV</option>
                     <option value="OFX">OFX</option>
                     <option value="MT940">MT940</option>
-                  </select>
+                  </SelectField>
                 </div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
                   <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>

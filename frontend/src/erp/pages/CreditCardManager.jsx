@@ -5,6 +5,8 @@ import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 import userService from '../../services/userService';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .ccm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .ccm-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
@@ -255,15 +257,15 @@ export default function CreditCardManager() {
                 <div className="form-row">
                   <div className="form-group">
                     <label>Card Type</label>
-                    <select value={form.card_type} onChange={e => f('card_type', e.target.value)}>
+                    <SelectField value={form.card_type} onChange={e => f('card_type', e.target.value)}>
                       {CARD_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-                    </select>
+                    </SelectField>
                   </div>
                   <div className="form-group">
                     <label>Card Brand</label>
-                    <select value={form.card_brand} onChange={e => f('card_brand', e.target.value)}>
+                    <SelectField value={form.card_brand} onChange={e => f('card_brand', e.target.value)}>
                       {CARD_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-                    </select>
+                    </SelectField>
                   </div>
                 </div>
 
@@ -291,10 +293,10 @@ export default function CreditCardManager() {
 
                 <div className="form-group">
                   <label>Assign To</label>
-                  <select value={form.assigned_to} onChange={e => f('assigned_to', e.target.value)}>
+                  <SelectField value={form.assigned_to} onChange={e => f('assigned_to', e.target.value)}>
                     <option value="">Not assigned</option>
                     {users.map(u => <option key={u._id} value={u._id}>{u.name} ({u.email})</option>)}
-                  </select>
+                  </SelectField>
                 </div>
 
                 <div className="form-group">

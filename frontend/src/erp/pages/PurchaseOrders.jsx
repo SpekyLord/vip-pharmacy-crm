@@ -3,6 +3,8 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
 
+import SelectField from '../../components/common/Select';
+
 const styles = `
   .po-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .po-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1300px; margin: 0 auto; }
@@ -186,10 +188,10 @@ export default function PurchaseOrders() {
             </div>
 
             <div className="po-filters">
-              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <SelectField value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                 <option value="">All Statuses</option>
                 {STATUSES.filter(Boolean).map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
-              </select>
+              </SelectField>
             </div>
 
             {msg.text && <div className={`po-msg po-msg-${msg.type}`}>{msg.text}</div>}
@@ -249,10 +251,10 @@ export default function PurchaseOrders() {
                   <div className="form-row">
                     <div className="form-group">
                       <label>Vendor *</label>
-                      <select value={form.vendor_id} onChange={e => setForm(f => ({ ...f, vendor_id: e.target.value }))}>
+                      <SelectField value={form.vendor_id} onChange={e => setForm(f => ({ ...f, vendor_id: e.target.value }))}>
                         <option value="">Select vendor...</option>
                         {vendors.map(v => <option key={v._id} value={v._id}>{v.vendor_name}</option>)}
-                      </select>
+                      </SelectField>
                     </div>
                     <div className="form-group">
                       <label>PO Date *</label>

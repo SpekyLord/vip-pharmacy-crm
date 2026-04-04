@@ -7,6 +7,8 @@ import DocumentFlowChain from '../components/DocumentFlowChain';
 import { useAuth } from '../../hooks/useAuth';
 import useCollections from '../hooks/useCollections';
 
+import SelectField from '../../components/common/Select';
+
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
   VALID: { bg: '#dcfce7', text: '#166534' },
@@ -104,10 +106,10 @@ export default function Collections() {
           </div>
 
           <div className="filter-bar">
-            <select value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
+            <SelectField value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
               <option value="">All Status</option>
               {['DRAFT', 'VALID', 'ERROR', 'POSTED'].map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            </SelectField>
           </div>
 
           <table className="coll-table">

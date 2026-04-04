@@ -18,6 +18,8 @@ import VisitDetailModal from '../../components/common/VisitDetailModal';
 import toast from 'react-hot-toast';
 import { Camera, AlertTriangle, Clock, Copy, User, Calendar, Filter, X, Eye } from 'lucide-react';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .dashboard-layout {
     min-height: 100vh;
@@ -926,22 +928,22 @@ const PhotoAuditPage = () => {
             <div className="filters-row">
               <div className="filter-group">
                 <label>Flag Type</label>
-                <select value={flagType} onChange={(e) => setFlagType(e.target.value)}>
+                <SelectField value={flagType} onChange={(e) => setFlagType(e.target.value)}>
                   <option value="all">All Flags</option>
                   <option value="date_mismatch">Date Mismatch</option>
                   <option value="duplicate_photo">Duplicate Photo</option>
-                </select>
+                </SelectField>
               </div>
               <div className="filter-group">
                 <label>BDM</label>
-                <select value={userId} onChange={(e) => setUserId(e.target.value)}>
+                <SelectField value={userId} onChange={(e) => setUserId(e.target.value)}>
                   <option value="">All BDMs</option>
                   {users.map((u) => (
                     <option key={u._id} value={u._id}>
                       {u.name}
                     </option>
                   ))}
-                </select>
+                </SelectField>
               </div>
               <div className="filter-group">
                 <label>From Date</label>
@@ -1145,14 +1147,12 @@ const PhotoAuditPage = () => {
           )}
         </main>
       </div>
-
       {selectedVisit && (
         <VisitDetailModal
           visit={selectedVisit}
           onClose={() => setSelectedVisit(null)}
         />
       )}
-
       {/* Side-by-Side Comparison Modal */}
       {comparisonData && (() => {
         const { currentVisit, originalVisit, flaggedPhotoIndex, flaggedPhotoHash, originalType } = comparisonData;

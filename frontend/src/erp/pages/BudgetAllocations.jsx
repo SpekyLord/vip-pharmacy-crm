@@ -11,6 +11,8 @@ import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 import usePeople from '../hooks/usePeople';
 
+import SelectField from '../../components/common/Select';
+
 const EXPENSE_COMPONENTS = [
   { code: 'SMER', label: 'SMER (Per Diem + Transport)' },
   { code: 'GAS', label: 'Gasoline (Official)' },
@@ -187,12 +189,12 @@ export default function BudgetAllocations() {
 
           <div className="controls">
             <input type="month" value={filters.period} onChange={e => setFilters(f => ({ ...f, period: e.target.value }))} />
-            <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
+            <SelectField value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
               <option value="">All Status</option>
               <option value="DRAFT">Draft</option>
               <option value="APPROVED">Approved</option>
               <option value="CLOSED">Closed</option>
-            </select>
+            </SelectField>
             <button className="btn btn-primary" onClick={loadAllocations} disabled={loading}>Load</button>
             <div style={{ flex: 1 }} />
             <button className="btn btn-primary" onClick={() => { resetForm(); setEditId(null); setShowForm(true); }}>
@@ -255,14 +257,14 @@ export default function BudgetAllocations() {
                 <div className="form-grid">
                   <div className="form-group">
                     <label>Target Type</label>
-                    <select value={form.target_type} onChange={e => setForm(f => ({ ...f, target_type: e.target.value }))}>
+                    <SelectField value={form.target_type} onChange={e => setForm(f => ({ ...f, target_type: e.target.value }))}>
                       <option value="BDM">BDM</option>
                       <option value="EMPLOYEE">Employee</option>
-                    </select>
+                    </SelectField>
                   </div>
                   <div className="form-group">
                     <label>BDM / Person</label>
-                    <select
+                    <SelectField
                       value={people.find(p => p.user_id === form.target_id)?._id || ''}
                       onChange={e => handlePersonChange(e.target.value)}
                     >
@@ -274,7 +276,7 @@ export default function BudgetAllocations() {
                         .map(p => (
                           <option key={p._id} value={p._id}>{p.full_name} ({p.person_type})</option>
                         ))}
-                    </select>
+                    </SelectField>
                   </div>
                   <div className="form-group">
                     <label>Period</label>

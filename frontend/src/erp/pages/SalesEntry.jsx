@@ -7,6 +7,8 @@ import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
+import SelectField from '../../components/common/Select';
+
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },
   VALID: { bg: '#dcfce7', text: '#166534', label: 'Valid' },
@@ -686,12 +688,12 @@ export default function SalesEntry() {
                   <tr key={row._id || row._tempId}>
                     <td style={{ color: 'var(--erp-muted)', fontSize: 12 }}>{idx + 1}</td>
                     <td>
-                      <select value={row.hospital_id?._id || row.hospital_id || ''} onChange={e => updateRow(idx, 'hospital_id', e.target.value)} disabled={row.status === 'POSTED'}>
+                      <SelectField value={row.hospital_id?._id || row.hospital_id || ''} onChange={e => updateRow(idx, 'hospital_id', e.target.value)} disabled={row.status === 'POSTED'}>
                         <option value="">Select hospital...</option>
                         {hospitals.map(h => (
                           <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>
                         ))}
-                      </select>
+                      </SelectField>
                     </td>
                     <td>
                       <input type="date" value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) : ''} onChange={e => updateRow(idx, 'csi_date', e.target.value)} disabled={row.status === 'POSTED'} />
@@ -702,14 +704,14 @@ export default function SalesEntry() {
                     <td>
                       {row.line_items?.map((item, li) => (
                         <div key={li}>
-                          <select value={item.product_id?._id || item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)} disabled={row.status === 'POSTED'}>
+                          <SelectField value={item.product_id?._id || item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)} disabled={row.status === 'POSTED'}>
                             <option value="">Select product...</option>
                             {productOptions.map(p => (
                               <option key={p.product_id} value={p.product_id}>
                                 {p.label}
                               </option>
                             ))}
-                          </select>
+                          </SelectField>
                           {item.product_id && productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id))?.near_expiry && (
                             <span className="near-expiry-badge">Near Expiry</span>
                           )}
@@ -724,14 +726,14 @@ export default function SalesEntry() {
                         if (batches.length === 1) return <div key={li} style={{ fontSize: 12, fontWeight: 600 }}>{batches[0].batch_lot_no} ({batches[0].available_qty})</div>;
                         return (
                           <div key={li}>
-                            <select value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} disabled={row.status === 'POSTED'} className="batch-select">
+                            <SelectField value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} disabled={row.status === 'POSTED'} className="batch-select">
                               <option value="">Auto (FIFO)</option>
                               {batches.map((b, bi) => (
                                 <option key={bi} value={b.batch_lot_no}>
                                   {b.batch_lot_no} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
                                 </option>
                               ))}
-                            </select>
+                            </SelectField>
                             {item.fifo_override && (
                               <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} disabled={row.status === 'POSTED'} />
                             )}
@@ -800,10 +802,10 @@ export default function SalesEntry() {
                   </span>
                 </div>
                 <label>Hospital</label>
-                <select value={row.hospital_id?._id || row.hospital_id || ''} onChange={e => updateRow(idx, 'hospital_id', e.target.value)}>
+                <SelectField value={row.hospital_id?._id || row.hospital_id || ''} onChange={e => updateRow(idx, 'hospital_id', e.target.value)}>
                   <option value="">Select...</option>
                   {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
-                </select>
+                </SelectField>
                 <label>CSI Date</label>
                 <input type="date" value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : '') : ''} onChange={e => updateRow(idx, 'csi_date', e.target.value)} />
                 <label>CSI #</label>
@@ -812,37 +814,37 @@ export default function SalesEntry() {
                   const prod = item.product_id ? productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id)) : null;
                   const batches = prod?.batches || [];
                   return (
-                  <div key={li}>
-                    <label>Product</label>
-                    <select value={item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)}>
-                      <option value="">Select...</option>
-                      {productOptions.map(p => <option key={p.product_id} value={p.product_id}>{p.label}</option>)}
-                    </select>
-                    {item.product_id && batches.length > 1 && (
-                      <>
-                        <label>Batch / Expiry</label>
-                        <select value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} className="batch-select">
-                          <option value="">Auto (FIFO)</option>
-                          {batches.map((b, bi) => (
-                            <option key={bi} value={b.batch_lot_no}>
-                              {b.batch_lot_no} — Exp: {new Date(b.expiry_date).toLocaleDateString()} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
-                            </option>
-                          ))}
-                        </select>
-                        {item.fifo_override && (
-                          <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} />
-                        )}
-                      </>
-                    )}
-                    {item.product_id && batches.length === 1 && (
-                      <div style={{ fontSize: 12, color: 'var(--erp-muted)', padding: '4px 0' }}>Batch: {batches[0].batch_lot_no} — Exp: {new Date(batches[0].expiry_date).toLocaleDateString()}</div>
-                    )}
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <div style={{ flex: 1 }}><label>Qty</label><input type="number" value={item.qty || ''} onChange={e => updateLineItem(idx, li, 'qty', e.target.value)} /></div>
-                      <div style={{ flex: 1 }}><label>Price</label><input type="number" value={item.unit_price || ''} onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)} /></div>
-                      <div style={{ flex: 1 }}><label>Total</label><input value={computeLineTotal(item)} readOnly /></div>
+                    <div key={li}>
+                      <label>Product</label>
+                      <SelectField value={item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)}>
+                        <option value="">Select...</option>
+                        {productOptions.map(p => <option key={p.product_id} value={p.product_id}>{p.label}</option>)}
+                      </SelectField>
+                      {item.product_id && batches.length > 1 && (
+                        <>
+                          <label>Batch / Expiry</label>
+                          <SelectField value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} className="batch-select">
+                            <option value="">Auto (FIFO)</option>
+                            {batches.map((b, bi) => (
+                              <option key={bi} value={b.batch_lot_no}>
+                                {b.batch_lot_no} — Exp: {new Date(b.expiry_date).toLocaleDateString()} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
+                              </option>
+                            ))}
+                          </SelectField>
+                          {item.fifo_override && (
+                            <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} />
+                          )}
+                        </>
+                      )}
+                      {item.product_id && batches.length === 1 && (
+                        <div style={{ fontSize: 12, color: 'var(--erp-muted)', padding: '4px 0' }}>Batch: {batches[0].batch_lot_no} — Exp: {new Date(batches[0].expiry_date).toLocaleDateString()}</div>
+                      )}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <div style={{ flex: 1 }}><label>Qty</label><input type="number" value={item.qty || ''} onChange={e => updateLineItem(idx, li, 'qty', e.target.value)} /></div>
+                        <div style={{ flex: 1 }}><label>Price</label><input type="number" value={item.unit_price || ''} onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)} /></div>
+                        <div style={{ flex: 1 }}><label>Total</label><input value={computeLineTotal(item)} readOnly /></div>
+                      </div>
                     </div>
-                  </div>
                   );
                 })}
                 {row.status === 'DRAFT' && (
@@ -870,7 +872,6 @@ export default function SalesEntry() {
           )}
         </main>
       </div>
-
       {/* Scan CSI Modal */}
       <ScanCSIModal
         open={scanModalOpen}

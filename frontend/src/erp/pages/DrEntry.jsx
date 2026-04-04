@@ -7,6 +7,8 @@ import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
+import SelectField from '../../components/common/Select';
+
 const DR_TYPES = [
   { value: 'DR_CONSIGNMENT', label: 'Consignment' },
   { value: 'DR_SAMPLING', label: 'Sampling' },
@@ -369,10 +371,10 @@ export default function DrEntry() {
                   <tr key={row._tempId}>
                     <td style={{ color: 'var(--erp-muted)', fontWeight: 600, fontSize: 12 }}>{idx + 1}</td>
                     <td>
-                      <select value={row.hospital_id} onChange={e => updateRow(idx, 'hospital_id', e.target.value)}>
+                      <SelectField value={row.hospital_id} onChange={e => updateRow(idx, 'hospital_id', e.target.value)}>
                         <option value="">Select hospital...</option>
                         {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
-                      </select>
+                      </SelectField>
                     </td>
                     <td>
                       <input value={row.dr_ref} onChange={e => updateRow(idx, 'dr_ref', e.target.value)} placeholder="DR #" />
@@ -381,24 +383,24 @@ export default function DrEntry() {
                       <input type="date" value={row.dr_date} onChange={e => updateRow(idx, 'dr_date', e.target.value)} />
                     </td>
                     <td>
-                      <select value={row.dr_type} onChange={e => updateRow(idx, 'dr_type', e.target.value)}>
+                      <SelectField value={row.dr_type} onChange={e => updateRow(idx, 'dr_type', e.target.value)}>
                         {DR_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                      </select>
+                      </SelectField>
                     </td>
                     <td>
-                      <select value={row.product_id} onChange={e => updateRow(idx, 'product_id', e.target.value)}>
+                      <SelectField value={row.product_id} onChange={e => updateRow(idx, 'product_id', e.target.value)}>
                         <option value="">Select...</option>
                         {productOptions.map(sp => (
                           <option key={sp.product_id} value={sp.product_id}>
                             {sp.product?.brand_name}{sp.product?.dosage_strength ? ` ${sp.product.dosage_strength}` : ''} — {sp.total_qty} {sp.product?.unit_code || 'PC'}
                           </option>
                         ))}
-                      </select>
+                      </SelectField>
                     </td>
                     <td>
                       {(() => {
                         const batches = batchesByProduct[row.product_id] || [];
-                        if (!row.product_id) return <select disabled><option>—</option></select>;
+                        if (!row.product_id) return <SelectField disabled><option>—</option></SelectField>;
                         if (batches.length === 0) return <input value={row.batch_lot_no} onChange={e => updateRow(idx, 'batch_lot_no', e.target.value)} placeholder="No batches" />;
                         if (batches.length === 1) {
                           // Auto-select single batch
@@ -408,14 +410,14 @@ export default function DrEntry() {
                           return <span style={{ fontSize: 12, fontWeight: 600 }}>{batches[0].batch_lot_no} ({batches[0].available_qty})</span>;
                         }
                         return (
-                          <select value={row.batch_lot_no} onChange={e => updateRow(idx, 'batch_lot_no', e.target.value)} style={{ fontSize: 12 }}>
+                          <SelectField value={row.batch_lot_no} onChange={e => updateRow(idx, 'batch_lot_no', e.target.value)} style={{ fontSize: 12 }}>
                             <option value="">Select batch...</option>
                             {batches.map(b => (
                               <option key={b.batch_lot_no} value={b.batch_lot_no}>
                                 {b.batch_lot_no} — {b.available_qty} avail (exp: {new Date(b.expiry_date).toLocaleDateString()})
                               </option>
                             ))}
-                          </select>
+                          </SelectField>
                         );
                       })()}
                     </td>
@@ -473,7 +475,6 @@ export default function DrEntry() {
           </div>
         </main>
       </div>
-
       <ScanDRModal open={scanOpen} onClose={() => setScanOpen(false)} onApply={handleScanApply} hospitals={hospitals} stockProducts={stockProducts} />
     </div>
   );

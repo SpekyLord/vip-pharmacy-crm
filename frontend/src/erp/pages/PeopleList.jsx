@@ -4,6 +4,8 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePeople from '../hooks/usePeople';
 
+import SelectField from '../../components/common/Select';
+
 const PERSON_TYPES = ['BDM', 'ECOMMERCE_BDM', 'EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'];
 const STATUS_LIST = ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'];
 const EMP_TYPES = ['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'CONSULTANT', 'PARTNERSHIP'];
@@ -108,14 +110,14 @@ export default function PeopleList() {
           <div className="ppl-filters">
             <input placeholder="Search name..." value={filters.search}
               onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} />
-            <select value={filters.person_type} onChange={e => setFilters(f => ({ ...f, person_type: e.target.value }))}>
+            <SelectField value={filters.person_type} onChange={e => setFilters(f => ({ ...f, person_type: e.target.value }))}>
               <option value="">All Types</option>
               {PERSON_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
-            </select>
-            <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
+            </SelectField>
+            <SelectField value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
               <option value="">All Status</option>
               {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            </SelectField>
           </div>
 
           {loading ? (
@@ -179,15 +181,15 @@ export default function PeopleList() {
                 <div className="ppl-row2">
                   <div className="ppl-field">
                     <label>Person Type</label>
-                    <select value={form.person_type} onChange={e => setForm(f => ({ ...f, person_type: e.target.value }))}>
+                    <SelectField value={form.person_type} onChange={e => setForm(f => ({ ...f, person_type: e.target.value }))}>
                       {PERSON_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
-                    </select>
+                    </SelectField>
                   </div>
                   <div className="ppl-field">
                     <label>Employment Type</label>
-                    <select value={form.employment_type} onChange={e => setForm(f => ({ ...f, employment_type: e.target.value }))}>
+                    <SelectField value={form.employment_type} onChange={e => setForm(f => ({ ...f, employment_type: e.target.value }))}>
                       {EMP_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    </SelectField>
                   </div>
                 </div>
                 <div className="ppl-row2">

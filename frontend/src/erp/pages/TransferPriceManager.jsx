@@ -4,6 +4,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useTransfers from '../hooks/useTransfers';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .tpm-page { background: var(--erp-bg, #f4f7fb); }
   .tpm-main { flex:1; min-width:0; overflow-y:auto; padding:24px; }
@@ -90,14 +92,14 @@ export default function TransferPriceManager() {
           </div>
 
           <div className="filter-row">
-            <select value={sourceId} onChange={e => setSourceId(e.target.value)}>
+            <SelectField value={sourceId} onChange={e => setSourceId(e.target.value)}>
               <option value="">Source Entity...</option>
               {entities.map(e => <option key={e._id} value={e._id}>{e.entity_name}</option>)}
-            </select>
-            <select value={targetId} onChange={e => setTargetId(e.target.value)}>
+            </SelectField>
+            <SelectField value={targetId} onChange={e => setTargetId(e.target.value)}>
               <option value="">Target Entity...</option>
               {entities.filter(e => e._id !== sourceId).map(e => <option key={e._id} value={e._id}>{e.entity_name}</option>)}
-            </select>
+            </SelectField>
           </div>
 
           {(!sourceId || !targetId) ? (

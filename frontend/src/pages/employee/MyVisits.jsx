@@ -19,6 +19,8 @@ import clientService from '../../services/clientService';
 import useDebounce from '../../hooks/useDebounce';
 import toast from 'react-hot-toast';
 
+import SelectField from '../../components/common/Select';
+
 const MyVisits = () => {
   const navigate = useNavigate();
 
@@ -267,7 +269,7 @@ const MyVisits = () => {
               {/* Status Filter */}
               <div className="filter-group">
                 <label htmlFor="status-filter">Status</label>
-                <select
+                <SelectField
                   id="status-filter"
                   value={statusFilter}
                   onChange={(e) => {
@@ -278,7 +280,7 @@ const MyVisits = () => {
                   <option value="all">All Status</option>
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
-                </select>
+                </SelectField>
               </div>
 
               {/* Date Range */}
@@ -456,7 +458,6 @@ const MyVisits = () => {
           />
         </main>
       </div>
-
       <style>{`
         .category-tabs {
           display: flex;

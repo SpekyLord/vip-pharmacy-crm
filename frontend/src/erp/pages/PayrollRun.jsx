@@ -4,6 +4,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import usePayroll from '../hooks/usePayroll';
 
+import SelectField from '../../components/common/Select';
+
 const STATUS_COLORS = {
   COMPUTED: { bg: '#dbeafe', text: '#1e40af' },
   REVIEWED: { bg: '#fef3c7', text: '#92400e' },
@@ -105,11 +107,11 @@ export default function PayrollRun() {
 
           <div className="pr-controls">
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />
-            <select value={cycle} onChange={e => setCycle(e.target.value)}>
+            <SelectField value={cycle} onChange={e => setCycle(e.target.value)}>
               <option value="MONTHLY">Monthly</option>
               <option value="C1">C1 (1st half)</option>
               <option value="C2">C2 (2nd half)</option>
-            </select>
+            </SelectField>
             <button className="btn btn-primary" onClick={loadStaging}>Load Staging</button>
             {isFinance && <button className="btn btn-warning" onClick={handleCompute}>Compute Payroll</button>}
             {isFinance && <button className="btn btn-success" onClick={handlePostAll}>Post All Approved</button>}

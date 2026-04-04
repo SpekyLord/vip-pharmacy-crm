@@ -17,6 +17,8 @@ import EngagementTypeSelector from './EngagementTypeSelector';
 import visitService from '../../services/visitService';
 import productService from '../../services/productService';
 
+import SelectField from '../common/Select';
+
 const visitLoggerStyles = `
   .visit-logger {
     max-width: 600px;
@@ -426,7 +428,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           {doctor?.visitFrequency}x per month
         </span>
       </div>
-
       {/* Photo Capture Section */}
       <div className="form-section">
         <h3>Photo Proof *</h3>
@@ -438,14 +439,13 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           maxPhotos={5}
         />
       </div>
-
       {/* Visit Details */}
       <div className="form-section">
         <h3>Visit Details</h3>
 
         <div className="form-group">
           <label htmlFor="visitType">Visit Type</label>
-          <select
+          <SelectField
             id="visitType"
             name="visitType"
             value={formData.visitType}
@@ -454,7 +454,7 @@ const VisitLogger = ({ doctor, onSuccess }) => {
             <option value="regular">Regular</option>
             <option value="follow-up">Follow-up</option>
             <option value="emergency">Emergency</option>
-          </select>
+          </SelectField>
         </div>
 
         <div className="form-group">
@@ -469,7 +469,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           />
         </div>
       </div>
-
       {/* Products Discussed */}
       {products.length > 0 && (
         <div className="form-section">
@@ -514,7 +513,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           <p className="vl-view-hint">Tap a product to view details</p>
         </div>
       )}
-
       {/* Product Detail Modal */}
       {detailProduct && (
         <ProductDetailModal
@@ -524,7 +522,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           currentIndex={detailIndex}
         />
       )}
-
       {/* Engagement Types */}
       <div className="form-section">
         <h3>Engagement Type</h3>
@@ -536,7 +533,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           onChange={(types) => setFormData((prev) => ({ ...prev, engagementTypes: types }))}
         />
       </div>
-
       {/* Feedback & Notes */}
       <div className="form-section">
         <h3>Feedback & Notes</h3>
@@ -577,7 +573,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           />
         </div>
       </div>
-
       {/* Submit Button */}
       <div className="form-actions">
         <button

@@ -4,6 +4,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useBanking from '../hooks/useBanking';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .br-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
   .br-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1400px; margin: 0 auto; width: 100%; }
@@ -191,9 +193,9 @@ export default function BankReconciliation() {
           {msg && <div className={`br-msg br-msg-${msg.type}`}>{msg.text}</div>}
 
           <div className="br-controls">
-            <select value={selectedBank} onChange={e => setSelectedBank(e.target.value)}>
+            <SelectField value={selectedBank} onChange={e => setSelectedBank(e.target.value)}>
               {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.bank_name} ({b.bank_code})</option>)}
-            </select>
+            </SelectField>
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />
           </div>
 

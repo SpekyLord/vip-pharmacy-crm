@@ -16,6 +16,8 @@ import TargetProductsModal from './TargetProductsModal';
 import DoctorEditForm from './DoctorEditForm';
 import useLookupData from '../../hooks/useLookupData';
 
+import SelectField from '../common/Select';
+
 // Custom dropdown component for mobile
 const CustomDropdown = ({ label, value, options, onChange, placeholder }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -786,7 +788,7 @@ const DoctorList = memo(function DoctorList({
 
         {/* Desktop: show all filters inline */}
         <div className="desktop-filter-selects">
-          <select
+          <SelectField
             value={frequencyFilter}
             onChange={(e) => setFrequencyFilter(e.target.value)}
             className="frequency-select"
@@ -794,8 +796,8 @@ const DoctorList = memo(function DoctorList({
             <option value="all">All Frequencies</option>
             <option value="2">2x per month</option>
             <option value="4">4x per month</option>
-          </select>
-          <select
+          </SelectField>
+          <SelectField
             value={supportFilter}
             onChange={(e) => setSupportFilter(e.target.value)}
             className="frequency-select"
@@ -804,8 +806,8 @@ const DoctorList = memo(function DoctorList({
             {supportTypes.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
-          </select>
-          <select
+          </SelectField>
+          <SelectField
             value={programFilter}
             onChange={(e) => setProgramFilter(e.target.value)}
             className="frequency-select"
@@ -814,7 +816,7 @@ const DoctorList = memo(function DoctorList({
             {programs.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
-          </select>
+          </SelectField>
         </div>
 
         {/* Mobile: toggle button and collapsible dropdown group */}
@@ -866,11 +868,9 @@ const DoctorList = memo(function DoctorList({
           )}
         </div>
       </div>
-
       {loadingStatus && (
         <p className="loading-status">Loading visit status...</p>
       )}
-
       <div className="doctor-list-grid">
         {filteredDoctors.map((doctor) => {
           const statusDisplay = getVisitStatusDisplay(doctor);
@@ -973,7 +973,6 @@ const DoctorList = memo(function DoctorList({
           );
         })}
       </div>
-
       {filteredDoctors.length === 0 && (
         <p className="no-results">
           {doctors.length === 0
@@ -981,7 +980,6 @@ const DoctorList = memo(function DoctorList({
             : 'No VIP Clients match your search criteria'}
         </p>
       )}
-
       {productsDoctor && (
         <TargetProductsModal
           doctor={productsDoctor}
@@ -989,7 +987,6 @@ const DoctorList = memo(function DoctorList({
           onSaved={() => setProductsDoctor(null)}
         />
       )}
-
       {editDoctor && (
         <DoctorEditForm
           doctor={editDoctor}

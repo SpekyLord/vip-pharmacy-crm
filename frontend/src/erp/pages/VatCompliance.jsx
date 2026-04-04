@@ -4,6 +4,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .vat-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .vat-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
@@ -101,9 +103,9 @@ export default function VatCompliance() {
 
           {(tab === '2550Q' || tab === '2307') && (
             <div className="vat-controls">
-              <select value={quarter} onChange={e => setQuarter(e.target.value)}>
+              <SelectField value={quarter} onChange={e => setQuarter(e.target.value)}>
                 {['Q1', 'Q2', 'Q3', 'Q4'].map(q => <option key={q} value={q}>{q}</option>)}
-              </select>
+              </SelectField>
               <input type="number" value={year} onChange={e => setYear(parseInt(e.target.value))} style={{ width: 80 }} />
               <button className="btn btn-primary" onClick={tab === '2550Q' ? loadVatReturn : loadCwtSummary} disabled={loading}>
                 {loading ? 'Computing…' : 'Compute'}

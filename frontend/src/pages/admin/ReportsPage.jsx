@@ -54,6 +54,8 @@ import { exportEmployeeReportToExcel, exportEmployeeReportToCSV } from '../../ut
 import reportService from '../../services/reportService';
 import toast from 'react-hot-toast';
 
+import SelectField from '../../components/common/Select';
+
 /* =============================================================================
    REPORT TYPE DEFINITIONS (UI-only — icons, colors, descriptions)
    ============================================================================= */
@@ -1677,7 +1679,7 @@ const ReportsPage = () => {
                 <div className="bdm-report-controls">
                   <div className="bdm-control-group">
                     <label>BDM</label>
-                    <select
+                    <SelectField
                       className="bdm-select"
                       value={selectedBdm}
                       onChange={(e) => {
@@ -1692,7 +1694,7 @@ const ReportsPage = () => {
                           {bdm.name}
                         </option>
                       ))}
-                    </select>
+                    </SelectField>
                   </div>
                   <div className="bdm-control-group">
                     <label>Month</label>
@@ -1705,7 +1707,7 @@ const ReportsPage = () => {
                   </div>
                   <div className="bdm-control-group">
                     <label>Client Type</label>
-                    <select
+                    <SelectField
                       className="bdm-select"
                       value={clientTypeFilter}
                       onChange={(e) => setClientTypeFilter(e.target.value)}
@@ -1713,7 +1715,7 @@ const ReportsPage = () => {
                       <option value="all">All (VIP + Regular)</option>
                       <option value="vip">VIP Only</option>
                       <option value="regular">Regular Only</option>
-                    </select>
+                    </SelectField>
                   </div>
                   <button className="bdm-btn-generate" onClick={handleGenerateReport}>
                     <Play size={16} />
@@ -1787,7 +1789,7 @@ const ReportsPage = () => {
                 <div className="bdm-report-controls">
                   <div className="bdm-control-group">
                     <label>BDM</label>
-                    <select
+                    <SelectField
                       className="bdm-select"
                       value={cptBdmId}
                       onChange={(e) => {
@@ -1802,7 +1804,7 @@ const ReportsPage = () => {
                           {bdm.name}
                         </option>
                       ))}
-                    </select>
+                    </SelectField>
                   </div>
 
                   {cptBdmId && (
@@ -2085,7 +2087,6 @@ const ReportsPage = () => {
           </div>
         </main>
       </div>
-
       {/* Report Generator Modal */}
       <ReportGenerator
         isOpen={generatorOpen}
