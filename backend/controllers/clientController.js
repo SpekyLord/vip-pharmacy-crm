@@ -16,6 +16,7 @@ const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { normalizeEngagementTypesQuery } = require('../utils/engagementTypes');
 const { signVisitPhotos } = require('../config/s3');
 const { getWeekOfMonth, getDayOfWeek, isWorkDay, MANILA_OFFSET_MS } = require('../utils/scheduleCycleUtils');
+const { isCrmAdminLike } = require('../utils/roleHelpers');
 
 /**
  * Build access filter based on user role
@@ -23,7 +24,7 @@ const { getWeekOfMonth, getDayOfWeek, isWorkDay, MANILA_OFFSET_MS } = require('.
  * - Employee: only their own clients (createdBy)
  */
 const getAccessFilter = (user) => {
-  if (user.role === 'admin') {
+  if (isCrmAdminLike(user.role)) {
     return {};
   }
   return { createdBy: user._id };
@@ -759,7 +760,7 @@ const getScheduledToday = catchAsync(async (req, res) => {
   };
 
   // BDMs see only their own; admin sees all
-  if (req.user.role !== 'admin') {
+  if (!isCrmAdminLike(req.user.role)) {
     filter.createdBy = req.user._id;
   }
 
@@ -845,7 +846,7 @@ const refreshClientVisitPhotos = catchAsync(async (req, res) => {
   }
 
   // Check if user has access to this visit
-  if (req.user.role !== 'admin' && visit.user.toString() !== req.user._id.toString()) {
+  if (!isCrmAdminLike(req.user.role) && visit.user.toString() !== req.user._id.toString()) {
     throw new ForbiddenError('You do not have permission to access this visit');
   }
 

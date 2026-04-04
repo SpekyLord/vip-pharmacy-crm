@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast';
 // Components
 import ErrorBoundary from './components/common/ErrorBoundary';
 import LoadingSpinner from './components/common/LoadingSpinner';
+import { useAuth } from './hooks/useAuth';
 
 // Eagerly loaded pages (always needed)
 import LoginPage from './pages/LoginPage';
@@ -114,7 +115,13 @@ const DataArchive = lazy(() => import('./erp/pages/DataArchive'));
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
+  const { user } = useAuth();
   const location = useLocation();
+
+  if (['admin', 'finance', 'president', 'ceo'].includes(user?.role)) {
+    return <Navigate to="/admin" replace />;
+  }
+
   const newPath = location.pathname.replace('/employee', '/bdm') + location.search;
   return <Navigate to={newPath} replace />;
 };
@@ -604,7 +611,7 @@ function App() {
           <Route path="/erp/data-archive" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><DataArchive /></ProtectedRoute>} />
 
           <Route path="/employee/*" element={<EmployeeRedirect />} />
-          <Route path="/employee" element={<Navigate to="/bdm" replace />} />
+          <Route path="/employee" element={<EmployeeRedirect />} />
 
           {/* Default Route */}
           <Route path="/" element={<LoginPage />} />

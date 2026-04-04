@@ -107,7 +107,7 @@ export default function ErpDashboard() {
   const { getEntityById } = useEntities();
   const dash = useDashboard();
   const userEntity = getEntityById(user?.entity_id);
-  const crmHome = user?.role === 'admin' || user?.role === 'president' ? '/admin' : '/bdm';
+  const crmHome = ['admin', 'finance', 'president', 'ceo'].includes(user?.role) ? '/admin' : '/bdm';
 
   const [summary, setSummary] = useState(null);
   const [mtd, setMtd] = useState(null);

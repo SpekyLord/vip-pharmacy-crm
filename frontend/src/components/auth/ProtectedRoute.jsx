@@ -30,6 +30,9 @@ const hasErpModuleAccess = (user, module) => {
 const ProtectedRoute = ({ children, allowedRoles = [], requiredErpModule = null }) => {
   const { user, loading, isAuthenticated } = useAuth();
   const location = useLocation();
+  const adminLikeRoles = ['admin', 'president', 'ceo', 'finance'];
+  const elevatedAdminLikeRoles = ['president', 'ceo', 'finance'];
+  const isAdminLike = adminLikeRoles.includes(user?.role);
 
   if (loading) {
     return <LoadingSpinner fullScreen text="Checking authentication..." />;
@@ -39,10 +42,14 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredErpModule = null 
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  // Keep admin-like users on admin/ERP routes to avoid mixed admin sidebar + BDM pages.
+  if (isAdminLike && (location.pathname.startsWith('/bdm') || location.pathname.startsWith('/employee'))) {
+    return <Navigate to="/admin" replace />;
+  }
+
   if (allowedRoles.length > 0 && !allowedRoles.includes(user?.role)) {
     // president/ceo/finance get admin-level access
-    const adminLikeRoles = ['president', 'ceo', 'finance'];
-    if (allowedRoles.includes('admin') && adminLikeRoles.includes(user?.role)) {
+    if (allowedRoles.includes('admin') && elevatedAdminLikeRoles.includes(user?.role)) {
       // Continue to ERP module check below
     } else {
       // Redirect to appropriate dashboard based on user role instead of showing error

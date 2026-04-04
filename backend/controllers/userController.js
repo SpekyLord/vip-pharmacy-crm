@@ -10,6 +10,7 @@
 const User = require('../models/User');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
+const { isCrmAdminLike } = require('../utils/roleHelpers');
 
 /**
  * @desc    Get currently active users (lastActivity within 15 minutes)
@@ -48,7 +49,7 @@ const getAllUsers = catchAsync(async (req, res) => {
   const filter = {};
 
   // Filter by role
-  if (req.query.role && ['admin', 'employee'].includes(req.query.role)) {
+  if (req.query.role && ['admin', 'employee', 'finance', 'president', 'ceo'].includes(req.query.role)) {
     filter.role = req.query.role;
   }
 
@@ -102,7 +103,7 @@ const getUserById = catchAsync(async (req, res) => {
   }
 
   // Check if user can access this resource
-  if (req.user.role !== 'admin' && req.user._id.toString() !== user._id.toString()) {
+  if (!isCrmAdminLike(req.user.role) && req.user._id.toString() !== user._id.toString()) {
     throw new ForbiddenError('You can only view your own profile');
   }
 
@@ -148,7 +149,7 @@ const updateUser = catchAsync(async (req, res) => {
     throw new NotFoundError('User not found');
   }
 
-  const isAdmin = req.user.role === 'admin';
+  const isAdmin = isCrmAdminLike(req.user.role);
   const isSelf = req.user._id.toString() === user._id.toString();
 
   if (!isAdmin && !isSelf) {

@@ -527,7 +527,11 @@ const sidebarStyles = `
  * Build ERP sidebar section based on user's erp_access.
  * Returns null if no ERP modules are accessible.
  */
-const getErpSection = (role, erpAccess) => {
+const ADMIN_LIKE_ROLES = ['admin', 'finance', 'president', 'ceo'];
+
+const isAdminLikeRole = (role) => ADMIN_LIKE_ROLES.includes(role);
+
+const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   // Determine effective access per module
   const hasModule = (mod) => {
     if (role === 'president' || role === 'ceo') return true;
@@ -572,48 +576,45 @@ const getErpSection = (role, erpAccess) => {
     items.push({ path: '/erp/accounts-payable', label: 'Accounts Payable', icon: Wallet });
   }
 
-  // Only show section if at least ERP Home + 1 module
-  if (items.length <= 1) return null;
+  // For CRM sidebars, hide ERP section when only ERP Home is available.
+  if (!includeHomeOnly && items.length <= 1) return null;
   return { title: 'ERP', items };
 };
 
-const getMenuConfig = (role, unreadCount = 0, erpAccess = null) => {
+const getCrmMenuConfig = (role, unreadCount = 0) => {
   switch (role) {
-    case 'admin': {
-      const erpSection = getErpSection(role, erpAccess);
-      const sections = [
-        {
-          title: 'Main',
-          items: [
-            { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-            { path: '/admin/activity', label: 'Activity', icon: Activity },
-          ],
-        },
-        {
-          title: 'Management',
-          items: [
-            { path: '/admin/doctors', label: 'VIP Clients', icon: Stethoscope },
-            { path: '/admin/employees', label: 'BDMs', icon: Users },
-            { path: '/admin/products', label: 'Products', icon: Package },
-          ],
-        },
-        {
-          title: 'Operations',
-          items: [
-            { path: '/admin/approvals', label: 'Import / Export', icon: FileSpreadsheet },
-            { path: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
-            { path: '/admin/reports', label: 'Reports', icon: FileText },
-            { path: '/admin/photo-audit', label: 'Photo Audit', icon: Camera },
-            { path: '/admin/settings', label: 'Programs', icon: Settings },
-          ],
-        },
-      ];
-      if (erpSection) sections.push(erpSection);
+    case 'admin':
       return {
         roleTitle: 'Administrator',
         roleSubtitle: 'Full Access',
         roleIcon: Shield,
-        sections,
+        sections: [
+          {
+            title: 'Main',
+            items: [
+              { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+              { path: '/admin/activity', label: 'Activity', icon: Activity },
+            ],
+          },
+          {
+            title: 'Management',
+            items: [
+              { path: '/admin/doctors', label: 'VIP Clients', icon: Stethoscope },
+              { path: '/admin/employees', label: 'BDMs', icon: Users },
+              { path: '/admin/products', label: 'Products', icon: Package },
+            ],
+          },
+          {
+            title: 'Operations',
+            items: [
+              { path: '/admin/approvals', label: 'Import / Export', icon: FileSpreadsheet },
+              { path: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
+              { path: '/admin/reports', label: 'Reports', icon: FileText },
+              { path: '/admin/photo-audit', label: 'Photo Audit', icon: Camera },
+              { path: '/admin/settings', label: 'Programs', icon: Settings },
+            ],
+          },
+        ],
         bottomTabs: [
           { path: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
           { path: '/admin/approvals', label: 'Import', icon: FileSpreadsheet },
@@ -621,34 +622,26 @@ const getMenuConfig = (role, unreadCount = 0, erpAccess = null) => {
           { path: '/admin/reports', label: 'Reports', icon: FileText },
         ],
       };
-    }
-
-    case 'employee':
-    default: {
-      const erpSection = getErpSection(role, erpAccess);
-      const sections = [
-        {
-          title: 'Main',
-          items: [
-            { path: '/bdm', label: 'Dashboard', icon: LayoutDashboard },
-          ],
-        },
-        {
-          title: 'Work',
-          items: [
-            { path: '/bdm/cpt', label: 'Call Plan', icon: CalendarRange },
-            { path: '/bdm/products', label: 'Products', icon: Package },
-            { path: '/bdm/inbox', label: 'Mail', icon: Inbox, badge: unreadCount || null },
-            { path: '/bdm/visits', label: 'My Visits', icon: ClipboardCheck },
-          ],
-        },
-      ];
-      if (erpSection) sections.push(erpSection);
+    default:
       return {
         roleTitle: 'Field BDM',
         roleSubtitle: 'BDM',
         roleIcon: UserCog,
-        sections,
+        sections: [
+          {
+            title: 'Main',
+            items: [{ path: '/bdm', label: 'Dashboard', icon: LayoutDashboard }],
+          },
+          {
+            title: 'Work',
+            items: [
+              { path: '/bdm/cpt', label: 'Call Plan', icon: CalendarRange },
+              { path: '/bdm/products', label: 'Products', icon: Package },
+              { path: '/bdm/inbox', label: 'Mail', icon: Inbox, badge: unreadCount || null },
+              { path: '/bdm/visits', label: 'My Visits', icon: ClipboardCheck },
+            ],
+          },
+        ],
         bottomTabs: [
           { path: '/bdm', label: 'Dashboard', icon: LayoutDashboard, end: true },
           { path: '/bdm/cpt', label: 'Call Plan', icon: CalendarRange },
@@ -656,8 +649,33 @@ const getMenuConfig = (role, unreadCount = 0, erpAccess = null) => {
           { path: '/bdm/inbox', label: 'Inbox', icon: Inbox, badge: unreadCount || null },
         ],
       };
-    }
   }
+};
+
+const getErpMenuConfig = (role, erpAccess = null) => {
+  const erpSection = getErpSection(role, erpAccess, { includeHomeOnly: true });
+  const erpItems = erpSection?.items || [{ path: '/erp', label: 'ERP Home', icon: Briefcase }];
+  const isAdminLike = isAdminLikeRole(role);
+
+  return {
+    roleTitle: isAdminLike ? 'Administrator' : 'Field BDM',
+    roleSubtitle: isAdminLike ? 'Full Access' : 'BDM',
+    roleIcon: isAdminLike ? Shield : UserCog,
+    sections: [{ title: 'ERP', items: erpItems }],
+    bottomTabs: erpItems.slice(0, 4).map((item) => ({
+      ...item,
+      end: item.path === '/erp',
+    })),
+  };
+};
+
+const getMenuConfig = (role, unreadCount = 0, erpAccess = null, pathname = '') => {
+  if (pathname.startsWith('/erp')) {
+    return getErpMenuConfig(role, erpAccess);
+  }
+
+  const crmRole = isAdminLikeRole(role) ? 'admin' : 'employee';
+  return getCrmMenuConfig(crmRole, unreadCount);
 };
 
 /* =============================================================================
@@ -695,11 +713,10 @@ const Sidebar = () => {
     return () => window.removeEventListener('inbox:updated', fetchUnreadCount);
   }, [fetchUnreadCount]);
 
-  const menuConfig = getMenuConfig(user?.role, unreadCount, user?.erp_access);
-  const RoleIcon = menuConfig.roleIcon;
+  const menuConfig = getMenuConfig(user?.role, unreadCount, user?.erp_access, location.pathname);
 
   const isActive = (path) => {
-    if (path === '/admin' || path === '/bdm') {
+    if (path === '/admin' || path === '/bdm' || path === '/erp') {
       return location.pathname === path;
     }
     return location.pathname.startsWith(path);

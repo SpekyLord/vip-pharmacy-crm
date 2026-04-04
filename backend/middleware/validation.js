@@ -123,8 +123,8 @@ const registerValidation = [
     .withMessage('Password must contain uppercase, lowercase, number, and special character (@$!%*?&)'),
   body('role')
     .optional()
-    .isIn(['admin', 'employee'])
-    .withMessage('Role must be admin or employee'),
+    .isIn(['admin', 'employee', 'finance', 'president', 'ceo'])
+    .withMessage('Role must be admin, employee, finance, president, or ceo'),
   validate,
 ];
 
@@ -152,8 +152,8 @@ const createUserValidation = [
   body('role')
     .notEmpty()
     .withMessage('Role is required')
-    .isIn(['admin', 'employee'])
-    .withMessage('Role must be admin or employee'),
+    .isIn(['admin', 'employee', 'finance', 'president', 'ceo'])
+    .withMessage('Role must be admin, employee, finance, president, or ceo'),
   body('phone')
     .optional()
     .custom(isValidPhone),
@@ -172,8 +172,8 @@ const updateUserValidation = [
     .withMessage('Please enter a valid email'),
   body('role')
     .optional()
-    .isIn(['admin', 'employee'])
-    .withMessage('Role must be admin or employee'),
+    .isIn(['admin', 'employee', 'finance', 'president', 'ceo'])
+    .withMessage('Role must be admin, employee, finance, president, or ceo'),
   body('phone')
     .optional()
     .custom(isValidPhone),

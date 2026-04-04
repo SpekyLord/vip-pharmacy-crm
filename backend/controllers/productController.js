@@ -13,6 +13,7 @@ const CrmProduct = require('../models/CrmProduct');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { deleteFromS3, getSignedDownloadUrl, extractKeyFromUrl } = require('../config/s3');
+const { isCrmAdminLike } = require('../utils/roleHelpers');
 
 /**
  * Sign product image URLs (replace raw S3 URLs with signed URLs)
@@ -66,7 +67,7 @@ const getAllProducts = catchAsync(async (req, res) => {
   }
 
   // Include inactive if requested (admin only)
-  if (req.query.includeInactive === 'true' && req.user.role === 'admin') {
+  if (req.query.includeInactive === 'true' && isCrmAdminLike(req.user.role)) {
     delete filter.isActive;
   }
 

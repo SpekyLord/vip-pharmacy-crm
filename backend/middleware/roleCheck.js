@@ -11,6 +11,8 @@
  * - employee: Field employee (BDM) - can only access assigned doctors
  */
 
+const { CRM_ADMIN_LIKE_ROLES, isCrmAdminLike } = require('../utils/roleHelpers');
+
 /**
  * Check if user has one of the allowed roles
  * @param {...string} allowedRoles - Roles that are permitted to access the route
@@ -45,7 +47,7 @@ const roleCheck = (...allowedRoles) => {
  * Admin only middleware
  * Shortcut for roleCheck('admin')
  */
-const adminOnly = roleCheck('admin');
+const adminOnly = roleCheck(...CRM_ADMIN_LIKE_ROLES);
 
 /**
  * Employee only middleware
@@ -57,13 +59,13 @@ const employeeOnly = roleCheck('employee');
  * Admin or Employee middleware
  * For routes accessible by both admin and employees
  */
-const adminOrEmployee = roleCheck('admin', 'employee');
+const adminOrEmployee = roleCheck(...CRM_ADMIN_LIKE_ROLES, 'employee');
 
 /**
  * All authenticated users middleware
  * For routes accessible by any authenticated user
  */
-const anyRole = roleCheck('admin', 'employee');
+const anyRole = roleCheck(...CRM_ADMIN_LIKE_ROLES, 'employee');
 
 /**
  * Check if user owns the resource (for user profile updates)
@@ -81,7 +83,7 @@ const isOwnerOrAdmin = (userIdParam = 'id') => {
     }
 
     // Admin can access any user
-    if (req.user.role === 'admin') {
+    if (isCrmAdminLike(req.user.role)) {
       return next();
     }
 
@@ -114,7 +116,7 @@ const isAssignedToDoctor = async (req, res, next) => {
   }
 
   // Admin can access any doctor
-  if (req.user.role === 'admin') {
+  if (isCrmAdminLike(req.user.role)) {
     return next();
   }
 
