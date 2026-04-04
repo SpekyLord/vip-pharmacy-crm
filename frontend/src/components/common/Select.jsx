@@ -70,14 +70,26 @@ const SelectField = ({
   };
 
   const mergedStyles = useMemo(() => {
-    if (!style && !styles) return styles;
-    return {
-      ...styles,
-      control: (base, state) => {
-        const baseStyles = styles?.control ? styles.control(base, state) : base;
-        return { ...baseStyles, ...style };
-      },
+    const baseDefaults = {
+      control: (base) => ({ ...base, minHeight: 30, fontSize: 12 }),
+      valueContainer: (base) => ({ ...base, paddingTop: 0, paddingBottom: 0 }),
+      singleValue: (base) => ({ ...base, fontSize: 12 }),
+      placeholder: (base) => ({ ...base, fontSize: 12 }),
+      input: (base) => ({ ...base, fontSize: 12 }),
+      option: (base) => ({ ...base, fontSize: 11, paddingTop: 6, paddingBottom: 6 }),
+      menu: (base) => ({ ...base, fontSize: 11 }),
     };
+
+    const merged = { ...baseDefaults, ...styles };
+    if (style) {
+      const userControl = merged.control;
+      merged.control = (base, state) => ({
+        ...(typeof userControl === 'function' ? userControl(base, state) : base),
+        ...style,
+      });
+    }
+
+    return merged;
   }, [style, styles]);
 
   return (

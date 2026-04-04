@@ -192,7 +192,7 @@ select optgroup {
 }
 
 .vip-select__control {
-  min-height: 38px;
+  min-height: 30px;
   border-radius: var(--radius-xl) !important;
   border: 1px solid var(--gray-300) !important;
   background: var(--white) !important;
@@ -211,7 +211,13 @@ select optgroup {
 }
 
 .vip-select__value-container {
-  padding: 2px 12px !important;
+  padding: 0 10px !important;
+}
+
+.vip-select__single-value,
+.vip-select__placeholder,
+.vip-select__input-container {
+  font-size: 12px;
 }
 
 .vip-select__indicator-separator {
@@ -239,8 +245,8 @@ select optgroup {
 }
 
 .vip-select__option {
-  padding: 10px 12px;
-  font-size: 13px;
+  padding: 6px 10px;
+  font-size: 11px;
 }
 
 .vip-select__option--is-focused {
