@@ -25,6 +25,22 @@ const ERP_TABS = [
   { label: 'Reports', path: '/erp/reports' },
 ];
 
+const ADMIN_LIKE_ROLES = ['admin', 'finance', 'president', 'ceo'];
+
+const CRM_ADMIN_TABS = [
+  { label: 'Dashboard', path: '/admin' },
+  { label: 'Activity', path: '/admin/activity' },
+  { label: 'Clients', path: '/admin/doctors' },
+  { label: 'Reports', path: '/admin/reports' },
+];
+
+const CRM_EMPLOYEE_TABS = [
+  { label: 'Dashboard', path: '/bdm' },
+  { label: 'Call Plan', path: '/bdm/cpt' },
+  { label: 'Visits', path: '/bdm/visits' },
+  { label: 'Inbox', path: '/bdm/inbox' },
+];
+
 /* =============================================================================
    STYLES
    ============================================================================= */
@@ -559,8 +575,17 @@ const Navbar = () => {
     window.dispatchEvent(new CustomEvent('sidebar:toggle'));
   };
 
-  const crmHome = user?.role === 'admin' ? '/admin' : '/bdm';
+  const isAdminLike = ADMIN_LIKE_ROLES.includes(user?.role);
+  const crmHome = isAdminLike ? '/admin' : '/bdm';
   const isErpRoute = location.pathname.startsWith('/erp');
+  const platformTabs = isErpRoute ? ERP_TABS : (isAdminLike ? CRM_ADMIN_TABS : CRM_EMPLOYEE_TABS);
+
+  const isTabActive = (path) => {
+    if (path === '/erp' || path === '/admin' || path === '/bdm') {
+      return location.pathname === path;
+    }
+    return location.pathname.startsWith(path);
+  };
 
   return (
     <nav className="navbar">
@@ -600,11 +625,9 @@ const Navbar = () => {
             </Link>
           </div>
 
-          <div className="navbar-erp-tabs" aria-label="ERP tabs">
-            {ERP_TABS.map((tab) => {
-              const isActive = tab.path === '/erp'
-                ? location.pathname === '/erp'
-                : location.pathname.startsWith(tab.path);
+          <div className="navbar-erp-tabs" aria-label={isErpRoute ? 'ERP tabs' : 'CRM tabs'}>
+            {platformTabs.map((tab) => {
+              const isActive = isTabActive(tab.path);
               return (
                 <Link
                   key={tab.label}

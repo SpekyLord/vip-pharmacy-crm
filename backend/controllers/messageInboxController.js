@@ -19,6 +19,7 @@
 
 const mongoose = require('mongoose');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
+const { isCrmAdminLike } = require('../utils/roleHelpers');
 
 /* ------------------------------------------------------------------ */
 /* Model getter (kept inside controller for "direct collection" access) */
@@ -177,7 +178,7 @@ const getInboxMessages = catchAsync(async (req, res) => {
 /* @access  Admin only                                                 */
 /* ------------------------------------------------------------------ */
 const createInboxMessage = catchAsync(async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (!isCrmAdminLike(req.user.role)) {
     return res.status(403).json({
       success: false,
       message: 'Only admins can create inbox messages.',
@@ -229,7 +230,7 @@ const createInboxMessage = catchAsync(async (req, res) => {
 /* @access  Admin only                                                 */
 /* ------------------------------------------------------------------ */
 const createMessageNotify = catchAsync(async (req, res) => {
-  if (req.user.role !== "admin") {
+  if (!isCrmAdminLike(req.user.role)) {
     return res.status(403).json({
       success: false,
       message: "Only admins can send compliance alerts.",
@@ -366,7 +367,7 @@ const markMessageUnread = catchAsync(async (req, res) => {
 /* @access  Admin only                                                 */
 /* ------------------------------------------------------------------ */
 const getSentMessages = catchAsync(async (req, res) => {
-  if (req.user.role !== "admin") {
+  if (!isCrmAdminLike(req.user.role)) {
     return res.status(403).json({
       success: false,
       message: "Only admins can view sent messages.",

@@ -18,6 +18,7 @@ const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, getMonthYear,
 const { MANILA_OFFSET_MS } = require('../utils/scheduleCycleUtils');
 const { normalizeEngagementTypesQuery } = require('../utils/engagementTypes');
 const { signVisitPhotos } = require('../config/s3');
+const { isCrmAdminLike } = require('../utils/roleHelpers');
 
 /**
  * @desc    Create a new visit
@@ -784,7 +785,7 @@ const refreshPhotoUrls = catchAsync(async (req, res) => {
   }
 
   // Check if user has access to this visit
-  if (req.user.role !== 'admin' && visit.user.toString() !== req.user._id.toString()) {
+  if (!isCrmAdminLike(req.user.role) && visit.user.toString() !== req.user._id.toString()) {
     return res.status(403).json({
       success: false,
       message: 'You do not have permission to access this visit',
