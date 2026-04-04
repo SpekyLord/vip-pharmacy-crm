@@ -100,6 +100,10 @@ const navbarStyles = `
     flex-shrink: 0;
   }
 
+  .navbar-platform-switch--mobile {
+    display: none;
+  }
+
   .navbar-platform-link {
     display: inline-flex;
     align-items: center;
@@ -206,7 +210,7 @@ const navbarStyles = `
     width: 160px;
     object-fit: contain;
     flex-shrink: 0;
-    margin: -45px -25px -45px 25px;
+    margin: 0;
   }
 
   .navbar-brand h1 {
@@ -545,6 +549,14 @@ const navbarStyles = `
       display: none;
     }
 
+    .navbar-center .navbar-platform-switch {
+      display: none;
+    }
+
+    .navbar-platform-switch--mobile {
+      display: inline-flex;
+    }
+
     .navbar-platform-switch {
       width: auto;
       max-width: 100%;
@@ -704,6 +716,22 @@ const Navbar = () => {
       )}
 
       <div className="navbar-menu">
+        {user && (
+          <div className="navbar-platform-switch navbar-platform-switch--mobile" aria-label="Platform switch">
+            <Link
+              to={crmHome}
+              className={`navbar-platform-link ${isErpRoute ? '' : 'active'}`.trim()}
+            >
+              CRM
+            </Link>
+            <Link
+              to="/erp"
+              className={`navbar-platform-link ${isErpRoute ? 'active' : ''}`.trim()}
+            >
+              ERP
+            </Link>
+          </div>
+        )}
         <button className="navbar-theme-btn" onClick={toggleTheme} aria-label="Toggle dark mode">
           {isDark ? <Sun size={17} /> : <Moon size={17} />}
         </button>

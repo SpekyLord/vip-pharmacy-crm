@@ -71,6 +71,7 @@ const pageStyles = `
   .sale-type-tab { padding: 8px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: var(--erp-muted, #5f7188); transition: all 0.15s; }
   .sale-type-tab.active { background: var(--erp-accent, #1e5eff); color: #fff; }
   .service-form { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 12px; padding: 20px; }
+  .service-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .service-form label { font-size: 12px; font-weight: 600; color: var(--erp-muted); text-transform: uppercase; display: block; margin-bottom: 4px; }
   .service-form input, .service-form textarea, .service-form select { width: 100%; padding: 10px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 14px; margin-bottom: 14px; }
   .service-form textarea { min-height: 80px; resize: vertical; }
@@ -107,6 +108,13 @@ const pageStyles = `
     .sale-card label { font-size: 11px; color: var(--erp-muted); font-weight: 600; text-transform: uppercase; }
     .sale-card input, .sale-card select { width: 100%; padding: 8px; margin-top: 4px; margin-bottom: 10px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 14px; }
     .sale-card .card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+    .sales-main { padding-bottom: 96px; }
+    .sales-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .sales-actions { width: 100%; }
+    .sales-actions .btn { flex: 1 1 48%; }
+    .sale-type-tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .sale-type-tab { white-space: nowrap; }
+    .service-grid { grid-template-columns: 1fr; }
   }
   @media (min-width: 769px) {
     .sales-cards { display: none; }
@@ -745,7 +753,7 @@ export default function SalesEntry() {
           {/* Phase 18: Service Invoice Form (no line items — description + total) */}
           {saleType === 'SERVICE_INVOICE' && (
             <div className="service-form">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div className="service-grid">
                 <div>
                   <label>Customer / Hospital</label>
                   <select value={`${serviceForm.customer_type}:${serviceForm.customer_ref}`} onChange={e => {

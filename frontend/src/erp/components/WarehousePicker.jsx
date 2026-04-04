@@ -37,6 +37,10 @@ const styles = `
   .whp-badge-main { background: #dbeafe; color: #1e40af; }
   .whp-badge-primary { background: #dcfce7; color: #166534; }
   .whp-badge-locked { background: #f3f4f6; color: #6b7280; }
+  @media (max-width: 768px) {
+    .whp-wrap.whp-compact { width: 100%; display: block; }
+    .whp-compact .whp-select { width: 100%; max-width: 100%; }
+  }
 `;
 
 export default function WarehousePicker({
