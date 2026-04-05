@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../../hooks/useAuth';
 import usePettyCash from '../hooks/usePettyCash';
+import usePeople from '../hooks/usePeople';
 
 const CEILING = 5000;
 
@@ -50,18 +52,42 @@ const styles = {
   peso: (val) => `₱${Number(val || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 };
 
-// ---------- Create Fund Modal ----------
-function CreateFundModal({ open, onClose, onSave }) {
-  const [form, setForm] = useState({ fund_name: '', fund_code: '', custodian_id: '', balance_ceiling: CEILING });
+// ---------- Fund Form Modal (Create + Edit) ----------
+function FundFormModal({ open, onClose, onSave, editData, people }) {
+  const isEdit = !!editData;
+  const [form, setForm] = useState({ fund_name: '', fund_code: '', custodian_id: '', balance_ceiling: CEILING, authorized_amount: 10000, coa_code: '1000', fund_mode: 'REVOLVING' });
   const [saving, setSaving] = useState(false);
+
+  // Populate form when editing
+  React.useEffect(() => {
+    if (editData) {
+      setForm({
+        fund_name: editData.fund_name || '',
+        fund_code: editData.fund_code || '',
+        custodian_id: editData.custodian_id?._id || editData.custodian_id || '',
+        balance_ceiling: editData.balance_ceiling || CEILING,
+        authorized_amount: editData.authorized_amount || 10000,
+        coa_code: editData.coa_code || '1000',
+        fund_mode: editData.fund_mode || 'REVOLVING',
+      });
+    } else {
+      setForm({ fund_name: '', fund_code: '', custodian_id: '', balance_ceiling: CEILING, authorized_amount: 10000, coa_code: '1000', fund_mode: 'REVOLVING' });
+    }
+  }, [editData, open]);
 
   const handleChange = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onSave({ ...form, balance_ceiling: Number(form.balance_ceiling) }); onClose(); }
-    catch (err) { alert(err?.response?.data?.message || 'Failed to create fund'); }
+    try {
+      await onSave({
+        ...form,
+        balance_ceiling: Number(form.balance_ceiling),
+        authorized_amount: Number(form.authorized_amount),
+      }, editData?._id);
+      onClose();
+    } catch (err) { alert(err?.response?.data?.message || `Failed to ${isEdit ? 'update' : 'create'} fund`); }
     finally { setSaving(false); }
   };
 
@@ -69,7 +95,7 @@ function CreateFundModal({ open, onClose, onSave }) {
   return (
     <div style={styles.modal} onClick={onClose}>
       <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-        <h3 style={styles.modalTitle}>Create Petty Cash Fund</h3>
+        <h3 style={styles.modalTitle}>{isEdit ? 'Edit' : 'Create'} Petty Cash Fund</h3>
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Fund Name</label>
@@ -80,16 +106,43 @@ function CreateFundModal({ open, onClose, onSave }) {
             <input style={styles.formInput} name="fund_code" value={form.fund_code} onChange={handleChange} required />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Custodian (User ID)</label>
-            <input style={styles.formInput} name="custodian_id" value={form.custodian_id} onChange={handleChange} required />
+            <label style={styles.label}>Custodian</label>
+            <select style={styles.formInput} name="custodian_id" value={form.custodian_id} onChange={handleChange} required>
+              <option value="">— Select custodian —</option>
+              {(people || []).map(p => (
+                <option key={p.user_id?._id || p._id} value={p.user_id?._id || p._id}>
+                  {p.full_name || p.user_id?.name || p.name || '(unnamed)'}
+                </option>
+              ))}
+            </select>
           </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Ceiling Amount</label>
-            <input style={styles.formInput} name="balance_ceiling" type="number" value={form.balance_ceiling} onChange={handleChange} required />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Authorized Amount</label>
+              <input style={styles.formInput} name="authorized_amount" type="number" value={form.authorized_amount} onChange={handleChange} required />
+            </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Ceiling Amount</label>
+              <input style={styles.formInput} name="balance_ceiling" type="number" value={form.balance_ceiling} onChange={handleChange} required />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>COA Code</label>
+              <input style={styles.formInput} name="coa_code" value={form.coa_code} onChange={handleChange} placeholder="1000" />
+            </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Fund Mode</label>
+              <select style={styles.formInput} name="fund_mode" value={form.fund_mode} onChange={handleChange}>
+                <option value="REVOLVING">Revolving (deposits + disbursements)</option>
+                <option value="EXPENSE_ONLY">Expense Only (disbursements)</option>
+                <option value="DEPOSIT_ONLY">Deposit Only (collections)</option>
+              </select>
+            </div>
           </div>
           <div style={styles.formActions}>
             <button type="button" style={styles.btnSecondary} onClick={onClose}>Cancel</button>
-            <button type="submit" style={styles.btnPrimary} disabled={saving}>{saving ? 'Saving...' : 'Create Fund'}</button>
+            <button type="submit" style={styles.btnPrimary} disabled={saving}>{saving ? 'Saving...' : isEdit ? 'Update Fund' : 'Create Fund'}</button>
           </div>
         </form>
       </div>
@@ -159,16 +212,26 @@ function CreateTxnModal({ open, onClose, onSave, funds }) {
 }
 
 // ---------- Fund Overview Tab ----------
-function FundOverview({ funds, loading, onCreateFund, onGenerateRemittance }) {
-  const [showCreate, setShowCreate] = useState(false);
+function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund, onGenerateRemittance, canManage, isPresident, people }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingFund, setEditingFund] = useState(null);
+
+  const handleCreate = () => { setEditingFund(null); setShowForm(true); };
+  const handleEdit = (fund) => { setEditingFund(fund); setShowForm(true); };
+  const handleSave = async (data, fundId) => {
+    if (fundId) await onUpdateFund(fundId, data);
+    else await onCreateFund(data);
+  };
 
   if (loading) return <div style={styles.empty}>Loading funds...</div>;
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-        <button style={styles.btnPrimary} onClick={() => setShowCreate(true)}>+ Create Fund</button>
-      </div>
+      {canManage && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+          <button style={styles.btnPrimary} onClick={handleCreate}>+ Create Fund</button>
+        </div>
+      )}
       {funds.length === 0 ? (
         <div style={styles.empty}>No petty cash funds found. Create one to get started.</div>
       ) : (
@@ -179,19 +242,31 @@ function FundOverview({ funds, loading, onCreateFund, onGenerateRemittance }) {
             const pct = (balance / ceiling) * 100;
             return (
               <div key={fund._id} style={styles.card}>
-                <div style={styles.cardTitle}>{fund.fund_name}</div>
-                <div style={styles.cardCode}>{fund.fund_code}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={styles.cardTitle}>{fund.fund_name}</div>
+                    <div style={styles.cardCode}>{fund.fund_code}{fund.coa_code ? ` (COA ${fund.coa_code})` : ''}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {canManage && <button onClick={() => handleEdit(fund)} style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', color: '#6b7280' }}>Edit</button>}
+                    {isPresident && <button onClick={() => onDeleteFund(fund._id)} style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #fca5a5', background: '#fff', cursor: 'pointer', color: '#dc2626' }}>Del</button>}
+                  </div>
+                </div>
                 <div style={styles.cardRow}>
                   <span>Custodian</span>
                   <span style={{ fontWeight: 500 }}>{fund.custodian_id?.name || '-'}</span>
+                </div>
+                <div style={styles.cardRow}>
+                  <span>Mode</span>
+                  <span style={{ fontWeight: 500, fontSize: '12px' }}>{fund.fund_mode || 'REVOLVING'}</span>
                 </div>
                 <div style={styles.cardRow}>
                   <span>Balance</span>
                   <span style={{ fontWeight: 600, fontSize: '16px' }}>{styles.peso(balance)}</span>
                 </div>
                 <div style={styles.cardRow}>
-                  <span>Ceiling</span>
-                  <span>{styles.peso(ceiling)}</span>
+                  <span>Authorized / Ceiling</span>
+                  <span>{styles.peso(fund.authorized_amount || 0)} / {styles.peso(ceiling)}</span>
                 </div>
                 <div style={styles.progressBar}>
                   <div style={styles.progressFill(pct)} />
@@ -210,7 +285,7 @@ function FundOverview({ funds, loading, onCreateFund, onGenerateRemittance }) {
           })}
         </div>
       )}
-      <CreateFundModal open={showCreate} onClose={() => setShowCreate(false)} onSave={onCreateFund} />
+      <FundFormModal open={showForm} onClose={() => setShowForm(false)} onSave={handleSave} editData={editingFund} people={people} />
     </div>
   );
 }
@@ -430,9 +505,13 @@ function DocumentsTab({ pc }) {
 
 // ---------- Main Page ----------
 export default function PettyCash() {
+  const { user } = useAuth();
   const pc = usePettyCash();
+  const { getPeopleList } = usePeople();
+  const canManage = ['admin', 'finance', 'president'].includes(user?.role);
   const [activeTab, setActiveTab] = useState('funds');
   const [funds, setFunds] = useState([]);
+  const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const loadFunds = useCallback(async () => {
@@ -442,13 +521,31 @@ export default function PettyCash() {
       setFunds(res.data || res || []);
     } catch { setFunds([]); }
     finally { setLoading(false); }
-  }, [pc]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadFunds(); }, [loadFunds]);
+
+  // Load people for custodian dropdown
+  useEffect(() => {
+    getPeopleList({ limit: 0 }).then(res => setPeople(res?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreateFund = async (body) => {
     await pc.createFund(body);
     loadFunds();
+  };
+
+  const handleUpdateFund = async (fundId, body) => {
+    await pc.updateFund(fundId, body);
+    loadFunds();
+  };
+
+  const handleDeleteFund = async (fundId) => {
+    if (!confirm('Delete this fund? This cannot be undone.')) return;
+    try {
+      await pc.deleteFund(fundId);
+      loadFunds();
+    } catch (err) { alert(err?.response?.data?.message || err?.message || 'Delete failed'); }
   };
 
   const handleGenerateRemittance = async (fundId) => {
@@ -474,7 +571,7 @@ export default function PettyCash() {
       </div>
 
       {activeTab === 'funds' && (
-        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onGenerateRemittance={handleGenerateRemittance} />
+        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} canManage={canManage} isPresident={user?.role === 'president'} people={people} />
       )}
       {activeTab === 'transactions' && (
         <TransactionsTab funds={funds} pc={pc} />

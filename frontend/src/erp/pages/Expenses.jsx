@@ -214,9 +214,9 @@ export default function Expenses() {
   // Load people, cards, bank accounts, COA for batch dropdowns
   useEffect(() => {
     if (!canBatchUpload) return;
-    getPeopleList({ limit: 0 }).then(res => setPeople(res?.data || [])).catch(() => {});
-    getMyCards().then(res => setMyCards(res?.data || [])).catch(() => {});
-    getMyBankAccounts().then(res => setMyBankAccounts(res?.data || [])).catch(() => {});
+    getPeopleList({ limit: 0 }).then(res => setPeople(res?.data || [])).catch(err => console.error('[Expenses] People load failed:', err.message));
+    getMyCards().then(res => setMyCards(res?.data || [])).catch(err => console.error('[Expenses] Cards load failed:', err.message));
+    getMyBankAccounts().then(res => setMyBankAccounts(res?.data || [])).catch(err => console.error('[Expenses] Bank accounts load failed:', err.message));
     listAccounts({ is_active: true }).then(res => {
       const accounts = res?.data || [];
       if (accounts.length) {
@@ -225,7 +225,7 @@ export default function Expenses() {
           .map(a => ({ code: a.account_code, label: `${a.account_code} — ${a.account_name}` }));
         if (expenseAccounts.length) setCoaOptions(expenseAccounts);
       }
-    }).catch(() => {});
+    }).catch(err => console.error('[Expenses] COA load failed:', err.message));
   }, [canBatchUpload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBatchFileChange = (e) => {
@@ -369,7 +369,9 @@ export default function Expenses() {
     } catch (err) { console.error('[Expenses] Edit failed:', err.message); alert(err.response?.data?.message || 'Failed to load expense'); }
   };
 
+  const savingRef = useRef(false);
   const handleSave = async () => {
+    if (savingRef.current) return; // prevent double-submit on slow mobile networks
     // Frontend validation before save
     const issues = [];
     lines.forEach((l, i) => {
@@ -380,6 +382,7 @@ export default function Expenses() {
     if (!lines.length) issues.push('Add at least one expense line');
     if (issues.length) { alert(issues.join('\n')); return; }
 
+    savingRef.current = true;
     const data = { period, cycle, lines };
     try {
       if (editingExpense) { await updateExpense(editingExpense._id, data); }
@@ -387,6 +390,7 @@ export default function Expenses() {
       setShowForm(false);
       loadExpenses();
     } catch (err) { console.error('[Expenses] Save failed:', err.message); alert(err.response?.data?.message || 'Failed to save expense'); }
+    finally { savingRef.current = false; }
   };
 
   const [actionMsg, setActionMsg] = useState(null);

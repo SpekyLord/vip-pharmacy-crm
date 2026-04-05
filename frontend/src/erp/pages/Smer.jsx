@@ -1,16 +1,116 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
+import api from '../../services/api';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
 const DAYS_OF_WEEK = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const ACTIVITY_TYPES = ['Office', 'Field', 'Other'];
+
+// ── Mobile-responsive SMER styles ──
+const smerMobileStyles = `
+  @media (max-width: 768px) {
+    .smer-desktop-grid { display: none !important; }
+    .smer-mobile-cards { display: block !important; }
+    .smer-summary-row { flex-direction: column; }
+    .smer-summary-row > div { min-width: auto !important; flex: 1; }
+    .smer-controls { flex-direction: column; gap: 8px !important; }
+    .smer-controls > * { width: 100%; }
+    .smer-controls select, .smer-controls input[type="month"] { width: 100%; }
+  }
+  @media (min-width: 769px) {
+    .smer-mobile-cards { display: none !important; }
+  }
+  .smer-card {
+    background: #fff;
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+  .smer-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .smer-card-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .smer-card-field label {
+    display: block;
+    font-size: 10px;
+    color: var(--erp-muted, #5f7188);
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .smer-card-field input, .smer-card-field select {
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--erp-border, #dbe4f0);
+    font-size: 14px;
+  }
+  .smer-card-field.full-width { grid-column: 1 / -1; }
+  .hospital-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .hospital-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    font-size: 11px;
+    color: #1e40af;
+  }
+  .hospital-chip button {
+    background: none;
+    border: none;
+    color: #93c5fd;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0;
+    line-height: 1;
+  }
+  .hospital-picker-dropdown {
+    position: absolute;
+    z-index: 50;
+    background: #fff;
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    max-height: 200px;
+    overflow-y: auto;
+    width: 100%;
+    left: 0;
+    top: 100%;
+    margin-top: 2px;
+  }
+  .hospital-picker-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    border-bottom: 1px solid #f8fafc;
+  }
+  .hospital-picker-item:hover { background: #f0f9ff; }
+`;
 
 // Timezone-safe date formatting (avoids UTC shift that causes day-1 bug in +08:00)
 function formatLocalDate(year, month, day) {
@@ -42,6 +142,30 @@ export default function Smer() {
   const [travelAdvance, setTravelAdvance] = useState(0);
   const [perdiemRate, setPerdiemRate] = useState(800);
 
+  // Hospital picker state
+  const [hospitals, setHospitals] = useState([]);
+  const [hospitalSearch, setHospitalSearch] = useState('');
+  const [activeHospitalPicker, setActiveHospitalPicker] = useState(null); // index of entry with open picker
+  const hospitalPickerRef = useRef(null);
+
+  // Load hospitals for multi-picker
+  useEffect(() => {
+    api.get('/erp/hospitals', { params: { limit: 500 } })
+      .then(res => setHospitals(res.data?.data || []))
+      .catch(() => {});
+  }, []);
+
+  // Close hospital picker on outside click
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (hospitalPickerRef.current && !hospitalPickerRef.current.contains(e.target)) {
+        setActiveHospitalPicker(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
   const loadSmers = useCallback(async () => {
     try {
       const res = await getSmerList({ period, cycle });
@@ -72,6 +196,7 @@ export default function Smer() {
         day_of_week: DAYS_OF_WEEK[dow - 1],
         activity_type: '',
         hospital_covered: '',
+        hospital_ids: [],
         md_count: 0,
         perdiem_tier: 'ZERO',
         perdiem_amount: 0,
@@ -126,9 +251,10 @@ export default function Smer() {
   };
 
   const [saveError, setSaveError] = useState(null);
+  const savingRef = useRef(false);
 
   const handleSave = async () => {
-    if (loading) return; // prevent double-click
+    if (savingRef.current || loading) return; // prevent double-submit on slow mobile
     // Frontend validation: activity_type required when md_count > 0
     const issues = [];
     dailyEntries.forEach(e => {
@@ -143,6 +269,7 @@ export default function Smer() {
       daily_entries: dailyEntries
     };
     setSaveError(null);
+    savingRef.current = true;
     try {
       if (editingSmer) { await updateSmer(editingSmer._id, data); }
       else { await createSmer(data); }
@@ -153,7 +280,7 @@ export default function Smer() {
       setSaveError(msg.includes('already exists')
         ? `SMER for ${period} ${cycle} already exists. Use Edit on the existing entry instead of creating a new one.`
         : msg);
-    }
+    } finally { savingRef.current = false; }
   };
 
   // CRM pull — only for field BDMs with CRM visit data
@@ -221,6 +348,98 @@ export default function Smer() {
     });
   };
 
+  // Hospital multi-picker helpers
+  const handleAddHospital = (entryIdx, hospital) => {
+    setDailyEntries(prev => {
+      const updated = [...prev];
+      const entry = { ...updated[entryIdx] };
+      const ids = [...(entry.hospital_ids || [])];
+      if (!ids.includes(hospital._id)) ids.push(hospital._id);
+      entry.hospital_ids = ids;
+      // Auto-fill hospital_covered as comma-joined names
+      entry.hospital_covered = ids.map(id => {
+        const h = hospitals.find(h => h._id === id);
+        return h?.hospital_name || id;
+      }).join(', ');
+      updated[entryIdx] = entry;
+      return updated;
+    });
+    setActiveHospitalPicker(null);
+    setHospitalSearch('');
+  };
+
+  const handleRemoveHospital = (entryIdx, hospitalId) => {
+    setDailyEntries(prev => {
+      const updated = [...prev];
+      const entry = { ...updated[entryIdx] };
+      const ids = (entry.hospital_ids || []).filter(id => id !== hospitalId);
+      entry.hospital_ids = ids;
+      entry.hospital_covered = ids.map(id => {
+        const h = hospitals.find(h => h._id === id);
+        return h?.hospital_name || id;
+      }).join(', ');
+      updated[entryIdx] = entry;
+      return updated;
+    });
+  };
+
+  const filteredHospitals = (entryIdx) => {
+    const entry = dailyEntries[entryIdx];
+    const selectedIds = entry?.hospital_ids || [];
+    const q = hospitalSearch.toLowerCase();
+    return hospitals
+      .filter(h => !selectedIds.includes(h._id))
+      .filter(h => !q || h.hospital_name?.toLowerCase().includes(q))
+      .slice(0, 15);
+  };
+
+  // Hospital chip renderer
+  const HospitalChips = ({ entryIdx }) => {
+    const entry = dailyEntries[entryIdx];
+    const ids = entry?.hospital_ids || [];
+    if (!ids.length && entry?.activity_type !== 'Field') return null;
+    return (
+      <div className="hospital-chips">
+        {ids.map(id => {
+          const h = hospitals.find(h => h._id === id);
+          return (
+            <span key={id} className="hospital-chip">
+              {h?.hospital_name || id}
+              <button onClick={() => handleRemoveHospital(entryIdx, id)}>&times;</button>
+            </span>
+          );
+        })}
+        {entry?.activity_type === 'Field' && (
+          <span style={{ position: 'relative', display: 'inline-block' }} ref={activeHospitalPicker === entryIdx ? hospitalPickerRef : undefined}>
+            <button
+              onClick={() => { setActiveHospitalPicker(activeHospitalPicker === entryIdx ? null : entryIdx); setHospitalSearch(''); }}
+              style={{ padding: '1px 6px', borderRadius: 10, border: '1px dashed #93c5fd', background: '#f8fafc', color: '#3b82f6', fontSize: 11, cursor: 'pointer' }}
+            >+ Hospital</button>
+            {activeHospitalPicker === entryIdx && (
+              <div className="hospital-picker-dropdown">
+                <input
+                  autoFocus
+                  placeholder="Search hospital..."
+                  value={hospitalSearch}
+                  onChange={e => setHospitalSearch(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', border: 'none', borderBottom: '1px solid #e5e7eb', fontSize: 13, outline: 'none' }}
+                />
+                {filteredHospitals(entryIdx).map(h => (
+                  <div key={h._id} className="hospital-picker-item" onClick={() => handleAddHospital(entryIdx, h)}>
+                    {h.hospital_name}
+                  </div>
+                ))}
+                {filteredHospitals(entryIdx).length === 0 && (
+                  <div style={{ padding: '8px 12px', color: '#94a3b8', fontSize: 12 }}>No hospitals found</div>
+                )}
+              </div>
+            )}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   // Compute totals
   const totals = dailyEntries.reduce((acc, e) => ({
     perdiem: acc.perdiem + (e.perdiem_amount || 0),
@@ -233,6 +452,7 @@ export default function Smer() {
 
   return (
     <div className="admin-page erp-page">
+      <style>{smerMobileStyles}</style>
       <Navbar />
       <div className="admin-layout">
         <Sidebar />
@@ -243,7 +463,7 @@ export default function Smer() {
           </div>
 
           {/* Period/Cycle selector */}
-          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="smer-controls" style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }} />
             <select value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
               <option value="C1">Cycle 1 (1st-15th)</option>
@@ -322,7 +542,7 @@ export default function Smer() {
               </div>
 
               {/* Summary cards — ABOVE grid so they're always visible */}
-              <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+              <div className="smer-summary-row" style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
                 <div style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--erp-border, #dbe4f0)', minWidth: 130 }}>
                   <div style={{ fontSize: 11, color: 'var(--erp-muted, #5f7188)' }}>Total Reimbursable</div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--erp-text, #132238)' }}>₱{totalReimbursable.toLocaleString()}</div>
@@ -360,8 +580,8 @@ export default function Smer() {
                 </div>
               )}
 
-              {/* Daily Entries Grid */}
-              <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+              {/* Daily Entries Grid — Desktop */}
+              <div className="smer-desktop-grid" style={{ overflowX: 'auto', marginBottom: 16 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: 'var(--erp-bg-alt, #f1f5f9)', borderBottom: '2px solid var(--erp-border, #dbe4f0)' }}>
@@ -391,6 +611,7 @@ export default function Smer() {
                         </td>
                         <td style={{ padding: 3 }}>
                           <input placeholder="Details..." value={entry.notes || ''} onChange={e => handleEntryChange(idx, 'notes', e.target.value)} style={{ width: '100%', padding: '2px 4px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 11 }} />
+                          <HospitalChips entryIdx={idx} />
                         </td>
                         <td style={{ padding: 3, textAlign: 'center' }}>
                           <input type="number" min={0} value={entry.md_count} onChange={e => handleEntryChange(idx, 'md_count', Number(e.target.value))} style={{ width: 45, padding: '2px 3px', textAlign: 'center', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
@@ -433,6 +654,80 @@ export default function Smer() {
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+
+              {/* Daily Entries — Mobile Card Layout */}
+              <div className="smer-mobile-cards" style={{ marginBottom: 16 }}>
+                {dailyEntries.map((entry, idx) => (
+                  <div key={idx} className="smer-card" style={entry.perdiem_override ? { borderColor: '#c4b5fd', background: '#faf5ff' } : undefined}>
+                    <div className="smer-card-header">
+                      <div>
+                        <span style={{ fontWeight: 600, fontSize: 15 }}>{entry.day_of_week}</span>
+                        <span style={{ marginLeft: 8, color: 'var(--erp-muted, #5f7188)', fontSize: 13 }}>{displayDate(entry.entry_date)}</span>
+                      </div>
+                      <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, color: entry.perdiem_tier === 'FULL' ? '#16a34a' : entry.perdiem_tier === 'HALF' ? '#d97706' : '#9ca3af', background: entry.perdiem_tier === 'FULL' ? '#dcfce7' : entry.perdiem_tier === 'HALF' ? '#fef3c7' : '#f3f4f6' }}>
+                        {entry.perdiem_tier} — ₱{(entry.perdiem_amount || 0).toLocaleString()}
+                        {entry.perdiem_override && <span style={{ marginLeft: 4, color: '#7c3aed' }}>★</span>}
+                      </span>
+                    </div>
+                    <div className="smer-card-fields">
+                      <div className="smer-card-field">
+                        <label>Activity</label>
+                        <select value={entry.activity_type || ''} onChange={e => handleEntryChange(idx, 'activity_type', e.target.value)}>
+                          <option value="">—</option>
+                          {ACTIVITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div className="smer-card-field">
+                        <label>MDs / Eng.</label>
+                        <input type="number" min={0} value={entry.md_count} onChange={e => handleEntryChange(idx, 'md_count', Number(e.target.value))} />
+                      </div>
+                      <div className="smer-card-field full-width">
+                        <label>Hospitals</label>
+                        <HospitalChips entryIdx={idx} />
+                      </div>
+                      <div className="smer-card-field full-width">
+                        <label>Notes</label>
+                        <input placeholder="Details..." value={entry.notes || ''} onChange={e => handleEntryChange(idx, 'notes', e.target.value)} />
+                      </div>
+                      <div className="smer-card-field">
+                        <label>P2P Transport</label>
+                        <input type="number" min={0} value={entry.transpo_p2p || 0} onChange={e => handleEntryChange(idx, 'transpo_p2p', Number(e.target.value))} />
+                      </div>
+                      <div className="smer-card-field">
+                        <label>Special Transport</label>
+                        <input type="number" min={0} value={entry.transpo_special || 0} onChange={e => handleEntryChange(idx, 'transpo_special', Number(e.target.value))} />
+                      </div>
+                      <div className="smer-card-field">
+                        <label>ORE Amount</label>
+                        <input type="number" min={0} value={entry.ore_amount || 0} onChange={e => handleEntryChange(idx, 'ore_amount', Number(e.target.value))} />
+                      </div>
+                      {canOverride && (
+                        <div className="smer-card-field">
+                          <label>Override</label>
+                          {entry.perdiem_override ? (
+                            <button onClick={() => handleRemoveOverride(idx)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #7c3aed', color: '#7c3aed', background: '#f5f3ff', cursor: 'pointer', fontSize: 12, width: '100%' }}>
+                              Undo ({entry.override_reason?.slice(0, 20)})
+                            </button>
+                          ) : (
+                            <button onClick={() => handleOverride(idx)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', color: 'var(--erp-muted)', background: '#fff', cursor: 'pointer', fontSize: 12, width: '100%' }}>
+                              + Override
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {/* Mobile totals */}
+                <div className="smer-card" style={{ background: 'var(--erp-bg-alt, #f1f5f9)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13, fontWeight: 600 }}>
+                    <div>Per Diem: ₱{totals.perdiem.toLocaleString()}</div>
+                    <div>Transport: ₱{totals.transpo.toLocaleString()}</div>
+                    <div>Special: ₱{totals.special.toLocaleString()}</div>
+                    <div>ORE: ₱{totals.ore.toLocaleString()}</div>
+                  </div>
+                </div>
               </div>
 
               {saveError && (

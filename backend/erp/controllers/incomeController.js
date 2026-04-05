@@ -24,13 +24,21 @@ const generateIncome = catchAsync(async (req, res) => {
   if (!bdm_id || !period || !cycle) {
     return res.status(400).json({ success: false, message: 'bdm_id, period, and cycle are required' });
   }
+  // BDMs can only generate for themselves; admin/finance/president can generate for any BDM in their entity
+  const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
+  if (!canViewOther && bdm_id !== req.bdmId?.toString()) {
+    return res.status(403).json({ success: false, message: 'Cannot generate income report for another BDM' });
+  }
   const report = await generateIncomeReport(req.entityId, bdm_id, period, cycle, req.user._id);
   res.status(201).json({ success: true, data: report });
 });
 
 const getIncomeList = catchAsync(async (req, res) => {
   const filter = { ...req.tenantFilter };
-  if (req.query.bdm_id) filter.bdm_id = req.query.bdm_id;
+  // BDMs only see their own income reports
+  const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
+  if (req.query.bdm_id && canViewOther) filter.bdm_id = req.query.bdm_id;
+  else if (!canViewOther && req.bdmId) filter.bdm_id = req.bdmId;
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
   if (req.query.status) filter.status = req.query.status;

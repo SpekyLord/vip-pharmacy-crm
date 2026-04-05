@@ -218,10 +218,52 @@ export default function HomePage() {
   const navigate = useNavigate();
   const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [autoRouteBlocked, setAutoRouteBlocked] = useState(false);
 
   const isAdminLike = ADMIN_LIKE.includes(user?.role);
   const crmPath = isAdminLike ? '/admin' : '/bdm';
   const hasErp = user?.erp_access?.enabled;
+
+  // ── Auto-route logic (20.6) ──
+  // BDM → CRM dashboard (phone-first daily work)
+  // Admin/President with ERP → ERP
+  // Only CRM users → CRM
+  // Last preference as fallback
+  useEffect(() => {
+    if (!user || autoRouteBlocked) return;
+
+    const lastPref = localStorage.getItem('vip_last_platform');
+
+    // BDMs always go to CRM (their daily tool is the phone CRM)
+    if (user.role === 'employee') {
+      navigate('/bdm');
+      return;
+    }
+
+    // If user has a saved preference, use it
+    if (lastPref === 'erp' && hasErp) {
+      navigate('/erp');
+      return;
+    }
+    if (lastPref === 'crm') {
+      navigate(crmPath);
+      return;
+    }
+
+    // Admin/President/Finance with ERP → ERP by default
+    if (isAdminLike && hasErp) {
+      navigate('/erp');
+      return;
+    }
+
+    // Only CRM → CRM
+    if (!hasErp) {
+      navigate(crmPath);
+      return;
+    }
+
+    // Fallback: show chooser (don't auto-route)
+  }, [user]);
 
   useEffect(() => {
     if (!hasErp) {
@@ -236,6 +278,12 @@ export default function HomePage() {
       .catch(() => setWarehouses([]))
       .finally(() => setLoading(false));
   }, [hasErp]);
+
+  // Save preference + navigate
+  const goTo = (platform, path) => {
+    localStorage.setItem('vip_last_platform', platform);
+    navigate(path);
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -265,14 +313,14 @@ export default function HomePage() {
       <div className="home-body">
         {/* CRM / ERP Platform Selection */}
         <div className="platform-section">
-          <div className="platform-card platform-card-crm" onClick={() => navigate(crmPath)}>
+          <div className="platform-card platform-card-crm" onClick={() => goTo('crm', crmPath)}>
             <div className="platform-icon">📋</div>
             <div className="platform-label">CRM</div>
             <div className="platform-desc">Visits & Clients</div>
           </div>
 
           {hasErp ? (
-            <div className="platform-card platform-card-erp" onClick={() => navigate('/erp')}>
+            <div className="platform-card platform-card-erp" onClick={() => goTo('erp', '/erp')}>
               <div className="platform-icon">📊</div>
               <div className="platform-label">ERP</div>
               <div className="platform-desc">Sales & Accounting</div>
@@ -286,6 +334,16 @@ export default function HomePage() {
           )}
         </div>
 
+        {hasErp && (
+          <div style={{ textAlign: 'center', fontSize: 12, color: '#94a3b8', marginTop: -4, marginBottom: 8 }}>
+            <button
+              onClick={() => { setAutoRouteBlocked(true); localStorage.removeItem('vip_last_platform'); }}
+              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}
+            >
+              Always show this chooser
+            </button>
+          </div>
+        )}
 
         <div className="home-logout">
           <button onClick={handleLogout}>Logout</button>

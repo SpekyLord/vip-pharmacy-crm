@@ -76,6 +76,27 @@ async function processOcr(docType, ocrResult, options = {}) {
   if (EXPENSE_DOC_TYPES.has(normalised)) {
     try {
       result.classification = await classifyExpense(extracted);
+
+      // Layer 2b: Claude AI fallback when regex classifier returns LOW confidence
+      if (result.classification?.confidence === 'LOW' && process.env.ANTHROPIC_API_KEY) {
+        try {
+          const { classifyWithClaude } = require('../../agents/ocrAutoFillAgent');
+          const aiResult = await classifyWithClaude(ocrResult.fullText || '', extracted);
+          if (aiResult && aiResult.confidence !== 'LOW') {
+            result.classification = {
+              ...result.classification,
+              ...aiResult,
+              fallback_used: true,
+              original_method: result.classification.match_method
+            };
+          }
+        } catch (aiErr) {
+          result.validation_flags.push({
+            type: 'AI_CLASSIFICATION_FALLBACK_ERROR',
+            message: `Claude fallback failed: ${aiErr.message}`
+          });
+        }
+      }
     } catch (err) {
       result.validation_flags.push({
         type: 'CLASSIFICATION_ERROR',

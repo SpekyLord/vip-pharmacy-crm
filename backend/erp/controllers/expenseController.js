@@ -263,7 +263,7 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
   const { entry_id, override_tier, override_reason, remove_override } = req.body;
   if (!entry_id) return res.status(400).json({ success: false, message: 'entry_id is required' });
 
-  const smer = await SmerEntry.findOne({ _id: req.params.id, status: { $in: ['DRAFT', 'ERROR'] } });
+  const smer = await SmerEntry.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
   if (!smer) return res.status(404).json({ success: false, message: 'SMER not found or not editable' });
 
   const entry = smer.daily_entries.id(entry_id);
@@ -710,6 +710,11 @@ const validateExpenses = catchAsync(async (req, res) => {
         errors.push(`Line ${i + 1}: OR photo or OR number required for ${line.expense_type} expense`);
       }
 
+      // COA mapping warning: lines falling through to 6900 Miscellaneous should be flagged
+      if (!line.coa_code || line.coa_code === '6900') {
+        errors.push(`Line ${i + 1}: COA code missing or defaulted to Miscellaneous (6900). Map "${line.establishment || 'unknown'}" to correct account.`);
+      }
+
       // CALF gate: ACCESS with non-cash requires CALF to be linked AND POSTED
       if (line.calf_required && req.user.role !== 'president') {
         if (!line.calf_id) {
@@ -901,8 +906,11 @@ const createPrfCalf = catchAsync(async (req, res) => {
   if (doc.doc_type === 'CALF' && doc.linked_expense_id && doc.linked_expense_line_ids?.length) {
     const collectedPhotos = [];
 
-    // Try ExpenseEntry first (ACCESS lines)
+    // Try ExpenseEntry first (ACCESS lines) — enforce same entity
     const expense = await ExpenseEntry.findById(doc.linked_expense_id);
+    if (expense && expense.entity_id.toString() !== doc.entity_id.toString()) {
+      return res.status(403).json({ success: false, message: 'Cannot link CALF to expense from a different entity' });
+    }
     if (expense) {
       for (const line of expense.lines) {
         if (doc.linked_expense_line_ids.some(lid => lid.toString() === line._id.toString())) {
@@ -912,8 +920,11 @@ const createPrfCalf = catchAsync(async (req, res) => {
       }
       await expense.save();
     } else {
-      // Try CarLogbookEntry (fuel entries)
+      // Try CarLogbookEntry (fuel entries) — enforce same entity
       const logbook = await CarLogbookEntry.findById(doc.linked_expense_id);
+      if (logbook && logbook.entity_id.toString() !== doc.entity_id.toString()) {
+        return res.status(403).json({ success: false, message: 'Cannot link CALF to logbook from a different entity' });
+      }
       if (logbook) {
         for (const fuel of logbook.fuel_entries) {
           if (doc.linked_expense_line_ids.some(lid => lid.toString() === fuel._id.toString())) {
@@ -967,10 +978,13 @@ const updatePrfCalf = catchAsync(async (req, res) => {
       }
     }
 
-    // Set new back-links (same logic as createPrfCalf)
+    // Set new back-links (same logic as createPrfCalf) — enforce same entity
     if (newLinkedId && newLineIds.length) {
       const collectedPhotos = [];
       const expense = await ExpenseEntry.findById(newLinkedId);
+      if (expense && expense.entity_id.toString() !== doc.entity_id.toString()) {
+        return res.status(403).json({ success: false, message: 'Cannot link CALF to expense from a different entity' });
+      }
       if (expense) {
         for (const line of expense.lines) {
           if (newLineIds.includes(line._id.toString())) {
@@ -981,6 +995,9 @@ const updatePrfCalf = catchAsync(async (req, res) => {
         await expense.save();
       } else {
         const logbook = await CarLogbookEntry.findById(newLinkedId);
+        if (logbook && logbook.entity_id.toString() !== doc.entity_id.toString()) {
+          return res.status(403).json({ success: false, message: 'Cannot link CALF to logbook from a different entity' });
+        }
         if (logbook) {
           for (const fuel of logbook.fuel_entries) {
             if (newLineIds.includes(fuel._id.toString())) fuel.calf_id = doc._id;
@@ -1812,6 +1829,19 @@ const saveBatchExpenses = catchAsync(async (req, res) => {
     status: 'DRAFT',
     created_by: req.user._id
   });
+
+  // Audit trail: log when president/admin uploads on behalf of another BDM
+  if (isOnBehalf) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: bdmId,
+      log_type: 'BATCH_UPLOAD_ON_BEHALF',
+      target_ref: entry._id.toString(),
+      target_model: 'ExpenseEntry',
+      changed_by: req.user._id,
+      note: `Batch upload: ${cleanLines.length} lines assigned to BDM ${bdmId} by ${req.user.name || req.user._id} (${req.user.role})`
+    }).catch(err => console.error('[BatchSave] Audit log failed:', err.message));
+  }
 
   res.status(201).json({
     success: true,

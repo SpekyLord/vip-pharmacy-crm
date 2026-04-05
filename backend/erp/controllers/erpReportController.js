@@ -35,7 +35,10 @@ const getCollectionsTrackerHandler = catchAsync(async (req, res) => {
 
 const getConsignmentAging = catchAsync(async (req, res) => {
   const filters = {};
-  if (req.query.bdm_id) filters.bdm_id = req.query.bdm_id;
+  // BDMs can only see their own data; admin/finance/president can query any BDM
+  const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
+  if (req.query.bdm_id && canViewOther) filters.bdm_id = req.query.bdm_id;
+  else if (!canViewOther && req.bdmId) filters.bdm_id = req.bdmId;
   if (req.query.hospital_id) filters.hospital_id = req.query.hospital_id;
   if (req.query.aging_status) filters.aging_status = req.query.aging_status;
   const data = await getConsolidatedConsignmentAging(req.entityId, filters);
@@ -72,7 +75,10 @@ const getCycleStatusHandler = catchAsync(async (req, res) => {
 
 const getProductStreakDetail = catchAsync(async (req, res) => {
   const { getProductStreakDetail: getDetail } = require('../services/profitShareEngine');
-  const data = await getDetail(req.entityId, req.query.bdm_id, req.params.period);
+  // BDMs can only query their own streak; admin/finance/president can query any
+  const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
+  const bdmId = (canViewOther && req.query.bdm_id) ? req.query.bdm_id : req.bdmId;
+  const data = await getDetail(req.entityId, bdmId, req.params.period);
   res.json({ success: true, data });
 });
 

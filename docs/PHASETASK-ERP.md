@@ -3259,32 +3259,57 @@ Replaced `roleCheck('admin', 'finance', 'president')` with `erpSubAccessCheck` o
 - [x] Added backend role check to CRM bridge `/smer/crm-md-counts` — BDM only, admin must pass bdm_id
 - [x] Fixed updatePrfCalf — now clears old back-links and re-runs back-linking when linked source changes (was silently orphaning calf_id refs)
 
-### 20.6 — Auto-Route Landing Page (Future)
-- [ ] Auto-route after login based on role + erp_access.enabled (no CRM/ERP chooser)
-- [ ] BDM (employee) → CRM BDM Dashboard (mobile-first daily work)
-- [ ] Admin/President with ERP → ERP Dashboard
-- [ ] Users with only CRM → CRM Dashboard
-- [ ] Users with only ERP → ERP Dashboard
-- [ ] Remember last-used preference as fallback
+### 20.6 — Auto-Route Landing Page ✅ (April 5, 2026)
+- [x] Auto-route after login based on role + erp_access.enabled (no CRM/ERP chooser)
+- [x] BDM (employee) → CRM BDM Dashboard (mobile-first daily work)
+- [x] Admin/President with ERP → ERP Dashboard
+- [x] Users with only CRM → CRM Dashboard
+- [x] Users with only ERP → ERP Dashboard
+- [x] Remember last-used preference via localStorage, "Always show chooser" button to reset
 
-### 20.7 — Agent Notification Fix (April 5, 2026)
+### 20.7 �� Agent Notification Fix ✅ (April 5, 2026)
 - [x] Fixed `recipientRole is required` in notificationService.js — now resolves user role from DB before creating MessageInbox
 
-### 20.8 — Build Paid Agents (Claude API) (Future)
-All 6 paid agents are stubs — scheduler lists them but no actual Claude API integration exists.
-- [ ] Install `@anthropic-ai/sdk` in backend
-- [ ] Create shared `agents/claudeClient.js` — wraps Anthropic SDK with retry, rate limit, cost tracking
-- [ ] **#1 Smart Collection** — AI analyzes AR aging + payment history → prioritizes which customers to call today
-- [ ] **#2 OCR Auto-Fill** — Claude fallback when regex parser has LOW confidence: sends raw Vision text → Claude extracts structured fields (OR#, date, amount, supplier). Wire into `ocrProcessor.js` Layer 2.
-- [ ] **#5 BIR Filing Review** — AI reviews month's JEs/VAT/CWT for compliance before BIR filing deadline
-- [ ] **#7 BDM Performance Coach** — AI analyzes BDM's visit/sales/expense patterns → generates coaching feedback
-- [ ] **#B Smart Visit Planner** — AI plans next week's hospital visits based on engagement decay, schedule, geography
-- [ ] **#C Engagement Decay** — AI identifies doctors losing engagement and suggests re-engagement strategy
-- [ ] Add cost tracking per agent call (token count, estimated cost) for budget monitoring
+### 20.8 — Build Paid Agents (Claude API) ✅ (April 5, 2026)
+All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
+- [x] Installed `@anthropic-ai/sdk` v0.82.0 in backend
+- [x] Created shared `agents/claudeClient.js` — wraps Anthropic SDK with retry (429/529), rate limit handling, cost tracking per agent
+- [x] **#1 Smart Collection** (`smartCollectionAgent.js`) — analyzes AR aging per hospital, recent collection history, notifies president + BDMs with prioritized call list
+- [x] **#2 OCR Auto-Fill** (`ocrAutoFillAgent.js`) — Claude fallback wired into `ocrProcessor.js` Layer 2b; triggers when `classifyExpense()` returns LOW confidence
+- [x] **#5 BIR Filing Review** (`birFilingAgent.js`) — reviews previous month's JEs, VAT/CWT, expense classifications; flags compliance gaps
+- [x] **#7 BDM Performance Coach** (`performanceCoachAgent.js`) — weekly visit/sales/expense analysis + personalized coaching per BDM
+- [x] **#B Smart Visit Planner** (`visitPlannerAgent.js`) �� plans Mon-Fri schedule based on frequency targets, missed visits, geography
+- [x] **#C Engagement Decay** (`engagementDecayAgent.js`) — detects VIP Clients below 70% visit target, suggests re-engagement
+- [x] Cost tracking built into claudeClient.js (token count, estimated cost, per-agent breakdown via `getCostSummary()`)
 
-### 20.9 — SMER Mobile Redesign (Future)
-- [ ] Change `hospital_id` to `hospital_ids: [ObjectId]` array in SmerEntry model
-- [ ] Add multi-hospital picker (chip/tag UI) when activity_type = 'Field'
-- [ ] Auto-fill `hospital_covered` as comma-joined hospital names
-- [ ] Mobile-optimized SMER daily entry layout (currently table-based, hard to use on phone)
-- [ ] Responsive breakpoints for SMER form columns
+### 20.9 — SMER Mobile Redesign ✅ (April 5, 2026)
+- [x] Added `hospital_ids: [ObjectId]` array to SmerEntry dailyEntrySchema (kept `hospital_id` for backward compat)
+- [x] Multi-hospital picker with chip/tag UI — search dropdown, add/remove chips, only shown when activity_type = 'Field'
+- [x] Auto-fill `hospital_covered` as comma-joined hospital names from picked IDs
+- [x] Mobile card layout (hidden on desktop via media query) — each day is a card with 2-col grid fields
+- [x] Responsive breakpoints: controls stack vertically, summary cards wrap, desktop table hidden below 768px
+
+### 20.10 — CALF E2E Test + BDM Security Audit ✅ (April 5, 2026)
+- [x] `testCalfFlow.js` — 34/34 passed: create ACCESS expense → auto-CALF → validate → post (journal DR 1110 CR bank) → auto-submit expense → reopen (reverse journals) → edit → re-validate → re-post
+- [x] `seedCOA.js` run — 237 new accounts across 3 entities (VIP, MG AND CO, BALAI LAWAAN)
+- [x] **CRITICAL FIX**: `overridePerdiemDay` missing `req.tenantFilter` — added entity isolation
+- [x] **CRITICAL FIX**: `budgetAllocationController` had no `tenantFilter` on any endpoint — all 5 methods now use `req.tenantFilter`
+- [x] **CRITICAL FIX**: CALF back-link (create + update) had no entity_id check — now rejects cross-entity links
+- [x] **HIGH FIX**: `erpReportController` bdm_id query param unvalidated — BDMs now restricted to own data
+- [x] **HIGH FIX**: `incomeController` bdm_id query open to all — BDMs now restricted to own income reports
+- [x] **HIGH FIX**: `warehouseController` entity filter could be overridden by admin — forced baseline, only president can cross-entity
+- [x] **HIGH FIX**: `Expenses.jsx` double-submit prevention — added `savingRef` guard for slow mobile networks
+- [x] **MED FIX**: `validateExpenses` now rejects lines with missing/fallback COA code (6900) — forces explicit account mapping
+- [x] **MED FIX**: `Expenses.jsx` empty catches on card/bank/people/COA loading — now log errors to console
+- [x] **MED FIX**: `Smer.jsx` double-submit prevention — added `savingRef` guard
+- [x] **MED FIX**: `saveBatchExpenses` audit trail — logs `BATCH_UPLOAD_ON_BEHALF` to ErpAuditLog when president uploads for another BDM
+
+### 20.11 — Funding COA Wiring + Petty Cash Edit UI (April 5, 2026)
+- [x] **ROOT CAUSE FIX**: `seedLookups.js` was using `findOneAndUpdate(fullDoc)` which overwrites manual DB edits every run — changed to `$setOnInsert`
+- [x] Fixed 3 wrong COA codes in seed: BANK_TRANSFER (1010→1011), CC_MBTC (2301→2304), CC_UB (2301→1013)
+- [x] Patched PaymentMode `coa_code` in DB: all 8 modes now resolve correctly in `resolveFundingCoa` step 3
+- [x] Patched PettyCashFund `coa_code` in DB: both funds → 1000 Cash on Hand
+- [x] Created 3 missing CreditCard records: Shell Fleet (2302), RCBC Corp (2303), BDO MC (2304)
+- [x] Added `coa_code` field to PettyCashFund schema (default '1000')
+- [x] PettyCash.jsx: merged Create/Edit into single `FundFormModal` — now editable: name, custodian, authorized amount, ceiling, COA code, fund mode
+- [x] PettyCash.jsx: added Edit button on each fund card, shows COA code and fund mode

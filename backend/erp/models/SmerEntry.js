@@ -17,8 +17,9 @@ const dailyEntrySchema = new mongoose.Schema({
   day_of_week: { type: String, enum: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] },
   entry_date: { type: Date, required: true },
   activity_type: { type: String, enum: ['Office', 'Field', 'Other'], trim: true },
-  hospital_covered: { type: String, trim: true },  // legacy — kept for backward compat
-  hospital_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' },
+  hospital_covered: { type: String, trim: true },  // auto-filled: comma-joined hospital names
+  hospital_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' },  // legacy single — kept for backward compat
+  hospital_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' }],  // multi-hospital picker (Field days)
   md_count: { type: Number, default: 0, min: 0 },          // CRM actual count — always preserved for audit
   perdiem_tier: { type: String, enum: ['FULL', 'HALF', 'ZERO'], default: 'ZERO' },  // effective tier (CRM-computed or override)
   perdiem_amount: { type: Number, default: 0 },             // effective amount (CRM-computed or override)
