@@ -11,6 +11,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useWarehouses from '../hooks/useWarehouses';
 import useEntities from '../hooks/useEntities';
+import api from '../../services/api';
 
 const TYPE_LABELS = { MAIN: 'Main Warehouse', TERRITORY: 'Territory', VIRTUAL: 'Virtual' };
 const TYPE_COLORS = { MAIN: '#1e40af', TERRITORY: '#166534', VIRTUAL: '#64748b' };
@@ -54,7 +55,7 @@ const pageStyles = `
 
 const emptyForm = () => ({
   warehouse_code: '', warehouse_name: '', warehouse_type: 'TERRITORY',
-  location: { city: '', region: '' }, manager_id: '', stock_type: 'PHARMA',
+  location: { city: '', region: '' }, manager_id: '', draws_from: '', stock_type: 'PHARMA',
   is_default_receiving: false, can_receive_grn: false, can_transfer_out: true,
 });
 
@@ -64,6 +65,7 @@ export default function WarehouseManager() {
   const { entities } = useEntities();
 
   const [warehouses, setWarehouses] = useState([]);
+  const [users, setUsers] = useState([]);
   const [editing, setEditing] = useState(null); // null | 'new' | warehouse object
   const [form, setForm] = useState(emptyForm());
   const [loading, setLoading] = useState(false);
@@ -71,9 +73,15 @@ export default function WarehouseManager() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await whApi.getWarehouses();
-      setWarehouses(res?.data || []);
-    } catch {} finally { setLoading(false); }
+      const [whRes, usersRes] = await Promise.all([
+        whApi.getWarehouses(),
+        api.get('/users', { params: { limit: 100 } })
+      ]);
+      setWarehouses(whRes?.data || []);
+      setUsers(usersRes?.data?.data || usersRes?.data || []);
+    } catch (err) {
+      console.error('[WarehouseManager] load failed:', err.message);
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -86,6 +94,7 @@ export default function WarehouseManager() {
       warehouse_type: wh.warehouse_type,
       location: wh.location || { city: '', region: '' },
       manager_id: wh.manager_id?._id || wh.manager_id || '',
+      draws_from: wh.draws_from?._id || wh.draws_from || '',
       stock_type: wh.stock_type || 'PHARMA',
       is_default_receiving: !!wh.is_default_receiving,
       can_receive_grn: !!wh.can_receive_grn,
@@ -189,6 +198,26 @@ export default function WarehouseManager() {
                   <div className="wm-field">
                     <label>Region</label>
                     <input value={form.location?.region || ''} onChange={e => setForm(f => ({ ...f, location: { ...f.location, region: e.target.value } }))} />
+                  </div>
+                </div>
+                <div className="wm-field-row">
+                  <div className="wm-field">
+                    <label>Manager</label>
+                    <select value={form.manager_id} onChange={e => setForm(f => ({ ...f, manager_id: e.target.value }))}>
+                      <option value="">— Select Manager —</option>
+                      {users.filter(u => u.isActive !== false).map(u => (
+                        <option key={u._id} value={u._id}>{u.name} ({u.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="wm-field">
+                    <label>Draws From (parent warehouse)</label>
+                    <select value={form.draws_from} onChange={e => setForm(f => ({ ...f, draws_from: e.target.value }))}>
+                      <option value="">— None —</option>
+                      {warehouses.filter(w => w._id !== (editing?._id)).map(w => (
+                        <option key={w._id} value={w._id}>{w.warehouse_code} — {w.warehouse_name}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="wm-field">

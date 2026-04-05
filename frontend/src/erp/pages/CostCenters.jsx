@@ -74,7 +74,9 @@ export default function CostCenters() {
       const [treeRes, listRes] = await Promise.all([rpt.getCostCenterTree(), rpt.getCostCenters({ include_inactive: true })]);
       setTree(treeRes?.data || []);
       setFlatList(listRes?.data || []);
-    } catch {}
+    } catch (err) {
+      console.error('[CostCenters] load failed:', err?.response?.data?.message || err.message);
+    }
     setLoading(false);
   }, []);
 
@@ -86,7 +88,9 @@ export default function CostCenters() {
       await rpt.createCostCenter(form);
       setForm({ code: '', name: '', parent_cost_center: '', description: '' });
       load();
-    } catch {}
+    } catch (err) {
+      alert(err?.response?.data?.message || err.message || 'Failed to create cost center');
+    }
   };
 
   const handleToggle = async (id, is_active) => {

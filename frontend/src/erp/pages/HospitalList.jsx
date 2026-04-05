@@ -25,7 +25,7 @@ export default function HospitalList() {
   });
 
   useEffect(() => {
-    api.get('/users?role=employee&limit=100').then(res => {
+    api.get('/users?role=employee&limit=0').then(res => {
       setBdmList(res.data?.data || res.data || []);
     }).catch(() => {});
   }, []);

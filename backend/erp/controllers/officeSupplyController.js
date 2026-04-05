@@ -18,19 +18,20 @@ const { catchAsync } = require('../../middleware/errorHandler');
  * Adds reorder_alert flag when qty_on_hand <= reorder_level
  */
 const getSupplies = catchAsync(async (req, res) => {
-  const { category, is_active, page = 1, limit = 50 } = req.query;
+  const { category, is_active } = req.query;
+  const page = Number(req.query.page) || 1;
+  const rawLimit = req.query.limit;
+  const limit = rawLimit === '0' || rawLimit === 0 ? 0 : (Number(rawLimit) || 50);
 
   const filter = { ...req.tenantFilter };
   if (category) filter.category = category;
   if (is_active !== undefined) filter.is_active = is_active === 'true';
 
-  const skip = (Number(page) - 1) * Number(limit);
+  const query = OfficeSupply.find(filter).sort({ item_name: 1 });
+  if (limit > 0) query.skip((page - 1) * limit).limit(limit);
+
   const [supplies, total] = await Promise.all([
-    OfficeSupply.find(filter)
-      .sort({ item_name: 1 })
-      .skip(skip)
-      .limit(Number(limit))
-      .lean(),
+    query.lean(),
     OfficeSupply.countDocuments(filter)
   ]);
 
@@ -44,10 +45,10 @@ const getSupplies = catchAsync(async (req, res) => {
     success: true,
     data,
     pagination: {
-      page: Number(page),
-      limit: Number(limit),
+      page,
+      limit,
       total,
-      pages: Math.ceil(total / Number(limit))
+      pages: limit > 0 ? Math.ceil(total / limit) : 1
     }
   });
 });

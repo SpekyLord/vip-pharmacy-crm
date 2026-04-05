@@ -316,14 +316,20 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
     const normalizedBatch = cleanBatchNo(count.batch_lot_no);
 
     // Get current system balance for this product/batch
+    const matchFilter = {
+      entity_id: new mongoose.Types.ObjectId(req.entityId),
+      product_id: new mongoose.Types.ObjectId(count.product_id),
+      batch_lot_no: normalizedBatch
+    };
+    // Use warehouse_id when provided, otherwise fall back to bdm_id
+    if (warehouse_id) {
+      matchFilter.warehouse_id = new mongoose.Types.ObjectId(warehouse_id);
+    } else {
+      matchFilter.bdm_id = new mongoose.Types.ObjectId(bdmId);
+    }
     const [agg] = await InventoryLedger.aggregate([
       {
-        $match: {
-          entity_id: new mongoose.Types.ObjectId(req.entityId),
-          bdm_id: new mongoose.Types.ObjectId(bdmId),
-          product_id: new mongoose.Types.ObjectId(count.product_id),
-          batch_lot_no: normalizedBatch
-        }
+        $match: matchFilter
       },
       {
         $group: {

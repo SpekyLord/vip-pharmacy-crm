@@ -101,7 +101,7 @@ export default function CollectionSession() {
   // Load CRM doctors once
   useEffect(() => {
     if (doctorsLoaded) return;
-    doctorService.getAll({ limit: 200 }).then(res => {
+    doctorService.getAll({ limit: 0 }).then(res => {
       const docs = (res.data?.data || res.data || []).map(d => ({
         _id: d._id,
         name: `${d.lastName}, ${d.firstName}`,
@@ -124,7 +124,7 @@ export default function CollectionSession() {
   // Load customers list
   useEffect(() => {
     import('../../services/api').then(({ default: api }) => {
-      api.get('/erp/customers', { params: { limit: 200, status: 'ACTIVE' } })
+      api.get('/erp/customers', { params: { limit: 0, status: 'ACTIVE' } })
         .then(res => setCustomerList(res.data?.data || []))
         .catch(() => {});
     });

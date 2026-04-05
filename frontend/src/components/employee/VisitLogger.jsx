@@ -284,7 +284,7 @@ const VisitLogger = ({ doctor, onSuccess }) => {
         if (doctor?.specialization) {
           response = await productService.getBySpecialization(doctor.specialization);
         } else {
-          response = await productService.getAll({ limit: 200 });
+          response = await productService.getAll({ limit: 0 });
         }
         setProducts(response.data || []);
       } catch (err) {

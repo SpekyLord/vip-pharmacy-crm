@@ -16,20 +16,21 @@ const { catchAsync } = require('../../middleware/errorHandler');
  * GET / — list collateral, filterable by collateral_type, assigned_to, is_active
  */
 const getAll = catchAsync(async (req, res) => {
-  const { collateral_type, assigned_to, is_active, page = 1, limit = 50 } = req.query;
+  const { collateral_type, assigned_to, is_active } = req.query;
+  const page = Number(req.query.page) || 1;
+  const rawLimit = req.query.limit;
+  const limit = rawLimit === '0' || rawLimit === 0 ? 0 : (Number(rawLimit) || 50);
 
   const filter = { ...req.tenantFilter };
   if (collateral_type) filter.collateral_type = collateral_type;
   if (assigned_to) filter.assigned_to = assigned_to;
   if (is_active !== undefined) filter.is_active = is_active === 'true';
 
-  const skip = (Number(page) - 1) * Number(limit);
+  const query = Collateral.find(filter).sort({ created_at: -1 });
+  if (limit > 0) query.skip((page - 1) * limit).limit(limit);
+
   const [items, total] = await Promise.all([
-    Collateral.find(filter)
-      .sort({ created_at: -1 })
-      .skip(skip)
-      .limit(Number(limit))
-      .lean(),
+    query.lean(),
     Collateral.countDocuments(filter)
   ]);
 
@@ -37,10 +38,10 @@ const getAll = catchAsync(async (req, res) => {
     success: true,
     data: items,
     pagination: {
-      page: Number(page),
-      limit: Number(limit),
+      page,
+      limit,
       total,
-      pages: Math.ceil(total / Number(limit))
+      pages: limit > 0 ? Math.ceil(total / limit) : 1
     }
   });
 });

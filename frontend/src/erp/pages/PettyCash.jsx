@@ -175,7 +175,7 @@ function FundOverview({ funds, loading, onCreateFund, onGenerateRemittance }) {
         <div style={styles.grid}>
           {funds.map(fund => {
             const balance = fund.current_balance || 0;
-            const ceiling = fund.ceiling_amount || CEILING;
+            const ceiling = fund.balance_ceiling || CEILING;
             const pct = (balance / ceiling) * 100;
             return (
               <div key={fund._id} style={styles.card}>
@@ -183,7 +183,7 @@ function FundOverview({ funds, loading, onCreateFund, onGenerateRemittance }) {
                 <div style={styles.cardCode}>{fund.fund_code}</div>
                 <div style={styles.cardRow}>
                   <span>Custodian</span>
-                  <span style={{ fontWeight: 500 }}>{fund.custodian?.name || fund.custodian || '-'}</span>
+                  <span style={{ fontWeight: 500 }}>{fund.custodian_id?.name || '-'}</span>
                 </div>
                 <div style={styles.cardRow}>
                   <span>Balance</span>
@@ -229,7 +229,7 @@ function TransactionsTab({ funds, pc }) {
     setLoading(true);
     try {
       const params = {};
-      if (fundFilter) params.fund = fundFilter;
+      if (fundFilter) params.fund_id = fundFilter;
       if (typeFilter) params.txn_type = typeFilter;
       if (dateFrom) params.date_from = dateFrom;
       if (dateTo) params.date_to = dateTo;
@@ -307,7 +307,7 @@ function TransactionsTab({ funds, pc }) {
                   <td style={styles.td}>{txn.txn_date ? new Date(txn.txn_date).toLocaleDateString() : '-'}</td>
                   <td style={styles.td}>{txn.txn_number || '-'}</td>
                   <td style={styles.td}>{typeBadge(txn.txn_type)}</td>
-                  <td style={styles.td}>{txn.payee || txn.source || '-'}</td>
+                  <td style={styles.td}>{txn.payee || txn.source_description || '-'}</td>
                   <td style={styles.td}>{styles.peso(txn.amount)}</td>
                   <td style={styles.td}>{styles.peso(txn.running_balance)}</td>
                   <td style={styles.td}>{statusBadge(txn.status)}</td>
@@ -453,7 +453,7 @@ export default function PettyCash() {
 
   const handleGenerateRemittance = async (fundId) => {
     try {
-      await pc.generateRemittance({ fund: fundId });
+      await pc.generateRemittance({ fund_id: fundId });
       alert('Remittance generated successfully.');
       setActiveTab('documents');
     } catch (err) {

@@ -474,7 +474,7 @@ export default function SalesEntry() {
   // Load customers for non-CSI modes
   useEffect(() => {
     if (saleType !== 'CSI') {
-      customers.getAll({ limit: 200, status: 'ACTIVE' }).then(res => {
+      customers.getAll({ limit: 0, status: 'ACTIVE' }).then(res => {
         if (res?.data) setCustomerList(res.data);
       }).catch(() => {});
     }

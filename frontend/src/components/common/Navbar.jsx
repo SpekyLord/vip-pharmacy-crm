@@ -520,25 +520,40 @@ const navbarStyles = `
 
   @media (max-width: 480px) {
     .navbar {
-      padding: 0 12px;
+      padding: 0 4px 0 0;
       min-height: 60px;
-      gap: 8px;
+      gap: 4px;
     }
 
     .navbar-hamburger {
       display: flex;
+      order: 0;
+    }
+
+    .navbar-brand {
+      order: 1;
+    }
+
+    .navbar-platform-switch {
+      order: 2;
     }
 
     .navbar-brand h1 {
       display: none;
     }
 
-    .navbar-logo {
-      height: 75px;
+    .navbar-left {
+      gap: 0;
+    }
+
+    .navbar-brand {
+      display: none;
     }
 
     .navbar-center {
+      flex: 1;
       justify-content: center;
+      min-width: 0;
     }
 
     .navbar-erp-tabs {
@@ -546,16 +561,7 @@ const navbarStyles = `
     }
 
     .navbar-platform-switch {
-      width: auto;
-      max-width: 100%;
-      padding: 3px;
-    }
-
-    .navbar-platform-link {
-      flex: 1;
-      padding: 0 6px;
-      font-size: 10px;
-      letter-spacing: 0.05em;
+      display: none;
     }
 
     .navbar-profile {
@@ -656,10 +662,8 @@ const Navbar = () => {
         <div className="navbar-brand">
           <img src="/VIP_LOGO-removebg.svg" alt="VIP" className="navbar-logo" />
         </div>
-      </div>
 
-      {user ? (
-        <div className="navbar-center">
+        {user && (
           <div className="navbar-platform-switch" aria-label="Platform switch">
             <Link
               to={crmHome}
@@ -674,6 +678,11 @@ const Navbar = () => {
               ERP
             </Link>
           </div>
+        )}
+      </div>
+
+      {user ? (
+        <div className="navbar-center">
 
           <div
             className={`navbar-erp-tabs ${isErpRoute ? 'navbar-erp-tabs--fluid' : ''}`.trim()}

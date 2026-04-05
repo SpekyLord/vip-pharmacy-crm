@@ -9,6 +9,7 @@ import { useAuth } from './hooks/useAuth';
 
 // Eagerly loaded pages (always needed)
 import LoginPage from './pages/LoginPage';
+import HomePage from './pages/HomePage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 // Lazy-loaded pages — split by role for smaller bundles
@@ -117,6 +118,7 @@ const DataArchive = lazy(() => import('./erp/pages/DataArchive'));
 // Phase 18 — Service Revenue & Cost Center Expenses
 const HospitalList = lazy(() => import('./erp/pages/HospitalList'));
 const CustomerList = lazy(() => import('./erp/pages/CustomerList'));
+const ProductMasterPage = lazy(() => import('./erp/pages/ProductMaster'));
 
 // Phase 19 — Petty Cash, Office Supplies & Collaterals
 const PettyCash = lazy(() => import('./erp/pages/PettyCash'));
@@ -144,6 +146,7 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/home" element={<ProtectedRoute allowedRoles={['admin', 'president', 'ceo', 'finance', 'employee', 'medrep']}><HomePage /></ProtectedRoute>} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
 
@@ -631,6 +634,7 @@ function App() {
           {/* Phase 18 — Service Revenue & Cost Center Expenses */}
           <Route path="/erp/hospitals" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}><HospitalList /></ProtectedRoute>} />
           <Route path="/erp/customers" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}><CustomerList /></ProtectedRoute>} />
+          <Route path="/erp/products" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}><ProductMasterPage /></ProtectedRoute>} />
 
           {/* Phase 19 — Petty Cash, Office Supplies & Collaterals */}
           <Route path="/erp/petty-cash" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><PettyCash /></ProtectedRoute>} />

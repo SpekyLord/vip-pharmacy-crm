@@ -27,11 +27,11 @@ export default function CostCenterPicker({ value, onChange, disabled = false, sh
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await api.get('/erp/cost-centers');
+        const res = await api.get('/erp/cost-centers', { params: { limit: 0 } });
         const list = res?.data?.data || res?.data || [];
         if (!cancelled) {
           // Only show active cost centers
-          const active = Array.isArray(list) ? list.filter(cc => cc.status !== 'INACTIVE') : [];
+          const active = Array.isArray(list) ? list.filter(cc => cc.is_active !== false) : [];
           setCostCenters(active);
           setLoaded(true);
         }

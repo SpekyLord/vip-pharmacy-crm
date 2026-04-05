@@ -162,25 +162,25 @@ export default function ErpDashboard() {
 
             {/* Header */}
             <div className="boss-header">
-              <h1>ERP Dashboard {userEntity && <EntityBadge entity={userEntity} />}</h1>
+              <h1>ERP Dashboard</h1>
               <p>Sales, inventory, collections & expense management</p>
             </div>
 
             {/* Section 1: Action Buttons */}
             <div className="action-grid">
-              <Link to={crmHome} className="action-btn">
-                <div className="action-icon" style={{ background: '#dbeafe' }}>📋</div>
-                CRM
-              </Link>
-              <Link to="/erp/sales" className="action-btn">
-                <div className="action-icon" style={{ background: '#dcfce7' }}>🧾</div>
+              <Link to="/erp/sales/entry" className="action-btn">
+                <div className="action-icon" style={{ background: '#dbeafe' }}>🧾</div>
                 Sales
+              </Link>
+              <Link to="/erp/grn" className="action-btn">
+                <div className="action-icon" style={{ background: '#dcfce7' }}>📦</div>
+                GRN
               </Link>
               <Link to="/erp/expenses" className="action-btn">
                 <div className="action-icon" style={{ background: '#fef3c7' }}>💰</div>
                 Expenses
               </Link>
-              <Link to="/erp/collections" className="action-btn">
+              <Link to="/erp/collections/session" className="action-btn">
                 <div className="action-icon" style={{ background: '#fce7f3' }}>📥</div>
                 Collections
               </Link>

@@ -22,7 +22,7 @@ const { createAndPostJournal } = require('../services/journalEngine');
  */
 const getFunds = catchAsync(async (req, res) => {
   const funds = await PettyCashFund.find({ ...req.tenantFilter })
-    .populate('custodian_id', 'firstName lastName email')
+    .populate('custodian_id', 'name email')
     .sort({ created_at: -1 })
     .lean();
 
@@ -36,7 +36,7 @@ const getFundById = catchAsync(async (req, res) => {
   const fund = await PettyCashFund.findOne({
     _id: req.params.id,
     ...req.tenantFilter
-  }).populate('custodian_id', 'firstName lastName email').lean();
+  }).populate('custodian_id', 'name email').lean();
 
   if (!fund) {
     return res.status(404).json({ success: false, message: 'Fund not found' });

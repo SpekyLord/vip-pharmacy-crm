@@ -548,6 +548,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   // Shared infrastructure — no module gate
   items.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
   items.push({ path: '/erp/customers', label: 'Customers', icon: Users });
+  items.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
   if (hasModule('inventory'))   items.push({ path: '/erp/my-stock', label: 'Inventory', icon: Package });
   if (hasModule('inventory'))   items.push({ path: '/erp/grn', label: 'GRN Entry', icon: FileInput });
   if (hasModule('inventory'))   items.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
@@ -555,6 +556,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   if (hasModule('inventory') && ['admin', 'president'].includes(role)) items.push({ path: '/erp/warehouses', label: 'Warehouses', icon: Package });
   if (hasModule('inventory'))   items.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
   if (hasModule('collections')) items.push({ path: '/erp/collections', label: 'Collections', icon: Wallet });
+  if (hasModule('collections')) items.push({ path: '/erp/collections/ar', label: 'AR Aging', icon: BarChart3 });
   if (hasModule('expenses'))    items.push({ path: '/erp/expenses', label: 'Expenses', icon: CreditCard });
   if (hasModule('reports'))     items.push({ path: '/erp/reports', label: 'Reports', icon: BarChart3 });
   if (hasModule('reports'))     items.push({ path: '/erp/budget-allocations', label: 'Budget Allocations', icon: DollarSign });
