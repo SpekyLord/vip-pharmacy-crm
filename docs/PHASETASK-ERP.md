@@ -1495,7 +1495,7 @@
 > **Future phases:**
 > - Phase 9.1: OCR → expense form connections (Scan OR, Scan Gas Receipt, Scan Odometer)
 > - Phase 9.1b: Document photo persistence for all expense proofs
-> - Phase 11: Journal entries from expenses (DR: 6XXX Expense, CR: 1110 AR BDM Advances)
+> - ~~Phase 11: Journal entries from expenses (DR: 6XXX Expense, CR: 1110 AR BDM Advances)~~ ✅ DONE (April 5, 2026)
 
 ### 6.1 — Expense Models ✅
 - [x] Create `backend/erp/models/SmerEntry.js` — daily entries with per diem tiers (FULL/HALF/ZERO), transport (P2P + special), ORE amount, travel advance reconciliation, auto-computed totals (pre-save), unique index on entity+bdm+period+cycle, DRAFT→VALID→ERROR→POSTED lifecycle, `erp_smer_entries` collection. **Per diem override fields:** `perdiem_override` (Boolean), `override_tier` (FULL/HALF), `override_reason`, `overridden_by`, `overridden_at` — Finance/Manager/President can override CRM-computed tier for exceptions (meetings, training). CRM `md_count` preserved for audit. Pre-save counts overridden days as working days. Validation skips hospital requirement for overridden days but requires override_reason.
@@ -1694,15 +1694,15 @@
 - [x] **Action feedback:** Car Logbook + Expenses pages show green/red message banner for validate/submit/delete actions (auto-dismiss 5s).
 - [x] **Save error handling:** SMER save shows specific error (e.g., "SMER already exists — use Edit") instead of silent failure.
 
-**COA / Journal Entry notes for Phase 11:**
-> When Phase 11 (VIP Accounting Engine) is built, the following auto-journals should be created from expense documents:
-> - **SMER POSTED:** DR: 6100 Per Diem Expense + 6150 Transport, CR: 1110 AR BDM Advances
-> - **Car Logbook POSTED:** DR: 6200 Fuel/Gas (official portion), CR: 1110 AR BDM Advances
-> - **ORE POSTED:** DR: 6XXX (per category — courier 6500, parking 6600, etc.), CR: 1110 AR BDM Advances
-> - **ACCESS POSTED:** DR: 6XXX (per category), CR: 2000 AP Trade or Bank Account (company fund)
-> - **PRF POSTED (partner rebate):** DR: 5200 Partner Rebate / Partners' Insurance, CR: Cash/Bank (payment to partner)
-> - **CALF POSTED (liquidation):** DR: 1110 AR BDM Advances (clearing), CR: Cash/Bank (advance return) or DR: 6XXX (shortfall reimbursement)
-> The `source_module: 'EXPENSE'` enum is already included in the JournalEntry model spec (Phase 11.2). Each expense model stores `event_id` linking to TransactionEvent for document flow tracing (Phase 9.3).
+**COA / Journal Entry notes for Phase 11:** ✅ WIRED (April 5, 2026)
+> All expense auto-journals are now wired into their respective submit functions in `expenseController.js`:
+> - **SMER POSTED:** DR: 6100 Per Diem + 6150 Transport + 6160 Special + 6170 ORE, CR: 1110 AR BDM Advances ✅
+> - **Car Logbook POSTED:** DR: 6200 Fuel/Gas, CR: 1110 AR BDM (cash) or funding COA (fleet card) ✅
+> - **ORE POSTED:** DR: line.coa_code (per category), CR: 1110 AR BDM Advances ✅
+> - **ACCESS POSTED:** DR: line.coa_code (per category), CR: funding COA via resolveFundingCoa() ✅
+> - **PRF POSTED (partner rebate):** DR: 5200 Partner Rebate, CR: funding COA ✅
+> - **CALF POSTED (advance):** DR: 1110 AR BDM Advances (clearing), CR: funding COA ✅
+> JE creation happens after MongoDB transaction (non-blocking, try/catch). Errors logged to console.
 
 
 ---
@@ -2213,7 +2213,7 @@
 - [x] Mounted in ERP router: `router.use('/payroll', erpAccessCheck('payroll'), require('./payrollRoutes'))`
 - [ ] Commit: `"feat(erp): payroll controller with staging-then-post workflow [v5]"`
 
-> **Note (April 4, 2026):** Payroll posting currently transitions payslips to POSTED status only. Journal entry generation (DR: Salaries/Allowances, CR: SSS/PhilHealth/PagIBIG/Tax Payables + Cash/Bank) deferred to Phase 11 when the JournalEntry model and autoJournal engine are built.
+> **Note (April 4, 2026):** ~~Payroll posting currently transitions payslips to POSTED status only. Journal entry generation deferred to Phase 11.~~ **RESOLVED (April 5, 2026):** `postPayroll` now calls `journalFromPayroll()` → `createAndPostJournal()` per posted payslip. Fixed field mapping: `sss_employee`/`philhealth_employee`/`pagibig_employee` (not `_ee`), individual allowance fields summed, `incentive` for commission. DR: 6000 Salaries + 6050 Allowances + 5100 Commission + 6060 Bonus, CR: 2200-2230 Payables + Cash/Bank.
 
 ### 10.7 — People & Payroll Frontend Pages ✅ COMPLETE
 - [x] Create `frontend/src/erp/pages/PeopleList.jsx` — table with search, person_type/status filters, add person modal, click → detail
@@ -2315,6 +2315,50 @@
   - `journalFromInterest(interestEntry)` — DR: 7050 Interest Exp, CR: Loan Payable
   - `journalFromOwnerEquity(equityEntry)` — infusion or drawing
 - [ ] Commit: `"feat(erp): journal entry engine with auto-journal from all modules [v5]"`
+
+### 11.3b — Auto-Journal Wiring into Controllers ✅ COMPLETE (April 5, 2026)
+
+All autoJournal functions are now called from their respective controller submit/post actions. JE creation is non-blocking (after MongoDB transaction, wrapped in try/catch).
+
+- [x] **salesController.submitSales()** — `journalFromSale()` for CSI/CASH_RECEIPT, `journalFromServiceRevenue()` for SERVICE_INVOICE
+- [x] **collectionController.submitCollections()** — `journalFromCollection()` with `resolveFundingCoa()`, plus `journalFromCWT()` when `cwt_amount > 0`
+- [x] **expenseController.submitSmer()** — custom multi-line JE: DR 6100 Per Diem + 6150 Transport + 6160 Special + 6170 ORE, CR 1110 AR BDM
+- [x] **expenseController.submitCarLogbook()** — DR 6200 Fuel, CR 1110 (cash) or funding COA (fleet card) via `resolveFundingCoa()`
+- [x] **expenseController.submitExpenses()** — per-line `coa_code` for DR, CR 1110 (ORE) or funding COA (ACCESS) via `resolveFundingCoa()`
+- [x] **expenseController.submitPrfCalf()** — PRF: DR 5200 Partner Rebate, CR funding. CALF: DR 1110 AR BDM, CR funding
+- [x] **payrollController.postPayroll()** — `journalFromPayroll()` per posted payslip, bank COA via `resolveFundingCoa()`
+- [x] **pettyCashController.processDocument()** — fixed broken `createAndPostJournal()` signature: was `(jeData, userId, session)`, now `(entityId, jeData)`
+- [x] Fixed `journalFromPayroll()` field mapping to match actual Payslip model: `sss_employee`/`philhealth_employee`/`pagibig_employee`, individual allowance sum, `incentive` for commission, added `6060 Bonus` line
+- [x] `journalFromCommission` — wired in collectionController.submitCollections (per settled CSI with commission_amount > 0)
+
+### 11.3c — Accounting Integrity Fixes ✅ COMPLETE (April 5, 2026)
+
+**JE Reversal on Reopen (SAP Storno):** All reopen + deletion functions now call `reverseJournal()` to create offsetting JEs:
+- [x] **salesController** — `reopenSales`, `approveDeletion` — find POSTED JEs by source_event_id, call reverseJournal
+- [x] **collectionController** — `reopenCollections`, `approveDeletion` — reverses collection JE + CWT JE
+- [x] **expenseController** — `reopenSmer`, `reopenCarLogbook`, `reopenExpenses`, `reopenPrfCalf` — all 4 reverse JEs
+
+**COGS Journal (DR 5000, CR 1200):**
+- [x] Created `journalFromCOGS(salesLine, totalCogs, userId)` in autoJournal.js
+- [x] Wired in salesController.submitSales — after FIFO consumption, looks up ProductMaster.purchase_price per line item, computes total COGS, posts JE. Skipped for SERVICE_INVOICE.
+
+**VAT/CWT Ledger Wiring (was dead code):**
+- [x] `createVatEntry()` wired in collectionController.submitCollections (OUTPUT VAT from collection amount)
+- [x] `createVatEntry()` wired in purchasingController.postInvoice (INPUT VAT from supplier invoice)
+- [x] `createCwtEntry()` wired in collectionController.submitCollections (when cwt_amount > 0)
+- [x] VAT/CWT cleanup added to collectionController.reopenCollections (deleteMany on reopen)
+
+**Inter-Company Transfer JE:**
+- [x] Created `journalFromInterCompany(transfer, perspective, amount, userId)` in autoJournal.js
+- [x] Wired in interCompanyService.postTransfer — sender JE (DR 1150 IC Receivable, CR 1200 Inventory), receiver JE (DR 1200 Inventory, CR 2050 IC Payable)
+
+**P2 gaps — ALL RESOLVED (April 5, 2026):**
+- [x] Month-End Close Phase 3 rewritten as **JE Verification** — counts POSTED docs vs JEs per module, flags orphans. Phase 4 rewritten as **VAT/CWT Verification** — checks ledger completeness.
+- [x] **Inventory adjustment JE** — `journalFromInventoryAdjustment()` created in autoJournal.js. Loss: DR 6800 Write-Off, CR 1200 Inventory. Gain: DR 1200, CR 6810. Wired in `inventoryController.recordPhysicalCount()`.
+- [x] **Bank reconciliation adjustment JEs** — `finalizeRecon()` now creates JEs for `RECONCILING_ITEM` entries (bank fees: DR 7100, CR bank; interest: DR bank, CR 4200). Links JE to statement entry.
+- [x] **P&L reconciliation** — monthEndClose Phase 5 Step 16 now compares GL revenue (account 4000) vs source-doc revenue (SalesLine). Variance stored in archive.
+- [x] **Year-end closing JE** — `executeYearEndClose()` now aggregates all 4000-7999 accounts from GL, creates closing JE transferring net income to 3200 Retained Earnings. Sets `closing_entries_pending: false`.
+- [x] Added `INVENTORY` and `IC_TRANSFER` to JournalEntry source_module enum
 
 ### 11.4 — VAT Ledger & CWT Ledger Models ✅ COMPLETE
 - [x] Create `backend/erp/models/VatLedger.js`:
@@ -2501,7 +2545,7 @@
 > - JE numbers auto-increment via DocSequence model (key: `JE-{entityId}-{YYYY}`), reusing existing atomic counter pattern.
 > - MonthlyArchive model extended with `close_progress`, `trial_balance_snapshot`, `pnl_snapshot` fields for month-end close tracking.
 > - P&L Service (`pnlService.js`) is DISTINCT from existing `pnlCalc.js` — the new service derives P&L from journal entries, while the old one computes from source documents. Both coexist.
-> - Auto-journal functions return JE data objects (not persisted). The caller (monthEndClose or controller) handles creation+posting via journalEngine.
+> - Auto-journal functions return JE data objects (not persisted). The caller (monthEndClose or controller) handles creation+posting via journalEngine. **As of April 5, 2026:** All 12 active autoJournal functions are now wired into controllers (only `journalFromCommission` awaits its controller).
 > - Month-End Close auto-close runs Steps 1-17 automatically, pauses at Step 21 for Finance review. Steps 23-25 post staged items after approval. Steps 26-29 finalize and lock the period.
 
 ### Phase 11 Summary
@@ -2510,6 +2554,9 @@
 | 11.1 COA Model + Seed | `ChartOfAccounts.js`, `seedCOA.js`, `coaController.js`, `coaRoutes.js` | ✅ |
 | 11.2 JE Model | `JournalEntry.js` | ✅ |
 | 11.3 JE Engine + Auto-Journal | `journalEngine.js`, `autoJournal.js` (+ `resolveFundingCoa`) | ✅ |
+| 11.3b Auto-Journal Wiring | `salesController`, `collectionController`, `expenseController`, `payrollController`, `pettyCashController` | ✅ |
+| 11.3c Accounting Integrity | JE reversal on reopen (10 functions), COGS JE, VAT/CWT wiring, IC transfer JE, commission JE | ✅ |
+| 11.3d P2 Cleanup | Inventory adj JE, bank recon JEs, MEC verification rewrite, P&L reconciliation, year-end closing JE | ✅ |
 | 11.4 VAT/CWT Models | `VatLedger.js`, `CwtLedger.js` | ✅ |
 | 11.5 VAT/CWT Services | `vatService.js`, `cwtService.js` | ✅ |
 | 11.6 Trial Balance | `trialBalanceService.js` | ✅ |
@@ -3062,6 +3109,7 @@ Replaced `roleCheck('admin', 'finance', 'president')` with `erpSubAccessCheck` o
 - [x] Added `journalFromServiceRevenue()` — DR 1100 AR / CR 4100 Service Revenue
 - [x] Added `journalFromPettyCash()` — for disbursements (DR expense / CR 1015) and remittances (DR 3100 / CR 1015)
 - [x] Added `SERVICE_REVENUE`, `PETTY_CASH` to JournalEntry source_module enum
+- [x] **(April 5, 2026)** Fixed `pettyCashController.processDocument()` — broken `createAndPostJournal(jeData, userId, session)` → correct `createAndPostJournal(entityId, jeData)`
 
 ### 18.7 — Cost Center Expense + President Override ✅
 - [x] Added `cost_center_id` to ExpenseEntry line schema

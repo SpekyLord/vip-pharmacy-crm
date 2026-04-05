@@ -13,6 +13,8 @@ const InterCompanyTransfer = require('../models/InterCompanyTransfer');
 const InventoryLedger = require('../models/InventoryLedger');
 const TransactionEvent = require('../models/TransactionEvent');
 const ProductMaster = require('../models/ProductMaster');
+const { journalFromInterCompany } = require('./autoJournal');
+const { createAndPostJournal } = require('./journalEngine');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const User = require('../../models/User');
 const { consumeFIFO, consumeSpecificBatch } = require('./fifoEngine');
@@ -302,6 +304,22 @@ const postTransfer = async (transferId, postedBy) => {
     created_by: postedBy
   });
 
+  // Journal entries for IC AR/AP
+  const amount = transfer.total_amount || 0;
+  if (amount > 0) {
+    try {
+      // Sender JE: DR 1150 IC Receivable, CR 1200 Inventory
+      const senderJe = journalFromInterCompany(transfer, 'SENDER', amount, postedBy);
+      if (senderJe) await createAndPostJournal(transfer.source_entity_id, senderJe);
+
+      // Receiver JE: DR 1200 Inventory, CR 2050 IC Payable
+      const receiverJe = journalFromInterCompany(transfer, 'RECEIVER', amount, postedBy);
+      if (receiverJe) await createAndPostJournal(transfer.target_entity_id, receiverJe);
+    } catch (jeErr) {
+      console.error('IC Transfer JE failed:', transfer.transfer_ref, jeErr.message);
+    }
+  }
+
   await ErpAuditLog.logChange({
     entity_id: transfer.source_entity_id,
     log_type: 'STATUS_CHANGE',
@@ -311,7 +329,7 @@ const postTransfer = async (transferId, postedBy) => {
     old_value: 'RECEIVED',
     new_value: 'POSTED',
     changed_by: postedBy,
-    note: `IC Transfer ${transfer.transfer_ref} posted (final) — AR/AP created for ₱${transfer.total_amount}`
+    note: `IC Transfer ${transfer.transfer_ref} posted (final) — AR/AP + JEs created for ₱${transfer.total_amount}`
   });
 
   return transfer;

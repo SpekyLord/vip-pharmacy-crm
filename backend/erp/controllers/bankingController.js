@@ -120,7 +120,7 @@ const getReconSummary = catchAsync(async (req, res) => {
 });
 
 const finalizeRecon = catchAsync(async (req, res) => {
-  const result = await bankReconService.finalizeRecon(req.params.id);
+  const result = await bankReconService.finalizeRecon(req.params.id, req.user._id);
   res.json({ success: true, data: result });
 });
 

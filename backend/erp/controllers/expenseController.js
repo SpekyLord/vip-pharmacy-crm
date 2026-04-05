@@ -18,6 +18,9 @@ const { computePerdiemAmount } = require('../services/perdiemCalc');
 // fuelTracker computations handled by CarLogbookEntry pre-save hook
 const { generateExpenseSummary } = require('../services/expenseSummary');
 const { getDailyMdCounts, getDailyVisitDetails } = require('../services/smerCrmBridge');
+const { journalFromExpense, resolveFundingCoa } = require('../services/autoJournal');
+const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
+const JournalEntry = require('../models/JournalEntry');
 
 // ═══════════════════════════════════════════
 // SMER ENDPOINTS
@@ -177,6 +180,36 @@ const submitSmer = catchAsync(async (req, res) => {
     }
   }
 
+  // Phase 11: Auto-journal — SMER multi-line (DR 6100+6150+6160+6170, CR 1110)
+  for (const smer of smers) {
+    try {
+      const lines = [];
+      const desc = `SMER ${smer.period}-${smer.cycle}`;
+      if (smer.total_perdiem > 0) lines.push({ account_code: '6100', account_name: 'Per Diem Expense', debit: smer.total_perdiem, credit: 0, description: desc });
+      if (smer.total_transpo > 0) lines.push({ account_code: '6150', account_name: 'Transport Expense', debit: smer.total_transpo, credit: 0, description: desc });
+      if (smer.total_special_cases > 0) lines.push({ account_code: '6160', account_name: 'Special Transport Expense', debit: smer.total_special_cases, credit: 0, description: desc });
+      if (smer.total_ore > 0) lines.push({ account_code: '6170', account_name: 'Other Reimbursable Expense', debit: smer.total_ore, credit: 0, description: desc });
+      if (lines.length > 0) {
+        lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: smer.total_reimbursable, description: desc });
+        await createAndPostJournal(smer.entity_id, {
+          je_date: smer.posted_at || new Date(),
+          period: smer.period,
+          description: `SMER: ${desc}`,
+          source_module: 'EXPENSE',
+          source_event_id: smer.event_id,
+          source_doc_ref: `SMER-${smer.period}-${smer.cycle}`,
+          lines,
+          bir_flag: 'BOTH',
+          vat_flag: 'N/A',
+          bdm_id: smer.bdm_id,
+          created_by: req.user._id
+        });
+      }
+    } catch (jeErr) {
+      console.error('Auto-journal failed for SMER:', smer._id, jeErr.message);
+    }
+  }
+
   res.json({ success: true, message: `Posted ${smers.length} SMER(s)` });
 });
 
@@ -186,6 +219,14 @@ const reopenSmer = catchAsync(async (req, res) => {
   if (!smers.length) return res.status(400).json({ success: false, message: 'No POSTED SMERs to reopen' });
 
   for (const smer of smers) {
+    // Reverse journal entries
+    if (smer.event_id) {
+      try {
+        const jes = await JournalEntry.find({ source_event_id: smer.event_id, status: 'POSTED', is_reversal: { $ne: true } });
+        for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: SMER reopen', req.user._id); }
+      } catch (jeErr) { console.error('JE reversal failed for SMER reopen:', smer._id, jeErr.message); }
+    }
+
     smer.status = 'DRAFT';
     smer.reopen_count = (smer.reopen_count || 0) + 1;
     smer.posted_at = undefined;
@@ -437,6 +478,48 @@ const submitCarLogbook = catchAsync(async (req, res) => {
     }
   }
 
+  // Phase 11: Auto-journal — Car Logbook (DR 6200 Fuel, CR 1110 or funding COA)
+  for (const entry of entries) {
+    try {
+      if (!entry.total_fuel_amount || entry.total_fuel_amount <= 0) continue;
+      // Split fuel by payment mode: cash → CR 1110, non-cash → CR funding COA
+      let cashTotal = 0;
+      let fundedTotal = 0;
+      let fundedCoa = null;
+      for (const fuel of (entry.fuel_entries || [])) {
+        if (!fuel.payment_mode || fuel.payment_mode === 'CASH') {
+          cashTotal += fuel.total_amount || 0;
+        } else {
+          fundedTotal += fuel.total_amount || 0;
+          if (!fundedCoa) fundedCoa = await resolveFundingCoa(fuel);
+        }
+      }
+      const desc = `Logbook ${entry.period} ${entry.entry_date.toISOString().split('T')[0]}`;
+      const lines = [];
+      const totalFuel = cashTotal + fundedTotal;
+      if (totalFuel > 0) lines.push({ account_code: '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: desc });
+      if (cashTotal > 0) lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: desc });
+      if (fundedTotal > 0 && fundedCoa) lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: desc });
+      if (lines.length >= 2) {
+        await createAndPostJournal(entry.entity_id, {
+          je_date: entry.entry_date || new Date(),
+          period: entry.period,
+          description: `Car Logbook: ${desc}`,
+          source_module: 'EXPENSE',
+          source_event_id: entry.event_id,
+          source_doc_ref: `LOGBOOK-${entry.period}-${entry.entry_date.toISOString().split('T')[0]}`,
+          lines,
+          bir_flag: 'BOTH',
+          vat_flag: 'N/A',
+          bdm_id: entry.bdm_id,
+          created_by: req.user._id
+        });
+      }
+    } catch (jeErr) {
+      console.error('Auto-journal failed for logbook:', entry._id, jeErr.message);
+    }
+  }
+
   res.json({ success: true, message: `Posted ${entries.length} logbook(s)` });
 });
 
@@ -446,6 +529,14 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
   if (!entries.length) return res.status(400).json({ success: false, message: 'No POSTED logbooks to reopen' });
 
   for (const entry of entries) {
+    // Reverse journal entries
+    if (entry.event_id) {
+      try {
+        const jes = await JournalEntry.find({ source_event_id: entry.event_id, status: 'POSTED', is_reversal: { $ne: true } });
+        for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: CarLogbook reopen', req.user._id); }
+      } catch (jeErr) { console.error('JE reversal failed for logbook reopen:', entry._id, jeErr.message); }
+    }
+
     entry.status = 'DRAFT';
     entry.reopen_count = (entry.reopen_count || 0) + 1;
     entry.posted_at = undefined;
@@ -624,6 +715,57 @@ const submitExpenses = catchAsync(async (req, res) => {
     }
   }
 
+  // Phase 11: Auto-journal — Expenses (ORE: DR 6XXX CR 1110, ACCESS: DR 6XXX CR funding)
+  for (const entry of entries) {
+    try {
+      const lines = [];
+      const desc = `EXP ${entry.period}-${entry.cycle}`;
+      let creditOre = 0;
+      let creditAccess = 0;
+      let accessCoa = null;
+
+      for (const line of (entry.lines || [])) {
+        const amt = line.amount || 0;
+        if (amt <= 0) continue;
+        const drCode = line.coa_code || '6900';
+        const drName = line.expense_category || 'Miscellaneous Expense';
+        lines.push({ account_code: drCode, account_name: drName, debit: amt, credit: 0, description: line.establishment || desc });
+        if (line.expense_type === 'ACCESS') {
+          creditAccess += amt;
+          if (!accessCoa) accessCoa = await resolveFundingCoa(line);
+        } else {
+          creditOre += amt;
+        }
+      }
+
+      // ORE credit → 1110 AR BDM Advances (personal reimbursement)
+      if (creditOre > 0) lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: creditOre, description: desc });
+      // ACCESS credit → funding source (company-funded)
+      if (creditAccess > 0) {
+        const coa = accessCoa || { coa_code: '2000', coa_name: 'Accounts Payable — Trade' };
+        lines.push({ account_code: coa.coa_code, account_name: coa.coa_name, debit: 0, credit: creditAccess, description: desc });
+      }
+
+      if (lines.length >= 2) {
+        await createAndPostJournal(entry.entity_id, {
+          je_date: entry.posted_at || new Date(),
+          period: entry.period,
+          description: `Expenses: ${desc}`,
+          source_module: 'EXPENSE',
+          source_event_id: entry.event_id,
+          source_doc_ref: `EXP-${entry.period}-${entry.cycle}`,
+          lines,
+          bir_flag: 'BOTH',
+          vat_flag: 'N/A',
+          bdm_id: entry.bdm_id,
+          created_by: req.user._id
+        });
+      }
+    } catch (jeErr) {
+      console.error('Auto-journal failed for expense:', entry._id, jeErr.message);
+    }
+  }
+
   res.json({ success: true, message: `Posted ${entries.length} expense(s)` });
 });
 
@@ -633,6 +775,14 @@ const reopenExpenses = catchAsync(async (req, res) => {
   if (!entries.length) return res.status(400).json({ success: false, message: 'No POSTED expenses to reopen' });
 
   for (const entry of entries) {
+    // Reverse journal entries
+    if (entry.event_id) {
+      try {
+        const jes = await JournalEntry.find({ source_event_id: entry.event_id, status: 'POSTED', is_reversal: { $ne: true } });
+        for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: Expense reopen', req.user._id); }
+      } catch (jeErr) { console.error('JE reversal failed for expense reopen:', entry._id, jeErr.message); }
+    }
+
     entry.status = 'DRAFT';
     entry.reopen_count = (entry.reopen_count || 0) + 1;
     entry.posted_at = undefined;
@@ -869,6 +1019,44 @@ const submitPrfCalf = catchAsync(async (req, res) => {
     }
   }
 
+  // Phase 11: Auto-journal — PRF (DR 5200, CR bank) / CALF (DR 1110, CR bank)
+  for (const doc of docs) {
+    try {
+      const amount = doc.amount || 0;
+      if (amount <= 0) continue;
+      const funding = await resolveFundingCoa(doc);
+      const docRef = doc.prf_number || doc.calf_number || `${doc.doc_type}-${doc.period}`;
+      let lines;
+      if (doc.doc_type === 'PRF') {
+        lines = [
+          { account_code: '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
+          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}` }
+        ];
+      } else {
+        // CALF: company advance to BDM → DR 1110 AR BDM, CR bank
+        lines = [
+          { account_code: '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
+          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}` }
+        ];
+      }
+      await createAndPostJournal(doc.entity_id, {
+        je_date: doc.posted_at || new Date(),
+        period: doc.period,
+        description: `${doc.doc_type}: ${docRef}`,
+        source_module: 'EXPENSE',
+        source_event_id: doc.event_id,
+        source_doc_ref: docRef,
+        lines,
+        bir_flag: 'BOTH',
+        vat_flag: 'N/A',
+        bdm_id: doc.bdm_id,
+        created_by: req.user._id
+      });
+    } catch (jeErr) {
+      console.error('Auto-journal failed for PRF/CALF:', doc._id, jeErr.message);
+    }
+  }
+
   res.json({ success: true, message: `Posted ${docs.length} PRF/CALF(s)` });
 });
 
@@ -878,6 +1066,14 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
   if (!docs.length) return res.status(400).json({ success: false, message: 'No POSTED PRF/CALFs to reopen' });
 
   for (const doc of docs) {
+    // Reverse journal entries
+    if (doc.event_id) {
+      try {
+        const jes = await JournalEntry.find({ source_event_id: doc.event_id, status: 'POSTED', is_reversal: { $ne: true } });
+        for (const je of jes) { await reverseJournal(je._id, `Auto-reversal: ${doc.doc_type} reopen`, req.user._id); }
+      } catch (jeErr) { console.error('JE reversal failed for PRF/CALF reopen:', doc._id, jeErr.message); }
+    }
+
     doc.status = 'DRAFT';
     doc.reopen_count = (doc.reopen_count || 0) + 1;
     doc.posted_at = undefined;

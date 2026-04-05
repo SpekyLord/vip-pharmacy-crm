@@ -498,8 +498,7 @@ const processDocument = catchAsync(async (req, res) => {
       };
       const jeData = journalFromPettyCash(jeTxn, '6900', 'Miscellaneous Expense', req.user._id);
       if (jeData) {
-        jeData.entity_id = req.entityId;
-        await createAndPostJournal(jeData, req.user._id, session);
+        await createAndPostJournal(req.entityId, jeData);
       }
 
       // Mark document processed

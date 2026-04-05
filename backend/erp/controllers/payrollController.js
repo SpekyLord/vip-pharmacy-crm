@@ -8,6 +8,8 @@ const {
   computeThirteenthMonth: compute13th,
   transitionPayslipStatus,
 } = require('../services/payslipCalc');
+const { journalFromPayroll, resolveFundingCoa } = require('../services/autoJournal');
+const { createAndPostJournal } = require('../services/journalEngine');
 
 const GENERATOR_MAP = {
   BDM: generateBdmPayslip,
@@ -110,8 +112,23 @@ const postPayroll = catchAsync(async (req, res) => {
 
   for (const ps of approved) {
     try {
-      await transitionPayslipStatus(ps._id, 'post', req.user._id);
+      const postedPs = await transitionPayslipStatus(ps._id, 'post', req.user._id);
       posted++;
+
+      // Phase 11: Auto-journal for each posted payslip
+      try {
+        const fullPs = await Payslip.findById(postedPs._id)
+          .populate('person_id', 'full_name')
+          .lean();
+        const bankCoa = await resolveFundingCoa({ payment_mode: 'BANK_TRANSFER' });
+        const jeData = journalFromPayroll(
+          { ...fullPs, employee_name: fullPs.person_id?.full_name || '' },
+          bankCoa.coa_code, bankCoa.coa_name, req.user._id
+        );
+        await createAndPostJournal(fullPs.entity_id, jeData);
+      } catch (jeErr) {
+        console.error('Auto-journal failed for payslip:', ps._id, jeErr.message);
+      }
     } catch (err) {
       errors.push({ payslip_id: ps._id, error: err.message });
     }

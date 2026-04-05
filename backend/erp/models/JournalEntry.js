@@ -54,7 +54,8 @@ const journalEntrySchema = new mongoose.Schema({
       'SALES', 'COLLECTION', 'EXPENSE', 'COMMISSION', 'AP',
       'PAYROLL', 'DEPRECIATION', 'INTEREST', 'PEOPLE_COMP',
       'VAT', 'OWNER', 'BANKING', 'MANUAL',
-      'SERVICE_REVENUE', 'PETTY_CASH'
+      'SERVICE_REVENUE', 'PETTY_CASH',
+      'INVENTORY', 'IC_TRANSFER'
     ],
     required: true
   },

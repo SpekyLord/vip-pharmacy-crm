@@ -14,6 +14,8 @@ const ErpAuditLog = require('../models/ErpAuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { getMyStock: getMyStockAgg, getAvailableBatches } = require('../services/fifoEngine');
 const { cleanBatchNo } = require('../utils/normalize');
+const { journalFromInventoryAdjustment } = require('../services/autoJournal');
+const { createAndPostJournal } = require('../services/journalEngine');
 
 /**
  * GET /my-stock — BDM's stock dashboard data
@@ -378,6 +380,24 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
       actual_qty: count.actual_qty,
       variance
     });
+  }
+
+  // Auto-journal for inventory adjustments (non-blocking)
+  for (const adj of adjustments) {
+    try {
+      const product = await ProductMaster.findById(adj.product_id).select('purchase_price brand_name').lean();
+      const unitCost = product?.purchase_price || 0;
+      const amount = Math.round(Math.abs(adj.variance) * unitCost * 100) / 100;
+      const jeData = journalFromInventoryAdjustment({
+        variance: adj.variance,
+        product_name: product?.brand_name || '',
+        batch_lot_no: adj.batch_lot_no,
+        bdm_id: req.bdmId
+      }, amount, req.user._id);
+      if (jeData) await createAndPostJournal(req.entityId, jeData);
+    } catch (jeErr) {
+      console.error('Inv adjustment JE failed:', adj.product_id, jeErr.message);
+    }
   }
 
   res.json({

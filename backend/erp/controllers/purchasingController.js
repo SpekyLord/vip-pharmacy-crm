@@ -15,6 +15,7 @@ const { journalFromAP } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');
 const { getApLedger, getApAging, getApConsolidated, getGrni } = require('../services/apService');
 const { recordApPayment, getPaymentHistory } = require('../services/apPaymentService');
+const { createVatEntry } = require('../services/vatService');
 
 /* ═══════════════════════════════════════════════════════════════════════
    PURCHASE ORDERS
@@ -274,6 +275,23 @@ const postInvoice = catchAsync(async (req, res) => {
   invoice.status = 'POSTED';
   invoice.event_id = je._id;
   await invoice.save();
+
+  // VAT Ledger — INPUT VAT from supplier invoice
+  const inputVat = invoice.input_vat || invoice.vat_amount || 0;
+  if (inputVat > 0) {
+    await createVatEntry({
+      entity_id: req.entityId,
+      period: je.period,
+      vat_type: 'INPUT',
+      source_module: 'SUPPLIER_INVOICE',
+      source_doc_ref: invoice.invoice_ref,
+      source_event_id: je._id,
+      hospital_or_vendor: invoice.vendor_id,
+      tin: invoice.vendor_tin,
+      gross_amount: invoice.total_amount || (invoice.net_amount + inputVat),
+      vat_amount: inputVat
+    }).catch(err => console.error('VAT entry failed for SI:', invoice.invoice_ref, err.message));
+  }
 
   res.json({ success: true, data: { invoice, journal_entry: je } });
 });
