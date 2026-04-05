@@ -64,6 +64,10 @@ const compProfileSchema = new mongoose.Schema(
     calf_override: { type: Boolean, default: false },    // Bypass CALF requirement
     crm_linked: { type: Boolean, default: false },
 
+    // ═══ Profit Share & Commission ═══
+    profit_share_eligible: { type: Boolean, default: false },
+    commission_rate: { type: Number, default: 0 },           // Default CSI commission % for this BDM
+
     // ═══ Tax Status ═══
     tax_status: {
       type: String,

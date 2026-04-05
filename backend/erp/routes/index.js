@@ -84,6 +84,9 @@ router.use('/petty-cash', erpAccessCheck('accounting'), require('./pettyCashRout
 router.use('/office-supplies', erpAccessCheck('accounting'), require('./officeSupplyRoutes'));
 router.use('/collaterals', erpAccessCheck('inventory'), require('./collateralRoutes'));
 
+// ═══ Phase 21 — Insurance Register ═══
+router.use('/insurance', erpAccessCheck('people'), require('./insuranceRoutes'));
+
 // ═══ Phase 15 — SAP-Equivalent Improvements ═══
 router.use('/csi-booklets', erpAccessCheck('sales'), require('./csiBookletRoutes'));
 router.use('/cycle-reports', erpAccessCheck('reports'), require('./cycleReportRoutes'));

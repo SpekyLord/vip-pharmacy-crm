@@ -153,6 +153,7 @@ const updateCompProfile = catchAsync(async (req, res) => {
     'km_per_liter', 'fuel_overconsumption_threshold', 'smer_eligible',
     'perdiem_engagement_threshold_full', 'perdiem_engagement_threshold_half',
     'logbook_eligible', 'vehicle_type', 'ore_eligible', 'access_eligible', 'crm_linked',
+    'profit_share_eligible', 'commission_rate',
     'tax_status', 'reason',
   ];
 
