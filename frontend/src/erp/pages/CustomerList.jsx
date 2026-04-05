@@ -71,11 +71,16 @@ const pageStyles = `
   .empty-row { text-align: center; padding: 40px 12px; color: var(--erp-muted); }
 
   @media (max-width: 768px) {
+    .cust-main { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
     .cust-filters { flex-direction: column; }
     .cust-filters input { min-width: 100%; }
     .form-grid { grid-template-columns: 1fr; }
     .cust-table { font-size: 12px; }
     .cust-table th, .cust-table td { padding: 8px 8px; }
+  }
+  @media (max-width: 375px) {
+    .cust-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+    .cust-main input, .cust-main select { font-size: 16px; }
   }
 `;
 

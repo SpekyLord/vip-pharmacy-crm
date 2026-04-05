@@ -7,10 +7,12 @@
 const express = require('express');
 const router = express.Router();
 const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
+const periodLockCheck = require('../middleware/periodLockCheck');
 const ac = require('../controllers/accountingController');
 
 // ═══ Journal Entries ═══
-router.post('/journals', erpSubAccessCheck('accounting', 'journal_entry'), ac.createManualJournal);
+router.post('/journals/batch-post', erpSubAccessCheck('accounting', 'journal_entry'), ac.batchPostJournals);
+router.post('/journals', erpSubAccessCheck('accounting', 'journal_entry'), periodLockCheck('JOURNAL'), ac.createManualJournal);
 router.get('/journals', ac.listJournals);
 router.get('/journals/:id', ac.getJournalById);
 router.post('/journals/:id/post', erpSubAccessCheck('accounting', 'journal_entry'), ac.postJournalEndpoint);

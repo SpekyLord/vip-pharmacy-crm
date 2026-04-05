@@ -95,6 +95,12 @@ const pageStyles = `
     .boss-scroll { padding: 12px 12px 110px; }
     .summary-card .value { font-size: 16px; }
   }
+  @media (max-width: 375px) {
+    .boss-scroll { padding: 8px 8px 90px; }
+    .summary-card .value { font-size: 14px; }
+    .summary-card .label { font-size: 10px; }
+    .boss-scroll input, .boss-scroll select { font-size: 16px; }
+  }
 `;
 
 function fmt(n) {

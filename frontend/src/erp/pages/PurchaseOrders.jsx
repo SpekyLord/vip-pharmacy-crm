@@ -45,7 +45,8 @@ const styles = `
   .po-empty { text-align: center; color: #64748b; padding: 40px; }
   .po-actions { display: flex; gap: 4px; }
   .po-pag { display: flex; justify-content: center; gap: 8px; margin-top: 14px; align-items: center; font-size: 13px; }
-  @media(max-width: 768px) { .po-main { padding: 12px; } .form-row { grid-template-columns: 1fr; } .po-modal-body { width: 95vw; } }
+  @media(max-width: 768px) { .po-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .form-row { grid-template-columns: 1fr; } .po-modal-body { width: 95vw; } }
+  @media(max-width: 375px) { .po-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .po-main input, .po-main select { font-size: 16px; } }
 `;
 
 const STATUSES = ['', 'DRAFT', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'];

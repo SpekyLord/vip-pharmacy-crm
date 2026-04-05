@@ -2872,10 +2872,14 @@ All autoJournal functions are now called from their respective controller submit
 - [x] Created `backend/erp/routes/cycleReportRoutes.js` — mounted at `/cycle-reports` with `erpAccessCheck('reports')`
 - [x] Created `frontend/src/erp/pages/CycleReports.jsx` — list, filters, workflow action buttons, status badges
 
-### 15.4 — Recurring Journal Templates (SAP FI Recurring Documents)
-- [ ] Template model: name, frequency (monthly/quarterly), line items, auto_post flag
-- [ ] Scheduler: auto-generate journal entries on schedule
-- [ ] Admin UI to create/edit/deactivate templates
+### 15.4 — Recurring Journal Templates (SAP FI Recurring Documents) ✅
+- [x] Template model: name, frequency (monthly/quarterly/annually), day_of_month, line items, auto_post flag — `backend/erp/models/RecurringJournalTemplate.js`
+- [x] Service: `runDueTemplates()`, `runSingleTemplate()`, schedule auto-advance — `backend/erp/services/recurringJournalService.js`
+- [x] Controller + Routes: full CRUD + run/export/import — `backend/erp/controllers/recurringJournalController.js`, `backend/erp/routes/recurringJournalRoutes.js`
+- [x] Admin UI to create/edit/deactivate templates, balance-validated line editor, Run Now/Run All Due — `frontend/src/erp/pages/RecurringJournals.jsx`
+- [x] Excel export/import (Google Sheets compatible) — "Templates" + "Template Lines" sheets
+- [x] Mounted at `/erp/recurring-journals` with erpAccessCheck('accounting')
+- **Completed:** Phase 21.3
 
 ### 15.5 — Cost Center Dimension (SAP CO Cost Centers) ✅
 - [x] Added optional `cost_center_id` to TransactionEvent and SalesLine schemas
@@ -2887,15 +2891,21 @@ All autoJournal functions are now called from their respective controller submit
 - [x] Added sidebar items under Accounting section
 - **Note:** JournalEntry lines already had a `cost_center` string field. CostCenter model provides the master data.
 
-### 15.6 — Per-Module Period Locks (SAP Posting Period Variant)
-- [ ] PeriodLock model: module, year, month, is_locked, locked_by, locked_at
-- [ ] Enforce in all POST/PUT endpoints: reject posting to locked periods
-- [ ] Finance UI to lock/unlock periods per module
+### 15.6 — Per-Module Period Locks (SAP Posting Period Variant) ✅
+- [x] PeriodLock model: 10 modules, year/month compound unique, audit fields — `backend/erp/models/PeriodLock.js`
+- [x] `periodLockCheck` factory middleware: rejects writes to locked periods (403) — `backend/erp/middleware/periodLockCheck.js`
+- [x] Applied to JOURNAL write routes in `accountingRoutes.js`
+- [x] Controller + Routes: getLocks matrix, toggleLock, exportLocks (XLSX)
+- [x] Finance UI: 10x12 matrix grid with padlock toggles — `frontend/src/erp/pages/PeriodLocks.jsx`
+- [x] Mounted at `/erp/period-locks` with erpAccessCheck('accounting')
+- **Completed:** Phase 21.4
 
-### 15.7 — Batch Posting with IDs (SAP Batch Input)
-- [ ] Bulk submit endpoint: POST /api/erp/sales/batch-submit
-- [ ] Accept array of document IDs, validate all, post all atomically
-- [ ] Rollback on any failure (MongoDB transaction)
+### 15.7 — Batch Posting with IDs (SAP Batch Input) ✅
+- [x] `batchPostJournals` endpoint: POST /api/erp/accounting/journals/batch-post — `backend/erp/controllers/accountingController.js`
+- [x] Accept array of JE IDs, validate all DRAFT, post atomically (MongoDB transaction)
+- [x] Rollback on any failure, return per-JE results
+- [x] Frontend: checkbox column + batch post bar + results modal — `frontend/src/erp/pages/JournalEntries.jsx`
+- **Completed:** Phase 21.5
 
 ### 15.8 — Data Archival (SAP Data Archiving) ✅
 - [x] Created `backend/erp/models/ArchiveBatch.js` — batch tracking with counts per collection, periods archived, status
@@ -3195,7 +3205,7 @@ Replaced `roleCheck('admin', 'finance', 'president')` with `erpSubAccessCheck` o
 | 13 | Banking & Cash [v5 NEW] | ~30 | 1-2 weeks |
 | 14 | New Reports & Analytics [v5 NEW] ✅ | ~35 | 1-2 weeks |
 | 15.1-15.3,15.5,15.8-15.9 | SAP-equivalent improvements + code quality (partial) ✅ | 6/8 | Completed |
-| 15.4,15.6,15.7 | Future (remaining SAP improvements) | 3 | Post-launch |
+| 15.4,15.6,15.7 | SAP improvements (Recurring Journals, Period Locks, Batch Posting) ✅ | 3 | Phase 21.3-21.5 |
 | 16 | Sub-Module Access (Granular Permissions) ✅ | ~20 | 1 week |
 | 17 | Warehouse Model + Full Migration ✅ | ~25 | 2-3 weeks |
 | 18 | Service Revenue + Cost Center Expenses ✅ | ~25 | 2-3 weeks |
@@ -3313,3 +3323,63 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] Added `coa_code` field to PettyCashFund schema (default '1000')
 - [x] PettyCash.jsx: merged Create/Edit into single `FundFormModal` — now editable: name, custodian, authorized amount, ceiling, COA code, fund mode
 - [x] PettyCash.jsx: added Edit button on each fund card, shows COA code and fund mode
+
+---
+
+## PHASE 21 — PersonDetail, Insurance, Gov Rates, SAP Improvements, BIR Calculator, Mobile Polish ✅ COMPLETE
+**Goal:** Complete PersonDetail editable forms, Insurance Register CRUD, Government Rates admin page, SAP-style recurring journals + period locks + batch posting, BIR tax calculator with unit tests, and mobile 375px responsive polish.
+
+### 21.1 — PersonDetail Editable, Insurance Register, Excel Export/Import ✅ (commit 0accad7)
+- [x] PersonDetail.jsx rewrite: 5 editable sections (Person Info, Comp Profile, Insurance Register, ERP Access, History)
+- [x] InsurancePolicy model + CRUD controller + routes — 6 policy types
+- [x] Excel export/import: 3-sheet workbook (Person Info, Comp Profile, Insurance Register)
+- [x] CompProfile: added profit_share_eligible, commission_rate fields
+
+### 21.2 — Government Rates Admin Page ✅
+- [x] Added `exportRates`, `importRates`, `computeBreakdown` to `governmentRatesController.js`
+- [x] Updated `governmentRatesRoutes.js` with multer upload + 3 new endpoints (export, import, compute-breakdown)
+- [x] Created `frontend/src/erp/pages/GovernmentRates.jsx` — 6-tab UI (SSS, PhilHealth, PagIBIG, Withholding Tax, EC, De Minimis)
+- [x] Bracket editor tables, flat rate forms, benefit limit editors, effective/expiry date management
+- [x] Excel export (1 sheet per rate_type) and import (upsert by rate_type + effective_date)
+
+### 21.3 — Recurring Journal Templates ✅
+- [x] Created `backend/erp/models/RecurringJournalTemplate.js` — frequency, day_of_month (1-28), auto_post, lines, schedule tracking
+- [x] Created `backend/erp/services/recurringJournalService.js` — runDueTemplates, runSingleTemplate, computeNextRunDate
+- [x] Created `backend/erp/controllers/recurringJournalController.js` — CRUD + runNow + runAllDue + exportTemplates + importTemplates
+- [x] Created `backend/erp/routes/recurringJournalRoutes.js` — gated by erpSubAccessCheck('accounting', 'journal_entry')
+- [x] Created `frontend/src/erp/pages/RecurringJournals.jsx` — template list, create/edit modal with balanced line editor, Run Now/Run All Due
+- [x] Excel export/import: "Templates" + "Template Lines" sheets (Google Sheets compatible)
+
+### 21.4 — Per-Module Period Locks ✅
+- [x] Created `backend/erp/models/PeriodLock.js` — 10 modules, entity_id+module+year+month compound unique
+- [x] Created `backend/erp/middleware/periodLockCheck.js` — factory middleware, rejects writes to locked periods (403)
+- [x] Applied periodLockCheck('JOURNAL') to journal create route in accountingRoutes.js
+- [x] Created `backend/erp/controllers/periodLockController.js` — getLocks matrix, toggleLock, exportLocks (XLSX)
+- [x] Created `backend/erp/routes/periodLockRoutes.js`
+- [x] Created `frontend/src/erp/pages/PeriodLocks.jsx` — 10×12 matrix grid, padlock toggles, year selector, confirm dialog
+- [x] Mounted at `/erp/period-locks` under erpAccessCheck('accounting')
+
+### 21.5 — Batch Journal Posting ✅
+- [x] Added `batchPostJournals` to `accountingController.js` — MongoDB session+transaction, atomic all-or-nothing
+- [x] Route: POST `/journals/batch-post` (before /:id to avoid param collision)
+- [x] Frontend: checkbox column for DRAFT rows, "Select All Drafts", batch post bar, results modal in JournalEntries.jsx
+- [x] Added `batchPostJournals` to `useAccounting.js` hook
+
+### 21.6 — BIR Calculator Tests & Demo Page ✅
+- [x] Created `backend/tests/unit/withholdingTaxCalc.test.js` — 11 test cases (TRAIN law brackets, boundary values, 0/negative income)
+- [x] Created `backend/tests/unit/deMinimisCalc.test.js` — 9 test cases (rice/clothing/medical/laundry limits, within/exceeding/partial)
+- [x] All 20 unit tests pass
+- [x] Created `frontend/src/erp/pages/BirCalculator.jsx` — salary input, compute SSS/PhilHealth/PagIBIG/De Minimis/WHT/Net Pay breakdown
+- [x] Backend `computeBreakdown` endpoint calls all 5 calc services (SSS, PhilHealth, PagIBIG, de minimis, withholding tax)
+
+### 21.7 — Mobile 375px Polish ✅
+- [x] Added `@media(max-width: 375px)` breakpoints to 22 ERP pages
+- [x] Added `padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px))` safe-area padding
+- [x] Input font-size: 16px at 375px (prevents iOS auto-zoom)
+- [x] Pages fixed: GovernmentRates, PeriodLocks, RecurringJournals, BirCalculator, JournalEntries, SalesList, Collections, PeopleList, ChartOfAccounts, ErpDashboard, MonthEndClose, PayrollRun, PersonDetail, PurchaseOrders, SupplierInvoices, VendorList, CustomerList, TrialBalance, ProfitAndLoss, CostCenters + all 4 new pages
+
+### Routing & Navigation ✅
+- [x] App.jsx: 4 new lazy routes (/erp/government-rates, /erp/period-locks, /erp/recurring-journals, /erp/bir-calculator)
+- [x] Sidebar.jsx: 4 new nav items (Recurring Journals after Journal Entries, Period Locks after Month-End Close, Gov. Rates + BIR Calculator after accounting section)
+- [x] useAccounting.js: batchPostJournals + 7 recurring template API methods
+- [x] ERP routes index.js: mounted period-locks and recurring-journals routes

@@ -31,7 +31,8 @@ const pageStyles = `
   .form-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--erp-muted); }
   .form-group input, .form-group select { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--erp-border); font-size: 13px; box-sizing: border-box; }
   .coa-empty { text-align: center; color: #64748b; padding: 40px; }
-  @media(max-width: 768px) { .coa-main { padding: 12px; } }
+  @media(max-width: 768px) { .coa-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } }
+  @media(max-width: 375px) { .coa-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .form-group input, .form-group select { font-size: 16px; } }
 `;
 
 const ACCOUNT_TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];

@@ -37,7 +37,8 @@ const pageStyles = `
   .pr-msg-ok { background: #dcfce7; color: #166534; }
   .pr-msg-err { background: #fee2e2; color: #dc2626; }
   .pr-empty { text-align: center; color: #64748b; padding: 40px; }
-  @media(max-width: 768px) { .pr-main { padding: 12px; } }
+  @media(max-width: 768px) { .pr-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } }
+  @media(max-width: 375px) { .pr-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .pr-main input, .pr-main select { font-size: 16px; } }
 `;
 
 const getCurrentPeriod = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };

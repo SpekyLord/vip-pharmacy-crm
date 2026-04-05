@@ -25,7 +25,8 @@ const pageStyles = `
   .pl-view-toggle { display: flex; gap: 4px; background: var(--erp-panel); border-radius: 8px; padding: 3px; }
   .pl-view-toggle button { padding: 6px 14px; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; background: transparent; }
   .pl-view-toggle button.active { background: var(--erp-accent); color: #fff; }
-  @media(max-width: 768px) { .pl-main { padding: 12px; } }
+  @media(max-width: 768px) { .pl-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } }
+  @media(max-width: 375px) { .pl-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .pl-main input, .pl-main select { font-size: 16px; } }
 `;
 
 const getCurrentPeriod = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };

@@ -50,7 +50,8 @@ const pageStyles = `
   .ppl-pag { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
   .ppl-pag button { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--erp-border); background: var(--erp-panel); font-size: 12px; cursor: pointer; }
   .ppl-pag button.active { background: var(--erp-accent); color: #fff; border-color: var(--erp-accent); }
-  @media(max-width: 768px) { .ppl-main { padding: 12px; } .ppl-table { font-size: 12px; } }
+  @media(max-width: 768px) { .ppl-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .ppl-table { font-size: 12px; } }
+  @media(max-width: 375px) { .ppl-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .ppl-main input, .ppl-main select { font-size: 16px; } }
 `;
 
 const EMPTY_FORM = {

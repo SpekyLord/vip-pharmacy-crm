@@ -34,7 +34,8 @@ const styles = `
   .vl-msg-err { background: #fee2e2; color: #dc2626; }
   .vl-empty { text-align: center; color: #64748b; padding: 40px; }
   .vl-actions { display: flex; gap: 6px; }
-  @media(max-width: 768px) { .vl-main { padding: 12px; } .vl-search { width: 100%; } .form-row { grid-template-columns: 1fr; } }
+  @media(max-width: 768px) { .vl-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .vl-search { width: 100%; } .form-row { grid-template-columns: 1fr; } }
+  @media(max-width: 375px) { .vl-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .vl-main input, .vl-main select { font-size: 16px; } }
 `;
 
 const EMPTY_FORM = {

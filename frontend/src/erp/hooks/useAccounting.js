@@ -24,6 +24,16 @@ export default function useAccounting() {
   const getJournal = (id) => api.get(`/accounting/journals/${id}`);
   const postJournal = (id) => api.post(`/accounting/journals/${id}/post`);
   const reverseJournal = (id, data) => api.post(`/accounting/journals/${id}/reverse`, data);
+  const batchPostJournals = (je_ids) => api.post('/accounting/journals/batch-post', { je_ids });
+
+  // ═══ Recurring Journal Templates ═══
+  const listRecurringTemplates = (params) => api.get('/recurring-journals', { params });
+  const getRecurringTemplate = (id) => api.get(`/recurring-journals/${id}`);
+  const createRecurringTemplate = (data) => api.post('/recurring-journals', data);
+  const updateRecurringTemplate = (id, data) => api.put(`/recurring-journals/${id}`, data);
+  const deleteRecurringTemplate = (id) => api.del(`/recurring-journals/${id}`);
+  const runRecurringTemplate = (id) => api.post(`/recurring-journals/${id}/run`);
+  const runAllDueTemplates = () => api.post('/recurring-journals/run-all-due');
 
   // ═══ General Ledger ═══
   const getGeneralLedger = (accountCode, params) => api.get(`/accounting/general-ledger/${accountCode}`, { params });
@@ -83,7 +93,10 @@ export default function useAccounting() {
     // COA
     listAccounts, createAccount, updateAccount,
     // Journals
-    createJournal, listJournals, getJournal, postJournal, reverseJournal,
+    createJournal, listJournals, getJournal, postJournal, reverseJournal, batchPostJournals,
+    // Recurring Templates
+    listRecurringTemplates, getRecurringTemplate, createRecurringTemplate,
+    updateRecurringTemplate, deleteRecurringTemplate, runRecurringTemplate, runAllDueTemplates,
     // GL
     getGeneralLedger,
     // TB

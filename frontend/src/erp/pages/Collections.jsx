@@ -36,7 +36,8 @@ const pageStyles = `
   .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
   .detail-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; align-items: center; justify-content: center; }
   .detail-panel { background: var(--erp-panel); border-radius: 16px; padding: 24px; max-width: 700px; width: 95%; max-height: 85vh; overflow-y: auto; }
-  @media(max-width: 768px) { .coll-main { padding: 12px; } }
+  @media(max-width: 768px) { .coll-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } }
+  @media(max-width: 375px) { .coll-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .coll-main input, .coll-main select { font-size: 16px; } }
 `;
 
 export default function Collections() {

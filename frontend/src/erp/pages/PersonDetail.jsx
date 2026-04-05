@@ -44,7 +44,8 @@ const css = `
   .pd-empty { color: #64748b; font-size: 13px; padding: 12px 0; }
   .pd-ins-card { border: 1px solid var(--erp-border, #e5e7eb); border-radius: 8px; padding: 12px; margin-bottom: 8px; }
   .pd-ins-type { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--erp-accent); }
-  @media(max-width: 768px) { .pd-main { padding: 12px; } .pd-grid, .pd-grid3 { grid-template-columns: 1fr; } }
+  @media(max-width: 768px) { .pd-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .pd-grid, .pd-grid3 { grid-template-columns: 1fr; } }
+  @media(max-width: 375px) { .pd-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .pd-main input, .pd-main select { font-size: 16px; } }
 `;
 
 const PERSON_TYPES = ['BDM', 'EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'];

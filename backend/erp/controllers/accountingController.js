@@ -4,6 +4,7 @@
  * Journals, Trial Balance, P&L, VAT/CWT, Cashflow,
  * Fixed Assets, Loans, Owner Equity, General Ledger
  */
+const mongoose = require('mongoose');
 const JournalEntry = require('../models/JournalEntry');
 const FixedAsset = require('../models/FixedAsset');
 const LoanMaster = require('../models/LoanMaster');
@@ -48,6 +49,43 @@ const reverseJournalEndpoint = catchAsync(async (req, res) => {
   const { reason } = req.body;
   const reversal = await reverseJournal(req.params.id, reason, req.user._id);
   res.json({ success: true, data: reversal });
+});
+
+const batchPostJournals = catchAsync(async (req, res) => {
+  const { je_ids } = req.body;
+  if (!Array.isArray(je_ids) || !je_ids.length) {
+    return res.status(400).json({ success: false, message: 'je_ids array required' });
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const results = [];
+    for (const id of je_ids) {
+      const je = await JournalEntry.findOne({ _id: id, entity_id: req.entityId }).session(session);
+      if (!je) { results.push({ id, success: false, reason: 'Not found' }); continue; }
+      if (je.status !== 'DRAFT') { results.push({ id, je_number: je.je_number, success: false, reason: `Status is ${je.status}` }); continue; }
+      je.status = 'POSTED';
+      je.posted_by = req.user._id;
+      je.posted_at = new Date();
+      await je.save({ session });
+      results.push({ id, je_number: je.je_number, success: true });
+    }
+
+    const failures = results.filter(r => !r.success);
+    if (failures.length > 0) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: `Batch post failed: ${failures.length} error(s)`, data: { results } });
+    }
+
+    await session.commitTransaction();
+    res.json({ success: true, message: `${results.length} journal entries posted`, data: { posted: results.length, results } });
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -235,7 +273,7 @@ const getEquityLedgerEndpoint = catchAsync(async (req, res) => {
 
 module.exports = {
   // Journals
-  createManualJournal, listJournals, getJournalById, postJournalEndpoint, reverseJournalEndpoint,
+  createManualJournal, listJournals, getJournalById, postJournalEndpoint, reverseJournalEndpoint, batchPostJournals,
   // GL
   getGeneralLedgerEndpoint,
   // Trial Balance

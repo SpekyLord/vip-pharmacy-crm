@@ -34,7 +34,8 @@ const pageStyles = `
   .tree-item:hover { background: var(--erp-accent-soft); }
   .tree-code { font-weight: 700; color: var(--erp-accent); min-width: 120px; }
   .loading { text-align: center; padding: 40px; color: var(--erp-muted); }
-  @media(max-width: 768px) { .cc-main { padding: 12px; } .form-row { flex-direction: column; } }
+  @media(max-width: 768px) { .cc-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .form-row { flex-direction: column; } }
+  @media(max-width: 375px) { .cc-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .cc-main input, .cc-main select { font-size: 16px; } }
 `;
 
 function TreeView({ nodes, onToggle }) {
