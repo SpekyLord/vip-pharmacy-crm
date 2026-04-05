@@ -34,7 +34,30 @@ const pageStyles = `
   .usage-fill { height: 100%; background: #2563eb; border-radius: 4px; }
   .alloc-section { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--erp-border); }
   .loading { text-align: center; padding: 40px; color: var(--erp-muted); }
-  @media(max-width: 768px) { .booklet-main { padding: 12px; } .form-row { flex-direction: column; } }
+  @media(max-width: 900px) {
+    .booklet-main { padding: 16px; }
+    .data-table { font-size: 12px; }
+    .panel { padding: 16px; }
+  }
+
+  @media(max-width: 768px) {
+    .booklet-page { padding-top: 12px; }
+    .booklet-main { padding: 76px 12px 96px; }
+    .form-row { flex-direction: column; align-items: stretch; }
+    .form-group input { width: 100%; }
+    .btn { width: 100%; }
+    .data-table th, .data-table td { padding: 6px 8px; }
+    .usage-bar { width: 64px; }
+  }
+
+  @media(max-width: 480px) {
+    .booklet-page { padding-top: 16px; }
+    .booklet-main { padding-top: 72px; padding-bottom: 104px; }
+    .booklet-header h1 { font-size: 18px; }
+    .booklet-header p { font-size: 12px; }
+    .panel { padding: 12px; border-radius: 12px; }
+    .data-table th, .data-table td { padding: 6px; }
+  }
 `;
 
 export default function CsiBooklets() {

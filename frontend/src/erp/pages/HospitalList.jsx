@@ -103,6 +103,36 @@ export default function HospitalList() {
     }
   };
 
+  const pageStyles = `
+    @media (max-width: 900px) {
+      .hospital-table-wrap { overflow-x: auto; border-radius: 12px; }
+      .hospital-table { min-width: 720px; }
+    }
+
+    @media (max-width: 768px) {
+      .hospital-page { padding-top: 12px; }
+      .hospital-main { padding-top: 76px !important; padding-bottom: 96px !important; }
+      .hospital-table-wrap { display: none; }
+      .hospital-card-list { display: grid; gap: 12px; }
+      .hospital-card { background: #fff; border: 1px solid #dbe4f0; border-radius: 14px; padding: 12px; }
+      .hospital-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+      .hospital-card-title { font-weight: 700; font-size: 14px; color: #0f172a; }
+      .hospital-card-meta { font-size: 12px; color: #64748b; margin-top: 2px; }
+      .hospital-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+      .hospital-card-item { display: flex; flex-direction: column; gap: 2px; }
+      .hospital-card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.04em; }
+      .hospital-card-value { font-size: 12px; color: #0f172a; }
+      .hospital-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+      .hospital-card-actions { display: flex; gap: 6px; margin-top: 10px; }
+    }
+
+    @media (max-width: 480px) {
+      .hospital-page { padding-top: 16px; }
+      .hospital-main { padding-top: 72px !important; padding-bottom: 104px !important; }
+      .hospital-card-grid { grid-template-columns: 1fr; }
+    }
+  `;
+
   const styles = {
     page: { background: '#f4f7fb', minHeight: '100vh' },
     main: { flex: 1, padding: 20, maxWidth: 1200, margin: '0 auto', overflow: 'auto' },
@@ -126,11 +156,12 @@ export default function HospitalList() {
   };
 
   return (
-    <div className="admin-page erp-page" style={styles.page}>
+    <div className="admin-page erp-page hospital-page" style={styles.page}>
+      <style>{pageStyles}</style>
       <Navbar />
       <div className="admin-layout">
         <Sidebar />
-        <main style={styles.main}>
+        <main className="hospital-main" style={styles.main}>
           <div style={styles.header}>
             <div>
               <h1 style={{ fontSize: 22, margin: 0 }}>Hospitals</h1>
@@ -145,7 +176,8 @@ export default function HospitalList() {
             <input style={{ ...styles.input, flex: 1, minWidth: 200 }} placeholder="Search hospitals..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
 
-          <table style={styles.table}>
+          <div className="hospital-table-wrap">
+            <table className="hospital-table" style={styles.table}>
             <thead>
               <tr>
                 <th style={styles.th}>Hospital Name</th>
@@ -188,7 +220,53 @@ export default function HospitalList() {
               ))}
               {!filtered.length && <tr><td colSpan={7} style={{ ...styles.td, textAlign: 'center', padding: 40, color: '#9ca3af' }}>{loading ? 'Loading...' : 'No hospitals found'}</td></tr>}
             </tbody>
-          </table>
+            </table>
+          </div>
+
+          <div className="hospital-card-list">
+            {filtered.map(h => (
+              <div key={h._id} className="hospital-card">
+                <div className="hospital-card-header">
+                  <div>
+                    <div className="hospital-card-title">{h.hospital_name}</div>
+                    <div className="hospital-card-meta">{h.hospital_type || '—'} · {h.payment_terms}d terms</div>
+                  </div>
+                  <div className="hospital-card-meta">{h.tin || '—'}</div>
+                </div>
+
+                <div className="hospital-card-grid">
+                  <div className="hospital-card-item">
+                    <span className="hospital-card-label">CWT</span>
+                    <span className="hospital-card-value">{(h.cwt_rate * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="hospital-card-item">
+                    <span className="hospital-card-label">Tagged BDMs</span>
+                    <span className="hospital-card-value">{(h.tagged_bdms || []).filter(t => t.is_active !== false).length || 'None'}</span>
+                  </div>
+                </div>
+
+                <div className="hospital-card-tags">
+                  {(h.tagged_bdms || []).filter(t => t.is_active !== false).map((t, i) => {
+                    const bdm = bdmList.find(b => b._id === (t.bdm_id?._id || t.bdm_id));
+                    return <span key={i} style={{ ...styles.badge, background: '#e0e7ff', color: '#3730a3' }}>{bdm?.name || 'BDM'}</span>;
+                  })}
+                  {(!h.tagged_bdms?.length) && <span style={{ color: '#9ca3af', fontSize: 12 }}>None</span>}
+                </div>
+
+                {['admin', 'finance', 'president'].includes(user?.role) && (
+                  <div className="hospital-card-actions">
+                    <button style={{ ...styles.btn, ...styles.btnOutline, flex: 1 }} onClick={() => openEdit(h)}>Edit</button>
+                    <button style={{ ...styles.btn, ...styles.btnSuccess, flex: 1 }} onClick={() => setTagModal(h)}>Tag</button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {!filtered.length && (
+              <div className="hospital-card" style={{ textAlign: 'center', color: '#9ca3af' }}>
+                {loading ? 'Loading...' : 'No hospitals found'}
+              </div>
+            )}
+          </div>
 
           {/* Create/Edit Modal */}
           {modalOpen && (
