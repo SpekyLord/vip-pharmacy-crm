@@ -16,7 +16,7 @@ const fuelEntrySchema = new mongoose.Schema({
   receipt_url: String,
   receipt_attachment_id: String,
   receipt_ocr_data: { type: mongoose.Schema.Types.Mixed },
-  payment_mode: { type: String, enum: ['CASH', 'SHELL_FLEET_CARD', 'GCASH', 'CARD', 'OTHER'], default: 'CASH' },
+  payment_mode: { type: String, enum: ['CASH', 'FLEET_CARD', 'CARD', 'GCASH', 'OTHER'], default: 'CASH' },
   funding_card_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CreditCard' },
   calf_required: { type: Boolean, default: false },
   calf_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PrfCalf' }

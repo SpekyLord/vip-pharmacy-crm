@@ -84,7 +84,7 @@ const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
 const FUEL_TYPES = ['UNLEADED', 'DIESEL', 'PREMIUM', 'V-POWER', 'XCS', 'OTHER'];
-const PAYMENT_MODES = ['CASH', 'SHELL_FLEET_CARD', 'GCASH', 'CARD', 'OTHER'];
+const PAYMENT_MODES = ['CASH', 'FLEET_CARD', 'GCASH', 'CARD', 'OTHER'];
 
 export default function CarLogbook() {
   const { getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook, validateCarLogbook, submitCarLogbook, reopenCarLogbook, loading } = useExpenses();

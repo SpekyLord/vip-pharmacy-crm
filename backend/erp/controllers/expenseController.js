@@ -1140,7 +1140,7 @@ const getPendingCalfLines = catchAsync(async (req, res) => {
   }
 
   // 2. Car Logbook fuel entries paid with company funds (non-cash)
-  const COMPANY_FUEL_MODES = ['SHELL_FLEET_CARD', 'CARD', 'GCASH'];
+  const COMPANY_FUEL_MODES = ['FLEET_CARD', 'CARD', 'GCASH'];
   const logbooks = await CarLogbookEntry.find({
     ...req.tenantFilter,
     'fuel_entries.payment_mode': { $in: COMPANY_FUEL_MODES }

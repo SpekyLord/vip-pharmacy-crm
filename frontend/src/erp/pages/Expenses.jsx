@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useExpenses from '../hooks/useExpenses';
-import useAccounting from '../hooks/useAccounting';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
@@ -123,9 +122,6 @@ const EXPENSE_CATEGORIES = ['Courier/Shipping', 'Parking', 'Toll', 'Hotel/Accomm
 
 export default function Expenses() {
   const { getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense, validateExpenses, submitExpenses, reopenExpenses, getExpenseSummary, loading } = useExpenses();
-  const { getMyCards, getMyBankAccounts } = useAccounting();
-  const [myCards, setMyCards] = useState([]);
-  const [myBankAccounts, setMyBankAccounts] = useState([]);
 
   const [expenses, setExpenses] = useState([]);
   const [editingExpense, setEditingExpense] = useState(null);
@@ -165,10 +161,6 @@ export default function Expenses() {
   }, [period, cycle]);
 
   useEffect(() => { loadExpenses(); }, [loadExpenses]);
-  useEffect(() => {
-    getMyCards().then(r => setMyCards(r?.data || [])).catch(() => {});
-    getMyBankAccounts().then(r => setMyBankAccounts(r?.data || [])).catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addLine = () => {
     setLines(prev => [...prev, {
@@ -384,27 +376,9 @@ export default function Expenses() {
                       }} />
                     </label>
                     {line.or_photo_url && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600 }}>OR Photo ✓</span>}
-                    <select value={line.payment_mode} onChange={e => { updateLine(idx, 'payment_mode', e.target.value); updateLine(idx, 'funding_card_id', null); updateLine(idx, 'funding_account_id', null); }} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
+                    <select value={line.payment_mode} onChange={e => updateLine(idx, 'payment_mode', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                       {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
-                    {line.payment_mode === 'CARD' && (
-                      <select value={line.funding_card_id || ''} onChange={e => updateLine(idx, 'funding_card_id', e.target.value || null)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid #a78bfa', fontSize: 12, background: '#f5f3ff' }}>
-                        <option value="">Card…</option>
-                        {myCards.map(c => <option key={c._id} value={c._id}>{c.card_name}</option>)}
-                      </select>
-                    )}
-                    {(line.payment_mode === 'BANK_TRANSFER' || line.payment_mode === 'ONLINE') && (
-                      <select value={line.funding_account_id || ''} onChange={e => updateLine(idx, 'funding_account_id', e.target.value || null)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid #67e8f9', fontSize: 12, background: '#ecfeff' }}>
-                        <option value="">Bank…</option>
-                        {myBankAccounts.map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
-                      </select>
-                    )}
-                    {line.payment_mode === 'GCASH' && (
-                      <select value={line.funding_account_id || ''} onChange={e => updateLine(idx, 'funding_account_id', e.target.value || null)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid #22c55e', fontSize: 12, background: '#f0fdf4' }}>
-                        <option value="">GCash…</option>
-                        {myBankAccounts.filter(b => b.bank_code?.includes('GCASH') || b.bank_name?.toLowerCase().includes('gcash')).map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
-                      </select>
-                    )}
                     {line.calf_required && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>CALF Required</span>}
                   </div>
                 </div>
