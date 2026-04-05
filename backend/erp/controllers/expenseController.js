@@ -22,6 +22,11 @@ const { journalFromExpense, resolveFundingCoa } = require('../services/autoJourn
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
 const JournalEntry = require('../models/JournalEntry');
 
+const { detectText } = require('../ocr/visionClient');
+const { processOcr } = require('../ocr/ocrProcessor');
+const { classifyExpense } = require('../services/expenseClassifier');
+const { uploadErpDocument } = require('../services/documentUpload');
+
 // ═══════════════════════════════════════════
 // SMER ENDPOINTS
 // ═══════════════════════════════════════════
@@ -334,7 +339,8 @@ const createCarLogbook = catchAsync(async (req, res) => {
     created_by: req.user._id,
     status: 'DRAFT'
   });
-  res.status(201).json({ success: true, data: entry });
+  const autoCalf = await autoCalfForSource(entry, 'CARLOGBOOK');
+  res.status(201).json({ success: true, data: entry, auto_calf: autoCalf ? { _id: autoCalf._id, calf_number: autoCalf.calf_number, amount: autoCalf.amount } : null });
 });
 
 const updateCarLogbook = catchAsync(async (req, res) => {
@@ -343,7 +349,8 @@ const updateCarLogbook = catchAsync(async (req, res) => {
 
   Object.assign(entry, req.body);
   await entry.save();
-  res.json({ success: true, data: entry });
+  const autoCalf = await autoCalfForSource(entry, 'CARLOGBOOK');
+  res.json({ success: true, data: entry, auto_calf: autoCalf ? { _id: autoCalf._id, calf_number: autoCalf.calf_number, amount: autoCalf.amount } : null });
 });
 
 const getCarLogbookList = catchAsync(async (req, res) => {
@@ -558,6 +565,70 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
 });
 
 // ═══════════════════════════════════════════
+// AUTO-CALF — auto-create/update linked CALF for company-funded lines
+// ═══════════════════════════════════════════
+
+async function autoCalfForSource(sourceDoc, sourceType) {
+  try {
+    const lines = sourceType === 'EXPENSE' ? (sourceDoc.lines || []) : (sourceDoc.fuel_entries || []);
+    const calfLines = lines.filter(l => l.calf_required && !l.calf_id);
+    if (!calfLines.length) return null;
+
+    const totalAmount = Math.round(calfLines.reduce((s, l) => s + (l.amount || l.total_amount || 0), 0) * 100) / 100;
+    const lineIds = calfLines.map(l => l._id);
+
+    // Reuse existing DRAFT CALF for this source if any
+    let calf = await PrfCalf.findOne({
+      entity_id: sourceDoc.entity_id,
+      doc_type: 'CALF',
+      linked_expense_id: sourceDoc._id,
+      status: { $in: ['DRAFT', 'ERROR'] }
+    });
+
+    if (calf) {
+      calf.linked_expense_line_ids = lineIds;
+      calf.advance_amount = totalAmount;
+      calf.liquidation_amount = totalAmount;
+      calf.amount = totalAmount;
+      calf.balance = 0;
+      await calf.save();
+    } else {
+      calf = await PrfCalf.create({
+        entity_id: sourceDoc.entity_id,
+        bdm_id: sourceDoc.bdm_id,
+        doc_type: 'CALF',
+        period: sourceDoc.period,
+        cycle: sourceDoc.cycle || 'MONTHLY',
+        purpose: sourceType === 'EXPENSE'
+          ? 'Auto-CALF: ACCESS expenses (company-funded)'
+          : 'Auto-CALF: Fuel (company-funded)',
+        advance_amount: totalAmount,
+        liquidation_amount: totalAmount,
+        amount: totalAmount,
+        balance: 0,
+        payment_mode: calfLines[0]?.payment_mode || 'CARD',
+        funding_card_id: calfLines[0]?.funding_card_id || null,
+        funding_account_id: calfLines[0]?.funding_account_id || null,
+        linked_expense_id: sourceDoc._id,
+        linked_expense_line_ids: lineIds,
+        bir_flag: 'INTERNAL',
+        status: 'DRAFT',
+        created_by: sourceDoc.created_by || sourceDoc.bdm_id
+      });
+    }
+
+    // Back-link calf_id to source lines
+    for (const l of calfLines) l.calf_id = calf._id;
+    await sourceDoc.save();
+
+    return calf;
+  } catch (err) {
+    console.error('Auto-CALF failed:', err.message);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════
 // EXPENSE ENTRY (ORE/ACCESS) ENDPOINTS
 // ═══════════════════════════════════════════
 
@@ -569,7 +640,9 @@ const createExpense = catchAsync(async (req, res) => {
     created_by: req.user._id,
     status: 'DRAFT'
   });
-  res.status(201).json({ success: true, data: entry });
+  // Auto-create linked CALF for company-funded (ACCESS non-cash) lines
+  const autoCalf = await autoCalfForSource(entry, 'EXPENSE');
+  res.status(201).json({ success: true, data: entry, auto_calf: autoCalf ? { _id: autoCalf._id, calf_number: autoCalf.calf_number, amount: autoCalf.amount } : null });
 });
 
 const updateExpense = catchAsync(async (req, res) => {
@@ -578,7 +651,9 @@ const updateExpense = catchAsync(async (req, res) => {
 
   Object.assign(entry, req.body);
   await entry.save();
-  res.json({ success: true, data: entry });
+  // Re-run auto-CALF (updates existing or creates new if needed)
+  const autoCalf = await autoCalfForSource(entry, 'EXPENSE');
+  res.json({ success: true, data: entry, auto_calf: autoCalf ? { _id: autoCalf._id, calf_number: autoCalf.calf_number, amount: autoCalf.amount } : null });
 });
 
 const getExpenseList = catchAsync(async (req, res) => {
@@ -755,7 +830,7 @@ const submitExpenses = catchAsync(async (req, res) => {
           source_event_id: entry.event_id,
           source_doc_ref: `EXP-${entry.period}-${entry.cycle}`,
           lines,
-          bir_flag: 'BOTH',
+          bir_flag: entry.bir_flag || 'BOTH',
           vat_flag: 'N/A',
           bdm_id: entry.bdm_id,
           created_by: req.user._id
@@ -863,7 +938,62 @@ const updatePrfCalf = catchAsync(async (req, res) => {
   const doc = await PrfCalf.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
   if (!doc) return res.status(404).json({ success: false, message: 'Draft PRF/CALF not found' });
 
+  // Snapshot old links before update
+  const oldLinkedId = doc.linked_expense_id?.toString();
+  const oldLineIds = (doc.linked_expense_line_ids || []).map(id => id.toString());
+
   Object.assign(doc, req.body);
+
+  // Re-run back-linking if linked source changed
+  const newLinkedId = doc.linked_expense_id?.toString();
+  const newLineIds = (doc.linked_expense_line_ids || []).map(id => id.toString());
+  const linkChanged = doc.doc_type === 'CALF' && (oldLinkedId !== newLinkedId || oldLineIds.join(',') !== newLineIds.join(','));
+
+  if (linkChanged) {
+    // Clear old back-links
+    if (oldLinkedId) {
+      const clearCalfId = (lines, lineIds) => {
+        for (const l of lines) {
+          if (lineIds.includes(l._id.toString()) && l.calf_id?.toString() === doc._id.toString()) {
+            l.calf_id = null;
+          }
+        }
+      };
+      const oldExp = await ExpenseEntry.findById(oldLinkedId);
+      if (oldExp) { clearCalfId(oldExp.lines, oldLineIds); await oldExp.save(); }
+      else {
+        const oldLb = await CarLogbookEntry.findById(oldLinkedId);
+        if (oldLb) { clearCalfId(oldLb.fuel_entries, oldLineIds); await oldLb.save(); }
+      }
+    }
+
+    // Set new back-links (same logic as createPrfCalf)
+    if (newLinkedId && newLineIds.length) {
+      const collectedPhotos = [];
+      const expense = await ExpenseEntry.findById(newLinkedId);
+      if (expense) {
+        for (const line of expense.lines) {
+          if (newLineIds.includes(line._id.toString())) {
+            line.calf_id = doc._id;
+            if (line.or_photo_url) collectedPhotos.push(line.or_photo_url);
+          }
+        }
+        await expense.save();
+      } else {
+        const logbook = await CarLogbookEntry.findById(newLinkedId);
+        if (logbook) {
+          for (const fuel of logbook.fuel_entries) {
+            if (newLineIds.includes(fuel._id.toString())) fuel.calf_id = doc._id;
+          }
+          await logbook.save();
+        }
+      }
+      if (collectedPhotos.length && (!doc.photo_urls || !doc.photo_urls.length)) {
+        doc.photo_urls = collectedPhotos;
+      }
+    }
+  }
+
   await doc.save();
   res.json({ success: true, data: doc });
 });
@@ -1047,7 +1177,7 @@ const submitPrfCalf = catchAsync(async (req, res) => {
         source_event_id: doc.event_id,
         source_doc_ref: docRef,
         lines,
-        bir_flag: 'BOTH',
+        bir_flag: doc.bir_flag || 'BOTH',
         vat_flag: 'N/A',
         bdm_id: doc.bdm_id,
         created_by: req.user._id
@@ -1057,7 +1187,116 @@ const submitPrfCalf = catchAsync(async (req, res) => {
     }
   }
 
-  res.json({ success: true, message: `Posted ${docs.length} PRF/CALF(s)` });
+  // ── Auto-validate+submit linked expenses/carlogbooks when CALF is posted ──
+  const autoResults = [];
+  for (const doc of docs) {
+    if (doc.doc_type !== 'CALF' || !doc.linked_expense_id) continue;
+    try {
+      // Try ExpenseEntry first
+      let source = await ExpenseEntry.findById(doc.linked_expense_id);
+      let sourceType = 'EXPENSE';
+      if (!source) {
+        source = await CarLogbookEntry.findById(doc.linked_expense_id);
+        sourceType = 'CARLOGBOOK';
+      }
+      if (!source || source.status === 'POSTED') continue;
+
+      // Validate
+      const valErrors = [];
+      if (sourceType === 'EXPENSE') {
+        if (!source.lines.length) valErrors.push('No expense lines');
+        for (let i = 0; i < source.lines.length; i++) {
+          const l = source.lines[i];
+          if (!l.expense_date) valErrors.push(`Line ${i + 1}: date required`);
+          if (!l.amount || l.amount <= 0) valErrors.push(`Line ${i + 1}: amount required`);
+          if (!l.establishment) valErrors.push(`Line ${i + 1}: establishment required`);
+        }
+      } else {
+        if (!source.entry_date) valErrors.push('Entry date required');
+        if (source.ending_km < source.starting_km) valErrors.push('Ending KM < Starting KM');
+      }
+
+      if (valErrors.length) {
+        source.status = 'ERROR';
+        source.validation_errors = valErrors;
+        await source.save();
+        autoResults.push({ source_id: source._id, type: sourceType, status: 'ERROR', errors: valErrors });
+        continue;
+      }
+
+      // Submit (create event + journal)
+      source.status = 'POSTED';
+      source.posted_at = new Date();
+      source.posted_by = req.user._id;
+      source.validation_errors = [];
+
+      const event = await TransactionEvent.create({
+        entity_id: source.entity_id,
+        bdm_id: source.bdm_id,
+        event_type: sourceType === 'EXPENSE' ? 'EXPENSE' : 'CAR_LOGBOOK',
+        event_date: new Date(),
+        document_ref: sourceType === 'EXPENSE'
+          ? `EXP-${source.period}-${source.cycle}`
+          : `LOGBOOK-${source.period}-${source.entry_date?.toISOString().split('T')[0] || ''}`,
+        status: 'ACTIVE',
+        created_by: req.user._id
+      });
+      source.event_id = event._id;
+      await source.save();
+
+      // Auto-journal (non-blocking)
+      try {
+        if (sourceType === 'EXPENSE') {
+          const lines = [];
+          let totalOre = 0, totalAccess = 0;
+          const desc = `EXP-${source.period}-${source.cycle}`;
+          for (const line of source.lines) {
+            lines.push({ account_code: line.coa_code || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
+            if (line.expense_type === 'ORE') totalOre += line.amount || 0;
+            else totalAccess += line.amount || 0;
+          }
+          if (totalOre > 0) lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
+          if (totalAccess > 0) {
+            const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source);
+            lines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
+          }
+          if (lines.length >= 2) {
+            await createAndPostJournal(source.entity_id, {
+              je_date: source.posted_at, period: source.period,
+              description: `Expenses: ${desc}`, source_module: 'EXPENSE',
+              source_event_id: source.event_id, source_doc_ref: desc, lines,
+              bir_flag: source.bir_flag || 'BOTH', vat_flag: 'N/A',
+              bdm_id: source.bdm_id, created_by: req.user._id
+            });
+          }
+        } else {
+          // CarLogbook journal — DR 6200, CR funding
+          const fuelTotal = source.official_gas_amount || source.total_fuel_amount || 0;
+          if (fuelTotal > 0) {
+            const funding = await resolveFundingCoa(source.fuel_entries?.[0] || source);
+            await createAndPostJournal(source.entity_id, {
+              je_date: source.posted_at, period: source.period,
+              description: `Car Logbook: ${source.period}`, source_module: 'EXPENSE',
+              source_event_id: source.event_id, source_doc_ref: `LOGBOOK-${source.period}`,
+              lines: [
+                { account_code: '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
+                { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}` }
+              ],
+              bir_flag: 'BOTH', vat_flag: 'N/A',
+              bdm_id: source.bdm_id, created_by: req.user._id
+            });
+          }
+        }
+      } catch (jeErr) { console.error('Auto-journal failed for auto-submitted source:', source._id, jeErr.message); }
+
+      autoResults.push({ source_id: source._id, type: sourceType, status: 'POSTED' });
+    } catch (err) {
+      console.error('Auto-submit linked source failed:', doc.linked_expense_id, err.message);
+      autoResults.push({ source_id: doc.linked_expense_id, type: 'UNKNOWN', status: 'FAILED', error: err.message });
+    }
+  }
+
+  res.json({ success: true, message: `Posted ${docs.length} PRF/CALF(s)`, auto_submitted: autoResults });
 });
 
 const reopenPrfCalf = catchAsync(async (req, res) => {
@@ -1089,9 +1328,34 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
       changed_by: req.user._id,
       note: `Reopened ${doc.doc_type} (count: ${doc.reopen_count})`
     });
+
+    // Auto-reopen linked expense/carlogbook (reverse its JE too)
+    if (doc.doc_type === 'CALF' && doc.linked_expense_id) {
+      try {
+        let source = await ExpenseEntry.findById(doc.linked_expense_id);
+        if (!source) source = await CarLogbookEntry.findById(doc.linked_expense_id);
+        if (source && source.status === 'POSTED') {
+          // Reverse source JEs
+          if (source.event_id) {
+            const jes = await JournalEntry.find({ source_event_id: source.event_id, status: 'POSTED', is_reversal: { $ne: true } });
+            for (const je of jes) { await reverseJournal(je._id, `Auto-reversal: linked CALF reopen`, req.user._id); }
+          }
+          source.status = 'DRAFT';
+          source.reopen_count = (source.reopen_count || 0) + 1;
+          source.posted_at = undefined;
+          source.posted_by = undefined;
+          await source.save();
+        }
+      } catch (err) { console.error('Auto-reopen linked source failed:', doc.linked_expense_id, err.message); }
+    }
   }
 
-  res.json({ success: true, message: `Reopened ${docs.length} PRF/CALF(s)` });
+  // Return linked expense IDs for frontend navigation
+  const linkedSources = docs
+    .filter(d => d.doc_type === 'CALF' && d.linked_expense_id)
+    .map(d => ({ calf_id: d._id, linked_expense_id: d.linked_expense_id }));
+
+  res.json({ success: true, message: `Reopened ${docs.length} PRF/CALF(s)`, linked_sources: linkedSources });
 });
 
 // ═══════════════════════════════════════════
@@ -1116,6 +1380,10 @@ const getExpenseSummary = catchAsync(async (req, res) => {
  * Used to auto-populate SMER daily entries instead of manual MD count entry.
  */
 const getSmerCrmMdCounts = catchAsync(async (req, res) => {
+  // Only BDMs (employees) should pull their own CRM visit data
+  if (req.user.role !== 'employee' && !req.query.bdm_id) {
+    return res.status(403).json({ success: false, message: 'CRM bridge is for BDM users. Pass bdm_id query param if admin.' });
+  }
   const { period, cycle } = req.query;
   if (!period || !cycle) return res.status(400).json({ success: false, message: 'period and cycle are required' });
 
@@ -1378,6 +1646,180 @@ const getPendingCalfLines = catchAsync(async (req, res) => {
   res.json({ success: true, data: filtered });
 });
 
+// ═══════════════════════════════════════════
+// BATCH UPLOAD (President / Admin only)
+// ═══════════════════════════════════════════
+
+const ASSORTED_THRESHOLD = 3; // receipts with 3+ line items → "Assorted Items"
+
+/**
+ * Process multiple OR images via OCR + classify each → return preview lines (NOT saved).
+ * Expects multipart: photos[] (up to 20), bir_flag, assigned_to, period, cycle
+ */
+const batchUploadExpenses = catchAsync(async (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ success: false, message: 'At least one photo is required.' });
+  }
+
+  const { bir_flag = 'BOTH', assigned_to, period, cycle, category_override, payment_mode: batchPaymentMode, funding_card_id, funding_account_id, cost_center_id } = req.body;
+  const lines = [];
+  const errors = [];
+
+  for (let i = 0; i < req.files.length; i++) {
+    const file = req.files[i];
+    try {
+      // 1. Upload to S3
+      const uploadResult = await uploadErpDocument(
+        file.buffer, file.originalname,
+        req.user?.name, period, cycle, 'OR', file.mimetype
+      );
+
+      // 2. OCR
+      const ocrResult = await detectText(file.buffer);
+      const processed = await processOcr('OR', ocrResult, {});
+
+      // 3. Classify COA
+      const classification = processed.classification || await classifyExpense(processed.extracted || {});
+
+      // 4. Create DocumentAttachment
+      let attachmentId = null;
+      try {
+        const att = await DocumentAttachment.create({
+          entity_id: req.entityId,
+          bdm_id: assigned_to || req.user._id,
+          document_type: 'OR',
+          ocr_applied: true,
+          storage_url: uploadResult.url,
+          s3_key: uploadResult.key,
+          original_filename: file.originalname,
+          uploaded_by: req.user._id
+        });
+        attachmentId = att._id;
+      } catch (err) {
+        console.error('DocumentAttachment creation failed:', err.message);
+      }
+
+      const ext = processed.extracted || {};
+
+      // 5. Assorted items check
+      const lineItems = ext.line_items?.value || ext.line_items || [];
+      const isAssorted = Array.isArray(lineItems) && lineItems.length >= ASSORTED_THRESHOLD;
+
+      const establishment = isAssorted
+        ? 'Assorted Items'
+        : (classification?.vendor_name || ext.supplier_name?.value || ext.supplier_name || '');
+
+      // 6. Determine expense type based on funding
+      const expenseType = (funding_card_id || funding_account_id || (batchPaymentMode && batchPaymentMode !== 'CASH')) ? 'ACCESS' : 'ORE';
+      const resolvedPaymentMode = batchPaymentMode || ext.payment_mode?.value || ext.payment_mode || 'CASH';
+
+      // 7. Build line object
+      lines.push({
+        _index: i,
+        expense_date: ext.date?.value || ext.date || null,
+        expense_type: expenseType,
+        expense_category: category_override || classification?.expense_category || 'MISCELLANEOUS',
+        coa_code: classification?.coa_code || '6900',
+        establishment,
+        particulars: isAssorted ? `${lineItems.length} items from receipt` : (ext.supplier_name?.value || ''),
+        amount: ext.amount?.value ?? ext.amount ?? 0,
+        vat_amount: classification?.vat_amount ?? ext.vat_amount?.value ?? ext.vat_amount ?? 0,
+        or_number: ext.or_number?.value || ext.or_number || '',
+        or_photo_url: uploadResult.url,
+        or_attachment_id: attachmentId,
+        payment_mode: resolvedPaymentMode,
+        funding_card_id: funding_card_id || null,
+        funding_account_id: funding_account_id || null,
+        cost_center_id: cost_center_id || null,
+        bir_flag,
+        is_assorted: isAssorted,
+        _classification: classification,
+        _ocr_confidence: processed.confidence || null,
+        _original_filename: file.originalname
+      });
+    } catch (err) {
+      console.error(`Batch OCR failed for image ${i}:`, err.message);
+      errors.push({ index: i, filename: file.originalname, error: err.message });
+    }
+  }
+
+  const assortedCount = lines.filter(l => l.is_assorted).length;
+  const totalAmount = lines.reduce((sum, l) => sum + (l.amount || 0), 0);
+
+  res.json({
+    success: true,
+    data: {
+      lines,
+      errors,
+      summary: {
+        total_images: req.files.length,
+        processed: lines.length,
+        failed: errors.length,
+        assorted_count: assortedCount,
+        total_amount: Math.round(totalAmount * 100) / 100
+      }
+    }
+  });
+});
+
+/**
+ * Save reviewed batch lines as a single DRAFT ExpenseEntry.
+ * Body: { bir_flag, assigned_to, period, cycle, lines: [...] }
+ */
+const saveBatchExpenses = catchAsync(async (req, res) => {
+  const { bir_flag = 'BOTH', assigned_to, period, cycle, lines, funding_card_id, funding_account_id, cost_center_id } = req.body;
+
+  if (!lines || !lines.length) {
+    return res.status(400).json({ success: false, message: 'No expense lines to save.' });
+  }
+  if (!period || !cycle) {
+    return res.status(400).json({ success: false, message: 'Period and cycle are required.' });
+  }
+
+  // Clean lines — strip preview-only fields
+  const cleanLines = lines.map(l => ({
+    expense_date: l.expense_date,
+    expense_type: l.expense_type || 'ORE',
+    expense_category: l.expense_category,
+    coa_code: l.coa_code,
+    establishment: l.establishment,
+    particulars: l.particulars,
+    amount: l.amount,
+    vat_amount: l.vat_amount,
+    or_number: l.or_number,
+    or_photo_url: l.or_photo_url,
+    or_attachment_id: l.or_attachment_id,
+    payment_mode: l.payment_mode || 'CASH',
+    funding_card_id: l.funding_card_id || funding_card_id || null,
+    funding_account_id: l.funding_account_id || funding_account_id || null,
+    cost_center_id: l.cost_center_id || cost_center_id || null,
+    bir_flag: l.bir_flag || bir_flag,
+    is_assorted: l.is_assorted || false,
+    notes: l.notes
+  }));
+
+  const bdmId = assigned_to || req.user._id;
+  const isOnBehalf = assigned_to && assigned_to !== req.user._id.toString();
+
+  const entry = await ExpenseEntry.create({
+    entity_id: req.entityId,
+    bdm_id: bdmId,
+    recorded_on_behalf_of: isOnBehalf ? req.user._id : undefined,
+    period,
+    cycle,
+    lines: cleanLines,
+    bir_flag,
+    status: 'DRAFT',
+    created_by: req.user._id
+  });
+
+  res.status(201).json({
+    success: true,
+    data: entry,
+    message: `Batch saved: ${cleanLines.length} expense lines as DRAFT`
+  });
+});
+
 module.exports = {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
@@ -1392,6 +1834,8 @@ module.exports = {
   // PRF/CALF
   createPrfCalf, updatePrfCalf, getPrfCalfList, getPrfCalfById, deleteDraftPrfCalf,
   validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines,
+  // Batch Upload
+  batchUploadExpenses, saveBatchExpenses,
   // Summary
   getExpenseSummary
 };

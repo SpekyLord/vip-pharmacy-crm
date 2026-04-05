@@ -25,12 +25,18 @@ const User = require('../models/User');
 // ═══════════════════════════════════════════
 async function sendInApp({ recipientId, title, body, category, priority }) {
   try {
+    // Resolve recipient's role for MessageInbox (required field)
+    let recipientRole = 'admin';
+    if (recipientId) {
+      const recipient = await User.findById(recipientId).select('role').lean();
+      if (recipient) recipientRole = recipient.role;
+    }
     await MessageInbox.create({
       title,
       body,
       category: category || 'system',
       priority: priority || 'normal',
-      recipientRole: null,
+      recipientRole,
       recipientUserId: recipientId || null,
       senderName: 'System Agent',
       senderId: null

@@ -3,7 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useBanking from '../hooks/useBanking';
-import crmApi from '../../services/api';
+import usePeople from '../hooks/usePeople';
 
 const pageStyles = `
   .ba-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
@@ -41,6 +41,7 @@ const EMPTY_FORM = {
 export default function BankAccounts() {
   const { user } = useAuth();
   const api = useBanking();
+  const people = usePeople();
 
   const [accounts, setAccounts] = useState([]);
   const [users, setUsers] = useState([]);
@@ -58,10 +59,10 @@ export default function BankAccounts() {
     try {
       const [acctRes, usersRes] = await Promise.all([
         api.listBankAccounts(),
-        crmApi.get('/users', { params: { limit: 0 } })
+        people.getAsUsers()
       ]);
       setAccounts(acctRes?.data || []);
-      setUsers(usersRes?.data?.data || []);
+      setUsers(usersRes?.data || []);
     } catch (err) { console.error('[BankAccounts] load error:', err.message); }
     setLoading(false);
   }, []);

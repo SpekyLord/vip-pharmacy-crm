@@ -5,6 +5,9 @@ const { catchAsync } = require('../../middleware/errorHandler');
 // ═══ Sub-Permission Keys Definition (Phase 16) ═══
 // Served from backend so frontend never hardcodes these — add new keys here to auto-populate UI.
 const SUB_PERMISSION_KEYS = {
+  expenses: [
+    { key: 'batch_upload', label: 'Batch OR Upload (OCR)' },
+  ],
   purchasing: [
     { key: 'po_create', label: 'Create/Edit Purchase Orders' },
     { key: 'po_approve', label: 'Approve Purchase Orders' },

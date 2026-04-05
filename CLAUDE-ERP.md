@@ -2,7 +2,7 @@
 
 > **Last Updated**: April 2026
 > **Version**: 5.0
-> **Status**: Phases 0-19 Complete. Accounting engine fully wired (April 5, 2026).
+> **Status**: Phases 0-20 Complete. Batch expense upload + COA expansion (April 5, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -56,6 +56,7 @@ VIP is the parent company, supplies subsidiaries (MG AND CO. INC. first). BDMs c
 | 17 | Warehouse Model | ✅ |
 | 18 | Service Revenue + Cost Center Expenses | ✅ |
 | 19 | Petty Cash / Office Supplies / Collaterals | ✅ |
+| 20 | Batch Expense Upload + COA Expansion | ✅ |
 
 ---
 
@@ -116,6 +117,8 @@ All reopen functions call `journalEngine.reverseJournal()` (SAP Storno pattern: 
 | IC Transfer (sender) | 1150 IC Receivable | 1200 Inventory |
 | IC Transfer (receiver) | 1200 Inventory | 2050 IC Payable |
 | Commission | 5100 BDM Commission | 1110 AR BDM |
+| Inventory Write-Off | 6850 Inventory Write-Off | 1200 Inventory |
+| Inventory Adj Gain | 1200 Inventory | 6860 Inventory Adj Gain |
 | Petty Cash | 6XXX Expense | 1015 Petty Cash |
 | Owner Infusion | Cash/Bank | 3000 Owner Capital |
 | Owner Drawing | 3100 Owner Drawings | Cash/Bank |
@@ -162,13 +165,33 @@ All reopen functions call `journalEngine.reverseJournal()` (SAP Storno pattern: 
 
 ---
 
+## Batch Expense Upload (Phase 20)
+
+President/admin-only feature for bulk receipt processing:
+- `POST /expenses/ore-access/batch-upload` — up to 20 images, OCR → classify COA → assorted items (3+ line items)
+- `POST /expenses/ore-access/batch-save` — save reviewed lines as DRAFT
+- Setup: BIR flag, category, employee, cost center, funding (card/bank), period/cycle
+- `bir_flag` passthrough: `submitExpenses` and `submitPrfCalf` use `entry.bir_flag || 'BOTH'`
+- President override via `recorded_on_behalf_of` bypasses CALF requirement
+- COA dropdown loads from API (`GET /api/erp/coa`) — scalable, not hardcoded
+
+### COA Export/Import
+- `GET /api/erp/coa/export?format=xlsx` — Excel download (Google Sheets compatible)
+- `GET /api/erp/coa/export?format=json` — JSON download
+- `POST /api/erp/coa/import` — accepts Excel file upload OR JSON body, upserts by account_code
+
+### Multi-Business-Line COA (Pharma + F&B + Rental)
+VIP runs three business lines under one entity, tracked by cost centers:
+- **Pharma**: 4000-4100 Revenue, 5000-5300 COGS, 6000-6600 OpEx
+- **F&B (Balai Lawaan)**: 4300 F&B Revenue, 5400 Food Cost, 5500 Beverage Cost, 6830-6840 F&B OpEx
+- **Rental (Balai Lawaan)**: 4400-4500 Rental Income (Short/Long), 6870-6890 Property OpEx
+
+---
+
 ## Remaining Known Gaps (P2 — Not Critical)
 
 | Gap | Description | Impact |
 |-----|-------------|--------|
-| Month-End Close Phase 3 | Steps 10-13 stub (less critical now — JEs created at submit time) | Monthly catch-up only |
-| Inventory Adjustment JE | Physical count adjustments lack write-off JE (DR 6800, CR 1200) | Write-offs not expensed |
-| Bank Recon Adjustment JEs | Finalize doesn't create JEs for unmatched items | Standard practice gap |
 | Dual P&L deprecation | pnlCalc vs pnlService coexist without reconciliation | Consistency risk |
 | Commission controller | No dedicated controller — wired inline in collectionController | Works, not clean |
 

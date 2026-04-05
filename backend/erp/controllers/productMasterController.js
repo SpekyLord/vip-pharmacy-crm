@@ -31,25 +31,26 @@ const getAll = catchAsync(async (req, res) => {
   res.json({
     success: true,
     data: products,
-    pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+    pagination: { page, limit, total, pages: limit > 0 ? Math.ceil(total / limit) : 1 }
   });
 });
 
 const getById = catchAsync(async (req, res) => {
-  const product = await ProductMaster.findById(req.params.id).lean();
+  const product = await ProductMaster.findOne({ _id: req.params.id, entity_id: req.entityId }).lean();
   if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
   res.json({ success: true, data: product });
 });
 
 const create = catchAsync(async (req, res) => {
+  req.body.entity_id = req.entityId;
   req.body.added_by = req.user._id;
   const product = await ProductMaster.create(req.body);
   res.status(201).json({ success: true, data: product });
 });
 
 const update = catchAsync(async (req, res) => {
-  const product = await ProductMaster.findByIdAndUpdate(
-    req.params.id,
+  const product = await ProductMaster.findOneAndUpdate(
+    { _id: req.params.id, entity_id: req.entityId },
     { $set: req.body },
     { new: true, runValidators: true }
   );
@@ -58,8 +59,8 @@ const update = catchAsync(async (req, res) => {
 });
 
 const deactivate = catchAsync(async (req, res) => {
-  const product = await ProductMaster.findByIdAndUpdate(
-    req.params.id,
+  const product = await ProductMaster.findOneAndUpdate(
+    { _id: req.params.id, entity_id: req.entityId },
     { $set: { is_active: false } },
     { new: true }
   );
@@ -73,7 +74,7 @@ const deactivate = catchAsync(async (req, res) => {
 const updateReorderQty = catchAsync(async (req, res) => {
   const { reorder_min_qty, reorder_qty, safety_stock_qty, lead_time_days } = req.body;
 
-  const product = await ProductMaster.findById(req.params.id);
+  const product = await ProductMaster.findOne({ _id: req.params.id, entity_id: req.entityId });
   if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
 
   const changes = {};

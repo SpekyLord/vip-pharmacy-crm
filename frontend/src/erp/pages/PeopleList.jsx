@@ -102,6 +102,14 @@ export default function PeopleList() {
         <main className="ppl-main">
           <div className="ppl-header">
             <h2>People Master</h2>
+            <button style={{ padding: '8px 16px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13, marginRight: 8 }}
+              onClick={async () => {
+                try {
+                  const res = await api.post('/people/sync-from-crm', {});
+                  alert(res?.message || `Synced: ${res?.data?.created || 0} created, ${res?.data?.skipped || 0} already exist`);
+                  load();
+                } catch (err) { alert(err.response?.data?.message || 'Sync failed'); }
+              }}>Sync from CRM</button>
             <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Add Person</button>
           </div>
 

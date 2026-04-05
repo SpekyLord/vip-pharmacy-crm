@@ -39,6 +39,10 @@ export default function useExpenses() {
   const submitExpenses = () => api.post('/expenses/ore-access/submit', {});
   const reopenExpenses = (ids) => api.post('/expenses/ore-access/reopen', { expense_ids: ids });
 
+  // ═══ Batch Upload (President/Admin) ═══
+  const batchUploadExpenses = (formData) => api.post('/expenses/ore-access/batch-upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+  const saveBatchExpenses = (data) => api.post('/expenses/ore-access/batch-save', data);
+
   // ═══ PRF / CALF ═══
   const getPrfCalfList = (params) => api.get('/expenses/prf-calf', { params });
   const getPrfCalfById = (id) => api.get(`/expenses/prf-calf/${id}`);
@@ -66,6 +70,8 @@ export default function useExpenses() {
     validateExpenses, submitExpenses, reopenExpenses,
     // PRF/CALF
     getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf,
-    validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines
+    validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines,
+    // Batch Upload
+    batchUploadExpenses, saveBatchExpenses
   };
 }

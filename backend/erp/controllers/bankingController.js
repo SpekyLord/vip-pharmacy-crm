@@ -40,7 +40,7 @@ const updateBankAccount = catchAsync(async (req, res) => {
   const account = await BankAccount.findOne({ _id: req.params.id, entity_id: req.entityId });
   if (!account) return res.status(404).json({ success: false, message: 'Bank account not found' });
 
-  const allowed = ['bank_name', 'account_no', 'account_type', 'coa_code', 'opening_balance', 'statement_import_format', 'is_active'];
+  const allowed = ['bank_name', 'account_no', 'account_type', 'coa_code', 'opening_balance', 'statement_import_format', 'is_active', 'assigned_users'];
   for (const field of allowed) {
     if (req.body[field] !== undefined) account[field] = req.body[field];
   }

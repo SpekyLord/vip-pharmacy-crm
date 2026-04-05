@@ -240,9 +240,9 @@ export default function ProductMasterPage() {
       const res = await api.get('/products', { params });
       setProducts(res?.data || []);
       setTotal(res?.pagination?.total || 0);
-    } catch { setProducts([]); }
+    } catch (err) { console.error('[ProductMaster] Load error:', err.message); setProducts([]); }
     finally { setLoading(false); }
-  }, [api, page, search, statusFilter]);
+  }, [page, search, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
 

@@ -110,7 +110,7 @@ export default function CarLogbook() {
     try {
       const res = await getCarLogbookList({ period, cycle, limit: 0 });
       setEntries(res?.data || []);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[CarLogbook] Load failed:', err.message); alert(err.response?.data?.message || 'Failed to load logbook entries'); }
   }, [period, cycle]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
@@ -169,7 +169,7 @@ export default function CarLogbook() {
         notes: data.notes || ''
       });
       setShowForm(true);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[CarLogbook] Edit failed:', err.message); alert(err.response?.data?.message || 'Failed to load entry'); }
   };
 
   const addFuelEntry = () => {
@@ -201,7 +201,7 @@ export default function CarLogbook() {
       else { await createCarLogbook(data); }
       setShowForm(false);
       loadEntries();
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[CarLogbook] Save failed:', err.message); alert(err.response?.data?.message || 'Failed to save entry'); }
   };
 
   const [actionMsg, setActionMsg] = useState(null);
@@ -376,7 +376,11 @@ export default function CarLogbook() {
                     }} />
                   </label>
                   {fuel.receipt_url && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600 }}>Receipt ✓</span>}
-                  {fuel.payment_mode && fuel.payment_mode !== 'CASH' && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>CALF Required</span>}
+                  {fuel.payment_mode && fuel.payment_mode !== 'CASH' && (
+                    fuel.calf_id
+                      ? <a href={`/erp/prf-calf?id=${fuel.calf_id}`} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600, textDecoration: 'none' }}>CALF ✓ →</a>
+                      : <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>CALF Pending (save first)</span>
+                  )}
                   <button onClick={() => removeFuelEntry(idx)} style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #ef4444', color: '#ef4444', background: '#fff', cursor: 'pointer', fontSize: 12 }}>X</button>
                 </div>
               ))}

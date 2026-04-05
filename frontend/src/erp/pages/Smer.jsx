@@ -46,7 +46,7 @@ export default function Smer() {
     try {
       const res = await getSmerList({ period, cycle });
       setSmers(res?.data || []);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[SMER]', err.message); alert(err.response?.data?.message || err.message || 'Operation failed'); }
   }, [period, cycle]);
 
   useEffect(() => { loadSmers(); }, [loadSmers]);
@@ -108,7 +108,7 @@ export default function Smer() {
       setTravelAdvance(data.travel_advance || 0);
       setPerdiemRate(data.perdiem_rate || 800);
       setShowForm(true);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[SMER]', err.message); alert(err.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   const handleEntryChange = (index, field, value) => {
@@ -129,6 +129,13 @@ export default function Smer() {
 
   const handleSave = async () => {
     if (loading) return; // prevent double-click
+    // Frontend validation: activity_type required when md_count > 0
+    const issues = [];
+    dailyEntries.forEach(e => {
+      if (e.md_count > 0 && !e.activity_type) issues.push(`${e.day_of_week} ${e.entry_date?.split('T')[0] || ''}: Activity type required when MDs > 0`);
+    });
+    if (issues.length) { alert(issues.join('\n')); return; }
+
     const data = {
       period, cycle,
       perdiem_rate: perdiemRate,

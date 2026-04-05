@@ -561,8 +561,8 @@ function journalFromInterCompany(transfer, perspective, amount, userId) {
 
 /**
  * Journal from Inventory Adjustment (Physical Count)
- * LOSS (negative variance): DR 6800 Inventory Write-Off, CR 1200 Inventory
- * GAIN (positive variance):  DR 1200 Inventory, CR 6810 Inventory Adjustment Gain
+ * LOSS (negative variance): DR 6850 Inventory Write-Off, CR 1200 Inventory
+ * GAIN (positive variance):  DR 1200 Inventory, CR 6860 Inventory Adjustment Gain
  * @param {Object} data — { variance, product_name, batch_lot_no, entity_id, bdm_id, period }
  * @param {Number} amount — |variance| × purchase_price (always positive)
  * @param {String} userId
@@ -575,12 +575,12 @@ function journalFromInventoryAdjustment(data, amount, userId) {
 
   const lines = isLoss
     ? [
-        { account_code: '6800', account_name: 'Inventory Write-Off', debit: amount, credit: 0, description: desc },
+        { account_code: '6850', account_name: 'Inventory Write-Off', debit: amount, credit: 0, description: desc },
         { account_code: '1200', account_name: 'Inventory', debit: 0, credit: amount, description: desc }
       ]
     : [
         { account_code: '1200', account_name: 'Inventory', debit: amount, credit: 0, description: desc },
-        { account_code: '6810', account_name: 'Inventory Adjustment Gain', debit: 0, credit: amount, description: desc }
+        { account_code: '6860', account_name: 'Inventory Adjustment Gain', debit: 0, credit: amount, description: desc }
       ];
 
   return {

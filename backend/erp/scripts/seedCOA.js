@@ -59,32 +59,51 @@ const COA_TEMPLATE = [
   { account_code: '3100', account_name: 'Owner Drawings', account_type: 'EQUITY', account_subtype: 'Drawings', normal_balance: 'DEBIT' },
   { account_code: '3200', account_name: 'Retained Earnings', account_type: 'EQUITY', account_subtype: 'Retained', normal_balance: 'CREDIT' },
 
-  // ──── 4000-4200: Revenue ────
+  // ──── 4000-4500: Revenue ────
   { account_code: '4000', account_name: 'Sales Revenue — Vatable', account_type: 'REVENUE', account_subtype: 'Sales', normal_balance: 'CREDIT' },
   { account_code: '4100', account_name: 'Sales Revenue — VAT Exempt', account_type: 'REVENUE', account_subtype: 'Sales', normal_balance: 'CREDIT' },
   { account_code: '4200', account_name: 'Other Income', account_type: 'REVENUE', account_subtype: 'Other', normal_balance: 'CREDIT' },
+  { account_code: '4300', account_name: 'F&B Revenue', account_type: 'REVENUE', account_subtype: 'Sales', normal_balance: 'CREDIT' },
+  { account_code: '4400', account_name: 'Rental Income — Short-Term', account_type: 'REVENUE', account_subtype: 'Other', normal_balance: 'CREDIT' },
+  { account_code: '4500', account_name: 'Rental Income — Long-Term', account_type: 'REVENUE', account_subtype: 'Other', normal_balance: 'CREDIT' },
 
-  // ──── 5000-5300: Cost of Sales ────
+  // ──── 5000-5500: Cost of Sales ────
   { account_code: '5000', account_name: 'Cost of Goods Sold', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
   { account_code: '5100', account_name: 'BDM Commission', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
   { account_code: '5200', account_name: 'Profit Share / Partner Rebate', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
   { account_code: '5300', account_name: "Partners' Insurance", account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
+  { account_code: '5400', account_name: 'Food Cost', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
+  { account_code: '5500', account_name: 'Beverage Cost', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
 
   // ──── 6000-6900: Operating Expenses ────
   { account_code: '6000', account_name: 'Salaries & Wages', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6050', account_name: 'Allowances', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6100', account_name: 'Per Diem Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6150', account_name: 'Transport Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6155', account_name: 'Travel & Accommodation', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6200', account_name: 'Fuel & Gas', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6250', account_name: 'Vehicle Maintenance', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6260', account_name: 'Repairs & Maintenance (General)', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6300', account_name: 'Marketing Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6310', account_name: 'Marketing — HCP/Doctor', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6320', account_name: 'Marketing — Hospital', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6330', account_name: 'Marketing — Retail', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6350', account_name: 'ACCESS Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6400', account_name: 'Office Supplies', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6450', account_name: 'Rent Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6460', account_name: 'Utilities & Communication', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6500', account_name: 'Courier & Delivery', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6600', account_name: 'Parking & Tolls', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
-  { account_code: '6700', account_name: 'Communication Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6800', account_name: 'Professional Fees', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6810', account_name: 'Regulatory & Licensing', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6820', account_name: 'IT Hardware & Software', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6830', account_name: 'F&B Supplies & Packaging', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6840', account_name: 'Kitchen Equipment & Maintenance', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6850', account_name: 'Inventory Write-Off', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6860', account_name: 'Inventory Adjustment Gain', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'CREDIT' },
+  { account_code: '6870', account_name: 'Property Maintenance', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6880', account_name: 'Property Insurance', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6890', account_name: 'Property Tax & Fees', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6900', account_name: 'Miscellaneous Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
 
   // ──── 7000-7100: Non-Operating Expenses ────

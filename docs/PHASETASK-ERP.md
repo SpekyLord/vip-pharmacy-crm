@@ -2354,7 +2354,7 @@ All autoJournal functions are now called from their respective controller submit
 
 **P2 gaps — ALL RESOLVED (April 5, 2026):**
 - [x] Month-End Close Phase 3 rewritten as **JE Verification** — counts POSTED docs vs JEs per module, flags orphans. Phase 4 rewritten as **VAT/CWT Verification** — checks ledger completeness.
-- [x] **Inventory adjustment JE** — `journalFromInventoryAdjustment()` created in autoJournal.js. Loss: DR 6800 Write-Off, CR 1200 Inventory. Gain: DR 1200, CR 6810. Wired in `inventoryController.recordPhysicalCount()`.
+- [x] **Inventory adjustment JE** — `journalFromInventoryAdjustment()` created in autoJournal.js. Loss: DR 6850 Write-Off, CR 1200 Inventory. Gain: DR 1200, CR 6860. Wired in `inventoryController.recordPhysicalCount()`.
 - [x] **Bank reconciliation adjustment JEs** — `finalizeRecon()` now creates JEs for `RECONCILING_ITEM` entries (bank fees: DR 7100, CR bank; interest: DR bank, CR 4200). Links JE to statement entry.
 - [x] **P&L reconciliation** — monthEndClose Phase 5 Step 16 now compares GL revenue (account 4000) vs source-doc revenue (SalesLine). Variance stored in archive.
 - [x] **Year-end closing JE** — `executeYearEndClose()` now aggregates all 4000-7999 accounts from GL, creates closing JE transferring net income to 3200 Retained Earnings. Sets `closing_entries_pending: false`.
@@ -3200,9 +3200,91 @@ Replaced `roleCheck('admin', 'finance', 'president')` with `erpSubAccessCheck` o
 | 17 | Warehouse Model + Full Migration ✅ | ~25 | 2-3 weeks |
 | 18 | Service Revenue + Cost Center Expenses ✅ | ~25 | 2-3 weeks |
 | 19 | Petty Cash / Office Supplies / Collaterals ✅ | ~25 | 2-3 weeks |
+| 20 | Batch Expense Upload + COA Expansion ✅ | ~15 | 1 week |
 
-**Total pre-launch: ~573 tasks across 18 phases → ~29-37 weeks**
+**Total pre-launch: ~588 tasks across 19 phases → ~30-38 weeks**
 **Note: Phases 4A+4B add ~13 tasks and ~2.5 weeks for entity migration + inter-company transfers**
 **Note: Phases 10-14 add ~220 tasks and ~10-14 weeks from PRD v5 (PNL Central live system integrations)**
 **Note: Phases 16-19 add ~95 tasks for warehouse, service revenue, petty cash, and sub-module access**
 **Reference PRD:** `docs/VIP ERP PRD v5.md`
+
+---
+
+## Phase 20: Batch Expense Upload + COA Expansion ✅ (April 5, 2026)
+
+### 20.1 — Batch OR Upload (President/Admin)
+- [x] `bir_flag` + `is_assorted` fields on ExpenseEntry (line + document level)
+- [x] `batchUploadExpenses` controller — up to 20 images, OCR → classify COA → assorted items (3+ line items)
+- [x] `saveBatchExpenses` controller — save reviewed lines as DRAFT with funding, cost center, bir_flag
+- [x] Routes: `POST /expenses/ore-access/batch-upload`, `POST /expenses/ore-access/batch-save` (admin/president only)
+- [x] Frontend: collapsible batch upload section in Expenses.jsx with setup dropdowns:
+  - BIR Classification (BOTH/INTERNAL/BIR)
+  - Category override (or auto-classify)
+  - Employee assignment (PeopleMaster)
+  - Cost Center (CostCenterPicker)
+  - Funding source (Cash / Card / Bank Account)
+  - Period / Cycle
+- [x] Review table with inline editing (date, establishment, amount, COA dropdown, OR#)
+- [x] COA dropdown loads dynamically from API (not hardcoded)
+- [x] `bir_flag` passthrough to autoJournal: `submitExpenses` and `submitPrfCalf` use `entry.bir_flag || 'BOTH'`
+
+### 20.2 — COA Expansion (Multi-Business-Line)
+- [x] Revenue: 4300 F&B Revenue, 4400 Rental Short-Term, 4500 Rental Long-Term
+- [x] COGS: 5400 Food Cost, 5500 Beverage Cost
+- [x] OpEx new: 6155 Travel & Accommodation, 6260 Repairs & Maintenance, 6310/6320/6330 Marketing subs (HCP/Hospital/Retail), 6460 Utilities & Communication, 6810 Regulatory & Licensing, 6820 IT Hardware & Software
+- [x] OpEx F&B: 6830 F&B Supplies & Packaging, 6840 Kitchen Equipment & Maintenance
+- [x] OpEx Rental: 6870 Property Maintenance, 6880 Property Insurance, 6890 Property Tax & Fees
+- [x] Inventory: 6850 Inventory Write-Off (was 6800), 6860 Inventory Adjustment Gain (was 6810) — resolved conflict with Professional Fees / Regulatory
+- [x] Removed: 6700 Communication (merged into 6460 Utilities & Communication)
+
+### 20.3 — COA Export/Import
+- [x] `GET /api/erp/coa/export?format=xlsx` — Excel download (Google Sheets compatible)
+- [x] `GET /api/erp/coa/export?format=json` — JSON download
+- [x] `POST /api/erp/coa/import` — accepts Excel file upload OR JSON body, upserts by account_code
+- [x] Existing COA CRUD UI unaffected
+
+### 20.4 — Expense Classifier Updates
+- [x] Updated all keyword→COA mappings to match new codes (Courier→6500, Fuel→6200, Tolls→6600, etc.)
+- [x] Added F&B rules: Food Cost→5400, Beverage→5500, F&B Supplies→6830, Kitchen→6840
+- [x] Added Rental rules: Property Tax→6890, Property Insurance→6880, Property Maintenance→6870
+- [x] Added new rules: Regulatory→6810, IT/Software→6820, Repairs→6260, Travel→6155, Rent→6450, Professional Fees→6800
+- [x] Fixed seedVendors.js — updated 13 vendor COA codes to match new mappings
+
+### 20.5 — BDM Function Fixes (April 5, 2026)
+- [x] Batch upload guard: `erpSubAccessCheck('expenses', 'batch_upload')` instead of role-based
+- [x] Added `batch_upload` to `SUB_PERMISSION_KEYS.expenses` in erpAccessController
+- [x] Fixed empty catch blocks in Smer.jsx (2), CarLogbook.jsx (3), Expenses.jsx (3) — now console.error + alert
+- [x] Added CALF linking: "CALF Required →" link to PRF/CALF page + "CALF Linked ✓" badge in CarLogbook + Expenses
+- [x] Added frontend field validation before save: Expenses (establishment, amount, date), SMER (activity_type when md_count > 0)
+- [x] Added backend role check to CRM bridge `/smer/crm-md-counts` — BDM only, admin must pass bdm_id
+- [x] Fixed updatePrfCalf — now clears old back-links and re-runs back-linking when linked source changes (was silently orphaning calf_id refs)
+
+### 20.6 — Auto-Route Landing Page (Future)
+- [ ] Auto-route after login based on role + erp_access.enabled (no CRM/ERP chooser)
+- [ ] BDM (employee) → CRM BDM Dashboard (mobile-first daily work)
+- [ ] Admin/President with ERP → ERP Dashboard
+- [ ] Users with only CRM → CRM Dashboard
+- [ ] Users with only ERP → ERP Dashboard
+- [ ] Remember last-used preference as fallback
+
+### 20.7 — Agent Notification Fix (April 5, 2026)
+- [x] Fixed `recipientRole is required` in notificationService.js — now resolves user role from DB before creating MessageInbox
+
+### 20.8 — Build Paid Agents (Claude API) (Future)
+All 6 paid agents are stubs — scheduler lists them but no actual Claude API integration exists.
+- [ ] Install `@anthropic-ai/sdk` in backend
+- [ ] Create shared `agents/claudeClient.js` — wraps Anthropic SDK with retry, rate limit, cost tracking
+- [ ] **#1 Smart Collection** — AI analyzes AR aging + payment history → prioritizes which customers to call today
+- [ ] **#2 OCR Auto-Fill** — Claude fallback when regex parser has LOW confidence: sends raw Vision text → Claude extracts structured fields (OR#, date, amount, supplier). Wire into `ocrProcessor.js` Layer 2.
+- [ ] **#5 BIR Filing Review** — AI reviews month's JEs/VAT/CWT for compliance before BIR filing deadline
+- [ ] **#7 BDM Performance Coach** — AI analyzes BDM's visit/sales/expense patterns → generates coaching feedback
+- [ ] **#B Smart Visit Planner** — AI plans next week's hospital visits based on engagement decay, schedule, geography
+- [ ] **#C Engagement Decay** — AI identifies doctors losing engagement and suggests re-engagement strategy
+- [ ] Add cost tracking per agent call (token count, estimated cost) for budget monitoring
+
+### 20.9 — SMER Mobile Redesign (Future)
+- [ ] Change `hospital_id` to `hospital_ids: [ObjectId]` array in SmerEntry model
+- [ ] Add multi-hospital picker (chip/tag UI) when activity_type = 'Field'
+- [ ] Auto-fill `hospital_covered` as comma-joined hospital names
+- [ ] Mobile-optimized SMER daily entry layout (currently table-based, hard to use on phone)
+- [ ] Responsive breakpoints for SMER form columns

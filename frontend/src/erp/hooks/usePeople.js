@@ -4,6 +4,7 @@ export default function usePeople() {
   const api = useErpApi();
 
   const getPeopleList = (params) => api.get('/people', { params });
+  const getAsUsers = (params) => api.get('/people/as-users', { params });  // CRM-compatible { _id, name, role }
   const getPersonById = (id) => api.get(`/people/${id}`);
   const createPerson = (data) => api.post('/people', data);
   const updatePerson = (id, data) => api.put(`/people/${id}`, data);
@@ -16,7 +17,7 @@ export default function usePeople() {
 
   return {
     ...api,
-    getPeopleList,
+    getPeopleList, getAsUsers,
     getPersonById,
     createPerson,
     updatePerson,

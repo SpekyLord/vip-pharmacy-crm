@@ -7,7 +7,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useHospitals from '../hooks/useHospitals';
-import api from '../../services/api';
+import usePeople from '../hooks/usePeople';
 
 export default function HospitalList() {
   const { user } = useAuth();
@@ -24,11 +24,12 @@ export default function HospitalList() {
     credit_limit: '', credit_limit_action: 'WARN'
   });
 
+  const { getAsUsers } = usePeople();
   useEffect(() => {
-    api.get('/users?role=employee&limit=0').then(res => {
-      setBdmList(res.data?.data || res.data || []);
+    getAsUsers({ role: 'employee' }).then(res => {
+      setBdmList(res?.data || []);
     }).catch(err => console.error('[HospitalList]', err.message));
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = hospitals.filter(h =>
     !search || h.hospital_name?.toLowerCase().includes(search.toLowerCase())

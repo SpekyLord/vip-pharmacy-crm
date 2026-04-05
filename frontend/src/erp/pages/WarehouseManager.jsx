@@ -11,7 +11,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useWarehouses from '../hooks/useWarehouses';
 import useEntities from '../hooks/useEntities';
-import api from '../../services/api';
+import usePeople from '../hooks/usePeople';
 
 const TYPE_LABELS = { MAIN: 'Main Warehouse', TERRITORY: 'Territory', VIRTUAL: 'Virtual' };
 const TYPE_COLORS = { MAIN: '#1e40af', TERRITORY: '#166534', VIRTUAL: '#64748b' };
@@ -63,6 +63,7 @@ export default function WarehouseManager() {
   const { user } = useAuth();
   const whApi = useWarehouses();
   const { entities } = useEntities();
+  const { getAsUsers } = usePeople();
 
   const [warehouses, setWarehouses] = useState([]);
   const [users, setUsers] = useState([]);
@@ -75,10 +76,10 @@ export default function WarehouseManager() {
     try {
       const [whRes, usersRes] = await Promise.all([
         whApi.getWarehouses(),
-        api.get('/users', { params: { limit: 0 } })
+        getAsUsers()
       ]);
       setWarehouses(whRes?.data || []);
-      setUsers(usersRes?.data?.data || usersRes?.data || []);
+      setUsers(usersRes?.data || []);
     } catch (err) {
       console.error('[WarehouseManager] load failed:', err.message);
     } finally { setLoading(false); }
