@@ -54,6 +54,15 @@ const pageStyles = `
   .grn-table th { padding: 10px 16px; text-align: left; font-weight: 600; color: var(--erp-muted); background: var(--erp-bg); }
   .grn-table td { padding: 10px 16px; border-top: 1px solid var(--erp-border); }
   .status-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .grn-card-list { display: none; }
+  .grn-card { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; padding: 12px 14px; margin: 10px 12px 0; }
+  .grn-card-header { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .grn-card-title { font-weight: 700; font-size: 14px; color: var(--erp-text); }
+  .grn-card-sub { font-size: 12px; color: var(--erp-muted); }
+  .grn-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .grn-card-item { display: flex; flex-direction: column; gap: 2px; }
+  .grn-card-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; font-weight: 700; }
+  .grn-card-value { font-size: 12px; color: var(--erp-text); }
 
   .scan-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
   .scan-modal { background: var(--erp-panel, #fff); border-radius: 16px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 24px; position: relative; }
@@ -75,8 +84,33 @@ const pageStyles = `
   .match-none { background: #fef2f2; color: #991b1b; }
 
   @media (max-width: 768px) {
+    .grn-page { padding-top: 12px; }
+    .grn-main { padding: 76px 12px 96px; }
+    .grn-header { flex-direction: column; align-items: flex-start; }
+    .grn-actions { width: 100%; }
+    .grn-actions .btn { flex: 1; }
     .form-row { flex-direction: column; }
+    .form-group { min-width: 100%; }
+    .grn-form { padding: 16px; }
+    .line-items-table { display: block; overflow-x: auto; }
+    .line-items-table th,
+    .line-items-table td { white-space: nowrap; }
+    .grn-list { overflow: hidden; }
     .grn-table { font-size: 12px; }
+    .grn-table th,
+    .grn-table td { white-space: nowrap; }
+    .grn-table { display: none; }
+    .grn-card-list { display: grid; gap: 10px; padding: 0 0 12px; }
+    .filter-tabs { background: #e8efff; border-radius: 999px; padding: 4px; gap: 4px; overflow: hidden; }
+    .filter-tab { padding: 6px 12px; border-radius: 999px; font-size: 12px; }
+    .filter-tab.active { background: #ffffff; box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08); }
+  }
+
+  @media (max-width: 480px) {
+    .grn-page { padding-top: 16px; }
+    .grn-main { padding-top: 72px; padding-bottom: 104px; }
+    .grn-card { margin: 10px 10px 0; }
+    .grn-card-grid { grid-template-columns: 1fr; }
   }
 `;
 
@@ -346,38 +380,81 @@ export default function GrnEntry() {
                 </button>
               ))}
             </div>
-            <table className="grn-table">
-              <thead>
-                <tr><th>Date</th><th>Items</th><th>BDM</th><th>Status</th><th>Reviewed By</th><th>Actions</th></tr>
-              </thead>
-              <tbody>
+              <table className="grn-table">
+                <thead>
+                  <tr><th>Date</th><th>Items</th><th>BDM</th><th>Status</th><th>Reviewed By</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                  {grnList.map(g => (
+                    <tr key={g._id}>
+                      <td>{new Date(g.grn_date).toLocaleDateString('en-PH')}</td>
+                      <td>{g.line_items?.length || 0} item(s)</td>
+                      <td>{g.bdm_id?.name || '—'}</td>
+                      <td>
+                        <span className="status-badge" style={{ background: STATUS_COLORS[g.status]?.bg, color: STATUS_COLORS[g.status]?.text }}>
+                          {STATUS_COLORS[g.status]?.label}
+                        </span>
+                      </td>
+                      <td>{g.reviewed_by?.name || '—'}</td>
+                      <td>
+                        {g.status === 'PENDING' && (user?.role === 'admin' || user?.role === 'finance') && (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="btn btn-success btn-sm" onClick={() => handleApprove(g._id, 'APPROVED')}>Approve</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>
+                          </div>
+                        )}
+                        {g.status === 'REJECTED' && g.rejection_reason && (
+                          <span style={{ fontSize: 12, color: '#991b1b' }}>{g.rejection_reason}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {!grnList.length && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No GRNs found</td></tr>}
+                </tbody>
+              </table>
+
+              <div className="grn-card-list">
                 {grnList.map(g => (
-                  <tr key={g._id}>
-                    <td>{new Date(g.grn_date).toLocaleDateString('en-PH')}</td>
-                    <td>{g.line_items?.length || 0} item(s)</td>
-                    <td>{g.bdm_id?.name || '—'}</td>
-                    <td>
+                  <div key={g._id} className="grn-card">
+                    <div className="grn-card-header">
+                      <div>
+                        <div className="grn-card-title">{new Date(g.grn_date).toLocaleDateString('en-PH')}</div>
+                        <div className="grn-card-sub">{g.line_items?.length || 0} item(s)</div>
+                      </div>
                       <span className="status-badge" style={{ background: STATUS_COLORS[g.status]?.bg, color: STATUS_COLORS[g.status]?.text }}>
                         {STATUS_COLORS[g.status]?.label}
                       </span>
-                    </td>
-                    <td>{g.reviewed_by?.name || '—'}</td>
-                    <td>
-                      {g.status === 'PENDING' && (user?.role === 'admin' || user?.role === 'finance') && (
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="btn btn-success btn-sm" onClick={() => handleApprove(g._id, 'APPROVED')}>Approve</button>
-                          <button className="btn btn-danger btn-sm" onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>
-                        </div>
-                      )}
-                      {g.status === 'REJECTED' && g.rejection_reason && (
-                        <span style={{ fontSize: 12, color: '#991b1b' }}>{g.rejection_reason}</span>
-                      )}
-                    </td>
-                  </tr>
+                    </div>
+
+                    <div className="grn-card-grid">
+                      <div className="grn-card-item">
+                        <span className="grn-card-label">BDM</span>
+                        <span className="grn-card-value">{g.bdm_id?.name || '—'}</span>
+                      </div>
+                      <div className="grn-card-item">
+                        <span className="grn-card-label">Reviewed By</span>
+                        <span className="grn-card-value">{g.reviewed_by?.name || '—'}</span>
+                      </div>
+                    </div>
+
+                    {g.status === 'REJECTED' && g.rejection_reason && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: '#991b1b' }}>{g.rejection_reason}</div>
+                    )}
+
+                    {g.status === 'PENDING' && (user?.role === 'admin' || user?.role === 'finance') && (
+                      <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                        <button className="btn btn-success btn-sm" style={{ flex: 1 }} onClick={() => handleApprove(g._id, 'APPROVED')}>Approve</button>
+                        <button className="btn btn-danger btn-sm" style={{ flex: 1 }} onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>
+                      </div>
+                    )}
+                  </div>
                 ))}
-                {!grnList.length && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No GRNs found</td></tr>}
-              </tbody>
-            </table>
+                {!grnList.length && (
+                  <div className="grn-card" style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>
+                    No GRNs found
+                  </div>
+                )}
+              </div>
           </div>
         </main>
       </div>
