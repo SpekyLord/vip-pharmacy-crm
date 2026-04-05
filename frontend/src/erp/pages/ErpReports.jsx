@@ -10,7 +10,7 @@ import useDashboard from '../hooks/useDashboard';
 
 const pageStyles = `
   .reports-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .reports-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .reports-main { padding: 20px; max-width: 1200px; margin: 0 auto; }
   .reports-header { margin-bottom: 20px; }
   .reports-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 4px; }
   .reports-header p { color: var(--erp-muted); font-size: 13px; margin: 0; }
@@ -31,7 +31,7 @@ const pageStyles = `
   .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
   .btn-primary { background: #2563eb; color: white; }
   .btn:disabled { opacity: 0.5; }
-  @media(max-width: 768px) { .reports-main { padding: 12px; } .report-cards { grid-template-columns: 1fr; } }
+  @media(max-width: 768px) { .reports-main { padding: 96px 16px 88px; } .report-cards { grid-template-columns: 1fr; } }
 `;
 
 function fmt(n) { return '₱' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -66,12 +66,12 @@ export default function ErpReports() {
   };
 
   return (
-    <div className="reports-page">
+    <div className="admin-page erp-page reports-page">
       <style>{pageStyles}</style>
       <Navbar />
-      <div style={{ display: 'flex' }}>
+      <div className="admin-layout">
         <Sidebar />
-        <div className="reports-main">
+        <main className="admin-main reports-main">
           <div className="reports-header">
             <h1>ERP Reports</h1>
             <p>Sales summaries, collection reports, expense breakdowns, and P&L analysis</p>
@@ -214,7 +214,7 @@ export default function ErpReports() {
           <Link to="/erp" style={{ display: 'inline-block', marginTop: 8, color: 'var(--erp-accent, #1e5eff)', fontSize: 13 }}>
             &larr; Back to Dashboard
           </Link>
-        </div>
+        </main>
       </div>
     </div>
   );
