@@ -217,7 +217,11 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
   const { entry_id, override_tier, override_reason, remove_override } = req.body;
   if (!entry_id) return res.status(400).json({ success: false, message: 'entry_id is required' });
 
-  const smer = await SmerEntry.findOne({ _id: req.params.id, status: { $in: ['DRAFT', 'ERROR'] } });
+  const smer = await SmerEntry.findOne({
+    _id: req.params.id,
+    ...req.tenantFilter,
+    status: { $in: ['DRAFT', 'ERROR'] }
+  });
   if (!smer) return res.status(404).json({ success: false, message: 'SMER not found or not editable' });
 
   const entry = smer.daily_entries.id(entry_id);

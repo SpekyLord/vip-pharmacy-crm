@@ -497,7 +497,16 @@ const getDoctorVisits = catchAsync(async (req, res) => {
  * @access  All authenticated users
  */
 const getDoctorProducts = catchAsync(async (req, res) => {
-  const doctor = await Doctor.findById(req.params.id).populate({
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid doctor ID',
+    });
+  }
+
+  const doctor = await Doctor.findOne({ _id: id, isActive: true }).populate({
     path: 'assignedProducts',
     match: { status: 'active' },
     populate: { path: 'product', select: 'name genericName dosage category image description usage safety' },

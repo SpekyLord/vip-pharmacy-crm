@@ -96,8 +96,8 @@ const visitService = {
   },
 
   // Batch check visit status for multiple doctors (eliminates N+1 problem)
-  canVisitBatch: async (doctorIds) => {
-    const response = await api.post('/visits/can-visit-batch', { doctorIds });
+  canVisitBatch: async (doctorIds, options = {}) => {
+    const response = await api.post('/visits/can-visit-batch', { doctorIds }, options);
     return response.data;
   },
 
