@@ -380,19 +380,27 @@ export default function PrfCalf() {
                   </select>
                 </label>
                 {/* Card Used — inline right of payment mode for CARD */}
-                {form.doc_type === 'CALF' && form.payment_mode === 'CARD' && myCards.length > 0 && (
-                  <select value={form.funding_card_id || ''} onChange={e => setForm(p => ({ ...p, funding_card_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #a78bfa', fontSize: 13, background: '#f5f3ff' }}>
-                    <option value="">Card Used…</option>
-                    {myCards.filter(c => c.card_type === 'CREDIT_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} ({c.bank})</option>)}
-                    {myCards.filter(c => c.card_type === 'FLEET_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} (Fleet)</option>)}
-                  </select>
+                {form.doc_type === 'CALF' && form.payment_mode === 'CARD' && (
+                  myCards.length > 0 ? (
+                    <select value={form.funding_card_id || ''} onChange={e => setForm(p => ({ ...p, funding_card_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #a78bfa', fontSize: 13, background: '#f5f3ff' }}>
+                      <option value="">Card Used…</option>
+                      {myCards.filter(c => c.card_type === 'CREDIT_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} ({c.bank})</option>)}
+                      {myCards.filter(c => c.card_type === 'FLEET_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} (Fleet)</option>)}
+                    </select>
+                  ) : (
+                    <span style={{ fontSize: 12, color: '#ef4444', padding: '6px 10px' }}>No cards assigned — ask admin to assign a card to you</span>
+                  )
                 )}
                 {/* Funding Bank — inline right for BANK_TRANSFER/GCASH */}
-                {form.doc_type === 'CALF' && (form.payment_mode === 'BANK_TRANSFER' || form.payment_mode === 'GCASH') && bankAccounts.length > 0 && (
-                  <select value={form.funding_account_id || ''} onChange={e => setForm(p => ({ ...p, funding_account_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #67e8f9', fontSize: 13, background: '#ecfeff' }}>
-                    <option value="">Funding Bank…</option>
-                    {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
-                  </select>
+                {form.doc_type === 'CALF' && (form.payment_mode === 'BANK_TRANSFER' || form.payment_mode === 'GCASH') && (
+                  bankAccounts.length > 0 ? (
+                    <select value={form.funding_account_id || ''} onChange={e => setForm(p => ({ ...p, funding_account_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #67e8f9', fontSize: 13, background: '#ecfeff' }}>
+                      <option value="">Funding Bank…</option>
+                      {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
+                    </select>
+                  ) : (
+                    <span style={{ fontSize: 12, color: '#ef4444', padding: '6px 10px' }}>No bank accounts configured</span>
+                  )
                 )}
               </div>
               {form.payment_mode === 'CHECK' && (

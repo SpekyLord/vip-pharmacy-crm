@@ -19,13 +19,16 @@ const listCards = catchAsync(async (req, res) => {
   res.json({ success: true, data: cards });
 });
 
-// ═══ Get cards assigned to current user ═══
+// ═══ Get cards accessible to current user ═══
+// Admin/president/finance see all entity cards; BDMs see only assigned cards
 const getMyCards = catchAsync(async (req, res) => {
-  const cards = await CreditCard.find({
-    entity_id: req.entityId,
-    assigned_to: req.user._id,
-    is_active: true
-  }).sort({ card_type: 1, card_name: 1 }).lean();
+  const filter = { entity_id: req.entityId, is_active: true };
+  const privileged = ['admin', 'president', 'finance', 'ceo'].includes(req.user.role);
+  if (!privileged) {
+    filter.assigned_to = req.user._id;
+  }
+  const cards = await CreditCard.find(filter)
+    .sort({ card_type: 1, card_name: 1 }).lean();
 
   res.json({ success: true, data: cards });
 });
