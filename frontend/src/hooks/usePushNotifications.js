@@ -204,7 +204,7 @@ const usePushNotifications = () => {
    */
   const showTestNotification = useCallback(() => {
     if (permission === 'granted') {
-      const notification = new Notification('VIP Pharmacy CRM', {
+      const notification = new Notification('VIP', {
         body: 'Push notifications are now enabled!',
         icon: '/favicon.ico',
         badge: '/favicon.ico',

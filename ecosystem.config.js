@@ -10,6 +10,11 @@ module.exports = {
         PORT: 5000,
         ENABLE_SCHEDULER: 'false',
       },
+      env_development: {
+        NODE_ENV: 'development',
+        PORT: 5000,
+        ENABLE_SCHEDULER: 'false',
+      },
       error_file: './logs/err.log',
       out_file: './logs/out.log',
       log_file: './logs/combined.log',
@@ -25,6 +30,10 @@ module.exports = {
       exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
+        ENABLE_SCHEDULER: 'true',
+      },
+      env_development: {
+        NODE_ENV: 'development',
         ENABLE_SCHEDULER: 'true',
       },
       error_file: './logs/worker-err.log',

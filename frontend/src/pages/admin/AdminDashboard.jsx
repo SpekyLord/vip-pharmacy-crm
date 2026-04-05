@@ -16,6 +16,14 @@ import clientService from '../../services/clientService';
 import scheduleService from '../../services/scheduleService';
 import api from '../../services/api';
 
+const CYCLE_ANCHOR = new Date(2026, 0, 5);
+
+const getCycleWeek = (date) => {
+  const diffDays = Math.floor((date.getTime() - CYCLE_ANCHOR.getTime()) / 86400000);
+  const dayInCycle = ((diffDays % 28) + 28) % 28;
+  return Math.floor(dayInCycle / 7) + 1; // 1-4
+};
+
 const pageStyles = `
   :root {
     --page-bg: #f1f5f9;
@@ -114,18 +122,47 @@ const AdminDashboard = () => {
       try {
         setLoading(true);
         setError(null);
-        const [doctorsRes, visitStatsRes, clientStatsRes, usersRes, cptSummaryRes, todayStatsRes] = await Promise.all([
+        const [doctorsRes, usersRes, cptSummaryRes, todayStatsRes, cycleRes] = await Promise.all([
           doctorService.getAll({ limit: 0 }),
-          visitService.getStats(),
-          clientService.getStats(),
           api.get('/users', { params: { limit: 0 } }),
           scheduleService.getCPTGridSummary().catch(() => ({ data: [] })),
           visitService.getAdminTodayStats().catch(() => ({ data: {} })),
+          scheduleService.getCycleSchedule().catch(() => ({ data: {} })),
         ]);
-        const vipVisitsTotal = visitStatsRes.data?.summary?.totalVisits || 0;
-        const regularVisitsTotal = clientStatsRes.data?.summary?.totalVisits || 0;
-        const vipWeeklyVisits = visitStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0;
-        const regularWeeklyVisits = clientStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0;
+
+        const currentCycleNumber = Number.isInteger(cycleRes.data?.cycleNumber)
+          ? cycleRes.data.cycleNumber
+          : null;
+        const currentCycleWeek = Number.isInteger(cycleRes.data?.currentWeek)
+          ? cycleRes.data.currentWeek
+          : getCycleWeek(new Date());
+
+        const cycleParams = currentCycleNumber != null ? { cycleNumber: currentCycleNumber } : {};
+
+        const [visitCycleStatsRes, clientCycleStatsRes] = await Promise.all([
+          visitService.getStats(cycleParams),
+          clientService.getStats(cycleParams),
+        ]);
+
+        const vipVisitsTotal = visitCycleStatsRes.data?.summary?.totalVisits || 0;
+        const regularVisitsTotal = clientCycleStatsRes.data?.summary?.totalVisits || 0;
+
+        let vipWeeklyVisits = 0;
+        let regularWeeklyVisits = 0;
+
+        if (currentCycleNumber != null) {
+          const weekParams = { cycleNumber: currentCycleNumber, cycleWeek: currentCycleWeek };
+          const [visitWeekStatsRes, clientWeekStatsRes] = await Promise.all([
+            visitService.getStats(weekParams),
+            clientService.getStats(weekParams),
+          ]);
+          vipWeeklyVisits = visitWeekStatsRes.data?.summary?.totalVisits || 0;
+          regularWeeklyVisits = clientWeekStatsRes.data?.summary?.totalVisits || 0;
+        } else {
+          // Fallback if cycle context is unavailable.
+          vipWeeklyVisits = visitCycleStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0;
+          regularWeeklyVisits = clientCycleStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0;
+        }
 
         // Aggregate target vs actual from CPT summary
         const cptData = cptSummaryRes.data || [];

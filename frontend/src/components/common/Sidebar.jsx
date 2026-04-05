@@ -595,6 +595,9 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
 const getCrmMenuConfig = (role, unreadCount = 0) => {
   switch (role) {
     case 'admin':
+    case 'finance':
+    case 'president':
+    case 'ceo':
       return {
         roleTitle: 'Administrator',
         roleSubtitle: 'Full Access',
