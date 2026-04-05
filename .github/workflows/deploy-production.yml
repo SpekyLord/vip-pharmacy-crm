@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
+        uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
 
@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           PORT="${PROD_SSH_PORT:-22}"
-          ssh -o BatchMode=yes -p "$PORT" "$PROD_SSH_USER@$PROD_SSH_HOST" <<'EOF'
+          ssh -T -o BatchMode=yes -p "$PORT" "$PROD_SSH_USER@$PROD_SSH_HOST" <<'EOF'
             set -euo pipefail
             cd /var/www/vip-pharmacy-crm
             git fetch origin
