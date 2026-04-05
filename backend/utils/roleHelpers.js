@@ -13,4 +13,3 @@ module.exports = {
   CRM_ADMIN_LIKE_ROLES,
   isCrmAdminLike,
 };
-

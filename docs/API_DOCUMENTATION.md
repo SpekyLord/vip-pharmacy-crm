@@ -56,9 +56,13 @@ After 5 failed login attempts, the account is locked for 15 minutes:
 ### 1.5 Role-Based Access
 | Role | Description | Access Level |
 |------|-------------|--------------|
-| `admin` | System administrator | Full access to all resources and regions |
-| `medrep` | Medical representative manager | Manages product assignments |
-| `bdm` | Business Development Manager | Limited to assigned regions |
+| `admin` | System administrator | Full CRM access to all resources and regions |
+| `president` | Executive role | Full CRM access (admin-equivalent) |
+| `ceo` | Executive role | Full CRM access (admin-equivalent) |
+| `finance` | Finance leadership role | Full CRM access (admin-equivalent) |
+| `employee` | Business Development Manager (BDM) | Limited to assigned VIP Clients and owned resources |
+
+**Note:** In CRM authorization, `admin`, `president`, `ceo`, and `finance` are treated as elevated admin-like roles.
 
 ---
 
@@ -477,7 +481,7 @@ Get visits with filtering. BDMs see only their visits; admins see all.
 | limit | Number | Items per page (default: 20, max: 100) |
 | status | String | Filter by status (completed, cancelled) |
 | monthYear | String | Filter by month (YYYY-MM format) |
-| userId | ObjectId | Filter by user (admin only) |
+| userId | ObjectId | Filter by user (admin-like roles only: `admin`, `president`, `ceo`, `finance`) |
 | vipClientId | ObjectId | Filter by VIP Client |
 
 **Response (200):**
@@ -786,8 +790,12 @@ Get visit statistics.
 **Query Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
+| cycleNumber | Number | Filter by 4-week cycle number (takes precedence over `monthYear`) |
+| cycleWeek | Number | Optional cycle week filter (1-4, used with `cycleNumber`) |
 | monthYear | String | Filter by month |
-| userId | ObjectId | Filter by user (admin only) |
+| userId | ObjectId | Filter by user (admin-like roles only: `admin`, `president`, `ceo`, `finance`) |
+
+**Filter precedence:** `cycleNumber` (+ optional `cycleWeek`) -> `monthYear` -> all-time
 
 **Response (200):**
 ```json
@@ -808,6 +816,8 @@ Get visit statistics.
   }
 }
 ```
+
+> Note: `/clients/visits/stats` supports the same `cycleNumber`, `cycleWeek`, `monthYear`, and `userId` query filters with the same precedence rules.
 
 ---
 
