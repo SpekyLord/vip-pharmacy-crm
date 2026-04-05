@@ -437,30 +437,30 @@ export default function CollectionSession() {
               <div className="form-row">
                 <div className="form-group">
                   <label>Payment Mode</label>
-                  <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
-                    <option value="CHECK">Check</option>
+                  <select value={paymentMode} onChange={e => { setPaymentMode(e.target.value); setBankAccountId(''); setPettyCashFundId(''); }}>
                     <option value="CASH">Cash</option>
+                    <option value="CHECK">Check</option>
+                    <option value="GCASH">GCash</option>
                     <option value="ONLINE">Online / Bank Transfer</option>
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>{paymentMode === 'CASH' ? 'Deposit To' : 'Deposited At'}</label>
-                  <select value={pettyCashFundId || bankAccountId || ''} onChange={e => {
-                    const val = e.target.value;
-                    const isPc = pettyCashFunds.some(f => f._id === val);
-                    if (isPc) { setPettyCashFundId(val); setBankAccountId(''); }
-                    else { setBankAccountId(val); setPettyCashFundId(''); }
-                  }} style={{ width: '100%' }}>
-                    <option value="">Select destination…</option>
-                    {pettyCashFunds.length > 0 && (
-                      <optgroup label="Petty Cash Funds">
-                        {pettyCashFunds.map(f => <option key={f._id} value={f._id}>{f.fund_code} — {f.fund_name}</option>)}
-                      </optgroup>
-                    )}
-                    <optgroup label="Bank Accounts">
-                      {bankAccountsList.map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
-                    </optgroup>
-                  </select>
+                  <label>{paymentMode === 'CASH' ? 'Deposit To (Petty Cash)' : paymentMode === 'GCASH' ? 'GCash Account' : 'Deposited At (Bank)'}</label>
+                  {paymentMode === 'CASH' ? (
+                    <select value={pettyCashFundId || ''} onChange={e => { setPettyCashFundId(e.target.value); setBankAccountId(''); }} style={{ width: '100%' }}>
+                      <option value="">Select petty cash fund…</option>
+                      {pettyCashFunds.map(f => <option key={f._id} value={f._id}>{f.fund_code} — {f.fund_name}</option>)}
+                      {!pettyCashFunds.length && <option disabled>No petty cash funds assigned</option>}
+                    </select>
+                  ) : (
+                    <select value={bankAccountId || ''} onChange={e => { setBankAccountId(e.target.value); setPettyCashFundId(''); }} style={{ width: '100%' }}>
+                      <option value="">Select bank account…</option>
+                      {bankAccountsList
+                        .filter(b => paymentMode === 'GCASH' ? b.bank_code?.includes('GCASH') || b.bank_name?.toLowerCase().includes('gcash') : true)
+                        .map(b => <option key={b._id} value={b._id}>{b.bank_name}{b.account_no ? ` (${b.account_no})` : ''}</option>)}
+                      {!bankAccountsList.length && <option disabled>No bank accounts assigned</option>}
+                    </select>
+                  )}
                 </div>
               </div>
 
