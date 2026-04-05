@@ -15,7 +15,7 @@ const PAYMENT_MODES = ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'CARD', 'OTHER
 export default function PrfCalf() {
   const { user } = useAuth();
   const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines, loading } = useExpenses();
-  const { getMyCards, listBankAccounts } = useAccounting();
+  const { getMyCards, getMyBankAccounts } = useAccounting();
 
   const [docs, setDocs] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
@@ -55,7 +55,7 @@ export default function PrfCalf() {
   useEffect(() => { loadDocs(); }, [loadDocs]);
   useEffect(() => {
     getMyCards().then(r => setMyCards(r?.data || [])).catch(err => console.error('[PrfCalf]', err.message));
-    listBankAccounts().then(r => setBankAccounts(r?.data || [])).catch(err => console.error('[PrfCalf]', err.message));
+    getMyBankAccounts().then(r => setBankAccounts(r?.data || [])).catch(err => console.error('[PrfCalf]', err.message));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load pending partner rebates + pending CALF lines

@@ -7,6 +7,7 @@ const { bankAccounts, paymentModes, expenseComponents } = require('../controller
 const adminFinance = roleCheck('admin', 'finance');
 
 // Bank Accounts
+router.get('/bank-accounts/my-accounts', protect, bankAccounts.getMyAccounts);
 router.get('/bank-accounts', protect, bankAccounts.getAll);
 router.post('/bank-accounts', protect, adminFinance, bankAccounts.create);
 router.put('/bank-accounts/:id', protect, adminFinance, bankAccounts.update);

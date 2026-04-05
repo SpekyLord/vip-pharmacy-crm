@@ -11,6 +11,7 @@ export default function useAccounting() {
 
   // ═══ Bank Accounts (via lookups) ═══
   const listBankAccounts = () => api.get('/lookups/bank-accounts');
+  const getMyBankAccounts = () => api.get('/lookups/bank-accounts/my-accounts');
 
   // ═══ COA ═══
   const listAccounts = (params) => api.get('/coa', { params });
@@ -78,7 +79,7 @@ export default function useAccounting() {
     // Credit Cards
     listCreditCards, getMyCards, createCreditCard, updateCreditCard,
     // Bank Accounts
-    listBankAccounts,
+    listBankAccounts, getMyBankAccounts,
     // COA
     listAccounts, createAccount, updateAccount,
     // Journals

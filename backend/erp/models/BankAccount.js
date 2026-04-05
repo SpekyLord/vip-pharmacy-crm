@@ -10,9 +10,15 @@ const bankAccountSchema = new mongoose.Schema({
   opening_balance: { type: Number, default: 0 },
   current_balance: { type: Number, default: 0 },
   statement_import_format: { type: String, enum: ['CSV', 'OFX', 'MT940'], default: 'CSV' },
+  // Multiple users can be assigned to deposit/use this account
+  assigned_users: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   is_active: { type: Boolean, default: true }
 }, { timestamps: true, collection: 'erp_bank_accounts' });
 
 bankAccountSchema.index({ entity_id: 1, bank_code: 1 }, { unique: true });
+bankAccountSchema.index({ entity_id: 1, assigned_users: 1 });
 
 module.exports = mongoose.model('BankAccount', bankAccountSchema);

@@ -58,7 +58,7 @@ export default function CollectionSession() {
   const collections = useCollections();
   const { hospitals } = useHospitals();
   const { settings } = useSettings();
-  const { listBankAccounts } = useAccounting();
+  const { getMyBankAccounts } = useAccounting();
   const navigate = useNavigate();
 
   const [hospitalId, setHospitalId] = useState('');
@@ -115,7 +115,7 @@ export default function CollectionSession() {
 
   // Load bank accounts + petty cash funds for "Deposited At" dropdown
   useEffect(() => {
-    listBankAccounts().then(r => setBankAccountsList(r?.data || [])).catch(err => console.error('[CollectionSession]', err.message));
+    getMyBankAccounts().then(r => setBankAccountsList(r?.data || [])).catch(err => console.error('[CollectionSession]', err.message));
     import('../../services/api').then(({ default: api }) => {
       api.get('/erp/petty-cash/funds').then(res => setPettyCashFunds(res.data?.data || [])).catch(err => console.error('[CollectionSession]', err.message));
     });
