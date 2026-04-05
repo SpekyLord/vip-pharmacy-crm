@@ -183,10 +183,10 @@ export default function Smer() {
     }
   };
 
-  const handleValidate = async () => { try { await validateSmer(); loadSmers(); } catch {} };
-  const handleSubmit = async () => { try { await submitSmer(); loadSmers(); } catch {} };
-  const handleReopen = async (id) => { try { await reopenSmer([id]); loadSmers(); } catch {} };
-  const handleDelete = async (id) => { try { await deleteDraftSmer(id); loadSmers(); } catch {} };
+  const handleValidate = async () => { try { await validateSmer(); loadSmers(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Validation failed'); } };
+  const handleSubmit = async () => { try { await submitSmer(); loadSmers(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Submit failed'); } };
+  const handleReopen = async (id) => { try { await reopenSmer([id]); loadSmers(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Reopen failed'); } };
+  const handleDelete = async (id) => { try { await deleteDraftSmer(id); loadSmers(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Delete failed'); } };
 
   const canOverride = ['admin', 'finance', 'president'].includes(user?.role);
 

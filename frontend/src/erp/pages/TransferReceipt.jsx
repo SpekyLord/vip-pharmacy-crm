@@ -42,7 +42,7 @@ export default function TransferReceipt() {
         t.target_entity_id?._id === user?.entity_id || ['president', 'ceo', 'admin'].includes(user?.role)
       );
       setIncoming(filtered);
-    } catch { /* */ }
+    } catch (err) { console.error('[TransferReceipt] load error:', err.message); }
   }, [user]);
 
   useEffect(() => { fetchIncoming(); }, []);

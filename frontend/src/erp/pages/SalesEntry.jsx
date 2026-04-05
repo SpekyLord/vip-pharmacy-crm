@@ -1032,7 +1032,7 @@ export default function SalesEntry() {
                   {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
                 </select>
                 <label>CSI Date</label>
-                <input type="date" value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : '') : ''} onChange={e => updateRow(idx, 'csi_date', e.target.value)} />
+                <input type="date" value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) : ''} onChange={e => updateRow(idx, 'csi_date', e.target.value)} />
                 <label>CSI #</label>
                 <input value={row.doc_ref || ''} onChange={e => updateRow(idx, 'doc_ref', e.target.value)} />
                 {row.line_items?.map((item, li) => {

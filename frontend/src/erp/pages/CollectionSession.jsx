@@ -134,7 +134,7 @@ export default function CollectionSession() {
   useEffect(() => {
     const activeId = hospitalId || customerId;
     if (!activeId) { setOpenCsis([]); setSelectedCsis(new Map()); return; }
-    collections.getOpenCsis(activeId).then(res => {
+    collections.getOpenCsis(activeId, null, { isCustomer: !!customerId }).then(res => {
       setOpenCsis(res?.data || []);
       setSelectedCsis(new Map());
       if (hospitalId) {

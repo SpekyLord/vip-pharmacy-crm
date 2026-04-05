@@ -85,14 +85,15 @@ const getCollectionById = catchAsync(async (req, res) => {
 
 const getOpenCsisEndpoint = catchAsync(async (req, res) => {
   const hospitalId = req.query.hospital_id;
-  if (!hospitalId) return res.status(400).json({ success: false, message: 'hospital_id required' });
+  const customerId = req.query.customer_id;
+  if (!hospitalId && !customerId) return res.status(400).json({ success: false, message: 'hospital_id or customer_id required' });
 
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.entity_id
     ? req.query.entity_id : req.entityId;
   const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.bdm_id
     ? req.query.bdm_id : req.bdmId;
 
-  const csis = await getOpenCsis(entityId, bdmId, hospitalId);
+  const csis = await getOpenCsis(entityId, bdmId, hospitalId, customerId);
   res.json({ success: true, data: csis });
 });
 

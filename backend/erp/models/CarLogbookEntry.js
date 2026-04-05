@@ -14,6 +14,7 @@ const fuelEntrySchema = new mongoose.Schema({
   price_per_liter: { type: Number, default: 0 },
   total_amount: { type: Number, default: 0 },
   receipt_url: String,
+  receipt_attachment_id: String,
   receipt_ocr_data: { type: mongoose.Schema.Types.Mixed },
   payment_mode: { type: String, enum: ['CASH', 'SHELL_FLEET_CARD', 'GCASH', 'CARD', 'OTHER'], default: 'CASH' },
   funding_card_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CreditCard' },

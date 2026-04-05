@@ -19,6 +19,7 @@ const expenseLineSchema = new mongoose.Schema({
   net_of_vat: { type: Number, default: 0 },
   or_number: { type: String, trim: true },
   or_photo_url: String,
+  or_attachment_id: String,
   or_ocr_data: { type: mongoose.Schema.Types.Mixed },
   payment_mode: { type: String, enum: ['CASH', 'GCASH', 'CARD', 'BANK_TRANSFER', 'CHECK', 'ONLINE', 'OTHER'], default: 'CASH' },
   funding_card_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CreditCard' },
