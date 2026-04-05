@@ -23,15 +23,21 @@ const pageStyles = `
   .section-label { font-size: 11px; font-weight: 700; color: var(--erp-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
   .summary-panel { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
   .summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .summary-table-wrap { overflow-x: auto; }
   .summary-table th { text-align: left; padding: 8px 10px; background: var(--erp-accent-soft); font-weight: 600; }
   .summary-table td { padding: 8px 10px; border-top: 1px solid var(--erp-border); }
   .summary-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
-  .controls { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+  .controls { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
   .controls input, .controls select { padding: 8px 12px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 13px; background: var(--erp-panel); color: var(--erp-text); }
   .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
   .btn-primary { background: #2563eb; color: white; }
   .btn:disabled { opacity: 0.5; }
-  @media(max-width: 768px) { .reports-main { padding: 96px 16px 88px; } .report-cards { grid-template-columns: 1fr; } }
+  @media(max-width: 768px) {
+    .reports-main { padding: 96px 16px 88px; }
+    .report-cards { grid-template-columns: 1fr; }
+    .controls { flex-direction: column; align-items: stretch; }
+    .controls input, .controls select, .controls .btn { width: 100%; }
+  }
 `;
 
 function fmt(n) { return '₱' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -171,21 +177,23 @@ export default function ErpReports() {
           {activeReport === 'sales' && salesData && !loading && (
             <div className="summary-panel">
               <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Sales Summary — {period}</h3>
-              <table className="summary-table">
-                <thead><tr><th>Hospital</th><th>Invoices</th><th style={{ textAlign: 'right' }}>Total Sales</th><th style={{ textAlign: 'right' }}>VAT</th><th style={{ textAlign: 'right' }}>Net</th></tr></thead>
-                <tbody>
-                  {salesData.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No sales data for this period</td></tr>}
-                  {salesData.map((r) => (
-                    <tr key={r._id || r.hospital_name}>
-                      <td style={{ fontWeight: 600 }}>{r.hospital_name}</td>
-                      <td>{r.total_invoices}</td>
-                      <td>{fmt(r.total_sales)}</td>
-                      <td>{fmt(r.total_vat)}</td>
-                      <td>{fmt(r.total_net)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="summary-table-wrap">
+                <table className="summary-table">
+                  <thead><tr><th>Hospital</th><th>Invoices</th><th style={{ textAlign: 'right' }}>Total Sales</th><th style={{ textAlign: 'right' }}>VAT</th><th style={{ textAlign: 'right' }}>Net</th></tr></thead>
+                  <tbody>
+                    {salesData.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No sales data for this period</td></tr>}
+                    {salesData.map((r) => (
+                      <tr key={r._id || r.hospital_name}>
+                        <td style={{ fontWeight: 600 }}>{r.hospital_name}</td>
+                        <td>{r.total_invoices}</td>
+                        <td>{fmt(r.total_sales)}</td>
+                        <td>{fmt(r.total_vat)}</td>
+                        <td>{fmt(r.total_net)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -193,21 +201,23 @@ export default function ErpReports() {
           {activeReport === 'collections' && collData && !loading && (
             <div className="summary-panel">
               <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Collection Summary — {period}</h3>
-              <table className="summary-table">
-                <thead><tr><th>Hospital</th><th>CRs</th><th style={{ textAlign: 'right' }}>Collected</th><th style={{ textAlign: 'right' }}>Commission</th><th style={{ textAlign: 'right' }}>Rebates</th></tr></thead>
-                <tbody>
-                  {collData.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No collection data for this period</td></tr>}
-                  {collData.map((r) => (
-                    <tr key={r._id || r.hospital_name}>
-                      <td style={{ fontWeight: 600 }}>{r.hospital_name}</td>
-                      <td>{r.total_crs}</td>
-                      <td>{fmt(r.total_collected)}</td>
-                      <td>{fmt(r.total_commission)}</td>
-                      <td>{fmt(r.total_rebates)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="summary-table-wrap">
+                <table className="summary-table">
+                  <thead><tr><th>Hospital</th><th>CRs</th><th style={{ textAlign: 'right' }}>Collected</th><th style={{ textAlign: 'right' }}>Commission</th><th style={{ textAlign: 'right' }}>Rebates</th></tr></thead>
+                  <tbody>
+                    {collData.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No collection data for this period</td></tr>}
+                    {collData.map((r) => (
+                      <tr key={r._id || r.hospital_name}>
+                        <td style={{ fontWeight: 600 }}>{r.hospital_name}</td>
+                        <td>{r.total_crs}</td>
+                        <td>{fmt(r.total_collected)}</td>
+                        <td>{fmt(r.total_commission)}</td>
+                        <td>{fmt(r.total_rebates)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
