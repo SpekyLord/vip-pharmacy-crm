@@ -297,7 +297,7 @@ export default function MyStock() {
     if (!productId) return;
     setLoading(true);
     try {
-      const res = await inventory.getLedger(productId, { limit: 100, warehouse_id: warehouseId });
+      const res = await inventory.getLedger(productId, { limit: 0, warehouse_id: warehouseId });
       if (res?.data) setLedgerEntries(res.data);
     } catch (err) { console.error('[MyStock] load error:', err.message); } finally { setLoading(false); }
   };

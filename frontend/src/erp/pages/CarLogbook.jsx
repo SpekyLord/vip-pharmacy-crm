@@ -108,7 +108,7 @@ export default function CarLogbook() {
 
   const loadEntries = useCallback(async () => {
     try {
-      const res = await getCarLogbookList({ period, cycle, limit: 50 });
+      const res = await getCarLogbookList({ period, cycle, limit: 0 });
       setEntries(res?.data || []);
     } catch { /* ignore */ }
   }, [period, cycle]);

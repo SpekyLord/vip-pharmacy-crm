@@ -87,7 +87,7 @@ export default function CreditCardManager() {
 
   const loadUsers = useCallback(async () => {
     try {
-      const res = await crmApi.get('/users', { params: { limit: 0 } });
+      const res = await crmApi.get('/users', { params: { limit: 0 } }); // limit: 0 = return all
       const list = res?.data?.data || [];
       setUsers(list);
       if (!list.length) console.warn('[CreditCardManager] No users returned from /users — check role permissions');

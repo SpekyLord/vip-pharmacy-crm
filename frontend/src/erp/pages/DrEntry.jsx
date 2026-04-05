@@ -228,7 +228,7 @@ export default function DrEntry() {
 
   const loadDRs = async () => {
     try {
-      const res = await consignment.getDRs({ limit: 50 });
+      const res = await consignment.getDRs({ limit: 0 });
       if (res?.data) setDrList(res.data);
     } catch (err) { console.error('[DrEntry] load error:', err.message); }
   };

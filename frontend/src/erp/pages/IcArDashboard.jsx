@@ -61,7 +61,7 @@ export default function IcArDashboard() {
     try {
       const [sumRes, settRes] = await Promise.all([
         ic.getIcArSummary(),
-        ic.getSettlements({ limit: 50 })
+        ic.getSettlements({ limit: 0 })
       ]);
       setSummary(sumRes?.data || null);
       setSettlements(settRes?.data || []);

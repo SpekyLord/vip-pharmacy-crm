@@ -75,7 +75,7 @@ export default function WarehouseManager() {
     try {
       const [whRes, usersRes] = await Promise.all([
         whApi.getWarehouses(),
-        api.get('/users', { params: { limit: 100 } })
+        api.get('/users', { params: { limit: 0 } })
       ]);
       setWarehouses(whRes?.data || []);
       setUsers(usersRes?.data?.data || usersRes?.data || []);

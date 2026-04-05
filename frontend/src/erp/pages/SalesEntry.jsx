@@ -628,7 +628,7 @@ export default function SalesEntry() {
   const loadSales = async () => {
     try {
       // Load all non-final rows: DRAFT (editable), VALID (submittable), ERROR (fixable), POSTED (reopenable)
-      const res = await sales.getSales({ limit: 100 });
+      const res = await sales.getSales({ limit: 0 });
       const activeRows = (res?.data || []).filter(s =>
         ['DRAFT', 'VALID', 'ERROR', 'POSTED'].includes(s.status)
       );

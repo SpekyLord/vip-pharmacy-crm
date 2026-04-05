@@ -36,7 +36,7 @@ export default function TransferReceipt() {
 
   const fetchIncoming = useCallback(async () => {
     try {
-      const res = await getTransfers({ status: 'SHIPPED', limit: 50 });
+      const res = await getTransfers({ status: 'SHIPPED', limit: 0 });
       // Filter to show only transfers targeting the user's entity
       const filtered = (res.data || []).filter(t =>
         t.target_entity_id?._id === user?.entity_id || ['president', 'ceo', 'admin'].includes(user?.role)
