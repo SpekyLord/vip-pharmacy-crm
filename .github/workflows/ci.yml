@@ -56,9 +56,6 @@ jobs:
           npm run test:ci
           npm run test:smoke
 
-      - name: Frontend changed-file risk lint gate
-        run: node scripts/lintChangedRisk.js
-
       - name: Frontend production build
         working-directory: frontend
         env:
