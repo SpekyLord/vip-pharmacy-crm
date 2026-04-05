@@ -66,6 +66,15 @@ const pageStyles = `
   .history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .history-table th { padding: 10px 16px; text-align: left; font-weight: 600; color: var(--erp-muted); background: var(--erp-bg); }
   .history-table td { padding: 10px 16px; border-top: 1px solid var(--erp-border); }
+  .history-card-list { display: none; }
+  .history-card { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; padding: 12px 14px; margin: 10px 12px 0; }
+  .history-card-header { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .history-card-title { font-weight: 700; font-size: 14px; color: var(--erp-text); }
+  .history-card-sub { font-size: 12px; color: var(--erp-muted); }
+  .history-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .history-card-item { display: flex; flex-direction: column; gap: 2px; }
+  .history-card-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; font-weight: 700; }
+  .history-card-value { font-size: 12px; color: var(--erp-text); }
 
   .scan-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
   .scan-modal { background: var(--erp-panel, #fff); border-radius: 16px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 24px; position: relative; }
@@ -86,9 +95,36 @@ const pageStyles = `
   .match-none { background: #fef2f2; color: #991b1b; }
 
   @media (max-width: 768px) {
-    .dr-main { padding: 12px; }
-    .dr-table { font-size: 12px; }
-    .dr-table th, .dr-table td { padding: 4px 4px; }
+    .dr-entry-page { padding-top: 12px; }
+    .dr-main { padding: 76px 12px 96px; }
+    .dr-header { flex-direction: column; align-items: flex-start; }
+    .dr-actions { width: 100%; }
+    .dr-actions .btn { flex: 1; }
+    .dr-grid { overflow: hidden; }
+    .dr-table { display: block; font-size: 12px; }
+    .dr-table thead { display: none; }
+    .dr-table tbody,
+    .dr-table tr,
+    .dr-table td { display: block; width: 100%; }
+    .dr-table tr { padding: 10px 12px; border: 1px solid var(--erp-border, #dbe4f0); border-radius: 10px; background: var(--erp-panel); margin-bottom: 10px; }
+    .dr-table td { padding: 6px 0; border: none; }
+    .dr-table td:last-child { padding-top: 4px; }
+    .dr-table input,
+    .dr-table .vip-select__control {
+      border: 1px solid #cbd5f5;
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    }
+    .dr-table td:last-child .btn { width: 100%; }
+    .history-table { display: none; }
+    .history-card-list { display: grid; gap: 10px; padding: 0 0 12px; }
+  }
+
+  @media (max-width: 480px) {
+    .dr-entry-page { padding-top: 16px; }
+    .dr-main { padding-top: 72px; padding-bottom: 104px; }
+    .history-card { margin: 10px 10px 0; }
+    .history-card-grid { grid-template-columns: 1fr; }
   }
 `;
 
@@ -435,7 +471,7 @@ export default function DrEntry() {
                       <input type="number" min="1" value={row.qty} onChange={e => updateRow(idx, 'qty', e.target.value)} placeholder="0" />
                     </td>
                     <td>
-                      <button className="btn btn-danger btn-sm" onClick={() => removeRow(idx)} title="Remove">&times;</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => removeRow(idx)} title="Remove">Remove line</button>
                     </td>
                   </tr>
                 ))}
@@ -479,6 +515,48 @@ export default function DrEntry() {
                 {!drList.length && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No DRs found</td></tr>}
               </tbody>
             </table>
+            <div className="history-card-list">
+              {drList.map(d => {
+                const tc = TYPE_COLORS[d.event_type] || {};
+                return (
+                  <div key={d._id} className="history-card">
+                    <div className="history-card-header">
+                      <div>
+                        <div className="history-card-title">{new Date(d.event_date).toLocaleDateString('en-PH')}</div>
+                        <div className="history-card-sub">DR #{d.document_ref}</div>
+                      </div>
+                      <span className="badge" style={{ background: tc.bg, color: tc.text }}>
+                        {TYPE_LABELS[d.event_type] || d.event_type}
+                      </span>
+                    </div>
+
+                    <div className="history-card-grid">
+                      <div className="history-card-item">
+                        <span className="history-card-label">Hospital</span>
+                        <span className="history-card-value">{d.payload?.hospital_name || '—'}</span>
+                      </div>
+                      <div className="history-card-item">
+                        <span className="history-card-label">Items</span>
+                        <span className="history-card-value">{d.payload?.line_items?.length || 0}</span>
+                      </div>
+                    </div>
+
+                    {d.payload?.line_items?.length > 0 && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--erp-muted)' }}>
+                        {d.payload.line_items.map((li, i) => (
+                          <div key={i}>{li.item_key || li.product_id} × {li.qty}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {!drList.length && (
+                <div className="history-card" style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>
+                  No DRs found
+                </div>
+              )}
+            </div>
           </div>
         </main>
       </div>
