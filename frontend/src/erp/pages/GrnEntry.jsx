@@ -213,6 +213,7 @@ export default function GrnEntry() {
   const [grnList, setGrnList] = useState([]);
   const [listFilter, setListFilter] = useState('');
   const [scanOpen, setScanOpen] = useState(false);
+  const [scanMeta, setScanMeta] = useState({});
 
   const productOptions = useMemo(() => (products || []).filter(p => p.is_active !== false), [products]);
 
@@ -270,7 +271,7 @@ export default function GrnEntry() {
 
   const handleScanApply = (lines, meta) => {
     if (lines.length) setLineItems(lines.map(l => ({ ...emptyLine(), ...l })));
-    if (meta?.undertaking_photo_url) setForm(p => ({ ...p, undertaking_photo_url: meta.undertaking_photo_url, undertaking_attachment_id: meta.undertaking_attachment_id }));
+    if (meta?.undertaking_photo_url) setScanMeta({ undertaking_photo_url: meta.undertaking_photo_url, undertaking_attachment_id: meta.undertaking_attachment_id });
   };
 
   return (

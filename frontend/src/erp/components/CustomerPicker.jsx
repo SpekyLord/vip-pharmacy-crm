@@ -84,7 +84,7 @@ export default function CustomerPicker({ value, onChange, saleType, disabled = f
           items.push({
             type: 'hospital',
             id: h._id,
-            name: h.hospital_name || h.name || 'Unknown Hospital',
+            name: h.hospital_name || 'Unknown Hospital',
             sub: h.address || '',
           });
         });

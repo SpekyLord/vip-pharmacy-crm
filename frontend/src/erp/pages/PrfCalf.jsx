@@ -153,8 +153,9 @@ export default function PrfCalf() {
   };
 
   const handleSave = async () => {
+    const { calf_number: _excluded, ...formData } = form;
     const data = {
-      ...form,
+      ...formData,
       period, cycle,
       amount: form.doc_type === 'PRF' ? form.rebate_amount : form.advance_amount
     };
