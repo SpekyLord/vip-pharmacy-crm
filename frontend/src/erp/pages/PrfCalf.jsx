@@ -10,7 +10,8 @@ import { processDocument } from '../services/ocrService';
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
-const PAYMENT_MODES = ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'CARD', 'OTHER'];
+const PRF_PAYMENT_MODES = ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'OTHER'];
+const CALF_PAYMENT_MODES = ['CARD', 'BANK_TRANSFER', 'GCASH', 'CHECK'];
 
 export default function PrfCalf() {
   const { user } = useAuth();
@@ -127,7 +128,8 @@ export default function PrfCalf() {
     partner_bank: '', partner_account_name: '', partner_account_no: '',
     rebate_amount: 0, amount: 0,
     calf_number: '', advance_amount: 0, liquidation_amount: 0,
-    payment_mode: 'CASH', check_no: '', bank: '',
+    payment_mode: docType === 'CALF' ? 'CARD' : 'CASH', check_no: '', bank: '',
+    funding_card_id: null, funding_account_id: null,
     notes: '', photo_urls: []
   });
 
@@ -376,7 +378,7 @@ export default function PrfCalf() {
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ fontSize: 13 }}>Payment Mode:
                   <select value={form.payment_mode} onChange={e => setForm(p => ({ ...p, payment_mode: e.target.value, funding_card_id: null, funding_account_id: null }))} style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }}>
-                    {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                    {(form.doc_type === 'CALF' ? CALF_PAYMENT_MODES : PRF_PAYMENT_MODES).map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </label>
                 {/* Card Used — inline right of payment mode for CARD */}
