@@ -386,8 +386,7 @@ export default function PrfCalf() {
                   myCards.length > 0 ? (
                     <select value={form.funding_card_id || ''} onChange={e => setForm(p => ({ ...p, funding_card_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #a78bfa', fontSize: 13, background: '#f5f3ff' }}>
                       <option value="">Card Used…</option>
-                      {myCards.filter(c => c.card_type === 'CREDIT_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} ({c.bank})</option>)}
-                      {myCards.filter(c => c.card_type === 'FLEET_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} (Fleet)</option>)}
+                      {myCards.filter(c => c.card_type !== 'FLEET_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} ({c.bank})</option>)}
                     </select>
                   ) : (
                     <span style={{ fontSize: 12, color: '#ef4444', padding: '6px 10px' }}>No cards assigned — ask admin to assign a card to you</span>

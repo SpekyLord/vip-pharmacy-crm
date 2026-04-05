@@ -85,6 +85,7 @@ const prfCalfSchema = new mongoose.Schema({
   payment_mode: { type: String, enum: ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'CARD', 'OTHER'], default: 'CASH' },
   funding_account_id: { type: mongoose.Schema.Types.ObjectId, ref: 'BankAccount' },
   funding_card_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CreditCard' },
+  petty_cash_fund_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PettyCashFund' },
   check_no: String,
   bank: String,
 
