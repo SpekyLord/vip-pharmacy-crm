@@ -3,7 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
-import api from '../../services/api';
+import crmApi from '../../services/api';
 
 const pageStyles = `
   .ccm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -87,9 +87,21 @@ export default function CreditCardManager() {
 
   const loadUsers = useCallback(async () => {
     try {
-      const res = await api.get('/users', { params: { limit: 100 } });
-      setUsers(res?.data?.data || []);
-    } catch (err) { console.error('[CreditCardManager] load users error:', err.message); }
+      const res = await crmApi.get('/users', { params: { limit: 0 } });
+      const list = res?.data?.data || [];
+      setUsers(list);
+      if (!list.length) console.warn('[CreditCardManager] No users returned from /users — check role permissions');
+    } catch (err) {
+      console.error('[CreditCardManager] load users error:', err?.response?.status, err?.response?.data?.message || err.message);
+      // Fallback: try ERP people endpoint
+      try {
+        const fallback = await crmApi.get('/erp/people');
+        const people = fallback?.data?.data || [];
+        if (people.length) {
+          setUsers(people.map(p => ({ _id: p.user_id?._id || p.user_id, name: p.user_id?.name || p.full_name, role: p.user_id?.role || 'employee', isActive: true })));
+        }
+      } catch { /* */ }
+    }
   }, []);
 
   useEffect(() => { loadCards(); }, [loadCards]);
