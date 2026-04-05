@@ -39,6 +39,15 @@ const pageStyles = `
   .transfers-table th { background:var(--erp-accent-soft,#e8efff); padding:10px 14px; text-align:left; font-weight:600; white-space:nowrap; }
   .transfers-table td { padding:10px 14px; border-top:1px solid var(--erp-border); }
   .transfers-table tr:hover { background:var(--erp-accent-soft); cursor:pointer; }
+  .transfers-card-list { display: none; }
+  .transfers-card { background: var(--erp-panel,#fff); border:1px solid var(--erp-border); border-radius:12px; padding:12px 14px; margin:10px 12px 0; }
+  .transfers-card-header { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+  .transfers-card-title { font-weight:700; font-size:14px; color:var(--erp-text,#132238); }
+  .transfers-card-sub { font-size:12px; color:var(--erp-muted,#64748b); }
+  .transfers-card-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+  .transfers-card-item { display:flex; flex-direction:column; gap:2px; }
+  .transfers-card-label { font-size:10px; text-transform:uppercase; letter-spacing:0.04em; color:#94a3b8; font-weight:700; }
+  .transfers-card-value { font-size:12px; color:var(--erp-text,#132238); }
 
   .badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600; }
   .btn { padding:8px 16px; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
@@ -74,9 +83,33 @@ const pageStyles = `
   .role-label { font-size:10px; color:#94a3b8; font-weight:400; }
 
   @media(max-width:768px) {
-    .transfers-main { padding:16px; }
+    .transfers-page { padding-top:12px; }
+    .transfers-main { padding:76px 12px 96px; }
+    .transfers-header { flex-direction:column; align-items:flex-start; }
+    .tab-bar { overflow:auto; }
+    .filter-bar { flex-direction:column; align-items:stretch; }
+    .filter-bar .vip-select__control { width:100%; }
     .form-row, .form-row-3 { grid-template-columns:1fr; }
-    .transfers-table { font-size:11px; }
+    .transfers-table { display:none; }
+    .transfers-card-list { display:grid; gap:10px; padding:0 0 12px; }
+    .line-items-grid { display:block; overflow-x:auto; }
+    .line-items-grid thead { display:none; }
+    .line-items-grid tbody,
+    .line-items-grid tr,
+    .line-items-grid td { display:block; width:100%; }
+    .line-items-grid tr { padding:10px 12px; border:1px solid var(--erp-border,#dbe4f0); border-radius:10px; background:var(--erp-panel); margin-bottom:10px; }
+    .line-items-grid td { padding:6px 0; border:none; }
+    .line-items-grid td:last-child { padding-top:4px; }
+    .line-items-grid input,
+    .line-items-grid .vip-select__control { border:1px solid #cbd5f5; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,0.06); }
+    .line-items-grid td:last-child .btn { width:100%; }
+  }
+
+  @media(max-width:480px) {
+    .transfers-page { padding-top:16px; }
+    .transfers-main { padding-top:72px; padding-bottom:104px; }
+    .transfers-card { margin:10px 10px 0; }
+    .transfers-card-grid { grid-template-columns:1fr; }
   }
 `;
 
@@ -413,6 +446,53 @@ export default function TransferOrders() {
                   })}
                 </tbody>
               </table>
+              <div className="transfers-card-list">
+                {!transfers.length && (
+                  <div className="transfers-card" style={{ textAlign: 'center', color: '#94a3b8' }}>No transfers found</div>
+                )}
+                {transfers.map(t => {
+                  const sc = STATUS_COLORS[t.status] || {};
+                  return (
+                    <div key={t._id} className="transfers-card" onClick={() => openDetail(t._id)}>
+                      <div className="transfers-card-header">
+                        <div>
+                          <div className="transfers-card-title">{t.transfer_ref}</div>
+                          <div className="transfers-card-sub">{new Date(t.transfer_date).toLocaleDateString()}</div>
+                        </div>
+                        <span className="badge" style={{ background: sc.bg, color: sc.text }}>{t.status}</span>
+                      </div>
+                      <div className="transfers-card-grid">
+                        <div className="transfers-card-item">
+                          <span className="transfers-card-label">From</span>
+                          <span className="transfers-card-value">{t.source_entity_id?.entity_name || '—'}</span>
+                        </div>
+                        <div className="transfers-card-item">
+                          <span className="transfers-card-label">To</span>
+                          <span className="transfers-card-value">{t.target_entity_id?.entity_name || '—'}</span>
+                        </div>
+                        <div className="transfers-card-item">
+                          <span className="transfers-card-label">Items</span>
+                          <span className="transfers-card-value">{t.total_items}</span>
+                        </div>
+                        <div className="transfers-card-item">
+                          <span className="transfers-card-label">Total</span>
+                          <span className="transfers-card-value">₱{(t.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      </div>
+                      {t.csi_ref && <div className="transfers-card-sub" style={{ marginTop: 8 }}>CSI # {t.csi_ref}</div>}
+                      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                        {t.status === 'DRAFT' && isPresidentOrAdmin && <button className="btn btn-sm btn-success" onClick={() => handleAction(t._id, 'approve')}>Approve</button>}
+                        {t.status === 'APPROVED' && isPresidentOrAdmin && <button className="btn btn-sm btn-warning" onClick={() => handleAction(t._id, 'ship')}>Ship</button>}
+                        {t.status === 'SHIPPED' && <button className="btn btn-sm btn-success" onClick={() => handleAction(t._id, 'receive')}>Receive</button>}
+                        {t.status === 'RECEIVED' && isPresidentOrAdmin && <button className="btn btn-sm btn-primary" onClick={() => handleAction(t._id, 'post')}>Post</button>}
+                        {!['POSTED', 'CANCELLED'].includes(t.status) && isPresidentOrAdmin && (
+                          <button className="btn btn-sm btn-danger" onClick={() => handleAction(t._id, 'cancel')}>Cancel</button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
               {pagination.pages > 1 && <Pagination currentPage={pagination.page} totalPages={pagination.pages} onPageChange={p => fetchTransfers(p)} />}
             </>
           )}
@@ -448,6 +528,48 @@ export default function TransferOrders() {
                   })}
                 </tbody>
               </table>
+              <div className="transfers-card-list">
+                {!reassignments.length && (
+                  <div className="transfers-card" style={{ textAlign: 'center', color: '#94a3b8' }}>No reassignments found</div>
+                )}
+                {reassignments.map(r => {
+                  const sc = STATUS_COLORS[r.status] || {};
+                  return (
+                    <div key={r._id} className="transfers-card">
+                      <div className="transfers-card-header">
+                        <div>
+                          <div className="transfers-card-title">{r.reassignment_ref || '—'}</div>
+                          <div className="transfers-card-sub">{new Date(r.reassignment_date).toLocaleDateString()}</div>
+                        </div>
+                        <span className="badge" style={{ background: sc.bg, color: sc.text }}>{r.status}</span>
+                      </div>
+                      <div className="transfers-card-grid">
+                        <div className="transfers-card-item">
+                          <span className="transfers-card-label">From</span>
+                          <span className="transfers-card-value">{r.source_bdm_id?.name || '—'}</span>
+                        </div>
+                        <div className="transfers-card-item">
+                          <span className="transfers-card-label">To</span>
+                          <span className="transfers-card-value">{r.target_bdm_id?.name || '—'}</span>
+                        </div>
+                        <div className="transfers-card-item">
+                          <span className="transfers-card-label">Items</span>
+                          <span className="transfers-card-value">{r.line_items?.length || 0}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                        {r.status === 'PENDING' && isFinanceOrAdmin && (
+                          <>
+                            <button className="btn btn-sm btn-success" onClick={() => handleReassignAction(r._id, 'APPROVED')}>Approve</button>
+                            <button className="btn btn-sm btn-danger" onClick={() => handleReassignAction(r._id, 'REJECTED')}>Reject</button>
+                          </>
+                        )}
+                        {r.status === 'REJECTED' && <span style={{ fontSize: 11, color: '#991b1b' }}>{r.rejection_reason}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </>
           )}
         </div>
@@ -572,7 +694,7 @@ export default function TransferOrders() {
                         </td>
                         <td><input type="number" min="1" value={li.qty} onChange={e => updateLineItem(i, 'qty', e.target.value)} style={{ width: 60 }} /></td>
                         <td><input type="number" min="0" step="0.01" value={li.transfer_price} onChange={e => updateLineItem(i, 'transfer_price', e.target.value)} style={{ width: 80 }} /></td>
-                        <td><button className="btn btn-sm btn-danger" onClick={() => removeLineItem(i)}>×</button></td>
+                        <td><button className="btn btn-sm btn-danger" onClick={() => removeLineItem(i)}>Remove line</button></td>
                       </tr>
                     );
                   })}
@@ -685,7 +807,7 @@ export default function TransferOrders() {
                           {li.expiry_date ? new Date(li.expiry_date).toLocaleDateString() : '—'}
                         </td>
                         <td><input type="number" min="1" value={li.qty} onChange={e => updateReassignItem(i, 'qty', e.target.value)} style={{ width: 60 }} /></td>
-                        <td><button className="btn btn-sm btn-danger" onClick={() => removeReassignItem(i)}>×</button></td>
+                        <td><button className="btn btn-sm btn-danger" onClick={() => removeReassignItem(i)}>Remove line</button></td>
                       </tr>
                     );
                   })}

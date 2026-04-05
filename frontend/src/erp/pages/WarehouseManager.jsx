@@ -50,7 +50,22 @@ const pageStyles = `
   .wm-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .wm-check { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 6px 0; }
   .wm-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-  @media(max-width: 768px) { .wm-grid { grid-template-columns: 1fr; } }
+  @media(max-width: 768px) {
+    .wm-page { padding-top: 12px; }
+    .wm-main { padding: 76px 12px 96px; }
+    .wm-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .wm-header .wm-btn { width: 100%; }
+    .wm-grid { grid-template-columns: 1fr; }
+    .wm-field-row { grid-template-columns: 1fr; }
+    .wm-footer { flex-direction: column; }
+    .wm-footer .wm-btn { width: 100%; }
+    .wm-panel { padding: 18px; }
+  }
+
+  @media(max-width: 480px) {
+    .wm-page { padding-top: 16px; }
+    .wm-main { padding-top: 72px; padding-bottom: 104px; }
+  }
 `;
 
 const emptyForm = () => ({
