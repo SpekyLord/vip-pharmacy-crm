@@ -57,7 +57,7 @@ const EMPTY_FORM = {
   card_code: '', card_name: '', card_holder: '', bank: '',
   card_type: 'CREDIT_CARD', card_brand: 'MASTERCARD',
   last_four: '', coa_code: '2301', credit_limit: '',
-  statement_cycle_day: '', assigned_to: '', is_active: true
+  statement_cycle_day: '', assigned_to: '', assigned_users: [], is_active: true
 };
 
 export default function CreditCardManager() {
@@ -132,6 +132,7 @@ export default function CreditCardManager() {
       credit_limit: card.credit_limit || '',
       statement_cycle_day: card.statement_cycle_day || '',
       assigned_to: card.assigned_to?._id || card.assigned_to || '',
+      assigned_users: (card.assigned_users || []).map(u => u._id || u),
       is_active: card.is_active !== false
     });
     setShowModal(true);
@@ -143,7 +144,8 @@ export default function CreditCardManager() {
       ...form,
       credit_limit: parseFloat(form.credit_limit) || 0,
       statement_cycle_day: parseInt(form.statement_cycle_day) || undefined,
-      assigned_to: form.assigned_to || undefined
+      assigned_to: form.assigned_to || undefined,
+      assigned_users: form.assigned_users.length ? form.assigned_users : undefined
     };
     try {
       if (editing) {
@@ -217,13 +219,17 @@ export default function CreditCardManager() {
                   {card.credit_limit > 0 && <div className="ccm-card-row"><span className="label">Limit</span><span className="value">₱{Number(card.credit_limit).toLocaleString()}</span></div>}
                   {!card.is_active && <div style={{ color: '#dc2626', fontSize: 12, fontWeight: 600, marginTop: 4 }}>INACTIVE</div>}
 
-                  {card.assigned_to && (
+                  {(card.assigned_users?.length > 0 || card.assigned_to) ? (
                     <div className="ccm-assigned">
-                      Assigned to: <span className="name">{card.assigned_to.name || card.assigned_to.email || '—'}</span>
-                      {card.assigned_at && <span style={{ marginLeft: 8, color: 'var(--erp-muted)' }}>since {new Date(card.assigned_at).toLocaleDateString()}</span>}
+                      Assigned to: <span className="name">
+                        {card.assigned_users?.length > 0
+                          ? card.assigned_users.map(u => u.name || u.email).join(', ')
+                          : card.assigned_to?.name || card.assigned_to?.email || '—'}
+                      </span>
                     </div>
+                  ) : (
+                    <div className="ccm-assigned" style={{ background: '#fef3c7' }}>Not assigned</div>
                   )}
-                  {!card.assigned_to && <div className="ccm-assigned" style={{ background: '#fef3c7' }}>Not assigned</div>}
 
                   <div className="ccm-actions">
                     <button className="btn btn-sm btn-primary" onClick={() => openEdit(card)}>Edit</button>
@@ -263,11 +269,19 @@ export default function CreditCardManager() {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Assign To *</label>
-                    <select value={form.assigned_to} onChange={e => f('assigned_to', e.target.value)} required>
-                      <option value="">Select user...</option>
-                      {users.filter(u => u.isActive !== false).map(u => <option key={u._id} value={u._id}>{u.name} ({u.role})</option>)}
-                    </select>
+                    <label>Assign To (select all users who can use this card)</label>
+                    <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--erp-border, #d1d5db)', borderRadius: 6, padding: 6 }}>
+                      {users.filter(u => u.isActive !== false).map(u => (
+                        <label key={u._id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', fontSize: 13, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={form.assigned_users.includes(u._id)} onChange={e => {
+                            if (e.target.checked) f('assigned_users', [...form.assigned_users, u._id]);
+                            else f('assigned_users', form.assigned_users.filter(id => id !== u._id));
+                          }} style={{ width: 'auto' }} />
+                          {u.name} <span style={{ color: 'var(--erp-muted)', fontSize: 11 }}>({u.role})</span>
+                        </label>
+                      ))}
+                      {!users.length && <div style={{ padding: 8, color: '#9ca3af', fontSize: 12 }}>No users loaded</div>}
+                    </div>
                   </div>
                 </div>
 
