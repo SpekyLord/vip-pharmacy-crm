@@ -3,7 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
-import userService from '../../services/userService';
+import api from '../../services/api';
 
 const pageStyles = `
   .ccm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -81,15 +81,15 @@ export default function CreditCardManager() {
       if (tab === 'fleet') params.card_type = 'FLEET_CARD';
       const res = await api.listCreditCards(params);
       setCards(res?.data || []);
-    } catch { /* */ }
+    } catch (err) { console.error('[CreditCardManager] load cards error:', err.message); }
     setLoading(false);
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadUsers = useCallback(async () => {
     try {
-      const res = await userService.getActiveUsers();
-      setUsers(res?.data || res || []);
-    } catch { /* */ }
+      const res = await api.get('/users', { params: { limit: 100 } });
+      setUsers(res?.data?.data || []);
+    } catch (err) { console.error('[CreditCardManager] load users error:', err.message); }
   }, []);
 
   useEffect(() => { loadCards(); }, [loadCards]);
@@ -126,6 +126,7 @@ export default function CreditCardManager() {
   };
 
   const handleSave = async () => {
+    if (!form.card_code || !form.card_name) return alert('Card Code and Card Name are required');
     const data = {
       ...form,
       credit_limit: parseFloat(form.credit_limit) || 0,
@@ -230,25 +231,15 @@ export default function CreditCardManager() {
               <div className="ccm-modal-body" onClick={e => e.stopPropagation()}>
                 <h3>{editing ? 'Edit Card' : 'Add New Card'}</h3>
 
+                {/* Required fields */}
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Card Code</label>
-                    <input value={form.card_code} onChange={e => f('card_code', e.target.value)} placeholder="e.g. SBC-MC-002" disabled={!!editing} />
+                    <label>Card Code *</label>
+                    <input value={form.card_code} onChange={e => f('card_code', e.target.value)} placeholder="e.g. SBC-MC-002" disabled={!!editing} required />
                   </div>
                   <div className="form-group">
-                    <label>Card Name</label>
-                    <input value={form.card_name} onChange={e => f('card_name', e.target.value)} placeholder="e.g. SBC Mastercard" />
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Bank</label>
-                    <input value={form.bank} onChange={e => f('bank', e.target.value)} placeholder="Security Bank" />
-                  </div>
-                  <div className="form-group">
-                    <label>Card Holder</label>
-                    <input value={form.card_holder} onChange={e => f('card_holder', e.target.value)} />
+                    <label>Card Name *</label>
+                    <input value={form.card_name} onChange={e => f('card_name', e.target.value)} placeholder="e.g. SBC Mastercard" required />
                   </div>
                 </div>
 
@@ -260,42 +251,54 @@ export default function CreditCardManager() {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Card Brand</label>
-                    <select value={form.card_brand} onChange={e => f('card_brand', e.target.value)}>
-                      {CARD_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                    <label>Assign To *</label>
+                    <select value={form.assigned_to} onChange={e => f('assigned_to', e.target.value)} required>
+                      <option value="">Select user...</option>
+                      {users.filter(u => u.isActive !== false).map(u => <option key={u._id} value={u._id}>{u.name} ({u.role})</option>)}
                     </select>
                   </div>
                 </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Last 4 Digits</label>
-                    <input value={form.last_four} onChange={e => f('last_four', e.target.value)} maxLength={4} placeholder="1234" />
+                {/* Optional details — admin can fill later */}
+                <details style={{ marginTop: 8, marginBottom: 12 }}>
+                  <summary style={{ fontSize: 13, color: 'var(--erp-muted)', cursor: 'pointer', marginBottom: 8 }}>More details (optional)</summary>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Bank</label>
+                      <input value={form.bank} onChange={e => f('bank', e.target.value)} placeholder="Security Bank" />
+                    </div>
+                    <div className="form-group">
+                      <label>Card Holder</label>
+                      <input value={form.card_holder} onChange={e => f('card_holder', e.target.value)} />
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label>COA Code</label>
-                    <input value={form.coa_code} onChange={e => f('coa_code', e.target.value)} placeholder="2301" />
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Card Brand</label>
+                      <select value={form.card_brand} onChange={e => f('card_brand', e.target.value)}>
+                        {CARD_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Last 4 Digits</label>
+                      <input value={form.last_four} onChange={e => f('last_four', e.target.value)} maxLength={4} placeholder="1234" />
+                    </div>
                   </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Credit Limit (₱)</label>
-                    <input type="number" value={form.credit_limit} onChange={e => f('credit_limit', e.target.value)} />
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>COA Code</label>
+                      <input value={form.coa_code} onChange={e => f('coa_code', e.target.value)} placeholder="2301" />
+                    </div>
+                    <div className="form-group">
+                      <label>Credit Limit (₱)</label>
+                      <input type="number" value={form.credit_limit} onChange={e => f('credit_limit', e.target.value)} />
+                    </div>
                   </div>
                   <div className="form-group">
                     <label>Statement Cycle Day</label>
                     <input type="number" min={1} max={31} value={form.statement_cycle_day} onChange={e => f('statement_cycle_day', e.target.value)} />
                   </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Assign To</label>
-                  <select value={form.assigned_to} onChange={e => f('assigned_to', e.target.value)}>
-                    <option value="">Not assigned</option>
-                    {users.map(u => <option key={u._id} value={u._id}>{u.name} ({u.email})</option>)}
-                  </select>
-                </div>
+                </details>
 
                 <div className="form-group">
                   <label>
