@@ -3,6 +3,7 @@
  */
 const CreditCard = require('../models/CreditCard');
 const { catchAsync } = require('../../middleware/errorHandler');
+const XLSX = require('xlsx');
 
 // ═══ List all cards (optionally filter by assigned_to, card_type) ═══
 const listCards = catchAsync(async (req, res) => {
@@ -79,4 +80,30 @@ const deleteCard = catchAsync(async (req, res) => {
   res.json({ success: true, message: `Card ${card.card_code} deactivated` });
 });
 
-module.exports = { listCards, getMyCards, createCard, updateCard, deleteCard };
+// ═══ Export Credit Cards (Excel) ═══
+const exportCards = catchAsync(async (req, res) => {
+  const cards = await CreditCard.find({ entity_id: req.entityId }).sort({ card_code: 1 }).lean();
+  const rows = cards.map(c => ({
+    'Card Code': c.card_code || '',
+    'Card Name': c.card_name || '',
+    'Card Holder': c.card_holder || '',
+    'Bank': c.bank || '',
+    'Card Type': c.card_type || '',
+    'Card Brand': c.card_brand || '',
+    'Last Four': c.last_four || '',
+    'COA Code': c.coa_code || '',
+    'Credit Limit': c.credit_limit || 0,
+    'Statement Cycle Day': c.statement_cycle_day || '',
+    'Active': c.is_active !== false ? 'YES' : 'NO'
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 8 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Credit Cards');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="credit-cards-export.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
+module.exports = { listCards, getMyCards, createCard, updateCard, deleteCard, exportCards };

@@ -54,6 +54,16 @@ export default function BankAccounts() {
   const f = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
   const showMsg = (text, type = 'ok') => { setMsg({ text, type }); setTimeout(() => setMsg(null), 4000); };
 
+  const handleExport = async () => {
+    try { const res = await api.exportBankAccounts(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'bank-accounts-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+  };
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const fd = new FormData(); fd.append('file', file);
+    try { const res = await api.importBankAccounts(fd); alert(res?.message || 'Import complete'); load(); } catch { /* */ }
+    e.target.value = '';
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -113,7 +123,11 @@ export default function BankAccounts() {
         <main className="ba-main admin-main">
           <div className="ba-header">
             <h2>Bank Accounts</h2>
-            <button className="btn btn-primary" onClick={openNew}>+ Add Bank Account</button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
+              <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>
+              <button className="btn btn-primary" onClick={openNew}>+ Add Bank Account</button>
+            </div>
           </div>
 
           {msg && <div className={`ba-msg ba-msg-${msg.type}`}>{msg.text}</div>}

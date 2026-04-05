@@ -232,6 +232,16 @@ export default function Collaterals() {
   const [showDistModal, setShowDistModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
 
+  const handleExport = async () => {
+    try { const res = await col.exportCollaterals(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'collaterals-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+  };
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const fd = new FormData(); fd.append('file', file);
+    try { const res = await col.importCollaterals(fd); alert(res?.message || 'Import complete'); loadItems(); } catch { /* */ }
+    e.target.value = '';
+  };
+
   const loadItems = useCallback(async () => {
     setLoading(true);
     try {
@@ -266,8 +276,12 @@ export default function Collaterals() {
 
   return (
     <div style={styles.container}>
-      <div style={styles.header}>
+      <div style={{ ...styles.header, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <h1 style={styles.title}>Collaterals</h1>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #dbe4f0', background: 'transparent', fontSize: 13, fontWeight: 600, cursor: 'pointer' }} onClick={handleExport}>Export Excel</button>
+          <label style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #dbe4f0', background: 'transparent', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>
+        </div>
       </div>
 
       <div style={styles.filterRow}>

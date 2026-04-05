@@ -7,6 +7,7 @@ const CreditCardTransaction = require('../models/CreditCardTransaction');
 const bankReconService = require('../services/bankReconService');
 const creditCardService = require('../services/creditCardService');
 const { catchAsync } = require('../../middleware/errorHandler');
+const XLSX = require('xlsx');
 
 // ════════════════════════════════════════════════════════════════════
 //  BANK ACCOUNTS
@@ -167,8 +168,63 @@ const recordCardPayment = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+// ═══ Export Bank Accounts (Excel) ═══
+const exportBankAccounts = catchAsync(async (req, res) => {
+  const accounts = await BankAccount.find({ entity_id: req.entityId }).sort({ bank_code: 1 }).lean();
+  const rows = accounts.map(a => ({
+    'Bank Code': a.bank_code || '',
+    'Bank Name': a.bank_name || '',
+    'Account No': a.account_no || '',
+    'Account Type': a.account_type || '',
+    'COA Code': a.coa_code || '',
+    'Opening Balance': a.opening_balance || 0,
+    'Current Balance': a.current_balance || 0,
+    'Import Format': a.statement_import_format || 'CSV',
+    'Active': a.is_active !== false ? 'YES' : 'NO'
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 8 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Bank Accounts');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="bank-accounts-export.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
+// ═══ Import Bank Accounts (Excel) — upsert by bank_code ═══
+const importBankAccounts = catchAsync(async (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+  let created = 0, updated = 0, errors = [];
+  for (const r of rows) {
+    const bank_code = String(r['Bank Code'] || r.bank_code || '').trim();
+    if (!bank_code) { errors.push({ bank_code: '(empty)', error: 'Bank code required' }); continue; }
+    try {
+      const result = await BankAccount.findOneAndUpdate(
+        { entity_id: req.entityId, bank_code },
+        {
+          entity_id: req.entityId, bank_code,
+          bank_name: String(r['Bank Name'] || r.bank_name || '').trim(),
+          account_no: String(r['Account No'] || r.account_no || '').trim(),
+          account_type: String(r['Account Type'] || r.account_type || 'SAVINGS').trim().toUpperCase(),
+          coa_code: String(r['COA Code'] || r.coa_code || '').trim() || undefined,
+          opening_balance: r['Opening Balance'] != null ? Number(r['Opening Balance']) : 0,
+          statement_import_format: String(r['Import Format'] || r.statement_import_format || 'CSV').trim().toUpperCase(),
+          is_active: String(r['Active'] || 'YES').toUpperCase() !== 'NO'
+        },
+        { upsert: true, new: true }
+      );
+      if (result.createdAt && result.updatedAt && result.createdAt.getTime() === result.updatedAt.getTime()) created++;
+      else updated++;
+    } catch (err) { errors.push({ bank_code, error: err.message }); }
+  }
+  res.json({ success: true, message: `Import complete: ${created} created, ${updated} updated, ${errors.length} errors`, data: { created, updated, errors } });
+});
+
 module.exports = {
-  listBankAccounts, createBankAccount, updateBankAccount,
+  listBankAccounts, createBankAccount, updateBankAccount, exportBankAccounts, importBankAccounts,
   importStatement, listStatements, getStatement, autoMatchStatement, manualMatchEntry, getReconSummary, finalizeRecon,
   getCardBalances, getCardLedger, createCreditCardTransaction, recordCardPayment
 };

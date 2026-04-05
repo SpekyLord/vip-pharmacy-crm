@@ -6,9 +6,13 @@
  */
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const c = require('../controllers/collateralController');
 
 // ═══ CRUD ═══
+router.get('/export', c.exportCollaterals);
+router.post('/import', upload.single('file'), c.importCollaterals);
 router.get('/', c.getAll);
 router.get('/:id', c.getById);
 router.post('/', c.create);

@@ -50,6 +50,21 @@ export default function FixedAssets() {
   const [staging, setStaging] = useState([]);
   const [msg, setMsg] = useState('');
 
+  const handleExport = async () => {
+    try {
+      const res = await api.exportFixedAssets();
+      const url = URL.createObjectURL(new Blob([res]));
+      const a = document.createElement('a'); a.href = url; a.download = 'fixed-assets-export.xlsx'; a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* */ }
+  };
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const fd = new FormData(); fd.append('file', file);
+    try { const res = await api.importFixedAssets(fd); alert(res?.message || 'Import complete'); loadAssets(); } catch { /* */ }
+    e.target.value = '';
+  };
+
   const loadAssets = useCallback(async () => {
     setLoading(true);
     try { const res = await api.listFixedAssets(); setAssets(res?.data || []); } catch { /* */ }
@@ -92,7 +107,11 @@ export default function FixedAssets() {
         <main className="fa-main admin-main">
           <div className="fa-header">
             <h2>Fixed Assets</h2>
-            {isAdmin && <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Add Asset</button>}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)' }} onClick={handleExport}>Export Excel</button>
+              {isAdmin && <label className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>}
+              {isAdmin && <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Add Asset</button>}
+            </div>
           </div>
 
           {loading ? <div className="fa-empty">Loading…</div> : assets.length === 0 ? <div className="fa-empty">No fixed assets</div> : (

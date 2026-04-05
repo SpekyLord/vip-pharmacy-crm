@@ -73,6 +73,10 @@ export default function CreditCardManager() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [msg, setMsg] = useState({ text: '', type: '' });
 
+  const handleExport = async () => {
+    try { const res = await api.exportCreditCards(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'credit-cards-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+  };
+
   const loadCards = useCallback(async () => {
     setLoading(true);
     try {
@@ -181,7 +185,10 @@ export default function CreditCardManager() {
         <main className="ccm-main admin-main">
           <div className="ccm-header">
             <h2>Credit Card Management</h2>
-            <button className="btn btn-primary" onClick={openCreate}>+ Add Card</button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)' }} onClick={handleExport}>Export Excel</button>
+              <button className="btn btn-primary" onClick={openCreate}>+ Add Card</button>
+            </div>
           </div>
 
           {msg.text && <div className={`ccm-msg ccm-msg-${msg.type}`}>{msg.text}</div>}

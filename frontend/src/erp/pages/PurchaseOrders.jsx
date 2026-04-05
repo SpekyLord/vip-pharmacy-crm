@@ -16,6 +16,7 @@ const styles = `
   .btn-warning { background: #f59e0b; color: #fff; }
   .btn-danger { background: #dc2626; color: #fff; }
   .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-outline { background: transparent; border: 1px solid var(--erp-border, #e2e8f0); color: var(--erp-text); }
   .po-table { width: 100%; border-collapse: collapse; background: var(--erp-panel, #fff); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
   .po-table th, .po-table td { padding: 10px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--erp-border, #f1f5f9); }
   .po-table th { background: var(--erp-accent-soft, #e8efff); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--erp-muted, #64748b); }
@@ -67,6 +68,15 @@ export default function PurchaseOrders() {
   const [msg, setMsg] = useState({ text: '', type: '' });
   const [showReceive, setShowReceive] = useState(null);
   const [receiveQtys, setReceiveQtys] = useState([]);
+
+  const handleExport = async () => {
+    try {
+      const res = await api.exportPOs();
+      const url = URL.createObjectURL(new Blob([res]));
+      const a = document.createElement('a'); a.href = url; a.download = 'purchase-orders-export.xlsx'; a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* hook handles */ }
+  };
 
   const loadPOs = useCallback(async (page = 1) => {
     setLoading(true);
@@ -183,7 +193,10 @@ export default function PurchaseOrders() {
           <main className="po-main">
             <div className="po-header">
               <h2>Purchase Orders</h2>
-              <button className="btn btn-primary" onClick={openCreate}>+ New PO</button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
+                <button className="btn btn-primary" onClick={openCreate}>+ New PO</button>
+              </div>
             </div>
 
             <div className="po-filters">

@@ -46,6 +46,8 @@ const pageStyles = `
   .btn-sm { padding: 4px 10px; font-size: 12px; }
   .btn-danger { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
   .btn-ghost { background: transparent; color: var(--erp-accent, #1e5eff); border: 1px solid var(--erp-border); }
+  .btn-outline { background: transparent; border: 1px solid var(--erp-border); color: var(--erp-text); }
+  .upload-input { display: none; }
 
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
   .modal { background: var(--erp-panel, #fff); border-radius: 16px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 24px; position: relative; }
@@ -227,6 +229,28 @@ export default function CustomerList() {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      const res = await customers.exportCustomers();
+      const url = URL.createObjectURL(new Blob([res]));
+      const a = document.createElement('a'); a.href = url; a.download = 'customers-export.xlsx'; a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* hook handles */ }
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await customers.importCustomers(fd);
+      alert(res?.message || 'Import complete');
+      fetchCustomers();
+    } catch { /* hook handles */ }
+    e.target.value = '';
+  };
+
   const formatType = (type) => (type || '').replace(/_/g, ' ');
 
   return (
@@ -241,7 +265,11 @@ export default function CustomerList() {
               <h1>Customers</h1>
               <p>{total} customer{total !== 1 ? 's' : ''} total</p>
             </div>
-            <button className="btn btn-primary" onClick={openCreate}>+ New Customer</button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
+              <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>
+              <button className="btn btn-primary" onClick={openCreate}>+ New Customer</button>
+            </div>
           </div>
 
           {/* Filters */}

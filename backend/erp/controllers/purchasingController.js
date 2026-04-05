@@ -16,6 +16,7 @@ const { createAndPostJournal } = require('../services/journalEngine');
 const { getApLedger, getApAging, getApConsolidated, getGrni } = require('../services/apService');
 const { recordApPayment, getPaymentHistory } = require('../services/apPaymentService');
 const { createVatEntry } = require('../services/vatService');
+const XLSX = require('xlsx');
 
 /* ═══════════════════════════════════════════════════════════════════════
    PURCHASE ORDERS
@@ -334,9 +335,51 @@ const paymentHistory = catchAsync(async (req, res) => {
   res.json({ success: true, data });
 });
 
+// ═══ Export Purchase Orders (Excel) ═══
+const exportPOs = catchAsync(async (req, res) => {
+  const pos = await PurchaseOrder.find({ entity_id: req.entityId })
+    .populate('vendor_id', 'vendor_name vendor_code')
+    .sort({ created_at: -1 })
+    .lean();
+
+  const rows = [];
+  for (const po of pos) {
+    for (const li of po.line_items || []) {
+      rows.push({
+        'PO Number': po.po_number || '',
+        'PO Date': po.po_date ? new Date(po.po_date).toISOString().slice(0, 10) : '',
+        'Vendor Code': po.vendor_id?.vendor_code || '',
+        'Vendor Name': po.vendor_id?.vendor_name || '',
+        'Status': po.status || '',
+        'Expected Delivery': po.expected_delivery_date ? new Date(po.expected_delivery_date).toISOString().slice(0, 10) : '',
+        'Item Key': li.item_key || '',
+        'Qty Ordered': li.qty_ordered || 0,
+        'Unit Price': li.unit_price || 0,
+        'Line Total': li.line_total || 0,
+        'Qty Received': li.qty_received || 0,
+        'Qty Invoiced': li.qty_invoiced || 0,
+        'PO Total': po.total_amount || 0,
+        'VAT': po.vat_amount || 0,
+        'Net': po.net_amount || 0,
+        'Notes': po.notes || ''
+      });
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 25 }, { wch: 12 }, { wch: 14 }, { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 25 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Purchase Orders');
+
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="purchase-orders-export.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
 module.exports = {
   // PO
-  createPO, updatePO, getPOs, getPOById, approvePO, cancelPO, receivePO,
+  createPO, updatePO, getPOs, getPOById, approvePO, cancelPO, receivePO, exportPOs,
   // Supplier Invoices
   createInvoice, updateInvoice, getInvoices, getInvoiceById, validateInvoice, postInvoice,
   // AP

@@ -17,8 +17,11 @@ export default function useCustomers() {
 
   const untagBdm = (id, bdmId) => api.post(`/customers/${id}/untag-bdm`, { bdm_id: bdmId });
 
+  const exportCustomers = () => api.get('/customers/export', { responseType: 'blob' });
+  const importCustomers = (formData) => api.post('/customers/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+
   return {
     ...api,
-    getAll, getById, create, update, deactivate, tagBdm, untagBdm
+    getAll, getById, create, update, deactivate, tagBdm, untagBdm, exportCustomers, importCustomers
   };
 }

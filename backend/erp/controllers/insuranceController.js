@@ -7,6 +7,7 @@
  */
 const InsurancePolicy = require('../models/InsurancePolicy');
 const { catchAsync } = require('../../middleware/errorHandler');
+const XLSX = require('xlsx');
 
 const getAll = catchAsync(async (req, res) => {
   const filter = { ...req.tenantFilter };
@@ -78,4 +79,35 @@ const getSummary = catchAsync(async (req, res) => {
   res.json({ success: true, data: { byType, expiringSoon } });
 });
 
-module.exports = { getAll, getById, create, update, remove, getSummary };
+// ═══ Export Insurance Policies (Excel) ═══
+const exportInsurance = catchAsync(async (req, res) => {
+  const policies = await InsurancePolicy.find({ entity_id: req.entityId })
+    .populate('person_id', 'full_name')
+    .sort({ policy_type: 1 }).lean();
+  const rows = policies.map(p => ({
+    'Person': p.person_id?.full_name || '',
+    'Policy Type': p.policy_type || '',
+    'Provider': p.provider || '',
+    'Policy No': p.policy_no || '',
+    'Coverage Amount': p.coverage_amount || 0,
+    'Premium Amount': p.premium_amount || 0,
+    'Premium Frequency': p.premium_frequency || '',
+    'Effective Date': p.effective_date ? new Date(p.effective_date).toISOString().slice(0, 10) : '',
+    'Expiry Date': p.expiry_date ? new Date(p.expiry_date).toISOString().slice(0, 10) : '',
+    'Beneficiary': p.beneficiary || '',
+    'Vehicle Plate': p.vehicle_plate_no || '',
+    'Vehicle Desc': p.vehicle_description || '',
+    'Status': p.status || 'ACTIVE',
+    'Notes': p.notes || ''
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 20 }, { wch: 10 }, { wch: 25 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Insurance Policies');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="insurance-export.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
+module.exports = { getAll, getById, create, update, remove, getSummary, exportInsurance };

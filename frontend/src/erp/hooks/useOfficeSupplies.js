@@ -17,5 +17,8 @@ export default function useOfficeSupplies() {
   };
   const getReorderAlerts = async () => { const { data } = await api.get('/erp/office-supplies/reorder-alerts'); return data; };
 
-  return { getSupplies, getSupplyById, createSupply, updateSupply, recordTransaction, getTransactions, getReorderAlerts };
+  const exportSupplies = async () => { const { data } = await api.get('/erp/office-supplies/export', { responseType: 'blob' }); return data; };
+  const importSupplies = async (fd) => { const { data } = await api.post('/erp/office-supplies/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } }); return data; };
+
+  return { getSupplies, getSupplyById, createSupply, updateSupply, recordTransaction, getTransactions, getReorderAlerts, exportSupplies, importSupplies };
 }

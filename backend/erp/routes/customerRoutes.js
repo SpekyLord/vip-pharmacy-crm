@@ -4,9 +4,13 @@
  */
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const { roleCheck } = require('../../middleware/roleCheck');
 const c = require('../controllers/customerController');
 
+router.get('/export', roleCheck('admin', 'finance', 'president'), c.exportCustomers);
+router.post('/import', roleCheck('admin', 'finance', 'president'), upload.single('file'), c.importCustomers);
 router.get('/', c.getAll);
 router.get('/:id', c.getById);
 router.post('/', roleCheck('admin', 'finance', 'president'), c.create);

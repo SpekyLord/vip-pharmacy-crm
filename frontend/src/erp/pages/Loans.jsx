@@ -48,6 +48,16 @@ export default function Loans() {
   const [staging, setStaging] = useState([]);
   const [msg, setMsg] = useState('');
 
+  const handleExport = async () => {
+    try { const res = await api.exportLoans(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'loans-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+  };
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const fd = new FormData(); fd.append('file', file);
+    try { const res = await api.importLoans(fd); alert(res?.message || 'Import complete'); loadLoans(); } catch { /* */ }
+    e.target.value = '';
+  };
+
   const loadLoans = useCallback(async () => {
     setLoading(true);
     try { const res = await api.listLoans(); setLoans(res?.data || []); } catch { /* */ }
@@ -77,7 +87,11 @@ export default function Loans() {
         <main className="ln-main admin-main">
           <div className="ln-header">
             <h2>Loans & Amortization</h2>
-            {isAdmin && <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Add Loan</button>}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)' }} onClick={handleExport}>Export Excel</button>
+              {isAdmin && <label className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>}
+              {isAdmin && <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Add Loan</button>}
+            </div>
           </div>
 
           {loading ? <div className="ln-empty">Loading…</div> : loans.length === 0 ? <div className="ln-empty">No loans</div> : (

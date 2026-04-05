@@ -9,6 +9,7 @@ const router = express.Router();
 const { roleCheck } = require('../../middleware/roleCheck');
 const c = require('../controllers/insuranceController');
 
+router.get('/export', c.exportInsurance);
 router.get('/', c.getAll);
 router.get('/summary', c.getSummary);
 router.get('/:id', c.getById);
