@@ -43,7 +43,7 @@ export default function FuelEfficiency() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { const res = await rpt.getFuelEfficiency(period); setData(res?.data || null); } catch {}
+    try { const res = await rpt.getFuelEfficiency(period); setData(res?.data || null); } catch (err) { console.error('[FuelEfficiency] load error:', err.message); }
     setLoading(false);
   }, [period]);
 

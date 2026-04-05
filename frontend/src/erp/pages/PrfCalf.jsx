@@ -54,8 +54,8 @@ export default function PrfCalf() {
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
   useEffect(() => {
-    getMyCards().then(r => setMyCards(r?.data || [])).catch(() => {});
-    listBankAccounts().then(r => setBankAccounts(r?.data || [])).catch(() => {});
+    getMyCards().then(r => setMyCards(r?.data || [])).catch(err => console.error('[PrfCalf]', err.message));
+    listBankAccounts().then(r => setBankAccounts(r?.data || [])).catch(err => console.error('[PrfCalf]', err.message));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load pending partner rebates + pending CALF lines
@@ -149,7 +149,7 @@ export default function PrfCalf() {
         notes: data.notes || '', photo_urls: data.photo_urls || []
       });
       setShowForm(true);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[PrfCalf] load error:', err.message); }
   };
 
   const handleSave = async () => {
@@ -163,13 +163,13 @@ export default function PrfCalf() {
       else { await createPrfCalf(data); }
       setShowForm(false);
       loadDocs();
-    } catch { /* ignore */ }
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
-  const handleValidate = async () => { try { await validatePrfCalf(); loadDocs(); } catch {} };
-  const handleSubmit = async () => { try { await submitPrfCalf(); loadDocs(); } catch {} };
-  const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch {} };
-  const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch {} };
+  const handleValidate = async () => { try { await validatePrfCalf(); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
+  const handleSubmit = async () => { try { await submitPrfCalf(); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
+  const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
+  const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
 
   const isFinance = ['admin', 'finance', 'president'].includes(user?.role);
   const calfBalance = (form.advance_amount || 0) - (form.liquidation_amount || 0);

@@ -65,7 +65,7 @@ export default function IcArDashboard() {
       ]);
       setSummary(sumRes?.data || null);
       setSettlements(settRes?.data || []);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[IcArDashboard] load error:', err.message); } finally { setLoading(false); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadData(); }, [loadData]);

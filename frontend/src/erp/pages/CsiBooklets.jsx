@@ -48,7 +48,7 @@ export default function CsiBooklets() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { const res = await rpt.getCsiBooklets(); setBooklets(res?.data || []); } catch {}
+    try { const res = await rpt.getCsiBooklets(); setBooklets(res?.data || []); } catch (err) { console.error('[CsiBooklets] load error:', err.message); }
     setLoading(false);
   }, []);
 
@@ -60,7 +60,7 @@ export default function CsiBooklets() {
       await rpt.createBooklet({ booklet_code: form.booklet_code, series_start: Number(form.series_start), series_end: Number(form.series_end) });
       setForm({ booklet_code: '', series_start: '', series_end: '' });
       load();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   const handleAllocate = async (bookletId) => {
@@ -72,7 +72,7 @@ export default function CsiBooklets() {
       });
       setAllocForm({ week_start: '', week_end: '', range_start: '', range_end: '' });
       load();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   return (

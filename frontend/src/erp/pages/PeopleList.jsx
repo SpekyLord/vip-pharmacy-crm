@@ -78,7 +78,7 @@ export default function PeopleList() {
       const res = await api.getPeopleList(params);
       setPeople(res?.data || []);
       setPagination(res?.pagination || { page: 1, limit: 50, total: 0, pages: 0 });
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[PeopleList] load error:', err.message); } finally { setLoading(false); }
   }, [filters]);
 
   useEffect(() => { load(); }, [load]);
@@ -90,7 +90,7 @@ export default function PeopleList() {
       setShowForm(false);
       setForm(EMPTY_FORM);
       load();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   return (

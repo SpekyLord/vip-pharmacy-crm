@@ -86,7 +86,7 @@ const getSmerList = catchAsync(async (req, res) => {
 
   const [docs, total] = await Promise.all([
     SmerEntry.find(filter)
-      .populate('bdm_id', 'firstName lastName')
+      .populate('bdm_id', 'name')
       .sort({ period: -1, cycle: -1 })
       .skip((page - 1) * limit).limit(limit).lean(),
     SmerEntry.countDocuments(filter)
@@ -97,7 +97,7 @@ const getSmerList = catchAsync(async (req, res) => {
 
 const getSmerById = catchAsync(async (req, res) => {
   const smer = await SmerEntry.findOne({ _id: req.params.id, ...req.tenantFilter })
-    .populate('bdm_id', 'firstName lastName').lean();
+    .populate('bdm_id', 'name').lean();
   if (!smer) return res.status(404).json({ success: false, message: 'SMER not found' });
   res.json({ success: true, data: smer });
 });
@@ -316,7 +316,7 @@ const getCarLogbookList = catchAsync(async (req, res) => {
 
   const [docs, total] = await Promise.all([
     CarLogbookEntry.find(filter)
-      .populate('bdm_id', 'firstName lastName')
+      .populate('bdm_id', 'name')
       .sort({ entry_date: -1 })
       .skip((page - 1) * limit).limit(limit).lean(),
     CarLogbookEntry.countDocuments(filter)
@@ -327,7 +327,7 @@ const getCarLogbookList = catchAsync(async (req, res) => {
 
 const getCarLogbookById = catchAsync(async (req, res) => {
   const entry = await CarLogbookEntry.findOne({ _id: req.params.id, ...req.tenantFilter })
-    .populate('bdm_id', 'firstName lastName').lean();
+    .populate('bdm_id', 'name').lean();
   if (!entry) return res.status(404).json({ success: false, message: 'Car logbook entry not found' });
   res.json({ success: true, data: entry });
 });
@@ -501,7 +501,7 @@ const getExpenseList = catchAsync(async (req, res) => {
 
   const [docs, total] = await Promise.all([
     ExpenseEntry.find(filter)
-      .populate('bdm_id', 'firstName lastName')
+      .populate('bdm_id', 'name')
       .sort({ period: -1 })
       .skip((page - 1) * limit).limit(limit).lean(),
     ExpenseEntry.countDocuments(filter)
@@ -512,7 +512,7 @@ const getExpenseList = catchAsync(async (req, res) => {
 
 const getExpenseById = catchAsync(async (req, res) => {
   const entry = await ExpenseEntry.findOne({ _id: req.params.id, ...req.tenantFilter })
-    .populate('bdm_id', 'firstName lastName').lean();
+    .populate('bdm_id', 'name').lean();
   if (!entry) return res.status(404).json({ success: false, message: 'Expense not found' });
   res.json({ success: true, data: entry });
 });
@@ -729,8 +729,8 @@ const getPrfCalfList = catchAsync(async (req, res) => {
 
   const [docs, total] = await Promise.all([
     PrfCalf.find(filter)
-      .populate('bdm_id', 'firstName lastName')
-      .populate('posted_by', 'firstName lastName')
+      .populate('bdm_id', 'name')
+      .populate('posted_by', 'name')
       .sort({ created_at: -1 })
       .skip((page - 1) * limit).limit(limit).lean(),
     PrfCalf.countDocuments(filter)
@@ -741,8 +741,8 @@ const getPrfCalfList = catchAsync(async (req, res) => {
 
 const getPrfCalfById = catchAsync(async (req, res) => {
   const doc = await PrfCalf.findOne({ _id: req.params.id, ...req.tenantFilter })
-    .populate('bdm_id', 'firstName lastName')
-    .populate('posted_by', 'firstName lastName').lean();
+    .populate('bdm_id', 'name')
+    .populate('posted_by', 'name').lean();
   if (!doc) return res.status(404).json({ success: false, message: 'PRF/CALF not found' });
   res.json({ success: true, data: doc });
 });

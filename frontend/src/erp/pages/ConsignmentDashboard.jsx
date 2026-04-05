@@ -64,7 +64,7 @@ export default function ConsignmentDashboard() {
       const res = await consignment.getConsignmentPool();
       if (res?.data) setHospitals(res.data);
       if (res?.summary) setSummary(res.summary);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[ConsignmentDashboard] load error:', err.message); } finally { setLoading(false); }
   };
 
   const handleConvert = async (consignmentId) => {

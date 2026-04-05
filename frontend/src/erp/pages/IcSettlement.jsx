@@ -70,7 +70,7 @@ export default function IcSettlement() {
       .then(res => {
         const subs = (res.data || []).filter(e => e.entity_type === 'SUBSIDIARY' && e.status === 'ACTIVE');
         setEntities(subs);
-      }).catch(() => {});
+      }).catch(err => console.error('[IcSettlement]', err.message));
   }, []);
 
   // Load open IC transfers when subsidiary changes
@@ -79,7 +79,7 @@ export default function IcSettlement() {
     ic.getOpenIcTransfers(debtorId).then(res => {
       setOpenTransfers(res?.data || []);
       setSelected(new Map());
-    }).catch(() => {});
+    }).catch(err => console.error('[IcSettlement]', err.message));
   }, [debtorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleTransfer = (tfr) => {

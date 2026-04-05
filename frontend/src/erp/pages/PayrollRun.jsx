@@ -60,7 +60,7 @@ export default function PayrollRun() {
       const res = await api.getPayrollStaging({ period, cycle });
       setPayslips(res?.data || []);
       setSummary(res?.summary || null);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[PayrollRun] load error:', err.message); } finally { setLoading(false); }
   }, [period, cycle]);
 
   const handleCompute = async () => {
@@ -79,7 +79,7 @@ export default function PayrollRun() {
       if (action === 'review') await api.reviewPayslip(id);
       if (action === 'approve') await api.approvePayslip(id);
       loadStaging();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   const handlePostAll = async () => {

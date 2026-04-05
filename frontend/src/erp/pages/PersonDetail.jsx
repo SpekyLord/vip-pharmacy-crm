@@ -44,7 +44,7 @@ export default function PersonDetail() {
       ]);
       setPerson(pRes?.data || null);
       setPayslips(psRes?.data || []);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[PersonDetail] load error:', err.message); } finally { setLoading(false); }
   }, [id]);
 
   useEffect(() => { load(); }, [load]);

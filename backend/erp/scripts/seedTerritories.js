@@ -77,7 +77,7 @@ async function seed() {
   console.log(`\nDone. ${count} territories created.`);
 
   // Verify
-  const all = await Territory.find({}).populate('assigned_bdms', 'firstName lastName email').lean();
+  const all = await Territory.find({}).populate('assigned_bdms', 'name email').lean();
   for (const t of all) {
     const bdms = t.assigned_bdms.map(b => `${b.firstName} ${b.lastName}`).join(', ');
     console.log(`  ${t.territory_code} | ${t.territory_name} | ${bdms}`);

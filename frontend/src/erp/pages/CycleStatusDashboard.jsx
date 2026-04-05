@@ -58,7 +58,7 @@ export default function CycleStatusDashboard() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { const res = await rpt.getCycleStatus(period); setData(res?.data || null); } catch {}
+    try { const res = await rpt.getCycleStatus(period); setData(res?.data || null); } catch (err) { console.error('[CycleStatusDashboard] load error:', err.message); }
     setLoading(false);
   }, [period]);
 

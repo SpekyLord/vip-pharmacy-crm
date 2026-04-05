@@ -36,7 +36,7 @@ const getIncomeList = catchAsync(async (req, res) => {
   if (req.query.status) filter.status = req.query.status;
 
   const reports = await IncomeReport.find(filter)
-    .populate('bdm_id', 'firstName lastName email')
+    .populate('bdm_id', 'name email')
     .sort({ period: -1, cycle: -1 })
     .lean();
   res.json({ success: true, data: reports });
@@ -44,9 +44,9 @@ const getIncomeList = catchAsync(async (req, res) => {
 
 const getIncomeById = catchAsync(async (req, res) => {
   const report = await IncomeReport.findOne({ _id: req.params.id, ...req.tenantFilter })
-    .populate('bdm_id', 'firstName lastName email')
-    .populate('reviewed_by', 'firstName lastName')
-    .populate('credited_by', 'firstName lastName');
+    .populate('bdm_id', 'name email')
+    .populate('reviewed_by', 'name')
+    .populate('credited_by', 'name');
   if (!report) return res.status(404).json({ success: false, message: 'Income report not found' });
   res.json({ success: true, data: report });
 });
@@ -128,7 +128,7 @@ const getPnlList = catchAsync(async (req, res) => {
   if (req.query.status) filter.status = req.query.status;
 
   const reports = await PnlReport.find(filter)
-    .populate('bdm_id', 'firstName lastName email')
+    .populate('bdm_id', 'name email')
     .sort({ period: -1 })
     .lean();
   res.json({ success: true, data: reports });
@@ -136,8 +136,8 @@ const getPnlList = catchAsync(async (req, res) => {
 
 const getPnlById = catchAsync(async (req, res) => {
   const report = await PnlReport.findOne({ _id: req.params.id, ...req.tenantFilter })
-    .populate('bdm_id', 'firstName lastName email')
-    .populate('posted_by', 'firstName lastName');
+    .populate('bdm_id', 'name email')
+    .populate('posted_by', 'name');
   if (!report) return res.status(404).json({ success: false, message: 'PNL report not found' });
   res.json({ success: true, data: report });
 });
@@ -364,8 +364,8 @@ const getArchiveList = catchAsync(async (req, res) => {
   if (req.query.fiscal_year) filter.fiscal_year = parseInt(req.query.fiscal_year);
 
   const archives = await MonthlyArchive.find(filter)
-    .populate('closed_by', 'firstName lastName')
-    .populate('fy_closed_by', 'firstName lastName')
+    .populate('closed_by', 'name')
+    .populate('fy_closed_by', 'name')
     .sort({ period: -1 })
     .lean();
   res.json({ success: true, data: archives });

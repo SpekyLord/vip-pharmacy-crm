@@ -57,7 +57,7 @@ export default function ExpenseAnomalies() {
         const res = await rpt.getBudgetOverruns(period);
         setBudgetData(res?.data || null);
       }
-    } catch {}
+    } catch (err) { console.error('[ExpenseAnomalies] load error:', err.message); }
     setLoading(false);
   }, [period, tab]);
 

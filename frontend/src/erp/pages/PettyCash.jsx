@@ -52,7 +52,7 @@ const styles = {
 
 // ---------- Create Fund Modal ----------
 function CreateFundModal({ open, onClose, onSave }) {
-  const [form, setForm] = useState({ fund_name: '', fund_code: '', custodian: '', ceiling_amount: CEILING });
+  const [form, setForm] = useState({ fund_name: '', fund_code: '', custodian_id: '', balance_ceiling: CEILING });
   const [saving, setSaving] = useState(false);
 
   const handleChange = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
@@ -60,7 +60,7 @@ function CreateFundModal({ open, onClose, onSave }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onSave({ ...form, ceiling_amount: Number(form.ceiling_amount) }); onClose(); }
+    try { await onSave({ ...form, balance_ceiling: Number(form.balance_ceiling) }); onClose(); }
     catch (err) { alert(err?.response?.data?.message || 'Failed to create fund'); }
     finally { setSaving(false); }
   };
@@ -81,11 +81,11 @@ function CreateFundModal({ open, onClose, onSave }) {
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Custodian (User ID)</label>
-            <input style={styles.formInput} name="custodian" value={form.custodian} onChange={handleChange} required />
+            <input style={styles.formInput} name="custodian_id" value={form.custodian_id} onChange={handleChange} required />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Ceiling Amount</label>
-            <input style={styles.formInput} name="ceiling_amount" type="number" value={form.ceiling_amount} onChange={handleChange} required />
+            <input style={styles.formInput} name="balance_ceiling" type="number" value={form.balance_ceiling} onChange={handleChange} required />
           </div>
           <div style={styles.formActions}>
             <button type="button" style={styles.btnSecondary} onClick={onClose}>Cancel</button>
@@ -99,7 +99,7 @@ function CreateFundModal({ open, onClose, onSave }) {
 
 // ---------- Create Transaction Modal ----------
 function CreateTxnModal({ open, onClose, onSave, funds }) {
-  const [form, setForm] = useState({ fund: '', txn_type: 'DISBURSEMENT', payee: '', description: '', amount: '', receipt_number: '' });
+  const [form, setForm] = useState({ fund_id: '', txn_type: 'DISBURSEMENT', payee: '', particulars: '', amount: '', or_number: '' });
   const [saving, setSaving] = useState(false);
 
   const handleChange = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
@@ -107,7 +107,7 @@ function CreateTxnModal({ open, onClose, onSave, funds }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onSave({ ...form, amount: Number(form.amount) }); onClose(); setForm({ fund: '', txn_type: 'DISBURSEMENT', payee: '', description: '', amount: '', receipt_number: '' }); }
+    try { await onSave({ ...form, amount: Number(form.amount) }); onClose(); setForm({ fund_id: '', txn_type: 'DISBURSEMENT', payee: '', particulars: '', amount: '', or_number: '' }); }
     catch (err) { alert(err?.response?.data?.message || 'Failed to create transaction'); }
     finally { setSaving(false); }
   };
@@ -120,7 +120,7 @@ function CreateTxnModal({ open, onClose, onSave, funds }) {
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Fund</label>
-            <select style={styles.formInput} name="fund" value={form.fund} onChange={handleChange} required>
+            <select style={styles.formInput} name="fund_id" value={form.fund_id} onChange={handleChange} required>
               <option value="">Select fund...</option>
               {(funds || []).map(f => <option key={f._id} value={f._id}>{f.fund_name}</option>)}
             </select>
@@ -138,7 +138,7 @@ function CreateTxnModal({ open, onClose, onSave, funds }) {
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Description</label>
-            <input style={styles.formInput} name="description" value={form.description} onChange={handleChange} required />
+            <input style={styles.formInput} name="particulars" value={form.particulars} onChange={handleChange} required />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Amount</label>
@@ -146,7 +146,7 @@ function CreateTxnModal({ open, onClose, onSave, funds }) {
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Receipt #</label>
-            <input style={styles.formInput} name="receipt_number" value={form.receipt_number} onChange={handleChange} />
+            <input style={styles.formInput} name="or_number" value={form.or_number} onChange={handleChange} />
           </div>
           <div style={styles.formActions}>
             <button type="button" style={styles.btnSecondary} onClick={onClose}>Cancel</button>

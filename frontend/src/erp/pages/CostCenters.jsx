@@ -94,7 +94,7 @@ export default function CostCenters() {
   };
 
   const handleToggle = async (id, is_active) => {
-    try { await rpt.updateCostCenter(id, { is_active }); load(); } catch {}
+    try { await rpt.updateCostCenter(id, { is_active }); load(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   return (

@@ -219,7 +219,7 @@ export default function DrEntry() {
   // Load stock when warehouse selected
   useEffect(() => {
     if (warehouseId) {
-      inventory.getMyStock(null, null, warehouseId).then(res => { if (res?.data) setStockProducts(res.data); }).catch(() => {});
+      inventory.getMyStock(null, null, warehouseId).then(res => { if (res?.data) setStockProducts(res.data); }).catch(err => console.error('[DrEntry]', err.message));
     }
     loadDRs();
   }, [warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -230,7 +230,7 @@ export default function DrEntry() {
     try {
       const res = await consignment.getDRs({ limit: 50 });
       if (res?.data) setDrList(res.data);
-    } catch {}
+    } catch (err) { console.error('[DrEntry] load error:', err.message); }
   };
 
   // Build batch lookup: { product_id: [{ batch_lot_no, expiry_date, available_qty }] }
@@ -300,7 +300,7 @@ export default function DrEntry() {
       }
       setRows([emptyRow()]);
       await loadDRs();
-      if (warehouseId) inventory.getMyStock(null, null, warehouseId).then(res => { if (res?.data) setStockProducts(res.data); }).catch(() => {});
+      if (warehouseId) inventory.getMyStock(null, null, warehouseId).then(res => { if (res?.data) setStockProducts(res.data); }).catch(err => console.error('[DrEntry]', err.message));
     } catch (err) {
       alert(err.response?.data?.message || err.message || 'DR submission failed');
     } finally {

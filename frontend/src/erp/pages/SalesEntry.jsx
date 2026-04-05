@@ -476,7 +476,7 @@ export default function SalesEntry() {
     if (saleType !== 'CSI') {
       customers.getAll({ limit: 0, status: 'ACTIVE' }).then(res => {
         if (res?.data) setCustomerList(res.data);
-      }).catch(() => {});
+      }).catch(err => console.error('[SalesEntry]', err.message));
     }
   }, [saleType]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -485,7 +485,7 @@ export default function SalesEntry() {
     if (!warehouseId) return;
     inventory.getMyStock(null, null, warehouseId).then(res => {
       if (res?.data) setStockProducts(res.data);
-    }).catch(() => {});
+    }).catch(err => console.error('[SalesEntry]', err.message));
   }, [warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build product dropdown options from stock (includes batches for FIFO selector)
@@ -637,7 +637,7 @@ export default function SalesEntry() {
       } else {
         setRows([emptyRow()]);
       }
-    } catch {}
+    } catch (err) { console.error('[SalesEntry] load error:', err.message); }
   };
 
   const handleValidate = async () => {
@@ -841,7 +841,7 @@ export default function SalesEntry() {
                                   try {
                                     await sales.validateSales([r._id]);
                                     await loadSales();
-                                  } catch {} finally { setActionLoading(''); }
+                                  } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } finally { setActionLoading(''); }
                                 }}>Validate</button>
                               )}
                               {r.status === 'VALID' && (
@@ -850,7 +850,7 @@ export default function SalesEntry() {
                                   try {
                                     await sales.submitSales();
                                     await loadSales();
-                                  } catch {} finally { setActionLoading(''); }
+                                  } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } finally { setActionLoading(''); }
                                 }}>Post</button>
                               )}
                               {r.status === 'POSTED' && (
@@ -860,7 +860,7 @@ export default function SalesEntry() {
                               )}
                               {r.status === 'DRAFT' && (
                                 <button className="btn btn-danger btn-sm" onClick={async () => {
-                                  try { await sales.deleteDraft(r._id); await loadSales(); } catch {}
+                                  try { await sales.deleteDraft(r._id); await loadSales(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
                                 }}>✕</button>
                               )}
                             </div>

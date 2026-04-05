@@ -57,7 +57,7 @@ export default function CycleReports() {
       if (filters.status) params.status = filters.status;
       const res = await rpt.getCycleReports(params);
       setReports(res?.data || []);
-    } catch {}
+    } catch (err) { console.error('[CycleReports] load error:', err.message); }
     setLoading(false);
   }, [filters]);
 
@@ -69,7 +69,7 @@ export default function CycleReports() {
       else if (action === 'confirm') await rpt.confirmCycleReport(id, extraData);
       else if (action === 'credit') await rpt.creditCycleReport(id, extraData);
       load();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   return (

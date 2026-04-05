@@ -115,9 +115,9 @@ export default function CollectionSession() {
 
   // Load bank accounts + petty cash funds for "Deposited At" dropdown
   useEffect(() => {
-    listBankAccounts().then(r => setBankAccountsList(r?.data || [])).catch(() => {});
+    listBankAccounts().then(r => setBankAccountsList(r?.data || [])).catch(err => console.error('[CollectionSession]', err.message));
     import('../../services/api').then(({ default: api }) => {
-      api.get('/erp/petty-cash/funds').then(res => setPettyCashFunds(res.data?.data || [])).catch(() => {});
+      api.get('/erp/petty-cash/funds').then(res => setPettyCashFunds(res.data?.data || [])).catch(err => console.error('[CollectionSession]', err.message));
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -126,7 +126,7 @@ export default function CollectionSession() {
     import('../../services/api').then(({ default: api }) => {
       api.get('/erp/customers', { params: { limit: 0, status: 'ACTIVE' } })
         .then(res => setCustomerList(res.data?.data || []))
-        .catch(() => {});
+        .catch(err => console.error('[CollectionSession]', err.message));
     });
   }, []);
 
@@ -141,7 +141,7 @@ export default function CollectionSession() {
         const h = hospitals.find(h => h._id === hospitalId);
         if (h?.cwt_rate) setCwtRate(String(h.cwt_rate));
       }
-    }).catch(() => {});
+    }).catch(err => console.error('[CollectionSession]', err.message));
   }, [hospitalId, customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleCsi = (csi) => {
@@ -420,8 +420,8 @@ export default function CollectionSession() {
                     try {
                       const { default: api } = await import('../../services/api');
                       const res = await api.post('/erp/sales', { sale_type: 'CASH_RECEIPT', hospital_id: hospitalId || undefined, customer_id: customerId || undefined, csi_date: crDate, line_items: [] });
-                      if (res.data?.data?.invoice_number) { setCrNo(res.data.data.invoice_number); await api.delete(`/erp/sales/draft/${res.data.data._id}`).catch(() => {}); }
-                    } catch {}
+                      if (res.data?.data?.invoice_number) { setCrNo(res.data.data.invoice_number); await api.delete(`/erp/sales/draft/${res.data.data._id}`).catch(err => console.error('[CollectionSession]', err.message)); }
+                    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
                   }}>(auto-generate)</span>}</label>
                   <input value={crNo} onChange={e => setCrNo(e.target.value)} placeholder={paymentMode === 'CASH' ? 'Click auto-generate or enter manually' : 'e.g. 002905'} />
                 </div>

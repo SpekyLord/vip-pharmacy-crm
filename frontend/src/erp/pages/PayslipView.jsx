@@ -37,7 +37,7 @@ export default function PayslipView() {
     try {
       const res = await api.getPayslip(id);
       setPs(res?.data || null);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[PayslipView] load error:', err.message); } finally { setLoading(false); }
   }, [id]);
 
   useEffect(() => { load(); }, [load]);

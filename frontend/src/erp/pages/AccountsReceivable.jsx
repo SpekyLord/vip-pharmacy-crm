@@ -55,7 +55,7 @@ export default function AccountsReceivable() {
     ]).then(([ar, rate]) => {
       setArData(ar?.data || null);
       setRateData(rate?.data || null);
-    }).catch(() => {}).finally(() => setLoading(false));
+    }).catch(err => console.error('[AccountsReceivable]', err.message)).finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hospitals = arData?.hospitals || [];

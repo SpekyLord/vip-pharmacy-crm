@@ -224,7 +224,7 @@ export default function GrnEntry() {
       if (listFilter) params.status = listFilter;
       const res = await grn.getGrnList(params);
       if (res?.data) setGrnList(res.data);
-    } catch {}
+    } catch (err) { console.error('[GrnEntry] load error:', err.message); }
   };
 
   const updateLine = (idx, field, value) => {
