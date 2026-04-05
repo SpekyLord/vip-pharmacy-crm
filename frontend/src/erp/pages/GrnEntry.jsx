@@ -95,6 +95,20 @@ const pageStyles = `
     .line-items-table { display: block; overflow-x: auto; }
     .line-items-table th,
     .line-items-table td { white-space: nowrap; }
+    .line-items-table thead { display: none; }
+    .line-items-table tbody,
+    .line-items-table tr,
+    .line-items-table td { display: block; width: 100%; }
+    .line-items-table tr { padding: 10px 12px; border: 1px solid var(--erp-border); border-radius: 10px; background: var(--erp-panel); margin-bottom: 10px; }
+    .line-items-table td { padding: 6px 0; border: none; }
+    .line-items-table td:last-child { padding-top: 4px; }
+    .line-items-table td:last-child .btn { width: 100%; }
+    .line-items-table input,
+    .line-items-table .vip-select__control {
+      border: 1px solid #cbd5f5;
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    }
     .grn-list { overflow: hidden; }
     .grn-table { font-size: 12px; }
     .grn-table th,
@@ -356,7 +370,7 @@ export default function GrnEntry() {
                     <td><input value={li.batch_lot_no} onChange={e => updateLine(idx, 'batch_lot_no', e.target.value)} placeholder="Batch #" /></td>
                     <td><input type="date" value={li.expiry_date} onChange={e => updateLine(idx, 'expiry_date', e.target.value)} /></td>
                     <td><input type="number" min="1" value={li.qty} onChange={e => updateLine(idx, 'qty', e.target.value)} placeholder="Qty" /></td>
-                    <td><button className="btn btn-danger btn-sm" onClick={() => removeLine(idx)}>&times;</button></td>
+                    <td><button className="btn btn-danger btn-sm" onClick={() => removeLine(idx)}>Remove line</button></td>
                   </tr>
                 ))}
               </tbody>
