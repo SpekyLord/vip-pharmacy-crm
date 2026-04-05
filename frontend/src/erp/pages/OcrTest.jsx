@@ -6,6 +6,8 @@ import { processDocument, extractExifDateTime } from '../services/ocrService';
 import useHospitals from '../hooks/useHospitals';
 import useProducts from '../hooks/useProducts';
 
+import SelectField from '../../components/common/Select';
+
 const DOC_TYPES = [
   { value: 'CSI', label: 'Charge Sales Invoice (CSI)' },
   { value: 'CR', label: 'Collection Receipt (CR)' },
@@ -359,7 +361,7 @@ const OcrTest = () => {
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ocr-muted)', marginBottom: 4, display: 'block' }}>
                   DOCUMENT TYPE
                 </label>
-                <select
+                <SelectField
                   className="ocr-select"
                   value={docType}
                   onChange={(e) => setDocType(e.target.value)}
@@ -367,7 +369,7 @@ const OcrTest = () => {
                   {DOC_TYPES.map((t) => (
                     <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
-                </select>
+                </SelectField>
               </div>
 
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>

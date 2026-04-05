@@ -12,6 +12,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useWarehouses from '../hooks/useWarehouses';
 import useEntities from '../hooks/useEntities';
 import usePeople from '../hooks/usePeople';
+import SelectField from '../../components/common/Select';
 
 const TYPE_LABELS = { MAIN: 'Main Warehouse', TERRITORY: 'Territory', VIRTUAL: 'Virtual' };
 const TYPE_COLORS = { MAIN: '#1e40af', TERRITORY: '#166534', VIRTUAL: '#64748b' };
@@ -50,7 +51,22 @@ const pageStyles = `
   .wm-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .wm-check { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 6px 0; }
   .wm-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-  @media(max-width: 768px) { .wm-grid { grid-template-columns: 1fr; } }
+  @media(max-width: 768px) {
+    .wm-page { padding-top: 12px; }
+    .wm-main { padding: 76px 12px 96px; }
+    .wm-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .wm-header .wm-btn { width: 100%; }
+    .wm-grid { grid-template-columns: 1fr; }
+    .wm-field-row { grid-template-columns: 1fr; }
+    .wm-footer { flex-direction: column; }
+    .wm-footer .wm-btn { width: 100%; }
+    .wm-panel { padding: 18px; }
+  }
+
+  @media(max-width: 480px) {
+    .wm-page { padding-top: 16px; }
+    .wm-main { padding-top: 72px; padding-bottom: 104px; }
+  }
 `;
 
 const emptyForm = () => ({
@@ -180,11 +196,11 @@ export default function WarehouseManager() {
                   </div>
                   <div className="wm-field">
                     <label>Type</label>
-                    <select value={form.warehouse_type} onChange={e => setForm(f => ({ ...f, warehouse_type: e.target.value }))}>
+                    <SelectField value={form.warehouse_type} onChange={e => setForm(f => ({ ...f, warehouse_type: e.target.value }))}>
                       <option value="MAIN">Main Warehouse</option>
                       <option value="TERRITORY">Territory</option>
                       <option value="VIRTUAL">Virtual</option>
-                    </select>
+                    </SelectField>
                   </div>
                 </div>
                 <div className="wm-field">
@@ -223,9 +239,9 @@ export default function WarehouseManager() {
                 </div>
                 <div className="wm-field">
                   <label>Stock Type</label>
-                  <select value={form.stock_type} onChange={e => setForm(f => ({ ...f, stock_type: e.target.value }))}>
+                  <SelectField value={form.stock_type} onChange={e => setForm(f => ({ ...f, stock_type: e.target.value }))}>
                     {STOCK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="wm-check">
                   <input type="checkbox" checked={form.is_default_receiving} onChange={e => setForm(f => ({ ...f, is_default_receiving: e.target.checked }))} />

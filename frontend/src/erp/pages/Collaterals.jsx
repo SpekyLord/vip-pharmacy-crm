@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import Navbar from '../../components/common/Navbar';
+import Sidebar from '../../components/common/Sidebar';
+import SelectField from '../../components/common/Select';
 import useCollaterals from '../hooks/useCollaterals';
 
 const COLLATERAL_TYPES = ['ALL', 'BROCHURE', 'SAMPLE', 'MERCHANDISE', 'BANNER', 'FLYER', 'OTHER'];
 
 const styles = {
-  container: { padding: '24px', maxWidth: '1200px', margin: '0 auto' },
+  container: { padding: 0, maxWidth: '1200px', margin: '0 auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' },
   title: { fontSize: '24px', fontWeight: 'bold', margin: 0 },
   filterRow: { display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' },
@@ -41,6 +44,27 @@ const styles = {
   td: { padding: '10px 12px', borderBottom: '1px solid #e5e7eb' },
   viewToggle: { display: 'flex', gap: '4px' }
 };
+
+const pageStyles = `
+  .collaterals-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
+  .collaterals-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 24px; }
+  .collaterals-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  @media (max-width: 768px) {
+    .collaterals-page { padding-top: 12px; }
+    .collaterals-main { padding: 76px 12px 96px; }
+    .collaterals-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .collaterals-actions > button { width: 100%; }
+    .collaterals-filter { flex-direction: column; align-items: stretch; }
+    .collaterals-filter .vip-select__control { width: 100%; }
+    .collaterals-filter .collaterals-spacer { display: none; }
+  }
+
+  @media (max-width: 480px) {
+    .collaterals-page { padding-top: 16px; }
+    .collaterals-main { padding-top: 72px; padding-bottom: 104px; }
+  }
+`;
 
 const TYPE_COLORS = { BROCHURE: 'blue', SAMPLE: 'green', MERCHANDISE: 'purple', BANNER: 'amber', FLYER: 'gray', OTHER: 'gray' };
 
@@ -88,9 +112,9 @@ function CollateralModal({ open, onClose, onSave, editItem }) {
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Type</label>
-            <select style={styles.formInput} name="collateral_type" value={form.collateral_type} onChange={handleChange}>
+            <SelectField style={styles.formInput} name="collateral_type" value={form.collateral_type} onChange={handleChange}>
               {COLLATERAL_TYPES.filter(t => t !== 'ALL').map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Qty On Hand</label>
@@ -144,10 +168,10 @@ function DistributionModal({ open, onClose, onSave, collaterals }) {
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Collateral</label>
-            <select style={styles.formInput} name="collateral" value={form.collateral} onChange={handleChange} required>
+            <SelectField style={styles.formInput} name="collateral" value={form.collateral} onChange={handleChange} required>
               <option value="">Select collateral...</option>
               {(collaterals || []).map(c => <option key={c._id} value={c._id}>{c.name} (qty: {c.qty_on_hand})</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Quantity</label>
@@ -201,10 +225,10 @@ function ReturnModal({ open, onClose, onSave, collaterals }) {
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Collateral</label>
-            <select style={styles.formInput} name="collateral" value={form.collateral} onChange={handleChange} required>
+            <SelectField style={styles.formInput} name="collateral" value={form.collateral} onChange={handleChange} required>
               <option value="">Select collateral...</option>
               {(collaterals || []).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Quantity</label>
@@ -275,102 +299,113 @@ export default function Collaterals() {
   const typeBadge = (type) => <span style={styles.badge(TYPE_COLORS[type] || 'gray')}>{type}</span>;
 
   return (
-    <div style={styles.container}>
-      <div style={{ ...styles.header, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-        <h1 style={styles.title}>Collaterals</h1>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #dbe4f0', background: 'transparent', fontSize: 13, fontWeight: 600, cursor: 'pointer' }} onClick={handleExport}>Export Excel</button>
-          <label style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #dbe4f0', background: 'transparent', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>
-        </div>
-      </div>
-
-      <div style={styles.filterRow}>
-        <select style={styles.select} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
-          {COLLATERAL_TYPES.map(t => <option key={t} value={t}>{t === 'ALL' ? 'All Types' : t}</option>)}
-        </select>
-        <div style={styles.viewToggle}>
-          <button style={viewMode === 'cards' ? styles.btnPrimary : styles.btnSecondaryLg} onClick={() => setViewMode('cards')}>Cards</button>
-          <button style={viewMode === 'table' ? styles.btnPrimary : styles.btnSecondaryLg} onClick={() => setViewMode('table')}>Table</button>
-        </div>
-        <div style={{ flex: 1 }} />
-        <button style={styles.btnPrimary} onClick={() => { setEditItem(null); setShowItemModal(true); }}>+ Add Collateral</button>
-        <button style={{ ...styles.btnSuccess, padding: '8px 16px', fontSize: '13px' }} onClick={() => setShowDistModal(true)}>Distribute</button>
-        <button style={{ ...styles.btnAmber, padding: '8px 16px', fontSize: '13px' }} onClick={() => setShowReturnModal(true)}>Record Return</button>
-      </div>
-
-      {loading ? (
-        <div style={styles.empty}>Loading collaterals...</div>
-      ) : items.length === 0 ? (
-        <div style={styles.empty}>No collaterals found{typeFilter !== 'ALL' ? ` for type ${typeFilter}` : ''}.</div>
-      ) : viewMode === 'cards' ? (
-        <div style={styles.grid}>
-          {items.map(item => (
-            <div key={item._id} style={styles.card}>
-              {item.photo_url ? (
-                <img src={item.photo_url} alt={item.name} style={styles.cardImg} />
-              ) : (
-                <div style={styles.cardImgPlaceholder}>No Photo</div>
-              )}
-              <div style={styles.cardBody}>
-                <div style={styles.cardTitle}>{item.name}</div>
-                <div style={{ marginBottom: '8px' }}>{typeBadge(item.collateral_type)}</div>
-                <div style={styles.cardRow}>
-                  <span>Qty On Hand</span>
-                  <span style={{ fontWeight: 600, color: item.qty_on_hand <= 0 ? '#dc2626' : '#111' }}>{item.qty_on_hand}</span>
-                </div>
-                <div style={styles.cardRow}>
-                  <span>Assigned To</span>
-                  <span>{item.assigned_to || '-'}</span>
-                </div>
-                {item.description && (
-                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px' }}>{item.description}</div>
-                )}
-                <div style={styles.cardActions}>
-                  <button style={styles.btnSecondary} onClick={() => { setEditItem(item); setShowItemModal(true); }}>Edit</button>
-                </div>
+    <div className="admin-page erp-page collaterals-page">
+      <style>{pageStyles}</style>
+      <Navbar />
+      <div className="admin-layout">
+        <Sidebar />
+        <main className="collaterals-main">
+          <div style={styles.container}>
+            <div style={styles.header} className="collaterals-header">
+              <h1 style={styles.title}>Collaterals</h1>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button style={styles.btnSecondaryLg} onClick={handleExport}>Export Excel</button>
+                <label style={{ ...styles.btnSecondaryLg, cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>
               </div>
             </div>
-          ))}
-        </div>
-      ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Name</th>
-                <th style={styles.th}>Type</th>
-                <th style={styles.th}>Qty On Hand</th>
-                <th style={styles.th}>Assigned To</th>
-                <th style={styles.th}>Description</th>
-                <th style={styles.th}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(item => (
-                <tr key={item._id}>
-                  <td style={styles.td}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {item.photo_url && <img src={item.photo_url} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover' }} />}
-                      {item.name}
-                    </div>
-                  </td>
-                  <td style={styles.td}>{typeBadge(item.collateral_type)}</td>
-                  <td style={{ ...styles.td, fontWeight: 600, color: item.qty_on_hand <= 0 ? '#dc2626' : '#111' }}>{item.qty_on_hand}</td>
-                  <td style={styles.td}>{item.assigned_to || '-'}</td>
-                  <td style={styles.td}>{item.description || '-'}</td>
-                  <td style={styles.td}>
-                    <button style={styles.btnSecondary} onClick={() => { setEditItem(item); setShowItemModal(true); }}>Edit</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
 
-      <CollateralModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} />
-      <DistributionModal open={showDistModal} onClose={() => setShowDistModal(false)} onSave={handleDistribute} collaterals={items} />
-      <ReturnModal open={showReturnModal} onClose={() => setShowReturnModal(false)} onSave={handleReturn} collaterals={items} />
+            <div style={styles.filterRow} className="collaterals-filter">
+              <SelectField style={styles.select} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+                {COLLATERAL_TYPES.map(t => <option key={t} value={t}>{t === 'ALL' ? 'All Types' : t}</option>)}
+              </SelectField>
+              <div style={styles.viewToggle}>
+                <button style={viewMode === 'cards' ? styles.btnPrimary : styles.btnSecondaryLg} onClick={() => setViewMode('cards')}>Cards</button>
+                <button style={viewMode === 'table' ? styles.btnPrimary : styles.btnSecondaryLg} onClick={() => setViewMode('table')}>Table</button>
+              </div>
+              <div className="collaterals-spacer" style={{ flex: 1 }} />
+              <div className="collaterals-actions">
+                <button style={styles.btnPrimary} onClick={() => { setEditItem(null); setShowItemModal(true); }}>+ Add Collateral</button>
+                <button style={{ ...styles.btnSuccess, padding: '8px 16px', fontSize: '13px' }} onClick={() => setShowDistModal(true)}>Distribute</button>
+                <button style={{ ...styles.btnAmber, padding: '8px 16px', fontSize: '13px' }} onClick={() => setShowReturnModal(true)}>Record Return</button>
+              </div>
+            </div>
+
+            {loading ? (
+              <div style={styles.empty}>Loading collaterals...</div>
+            ) : items.length === 0 ? (
+              <div style={styles.empty}>No collaterals found{typeFilter !== 'ALL' ? ` for type ${typeFilter}` : ''}.</div>
+            ) : viewMode === 'cards' ? (
+              <div style={styles.grid}>
+                {items.map(item => (
+                  <div key={item._id} style={styles.card}>
+                    {item.photo_url ? (
+                      <img src={item.photo_url} alt={item.name} style={styles.cardImg} />
+                    ) : (
+                      <div style={styles.cardImgPlaceholder}>No Photo</div>
+                    )}
+                    <div style={styles.cardBody}>
+                      <div style={styles.cardTitle}>{item.name}</div>
+                      <div style={{ marginBottom: '8px' }}>{typeBadge(item.collateral_type)}</div>
+                      <div style={styles.cardRow}>
+                        <span>Qty On Hand</span>
+                        <span style={{ fontWeight: 600, color: item.qty_on_hand <= 0 ? '#dc2626' : '#111' }}>{item.qty_on_hand}</span>
+                      </div>
+                      <div style={styles.cardRow}>
+                        <span>Assigned To</span>
+                        <span>{item.assigned_to || '-'}</span>
+                      </div>
+                      {item.description && (
+                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px' }}>{item.description}</div>
+                      )}
+                      <div style={styles.cardActions}>
+                        <button style={styles.btnSecondary} onClick={() => { setEditItem(item); setShowItemModal(true); }}>Edit</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>Name</th>
+                      <th style={styles.th}>Type</th>
+                      <th style={styles.th}>Qty On Hand</th>
+                      <th style={styles.th}>Assigned To</th>
+                      <th style={styles.th}>Description</th>
+                      <th style={styles.th}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map(item => (
+                      <tr key={item._id}>
+                        <td style={styles.td}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {item.photo_url && <img src={item.photo_url} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover' }} />}
+                            {item.name}
+                          </div>
+                        </td>
+                        <td style={styles.td}>{typeBadge(item.collateral_type)}</td>
+                        <td style={{ ...styles.td, fontWeight: 600, color: item.qty_on_hand <= 0 ? '#dc2626' : '#111' }}>{item.qty_on_hand}</td>
+                        <td style={styles.td}>{item.assigned_to || '-'}</td>
+                        <td style={styles.td}>{item.description || '-'}</td>
+                        <td style={styles.td}>
+                          <button style={styles.btnSecondary} onClick={() => { setEditItem(item); setShowItemModal(true); }}>Edit</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <CollateralModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} />
+            <DistributionModal open={showDistModal} onClose={() => setShowDistModal(false)} onSave={handleDistribute} collaterals={items} />
+            <ReturnModal open={showReturnModal} onClose={() => setShowReturnModal(false)} onSave={handleReturn} collaterals={items} />
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

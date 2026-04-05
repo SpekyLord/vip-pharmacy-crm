@@ -788,7 +788,7 @@ const Dashboard = ({ user, stats = {} }) => {
               <div className="db-stat-icon green"><MapPin size={18} /></div>
               <div>
                 <div className="db-stat-value">{totalVisits}</div>
-                <div className="db-stat-label">Total Visits</div>
+                <div className="db-stat-label">Cycle Visits</div>
                 <div className="db-stat-sub">
                   <span className="dot-vip">{vipVisits} VIP</span>
                   <span className="dot-reg">{regularVisits} Regular</span>

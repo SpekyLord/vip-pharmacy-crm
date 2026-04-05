@@ -23,6 +23,8 @@ import doctorService from '../../services/doctorService';
 import toast from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+import SelectField from '../../components/common/Select';
+
 /* =============================================================================
    HELPERS
    ============================================================================= */
@@ -874,7 +876,7 @@ const CallPlanPage = () => {
               {/* Month Picker (only visible on Performance tab) */}
               {activeTab === 'performance' && (
                 <div className="cpt-perf-month-picker">
-                  <select
+                  <SelectField
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(e.target.value)}
                   >
@@ -883,7 +885,7 @@ const CallPlanPage = () => {
                         {opt.label}
                       </option>
                     ))}
-                  </select>
+                  </SelectField>
                 </div>
               )}
             </div>

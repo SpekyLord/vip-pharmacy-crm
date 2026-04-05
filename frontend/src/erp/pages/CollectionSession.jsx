@@ -10,6 +10,8 @@ import useAccounting from '../hooks/useAccounting';
 import doctorService from '../../services/doctorService';
 import { processDocument } from '../services/ocrService';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .coll-session { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .coll-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1100px; margin: 0 auto; }
@@ -289,7 +291,7 @@ export default function CollectionSession() {
             <div className="form-row">
               <div className="form-group" style={{ flex: 2 }}>
                 <label>Hospital / Customer (one CR per account)</label>
-                <select value={hospitalId || customerId || ''} onChange={e => {
+                <SelectField value={hospitalId || customerId || ''} onChange={e => {
                   const val = e.target.value;
                   const isCustomer = customerList.some(c => c._id === val);
                   if (isCustomer) { setCustomerId(val); setHospitalId(''); }
@@ -304,13 +306,13 @@ export default function CollectionSession() {
                       {customerList.map(c => <option key={c._id} value={c._id}>{c.customer_name}{c.customer_type ? ` (${c.customer_type})` : ''}</option>)}
                     </optgroup>
                   )}
-                </select>
+                </SelectField>
               </div>
             </div>
           </div>
 
           {/* Step 2: CSIs with inline commission + partner tags */}
-          {hospitalId && (
+          {(hospitalId || customerId) && (
             <div className="section">
               <h2>2. Select CSIs — Commission & Partner Rebate</h2>
               {openCsis.length === 0 ? (
@@ -334,7 +336,6 @@ export default function CollectionSession() {
                           P{(csi.balance_due || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </span>
                       </div>
-
                       {/* Meta: date, invoice total, days outstanding */}
                       <div className="csi-card-meta">
                         <span>Date: {new Date(csi.csi_date).toLocaleDateString('en-PH')}</span>
@@ -342,16 +343,15 @@ export default function CollectionSession() {
                         <span>Outstanding: {csi.days_outstanding}d</span>
                         <span>Net of VAT: P{(csi.total_net_of_vat || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                       </div>
-
                       {/* Commission + Partner tags — only when selected */}
                       {isSelected && (
                         <>
                           <div className="csi-controls">
                             <div>
                               <label>Commission %</label>
-                              <select value={entry?.commission_rate || 0} onChange={e => updateCsiField(csi._id, 'commission_rate', parseFloat(e.target.value))}>
+                              <SelectField value={entry?.commission_rate || 0} onChange={e => updateCsiField(csi._id, 'commission_rate', parseFloat(e.target.value))}>
                                 {commRates.map(r => <option key={r} value={r}>{(r * 100).toFixed(1)}%</option>)}
-                              </select>
+                              </SelectField>
                               <span style={{ fontSize: 11, marginLeft: 6, color: '#16a34a', fontWeight: 600 }}>
                                 = P{((entry?.net_of_vat || csi.total_net_of_vat || 0) * (entry?.commission_rate || 0)).toFixed(2)}
                               </span>
@@ -368,9 +368,9 @@ export default function CollectionSession() {
                                   {tag.doctor_name}
                                   <button className="remove-btn" onClick={() => removePartnerTag(csi._id, tag.doctor_id)} title="Remove">&times;</button>
                                 </span>
-                                <select value={tag.rebate_pct} onChange={e => updatePartnerRebate(csi._id, tag.doctor_id, e.target.value)}>
+                                <SelectField value={tag.rebate_pct} onChange={e => updatePartnerRebate(csi._id, tag.doctor_id, e.target.value)}>
                                   {rebateRates.map(r => <option key={r} value={r}>{r}%</option>)}
-                                </select>
+                                </SelectField>
                                 <span className="rebate-display">
                                   = P{((entry?.net_of_vat || 0) * (tag.rebate_pct / 100)).toFixed(2)} rebate
                                 </span>
@@ -378,7 +378,7 @@ export default function CollectionSession() {
                             ))}
 
                             <div className="partner-row">
-                              <select
+                              <SelectField
                                 value=""
                                 onChange={e => { if (e.target.value) addPartnerTag(csi._id, e.target.value); }}
                                 style={{ minWidth: 220 }}
@@ -388,7 +388,7 @@ export default function CollectionSession() {
                                   .filter(d => !(entry?.partner_tags || []).some(t => t.doctor_id === d._id))
                                   .map(d => <option key={d._id} value={d._id}>{d.name}{d.specialty ? ` — ${d.specialty}` : ''}</option>)
                                 }
-                              </select>
+                              </SelectField>
                             </div>
 
                             {!(entry?.partner_tags || []).length && (
@@ -437,30 +437,31 @@ export default function CollectionSession() {
               <div className="form-row">
                 <div className="form-group">
                   <label>Payment Mode</label>
-                  <select value={paymentMode} onChange={e => { setPaymentMode(e.target.value); setBankAccountId(''); setPettyCashFundId(''); }}>
+                  <SelectField value={paymentMode} onChange={e => { setPaymentMode(e.target.value); setBankAccountId(''); setPettyCashFundId(''); }}>
                     <option value="CASH">Cash</option>
                     <option value="CHECK">Check</option>
                     <option value="GCASH">GCash</option>
                     <option value="ONLINE">Online / Bank Transfer</option>
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="form-group">
-                  <label>{paymentMode === 'CASH' ? 'Deposit To (Petty Cash)' : paymentMode === 'GCASH' ? 'GCash Account' : 'Deposited At (Bank)'}</label>
-                  {paymentMode === 'CASH' ? (
-                    <select value={pettyCashFundId || ''} onChange={e => { setPettyCashFundId(e.target.value); setBankAccountId(''); }} style={{ width: '100%' }}>
-                      <option value="">Select petty cash fund…</option>
-                      {pettyCashFunds.map(f => <option key={f._id} value={f._id}>{f.fund_code} — {f.fund_name}</option>)}
-                      {!pettyCashFunds.length && <option disabled>No petty cash funds assigned</option>}
-                    </select>
-                  ) : (
-                    <select value={bankAccountId || ''} onChange={e => { setBankAccountId(e.target.value); setPettyCashFundId(''); }} style={{ width: '100%' }}>
-                      <option value="">Select bank account…</option>
-                      {bankAccountsList
-                        .filter(b => paymentMode === 'GCASH' ? b.bank_code?.includes('GCASH') || b.bank_name?.toLowerCase().includes('gcash') : true)
-                        .map(b => <option key={b._id} value={b._id}>{b.bank_name}{b.account_no ? ` (${b.account_no})` : ''}</option>)}
-                      {!bankAccountsList.length && <option disabled>No bank accounts assigned</option>}
-                    </select>
-                  )}
+                  <label>{paymentMode === 'CASH' ? 'Deposit To' : 'Deposited At'}</label>
+                  <SelectField value={pettyCashFundId || bankAccountId || ''} onChange={e => {
+                    const val = e.target.value;
+                    const isPc = pettyCashFunds.some(f => f._id === val);
+                    if (isPc) { setPettyCashFundId(val); setBankAccountId(''); }
+                    else { setBankAccountId(val); setPettyCashFundId(''); }
+                  }} style={{ width: '100%' }}>
+                    <option value="">Select destination…</option>
+                    {pettyCashFunds.length > 0 && (
+                      <optgroup label="Petty Cash Funds">
+                        {pettyCashFunds.map(f => <option key={f._id} value={f._id}>{f.fund_code} — {f.fund_name}</option>)}
+                      </optgroup>
+                    )}
+                    <optgroup label="Bank Accounts">
+                      {bankAccountsList.map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
+                    </optgroup>
+                  </SelectField>
                 </div>
               </div>
 

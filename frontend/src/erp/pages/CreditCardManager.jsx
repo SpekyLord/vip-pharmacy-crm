@@ -5,6 +5,8 @@ import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 import usePeople from '../hooks/usePeople';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .ccm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .ccm-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
@@ -262,9 +264,9 @@ export default function CreditCardManager() {
                 <div className="form-row">
                   <div className="form-group">
                     <label>Card Type</label>
-                    <select value={form.card_type} onChange={e => f('card_type', e.target.value)}>
+                    <SelectField value={form.card_type} onChange={e => f('card_type', e.target.value)}>
                       {CARD_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-                    </select>
+                    </SelectField>
                   </div>
                   <div className="form-group">
                     <label>Assign To (select all users who can use this card)</label>

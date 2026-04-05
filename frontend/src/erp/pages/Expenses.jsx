@@ -9,6 +9,8 @@ import CostCenterPicker from '../components/CostCenterPicker';
 import useErpSubAccess from '../hooks/useErpSubAccess';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
+import SelectField from '../../components/common/Select';
+
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
 function ScanORModal({ open, onClose, onApply }) {
   const [step, setStep] = useState('capture');
@@ -169,6 +171,238 @@ const COA_OPTIONS_FALLBACK = [
   // Catch-all
   { code: '6900', label: '6900 — Miscellaneous' },
 ];
+const pageStyles = `
+.erp-expenses-page .admin-main {
+  padding: 24px;
+}
+
+.erp-expenses-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.erp-expenses-nav {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.erp-expenses-nav a,
+.erp-expenses-nav span {
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.erp-expenses-nav a:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(30, 94, 255, 0.12);
+}
+
+.erp-expenses-nav span {
+  background: linear-gradient(135deg, #1e5eff, #3b82f6);
+  box-shadow: 0 10px 24px rgba(30, 94, 255, 0.25);
+}
+
+.erp-expenses-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.erp-expenses-summary > div {
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.erp-expenses-summary > div:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+}
+
+.erp-expenses-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+
+.erp-expenses-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  align-items: center;
+}
+
+.erp-expenses-date {
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(30, 94, 255, 0.25);
+  background: linear-gradient(180deg, #ffffff, #f5f9ff);
+  box-shadow: 0 8px 18px rgba(30, 94, 255, 0.12);
+  transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
+}
+
+.erp-expenses-date:focus {
+  outline: none;
+  border-color: rgba(30, 94, 255, 0.6);
+  box-shadow: 0 10px 22px rgba(30, 94, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.erp-expenses-cycle .vip-select__control {
+  padding: 2px 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(30, 94, 255, 0.25);
+  background: linear-gradient(180deg, #ffffff, #f5f9ff);
+  box-shadow: 0 8px 18px rgba(30, 94, 255, 0.12);
+  transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
+  min-height: 34px;
+}
+
+.erp-expenses-cycle .vip-select__control--is-focused {
+  border-color: rgba(30, 94, 255, 0.6);
+  box-shadow: 0 10px 22px rgba(30, 94, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.erp-expenses-cycle .vip-select__value-container {
+  padding-left: 8px;
+}
+
+.erp-expenses-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  align-items: center;
+}
+
+.erp-expenses-actions button {
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+}
+
+.erp-expenses-actions button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.15);
+  filter: brightness(1.03);
+}
+
+.erp-expenses-actions button:active {
+  transform: translateY(0);
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.12);
+}
+
+.erp-expenses-table-wrap {
+  overflow-x: auto;
+}
+
+.erp-expenses-cards {
+  display: none;
+}
+
+.erp-expense-card {
+  border: 1px solid var(--erp-border, #dbe4f0);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.06);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.erp-expense-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 26px rgba(15, 23, 42, 0.12);
+}
+
+.erp-expense-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.erp-expense-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  font-size: 13px;
+}
+
+.erp-expense-card-label {
+  font-size: 11px;
+  color: var(--erp-muted, #5f7188);
+}
+
+.erp-expense-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.erp-expense-line-row,
+.erp-expense-fields {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.erp-expense-fields {
+  margin-top: 8px;
+}
+
+@media (max-width: 768px) {
+  .erp-expenses-page .admin-main {
+    padding: 96px 16px 88px;
+  }
+
+  .erp-expenses-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .erp-expenses-filters,
+  .erp-expenses-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .erp-expenses-actions button {
+    width: 100%;
+  }
+
+  .erp-expenses-table-wrap {
+    display: none;
+  }
+
+  .erp-expenses-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .erp-expense-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .erp-expense-line-row,
+  .erp-expense-fields {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .erp-expense-line-row > *,
+  .erp-expense-fields > * {
+    width: 100%;
+  }
+}
+`;
 
 export default function Expenses() {
   const { getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense, validateExpenses, submitExpenses, reopenExpenses, getExpenseSummary, batchUploadExpenses, saveBatchExpenses, loading } = useExpenses();
@@ -405,15 +639,18 @@ export default function Expenses() {
   const totalAccess = lines.filter(l => l.expense_type === 'ACCESS').reduce((s, l) => s + (l.amount || 0), 0);
 
   return (
-    <div className="admin-page erp-page">
+    <div className="admin-page erp-page erp-expenses-page">
       <Navbar />
+      <style>{pageStyles}</style>
       <div className="admin-layout">
         <Sidebar />
-        <main className="admin-main" style={{ padding: 24 }}>
-          <h1 style={{ marginBottom: 8, color: 'var(--erp-text, #132238)' }}>Expenses</h1>
+        <main className="admin-main">
+          <div className="erp-expenses-header">
+            <h1 style={{ marginBottom: 0, color: 'var(--erp-text, #132238)' }}>Expenses</h1>
+          </div>
 
           {/* Module navigation */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          <div className="erp-expenses-nav">
             <Link to="/erp/smer" style={{ padding: '6px 14px', borderRadius: 6, background: '#f1f5f9', color: 'var(--erp-text, #132238)', textDecoration: 'none', fontSize: 13, border: '1px solid var(--erp-border, #dbe4f0)' }}>SMER Per Diem</Link>
             <Link to="/erp/car-logbook" style={{ padding: '6px 14px', borderRadius: 6, background: '#f1f5f9', color: 'var(--erp-text, #132238)', textDecoration: 'none', fontSize: 13, border: '1px solid var(--erp-border, #dbe4f0)' }}>Car Logbook</Link>
             <span style={{ padding: '6px 14px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', fontSize: 13, fontWeight: 600 }}>ORE / ACCESS</span>
@@ -422,7 +659,7 @@ export default function Expenses() {
 
           {/* Summary cards */}
           {summary && (
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div className="erp-expenses-summary">
               {[
                 { label: 'SMER', value: summary.categories?.smer_reimbursable, status: summary.smer_status },
                 { label: 'Gas (Official)', value: summary.categories?.gasoline_less_personal },
@@ -440,14 +677,23 @@ export default function Expenses() {
           )}
 
           {/* Controls */}
-          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }} />
-            <select value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
-              <option value="C1">Cycle 1</option><option value="C2">Cycle 2</option><option value="MONTHLY">Monthly</option>
-            </select>
-            <button onClick={handleNew} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New Expense</button>
-            <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
-            <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
+          <div className="erp-expenses-controls">
+            <div className="erp-expenses-filters">
+              <input
+                className="erp-expenses-date"
+                type="date"
+                value={`${period}-01`}
+                onChange={e => setPeriod(e.target.value.slice(0, 7))}
+              />
+              <SelectField className="erp-expenses-cycle" value={cycle} onChange={e => setCycle(e.target.value)}>
+                <option value="C1">Cycle 1</option><option value="C2">Cycle 2</option><option value="MONTHLY">Monthly</option>
+              </SelectField>
+            </div>
+            <div className="erp-expenses-actions">
+              <button onClick={handleNew} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New Expense</button>
+              <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
+              <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
+            </div>
           </div>
 
           {/* ═══ Batch Upload Section (President/Admin) ═══ */}
@@ -630,7 +876,7 @@ export default function Expenses() {
 
           {/* Expense List */}
           {!showForm && (
-            <div style={{ overflowX: 'auto' }}>
+            <div className="erp-expenses-table-wrap">
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
                   <tr style={{ background: 'var(--erp-bg-alt, #f1f5f9)', borderBottom: '2px solid var(--erp-border, #dbe4f0)' }}>
@@ -684,6 +930,63 @@ export default function Expenses() {
             </div>
           )}
 
+          {!showForm && (
+            <div className="erp-expenses-cards">
+              {expenses.map(e => (
+                <div key={e._id} className="erp-expense-card">
+                  <div className="erp-expense-card-header">
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{e.period}</div>
+                      <div style={{ fontSize: 12, color: 'var(--erp-muted, #5f7188)' }}>{e.cycle}</div>
+                    </div>
+                    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#fff', background: STATUS_COLORS[e.status] || '#6b7280' }}>{e.status}</span>
+                  </div>
+                  <div className="erp-expense-card-grid">
+                    <div>
+                      <div className="erp-expense-card-label">Lines</div>
+                      <div>{e.line_count || 0}</div>
+                    </div>
+                    <div>
+                      <div className="erp-expense-card-label">ORE</div>
+                      <div>₱{(e.total_ore || 0).toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="erp-expense-card-label">ACCESS</div>
+                      <div>₱{(e.total_access || 0).toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="erp-expense-card-label">Total</div>
+                      <div style={{ fontWeight: 600 }}>₱{(e.total_amount || 0).toLocaleString()}</div>
+                    </div>
+                  </div>
+                  {e.status === 'ERROR' && e.validation_errors?.length > 0 && (
+                    <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 6, background: '#fef2f2', border: '1px solid #fca5a5' }}>
+                      <div style={{ fontSize: 12, color: '#dc2626' }}>
+                        {e.validation_errors.map((err, i) => <div key={i}>- {err}</div>)}
+                      </div>
+                    </div>
+                  )}
+                  <div className="erp-expense-card-actions">
+                    {['DRAFT', 'ERROR'].includes(e.status) && (
+                      <button onClick={() => handleEdit(e)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Edit</button>
+                    )}
+                    {e.status === 'DRAFT' && (
+                      <button onClick={() => handleDelete(e._id)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
+                    )}
+                    {e.status === 'POSTED' && (
+                      <button onClick={() => handleReopen(e._id)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {!expenses.length && (
+                <div style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)', border: '1px dashed var(--erp-border, #dbe4f0)', borderRadius: 10 }}>
+                  No expenses for this period
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Expense Form */}
           {showForm && (
             <div>
@@ -695,19 +998,19 @@ export default function Expenses() {
               {/* Expense Lines */}
               {lines.map((line, idx) => (
                 <div key={idx} style={{ padding: 12, marginBottom: 8, borderRadius: 8, border: `1px solid ${line.calf_required ? '#f59e0b' : 'var(--erp-border, #dbe4f0)'}`, background: line.expense_type === 'ACCESS' ? '#fffbeb' : '#fff' }}>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
+                  <div className="erp-expense-line-row" style={{ marginBottom: 8 }}>
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--erp-muted)' }}>#{idx + 1}</span>
-                    <select value={line.expense_type} onChange={e => updateLine(idx, 'expense_type', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12, fontWeight: 600 }}>
+                    <SelectField value={line.expense_type} onChange={e => updateLine(idx, 'expense_type', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12, fontWeight: 600 }}>
                       {EXPENSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    </SelectField>
                     <input type="date" value={line.expense_date?.split('T')[0] || ''} onChange={e => updateLine(idx, 'expense_date', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
-                    <select value={line.expense_category} onChange={e => updateLine(idx, 'expense_category', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
+                    <SelectField value={line.expense_category} onChange={e => updateLine(idx, 'expense_category', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                       <option value="">Category...</option>
                       {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    </SelectField>
                     <button onClick={() => removeLine(idx)} style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #ef4444', color: '#ef4444', background: '#fff', cursor: 'pointer', fontSize: 11 }}>X</button>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div className="erp-expense-fields">
                     <input placeholder="Establishment" value={line.establishment} onChange={e => updateLine(idx, 'establishment', e.target.value)} style={{ flex: 1, minWidth: 120, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
                     <input placeholder="Particulars" value={line.particulars} onChange={e => updateLine(idx, 'particulars', e.target.value)} style={{ flex: 1, minWidth: 120, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
                     <input type="number" placeholder="Amount" value={line.amount || ''} onChange={e => updateLine(idx, 'amount', Number(e.target.value))} style={{ width: 90, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
@@ -729,9 +1032,9 @@ export default function Expenses() {
                       }} />
                     </label>
                     {line.or_photo_url && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600 }}>OR Photo ✓</span>}
-                    <select value={line.payment_mode} onChange={e => updateLine(idx, 'payment_mode', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
+                    <SelectField value={line.payment_mode} onChange={e => updateLine(idx, 'payment_mode', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                       {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
+                    </SelectField>
                     {line.calf_required && (
                       line.calf_id
                         ? <a href={`/erp/prf-calf?id=${line.calf_id}`} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600, textDecoration: 'none' }}>CALF ✓ →</a>

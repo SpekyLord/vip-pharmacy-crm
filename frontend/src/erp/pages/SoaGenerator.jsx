@@ -4,6 +4,8 @@ import Sidebar from '../../components/common/Sidebar';
 import useCollections from '../hooks/useCollections';
 import useHospitals from '../hooks/useHospitals';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .soa-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .soa-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 800px; margin: 0 auto; }
@@ -56,10 +58,10 @@ export default function SoaGenerator() {
           <div className="section">
             <div className="form-group">
               <label>Select Hospital</label>
-              <select value={hospitalId} onChange={e => setHospitalId(e.target.value)}>
+              <SelectField value={hospitalId} onChange={e => setHospitalId(e.target.value)}>
                 <option value="">Select hospital...</option>
                 {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
-              </select>
+              </SelectField>
             </div>
             <button className="btn btn-success" onClick={handleGenerate} disabled={!hospitalId || generating}>
               {generating ? 'Generating...' : 'Generate SOA (Excel)'}

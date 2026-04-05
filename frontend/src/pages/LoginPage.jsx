@@ -646,6 +646,7 @@ const LoginPage = () => {
             />
           </div>
           <h1>Welcome!</h1>
+          <div className="login-subtitle">Sign in to continue to VIP</div>
         </div>
         <LoginForm />
       </div>

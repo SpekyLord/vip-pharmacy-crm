@@ -326,9 +326,24 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
   const fileInputRef = useRef(null);
   const containerRef = useRef(null);
   const hasLocationRef = useRef(false);
+  const gpsSessionRef = useRef(0);
 
   // GPS timeout duration (5 minutes max to prevent battery drain)
   const GPS_TIMEOUT_MS = 5 * 60 * 1000;
+
+  const clearGPSTracking = useCallback(() => {
+    if (gpsWatchId.current !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(gpsWatchId.current);
+      gpsWatchId.current = null;
+    }
+    if (gpsWatchId.current !== null && !navigator.geolocation) {
+      gpsWatchId.current = null;
+    }
+    if (gpsTimeoutId.current !== null) {
+      clearTimeout(gpsTimeoutId.current);
+      gpsTimeoutId.current = null;
+    }
+  }, []);
 
   // Start continuous GPS tracking with quick initial fix
   const startGPSTracking = useCallback(() => {
@@ -338,10 +353,16 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
       return;
     }
 
+    clearGPSTracking();
+    hasLocationRef.current = false;
+    setCachedLocation(null);
     setGpsStatus('acquiring');
     setError(null);
+    const sessionId = gpsSessionRef.current + 1;
+    gpsSessionRef.current = sessionId;
 
     const handlePosition = (position) => {
+      if (gpsSessionRef.current !== sessionId) return;
       hasLocationRef.current = true;
       const loc = {
         latitude: position.coords.latitude,
@@ -353,6 +374,7 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
     };
 
     const handleError = () => {
+      if (gpsSessionRef.current !== sessionId) return;
       if (!hasLocationRef.current) {
         setGpsStatus('failed');
       }
@@ -378,15 +400,13 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
 
     // Set a maximum timeout (5 minutes) to stop GPS tracking and prevent battery drain
     gpsTimeoutId.current = setTimeout(() => {
-      if (gpsWatchId.current) {
-        navigator.geolocation.clearWatch(gpsWatchId.current);
-        gpsWatchId.current = null;
-      }
+      if (gpsSessionRef.current !== sessionId) return;
+      clearGPSTracking();
       if (!hasLocationRef.current) {
         setGpsStatus('failed');
       }
     }, GPS_TIMEOUT_MS);
-  }, [GPS_TIMEOUT_MS]);
+  }, [GPS_TIMEOUT_MS, clearGPSTracking]);
 
   // Start GPS tracking on mount (decoupled from camera)
   useEffect(() => {
@@ -400,16 +420,10 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
       if (videoRef.current) {
         videoRef.current.srcObject = null;
       }
-      if (gpsWatchId.current) {
-        navigator.geolocation.clearWatch(gpsWatchId.current);
-        gpsWatchId.current = null;
-      }
-      if (gpsTimeoutId.current) {
-        clearTimeout(gpsTimeoutId.current);
-        gpsTimeoutId.current = null;
-      }
+      gpsSessionRef.current += 1;
+      clearGPSTracking();
     };
-  }, [startGPSTracking]);
+  }, [startGPSTracking, clearGPSTracking]);
 
   // Attach stream to video element when capturing starts
   useEffect(() => {

@@ -10,6 +10,8 @@ import useCustomers from '../hooks/useCustomers';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import WarehousePicker from '../components/WarehousePicker';
 
+import SelectField from '../../components/common/Select';
+
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },
   VALID: { bg: '#dcfce7', text: '#166534', label: 'Valid' },
@@ -69,6 +71,7 @@ const pageStyles = `
   .sale-type-tab { padding: 8px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: var(--erp-muted, #5f7188); transition: all 0.15s; }
   .sale-type-tab.active { background: var(--erp-accent, #1e5eff); color: #fff; }
   .service-form { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 12px; padding: 20px; }
+  .service-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .service-form label { font-size: 12px; font-weight: 600; color: var(--erp-muted); text-transform: uppercase; display: block; margin-bottom: 4px; }
   .service-form input, .service-form textarea, .service-form select { width: 100%; padding: 10px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 14px; margin-bottom: 14px; }
   .service-form textarea { min-height: 80px; resize: vertical; }
@@ -105,6 +108,13 @@ const pageStyles = `
     .sale-card label { font-size: 11px; color: var(--erp-muted); font-weight: 600; text-transform: uppercase; }
     .sale-card input, .sale-card select { width: 100%; padding: 8px; margin-top: 4px; margin-bottom: 10px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 14px; }
     .sale-card .card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+    .sales-main { padding-bottom: 96px; }
+    .sales-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .sales-actions { width: 100%; }
+    .sales-actions .btn { flex: 1 1 48%; }
+    .sale-type-tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .sale-type-tab { white-space: nowrap; }
+    .service-grid { grid-template-columns: 1fr; }
   }
   @media (min-width: 769px) {
     .sales-cards { display: none; }
@@ -743,10 +753,10 @@ export default function SalesEntry() {
           {/* Phase 18: Service Invoice Form (no line items — description + total) */}
           {saleType === 'SERVICE_INVOICE' && (
             <div className="service-form">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div className="service-grid">
                 <div>
                   <label>Customer / Hospital</label>
-                  <select value={`${serviceForm.customer_type}:${serviceForm.customer_ref}`} onChange={e => {
+                  <SelectField value={`${serviceForm.customer_type}:${serviceForm.customer_ref}`} onChange={e => {
                     const [type, id] = e.target.value.split(':');
                     setServiceForm(f => ({ ...f, customer_type: type, customer_ref: id }));
                   }}>
@@ -757,7 +767,7 @@ export default function SalesEntry() {
                     <optgroup label="Customers">
                       {customerList.map(c => <option key={c._id} value={`customer:${c._id}`}>{c.customer_name}{c.customer_type ? ` (${c.customer_type})` : ''}</option>)}
                     </optgroup>
-                  </select>
+                  </SelectField>
                 </div>
                 <div>
                   <label>Invoice Date</label>
@@ -773,13 +783,13 @@ export default function SalesEntry() {
                 </div>
                 <div>
                   <label>Payment Mode</label>
-                  <select value={serviceForm.payment_mode} onChange={e => setServiceForm(f => ({ ...f, payment_mode: e.target.value }))}>
+                  <SelectField value={serviceForm.payment_mode} onChange={e => setServiceForm(f => ({ ...f, payment_mode: e.target.value }))}>
                     <option value="CASH">Cash</option>
                     <option value="CHECK">Check</option>
                     <option value="GCASH">GCash</option>
                     <option value="BANK_TRANSFER">Bank Transfer</option>
                     <option value="ONLINE">Online</option>
-                  </select>
+                  </SelectField>
                 </div>
               </div>
               <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
@@ -899,7 +909,7 @@ export default function SalesEntry() {
                   <tr key={row._id || row._tempId}>
                     <td style={{ color: 'var(--erp-muted)', fontSize: 12 }}>{idx + 1}</td>
                     <td>
-                      <select value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {
+                      <SelectField value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {
                         const val = e.target.value;
                         const isCustomer = customerList.some(c => c._id === val);
                         if (isCustomer) { updateRow(idx, 'customer_id', val); updateRow(idx, 'hospital_id', ''); }
@@ -918,7 +928,7 @@ export default function SalesEntry() {
                             ))}
                           </optgroup>
                         )}
-                      </select>
+                      </SelectField>
                     </td>
                     <td>
                       <input type="date" value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) : ''} onChange={e => updateRow(idx, 'csi_date', e.target.value)} disabled={row.status === 'POSTED'} />
@@ -929,14 +939,14 @@ export default function SalesEntry() {
                     <td>
                       {row.line_items?.map((item, li) => (
                         <div key={li}>
-                          <select value={item.product_id?._id || item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)} disabled={row.status === 'POSTED'}>
+                          <SelectField value={item.product_id?._id || item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)} disabled={row.status === 'POSTED'}>
                             <option value="">Select product...</option>
                             {productOptions.map(p => (
                               <option key={p.product_id} value={p.product_id}>
                                 {p.label}
                               </option>
                             ))}
-                          </select>
+                          </SelectField>
                           {item.product_id && productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id))?.near_expiry && (
                             <span className="near-expiry-badge">Near Expiry</span>
                           )}
@@ -951,14 +961,14 @@ export default function SalesEntry() {
                         if (batches.length === 1) return <div key={li} style={{ fontSize: 12, fontWeight: 600 }}>{batches[0].batch_lot_no} ({batches[0].available_qty})</div>;
                         return (
                           <div key={li}>
-                            <select value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} disabled={row.status === 'POSTED'} className="batch-select">
+                            <SelectField value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} disabled={row.status === 'POSTED'} className="batch-select">
                               <option value="">Auto (FIFO)</option>
                               {batches.map((b, bi) => (
                                 <option key={bi} value={b.batch_lot_no}>
                                   {b.batch_lot_no} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
                                 </option>
                               ))}
-                            </select>
+                            </SelectField>
                             {item.fifo_override && (
                               <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} disabled={row.status === 'POSTED'} />
                             )}
@@ -1026,11 +1036,25 @@ export default function SalesEntry() {
                     {STATUS_COLORS[row.status]?.label}
                   </span>
                 </div>
-                <label>Hospital</label>
-                <select value={row.hospital_id?._id || row.hospital_id || ''} onChange={e => updateRow(idx, 'hospital_id', e.target.value)}>
+                <label>{saleType === 'CSI' ? 'Hospital' : 'Customer'}</label>
+                <SelectField value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {
+                  const val = e.target.value;
+                  const isCustomer = customerList.some(c => c._id === val);
+                  if (isCustomer) { updateRow(idx, 'customer_id', val); updateRow(idx, 'hospital_id', ''); }
+                  else { updateRow(idx, 'hospital_id', val); updateRow(idx, 'customer_id', ''); }
+                }}>
                   <option value="">Select...</option>
-                  {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
-                </select>
+                  <optgroup label="Hospitals">
+                    {hospitals.map(h => <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>)}
+                  </optgroup>
+                  {saleType !== 'CSI' && customerList.length > 0 && (
+                    <optgroup label="Customers">
+                      {customerList.map(c => (
+                        <option key={c._id} value={c._id}>{c.customer_name}{c.customer_type ? ` (${c.customer_type})` : ''}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </SelectField>
                 <label>CSI Date</label>
                 <input type="date" value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) : ''} onChange={e => updateRow(idx, 'csi_date', e.target.value)} />
                 <label>CSI #</label>
@@ -1039,37 +1063,37 @@ export default function SalesEntry() {
                   const prod = item.product_id ? productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id)) : null;
                   const batches = prod?.batches || [];
                   return (
-                  <div key={li}>
-                    <label>Product</label>
-                    <select value={item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)}>
-                      <option value="">Select...</option>
-                      {productOptions.map(p => <option key={p.product_id} value={p.product_id}>{p.label}</option>)}
-                    </select>
-                    {item.product_id && batches.length > 1 && (
-                      <>
-                        <label>Batch / Expiry</label>
-                        <select value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} className="batch-select">
-                          <option value="">Auto (FIFO)</option>
-                          {batches.map((b, bi) => (
-                            <option key={bi} value={b.batch_lot_no}>
-                              {b.batch_lot_no} — Exp: {new Date(b.expiry_date).toLocaleDateString()} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
-                            </option>
-                          ))}
-                        </select>
-                        {item.fifo_override && (
-                          <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} />
-                        )}
-                      </>
-                    )}
-                    {item.product_id && batches.length === 1 && (
-                      <div style={{ fontSize: 12, color: 'var(--erp-muted)', padding: '4px 0' }}>Batch: {batches[0].batch_lot_no} — Exp: {new Date(batches[0].expiry_date).toLocaleDateString()}</div>
-                    )}
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <div style={{ flex: 1 }}><label>Qty</label><input type="number" value={item.qty || ''} onChange={e => updateLineItem(idx, li, 'qty', e.target.value)} /></div>
-                      <div style={{ flex: 1 }}><label>Price</label><input type="number" value={item.unit_price || ''} onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)} /></div>
-                      <div style={{ flex: 1 }}><label>Total</label><input value={computeLineTotal(item)} readOnly /></div>
+                    <div key={li}>
+                      <label>Product</label>
+                      <SelectField value={item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)}>
+                        <option value="">Select...</option>
+                        {productOptions.map(p => <option key={p.product_id} value={p.product_id}>{p.label}</option>)}
+                      </SelectField>
+                      {item.product_id && batches.length > 1 && (
+                        <>
+                          <label>Batch / Expiry</label>
+                          <SelectField value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} className="batch-select">
+                            <option value="">Auto (FIFO)</option>
+                            {batches.map((b, bi) => (
+                              <option key={bi} value={b.batch_lot_no}>
+                                {b.batch_lot_no} — Exp: {new Date(b.expiry_date).toLocaleDateString()} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
+                              </option>
+                            ))}
+                          </SelectField>
+                          {item.fifo_override && (
+                            <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} />
+                          )}
+                        </>
+                      )}
+                      {item.product_id && batches.length === 1 && (
+                        <div style={{ fontSize: 12, color: 'var(--erp-muted)', padding: '4px 0' }}>Batch: {batches[0].batch_lot_no} — Exp: {new Date(batches[0].expiry_date).toLocaleDateString()}</div>
+                      )}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <div style={{ flex: 1 }}><label>Qty</label><input type="number" value={item.qty || ''} onChange={e => updateLineItem(idx, li, 'qty', e.target.value)} /></div>
+                        <div style={{ flex: 1 }}><label>Price</label><input type="number" value={item.unit_price || ''} onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)} /></div>
+                        <div style={{ flex: 1 }}><label>Total</label><input value={computeLineTotal(item)} readOnly /></div>
+                      </div>
                     </div>
-                  </div>
                   );
                 })}
                 {row.status === 'DRAFT' && (
@@ -1097,7 +1121,6 @@ export default function SalesEntry() {
           )}
         </main>
       </div>
-
       {/* Scan CSI Modal */}
       <ScanCSIModal
         open={scanModalOpen}

@@ -3,6 +3,8 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
 
+import SelectField from '../../components/common/Select';
+
 const styles = `
   .si-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .si-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1300px; margin: 0 auto; }
@@ -188,25 +190,25 @@ export default function SupplierInvoices() {
             </div>
 
             <div className="si-filters">
-              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <SelectField value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                 <option value="">All Statuses</option>
                 <option value="DRAFT">Draft</option>
                 <option value="VALIDATED">Validated</option>
                 <option value="POSTED">Posted</option>
-              </select>
-              <select value={matchFilter} onChange={e => setMatchFilter(e.target.value)}>
+              </SelectField>
+              <SelectField value={matchFilter} onChange={e => setMatchFilter(e.target.value)}>
                 <option value="">All Match</option>
                 <option value="UNMATCHED">Unmatched</option>
                 <option value="PARTIAL_MATCH">Partial</option>
                 <option value="FULL_MATCH">Full Match</option>
                 <option value="DISCREPANCY">Discrepancy</option>
-              </select>
-              <select value={payFilter} onChange={e => setPayFilter(e.target.value)}>
+              </SelectField>
+              <SelectField value={payFilter} onChange={e => setPayFilter(e.target.value)}>
                 <option value="">All Payment</option>
                 <option value="UNPAID">Unpaid</option>
                 <option value="PARTIAL">Partial</option>
                 <option value="PAID">Paid</option>
-              </select>
+              </SelectField>
             </div>
 
             {msg.text && <div className={`si-msg si-msg-${msg.type}`}>{msg.text}</div>}
@@ -269,10 +271,10 @@ export default function SupplierInvoices() {
                   <div className="form-row">
                     <div className="form-group">
                       <label>Vendor *</label>
-                      <select value={form.vendor_id} onChange={e => setForm(f => ({ ...f, vendor_id: e.target.value }))}>
+                      <SelectField value={form.vendor_id} onChange={e => setForm(f => ({ ...f, vendor_id: e.target.value }))}>
                         <option value="">Select vendor...</option>
                         {vendors.map(v => <option key={v._id} value={v._id}>{v.vendor_name}</option>)}
-                      </select>
+                      </SelectField>
                     </div>
                     <div className="form-group">
                       <label>Invoice Ref *</label>
@@ -291,12 +293,12 @@ export default function SupplierInvoices() {
                   </div>
                   <div className="form-group">
                     <label>Link to PO (optional)</label>
-                    <select value={form.po_id} onChange={e => setForm(f => ({ ...f, po_id: e.target.value }))}>
+                    <SelectField value={form.po_id} onChange={e => setForm(f => ({ ...f, po_id: e.target.value }))}>
                       <option value="">No PO link</option>
                       {pos.filter(p => !form.vendor_id || p.vendor_id?._id === form.vendor_id || p.vendor_id === form.vendor_id).map(p => (
                         <option key={p._id} value={p._id}>{p.po_number} — {p.vendor_id?.vendor_name || ''}</option>
                       ))}
-                    </select>
+                    </SelectField>
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 6px' }}>
@@ -346,14 +348,14 @@ export default function SupplierInvoices() {
                   </div>
                   <div className="form-group">
                     <label>Payment Mode</label>
-                    <select value={payForm.payment_mode} onChange={e => setPayForm(f => ({ ...f, payment_mode: e.target.value, funding_card_id: '', bank_account_id: '' }))}>
+                    <SelectField value={payForm.payment_mode} onChange={e => setPayForm(f => ({ ...f, payment_mode: e.target.value, funding_card_id: '', bank_account_id: '' }))}>
                       <option value="">Select...</option>
                       <option value="CASH">Cash</option>
                       <option value="CHECK">Check</option>
                       <option value="BANK_TRANSFER">Bank Transfer</option>
                       <option value="GCASH">GCash</option>
                       <option value="CARD">Credit Card</option>
-                    </select>
+                    </SelectField>
                   </div>
                   {payForm.payment_mode === 'CHECK' && (
                     <div className="form-row">
@@ -363,10 +365,10 @@ export default function SupplierInvoices() {
                       </div>
                       <div className="form-group">
                         <label>Bank Account</label>
-                        <select value={payForm.bank_account_id} onChange={e => setPayForm(f => ({ ...f, bank_account_id: e.target.value }))}>
+                        <SelectField value={payForm.bank_account_id} onChange={e => setPayForm(f => ({ ...f, bank_account_id: e.target.value }))}>
                           <option value="">Select bank...</option>
                           {bankAccounts.map(ba => <option key={ba._id} value={ba._id}>{ba.bank_name} ({ba.bank_code})</option>)}
-                        </select>
+                        </SelectField>
                       </div>
                     </div>
                   )}
@@ -374,10 +376,10 @@ export default function SupplierInvoices() {
                     <div className="form-row">
                       <div className="form-group">
                         <label>Bank Account</label>
-                        <select value={payForm.bank_account_id} onChange={e => setPayForm(f => ({ ...f, bank_account_id: e.target.value }))}>
+                        <SelectField value={payForm.bank_account_id} onChange={e => setPayForm(f => ({ ...f, bank_account_id: e.target.value }))}>
                           <option value="">Select bank...</option>
                           {bankAccounts.map(ba => <option key={ba._id} value={ba._id}>{ba.bank_name} ({ba.bank_code})</option>)}
-                        </select>
+                        </SelectField>
                       </div>
                       <div className="form-group">
                         <label>Reference / Txn ID</label>
@@ -388,10 +390,10 @@ export default function SupplierInvoices() {
                   {payForm.payment_mode === 'CARD' && (
                     <div className="form-group">
                       <label>Credit Card</label>
-                      <select value={payForm.funding_card_id} onChange={e => setPayForm(f => ({ ...f, funding_card_id: e.target.value }))}>
+                      <SelectField value={payForm.funding_card_id} onChange={e => setPayForm(f => ({ ...f, funding_card_id: e.target.value }))}>
                         <option value="">Select card...</option>
                         {creditCards.map(cc => <option key={cc._id} value={cc._id}>{cc.card_name} ({cc.card_code})</option>)}
-                      </select>
+                      </SelectField>
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>

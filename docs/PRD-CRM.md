@@ -57,6 +57,8 @@ Documentation uses business terms. Code uses Doctor/Employee.
 ### 2.1 Admin
 **Description:** System administrators with full access to all features and data across all regions.
 
+**CRM elevated admin-like roles:** `admin`, `president`, `ceo`, and `finance` all have full CRM admin permissions.
+
 **Permissions:**
 - Manage all users (create, edit, deactivate)
 - Manage all VIP Clients across all regions
@@ -239,7 +241,7 @@ Every visit MUST include:
 ### 4.1 Authentication & Authorization
 - Secure login with email/password
 - JWT-based authentication via **httpOnly cookies** (NOT localStorage)
-- Role-based access control (admin, employee)
+- Role-based access control (`admin`, `employee`, `president`, `ceo`, `finance`)
 - Password reset functionality
 - **Account lockout** after 5 failed attempts (15 min)
 - **Audit logging** (all auth events, 90-day TTL)

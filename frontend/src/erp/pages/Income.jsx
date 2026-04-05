@@ -11,6 +11,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useIncome from '../hooks/useIncome';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .income-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .income-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
@@ -162,12 +164,12 @@ export default function Income() {
             <h1>Income Reports</h1>
             <div className="controls">
               <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />
-              <select value={cycle} onChange={e => setCycle(e.target.value)}>
+              <SelectField value={cycle} onChange={e => setCycle(e.target.value)}>
                 <option value="ALL">All Cycles</option>
                 <option value="C1">C1</option>
                 <option value="C2">C2</option>
                 <option value="MONTHLY">Monthly</option>
-              </select>
+              </SelectField>
               {isAdmin && (
                 <input type="text" placeholder="BDM ID (optional)" value={bdmId}
                   onChange={e => setBdmId(e.target.value)} style={{ width: 160 }} />

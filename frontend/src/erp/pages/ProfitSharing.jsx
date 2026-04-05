@@ -14,6 +14,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useIncome from '../hooks/useIncome';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .ps-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .ps-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
@@ -224,12 +226,12 @@ export default function ProfitSharing() {
             <div className="fy-section">
               <h3>Year-End Close</h3>
               <div className="fy-status">
-                <select value={fyYear} onChange={e => setFyYear(parseInt(e.target.value))}>
+                <SelectField value={fyYear} onChange={e => setFyYear(parseInt(e.target.value))}>
                   {[...Array(5)].map((_, i) => {
                     const y = new Date().getFullYear() - 2 + i;
                     return <option key={y} value={y}>{y}</option>;
                   })}
-                </select>
+                </SelectField>
                 {fyStatus && (
                   <span className={`badge ${fyStatus.status === 'CLOSED' ? 'badge-qualified' : 'badge-not-met'}`}>
                     FY {fyYear}: {fyStatus.status}

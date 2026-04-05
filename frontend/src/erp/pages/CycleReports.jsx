@@ -8,6 +8,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .cr-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .cr-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
@@ -86,13 +88,13 @@ export default function CycleReports() {
 
           <div className="controls">
             <input type="month" value={filters.period} onChange={e => setFilters(f => ({ ...f, period: e.target.value }))} />
-            <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
+            <SelectField value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
               <option value="">All Status</option>
               <option value="GENERATED">Generated</option>
               <option value="REVIEWED">Reviewed</option>
               <option value="BDM_CONFIRMED">BDM Confirmed</option>
               <option value="CREDITED">Credited</option>
-            </select>
+            </SelectField>
             <button className="btn btn-primary" onClick={load} disabled={loading}>Load</button>
           </div>
 

@@ -63,8 +63,8 @@ const navbarStyles = `
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 16px;
-    padding: 0 24px;
-    min-height: 68px;
+    padding: 0 20px;
+    min-height: 56px;
     background: white;
     border-bottom: 1px solid #e5e7eb;
     position: sticky;
@@ -98,6 +98,10 @@ const navbarStyles = `
     border: 1px solid #e5e7eb;
     border-radius: 999px;
     flex-shrink: 0;
+  }
+
+  .navbar-platform-switch--mobile {
+    display: none;
   }
 
   .navbar-platform-link {
@@ -202,11 +206,12 @@ const navbarStyles = `
   }
 
   .navbar-logo {
-    height: 160px;
-    width: 160px;
+    height: 72px;
+    width: 72px;
     object-fit: contain;
+    object-position: center;
     flex-shrink: 0;
-    margin: -45px -25px -45px 25px;
+    margin: 0;
   }
 
   .navbar-brand h1 {
@@ -257,7 +262,7 @@ const navbarStyles = `
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 6px 12px 6px 6px;
+    padding: 4px 10px 4px 4px;
     background: #f9fafb;
     border: 1px solid #e5e7eb;
     border-radius: 12px;
@@ -274,10 +279,10 @@ const navbarStyles = `
   }
 
   .navbar-avatar {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border-radius: 10px;
-    font-size: 14px;
+    font-size: 12px;
   }
 
   .navbar-avatar-mobile {
@@ -309,11 +314,11 @@ const navbarStyles = `
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 16px;
+    padding: 8px 12px;
     background: white;
     border: 1px solid #e5e7eb;
     border-radius: 10px;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
     color: #6b7280;
     cursor: pointer;
@@ -338,8 +343,8 @@ const navbarStyles = `
   }
 
   .navbar-theme-btn {
-    width: 38px;
-    height: 38px;
+    width: 34px;
+    height: 34px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -450,7 +455,7 @@ const navbarStyles = `
 
   @media (max-width: 1280px) {
     .navbar {
-      padding: 0 16px;
+      padding: 0 14px;
       gap: 10px;
     }
 
@@ -504,6 +509,14 @@ const navbarStyles = `
   }
 
   @media (max-width: 768px) {
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+    }
+
     .navbar-center {
       justify-content: flex-start;
     }
@@ -520,9 +533,9 @@ const navbarStyles = `
 
   @media (max-width: 480px) {
     .navbar {
-      padding: 0 4px 0 0;
-      min-height: 60px;
-      gap: 4px;
+      padding: 0 10px;
+      min-height: 52px;
+      gap: 8px;
     }
 
     .navbar-hamburger {
@@ -542,12 +555,8 @@ const navbarStyles = `
       display: none;
     }
 
-    .navbar-left {
-      gap: 0;
-    }
-
-    .navbar-brand {
-      display: none;
+    .navbar-logo {
+      height: 56px;
     }
 
     .navbar-center {
@@ -558,6 +567,14 @@ const navbarStyles = `
 
     .navbar-erp-tabs {
       display: none;
+    }
+
+    .navbar-center .navbar-platform-switch {
+      display: none;
+    }
+
+    .navbar-platform-switch--mobile {
+      display: inline-flex;
     }
 
     .navbar-platform-switch {
@@ -660,7 +677,7 @@ const Navbar = () => {
         </button>
 
         <div className="navbar-brand">
-          <img src="/VIP_LOGO-removebg.svg" alt="VIP" className="navbar-logo" />
+          <img src="/image-removebg-preview (1).png" alt="VIP" className="navbar-logo" />
         </div>
 
         {user && (
@@ -713,6 +730,22 @@ const Navbar = () => {
       )}
 
       <div className="navbar-menu">
+        {user && (
+          <div className="navbar-platform-switch navbar-platform-switch--mobile" aria-label="Platform switch">
+            <Link
+              to={crmHome}
+              className={`navbar-platform-link ${isErpRoute ? '' : 'active'}`.trim()}
+            >
+              CRM
+            </Link>
+            <Link
+              to="/erp"
+              className={`navbar-platform-link ${isErpRoute ? 'active' : ''}`.trim()}
+            >
+              ERP
+            </Link>
+          </div>
+        )}
         <button className="navbar-theme-btn" onClick={toggleTheme} aria-label="Toggle dark mode">
           {isDark ? <Sun size={17} /> : <Moon size={17} />}
         </button>

@@ -38,6 +38,7 @@ const getEngagementClass = (level) => {
 
 const DAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const VISIT_STATUS_UNAVAILABLE_REASON = 'Visit status unavailable. Please retry.';
 
 const pageStyles = `
   .ddp-back-row {
@@ -620,6 +621,11 @@ const DoctorDetailPage = () => {
 
       if (canVisitRes.status === 'fulfilled') {
         setVisitEligibility(canVisitRes.value.data);
+      } else {
+        setVisitEligibility({
+          canVisit: false,
+          reason: VISIT_STATUS_UNAVAILABLE_REASON,
+        });
       }
 
       if (visitsRes.status === 'fulfilled') {
@@ -637,6 +643,9 @@ const DoctorDetailPage = () => {
   }, [fetchData]);
 
   const handleLogVisit = () => {
+    if (visitEligibility?.canVisit !== true) {
+      return;
+    }
     navigate(`/bdm/visit/new?doctorId=${id}`);
   };
 
@@ -694,8 +703,10 @@ const DoctorDetailPage = () => {
   if (!doctor) return null;
 
   const fullName = doctor.fullName || `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim();
-  const canVisit = visitEligibility?.canVisit ?? true;
-  const visitReason = visitEligibility?.reason;
+  const canVisit = visitEligibility?.canVisit === true;
+  const visitReason = canVisit
+    ? ''
+    : (visitEligibility?.reason || VISIT_STATUS_UNAVAILABLE_REASON);
   const assignedToName = doctor.assignedTo?.name || '';
   const schedule = doctor.clinicSchedule || {};
   const targetProducts = doctor.targetProducts || [];

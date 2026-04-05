@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useCustomers from '../hooks/useCustomers';
+import SelectField from '../../components/common/Select';
 
 const CUSTOMER_TYPES = ['ALL', 'PERSON', 'PHARMACY', 'DIAGNOSTIC_CENTER', 'INDUSTRIAL', 'OTHER'];
 const SALE_TYPES = ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'];
@@ -29,14 +30,18 @@ const pageStyles = `
   .cust-header p { color: var(--erp-muted, #5f7188); font-size: 14px; margin: 0; }
 
   .cust-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+  .cust-filter-item { min-width: 180px; }
   .cust-filters input,
-  .cust-filters select { padding: 7px 10px; border: 1px solid var(--erp-border, #dbe4f0); border-radius: 8px; font-size: 13px; background: var(--erp-panel, #fff); }
+  .cust-filters select { padding: 7px 10px; border: 1px solid var(--erp-border, #dbe4f0); border-radius: 8px; font-size: 13px; background: var(--erp-panel, #fff); box-sizing: border-box; }
   .cust-filters input { min-width: 200px; }
+
+  
 
   .cust-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 12px; overflow: hidden; }
   .cust-table th { background: var(--erp-accent-soft, #e8efff); padding: 10px 12px; text-align: left; font-weight: 600; color: var(--erp-text); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
   .cust-table td { padding: 10px 12px; border-top: 1px solid var(--erp-border); }
   .cust-table tr:hover { background: var(--erp-accent-soft, #f0f4ff); }
+  .cust-card-list { display: none; }
 
   .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
 
@@ -73,12 +78,32 @@ const pageStyles = `
   .empty-row { text-align: center; padding: 40px 12px; color: var(--erp-muted); }
 
   @media (max-width: 768px) {
-    .cust-main { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
-    .cust-filters { flex-direction: column; }
+    .cust-page { padding-top: 12px; }
+    .cust-main { padding-top: 76px; padding-bottom: 96px; }
+    .cust-table { display: none; }
+    .cust-filters { flex-direction: column; align-items: stretch; }
     .cust-filters input { min-width: 100%; }
+    .cust-filters select { width: 100%; max-width: 100%; min-width: 0; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+    .cust-filter-item { min-width: 100%; }
     .form-grid { grid-template-columns: 1fr; }
     .cust-table { font-size: 12px; }
     .cust-table th, .cust-table td { padding: 8px 8px; }
+    .cust-card-list { display: grid; gap: 12px; }
+    .cust-card { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 14px; padding: 12px; }
+    .cust-card-header { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+    .cust-card-title { font-weight: 700; font-size: 14px; color: var(--erp-text, #132238); }
+    .cust-card-sub { font-size: 12px; color: var(--erp-muted, #5f7188); margin-top: 2px; }
+    .cust-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .cust-card-item { display: flex; flex-direction: column; gap: 2px; }
+    .cust-card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.04em; }
+    .cust-card-value { font-size: 12px; color: var(--erp-text, #132238); }
+    .cust-card-actions { display: flex; gap: 6px; margin-top: 10px; }
+  }
+
+  @media (max-width: 480px) {
+    .cust-page { padding-top: 16px; }
+    .cust-main { padding-top: 72px; padding-bottom: 104px; }
+    .cust-card-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 375px) {
     .cust-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
@@ -280,22 +305,22 @@ export default function CustomerList() {
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
             />
-            <select
-              value={filters.customer_type}
-              onChange={e => handleFilterChange('customer_type', e.target.value)}
-            >
-              {CUSTOMER_TYPES.map(t => (
-                <option key={t} value={t}>{t === 'ALL' ? 'All Types' : formatType(t)}</option>
-              ))}
-            </select>
-            <select
-              value={filters.status}
-              onChange={e => handleFilterChange('status', e.target.value)}
-            >
-              {STATUS_OPTIONS.map(s => (
-                <option key={s} value={s}>{s === 'ALL' ? 'All Status' : s}</option>
-              ))}
-            </select>
+            <div className="cust-filter-item">
+              <SelectField
+                value={filters.customer_type}
+                onChange={e => handleFilterChange('customer_type', e.target.value)}
+                options={CUSTOMER_TYPES.map(t => ({ value: t, label: t === 'ALL' ? 'All Types' : formatType(t) }))}
+                placeholder="All Types"
+              />
+            </div>
+            <div className="cust-filter-item">
+              <SelectField
+                value={filters.status}
+                onChange={e => handleFilterChange('status', e.target.value)}
+                options={STATUS_OPTIONS.map(s => ({ value: s, label: s === 'ALL' ? 'All Status' : s }))}
+                placeholder="All Status"
+              />
+            </div>
           </div>
 
           {/* Table */}
@@ -359,6 +384,63 @@ export default function CustomerList() {
             </tbody>
           </table>
 
+          {/* Mobile cards */}
+          <div className="cust-card-list">
+            {data.map(cust => {
+              const typeColor = TYPE_BADGE_COLORS[cust.customer_type] || TYPE_BADGE_COLORS.OTHER;
+              const statusColor = STATUS_BADGE[cust.status] || STATUS_BADGE.ACTIVE;
+              return (
+                <div key={cust._id} className="cust-card">
+                  <div className="cust-card-header">
+                    <div>
+                      <div className="cust-card-title">{cust.customer_name}</div>
+                      {cust.tin && <div className="cust-card-sub">TIN: {cust.tin}</div>}
+                    </div>
+                    {cust.customer_type && (
+                      <span className="badge" style={{ background: typeColor.bg, color: typeColor.text }}>
+                        {formatType(cust.customer_type)}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="cust-card-grid">
+                    <div className="cust-card-item">
+                      <span className="cust-card-label">Sale Type</span>
+                      <span className="cust-card-value">{cust.default_sale_type || '-'}</span>
+                    </div>
+                    <div className="cust-card-item">
+                      <span className="cust-card-label">Payment Terms</span>
+                      <span className="cust-card-value">{cust.payment_terms != null ? `${cust.payment_terms} days` : '-'}</span>
+                    </div>
+                    <div className="cust-card-item">
+                      <span className="cust-card-label">Contact</span>
+                      <span className="cust-card-value">{cust.contact_person || '-'}</span>
+                    </div>
+                    <div className="cust-card-item">
+                      <span className="cust-card-label">Status</span>
+                      <span className="badge" style={{ background: statusColor.bg, color: statusColor.text, width: 'fit-content' }}>
+                        {cust.status || 'ACTIVE'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="cust-card-actions">
+                    <button className="btn btn-sm btn-ghost" onClick={() => openEdit(cust)} style={{ flex: 1 }}>Edit</button>
+                    {(cust.status || 'ACTIVE') === 'ACTIVE' && (
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDeactivate(cust._id)} style={{ flex: 1 }}>Deactivate</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {!data.length && !loading && (
+              <div className="cust-card" style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No customers found</div>
+            )}
+            {loading && (
+              <div className="cust-card" style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>Loading...</div>
+            )}
+          </div>
+
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="pagination">
@@ -395,21 +477,21 @@ export default function CustomerList() {
 
                   <div className="form-group">
                     <label>Customer Type</label>
-                    <select value={form.customer_type} onChange={e => handleFormChange('customer_type', e.target.value)}>
+                    <SelectField value={form.customer_type} onChange={e => handleFormChange('customer_type', e.target.value)}>
                       <option value="">-- Optional --</option>
                       {CUSTOMER_TYPES.filter(t => t !== 'ALL').map(t => (
                         <option key={t} value={t}>{formatType(t)}</option>
                       ))}
-                    </select>
+                    </SelectField>
                   </div>
 
                   <div className="form-group">
                     <label>Default Sale Type</label>
-                    <select value={form.default_sale_type} onChange={e => handleFormChange('default_sale_type', e.target.value)}>
+                    <SelectField value={form.default_sale_type} onChange={e => handleFormChange('default_sale_type', e.target.value)}>
                       {SALE_TYPES.map(t => (
                         <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
                       ))}
-                    </select>
+                    </SelectField>
                   </div>
 
                   <div className="form-group">
@@ -424,11 +506,11 @@ export default function CustomerList() {
 
                   <div className="form-group">
                     <label>VAT Status</label>
-                    <select value={form.vat_status} onChange={e => handleFormChange('vat_status', e.target.value)}>
+                    <SelectField value={form.vat_status} onChange={e => handleFormChange('vat_status', e.target.value)}>
                       {VAT_OPTIONS.map(v => (
                         <option key={v} value={v}>{v.replace(/_/g, ' ')}</option>
                       ))}
-                    </select>
+                    </SelectField>
                   </div>
 
                   <div className="form-group full">

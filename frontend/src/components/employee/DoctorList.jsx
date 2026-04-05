@@ -9,12 +9,14 @@
  * - Log Visit button
  */
 
-import { useState, useEffect, useMemo, memo } from 'react';
+import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import LoadingSpinner from '../common/LoadingSpinner';
 import visitService from '../../services/visitService';
 import TargetProductsModal from './TargetProductsModal';
 import DoctorEditForm from './DoctorEditForm';
 import useLookupData from '../../hooks/useLookupData';
+
+import SelectField from '../common/Select';
 
 // Custom dropdown component for mobile
 const CustomDropdown = ({ label, value, options, onChange, placeholder }) => {
@@ -676,37 +678,71 @@ const DoctorList = memo(function DoctorList({
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [productsDoctor, setProductsDoctor] = useState(null);
   const [editDoctor, setEditDoctor] = useState(null);
+  const requestIdRef = useRef(0);
 
   // Fetch visit status for all doctors using batch endpoint (eliminates N+1 problem)
   useEffect(() => {
     let isMounted = true;
     const abortController = new AbortController();
+    const currentRequestId = ++requestIdRef.current;
 
     const fetchVisitStatus = async () => {
-      if (doctors.length === 0) return;
+      if (doctors.length === 0) {
+        setVisitStatus({});
+        setLoadingStatus(false);
+        return;
+      }
+
+      const doctorIds = doctors.map((doctor) => doctor._id);
+      const initialStatus = {};
+      doctorIds.forEach((doctorId) => {
+        initialStatus[doctorId] = {
+          canVisit: false,
+          reason: 'Loading visit status...',
+          monthlyCount: 0,
+          monthlyLimit: 0,
+        };
+      });
+      setVisitStatus(initialStatus);
 
       setLoadingStatus(true);
 
       try {
         // Use batch endpoint - single API call instead of N calls
-        const doctorIds = doctors.map((doctor) => doctor._id);
-        const response = await visitService.canVisitBatch(doctorIds);
+        const response = await visitService.canVisitBatch(doctorIds, { signal: abortController.signal });
 
         // Only update state if component is still mounted
-        if (isMounted) {
-          setVisitStatus(response.data || {});
+        if (isMounted && requestIdRef.current === currentRequestId) {
+          const nextStatus = {};
+          doctorIds.forEach((doctorId) => {
+            nextStatus[doctorId] = response.data?.[doctorId] || {
+              canVisit: false,
+              reason: 'Visit status unavailable. Please retry.',
+              monthlyCount: 0,
+              monthlyLimit: 0,
+            };
+          });
+          setVisitStatus(nextStatus);
         }
       } catch (error) {
-        // Fallback: set all as visitable if batch fails
-        if (isMounted) {
+        const isAborted = error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED';
+        if (isAborted) return;
+
+        // Fail closed when status endpoint fails
+        if (isMounted && requestIdRef.current === currentRequestId) {
           const fallbackStatus = {};
           doctors.forEach((doctor) => {
-            fallbackStatus[doctor._id] = { canVisit: true };
+            fallbackStatus[doctor._id] = {
+              canVisit: false,
+              reason: 'Visit status unavailable. Please retry.',
+              monthlyCount: 0,
+              monthlyLimit: doctor.visitFrequency || 4,
+            };
           });
           setVisitStatus(fallbackStatus);
         }
       } finally {
-        if (isMounted) {
+        if (isMounted && requestIdRef.current === currentRequestId) {
           setLoadingStatus(false);
         }
       }
@@ -747,7 +783,15 @@ const DoctorList = memo(function DoctorList({
   // Get visit status display for a doctor
   const getVisitStatusDisplay = (doctor) => {
     const status = visitStatus[doctor._id];
-    if (!status) return null;
+    if (!status) {
+      return {
+        monthlyCount: 0,
+        monthlyLimit: doctor.visitFrequency || 4,
+        isComplete: false,
+        canVisit: false,
+        reason: 'Visit status unavailable. Please retry.',
+      };
+    }
 
     const { monthlyCount = 0, monthlyLimit = doctor.visitFrequency || 4 } = status;
 
@@ -786,7 +830,7 @@ const DoctorList = memo(function DoctorList({
 
         {/* Desktop: show all filters inline */}
         <div className="desktop-filter-selects">
-          <select
+          <SelectField
             value={frequencyFilter}
             onChange={(e) => setFrequencyFilter(e.target.value)}
             className="frequency-select"
@@ -794,8 +838,8 @@ const DoctorList = memo(function DoctorList({
             <option value="all">All Frequencies</option>
             <option value="2">2x per month</option>
             <option value="4">4x per month</option>
-          </select>
-          <select
+          </SelectField>
+          <SelectField
             value={supportFilter}
             onChange={(e) => setSupportFilter(e.target.value)}
             className="frequency-select"
@@ -804,8 +848,8 @@ const DoctorList = memo(function DoctorList({
             {supportTypes.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
-          </select>
-          <select
+          </SelectField>
+          <SelectField
             value={programFilter}
             onChange={(e) => setProgramFilter(e.target.value)}
             className="frequency-select"
@@ -814,7 +858,7 @@ const DoctorList = memo(function DoctorList({
             {programs.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
-          </select>
+          </SelectField>
         </div>
 
         {/* Mobile: toggle button and collapsible dropdown group */}
@@ -866,15 +910,13 @@ const DoctorList = memo(function DoctorList({
           )}
         </div>
       </div>
-
       {loadingStatus && (
         <p className="loading-status">Loading visit status...</p>
       )}
-
       <div className="doctor-list-grid">
         {filteredDoctors.map((doctor) => {
           const statusDisplay = getVisitStatusDisplay(doctor);
-          const canVisit = statusDisplay?.canVisit ?? true;
+          const canVisit = statusDisplay?.canVisit ?? false;
 
           return (
             <div
@@ -973,7 +1015,6 @@ const DoctorList = memo(function DoctorList({
           );
         })}
       </div>
-
       {filteredDoctors.length === 0 && (
         <p className="no-results">
           {doctors.length === 0
@@ -981,7 +1022,6 @@ const DoctorList = memo(function DoctorList({
             : 'No VIP Clients match your search criteria'}
         </p>
       )}
-
       {productsDoctor && (
         <TargetProductsModal
           doctor={productsDoctor}
@@ -989,7 +1029,6 @@ const DoctorList = memo(function DoctorList({
           onSaved={() => setProductsDoctor(null)}
         />
       )}
-
       {editDoctor && (
         <DoctorEditForm
           doctor={editDoctor}

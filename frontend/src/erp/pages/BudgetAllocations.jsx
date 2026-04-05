@@ -11,6 +11,8 @@ import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 import usePeople from '../hooks/usePeople';
 
+import SelectField from '../../components/common/Select';
+
 const EXPENSE_COMPONENTS = [
   { code: 'SMER', label: 'SMER (Per Diem + Transport)' },
   { code: 'GAS', label: 'Gasoline (Official)' },
@@ -28,11 +30,14 @@ const STATUS_COLORS = {
 
 const pageStyles = `
   .ba-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .ba-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .ba-main { padding: 20px; max-width: 1200px; margin: 0 auto; }
   .ba-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 4px; }
   .ba-header p { color: var(--erp-muted); font-size: 13px; margin: 0 0 16px; }
   .controls { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
   .controls input, .controls select { padding: 8px 12px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 13px; background: var(--erp-panel); color: var(--erp-text); }
+  .ba-date { padding: 8px 12px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 13px; background-color: #ffffff; color: var(--erp-text); box-shadow: inset 0 0 0 1px #ffffff; }
+  .ba-date:focus { outline: none; border-color: var(--erp-accent, #1e5eff); box-shadow: 0 0 0 3px rgba(30, 94, 255, 0.12); }
+  .ba-date::-webkit-calendar-picker-indicator { opacity: 0.8; }
   .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
   .btn-primary { background: #2563eb; color: white; }
   .btn-success { background: #16a34a; color: white; }
@@ -48,16 +53,32 @@ const pageStyles = `
   .comp-card label { font-size: 11px; font-weight: 600; color: var(--erp-muted); display: block; margin-bottom: 4px; }
   .comp-card input { width: 100%; padding: 6px 10px; border: 1px solid var(--erp-border); border-radius: 6px; font-size: 14px; font-weight: 600; text-align: right; }
   .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .data-table-wrap { overflow-x: auto; }
   .data-table th { text-align: left; padding: 8px 10px; background: var(--erp-accent-soft); font-weight: 600; white-space: nowrap; }
   .data-table td { padding: 8px 10px; border-top: 1px solid var(--erp-border); white-space: nowrap; }
   .data-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .alloc-cards { display: none; }
+  .alloc-card { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; padding: 12px; }
+  .alloc-card-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .alloc-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; }
+  .alloc-card-label { font-size: 10px; color: var(--erp-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .alloc-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
   .badge { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
   .total-row { font-weight: 700; background: var(--erp-accent-soft); }
   .loading { text-align: center; padding: 40px; color: var(--erp-muted); }
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
   .modal-content { background: var(--erp-panel); border-radius: 16px; padding: 24px; width: 90%; max-width: 640px; max-height: 80vh; overflow-y: auto; }
   .modal-content h3 { margin: 0 0 16px; font-size: 17px; }
-  @media(max-width: 768px) { .ba-main { padding: 12px; } .form-grid { grid-template-columns: 1fr; } .comp-grid { grid-template-columns: 1fr; } }
+  @media(max-width: 768px) {
+    .ba-main { padding: 96px 16px 88px; }
+    .form-grid { grid-template-columns: 1fr; }
+    .comp-grid { grid-template-columns: 1fr; }
+    .controls { flex-direction: column; align-items: stretch; }
+    .controls input, .controls select, .controls .btn { width: 100%; }
+    .data-table-wrap { display: none; }
+    .alloc-cards { display: flex; flex-direction: column; gap: 10px; }
+    .alloc-card-grid { grid-template-columns: 1fr; }
+  }
 `;
 
 function fmt(n) { return '\u20B1' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -174,25 +195,30 @@ export default function BudgetAllocations() {
   };
 
   return (
-    <div className="ba-page">
+    <div className="admin-page erp-page ba-page">
       <style>{pageStyles}</style>
       <Navbar />
-      <div style={{ display: 'flex' }}>
+      <div className="admin-layout">
         <Sidebar />
-        <div className="ba-main">
+        <main className="admin-main ba-main">
           <div className="ba-header">
             <h1>Budget Allocations</h1>
             <p>Set per-BDM expense budgets by period. Approved budgets feed into Expense Anomalies &gt; Budget Overruns.</p>
           </div>
 
           <div className="controls">
-            <input type="month" value={filters.period} onChange={e => setFilters(f => ({ ...f, period: e.target.value }))} />
-            <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
+            <input
+              className="ba-date"
+              type="date"
+              value={`${filters.period}-01`}
+              onChange={e => setFilters(f => ({ ...f, period: e.target.value.slice(0, 7) }))}
+            />
+            <SelectField value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
               <option value="">All Status</option>
               <option value="DRAFT">Draft</option>
               <option value="APPROVED">Approved</option>
               <option value="CLOSED">Closed</option>
-            </select>
+            </SelectField>
             <button className="btn btn-primary" onClick={loadAllocations} disabled={loading}>Load</button>
             <div style={{ flex: 1 }} />
             <button className="btn btn-primary" onClick={() => { resetForm(); setEditId(null); setShowForm(true); }}>
@@ -203,47 +229,90 @@ export default function BudgetAllocations() {
           {loading && <div className="loading">Loading...</div>}
 
           <div className="panel">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>BDM / Target</th><th>Type</th><th>Period</th>
-                  {EXPENSE_COMPONENTS.map(c => <th key={c.code} style={{ textAlign: 'right' }}>{c.code}</th>)}
-                  <th style={{ textAlign: 'right' }}>Total</th>
-                  <th>Status</th><th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allocations.map(a => {
-                  const compMap = new Map((a.components || []).map(c => [c.component_code, c.budgeted_amount]));
-                  const sc = STATUS_COLORS[a.status] || STATUS_COLORS.DRAFT;
-                  return (
-                    <tr key={a._id}>
-                      <td style={{ fontWeight: 600 }}>{a.target_name || 'Unknown'}</td>
-                      <td>{a.target_type}</td>
-                      <td>{a.period}</td>
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>BDM / Target</th><th>Type</th><th>Period</th>
+                    {EXPENSE_COMPONENTS.map(c => <th key={c.code} style={{ textAlign: 'right' }}>{c.code}</th>)}
+                    <th style={{ textAlign: 'right' }}>Total</th>
+                    <th>Status</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allocations.map(a => {
+                    const compMap = new Map((a.components || []).map(c => [c.component_code, c.budgeted_amount]));
+                    const sc = STATUS_COLORS[a.status] || STATUS_COLORS.DRAFT;
+                    return (
+                      <tr key={a._id}>
+                        <td style={{ fontWeight: 600 }}>{a.target_name || 'Unknown'}</td>
+                        <td>{a.target_type}</td>
+                        <td>{a.period}</td>
+                        {EXPENSE_COMPONENTS.map(c => (
+                          <td key={c.code} className="num">{fmt(compMap.get(c.code) || 0)}</td>
+                        ))}
+                        <td className="num" style={{ fontWeight: 700 }}>{fmt(a.total_budget)}</td>
+                        <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{a.status}</span></td>
+                        <td style={{ display: 'flex', gap: 4 }}>
+                          {a.status === 'DRAFT' && (
+                            <>
+                              <button className="btn btn-sm" onClick={() => handleEdit(a)}>Edit</button>
+                              <button className="btn btn-success btn-sm" onClick={() => handleApprove(a._id)}>Approve</button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {allocations.length === 0 && !loading && (
+                    <tr><td colSpan={4 + EXPENSE_COMPONENTS.length + 3} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>
+                      No budget allocations for {filters.period}
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="alloc-cards">
+              {allocations.map(a => {
+                const compMap = new Map((a.components || []).map(c => [c.component_code, c.budgeted_amount]));
+                const sc = STATUS_COLORS[a.status] || STATUS_COLORS.DRAFT;
+                return (
+                  <div className="alloc-card" key={a._id}>
+                    <div className="alloc-card-header">
+                      <div>
+                        <div style={{ fontWeight: 700 }}>{a.target_name || 'Unknown'}</div>
+                        <div style={{ fontSize: 12, color: 'var(--erp-muted)' }}>{a.target_type} • {a.period}</div>
+                      </div>
+                      <span className="badge" style={{ background: sc.bg, color: sc.text }}>{a.status}</span>
+                    </div>
+                    <div className="alloc-card-grid">
                       {EXPENSE_COMPONENTS.map(c => (
-                        <td key={c.code} className="num">{fmt(compMap.get(c.code) || 0)}</td>
+                        <div key={c.code}>
+                          <div className="alloc-card-label">{c.code}</div>
+                          <div style={{ fontWeight: 600 }}>{fmt(compMap.get(c.code) || 0)}</div>
+                        </div>
                       ))}
-                      <td className="num" style={{ fontWeight: 700 }}>{fmt(a.total_budget)}</td>
-                      <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{a.status}</span></td>
-                      <td style={{ display: 'flex', gap: 4 }}>
-                        {a.status === 'DRAFT' && (
-                          <>
-                            <button className="btn btn-sm" onClick={() => handleEdit(a)}>Edit</button>
-                            <button className="btn btn-success btn-sm" onClick={() => handleApprove(a._id)}>Approve</button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {allocations.length === 0 && !loading && (
-                  <tr><td colSpan={4 + EXPENSE_COMPONENTS.length + 3} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>
-                    No budget allocations for {filters.period}
-                  </td></tr>
-                )}
-              </tbody>
-            </table>
+                      <div>
+                        <div className="alloc-card-label">Total</div>
+                        <div style={{ fontWeight: 700 }}>{fmt(a.total_budget)}</div>
+                      </div>
+                    </div>
+                    {a.status === 'DRAFT' && (
+                      <div className="alloc-card-actions">
+                        <button className="btn btn-sm" onClick={() => handleEdit(a)}>Edit</button>
+                        <button className="btn btn-success btn-sm" onClick={() => handleApprove(a._id)}>Approve</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {allocations.length === 0 && !loading && (
+                <div style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 12 }}>
+                  No budget allocations for {filters.period}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Create / Edit Modal */}
@@ -255,14 +324,14 @@ export default function BudgetAllocations() {
                 <div className="form-grid">
                   <div className="form-group">
                     <label>Target Type</label>
-                    <select value={form.target_type} onChange={e => setForm(f => ({ ...f, target_type: e.target.value }))}>
+                    <SelectField value={form.target_type} onChange={e => setForm(f => ({ ...f, target_type: e.target.value }))}>
                       <option value="BDM">BDM</option>
                       <option value="EMPLOYEE">Employee</option>
-                    </select>
+                    </SelectField>
                   </div>
                   <div className="form-group">
                     <label>BDM / Person</label>
-                    <select
+                    <SelectField
                       value={people.find(p => p.user_id === form.target_id)?._id || ''}
                       onChange={e => handlePersonChange(e.target.value)}
                     >
@@ -274,11 +343,16 @@ export default function BudgetAllocations() {
                         .map(p => (
                           <option key={p._id} value={p._id}>{p.full_name} ({p.person_type})</option>
                         ))}
-                    </select>
+                    </SelectField>
                   </div>
                   <div className="form-group">
                     <label>Period</label>
-                    <input type="month" value={form.period} onChange={e => setForm(f => ({ ...f, period: e.target.value }))} />
+                    <input
+                      className="ba-date"
+                      type="date"
+                      value={`${form.period}-01`}
+                      onChange={e => setForm(f => ({ ...f, period: e.target.value.slice(0, 7) }))}
+                    />
                   </div>
                 </div>
 
@@ -312,7 +386,7 @@ export default function BudgetAllocations() {
               </div>
             </div>
           )}
-        </div>
+        </main>
       </div>
     </div>
   );

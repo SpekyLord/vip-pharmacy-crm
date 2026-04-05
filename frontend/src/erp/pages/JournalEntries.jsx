@@ -4,6 +4,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .je-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .je-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
@@ -161,12 +163,12 @@ export default function JournalEntries() {
               </div>
               <div className="je-controls">
                 <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />
-                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                <SelectField value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                   <option value="">All Status</option>
                   <option value="DRAFT">DRAFT</option>
                   <option value="POSTED">POSTED</option>
                   <option value="VOID">VOID</option>
-                </select>
+                </SelectField>
               </div>
               {selectedIds.size > 0 && (
                 <div className="je-batch-bar">
@@ -271,9 +273,9 @@ export default function JournalEntries() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div className="form-group"><label>Date</label><input type="date" value={jeForm.je_date} onChange={e => setJeForm({ ...jeForm, je_date: e.target.value })} /></div>
                   <div className="form-group"><label>BIR Flag</label>
-                    <select value={jeForm.bir_flag} onChange={e => setJeForm({ ...jeForm, bir_flag: e.target.value })}>
+                    <SelectField value={jeForm.bir_flag} onChange={e => setJeForm({ ...jeForm, bir_flag: e.target.value })}>
                       <option value="BOTH">BOTH</option><option value="INTERNAL">INTERNAL</option><option value="BIR">BIR</option>
-                    </select>
+                    </SelectField>
                   </div>
                 </div>
                 <div className="form-group"><label>Description</label><input value={jeForm.description} onChange={e => setJeForm({ ...jeForm, description: e.target.value })} /></div>

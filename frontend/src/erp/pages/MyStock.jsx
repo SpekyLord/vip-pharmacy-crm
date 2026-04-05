@@ -7,6 +7,8 @@ import useEntities from '../hooks/useEntities';
 import EntityBadge from '../components/EntityBadge';
 import WarehousePicker from '../components/WarehousePicker';
 
+import SelectField from '../../components/common/Select';
+
 const TABS = ['Stock on Hand', 'Transaction Ledger', 'Variance Report', 'Alerts'];
 
 const TYPE_COLORS = {
@@ -469,14 +471,14 @@ export default function MyStock() {
           {activeTab === 1 && (
             <>
               <div className="ledger-select">
-                <select value={ledgerProduct} onChange={e => handleLedgerProductChange(e.target.value)}>
+                <SelectField value={ledgerProduct} onChange={e => handleLedgerProductChange(e.target.value)}>
                   <option value="">Select a product...</option>
                   {stockData.map(item => (
                     <option key={item.product_id} value={item.product_id}>
                       {item.product?.brand_name}{item.product?.dosage_strength ? ` ${item.product.dosage_strength}` : ''} — {item.total_qty} {item.product?.unit_code || 'PC'}
                     </option>
                   ))}
-                </select>
+                </SelectField>
               </div>
               {ledgerProduct && (
                 <table className="stock-table">
@@ -617,7 +619,6 @@ export default function MyStock() {
           )}
         </main>
       </div>
-
       {/* Physical Count Modal */}
       <PhysicalCountModal
         open={pcModalOpen}

@@ -8,6 +8,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .cc-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .cc-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1000px; margin: 0 auto; }
@@ -153,12 +155,12 @@ export default function CostCenters() {
               </div>
               <div className="form-group">
                 <label>Parent</label>
-                <select value={form.parent_cost_center} onChange={e => setForm(f => ({ ...f, parent_cost_center: e.target.value }))}>
+                <SelectField value={form.parent_cost_center} onChange={e => setForm(f => ({ ...f, parent_cost_center: e.target.value }))}>
                   <option value="">None (Root)</option>
                   {flatList.filter(c => c.is_active).map(c => (
                     <option key={c._id} value={c._id}>{c.code} - {c.name}</option>
                   ))}
-                </select>
+                </SelectField>
               </div>
               <div className="form-group">
                 <label>Description</label>

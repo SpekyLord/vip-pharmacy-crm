@@ -15,7 +15,7 @@ const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/err
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { normalizeEngagementTypesQuery } = require('../utils/engagementTypes');
 const { signVisitPhotos } = require('../config/s3');
-const { getWeekOfMonth, getDayOfWeek, isWorkDay, MANILA_OFFSET_MS } = require('../utils/scheduleCycleUtils');
+const { getWeekOfMonth, getDayOfWeek, isWorkDay, MANILA_OFFSET_MS, getCycleStartDate, getCycleEndDate } = require('../utils/scheduleCycleUtils');
 const { isCrmAdminLike } = require('../utils/roleHelpers');
 
 /**
@@ -664,7 +664,7 @@ const getTodayClientVisitCount = catchAsync(async (req, res) => {
  * @access  Private
  */
 const getClientVisitStats = catchAsync(async (req, res) => {
-  const { monthYear, userId } = req.query;
+  const { monthYear, userId, cycleNumber, cycleWeek } = req.query;
   const mongoose = require('mongoose');
 
   const matchQuery = {};
@@ -676,8 +676,25 @@ const getClientVisitStats = catchAsync(async (req, res) => {
     matchQuery.user = new mongoose.Types.ObjectId(userId);
   }
 
-  // Month/year filtering
-  if (monthYear) {
+  const parsedCycleNumber = cycleNumber != null && `${cycleNumber}`.trim() !== ''
+    ? parseInt(cycleNumber, 10)
+    : null;
+  const parsedCycleWeek = cycleWeek != null && `${cycleWeek}`.trim() !== ''
+    ? parseInt(cycleWeek, 10)
+    : null;
+
+  // Filter precedence:
+  // 1) cycleNumber (+ optional cycleWeek), 2) monthYear, 3) default all-time
+  if (Number.isInteger(parsedCycleNumber)) {
+    matchQuery.visitDate = {
+      $gte: getCycleStartDate(parsedCycleNumber),
+      $lte: getCycleEndDate(parsedCycleNumber),
+    };
+
+    if (Number.isInteger(parsedCycleWeek) && parsedCycleWeek >= 1 && parsedCycleWeek <= 4) {
+      matchQuery.weekOfMonth = parsedCycleWeek;
+    }
+  } else if (monthYear) {
     matchQuery.monthYear = monthYear;
   }
 

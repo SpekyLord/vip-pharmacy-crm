@@ -7,6 +7,8 @@ import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
 import api from '../../services/api';
 
+import SelectField from '../../components/common/Select';
+
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
@@ -465,11 +467,11 @@ export default function Smer() {
           {/* Period/Cycle selector */}
           <div className="smer-controls" style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }} />
-            <select value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
+            <SelectField value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
               <option value="C1">Cycle 1 (1st-15th)</option>
               <option value="C2">Cycle 2 (16th-end)</option>
               <option value="MONTHLY">Monthly</option>
-            </select>
+            </SelectField>
             <button onClick={handleNewSmer} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New SMER</button>
             <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
             <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
@@ -604,10 +606,10 @@ export default function Smer() {
                         <td style={{ padding: 3, textAlign: 'center', fontSize: 11 }}>{displayDate(entry.entry_date).slice(0, 5)}</td>
                         <td style={{ padding: 3, textAlign: 'center', fontSize: 10, color: 'var(--erp-muted, #5f7188)' }}>{entry.day_of_week}</td>
                         <td style={{ padding: 3 }}>
-                          <select value={entry.activity_type || entry.hospital_covered || ''} onChange={e => handleEntryChange(idx, 'activity_type', e.target.value)} style={{ width: '100%', padding: '2px 4px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 11 }}>
+                          <SelectField value={entry.activity_type || entry.hospital_covered || ''} onChange={e => handleEntryChange(idx, 'activity_type', e.target.value)} style={{ width: '100%', padding: '2px 4px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 11 }}>
                             <option value="">—</option>
                             {ACTIVITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                          </select>
+                          </SelectField>
                         </td>
                         <td style={{ padding: 3 }}>
                           <input placeholder="Details..." value={entry.notes || ''} onChange={e => handleEntryChange(idx, 'notes', e.target.value)} style={{ width: '100%', padding: '2px 4px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 11 }} />

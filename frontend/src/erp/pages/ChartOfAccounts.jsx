@@ -4,6 +4,8 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 
+import SelectField from '../../components/common/Select';
+
 const pageStyles = `
   .coa-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .coa-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
@@ -113,10 +115,10 @@ export default function ChartOfAccounts() {
 
           <div className="coa-controls">
             <input placeholder="Search code or name…" value={search} onChange={e => setSearch(e.target.value)} />
-            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+            <SelectField value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
               <option value="">All Types</option>
               {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            </SelectField>
           </div>
 
           {loading ? <div className="coa-empty">Loading…</div> : accounts.length === 0 ? <div className="coa-empty">No accounts found</div> : (
@@ -162,16 +164,16 @@ export default function ChartOfAccounts() {
                 </div>
                 <div className="form-group">
                   <label>Account Type</label>
-                  <select value={form.account_type} onChange={e => setForm({ ...form, account_type: e.target.value })}>
+                  <SelectField value={form.account_type} onChange={e => setForm({ ...form, account_type: e.target.value })}>
                     {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="form-group">
                   <label>Normal Balance</label>
-                  <select value={form.normal_balance} onChange={e => setForm({ ...form, normal_balance: e.target.value })}>
+                  <SelectField value={form.normal_balance} onChange={e => setForm({ ...form, normal_balance: e.target.value })}>
                     <option value="DEBIT">DEBIT</option>
                     <option value="CREDIT">CREDIT</option>
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="form-group">
                   <label>Subtype</label>

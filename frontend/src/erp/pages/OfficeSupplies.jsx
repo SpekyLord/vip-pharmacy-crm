@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import SelectField from '../../components/common/Select';
 import useOfficeSupplies from '../hooks/useOfficeSupplies';
 
 const CATEGORIES = ['ALL', 'PAPER', 'INK_TONER', 'CLEANING', 'STATIONERY', 'ELECTRONICS', 'OTHER'];
@@ -91,9 +92,9 @@ function ItemModal({ open, onClose, onSave, editItem }) {
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Category</label>
-            <select style={styles.formInput} name="category" value={form.category} onChange={handleChange}>
+            <SelectField style={styles.formInput} name="category" value={form.category} onChange={handleChange}>
               {CATEGORIES.filter(c => c !== 'ALL').map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Unit</label>
@@ -147,16 +148,16 @@ function TxnModal({ open, onClose, onSave, supplies }) {
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Item</label>
-            <select style={styles.formInput} name="supply" value={form.supply} onChange={handleChange} required>
+            <SelectField style={styles.formInput} name="supply" value={form.supply} onChange={handleChange} required>
               <option value="">Select item...</option>
               {(supplies || []).map(s => <option key={s._id} value={s._id}>{s.item_name} ({s.item_code})</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Type</label>
-            <select style={styles.formInput} name="txn_type" value={form.txn_type} onChange={handleChange}>
+            <SelectField style={styles.formInput} name="txn_type" value={form.txn_type} onChange={handleChange}>
               {TXN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Quantity</label>

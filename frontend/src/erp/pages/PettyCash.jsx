@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import SelectField from '../../components/common/Select';
 import { useAuth } from '../../hooks/useAuth';
 import usePettyCash from '../hooks/usePettyCash';
 import usePeople from '../hooks/usePeople';
@@ -173,17 +174,17 @@ function CreateTxnModal({ open, onClose, onSave, funds }) {
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Fund</label>
-            <select style={styles.formInput} name="fund_id" value={form.fund_id} onChange={handleChange} required>
+            <SelectField style={styles.formInput} name="fund_id" value={form.fund_id} onChange={handleChange} required>
               <option value="">Select fund...</option>
               {(funds || []).map(f => <option key={f._id} value={f._id}>{f.fund_name}</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Type</label>
-            <select style={styles.formInput} name="txn_type" value={form.txn_type} onChange={handleChange}>
+            <SelectField style={styles.formInput} name="txn_type" value={form.txn_type} onChange={handleChange}>
               <option value="DISBURSEMENT">Disbursement</option>
               <option value="DEPOSIT">Deposit</option>
-            </select>
+            </SelectField>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>{form.txn_type === 'DEPOSIT' ? 'Source' : 'Payee'}</label>
@@ -343,15 +344,15 @@ function TransactionsTab({ funds, pc }) {
   return (
     <div>
       <div style={styles.filterRow}>
-        <select style={styles.select} value={fundFilter} onChange={e => setFundFilter(e.target.value)}>
+        <SelectField style={styles.select} value={fundFilter} onChange={e => setFundFilter(e.target.value)}>
           <option value="">All Funds</option>
           {(funds || []).map(f => <option key={f._id} value={f._id}>{f.fund_name}</option>)}
-        </select>
-        <select style={styles.select} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+        </SelectField>
+        <SelectField style={styles.select} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
           <option value="">All Types</option>
           <option value="DEPOSIT">Deposit</option>
           <option value="DISBURSEMENT">Disbursement</option>
-        </select>
+        </SelectField>
         <input style={styles.input} type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} placeholder="From" />
         <input style={styles.input} type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} placeholder="To" />
         <button style={styles.btnPrimary} onClick={() => setShowCreate(true)}>+ New Transaction</button>

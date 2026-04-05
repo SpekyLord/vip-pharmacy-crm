@@ -7,6 +7,8 @@ import DocumentFlowChain from '../components/DocumentFlowChain';
 import { useAuth } from '../../hooks/useAuth';
 import useCollections from '../hooks/useCollections';
 
+import SelectField from '../../components/common/Select';
+
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
   VALID: { bg: '#dcfce7', text: '#166534' },
@@ -20,6 +22,8 @@ const pageStyles = `
   .coll-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .coll-list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
   .coll-list-header h1 { font-size: 22px; color: var(--erp-text); margin: 0; }
+  .coll-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .coll-actions .btn { flex: 0 0 auto; }
   .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
   .btn-primary { background: var(--erp-accent, #1e5eff); color: #fff; }
   .btn-success { background: #16a34a; color: #fff; }
@@ -36,8 +40,31 @@ const pageStyles = `
   .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
   .detail-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; align-items: center; justify-content: center; }
   .detail-panel { background: var(--erp-panel); border-radius: 16px; padding: 24px; max-width: 700px; width: 95%; max-height: 85vh; overflow-y: auto; }
-  @media(max-width: 768px) { .coll-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } }
-  @media(max-width: 375px) { .coll-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .coll-main input, .coll-main select { font-size: 16px; } }
+  @media(max-width: 768px) {
+    .coll-page { padding-top: 12px; }
+    .coll-main { padding: 76px 12px 96px; }
+    .coll-list-header { flex-direction: column; align-items: flex-start; }
+    .coll-actions { width: 100%; }
+    .coll-actions .btn { width: 100%; }
+    .filter-bar { flex-direction: column; align-items: stretch; }
+    .filter-bar .vip-select__control { width: 100%; }
+    .coll-table { display: none; }
+    .coll-card-list { display: grid; gap: 10px; padding: 0 0 12px; }
+    .coll-card { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; padding: 12px 14px; }
+    .coll-card-header { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+    .coll-card-title { font-weight: 700; font-size: 14px; color: var(--erp-text); }
+    .coll-card-sub { font-size: 12px; color: var(--erp-muted); }
+    .coll-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .coll-card-item { display: flex; flex-direction: column; gap: 2px; }
+    .coll-card-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; font-weight: 700; }
+    .coll-card-value { font-size: 12px; color: var(--erp-text); }
+  }
+
+  @media(max-width: 480px) {
+    .coll-page { padding-top: 16px; }
+    .coll-main { padding-top: 72px; padding-bottom: 104px; }
+    .coll-card-grid { grid-template-columns: 1fr; }
+  }
 `;
 
 export default function Collections() {
@@ -97,18 +124,18 @@ export default function Collections() {
         <main className="coll-main">
           <div className="coll-list-header">
             <h1>Collections</h1>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="coll-actions">
               <Link to="/erp/collections/session" className="btn btn-primary">+ New Collection</Link>
-              <Link to="/erp/collections/ar" className="btn btn-outline">AR Aging</Link>
-              <Link to="/erp/collections/soa" className="btn btn-outline">SOA</Link>
+              <Link to="/erp/collections/ar" className="btn btn-success">AR Aging</Link>
+              <Link to="/erp/collections/soa" className="btn btn-success">SOA</Link>
             </div>
           </div>
 
           <div className="filter-bar">
-            <select value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
+            <SelectField value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
               <option value="">All Status</option>
               {['DRAFT', 'VALID', 'ERROR', 'POSTED'].map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            </SelectField>
           </div>
 
           <table className="coll-table">
@@ -139,6 +166,51 @@ export default function Collections() {
               {!data.length && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>{loading ? 'Loading...' : 'No collections found'}</td></tr>}
             </tbody>
           </table>
+          <div className="coll-card-list">
+            {data.map(c => {
+              const sc = STATUS_COLORS[c.status] || {};
+              return (
+                <div key={c._id} className="coll-card" onClick={() => viewDetail(c._id)}>
+                  <div className="coll-card-header">
+                    <div>
+                      <div className="coll-card-title">CR #{c.cr_no}</div>
+                      <div className="coll-card-sub">{new Date(c.cr_date).toLocaleDateString('en-PH')}</div>
+                    </div>
+                    <span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span>
+                  </div>
+                  <div className="coll-card-grid">
+                    <div className="coll-card-item">
+                      <span className="coll-card-label">Customer</span>
+                      <span className="coll-card-value">{c.hospital_id?.hospital_name || c.customer_id?.customer_name || '—'}</span>
+                    </div>
+                    <div className="coll-card-item">
+                      <span className="coll-card-label">Amount</span>
+                      <span className="coll-card-value">P{(c.cr_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="coll-card-item">
+                      <span className="coll-card-label">Invoices</span>
+                      <span className="coll-card-value">{c.settled_csis?.length || 0}</span>
+                    </div>
+                    <div className="coll-card-item">
+                      <span className="coll-card-label">CWT</span>
+                      <span className="coll-card-value">{c.cwt_na ? 'N/A' : `P${(c.cwt_amount || 0).toFixed(2)}`}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                    {(c.status === 'DRAFT' || c.status === 'ERROR') && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
+                    {c.status === 'DRAFT' && <button className="btn btn-sm" style={{ border: '1px solid #ef4444', color: '#ef4444', background: '#fff' }} onClick={() => handleDeleteDraft(c._id)}>Del</button>}
+                    {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={handleSubmit}>Submit</button>}
+                    {c.status === 'POSTED' && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}
+                  </div>
+                </div>
+              );
+            })}
+            {!data.length && (
+              <div className="coll-card" style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>
+                {loading ? 'Loading...' : 'No collections found'}
+              </div>
+            )}
+          </div>
           {pagination.pages > 1 && <Pagination currentPage={pagination.page} totalPages={pagination.pages} onPageChange={loadData} />}
 
           {selected && (

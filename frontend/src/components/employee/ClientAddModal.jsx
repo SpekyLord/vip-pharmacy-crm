@@ -16,6 +16,8 @@ import clientService from '../../services/clientService';
 import toast from 'react-hot-toast';
 import useLookupData from '../../hooks/useLookupData';
 
+import SelectField from '../common/Select';
+
 const modalStyles = `
   .client-modal-overlay {
     position: fixed;
@@ -493,7 +495,7 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
             <div className="client-form-row">
               <div className="client-form-group">
                 <label>Level of Engagement</label>
-                <select
+                <SelectField
                   value={formData.levelOfEngagement}
                   onChange={(e) => handleChange('levelOfEngagement', e.target.value)}
                 >
@@ -501,7 +503,7 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                   {ENGAGEMENT_LEVELS.map((lvl) => (
                     <option key={lvl.value} value={lvl.value}>{lvl.label}</option>
                   ))}
-                </select>
+                </SelectField>
               </div>
             </div>
 
@@ -555,13 +557,13 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
 
             <div className="client-form-group">
               <label>Scheduling Mode</label>
-              <select
+              <SelectField
                 value={formData.schedulingMode}
                 onChange={(e) => handleChange('schedulingMode', e.target.value)}
               >
                 <option value="flexible">Flexible — Visit anytime, no schedule enforcement</option>
                 <option value="strict">Strict — Enforced schedule (appears in Today tab)</option>
-              </select>
+              </SelectField>
               <p style={{ fontSize: '12px', color: '#6b7280', margin: '4px 0 0 0' }}>
                 {formData.schedulingMode === 'flexible'
                   ? 'No weekly limits or missed visit tracking. Visit this client whenever needed.'
@@ -574,25 +576,25 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                 <div className="client-form-row">
                   <div className="client-form-group">
                     <label>Visit Frequency</label>
-                    <select
+                    <SelectField
                       value={formData.visitFrequency}
                       onChange={(e) => handleChange('visitFrequency', parseInt(e.target.value))}
                     >
                       <option value={4}>4x / month (every week)</option>
                       <option value={2}>2x / month (alternating weeks)</option>
-                    </select>
+                    </SelectField>
                   </div>
 
                   {parseInt(formData.visitFrequency) === 2 && (
                     <div className="client-form-group">
                       <label>Week Pattern</label>
-                      <select
+                      <SelectField
                         value={formData.weekPattern}
                         onChange={(e) => handleChange('weekPattern', e.target.value)}
                       >
                         <option value="w1w3">Week 1 + Week 3</option>
                         <option value="w2w4">Week 2 + Week 4</option>
-                      </select>
+                      </SelectField>
                     </div>
                   )}
                 </div>
@@ -602,7 +604,7 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                     {['w1', 'w2', 'w3', 'w4'].map((wk) => (
                       <div className="client-form-group" key={wk}>
                         <label>{wk.toUpperCase()} Day</label>
-                        <select
+                        <SelectField
                           value={formData.weekSchedule[wk]}
                           onChange={(e) =>
                             setFormData((prev) => ({
@@ -617,7 +619,7 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                           <option value="3">Wednesday</option>
                           <option value="4">Thursday</option>
                           <option value="5">Friday</option>
-                        </select>
+                        </SelectField>
                       </div>
                     ))}
                   </div>
@@ -626,7 +628,7 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                     {(formData.weekPattern === 'w1w3' ? ['w1', 'w3'] : ['w2', 'w4']).map((wk) => (
                       <div className="client-form-group" key={wk}>
                         <label>{wk.toUpperCase()} Day</label>
-                        <select
+                        <SelectField
                           value={formData.weekSchedule[wk]}
                           onChange={(e) =>
                             setFormData((prev) => ({
@@ -641,7 +643,7 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                           <option value="3">Wednesday</option>
                           <option value="4">Thursday</option>
                           <option value="5">Friday</option>
-                        </select>
+                        </SelectField>
                       </div>
                     ))}
                   </div>

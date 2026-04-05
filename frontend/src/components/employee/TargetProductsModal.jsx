@@ -14,6 +14,8 @@ import { useEffect, useState } from 'react';
 import doctorService from '../../services/doctorService';
 import productService from '../../services/productService';
 
+import SelectField from '../common/Select';
+
 const MAX_SLOTS = 3;
 
 const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
@@ -136,7 +138,7 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
                 )}
               </div>
 
-              <select
+              <SelectField
                 className="tpm-select"
                 value={slot.product}
                 onChange={(e) => updateSlot(i, 'product', e.target.value)}
@@ -152,7 +154,7 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
                     {p.name}{p.category ? ` (${p.category})` : ''}
                   </option>
                 ))}
-              </select>
+              </SelectField>
 
               {slot.product && (
                 <div className="tpm-status-toggle">
@@ -190,7 +192,6 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
           </button>
         </div>
       </div>
-
       <style>{`
         .tpm-overlay {
           position: fixed; inset: 0;
