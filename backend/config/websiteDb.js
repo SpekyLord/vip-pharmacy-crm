@@ -15,15 +15,17 @@ let websiteConnection = null;
 const connectWebsiteDB = async () => {
   try {
     // Create a separate connection to the website database
+    // Use WEBSITE_DB_NAME env var for dev/prod isolation (defaults to 'vip-pharmacy')
+    const websiteDbName = process.env.WEBSITE_DB_NAME || 'vip-pharmacy';
     const websiteUri = process.env.MONGO_URI.replace(
       /\/[^/?]+(\?|$)/,
-      '/vip-pharmacy$1'
+      `/${websiteDbName}$1`
     );
 
     websiteConnection = mongoose.createConnection(websiteUri);
 
     websiteConnection.on('connected', () => {
-      console.log('Website DB Connected: vip-pharmacy');
+      console.log(`Website DB Connected: ${websiteDbName}`);
     });
 
     websiteConnection.on('error', (err) => {
