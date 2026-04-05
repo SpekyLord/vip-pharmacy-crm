@@ -510,17 +510,17 @@ export default function TransferOrders() {
               <div className="form-row">
                 <div className="form-group">
                   <label>Source Warehouse</label>
-                  <select value={form.source_warehouse_id} onChange={e => setForm({ ...form, source_warehouse_id: e.target.value })}>
+                  <SelectField value={form.source_warehouse_id} onChange={e => setForm({ ...form, source_warehouse_id: e.target.value })}>
                     <option value="">Select...</option>
                     {sourceWarehouses.map(w => <option key={w._id} value={w._id}>{w.warehouse_code} — {w.warehouse_name}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="form-group">
                   <label>Target Warehouse</label>
-                  <select value={form.target_warehouse_id} onChange={e => setForm({ ...form, target_warehouse_id: e.target.value })}>
+                  <SelectField value={form.target_warehouse_id} onChange={e => setForm({ ...form, target_warehouse_id: e.target.value })}>
                     <option value="">Select...</option>
                     {targetWarehouses.map(w => <option key={w._id} value={w._id}>{w.warehouse_code} — {w.warehouse_name}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
               </div>
               <div className="form-row-3">
@@ -629,17 +629,17 @@ export default function TransferOrders() {
               <div className="form-row">
                 <div className="form-group">
                   <label>Source Warehouse</label>
-                  <select value={reassignForm.source_warehouse_id} onChange={e => setReassignForm({ ...reassignForm, source_warehouse_id: e.target.value })}>
+                  <SelectField value={reassignForm.source_warehouse_id} onChange={e => setReassignForm({ ...reassignForm, source_warehouse_id: e.target.value })}>
                     <option value="">Select...</option>
                     {internalWarehouses.map(w => <option key={w._id} value={w._id}>{w.warehouse_code} — {w.warehouse_name}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="form-group">
                   <label>Target Warehouse</label>
-                  <select value={reassignForm.target_warehouse_id} onChange={e => setReassignForm({ ...reassignForm, target_warehouse_id: e.target.value })}>
+                  <SelectField value={reassignForm.target_warehouse_id} onChange={e => setReassignForm({ ...reassignForm, target_warehouse_id: e.target.value })}>
                     <option value="">Select...</option>
                     {internalWarehouses.filter(w => w._id !== reassignForm.source_warehouse_id).map(w => <option key={w._id} value={w._id}>{w.warehouse_code} — {w.warehouse_name}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
               </div>
               <div className="form-row-3">

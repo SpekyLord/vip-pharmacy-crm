@@ -756,7 +756,7 @@ export default function SalesEntry() {
               <div className="service-grid">
                 <div>
                   <label>Customer / Hospital</label>
-                  <select value={`${serviceForm.customer_type}:${serviceForm.customer_ref}`} onChange={e => {
+                  <SelectField value={`${serviceForm.customer_type}:${serviceForm.customer_ref}`} onChange={e => {
                     const [type, id] = e.target.value.split(':');
                     setServiceForm(f => ({ ...f, customer_type: type, customer_ref: id }));
                   }}>
@@ -767,7 +767,7 @@ export default function SalesEntry() {
                     <optgroup label="Customers">
                       {customerList.map(c => <option key={c._id} value={`customer:${c._id}`}>{c.customer_name}{c.customer_type ? ` (${c.customer_type})` : ''}</option>)}
                     </optgroup>
-                  </select>
+                  </SelectField>
                 </div>
                 <div>
                   <label>Invoice Date</label>
@@ -783,13 +783,13 @@ export default function SalesEntry() {
                 </div>
                 <div>
                   <label>Payment Mode</label>
-                  <select value={serviceForm.payment_mode} onChange={e => setServiceForm(f => ({ ...f, payment_mode: e.target.value }))}>
+                  <SelectField value={serviceForm.payment_mode} onChange={e => setServiceForm(f => ({ ...f, payment_mode: e.target.value }))}>
                     <option value="CASH">Cash</option>
                     <option value="CHECK">Check</option>
                     <option value="GCASH">GCash</option>
                     <option value="BANK_TRANSFER">Bank Transfer</option>
                     <option value="ONLINE">Online</option>
-                  </select>
+                  </SelectField>
                 </div>
               </div>
               <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>

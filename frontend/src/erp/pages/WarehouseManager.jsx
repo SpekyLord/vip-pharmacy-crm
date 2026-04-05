@@ -11,6 +11,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useWarehouses from '../hooks/useWarehouses';
 import useEntities from '../hooks/useEntities';
+import SelectField from '../../components/common/Select';
 
 const TYPE_LABELS = { MAIN: 'Main Warehouse', TERRITORY: 'Territory', VIRTUAL: 'Virtual' };
 const TYPE_COLORS = { MAIN: '#1e40af', TERRITORY: '#166534', VIRTUAL: '#64748b' };
@@ -170,11 +171,11 @@ export default function WarehouseManager() {
                   </div>
                   <div className="wm-field">
                     <label>Type</label>
-                    <select value={form.warehouse_type} onChange={e => setForm(f => ({ ...f, warehouse_type: e.target.value }))}>
+                    <SelectField value={form.warehouse_type} onChange={e => setForm(f => ({ ...f, warehouse_type: e.target.value }))}>
                       <option value="MAIN">Main Warehouse</option>
                       <option value="TERRITORY">Territory</option>
                       <option value="VIRTUAL">Virtual</option>
-                    </select>
+                    </SelectField>
                   </div>
                 </div>
                 <div className="wm-field">
@@ -193,9 +194,9 @@ export default function WarehouseManager() {
                 </div>
                 <div className="wm-field">
                   <label>Stock Type</label>
-                  <select value={form.stock_type} onChange={e => setForm(f => ({ ...f, stock_type: e.target.value }))}>
+                  <SelectField value={form.stock_type} onChange={e => setForm(f => ({ ...f, stock_type: e.target.value }))}>
                     {STOCK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="wm-check">
                   <input type="checkbox" checked={form.is_default_receiving} onChange={e => setForm(f => ({ ...f, is_default_receiving: e.target.checked }))} />

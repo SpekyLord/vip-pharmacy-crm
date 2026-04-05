@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import SelectField from '../../components/common/Select';
 import useCollaterals from '../hooks/useCollaterals';
 
 const COLLATERAL_TYPES = ['ALL', 'BROCHURE', 'SAMPLE', 'MERCHANDISE', 'BANNER', 'FLYER', 'OTHER'];
@@ -88,9 +89,9 @@ function CollateralModal({ open, onClose, onSave, editItem }) {
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Type</label>
-            <select style={styles.formInput} name="collateral_type" value={form.collateral_type} onChange={handleChange}>
+            <SelectField style={styles.formInput} name="collateral_type" value={form.collateral_type} onChange={handleChange}>
               {COLLATERAL_TYPES.filter(t => t !== 'ALL').map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Qty On Hand</label>
@@ -144,10 +145,10 @@ function DistributionModal({ open, onClose, onSave, collaterals }) {
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Collateral</label>
-            <select style={styles.formInput} name="collateral" value={form.collateral} onChange={handleChange} required>
+            <SelectField style={styles.formInput} name="collateral" value={form.collateral} onChange={handleChange} required>
               <option value="">Select collateral...</option>
               {(collaterals || []).map(c => <option key={c._id} value={c._id}>{c.name} (qty: {c.qty_on_hand})</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Quantity</label>
@@ -201,10 +202,10 @@ function ReturnModal({ open, onClose, onSave, collaterals }) {
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Collateral</label>
-            <select style={styles.formInput} name="collateral" value={form.collateral} onChange={handleChange} required>
+            <SelectField style={styles.formInput} name="collateral" value={form.collateral} onChange={handleChange} required>
               <option value="">Select collateral...</option>
               {(collaterals || []).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Quantity</label>
@@ -271,9 +272,9 @@ export default function Collaterals() {
       </div>
 
       <div style={styles.filterRow}>
-        <select style={styles.select} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+        <SelectField style={styles.select} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
           {COLLATERAL_TYPES.map(t => <option key={t} value={t}>{t === 'ALL' ? 'All Types' : t}</option>)}
-        </select>
+        </SelectField>
         <div style={styles.viewToggle}>
           <button style={viewMode === 'cards' ? styles.btnPrimary : styles.btnSecondaryLg} onClick={() => setViewMode('cards')}>Cards</button>
           <button style={viewMode === 'table' ? styles.btnPrimary : styles.btnSecondaryLg} onClick={() => setViewMode('table')}>Table</button>

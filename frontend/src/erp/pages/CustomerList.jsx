@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useCustomers from '../hooks/useCustomers';
+import SelectField from '../../components/common/Select';
 
 const CUSTOMER_TYPES = ['ALL', 'PERSON', 'PHARMACY', 'DIAGNOSTIC_CENTER', 'INDUSTRIAL', 'OTHER'];
 const SALE_TYPES = ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'];
@@ -29,18 +30,12 @@ const pageStyles = `
   .cust-header p { color: var(--erp-muted, #5f7188); font-size: 14px; margin: 0; }
 
   .cust-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
-  .cust-filters-native { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .cust-filters-mobile { display: none; width: 100%; gap: 10px; flex-direction: column; }
+  .cust-filter-item { min-width: 180px; }
   .cust-filters input,
   .cust-filters select { padding: 7px 10px; border: 1px solid var(--erp-border, #dbe4f0); border-radius: 8px; font-size: 13px; background: var(--erp-panel, #fff); box-sizing: border-box; }
   .cust-filters input { min-width: 200px; }
 
-  .mobile-select { position: relative; }
-  .mobile-select-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border: 1px solid var(--erp-border, #dbe4f0); border-radius: 10px; background: var(--erp-panel, #fff); font-size: 13px; color: var(--erp-text, #132238); cursor: pointer; }
-  .mobile-select-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mobile-select-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 20; background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 10px; box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12); max-height: 240px; overflow: auto; }
-  .mobile-select-option { padding: 10px 12px; font-size: 13px; cursor: pointer; }
-  .mobile-select-option.active { background: var(--erp-accent-soft, #e8efff); font-weight: 600; }
+  
 
   .cust-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 12px; overflow: hidden; }
   .cust-table th { background: var(--erp-accent-soft, #e8efff); padding: 10px 12px; text-align: left; font-weight: 600; color: var(--erp-text); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
@@ -87,8 +82,7 @@ const pageStyles = `
     .cust-filters { flex-direction: column; align-items: stretch; }
     .cust-filters input { min-width: 100%; }
     .cust-filters select { width: 100%; max-width: 100%; min-width: 0; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-    .cust-filters-native { display: none; }
-    .cust-filters-mobile { display: flex; }
+    .cust-filter-item { min-width: 100%; }
     .form-grid { grid-template-columns: 1fr; }
     .cust-table { font-size: 12px; }
     .cust-table th, .cust-table td { padding: 8px 8px; }
@@ -256,54 +250,6 @@ export default function CustomerList() {
 
   const formatType = (type) => (type || '').replace(/_/g, ' ');
 
-  const MobileSelect = ({ label, value, options, onChange }) => {
-    const [open, setOpen] = useState(false);
-    const rootRef = useRef(null);
-
-    useEffect(() => {
-      if (!open) return;
-      const handleClick = (event) => {
-        if (rootRef.current && !rootRef.current.contains(event.target)) {
-          setOpen(false);
-        }
-      };
-      window.addEventListener('click', handleClick);
-      return () => window.removeEventListener('click', handleClick);
-    }, [open]);
-
-    const currentLabel = options.find(opt => opt.value === value)?.label || value;
-
-    return (
-      <div className="mobile-select" ref={rootRef}>
-        <button
-          type="button"
-          className="mobile-select-btn"
-          onClick={() => setOpen(prev => !prev)}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-        >
-          <span className="mobile-select-value">{label}: {currentLabel}</span>
-          <span aria-hidden="true">▾</span>
-        </button>
-        {open && (
-          <div className="mobile-select-menu" role="listbox">
-            {options.map(opt => (
-              <div
-                key={opt.value}
-                className={`mobile-select-option ${opt.value === value ? 'active' : ''}`.trim()}
-                role="option"
-                aria-selected={opt.value === value}
-                onClick={() => { onChange(opt.value); setOpen(false); }}
-              >
-                {opt.label}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="admin-page erp-page cust-page">
       <style>{pageStyles}</style>
@@ -327,36 +273,20 @@ export default function CustomerList() {
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
             />
-            <div className="cust-filters-native">
-              <select
+            <div className="cust-filter-item">
+              <SelectField
                 value={filters.customer_type}
                 onChange={e => handleFilterChange('customer_type', e.target.value)}
-              >
-                {CUSTOMER_TYPES.map(t => (
-                  <option key={t} value={t}>{t === 'ALL' ? 'All Types' : formatType(t)}</option>
-                ))}
-              </select>
-              <select
+                options={CUSTOMER_TYPES.map(t => ({ value: t, label: t === 'ALL' ? 'All Types' : formatType(t) }))}
+                placeholder="All Types"
+              />
+            </div>
+            <div className="cust-filter-item">
+              <SelectField
                 value={filters.status}
                 onChange={e => handleFilterChange('status', e.target.value)}
-              >
-                {STATUS_OPTIONS.map(s => (
-                  <option key={s} value={s}>{s === 'ALL' ? 'All Status' : s}</option>
-                ))}
-              </select>
-            </div>
-            <div className="cust-filters-mobile">
-              <MobileSelect
-                label="Type"
-                value={filters.customer_type}
-                options={CUSTOMER_TYPES.map(t => ({ value: t, label: t === 'ALL' ? 'All Types' : formatType(t) }))}
-                onChange={(value) => handleFilterChange('customer_type', value)}
-              />
-              <MobileSelect
-                label="Status"
-                value={filters.status}
                 options={STATUS_OPTIONS.map(s => ({ value: s, label: s === 'ALL' ? 'All Status' : s }))}
-                onChange={(value) => handleFilterChange('status', value)}
+                placeholder="All Status"
               />
             </div>
           </div>
@@ -515,21 +445,21 @@ export default function CustomerList() {
 
                   <div className="form-group">
                     <label>Customer Type</label>
-                    <select value={form.customer_type} onChange={e => handleFormChange('customer_type', e.target.value)}>
+                    <SelectField value={form.customer_type} onChange={e => handleFormChange('customer_type', e.target.value)}>
                       <option value="">-- Optional --</option>
                       {CUSTOMER_TYPES.filter(t => t !== 'ALL').map(t => (
                         <option key={t} value={t}>{formatType(t)}</option>
                       ))}
-                    </select>
+                    </SelectField>
                   </div>
 
                   <div className="form-group">
                     <label>Default Sale Type</label>
-                    <select value={form.default_sale_type} onChange={e => handleFormChange('default_sale_type', e.target.value)}>
+                    <SelectField value={form.default_sale_type} onChange={e => handleFormChange('default_sale_type', e.target.value)}>
                       {SALE_TYPES.map(t => (
                         <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
                       ))}
-                    </select>
+                    </SelectField>
                   </div>
 
                   <div className="form-group">
@@ -544,11 +474,11 @@ export default function CustomerList() {
 
                   <div className="form-group">
                     <label>VAT Status</label>
-                    <select value={form.vat_status} onChange={e => handleFormChange('vat_status', e.target.value)}>
+                    <SelectField value={form.vat_status} onChange={e => handleFormChange('vat_status', e.target.value)}>
                       {VAT_OPTIONS.map(v => (
                         <option key={v} value={v}>{v.replace(/_/g, ' ')}</option>
                       ))}
-                    </select>
+                    </SelectField>
                   </div>
 
                   <div className="form-group full">

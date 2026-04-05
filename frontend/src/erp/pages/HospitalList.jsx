@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
+import SelectField from '../../components/common/Select';
 import { useAuth } from '../../hooks/useAuth';
 import useHospitals from '../hooks/useHospitals';
 import api from '../../services/api';
@@ -283,7 +284,14 @@ export default function HospitalList() {
                   <div style={styles.formGroup}><label style={styles.label}>Contact Person</label><input style={styles.input} value={form.contact_person} onChange={e => setForm(f => ({ ...f, contact_person: e.target.value }))} /></div>
                   <div style={styles.formGroup}><label style={styles.label}>Address</label><input style={styles.input} value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} /></div>
                   <div style={styles.formGroup}><label style={styles.label}>Payment Terms (days)</label><input type="number" style={styles.input} value={form.payment_terms} onChange={e => setForm(f => ({ ...f, payment_terms: parseInt(e.target.value) || 30 }))} /></div>
-                  <div style={styles.formGroup}><label style={styles.label}>VAT Status</label><select style={styles.input} value={form.vat_status} onChange={e => setForm(f => ({ ...f, vat_status: e.target.value }))}><option>VATABLE</option><option>EXEMPT</option><option>ZERO</option></select></div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>VAT Status</label>
+                    <SelectField style={styles.input} value={form.vat_status} onChange={e => setForm(f => ({ ...f, vat_status: e.target.value }))}>
+                      <option value="VATABLE">VATABLE</option>
+                      <option value="EXEMPT">EXEMPT</option>
+                      <option value="ZERO">ZERO</option>
+                    </SelectField>
+                  </div>
                   <div style={styles.formGroup}><label style={styles.label}>CWT Rate</label><input type="number" step="0.001" style={styles.input} value={form.cwt_rate} onChange={e => setForm(f => ({ ...f, cwt_rate: parseFloat(e.target.value) || 0 }))} /></div>
                   <div style={styles.formGroup}><label style={styles.label}>Credit Limit</label><input type="number" style={styles.input} value={form.credit_limit} onChange={e => setForm(f => ({ ...f, credit_limit: e.target.value }))} placeholder="No limit" /></div>
                   <div style={styles.formGroup}><label style={styles.label}>Bed Capacity</label><input type="number" style={styles.input} value={form.bed_capacity} onChange={e => setForm(f => ({ ...f, bed_capacity: e.target.value }))} /></div>
