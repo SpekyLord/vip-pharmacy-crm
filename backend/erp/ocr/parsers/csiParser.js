@@ -17,6 +17,14 @@ const {
   splitLines,
 } = require('../confidenceScorer');
 
+const {
+  normalizeWords,
+  detectCSIZones,
+  findWordsInRect,
+  buildSpatialLines,
+  getLineIndicesInZone,
+} = require('../spatialUtils');
+
 // ═══════════════════════════════════════════════════════════
 // AMOUNT PARSER
 // ═══════════════════════════════════════════════════════════
@@ -182,6 +190,12 @@ function extractHospital(lines) {
     return chargedToValue;
   }
 
+  // Step 3b: chargedToValue is empty but hospital keyword lines were found nearby — use the closest
+  if (hospitalSuffixes.length > 0) {
+    hospitalSuffixes.sort((a, b) => Math.abs(a.idx - chargedToIdx) - Math.abs(b.idx - chargedToIdx));
+    return hospitalSuffixes[0].text;
+  }
+
   // Step 4: Fallback — search for standalone hospital name lines
   for (let j = chargedToIdx + 1; j <= Math.min(chargedToIdx + 15, lines.length - 1); j++) {
     const c = lines[j].trim();
@@ -238,7 +252,7 @@ const RE_PRODUCT_BROKEN = /(.+?)\s+[C(]\s*([^)]+)\)\s*(.+?)$/i;
 // Unit prefixes to strip from brand names
 const UNIT_WORDS = /^(\d+\s*)?(?:vials?|pcs?|tabs?|caps?|boxes?|bottles?|amps?|units?|bots?|pairs?)\s+/i;
 
-function extractProductBlocks(lines) {
+function extractProductBlocks(lines, tableLineIndices = null) {
   const blocks = [];
   const usedLines = new Set();
 
@@ -255,10 +269,19 @@ function extractProductBlocks(lines) {
     let dosage = null;
 
     // Search nearby lines for product name
+    // When spatial data is available, search ALL table lines (not just ±4)
+    // because OCR may insert many blank/irrelevant lines between the product name and batch line
     const nearby = [];
-    for (let j = Math.max(0, i - 4); j <= Math.min(lines.length - 1, i + 4); j++) {
-      if (j === i || usedLines.has(j)) continue;
-      nearby.push({ idx: j, line: lines[j].trim(), dist: Math.abs(j - i) });
+    if (tableLineIndices) {
+      for (const j of tableLineIndices) {
+        if (j === i || usedLines.has(j)) continue;
+        nearby.push({ idx: j, line: lines[j].trim(), dist: Math.abs(j - i) });
+      }
+    } else {
+      for (let j = Math.max(0, i - 4); j <= Math.min(lines.length - 1, i + 4); j++) {
+        if (j === i || usedLines.has(j)) continue;
+        nearby.push({ idx: j, line: lines[j].trim(), dist: Math.abs(j - i) });
+      }
     }
     nearby.sort((a, b) => a.dist - b.dist);
 
@@ -368,7 +391,7 @@ function findFooterStart(lines) {
  * Strategy: collect all number-only lines before footer,
  *           then assign in order (every 3 numbers = qty, price, amount for next product)
  */
-function assignProductNumbers(lines, blocks, footerIdx) {
+function assignProductNumbers(lines, blocks, footerIdx, tableLineIndices = null) {
   if (blocks.length === 0) return;
 
   // Step 1: Collect ALL number entries before footer
@@ -383,9 +406,16 @@ function assignProductNumbers(lines, blocks, footerIdx) {
     }
   }
 
+  // For number collection, use line-index range rather than exact spatial match,
+  // because standalone number lines ("120") don't text-match to spatial lines.
+  // Skip everything before the first table line (filters out header numbers like "5000" address).
+  const tableStartIdx = tableLineIndices ? Math.min(...tableLineIndices) : 0;
+
   for (let i = 0; i < footerIdx; i++) {
     const line = lines[i].trim();
     if (skipLines.has(i)) continue;
+    // Spatial filter: skip lines before the table body starts
+    if (i < tableStartIdx) continue;
 
     // Skip TIN patterns
     if (/\d{3}[-\s]\d{3}[-\s]\d{3}/i.test(line)) continue;
@@ -618,6 +648,85 @@ function validateFooter(totals) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// SPATIAL EXTRACTION
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Extract hospital name using spatial bounding box data.
+ *
+ * Strategy — search three regions around the "CHARGE TO" label:
+ *   A. ABOVE the label (OCR sometimes reads the value before the label)
+ *   B. Same Y-line, to the RIGHT of the label center
+ *   C. BELOW the label (next line down)
+ *
+ * Prefer results containing hospital keywords (Hospital, Medical, Health Care, etc.).
+ * If no keyword match, return null to fall through to line-based extraction.
+ */
+function extractHospitalSpatial(nWords, zones) {
+  if (!zones || zones.chargeToY == null) return null;
+
+  const { findLandmark: findLM } = require('../spatialUtils');
+  const ctLandmark = findLM(nWords, /charge[d]?\s*to/i);
+  if (!ctLandmark) return null;
+
+  const skipPatterns = /^(Invoice|Date|TIN|Registered|Business|TERMS|N[°o]?\s*\d|No\.|SC\/PWD|Qty|Unit|ARTICLES|Item|OSCA|Address|MG\s*AND|MILLIGRAM|B4\s*L7|Lawaan|Balantang|VAT|Vios|VIP|CHARGE|ARGE|SALES)/i;
+  const hospitalKeywords = /Hospital|Medical|Clinic|Infirmary|Health\s*Care|Cooperative|Multi.?Purpose/i;
+
+  // Collect candidate texts from all three regions
+  const candidates = [];
+
+  // Region A: ABOVE the label (OCR can place value text before the label)
+  const aboveRegion = {
+    xMin: 0.02, xMax: 0.65,
+    yMin: ctLandmark.yMin - 0.03,
+    yMax: ctLandmark.yMin - 0.002,
+  };
+  const aboveLines = buildSpatialLines(findWordsInRect(nWords, aboveRegion), null, 0.008);
+  for (const line of aboveLines) {
+    const text = line.text.trim();
+    if (text.length >= 3 && !skipPatterns.test(text) && !/^[\d:.;\s_-]+$/.test(text)) {
+      candidates.push(text);
+    }
+  }
+
+  // Region B: Same Y-line, to the right of the label CENTER (not rightX edge)
+  const sameLineRegion = {
+    xMin: ctLandmark.cx + 0.08,
+    xMax: 0.65,
+    yMin: ctLandmark.yMin - 0.008,
+    yMax: ctLandmark.yMax + 0.008,
+  };
+  const sameLineWords = findWordsInRect(nWords, sameLineRegion);
+  if (sameLineWords.length > 0) {
+    const text = [...sameLineWords].sort((a, b) => a.cx - b.cx).map(w => w.text).join(' ').trim();
+    if (text.length >= 3 && !skipPatterns.test(text) && !/^[\d:.;\s_-]+$/.test(text)) {
+      candidates.push(text);
+    }
+  }
+
+  // Region C: Below the label
+  const belowRegion = {
+    xMin: 0.02, xMax: 0.65,
+    yMin: ctLandmark.yMax + 0.003,
+    yMax: ctLandmark.yMax + 0.05,
+  };
+  const belowLines = buildSpatialLines(findWordsInRect(nWords, belowRegion), null, 0.008);
+  for (const line of belowLines) {
+    const text = line.text.trim();
+    if (text.length >= 3 && !skipPatterns.test(text) && !/^[\d:.;\s_-]+$/.test(text)) {
+      candidates.push(text);
+    }
+  }
+
+  // Prefer candidates with hospital keywords
+  const withKeyword = candidates.find(c => hospitalKeywords.test(c));
+  if (withKeyword) return withKeyword;
+
+  // No keyword match — return null to let line-based extraction try
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════
 
@@ -626,14 +735,25 @@ function parseCSI(ocrResult) {
   const lines = splitLines(fullText);
   const validationFlags = [];
 
+  // Spatial layer: normalize words and detect zones
+  const nWords = normalizeWords(words, ocrResult.fullTextAnnotation);
+  const zones = nWords.length > 10 ? detectCSIZones(nWords) : null;
+
+  // Table line indices for spatial filtering (null = use all lines as before)
+  const tableLineIndices = zones ? getLineIndicesInZone(lines, nWords, zones.tableBody) : null;
+
   const invoiceNo = extractInvoiceNo(lines);
   const date = extractDate(lines);
-  const hospital = extractHospital(lines);
+
+  // Try spatial hospital extraction first, fall back to line-based
+  let hospital = zones ? extractHospitalSpatial(nWords, zones) : null;
+  if (!hospital) hospital = extractHospital(lines);
+
   const terms = extractTerms(lines);
 
   const footerIdx = findFooterStart(lines);
-  const blocks = extractProductBlocks(lines);
-  assignProductNumbers(lines, blocks, footerIdx);
+  const blocks = extractProductBlocks(lines, tableLineIndices);
+  assignProductNumbers(lines, blocks, footerIdx, tableLineIndices);
   const footer = extractFooterTotals(lines, footerIdx);
 
   const lineItems = blocks.map((b) => ({
