@@ -15,6 +15,7 @@ import { useState } from 'react';
 import clientService from '../../services/clientService';
 import toast from 'react-hot-toast';
 import useLookupData from '../../hooks/useLookupData';
+import { useLookupOptions } from '../../erp/hooks/useLookups';
 
 import SelectField from '../common/Select';
 
@@ -215,16 +216,9 @@ const modalStyles = `
   }
 `;
 
-const ENGAGEMENT_LEVELS = [
-  { value: 1, label: '1 - Visited 4 times' },
-  { value: 2, label: '2 - Knows BDM/products' },
-  { value: 3, label: '3 - Tried products' },
-  { value: 4, label: '4 - In group chat' },
-  { value: 5, label: '5 - Active partner' },
-];
-
 const ClientAddModal = ({ client, onClose, onSaved }) => {
   const { programs: PROGRAMS, supportTypes: SUPPORT_TYPES } = useLookupData();
+  const { options: ENGAGEMENT_LEVELS } = useLookupOptions('ENGAGEMENT_LEVEL');
   const isEdit = !!client;
 
   const [saving, setSaving] = useState(false);

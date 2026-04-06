@@ -6,9 +6,9 @@ import usePeople from '../hooks/usePeople';
 import { useAuth } from '../../hooks/useAuth';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
-const SALE_TYPES = ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'];
+const SALE_TYPES_FALLBACK = ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'];
 const STATUS_OPTIONS = ['ALL', 'ACTIVE', 'INACTIVE'];
-const VAT_OPTIONS = ['VATABLE', 'EXEMPT', 'ZERO'];
+const VAT_OPTIONS_FALLBACK = ['VATABLE', 'EXEMPT', 'ZERO'];
 
 const TYPE_BADGE_COLORS = {
   PERSON: { bg: '#dbeafe', text: '#1e40af' },
@@ -132,6 +132,10 @@ export function CustomerListContent() {
   const { getAsUsers } = usePeople();
   const { options: custTypeOpts } = useLookupOptions('CUSTOMER_TYPE');
   const CUSTOMER_TYPES = ['ALL', ...custTypeOpts.map(o => o.code)];
+  const { options: saleTypeOpts } = useLookupOptions('SALE_TYPE');
+  const SALE_TYPES = saleTypeOpts.length > 0 ? saleTypeOpts.map(o => o.code) : SALE_TYPES_FALLBACK;
+  const { options: vatOpts } = useLookupOptions('VAT_TYPE');
+  const VAT_OPTIONS = vatOpts.length > 0 ? vatOpts.map(o => o.code) : VAT_OPTIONS_FALLBACK;
 
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);

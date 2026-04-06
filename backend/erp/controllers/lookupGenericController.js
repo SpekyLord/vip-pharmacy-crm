@@ -29,7 +29,38 @@ const SEED_DEFAULTS = {
   DR_TYPE: ['DR_CONSIGNMENT', 'DR_SAMPLING', 'DR_DONATION'],
   STOCK_TYPE: ['PHARMA', 'FNB', 'OFFICE'],
   DEPARTMENT: ['SALES', 'ADMIN', 'FINANCE', 'OPERATIONS', 'LOGISTICS', 'MARKETING', 'EXECUTIVE'],
-  POSITION: ['BDM', 'eBDM', 'Sales Manager', 'Admin Staff', 'Finance Staff', 'President', 'Operations Head']
+  POSITION: ['BDM', 'eBDM', 'Sales Manager', 'Admin Staff', 'Finance Staff', 'President', 'Operations Head'],
+  // Phase 24B — new categories
+  ENGAGEMENT_TYPE: [
+    { code: 'TXT_PROMATS', label: 'TXT/PROMATS' },
+    { code: 'MES_VIBER_GIF', label: 'MES/VIBER GIF' },
+    { code: 'PICTURE', label: 'PICTURE' },
+    { code: 'SIGNED_CALL', label: 'SIGNED CALL' },
+    { code: 'VOICE_CALL', label: 'VOICE CALL' },
+  ],
+  ENGAGEMENT_LEVEL: [
+    { code: '1', label: '1 - Visited 4 times' },
+    { code: '2', label: '2 - Knows BDM/products' },
+    { code: '3', label: '3 - Tried products' },
+    { code: '4', label: '4 - In group chat' },
+    { code: '5', label: '5 - Active partner' },
+  ],
+  DOC_TYPE: [
+    { code: 'CSI', label: 'Charge Sales Invoice (CSI)' },
+    { code: 'CR', label: 'Collection Receipt (CR)' },
+    { code: 'CWT_2307', label: 'BIR 2307 (Withholding Tax)' },
+    { code: 'GAS_RECEIPT', label: 'Gas Station Receipt' },
+    { code: 'ODOMETER', label: 'Odometer' },
+    { code: 'OR', label: 'Expense Receipt / OR' },
+    { code: 'UNDERTAKING', label: 'Undertaking of Receipt (GRN)' },
+    { code: 'DR', label: 'Delivery Receipt (DR)' },
+  ],
+  SALE_TYPE: ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'],
+  VAT_TYPE: ['VATABLE', 'EXEMPT', 'ZERO'],
+  EXPENSE_TYPE: ['ORE', 'ACCESS'],
+  OFFICE_SUPPLY_TXN_TYPE: ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'],
+  PAYMENT_MODE_TYPE: ['CASH', 'CHECK', 'BANK_TRANSFER', 'GCASH', 'CARD', 'OTHER'],
+  PEOPLE_STATUS: ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'],
 };
 
 // List all distinct categories for current entity
@@ -42,12 +73,36 @@ exports.getCategories = catchAsync(async (req, res) => {
   res.json({ success: true, data: allCategories });
 });
 
-// List items in a category
+// Helper: build bulkWrite ops from seed defaults (supports string or {code,label} items)
+function buildSeedOps(defaults, category, entityId, userId) {
+  return defaults.map((item, i) => {
+    const isObj = typeof item === 'object';
+    const label = isObj ? item.label : item;
+    const code = isObj ? item.code.toUpperCase() : label.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+    return {
+      updateOne: {
+        filter: { entity_id: entityId, category, code },
+        update: { $setOnInsert: { label, sort_order: i * 10, is_active: true, metadata: isObj ? (item.metadata || {}) : {}, created_by: userId } },
+        upsert: true
+      }
+    };
+  });
+}
+
+// List items in a category (auto-seeds if empty and defaults exist)
 exports.getByCategory = catchAsync(async (req, res) => {
   const filter = { category: req.params.category.toUpperCase() };
   if (req.entityId) filter.entity_id = req.entityId;
   if (req.query.active_only === 'true') filter.is_active = true;
-  const items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+  let items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+
+  // Auto-seed on first access if empty and defaults exist
+  if (items.length === 0 && req.entityId && SEED_DEFAULTS[filter.category]) {
+    const ops = buildSeedOps(SEED_DEFAULTS[filter.category], filter.category, req.entityId, req.user?._id);
+    await Lookup.bulkWrite(ops);
+    items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+  }
+
   res.json({ success: true, data: items });
 });
 
@@ -93,13 +148,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   const defaults = SEED_DEFAULTS[category];
   if (!defaults) return res.status(400).json({ success: false, message: `No defaults for category: ${category}` });
 
-  const ops = defaults.map((label, i) => ({
-    updateOne: {
-      filter: { entity_id: req.entityId, category, code: label.toUpperCase().replace(/[^A-Z0-9]/g, '_') },
-      update: { $setOnInsert: { label, sort_order: i * 10, is_active: true, created_by: req.user._id } },
-      upsert: true
-    }
-  }));
+  const ops = buildSeedOps(defaults, category, req.entityId, req.user._id);
   await Lookup.bulkWrite(ops);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });

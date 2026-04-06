@@ -15,14 +15,8 @@ import userService from '../../services/userService';
 import specializationService from '../../services/specializationService';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import useLookupData from '../../hooks/useLookupData';
+import { useLookupOptions } from '../../erp/hooks/useLookups';
 import SelectField from '../common/Select';
-const ENGAGEMENT_LEVELS = [
-  { value: 1, label: '1 - Visited 4 times' },
-  { value: 2, label: '2 - Knows BDM/products' },
-  { value: 3, label: '3 - Tried products' },
-  { value: 4, label: '4 - In group chat' },
-  { value: 5, label: '5 - Active partner' },
-];
 
 const doctorManagementStyles = `
   .doctor-management {
@@ -1267,6 +1261,7 @@ const DoctorManagement = ({
   onSearchChange,
 }) => {
   const { programs: lookupPrograms, supportTypes: lookupSupportTypes } = useLookupData();
+  const { options: ENGAGEMENT_LEVELS } = useLookupOptions('ENGAGEMENT_LEVEL');
 
   // Merge lookup data with unique values from loaded doctors as fallback
   const PROGRAMS = useMemo(() => {

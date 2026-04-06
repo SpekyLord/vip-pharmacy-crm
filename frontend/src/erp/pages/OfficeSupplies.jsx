@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import SelectField from '../../components/common/Select';
 import useOfficeSupplies from '../hooks/useOfficeSupplies';
 import { useLookupOptions } from '../hooks/useLookups';
-const TXN_TYPES = ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'];
+const TXN_TYPES_FALLBACK = ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'];
 
 const styles = {
   container: { padding: '24px', maxWidth: '1200px', margin: '0 auto' },
@@ -207,6 +207,8 @@ function TxnModal({ open, onClose, onSave, supplies }) {
 export default function OfficeSupplies() {
   const os = useOfficeSupplies();
   const { options: catOpts } = useLookupOptions('OFFICE_SUPPLY_CATEGORY');
+  const { options: txnOpts } = useLookupOptions('OFFICE_SUPPLY_TXN_TYPE');
+  const TXN_TYPES = txnOpts.length > 0 ? txnOpts.map(o => o.code) : TXN_TYPES_FALLBACK;
   const CATEGORIES = ['ALL', ...catOpts.map(o => o.code)];
   const [supplies, setSupplies] = useState([]);
   const [transactions, setTransactions] = useState([]);

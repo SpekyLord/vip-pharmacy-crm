@@ -126,7 +126,7 @@ function ScanORModal({ open, onClose, onApply }) {
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
-const EXPENSE_TYPES = ['ORE', 'ACCESS'];
+const EXPENSE_TYPES_FALLBACK = ['ORE', 'ACCESS'];
 // Static fallback — overridden at runtime by COA API when available
 const COA_OPTIONS_FALLBACK = [
   // COGS
@@ -409,6 +409,8 @@ export default function Expenses() {
   const { options: expCatOpts } = useLookupOptions('EXPENSE_CATEGORY');
   const EXPENSE_CATEGORIES = expCatOpts.map(o => o.label);
   const { options: birFlagOpts } = useLookupOptions('BIR_FLAG');
+  const { options: expTypeOpts } = useLookupOptions('EXPENSE_TYPE');
+  const EXPENSE_TYPES = expTypeOpts.length > 0 ? expTypeOpts.map(o => o.code) : EXPENSE_TYPES_FALLBACK;
   const BIR_FLAGS = birFlagOpts.map(o => o.code);
   const [paymentModes, setPaymentModes] = useState([]);
 

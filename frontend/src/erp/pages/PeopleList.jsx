@@ -7,7 +7,7 @@ import usePeople from '../hooks/usePeople';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 
-const STATUS_LIST = ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'];
+const STATUS_LIST_FALLBACK = ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'];
 
 const TYPE_COLORS = {
   BDM: { bg: '#dbeafe', text: '#1e40af' },
@@ -57,13 +57,15 @@ const pageStyles = `
 
 const EMPTY_FORM = {
   first_name: '', last_name: '', full_name: '', person_type: 'EMPLOYEE',
-  position: '', department: '', employment_type: 'REGULAR', status: 'ACTIVE',
+  position: '', department: '', reports_to: '', employment_type: 'REGULAR', status: 'ACTIVE',
 };
 
 export function PeopleListContent() {
   const navigate = useNavigate();
   const api = usePeople();
   const { options: personTypeOpts } = useLookupOptions('PERSON_TYPE');
+  const { options: statusOpts } = useLookupOptions('PEOPLE_STATUS');
+  const STATUS_LIST = statusOpts.length > 0 ? statusOpts.map(s => s.code) : STATUS_LIST_FALLBACK;
   const PERSON_TYPES = personTypeOpts.map(o => o.code);
   const { options: empTypeOpts } = useLookupOptions('EMPLOYMENT_TYPE');
   const EMP_TYPES = empTypeOpts.map(o => o.code);
@@ -92,7 +94,7 @@ export function PeopleListContent() {
   const handleCreate = async () => {
     const full_name = `${form.first_name} ${form.last_name}`.trim();
     try {
-      await api.createPerson({ ...form, full_name });
+      await api.createPerson({ ...form, full_name, reports_to: form.reports_to || null });
       setShowForm(false);
       setForm(EMPTY_FORM);
       load();
@@ -141,6 +143,7 @@ export function PeopleListContent() {
                 <th>Type</th>
                 <th>Position</th>
                 <th>Department</th>
+                <th>Reports To</th>
                 <th>Employment</th>
                 <th>Status</th>
               </tr>
@@ -155,6 +158,7 @@ export function PeopleListContent() {
                     <td><span className="badge" style={{ background: tc.bg, color: tc.text }}>{p.person_type.replace(/_/g, ' ')}</span></td>
                     <td>{p.position || '—'}</td>
                     <td>{p.department || '—'}</td>
+                    <td style={{ fontSize: 12, color: '#64748b' }}>{p.reports_to?.full_name || '—'}</td>
                     <td>{p.employment_type || '—'}</td>
                     <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{p.status}</span></td>
                   </tr>
@@ -209,6 +213,15 @@ export function PeopleListContent() {
                 <label>Department</label>
                 <input value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))} />
               </div>
+            </div>
+            <div className="ppl-field">
+              <label>Reports To</label>
+              <SelectField value={form.reports_to} onChange={e => setForm(f => ({ ...f, reports_to: e.target.value }))}>
+                <option value="">None (Top Level)</option>
+                {people.filter(p => p._id !== form._id).map(p => (
+                  <option key={p._id} value={p._id}>{p.full_name}{p.position ? ` (${p.position})` : ''}</option>
+                ))}
+              </SelectField>
             </div>
             <div className="ppl-footer">
               <button className="btn" style={{ background: '#f3f4f6' }} onClick={() => setShowForm(false)}>Cancel</button>

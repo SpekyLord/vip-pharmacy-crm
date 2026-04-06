@@ -85,7 +85,7 @@ function ScanModal({ open, onClose, onApply, docType, title }) {
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
-const PAYMENT_MODES = ['CASH', 'FLEET_CARD', 'GCASH', 'CARD', 'OTHER'];
+const PAYMENT_MODES_FALLBACK = ['CASH', 'FLEET_CARD', 'GCASH', 'CARD', 'OTHER'];
 
 const mobileStyles = `
   .cl-table { display: table; }
@@ -124,6 +124,8 @@ export default function CarLogbook() {
   const { getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook, validateCarLogbook, submitCarLogbook, reopenCarLogbook, loading } = useExpenses();
   const { settings } = useSettings();
   const { options: fuelTypeOpts } = useLookupOptions('FUEL_TYPE');
+  const { options: pmOpts } = useLookupOptions('PAYMENT_MODE_TYPE');
+  const PAYMENT_MODES = pmOpts.length > 0 ? pmOpts.map(o => o.code) : PAYMENT_MODES_FALLBACK;
   const FUEL_TYPES = fuelTypeOpts.map(o => o.code);
 
   const [entries, setEntries] = useState([]);

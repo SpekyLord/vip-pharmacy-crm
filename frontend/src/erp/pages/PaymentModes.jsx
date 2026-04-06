@@ -6,8 +6,9 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
 import useAccounting from '../hooks/useAccounting';
+import { useLookupOptions } from '../hooks/useLookups';
 
-const MODE_TYPES = ['CASH', 'CHECK', 'BANK_TRANSFER', 'GCASH', 'CARD', 'OTHER'];
+const MODE_TYPES_FALLBACK = ['CASH', 'CHECK', 'BANK_TRANSFER', 'GCASH', 'CARD', 'OTHER'];
 
 const pageStyles = `
   .pmode-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -42,6 +43,8 @@ const EMPTY_FORM = { mode_code: '', mode_label: '', mode_type: 'CASH', coa_code:
 export function PaymentModesContent() {
   const api = useErpApi();
   const { listAccounts } = useAccounting();
+  const { options: modeTypeOpts } = useLookupOptions('PAYMENT_MODE_TYPE');
+  const MODE_TYPES = modeTypeOpts.length > 0 ? modeTypeOpts.map(o => o.code) : MODE_TYPES_FALLBACK;
   const [modes, setModes] = useState([]);
   const [coaAccounts, setCoaAccounts] = useState([]);
   const [loading, setLoading] = useState(false);

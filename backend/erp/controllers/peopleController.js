@@ -25,6 +25,7 @@ const getPeopleList = catchAsync(async (req, res) => {
       .skip((page - 1) * limit)
       .limit(limit)
       .populate('user_id', 'name email role')
+      .populate('reports_to', 'full_name position')
       .lean(),
     PeopleMaster.countDocuments(filter),
   ]);
@@ -41,6 +42,7 @@ const getPersonById = catchAsync(async (req, res) => {
   const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope })
     .select('+government_ids.sss_no +government_ids.philhealth_no +government_ids.pagibig_no +government_ids.tin +bank_account.bank +bank_account.account_no +bank_account.account_name')
     .populate('user_id', 'name email role')
+    .populate('reports_to', 'full_name position department')
     .lean();
 
   if (!person) {
@@ -79,6 +81,7 @@ const updatePerson = catchAsync(async (req, res) => {
 
   const allowed = [
     'full_name', 'first_name', 'last_name', 'person_type', 'position', 'department',
+    'reports_to', 'bdm_code', 'role_notes',
     'employment_type', 'date_hired', 'date_regularized', 'date_separated', 'date_of_birth',
     'civil_status', 'government_ids', 'bank_account', 'is_active', 'status', 'user_id',
   ];
@@ -249,6 +252,31 @@ const getAsUsers = catchAsync(async (req, res) => {
   res.json({ success: true, data: users });
 });
 
+// ═══ Org Chart ═══
+
+const getOrgChart = catchAsync(async (req, res) => {
+  const filter = { entity_id: req.entityId, is_active: true };
+  const people = await PeopleMaster.find(filter)
+    .select('full_name position department person_type reports_to bdm_code')
+    .sort({ full_name: 1 })
+    .lean();
+
+  // Build tree: index by _id, attach children to parents
+  const map = new Map(people.map(p => [p._id.toString(), { ...p, children: [] }]));
+  const roots = [];
+
+  for (const node of map.values()) {
+    const parentId = node.reports_to?.toString();
+    if (parentId && map.has(parentId)) {
+      map.get(parentId).children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  res.json({ success: true, data: { tree: roots, count: people.length } });
+});
+
 module.exports = {
   getPeopleList,
   getPersonById,
@@ -260,4 +288,5 @@ module.exports = {
   updateCompProfile,
   getAsUsers,
   syncFromCrm,
+  getOrgChart,
 };

@@ -5,7 +5,16 @@
  * Maps to Excel CPT day sheet columns G-K.
  * Phone-friendly with 48px min tap targets.
  */
-import { ENGAGEMENT_TYPE_OPTIONS } from '../../constants/engagementTypes';
+import { useLookupOptions } from '../../erp/hooks/useLookups';
+
+// Fallback used only while lookup loads on first render
+const FALLBACK = [
+  { value: 'TXT_PROMATS', label: 'TXT/PROMATS' },
+  { value: 'MES_VIBER_GIF', label: 'MES/VIBER GIF' },
+  { value: 'PICTURE', label: 'PICTURE' },
+  { value: 'SIGNED_CALL', label: 'SIGNED CALL' },
+  { value: 'VOICE_CALL', label: 'VOICE CALL' },
+];
 
 const selectorStyles = `
   .engagement-selector {
@@ -67,6 +76,9 @@ const selectorStyles = `
 `;
 
 const EngagementTypeSelector = ({ selected = [], onChange }) => {
+  const { options: lookupOpts } = useLookupOptions('ENGAGEMENT_TYPE');
+  const engTypes = lookupOpts.length > 0 ? lookupOpts : FALLBACK;
+
   const handleToggle = (value) => {
     const newSelected = selected.includes(value)
       ? selected.filter((v) => v !== value)
@@ -77,7 +89,7 @@ const EngagementTypeSelector = ({ selected = [], onChange }) => {
   return (
     <div className="engagement-selector">
       <style>{selectorStyles}</style>
-      {ENGAGEMENT_TYPE_OPTIONS.map((opt) => (
+      {engTypes.map((opt) => (
         <button
           key={opt.value}
           type="button"

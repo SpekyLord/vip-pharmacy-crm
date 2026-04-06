@@ -12,11 +12,13 @@ const {
   updateCompProfile,
   getAsUsers,
   syncFromCrm,
+  getOrgChart,
 } = require('../controllers/peopleController');
 
 // ═══ People CRUD ═══
 router.get('/as-users', getAsUsers);  // lightweight CRM-compatible user list (entity-scoped)
 router.post('/sync-from-crm', roleCheck('admin', 'president'), syncFromCrm);  // import CRM Users → PeopleMaster
+router.get('/org-chart', getOrgChart);
 router.get('/', getPeopleList);
 router.post('/', roleCheck('admin', 'finance', 'president'), createPerson);
 router.get('/:id', getPersonById);

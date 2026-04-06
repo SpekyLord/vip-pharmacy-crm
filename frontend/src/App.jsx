@@ -72,6 +72,7 @@ const AuditLogs = lazy(() => import('./erp/pages/AuditLogs'));
 // Phase 10 — ERP Access Control, People & Payroll
 const AccessTemplateManager = lazy(() => import('./erp/pages/AccessTemplateManager'));
 const PeopleList = lazy(() => import('./erp/pages/PeopleList'));
+const OrgChart = lazy(() => import('./erp/pages/OrgChart'));
 const PersonDetail = lazy(() => import('./erp/pages/PersonDetail'));
 const PayrollRun = lazy(() => import('./erp/pages/PayrollRun'));
 const PayslipView = lazy(() => import('./erp/pages/PayslipView'));
@@ -576,6 +577,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="people">
                 <PersonDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/org-chart"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="people">
+                <OrgChart />
               </ProtectedRoute>
             }
           />
