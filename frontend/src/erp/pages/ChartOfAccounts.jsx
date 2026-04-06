@@ -240,8 +240,8 @@ export function ChartOfAccountsContent() {
               <label>BIR Flag</label>
               <SelectField value={form.bir_flag} onChange={e => setForm({ ...form, bir_flag: e.target.value })}>
                 <option value="BOTH">BOTH</option>
-                <option value="DEDUCTIBLE">DEDUCTIBLE</option>
-                <option value="NON_DEDUCTIBLE">NON_DEDUCTIBLE</option>
+                <option value="INTERNAL">INTERNAL</option>
+                <option value="BIR">BIR</option>
               </SelectField>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
