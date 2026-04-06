@@ -303,8 +303,8 @@ export default function ErpDashboard() {
                 {agentRuns.map((r, i) => (
                   <div key={r._id || i} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--erp-border)' : 'none', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontWeight: 600, color: 'var(--erp-text)' }}>{r.agent_name || r.agentName || 'Agent'}</div>
-                      <div style={{ color: 'var(--erp-muted)', fontSize: 11 }}>{r.last_run || r.lastRun ? new Date(r.last_run || r.lastRun).toLocaleString() : '--'}</div>
+                      <div style={{ fontWeight: 600, color: 'var(--erp-text)' }}>{r.agent_label || 'Agent'}</div>
+                      <div style={{ color: 'var(--erp-muted)', fontSize: 11 }}>{r.run_date ? new Date(r.run_date).toLocaleString() : '--'}</div>
                     </div>
                     <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: r.status === 'success' ? '#dcfce7' : r.status === 'error' ? '#fef2f2' : 'var(--erp-accent-soft)', color: r.status === 'success' ? '#16a34a' : r.status === 'error' ? '#dc2626' : 'var(--erp-accent)' }}>
                       {r.status || 'unknown'}
