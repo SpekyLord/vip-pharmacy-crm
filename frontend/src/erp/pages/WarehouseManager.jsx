@@ -123,10 +123,14 @@ export function WarehouseManagerContent() {
 
   const handleSave = async () => {
     try {
+      // Clean empty-string ObjectId fields to null (Mongoose rejects '' as ObjectId)
+      const payload = { ...form };
+      if (!payload.manager_id) payload.manager_id = null;
+      if (!payload.draws_from) payload.draws_from = null;
       if (editing === 'new') {
-        await whApi.createWarehouse(form);
+        await whApi.createWarehouse(payload);
       } else {
-        await whApi.updateWarehouse(editing._id, form);
+        await whApi.updateWarehouse(editing._id, payload);
       }
       setEditing(null);
       load();
