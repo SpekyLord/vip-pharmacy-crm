@@ -198,6 +198,7 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
   const galleryRef = useRef(null);
 
   const reset = () => {
+    if (preview) URL.revokeObjectURL(preview);
     setStep('capture');
     setPhoto(null);
     setPreview(null);

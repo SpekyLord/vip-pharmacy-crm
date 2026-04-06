@@ -5,6 +5,6 @@ const { roleCheck } = require('../../middleware/roleCheck');
 const { getSettings, updateSettings } = require('../controllers/settingsController');
 
 router.get('/', protect, getSettings);
-router.put('/', protect, roleCheck('admin', 'finance'), updateSettings);
+router.put('/', protect, roleCheck('admin', 'finance', 'president'), updateSettings);
 
 module.exports = router;

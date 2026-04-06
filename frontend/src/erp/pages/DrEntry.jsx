@@ -165,7 +165,7 @@ function ScanDRModal({ open, onClose, onApply, hospitals, stockProducts }) {
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
 
-  const reset = () => { setStep('capture'); setPreview(null); setOcrData(null); setMatchedHospital(null); setMatchedItems([]); setErrorMsg(''); };
+  const reset = () => { if (preview) URL.revokeObjectURL(preview); setStep('capture'); setPreview(null); setOcrData(null); setMatchedHospital(null); setMatchedItems([]); setErrorMsg(''); };
   const handleClose = () => { reset(); onClose(); };
 
   const handleFile = async (file) => {

@@ -272,8 +272,11 @@ const postInvoice = catchAsync(async (req, res) => {
 
   // Period lock check
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
-  const invPeriod = invoice.period || dateToPeriod(invoice.invoice_date || new Date());
+  const invPeriod = dateToPeriod(invoice.invoice_date || new Date());
   await checkPeriodOpen(req.entityId, invPeriod);
+
+  // Fetch vendor TIN for VAT ledger entry
+  const vendor = await VendorMaster.findById(invoice.vendor_id).select('tin').lean();
 
   // Build JE data using existing journalFromAP
   const jeData = journalFromAP(invoice.toObject(), req.user._id);
@@ -294,7 +297,7 @@ const postInvoice = catchAsync(async (req, res) => {
       source_doc_ref: invoice.invoice_ref,
       source_event_id: je._id,
       hospital_or_vendor: invoice.vendor_id,
-      tin: invoice.vendor_tin,
+      tin: vendor?.tin || '',
       gross_amount: invoice.total_amount || (invoice.net_amount + inputVat),
       vat_amount: inputVat
     }).catch(async (err) => {

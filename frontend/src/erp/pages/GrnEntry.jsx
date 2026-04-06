@@ -160,7 +160,7 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
 
-  const reset = () => { setStep('capture'); setPreview(null); setOcrData(null); setMatchedItems([]); setErrorMsg(''); };
+  const reset = () => { if (preview) URL.revokeObjectURL(preview); setStep('capture'); setPreview(null); setOcrData(null); setMatchedItems([]); setErrorMsg(''); };
   const handleClose = () => { reset(); onClose(); };
 
   const handleFile = async (file) => {
