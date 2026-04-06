@@ -130,7 +130,7 @@ export default function PersonDetail() {
         });
         const c = p.comp_profile || {};
         setCompForm({
-          salary_type: c.salary_type || '', effective_date: toInput(c.effective_date),
+          salary_type: c.salary_type || 'FIXED_SALARY', effective_date: toInput(c.effective_date) || toInput(new Date()),
           basic_salary: c.basic_salary || 0, rice_allowance: c.rice_allowance || 0,
           clothing_allowance: c.clothing_allowance || 0, medical_allowance: c.medical_allowance || 0,
           laundry_allowance: c.laundry_allowance || 0, transport_allowance: c.transport_allowance || 0,
