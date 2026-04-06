@@ -47,7 +47,7 @@ const EMPTY_FORM = {
   bank_account: { bank: '', account_no: '', account_name: '' }
 };
 
-export default function VendorList() {
+export function VendorListContent() {
   const { user } = useAuth();
   const api = usePurchasing();
 
@@ -133,11 +133,6 @@ export default function VendorList() {
   return (
     <>
       <style>{styles}</style>
-      <div className="vl-page">
-        <Navbar />
-        <div style={{ display: 'flex' }}>
-          <Sidebar />
-          <main className="vl-main">
             <div className="vl-header">
               <h2>Vendor Master</h2>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -256,9 +251,20 @@ export default function VendorList() {
                 </div>
               </div>
             )}
-          </main>
-        </div>
-      </div>
     </>
+  );
+}
+
+export default function VendorList() {
+  return (
+    <div className="vl-page">
+      <Navbar />
+      <div style={{ display: 'flex' }}>
+        <Sidebar />
+        <main className="vl-main">
+          <VendorListContent />
+        </main>
+      </div>
+    </div>
   );
 }

@@ -42,7 +42,7 @@ const pageStyles = `
   @media(max-width: 375px) { .cc-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .cc-main input, .cc-main select { font-size: 16px; } }
 `;
 
-function TreeView({ nodes, onToggle }) {
+function TreeView({ nodes, onToggle, onEdit }) {
   if (!nodes || nodes.length === 0) return null;
   return (
     <div className="tree-node">
@@ -50,15 +50,16 @@ function TreeView({ nodes, onToggle }) {
         <div key={n._id}>
           <div className="tree-item">
             <span className="tree-code">{n.code}</span>
-            <span style={{ flex: 1 }}>{n.name}</span>
+            <span style={{ flex: 1 }}>{n.name}{n.description ? <span style={{ color: 'var(--erp-muted)', fontSize: 11, marginLeft: 6 }}>— {n.description}</span> : ''}</span>
             <span className={`badge badge-${n.is_active ? 'active' : 'inactive'}`}>{n.is_active ? 'Active' : 'Inactive'}</span>
+            {onEdit && <button className="btn btn-sm btn-outline" onClick={() => onEdit(n)} style={{ marginRight: 4 }}>Edit</button>}
             {onToggle && (
               <button className="btn btn-sm" onClick={() => onToggle(n._id, !n.is_active)}>
                 {n.is_active ? 'Deactivate' : 'Activate'}
               </button>
             )}
           </div>
-          {n.children && n.children.length > 0 && <TreeView nodes={n.children} onToggle={onToggle} />}
+          {n.children && n.children.length > 0 && <TreeView nodes={n.children} onToggle={onToggle} onEdit={onEdit} />}
         </div>
       ))}
     </div>
@@ -72,6 +73,7 @@ export function CostCentersContent() {
   const [flatList, setFlatList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ code: '', name: '', parent_cost_center: '', description: '' });
+  const [editModal, setEditModal] = useState(null); // null or { _id, name, description, parent_cost_center }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -100,6 +102,19 @@ export function CostCentersContent() {
 
   const handleToggle = async (id, is_active) => {
     try { await rpt.updateCostCenter(id, { is_active }); load(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+  };
+
+  const openEdit = (node) => {
+    setEditModal({ _id: node._id, name: node.name, description: node.description || '', parent_cost_center: node.parent_cost_center || '' });
+  };
+
+  const handleEditSave = async () => {
+    if (!editModal) return;
+    try {
+      await rpt.updateCostCenter(editModal._id, { name: editModal.name, description: editModal.description, parent_cost_center: editModal.parent_cost_center || null });
+      setEditModal(null);
+      load();
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Update failed'); }
   };
 
   const handleExport = async () => {
@@ -170,10 +185,39 @@ export function CostCentersContent() {
 
       <div className="panel">
         <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>Cost Center Hierarchy</h3>
-        {tree.length > 0 ? <TreeView nodes={tree} onToggle={handleToggle} /> : (
+        {tree.length > 0 ? <TreeView nodes={tree} onToggle={handleToggle} onEdit={openEdit} /> : (
           <div style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 20 }}>No cost centers created yet</div>
         )}
       </div>
+
+      {editModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => { if (e.target === e.currentTarget) setEditModal(null); }}>
+          <div style={{ background: 'var(--erp-panel, #fff)', borderRadius: 14, padding: 24, width: 420, maxWidth: '95vw' }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>Edit Cost Center</h3>
+            <div className="form-group">
+              <label>Name</label>
+              <input value={editModal.name} onChange={e => setEditModal(m => ({ ...m, name: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label>Description</label>
+              <input value={editModal.description} onChange={e => setEditModal(m => ({ ...m, description: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label>Parent</label>
+              <SelectField value={editModal.parent_cost_center} onChange={e => setEditModal(m => ({ ...m, parent_cost_center: e.target.value }))}>
+                <option value="">None (Root)</option>
+                {flatList.filter(c => c.is_active && c._id !== editModal._id).map(c => (
+                  <option key={c._id} value={c._id}>{c.code} - {c.name}</option>
+                ))}
+              </SelectField>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button className="btn btn-outline" onClick={() => setEditModal(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleEditSave}>Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

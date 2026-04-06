@@ -220,7 +220,7 @@ function ProductModal({ open, onClose, onSave, editItem }) {
 }
 
 // ---------- Main Page ----------
-export default function ProductMasterPage() {
+export function ProductMasterPageContent() {
   const api = useErpApi();
   const { getWarehouses } = useWarehouses();
   const [products, setProducts] = useState([]);
@@ -302,12 +302,8 @@ export default function ProductMasterPage() {
   const margin = (p) => peso(p.selling_price - p.purchase_price);
 
   return (
-    <div className="pm-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div style={{ display: 'flex' }}>
-        <Sidebar />
-        <div className="pm-main">
           <div className="pm-header">
             <div>
               <h1>Product Master</h1>
@@ -439,6 +435,18 @@ export default function ProductMasterPage() {
               </div>
             </div>
           )}
+    </>
+  );
+}
+
+export default function ProductMasterPage() {
+  return (
+    <div className="pm-page">
+      <Navbar />
+      <div style={{ display: 'flex' }}>
+        <Sidebar />
+        <div className="pm-main">
+          <ProductMasterPageContent />
         </div>
       </div>
     </div>

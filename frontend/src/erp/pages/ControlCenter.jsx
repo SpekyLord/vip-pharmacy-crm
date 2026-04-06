@@ -15,7 +15,8 @@ import { useAuth } from '../../hooks/useAuth';
 import {
   LayoutDashboard, Building2, Users, ShieldCheck, BookOpen, Landmark,
   CreditCard, Receipt, Package, ArrowLeftRight, Boxes, Lock,
-  RefreshCw, Archive, Settings, List, DollarSign
+  RefreshCw, Archive, Settings, List, DollarSign, MapPin, Truck,
+  Stethoscope, ShoppingCart
 } from 'lucide-react';
 
 // Lazy-load section content components
@@ -36,6 +37,10 @@ const SECTIONS = {
   'period-locks': lazy(() => import('./PeriodLocks').then(m => ({ default: m.PeriodLocksContent }))),
   'recurring-journals': lazy(() => import('./RecurringJournals').then(m => ({ default: m.RecurringJournalsContent }))),
   'data-archive': lazy(() => import('./DataArchive').then(m => ({ default: m.DataArchiveContent }))),
+  'territories': lazy(() => import('./TerritoryManager').then(m => ({ default: m.TerritoryManagerContent }))),
+  'vendors': lazy(() => import('./VendorList').then(m => ({ default: m.VendorListContent }))),
+  'customers': lazy(() => import('./CustomerList').then(m => ({ default: m.CustomerListContent }))),
+  'products': lazy(() => import('./ProductMaster').then(m => ({ default: m.ProductMasterPageContent }))),
   'erp-settings': lazy(() => import('./ErpSettingsPanel')),
   'lookups': lazy(() => import('./LookupManager'))
 };
@@ -51,7 +56,10 @@ const CATEGORY_CONFIG = [
     id: 'entity',
     label: 'Entity & Organization',
     icon: Building2,
-    items: [{ key: 'entities', label: 'Entities', icon: Building2 }]
+    items: [
+      { key: 'entities', label: 'Entities', icon: Building2 },
+      { key: 'territories', label: 'Territories', icon: MapPin }
+    ]
   },
   {
     id: 'people',
@@ -79,6 +87,16 @@ const CATEGORY_CONFIG = [
     label: 'Tax & Compliance',
     icon: Receipt,
     items: [{ key: 'government-rates', label: 'Government Rates', icon: Receipt }]
+  },
+  {
+    id: 'master-data',
+    label: 'Master Data',
+    icon: ShoppingCart,
+    items: [
+      { key: 'vendors', label: 'Vendors', icon: Truck },
+      { key: 'customers', label: 'Customers', icon: Stethoscope },
+      { key: 'products', label: 'Products', icon: ShoppingCart }
+    ]
   },
   {
     id: 'operations',

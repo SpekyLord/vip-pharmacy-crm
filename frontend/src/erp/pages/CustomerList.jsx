@@ -127,7 +127,7 @@ const EMPTY_FORM = {
   credit_limit: 0,
 };
 
-export default function CustomerList() {
+export function CustomerListContent() {
   const { user } = useAuth();
   const customers = useCustomers();
   const { getAsUsers } = usePeople();
@@ -312,12 +312,8 @@ export default function CustomerList() {
   const formatType = (type) => (type || '').replace(/_/g, ' ');
 
   return (
-    <div className="admin-page erp-page cust-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div className="admin-layout">
-        <Sidebar />
-        <main className="cust-main">
           <div className="cust-header">
             <div>
               <h1>Customers</h1>
@@ -658,6 +654,18 @@ export default function CustomerList() {
               </div>
             </div>
           )}
+    </>
+  );
+}
+
+export default function CustomerList() {
+  return (
+    <div className="admin-page erp-page cust-page">
+      <Navbar />
+      <div className="admin-layout">
+        <Sidebar />
+        <main className="cust-main">
+          <CustomerListContent />
         </main>
       </div>
     </div>
