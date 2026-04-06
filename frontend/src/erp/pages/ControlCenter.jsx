@@ -149,6 +149,166 @@ class SectionErrorBoundary extends Component {
   }
 }
 
+// ── Dependency guide: what to configure when you change each section ──
+const DEPENDENCY_GUIDE = {
+  'entities': {
+    title: 'Entity Dependencies',
+    items: [
+      { action: 'When you add a new entity', deps: 'Set up Territories, Warehouses, Bank Accounts, Credit Cards, COA, and Access Templates for it', section: 'territories' },
+      { action: 'When you change VAT status', deps: 'Review Government Rates and COA Mapping in ERP Settings', section: 'government-rates' },
+    ]
+  },
+  'territories': {
+    title: 'Territory Dependencies',
+    items: [
+      { action: 'When you add a territory', deps: 'Create a matching Warehouse (Territory type) and assign BDMs to it', section: 'warehouses' },
+      { action: 'When you deactivate a territory', deps: 'Reassign affected BDMs and check Warehouse assignments', section: 'people' },
+    ]
+  },
+  'people': {
+    title: 'People Dependencies',
+    items: [
+      { action: 'When you add a person', deps: 'Create their Comp Profile (salary, allowances, tax status) from their detail page', section: null },
+      { action: 'When you add a person', deps: 'Assign an Access Template so they can use ERP modules', section: 'access-templates' },
+      { action: 'New to ERP?', deps: 'Use "Sync from CRM" button to import existing CRM users', section: null },
+    ]
+  },
+  'access-templates': {
+    title: 'Access Template Dependencies',
+    items: [
+      { action: 'When you create/edit a template', deps: 'Apply it to users via People Master > person detail > ERP Access', section: 'people' },
+      { action: 'When you change module permissions', deps: 'Affected users will see/lose sidebar items on next login', section: null },
+    ]
+  },
+  'coa': {
+    title: 'Chart of Accounts Dependencies',
+    items: [
+      { action: 'When you add an account', deps: 'If used for auto-journals, update COA Mapping in ERP Settings', section: 'erp-settings' },
+      { action: 'When you deactivate an account', deps: 'Ensure no Bank Account, Credit Card, or Payment Mode references it', section: 'bank-accounts' },
+    ]
+  },
+  'cost-centers': {
+    title: 'Cost Center Dependencies',
+    items: [
+      { action: 'When you add a cost center', deps: 'Assign it to transactions via Expenses, Payroll, or Budget Allocations', section: null },
+    ]
+  },
+  'bank-accounts': {
+    title: 'Bank Account Dependencies',
+    items: [
+      { action: 'When you add a bank account', deps: 'Map it to a COA account code (e.g. 1001 Cash in Bank)', section: 'coa' },
+      { action: 'When you add a bank account', deps: 'Assign users who can deposit/transact on it', section: null },
+    ]
+  },
+  'credit-cards': {
+    title: 'Credit Card Dependencies',
+    items: [
+      { action: 'When you add a card', deps: 'Map it to a COA account code (e.g. 2301 CC Payable) and assign users', section: 'coa' },
+    ]
+  },
+  'payment-modes': {
+    title: 'Payment Mode Dependencies',
+    items: [
+      { action: 'When you add a payment mode', deps: 'Map it to a COA account code for journal posting', section: 'coa' },
+      { action: 'When you set CALF required', deps: 'BDMs must submit a CALF before expenses using this mode can be posted', section: null },
+    ]
+  },
+  'government-rates': {
+    title: 'Government Rates Dependencies',
+    items: [
+      { action: 'When you update SSS/PhilHealth/PagIBIG rates', deps: 'Next payroll run will use the new rates automatically', section: null },
+      { action: 'When you update Withholding Tax brackets', deps: 'Affects BIR 2316 computation for all employees', section: null },
+    ]
+  },
+  'vendors': {
+    title: 'Vendor Dependencies',
+    items: [
+      { action: 'When you add a vendor', deps: 'You can now create Purchase Orders and Supplier Invoices for them', section: null },
+    ]
+  },
+  'customers': {
+    title: 'Customer Dependencies',
+    items: [
+      { action: 'When you add a customer', deps: 'You can now create Sales (CSI/Service Invoice) for them', section: null },
+    ]
+  },
+  'products': {
+    title: 'Product Dependencies',
+    items: [
+      { action: 'When you add a product', deps: 'Set purchase_price (drives COGS) and assign to a Warehouse for inventory', section: 'warehouses' },
+    ]
+  },
+  'warehouses': {
+    title: 'Warehouse Dependencies',
+    items: [
+      { action: 'When you add a warehouse', deps: 'Set a manager, assign users, and link to a Territory if it is a field warehouse', section: 'territories' },
+      { action: 'When you set "Default Receiving"', deps: 'All GRNs will route to this warehouse unless overridden', section: null },
+    ]
+  },
+  'transfer-prices': {
+    title: 'Transfer Price Dependencies',
+    items: [
+      { action: 'When you set a transfer price', deps: 'Inter-company transfers between entities will use this price for COGS/inventory valuation', section: null },
+    ]
+  },
+  'fixed-assets': {
+    title: 'Fixed Asset Dependencies',
+    items: [
+      { action: 'When you add an asset', deps: 'Monthly depreciation will be computed and posted via Month-End Close', section: null },
+      { action: 'When you change useful life', deps: 'Future depreciation amounts will recalculate', section: null },
+    ]
+  },
+  'period-locks': {
+    title: 'Period Lock Dependencies',
+    items: [
+      { action: 'When you lock a period', deps: 'No one can post, reopen, or modify documents in that month for that module', section: null },
+      { action: 'Before locking', deps: 'Run Month-End Close to finalize all postings first', section: null },
+    ]
+  },
+  'recurring-journals': {
+    title: 'Recurring Journal Dependencies',
+    items: [
+      { action: 'When you create a template', deps: 'Ensure the COA codes exist and are active in Chart of Accounts', section: 'coa' },
+      { action: 'When you set auto-post', deps: 'Journals will post automatically on the scheduled day — review Period Locks', section: 'period-locks' },
+    ]
+  },
+  'erp-settings': {
+    title: 'ERP Settings Dependencies',
+    items: [
+      { action: 'When you change COA Mapping', deps: 'All future auto-journal entries (sales, collections, expenses, payroll) will post to the new accounts', section: 'coa' },
+      { action: 'When you change VAT/CWT rates', deps: 'All future transactions will use the new rates', section: null },
+      { action: 'When you change Per Diem or Fuel rates', deps: 'Affects SMER and Car Logbook computations for all BDMs', section: null },
+      { action: 'When you change Commission/Rebate rates', deps: 'Affects Collection commission and PRF computations', section: null },
+    ]
+  },
+  'lookups': {
+    title: 'Lookup Table Dependencies',
+    items: [
+      { action: 'When you add/edit a lookup value', deps: 'All dropdowns using that category will show the new value immediately (5-min cache)', section: null },
+      { action: 'When you deactivate a value', deps: 'Existing records keep their value, but new entries cannot select it', section: null },
+    ]
+  },
+};
+
+function DependencyBanner({ section, onNavigate }) {
+  const guide = DEPENDENCY_GUIDE[section];
+  if (!guide) return null;
+  return (
+    <div className="ctlc-dep-banner">
+      <div className="ctlc-dep-title">{guide.title}</div>
+      {guide.items.map((item, i) => (
+        <div key={i} className="ctlc-dep-item">
+          <span className="ctlc-dep-action">{item.action}:</span>{' '}
+          <span className="ctlc-dep-desc">{item.deps}</span>
+          {item.section && onNavigate && (
+            <button className="ctlc-dep-link" onClick={() => onNavigate(item.section)}>Go to {item.section.replace(/-/g, ' ')}</button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const pageStyles = `
   .ctlc-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .ctlc-outer { display: flex; flex: 1; }
@@ -173,6 +333,20 @@ const pageStyles = `
   /* Mobile: collapse nav to top selector */
   .ctlc-mobile-select { display: none; padding: 12px 16px; background: var(--erp-panel); border-bottom: 1px solid var(--erp-border); }
   .ctlc-mobile-select select { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--erp-border); font-size: 13px; background: var(--erp-bg); }
+
+  /* Dependency banner */
+  .ctlc-dep-banner { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; font-size: 12px; line-height: 1.7; }
+  .ctlc-dep-title { font-size: 12px; font-weight: 700; color: #1e40af; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.3px; }
+  .ctlc-dep-item { color: #334155; margin-bottom: 2px; }
+  .ctlc-dep-action { font-weight: 600; color: #1e40af; }
+  .ctlc-dep-desc { color: #475569; }
+  .ctlc-dep-link { background: none; border: none; color: #2563eb; cursor: pointer; font-size: 11px; font-weight: 600; text-decoration: underline; margin-left: 6px; padding: 0; }
+  .ctlc-dep-link:hover { color: #1d4ed8; }
+  body.dark-mode .ctlc-dep-banner { background: #1e293b; border-color: #334155; }
+  body.dark-mode .ctlc-dep-title { color: #93c5fd; }
+  body.dark-mode .ctlc-dep-action { color: #93c5fd; }
+  body.dark-mode .ctlc-dep-desc { color: #94a3b8; }
+  body.dark-mode .ctlc-dep-link { color: #60a5fa; }
 
   @media(max-width: 768px) {
     .ctlc-nav { display: none; }
@@ -266,6 +440,7 @@ export default function ControlCenter() {
           {/* Content area */}
           <div className="ctlc-content">
             <div>
+              <DependencyBanner section={activeSection} onNavigate={setActiveSection} />
               <SectionErrorBoundary key={activeSection}>
                 <Suspense fallback={<div className="ctlc-loading">Loading section...</div>}>
                   {ActiveComponent ? <ActiveComponent /> : <div className="ctlc-loading">Section not found</div>}
