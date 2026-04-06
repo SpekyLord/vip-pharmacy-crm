@@ -202,7 +202,7 @@ function detectCSIZones(nWords) {
   if (!itemDescLandmark && !totalSalesLandmark) return null;
 
   const chargeToLandmark =
-    findLandmark(nWords, /charge[d]?\s*to/i);
+    findLandmark(nWords, /(?:charge[d]?|[ci]?arge[d]?)\s*(?:to|t0)/i);
 
   const noteLandmark = findLandmark(nWords, /^note/i) || findLandmark(nWords, /NOTE/);
   const birLandmark =

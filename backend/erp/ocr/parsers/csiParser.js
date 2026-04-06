@@ -118,33 +118,78 @@ function extractInvoiceNo(lines) {
 }
 
 function extractDate(lines) {
-  const text = lines.join('\n');
-  // Written: "Date: March 31, 2026" or "Date March 31,20 24"
-  const wm = text.match(/Date\s*[:;]?\s*([A-Z][a-z]+\.?\s+\d{1,2},?\s*\d{2,4}(?:\s*\d{0,2})?)/i);
-  if (wm) return wm[1].replace(/\s+/g, ' ').trim();
-  // Numeric: "Date: 7-14-2026"
-  const nm = text.match(/Date\s*[:;]?\s*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i);
-  if (nm) return nm[1].trim();
-  // Handwritten ALL CAPS: "Date: MARCA 71,7024" — pass through raw
-  const hm = text.match(/Date\s*[:;]?\s*([A-Z]+\s+\d[\d,\s]*)/i);
-  if (hm) return hm[1].replace(/\s+/g, ' ').trim();
+  const monthPattern = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+  const monthRe = new RegExp(`(?:[A-Z])?(${monthPattern}\\.?\\s+\\d{1,2},?\\s*\\d{2,4})`, 'i');
+  const numericRe = /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/;
+
+  const invoiceIdx = lines.findIndex((l) => /invoice|no\.?\s*\d/i.test(l));
+  const candidates = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = String(lines[i] || '').trim();
+    if (!raw) continue;
+    if (/run\s*date|date\s*issued|bir|accreditation|auth\s*to\s*print|printer|fisherman|agreement/i.test(raw)) continue;
+
+    const hasDateLabel = /\bdate\b/i.test(raw);
+    const monthMatch = raw.match(monthRe);
+    const numericMatch = hasDateLabel ? raw.match(numericRe) : null;
+
+    let value = null;
+    if (monthMatch) {
+      value = monthMatch[1].replace(/\s+/g, ' ').trim();
+    } else if (numericMatch) {
+      value = numericMatch[1].trim();
+    } else if (hasDateLabel) {
+      // Handwritten fallback: "Date: MARCA 71,7024"
+      const hm = raw.match(/Date\s*[:;]?\s*([A-Z]+\s+\d[\d,\s]*)/i);
+      if (hm) value = hm[1].replace(/\s+/g, ' ').trim();
+    }
+
+    if (!value) continue;
+
+    let score = 0;
+    if (hasDateLabel) score += 100;
+    if (monthMatch) score += 30;
+    if (i <= 30) score += 20; // Header/top area bias
+    if (invoiceIdx >= 0) score += Math.max(0, 25 - Math.abs(i - invoiceIdx));
+
+    candidates.push({ value, score });
+  }
+
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0].value;
+  }
+
   return null;
 }
 
 function extractHospital(lines) {
   let chargedToValue = null;
   let chargedToIdx = -1;
+  const chargeToRe = /(?:CHARGE[D]?|[CI]?ARGE[D]?)\s*(?:TO|T0)\s*[:;]?\s*(.*)/i;
+  const hospitalKeywordRe = /Medical\s*Center|Hospital|Clinic|Infirmary|Health\s*Care|Cooperative/i;
 
   // Step 1: Find "Charged to" / "CHARGE TO:" and extract the name fragment
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/CHARGE[D]?\s*(?:TO|to)\s*[:;]?\s*(.*)/i);
+    const m = lines[i].match(chargeToRe);
     if (!m) continue;
     chargedToValue = m[1].trim();
     chargedToIdx = i;
     break;
   }
 
-  if (chargedToIdx < 0) return null;
+  // OCR may miss the leading "C" and fail CHARGE TO detection.
+  // Fall back to hospital keyword scan when no charge label is found.
+  if (chargedToIdx < 0) {
+    for (let i = 0; i < lines.length; i++) {
+      const c = lines[i].trim();
+      if (!hospitalKeywordRe.test(c)) continue;
+      if (/MG\s*AND|MILLIGRAM|INCORPORATED|Lawaan|Balantang|Jaro|Iloilo\s*City|Mandurriao|VAT|TIN|Address|Business|Registered/i.test(c)) continue;
+      if (c.length > 5 && c.length < 80) return c;
+    }
+    return null;
+  }
 
   // Step 2: Search ALL lines (not just adjacent) for hospital/medical/clinic keywords
   // OCR two-column layout may put "Medical Center" many lines away from "Charged to"
@@ -157,7 +202,7 @@ function extractHospital(lines) {
       hospitalSuffixes.push({ idx: j, text: c });
     }
     // Also match "XXX Medical Center", "XXX Hospital" etc. as standalone
-    if (/Medical\s*Center|Hospital|Clinic|Infirmary|Health\s*Care|Cooperative/i.test(c) &&
+    if (hospitalKeywordRe.test(c) &&
         !/MG\s*AND|MILLIGRAM|INCORPORATED|Lawaan|Balantang|Jaro|Iloilo\s*City|Mandurriao|VAT|TIN/i.test(c)) {
       // This line itself IS a hospital name
       if (c.length > 5 && c.length < 80) {
@@ -416,6 +461,9 @@ function assignProductNumbers(lines, blocks, footerIdx, tableLineIndices = null)
     if (skipLines.has(i)) continue;
     // Spatial filter: skip lines before the table body starts
     if (i < tableStartIdx) continue;
+    // Skip payment terms values like "30 days" (can be mistaken as qty/price).
+    if (/^\d+\s*(days?|DAYS?)\b/.test(line)) continue;
+    if (i > 0 && /_?terms\s*[:;]?/i.test(lines[i - 1])) continue;
 
     // Skip TIN patterns
     if (/\d{3}[-\s]\d{3}[-\s]\d{3}/i.test(line)) continue;
@@ -666,7 +714,7 @@ function extractHospitalSpatial(nWords, zones) {
   if (!zones || zones.chargeToY == null) return null;
 
   const { findLandmark: findLM } = require('../spatialUtils');
-  const ctLandmark = findLM(nWords, /charge[d]?\s*to/i);
+  const ctLandmark = findLM(nWords, /(?:charge[d]?|[ci]?arge[d]?)\s*(?:to|t0)/i);
   if (!ctLandmark) return null;
 
   const skipPatterns = /^(Invoice|Date|TIN|Registered|Business|TERMS|N[°o]?\s*\d|No\.|SC\/PWD|Qty|Unit|ARTICLES|Item|OSCA|Address|MG\s*AND|MILLIGRAM|B4\s*L7|Lawaan|Balantang|VAT|Vios|VIP|CHARGE|ARGE|SALES)/i;
