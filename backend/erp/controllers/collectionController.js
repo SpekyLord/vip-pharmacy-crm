@@ -336,7 +336,8 @@ const submitCollections = catchAsync(async (req, res) => {
           }
         }
 
-        // VAT Ledger — OUTPUT VAT from collection
+        // VAT Ledger — OUTPUT VAT from collection (PH 12/112 formula)
+        // TODO: use hospital.vat_status to determine if EXEMPT/ZERO — skip VAT entry if so
         const crAmount = row.cr_amount || row.total_amount || 0;
         if (crAmount > 0) {
           const vatAmount = Math.round((crAmount * 12 / 112) * 100) / 100;

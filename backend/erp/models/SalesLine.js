@@ -125,7 +125,7 @@ salesLineSchema.pre('save', function (next) {
   if (this.sale_type === 'CSI' && !this.doc_ref) {
     return next(new Error('Document reference (CSI#) is required for CSI sales'));
   }
-  // Default VAT rate (Philippines 12%)
+  // Default VAT rate (Philippines 12%) — TODO: load from Settings.VAT_RATE when rate changes
   const VAT_RATE = 0.12;
 
   // SERVICE_INVOICE: preserve user-entered invoice_total (no line items to compute from)
