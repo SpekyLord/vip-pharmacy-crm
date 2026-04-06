@@ -24,6 +24,10 @@ export default function useTransfers() {
   const getBdmsByEntity = (entityId, includeUnassigned = false) =>
     api.get('/transfers/bdms', { params: { entity_id: entityId, include_unassigned: includeUnassigned } });
 
+  // Copy products between entities
+  const getSourceProducts = (params = {}) => api.get('/transfers/source-products', { params });
+  const copyProductsToEntity = (data) => api.post('/transfers/copy-products', data);
+
   // Internal Stock Reassignment
   const getReassignments = (params = {}) => api.get('/transfers/reassign', { params });
   const createReassignment = (data) => api.post('/transfers/reassign', data);
@@ -36,6 +40,7 @@ export default function useTransfers() {
     approveTransfer, shipTransfer, receiveTransfer, postTransfer, cancelTransfer,
     getTransferPrices, getTransferPriceProducts, setTransferPrice, bulkSetTransferPrices,
     getEntities, getBdmsByEntity,
+    getSourceProducts, copyProductsToEntity,
     getReassignments, createReassignment, approveReassignment
   };
 }

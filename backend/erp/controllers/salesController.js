@@ -414,14 +414,17 @@ const submitSales = catchAsync(async (req, res) => {
             // Regular CSI: consume inventory via FIFO
             // Phase 17: warehouse-scoped FIFO consumption
             const fifoOpts = row.warehouse_id ? { warehouseId: row.warehouse_id.toString() } : undefined;
+            // President/admin/finance without warehouse → entity-wide FIFO
+            const submitBdmId = (req.isPresident || req.isAdmin || req.isFinance) && !row.warehouse_id
+              ? null : row.bdm_id;
             let consumed;
             if (item.fifo_override && item.batch_lot_no) {
               consumed = [await consumeSpecificBatch(
-                row.entity_id, row.bdm_id, item.product_id, item.batch_lot_no, item.qty, fifoOpts
+                row.entity_id, submitBdmId, item.product_id, item.batch_lot_no, item.qty, fifoOpts
               )];
             } else {
               consumed = await consumeFIFO(
-                row.entity_id, row.bdm_id, item.product_id, item.qty, fifoOpts
+                row.entity_id, submitBdmId, item.product_id, item.qty, fifoOpts
               );
             }
 
@@ -429,7 +432,7 @@ const submitSales = catchAsync(async (req, res) => {
             for (const c of consumed) {
               await InventoryLedger.create([{
                 entity_id: row.entity_id,
-                bdm_id: row.bdm_id,
+                bdm_id: c.bdm_id || row.bdm_id,
                 warehouse_id: row.warehouse_id || undefined,
                 product_id: item.product_id,
                 batch_lot_no: c.batch_lot_no,

@@ -190,4 +190,121 @@ const getProductWarehouses = catchAsync(async (req, res) => {
   res.json({ success: true, data: warehouses });
 });
 
-module.exports = { getAll, getById, create, update, deactivate, updateReorderQty, tagToWarehouse, getProductWarehouses };
+// ═══ Price Export/Import ═══
+
+/**
+ * GET /export-prices — Download XLSX with product prices for editing
+ */
+const exportPrices = catchAsync(async (req, res) => {
+  const XLSX = require('xlsx');
+
+  const entityId = req.query.entity_id || req.entityId;
+  const filter = { entity_id: entityId };
+  if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
+
+  const products = await ProductMaster.find(filter)
+    .select('brand_name generic_name dosage_strength sold_per purchase_price selling_price is_active')
+    .sort({ brand_name: 1 })
+    .lean();
+
+  const rows = products.map(p => ({
+    product_id: p._id.toString(),
+    brand_name: p.brand_name,
+    generic_name: p.generic_name,
+    dosage_strength: p.dosage_strength || '',
+    sold_per: p.sold_per || '',
+    purchase_price: p.purchase_price || 0,
+    selling_price: p.selling_price || 0,
+    is_active: p.is_active ? 'YES' : 'NO'
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Product Prices');
+
+  // Set column widths
+  ws['!cols'] = [
+    { wch: 26 }, // product_id
+    { wch: 30 }, // brand_name
+    { wch: 30 }, // generic_name
+    { wch: 15 }, // dosage_strength
+    { wch: 10 }, // sold_per
+    { wch: 15 }, // purchase_price
+    { wch: 15 }, // selling_price
+    { wch: 10 }  // is_active
+  ];
+
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  res.setHeader('Content-Disposition', 'attachment; filename=product_prices.xlsx');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
+/**
+ * PUT /import-prices — Bulk update prices from XLSX upload
+ * Expects multipart/form-data with a file field named 'file'
+ */
+const importPrices = catchAsync(async (req, res) => {
+  const XLSX = require('xlsx');
+
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No file uploaded. Send as multipart/form-data with field name "file".' });
+  }
+
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws);
+
+  if (!rows.length) {
+    return res.status(400).json({ success: false, message: 'Spreadsheet is empty' });
+  }
+
+  const errors = [];
+  const ops = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 2; // 1-indexed + header row
+
+    if (!row.product_id) {
+      errors.push({ row: rowNum, message: 'Missing product_id' });
+      continue;
+    }
+
+    const update = {};
+    if (row.selling_price != null && row.selling_price !== '') {
+      const sp = Number(row.selling_price);
+      if (isNaN(sp) || sp < 0) { errors.push({ row: rowNum, message: `Invalid selling_price: ${row.selling_price}` }); continue; }
+      update.selling_price = sp;
+    }
+    if (row.purchase_price != null && row.purchase_price !== '') {
+      const pp = Number(row.purchase_price);
+      if (isNaN(pp) || pp < 0) { errors.push({ row: rowNum, message: `Invalid purchase_price: ${row.purchase_price}` }); continue; }
+      update.purchase_price = pp;
+    }
+
+    if (!Object.keys(update).length) continue;
+
+    ops.push({
+      updateOne: {
+        filter: { _id: row.product_id },
+        update: { $set: update }
+      }
+    });
+  }
+
+  let updated = 0;
+  if (ops.length) {
+    const result = await ProductMaster.bulkWrite(ops);
+    updated = result.modifiedCount;
+  }
+
+  res.json({
+    success: true,
+    message: `Updated ${updated} product(s)`,
+    data: { updated, total_rows: rows.length, errors }
+  });
+});
+
+module.exports = { getAll, getById, create, update, deactivate, updateReorderQty, tagToWarehouse, getProductWarehouses, exportPrices, importPrices };

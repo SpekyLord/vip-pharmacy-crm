@@ -2,7 +2,7 @@
  * Product Master Page — ERP product catalog management
  * Full CRUD + reorder rules + search/filter + deactivate
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
@@ -239,6 +239,10 @@ export function ProductMasterPageContent() {
   const [tagWarehouseId, setTagWarehouseId] = useState('');
   const [selectedProducts, setSelectedProducts] = useState([]);
 
+  // Price import/export
+  const fileInputRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+
   useEffect(() => {
     getWarehouses({ limit: 0 }).then(res => setWarehouses(res?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -298,6 +302,37 @@ export function ProductMasterPageContent() {
     }
   };
 
+  const handleExportPrices = async () => {
+    try {
+      const blob = await api.get('/products/export-prices', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(blob instanceof Blob ? blob : new Blob([blob]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'product_prices.xlsx';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) { alert(err?.response?.data?.message || 'Export failed'); }
+  };
+
+  const handleImportPrices = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      // Let axios auto-detect Content-Type boundary from FormData
+      const res = await api.put('/products/import-prices', formData, {
+        headers: { 'Content-Type': undefined }
+      });
+      const msg = `Updated ${res?.data?.updated || 0} product(s).`;
+      const errs = res?.data?.errors || [];
+      alert(errs.length ? `${msg}\n\nErrors:\n${errs.map(e => `Row ${e.row}: ${e.message}`).join('\n')}` : msg);
+      loadProducts();
+    } catch (err) { alert(err?.response?.data?.message || 'Import failed'); }
+    finally { setImporting(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
+  };
+
   const totalPages = Math.ceil(total / limit);
   const margin = (p) => peso(p.selling_price - p.purchase_price);
 
@@ -310,6 +345,11 @@ export function ProductMasterPageContent() {
               <p>ERP product catalog — pricing, VAT, reorder rules</p>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-secondary" onClick={handleExportPrices}>Export Prices</button>
+              <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+                {importing ? 'Importing...' : 'Import Prices'}
+              </button>
+              <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportPrices} style={{ display: 'none' }} />
               {selectedProducts.length > 0 && (
                 <button className="btn btn-secondary" onClick={() => setTagModal(true)}>
                   Tag {selectedProducts.length} to Warehouse

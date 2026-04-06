@@ -24,8 +24,9 @@ const { createAndPostJournal } = require('../services/journalEngine');
  * Admin/Finance: pass ?bdm_id=X to view any BDM's stock.
  */
 const getMyStock = catchAsync(async (req, res) => {
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.bdm_id
-    ? req.query.bdm_id
+  // President/admin/finance: use query.bdm_id if provided, else null (entity-wide)
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
+    ? (req.query.bdm_id || null)
     : req.bdmId;
 
   // Allow privileged users to query a different entity's stock (for IC transfers)
@@ -37,7 +38,7 @@ const getMyStock = catchAsync(async (req, res) => {
   const warehouseId = req.query.warehouse_id;
   const opts = warehouseId ? { warehouseId } : undefined;
 
-  if (!bdmId && !warehouseId) {
+  if (!bdmId && !warehouseId && !(req.isAdmin || req.isFinance || req.isPresident)) {
     return res.status(400).json({ success: false, message: 'BDM ID or Warehouse ID required' });
   }
 
@@ -599,8 +600,9 @@ const getGrnList = catchAsync(async (req, res) => {
  * Enriched with SAP-level reorder data (min qty, suggested order, lead time, order-by date).
  */
 const getAlerts = catchAsync(async (req, res) => {
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.bdm_id
-    ? req.query.bdm_id
+  // President/admin/finance: use query.bdm_id if provided, else null (entity-wide)
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
+    ? (req.query.bdm_id || null)
     : req.bdmId;
 
   // Phase 17: warehouse_id takes priority

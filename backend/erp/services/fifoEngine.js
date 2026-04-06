@@ -48,7 +48,7 @@ const getAvailableBatches = async (entityId, bdmId, productId, opts) => {
     { $match: buildStockMatch(entityId, bdmId, opts, productId) },
     {
       $group: {
-        _id: { batch_lot_no: '$batch_lot_no', expiry_date: '$expiry_date' },
+        _id: { batch_lot_no: '$batch_lot_no', expiry_date: '$expiry_date', bdm_id: '$bdm_id' },
         total_in: { $sum: '$qty_in' },
         total_out: { $sum: '$qty_out' }
       }
@@ -65,6 +65,7 @@ const getAvailableBatches = async (entityId, bdmId, productId, opts) => {
         _id: 0,
         batch_lot_no: '$_id.batch_lot_no',
         expiry_date: '$_id.expiry_date',
+        bdm_id: '$_id.bdm_id',
         available_qty: 1
       }
     }
@@ -81,7 +82,7 @@ const getAvailableBatches = async (entityId, bdmId, productId, opts) => {
  * @param {ObjectId|string} bdmId
  * @param {ObjectId|string} productId
  * @param {number} qty - Total quantity to consume
- * @returns {Array<{ batch_lot_no, expiry_date, qty_consumed }>}
+ * @returns {Array<{ batch_lot_no, expiry_date, qty_consumed, bdm_id }>}
  * @throws {Error} INSUFFICIENT_STOCK if total available < qty
  */
 const consumeFIFO = async (entityId, bdmId, productId, qty, opts) => {
@@ -106,7 +107,8 @@ const consumeFIFO = async (entityId, bdmId, productId, qty, opts) => {
     consumed.push({
       batch_lot_no: batch.batch_lot_no,
       expiry_date: batch.expiry_date,
-      qty_consumed: take
+      qty_consumed: take,
+      bdm_id: batch.bdm_id
     });
     remaining -= take;
   }
@@ -135,7 +137,7 @@ const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty,
     { $match: match },
     {
       $group: {
-        _id: { batch_lot_no: '$batch_lot_no', expiry_date: '$expiry_date' },
+        _id: { batch_lot_no: '$batch_lot_no', expiry_date: '$expiry_date', bdm_id: '$bdm_id' },
         total_in: { $sum: '$qty_in' },
         total_out: { $sum: '$qty_out' }
       }
@@ -159,7 +161,8 @@ const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty,
   return {
     batch_lot_no: result[0]._id.batch_lot_no,
     expiry_date: result[0]._id.expiry_date,
-    qty_consumed: qty
+    qty_consumed: qty,
+    bdm_id: result[0]._id.bdm_id
   };
 };
 
@@ -181,7 +184,8 @@ const getMyStock = async (entityId, bdmId, opts) => {
         _id: {
           product_id: '$product_id',
           batch_lot_no: '$batch_lot_no',
-          expiry_date: '$expiry_date'
+          expiry_date: '$expiry_date',
+          bdm_id: '$bdm_id'
         },
         total_in: { $sum: '$qty_in' },
         total_out: { $sum: '$qty_out' }
@@ -200,6 +204,7 @@ const getMyStock = async (entityId, bdmId, opts) => {
         product_id: '$_id.product_id',
         batch_lot_no: '$_id.batch_lot_no',
         expiry_date: '$_id.expiry_date',
+        bdm_id: '$_id.bdm_id',
         available_qty: 1
       }
     }

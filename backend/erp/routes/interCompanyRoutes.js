@@ -18,6 +18,10 @@ router.get('/prices/products', roleCheck('president', 'admin', 'finance'), ic.ge
 router.put('/prices', roleCheck('president', 'admin'), ic.setTransferPrice);
 router.put('/prices/bulk', roleCheck('president', 'admin'), ic.bulkSetTransferPrices);
 
+// Copy products from source to target entity
+router.get('/source-products', roleCheck('president', 'admin'), ic.getSourceProducts);
+router.post('/copy-products', roleCheck('president', 'admin'), ic.copyProductsToEntity);
+
 // Internal Stock Reassignment (same entity, GRN-like approval)
 router.post('/reassign', roleCheck('president', 'admin'), ic.createReassignment);
 router.get('/reassign', ic.getReassignments);

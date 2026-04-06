@@ -1,9 +1,14 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { roleCheck } = require('../../middleware/roleCheck');
 const c = require('../controllers/productMasterController');
 
+const xlsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
 router.post('/tag-warehouse', roleCheck('admin', 'finance', 'president'), c.tagToWarehouse);
+router.get('/export-prices', roleCheck('admin', 'finance', 'president'), c.exportPrices);
+router.put('/import-prices', roleCheck('admin', 'finance', 'president'), xlsUpload.single('file'), c.importPrices);
 router.get('/', c.getAll);
 router.get('/:id', c.getById);
 router.get('/:id/warehouses', c.getProductWarehouses);

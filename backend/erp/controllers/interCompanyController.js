@@ -685,6 +685,121 @@ const getReassignments = catchAsync(async (req, res) => {
   });
 });
 
+// ═══ Copy Products to Target Entity ═══
+
+/**
+ * POST /copy-products — Copy ProductMaster records from source to target entity.
+ * Skips products that already exist in target (by item_key match).
+ * Input: { source_entity_id, target_entity_id, product_ids[] }
+ */
+const copyProductsToEntity = catchAsync(async (req, res) => {
+  const { source_entity_id, target_entity_id, product_ids } = req.body;
+
+  if (!source_entity_id || !target_entity_id) {
+    return res.status(400).json({ success: false, message: 'source_entity_id and target_entity_id are required' });
+  }
+  if (!Array.isArray(product_ids) || !product_ids.length) {
+    return res.status(400).json({ success: false, message: 'product_ids array is required' });
+  }
+  if (source_entity_id === target_entity_id) {
+    return res.status(400).json({ success: false, message: 'Source and target entities must be different' });
+  }
+
+  // Fetch source products
+  const sourceProducts = await ProductMaster.find({
+    _id: { $in: product_ids },
+    entity_id: source_entity_id
+  }).lean();
+
+  if (!sourceProducts.length) {
+    return res.status(404).json({ success: false, message: 'No matching products found in source entity' });
+  }
+
+  // Fetch existing item_keys in target to detect duplicates
+  const existingKeys = new Set(
+    (await ProductMaster.find({ entity_id: target_entity_id }).select('item_key').lean())
+      .map(p => p.item_key)
+  );
+
+  let copied = 0, skipped = 0;
+  const errors = [];
+
+  for (const src of sourceProducts) {
+    if (existingKeys.has(src.item_key)) {
+      skipped++;
+      continue;
+    }
+    try {
+      await ProductMaster.create({
+        entity_id: target_entity_id,
+        brand_name: src.brand_name,
+        generic_name: src.generic_name,
+        dosage_strength: src.dosage_strength,
+        sold_per: src.sold_per,
+        purchase_price: src.purchase_price,
+        selling_price: src.selling_price,
+        vat_status: src.vat_status,
+        category: src.category,
+        description: src.description,
+        key_benefits: src.key_benefits,
+        product_aliases: src.product_aliases,
+        is_active: true,
+        added_by: req.user._id
+      });
+      copied++;
+      existingKeys.add(src.item_key); // prevent duplicates within same batch
+    } catch (err) {
+      errors.push({ product_id: src._id, brand_name: src.brand_name, message: err.message });
+    }
+  }
+
+  res.json({
+    success: true,
+    message: `Copied ${copied} product(s), skipped ${skipped} existing`,
+    data: { copied, skipped, errors }
+  });
+});
+
+/**
+ * GET /source-products — List products from source entity for copy picker
+ * Query: ?source_entity_id=X&target_entity_id=Y&search=optional
+ */
+const getSourceProducts = catchAsync(async (req, res) => {
+  const { source_entity_id, target_entity_id, search } = req.query;
+  if (!source_entity_id) {
+    return res.status(400).json({ success: false, message: 'source_entity_id is required' });
+  }
+
+  const filter = { entity_id: source_entity_id, is_active: { $ne: false } };
+  if (search) {
+    filter.$or = [
+      { brand_name: new RegExp(search, 'i') },
+      { generic_name: new RegExp(search, 'i') }
+    ];
+  }
+
+  const products = await ProductMaster.find(filter)
+    .select('brand_name generic_name dosage_strength sold_per item_key selling_price purchase_price')
+    .sort({ brand_name: 1 })
+    .lean();
+
+  // Mark which ones already exist in target
+  let targetKeys = new Set();
+  if (target_entity_id) {
+    targetKeys = new Set(
+      (await ProductMaster.find({ entity_id: target_entity_id }).select('item_key').lean())
+        .map(p => p.item_key)
+    );
+  }
+
+  const enriched = products.map(p => ({
+    ...p,
+    already_in_target: targetKeys.has(p.item_key)
+  }));
+
+  res.json({ success: true, data: enriched, total: enriched.length });
+});
+
 module.exports = {
   createTransfer,
   getTransfers,
@@ -702,5 +817,7 @@ module.exports = {
   getBdmsByEntity,
   createReassignment,
   approveReassignment,
-  getReassignments
+  getReassignments,
+  copyProductsToEntity,
+  getSourceProducts
 };
