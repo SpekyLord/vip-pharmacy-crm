@@ -116,17 +116,18 @@ const salesLineSchema = new mongoose.Schema({
 });
 
 // Pre-save: validate customer reference + normalize line items + auto-compute totals
-salesLineSchema.pre('save', function (next) {
+salesLineSchema.pre('save', async function () {
   // Phase 18: at least one customer reference required
   if (!this.hospital_id && !this.customer_id) {
-    return next(new Error('Either hospital_id or customer_id is required'));
+    throw new Error('Either hospital_id or customer_id is required');
   }
   // CSI requires doc_ref (booklet number)
   if (this.sale_type === 'CSI' && !this.doc_ref) {
-    return next(new Error('Document reference (CSI#) is required for CSI sales'));
+    throw new Error('Document reference (CSI#) is required for CSI sales');
   }
-  // VAT rate: prefer _vat_rate set by controller from Settings, fallback to PH default
-  const VAT_RATE = this._vat_rate || 0.12;
+  // VAT rate from Settings (cached 5min), fallback to PH default
+  const Settings = require('./Settings');
+  const VAT_RATE = await Settings.getVatRate();
 
   // SERVICE_INVOICE: preserve user-entered invoice_total (no line items to compute from)
   if (this.sale_type === 'SERVICE_INVOICE') {
@@ -135,7 +136,7 @@ salesLineSchema.pre('save', function (next) {
       this.total_vat = Math.round(gross * (VAT_RATE / (1 + VAT_RATE)) * 100) / 100;
       this.total_net_of_vat = Math.round((gross - this.total_vat) * 100) / 100;
     }
-    return next();
+    return;
   }
 
   let invoiceTotal = 0;
@@ -169,8 +170,6 @@ salesLineSchema.pre('save', function (next) {
   this.invoice_total = Math.round(invoiceTotal * 100) / 100;
   this.total_vat = Math.round(totalVat * 100) / 100;
   this.total_net_of_vat = Math.round(totalNetOfVat * 100) / 100;
-
-  next();
 });
 
 // Indexes

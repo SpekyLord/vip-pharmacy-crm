@@ -186,6 +186,34 @@ const importAccounts = catchAsync(async (req, res) => {
   });
 });
 
+// ═══ Seed Default COA ═══
+const { COA_TEMPLATE } = require('../scripts/seedCOA');
+
+const seedDefaultCOA = catchAsync(async (req, res) => {
+  let created = 0;
+  for (const acct of COA_TEMPLATE) {
+    const result = await ChartOfAccounts.updateOne(
+      { entity_id: req.entityId, account_code: acct.account_code },
+      {
+        $setOnInsert: {
+          entity_id: req.entityId,
+          ...acct,
+          bir_flag: acct.bir_flag || 'BOTH',
+          is_active: acct.is_active !== undefined ? acct.is_active : true
+        }
+      },
+      { upsert: true }
+    );
+    if (result.upsertedCount > 0) created++;
+  }
+
+  res.json({
+    success: true,
+    message: `Seed complete: ${created} new accounts created (${COA_TEMPLATE.length} total in template)`,
+    data: { created, total_template: COA_TEMPLATE.length }
+  });
+});
+
 module.exports = {
   listAccounts,
   createAccount,
@@ -193,4 +221,5 @@ module.exports = {
   deactivateAccount,
   exportAccounts,
   importAccounts,
+  seedDefaultCOA,
 };

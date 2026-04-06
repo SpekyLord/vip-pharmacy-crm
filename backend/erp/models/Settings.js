@@ -101,4 +101,18 @@ settingsSchema.statics.getSettings = async function () {
   return settings;
 };
 
+// Cached VAT rate — avoids DB hit on every pre-save hook.
+// Cache TTL: 5 minutes. Refreshed on Settings update.
+let _cachedVatRate = null;
+let _vatCacheExpiry = 0;
+settingsSchema.statics.getVatRate = async function () {
+  const now = Date.now();
+  if (_cachedVatRate !== null && now < _vatCacheExpiry) return _cachedVatRate;
+  const s = await this.findOne().select('VAT_RATE').lean();
+  _cachedVatRate = s?.VAT_RATE ?? 0.12;
+  _vatCacheExpiry = now + 5 * 60 * 1000;
+  return _cachedVatRate;
+};
+settingsSchema.statics.clearVatCache = function () { _cachedVatRate = null; _vatCacheExpiry = 0; };
+
 module.exports = mongoose.model('ErpSettings', settingsSchema);

@@ -81,8 +81,9 @@ const expenseEntrySchema = new mongoose.Schema({
 });
 
 // Pre-save: auto-compute totals, CALF flag, VAT
-expenseEntrySchema.pre('save', function (next) {
-  const VAT_RATE = this._vat_rate || 0.12;
+expenseEntrySchema.pre('save', async function () {
+  const Settings = require('./Settings');
+  const VAT_RATE = await Settings.getVatRate();
   let totalOre = 0, totalAccess = 0, totalVat = 0;
 
   for (const line of this.lines) {
@@ -115,8 +116,6 @@ expenseEntrySchema.pre('save', function (next) {
   this.total_amount = Math.round((totalOre + totalAccess) * 100) / 100;
   this.total_vat = Math.round(totalVat * 100) / 100;
   this.line_count = this.lines.length;
-
-  next();
 });
 
 // Indexes

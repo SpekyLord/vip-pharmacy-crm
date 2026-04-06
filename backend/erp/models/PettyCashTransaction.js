@@ -73,7 +73,8 @@ pettyCashTransactionSchema.pre('save', async function () {
 
   // VAT computation for disbursements
   if (this.txn_type === 'DISBURSEMENT' && this.amount > 0) {
-    const vatRate = this._vat_rate || 0.12;
+    const Settings = require('./Settings');
+    const vatRate = await Settings.getVatRate();
     if (!this.vat_amount) {
       this.vat_amount = Math.round(this.amount * (vatRate / (1 + vatRate)) * 100) / 100;
     }

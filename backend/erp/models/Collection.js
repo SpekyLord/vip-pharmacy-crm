@@ -96,7 +96,7 @@ const collectionSchema = new mongoose.Schema({
 });
 
 // Pre-save: validate customer reference + auto-compute totals and commission/rebate amounts
-collectionSchema.pre('save', function () {
+collectionSchema.pre('save', async function () {
   // Phase 18: at least one customer reference required
   if (!this.hospital_id && !this.customer_id) {
     throw new Error('Either hospital_id or customer_id is required');
@@ -106,12 +106,12 @@ collectionSchema.pre('save', function () {
     throw new Error('Cannot set both bank_account_id and petty_cash_fund_id — choose one payment destination');
   }
   if (this.settled_csis?.length) {
+    const Settings = require('./Settings');
+    const vatRate = await Settings.getVatRate();
     let totalCsi = 0, totalNet = 0, totalComm = 0, totalRebates = 0;
 
     for (const csi of this.settled_csis) {
       totalCsi += csi.invoice_amount || 0;
-      // Compute net_of_vat from invoice_amount using configurable VAT rate
-      const vatRate = this._vat_rate || 0.12;
       csi.net_of_vat = Math.round((csi.invoice_amount || 0) / (1 + vatRate) * 100) / 100;
       totalNet += csi.net_of_vat;
 
