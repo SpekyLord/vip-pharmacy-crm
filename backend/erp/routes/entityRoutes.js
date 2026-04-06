@@ -5,8 +5,8 @@ const entityController = require('../controllers/entityController');
 
 const presidentAdmin = roleCheck('president', 'admin');
 
-router.get('/', entityController.getAll);
-router.get('/:id', entityController.getById);
+router.get('/', roleCheck('admin', 'finance', 'president'), entityController.getAll);
+router.get('/:id', roleCheck('admin', 'finance', 'president'), entityController.getById);
 router.post('/', roleCheck('president'), entityController.create);
 router.put('/:id', presidentAdmin, entityController.update);
 

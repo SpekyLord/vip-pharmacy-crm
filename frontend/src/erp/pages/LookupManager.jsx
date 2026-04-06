@@ -4,8 +4,9 @@
  * Centralized UI for managing configurable dropdown values.
  * Replaces hardcoded frontend arrays with database-driven lookups.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useContext } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { EntityContext } from '../../context/EntityContext';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 
@@ -52,6 +53,8 @@ const formatCategory = (cat) => cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.t
 
 export function LookupManagerContent() {
   const { user } = useAuth();
+  const entityCtx = useContext(EntityContext);
+  const workingEntityId = entityCtx?.workingEntityId || null;
   const canEdit = ['admin', 'finance', 'president'].includes(user?.role);
 
   const [categories, setCategories] = useState([]);
@@ -64,6 +67,7 @@ export function LookupManagerContent() {
   const [form, setForm] = useState({ code: '', label: '', sort_order: 0 });
   const [catCounts, setCatCounts] = useState({});
 
+  // Reload when entity changes
   const loadCategories = useCallback(async () => {
     try {
       const [catRes, seedRes] = await Promise.all([
@@ -73,11 +77,11 @@ export function LookupManagerContent() {
       const cats = catRes.data?.data || [];
       setCategories(cats);
       setSeedDefaults(seedRes.data?.data || {});
-      if (!activeCat && cats.length > 0) setActiveCat(cats[0]);
+      if (cats.length > 0) setActiveCat(prev => prev && cats.includes(prev) ? prev : cats[0]);
     } catch (err) {
       toast.error('Failed to load categories');
     }
-  }, []);
+  }, [workingEntityId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadItems = useCallback(async () => {
     if (!activeCat) return;
@@ -91,7 +95,7 @@ export function LookupManagerContent() {
       toast.error('Failed to load items');
     }
     setLoading(false);
-  }, [activeCat]);
+  }, [activeCat, workingEntityId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadCategories(); }, [loadCategories]);
   useEffect(() => { loadItems(); }, [loadItems]);

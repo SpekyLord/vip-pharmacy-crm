@@ -1,12 +1,14 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import api from '../../services/api';
+import { EntityContext } from '../../context/EntityContext';
 
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const cache = {}; // { [category]: { data, ts } }
+const cache = {}; // { [entityId:category]: { data, ts } }
 
 /**
  * Hook to fetch and cache lookup values by category.
  * Replaces hardcoded frontend arrays with database-driven lookups.
+ * Cache is entity-aware — switching entities fetches fresh data.
  *
  * Usage:
  *   const { options, loading } = useLookupOptions('EXPENSE_CATEGORY');
@@ -15,17 +17,24 @@ const cache = {}; // { [category]: { data, ts } }
  * Falls back to empty array if API fails or no data exists.
  */
 export function useLookupOptions(category) {
-  const [options, setOptions] = useState(cache[category]?.data || []);
-  const [loading, setLoading] = useState(!cache[category]?.data);
+  const entityCtx = useContext(EntityContext);
+  const entityId = entityCtx?.workingEntityId || 'default';
+  const cacheKey = `${entityId}:${category}`;
+
+  const [options, setOptions] = useState(cache[cacheKey]?.data || []);
+  const [loading, setLoading] = useState(!cache[cacheKey]?.data);
   const mounted = useRef(true);
 
   useEffect(() => {
     mounted.current = true;
-    if (!category) return;
+    if (!category) {
+      setLoading(false);
+      return;
+    }
 
     // Return cached if fresh
-    if (cache[category] && Date.now() - cache[category].ts < CACHE_TTL) {
-      setOptions(cache[category].data);
+    if (cache[cacheKey] && Date.now() - cache[cacheKey].ts < CACHE_TTL) {
+      setOptions(cache[cacheKey].data);
       setLoading(false);
       return;
     }
@@ -40,7 +49,7 @@ export function useLookupOptions(category) {
           value: item.code, // convenience alias
           metadata: item.metadata
         }));
-        cache[category] = { data, ts: Date.now() };
+        cache[cacheKey] = { data, ts: Date.now() };
         if (mounted.current) {
           setOptions(data);
         }
@@ -53,17 +62,21 @@ export function useLookupOptions(category) {
     })();
 
     return () => { mounted.current = false; };
-  }, [category]);
+  }, [category, cacheKey]);
 
   return { options, loading };
 }
 
 /**
  * Invalidate cache for a specific category or all categories.
+ * Pass entityId to scope invalidation, or omit to clear all.
  */
-export function invalidateLookupCache(category) {
-  if (category) {
-    delete cache[category];
+export function invalidateLookupCache(category, entityId) {
+  if (category && entityId) {
+    delete cache[`${entityId}:${category}`];
+  } else if (category) {
+    // Clear this category across all entities
+    Object.keys(cache).forEach(k => { if (k.endsWith(`:${category}`)) delete cache[k]; });
   } else {
     Object.keys(cache).forEach(k => delete cache[k]);
   }

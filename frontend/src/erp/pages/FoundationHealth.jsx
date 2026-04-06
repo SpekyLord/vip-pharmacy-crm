@@ -54,7 +54,18 @@ export function FoundationHealthContent() {
   if (error) return <><style>{pageStyles}</style><div className="fh-error">{error}</div></>;
   if (!data) return null;
 
-  const { entities, people, access_templates, coa, bank_accounts, credit_cards, government_rates, warehouses, period_locks, lookups, settings } = data;
+  // Null-safe destructuring with defaults
+  const entities = data.entities || { count: 0, items: [] };
+  const people = data.people || { total: 0, active: 0 };
+  const access_templates = data.access_templates || 0;
+  const coa = data.coa || { total: 0, breakdown: {} };
+  const bank_accounts = data.bank_accounts || 0;
+  const credit_cards = data.credit_cards || 0;
+  const government_rates = data.government_rates || {};
+  const warehouses = data.warehouses || 0;
+  const period_locks = data.period_locks || { current_month_locked: 0, current_month_open: 0, total_modules: 10 };
+  const lookups = data.lookups || { categories_configured: 0, total_available: 16 };
+  const settings = data.settings || { last_updated: null };
 
   const cards = [
     {

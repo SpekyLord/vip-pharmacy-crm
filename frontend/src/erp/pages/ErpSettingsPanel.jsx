@@ -59,42 +59,52 @@ export function ErpSettingsPanelContent() {
 
   const canEdit = ['admin', 'finance', 'president'].includes(user?.role);
 
+  const buildForm = (s) => {
+    // Ensure COA_MAP has all expected keys (fill missing with empty string)
+    const coaMap = {};
+    for (const key of Object.keys(COA_LABELS)) {
+      coaMap[key] = s.COA_MAP?.[key] ?? '';
+    }
+    return {
+      PERDIEM_RATE_DEFAULT: s.PERDIEM_RATE_DEFAULT ?? 800,
+      PERDIEM_MD_FULL: s.PERDIEM_MD_FULL ?? 8,
+      PERDIEM_MD_HALF: s.PERDIEM_MD_HALF ?? 3,
+      FUEL_EFFICIENCY_DEFAULT: s.FUEL_EFFICIENCY_DEFAULT ?? 12,
+      REVOLVING_FUND_AMOUNT: s.REVOLVING_FUND_AMOUNT ?? 8000,
+      VAT_RATE: s.VAT_RATE ?? 0.12,
+      CWT_RATE_WC158: s.CWT_RATE_WC158 ?? 0.01,
+      SCPWD_DISCOUNT_RATE: s.SCPWD_DISCOUNT_RATE ?? 0.20,
+      PROFIT_SHARE_BDM_PCT: s.PROFIT_SHARE_BDM_PCT ?? 0.30,
+      PROFIT_SHARE_VIP_PCT: s.PROFIT_SHARE_VIP_PCT ?? 0.70,
+      PROFIT_SHARE_MIN_PRODUCTS: s.PROFIT_SHARE_MIN_PRODUCTS ?? 5,
+      PROFIT_SHARE_MIN_HOSPITALS: s.PROFIT_SHARE_MIN_HOSPITALS ?? 2,
+      PS_CONSECUTIVE_MONTHS: s.PS_CONSECUTIVE_MONTHS ?? 3,
+      NEAR_EXPIRY_DAYS: s.NEAR_EXPIRY_DAYS ?? 120,
+      DEFAULT_PAYMENT_TERMS: s.DEFAULT_PAYMENT_TERMS ?? 30,
+      COLLECTION_OK_THRESHOLD: s.COLLECTION_OK_THRESHOLD ?? 0.70,
+      COMMISSION_RATES: Array.isArray(s.COMMISSION_RATES) ? [...s.COMMISSION_RATES] : [0, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05],
+      PARTNER_REBATE_RATES: Array.isArray(s.PARTNER_REBATE_RATES) ? [...s.PARTNER_REBATE_RATES] : [1, 2, 3, 5, 20, 25],
+      MD_MAX_PRODUCT_TAGS: s.MD_MAX_PRODUCT_TAGS ?? 3,
+      CONSIGNMENT_AGING_DEFAULT: s.CONSIGNMENT_AGING_DEFAULT ?? 90,
+      ENFORCE_AUTHORITY_MATRIX: s.ENFORCE_AUTHORITY_MATRIX ?? false,
+      EXPENSE_ANOMALY_THRESHOLD: s.EXPENSE_ANOMALY_THRESHOLD ?? 0.30,
+      COA_MAP: coaMap
+    };
+  };
+
   useEffect(() => {
     if (settings && !form) {
-      setForm({
-        PERDIEM_RATE_DEFAULT: settings.PERDIEM_RATE_DEFAULT ?? 800,
-        PERDIEM_MD_FULL: settings.PERDIEM_MD_FULL ?? 8,
-        PERDIEM_MD_HALF: settings.PERDIEM_MD_HALF ?? 3,
-        FUEL_EFFICIENCY_DEFAULT: settings.FUEL_EFFICIENCY_DEFAULT ?? 12,
-        REVOLVING_FUND_AMOUNT: settings.REVOLVING_FUND_AMOUNT ?? 8000,
-        VAT_RATE: settings.VAT_RATE ?? 0.12,
-        CWT_RATE_WC158: settings.CWT_RATE_WC158 ?? 0.01,
-        SCPWD_DISCOUNT_RATE: settings.SCPWD_DISCOUNT_RATE ?? 0.20,
-        PROFIT_SHARE_BDM_PCT: settings.PROFIT_SHARE_BDM_PCT ?? 0.30,
-        PROFIT_SHARE_VIP_PCT: settings.PROFIT_SHARE_VIP_PCT ?? 0.70,
-        PROFIT_SHARE_MIN_PRODUCTS: settings.PROFIT_SHARE_MIN_PRODUCTS ?? 5,
-        PROFIT_SHARE_MIN_HOSPITALS: settings.PROFIT_SHARE_MIN_HOSPITALS ?? 2,
-        PS_CONSECUTIVE_MONTHS: settings.PS_CONSECUTIVE_MONTHS ?? 3,
-        NEAR_EXPIRY_DAYS: settings.NEAR_EXPIRY_DAYS ?? 120,
-        DEFAULT_PAYMENT_TERMS: settings.DEFAULT_PAYMENT_TERMS ?? 30,
-        COLLECTION_OK_THRESHOLD: settings.COLLECTION_OK_THRESHOLD ?? 0.70,
-        COMMISSION_RATES: settings.COMMISSION_RATES || [0, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05],
-        PARTNER_REBATE_RATES: settings.PARTNER_REBATE_RATES || [1, 2, 3, 5, 20, 25],
-        MD_MAX_PRODUCT_TAGS: settings.MD_MAX_PRODUCT_TAGS ?? 3,
-        CONSIGNMENT_AGING_DEFAULT: settings.CONSIGNMENT_AGING_DEFAULT ?? 90,
-        ENFORCE_AUTHORITY_MATRIX: settings.ENFORCE_AUTHORITY_MATRIX ?? false,
-        EXPENSE_ANOMALY_THRESHOLD: settings.EXPENSE_ANOMALY_THRESHOLD ?? 0.30,
-        COA_MAP: { ...settings.COA_MAP }
-      });
+      setForm(buildForm(settings));
     }
-  }, [settings]);
+  }, [settings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.put('/erp/settings', form);
+      const res = await api.put('/erp/settings', form);
       toast.success('Settings saved');
-      setForm(null); // Force re-initialization from server on next refresh
+      // Re-build form from response to avoid loading flash
+      if (res.data?.data) setForm(buildForm(res.data.data));
       refresh();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Save failed');
