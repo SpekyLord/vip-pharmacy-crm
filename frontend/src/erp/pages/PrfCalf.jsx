@@ -5,6 +5,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useExpenses from '../hooks/useExpenses';
 import useAccounting from '../hooks/useAccounting';
+import useErpApi from '../hooks/useErpApi';
 import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
@@ -12,13 +13,12 @@ import SelectField from '../../components/common/Select';
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
-const PRF_PAYMENT_MODES = ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'OTHER'];
-const CALF_PAYMENT_MODES = ['CARD', 'BANK_TRANSFER', 'GCASH', 'CHECK'];
 
 export default function PrfCalf() {
   const { user } = useAuth();
   const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines, loading } = useExpenses();
   const { getMyCards, getMyBankAccounts } = useAccounting();
+  const lookupApi = useErpApi();
 
   const [docs, setDocs] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
@@ -27,6 +27,7 @@ export default function PrfCalf() {
   const [pendingCalfLines, setPendingCalfLines] = useState([]);
   const [myCards, setMyCards] = useState([]);
   const [bankAccounts, setBankAccounts] = useState([]);
+  const [paymentModes, setPaymentModes] = useState([]);
   const [docTypeFilter, setDocTypeFilter] = useState('');
   const [period, setPeriod] = useState(() => {
     const d = new Date();
@@ -59,6 +60,7 @@ export default function PrfCalf() {
   useEffect(() => {
     getMyCards().then(r => setMyCards(r?.data || [])).catch(err => console.error('[PrfCalf]', err.message));
     getMyBankAccounts().then(r => setBankAccounts(r?.data || [])).catch(err => console.error('[PrfCalf]', err.message));
+    lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load pending partner rebates + pending CALF lines
@@ -178,6 +180,7 @@ export default function PrfCalf() {
 
   const isFinance = ['admin', 'finance', 'president'].includes(user?.role);
   const calfBalance = (form.advance_amount || 0) - (form.liquidation_amount || 0);
+  const selectedModeType = paymentModes.find(pm => pm.mode_code === form.payment_mode)?.mode_type || form.payment_mode;
 
   return (
     <div className="admin-page erp-page">
@@ -380,11 +383,14 @@ export default function PrfCalf() {
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ fontSize: 13 }}>Payment Mode:
                   <SelectField value={form.payment_mode} onChange={e => setForm(p => ({ ...p, payment_mode: e.target.value, funding_card_id: null, funding_account_id: null }))} style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }}>
-                    {(form.doc_type === 'CALF' ? CALF_PAYMENT_MODES : PRF_PAYMENT_MODES).map(m => <option key={m} value={m}>{m}</option>)}
+                    {(form.doc_type === 'CALF'
+                      ? paymentModes.filter(pm => pm.is_active !== false && pm.requires_calf)
+                      : paymentModes.filter(pm => pm.is_active !== false && !pm.requires_calf)
+                    ).map(pm => <option key={pm.mode_code} value={pm.mode_code}>{pm.mode_label}{pm.coa_code ? ` (${pm.coa_code})` : ''}</option>)}
                   </SelectField>
                 </label>
                 {/* Card Used — inline right of payment mode for CARD */}
-                {form.doc_type === 'CALF' && form.payment_mode === 'CARD' && myCards.length > 0 && (
+                {form.doc_type === 'CALF' && selectedModeType === 'CARD' && myCards.length > 0 && (
                   <SelectField value={form.funding_card_id || ''} onChange={e => setForm(p => ({ ...p, funding_card_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #a78bfa', fontSize: 13, background: '#f5f3ff' }}>
                     <option value="">Card Used…</option>
                     {myCards.filter(c => c.card_type === 'CREDIT_CARD').map(c => <option key={c._id} value={c._id}>{c.card_name} ({c.bank})</option>)}
@@ -392,14 +398,14 @@ export default function PrfCalf() {
                   </SelectField>
                 )}
                 {/* Funding Bank — inline right for BANK_TRANSFER/GCASH */}
-                {form.doc_type === 'CALF' && (form.payment_mode === 'BANK_TRANSFER' || form.payment_mode === 'GCASH') && bankAccounts.length > 0 && (
+                {form.doc_type === 'CALF' && (selectedModeType === 'BANK_TRANSFER' || selectedModeType === 'GCASH') && bankAccounts.length > 0 && (
                   <SelectField value={form.funding_account_id || ''} onChange={e => setForm(p => ({ ...p, funding_account_id: e.target.value || null }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #67e8f9', fontSize: 13, background: '#ecfeff' }}>
                     <option value="">Funding Bank…</option>
                     {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.bank_name}</option>)}
                   </SelectField>
                 )}
               </div>
-              {form.payment_mode === 'CHECK' && (
+              {selectedModeType === 'CHECK' && (
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                   <input placeholder="Check No." value={form.check_no} onChange={e => setForm(p => ({ ...p, check_no: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
                   <input placeholder="Bank" value={form.bank} onChange={e => setForm(p => ({ ...p, bank: e.target.value }))} style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13 }} />
@@ -419,20 +425,36 @@ export default function PrfCalf() {
                       </div>
                     ))}
                   </div>
-                  <label style={{ padding: '6px 14px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'inline-block' }}>
-                    Upload Photo
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      e.target.value = '';
-                      try {
-                        const result = await processDocument(file, 'OR');
-                        setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), result.s3_url] }));
-                      } catch {
-                        setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), URL.createObjectURL(file)] }));
-                      }
-                    }} />
-                  </label>
+                  <div style={{ display: 'inline-flex', gap: 6 }}>
+                    <label style={{ padding: '6px 14px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'inline-block' }}>
+                      Scan
+                      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={async e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        e.target.value = '';
+                        try {
+                          const result = await processDocument(file, 'PRF_CALF');
+                          setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), result.s3_url] }));
+                        } catch {
+                          setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), URL.createObjectURL(file)] }));
+                        }
+                      }} />
+                    </label>
+                    <label style={{ padding: '6px 14px', borderRadius: 6, background: 'transparent', color: '#2563eb', border: '1px solid #2563eb', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'inline-block' }}>
+                      Gallery
+                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        e.target.value = '';
+                        try {
+                          const result = await processDocument(file, 'PRF_CALF');
+                          setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), result.s3_url] }));
+                        } catch {
+                          setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), URL.createObjectURL(file)] }));
+                        }
+                      }} />
+                    </label>
+                  </div>
                   <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7280' }}>
                     {(form.photo_urls || []).length} photo(s) attached {!(form.photo_urls || []).length && '— required for validation'}
                   </span>

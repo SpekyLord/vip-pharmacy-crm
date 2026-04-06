@@ -6,6 +6,7 @@
  *
  * Access levels:
  * - president/ceo: no entity filter (sees all entities)
+ *     Reads X-Entity-Id header to set req.entityId for create operations.
  * - admin/finance: filter by entity_id only
  * - employee (BDM): filter by entity_id AND bdm_id
  * - no entity_id on user: skip filtering (backward compat with CRM-only users)
@@ -17,6 +18,11 @@ const tenantFilter = (req, res, next) => {
 
   const { role, entity_id, _id } = req.user;
 
+  // Security: only president/ceo may override entity via header
+  if (role !== 'president' && role !== 'ceo') {
+    delete req.headers['x-entity-id'];
+  }
+
   // Attach tenant context
   req.entityId = entity_id || null;
   req.bdmId = _id;
@@ -24,9 +30,14 @@ const tenantFilter = (req, res, next) => {
   req.isFinance = role === 'finance';
   req.isPresident = role === 'president' || role === 'ceo';
 
-  // President/CEO sees all entities — no filter
+  // President/CEO sees all entities — no query filter
+  // Use X-Entity-Id header to determine which entity to stamp on creates
   if (req.isPresident) {
     req.tenantFilter = {};
+    const headerEntityId = req.headers['x-entity-id'];
+    if (headerEntityId && /^[a-f\d]{24}$/i.test(headerEntityId)) {
+      req.entityId = headerEntityId;
+    }
     return next();
   }
 

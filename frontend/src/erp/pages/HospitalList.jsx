@@ -29,7 +29,7 @@ export default function HospitalList() {
 
   const { getAsUsers } = usePeople();
   useEffect(() => {
-    getAsUsers({ role: 'employee' }).then(res => {
+    getAsUsers().then(res => {
       setBdmList(res?.data || []);
     }).catch(err => console.error('[HospitalList]', err.message));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -74,9 +74,9 @@ export default function HospitalList() {
       if (form.credit_limit_action) data.credit_limit_action = form.credit_limit_action;
 
       if (editing) {
-        await api.put(`/erp/hospitals/${editing._id}`, data);
+        await erpApi.put(`/hospitals/${editing._id}`, data);
       } else {
-        await api.post('/erp/hospitals', data);
+        await erpApi.post('/hospitals', data);
       }
       setModalOpen(false);
       refresh();
@@ -95,7 +95,7 @@ export default function HospitalList() {
       } else {
         newTags = [...(h.tagged_bdms || []), { bdm_id: bdmId, tagged_by: user._id, is_active: true }];
       }
-      const res = await api.put(`/erp/hospitals/${hospitalId}`, { tagged_bdms: newTags });
+      const res = await erpApi.put(`/hospitals/${hospitalId}`, { tagged_bdms: newTags });
       // Update tagModal immediately so checkboxes reflect change
       if (res.data?.data) {
         setTagModal(res.data.data);

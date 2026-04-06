@@ -4,6 +4,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useIcSettlements from '../hooks/useIcSettlements';
+import useErpApi from '../hooks/useErpApi';
 import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
@@ -43,9 +44,11 @@ const pageStyles = `
 export default function IcSettlement() {
   const { user } = useAuth();
   const ic = useIcSettlements();
+  const lookupApi = useErpApi();
   const navigate = useNavigate();
 
   const [entities, setEntities] = useState([]);
+  const [paymentModes, setPaymentModes] = useState([]);
   const [debtorId, setDebtorId] = useState('');
   const [openTransfers, setOpenTransfers] = useState([]);
   const [selected, setSelected] = useState(new Map());
@@ -63,7 +66,12 @@ export default function IcSettlement() {
   const [uploading, setUploading] = useState('');
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const [pendingUploadType, setPendingUploadType] = useState('');
+
+  useEffect(() => {
+    lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load subsidiary entities
   useEffect(() => {
@@ -132,6 +140,7 @@ export default function IcSettlement() {
   };
 
   const triggerUpload = (type) => { setPendingUploadType(type); fileInputRef.current?.click(); };
+  const triggerCamera = (type) => { setPendingUploadType(type); cameraInputRef.current?.click(); };
   const onFileSelected = (e) => {
     const file = e.target.files?.[0];
     if (file && pendingUploadType) handleUpload(file, pendingUploadType);
@@ -247,10 +256,10 @@ export default function IcSettlement() {
                 <div className="form-group">
                   <label>Payment Mode</label>
                   <SelectField value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
-                    <option value="CHECK">Check</option><option value="CASH">Cash</option><option value="ONLINE">Online / Bank Transfer</option>
+                    {paymentModes.filter(pm => pm.is_active !== false).map(pm => <option key={pm.mode_code} value={pm.mode_code}>{pm.mode_label}</option>)}
                   </SelectField>
                 </div>
-                {paymentMode === 'CHECK' && (
+                {paymentModes.find(pm => pm.mode_code === paymentMode)?.mode_type === 'CHECK' && (
                   <>
                     <div className="form-group"><label>Check No.</label><input value={checkNo} onChange={e => setCheckNo(e.target.value)} /></div>
                     <div className="form-group"><label>Check Date</label><input type="date" value={checkDate} onChange={e => setCheckDate(e.target.value)} /></div>
@@ -280,7 +289,8 @@ export default function IcSettlement() {
           {selectedList.length > 0 && (
             <div className="section">
               <h2>4. Attach Documents</h2>
-              <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onFileSelected} />
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onFileSelected} />
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onFileSelected} />
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ border: '1px solid var(--erp-border)', borderRadius: 10, padding: 12, minWidth: 200, background: crPhotoUrl ? '#f0fdf4' : 'var(--erp-bg)' }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', textTransform: 'uppercase', marginBottom: 6 }}>CR Photo</div>
@@ -290,9 +300,14 @@ export default function IcSettlement() {
                       <button className="btn btn-sm btn-outline" onClick={() => setCrPhotoUrl('')}>Remove</button>
                     </div>
                   ) : (
-                    <button className="btn btn-sm btn-primary" onClick={() => triggerUpload('cr_photo')} disabled={!!uploading}>
-                      {uploading === 'cr_photo' ? 'Uploading...' : 'Upload CR Photo'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-sm btn-primary" onClick={() => triggerCamera('cr_photo')} disabled={!!uploading}>
+                        {uploading === 'cr_photo' ? 'Uploading...' : 'Scan'}
+                      </button>
+                      <button className="btn btn-sm btn-outline" onClick={() => triggerUpload('cr_photo')} disabled={!!uploading}>
+                        Gallery
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div style={{ border: '1px solid var(--erp-border)', borderRadius: 10, padding: 12, minWidth: 200, background: depositSlipUrl ? '#f0fdf4' : 'var(--erp-bg)' }}>
@@ -303,9 +318,14 @@ export default function IcSettlement() {
                       <button className="btn btn-sm btn-outline" onClick={() => setDepositSlipUrl('')}>Remove</button>
                     </div>
                   ) : (
-                    <button className="btn btn-sm btn-primary" onClick={() => triggerUpload('deposit_slip')} disabled={!!uploading}>
-                      {uploading === 'deposit_slip' ? 'Uploading...' : 'Upload Deposit Slip'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-sm btn-primary" onClick={() => triggerCamera('deposit_slip')} disabled={!!uploading}>
+                        {uploading === 'deposit_slip' ? 'Uploading...' : 'Scan'}
+                      </button>
+                      <button className="btn btn-sm btn-outline" onClick={() => triggerUpload('deposit_slip')} disabled={!!uploading}>
+                        Gallery
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

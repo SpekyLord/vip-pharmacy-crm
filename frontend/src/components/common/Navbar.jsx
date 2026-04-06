@@ -26,6 +26,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import useWorkingEntity from '../../hooks/useWorkingEntity';
 
 const ERP_TABS = [
   { label: 'Dashboard', path: '/erp', icon: LayoutGrid },
@@ -249,6 +250,29 @@ const navbarStyles = `
 
   .navbar-hamburger:active {
     background: #e5e7eb;
+  }
+
+  .navbar-entity-select {
+    padding: 5px 26px 5px 10px;
+    border: 2px solid #e8af30;
+    border-radius: 8px;
+    background: #fffbeb;
+    font-size: 13px;
+    font-weight: 600;
+    color: #92400e;
+    cursor: pointer;
+    appearance: auto;
+    max-width: 170px;
+    flex-shrink: 0;
+  }
+  .navbar-entity-select:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(232,175,48,0.25);
+  }
+  body.dark-mode .navbar-entity-select {
+    background: #422006;
+    color: #fbbf24;
+    border-color: #d97706;
   }
 
   .navbar-menu {
@@ -611,6 +635,7 @@ const navbarStyles = `
 
 const Navbar = () => {
   const { user, logout } = useAuth();
+  const { entities, workingEntityId, setWorkingEntityId, isMultiEntity } = useWorkingEntity();
   const location = useLocation();
   const [isDark, setIsDark] = useState(() => {
     try {
@@ -746,6 +771,21 @@ const Navbar = () => {
             </Link>
           </div>
         )}
+        {isMultiEntity && entities.length > 0 && (
+          <select
+            className="navbar-entity-select"
+            value={workingEntityId || ''}
+            onChange={(e) => setWorkingEntityId(e.target.value)}
+            aria-label="Working entity"
+          >
+            {entities.map(ent => (
+              <option key={ent._id} value={ent._id}>
+                {ent.short_name || ent.entity_name}
+              </option>
+            ))}
+          </select>
+        )}
+
         <button className="navbar-theme-btn" onClick={toggleTheme} aria-label="Toggle dark mode">
           {isDark ? <Sun size={17} /> : <Moon size={17} />}
         </button>

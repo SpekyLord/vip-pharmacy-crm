@@ -7,6 +7,7 @@ import useSales from '../hooks/useSales';
 import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
 import useCustomers from '../hooks/useCustomers';
+import useErpApi from '../hooks/useErpApi';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import WarehousePicker from '../components/WarehousePicker';
 
@@ -439,6 +440,8 @@ export default function SalesEntry() {
   const inventory = useInventory();
   const { hospitals } = useHospitals();
   const customers = useCustomers();
+  const lookupApi = useErpApi();
+  const [paymentModes, setPaymentModes] = useState([]);
 
   const [saleType, setSaleType] = useState('CSI'); // CSI, CASH_RECEIPT, SERVICE_INVOICE
   const [warehouseId, setWarehouseId] = useState('');
@@ -451,6 +454,10 @@ export default function SalesEntry() {
 
   // Phase 18: Service Invoice state (no line items — just description + total)
   const [serviceForm, setServiceForm] = useState({ customer_type: 'hospital', customer_ref: '', csi_date: new Date().toISOString().split('T')[0], service_description: '', invoice_total: '', payment_mode: 'CASH' });
+
+  useEffect(() => {
+    lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prefill from navigation (e.g. "Issue CSI" from Consignment Aging)
   const location = useLocation();
@@ -599,7 +606,8 @@ export default function SalesEntry() {
       const savedIds = [];
       for (const row of rows) {
         if (!row._isNew) continue;
-        if (!row.hospital_id || !row.doc_ref) continue;
+        if (!row.hospital_id && !row.customer_id) continue;
+        if (saleType === 'CSI' && !row.doc_ref) continue;
 
         const payload = {
           sale_type: saleType,
@@ -625,11 +633,13 @@ export default function SalesEntry() {
       }
 
       if (savedIds.length) {
-        // Reload from server
         await loadSales();
+      } else if (rows.some(r => r._isNew)) {
+        alert('No rows saved. Make sure each row has a hospital or customer selected' + (saleType === 'CSI' ? ' and a CSI#' : '') + '.');
       }
     } catch (err) {
       console.error('Save error:', err);
+      alert(err?.response?.data?.message || err.message || 'Save failed');
     } finally {
       setActionLoading('');
     }
@@ -784,11 +794,7 @@ export default function SalesEntry() {
                 <div>
                   <label>Payment Mode</label>
                   <SelectField value={serviceForm.payment_mode} onChange={e => setServiceForm(f => ({ ...f, payment_mode: e.target.value }))}>
-                    <option value="CASH">Cash</option>
-                    <option value="CHECK">Check</option>
-                    <option value="GCASH">GCash</option>
-                    <option value="BANK_TRANSFER">Bank Transfer</option>
-                    <option value="ONLINE">Online</option>
+                    {paymentModes.filter(pm => pm.is_active !== false).map(pm => <option key={pm.mode_code} value={pm.mode_code}>{pm.mode_label}</option>)}
                   </SelectField>
                 </div>
               </div>

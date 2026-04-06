@@ -49,6 +49,7 @@ import {
   Layers,
   Archive,
   ArrowLeftRight,
+  Repeat,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -557,6 +558,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   if (hasModule('inventory'))   items.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
   if (hasModule('collections')) items.push({ path: '/erp/collections', label: 'Collections', icon: Wallet });
   if (hasModule('collections')) items.push({ path: '/erp/collections/ar', label: 'AR Aging', icon: BarChart3 });
+  if (hasModule('collections') && ['admin', 'finance', 'president'].includes(role)) items.push({ path: '/erp/ic-settlements', label: 'IC Settlements', icon: Repeat });
   if (hasModule('expenses'))    items.push({ path: '/erp/expenses', label: 'Expenses', icon: CreditCard });
   if (hasModule('reports'))     items.push({ path: '/erp/reports', label: 'Reports', icon: BarChart3 });
   if (hasModule('reports'))     items.push({ path: '/erp/budget-allocations', label: 'Budget Allocations', icon: DollarSign });
@@ -587,6 +589,9 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   // Government Rates & BIR Calculator — available to admin/finance/president (no module gate)
   items.push({ path: '/erp/government-rates', label: 'Gov. Rates', icon: BookOpen });
   items.push({ path: '/erp/bir-calculator', label: 'BIR Calculator', icon: BookOpen });
+  if (['admin', 'finance', 'president'].includes(role)) {
+    items.push({ path: '/erp/payment-modes', label: 'Payment Modes', icon: BookOpen });
+  }
   if (hasModule('purchasing')) {
     items.push({ path: '/erp/vendors', label: 'Vendors', icon: Truck });
     items.push({ path: '/erp/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart });
