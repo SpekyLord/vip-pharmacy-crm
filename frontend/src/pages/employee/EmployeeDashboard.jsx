@@ -22,6 +22,7 @@ import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
 import clientService from '../../services/clientService';
 import scheduleService from '../../services/scheduleService';
+import messageService from '../../services/messageInboxService';
 
 const dashboardStyles = `
   .main-content h1 {
@@ -487,6 +488,7 @@ const EmployeeDashboard = () => {
   const [mobileShowCount, setMobileShowCount] = useState(MOBILE_PAGE_SIZE);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 480);
   const [dashboardTab, setDashboardTab] = useState('vip');
+  const [aiInsights, setAiInsights] = useState([]);
   const [stats, setStats] = useState({
     visitsToday: 0,
     vipVisitsToday: 0,
@@ -512,6 +514,9 @@ const EmployeeDashboard = () => {
     try {
       setLoading(true);
       setError(null);
+
+      // Fetch AI insights (non-blocking)
+      messageService.getAll({ category: 'ai_coaching,ai_schedule,ai_alert', limit: 3 }).then(res => setAiInsights(res.data || [])).catch(() => {});
 
       const monthYear = getCurrentMonthYear();
 
@@ -752,6 +757,18 @@ const EmployeeDashboard = () => {
                   style={{ width: `${Math.min(stats.compliancePercentage, 100)}%` }}
                 />
               </div>
+            </div>
+          )}
+
+          {aiInsights.length > 0 && (
+            <div style={{ background: 'var(--erp-panel, #fff)', border: '1px solid var(--erp-border, #dbe4f0)', borderRadius: 14, padding: 16, marginBottom: 16 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 10px', color: 'var(--erp-text)', display: 'flex', alignItems: 'center', gap: 6 }}>🤖 AI Insights</h3>
+              {aiInsights.map(m => (
+                <div key={m._id} style={{ padding: '8px 0', borderTop: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
+                  <div style={{ fontWeight: 600, color: 'var(--erp-text)', marginBottom: 2 }}>{m.title}</div>
+                  <div style={{ color: 'var(--erp-muted, #64748b)', lineHeight: 1.5 }}>{m.body?.slice(0, 150)}{m.body?.length > 150 ? '...' : ''}</div>
+                </div>
+              ))}
             </div>
           )}
 

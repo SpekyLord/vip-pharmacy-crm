@@ -11,6 +11,7 @@
  */
 const { askClaude } = require('./claudeClient');
 const { notify } = require('./notificationService');
+const AgentRun = require('../erp/models/AgentRun');
 
 async function run() {
   console.log('[VisitPlanner] Running...');
@@ -107,7 +108,7 @@ Output a simple Mon-Fri schedule. Be practical and concise.`,
         recipient_id: bdm._id,
         title: `Visit Plan — Week of ${nextMon.toLocaleDateString('en-PH')}`,
         body: text,
-        category: 'schedule',
+        category: 'ai_schedule',
         priority: 'normal',
         channels: ['in_app'],
         agent: 'visit_planner'
@@ -116,9 +117,23 @@ Output a simple Mon-Fri schedule. Be practical and concise.`,
       console.log(`[VisitPlanner] ${bdm.name}: ${clientStatus.length} clients need visits next week`);
     }
 
+    // Log agent run
+    await AgentRun.create({
+      agent_key: 'visit_planner',
+      agent_label: 'Smart Visit Planner',
+      status: 'success',
+      summary: {
+        bdms_processed: bdms.length,
+        alerts_generated: 0,
+        messages_sent: bdms.length,
+        key_findings: [`${bdms.length} BDMs received visit plans for week of ${nextMon.toLocaleDateString('en-PH')}`]
+      }
+    });
+
     console.log('[VisitPlanner] Done.');
   } catch (err) {
     console.error('[VisitPlanner] Error:', err.message);
+    try { await AgentRun.create({ agent_key: 'visit_planner', agent_label: 'Smart Visit Planner', status: 'error', error_msg: err.message }); } catch {}
   }
 }
 

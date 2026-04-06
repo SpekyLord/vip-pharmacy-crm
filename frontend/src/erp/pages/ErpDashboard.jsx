@@ -16,6 +16,7 @@ import useEntities from '../hooks/useEntities';
 import useDashboard from '../hooks/useDashboard';
 import EntityBadge from '../components/EntityBadge';
 import WorkflowGuide from '../components/WorkflowGuide';
+import api from '../../services/api';
 
 const pageStyles = `
   :root {
@@ -122,7 +123,15 @@ export default function ErpDashboard() {
   const [activeTab, setActiveTab] = useState('products');
   const [tabData, setTabData] = useState(null);
   const [tabLoading, setTabLoading] = useState(false);
+  const [agentRuns, setAgentRuns] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Load agent runs for admin/president
+  useEffect(() => {
+    if (['admin', 'finance', 'president', 'ceo'].includes(user?.role)) {
+      api.get('/erp/agents/runs?limit=3').then(res => setAgentRuns(res.data?.data || [])).catch(() => {});
+    }
+  }, [user?.role]);
 
   // Load KPIs
   useEffect(() => {
@@ -286,6 +295,24 @@ export default function ErpDashboard() {
               <Link to="/erp/pnl" className="quick-link">P&L</Link>
               <Link to="/erp/reports" className="quick-link">Reports</Link>
             </div>
+
+            {/* Agent Activity */}
+            {agentRuns.length > 0 && (
+              <div style={{ background: 'var(--erp-panel)', border: '1px solid var(--erp-border)', borderRadius: 14, padding: 16, marginBottom: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Agent Activity</div>
+                {agentRuns.map((r, i) => (
+                  <div key={r._id || i} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--erp-border)' : 'none', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 600, color: 'var(--erp-text)' }}>{r.agent_name || r.agentName || 'Agent'}</div>
+                      <div style={{ color: 'var(--erp-muted)', fontSize: 11 }}>{r.last_run || r.lastRun ? new Date(r.last_run || r.lastRun).toLocaleString() : '--'}</div>
+                    </div>
+                    <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: r.status === 'success' ? '#dcfce7' : r.status === 'error' ? '#fef2f2' : 'var(--erp-accent-soft)', color: r.status === 'success' ? '#16a34a' : r.status === 'error' ? '#dc2626' : 'var(--erp-accent)' }}>
+                      {r.status || 'unknown'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Section 4: Bottom Tab Content */}
             <div className="section-label">Data Views</div>

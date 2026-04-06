@@ -11,6 +11,7 @@
  */
 const { askClaude } = require('./claudeClient');
 const { notify } = require('./notificationService');
+const AgentRun = require('../erp/models/AgentRun');
 
 async function run() {
   console.log('[EngagementDecay] Running...');
@@ -129,7 +130,7 @@ Be concise — 2-3 sentences per client recommendation.`,
       recipient_id: 'PRESIDENT',
       title: `Engagement Decay Alert — ${decayingClients.length} VIP Clients at risk`,
       body: text,
-      category: 'compliance_alert',
+      category: 'ai_alert',
       priority: 'important',
       channels: ['in_app'],
       agent: 'engagement_decay'
@@ -147,16 +148,30 @@ Be concise — 2-3 sentences per client recommendation.`,
         recipient_id: bdmId,
         title: `${clients.length} VIP Client(s) need attention`,
         body: `The following VIP Clients in your territory show declining engagement:\n\n${names}\n\nPlease prioritize re-engagement visits this week.`,
-        category: 'compliance_alert',
+        category: 'ai_alert',
         priority: 'important',
         channels: ['in_app'],
         agent: 'engagement_decay'
       });
     }
 
+    // Log agent run
+    await AgentRun.create({
+      agent_key: 'engagement_decay',
+      agent_label: 'Engagement Decay Monitor',
+      status: 'success',
+      summary: {
+        bdms_processed: Object.keys(byBdm).length,
+        alerts_generated: decayingClients.length,
+        messages_sent: Object.keys(byBdm).length + 1,
+        key_findings: decayingClients.slice(0, 3).map(c => `Dr. ${c.doctor.lastName}: ${c.daysSinceVisit} days, ${((c.ratio || 0) * 100).toFixed(0)}% target`)
+      }
+    });
+
     console.log(`[EngagementDecay] Flagged ${decayingClients.length} decaying clients across ${Object.keys(byBdm).length} BDMs.`);
   } catch (err) {
     console.error('[EngagementDecay] Error:', err.message);
+    try { await AgentRun.create({ agent_key: 'engagement_decay', agent_label: 'Engagement Decay Monitor', status: 'error', error_msg: err.message }); } catch {}
   }
 }
 

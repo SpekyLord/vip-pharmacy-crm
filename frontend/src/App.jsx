@@ -132,8 +132,9 @@ const PettyCash = lazy(() => import('./erp/pages/PettyCash'));
 const OfficeSupplies = lazy(() => import('./erp/pages/OfficeSupplies'));
 const Collaterals = lazy(() => import('./erp/pages/Collaterals'));
 
-// Phase 24 — ERP Control Center
+// Phase 24 — ERP Control Center + Agent Intelligence
 const ControlCenter = lazy(() => import('./erp/pages/ControlCenter'));
+const AgentDashboard = lazy(() => import('./erp/pages/AgentDashboard'));
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -658,8 +659,9 @@ function App() {
           <Route path="/erp/office-supplies" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><OfficeSupplies /></ProtectedRoute>} />
           <Route path="/erp/collaterals" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="inventory"><Collaterals /></ProtectedRoute>} />
 
-          {/* Phase 24 — ERP Control Center */}
+          {/* Phase 24 — ERP Control Center + Agent Intelligence */}
           <Route path="/erp/control-center" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><ControlCenter /></ProtectedRoute>} />
+          <Route path="/erp/agent-dashboard" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><AgentDashboard /></ProtectedRoute>} />
 
           <Route path="/employee/*" element={<EmployeeRedirect />} />
           <Route path="/employee" element={<EmployeeRedirect />} />

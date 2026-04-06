@@ -547,6 +547,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   // Phase 24 — Control Center for admin-like roles
   if (['admin', 'finance', 'president'].includes(role)) {
     items.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
+    items.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
   }
   if (hasModule('sales'))       items.push({ path: '/erp/sales', label: 'Sales', icon: Receipt });
   if (hasModule('sales'))       items.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });

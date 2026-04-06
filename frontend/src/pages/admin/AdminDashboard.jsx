@@ -107,6 +107,7 @@ const AdminDashboard = () => {
     vipVisitsToday: 0,
     regularVisitsToday: 0,
   });
+  const [agentRuns, setAgentRuns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -122,6 +123,10 @@ const AdminDashboard = () => {
       try {
         setLoading(true);
         setError(null);
+
+        // Fetch AI agent runs (non-blocking)
+        api.get('/erp/agents/runs?limit=3').then(res => setAgentRuns(res.data?.data || [])).catch(() => {});
+
         const [doctorsRes, usersRes, cptSummaryRes, todayStatsRes, cycleRes] = await Promise.all([
           doctorService.getAll({ limit: 0 }),
           api.get('/users', { params: { limit: 0 } }),
@@ -209,6 +214,22 @@ const AdminDashboard = () => {
         <Sidebar />
         <main className="admin-main">
           {error && <div className="error-banner">{error}</div>}
+          {agentRuns.length > 0 && (
+            <div style={{ background: 'var(--erp-panel, #fff)', border: '1px solid var(--erp-border, #e5e7eb)', borderRadius: 12, padding: 16, margin: '16px 24px 0' }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, margin: '0 0 10px', color: 'var(--erp-text, #1f2937)', display: 'flex', alignItems: 'center', gap: 6 }}>🤖 AI Agents</h3>
+              {agentRuns.map((r, i) => (
+                <div key={r._id || i} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--erp-border, #e5e7eb)' : 'none', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: 'var(--erp-text, #1f2937)' }}>{r.agent_name || r.agentName || 'Agent'}</div>
+                    <div style={{ color: 'var(--erp-muted, #6b7280)', fontSize: 11 }}>{r.last_run || r.lastRun ? new Date(r.last_run || r.lastRun).toLocaleString() : '--'}</div>
+                  </div>
+                  <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: r.status === 'success' ? '#dcfce7' : r.status === 'error' ? '#fef2f2' : '#e8efff', color: r.status === 'success' ? '#16a34a' : r.status === 'error' ? '#dc2626' : '#2563eb' }}>
+                    {r.status || 'unknown'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           <Dashboard
             user={user}
             stats={stats}

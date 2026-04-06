@@ -29,6 +29,9 @@ router.use('/entities', require('./entityRoutes'));
 router.use('/control-center', require('./controlCenterRoutes'));
 router.use('/lookup-values', require('./lookupGenericRoutes'));
 
+// ═══ Phase 24 — Agent Intelligence ═══
+router.use('/agents', require('./agentRoutes'));
+
 // ═══ Phase 3 — Sales & Inventory ═══
 router.use('/sales', erpAccessCheck('sales'), require('./salesRoutes'));
 router.use('/inventory', erpAccessCheck('inventory'), require('./inventoryRoutes'));
