@@ -19,7 +19,6 @@ async function run() {
     const User = require('../models/User');
     const Doctor = require('../models/Doctor');
     const Visit = require('../models/Visit');
-    const Region = require('../models/Region');
 
     const bdms = await User.find({ role: 'employee', isActive: true }).select('_id name regions').lean();
     if (!bdms.length) { console.log('[VisitPlanner] No active BDMs.'); return; }
@@ -36,19 +35,12 @@ async function run() {
     const monthStart = new Date(nextMon.getFullYear(), nextMon.getMonth(), 1);
 
     for (const bdm of bdms) {
-      // Get BDM's assigned VIP Clients
-      let regionIds = bdm.regions || [];
-      if (regionIds.length) {
-        const allRegionIds = [];
-        for (const rId of regionIds) {
-          const descendants = await Region.getDescendantIds(rId);
-          allRegionIds.push(rId, ...descendants);
-        }
-        regionIds = allRegionIds;
-      }
-
+      // Get BDM's assigned VIP Clients (via assignedEmployee field)
       const doctors = await Doctor.find({
-        ...(regionIds.length ? { region: { $in: regionIds } } : {}),
+        $or: [
+          { assignedEmployee: bdm._id },
+          ...(bdm.regions?.length ? [{ region: { $in: bdm.regions } }] : [])
+        ],
         isActive: true
       }).select('firstName lastName visitFrequency region clinicAddress').lean();
 
