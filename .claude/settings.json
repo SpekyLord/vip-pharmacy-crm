@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tasklist)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 2900 //F)",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS: %{http_code}\" -X DELETE http://localhost:5000/api/erp/erp-access/templates/69d3a0ed98e66712cabd6fe3 --cookie \"accessToken=test\")",
+      "Read(//c/Users/LENOVO/OneDrive/Documents/VIP/ and/ VS/ CODE/VIP/ IP/VIP/ CRM/ ERP/vip-pharmacy-crm/backend/erp/models/**)",
+      "Read(//c/Users/LENOVO/OneDrive/Documents/VIP/ and/ VS/ CODE/VIP/ IP/VIP/ CRM/ ERP/vip-pharmacy-crm/backend/erp/controllers/**)",
+      "Read(//c/Users/LENOVO/OneDrive/Documents/VIP/ and/ VS/ CODE/VIP/ IP/VIP/ CRM/ ERP/vip-pharmacy-crm/frontend/src/erp/pages/**)",
+      "Bash(curl -s http://localhost:5000/erp/transfers/prices/products?source_entity_id=69cd76ec7f6beb5888bd1a53\\\\&target_entity_id=69cd76ec7f6beb5888bd1a56)",
+      "Bash(curl -s http://localhost:5000/erp/transfers/prices/products)",
+      "Bash(taskkill //F //IM \"node.exe\")",
+      "Read(//tmp/**)",
+      "Bash(curl -s http://localhost:5000/)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/erp/transfers/prices/list)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/api/erp/transfers/prices/products)"
+    ]
+  }
+}
