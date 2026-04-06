@@ -14,7 +14,10 @@
       "Read(//tmp/**)",
       "Bash(curl -s http://localhost:5000/)",
       "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/erp/transfers/prices/list)",
-      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/api/erp/transfers/prices/products)"
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/api/erp/transfers/prices/products)",
+      "Bash(ls docs/PHASETASK*.md)",
+      "Bash(ls PHASETASK*.md)",
+      "Bash(ls docs/PHASE*.md)"
     ]
   }
 }
