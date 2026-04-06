@@ -285,6 +285,113 @@ const setTransferPrice = catchAsync(async (req, res) => {
 });
 
 /**
+ * GET /prices/products — All source entity products merged with existing transfer prices
+ * Shows every product so the user can set prices for ones that don't have them yet.
+ */
+const getTransferPriceProducts = catchAsync(async (req, res) => {
+  const { source_entity_id, target_entity_id, search } = req.query;
+  if (!source_entity_id || !target_entity_id) {
+    return res.status(400).json({ success: false, message: 'source_entity_id and target_entity_id are required' });
+  }
+
+  // Get active products for the TARGET entity (these are the products the target BDM sells)
+  const productFilter = { entity_id: target_entity_id, is_active: { $ne: false } };
+  if (search) {
+    productFilter.$or = [
+      { brand_name: new RegExp(search, 'i') },
+      { generic_name: new RegExp(search, 'i') }
+    ];
+  }
+
+  const products = await ProductMaster.find(productFilter)
+    .select('brand_name generic_name dosage_strength unit_code selling_price purchase_price')
+    .sort({ brand_name: 1 })
+    .lean();
+
+  // Get existing transfer prices for this entity pair
+  const existingPrices = await TransferPriceList.find({
+    source_entity_id,
+    target_entity_id,
+    is_active: true
+  }).populate('set_by', 'name').lean();
+
+  const priceMap = new Map(existingPrices.map(p => [p.product_id.toString(), p]));
+
+  // Merge: every product gets a row, with transfer_price if one exists
+  const merged = products.map(prod => {
+    const existing = priceMap.get(prod._id.toString());
+    return {
+      product_id: prod._id,
+      brand_name: prod.brand_name,
+      generic_name: prod.generic_name,
+      dosage_strength: prod.dosage_strength,
+      unit_code: prod.unit_code,
+      selling_price: prod.selling_price || 0,
+      purchase_price: prod.purchase_price || 0,
+      transfer_price: existing?.transfer_price || null,
+      effective_date: existing?.effective_date || null,
+      set_by: existing?.set_by || null,
+      price_id: existing?._id || null
+    };
+  });
+
+  res.json({ success: true, data: merged, total: merged.length });
+});
+
+/**
+ * PUT /prices/bulk — Bulk create/update transfer prices
+ * Body: { source_entity_id, target_entity_id, items: [{ product_id, transfer_price }] }
+ */
+const bulkSetTransferPrices = catchAsync(async (req, res) => {
+  const { source_entity_id, target_entity_id, items } = req.body;
+
+  if (!source_entity_id || !target_entity_id || !items?.length) {
+    return res.status(400).json({ success: false, message: 'source_entity_id, target_entity_id, and items[] are required' });
+  }
+
+  const ops = items
+    .filter(item => item.product_id && item.transfer_price > 0)
+    .map(item => ({
+      updateOne: {
+        filter: { source_entity_id, target_entity_id, product_id: item.product_id },
+        update: {
+          $set: {
+            transfer_price: item.transfer_price,
+            effective_date: new Date(),
+            set_by: req.user._id,
+            is_active: true,
+            notes: item.notes || ''
+          }
+        },
+        upsert: true
+      }
+    }));
+
+  if (!ops.length) {
+    return res.status(400).json({ success: false, message: 'No valid items to save (transfer_price must be > 0)' });
+  }
+
+  const result = await TransferPriceList.bulkWrite(ops);
+
+  await ErpAuditLog.logChange({
+    entity_id: source_entity_id,
+    log_type: 'UPDATE',
+    target_model: 'TransferPriceList',
+    field_changed: 'transfer_price',
+    new_value: `${ops.length} prices`,
+    changed_by: req.user._id,
+    note: `Bulk update: ${result.upsertedCount} created, ${result.modifiedCount} updated`
+  });
+
+  res.json({
+    success: true,
+    message: `${result.upsertedCount} created, ${result.modifiedCount} updated`,
+    created: result.upsertedCount,
+    updated: result.modifiedCount
+  });
+});
+
+/**
  * GET /entities — List all entities (for dropdowns)
  */
 const getEntities = catchAsync(async (req, res) => {
@@ -589,6 +696,8 @@ module.exports = {
   cancelTransfer,
   getTransferPrices,
   setTransferPrice,
+  getTransferPriceProducts,
+  bulkSetTransferPrices,
   getEntities,
   getBdmsByEntity,
   createReassignment,

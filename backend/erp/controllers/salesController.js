@@ -195,7 +195,9 @@ const validateSales = catchAsync(async (req, res) => {
   // For now, all rows for a BDM share one warehouse, so first row's warehouse is used.
   const firstWarehouseId = rows[0]?.warehouse_id;
   const snapOpts = firstWarehouseId ? { warehouseId: firstWarehouseId.toString() } : undefined;
-  const { productTotals } = await buildStockSnapshot(req.entityId, req.bdmId, snapOpts);
+  // President/admin/finance without a warehouse scope → query all entity stock
+  const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && !firstWarehouseId ? null : req.bdmId;
+  const { productTotals } = await buildStockSnapshot(req.entityId, bdmId, snapOpts);
 
   // In-memory deduction tracker (prevents double-allocation across rows)
   const deducted = new Map(); // productId → qty deducted so far

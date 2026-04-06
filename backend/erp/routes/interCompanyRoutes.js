@@ -14,7 +14,9 @@ router.get('/bdms', ic.getBdmsByEntity);
 
 // Transfer pricing — president/admin only
 router.get('/prices/list', roleCheck('president', 'admin', 'finance'), ic.getTransferPrices);
+router.get('/prices/products', roleCheck('president', 'admin', 'finance'), ic.getTransferPriceProducts);
 router.put('/prices', roleCheck('president', 'admin'), ic.setTransferPrice);
+router.put('/prices/bulk', roleCheck('president', 'admin'), ic.bulkSetTransferPrices);
 
 // Internal Stock Reassignment (same entity, GRN-like approval)
 router.post('/reassign', roleCheck('president', 'admin'), ic.createReassignment);
