@@ -8,12 +8,12 @@ import useSettings from '../hooks/useSettings';
 import api from '../../services/api';
 
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
 const DAYS_OF_WEEK = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-const ACTIVITY_TYPES = ['Office', 'Field', 'Other'];
 
 // ── Mobile-responsive SMER styles ──
 const smerMobileStyles = `
@@ -129,6 +129,8 @@ export default function Smer() {
   const { user } = useAuth();
   const { getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer, validateSmer, submitSmer, reopenSmer, getSmerCrmMdCounts, loading } = useExpenses();
   const { settings } = useSettings();
+  const { options: activityTypeOpts } = useLookupOptions('ACTIVITY_TYPE');
+  const ACTIVITY_TYPES = activityTypeOpts.map(o => o.code);
 
   const [smers, setSmers] = useState([]);
   const [editingSmer, setEditingSmer] = useState(null);

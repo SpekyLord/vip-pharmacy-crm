@@ -12,6 +12,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
 function ScanORModal({ open, onClose, onApply }) {
@@ -125,15 +126,6 @@ const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
 const EXPENSE_TYPES = ['ORE', 'ACCESS'];
-const EXPENSE_CATEGORIES = [
-  'Transportation', 'Travel/Accommodation', 'Fuel & Gas', 'Parking/Toll',
-  'Courier/Shipping', 'ACCESS/Meals', 'Office Supplies',
-  'Utilities/Communication', 'Rent', 'Marketing — HCP/Doctor', 'Marketing — Hospital', 'Marketing — Retail',
-  'Vehicle Maintenance', 'Repairs/Maintenance', 'Professional Fees',
-  'Regulatory/Licensing', 'IT/Software', 'Miscellaneous'
-];
-
-const BIR_FLAGS = ['BOTH', 'INTERNAL', 'BIR'];
 // Static fallback — overridden at runtime by COA API when available
 const COA_OPTIONS_FALLBACK = [
   // COGS
@@ -413,6 +405,10 @@ export default function Expenses() {
   const { hasSubPermission } = useErpSubAccess();
   const canBatchUpload = hasSubPermission('expenses', 'batch_upload') && ['admin', 'finance', 'president'].includes(user?.role);
   const lookupApi = useErpApi();
+  const { options: expCatOpts } = useLookupOptions('EXPENSE_CATEGORY');
+  const EXPENSE_CATEGORIES = expCatOpts.map(o => o.label);
+  const { options: birFlagOpts } = useLookupOptions('BIR_FLAG');
+  const BIR_FLAGS = birFlagOpts.map(o => o.code);
   const [paymentModes, setPaymentModes] = useState([]);
 
   const [expenses, setExpenses] = useState([]);

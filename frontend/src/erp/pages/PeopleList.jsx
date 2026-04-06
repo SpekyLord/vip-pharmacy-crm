@@ -5,10 +5,9 @@ import Sidebar from '../../components/common/Sidebar';
 import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
 
-const PERSON_TYPES = ['BDM', 'ECOMMERCE_BDM', 'EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'];
 const STATUS_LIST = ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'];
-const EMP_TYPES = ['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'CONSULTANT', 'PARTNERSHIP'];
 
 const TYPE_COLORS = {
   BDM: { bg: '#dbeafe', text: '#1e40af' },
@@ -64,6 +63,10 @@ const EMPTY_FORM = {
 export function PeopleListContent() {
   const navigate = useNavigate();
   const api = usePeople();
+  const { options: personTypeOpts } = useLookupOptions('PERSON_TYPE');
+  const PERSON_TYPES = personTypeOpts.map(o => o.code);
+  const { options: empTypeOpts } = useLookupOptions('EMPLOYMENT_TYPE');
+  const EMP_TYPES = empTypeOpts.map(o => o.code);
   const [people, setPeople] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 0 });
   const [filters, setFilters] = useState({ search: '', person_type: '', status: '' });

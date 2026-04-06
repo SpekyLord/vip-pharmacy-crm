@@ -13,10 +13,10 @@ import useWarehouses from '../hooks/useWarehouses';
 import useEntities from '../hooks/useEntities';
 import usePeople from '../hooks/usePeople';
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
 
 const TYPE_LABELS = { MAIN: 'Main Warehouse', TERRITORY: 'Territory', VIRTUAL: 'Virtual' };
 const TYPE_COLORS = { MAIN: '#1e40af', TERRITORY: '#166534', VIRTUAL: '#64748b' };
-const STOCK_TYPES = ['PHARMA', 'FNB', 'OFFICE'];
 
 const pageStyles = `
   .wm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -78,6 +78,8 @@ const emptyForm = () => ({
 export function WarehouseManagerContent() {
   const { user } = useAuth();
   const whApi = useWarehouses();
+  const { options: stockTypeOpts } = useLookupOptions('STOCK_TYPE');
+  const STOCK_TYPES = stockTypeOpts.map(o => o.code);
   const { entities } = useEntities();
   const { getAsUsers } = usePeople();
 

@@ -16,6 +16,7 @@ import usePayroll from '../hooks/usePayroll';
 import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
 import * as XLSX from 'xlsx';
+import { useLookupOptions } from '../hooks/useLookups';
 
 const css = `
   .pd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -48,13 +49,10 @@ const css = `
   @media(max-width: 375px) { .pd-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .pd-main input, .pd-main select { font-size: 16px; } }
 `;
 
-const PERSON_TYPES = ['BDM', 'EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'];
-const EMP_TYPES = ['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'CONSULTANT', 'PARTNERSHIP'];
 const CIVIL_STATUSES = ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'];
 const PERSON_STATUSES = ['ACTIVE', 'ON_LEAVE', 'SEPARATED'];
 const SALARY_TYPES = ['FIXED_SALARY', 'COMMISSION_BASED', 'HYBRID'];
 const TAX_STATUSES = ['S', 'S1', 'S2', 'ME', 'ME1', 'ME2', 'ME3', 'ME4'];
-const VEHICLE_TYPES = ['CAR', 'MOTORCYCLE', 'COMPANY_CAR', 'NONE'];
 const INCENTIVE_TYPES = ['CASH', 'IN_KIND', 'COMMISSION', 'NONE'];
 const INS_TYPES = ['LIFE', 'KEYMAN', 'INCOME_LOSS', 'ACCIDENT', 'VEHICLE_COMPREHENSIVE', 'VEHICLE_CTPL'];
 const INS_FREQ = ['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL'];
@@ -87,6 +85,13 @@ export default function PersonDetail() {
   const { user } = useAuth();
   const pplApi = usePeople();
   const payApi = usePayroll();
+
+  const { options: personTypeOpts } = useLookupOptions('PERSON_TYPE');
+  const PERSON_TYPES = personTypeOpts.map(o => o.code);
+  const { options: empTypeOpts } = useLookupOptions('EMPLOYMENT_TYPE');
+  const EMP_TYPES = empTypeOpts.map(o => o.code);
+  const { options: vehicleTypeOpts } = useLookupOptions('VEHICLE_TYPE');
+  const VEHICLE_TYPES = vehicleTypeOpts.map(o => o.code);
 
   const canEdit = ['admin', 'finance', 'president'].includes(user?.role);
   const isPresident = user?.role === 'president';

@@ -5,6 +5,7 @@ import Sidebar from '../../components/common/Sidebar';
 import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
+import { useLookupOptions } from '../hooks/useLookups';
 
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
 function ScanModal({ open, onClose, onApply, docType, title }) {
@@ -83,7 +84,6 @@ function ScanModal({ open, onClose, onApply, docType, title }) {
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
-const FUEL_TYPES = ['UNLEADED', 'DIESEL', 'PREMIUM', 'V-POWER', 'XCS', 'OTHER'];
 const PAYMENT_MODES = ['CASH', 'FLEET_CARD', 'GCASH', 'CARD', 'OTHER'];
 
 const mobileStyles = `
@@ -106,13 +106,24 @@ const mobileStyles = `
     .cl-fuel-entry input, .cl-fuel-entry select { width: 100% !important; }
     .cl-controls { flex-direction: column !important; }
     .cl-controls > * { width: 100%; }
-    .cl-controls button, .cl-controls a { text-align: center; }
+    .cl-controls button, .cl-controls a { text-align: center; min-height: 40px; }
+    .cl-card-actions button { min-height: 36px; border-radius: 6px; cursor: pointer; border: 1px solid var(--erp-border, #dbe4f0); background: #fff; }
+  }
+  @media (max-width: 480px) {
+    .cl-cards { gap: 8px; }
+    .cl-card { padding: 10px; }
+    .cl-card-header { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .cl-card-grid { grid-template-columns: 1fr 1fr; gap: 4px 8px; font-size: 12px; }
+    .cl-card-actions button { font-size: 12px; padding: 8px 0; }
+    .cl-controls { gap: 8px !important; }
   }
 `;
 
 export default function CarLogbook() {
   const { getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook, validateCarLogbook, submitCarLogbook, reopenCarLogbook, loading } = useExpenses();
   const { settings } = useSettings();
+  const { options: fuelTypeOpts } = useLookupOptions('FUEL_TYPE');
+  const FUEL_TYPES = fuelTypeOpts.map(o => o.code);
 
   const [entries, setEntries] = useState([]);
   const [editingEntry, setEditingEntry] = useState(null);
@@ -357,8 +368,8 @@ export default function CarLogbook() {
                     <div><span className="cl-card-label">Fuel</span><br/><span className="cl-card-value">{(e.fuel_entries || []).length} entry(s)</span></div>
                   </div>
                   <div className="cl-card-actions">
-                    {['DRAFT', 'ERROR'].includes(e.status) && <button onClick={() => handleEdit(e)} className="btn btn-outline btn-sm">Edit</button>}
-                    {e.status === 'DRAFT' && <button onClick={() => handleDelete(e._id)} className="btn btn-danger btn-sm">Delete</button>}
+                    {['DRAFT', 'ERROR'].includes(e.status) && <button onClick={() => handleEdit(e)} style={{ border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', color: 'var(--erp-text, #132238)' }}>Edit</button>}
+                    {e.status === 'DRAFT' && <button onClick={() => handleDelete(e._id)} style={{ border: '1px solid #ef4444', background: '#fff', color: '#ef4444' }}>Delete</button>}
                     {e.status === 'POSTED' && <button onClick={() => handleReopen(e._id)} style={{ padding: '6px 0', fontSize: 13, borderRadius: 6, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer', flex: 1 }}>Re-open</button>}
                   </div>
                 </div>

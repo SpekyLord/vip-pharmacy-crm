@@ -6,6 +6,7 @@ import useAccounting from '../hooks/useAccounting';
 import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
 
 const pageStyles = `
   .ccm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -52,8 +53,6 @@ const pageStyles = `
 `;
 
 const TYPE_BADGES = { CREDIT_CARD: 'ccm-badge-cc', FLEET_CARD: 'ccm-badge-fleet', DEBIT_CARD: 'ccm-badge-debit' };
-const CARD_TYPES = ['CREDIT_CARD', 'FLEET_CARD', 'DEBIT_CARD'];
-const CARD_BRANDS = ['VISA', 'MASTERCARD', 'JCB', 'AMEX', 'FLEET'];
 
 const EMPTY_FORM = {
   card_code: '', card_name: '', card_holder: '', bank: '',
@@ -65,6 +64,10 @@ const EMPTY_FORM = {
 export function CreditCardManagerContent() {
   const { user } = useAuth();
   const api = useAccounting();
+  const { options: cardTypeOpts } = useLookupOptions('CARD_TYPE');
+  const CARD_TYPES = cardTypeOpts.map(o => o.code);
+  const { options: cardBrandOpts } = useLookupOptions('CARD_BRAND');
+  const CARD_BRANDS = cardBrandOpts.map(o => o.code);
 
   const [cards, setCards] = useState([]);
   const [users, setUsers] = useState([]);

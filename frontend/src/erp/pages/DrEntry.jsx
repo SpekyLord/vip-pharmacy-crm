@@ -9,12 +9,7 @@ import { processDocument, extractExifDateTime } from '../services/ocrService';
 import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
-
-const DR_TYPES = [
-  { value: 'DR_CONSIGNMENT', label: 'Consignment' },
-  { value: 'DR_SAMPLING', label: 'Sampling' },
-  { value: 'DR_DONATION', label: 'Donation' }
-];
+import { useLookupOptions } from '../hooks/useLookups';
 
 const TYPE_COLORS = {
   DR_CONSIGNMENT: { bg: '#dbeafe', text: '#1e40af' },
@@ -246,6 +241,8 @@ export default function DrEntry() {
   const consignment = useConsignment();
   const inventory = useInventory();
   const { hospitals } = useHospitals();
+  const { options: drTypeOpts } = useLookupOptions('DR_TYPE');
+  const DR_TYPES = drTypeOpts.map(o => ({ value: o.code, label: o.label }));
 
   const [warehouseId, setWarehouseId] = useState('');
   const [rows, setRows] = useState([emptyRow()]);

@@ -5,8 +5,7 @@ import useCustomers from '../hooks/useCustomers';
 import usePeople from '../hooks/usePeople';
 import { useAuth } from '../../hooks/useAuth';
 import SelectField from '../../components/common/Select';
-
-const CUSTOMER_TYPES = ['ALL', 'PERSON', 'PHARMACY', 'DIAGNOSTIC_CENTER', 'INDUSTRIAL', 'OTHER'];
+import { useLookupOptions } from '../hooks/useLookups';
 const SALE_TYPES = ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'];
 const STATUS_OPTIONS = ['ALL', 'ACTIVE', 'INACTIVE'];
 const VAT_OPTIONS = ['VATABLE', 'EXEMPT', 'ZERO'];
@@ -131,6 +130,8 @@ export function CustomerListContent() {
   const { user } = useAuth();
   const customers = useCustomers();
   const { getAsUsers } = usePeople();
+  const { options: custTypeOpts } = useLookupOptions('CUSTOMER_TYPE');
+  const CUSTOMER_TYPES = ['ALL', ...custTypeOpts.map(o => o.code)];
 
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);

@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SelectField from '../../components/common/Select';
 import useOfficeSupplies from '../hooks/useOfficeSupplies';
-
-const CATEGORIES = ['ALL', 'PAPER', 'INK_TONER', 'CLEANING', 'STATIONERY', 'ELECTRONICS', 'OTHER'];
+import { useLookupOptions } from '../hooks/useLookups';
 const TXN_TYPES = ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'];
 
 const styles = {
@@ -54,7 +53,7 @@ const mobileCSS = `
 `;
 
 // ---------- Item Modal ----------
-function ItemModal({ open, onClose, onSave, editItem }) {
+function ItemModal({ open, onClose, onSave, editItem, categories }) {
   const [form, setForm] = useState({ item_name: '', item_code: '', category: 'PAPER', qty_on_hand: 0, reorder_level: 5, unit: 'pc', last_purchase_price: 0 });
   const [saving, setSaving] = useState(false);
 
@@ -108,7 +107,7 @@ function ItemModal({ open, onClose, onSave, editItem }) {
           <div style={styles.formGroup}>
             <label style={styles.label}>Category</label>
             <SelectField style={styles.formInput} name="category" value={form.category} onChange={handleChange}>
-              {CATEGORIES.filter(c => c !== 'ALL').map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+              {categories.filter(c => c !== 'ALL').map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
             </SelectField>
           </div>
           <div style={styles.formGroup}>
@@ -207,6 +206,8 @@ function TxnModal({ open, onClose, onSave, supplies }) {
 // ---------- Main Page ----------
 export default function OfficeSupplies() {
   const os = useOfficeSupplies();
+  const { options: catOpts } = useLookupOptions('OFFICE_SUPPLY_CATEGORY');
+  const CATEGORIES = ['ALL', ...catOpts.map(o => o.code)];
   const [supplies, setSupplies] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -446,7 +447,7 @@ export default function OfficeSupplies() {
         </div>
       )}
 
-      <ItemModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} />
+      <ItemModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} categories={CATEGORIES} />
       <TxnModal open={showTxnModal} onClose={() => setShowTxnModal(false)} onSave={handleRecordTxn} supplies={supplies} />
     </div>
     </>

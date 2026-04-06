@@ -3,8 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import SelectField from '../../components/common/Select';
 import useCollaterals from '../hooks/useCollaterals';
-
-const COLLATERAL_TYPES = ['ALL', 'BROCHURE', 'SAMPLE', 'MERCHANDISE', 'BANNER', 'FLYER', 'OTHER'];
+import { useLookupOptions } from '../hooks/useLookups';
 
 const styles = {
   container: { padding: 0, maxWidth: '1200px', margin: '0 auto' },
@@ -69,7 +68,7 @@ const pageStyles = `
 const TYPE_COLORS = { BROCHURE: 'blue', SAMPLE: 'green', MERCHANDISE: 'purple', BANNER: 'amber', FLYER: 'gray', OTHER: 'gray' };
 
 // ---------- Create/Edit Modal ----------
-function CollateralModal({ open, onClose, onSave, editItem }) {
+function CollateralModal({ open, onClose, onSave, editItem, collateralTypes }) {
   const [form, setForm] = useState({ name: '', collateral_type: 'BROCHURE', qty_on_hand: 0, assigned_to: '', description: '', photo_url: '' });
   const [saving, setSaving] = useState(false);
 
@@ -113,7 +112,7 @@ function CollateralModal({ open, onClose, onSave, editItem }) {
           <div style={styles.formGroup}>
             <label style={styles.label}>Type</label>
             <SelectField style={styles.formInput} name="collateral_type" value={form.collateral_type} onChange={handleChange}>
-              {COLLATERAL_TYPES.filter(t => t !== 'ALL').map(t => <option key={t} value={t}>{t}</option>)}
+              {collateralTypes.filter(t => t !== 'ALL').map(t => <option key={t} value={t}>{t}</option>)}
             </SelectField>
           </div>
           <div style={styles.formGroup}>
@@ -247,6 +246,8 @@ function ReturnModal({ open, onClose, onSave, collaterals }) {
 // ---------- Main Page ----------
 export default function Collaterals() {
   const col = useCollaterals();
+  const { options: collatOpts } = useLookupOptions('COLLATERAL_TYPE');
+  const COLLATERAL_TYPES = ['ALL', ...collatOpts.map(o => o.code)];
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState('ALL');
@@ -400,7 +401,7 @@ export default function Collaterals() {
               </div>
             )}
 
-            <CollateralModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} />
+            <CollateralModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} collateralTypes={COLLATERAL_TYPES} />
             <DistributionModal open={showDistModal} onClose={() => setShowDistModal(false)} onSave={handleDistribute} collaterals={items} />
             <ReturnModal open={showReturnModal} onClose={() => setShowReturnModal(false)} onSave={handleReturn} collaterals={items} />
           </div>
