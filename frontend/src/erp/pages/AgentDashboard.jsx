@@ -10,7 +10,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import api from '../../services/api';
 import messageService from '../../services/messageInboxService';
-import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, Users, MessageSquare, TrendingUp, Calendar, ShieldAlert } from 'lucide-react';
+import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, Users, MessageSquare, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap } from 'lucide-react';
 
 const pageStyles = `
   .agd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -69,9 +69,19 @@ const pageStyles = `
 `;
 
 const AGENT_CONFIG = {
-  performance_coach: { label: 'BDM Performance Coach', icon: TrendingUp, color: '#6366f1', schedule: 'Mon 6:00 AM' },
-  visit_planner: { label: 'Smart Visit Planner', icon: Calendar, color: '#10b981', schedule: 'Sun 6:00 PM' },
-  engagement_decay: { label: 'Engagement Decay', icon: ShieldAlert, color: '#ef4444', schedule: 'Mon 7:00 AM' },
+  // Paid agents (Claude AI)
+  smart_collection:   { label: 'Smart Collection',      icon: DollarSign,  color: '#2563eb', schedule: 'Weekdays 7:00 AM', type: 'AI' },
+  performance_coach:  { label: 'BDM Performance Coach', icon: TrendingUp,  color: '#6366f1', schedule: 'Mon 6:00 AM',      type: 'AI' },
+  bir_filing:         { label: 'BIR Filing Review',     icon: FileSearch,  color: '#0891b2', schedule: '15th monthly 9 AM', type: 'AI' },
+  visit_planner:      { label: 'Smart Visit Planner',   icon: Calendar,    color: '#10b981', schedule: 'Sun 6:00 PM',       type: 'AI' },
+  engagement_decay:   { label: 'Engagement Decay',      icon: ShieldAlert, color: '#ef4444', schedule: 'Mon 7:00 AM',       type: 'AI' },
+  // Free agents (rule-based)
+  expense_anomaly:    { label: 'Expense Anomaly',       icon: FileWarning, color: '#f59e0b', schedule: 'Daily 6:00 AM',     type: 'Free' },
+  inventory_reorder:  { label: 'Inventory Reorder',     icon: Package,     color: '#8b5cf6', schedule: 'Daily 6:30 AM',     type: 'Free' },
+  credit_risk:        { label: 'Credit Risk Scoring',   icon: CreditCard,  color: '#ec4899', schedule: 'Sun 11:00 PM',      type: 'Free' },
+  document_expiry:    { label: 'Document Expiry',       icon: Clock,       color: '#64748b', schedule: 'Daily 7:30 AM',     type: 'Free' },
+  visit_compliance:   { label: 'Visit Compliance',      icon: MapPin,      color: '#14b8a6', schedule: 'Wed + Fri',         type: 'Free' },
+  photo_audit:        { label: 'Photo Audit',           icon: Camera,      color: '#a855f7', schedule: 'Daily 8:30 AM',     type: 'Free' },
 };
 
 const CAT_LABELS = { ai_coaching: 'Coaching', ai_schedule: 'Schedule', ai_alert: 'Alert' };
@@ -128,46 +138,73 @@ export default function AgentDashboard() {
 
           {loading ? <div className="agd-loading">Loading agent data...</div> : (
             <>
-              {/* Agent Status Cards */}
+              {/* AI-Powered Agents */}
+              <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Zap size={18} style={{ color: '#6366f1' }} /> Claude AI Agents
+                <span style={{ fontSize: 11, fontWeight: 500, color: '#64748b', background: '#f1f5f9', padding: '2px 8px', borderRadius: 4 }}>Requires ANTHROPIC_API_KEY</span>
+              </h2>
               <div className="agd-cards">
-                {Object.entries(AGENT_CONFIG).map(([key, cfg]) => {
+                {Object.entries(AGENT_CONFIG).filter(([, c]) => c.type === 'AI').map(([key, cfg]) => {
                   const Icon = cfg.icon;
                   const agent = stats?.agents?.find(a => a._id === key);
                   return (
                     <div className="agd-card" key={key}>
                       <div className="agd-card-accent" style={{ background: cfg.color }} />
                       <div className="agd-card-header">
-                        <h3><Icon style={{ color: cfg.color }} />{cfg.label}</h3>
-                        {agent ? <StatusBadge status={agent.last_status} /> : <span className="agd-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>No runs</span>}
+                        <h3><Icon style={{ color: cfg.color }} /> {cfg.label}</h3>
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: '#6366f1', background: '#e0e7ff', padding: '1px 6px', borderRadius: 4 }}>AI</span>
+                          {agent ? <StatusBadge status={agent.last_status} /> : <span className="agd-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>Awaiting run</span>}
+                        </div>
                       </div>
                       <div className="agd-card-stats">
-                        <div className="agd-stat">
-                          <div className="agd-stat-value">{agent?.total_runs || 0}</div>
-                          <div className="agd-stat-label">Total Runs</div>
-                        </div>
-                        <div className="agd-stat">
-                          <div className="agd-stat-value">{agent?.total_messages || 0}</div>
-                          <div className="agd-stat-label">Messages Sent</div>
-                        </div>
-                        <div className="agd-stat">
-                          <div className="agd-stat-value">{agent?.total_alerts || 0}</div>
-                          <div className="agd-stat-label">Alerts</div>
-                        </div>
-                        <div className="agd-stat">
-                          <div className="agd-stat-value" style={{ fontSize: 13 }}>{fmtDate(agent?.last_run)}</div>
-                          <div className="agd-stat-label">Last Run</div>
-                        </div>
+                        <div className="agd-stat"><div className="agd-stat-value">{agent?.total_runs || 0}</div><div className="agd-stat-label">Total Runs</div></div>
+                        <div className="agd-stat"><div className="agd-stat-value">{agent?.total_messages || 0}</div><div className="agd-stat-label">Messages Sent</div></div>
+                        <div className="agd-stat"><div className="agd-stat-value">{agent?.total_alerts || 0}</div><div className="agd-stat-label">Alerts</div></div>
+                        <div className="agd-stat"><div className="agd-stat-value" style={{ fontSize: 13 }}>{fmtDate(agent?.last_run)}</div><div className="agd-stat-label">Last Run</div></div>
                       </div>
                       {agent?.last_summary?.key_findings?.length > 0 && (
                         <div className="agd-findings" style={{ marginTop: 10 }}>
-                          {agent.last_summary.key_findings.slice(0, 2).map((f, i) => (
-                            <div key={i} className="agd-finding">{f}</div>
-                          ))}
+                          {agent.last_summary.key_findings.slice(0, 2).map((f, i) => <div key={i} className="agd-finding">{f}</div>)}
                         </div>
                       )}
-                      <div style={{ marginTop: 8, fontSize: 11, color: '#94a3b8' }}>
-                        <Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {cfg.schedule}
+                      <div style={{ marginTop: 8, fontSize: 11, color: '#94a3b8' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {cfg.schedule}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Free Rule-Based Agents */}
+              <h2 style={{ fontSize: 16, fontWeight: 700, margin: '24px 0 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Bot size={18} style={{ color: '#10b981' }} /> Rule-Based Agents
+                <span style={{ fontSize: 11, fontWeight: 500, color: '#64748b', background: '#f1f5f9', padding: '2px 8px', borderRadius: 4 }}>Always active</span>
+              </h2>
+              <div className="agd-cards">
+                {Object.entries(AGENT_CONFIG).filter(([, c]) => c.type === 'Free').map(([key, cfg]) => {
+                  const Icon = cfg.icon;
+                  const agent = stats?.agents?.find(a => a._id === key);
+                  return (
+                    <div className="agd-card" key={key}>
+                      <div className="agd-card-accent" style={{ background: cfg.color }} />
+                      <div className="agd-card-header">
+                        <h3><Icon style={{ color: cfg.color }} /> {cfg.label}</h3>
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: '#10b981', background: '#dcfce7', padding: '1px 6px', borderRadius: 4 }}>FREE</span>
+                          {agent ? <StatusBadge status={agent.last_status} /> : <span className="agd-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>Awaiting run</span>}
+                        </div>
                       </div>
+                      <div className="agd-card-stats">
+                        <div className="agd-stat"><div className="agd-stat-value">{agent?.total_runs || 0}</div><div className="agd-stat-label">Total Runs</div></div>
+                        <div className="agd-stat"><div className="agd-stat-value">{agent?.total_messages || 0}</div><div className="agd-stat-label">Messages Sent</div></div>
+                        <div className="agd-stat"><div className="agd-stat-value">{agent?.total_alerts || 0}</div><div className="agd-stat-label">Alerts</div></div>
+                        <div className="agd-stat"><div className="agd-stat-value" style={{ fontSize: 13 }}>{fmtDate(agent?.last_run)}</div><div className="agd-stat-label">Last Run</div></div>
+                      </div>
+                      {agent?.last_summary?.key_findings?.length > 0 && (
+                        <div className="agd-findings" style={{ marginTop: 10 }}>
+                          {agent.last_summary.key_findings.slice(0, 2).map((f, i) => <div key={i} className="agd-finding">{f}</div>)}
+                        </div>
+                      )}
+                      <div style={{ marginTop: 8, fontSize: 11, color: '#94a3b8' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {cfg.schedule}</div>
                     </div>
                   );
                 })}
