@@ -77,8 +77,8 @@ const inventoryLedgerSchema = new mongoose.Schema({
   collection: 'erp_inventory_ledger'
 });
 
-// Normalize batch_lot_no + enforce immutability
-inventoryLedgerSchema.pre('save', function (next) {
+// Normalize batch_lot_no + enforce immutability + auto-compute running_balance
+inventoryLedgerSchema.pre('save', async function (next) {
   if (!this.isNew) {
     return next(new Error('InventoryLedger entries are immutable. Create a new entry instead.'));
   }
@@ -86,6 +86,23 @@ inventoryLedgerSchema.pre('save', function (next) {
     this.batch_lot_no = cleanBatchNo(this.batch_lot_no);
   }
   this.recorded_at = new Date();
+
+  // Auto-compute running_balance if not explicitly set
+  if (this.running_balance == null) {
+    try {
+      const filter = {
+        entity_id: this.entity_id,
+        product_id: this.product_id,
+        batch_lot_no: this.batch_lot_no
+      };
+      if (this.warehouse_id) filter.warehouse_id = this.warehouse_id;
+
+      const prev = await this.constructor.findOne(filter).sort({ recorded_at: -1 }).select('running_balance').lean();
+      const prevBalance = prev?.running_balance ?? 0;
+      this.running_balance = prevBalance + (this.qty_in || 0) - (this.qty_out || 0);
+    } catch { /* fall through — balance stays null */ }
+  }
+
   next();
 });
 

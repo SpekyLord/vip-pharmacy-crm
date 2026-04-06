@@ -21,7 +21,7 @@ const expenseLineSchema = new mongoose.Schema({
   or_photo_url: String,
   or_attachment_id: String,
   or_ocr_data: { type: mongoose.Schema.Types.Mixed },
-  payment_mode: { type: String, enum: ['CASH', 'GCASH', 'CARD', 'BANK_TRANSFER', 'CHECK', 'ONLINE', 'OTHER'], default: 'CASH' },
+  payment_mode: { type: String, default: 'CASH' }, // Validated against PaymentMode lookup
   funding_card_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CreditCard' },
   funding_account_id: { type: mongoose.Schema.Types.ObjectId, ref: 'BankAccount' },
   calf_required: { type: Boolean, default: false },

@@ -91,6 +91,7 @@ const MonthEndClose = lazy(() => import('./erp/pages/MonthEndClose'));
 
 // Phase 21 — Government Rates, Period Locks, Recurring Journals, BIR Calculator
 const GovernmentRates = lazy(() => import('./erp/pages/GovernmentRates'));
+const PaymentModes = lazy(() => import('./erp/pages/PaymentModes'));
 const PeriodLocks = lazy(() => import('./erp/pages/PeriodLocks'));
 const RecurringJournals = lazy(() => import('./erp/pages/RecurringJournals'));
 const BirCalculator = lazy(() => import('./erp/pages/BirCalculator'));
@@ -614,6 +615,7 @@ function App() {
 
           {/* Phase 21 — Government Rates, Period Locks, Recurring Journals, BIR Calculator */}
           <Route path="/erp/government-rates" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><GovernmentRates /></ProtectedRoute>} />
+          <Route path="/erp/payment-modes" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><PaymentModes /></ProtectedRoute>} />
           <Route path="/erp/period-locks" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><PeriodLocks /></ProtectedRoute>} />
           <Route path="/erp/recurring-journals" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><RecurringJournals /></ProtectedRoute>} />
           <Route path="/erp/bir-calculator" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><BirCalculator /></ProtectedRoute>} />

@@ -1,14 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../../middleware/auth');
 const { roleCheck } = require('../../middleware/roleCheck');
 const c = require('../controllers/productMasterController');
 
-router.get('/', protect, c.getAll);
-router.get('/:id', protect, c.getById);
-router.post('/', protect, roleCheck('admin', 'finance'), c.create);
-router.put('/:id', protect, roleCheck('admin', 'finance'), c.update);
-router.patch('/:id/deactivate', protect, roleCheck('admin', 'finance'), c.deactivate);
-router.patch('/:id/reorder-qty', protect, roleCheck('admin', 'finance'), c.updateReorderQty);
+router.post('/tag-warehouse', roleCheck('admin', 'finance', 'president'), c.tagToWarehouse);
+router.get('/', c.getAll);
+router.get('/:id', c.getById);
+router.get('/:id/warehouses', c.getProductWarehouses);
+router.post('/', roleCheck('admin', 'finance', 'president'), c.create);
+router.put('/:id', roleCheck('admin', 'finance', 'president'), c.update);
+router.patch('/:id/deactivate', roleCheck('admin', 'finance', 'president'), c.deactivate);
+router.patch('/:id/reorder-qty', roleCheck('admin', 'finance', 'president'), c.updateReorderQty);
 
 module.exports = router;

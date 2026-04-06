@@ -183,7 +183,114 @@ export default function PrfCalf() {
   const selectedModeType = paymentModes.find(pm => pm.mode_code === form.payment_mode)?.mode_type || form.payment_mode;
 
   return (
-    <div className="admin-page erp-page">
+    <div className="admin-page erp-page prf-calf-page">
+      <style>{`
+.prf-calf-cards { display: none; }
+
+@media (max-width: 768px) {
+  .prf-calf-page .admin-main {
+    padding: 96px 12px 88px !important;
+  }
+  .prf-calf-controls {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .prf-calf-controls > * {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .prf-calf-controls button {
+    min-height: 40px;
+  }
+  .prf-calf-table-wrap {
+    display: none !important;
+  }
+  .prf-calf-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .prf-calf-card {
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 10px;
+    padding: 14px;
+    background: #fff;
+  }
+  .prf-calf-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .prf-calf-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--erp-text, #132238);
+  }
+  .prf-calf-card-body .prf-calf-card-label {
+    font-size: 11px;
+    color: var(--erp-muted, #5f7188);
+  }
+  .prf-calf-card-amount {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--erp-text, #132238);
+    margin: 4px 0;
+  }
+  .prf-calf-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .prf-calf-card-actions button {
+    min-height: 36px;
+    padding: 8px 14px;
+    font-size: 13px;
+    border-radius: 6px;
+    cursor: pointer;
+    flex: 1;
+    min-width: 80px;
+  }
+  .prf-calf-form-wrap {
+    max-width: 100% !important;
+  }
+  .prf-calf-form-wrap label {
+    display: block;
+    width: 100%;
+  }
+  .prf-calf-form-wrap input,
+  .prf-calf-form-wrap select {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .prf-calf-shared-fields {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .prf-calf-shared-fields > * {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .prf-calf-page .admin-main {
+    padding: 90px 8px 80px !important;
+  }
+  .prf-calf-card {
+    padding: 12px;
+  }
+  .prf-calf-card-amount {
+    font-size: 16px;
+  }
+  .prf-calf-card-actions button {
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+}
+      `}</style>
       <Navbar />
       <div className="admin-layout">
         <Sidebar />
@@ -199,7 +306,7 @@ export default function PrfCalf() {
           </p>
 
           {/* Controls */}
-          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="prf-calf-controls" style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }} />
             <SelectField value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
               <option value="C1">Cycle 1</option><option value="C2">Cycle 2</option><option value="MONTHLY">Monthly</option>
@@ -261,7 +368,7 @@ export default function PrfCalf() {
 
           {/* Document List */}
           {!showForm && (
-            <div style={{ overflowX: 'auto' }}>
+            <div className="prf-calf-table-wrap" style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
                   <tr style={{ background: 'var(--erp-bg-alt, #f1f5f9)', borderBottom: '2px solid var(--erp-border, #dbe4f0)' }}>
@@ -312,9 +419,57 @@ export default function PrfCalf() {
             </div>
           )}
 
+          {/* Mobile Card List */}
+          {!showForm && (
+            <div className="prf-calf-cards">
+              {docs.map(d => (
+                <div key={d._id} className="prf-calf-card">
+                  <div className="prf-calf-card-header">
+                    <span style={{ padding: '2px 10px', borderRadius: 4, fontSize: 12, fontWeight: 700, color: '#fff', background: d.doc_type === 'PRF' ? '#7c3aed' : '#0891b2' }}>{d.doc_type}</span>
+                    <span style={{ padding: '2px 10px', borderRadius: 4, fontSize: 12, color: '#fff', background: STATUS_COLORS[d.status] || '#6b7280' }}>{d.status}</span>
+                  </div>
+                  <div className="prf-calf-card-body">
+                    <div>
+                      <span className="prf-calf-card-label">Period: </span>
+                      {d.period} {d.cycle}
+                    </div>
+                    <div>
+                      <span className="prf-calf-card-label">Payee / Purpose: </span>
+                      {d.doc_type === 'PRF'
+                        ? <span>{d.payee_name || '\u2014'} <span style={{ color: 'var(--erp-muted)', fontSize: 11 }}>({d.payee_type})</span></span>
+                        : <span>{d.calf_number || 'CALF'} — {d.notes || 'Company fund advance'}</span>
+                      }
+                    </div>
+                    <div className="prf-calf-card-amount">{'\u20B1'}{(d.amount || 0).toLocaleString()}</div>
+                    {d.doc_type === 'PRF' && (
+                      <div>
+                        <span className="prf-calf-card-label">Partner Bank: </span>
+                        {d.partner_bank || '\u2014'} {d.partner_account_no ? '\u2022\u2022\u2022' + d.partner_account_no.slice(-4) : ''}
+                      </div>
+                    )}
+                  </div>
+                  <div className="prf-calf-card-actions">
+                    {['DRAFT', 'ERROR'].includes(d.status) && (
+                      <button onClick={() => handleEdit(d)} style={{ border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', color: 'var(--erp-text, #132238)' }}>Edit</button>
+                    )}
+                    {d.status === 'DRAFT' && (
+                      <button onClick={() => handleDelete(d._id)} style={{ border: '1px solid #ef4444', background: '#fff', color: '#ef4444' }}>Delete</button>
+                    )}
+                    {d.status === 'POSTED' && isFinance && (
+                      <button onClick={() => handleReopen(d._id)} style={{ border: '1px solid #eab308', background: '#fff', color: '#b45309' }}>Re-open</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {!docs.length && (
+                <div style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)', fontSize: 14 }}>No PRF/CALF documents</div>
+              )}
+            </div>
+          )}
+
           {/* Form */}
           {showForm && (
-            <div style={{ maxWidth: 600 }}>
+            <div className="prf-calf-form-wrap" style={{ maxWidth: 600 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
                 <h2 style={{ margin: 0, fontSize: 18 }}>
                   {editingDoc ? 'Edit' : 'New'} {form.doc_type}
@@ -380,7 +535,7 @@ export default function PrfCalf() {
               )}
 
               {/* Shared fields */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div className="prf-calf-shared-fields" style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ fontSize: 13 }}>Payment Mode:
                   <SelectField value={form.payment_mode} onChange={e => setForm(p => ({ ...p, payment_mode: e.target.value, funding_card_id: null, funding_account_id: null }))} style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }}>
                     {(form.doc_type === 'CALF'

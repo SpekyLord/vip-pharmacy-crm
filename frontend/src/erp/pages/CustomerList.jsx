@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useCustomers from '../hooks/useCustomers';
+import usePeople from '../hooks/usePeople';
+import { useAuth } from '../../hooks/useAuth';
 import SelectField from '../../components/common/Select';
 
 const CUSTOMER_TYPES = ['ALL', 'PERSON', 'PHARMACY', 'DIAGNOSTIC_CENTER', 'INDUSTRIAL', 'OTHER'];
 const SALE_TYPES = ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'];
 const STATUS_OPTIONS = ['ALL', 'ACTIVE', 'INACTIVE'];
-const VAT_OPTIONS = ['VAT', 'NON_VAT', 'ZERO_RATED'];
+const VAT_OPTIONS = ['VATABLE', 'EXEMPT', 'ZERO'];
 
 const TYPE_BADGE_COLORS = {
   PERSON: { bg: '#dbeafe', text: '#1e40af' },
@@ -120,13 +122,15 @@ const EMPTY_FORM = {
   contact_person: '',
   contact_phone: '',
   contact_email: '',
-  vat_status: 'VAT',
+  vat_status: 'VATABLE',
   payment_terms: 30,
   credit_limit: 0,
 };
 
 export default function CustomerList() {
+  const { user } = useAuth();
   const customers = useCustomers();
+  const { getAsUsers } = usePeople();
 
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -140,6 +144,35 @@ export default function CustomerList() {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
+
+  // Tag BDM
+  const [tagModal, setTagModal] = useState(null);
+  const [bdmList, setBdmList] = useState([]);
+
+  useEffect(() => {
+    getAsUsers().then(res => setBdmList(res?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTag = async (customerId, bdmId) => {
+    try {
+      const c = tagModal;
+      const isTagged = (c?.tagged_bdms || []).some(t => (t.bdm_id?._id || t.bdm_id) === bdmId && t.is_active !== false);
+      let newTags;
+      if (isTagged) {
+        newTags = (c.tagged_bdms || []).filter(t => (t.bdm_id?._id || t.bdm_id) !== bdmId);
+      } else {
+        newTags = [...(c.tagged_bdms || []), { bdm_id: bdmId, tagged_by: user._id, is_active: true }];
+      }
+      const res = await customers.update(customerId, { tagged_bdms: newTags });
+      if (res?.data) {
+        setTagModal(res.data);
+      } else {
+        setTagModal(prev => prev ? { ...prev, tagged_bdms: newTags } : null);
+      }
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Tag failed');
+    }
+  };
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
@@ -333,6 +366,7 @@ export default function CustomerList() {
                 <th>Contact Person</th>
                 <th>Payment Terms</th>
                 <th>Status</th>
+                <th>Tagged BDMs</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -365,8 +399,16 @@ export default function CustomerList() {
                       </span>
                     </td>
                     <td>
+                      {(cust.tagged_bdms || []).filter(t => t.is_active !== false).map((t, i) => {
+                        const bdm = bdmList.find(b => b._id === (t.bdm_id?._id || t.bdm_id));
+                        return <span key={i} className="badge" style={{ background: '#e0e7ff', color: '#3730a3', marginRight: 2 }}>{bdm?.name || 'BDM'}</span>;
+                      })}
+                      {!cust.tagged_bdms?.length && <span style={{ color: '#9ca3af', fontSize: 12 }}>None</span>}
+                    </td>
+                    <td>
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button className="btn btn-sm btn-ghost" onClick={() => openEdit(cust)}>Edit</button>
+                        <button className="btn btn-sm btn-ghost" style={{ color: '#16a34a' }} onClick={() => setTagModal(cust)}>Tag</button>
                         {(cust.status || 'ACTIVE') === 'ACTIVE' && (
                           <button className="btn btn-sm btn-danger" onClick={() => handleDeactivate(cust._id)}>Deactivate</button>
                         )}
@@ -376,10 +418,10 @@ export default function CustomerList() {
                 );
               })}
               {!data.length && !loading && (
-                <tr><td colSpan={7} className="empty-row">No customers found</td></tr>
+                <tr><td colSpan={8} className="empty-row">No customers found</td></tr>
               )}
               {loading && (
-                <tr><td colSpan={7} className="empty-row">Loading...</td></tr>
+                <tr><td colSpan={8} className="empty-row">Loading...</td></tr>
               )}
             </tbody>
           </table>
@@ -426,6 +468,7 @@ export default function CustomerList() {
 
                   <div className="cust-card-actions">
                     <button className="btn btn-sm btn-ghost" onClick={() => openEdit(cust)} style={{ flex: 1 }}>Edit</button>
+                    <button className="btn btn-sm btn-ghost" style={{ flex: 1, color: '#16a34a' }} onClick={() => setTagModal(cust)}>Tag</button>
                     {(cust.status || 'ACTIVE') === 'ACTIVE' && (
                       <button className="btn btn-sm btn-danger" onClick={() => handleDeactivate(cust._id)} style={{ flex: 1 }}>Deactivate</button>
                     )}
@@ -472,105 +515,111 @@ export default function CustomerList() {
                       value={form.customer_name}
                       onChange={e => handleFormChange('customer_name', e.target.value)}
                       placeholder="e.g. MG AND CO. INC."
+                      autoFocus
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label>Customer Type</label>
-                    <SelectField value={form.customer_type} onChange={e => handleFormChange('customer_type', e.target.value)}>
-                      <option value="">-- Optional --</option>
-                      {CUSTOMER_TYPES.filter(t => t !== 'ALL').map(t => (
-                        <option key={t} value={t}>{formatType(t)}</option>
-                      ))}
-                    </SelectField>
-                  </div>
+                  <details style={{ gridColumn: '1 / -1', marginTop: 4 }}>
+                    <summary style={{ fontSize: 13, color: 'var(--erp-muted)', cursor: 'pointer', marginBottom: 8 }}>More details (optional)</summary>
+                    <div className="form-grid">
+                      <div className="form-group">
+                        <label>Customer Type</label>
+                        <SelectField value={form.customer_type} onChange={e => handleFormChange('customer_type', e.target.value)}>
+                          <option value="">-- Optional --</option>
+                          {CUSTOMER_TYPES.filter(t => t !== 'ALL').map(t => (
+                            <option key={t} value={t}>{formatType(t)}</option>
+                          ))}
+                        </SelectField>
+                      </div>
 
-                  <div className="form-group">
-                    <label>Default Sale Type</label>
-                    <SelectField value={form.default_sale_type} onChange={e => handleFormChange('default_sale_type', e.target.value)}>
-                      {SALE_TYPES.map(t => (
-                        <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
-                      ))}
-                    </SelectField>
-                  </div>
+                      <div className="form-group">
+                        <label>Default Sale Type</label>
+                        <SelectField value={form.default_sale_type} onChange={e => handleFormChange('default_sale_type', e.target.value)}>
+                          {SALE_TYPES.map(t => (
+                            <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
+                          ))}
+                        </SelectField>
+                      </div>
 
-                  <div className="form-group">
-                    <label>TIN</label>
-                    <input
-                      type="text"
-                      value={form.tin}
-                      onChange={e => handleFormChange('tin', e.target.value)}
-                      placeholder="000-000-000-000"
-                    />
-                  </div>
+                      <div className="form-group">
+                        <label>TIN</label>
+                        <input
+                          type="text"
+                          value={form.tin}
+                          onChange={e => handleFormChange('tin', e.target.value)}
+                          placeholder="000-000-000-000"
+                        />
+                      </div>
 
-                  <div className="form-group">
-                    <label>VAT Status</label>
-                    <SelectField value={form.vat_status} onChange={e => handleFormChange('vat_status', e.target.value)}>
-                      {VAT_OPTIONS.map(v => (
-                        <option key={v} value={v}>{v.replace(/_/g, ' ')}</option>
-                      ))}
-                    </SelectField>
-                  </div>
+                      <div className="form-group">
+                        <label>VAT Status</label>
+                        <SelectField value={form.vat_status} onChange={e => handleFormChange('vat_status', e.target.value)}>
+                          {VAT_OPTIONS.map(v => (
+                            <option key={v} value={v}>{v.replace(/_/g, ' ')}</option>
+                          ))}
+                        </SelectField>
+                      </div>
 
-                  <div className="form-group full">
-                    <label>Address</label>
-                    <input
-                      type="text"
-                      value={form.address}
-                      onChange={e => handleFormChange('address', e.target.value)}
-                      placeholder="Full address"
-                    />
-                  </div>
+                      <div className="form-group full">
+                        <label>Address</label>
+                        <input
+                          type="text"
+                          value={form.address}
+                          onChange={e => handleFormChange('address', e.target.value)}
+                          placeholder="Full address"
+                        />
+                      </div>
 
-                  <div className="form-group">
-                    <label>Contact Person</label>
-                    <input
-                      type="text"
-                      value={form.contact_person}
-                      onChange={e => handleFormChange('contact_person', e.target.value)}
-                    />
-                  </div>
+                      <div className="form-group">
+                        <label>Contact Person</label>
+                        <input
+                          type="text"
+                          value={form.contact_person}
+                          onChange={e => handleFormChange('contact_person', e.target.value)}
+                        />
+                      </div>
 
-                  <div className="form-group">
-                    <label>Contact Phone</label>
-                    <input
-                      type="text"
-                      value={form.contact_phone}
-                      onChange={e => handleFormChange('contact_phone', e.target.value)}
-                      placeholder="09xx-xxx-xxxx"
-                    />
-                  </div>
+                      <div className="form-group">
+                        <label>Contact Phone</label>
+                        <input
+                          type="text"
+                          value={form.contact_phone}
+                          onChange={e => handleFormChange('contact_phone', e.target.value)}
+                          placeholder="09xx-xxx-xxxx"
+                        />
+                      </div>
 
-                  <div className="form-group full">
-                    <label>Contact Email</label>
-                    <input
-                      type="email"
-                      value={form.contact_email}
-                      onChange={e => handleFormChange('contact_email', e.target.value)}
-                    />
-                  </div>
+                      <div className="form-group full">
+                        <label>Contact Email</label>
+                        <input
+                          type="email"
+                          value={form.contact_email}
+                          onChange={e => handleFormChange('contact_email', e.target.value)}
+                        />
+                      </div>
 
-                  <div className="form-group">
-                    <label>Payment Terms (days)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={form.payment_terms}
-                      onChange={e => handleFormChange('payment_terms', parseInt(e.target.value) || 0)}
-                    />
-                  </div>
+                      <div className="form-group">
+                        <label>Payment Terms (days)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={form.payment_terms}
+                          onChange={e => handleFormChange('payment_terms', parseInt(e.target.value) || 0)}
+                        />
+                      </div>
 
-                  <div className="form-group">
-                    <label>Credit Limit</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={form.credit_limit}
-                      onChange={e => handleFormChange('credit_limit', parseFloat(e.target.value) || 0)}
-                    />
-                  </div>
+                      <div className="form-group">
+                        <label>Credit Limit</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={form.credit_limit}
+                          onChange={e => handleFormChange('credit_limit', parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                    </div>
+                  </details>
                 </div>
 
                 <div className="form-actions">
@@ -578,6 +627,33 @@ export default function CustomerList() {
                   <button className="btn btn-primary" onClick={handleSave} disabled={saving || !form.customer_name.trim()}>
                     {saving ? 'Saving...' : editingCustomer ? 'Update' : 'Create'}
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tag BDM Modal */}
+          {tagModal && (
+            <div className="modal-overlay" onClick={() => { setTagModal(null); fetchCustomers(); }}>
+              <div className="modal" onClick={e => e.stopPropagation()}>
+                <button className="close-btn" onClick={() => { setTagModal(null); fetchCustomers(); }}>&times;</button>
+                <h2>Tag BDMs — {tagModal.customer_name}</h2>
+                <p style={{ fontSize: 13, color: 'var(--erp-muted)', margin: '0 0 16px' }}>Select which BDMs can access this customer</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {bdmList.map(b => {
+                    const isTagged = (tagModal.tagged_bdms || []).some(t => (t.bdm_id?._id || t.bdm_id) === b._id && t.is_active !== false);
+                    return (
+                      <label key={b._id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: isTagged ? '#f0fdf4' : '#f9fafb', borderRadius: 8, cursor: 'pointer', border: isTagged ? '1px solid #86efac' : '1px solid #e5e7eb' }}>
+                        <input type="checkbox" checked={isTagged} onChange={() => handleTag(tagModal._id, b._id)} style={{ width: 'auto' }} />
+                        <span style={{ fontWeight: 600 }}>{b.name}</span>
+                        <span style={{ fontSize: 12, color: '#6b7280' }}>{b.email}</span>
+                      </label>
+                    );
+                  })}
+                  {!bdmList.length && <p style={{ color: '#9ca3af', fontSize: 13 }}>No BDMs found</p>}
+                </div>
+                <div style={{ marginTop: 16, textAlign: 'right' }}>
+                  <button className="btn btn-primary" onClick={() => { setTagModal(null); fetchCustomers(); }}>Done</button>
                 </div>
               </div>
             </div>

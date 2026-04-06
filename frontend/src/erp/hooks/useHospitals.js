@@ -50,8 +50,8 @@ export default function useHospitals() {
         });
       cachedHospitals = deduped;
       setHospitals(deduped);
-    }).catch(() => {
-      // fail silently — don't retry on error
+    }).catch(err => {
+      console.error('[useHospitals] fetch failed:', err?.response?.status, err?.response?.data?.message || err.message);
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

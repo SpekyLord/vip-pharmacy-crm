@@ -307,7 +307,7 @@ export default function GovernmentRates() {
                   {isAdmin && (
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button className="btn btn-outline btn-sm" onClick={() => openEdit(rate)}>Edit</button>
-                      {user?.role === 'admin' && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(rate._id)}>Delete</button>}
+                      {['admin', 'president'].includes(user?.role) && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(rate._id)}>Delete</button>}
                     </div>
                   )}
                 </div>

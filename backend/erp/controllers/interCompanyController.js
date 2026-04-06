@@ -130,7 +130,11 @@ const getTransfers = catchAsync(async (req, res) => {
  * GET /transfers/:id — Single transfer detail with enriched line items
  */
 const getTransferById = catchAsync(async (req, res) => {
-  const transfer = await InterCompanyTransfer.findById(req.params.id)
+  // Entity-scope: president sees all, others must be source or target entity
+  const entityFilter = req.isPresident ? {} : {
+    $or: [{ source_entity_id: req.entityId }, { target_entity_id: req.entityId }]
+  };
+  const transfer = await InterCompanyTransfer.findOne({ _id: req.params.id, ...entityFilter })
     .populate('source_entity_id', 'entity_name brand_color brand_text_color')
     .populate('target_entity_id', 'entity_name brand_color brand_text_color')
     .populate('source_bdm_id', 'name role')
@@ -165,7 +169,10 @@ const getTransferById = catchAsync(async (req, res) => {
  * PATCH /transfers/:id/approve — DRAFT → APPROVED (president only)
  */
 const approveTransfer = catchAsync(async (req, res) => {
-  const transfer = await InterCompanyTransfer.findById(req.params.id);
+  const entityFilter = req.isPresident ? {} : {
+    $or: [{ source_entity_id: req.entityId }, { target_entity_id: req.entityId }]
+  };
+  const transfer = await InterCompanyTransfer.findOne({ _id: req.params.id, ...entityFilter });
   if (!transfer) return res.status(404).json({ success: false, message: 'Transfer not found' });
   if (transfer.status !== 'DRAFT') {
     return res.status(400).json({ success: false, message: `Cannot approve transfer in ${transfer.status} status` });

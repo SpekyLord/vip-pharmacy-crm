@@ -1,9 +1,10 @@
 const ProductMaster = require('../models/ProductMaster');
+const Warehouse = require('../models/Warehouse');
+const InventoryLedger = require('../models/InventoryLedger');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
 
 const getAll = catchAsync(async (req, res) => {
-  // ProductMaster is entity-level (no bdm_id field), so only apply entity_id from tenantFilter
   const filter = {};
   if (req.tenantFilter?.entity_id) filter.entity_id = req.tenantFilter.entity_id;
   if (req.query.entity_id) filter.entity_id = req.query.entity_id;
@@ -13,6 +14,28 @@ const getAll = catchAsync(async (req, res) => {
       { brand_name: { $regex: req.query.q, $options: 'i' } },
       { generic_name: { $regex: req.query.q, $options: 'i' } }
     ];
+  }
+
+  // BDMs only see products that have inventory in their assigned warehouse
+  const bdmRoles = ['employee'];
+  if (bdmRoles.includes(req.user?.role)) {
+    const myWarehouses = await Warehouse.find({
+      $or: [{ manager_id: req.user._id }, { assigned_users: req.user._id }]
+    }).select('_id').lean();
+    const whIds = myWarehouses.map(w => w._id);
+
+    if (whIds.length) {
+      const productIds = await InventoryLedger.distinct('product_id', { warehouse_id: { $in: whIds } });
+      filter._id = { $in: productIds };
+    } else {
+      return res.json({ success: true, data: [], pagination: { page: 1, limit: 50, total: 0, pages: 0 } });
+    }
+  }
+
+  // Optional warehouse filter (admin can filter by warehouse too)
+  if (req.query.warehouse_id) {
+    const productIds = await InventoryLedger.distinct('product_id', { warehouse_id: req.query.warehouse_id });
+    filter._id = filter._id ? { $in: productIds.filter(id => filter._id.$in.some(fid => fid.toString() === id.toString())) } : { $in: productIds };
   }
 
   const page = parseInt(req.query.page) || 1;
@@ -119,4 +142,52 @@ const updateReorderQty = catchAsync(async (req, res) => {
   res.json({ success: true, message: 'Reorder rules updated', data: product });
 });
 
-module.exports = { getAll, getById, create, update, deactivate, updateReorderQty };
+// ═══ Tag products to warehouse (creates inventory link) ═══
+const tagToWarehouse = catchAsync(async (req, res) => {
+  const { product_ids, warehouse_id, batch_lot_no, expiry_date, qty } = req.body;
+  if (!warehouse_id) return res.status(400).json({ success: false, message: 'warehouse_id is required' });
+  if (!Array.isArray(product_ids) || !product_ids.length) return res.status(400).json({ success: false, message: 'product_ids array is required' });
+
+  const warehouse = await Warehouse.findById(warehouse_id).select('_id entity_id').lean();
+  if (!warehouse) return res.status(404).json({ success: false, message: 'Warehouse not found' });
+
+  let tagged = 0, skipped = 0;
+  for (const pid of product_ids) {
+    // Check if product already has inventory in this warehouse
+    const exists = await InventoryLedger.findOne({ warehouse_id, product_id: pid }).lean();
+    if (exists) { skipped++; continue; }
+
+    await InventoryLedger.create({
+      entity_id: warehouse.entity_id || req.entityId,
+      bdm_id: req.user._id,
+      warehouse_id,
+      product_id: pid,
+      batch_lot_no: batch_lot_no || 'INITIAL',
+      expiry_date: expiry_date || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      transaction_type: 'OPENING_BALANCE',
+      qty_in: qty || 0,
+      running_balance: qty || 0,
+      recorded_by: req.user._id
+    });
+    tagged++;
+  }
+
+  res.json({
+    success: true,
+    message: `Tagged ${tagged} product(s) to warehouse, ${skipped} already existed`,
+    data: { tagged, skipped }
+  });
+});
+
+// ═══ Get warehouses that a product is tagged to ═══
+const getProductWarehouses = catchAsync(async (req, res) => {
+  const entries = await InventoryLedger.aggregate([
+    { $match: { product_id: require('mongoose').Types.ObjectId.createFromHexString(req.params.id) } },
+    { $group: { _id: '$warehouse_id' } }
+  ]);
+  const whIds = entries.map(e => e._id).filter(Boolean);
+  const warehouses = await Warehouse.find({ _id: { $in: whIds } }).select('warehouse_code warehouse_name').lean();
+  res.json({ success: true, data: warehouses });
+});
+
+module.exports = { getAll, getById, create, update, deactivate, updateReorderQty, tagToWarehouse, getProductWarehouses };

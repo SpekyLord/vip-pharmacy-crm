@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
+import useErpApi from '../hooks/useErpApi';
 
 import SelectField from '../../components/common/Select';
 
@@ -57,12 +58,14 @@ const EMPTY_LINE = { product_id: '', item_key: '', qty_invoiced: 1, unit_price: 
 
 export default function SupplierInvoices() {
   const api = usePurchasing();
+  const lookupApi = useErpApi();
 
   const [invoices, setInvoices] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [pos, setPOs] = useState([]);
   const [bankAccounts, setBankAccounts] = useState([]);
   const [creditCards, setCreditCards] = useState([]);
+  const [paymentModes, setPaymentModes] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0 });
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
@@ -105,6 +108,9 @@ export default function SupplierInvoices() {
 
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
   useEffect(() => { loadLookups(); }, [loadLookups]);
+  useEffect(() => {
+    lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showMsg = (text, type = 'ok') => {
     setMsg({ text, type });
@@ -350,14 +356,10 @@ export default function SupplierInvoices() {
                     <label>Payment Mode</label>
                     <SelectField value={payForm.payment_mode} onChange={e => setPayForm(f => ({ ...f, payment_mode: e.target.value, funding_card_id: '', bank_account_id: '' }))}>
                       <option value="">Select...</option>
-                      <option value="CASH">Cash</option>
-                      <option value="CHECK">Check</option>
-                      <option value="BANK_TRANSFER">Bank Transfer</option>
-                      <option value="GCASH">GCash</option>
-                      <option value="CARD">Credit Card</option>
+                      {paymentModes.filter(pm => pm.is_active !== false).map(pm => <option key={pm.mode_code} value={pm.mode_code}>{pm.mode_label}</option>)}
                     </SelectField>
                   </div>
-                  {payForm.payment_mode === 'CHECK' && (
+                  {paymentModes.find(pm => pm.mode_code === payForm.payment_mode)?.mode_type === 'CHECK' && (
                     <div className="form-row">
                       <div className="form-group">
                         <label>Check No.</label>
@@ -372,7 +374,7 @@ export default function SupplierInvoices() {
                       </div>
                     </div>
                   )}
-                  {payForm.payment_mode === 'BANK_TRANSFER' && (
+                  {paymentModes.find(pm => pm.mode_code === payForm.payment_mode)?.mode_type === 'BANK_TRANSFER' && (
                     <div className="form-row">
                       <div className="form-group">
                         <label>Bank Account</label>
@@ -387,7 +389,7 @@ export default function SupplierInvoices() {
                       </div>
                     </div>
                   )}
-                  {payForm.payment_mode === 'CARD' && (
+                  {paymentModes.find(pm => pm.mode_code === payForm.payment_mode)?.mode_type === 'CARD' && (
                     <div className="form-group">
                       <label>Credit Card</label>
                       <SelectField value={payForm.funding_card_id} onChange={e => setPayForm(f => ({ ...f, funding_card_id: e.target.value }))}>

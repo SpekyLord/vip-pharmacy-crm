@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
+import useWarehouses from '../hooks/useWarehouses';
 
 const VAT_OPTIONS = ['VATABLE', 'EXEMPT', 'ZERO'];
 const STATUS_FILTER = ['ALL', 'ACTIVE', 'INACTIVE'];
@@ -221,6 +222,7 @@ function ProductModal({ open, onClose, onSave, editItem }) {
 // ---------- Main Page ----------
 export default function ProductMasterPage() {
   const api = useErpApi();
+  const { getWarehouses } = useWarehouses();
   const [products, setProducts] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -230,6 +232,33 @@ export default function ProductMasterPage() {
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const limit = 50;
+
+  // Tag to Warehouse state
+  const [tagModal, setTagModal] = useState(false);
+  const [warehouses, setWarehouses] = useState([]);
+  const [tagWarehouseId, setTagWarehouseId] = useState('');
+  const [selectedProducts, setSelectedProducts] = useState([]);
+
+  useEffect(() => {
+    getWarehouses({ limit: 0 }).then(res => setWarehouses(res?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleSelect = (id) => setSelectedProducts(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleSelectAll = () => {
+    if (selectedProducts.length === products.length) setSelectedProducts([]);
+    else setSelectedProducts(products.map(p => p._id));
+  };
+
+  const handleTagToWarehouse = async () => {
+    if (!tagWarehouseId || !selectedProducts.length) return;
+    try {
+      const res = await api.post('/products/tag-warehouse', { product_ids: selectedProducts, warehouse_id: tagWarehouseId });
+      alert(res?.message || 'Tagged successfully');
+      setTagModal(false);
+      setSelectedProducts([]);
+      setTagWarehouseId('');
+    } catch (err) { alert(err?.response?.data?.message || 'Tag failed'); }
+  };
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
@@ -284,9 +313,16 @@ export default function ProductMasterPage() {
               <h1>Product Master</h1>
               <p>ERP product catalog — pricing, VAT, reorder rules</p>
             </div>
-            <button className="btn btn-primary" onClick={() => { setEditItem(null); setShowModal(true); }}>
-              + New Product
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {selectedProducts.length > 0 && (
+                <button className="btn btn-secondary" onClick={() => setTagModal(true)}>
+                  Tag {selectedProducts.length} to Warehouse
+                </button>
+              )}
+              <button className="btn btn-primary" onClick={() => { setEditItem(null); setShowModal(true); }}>
+                + New Product
+              </button>
+            </div>
           </div>
 
           <div className="pm-controls">
@@ -310,6 +346,7 @@ export default function ProductMasterPage() {
               <table className="pm-table">
                 <thead>
                   <tr>
+                    <th style={{ width: 36 }}><input type="checkbox" checked={selectedProducts.length === products.length && products.length > 0} onChange={toggleSelectAll} style={{ width: 'auto' }} /></th>
                     <th>Product</th>
                     <th>Unit</th>
                     <th style={{ textAlign: 'right' }}>Purchase</th>
@@ -324,6 +361,7 @@ export default function ProductMasterPage() {
                 <tbody>
                   {products.map(p => (
                     <tr key={p._id}>
+                      <td><input type="checkbox" checked={selectedProducts.includes(p._id)} onChange={() => toggleSelect(p._id)} style={{ width: 'auto' }} /></td>
                       <td>
                         <div className="pm-brand">{p.brand_name}</div>
                         <div className="pm-generic">{p.generic_name}</div>
@@ -376,6 +414,31 @@ export default function ProductMasterPage() {
             onSave={handleSave}
             editItem={editItem}
           />
+
+          {/* Tag to Warehouse Modal */}
+          {tagModal && (
+            <div className="modal-overlay" onClick={() => setTagModal(false)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()} style={{ width: 420 }}>
+                <h3 className="modal-title">Tag Products to Warehouse</h3>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>
+                  {selectedProducts.length} product(s) selected. Choose a warehouse to tag them to.
+                </p>
+                <div className="form-group">
+                  <label>Warehouse</label>
+                  <select value={tagWarehouseId} onChange={e => setTagWarehouseId(e.target.value)} style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}>
+                    <option value="">Select warehouse...</option>
+                    {warehouses.map(w => (
+                      <option key={w._id} value={w._id}>{w.warehouse_code} — {w.warehouse_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-actions">
+                  <button className="btn btn-secondary" onClick={() => setTagModal(false)}>Cancel</button>
+                  <button className="btn btn-primary" disabled={!tagWarehouseId} onClick={handleTagToWarehouse}>Tag to Warehouse</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

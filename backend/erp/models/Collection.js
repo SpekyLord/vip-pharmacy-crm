@@ -59,7 +59,7 @@ const collectionSchema = new mongoose.Schema({
   cwt_certificate_url: String,
 
   // Payment
-  payment_mode: { type: String, enum: ['CHECK', 'CASH', 'ONLINE'], default: 'CHECK' },
+  payment_mode: { type: String, default: 'CHECK' }, // Validated against PaymentMode lookup
   check_no: String,
   check_date: Date,
   bank: String,

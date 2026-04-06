@@ -7,6 +7,8 @@ import usePeople from '../hooks/usePeople';
 import useAccounting from '../hooks/useAccounting';
 import CostCenterPicker from '../components/CostCenterPicker';
 import useErpSubAccess from '../hooks/useErpSubAccess';
+import useErpApi from '../hooks/useErpApi';
+import { useAuth } from '../../hooks/useAuth';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
@@ -123,7 +125,6 @@ const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
 const EXPENSE_TYPES = ['ORE', 'ACCESS'];
-const PAYMENT_MODES = ['CASH', 'GCASH', 'CARD', 'BANK_TRANSFER', 'CHECK', 'ONLINE', 'OTHER'];
 const EXPENSE_CATEGORIES = [
   'Transportation', 'Travel/Accommodation', 'Fuel & Gas', 'Parking/Toll',
   'Courier/Shipping', 'ACCESS/Meals', 'Office Supplies',
@@ -405,11 +406,14 @@ const pageStyles = `
 `;
 
 export default function Expenses() {
+  const { user } = useAuth();
   const { getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense, validateExpenses, submitExpenses, reopenExpenses, getExpenseSummary, batchUploadExpenses, saveBatchExpenses, loading } = useExpenses();
   const { getPeopleList } = usePeople();
   const { getMyCards, getMyBankAccounts, listAccounts } = useAccounting();
   const { hasSubPermission } = useErpSubAccess();
-  const canBatchUpload = hasSubPermission('expenses', 'batch_upload');
+  const canBatchUpload = hasSubPermission('expenses', 'batch_upload') && ['admin', 'finance', 'president'].includes(user?.role);
+  const lookupApi = useErpApi();
+  const [paymentModes, setPaymentModes] = useState([]);
 
   const [expenses, setExpenses] = useState([]);
   const [editingExpense, setEditingExpense] = useState(null);
@@ -446,6 +450,10 @@ export default function Expenses() {
   const batchFileRef = useRef(null);
 
   // Load people, cards, bank accounts, COA for batch dropdowns
+  useEffect(() => {
+    lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!canBatchUpload) return;
     getPeopleList({ limit: 0 }).then(res => setPeople(res?.data || [])).catch(err => console.error('[Expenses] People load failed:', err.message));
@@ -486,8 +494,9 @@ export default function Expenses() {
     if (batchFundingCardId) formData.append('funding_card_id', batchFundingCardId);
     if (batchFundingAccountId) formData.append('funding_account_id', batchFundingAccountId);
     if (batchCostCenter) formData.append('cost_center_id', batchCostCenter);
-    const paymentMode = batchFundingType === 'CARD' ? 'CARD' : batchFundingType === 'BANK' ? 'BANK_TRANSFER' : 'CASH';
-    formData.append('payment_mode', paymentMode);
+    const modeType = batchFundingType === 'CARD' ? 'CARD' : batchFundingType === 'BANK' ? 'BANK_TRANSFER' : 'CASH';
+    const matchedMode = paymentModes.find(pm => pm.mode_type === modeType && pm.is_active !== false);
+    formData.append('payment_mode', matchedMode?.mode_code || modeType);
 
     try {
       setBatchProgress(`Processing ${batchFiles.length} images via OCR...`);
@@ -581,9 +590,11 @@ export default function Expenses() {
     setLines(prev => {
       const updated = [...prev];
       updated[idx] = { ...updated[idx], [field]: value };
-      // Auto-set CALF required for ACCESS non-cash
+      // Auto-set CALF required for ACCESS non-cash (company-funded)
       if (field === 'expense_type' || field === 'payment_mode') {
-        updated[idx].calf_required = updated[idx].expense_type === 'ACCESS' && updated[idx].payment_mode !== 'CASH';
+        const pm = paymentModes.find(p => p.mode_code === updated[idx].payment_mode);
+        const needsCalf = pm ? pm.requires_calf : updated[idx].payment_mode !== 'CASH';
+        updated[idx].calf_required = updated[idx].expense_type === 'ACCESS' && needsCalf;
       }
       return updated;
     });
@@ -1033,7 +1044,7 @@ export default function Expenses() {
                     </label>
                     {line.or_photo_url && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600 }}>OR Photo ✓</span>}
                     <SelectField value={line.payment_mode} onChange={e => updateLine(idx, 'payment_mode', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
-                      {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                      {paymentModes.filter(pm => pm.is_active !== false).map(pm => <option key={pm.mode_code} value={pm.mode_code}>{pm.mode_label}{pm.coa_code ? ` (${pm.coa_code})` : ''}</option>)}
                     </SelectField>
                     {line.calf_required && (
                       line.calf_id

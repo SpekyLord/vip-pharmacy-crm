@@ -3427,3 +3427,51 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [ ] B1: CarLogbook.jsx — mobile card layout (currently POOR: no media queries, 10-col table)
 - [ ] B2: PrfCalf.jsx — mobile card layout (currently POOR: no media queries, 7-col table, 20px action buttons)
 - [x] ERP routes index.js: mounted period-locks and recurring-journals routes
+
+---
+
+## PHASE 23 — System Audit & Governance Hardening ✅ (April 6, 2026)
+**Goal:** Full system audit against governance principles (multi-entity, lookup-driven, finance-authoritative). Fix cross-entity data leaks, missing period locks, hardcoded COA/payment mode enums, silent error handling, route security gaps, and president UI exclusions.
+
+### 23.1 — Cross-Entity Data Leak Fixes (CRITICAL) ✅
+- [x] `collectionController.js`: `getCollectionById` — added `...req.tenantFilter` (was `findOne({ _id })` without entity scope)
+- [x] `interCompanyController.js`: `getTransferById` — changed from `findById` to `findOne` with entity filter ($or source/target)
+- [x] `interCompanyController.js`: `approveTransfer` — same entity scope fix
+- [x] `vendorController.js`: `getAll`, `getById`, `search`, `update`, `addAlias`, `deactivate` — all now scope by entity (president sees all)
+- [x] `inventoryController.js`: `approveGrn` — added entity scope to GRN lookup
+- [x] `icSettlementController.js`: `getSettlementById`, `postSettlement` — added entity filter ($or creditor/debtor)
+- [x] `payrollController.js`: `getPayslip` — added entity scope
+- [x] `peopleController.js`: `getPersonById`, `updatePerson`, `deactivatePerson` — added entity scope
+- [x] `purchasingController.js`: `validateInvoice` re-fetch — added entity scope
+
+### 23.2 — Route Security ✅
+- [x] `creditCardRoutes.js`: Added `roleCheck('admin', 'finance', 'president')` to `/export` endpoint (was unprotected)
+- [x] Verified: crmBridgeRoutes, hospitalRoutes, productMasterRoutes are behind `protect + tenantFilter` via index.js line 13 (not vulnerable — false alarm from audit)
+
+### 23.3 — Silent Error Handling → Audit Trail ✅
+- [x] `collectionController.js`: VAT/CWT `.catch()` now logs to `ErpAuditLog` (log_type: 'LEDGER_ERROR') + surfaces `warnings` array in response
+- [x] `collectionController.js`: Journal failure catch now logs to `ErpAuditLog` + surfaces warning
+- [x] `purchasingController.js`: VAT `.catch()` now logs to `ErpAuditLog` (was console.error only)
+
+### 23.4 — Missing Period Lock Checks ✅
+- [x] `purchasingController.js`: `postInvoice` — added `checkPeriodOpen()` before posting SI
+- [x] `inventoryController.js`: `approveGrn` — added `checkPeriodOpen()` before GRN approval
+- [x] `pettyCashController.js`: `postTransaction` — added `checkPeriodOpen()` before petty cash posting
+
+### 23.5 — Hardcoded COA Codes → COA_MAP ✅
+- [x] `expenseController.js` `submitExpenses`: Replaced hardcoded `'1110'` (AR_BDM), `'2000'` (AP_TRADE), `'6900'` (MISC) with `getCoaMap()` lookups
+- [x] `expenseController.js` `reopenExpense`: Same COA_MAP fix for reopen journal re-posting
+
+### 23.6 — Payment Mode Enum → Lookup-Driven ✅
+- [x] `Collection.js`: Removed restrictive `enum: ['CHECK', 'CASH', 'ONLINE']` — now `type: String` (PaymentMode lookup is authoritative)
+- [x] `SalesLine.js`: Removed `enum: ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'ONLINE']`
+- [x] `ExpenseEntry.js`: Removed `enum: ['CASH', 'GCASH', 'CARD', 'BANK_TRANSFER', 'CHECK', 'ONLINE', 'OTHER']`
+- [x] `PrfCalf.js`: Removed `enum: ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'CARD', 'OTHER']`
+- [x] `CarLogbookEntry.js`: Removed `enum: ['CASH', 'FLEET_CARD', 'CARD', 'GCASH', 'OTHER']`
+- [x] `IcSettlement.js`: Removed `enum: ['CHECK', 'CASH', 'ONLINE']`
+
+### 23.7 — President UI Full Control ✅
+- [x] `SalesList.jsx`: `isAdmin` now includes `'president'` (was missing — president couldn't approve/request deletion)
+- [x] `GrnEntry.jsx`: Approve/Reject buttons now visible for `'president'` (was admin/finance only)
+- [x] `GovernmentRates.jsx`: Delete button now visible for `'president'` (was admin only)
+- [x] Verified: All other ERP pages, sidebar, route protections, useErpSubAccess, EntityContext — all correctly include president

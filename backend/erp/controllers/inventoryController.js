@@ -470,7 +470,8 @@ const approveGrn = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Action must be APPROVED or REJECTED' });
   }
 
-  const grn = await GrnEntry.findOne({ _id: req.params.id, status: 'PENDING' });
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const grn = await GrnEntry.findOne({ _id: req.params.id, status: 'PENDING', ...entityScope });
   if (!grn) {
     return res.status(404).json({ success: false, message: 'GRN not found or not in PENDING status' });
   }
@@ -497,6 +498,11 @@ const approveGrn = catchAsync(async (req, res) => {
 
     return res.json({ success: true, message: 'GRN rejected', data: grn });
   }
+
+  // Period lock check
+  const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+  const grnPeriod = dateToPeriod(grn.grn_date || new Date());
+  await checkPeriodOpen(grn.entity_id, grnPeriod);
 
   // APPROVED — atomic transaction
   const session = await mongoose.startSession();

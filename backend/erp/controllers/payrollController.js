@@ -143,7 +143,8 @@ const postPayroll = catchAsync(async (req, res) => {
 
 // ═══ Read ═══
 const getPayslip = catchAsync(async (req, res) => {
-  const payslip = await Payslip.findById(req.params.id)
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const payslip = await Payslip.findOne({ _id: req.params.id, ...entityScope })
     .populate('person_id', 'full_name person_type department position')
     .populate('reviewed_by', 'name')
     .populate('approved_by', 'name')

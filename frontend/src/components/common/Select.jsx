@@ -77,7 +77,8 @@ const SelectField = ({
       placeholder: (base) => ({ ...base, fontSize: 12 }),
       input: (base) => ({ ...base, fontSize: 12 }),
       option: (base) => ({ ...base, fontSize: 11, paddingTop: 6, paddingBottom: 6 }),
-      menu: (base) => ({ ...base, fontSize: 11 }),
+      menu: (base) => ({ ...base, fontSize: 11, zIndex: 9999 }),
+      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
     };
 
     const merged = { ...baseDefaults, ...styles };

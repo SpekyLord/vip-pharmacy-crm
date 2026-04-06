@@ -79,7 +79,9 @@ const getCollections = catchAsync(async (req, res) => {
 });
 
 const getCollectionById = catchAsync(async (req, res) => {
-  const collection = await Collection.findOne({ _id: req.params.id })
+  // President sees all; others scoped by entity (+ bdm for employees)
+  const filter = { _id: req.params.id, ...req.tenantFilter };
+  const collection = await Collection.findOne(filter)
     .populate('hospital_id', 'hospital_name tin cwt_rate payment_terms')
     .populate('customer_id', 'customer_name customer_type tin payment_terms')
     .populate('bdm_id', 'name')
@@ -209,6 +211,7 @@ const validateCollections = catchAsync(async (req, res) => {
 // ═══ SUBMIT ═══
 
 const submitCollections = catchAsync(async (req, res) => {
+  let warnings;
   const validRows = await Collection.find({ ...req.tenantFilter, status: 'VALID' });
   if (!validRows.length) {
     return res.status(400).json({ success: false, message: 'No VALID collections to submit' });
@@ -347,7 +350,12 @@ const submitCollections = catchAsync(async (req, res) => {
             hospital_or_vendor: row.hospital_id,
             gross_amount: crAmount,
             vat_amount: vatAmount
-          }).catch(err => console.error('VAT entry failed:', row.cr_no, err.message));
+          }).catch(async (err) => {
+            console.error('VAT entry failed:', row.cr_no, err.message);
+            await ErpAuditLog.logChange({ entity_id: row.entity_id, log_type: 'LEDGER_ERROR', target_ref: row.cr_no, target_model: 'VatLedger', field_changed: 'vat_entry', old_value: '', new_value: err.message, changed_by: req.user._id, note: `VAT entry failed for CR ${row.cr_no}` }).catch(() => {});
+            if (!warnings) warnings = [];
+            warnings.push(`VAT entry failed for ${row.cr_no}: ${err.message}`);
+          });
         }
 
         // CWT Ledger
@@ -364,16 +372,25 @@ const submitCollections = catchAsync(async (req, res) => {
             cwt_amount: row.cwt_amount,
             quarter,
             year: new Date(row.cr_date).getFullYear()
-          }).catch(err => console.error('CWT entry failed:', row.cr_no, err.message));
+          }).catch(async (err) => {
+            console.error('CWT entry failed:', row.cr_no, err.message);
+            await ErpAuditLog.logChange({ entity_id: row.entity_id, log_type: 'LEDGER_ERROR', target_ref: row.cr_no, target_model: 'CwtLedger', field_changed: 'cwt_entry', old_value: '', new_value: err.message, changed_by: req.user._id, note: `CWT entry failed for CR ${row.cr_no}` }).catch(() => {});
+            if (!warnings) warnings = [];
+            warnings.push(`CWT entry failed for ${row.cr_no}: ${err.message}`);
+          });
         }
       } catch (jeErr) {
         console.error('Auto-journal failed for collection:', row.cr_no || row._id, jeErr.message);
+        await ErpAuditLog.logChange({ entity_id: row.entity_id, log_type: 'LEDGER_ERROR', target_ref: row.cr_no || row._id?.toString(), target_model: 'JournalEntry', field_changed: 'auto_journal', old_value: '', new_value: jeErr.message, changed_by: req.user._id, note: `Auto-journal failed for collection ${row.cr_no}` }).catch(() => {});
+        if (!warnings) warnings = [];
+        warnings.push(`Journal failed for ${row.cr_no}: ${jeErr.message}`);
       }
     }
 
     res.json({
       success: true,
       message: `${validRows.length} collection(s) posted`,
+      warnings: warnings || undefined,
       posted_count: validRows.length
     });
   } finally {

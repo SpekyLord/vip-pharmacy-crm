@@ -37,7 +37,8 @@ const getPeopleList = catchAsync(async (req, res) => {
 });
 
 const getPersonById = catchAsync(async (req, res) => {
-  const person = await PeopleMaster.findById(req.params.id)
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope })
     .select('+government_ids.sss_no +government_ids.philhealth_no +government_ids.pagibig_no +government_ids.tin +bank_account.bank +bank_account.account_no +bank_account.account_name')
     .populate('user_id', 'name email role')
     .lean();
@@ -70,7 +71,8 @@ const createPerson = catchAsync(async (req, res) => {
 });
 
 const updatePerson = catchAsync(async (req, res) => {
-  const person = await PeopleMaster.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope });
   if (!person) {
     return res.status(404).json({ success: false, message: 'Person not found' });
   }
@@ -93,7 +95,8 @@ const updatePerson = catchAsync(async (req, res) => {
 });
 
 const deactivatePerson = catchAsync(async (req, res) => {
-  const person = await PeopleMaster.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope });
   if (!person) {
     return res.status(404).json({ success: false, message: 'Person not found' });
   }

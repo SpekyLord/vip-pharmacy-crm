@@ -203,7 +203,7 @@ export default function SalesList() {
     } catch {}
   };
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'finance';
+  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
 
   return (
     <div className="admin-page erp-page saleslist-page">

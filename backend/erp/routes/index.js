@@ -59,6 +59,8 @@ router.use('/crm-bridge', require('./crmBridgeRoutes'));
 
 // ═══ Phase 10 — ERP Access Control, People & Payroll ═══
 router.use('/erp-access', require('./erpAccessRoutes'));
+// as-users is a lightweight lookup needed by tagging UIs — no module check
+router.get('/people/as-users', require('../controllers/peopleController').getAsUsers);
 router.use('/people', erpAccessCheck('people'), require('./peopleRoutes'));
 router.use('/payroll', erpAccessCheck('payroll'), require('./payrollRoutes'));
 

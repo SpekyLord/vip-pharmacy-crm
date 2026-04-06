@@ -2,7 +2,7 @@
 
 > **Last Updated**: April 2026
 > **Version**: 5.0
-> **Status**: Phases 0-20 Complete. Batch expense upload + COA expansion (April 5, 2026).
+> **Status**: Phases 0-23 Complete. System audit & governance hardening (April 6, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -28,6 +28,19 @@ VIP is the parent company, supplies subsidiaries (MG AND CO. INC. first). BDMs c
 - `req.entityId` — resolved from user's assigned entity
 - `req.bdmId` — the BDM user (for BDM-scoped queries)
 - `req.tenantFilter` — `{ entity_id: req.entityId, bdm_id: req.bdmId }` (convenience)
+
+## Governance Principles
+
+This ERP is a top-down, lookup-driven business operating system. It must scale across entities, subsidiaries, business lines, departments, and people without relying on hardcoded values in code or UI.
+
+- **President/Admin/Finance own control**: They define and maintain the core business structure for entities, people, roles, reporting lines, cost centers, permissions, funding sources, banks, cards, Chart of Accounts, and other lookup/master data.
+- **Master data flows downward**: Employees and operational users work inside the structure created by president/admin/finance. Transactions, approvals, reporting, and visibility all inherit from that structure.
+- **No hardcoded business options**: Dropdowns, mappings, permissions, and posting references should come from controlled master data and API lookups wherever possible, not fixed frontend constants or one-off backend conditions.
+- **Entity-first design**: All scalable features must respect entity boundaries and support future subsidiaries, inter-company activity, and shared parent oversight.
+- **People-first design**: System behavior depends on properly structured people data — who belongs to which entity, who reports to whom, who can approve, and who can view or act on each module.
+- **Finance-authoritative outputs**: Posted accounting data, controlled journals, and approved master data are the source of truth for financial reports, compliance, and cross-module reconciliation.
+
+In practice, the system is dependent on president/admin/finance maintaining clean entity structure and people structure. If those foundations are incomplete or inconsistent, downstream modules will become unreliable.
 
 ---
 
@@ -57,6 +70,9 @@ VIP is the parent company, supplies subsidiaries (MG AND CO. INC. first). BDMs c
 | 18 | Service Revenue + Cost Center Expenses | ✅ |
 | 19 | Petty Cash / Office Supplies / Collaterals | ✅ |
 | 20 | Batch Expense Upload + COA Expansion | ✅ |
+| 21 | Insurance, Period Locks, Recurring Journals, BIR Calc | ✅ |
+| 22 | Accounting Hardening, COA Config, Entity Context | ✅ |
+| 23 | System Audit & Governance Hardening | ✅ |
 
 ---
 
@@ -194,6 +210,9 @@ VIP runs three business lines under one entity, tracked by cost centers:
 |-----|-------------|--------|
 | Dual P&L deprecation | pnlCalc vs pnlService coexist without reconciliation | Consistency risk |
 | Commission controller | No dedicated controller — wired inline in collectionController | Works, not clean |
+| VAT 0.12 in pre-save hooks | SalesLine, ExpenseEntry, Collection etc. hardcode 12% in schema hooks | Cannot change per entity; low risk until rate changes |
+| Frontend hardcoded dropdowns | ~30 static arrays (expense categories, collateral types, activity types) serve as fallbacks | Violates lookup-driven principle but low operational risk |
+| Hospital entity_id optional | Hospitals intentionally global (shared across entities) | By design, but undocumented in schema |
 
 ---
 

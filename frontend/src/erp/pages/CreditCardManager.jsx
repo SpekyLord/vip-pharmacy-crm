@@ -116,6 +116,8 @@ export default function CreditCardManager() {
   };
 
   const openEdit = (card) => {
+    const assignedUsers = (card.assigned_users || []).map(u => u._id || u);
+    const legacyAssignedTo = card.assigned_to?._id || card.assigned_to || '';
     setEditing(card);
     setForm({
       card_code: card.card_code || '',
@@ -128,8 +130,8 @@ export default function CreditCardManager() {
       coa_code: card.coa_code || '2301',
       credit_limit: card.credit_limit || '',
       statement_cycle_day: card.statement_cycle_day || '',
-      assigned_to: card.assigned_to?._id || card.assigned_to || '',
-      assigned_users: (card.assigned_users || []).map(u => u._id || u),
+      assigned_to: legacyAssignedTo,
+      assigned_users: assignedUsers.length ? assignedUsers : (legacyAssignedTo ? [legacyAssignedTo] : []),
       is_active: card.is_active !== false
     });
     setShowModal(true);
@@ -141,8 +143,8 @@ export default function CreditCardManager() {
       ...form,
       credit_limit: parseFloat(form.credit_limit) || 0,
       statement_cycle_day: parseInt(form.statement_cycle_day) || undefined,
-      assigned_to: form.assigned_to || undefined,
-      assigned_users: form.assigned_users.length ? form.assigned_users : undefined
+      assigned_to: form.assigned_users[0] || undefined,
+      assigned_users: form.assigned_users
     };
     try {
       if (editing) {

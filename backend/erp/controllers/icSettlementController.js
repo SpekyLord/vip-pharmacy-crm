@@ -61,7 +61,10 @@ const getSettlements = catchAsync(async (req, res) => {
 });
 
 const getSettlementById = catchAsync(async (req, res) => {
-  const settlement = await IcSettlement.findById(req.params.id)
+  const entityFilter = req.isPresident ? {} : {
+    $or: [{ creditor_entity_id: req.entityId }, { debtor_entity_id: req.entityId }]
+  };
+  const settlement = await IcSettlement.findOne({ _id: req.params.id, ...entityFilter })
     .populate('creditor_entity_id', 'entity_name')
     .populate('debtor_entity_id', 'entity_name')
     .lean();
@@ -72,7 +75,10 @@ const getSettlementById = catchAsync(async (req, res) => {
 // ═══ POST (DRAFT → POSTED) ═══
 
 const postSettlement = catchAsync(async (req, res) => {
-  const settlement = await IcSettlement.findById(req.params.id);
+  const entityFilter = req.isPresident ? {} : {
+    $or: [{ creditor_entity_id: req.entityId }, { debtor_entity_id: req.entityId }]
+  };
+  const settlement = await IcSettlement.findOne({ _id: req.params.id, ...entityFilter });
   if (!settlement) return res.status(404).json({ success: false, message: 'Settlement not found' });
   if (settlement.status !== 'DRAFT') {
     return res.status(400).json({ success: false, message: `Cannot post settlement in ${settlement.status} status` });

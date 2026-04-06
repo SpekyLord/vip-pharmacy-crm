@@ -801,7 +801,8 @@ const submitExpenses = catchAsync(async (req, res) => {
     }
   }
 
-  // Phase 11: Auto-journal — Expenses (ORE: DR 6XXX CR 1110, ACCESS: DR 6XXX CR funding)
+  // Phase 11: Auto-journal — Expenses (ORE: DR 6XXX CR coaMap.AR_BDM, ACCESS: DR 6XXX CR funding)
+  const expCoaMap = await getCoaMap();
   for (const entry of entries) {
     try {
       const lines = [];
@@ -813,7 +814,7 @@ const submitExpenses = catchAsync(async (req, res) => {
       for (const line of (entry.lines || [])) {
         const amt = line.amount || 0;
         if (amt <= 0) continue;
-        const drCode = line.coa_code || '6900';
+        const drCode = line.coa_code || expCoaMap.MISC_EXPENSE || '6900';
         const drName = line.expense_category || 'Miscellaneous Expense';
         lines.push({ account_code: drCode, account_name: drName, debit: amt, credit: 0, description: line.establishment || desc });
         if (line.expense_type === 'ACCESS') {
@@ -824,11 +825,11 @@ const submitExpenses = catchAsync(async (req, res) => {
         }
       }
 
-      // ORE credit → 1110 AR BDM Advances (personal reimbursement)
-      if (creditOre > 0) lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: creditOre, description: desc });
+      // ORE credit → AR BDM Advances (personal reimbursement)
+      if (creditOre > 0) lines.push({ account_code: expCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: creditOre, description: desc });
       // ACCESS credit → funding source (company-funded)
       if (creditAccess > 0) {
-        const coa = accessCoa || { coa_code: '2000', coa_name: 'Accounts Payable — Trade' };
+        const coa = accessCoa || { coa_code: expCoaMap.AP_TRADE || '2000', coa_name: 'Accounts Payable — Trade' };
         lines.push({ account_code: coa.coa_code, account_name: coa.coa_name, debit: 0, credit: creditAccess, description: desc });
       }
 
@@ -1269,16 +1270,17 @@ const submitPrfCalf = catchAsync(async (req, res) => {
 
       // Auto-journal (non-blocking)
       try {
+        const reopenCoaMap = await getCoaMap();
         if (sourceType === 'EXPENSE') {
           const lines = [];
           let totalOre = 0, totalAccess = 0;
           const desc = `EXP-${source.period}-${source.cycle}`;
           for (const line of source.lines) {
-            lines.push({ account_code: line.coa_code || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
+            lines.push({ account_code: line.coa_code || reopenCoaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
             if (line.expense_type === 'ORE') totalOre += line.amount || 0;
             else totalAccess += line.amount || 0;
           }
-          if (totalOre > 0) lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
+          if (totalOre > 0) lines.push({ account_code: reopenCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
           if (totalAccess > 0) {
             const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source);
             lines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
@@ -1846,7 +1848,7 @@ const saveBatchExpenses = catchAsync(async (req, res) => {
       target_model: 'ExpenseEntry',
       changed_by: req.user._id,
       note: `Batch upload: ${cleanLines.length} lines assigned to BDM ${bdmId} by ${req.user.name || req.user._id} (${req.user.role})`
-    }).catch(err => console.error('[BatchSave] Audit log failed:', err.message));
+    }).catch(err => console.error('[BatchSave] Audit log write failed (non-critical):', err.message));
   }
 
   res.status(201).json({

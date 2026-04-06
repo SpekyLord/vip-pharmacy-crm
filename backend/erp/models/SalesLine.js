@@ -71,10 +71,7 @@ const salesLineSchema = new mongoose.Schema({
   // Phase 18: system-generated invoice number for non-CSI sales
   invoice_number: { type: String, trim: true },
   // Phase 18: payment mode for non-CSI sales
-  payment_mode: {
-    type: String,
-    enum: ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'ONLINE']
-  },
+  payment_mode: { type: String }, // Validated against PaymentMode lookup
   // Phase 18: service description (SERVICE_INVOICE only — FNB, rental, consulting)
   service_description: { type: String, trim: true },
 

@@ -15,7 +15,8 @@ const VendorMaster = require('../models/VendorMaster');
 const KEYWORD_RULES = [
   { keywords: ['AP CARGO', 'JRS', 'LBC', 'J&T', 'J AND T', '2GO', 'AIR21', 'NINJA VAN', 'GRAB EXPRESS', 'COURIER', 'SHIPPING'], coa_code: '6500', coa_name: 'Courier & Delivery', category: 'COURIER/SHIPPING' },
   { keywords: ['SHELL', 'PETRON', 'CALTEX', 'PHOENIX', 'SEAOIL', 'GASOLINE', 'FUEL', 'DIESEL'], coa_code: '6200', coa_name: 'Fuel & Gas', category: 'FUEL' },
-  { keywords: ['PARKING', 'TOLL', 'NLEX', 'SLEX', 'TPLEX', 'SKYWAY', 'CAVITEX', 'EXPRESSWAY'], coa_code: '6600', coa_name: 'Parking & Tolls', category: 'PARKING/TOLL' },
+  // Include OCR-noisy toll variants like "TESY" from Easytrip-style receipts.
+  { keywords: ['PARKING', 'TOLL', 'NLEX', 'SLEX', 'TPLEX', 'SKYWAY', 'CAVITEX', 'EXPRESSWAY', 'EASYTRIP', 'EASY TRIP', 'AUTOSWEEP', 'AUTO SWEEP', 'RFID', 'TESY'], coa_code: '6600', coa_name: 'Parking & Tolls', category: 'PARKING/TOLL' },
   { keywords: ['HOTEL', 'INN', 'LODGE', 'PENSION', 'AIRBNB', 'ACCOMMODATION', 'RESORT'], coa_code: '6155', coa_name: 'Travel & Accommodation', category: 'TRAVEL/ACCOMMODATION' },
   { keywords: ['RESTAURANT', 'FOOD', 'MEAL', 'CAFE', 'JOLLIBEE', 'MCDONALDS', 'DINE', 'EATERY'], coa_code: '6350', coa_name: 'ACCESS Expense', category: 'ACCESS/MEALS' },
   { keywords: ['PRINTING', 'OFFICE', 'SUPPLIES', 'STATIONERY', 'NATIONAL BOOKSTORE'], coa_code: '6400', coa_name: 'Office Supplies', category: 'OFFICE SUPPLIES' },
