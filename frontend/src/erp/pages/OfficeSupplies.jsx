@@ -38,6 +38,21 @@ const styles = {
   peso: (val) => `₱${Number(val || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 };
 
+const mobileCSS = `
+  .os-cards { display: none; }
+  @media (max-width: 768px) {
+    .os-table { display: none !important; }
+    .os-cards { display: flex; flex-direction: column; gap: 10px; }
+    .os-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; background: #fff; }
+    .os-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .os-card-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 12px; font-size: 13px; margin-bottom: 10px; }
+    .os-card-label { font-size: 11px; color: #6b7280; }
+    .os-card-value { font-weight: 600; }
+    .os-card-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .os-card-actions button { flex: 1; }
+  }
+`;
+
 // ---------- Item Modal ----------
 function ItemModal({ open, onClose, onSave, editItem }) {
   const [form, setForm] = useState({ item_name: '', item_code: '', category: 'PAPER', qty_on_hand: 0, reorder_level: 5, unit: 'pc', last_purchase_price: 0 });
@@ -254,6 +269,8 @@ export default function OfficeSupplies() {
   };
 
   return (
+    <>
+    <style>{mobileCSS}</style>
     <div style={styles.container}>
       <div style={{ ...styles.header, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <h1 style={styles.title}>Office Supplies</h1>
@@ -286,7 +303,8 @@ export default function OfficeSupplies() {
       ) : supplies.length === 0 ? (
         <div style={styles.empty}>No items found{activeCategory !== 'ALL' ? ` in ${activeCategory.replace('_', ' ')}` : ''}.</div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <>
+        <div className="os-table" style={{ overflowX: 'auto' }}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -322,6 +340,39 @@ export default function OfficeSupplies() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile Supply Cards */}
+        <div className="os-cards">
+          {supplies.map(item => {
+            const isLow = item.qty_on_hand <= item.reorder_level;
+            return (
+              <div key={item._id} className="os-card" style={{ borderLeft: `4px solid ${isLow ? '#dc2626' : '#22c55e'}` }}>
+                <div className="os-card-header">
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{item.item_name}</div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      {catBadge(item.category)}
+                      {isLow && <span style={{ ...styles.badge('red') }}>REORDER</span>}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: isLow ? '#dc2626' : '#111' }}>{item.qty_on_hand} {item.unit || ''}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>{styles.peso(item.last_purchase_price)}</div>
+                  </div>
+                </div>
+                <div className="os-card-grid">
+                  <div><span className="os-card-label">Code</span><br /><span className="os-card-value">{item.item_code}</span></div>
+                  <div><span className="os-card-label">On Hand</span><br /><span className="os-card-value">{item.qty_on_hand} {item.unit || ''}</span></div>
+                  <div><span className="os-card-label">Reorder At</span><br /><span className="os-card-value">{item.reorder_level}</span></div>
+                </div>
+                <div className="os-card-actions">
+                  <button style={styles.btnSecondary} onClick={() => { setEditItem(item); setShowItemModal(true); }}>Edit</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        </>
       )}
 
       {showTxns && (
@@ -332,7 +383,8 @@ export default function OfficeSupplies() {
           ) : transactions.length === 0 ? (
             <div style={styles.empty}>No transactions recorded.</div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <>
+            <div className="os-table" style={{ overflowX: 'auto' }}>
               <table style={styles.table}>
                 <thead>
                   <tr>
@@ -364,6 +416,32 @@ export default function OfficeSupplies() {
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile Transaction Cards */}
+            <div className="os-cards">
+              {transactions.map(txn => (
+                <div key={txn._id} className="os-card">
+                  <div className="os-card-header">
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{txn.supply?.item_name || txn.supply || '-'}</div>
+                      <span style={styles.badge(txn.txn_type === 'PURCHASE' ? 'green' : txn.txn_type === 'ISSUE' ? 'blue' : txn.txn_type === 'RETURN' ? 'amber' : 'gray')}>
+                        {txn.txn_type}
+                      </span>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 16, fontWeight: 700 }}>{txn.qty}</div>
+                      <div style={{ fontSize: 11, color: '#6b7280' }}>{txn.createdAt ? new Date(txn.createdAt).toLocaleDateString() : '-'}</div>
+                    </div>
+                  </div>
+                  <div className="os-card-grid">
+                    <div><span className="os-card-label">Unit Cost</span><br /><span className="os-card-value">{txn.unit_cost ? styles.peso(txn.unit_cost) : '-'}</span></div>
+                    <div><span className="os-card-label">Issued To</span><br /><span className="os-card-value">{txn.issued_to || '-'}</span></div>
+                    <div><span className="os-card-label">Notes</span><br /><span className="os-card-value">{txn.notes || '-'}</span></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            </>
           )}
         </div>
       )}
@@ -371,5 +449,6 @@ export default function OfficeSupplies() {
       <ItemModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} />
       <TxnModal open={showTxnModal} onClose={() => setShowTxnModal(false)} onSave={handleRecordTxn} supplies={supplies} />
     </div>
+    </>
   );
 }

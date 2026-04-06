@@ -50,7 +50,21 @@ const styles = `
   .si-actions { display: flex; gap: 4px; }
   .si-pag { display: flex; justify-content: center; gap: 8px; margin-top: 14px; align-items: center; font-size: 13px; }
   .si-pay-form { background: #f8fafc; padding: 14px; border-radius: 8px; margin-top: 12px; }
-  @media(max-width: 768px) { .si-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .form-row { grid-template-columns: 1fr; } .si-modal-body { width: 95vw; } }
+  .si-cards { display: none; }
+  @media(max-width: 768px) {
+    .si-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+    .form-row { grid-template-columns: 1fr; }
+    .si-modal-body { width: 95vw; }
+    .si-table { display: none !important; }
+    .si-cards { display: flex; flex-direction: column; gap: 10px; }
+    .si-card { border: 1px solid var(--erp-border, #e2e8f0); border-radius: 10px; padding: 14px; background: var(--erp-panel, #fff); }
+    .si-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .si-card-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 12px; font-size: 13px; margin-bottom: 10px; }
+    .si-card-label { font-size: 11px; color: var(--erp-muted, #64748b); }
+    .si-card-value { font-weight: 600; }
+    .si-card-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .si-card-actions button { flex: 1; padding: 6px 0; font-size: 13px; }
+  }
   @media(max-width: 375px) { .si-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .si-main input, .si-main select { font-size: 16px; } }
 `;
 
@@ -259,6 +273,38 @@ export default function SupplierInvoices() {
                     ))}
                   </tbody>
                 </table>
+
+                {/* Mobile Card View */}
+                <div className="si-cards">
+                  {invoices.map(inv => (
+                    <div key={inv._id} className="si-card" style={{ borderLeft: `4px solid ${inv.status === 'POSTED' ? '#16a34a' : inv.status === 'VALIDATED' ? '#1e40af' : '#6b7280'}` }}>
+                      <div className="si-card-header">
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 15 }}>{inv.invoice_ref}</div>
+                          <span className={`si-badge si-badge-${inv.status}`}>{inv.status}</span>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--erp-accent, #1e5eff)' }}>{fmt(inv.total_amount)}</div>
+                          <div style={{ fontSize: 11, color: 'var(--erp-muted, #64748b)' }}>{fmtDate(inv.invoice_date)}</div>
+                        </div>
+                      </div>
+                      <div className="si-card-grid">
+                        <div><span className="si-card-label">Vendor</span><br /><span className="si-card-value">{inv.vendor_id?.vendor_name || inv.vendor_name || '—'}</span></div>
+                        <div><span className="si-card-label">Match</span><br /><span className={`si-badge si-badge-${inv.match_status}`}>{inv.match_status?.replace(/_/g, ' ')}</span></div>
+                        <div><span className="si-card-label">Payment</span><br /><span className={`si-badge si-badge-${inv.payment_status}`}>{inv.payment_status}</span></div>
+                        <div><span className="si-card-label">PO #</span><br /><span className="si-card-value" style={{ fontFamily: 'monospace', fontSize: 11 }}>{inv.po_number || '—'}</span></div>
+                        <div><span className="si-card-label">Paid</span><br /><span className="si-card-value">{fmt(inv.amount_paid)}</span></div>
+                        <div><span className="si-card-label">Due</span><br /><span className="si-card-value">{fmtDate(inv.due_date)}</span></div>
+                      </div>
+                      <div className="si-card-actions">
+                        {inv.status === 'DRAFT' && <button className="btn btn-warning btn-sm" onClick={() => handleValidate(inv._id)}>Validate</button>}
+                        {['DRAFT', 'VALIDATED'].includes(inv.status) && <button className="btn btn-success btn-sm" onClick={() => handlePost(inv._id)}>Post</button>}
+                        {inv.status === 'POSTED' && inv.payment_status !== 'PAID' && <button className="btn btn-primary btn-sm" onClick={() => openPay(inv)}>Pay</button>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
                 {pagination.total > pagination.limit && (
                   <div className="si-pag">
                     <button className="btn btn-sm" disabled={pagination.page <= 1} onClick={() => loadInvoices(pagination.page - 1)}>Prev</button>
