@@ -3382,4 +3382,48 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] App.jsx: 4 new lazy routes (/erp/government-rates, /erp/period-locks, /erp/recurring-journals, /erp/bir-calculator)
 - [x] Sidebar.jsx: 4 new nav items (Recurring Journals after Journal Entries, Period Locks after Month-End Close, Gov. Rates + BIR Calculator after accounting section)
 - [x] useAccounting.js: batchPostJournals + 7 recurring template API methods
+
+---
+
+## PHASE 22 — Accounting Hardening, COA Configurability, Entity Context, Wiring Fixes ✅ PARTIAL (April 6, 2026)
+**Goal:** Fix critical accounting engine issues, make COA codes configurable, add multi-entity support for president, fix OCR scan/upload gaps, fix frontend wiring bugs.
+
+### 22.1 — Multi-Entity Context (President) ✅
+- [x] `tenantFilter.js`: Strip X-Entity-Id header for non-president (security); president reads header to set req.entityId
+- [x] `EntityContext.jsx`: New context — manages working entity state, fetches entities for president, persists in sessionStorage
+- [x] `useWorkingEntity.js`: Hook to consume EntityContext
+- [x] `api.js`: Request interceptor injects X-Entity-Id header
+- [x] `main.jsx`: EntityProvider wired inside AuthProvider
+- [x] `Navbar.jsx`: Entity selector dropdown for president/ceo (gold/amber styled)
+- [x] Fixes 55 controllers where req.entityId was null for president
+
+### 22.2 — Accounting Engine Hardening ✅
+- [x] A1: Entity isolation on `postJournal` & `reverseJournal` — added entityId param, uses `findOne({ _id, entity_id })` instead of `findById`
+- [x] A2: Unique sparse index on `corrects_je_id` — prevents double reversal at DB level (JournalEntry.js)
+- [x] A3: Period lock on post/reverse/batch journal routes — added `periodLockCheck('JOURNAL')` to 3 routes (accountingRoutes.js)
+- [x] A4: MongoDB session/transaction on `reverseJournal` — wraps create+link in atomic transaction (journalEngine.js)
+- [x] A5: Reversal period derived from reversal date — no longer copies original's period (fixes date/period mismatch)
+
+### 22.3 — COA Configurability (Settings.COA_MAP) ✅
+- [x] C1: Added `COA_MAP` field to Settings model with 31 configurable account codes (all with sensible defaults)
+- [x] C2: `autoJournal.js` — added `getCoaMap()` with 1-min cache, all 16 `journalFrom*()` functions now async and read from Settings
+- [x] C3: `expenseController.js` — SMER, Car Logbook fuel, PRF/CALF journal lines use COA_MAP
+- [x] C3: `bankReconService.js` — bank charges and interest income use COA_MAP
+- [x] C3: `apPaymentService.js` — AP trade uses COA_MAP
+- [x] Exported `getCoaMap()` for use by any future module
+
+### 22.4 — OCR Scan/Upload Fixes ✅
+- [x] CollectionSession.jsx: Added camera capture buttons (Scan + Gallery) for CR, Deposit Slip, CWT, CSI photos
+- [x] IcSettlement.jsx: Added camera capture buttons for CR and Deposit Slip photos
+- [x] PrfCalf.jsx: Added camera + gallery photo upload (was missing UI despite importing OCR service)
+- [x] Sidebar.jsx: Added IC Settlements nav item under Collections
+
+### 22.5 — Frontend Wiring Fixes ✅
+- [x] HospitalList.jsx: Fixed `api` → `erpApi` (ReferenceError on create/edit/tag) + path prefix fix
+- [x] usePurchasing.js: Fixed `searchProducts` endpoint from `/products/search` (404) to `/products?q=`
+- [x] SalesEntry.jsx: Removed premature `console.log` referencing `customerList` before useState declaration
+
+### 22.6 — Mobile UX Fixes (B1/B2) ⬜ DEFERRED
+- [ ] B1: CarLogbook.jsx — mobile card layout (currently POOR: no media queries, 10-col table)
+- [ ] B2: PrfCalf.jsx — mobile card layout (currently POOR: no media queries, 7-col table, 20px action buttons)
 - [x] ERP routes index.js: mounted period-locks and recurring-journals routes

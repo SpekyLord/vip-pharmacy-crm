@@ -42,13 +42,13 @@ const getJournalById = catchAsync(async (req, res) => {
 });
 
 const postJournalEndpoint = catchAsync(async (req, res) => {
-  const je = await postJournal(req.params.id, req.user._id);
+  const je = await postJournal(req.params.id, req.user._id, req.entityId);
   res.json({ success: true, data: je });
 });
 
 const reverseJournalEndpoint = catchAsync(async (req, res) => {
   const { reason } = req.body;
-  const reversal = await reverseJournal(req.params.id, reason, req.user._id);
+  const reversal = await reverseJournal(req.params.id, reason, req.user._id, req.entityId);
   res.json({ success: true, data: reversal });
 });
 

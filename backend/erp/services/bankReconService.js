@@ -7,6 +7,7 @@ const BankStatement = require('../models/BankStatement');
 const BankAccount = require('../models/BankAccount');
 const JournalEntry = require('../models/JournalEntry');
 const { createAndPostJournal } = require('./journalEngine');
+const { getCoaMap } = require('./autoJournal');
 
 /**
  * Import a bank statement — parse entries array and persist.
@@ -231,6 +232,7 @@ async function finalizeRecon(statementId, userId) {
   const bankName = bankAccount?.bank_name || 'Bank Account';
 
   // Create adjustment JEs for RECONCILING_ITEM entries (bank fees, interest, etc.)
+  const coa = await getCoaMap();
   const reconItems = (statement.entries || []).filter(e => e.match_status === 'RECONCILING_ITEM' && !e.je_id);
   for (const entry of reconItems) {
     try {
@@ -240,12 +242,12 @@ async function finalizeRecon(statementId, userId) {
       const isDebit = entry.debit > 0; // Bank debited = money left bank (fee/charge)
       const lines = isDebit
         ? [
-            { account_code: '7100', account_name: 'Bank Charges', debit: amount, credit: 0, description: entry.description || 'Bank charge' },
+            { account_code: coa.BANK_CHARGES || '7100', account_name: 'Bank Charges', debit: amount, credit: 0, description: entry.description || 'Bank charge' },
             { account_code: bankCoa, account_name: bankName, debit: 0, credit: amount, description: entry.description || 'Bank charge' }
           ]
         : [
             { account_code: bankCoa, account_name: bankName, debit: amount, credit: 0, description: entry.description || 'Bank credit' },
-            { account_code: '4200', account_name: 'Interest Income', debit: 0, credit: amount, description: entry.description || 'Interest earned' }
+            { account_code: coa.INTEREST_INCOME || '4200', account_name: 'Interest Income', debit: 0, credit: amount, description: entry.description || 'Interest earned' }
           ];
 
       const je = await createAndPostJournal(statement.entity_id, {

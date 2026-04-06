@@ -18,7 +18,7 @@ const { computePerdiemAmount } = require('../services/perdiemCalc');
 // fuelTracker computations handled by CarLogbookEntry pre-save hook
 const { generateExpenseSummary } = require('../services/expenseSummary');
 const { getDailyMdCounts, getDailyVisitDetails } = require('../services/smerCrmBridge');
-const { journalFromExpense, resolveFundingCoa } = require('../services/autoJournal');
+const { journalFromExpense, resolveFundingCoa, getCoaMap } = require('../services/autoJournal');
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
 const JournalEntry = require('../models/JournalEntry');
 
@@ -185,17 +185,18 @@ const submitSmer = catchAsync(async (req, res) => {
     }
   }
 
-  // Phase 11: Auto-journal — SMER multi-line (DR 6100+6150+6160+6170, CR 1110)
+  // Phase 11/22: Auto-journal — SMER multi-line (COA from Settings.COA_MAP)
+  const coaMap = await getCoaMap();
   for (const smer of smers) {
     try {
       const lines = [];
       const desc = `SMER ${smer.period}-${smer.cycle}`;
-      if (smer.total_perdiem > 0) lines.push({ account_code: '6100', account_name: 'Per Diem Expense', debit: smer.total_perdiem, credit: 0, description: desc });
-      if (smer.total_transpo > 0) lines.push({ account_code: '6150', account_name: 'Transport Expense', debit: smer.total_transpo, credit: 0, description: desc });
-      if (smer.total_special_cases > 0) lines.push({ account_code: '6160', account_name: 'Special Transport Expense', debit: smer.total_special_cases, credit: 0, description: desc });
-      if (smer.total_ore > 0) lines.push({ account_code: '6170', account_name: 'Other Reimbursable Expense', debit: smer.total_ore, credit: 0, description: desc });
+      if (smer.total_perdiem > 0) lines.push({ account_code: coaMap.PER_DIEM || '6100', account_name: 'Per Diem Expense', debit: smer.total_perdiem, credit: 0, description: desc });
+      if (smer.total_transpo > 0) lines.push({ account_code: coaMap.TRANSPORT || '6150', account_name: 'Transport Expense', debit: smer.total_transpo, credit: 0, description: desc });
+      if (smer.total_special_cases > 0) lines.push({ account_code: coaMap.SPECIAL_TRANSPORT || '6160', account_name: 'Special Transport Expense', debit: smer.total_special_cases, credit: 0, description: desc });
+      if (smer.total_ore > 0) lines.push({ account_code: coaMap.OTHER_REIMBURSABLE || '6170', account_name: 'Other Reimbursable Expense', debit: smer.total_ore, credit: 0, description: desc });
       if (lines.length > 0) {
-        lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: smer.total_reimbursable, description: desc });
+        lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: smer.total_reimbursable, description: desc });
         await createAndPostJournal(smer.entity_id, {
           je_date: smer.posted_at || new Date(),
           period: smer.period,
@@ -489,7 +490,8 @@ const submitCarLogbook = catchAsync(async (req, res) => {
     }
   }
 
-  // Phase 11: Auto-journal — Car Logbook (DR 6200 Fuel, CR 1110 or funding COA)
+  // Phase 11/22: Auto-journal — Car Logbook (COA from Settings.COA_MAP)
+  const coaMap = await getCoaMap();
   for (const entry of entries) {
     try {
       if (!entry.total_fuel_amount || entry.total_fuel_amount <= 0) continue;
@@ -508,8 +510,8 @@ const submitCarLogbook = catchAsync(async (req, res) => {
       const desc = `Logbook ${entry.period} ${entry.entry_date.toISOString().split('T')[0]}`;
       const lines = [];
       const totalFuel = cashTotal + fundedTotal;
-      if (totalFuel > 0) lines.push({ account_code: '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: desc });
-      if (cashTotal > 0) lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: desc });
+      if (totalFuel > 0) lines.push({ account_code: coaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: desc });
+      if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: desc });
       if (fundedTotal > 0 && fundedCoa) lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: desc });
       if (lines.length >= 2) {
         await createAndPostJournal(entry.entity_id, {
@@ -1170,7 +1172,8 @@ const submitPrfCalf = catchAsync(async (req, res) => {
     }
   }
 
-  // Phase 11: Auto-journal — PRF (DR 5200, CR bank) / CALF (DR 1110, CR bank)
+  // Phase 11/22: Auto-journal — PRF/CALF (COA from Settings.COA_MAP)
+  const calfCoaMap = await getCoaMap();
   for (const doc of docs) {
     try {
       const amount = doc.amount || 0;
@@ -1180,13 +1183,12 @@ const submitPrfCalf = catchAsync(async (req, res) => {
       let lines;
       if (doc.doc_type === 'PRF') {
         lines = [
-          { account_code: '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
+          { account_code: calfCoaMap.PARTNER_REBATE || '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
           { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}` }
         ];
       } else {
-        // CALF: company advance to BDM → DR 1110 AR BDM, CR bank
         lines = [
-          { account_code: '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
+          { account_code: calfCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
           { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}` }
         ];
       }
@@ -1300,7 +1302,7 @@ const submitPrfCalf = catchAsync(async (req, res) => {
               description: `Car Logbook: ${source.period}`, source_module: 'EXPENSE',
               source_event_id: source.event_id, source_doc_ref: `LOGBOOK-${source.period}`,
               lines: [
-                { account_code: '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
+                { account_code: calfCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
                 { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}` }
               ],
               bir_flag: 'BOTH', vat_flag: 'N/A',

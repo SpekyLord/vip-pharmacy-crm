@@ -4,18 +4,67 @@
  * PRD v5 §11.3 — Each function returns a JE data object (not persisted).
  * The caller (monthEndClose or controller) creates+posts via journalEngine.
  *
- * COA mapping from PHASETASK-ERP.md Phase 6 notes:
- *   SMER POSTED:       DR 6100 Per Diem + 6150 Transport, CR 1110 AR BDM
- *   Car Logbook POSTED: DR 6200 Fuel/Gas, CR 1110 AR BDM
- *   ORE POSTED:        DR 6XXX (per category), CR 1110 AR BDM
- *   ACCESS POSTED:     DR 6XXX, CR 2000 AP Trade or Bank
- *   PRF POSTED:        DR 5200 Partner Rebate, CR Cash/Bank
- *   CALF POSTED:       DR 1110 AR BDM (clearing), CR Cash/Bank
+ * Phase 22: All COA codes are read from Settings.COA_MAP (configurable).
+ * Use getCoaMap() to load the mapping — cached per process lifetime until settings change.
  */
 
 const BankAccount = require('../models/BankAccount');
 const CreditCard = require('../models/CreditCard');
 const PaymentMode = require('../models/PaymentMode');
+const Settings = require('../models/Settings');
+
+// ═══ COA Map Cache ═══
+let _coaCache = null;
+let _coaCacheTime = 0;
+const COA_CACHE_TTL = 60_000; // 1 minute
+
+async function getCoaMap() {
+  const now = Date.now();
+  if (_coaCache && now - _coaCacheTime < COA_CACHE_TTL) return _coaCache;
+  const settings = await Settings.getSettings();
+  _coaCache = settings.COA_MAP || {};
+  _coaCacheTime = now;
+  return _coaCache;
+}
+
+// Helper for COA name lookup (avoids stale names by using code as key)
+const COA_NAMES = {
+  AR_TRADE: 'Accounts Receivable — Trade',
+  AR_BDM: 'AR — BDM Advances',
+  IC_RECEIVABLE: 'Intercompany Receivable',
+  CASH_ON_HAND: 'Cash on Hand',
+  PETTY_CASH: 'Petty Cash Fund',
+  INVENTORY: 'Inventory',
+  INPUT_VAT: 'Input VAT',
+  CWT_RECEIVABLE: 'CWT Receivable',
+  ACCUM_DEPRECIATION: 'Accumulated Depreciation',
+  AP_TRADE: 'Accounts Payable — Trade',
+  IC_PAYABLE: 'Intercompany Payable',
+  OUTPUT_VAT: 'Output VAT',
+  LOANS_PAYABLE: 'Loans Payable',
+  OWNER_CAPITAL: 'Owner Capital',
+  OWNER_DRAWINGS: 'Owner Drawings',
+  SALES_REVENUE: 'Sales Revenue — Vatable',
+  SERVICE_REVENUE: 'Service Revenue',
+  INTEREST_INCOME: 'Interest Income',
+  COGS: 'Cost of Goods Sold',
+  BDM_COMMISSION: 'BDM Commission',
+  PARTNER_REBATE: 'Partner Rebate Expense',
+  PER_DIEM: 'Per Diem Expense',
+  TRANSPORT: 'Transport Expense',
+  SPECIAL_TRANSPORT: 'Special Transport Expense',
+  OTHER_REIMBURSABLE: 'Other Reimbursable Expense',
+  FUEL_GAS: 'Fuel & Gas Expense',
+  INVENTORY_WRITEOFF: 'Inventory Write-Off',
+  INVENTORY_ADJ_GAIN: 'Inventory Adjustment Gain',
+  MISC_EXPENSE: 'Miscellaneous Expense',
+  DEPRECIATION: 'Depreciation Expense',
+  INTEREST_EXPENSE: 'Interest Expense',
+  BANK_CHARGES: 'Bank Charges',
+};
+
+function c(coa, key) { return coa[key] || '9999'; }
+function n(key) { return COA_NAMES[key] || key; }
 
 /**
  * Helper: format period from Date
@@ -28,53 +77,48 @@ function dateToPeriod(d) {
 /**
  * Resolve COA code from funding references.
  * Priority: funding_card_id → funding_account_id → bank_account_id → payment_mode lookup → fallback
- * @param {Object} doc — the source document (expense line, collection, etc.)
- * @param {String} fallback — default COA code if nothing resolves (default '1000')
- * @returns {Object} { coa_code, coa_name }
  */
-async function resolveFundingCoa(doc, fallback = '1000') {
-  // 1. Credit card reference
+async function resolveFundingCoa(doc, fallback) {
+  const coa = await getCoaMap();
+  const fb = fallback || c(coa, 'CASH_ON_HAND');
+
   if (doc.funding_card_id) {
     const card = await CreditCard.findById(doc.funding_card_id).lean();
     if (card?.coa_code) return { coa_code: card.coa_code, coa_name: card.card_name };
   }
 
-  // 2. Bank account reference (funding_account_id or bank_account_id)
   const bankRef = doc.funding_account_id || doc.bank_account_id;
   if (bankRef) {
     const bank = await BankAccount.findById(bankRef).lean();
     if (bank?.coa_code) return { coa_code: bank.coa_code, coa_name: bank.bank_name };
   }
 
-  // 3. PaymentMode lookup
   if (doc.payment_mode) {
     const pm = await PaymentMode.findOne({ mode_code: doc.payment_mode }).lean()
       || await PaymentMode.findOne({ mode_type: doc.payment_mode }).lean();
     if (pm?.coa_code) return { coa_code: pm.coa_code, coa_name: pm.mode_label };
   }
 
-  // 4. Fallback
-  return { coa_code: fallback, coa_name: 'Cash on Hand' };
+  return { coa_code: fb, coa_name: n('CASH_ON_HAND') };
 }
 
 /**
  * Journal from Sales Line
- * DR 1100 AR Trade (gross)
- * CR 4000 Sales Revenue — Vatable (net)
- * CR 2100 Output VAT (vat)
+ * DR AR_TRADE (gross), CR SALES_REVENUE (net), CR OUTPUT_VAT (vat)
  */
-function journalFromSale(salesLine, entityId, userId) {
+async function journalFromSale(salesLine, entityId, userId) {
+  const coa = await getCoaMap();
   const gross = salesLine.total_amount || salesLine.invoice_total || 0;
   const vat = salesLine.total_vat || 0;
   const net = gross - vat;
 
   const lines = [
-    { account_code: '1100', account_name: 'Accounts Receivable — Trade', debit: gross, credit: 0, description: `Sale: ${salesLine.invoice_number || ''}` },
-    { account_code: '4000', account_name: 'Sales Revenue — Vatable', debit: 0, credit: net, description: `Sale: ${salesLine.invoice_number || ''}` },
+    { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: gross, credit: 0, description: `Sale: ${salesLine.invoice_number || ''}` },
+    { account_code: c(coa, 'SALES_REVENUE'), account_name: n('SALES_REVENUE'), debit: 0, credit: net, description: `Sale: ${salesLine.invoice_number || ''}` },
   ];
 
   if (vat > 0) {
-    lines.push({ account_code: '2100', account_name: 'Output VAT', debit: 0, credit: vat, description: `VAT on ${salesLine.invoice_number || ''}` });
+    lines.push({ account_code: c(coa, 'OUTPUT_VAT'), account_name: n('OUTPUT_VAT'), debit: 0, credit: vat, description: `VAT on ${salesLine.invoice_number || ''}` });
   }
 
   return {
@@ -94,20 +138,19 @@ function journalFromSale(salesLine, entityId, userId) {
 
 /**
  * Journal from Collection
- * DR 1010-1014 Cash/Bank (based on payment_mode coa_code)
- * CR 1100 AR Trade
+ * DR Cash/Bank (resolved), CR AR_TRADE
  */
-function journalFromCollection(collection, bankCoaCode, bankName, userId) {
+async function journalFromCollection(collection, bankCoaCode, bankName, userId) {
+  const coa = await getCoaMap();
   const amount = collection.total_amount || collection.amount_collected || 0;
 
-  // Phase 18/19: cash collections to petty cash use account 1015
   let coaCode, coaName;
   if (collection.petty_cash_fund_id) {
-    coaCode = '1015';
-    coaName = 'Petty Cash Fund';
+    coaCode = c(coa, 'PETTY_CASH');
+    coaName = n('PETTY_CASH');
   } else {
-    coaCode = bankCoaCode || '1000';
-    coaName = bankName || 'Cash on Hand';
+    coaCode = bankCoaCode || c(coa, 'CASH_ON_HAND');
+    coaName = bankName || n('CASH_ON_HAND');
   }
 
   return {
@@ -119,7 +162,7 @@ function journalFromCollection(collection, bankCoaCode, bankName, userId) {
     source_doc_ref: collection.or_number || String(collection._id),
     lines: [
       { account_code: coaCode, account_name: coaName, debit: amount, credit: 0, description: `Collection ${collection.or_number || ''}` },
-      { account_code: '1100', account_name: 'Accounts Receivable — Trade', debit: 0, credit: amount, description: `Collection ${collection.or_number || ''}` }
+      { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: 0, credit: amount, description: `Collection ${collection.or_number || ''}` }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -129,11 +172,11 @@ function journalFromCollection(collection, bankCoaCode, bankName, userId) {
 }
 
 /**
- * Journal from CWT (Creditable Withholding Tax)
- * DR 1220 CWT Receivable
- * CR 1100 AR Trade
+ * Journal from CWT
+ * DR CWT_RECEIVABLE, CR AR_TRADE
  */
-function journalFromCWT(cwtEntry, userId) {
+async function journalFromCWT(cwtEntry, userId) {
+  const coa = await getCoaMap();
   const amount = cwtEntry.cwt_amount || 0;
 
   return {
@@ -144,8 +187,8 @@ function journalFromCWT(cwtEntry, userId) {
     source_event_id: cwtEntry.event_id || null,
     source_doc_ref: cwtEntry.cr_no || String(cwtEntry._id),
     lines: [
-      { account_code: '1220', account_name: 'CWT Receivable', debit: amount, credit: 0, description: `CWT CR#${cwtEntry.cr_no || ''}` },
-      { account_code: '1100', account_name: 'Accounts Receivable — Trade', debit: 0, credit: amount, description: `CWT CR#${cwtEntry.cr_no || ''}` }
+      { account_code: c(coa, 'CWT_RECEIVABLE'), account_name: n('CWT_RECEIVABLE'), debit: amount, credit: 0, description: `CWT CR#${cwtEntry.cr_no || ''}` },
+      { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: 0, credit: amount, description: `CWT CR#${cwtEntry.cr_no || ''}` }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -156,10 +199,10 @@ function journalFromCWT(cwtEntry, userId) {
 
 /**
  * Journal from Expense
- * DR 6XXX Expense (from expense category/coa_code)
- * CR 1110 AR BDM Advances (personal reimbursement) or CR 2000 AP / Bank (company funded)
+ * DR 6XXX Expense, CR AR_BDM or AP/Bank
  */
-function journalFromExpense(expense, expenseCoaCode, expenseCoaName, creditCoaCode, creditCoaName, userId) {
+async function journalFromExpense(expense, expenseCoaCode, expenseCoaName, creditCoaCode, creditCoaName, userId) {
+  const coa = await getCoaMap();
   const amount = expense.total_amount || expense.amount || 0;
 
   return {
@@ -170,8 +213,8 @@ function journalFromExpense(expense, expenseCoaCode, expenseCoaName, creditCoaCo
     source_event_id: expense.event_id || null,
     source_doc_ref: expense.doc_number || String(expense._id),
     lines: [
-      { account_code: expenseCoaCode || '6900', account_name: expenseCoaName || 'Miscellaneous Expense', debit: amount, credit: 0, description: expense.description || '' },
-      { account_code: creditCoaCode || '1110', account_name: creditCoaName || 'AR — BDM Advances', debit: 0, credit: amount, description: expense.description || '' }
+      { account_code: expenseCoaCode || c(coa, 'MISC_EXPENSE'), account_name: expenseCoaName || n('MISC_EXPENSE'), debit: amount, credit: 0, description: expense.description || '' },
+      { account_code: creditCoaCode || c(coa, 'AR_BDM'), account_name: creditCoaName || n('AR_BDM'), debit: 0, credit: amount, description: expense.description || '' }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -182,10 +225,10 @@ function journalFromExpense(expense, expenseCoaCode, expenseCoaName, creditCoaCo
 
 /**
  * Journal from Commission
- * DR 5100 BDM Commission
- * CR 1110 AR BDM Advances
+ * DR BDM_COMMISSION, CR AR_BDM
  */
-function journalFromCommission(commission, userId) {
+async function journalFromCommission(commission, userId) {
+  const coa = await getCoaMap();
   const amount = commission.amount || 0;
 
   return {
@@ -196,8 +239,8 @@ function journalFromCommission(commission, userId) {
     source_event_id: commission.event_id || null,
     source_doc_ref: String(commission._id),
     lines: [
-      { account_code: '5100', account_name: 'BDM Commission', debit: amount, credit: 0, description: `Commission ${commission.bdm_name || ''}` },
-      { account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: amount, description: `Commission ${commission.bdm_name || ''}` }
+      { account_code: c(coa, 'BDM_COMMISSION'), account_name: n('BDM_COMMISSION'), debit: amount, credit: 0, description: `Commission ${commission.bdm_name || ''}` },
+      { account_code: c(coa, 'AR_BDM'), account_name: n('AR_BDM'), debit: 0, credit: amount, description: `Commission ${commission.bdm_name || ''}` }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -207,14 +250,13 @@ function journalFromCommission(commission, userId) {
 }
 
 /**
- * Journal from Payroll (multi-line)
- * DR 6000 Salaries + DR 6050 Allowances + DR 5100 Commission (if any)
- * CR 2200 SSS + CR 2210 PhilHealth + CR 2220 PagIBIG + CR 2230 WHT + CR Cash/Bank (net)
+ * Journal from Payroll
+ * DR 6000 Salaries + DR 6050 Allowances + DR 5100 Commission
+ * CR 2200 SSS + CR 2210 PhilHealth + CR 2220 PagIBIG + CR 2230 WHT + CR Cash/Bank
  */
 function journalFromPayroll(payslip, bankCoaCode, bankName, userId) {
   const lines = [];
 
-  // Debit: earnings breakdown
   const e = payslip.earnings || {};
   const basic = e.basic_salary || 0;
   const overtime = e.overtime || 0;
@@ -228,7 +270,6 @@ function journalFromPayroll(payslip, bankCoaCode, bankName, userId) {
   if (commission > 0) lines.push({ account_code: '5100', account_name: 'BDM Commission', debit: commission, credit: 0, description: 'Incentive / Commission' });
   if (bonus > 0) lines.push({ account_code: '6060', account_name: 'Bonus & 13th Month', debit: bonus, credit: 0, description: 'Bonus / 13th month / holiday' });
 
-  // Credit: deductions
   const d = payslip.deductions || {};
   const sss = d.sss_employee || 0;
   const philhealth = d.philhealth_employee || 0;
@@ -240,7 +281,6 @@ function journalFromPayroll(payslip, bankCoaCode, bankName, userId) {
   if (pagibig > 0) lines.push({ account_code: '2220', account_name: 'Pag-IBIG Payable', debit: 0, credit: pagibig, description: 'Pag-IBIG EE share' });
   if (tax > 0) lines.push({ account_code: '2230', account_name: 'Withholding Tax Payable', debit: 0, credit: tax, description: 'WHT' });
 
-  // Credit: net pay → Cash/Bank
   const netPay = payslip.net_pay || 0;
   if (netPay > 0) {
     lines.push({
@@ -269,21 +309,21 @@ function journalFromPayroll(payslip, bankCoaCode, bankName, userId) {
 
 /**
  * Journal from Accounts Payable (Supplier Invoice)
- * DR 1200 Inventory + DR 1210 Input VAT
- * CR 2000 AP Trade
+ * DR INVENTORY + DR INPUT_VAT, CR AP_TRADE
  */
-function journalFromAP(supplierInvoice, userId) {
+async function journalFromAP(supplierInvoice, userId) {
+  const coa = await getCoaMap();
   const net = supplierInvoice.net_amount || supplierInvoice.total_amount || 0;
   const vat = supplierInvoice.input_vat || supplierInvoice.vat_amount || 0;
   const gross = net + vat;
 
   const lines = [
-    { account_code: '1200', account_name: 'Inventory', debit: net, credit: 0, description: `PO: ${supplierInvoice.po_number || ''}` },
+    { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: net, credit: 0, description: `PO: ${supplierInvoice.po_number || ''}` },
   ];
   if (vat > 0) {
-    lines.push({ account_code: '1210', account_name: 'Input VAT', debit: vat, credit: 0, description: `Input VAT on ${supplierInvoice.invoice_ref || ''}` });
+    lines.push({ account_code: c(coa, 'INPUT_VAT'), account_name: n('INPUT_VAT'), debit: vat, credit: 0, description: `Input VAT on ${supplierInvoice.invoice_ref || ''}` });
   }
-  lines.push({ account_code: '2000', account_name: 'Accounts Payable — Trade', debit: 0, credit: gross, description: `SI: ${supplierInvoice.invoice_ref || ''}` });
+  lines.push({ account_code: c(coa, 'AP_TRADE'), account_name: n('AP_TRADE'), debit: 0, credit: gross, description: `SI: ${supplierInvoice.invoice_ref || ''}` });
 
   return {
     je_date: supplierInvoice.invoice_date || new Date(),
@@ -302,10 +342,10 @@ function journalFromAP(supplierInvoice, userId) {
 
 /**
  * Journal from Depreciation
- * DR 7000 Depreciation Expense
- * CR 1350 Accumulated Depreciation
+ * DR DEPRECIATION, CR ACCUM_DEPRECIATION
  */
-function journalFromDepreciation(deprnEntry, userId) {
+async function journalFromDepreciation(deprnEntry, userId) {
+  const coa = await getCoaMap();
   const amount = deprnEntry.amount || 0;
 
   return {
@@ -315,8 +355,8 @@ function journalFromDepreciation(deprnEntry, userId) {
     source_module: 'DEPRECIATION',
     source_doc_ref: String(deprnEntry.asset_id || deprnEntry._id),
     lines: [
-      { account_code: '7000', account_name: 'Depreciation Expense', debit: amount, credit: 0, description: deprnEntry.asset_name || '' },
-      { account_code: '1350', account_name: 'Accumulated Depreciation', debit: 0, credit: amount, description: deprnEntry.asset_name || '' }
+      { account_code: c(coa, 'DEPRECIATION'), account_name: n('DEPRECIATION'), debit: amount, credit: 0, description: deprnEntry.asset_name || '' },
+      { account_code: c(coa, 'ACCUM_DEPRECIATION'), account_name: n('ACCUM_DEPRECIATION'), debit: 0, credit: amount, description: deprnEntry.asset_name || '' }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -326,10 +366,10 @@ function journalFromDepreciation(deprnEntry, userId) {
 
 /**
  * Journal from Interest (Loan)
- * DR 7050 Interest Expense
- * CR 2300 Loans Payable
+ * DR INTEREST_EXPENSE, CR LOANS_PAYABLE
  */
-function journalFromInterest(interestEntry, userId) {
+async function journalFromInterest(interestEntry, userId) {
+  const coa = await getCoaMap();
   const amount = interestEntry.interest_amount || 0;
 
   return {
@@ -339,8 +379,8 @@ function journalFromInterest(interestEntry, userId) {
     source_module: 'INTEREST',
     source_doc_ref: String(interestEntry.loan_id || interestEntry._id),
     lines: [
-      { account_code: '7050', account_name: 'Interest Expense', debit: amount, credit: 0, description: interestEntry.loan_code || '' },
-      { account_code: '2300', account_name: 'Loans Payable', debit: 0, credit: amount, description: interestEntry.loan_code || '' }
+      { account_code: c(coa, 'INTEREST_EXPENSE'), account_name: n('INTEREST_EXPENSE'), debit: amount, credit: 0, description: interestEntry.loan_code || '' },
+      { account_code: c(coa, 'LOANS_PAYABLE'), account_name: n('LOANS_PAYABLE'), debit: 0, credit: amount, description: interestEntry.loan_code || '' }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -350,10 +390,11 @@ function journalFromInterest(interestEntry, userId) {
 
 /**
  * Journal from Owner Equity (infusion or drawing)
- * INFUSION: DR Cash/Bank, CR 3000 Owner Capital
- * DRAWING:  DR 3100 Owner Drawings, CR Cash/Bank
+ * INFUSION: DR Cash/Bank, CR OWNER_CAPITAL
+ * DRAWING:  DR OWNER_DRAWINGS, CR Cash/Bank
  */
-function journalFromOwnerEquity(equityEntry, bankCoaCode, bankName, userId) {
+async function journalFromOwnerEquity(equityEntry, bankCoaCode, bankName, userId) {
+  const coa = await getCoaMap();
   const amount = equityEntry.amount || 0;
   const coaCode = bankCoaCode || '1010';
   const coaName = bankName || 'RCBC Savings';
@@ -367,7 +408,7 @@ function journalFromOwnerEquity(equityEntry, bankCoaCode, bankName, userId) {
       source_doc_ref: String(equityEntry._id),
       lines: [
         { account_code: coaCode, account_name: coaName, debit: amount, credit: 0, description: 'Owner infusion' },
-        { account_code: '3000', account_name: 'Owner Capital', debit: 0, credit: amount, description: 'Owner infusion' }
+        { account_code: c(coa, 'OWNER_CAPITAL'), account_name: n('OWNER_CAPITAL'), debit: 0, credit: amount, description: 'Owner infusion' }
       ],
       bir_flag: equityEntry.bir_flag || 'BOTH',
       vat_flag: 'N/A',
@@ -375,7 +416,6 @@ function journalFromOwnerEquity(equityEntry, bankCoaCode, bankName, userId) {
     };
   }
 
-  // DRAWING
   return {
     je_date: equityEntry.entry_date || new Date(),
     period: dateToPeriod(equityEntry.entry_date || new Date()),
@@ -383,7 +423,7 @@ function journalFromOwnerEquity(equityEntry, bankCoaCode, bankName, userId) {
     source_module: 'OWNER',
     source_doc_ref: String(equityEntry._id),
     lines: [
-      { account_code: '3100', account_name: 'Owner Drawings', debit: amount, credit: 0, description: 'Owner drawing' },
+      { account_code: c(coa, 'OWNER_DRAWINGS'), account_name: n('OWNER_DRAWINGS'), debit: amount, credit: 0, description: 'Owner drawing' },
       { account_code: coaCode, account_name: coaName, debit: 0, credit: amount, description: 'Owner drawing' }
     ],
     bir_flag: equityEntry.bir_flag || 'BOTH',
@@ -394,22 +434,22 @@ function journalFromOwnerEquity(equityEntry, bankCoaCode, bankName, userId) {
 
 /**
  * Journal from Service Revenue (Phase 18)
- * DR 1100 AR Trade (or Cash if paid)
- * CR 4100 Service Revenue
+ * DR AR_TRADE, CR SERVICE_REVENUE, CR OUTPUT_VAT
  */
-function journalFromServiceRevenue(salesLine, entityId, userId) {
+async function journalFromServiceRevenue(salesLine, entityId, userId) {
+  const coa = await getCoaMap();
   const gross = salesLine.invoice_total || 0;
   const vat = salesLine.total_vat || 0;
   const net = gross - vat;
   const docRef = salesLine.invoice_number || salesLine.doc_ref || '';
 
   const lines = [
-    { account_code: '1100', account_name: 'Accounts Receivable — Trade', debit: gross, credit: 0, description: `Service: ${docRef}` },
-    { account_code: '4100', account_name: 'Service Revenue', debit: 0, credit: net, description: `Service: ${docRef}` },
+    { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: gross, credit: 0, description: `Service: ${docRef}` },
+    { account_code: c(coa, 'SERVICE_REVENUE'), account_name: n('SERVICE_REVENUE'), debit: 0, credit: net, description: `Service: ${docRef}` },
   ];
 
   if (vat > 0) {
-    lines.push({ account_code: '2100', account_name: 'Output VAT', debit: 0, credit: vat, description: `VAT on ${docRef}` });
+    lines.push({ account_code: c(coa, 'OUTPUT_VAT'), account_name: n('OUTPUT_VAT'), debit: 0, credit: vat, description: `VAT on ${docRef}` });
   }
 
   return {
@@ -429,13 +469,16 @@ function journalFromServiceRevenue(salesLine, entityId, userId) {
 
 /**
  * Journal from Petty Cash transaction (Phase 19)
- * DISBURSEMENT: DR 6XXX Expense, CR 1015 Petty Cash Fund
- * REMITTANCE:   DR 3100 Owner Drawings, CR 1015 Petty Cash Fund
- * REPLENISHMENT: DR 1015 Petty Cash Fund, CR 3100 Owner Drawings
+ * DISBURSEMENT: DR 6XXX Expense, CR PETTY_CASH
+ * REMITTANCE:   DR OWNER_DRAWINGS, CR PETTY_CASH
+ * REPLENISHMENT: DR PETTY_CASH, CR OWNER_DRAWINGS
  */
-function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId) {
+async function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId) {
+  const coa = await getCoaMap();
   const amount = txn.amount || 0;
   const docRef = txn.txn_number || String(txn._id);
+  const pc = c(coa, 'PETTY_CASH');
+  const pcName = n('PETTY_CASH');
 
   if (txn.txn_type === 'DISBURSEMENT') {
     return {
@@ -445,8 +488,8 @@ function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId) {
       source_module: 'PETTY_CASH',
       source_doc_ref: docRef,
       lines: [
-        { account_code: expenseCoaCode || '6900', account_name: expenseCoaName || 'Miscellaneous Expense', debit: amount, credit: 0, description: txn.particulars || '' },
-        { account_code: '1015', account_name: 'Petty Cash Fund', debit: 0, credit: amount, description: txn.particulars || '' }
+        { account_code: expenseCoaCode || c(coa, 'MISC_EXPENSE'), account_name: expenseCoaName || n('MISC_EXPENSE'), debit: amount, credit: 0, description: txn.particulars || '' },
+        { account_code: pc, account_name: pcName, debit: 0, credit: amount, description: txn.particulars || '' }
       ],
       bir_flag: 'BOTH',
       vat_flag: 'N/A',
@@ -463,8 +506,8 @@ function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId) {
       source_module: 'PETTY_CASH',
       source_doc_ref: docRef,
       lines: [
-        { account_code: '3100', account_name: 'Owner Drawings', debit: amount, credit: 0, description: 'Petty cash remittance to owner' },
-        { account_code: '1015', account_name: 'Petty Cash Fund', debit: 0, credit: amount, description: 'Petty cash remittance to owner' }
+        { account_code: c(coa, 'OWNER_DRAWINGS'), account_name: n('OWNER_DRAWINGS'), debit: amount, credit: 0, description: 'Petty cash remittance to owner' },
+        { account_code: pc, account_name: pcName, debit: 0, credit: amount, description: 'Petty cash remittance to owner' }
       ],
       bir_flag: 'INTERNAL',
       vat_flag: 'N/A',
@@ -480,8 +523,8 @@ function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId) {
     source_module: 'PETTY_CASH',
     source_doc_ref: docRef,
     lines: [
-      { account_code: '1015', account_name: 'Petty Cash Fund', debit: amount, credit: 0, description: 'Owner replenishment' },
-      { account_code: '3100', account_name: 'Owner Drawings', debit: 0, credit: amount, description: 'Owner replenishment' }
+      { account_code: pc, account_name: pcName, debit: amount, credit: 0, description: 'Owner replenishment' },
+      { account_code: c(coa, 'OWNER_DRAWINGS'), account_name: n('OWNER_DRAWINGS'), debit: 0, credit: amount, description: 'Owner replenishment' }
     ],
     bir_flag: 'INTERNAL',
     vat_flag: 'N/A',
@@ -490,15 +533,12 @@ function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId) {
 }
 
 /**
- * Journal from COGS (Cost of Goods Sold)
- * DR 5000 Cost of Goods Sold
- * CR 1200 Inventory
- * @param {Object} salesLine — the posted SalesLine document
- * @param {Number} totalCogs — sum of (qty × purchase_price) for consumed items
- * @param {String} userId
+ * Journal from COGS
+ * DR COGS, CR INVENTORY
  */
-function journalFromCOGS(salesLine, totalCogs, userId) {
+async function journalFromCOGS(salesLine, totalCogs, userId) {
   if (!totalCogs || totalCogs <= 0) return null;
+  const coa = await getCoaMap();
 
   const docRef = salesLine.invoice_number || salesLine.doc_ref || '';
   return {
@@ -509,8 +549,8 @@ function journalFromCOGS(salesLine, totalCogs, userId) {
     source_event_id: salesLine.event_id || null,
     source_doc_ref: docRef,
     lines: [
-      { account_code: '5000', account_name: 'Cost of Goods Sold', debit: totalCogs, credit: 0, description: `COGS: ${docRef}` },
-      { account_code: '1200', account_name: 'Inventory', debit: 0, credit: totalCogs, description: `COGS: ${docRef}` }
+      { account_code: c(coa, 'COGS'), account_name: n('COGS'), debit: totalCogs, credit: 0, description: `COGS: ${docRef}` },
+      { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: 0, credit: totalCogs, description: `COGS: ${docRef}` }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -521,27 +561,24 @@ function journalFromCOGS(salesLine, totalCogs, userId) {
 
 /**
  * Journal from Inter-Company Transfer
- * SENDER:   DR 1150 IC Receivable, CR 1200 Inventory
- * RECEIVER: DR 1200 Inventory, CR 2050 IC Payable
- * @param {Object} transfer — the transfer document
- * @param {String} perspective — 'SENDER' or 'RECEIVER'
- * @param {Number} amount — transfer value
- * @param {String} userId
+ * SENDER:   DR IC_RECEIVABLE, CR INVENTORY
+ * RECEIVER: DR INVENTORY, CR IC_PAYABLE
  */
-function journalFromInterCompany(transfer, perspective, amount, userId) {
+async function journalFromInterCompany(transfer, perspective, amount, userId) {
   if (!amount || amount <= 0) return null;
+  const coa = await getCoaMap();
 
   const docRef = transfer.transfer_number || String(transfer._id);
   const desc = `IC Transfer: ${docRef}`;
 
   const lines = perspective === 'SENDER'
     ? [
-        { account_code: '1150', account_name: 'Intercompany Receivable', debit: amount, credit: 0, description: desc },
-        { account_code: '1200', account_name: 'Inventory', debit: 0, credit: amount, description: desc }
+        { account_code: c(coa, 'IC_RECEIVABLE'), account_name: n('IC_RECEIVABLE'), debit: amount, credit: 0, description: desc },
+        { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: 0, credit: amount, description: desc }
       ]
     : [
-        { account_code: '1200', account_name: 'Inventory', debit: amount, credit: 0, description: desc },
-        { account_code: '2050', account_name: 'Intercompany Payable', debit: 0, credit: amount, description: desc }
+        { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: amount, credit: 0, description: desc },
+        { account_code: c(coa, 'IC_PAYABLE'), account_name: n('IC_PAYABLE'), debit: 0, credit: amount, description: desc }
       ];
 
   return {
@@ -561,26 +598,24 @@ function journalFromInterCompany(transfer, perspective, amount, userId) {
 
 /**
  * Journal from Inventory Adjustment (Physical Count)
- * LOSS (negative variance): DR 6850 Inventory Write-Off, CR 1200 Inventory
- * GAIN (positive variance):  DR 1200 Inventory, CR 6860 Inventory Adjustment Gain
- * @param {Object} data — { variance, product_name, batch_lot_no, entity_id, bdm_id, period }
- * @param {Number} amount — |variance| × purchase_price (always positive)
- * @param {String} userId
+ * LOSS: DR INVENTORY_WRITEOFF, CR INVENTORY
+ * GAIN: DR INVENTORY, CR INVENTORY_ADJ_GAIN
  */
-function journalFromInventoryAdjustment(data, amount, userId) {
+async function journalFromInventoryAdjustment(data, amount, userId) {
   if (!amount || amount <= 0) return null;
+  const coa = await getCoaMap();
 
   const desc = `Inv Adj: ${data.product_name || ''} batch ${data.batch_lot_no || ''}`;
   const isLoss = data.variance < 0;
 
   const lines = isLoss
     ? [
-        { account_code: '6850', account_name: 'Inventory Write-Off', debit: amount, credit: 0, description: desc },
-        { account_code: '1200', account_name: 'Inventory', debit: 0, credit: amount, description: desc }
+        { account_code: c(coa, 'INVENTORY_WRITEOFF'), account_name: n('INVENTORY_WRITEOFF'), debit: amount, credit: 0, description: desc },
+        { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: 0, credit: amount, description: desc }
       ]
     : [
-        { account_code: '1200', account_name: 'Inventory', debit: amount, credit: 0, description: desc },
-        { account_code: '6860', account_name: 'Inventory Adjustment Gain', debit: 0, credit: amount, description: desc }
+        { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: amount, credit: 0, description: desc },
+        { account_code: c(coa, 'INVENTORY_ADJ_GAIN'), account_name: n('INVENTORY_ADJ_GAIN'), debit: 0, credit: amount, description: desc }
       ];
 
   return {
@@ -598,6 +633,7 @@ function journalFromInventoryAdjustment(data, amount, userId) {
 }
 
 module.exports = {
+  getCoaMap,
   resolveFundingCoa,
   journalFromSale,
   journalFromCollection,

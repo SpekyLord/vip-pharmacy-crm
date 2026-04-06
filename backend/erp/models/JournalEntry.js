@@ -150,6 +150,6 @@ journalEntrySchema.index({ entity_id: 1, period: 1, status: 1 });
 journalEntrySchema.index({ entity_id: 1, source_module: 1 });
 journalEntrySchema.index({ entity_id: 1, source_module: 1, source_event_id: 1 });
 journalEntrySchema.index({ 'lines.account_code': 1, entity_id: 1 });
-journalEntrySchema.index({ corrects_je_id: 1 });
+journalEntrySchema.index({ corrects_je_id: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('JournalEntry', journalEntrySchema);
