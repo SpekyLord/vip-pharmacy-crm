@@ -52,6 +52,7 @@ export function ChartOfAccountsContent() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ account_code: '', account_name: '', account_type: 'ASSET', normal_balance: 'DEBIT', account_subtype: '', bir_flag: 'BOTH' });
 
   const loadAccounts = useCallback(async () => {
@@ -101,11 +102,48 @@ export function ChartOfAccountsContent() {
     }
   };
 
+  const resetForm = () => setForm({ account_code: '', account_name: '', account_type: 'ASSET', normal_balance: 'DEBIT', account_subtype: '', bir_flag: 'BOTH' });
+
   const handleCreate = async () => {
     try {
       await api.createAccount(form);
       setShowModal(false);
-      setForm({ account_code: '', account_name: '', account_type: 'ASSET', normal_balance: 'DEBIT', account_subtype: '', bir_flag: 'BOTH' });
+      setEditingId(null);
+      resetForm();
+      loadAccounts();
+    } catch { /* hook handles */ }
+  };
+
+  const openEdit = (acct) => {
+    setEditingId(acct._id);
+    setForm({
+      account_code: acct.account_code,
+      account_name: acct.account_name,
+      account_type: acct.account_type,
+      normal_balance: acct.normal_balance,
+      account_subtype: acct.account_subtype || '',
+      bir_flag: acct.bir_flag || 'BOTH',
+    });
+    setShowModal(true);
+  };
+
+  const handleUpdate = async () => {
+    try {
+      await api.updateAccount(editingId, {
+        account_name: form.account_name,
+        account_subtype: form.account_subtype,
+        bir_flag: form.bir_flag,
+      });
+      setShowModal(false);
+      setEditingId(null);
+      resetForm();
+      loadAccounts();
+    } catch { /* hook handles */ }
+  };
+
+  const handleToggleActive = async (acct) => {
+    try {
+      await api.updateAccount(acct._id, { is_active: !acct.is_active });
       loadAccounts();
     } catch { /* hook handles */ }
   };
@@ -119,7 +157,7 @@ export function ChartOfAccountsContent() {
           {isAdmin && accounts.length === 0 && <button className="btn btn-success" onClick={handleSeedCOA}>Seed Default COA</button>}
           <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
           {isAdmin && <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>}
-          {isAdmin && <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Add Account</button>}
+          {isAdmin && <button className="btn btn-primary" onClick={() => { setEditingId(null); resetForm(); setShowModal(true); }}>+ Add Account</button>}
         </div>
       </div>
 
@@ -142,11 +180,12 @@ export function ChartOfAccountsContent() {
               <th>Normal Bal</th>
               <th>BIR Flag</th>
               <th>Status</th>
+              {isAdmin && <th></th>}
             </tr>
           </thead>
           <tbody>
             {accounts.map(a => (
-              <tr key={a._id}>
+              <tr key={a._id} style={{ opacity: a.is_active ? 1 : 0.5 }}>
                 <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>{a.account_code}</td>
                 <td>{a.account_name}</td>
                 <td><span className={`type-badge type-${a.account_type}`}>{a.account_type}</span></td>
@@ -154,6 +193,14 @@ export function ChartOfAccountsContent() {
                 <td>{a.normal_balance}</td>
                 <td>{a.bir_flag}</td>
                 <td>{a.is_active ? '✓ Active' : '✗ Inactive'}</td>
+                {isAdmin && (
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-sm" style={{ background: 'var(--erp-accent-soft)', color: 'var(--erp-accent)', marginRight: 4 }} onClick={() => openEdit(a)}>Edit</button>
+                    <button className="btn btn-sm" style={{ background: a.is_active ? '#fee2e2' : '#dcfce7', color: a.is_active ? '#991b1b' : '#166534' }} onClick={() => handleToggleActive(a)}>
+                      {a.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -161,12 +208,12 @@ export function ChartOfAccountsContent() {
       )}
 
       {showModal && (
-        <div className="coa-modal" onClick={() => setShowModal(false)}>
+        <div className="coa-modal" onClick={() => { setShowModal(false); setEditingId(null); resetForm(); }}>
           <div className="coa-modal-body" onClick={e => e.stopPropagation()}>
-            <h3>New Account</h3>
+            <h3>{editingId ? 'Edit Account' : 'New Account'}</h3>
             <div className="form-group">
               <label>Account Code</label>
-              <input value={form.account_code} onChange={e => setForm({ ...form, account_code: e.target.value })} placeholder="e.g. 1015" />
+              <input value={form.account_code} onChange={e => setForm({ ...form, account_code: e.target.value })} placeholder="e.g. 1015" disabled={!!editingId} />
             </div>
             <div className="form-group">
               <label>Account Name</label>
@@ -174,13 +221,13 @@ export function ChartOfAccountsContent() {
             </div>
             <div className="form-group">
               <label>Account Type</label>
-              <SelectField value={form.account_type} onChange={e => setForm({ ...form, account_type: e.target.value })}>
+              <SelectField value={form.account_type} onChange={e => setForm({ ...form, account_type: e.target.value })} disabled={!!editingId}>
                 {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </SelectField>
             </div>
             <div className="form-group">
               <label>Normal Balance</label>
-              <SelectField value={form.normal_balance} onChange={e => setForm({ ...form, normal_balance: e.target.value })}>
+              <SelectField value={form.normal_balance} onChange={e => setForm({ ...form, normal_balance: e.target.value })} disabled={!!editingId}>
                 <option value="DEBIT">DEBIT</option>
                 <option value="CREDIT">CREDIT</option>
               </SelectField>
@@ -189,9 +236,19 @@ export function ChartOfAccountsContent() {
               <label>Subtype</label>
               <input value={form.account_subtype} onChange={e => setForm({ ...form, account_subtype: e.target.value })} placeholder="e.g. Bank, Receivable" />
             </div>
+            <div className="form-group">
+              <label>BIR Flag</label>
+              <SelectField value={form.bir_flag} onChange={e => setForm({ ...form, bir_flag: e.target.value })}>
+                <option value="BOTH">BOTH</option>
+                <option value="DEDUCTIBLE">DEDUCTIBLE</option>
+                <option value="NON_DEDUCTIBLE">NON_DEDUCTIBLE</option>
+              </SelectField>
+            </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleCreate}>Create</button>
+              <button className="btn" onClick={() => { setShowModal(false); setEditingId(null); resetForm(); }}>Cancel</button>
+              <button className="btn btn-primary" onClick={editingId ? handleUpdate : handleCreate}>
+                {editingId ? 'Save Changes' : 'Create'}
+              </button>
             </div>
           </div>
         </div>
