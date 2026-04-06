@@ -6,14 +6,14 @@ const getAll = catchAsync(async (req, res) => {
   if (req.query.entity_id) filter.entity_id = req.query.entity_id;
   if (req.query.active_only !== 'false') filter.is_active = true;
   const territories = await Territory.find(filter)
-    .populate('assigned_bdms', 'firstName lastName email')
+    .populate('assigned_bdms', 'name email')
     .sort({ territory_code: 1 }).lean();
   res.json({ success: true, data: territories });
 });
 
 const getById = catchAsync(async (req, res) => {
   const territory = await Territory.findById(req.params.id)
-    .populate('assigned_bdms', 'firstName lastName email').lean();
+    .populate('assigned_bdms', 'name email').lean();
   if (!territory) return res.status(404).json({ success: false, message: 'Territory not found' });
   res.json({ success: true, data: territory });
 });

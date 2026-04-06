@@ -27,6 +27,7 @@ const pettyCashFundSchema = new mongoose.Schema({
     enum: ['REVOLVING', 'EXPENSE_ONLY', 'DEPOSIT_ONLY'],
     default: 'REVOLVING'
   },
+  coa_code: { type: String, trim: true, default: '1000' },  // Cash on Hand (default for petty cash)
   authorized_amount: { type: Number, default: 10000 },
   current_balance: { type: Number, default: 0 },
   balance_ceiling: { type: Number, default: 5000 },

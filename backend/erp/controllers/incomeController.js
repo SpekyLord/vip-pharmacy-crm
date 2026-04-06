@@ -24,19 +24,27 @@ const generateIncome = catchAsync(async (req, res) => {
   if (!bdm_id || !period || !cycle) {
     return res.status(400).json({ success: false, message: 'bdm_id, period, and cycle are required' });
   }
+  // BDMs can only generate for themselves; admin/finance/president can generate for any BDM in their entity
+  const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
+  if (!canViewOther && bdm_id !== req.bdmId?.toString()) {
+    return res.status(403).json({ success: false, message: 'Cannot generate income report for another BDM' });
+  }
   const report = await generateIncomeReport(req.entityId, bdm_id, period, cycle, req.user._id);
   res.status(201).json({ success: true, data: report });
 });
 
 const getIncomeList = catchAsync(async (req, res) => {
   const filter = { ...req.tenantFilter };
-  if (req.query.bdm_id) filter.bdm_id = req.query.bdm_id;
+  // BDMs only see their own income reports
+  const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
+  if (req.query.bdm_id && canViewOther) filter.bdm_id = req.query.bdm_id;
+  else if (!canViewOther && req.bdmId) filter.bdm_id = req.bdmId;
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
   if (req.query.status) filter.status = req.query.status;
 
   const reports = await IncomeReport.find(filter)
-    .populate('bdm_id', 'firstName lastName email')
+    .populate('bdm_id', 'name email')
     .sort({ period: -1, cycle: -1 })
     .lean();
   res.json({ success: true, data: reports });
@@ -44,9 +52,9 @@ const getIncomeList = catchAsync(async (req, res) => {
 
 const getIncomeById = catchAsync(async (req, res) => {
   const report = await IncomeReport.findOne({ _id: req.params.id, ...req.tenantFilter })
-    .populate('bdm_id', 'firstName lastName email')
-    .populate('reviewed_by', 'firstName lastName')
-    .populate('credited_by', 'firstName lastName');
+    .populate('bdm_id', 'name email')
+    .populate('reviewed_by', 'name')
+    .populate('credited_by', 'name');
   if (!report) return res.status(404).json({ success: false, message: 'Income report not found' });
   res.json({ success: true, data: report });
 });
@@ -128,7 +136,7 @@ const getPnlList = catchAsync(async (req, res) => {
   if (req.query.status) filter.status = req.query.status;
 
   const reports = await PnlReport.find(filter)
-    .populate('bdm_id', 'firstName lastName email')
+    .populate('bdm_id', 'name email')
     .sort({ period: -1 })
     .lean();
   res.json({ success: true, data: reports });
@@ -136,8 +144,8 @@ const getPnlList = catchAsync(async (req, res) => {
 
 const getPnlById = catchAsync(async (req, res) => {
   const report = await PnlReport.findOne({ _id: req.params.id, ...req.tenantFilter })
-    .populate('bdm_id', 'firstName lastName email')
-    .populate('posted_by', 'firstName lastName');
+    .populate('bdm_id', 'name email')
+    .populate('posted_by', 'name');
   if (!report) return res.status(404).json({ success: false, message: 'PNL report not found' });
   res.json({ success: true, data: report });
 });
@@ -364,8 +372,8 @@ const getArchiveList = catchAsync(async (req, res) => {
   if (req.query.fiscal_year) filter.fiscal_year = parseInt(req.query.fiscal_year);
 
   const archives = await MonthlyArchive.find(filter)
-    .populate('closed_by', 'firstName lastName')
-    .populate('fy_closed_by', 'firstName lastName')
+    .populate('closed_by', 'name')
+    .populate('fy_closed_by', 'name')
     .sort({ period: -1 })
     .lean();
   res.json({ success: true, data: archives });

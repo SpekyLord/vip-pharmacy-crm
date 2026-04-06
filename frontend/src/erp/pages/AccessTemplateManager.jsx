@@ -76,7 +76,7 @@ export default function AccessTemplateManager() {
       ]);
       setTemplates(tplRes?.data || []);
       setSubPermKeys(spkRes?.data || {});
-    } catch {}
+    } catch (err) { console.error('[AccessTemplateManager] load error:', err.message); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -106,7 +106,7 @@ export default function AccessTemplateManager() {
       }
       setEditing(null);
       load();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   const handleDelete = async (id) => {
@@ -114,7 +114,7 @@ export default function AccessTemplateManager() {
     try {
       await api.deleteTemplate(id);
       load();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   const setModuleLevel = (modKey, level) => {

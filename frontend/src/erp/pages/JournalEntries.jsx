@@ -44,7 +44,13 @@ const pageStyles = `
   .balance-err { color: #dc2626; }
   .je-empty { text-align: center; color: #64748b; padding: 40px; }
   .je-back { cursor: pointer; font-size: 13px; color: var(--erp-accent); margin-bottom: 12px; display: inline-block; }
-  @media(max-width: 768px) { .je-main { padding: 12px; } .je-line-row { grid-template-columns: 1fr; } }
+  .je-batch-bar { display: flex; gap: 8px; align-items: center; padding: 10px 14px; background: #eff6ff; border-radius: 8px; margin-bottom: 10px; font-size: 13px; color: #1e40af; flex-wrap: wrap; }
+  .je-batch-bar strong { font-weight: 700; }
+  .je-chk { width: 16px; height: 16px; cursor: pointer; accent-color: var(--erp-accent); }
+  .je-batch-result { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .je-batch-result-body { background: var(--erp-panel, #fff); border-radius: 12px; padding: 24px; width: 420px; max-width: 95vw; max-height: 80vh; overflow-y: auto; }
+  @media(max-width: 768px) { .je-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .je-line-row { grid-template-columns: 1fr; } }
+  @media(max-width: 375px) { .je-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .form-group input, .form-group select { font-size: 16px; } }
 `;
 
 const getCurrentPeriod = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
@@ -64,6 +70,11 @@ export default function JournalEntries() {
   const [period, setPeriod] = useState(getCurrentPeriod());
   const [statusFilter, setStatusFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+
+  // Batch post state
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [batchPosting, setBatchPosting] = useState(false);
+  const [batchResults, setBatchResults] = useState(null);
 
   // Create form
   const [jeForm, setJeForm] = useState({ je_date: new Date().toISOString().slice(0, 10), description: '', bir_flag: 'BOTH' });
@@ -99,6 +110,28 @@ export default function JournalEntries() {
 
   const handlePost = async (id) => {
     try { await api.postJournal(id); loadJournals(); if (selected?._id === id) viewDetail(id); } catch { /* */ }
+  };
+
+  const draftIds = journals.filter(j => j.status === 'DRAFT').map(j => j._id);
+  const toggleSelect = (id) => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleSelectAll = () => {
+    if (draftIds.every(id => selectedIds.has(id))) setSelectedIds(new Set());
+    else setSelectedIds(new Set(draftIds));
+  };
+
+  const handleBatchPost = async () => {
+    if (!selectedIds.size) return;
+    if (!window.confirm(`Post ${selectedIds.size} journal entries? This action cannot be undone.`)) return;
+    setBatchPosting(true);
+    try {
+      const res = await api.batchPostJournals([...selectedIds]);
+      setBatchResults(res?.data?.results || []);
+      setSelectedIds(new Set());
+      loadJournals();
+    } catch (err) {
+      setBatchResults(err?.response?.data?.data?.results || [{ success: false, reason: err?.message || 'Error' }]);
+    }
+    setBatchPosting(false);
   };
 
   const handleReverse = async (id) => {
@@ -137,12 +170,30 @@ export default function JournalEntries() {
                   <option value="VOID">VOID</option>
                 </SelectField>
               </div>
+              {selectedIds.size > 0 && (
+                <div className="je-batch-bar">
+                  <strong>{selectedIds.size}</strong> draft(s) selected
+                  <button className="btn btn-success btn-sm" onClick={handleBatchPost} disabled={batchPosting}>
+                    {batchPosting ? 'Posting...' : `Batch Post (${selectedIds.size})`}
+                  </button>
+                  <button className="btn btn-sm" style={{ background: '#fee2e2', color: '#dc2626' }} onClick={() => setSelectedIds(new Set())}>Clear</button>
+                </div>
+              )}
               {loading ? <div className="je-empty">Loading…</div> : journals.length === 0 ? <div className="je-empty">No journal entries</div> : (
+                <div className="govr-table-wrap" style={{ overflowX: 'auto' }}>
                 <table className="je-table">
-                  <thead><tr><th>JE#</th><th>Date</th><th>Description</th><th>Source</th><th>DR</th><th>CR</th><th>Status</th><th>Actions</th></tr></thead>
+                  <thead><tr>
+                    {isAdmin && draftIds.length > 0 && <th style={{ width: 36 }}><input type="checkbox" className="je-chk" checked={draftIds.length > 0 && draftIds.every(id => selectedIds.has(id))} onChange={toggleSelectAll} title="Select all drafts" /></th>}
+                    <th>JE#</th><th>Date</th><th>Description</th><th>Source</th><th>DR</th><th>CR</th><th>Status</th><th>Actions</th>
+                  </tr></thead>
                   <tbody>
                     {journals.map(j => (
                       <tr key={j._id} style={{ cursor: 'pointer' }} onClick={() => viewDetail(j._id)}>
+                        {isAdmin && draftIds.length > 0 && (
+                          <td onClick={e => e.stopPropagation()}>
+                            {j.status === 'DRAFT' && <input type="checkbox" className="je-chk" checked={selectedIds.has(j._id)} onChange={() => toggleSelect(j._id)} />}
+                          </td>
+                        )}
                         <td style={{ fontWeight: 600 }}>{j.je_number}</td>
                         <td>{new Date(j.je_date).toLocaleDateString()}</td>
                         <td>{j.description || '—'}</td>
@@ -158,6 +209,7 @@ export default function JournalEntries() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </>
           ) : (
@@ -193,6 +245,25 @@ export default function JournalEntries() {
                 </div>
               )}
             </>
+          )}
+
+          {/* Batch Post Results */}
+          {batchResults && (
+            <div className="je-batch-result" onClick={() => setBatchResults(null)}>
+              <div className="je-batch-result-body" onClick={e => e.stopPropagation()}>
+                <h3>Batch Post Results</h3>
+                <div style={{ marginBottom: 12 }}>
+                  <span style={{ color: '#16a34a', fontWeight: 600 }}>{batchResults.filter(r => r.success).length} posted</span>
+                  {batchResults.some(r => !r.success) && <span style={{ color: '#dc2626', fontWeight: 600, marginLeft: 12 }}>{batchResults.filter(r => !r.success).length} failed</span>}
+                </div>
+                {batchResults.filter(r => !r.success).map((r, i) => (
+                  <div key={i} style={{ fontSize: 12, color: '#dc2626', marginBottom: 4 }}>JE #{r.je_number || r.id}: {r.reason}</div>
+                ))}
+                <div style={{ textAlign: 'right', marginTop: 16 }}>
+                  <button className="btn btn-primary" onClick={() => setBatchResults(null)}>Close</button>
+                </div>
+              </div>
+            </div>
           )}
 
           {showCreate && (

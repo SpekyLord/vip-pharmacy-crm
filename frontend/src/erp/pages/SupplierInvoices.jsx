@@ -49,7 +49,8 @@ const styles = `
   .si-actions { display: flex; gap: 4px; }
   .si-pag { display: flex; justify-content: center; gap: 8px; margin-top: 14px; align-items: center; font-size: 13px; }
   .si-pay-form { background: #f8fafc; padding: 14px; border-radius: 8px; margin-top: 12px; }
-  @media(max-width: 768px) { .si-main { padding: 12px; } .form-row { grid-template-columns: 1fr; } .si-modal-body { width: 95vw; } }
+  @media(max-width: 768px) { .si-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .form-row { grid-template-columns: 1fr; } .si-modal-body { width: 95vw; } }
+  @media(max-width: 375px) { .si-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .si-main input, .si-main select { font-size: 16px; } }
 `;
 
 const EMPTY_LINE = { product_id: '', item_key: '', qty_invoiced: 1, unit_price: 0 };

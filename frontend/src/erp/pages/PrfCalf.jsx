@@ -12,12 +12,13 @@ import SelectField from '../../components/common/Select';
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
-const PAYMENT_MODES = ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'CARD', 'OTHER'];
+const PRF_PAYMENT_MODES = ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'OTHER'];
+const CALF_PAYMENT_MODES = ['CARD', 'BANK_TRANSFER', 'GCASH', 'CHECK'];
 
 export default function PrfCalf() {
   const { user } = useAuth();
   const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines, loading } = useExpenses();
-  const { getMyCards, listBankAccounts } = useAccounting();
+  const { getMyCards, getMyBankAccounts } = useAccounting();
 
   const [docs, setDocs] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
@@ -56,8 +57,8 @@ export default function PrfCalf() {
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
   useEffect(() => {
-    getMyCards().then(r => setMyCards(r?.data || [])).catch(() => {});
-    listBankAccounts().then(r => setBankAccounts(r?.data || [])).catch(() => {});
+    getMyCards().then(r => setMyCards(r?.data || [])).catch(err => console.error('[PrfCalf]', err.message));
+    getMyBankAccounts().then(r => setBankAccounts(r?.data || [])).catch(err => console.error('[PrfCalf]', err.message));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load pending partner rebates + pending CALF lines
@@ -129,7 +130,8 @@ export default function PrfCalf() {
     partner_bank: '', partner_account_name: '', partner_account_no: '',
     rebate_amount: 0, amount: 0,
     calf_number: '', advance_amount: 0, liquidation_amount: 0,
-    payment_mode: 'CASH', check_no: '', bank: '',
+    payment_mode: docType === 'CALF' ? 'CARD' : 'CASH', check_no: '', bank: '',
+    funding_card_id: null, funding_account_id: null,
     notes: '', photo_urls: []
   });
 
@@ -151,12 +153,13 @@ export default function PrfCalf() {
         notes: data.notes || '', photo_urls: data.photo_urls || []
       });
       setShowForm(true);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[PrfCalf] load error:', err.message); }
   };
 
   const handleSave = async () => {
+    const { calf_number: _excluded, ...formData } = form;
     const data = {
-      ...form,
+      ...formData,
       period, cycle,
       amount: form.doc_type === 'PRF' ? form.rebate_amount : form.advance_amount
     };
@@ -165,13 +168,13 @@ export default function PrfCalf() {
       else { await createPrfCalf(data); }
       setShowForm(false);
       loadDocs();
-    } catch { /* ignore */ }
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
-  const handleValidate = async () => { try { await validatePrfCalf(); loadDocs(); } catch {} };
-  const handleSubmit = async () => { try { await submitPrfCalf(); loadDocs(); } catch {} };
-  const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch {} };
-  const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch {} };
+  const handleValidate = async () => { try { await validatePrfCalf(); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
+  const handleSubmit = async () => { try { await submitPrfCalf(); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
+  const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
+  const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
 
   const isFinance = ['admin', 'finance', 'president'].includes(user?.role);
   const calfBalance = (form.advance_amount || 0) - (form.liquidation_amount || 0);
@@ -377,7 +380,7 @@ export default function PrfCalf() {
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ fontSize: 13 }}>Payment Mode:
                   <SelectField value={form.payment_mode} onChange={e => setForm(p => ({ ...p, payment_mode: e.target.value, funding_card_id: null, funding_account_id: null }))} style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }}>
-                    {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                    {(form.doc_type === 'CALF' ? CALF_PAYMENT_MODES : PRF_PAYMENT_MODES).map(m => <option key={m} value={m}>{m}</option>)}
                   </SelectField>
                 </label>
                 {/* Card Used — inline right of payment mode for CARD */}

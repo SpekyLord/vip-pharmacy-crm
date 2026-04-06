@@ -15,6 +15,8 @@ const { journalFromAP } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');
 const { getApLedger, getApAging, getApConsolidated, getGrni } = require('../services/apService');
 const { recordApPayment, getPaymentHistory } = require('../services/apPaymentService');
+const { createVatEntry } = require('../services/vatService');
+const XLSX = require('xlsx');
 
 /* ═══════════════════════════════════════════════════════════════════════
    PURCHASE ORDERS
@@ -275,6 +277,23 @@ const postInvoice = catchAsync(async (req, res) => {
   invoice.event_id = je._id;
   await invoice.save();
 
+  // VAT Ledger — INPUT VAT from supplier invoice
+  const inputVat = invoice.input_vat || invoice.vat_amount || 0;
+  if (inputVat > 0) {
+    await createVatEntry({
+      entity_id: req.entityId,
+      period: je.period,
+      vat_type: 'INPUT',
+      source_module: 'SUPPLIER_INVOICE',
+      source_doc_ref: invoice.invoice_ref,
+      source_event_id: je._id,
+      hospital_or_vendor: invoice.vendor_id,
+      tin: invoice.vendor_tin,
+      gross_amount: invoice.total_amount || (invoice.net_amount + inputVat),
+      vat_amount: inputVat
+    }).catch(err => console.error('VAT entry failed for SI:', invoice.invoice_ref, err.message));
+  }
+
   res.json({ success: true, data: { invoice, journal_entry: je } });
 });
 
@@ -316,9 +335,51 @@ const paymentHistory = catchAsync(async (req, res) => {
   res.json({ success: true, data });
 });
 
+// ═══ Export Purchase Orders (Excel) ═══
+const exportPOs = catchAsync(async (req, res) => {
+  const pos = await PurchaseOrder.find({ entity_id: req.entityId })
+    .populate('vendor_id', 'vendor_name vendor_code')
+    .sort({ created_at: -1 })
+    .lean();
+
+  const rows = [];
+  for (const po of pos) {
+    for (const li of po.line_items || []) {
+      rows.push({
+        'PO Number': po.po_number || '',
+        'PO Date': po.po_date ? new Date(po.po_date).toISOString().slice(0, 10) : '',
+        'Vendor Code': po.vendor_id?.vendor_code || '',
+        'Vendor Name': po.vendor_id?.vendor_name || '',
+        'Status': po.status || '',
+        'Expected Delivery': po.expected_delivery_date ? new Date(po.expected_delivery_date).toISOString().slice(0, 10) : '',
+        'Item Key': li.item_key || '',
+        'Qty Ordered': li.qty_ordered || 0,
+        'Unit Price': li.unit_price || 0,
+        'Line Total': li.line_total || 0,
+        'Qty Received': li.qty_received || 0,
+        'Qty Invoiced': li.qty_invoiced || 0,
+        'PO Total': po.total_amount || 0,
+        'VAT': po.vat_amount || 0,
+        'Net': po.net_amount || 0,
+        'Notes': po.notes || ''
+      });
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 25 }, { wch: 12 }, { wch: 14 }, { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 25 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Purchase Orders');
+
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="purchase-orders-export.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
 module.exports = {
   // PO
-  createPO, updatePO, getPOs, getPOById, approvePO, cancelPO, receivePO,
+  createPO, updatePO, getPOs, getPOById, approvePO, cancelPO, receivePO, exportPOs,
   // Supplier Invoices
   createInvoice, updateInvoice, getInvoices, getInvoiceById, validateInvoice, postInvoice,
   // AP

@@ -8,11 +8,13 @@ import Sidebar from '../../components/common/Sidebar';
 import SelectField from '../../components/common/Select';
 import { useAuth } from '../../hooks/useAuth';
 import useHospitals from '../hooks/useHospitals';
-import api from '../../services/api';
+import usePeople from '../hooks/usePeople';
+import useErpApi from '../hooks/useErpApi';
 
 export default function HospitalList() {
   const { user } = useAuth();
   const { hospitals, loading, refresh } = useHospitals();
+  const erpApi = useErpApi();
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -25,11 +27,12 @@ export default function HospitalList() {
     credit_limit: '', credit_limit_action: 'WARN'
   });
 
+  const { getAsUsers } = usePeople();
   useEffect(() => {
-    api.get('/users?role=employee&limit=100').then(res => {
-      setBdmList(res.data?.data || res.data || []);
-    }).catch(() => {});
-  }, []);
+    getAsUsers({ role: 'employee' }).then(res => {
+      setBdmList(res?.data || []);
+    }).catch(err => console.error('[HospitalList]', err.message));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = hospitals.filter(h =>
     !search || h.hospital_name?.toLowerCase().includes(search.toLowerCase())
@@ -104,6 +107,28 @@ export default function HospitalList() {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      const res = await erpApi.get('/hospitals/export', { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res]));
+      const a = document.createElement('a'); a.href = url; a.download = 'hospitals-export.xlsx'; a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* hook handles */ }
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await erpApi.post('/hospitals/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      alert(res?.message || 'Import complete');
+      refresh();
+    } catch { /* hook handles */ }
+    e.target.value = '';
+  };
+
   const pageStyles = `
     @media (max-width: 900px) {
       .hospital-table-wrap { overflow-x: auto; border-radius: 12px; }
@@ -168,9 +193,15 @@ export default function HospitalList() {
               <h1 style={{ fontSize: 22, margin: 0 }}>Hospitals</h1>
               <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>{filtered.length} hospitals</p>
             </div>
-            {['admin', 'finance', 'president'].includes(user?.role) && (
-              <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={openCreate}>+ New Hospital</button>
-            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button style={{ ...styles.btn, ...styles.btnOutline }} onClick={handleExport}>Export Excel</button>
+              {['admin', 'finance', 'president'].includes(user?.role) && (
+                <label style={{ ...styles.btn, ...styles.btnOutline, cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>
+              )}
+              {['admin', 'finance', 'president'].includes(user?.role) && (
+                <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={openCreate}>+ New Hospital</button>
+              )}
+            </div>
           </div>
 
           <div style={styles.filters}>

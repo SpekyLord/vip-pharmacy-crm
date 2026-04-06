@@ -1,5 +1,6 @@
 const PeopleMaster = require('../models/PeopleMaster');
 const CompProfile = require('../models/CompProfile');
+const User = require('../../models/User');
 const { catchAsync } = require('../../middleware/errorHandler');
 
 // ═══ People CRUD ═══
@@ -152,6 +153,7 @@ const updateCompProfile = catchAsync(async (req, res) => {
     'km_per_liter', 'fuel_overconsumption_threshold', 'smer_eligible',
     'perdiem_engagement_threshold_full', 'perdiem_engagement_threshold_half',
     'logbook_eligible', 'vehicle_type', 'ore_eligible', 'access_eligible', 'crm_linked',
+    'profit_share_eligible', 'commission_rate',
     'tax_status', 'reason',
   ];
 
@@ -164,6 +166,83 @@ const updateCompProfile = catchAsync(async (req, res) => {
   res.json({ success: true, data: profile });
 });
 
+/**
+ * POST /people/sync-from-crm — import CRM Users with erp_access.enabled into PeopleMaster
+ * Skips users that already have a PeopleMaster record. Creates new records for missing ones.
+ */
+const syncFromCrm = catchAsync(async (req, res) => {
+  // Get all CRM users with ERP access for this entity
+  const crmUsers = await User.find({
+    entity_id: req.entityId,
+    'erp_access.enabled': true
+  }).select('_id name email role entity_id').lean();
+
+  // Get existing PeopleMaster user_ids
+  const existing = await PeopleMaster.find({ entity_id: req.entityId })
+    .select('user_id').lean();
+  const existingUserIds = new Set(existing.map(p => p.user_id?.toString()).filter(Boolean));
+
+  let created = 0, skipped = 0;
+  for (const u of crmUsers) {
+    if (existingUserIds.has(u._id.toString())) { skipped++; continue; }
+
+    // Parse name
+    const nameParts = (u.name || '').trim().split(/\s+/);
+    const firstName = nameParts[0] || u.name || 'Unknown';
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+
+    // Map CRM role to person_type
+    const typeMap = { admin: 'EMPLOYEE', president: 'DIRECTOR', employee: 'BDM', medrep: 'SALES_REP', finance: 'EMPLOYEE' };
+    const personType = typeMap[u.role] || 'EMPLOYEE';
+
+    await PeopleMaster.create({
+      entity_id: req.entityId,
+      user_id: u._id,
+      person_type: personType,
+      full_name: u.name || 'Unknown',
+      first_name: firstName,
+      last_name: lastName,
+      position: u.role === 'employee' ? 'BDM' : u.role,
+      department: u.role === 'employee' ? 'SALES' : 'ADMIN',
+      employment_type: 'REGULAR',
+      is_active: true
+    });
+    created++;
+  }
+
+  res.json({ success: true, message: `Synced: ${created} created, ${skipped} already exist`, data: { created, skipped, total_crm_users: crmUsers.length } });
+});
+
+/**
+ * GET /people/as-users — lightweight user list (CRM-compatible shape)
+ * Returns { _id, name, role, isActive } from PeopleMaster → User,
+ * scoped by entity. Replaces crmApi.get('/users') calls in ERP pages.
+ */
+const getAsUsers = catchAsync(async (req, res) => {
+  const filter = { entity_id: req.entityId, is_active: true };
+  if (req.query.role) filter.department = req.query.role; // optional filter
+
+  const people = await PeopleMaster.find(filter)
+    .populate('user_id', 'name email role')
+    .sort({ full_name: 1 })
+    .lean();
+
+  const users = people
+    .filter(p => p.user_id)
+    .map(p => ({
+      _id: p.user_id._id,
+      name: p.user_id.name || p.full_name,
+      email: p.user_id.email,
+      role: p.user_id.role || 'employee',
+      isActive: true,
+      person_id: p._id,
+      full_name: p.full_name,
+      department: p.department
+    }));
+
+  res.json({ success: true, data: users });
+});
+
 module.exports = {
   getPeopleList,
   getPersonById,
@@ -173,4 +252,6 @@ module.exports = {
   getCompProfile,
   createCompProfile,
   updateCompProfile,
+  getAsUsers,
+  syncFromCrm,
 };

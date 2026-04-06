@@ -5,7 +5,7 @@ export default function useCollections() {
 
   const getCollections = (params) => api.get('/collections', { params });
   const getCollectionById = (id) => api.get(`/collections/${id}`);
-  const getOpenCsis = (hospitalId, entityId) => api.get('/collections/open-csis', { params: { hospital_id: hospitalId, ...(entityId && { entity_id: entityId }) } });
+  const getOpenCsis = (id, entityId, { isCustomer } = {}) => api.get('/collections/open-csis', { params: { ...(isCustomer ? { customer_id: id } : { hospital_id: id }), ...(entityId && { entity_id: entityId }) } });
   const createCollection = (data) => api.post('/collections', data);
   const updateCollection = (id, data) => api.put(`/collections/${id}`, data);
   const deleteDraft = (id) => api.del(`/collections/draft/${id}`);

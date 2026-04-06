@@ -85,7 +85,7 @@ export default function Collections() {
       const res = await coll.getCollections(params);
       setData(res?.data || []);
       setPagination(res?.pagination || { page: 1, limit: 20, total: 0, pages: 0 });
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[Collections] load error:', err.message); } finally { setLoading(false); }
   }, [filters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -112,7 +112,7 @@ export default function Collections() {
     try { await coll.deleteDraft(id); loadData(pagination.page); } catch (err) { alert(err.response?.data?.message || 'Delete failed'); }
   };
   const viewDetail = async (id) => {
-    try { const res = await coll.getCollectionById(id); if (res?.data) setSelected(res.data); } catch {}
+    try { const res = await coll.getCollectionById(id); if (res?.data) setSelected(res.data); } catch (err) { console.error('[Collections] load error:', err.message); }
   };
 
   return (

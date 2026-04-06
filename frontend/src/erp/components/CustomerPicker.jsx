@@ -71,8 +71,8 @@ export default function CustomerPicker({ value, onChange, saleType, disabled = f
     try {
       // Fetch from both endpoints in parallel
       const [hospRes, custRes] = await Promise.allSettled([
-        api.get('/erp/hospitals', { params: { q, limit: 10 } }),
-        api.get('/erp/customers', { params: { q, limit: 10 } }),
+        api.get('/erp/hospitals', { params: { q, limit: 50 } }),
+        api.get('/erp/customers', { params: { q, limit: 50 } }),
       ]);
 
       const items = [];
@@ -84,7 +84,7 @@ export default function CustomerPicker({ value, onChange, saleType, disabled = f
           items.push({
             type: 'hospital',
             id: h._id,
-            name: h.hospital_name || h.name || 'Unknown Hospital',
+            name: h.hospital_name || 'Unknown Hospital',
             sub: h.address || '',
           });
         });

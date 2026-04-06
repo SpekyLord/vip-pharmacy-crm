@@ -36,7 +36,10 @@ const pageStyles = `
   .tree-item:hover { background: var(--erp-accent-soft); }
   .tree-code { font-weight: 700; color: var(--erp-accent); min-width: 120px; }
   .loading { text-align: center; padding: 40px; color: var(--erp-muted); }
-  @media(max-width: 768px) { .cc-main { padding: 12px; } .form-row { flex-direction: column; } }
+  .btn-outline { background: transparent; border: 1px solid var(--erp-border); color: var(--erp-text); }
+  .upload-input { display: none; }
+  @media(max-width: 768px) { .cc-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .form-row { flex-direction: column; } }
+  @media(max-width: 375px) { .cc-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .cc-main input, .cc-main select { font-size: 16px; } }
 `;
 
 function TreeView({ nodes, onToggle }) {
@@ -76,7 +79,9 @@ export default function CostCenters() {
       const [treeRes, listRes] = await Promise.all([rpt.getCostCenterTree(), rpt.getCostCenters({ include_inactive: true })]);
       setTree(treeRes?.data || []);
       setFlatList(listRes?.data || []);
-    } catch {}
+    } catch (err) {
+      console.error('[CostCenters] load failed:', err?.response?.data?.message || err.message);
+    }
     setLoading(false);
   }, []);
 
@@ -88,11 +93,35 @@ export default function CostCenters() {
       await rpt.createCostCenter(form);
       setForm({ code: '', name: '', parent_cost_center: '', description: '' });
       load();
-    } catch {}
+    } catch (err) {
+      alert(err?.response?.data?.message || err.message || 'Failed to create cost center');
+    }
   };
 
   const handleToggle = async (id, is_active) => {
-    try { await rpt.updateCostCenter(id, { is_active }); load(); } catch {}
+    try { await rpt.updateCostCenter(id, { is_active }); load(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+  };
+
+  const handleExport = async () => {
+    try {
+      const res = await rpt.exportCostCenters();
+      const url = URL.createObjectURL(new Blob([res]));
+      const a = document.createElement('a'); a.href = url; a.download = 'cost-centers-export.xlsx'; a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* hook handles */ }
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await rpt.importCostCenters(fd);
+      alert(res?.message || 'Import complete');
+      load();
+    } catch { /* hook handles */ }
+    e.target.value = '';
   };
 
   return (
@@ -103,7 +132,13 @@ export default function CostCenters() {
         <Sidebar />
         <div className="cc-main">
           <div className="cc-header">
-            <h1>Cost Centers</h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <h1>Cost Centers</h1>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
+                <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>
+              </div>
+            </div>
             <p>Manage cost center hierarchy for financial reporting</p>
           </div>
 

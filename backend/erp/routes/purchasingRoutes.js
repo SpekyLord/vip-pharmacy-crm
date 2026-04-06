@@ -26,6 +26,7 @@ router.post('/invoices/:id/post', erpSubAccessCheck('purchasing', 'supplier_invo
 router.post('/invoices/:id/pay', erpSubAccessCheck('purchasing', 'ap_payment'), c.recordPayment);
 
 // ═══ Purchase Orders ═══
+router.get('/orders/export', c.exportPOs);
 router.get('/orders', c.getPOs);
 router.post('/orders', erpSubAccessCheck('purchasing', 'po_create'), c.createPO);
 router.get('/orders/:id', c.getPOById);

@@ -58,7 +58,7 @@ export default function PerformanceRanking() {
 
   const loadRanking = useCallback(async () => {
     setLoading(true);
-    try { const res = await rpt.getPerformanceRanking(period); setData(res?.data || null); } catch {}
+    try { const res = await rpt.getPerformanceRanking(period); setData(res?.data || null); } catch (err) { console.error('[PerformanceRanking] load error:', err.message); }
     setLoading(false);
   }, [period]);
 
@@ -67,14 +67,14 @@ export default function PerformanceRanking() {
     try {
       const res = type === 'sales' ? await rpt.getSalesTracker(year) : await rpt.getCollectionsTracker(year);
       setTrackerData(res?.data || null);
-    } catch {}
+    } catch (err) { console.error('[PerformanceRanking] load error:', err.message); }
     setLoading(false);
   }, [year]);
 
   const loadTrend = useCallback(async (personId) => {
     if (expandedPerson === personId) { setExpandedPerson(null); return; }
     setExpandedPerson(personId);
-    try { const res = await rpt.getPerformanceTrend(personId); setTrendData(res?.data || null); } catch {}
+    try { const res = await rpt.getPerformanceTrend(personId); setTrendData(res?.data || null); } catch (err) { console.error('[PerformanceRanking] load error:', err.message); }
   }, [expandedPerson]);
 
   const handleTabChange = (t) => {

@@ -7,6 +7,7 @@
 const mongoose = require('mongoose');
 const Collateral = require('../models/Collateral');
 const { catchAsync } = require('../../middleware/errorHandler');
+const XLSX = require('xlsx');
 
 // ═══════════════════════════════════════════════════════════
 // CRUD
@@ -16,20 +17,21 @@ const { catchAsync } = require('../../middleware/errorHandler');
  * GET / — list collateral, filterable by collateral_type, assigned_to, is_active
  */
 const getAll = catchAsync(async (req, res) => {
-  const { collateral_type, assigned_to, is_active, page = 1, limit = 50 } = req.query;
+  const { collateral_type, assigned_to, is_active } = req.query;
+  const page = Number(req.query.page) || 1;
+  const rawLimit = req.query.limit;
+  const limit = rawLimit === '0' || rawLimit === 0 ? 0 : (Number(rawLimit) || 50);
 
   const filter = { ...req.tenantFilter };
   if (collateral_type) filter.collateral_type = collateral_type;
   if (assigned_to) filter.assigned_to = assigned_to;
   if (is_active !== undefined) filter.is_active = is_active === 'true';
 
-  const skip = (Number(page) - 1) * Number(limit);
+  const query = Collateral.find(filter).sort({ created_at: -1 });
+  if (limit > 0) query.skip((page - 1) * limit).limit(limit);
+
   const [items, total] = await Promise.all([
-    Collateral.find(filter)
-      .sort({ created_at: -1 })
-      .skip(skip)
-      .limit(Number(limit))
-      .lean(),
+    query.lean(),
     Collateral.countDocuments(filter)
   ]);
 
@@ -37,10 +39,10 @@ const getAll = catchAsync(async (req, res) => {
     success: true,
     data: items,
     pagination: {
-      page: Number(page),
-      limit: Number(limit),
+      page,
+      limit,
       total,
-      pages: Math.ceil(total / Number(limit))
+      pages: limit > 0 ? Math.ceil(total / limit) : 1
     }
   });
 });
@@ -174,11 +176,63 @@ const recordReturn = catchAsync(async (req, res) => {
   res.json({ success: true, data: item });
 });
 
+// ═══ Export Collaterals (Excel) ═══
+const exportCollaterals = catchAsync(async (req, res) => {
+  const items = await Collateral.find({ entity_id: req.entityId }).sort({ collateral_name: 1 }).lean();
+  const rows = items.map(c => ({
+    'Name': c.collateral_name || '',
+    'Type': c.collateral_type || '',
+    'Item Code': c.item_code || '',
+    'Qty On Hand': c.qty_on_hand || 0,
+    'Unit': c.unit || '',
+    'Active': c.is_active !== false ? 'YES' : 'NO'
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 25 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 8 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Collaterals');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="collaterals-export.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
+// ═══ Import Collaterals (Excel) — upsert by name+type ═══
+const importCollaterals = catchAsync(async (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+  let created = 0, updated = 0, errors = [];
+  for (const r of rows) {
+    const collateral_name = String(r['Name'] || r.collateral_name || '').trim();
+    const collateral_type = String(r['Type'] || r.collateral_type || '').trim().toUpperCase();
+    if (!collateral_name) { errors.push({ name: '(empty)', error: 'Name required' }); continue; }
+    try {
+      const result = await Collateral.findOneAndUpdate(
+        { entity_id: req.entityId, collateral_name, collateral_type },
+        {
+          entity_id: req.entityId, collateral_name, collateral_type,
+          item_code: String(r['Item Code'] || r.item_code || '').trim() || undefined,
+          qty_on_hand: r['Qty On Hand'] != null ? Number(r['Qty On Hand']) : 0,
+          unit: String(r['Unit'] || r.unit || '').trim() || undefined,
+          is_active: String(r['Active'] || 'YES').toUpperCase() !== 'NO'
+        },
+        { upsert: true, new: true }
+      );
+      if (result.createdAt && result.updatedAt && result.createdAt.getTime() === result.updatedAt.getTime()) created++;
+      else updated++;
+    } catch (err) { errors.push({ name: collateral_name, error: err.message }); }
+  }
+  res.json({ success: true, message: `Import complete: ${created} created, ${updated} updated, ${errors.length} errors`, data: { created, updated, errors } });
+});
+
 module.exports = {
   getAll,
   getById,
   create,
   update,
   recordDistribution,
-  recordReturn
+  recordReturn,
+  exportCollaterals,
+  importCollaterals
 };

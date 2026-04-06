@@ -39,7 +39,8 @@ const pageStyles = `
   .pr-msg-ok { background: #dcfce7; color: #166534; }
   .pr-msg-err { background: #fee2e2; color: #dc2626; }
   .pr-empty { text-align: center; color: #64748b; padding: 40px; }
-  @media(max-width: 768px) { .pr-main { padding: 12px; } }
+  @media(max-width: 768px) { .pr-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } }
+  @media(max-width: 375px) { .pr-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .pr-main input, .pr-main select { font-size: 16px; } }
 `;
 
 const getCurrentPeriod = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
@@ -62,7 +63,7 @@ export default function PayrollRun() {
       const res = await api.getPayrollStaging({ period, cycle });
       setPayslips(res?.data || []);
       setSummary(res?.summary || null);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[PayrollRun] load error:', err.message); } finally { setLoading(false); }
   }, [period, cycle]);
 
   const handleCompute = async () => {
@@ -81,7 +82,7 @@ export default function PayrollRun() {
       if (action === 'review') await api.reviewPayslip(id);
       if (action === 'approve') await api.approvePayslip(id);
       loadStaging();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   const handlePostAll = async () => {

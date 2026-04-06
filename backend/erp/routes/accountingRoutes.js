@@ -6,11 +6,15 @@
  */
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
+const periodLockCheck = require('../middleware/periodLockCheck');
 const ac = require('../controllers/accountingController');
 
 // ═══ Journal Entries ═══
-router.post('/journals', erpSubAccessCheck('accounting', 'journal_entry'), ac.createManualJournal);
+router.post('/journals/batch-post', erpSubAccessCheck('accounting', 'journal_entry'), ac.batchPostJournals);
+router.post('/journals', erpSubAccessCheck('accounting', 'journal_entry'), periodLockCheck('JOURNAL'), ac.createManualJournal);
 router.get('/journals', ac.listJournals);
 router.get('/journals/:id', ac.getJournalById);
 router.post('/journals/:id/post', erpSubAccessCheck('accounting', 'journal_entry'), ac.postJournalEndpoint);
@@ -38,6 +42,8 @@ router.get('/cwt-ledger/:period', ac.getCwtLedgerEndpoint);
 router.get('/cashflow/:period', ac.getCashflowEndpoint);
 
 // ═══ Fixed Assets ═══
+router.get('/fixed-assets/export', ac.exportFixedAssets);
+router.post('/fixed-assets/import', erpSubAccessCheck('accounting', 'fixed_assets'), upload.single('file'), ac.importFixedAssets);
 router.get('/fixed-assets', ac.listFixedAssets);
 router.post('/fixed-assets', erpSubAccessCheck('accounting', 'fixed_assets'), ac.createFixedAsset);
 router.post('/depreciation/compute', erpSubAccessCheck('accounting', 'fixed_assets'), ac.computeDepreciationEndpoint);
@@ -46,6 +52,8 @@ router.post('/depreciation/approve', erpSubAccessCheck('accounting', 'fixed_asse
 router.post('/depreciation/post', erpSubAccessCheck('accounting', 'fixed_assets'), ac.postDepreciationEndpoint);
 
 // ═══ Loans ═══
+router.get('/loans/export', ac.exportLoans);
+router.post('/loans/import', erpSubAccessCheck('accounting', 'loans'), upload.single('file'), ac.importLoans);
 router.get('/loans', ac.listLoans);
 router.post('/loans', erpSubAccessCheck('accounting', 'loans'), ac.createLoan);
 router.post('/interest/compute', erpSubAccessCheck('accounting', 'loans'), ac.computeInterestEndpoint);

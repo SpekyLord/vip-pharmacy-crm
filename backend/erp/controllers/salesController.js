@@ -13,6 +13,10 @@ const ConsignmentTracker = require('../models/ConsignmentTracker');
 const DocumentAttachment = require('../models/DocumentAttachment');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { consumeFIFO, consumeSpecificBatch, buildStockSnapshot } = require('../services/fifoEngine');
+const { journalFromSale, journalFromServiceRevenue, journalFromCOGS } = require('../services/autoJournal');
+const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
+const JournalEntry = require('../models/JournalEntry');
+const ProductMaster = require('../models/ProductMaster');
 
 // ═══════════════════════════════════════════════════════════
 // CRUD
@@ -456,6 +460,34 @@ const submitSales = catchAsync(async (req, res) => {
       ).catch(() => {});
     }
 
+    // Phase 11: Auto-journal entries (non-blocking — outside transaction)
+    for (const row of validRows) {
+      try {
+        const saleType = row.sale_type || 'CSI';
+        // Revenue JE
+        const jeData = saleType === 'SERVICE_INVOICE'
+          ? journalFromServiceRevenue(row, row.entity_id, req.user._id)
+          : journalFromSale(row, row.entity_id, req.user._id);
+        jeData.source_event_id = row.event_id;
+        await createAndPostJournal(row.entity_id, jeData);
+
+        // COGS JE (skip for SERVICE_INVOICE — no inventory)
+        if (saleType !== 'SERVICE_INVOICE' && row.line_items?.length) {
+          const productIds = row.line_items.map(li => li.product_id);
+          const products = await ProductMaster.find({ _id: { $in: productIds } }).select('purchase_price').lean();
+          const costMap = new Map(products.map(p => [p._id.toString(), p.purchase_price || 0]));
+          const totalCogs = row.line_items.reduce((sum, li) => sum + (li.qty || 0) * (costMap.get(li.product_id?.toString()) || 0), 0);
+          const cogsData = journalFromCOGS(row, Math.round(totalCogs * 100) / 100, req.user._id);
+          if (cogsData) {
+            cogsData.source_event_id = row.event_id;
+            await createAndPostJournal(row.entity_id, cogsData);
+          }
+        }
+      } catch (jeErr) {
+        console.error('Auto-journal failed for sale:', row.doc_ref || row._id, jeErr.message);
+      }
+    }
+
     res.json({
       success: true,
       message: `${validRows.length} sales posted successfully`,
@@ -525,6 +557,20 @@ const reopenSales = catchAsync(async (req, res) => {
         );
         consignment.qty_consumed = Math.max(0, consignment.qty_consumed - item.qty);
         await consignment.save();
+      }
+    }
+
+    // Reverse journal entries (SAP Storno)
+    if (row.event_id) {
+      try {
+        const jes = await JournalEntry.find({
+          source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
+        });
+        for (const je of jes) {
+          await reverseJournal(je._id, 'Auto-reversal: SalesLine reopen', req.user._id);
+        }
+      } catch (jeErr) {
+        console.error('JE reversal failed for sale reopen:', row._id, jeErr.message);
       }
     }
 
@@ -627,6 +673,20 @@ const approveDeletion = catchAsync(async (req, res) => {
       event_id: reversalEvent._id,
       recorded_by: req.user._id
     });
+  }
+
+  // Reverse journal entries (SAP Storno)
+  if (sale.event_id) {
+    try {
+      const jes = await JournalEntry.find({
+        source_event_id: sale.event_id, status: 'POSTED', is_reversal: { $ne: true }
+      });
+      for (const je of jes) {
+        await reverseJournal(je._id, `Auto-reversal: SalesLine deletion approved`, req.user._id);
+      }
+    } catch (jeErr) {
+      console.error('JE reversal failed for sale deletion:', sale._id, jeErr.message);
+    }
   }
 
   // Mark original with deletion_event_id (original stays POSTED for audit trail)

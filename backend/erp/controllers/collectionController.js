@@ -15,6 +15,13 @@ const { catchAsync } = require('../../middleware/errorHandler');
 const { getOpenCsis, getArAging, getCollectionRate, getHospitalArBalance } = require('../services/arEngine');
 const { enrichArWithDunning } = require('../services/dunningService');
 const { generateSoaWorkbook } = require('../services/soaGenerator');
+const { journalFromCollection, journalFromCWT, journalFromCommission, resolveFundingCoa } = require('../services/autoJournal');
+const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
+const JournalEntry = require('../models/JournalEntry');
+const { createVatEntry } = require('../services/vatService');
+const { createCwtEntry } = require('../services/cwtService');
+const VatLedger = require('../models/VatLedger');
+const CwtLedger = require('../models/CwtLedger');
 
 // ═══ CRUD ═══
 
@@ -85,14 +92,15 @@ const getCollectionById = catchAsync(async (req, res) => {
 
 const getOpenCsisEndpoint = catchAsync(async (req, res) => {
   const hospitalId = req.query.hospital_id;
-  if (!hospitalId) return res.status(400).json({ success: false, message: 'hospital_id required' });
+  const customerId = req.query.customer_id;
+  if (!hospitalId && !customerId) return res.status(400).json({ success: false, message: 'hospital_id or customer_id required' });
 
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.entity_id
     ? req.query.entity_id : req.entityId;
   const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.bdm_id
     ? req.query.bdm_id : req.bdmId;
 
-  const csis = await getOpenCsis(entityId, bdmId, hospitalId);
+  const csis = await getOpenCsis(entityId, bdmId, hospitalId, customerId);
   res.json({ success: true, data: csis });
 });
 
@@ -290,6 +298,79 @@ const submitCollections = catchAsync(async (req, res) => {
       }
     }
 
+    // Phase 11: Auto-journal + VAT/CWT ledger + commission (non-blocking)
+    for (const row of validRows) {
+      try {
+        // Collection JE
+        const funding = await resolveFundingCoa(row);
+        const jeData = journalFromCollection(row, funding.coa_code, funding.coa_name, req.user._id);
+        jeData.source_event_id = row.event_id;
+        await createAndPostJournal(row.entity_id, jeData);
+
+        // CWT journal if applicable
+        if (row.cwt_amount > 0) {
+          const cwtData = journalFromCWT(row, req.user._id);
+          cwtData.source_event_id = row.event_id;
+          await createAndPostJournal(row.entity_id, cwtData);
+        }
+
+        // Commission journal — for each settled CSI with commission
+        for (const csi of (row.settled_csis || [])) {
+          if (csi.commission_amount > 0) {
+            const commData = journalFromCommission({
+              amount: csi.commission_amount,
+              bdm_id: row.bdm_id,
+              date: row.cr_date,
+              bdm_name: '',
+              period: row.period || require('../utils/periodLock').dateToPeriod(row.cr_date),
+              event_id: row.event_id,
+              _id: row._id
+            }, req.user._id);
+            if (commData) {
+              commData.source_event_id = row.event_id;
+              await createAndPostJournal(row.entity_id, commData);
+            }
+          }
+        }
+
+        // VAT Ledger — OUTPUT VAT from collection
+        const crAmount = row.cr_amount || row.total_amount || 0;
+        if (crAmount > 0) {
+          const vatAmount = Math.round((crAmount * 12 / 112) * 100) / 100;
+          await createVatEntry({
+            entity_id: row.entity_id,
+            period: row.period || require('../utils/periodLock').dateToPeriod(row.cr_date),
+            vat_type: 'OUTPUT',
+            source_module: 'COLLECTION',
+            source_doc_ref: row.cr_no,
+            source_event_id: row.event_id,
+            hospital_or_vendor: row.hospital_id,
+            gross_amount: crAmount,
+            vat_amount: vatAmount
+          }).catch(err => console.error('VAT entry failed:', row.cr_no, err.message));
+        }
+
+        // CWT Ledger
+        if (row.cwt_amount > 0) {
+          const quarter = `Q${Math.ceil((new Date(row.cr_date).getMonth() + 1) / 3)}`;
+          await createCwtEntry({
+            entity_id: row.entity_id,
+            bdm_id: row.bdm_id,
+            period: row.period || require('../utils/periodLock').dateToPeriod(row.cr_date),
+            hospital_id: row.hospital_id,
+            cr_no: row.cr_no,
+            cr_date: row.cr_date,
+            cr_amount: row.cr_amount || row.total_amount || 0,
+            cwt_amount: row.cwt_amount,
+            quarter,
+            year: new Date(row.cr_date).getFullYear()
+          }).catch(err => console.error('CWT entry failed:', row.cr_no, err.message));
+        }
+      } catch (jeErr) {
+        console.error('Auto-journal failed for collection:', row.cr_no || row._id, jeErr.message);
+      }
+    }
+
     res.json({
       success: true,
       message: `${validRows.length} collection(s) posted`,
@@ -310,8 +391,23 @@ const reopenCollections = catchAsync(async (req, res) => {
   if (!rows.length) return res.status(404).json({ success: false, message: 'No POSTED collections found' });
 
   for (const row of rows) {
+    // Reverse journal entries (collection JE + CWT JE)
     if (row.event_id) {
+      try {
+        const jes = await JournalEntry.find({
+          source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
+        });
+        for (const je of jes) {
+          await reverseJournal(je._id, 'Auto-reversal: Collection reopen', req.user._id);
+        }
+      } catch (jeErr) {
+        console.error('JE reversal failed for collection reopen:', row.cr_no, jeErr.message);
+      }
       await TransactionEvent.findByIdAndUpdate(row.event_id, { status: 'DELETED' });
+
+      // Cleanup VAT/CWT ledger entries
+      await VatLedger.deleteMany({ source_event_id: row.event_id }).catch(() => {});
+      await CwtLedger.deleteMany({ cr_no: row.cr_no, entity_id: row.entity_id }).catch(() => {});
     }
     row.status = 'DRAFT';
     row.reopen_count = (row.reopen_count || 0) + 1;
@@ -367,6 +463,20 @@ const approveDeletion = catchAsync(async (req, res) => {
     payload: { original_cr_no: collection.cr_no, reason: req.body.reason },
     created_by: req.user._id
   }]);
+
+  // Reverse journal entries (collection JE + CWT JE)
+  if (collection.event_id) {
+    try {
+      const jes = await JournalEntry.find({
+        source_event_id: collection.event_id, status: 'POSTED', is_reversal: { $ne: true }
+      });
+      for (const je of jes) {
+        await reverseJournal(je._id, 'Auto-reversal: Collection deletion approved', req.user._id);
+      }
+    } catch (jeErr) {
+      console.error('JE reversal failed for collection deletion:', collection.cr_no, jeErr.message);
+    }
+  }
 
   collection.deletion_event_id = reversalEvent._id;
   await collection.save();

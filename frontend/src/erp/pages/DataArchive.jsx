@@ -51,7 +51,7 @@ export default function DataArchive() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { const res = await rpt.getArchiveBatches(); setBatches(res?.data || []); } catch {}
+    try { const res = await rpt.getArchiveBatches(); setBatches(res?.data || []); } catch (err) { console.error('[DataArchive] load error:', err.message); }
     setLoading(false);
   }, []);
 
@@ -63,14 +63,14 @@ export default function DataArchive() {
       await rpt.triggerArchive();
       setConfirmArchive(false);
       load();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
     setArchiving(false);
   };
 
   const handleExpand = async (batchId) => {
     if (expandedBatch === batchId) { setExpandedBatch(null); return; }
     setExpandedBatch(batchId);
-    try { const res = await rpt.getArchiveBatchDetail(batchId); setBatchDetail(res?.data || null); } catch {}
+    try { const res = await rpt.getArchiveBatchDetail(batchId); setBatchDetail(res?.data || null); } catch (err) { console.error('[DataArchive] load error:', err.message); }
   };
 
   const handleRestore = async (batchId) => {
@@ -80,7 +80,7 @@ export default function DataArchive() {
       setRestoreReason('');
       setExpandedBatch(null);
       load();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   return (

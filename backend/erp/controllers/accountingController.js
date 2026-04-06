@@ -4,6 +4,7 @@
  * Journals, Trial Balance, P&L, VAT/CWT, Cashflow,
  * Fixed Assets, Loans, Owner Equity, General Ledger
  */
+const mongoose = require('mongoose');
 const JournalEntry = require('../models/JournalEntry');
 const FixedAsset = require('../models/FixedAsset');
 const LoanMaster = require('../models/LoanMaster');
@@ -17,6 +18,7 @@ const { generateCashflow } = require('../services/cashflowService');
 const { computeDepreciation, getDepreciationStaging, approveDepreciation, postDepreciation } = require('../services/depreciationService');
 const { computeInterest, getInterestStaging, approveInterest, postInterest } = require('../services/loanService');
 const { recordInfusion, recordDrawing, getEquityLedger } = require('../services/ownerEquityService');
+const XLSX = require('xlsx');
 
 // ═══════════════════════════════════════════════════════════
 // JOURNAL ENTRIES
@@ -48,6 +50,43 @@ const reverseJournalEndpoint = catchAsync(async (req, res) => {
   const { reason } = req.body;
   const reversal = await reverseJournal(req.params.id, reason, req.user._id);
   res.json({ success: true, data: reversal });
+});
+
+const batchPostJournals = catchAsync(async (req, res) => {
+  const { je_ids } = req.body;
+  if (!Array.isArray(je_ids) || !je_ids.length) {
+    return res.status(400).json({ success: false, message: 'je_ids array required' });
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const results = [];
+    for (const id of je_ids) {
+      const je = await JournalEntry.findOne({ _id: id, entity_id: req.entityId }).session(session);
+      if (!je) { results.push({ id, success: false, reason: 'Not found' }); continue; }
+      if (je.status !== 'DRAFT') { results.push({ id, je_number: je.je_number, success: false, reason: `Status is ${je.status}` }); continue; }
+      je.status = 'POSTED';
+      je.posted_by = req.user._id;
+      je.posted_at = new Date();
+      await je.save({ session });
+      results.push({ id, je_number: je.je_number, success: true });
+    }
+
+    const failures = results.filter(r => !r.success);
+    if (failures.length > 0) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: `Batch post failed: ${failures.length} error(s)`, data: { results } });
+    }
+
+    await session.commitTransaction();
+    res.json({ success: true, message: `${results.length} journal entries posted`, data: { posted: results.length, results } });
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -233,9 +272,123 @@ const getEquityLedgerEndpoint = catchAsync(async (req, res) => {
   res.json({ success: true, data });
 });
 
+// ═══ Export Fixed Assets (Excel) ═══
+const exportFixedAssets = catchAsync(async (req, res) => {
+  const assets = await FixedAsset.find({ entity_id: req.entityId }).sort({ asset_code: 1 }).lean();
+  const rows = assets.map(a => ({
+    'Asset Code': a.asset_code,
+    'Asset Name': a.asset_name,
+    'Category': a.category || '',
+    'Acquisition Date': a.acquisition_date ? new Date(a.acquisition_date).toISOString().slice(0, 10) : '',
+    'Acquisition Cost': a.acquisition_cost || 0,
+    'Useful Life (Months)': a.useful_life_months || 0,
+    'Salvage Value': a.salvage_value || 0,
+    'Depreciation Method': a.depreciation_method || 'STRAIGHT_LINE',
+    'Accumulated Depreciation': a.accumulated_depreciation || 0,
+    'Net Book Value': a.net_book_value || 0,
+    'Status': a.status || 'ACTIVE'
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Fixed Assets');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="fixed-assets-export.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
+// ═══ Import Fixed Assets (Excel) — upsert by asset_code ═══
+const importFixedAssets = catchAsync(async (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+  let created = 0, updated = 0, errors = [];
+  for (const r of rows) {
+    const asset_code = String(r['Asset Code'] || r.asset_code || '').trim();
+    const asset_name = String(r['Asset Name'] || r.asset_name || '').trim();
+    if (!asset_code || !asset_name) { errors.push({ asset_code: asset_code || '(empty)', error: 'Code and Name required' }); continue; }
+    try {
+      const result = await FixedAsset.findOneAndUpdate(
+        { entity_id: req.entityId, asset_code },
+        {
+          entity_id: req.entityId, asset_code, asset_name,
+          category: String(r['Category'] || r.category || '').trim() || undefined,
+          acquisition_date: r['Acquisition Date'] ? new Date(r['Acquisition Date']) : undefined,
+          acquisition_cost: r['Acquisition Cost'] != null ? Number(r['Acquisition Cost']) : 0,
+          useful_life_months: r['Useful Life (Months)'] != null ? Number(r['Useful Life (Months)']) : 60,
+          salvage_value: r['Salvage Value'] != null ? Number(r['Salvage Value']) : 0,
+          depreciation_method: String(r['Depreciation Method'] || 'STRAIGHT_LINE').trim().toUpperCase(),
+          status: String(r['Status'] || 'ACTIVE').trim().toUpperCase()
+        },
+        { upsert: true, new: true }
+      );
+      if (result.createdAt && result.updatedAt && result.createdAt.getTime() === result.updatedAt.getTime()) created++;
+      else updated++;
+    } catch (err) { errors.push({ asset_code, error: err.message }); }
+  }
+  res.json({ success: true, message: `Import complete: ${created} created, ${updated} updated, ${errors.length} errors`, data: { created, updated, errors } });
+});
+
+// ═══ Export Loans (Excel) ═══
+const exportLoans = catchAsync(async (req, res) => {
+  const loans = await LoanMaster.find({ entity_id: req.entityId }).sort({ loan_code: 1 }).lean();
+  const rows = loans.map(l => ({
+    'Loan Code': l.loan_code,
+    'Lender': l.lender || '',
+    'Purpose': l.purpose || '',
+    'Principal': l.principal || 0,
+    'Annual Rate (%)': l.annual_rate || 0,
+    'Term (Months)': l.term_months || 0,
+    'Start Date': l.start_date ? new Date(l.start_date).toISOString().slice(0, 10) : '',
+    'Monthly Payment': l.monthly_payment || 0,
+    'Outstanding Balance': l.outstanding_balance || 0,
+    'Status': l.status || 'ACTIVE'
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 12 }, { wch: 22 }, { wch: 25 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Loans');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="loans-export.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
+// ═══ Import Loans (Excel) — upsert by loan_code ═══
+const importLoans = catchAsync(async (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+  let created = 0, updated = 0, errors = [];
+  for (const r of rows) {
+    const loan_code = String(r['Loan Code'] || r.loan_code || '').trim();
+    if (!loan_code) { errors.push({ loan_code: '(empty)', error: 'Loan code required' }); continue; }
+    try {
+      const result = await LoanMaster.findOneAndUpdate(
+        { entity_id: req.entityId, loan_code },
+        {
+          entity_id: req.entityId, loan_code,
+          lender: String(r['Lender'] || r.lender || '').trim() || undefined,
+          purpose: String(r['Purpose'] || r.purpose || '').trim() || undefined,
+          principal: r['Principal'] != null ? Number(r['Principal']) : 0,
+          annual_rate: r['Annual Rate (%)'] != null ? Number(r['Annual Rate (%)']) : 0,
+          term_months: r['Term (Months)'] != null ? Number(r['Term (Months)']) : 0,
+          start_date: r['Start Date'] ? new Date(r['Start Date']) : undefined,
+          status: String(r['Status'] || 'ACTIVE').trim().toUpperCase()
+        },
+        { upsert: true, new: true }
+      );
+      if (result.createdAt && result.updatedAt && result.createdAt.getTime() === result.updatedAt.getTime()) created++;
+      else updated++;
+    } catch (err) { errors.push({ loan_code, error: err.message }); }
+  }
+  res.json({ success: true, message: `Import complete: ${created} created, ${updated} updated, ${errors.length} errors`, data: { created, updated, errors } });
+});
+
 module.exports = {
   // Journals
-  createManualJournal, listJournals, getJournalById, postJournalEndpoint, reverseJournalEndpoint,
+  createManualJournal, listJournals, getJournalById, postJournalEndpoint, reverseJournalEndpoint, batchPostJournals,
   // GL
   getGeneralLedgerEndpoint,
   // Trial Balance
@@ -251,9 +404,11 @@ module.exports = {
   // Fixed Assets
   listFixedAssets, createFixedAsset, computeDepreciationEndpoint,
   getDepreciationStagingEndpoint, approveDepreciationEndpoint, postDepreciationEndpoint,
+  exportFixedAssets, importFixedAssets,
   // Loans
   listLoans, createLoan, computeInterestEndpoint,
   getInterestStagingEndpoint, approveInterestEndpoint, postInterestEndpoint,
+  exportLoans, importLoans,
   // Owner Equity
   recordInfusionEndpoint, recordDrawingEndpoint, getEquityLedgerEndpoint
 };

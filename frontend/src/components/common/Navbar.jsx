@@ -540,6 +540,15 @@ const navbarStyles = `
 
     .navbar-hamburger {
       display: flex;
+      order: 0;
+    }
+
+    .navbar-brand {
+      order: 1;
+    }
+
+    .navbar-platform-switch {
+      order: 2;
     }
 
     .navbar-brand h1 {
@@ -551,7 +560,9 @@ const navbarStyles = `
     }
 
     .navbar-center {
+      flex: 1;
       justify-content: center;
+      min-width: 0;
     }
 
     .navbar-erp-tabs {
@@ -567,16 +578,7 @@ const navbarStyles = `
     }
 
     .navbar-platform-switch {
-      width: auto;
-      max-width: 100%;
-      padding: 3px;
-    }
-
-    .navbar-platform-link {
-      flex: 1;
-      padding: 0 6px;
-      font-size: 10px;
-      letter-spacing: 0.05em;
+      display: none;
     }
 
     .navbar-profile {
@@ -677,10 +679,8 @@ const Navbar = () => {
         <div className="navbar-brand">
           <img src="/image-removebg-preview (1).png" alt="VIP" className="navbar-logo" />
         </div>
-      </div>
 
-      {user ? (
-        <div className="navbar-center">
+        {user && (
           <div className="navbar-platform-switch" aria-label="Platform switch">
             <Link
               to={crmHome}
@@ -695,6 +695,11 @@ const Navbar = () => {
               ERP
             </Link>
           </div>
+        )}
+      </div>
+
+      {user ? (
+        <div className="navbar-center">
 
           <div
             className={`navbar-erp-tabs ${isErpRoute ? 'navbar-erp-tabs--fluid' : ''}`.trim()}

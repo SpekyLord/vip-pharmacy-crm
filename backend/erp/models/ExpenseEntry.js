@@ -19,6 +19,7 @@ const expenseLineSchema = new mongoose.Schema({
   net_of_vat: { type: Number, default: 0 },
   or_number: { type: String, trim: true },
   or_photo_url: String,
+  or_attachment_id: String,
   or_ocr_data: { type: mongoose.Schema.Types.Mixed },
   payment_mode: { type: String, enum: ['CASH', 'GCASH', 'CARD', 'BANK_TRANSFER', 'CHECK', 'ONLINE', 'OTHER'], default: 'CASH' },
   funding_card_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CreditCard' },
@@ -28,7 +29,10 @@ const expenseLineSchema = new mongoose.Schema({
   vendor_id: { type: mongoose.Schema.Types.ObjectId, ref: 'VendorMaster' },
   // Phase 18: cost center allocation per expense line
   cost_center_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CostCenter' },
-  notes: { type: String, trim: true }
+  notes: { type: String, trim: true },
+  // Batch upload fields
+  bir_flag: { type: String, enum: ['BOTH', 'INTERNAL', 'BIR'], default: 'BOTH' },
+  is_assorted: { type: Boolean, default: false }
 }, { _id: true });
 
 const expenseEntrySchema = new mongoose.Schema({
@@ -52,6 +56,9 @@ const expenseEntrySchema = new mongoose.Schema({
   total_amount: { type: Number, default: 0 },
   total_vat: { type: Number, default: 0 },
   line_count: { type: Number, default: 0 },
+
+  // BIR classification (set upfront by president for batch uploads)
+  bir_flag: { type: String, enum: ['BOTH', 'INTERNAL', 'BIR'], default: 'BOTH' },
 
   // Lifecycle
   status: {

@@ -215,20 +215,25 @@ function journalFromPayroll(payslip, bankCoaCode, bankName, userId) {
   const lines = [];
 
   // Debit: earnings breakdown
-  const basic = payslip.earnings?.basic_salary || 0;
-  const allowance = payslip.earnings?.allowance || payslip.earnings?.de_minimis_total || 0;
-  const commission = payslip.earnings?.commission || 0;
-  const overtime = payslip.earnings?.overtime || 0;
+  const e = payslip.earnings || {};
+  const basic = e.basic_salary || 0;
+  const overtime = e.overtime || 0;
+  const allowance = (e.rice_allowance || 0) + (e.clothing_allowance || 0) +
+    (e.medical_allowance || 0) + (e.laundry_allowance || 0) + (e.transport_allowance || 0);
+  const commission = e.incentive || 0;
+  const bonus = (e.bonus || 0) + (e.thirteenth_month || 0) + (e.holiday_pay || 0) + (e.night_diff || 0);
 
-  if (basic > 0) lines.push({ account_code: '6000', account_name: 'Salaries & Wages', debit: basic + overtime, credit: 0, description: 'Basic salary' });
+  if (basic + overtime > 0) lines.push({ account_code: '6000', account_name: 'Salaries & Wages', debit: basic + overtime, credit: 0, description: 'Basic salary + OT' });
   if (allowance > 0) lines.push({ account_code: '6050', account_name: 'Allowances', debit: allowance, credit: 0, description: 'Allowances / de minimis' });
-  if (commission > 0) lines.push({ account_code: '5100', account_name: 'BDM Commission', debit: commission, credit: 0, description: 'Commission' });
+  if (commission > 0) lines.push({ account_code: '5100', account_name: 'BDM Commission', debit: commission, credit: 0, description: 'Incentive / Commission' });
+  if (bonus > 0) lines.push({ account_code: '6060', account_name: 'Bonus & 13th Month', debit: bonus, credit: 0, description: 'Bonus / 13th month / holiday' });
 
   // Credit: deductions
-  const sss = payslip.deductions?.sss_ee || 0;
-  const philhealth = payslip.deductions?.philhealth_ee || 0;
-  const pagibig = payslip.deductions?.pagibig_ee || 0;
-  const tax = payslip.deductions?.withholding_tax || 0;
+  const d = payslip.deductions || {};
+  const sss = d.sss_employee || 0;
+  const philhealth = d.philhealth_employee || 0;
+  const pagibig = d.pagibig_employee || 0;
+  const tax = d.withholding_tax || 0;
 
   if (sss > 0) lines.push({ account_code: '2200', account_name: 'SSS Payable', debit: 0, credit: sss, description: 'SSS EE share' });
   if (philhealth > 0) lines.push({ account_code: '2210', account_name: 'PhilHealth Payable', debit: 0, credit: philhealth, description: 'PhilHealth EE share' });
@@ -484,6 +489,114 @@ function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId) {
   };
 }
 
+/**
+ * Journal from COGS (Cost of Goods Sold)
+ * DR 5000 Cost of Goods Sold
+ * CR 1200 Inventory
+ * @param {Object} salesLine — the posted SalesLine document
+ * @param {Number} totalCogs — sum of (qty × purchase_price) for consumed items
+ * @param {String} userId
+ */
+function journalFromCOGS(salesLine, totalCogs, userId) {
+  if (!totalCogs || totalCogs <= 0) return null;
+
+  const docRef = salesLine.invoice_number || salesLine.doc_ref || '';
+  return {
+    je_date: salesLine.csi_date || salesLine.created_at || new Date(),
+    period: dateToPeriod(salesLine.csi_date || salesLine.created_at || new Date()),
+    description: `COGS: ${docRef}`,
+    source_module: 'SALES',
+    source_event_id: salesLine.event_id || null,
+    source_doc_ref: docRef,
+    lines: [
+      { account_code: '5000', account_name: 'Cost of Goods Sold', debit: totalCogs, credit: 0, description: `COGS: ${docRef}` },
+      { account_code: '1200', account_name: 'Inventory', debit: 0, credit: totalCogs, description: `COGS: ${docRef}` }
+    ],
+    bir_flag: 'BOTH',
+    vat_flag: 'N/A',
+    bdm_id: salesLine.bdm_id || null,
+    created_by: userId
+  };
+}
+
+/**
+ * Journal from Inter-Company Transfer
+ * SENDER:   DR 1150 IC Receivable, CR 1200 Inventory
+ * RECEIVER: DR 1200 Inventory, CR 2050 IC Payable
+ * @param {Object} transfer — the transfer document
+ * @param {String} perspective — 'SENDER' or 'RECEIVER'
+ * @param {Number} amount — transfer value
+ * @param {String} userId
+ */
+function journalFromInterCompany(transfer, perspective, amount, userId) {
+  if (!amount || amount <= 0) return null;
+
+  const docRef = transfer.transfer_number || String(transfer._id);
+  const desc = `IC Transfer: ${docRef}`;
+
+  const lines = perspective === 'SENDER'
+    ? [
+        { account_code: '1150', account_name: 'Intercompany Receivable', debit: amount, credit: 0, description: desc },
+        { account_code: '1200', account_name: 'Inventory', debit: 0, credit: amount, description: desc }
+      ]
+    : [
+        { account_code: '1200', account_name: 'Inventory', debit: amount, credit: 0, description: desc },
+        { account_code: '2050', account_name: 'Intercompany Payable', debit: 0, credit: amount, description: desc }
+      ];
+
+  return {
+    je_date: transfer.shipped_at || transfer.received_at || new Date(),
+    period: dateToPeriod(transfer.shipped_at || transfer.received_at || new Date()),
+    description: `${perspective === 'SENDER' ? 'IC Ship' : 'IC Receive'}: ${docRef}`,
+    source_module: 'IC_TRANSFER',
+    source_event_id: transfer.event_id || null,
+    source_doc_ref: docRef,
+    lines,
+    bir_flag: 'INTERNAL',
+    vat_flag: 'N/A',
+    bdm_id: null,
+    created_by: userId
+  };
+}
+
+/**
+ * Journal from Inventory Adjustment (Physical Count)
+ * LOSS (negative variance): DR 6850 Inventory Write-Off, CR 1200 Inventory
+ * GAIN (positive variance):  DR 1200 Inventory, CR 6860 Inventory Adjustment Gain
+ * @param {Object} data — { variance, product_name, batch_lot_no, entity_id, bdm_id, period }
+ * @param {Number} amount — |variance| × purchase_price (always positive)
+ * @param {String} userId
+ */
+function journalFromInventoryAdjustment(data, amount, userId) {
+  if (!amount || amount <= 0) return null;
+
+  const desc = `Inv Adj: ${data.product_name || ''} batch ${data.batch_lot_no || ''}`;
+  const isLoss = data.variance < 0;
+
+  const lines = isLoss
+    ? [
+        { account_code: '6850', account_name: 'Inventory Write-Off', debit: amount, credit: 0, description: desc },
+        { account_code: '1200', account_name: 'Inventory', debit: 0, credit: amount, description: desc }
+      ]
+    : [
+        { account_code: '1200', account_name: 'Inventory', debit: amount, credit: 0, description: desc },
+        { account_code: '6860', account_name: 'Inventory Adjustment Gain', debit: 0, credit: amount, description: desc }
+      ];
+
+  return {
+    je_date: new Date(),
+    period: data.period || dateToPeriod(new Date()),
+    description: `${isLoss ? 'Write-Off' : 'Adj Gain'}: ${data.product_name || ''} (${data.variance > 0 ? '+' : ''}${data.variance})`,
+    source_module: 'INVENTORY',
+    source_doc_ref: `ADJ-${data.batch_lot_no || 'unknown'}`,
+    lines,
+    bir_flag: 'BOTH',
+    vat_flag: 'N/A',
+    bdm_id: data.bdm_id || null,
+    created_by: userId
+  };
+}
+
 module.exports = {
   resolveFundingCoa,
   journalFromSale,
@@ -497,5 +610,8 @@ module.exports = {
   journalFromInterest,
   journalFromOwnerEquity,
   journalFromServiceRevenue,
-  journalFromPettyCash
+  journalFromPettyCash,
+  journalFromCOGS,
+  journalFromInterCompany,
+  journalFromInventoryAdjustment
 };

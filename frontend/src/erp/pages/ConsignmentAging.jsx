@@ -61,7 +61,7 @@ export default function ConsignmentAging() {
       if (filters.aging_status) params.aging_status = filters.aging_status;
       const res = await rpt.getConsignmentAging(params);
       setData(res?.data || null);
-    } catch {}
+    } catch (err) { console.error('[ConsignmentAging] load error:', err.message); }
     setLoading(false);
   }, [filters, warehouseId]);
 

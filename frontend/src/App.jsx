@@ -9,6 +9,7 @@ import { useAuth } from './hooks/useAuth';
 
 // Eagerly loaded pages (always needed)
 import LoginPage from './pages/LoginPage';
+import HomePage from './pages/HomePage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 // Lazy-loaded pages — split by role for smaller bundles
@@ -88,6 +89,12 @@ const LoansPage = lazy(() => import('./erp/pages/Loans'));
 const OwnerEquity = lazy(() => import('./erp/pages/OwnerEquity'));
 const MonthEndClose = lazy(() => import('./erp/pages/MonthEndClose'));
 
+// Phase 21 — Government Rates, Period Locks, Recurring Journals, BIR Calculator
+const GovernmentRates = lazy(() => import('./erp/pages/GovernmentRates'));
+const PeriodLocks = lazy(() => import('./erp/pages/PeriodLocks'));
+const RecurringJournals = lazy(() => import('./erp/pages/RecurringJournals'));
+const BirCalculator = lazy(() => import('./erp/pages/BirCalculator'));
+
 // Phase 13 — Banking & Cash
 const BankAccounts = lazy(() => import('./erp/pages/BankAccounts'));
 const BankReconciliation = lazy(() => import('./erp/pages/BankReconciliation'));
@@ -117,6 +124,7 @@ const DataArchive = lazy(() => import('./erp/pages/DataArchive'));
 // Phase 18 — Service Revenue & Cost Center Expenses
 const HospitalList = lazy(() => import('./erp/pages/HospitalList'));
 const CustomerList = lazy(() => import('./erp/pages/CustomerList'));
+const ProductMasterPage = lazy(() => import('./erp/pages/ProductMaster'));
 
 // Phase 19 — Petty Cash, Office Supplies & Collaterals
 const PettyCash = lazy(() => import('./erp/pages/PettyCash'));
@@ -144,6 +152,7 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/home" element={<ProtectedRoute allowedRoles={['admin', 'president', 'ceo', 'finance', 'employee', 'medrep']}><HomePage /></ProtectedRoute>} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
 
@@ -603,6 +612,12 @@ function App() {
           <Route path="/erp/owner-equity" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><OwnerEquity /></ProtectedRoute>} />
           <Route path="/erp/month-end-close" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><MonthEndClose /></ProtectedRoute>} />
 
+          {/* Phase 21 — Government Rates, Period Locks, Recurring Journals, BIR Calculator */}
+          <Route path="/erp/government-rates" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><GovernmentRates /></ProtectedRoute>} />
+          <Route path="/erp/period-locks" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><PeriodLocks /></ProtectedRoute>} />
+          <Route path="/erp/recurring-journals" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><RecurringJournals /></ProtectedRoute>} />
+          <Route path="/erp/bir-calculator" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><BirCalculator /></ProtectedRoute>} />
+
           {/* Phase 12 — Purchasing & AP */}
           <Route path="/erp/vendors" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="purchasing"><VendorList /></ProtectedRoute>} />
           <Route path="/erp/purchase-orders" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="purchasing"><PurchaseOrders /></ProtectedRoute>} />
@@ -631,6 +646,7 @@ function App() {
           {/* Phase 18 — Service Revenue & Cost Center Expenses */}
           <Route path="/erp/hospitals" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}><HospitalList /></ProtectedRoute>} />
           <Route path="/erp/customers" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}><CustomerList /></ProtectedRoute>} />
+          <Route path="/erp/products" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}><ProductMasterPage /></ProtectedRoute>} />
 
           {/* Phase 19 — Petty Cash, Office Supplies & Collaterals */}
           <Route path="/erp/petty-cash" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><PettyCash /></ProtectedRoute>} />

@@ -292,16 +292,16 @@ export default function MyStock() {
       const res = await inventory.getMyStock(null, null, warehouseId);
       if (res?.data) setStockData(res.data);
       if (res?.summary) setSummary(res.summary);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[MyStock] load error:', err.message); } finally { setLoading(false); }
   };
 
   const loadLedger = async (productId) => {
     if (!productId) return;
     setLoading(true);
     try {
-      const res = await inventory.getLedger(productId, { limit: 100, warehouse_id: warehouseId });
+      const res = await inventory.getLedger(productId, { limit: 0, warehouse_id: warehouseId });
       if (res?.data) setLedgerEntries(res.data);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[MyStock] load error:', err.message); } finally { setLoading(false); }
   };
 
   const loadVariance = async () => {
@@ -309,7 +309,7 @@ export default function MyStock() {
     try {
       const res = await inventory.getVariance(null, warehouseId);
       if (res?.data) setVarianceData(res.data);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[MyStock] load error:', err.message); } finally { setLoading(false); }
   };
 
   const loadAlerts = async () => {
@@ -318,7 +318,7 @@ export default function MyStock() {
       const res = await inventory.getAlerts(null, warehouseId);
       if (res?.data) setAlertData(res.data);
       if (res?.summary) setAlertSummary(res.summary);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[MyStock] load error:', err.message); } finally { setLoading(false); }
   };
 
   useEffect(() => {
@@ -352,7 +352,7 @@ export default function MyStock() {
       );
       setStockData(enriched);
       setPcModalOpen(true);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[MyStock] load error:', err.message); } finally { setLoading(false); }
   }, [stockData, inventory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePhysicalCountSubmit = useCallback(async (counts) => {

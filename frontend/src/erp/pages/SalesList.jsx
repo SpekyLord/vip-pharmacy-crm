@@ -120,6 +120,11 @@ const pageStyles = `
       flex-shrink: 0;
     }
   }
+  @media (max-width: 375px) {
+    .saleslist-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+    .btn { font-size: 12px; padding: 6px 10px; }
+    .filter-bar input, .filter-bar select { font-size: 16px; }
+  }
 `;
 
 export default function SalesList() {

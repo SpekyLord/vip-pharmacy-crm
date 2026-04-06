@@ -64,10 +64,16 @@ const creditCardSchema = new mongoose.Schema({
     min: 1,
     max: 31
   },
+  // Single legacy field (kept for backward compat — prefer assigned_users)
   assigned_to: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  // Multiple users can share one company card
+  assigned_users: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   assigned_at: {
     type: Date
   },

@@ -60,7 +60,7 @@ export default function CollectionSession() {
   const collections = useCollections();
   const { hospitals } = useHospitals();
   const { settings } = useSettings();
-  const { listBankAccounts } = useAccounting();
+  const { getMyBankAccounts } = useAccounting();
   const navigate = useNavigate();
 
   const [hospitalId, setHospitalId] = useState('');
@@ -103,7 +103,7 @@ export default function CollectionSession() {
   // Load CRM doctors once
   useEffect(() => {
     if (doctorsLoaded) return;
-    doctorService.getAll({ limit: 200 }).then(res => {
+    doctorService.getAll({ limit: 0 }).then(res => {
       const docs = (res.data?.data || res.data || []).map(d => ({
         _id: d._id,
         name: `${d.lastName}, ${d.firstName}`,
@@ -117,18 +117,18 @@ export default function CollectionSession() {
 
   // Load bank accounts + petty cash funds for "Deposited At" dropdown
   useEffect(() => {
-    listBankAccounts().then(r => setBankAccountsList(r?.data || [])).catch(() => {});
+    getMyBankAccounts().then(r => setBankAccountsList(r?.data || [])).catch(err => console.error('[CollectionSession]', err.message));
     import('../../services/api').then(({ default: api }) => {
-      api.get('/erp/petty-cash/funds').then(res => setPettyCashFunds(res.data?.data || [])).catch(() => {});
+      api.get('/erp/petty-cash/funds').then(res => setPettyCashFunds(res.data?.data || [])).catch(err => console.error('[CollectionSession]', err.message));
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load customers list
   useEffect(() => {
     import('../../services/api').then(({ default: api }) => {
-      api.get('/erp/customers', { params: { limit: 200, status: 'ACTIVE' } })
+      api.get('/erp/customers', { params: { limit: 0, status: 'ACTIVE' } })
         .then(res => setCustomerList(res.data?.data || []))
-        .catch(() => {});
+        .catch(err => console.error('[CollectionSession]', err.message));
     });
   }, []);
 
@@ -136,14 +136,14 @@ export default function CollectionSession() {
   useEffect(() => {
     const activeId = hospitalId || customerId;
     if (!activeId) { setOpenCsis([]); setSelectedCsis(new Map()); return; }
-    collections.getOpenCsis(activeId).then(res => {
+    collections.getOpenCsis(activeId, null, { isCustomer: !!customerId }).then(res => {
       setOpenCsis(res?.data || []);
       setSelectedCsis(new Map());
       if (hospitalId) {
         const h = hospitals.find(h => h._id === hospitalId);
         if (h?.cwt_rate) setCwtRate(String(h.cwt_rate));
       }
-    }).catch(() => {});
+    }).catch(err => console.error('[CollectionSession]', err.message));
   }, [hospitalId, customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleCsi = (csi) => {
@@ -420,8 +420,8 @@ export default function CollectionSession() {
                     try {
                       const { default: api } = await import('../../services/api');
                       const res = await api.post('/erp/sales', { sale_type: 'CASH_RECEIPT', hospital_id: hospitalId || undefined, customer_id: customerId || undefined, csi_date: crDate, line_items: [] });
-                      if (res.data?.data?.invoice_number) { setCrNo(res.data.data.invoice_number); await api.delete(`/erp/sales/draft/${res.data.data._id}`).catch(() => {}); }
-                    } catch {}
+                      if (res.data?.data?.invoice_number) { setCrNo(res.data.data.invoice_number); await api.delete(`/erp/sales/draft/${res.data.data._id}`).catch(err => console.error('[CollectionSession]', err.message)); }
+                    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
                   }}>(auto-generate)</span>}</label>
                   <input value={crNo} onChange={e => setCrNo(e.target.value)} placeholder={paymentMode === 'CASH' ? 'Click auto-generate or enter manually' : 'e.g. 002905'} />
                 </div>
@@ -437,9 +437,10 @@ export default function CollectionSession() {
               <div className="form-row">
                 <div className="form-group">
                   <label>Payment Mode</label>
-                  <SelectField value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
-                    <option value="CHECK">Check</option>
+                  <SelectField value={paymentMode} onChange={e => { setPaymentMode(e.target.value); setBankAccountId(''); setPettyCashFundId(''); }}>
                     <option value="CASH">Cash</option>
+                    <option value="CHECK">Check</option>
+                    <option value="GCASH">GCash</option>
                     <option value="ONLINE">Online / Bank Transfer</option>
                   </SelectField>
                 </div>

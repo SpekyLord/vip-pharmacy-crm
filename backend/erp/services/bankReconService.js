@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const BankStatement = require('../models/BankStatement');
 const BankAccount = require('../models/BankAccount');
 const JournalEntry = require('../models/JournalEntry');
+const { createAndPostJournal } = require('./journalEngine');
 
 /**
  * Import a bank statement — parse entries array and persist.
@@ -220,10 +221,52 @@ async function getReconSummary(statementId) {
 /**
  * Finalize reconciliation — lock the statement and update bank account balance.
  */
-async function finalizeRecon(statementId) {
+async function finalizeRecon(statementId, userId) {
   const statement = await BankStatement.findById(statementId);
   if (!statement) throw new Error('Statement not found');
   if (statement.status === 'FINALIZED') throw new Error('Already finalized');
+
+  const bankAccount = await BankAccount.findById(statement.bank_account_id).lean();
+  const bankCoa = bankAccount?.coa_code || '1010';
+  const bankName = bankAccount?.bank_name || 'Bank Account';
+
+  // Create adjustment JEs for RECONCILING_ITEM entries (bank fees, interest, etc.)
+  const reconItems = (statement.entries || []).filter(e => e.match_status === 'RECONCILING_ITEM' && !e.je_id);
+  for (const entry of reconItems) {
+    try {
+      const amount = entry.debit || entry.credit || 0;
+      if (amount <= 0) continue;
+
+      const isDebit = entry.debit > 0; // Bank debited = money left bank (fee/charge)
+      const lines = isDebit
+        ? [
+            { account_code: '7100', account_name: 'Bank Charges', debit: amount, credit: 0, description: entry.description || 'Bank charge' },
+            { account_code: bankCoa, account_name: bankName, debit: 0, credit: amount, description: entry.description || 'Bank charge' }
+          ]
+        : [
+            { account_code: bankCoa, account_name: bankName, debit: amount, credit: 0, description: entry.description || 'Bank credit' },
+            { account_code: '4200', account_name: 'Interest Income', debit: 0, credit: amount, description: entry.description || 'Interest earned' }
+          ];
+
+      const je = await createAndPostJournal(statement.entity_id, {
+        je_date: entry.txn_date || statement.statement_date,
+        period: statement.period,
+        description: `Bank Recon: ${entry.description || 'Reconciling item'}`,
+        source_module: 'BANKING',
+        source_doc_ref: `RECON-${statement.period}-L${entry.line_no}`,
+        lines,
+        bir_flag: 'BOTH',
+        vat_flag: 'N/A',
+        created_by: userId
+      });
+
+      // Link JE to statement entry
+      entry.je_id = je._id;
+      entry.match_status = 'MATCHED';
+    } catch (jeErr) {
+      console.error('Bank recon JE failed for line', entry.line_no, jeErr.message);
+    }
+  }
 
   statement.status = 'FINALIZED';
   await statement.save();
@@ -233,7 +276,7 @@ async function finalizeRecon(statementId) {
     current_balance: statement.closing_balance
   });
 
-  return { status: 'FINALIZED', closing_balance: statement.closing_balance };
+  return { status: 'FINALIZED', closing_balance: statement.closing_balance, adjustment_jes: reconItems.length };
 }
 
 module.exports = {

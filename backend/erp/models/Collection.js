@@ -70,6 +70,7 @@ const collectionSchema = new mongoose.Schema({
   // Hard gate document URLs
   cr_photo_url: String,
   csi_photo_urls: [String],
+  attachment_ids: [String],
 
   // Notes
   notes: { type: String, trim: true },

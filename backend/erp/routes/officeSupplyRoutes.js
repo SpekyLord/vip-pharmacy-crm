@@ -6,9 +6,13 @@
  */
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const c = require('../controllers/officeSupplyController');
 
 // ═══ Supplies ═══
+router.get('/export', c.exportSupplies);
+router.post('/import', upload.single('file'), c.importSupplies);
 router.get('/', c.getSupplies);
 router.get('/reorder-alerts', c.getReorderAlerts);
 router.get('/transactions', c.getAllTransactions); // global transaction list

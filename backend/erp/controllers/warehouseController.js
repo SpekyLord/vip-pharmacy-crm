@@ -12,11 +12,10 @@ const { catchAsync } = require('../../middleware/errorHandler');
  * President/admin see all. BDMs see only warehouses they manage or are assigned to.
  */
 const getWarehouses = catchAsync(async (req, res) => {
-  const filter = { is_active: true };
-  if (req.entityId) filter.entity_id = req.entityId;
+  const filter = { is_active: true, entity_id: req.entityId };
 
-  // If entity_id query param provided (president viewing another entity)
-  if (req.query.entity_id && (req.isPresident || req.isAdmin)) {
+  // Only president can view another entity's warehouses
+  if (req.query.entity_id && req.isPresident) {
     filter.entity_id = req.query.entity_id;
   }
 

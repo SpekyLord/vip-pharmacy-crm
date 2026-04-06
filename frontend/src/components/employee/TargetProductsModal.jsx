@@ -46,7 +46,7 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
         if (doctor?.specialization) {
           res = await productService.getBySpecialization(doctor.specialization);
         } else {
-          res = await productService.getAll({ limit: 200 });
+          res = await productService.getAll({ limit: 0 });
         }
         if (!cancelled) {
           setProducts(res.data || []);

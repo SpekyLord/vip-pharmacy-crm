@@ -14,6 +14,8 @@ const ErpAuditLog = require('../models/ErpAuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { getMyStock: getMyStockAgg, getAvailableBatches } = require('../services/fifoEngine');
 const { cleanBatchNo } = require('../utils/normalize');
+const { journalFromInventoryAdjustment } = require('../services/autoJournal');
+const { createAndPostJournal } = require('../services/journalEngine');
 
 /**
  * GET /my-stock — BDM's stock dashboard data
@@ -316,14 +318,20 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
     const normalizedBatch = cleanBatchNo(count.batch_lot_no);
 
     // Get current system balance for this product/batch
+    const matchFilter = {
+      entity_id: new mongoose.Types.ObjectId(req.entityId),
+      product_id: new mongoose.Types.ObjectId(count.product_id),
+      batch_lot_no: normalizedBatch
+    };
+    // Use warehouse_id when provided, otherwise fall back to bdm_id
+    if (warehouse_id) {
+      matchFilter.warehouse_id = new mongoose.Types.ObjectId(warehouse_id);
+    } else {
+      matchFilter.bdm_id = new mongoose.Types.ObjectId(bdmId);
+    }
     const [agg] = await InventoryLedger.aggregate([
       {
-        $match: {
-          entity_id: new mongoose.Types.ObjectId(req.entityId),
-          bdm_id: new mongoose.Types.ObjectId(bdmId),
-          product_id: new mongoose.Types.ObjectId(count.product_id),
-          batch_lot_no: normalizedBatch
-        }
+        $match: matchFilter
       },
       {
         $group: {
@@ -372,6 +380,24 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
       actual_qty: count.actual_qty,
       variance
     });
+  }
+
+  // Auto-journal for inventory adjustments (non-blocking)
+  for (const adj of adjustments) {
+    try {
+      const product = await ProductMaster.findById(adj.product_id).select('purchase_price brand_name').lean();
+      const unitCost = product?.purchase_price || 0;
+      const amount = Math.round(Math.abs(adj.variance) * unitCost * 100) / 100;
+      const jeData = journalFromInventoryAdjustment({
+        variance: adj.variance,
+        product_name: product?.brand_name || '',
+        batch_lot_no: adj.batch_lot_no,
+        bdm_id: req.bdmId
+      }, amount, req.user._id);
+      if (jeData) await createAndPostJournal(req.entityId, jeData);
+    } catch (jeErr) {
+      console.error('Inv adjustment JE failed:', adj.product_id, jeErr.message);
+    }
   }
 
   res.json({

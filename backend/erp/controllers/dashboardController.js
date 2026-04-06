@@ -214,7 +214,7 @@ const getAuditLogs = catchAsync(async (req, res) => {
 
   const [logs, total] = await Promise.all([
     ErpAuditLog.find(filter)
-      .populate('changed_by', 'firstName lastName email')
+      .populate('changed_by', 'name email')
       .sort({ changed_at: -1 })
       .skip(skip)
       .limit(limit)
@@ -238,7 +238,7 @@ const getMonthlyArchives = catchAsync(async (req, res) => {
   if (req.entityId) filter.entity_id = new mongoose.Types.ObjectId(req.entityId);
 
   const archives = await MonthlyArchive.find(filter)
-    .populate('closed_by', 'firstName lastName')
+    .populate('closed_by', 'name')
     .sort({ period: -1 })
     .lean();
   res.json({ success: true, data: archives });

@@ -12,11 +12,12 @@ const Collection = require('../models/Collection');
  * Get open (unpaid/partially-paid) CSIs for a hospital
  * Returns CSIs with balance_due > 0
  */
-async function getOpenCsis(entityId, bdmId, hospitalId) {
+async function getOpenCsis(entityId, bdmId, hospitalId, customerId) {
   const match = { status: 'POSTED', deletion_event_id: { $exists: false } };
   if (entityId) match.entity_id = new mongoose.Types.ObjectId(entityId);
   if (bdmId) match.bdm_id = new mongoose.Types.ObjectId(bdmId);
   if (hospitalId) match.hospital_id = new mongoose.Types.ObjectId(hospitalId);
+  if (customerId) match.customer_id = new mongoose.Types.ObjectId(customerId);
 
   const pipeline = [
     { $match: match },

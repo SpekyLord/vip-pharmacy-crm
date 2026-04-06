@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useBanking from '../hooks/useBanking';
+import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
 
@@ -36,14 +37,16 @@ const pageStyles = `
 
 const EMPTY_FORM = {
   bank_code: '', bank_name: '', account_no: '', account_type: 'SAVINGS',
-  coa_code: '', opening_balance: 0, statement_import_format: 'CSV'
+  coa_code: '', opening_balance: 0, statement_import_format: 'CSV', assigned_users: []
 };
 
 export default function BankAccounts() {
   const { user } = useAuth();
   const api = useBanking();
+  const people = usePeople();
 
   const [accounts, setAccounts] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -53,12 +56,26 @@ export default function BankAccounts() {
   const f = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
   const showMsg = (text, type = 'ok') => { setMsg({ text, type }); setTimeout(() => setMsg(null), 4000); };
 
+  const handleExport = async () => {
+    try { const res = await api.exportBankAccounts(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'bank-accounts-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+  };
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const fd = new FormData(); fd.append('file', file);
+    try { const res = await api.importBankAccounts(fd); alert(res?.message || 'Import complete'); load(); } catch { /* */ }
+    e.target.value = '';
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.listBankAccounts();
-      setAccounts(res?.data || []);
-    } catch { /* */ }
+      const [acctRes, usersRes] = await Promise.all([
+        api.listBankAccounts(),
+        people.getAsUsers()
+      ]);
+      setAccounts(acctRes?.data || []);
+      setUsers(usersRes?.data || []);
+    } catch (err) { console.error('[BankAccounts] load error:', err.message); }
     setLoading(false);
   }, []);
 
@@ -74,14 +91,15 @@ export default function BankAccounts() {
       account_type: acct.account_type || 'SAVINGS',
       coa_code: acct.coa_code || '',
       opening_balance: acct.opening_balance || 0,
-      statement_import_format: acct.statement_import_format || 'CSV'
+      statement_import_format: acct.statement_import_format || 'CSV',
+      assigned_users: (acct.assigned_users || []).map(u => u._id || u)
     });
     setShowModal(true);
   };
 
   const handleSave = async () => {
     try {
-      const data = { ...form, opening_balance: parseFloat(form.opening_balance) || 0 };
+      const data = { ...form, opening_balance: parseFloat(form.opening_balance) || 0, assigned_users: form.assigned_users };
       if (editing) {
         await api.updateBankAccount(editing._id, data);
         showMsg('Bank account updated');
@@ -107,7 +125,11 @@ export default function BankAccounts() {
         <main className="ba-main admin-main">
           <div className="ba-header">
             <h2>Bank Accounts</h2>
-            <button className="btn btn-primary" onClick={openNew}>+ Add Bank Account</button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
+              <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>
+              <button className="btn btn-primary" onClick={openNew}>+ Add Bank Account</button>
+            </div>
           </div>
 
           {msg && <div className={`ba-msg ba-msg-${msg.type}`}>{msg.text}</div>}
@@ -125,6 +147,7 @@ export default function BankAccounts() {
                   <th style={{ textAlign: 'right' }}>Opening Bal.</th>
                   <th style={{ textAlign: 'right' }}>Current Bal.</th>
                   <th>Format</th>
+                  <th>Assigned To</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -140,6 +163,7 @@ export default function BankAccounts() {
                     <td className="money">{fmt(a.opening_balance)}</td>
                     <td className="money">{fmt(a.current_balance)}</td>
                     <td>{a.statement_import_format || 'CSV'}</td>
+                    <td style={{ fontSize: 12 }}>{a.assigned_users?.length ? a.assigned_users.map(u => u.name || u).join(', ') : <span style={{ color: '#9ca3af' }}>All</span>}</td>
                     <td><span className={a.is_active ? 'badge-active' : 'badge-inactive'}>{a.is_active ? 'Active' : 'Inactive'}</span></td>
                     <td><button className="btn btn-sm btn-primary" onClick={() => openEdit(a)}>Edit</button></td>
                   </tr>
@@ -193,6 +217,21 @@ export default function BankAccounts() {
                     <option value="OFX">OFX</option>
                     <option value="MT940">MT940</option>
                   </SelectField>
+                </div>
+                <div className="ba-fg">
+                  <label>Assign To (users who can deposit/use this account)</label>
+                  <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--erp-border, #e5e7eb)', borderRadius: 6, padding: 6 }}>
+                    {users.filter(u => u.isActive !== false).map(u => (
+                      <label key={u._id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', fontSize: 13, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={form.assigned_users.includes(u._id)} onChange={e => {
+                          if (e.target.checked) f('assigned_users', [...form.assigned_users, u._id]);
+                          else f('assigned_users', form.assigned_users.filter(id => id !== u._id));
+                        }} style={{ width: 'auto' }} />
+                        {u.name} <span style={{ color: '#9ca3af', fontSize: 11 }}>({u.role})</span>
+                      </label>
+                    ))}
+                    {!users.length && <div style={{ padding: 8, color: '#9ca3af', fontSize: 12 }}>No users loaded</div>}
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
                   <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>

@@ -52,7 +52,8 @@ const pageStyles = `
   .ppl-pag { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
   .ppl-pag button { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--erp-border); background: var(--erp-panel); font-size: 12px; cursor: pointer; }
   .ppl-pag button.active { background: var(--erp-accent); color: #fff; border-color: var(--erp-accent); }
-  @media(max-width: 768px) { .ppl-main { padding: 12px; } .ppl-table { font-size: 12px; } }
+  @media(max-width: 768px) { .ppl-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .ppl-table { font-size: 12px; } }
+  @media(max-width: 375px) { .ppl-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .ppl-main input, .ppl-main select { font-size: 16px; } }
 `;
 
 const EMPTY_FORM = {
@@ -80,7 +81,7 @@ export default function PeopleList() {
       const res = await api.getPeopleList(params);
       setPeople(res?.data || []);
       setPagination(res?.pagination || { page: 1, limit: 50, total: 0, pages: 0 });
-    } catch {} finally { setLoading(false); }
+    } catch (err) { console.error('[PeopleList] load error:', err.message); } finally { setLoading(false); }
   }, [filters]);
 
   useEffect(() => { load(); }, [load]);
@@ -92,7 +93,7 @@ export default function PeopleList() {
       setShowForm(false);
       setForm(EMPTY_FORM);
       load();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   return (
@@ -104,6 +105,14 @@ export default function PeopleList() {
         <main className="ppl-main">
           <div className="ppl-header">
             <h2>People Master</h2>
+            <button style={{ padding: '8px 16px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13, marginRight: 8 }}
+              onClick={async () => {
+                try {
+                  const res = await api.post('/people/sync-from-crm', {});
+                  alert(res?.message || `Synced: ${res?.data?.created || 0} created, ${res?.data?.skipped || 0} already exist`);
+                  load();
+                } catch (err) { alert(err.response?.data?.message || 'Sync failed'); }
+              }}>Sync from CRM</button>
             <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Add Person</button>
           </div>
 

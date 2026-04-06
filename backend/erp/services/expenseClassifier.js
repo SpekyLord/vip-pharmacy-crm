@@ -13,14 +13,28 @@ const VendorMaster = require('../models/VendorMaster');
 
 // Keyword-to-COA patterns (moved from removed EXPENSE_COA_MAP in orParser.js)
 const KEYWORD_RULES = [
-  { keywords: ['AP CARGO', 'JRS', 'LBC', 'J&T', 'J AND T', '2GO', 'AIR21', 'NINJA VAN', 'GRAB EXPRESS', 'COURIER', 'SHIPPING'], coa_code: '6200', coa_name: 'Courier / Shipping', category: 'COURIER/SHIPPING' },
-  { keywords: ['SHELL', 'PETRON', 'CALTEX', 'PHOENIX', 'SEAOIL', 'GASOLINE', 'FUEL', 'DIESEL'], coa_code: '6150', coa_name: 'Fuel & Oil', category: 'FUEL' },
-  { keywords: ['PARKING', 'TOLL', 'NLEX', 'SLEX', 'TPLEX', 'SKYWAY', 'CAVITEX', 'EXPRESSWAY'], coa_code: '6160', coa_name: 'Parking & Tolls', category: 'PARKING/TOLL' },
-  { keywords: ['HOTEL', 'INN', 'LODGE', 'PENSION', 'AIRBNB', 'ACCOMMODATION'], coa_code: '6300', coa_name: 'Travel & Accommodation', category: 'ACCOMMODATION' },
-  { keywords: ['RESTAURANT', 'FOOD', 'MEAL', 'CAFE', 'JOLLIBEE', 'MCDONALDS', 'DINE', 'EATERY'], coa_code: '6250', coa_name: 'Meals & Entertainment', category: 'FOOD/MEALS' },
+  { keywords: ['AP CARGO', 'JRS', 'LBC', 'J&T', 'J AND T', '2GO', 'AIR21', 'NINJA VAN', 'GRAB EXPRESS', 'COURIER', 'SHIPPING'], coa_code: '6500', coa_name: 'Courier & Delivery', category: 'COURIER/SHIPPING' },
+  { keywords: ['SHELL', 'PETRON', 'CALTEX', 'PHOENIX', 'SEAOIL', 'GASOLINE', 'FUEL', 'DIESEL'], coa_code: '6200', coa_name: 'Fuel & Gas', category: 'FUEL' },
+  { keywords: ['PARKING', 'TOLL', 'NLEX', 'SLEX', 'TPLEX', 'SKYWAY', 'CAVITEX', 'EXPRESSWAY'], coa_code: '6600', coa_name: 'Parking & Tolls', category: 'PARKING/TOLL' },
+  { keywords: ['HOTEL', 'INN', 'LODGE', 'PENSION', 'AIRBNB', 'ACCOMMODATION', 'RESORT'], coa_code: '6155', coa_name: 'Travel & Accommodation', category: 'TRAVEL/ACCOMMODATION' },
+  { keywords: ['RESTAURANT', 'FOOD', 'MEAL', 'CAFE', 'JOLLIBEE', 'MCDONALDS', 'DINE', 'EATERY'], coa_code: '6350', coa_name: 'ACCESS Expense', category: 'ACCESS/MEALS' },
   { keywords: ['PRINTING', 'OFFICE', 'SUPPLIES', 'STATIONERY', 'NATIONAL BOOKSTORE'], coa_code: '6400', coa_name: 'Office Supplies', category: 'OFFICE SUPPLIES' },
-  { keywords: ['GLOBE', 'SMART', 'PLDT', 'CONVERGE'], coa_code: '6350', coa_name: 'Communication', category: 'COMMUNICATION' },
-  { keywords: ['GRAB', 'TAXI', 'ANGKAS', 'FERRY', 'BOAT'], coa_code: '6100', coa_name: 'Transportation', category: 'TRANSPORTATION' },
+  { keywords: ['GLOBE', 'SMART', 'PLDT', 'CONVERGE', 'MERALCO', 'WATER', 'ELECTRIC', 'UTILITY'], coa_code: '6460', coa_name: 'Utilities & Communication', category: 'UTILITIES/COMMUNICATION' },
+  { keywords: ['GRAB', 'TAXI', 'ANGKAS', 'FERRY', 'BOAT'], coa_code: '6150', coa_name: 'Transport Expense', category: 'TRANSPORTATION' },
+  { keywords: ['FDA', 'DOH', 'LGU', 'LICENSE', 'PERMIT', 'REGULATORY', 'REGISTRATION', 'RENEWAL'], coa_code: '6810', coa_name: 'Regulatory & Licensing', category: 'REGULATORY/LICENSING' },
+  { keywords: ['SOFTWARE', 'SUBSCRIPTION', 'DOMAIN', 'HOSTING', 'CLOUD', 'APP', 'COMPUTER', 'LAPTOP', 'PRINTER', 'HARDWARE'], coa_code: '6820', coa_name: 'IT Hardware & Software', category: 'IT/SOFTWARE' },
+  { keywords: ['REPAIR', 'MAINTENANCE', 'AIRCON', 'PLUMBING', 'ELECTRICAL', 'FIX'], coa_code: '6260', coa_name: 'Repairs & Maintenance', category: 'REPAIRS/MAINTENANCE' },
+  { keywords: ['RENT', 'LEASE', 'BALAI LAWAAN'], coa_code: '6450', coa_name: 'Rent Expense', category: 'RENT' },
+  { keywords: ['AUDIT', 'TAX', 'LEGAL', 'ATTORNEY', 'LAWYER', 'CPA', 'ACCOUNTANT', 'PHARMACIST', 'NOTARY'], coa_code: '6800', coa_name: 'Professional Fees', category: 'PROFESSIONAL FEES' },
+  // F&B
+  { keywords: ['GROCERY', 'MARKET', 'INGREDIENT', 'MEAT', 'VEGETABLE', 'FISH', 'SEAFOOD', 'RICE', 'COOKING', 'FOOD SUPPLY'], coa_code: '5400', coa_name: 'Food Cost', category: 'FOOD COST' },
+  { keywords: ['BEVERAGE', 'DRINK', 'JUICE', 'SODA', 'COFFEE BEAN', 'TEA', 'LIQUOR', 'WINE', 'BEER'], coa_code: '5500', coa_name: 'Beverage Cost', category: 'BEVERAGE COST' },
+  { keywords: ['TAKEOUT BOX', 'PACKAGING', 'CONTAINER', 'DISPOSABLE', 'NAPKIN', 'TISSUE', 'F&B SUPPLY'], coa_code: '6830', coa_name: 'F&B Supplies & Packaging', category: 'F&B SUPPLIES' },
+  { keywords: ['KITCHEN', 'OVEN', 'STOVE', 'REFRIGERATOR', 'FREEZER', 'KITCHEN REPAIR'], coa_code: '6840', coa_name: 'Kitchen Equipment & Maintenance', category: 'KITCHEN EQUIPMENT' },
+  // Rental / Property
+  { keywords: ['PROPERTY TAX', 'REAL PROPERTY', 'AMILYAR', 'REALTY TAX'], coa_code: '6890', coa_name: 'Property Tax & Fees', category: 'PROPERTY TAX' },
+  { keywords: ['INSURANCE', 'FIRE INSURANCE', 'PROPERTY INSURANCE', 'COMPREHENSIVE'], coa_code: '6880', coa_name: 'Property Insurance', category: 'PROPERTY INSURANCE' },
+  { keywords: ['PROPERTY REPAIR', 'BUILDING MAINTENANCE', 'RENOVATION', 'PAINT', 'CONSTRUCTION'], coa_code: '6870', coa_name: 'Property Maintenance', category: 'PROPERTY MAINTENANCE' },
 ];
 
 const FALLBACK = {

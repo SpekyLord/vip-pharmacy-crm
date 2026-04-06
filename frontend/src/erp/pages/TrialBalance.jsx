@@ -22,7 +22,8 @@ const pageStyles = `
   .tb-balanced { background: #dcfce7; color: #166534; }
   .tb-unbalanced { background: #fee2e2; color: #dc2626; }
   .tb-empty { text-align: center; color: #64748b; padding: 40px; }
-  @media(max-width: 768px) { .tb-main { padding: 12px; } }
+  @media(max-width: 768px) { .tb-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } }
+  @media(max-width: 375px) { .tb-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .tb-main input, .tb-main select { font-size: 16px; } }
 `;
 
 const getCurrentPeriod = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };

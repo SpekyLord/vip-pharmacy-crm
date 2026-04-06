@@ -3,6 +3,10 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useExpenses from '../hooks/useExpenses';
+import usePeople from '../hooks/usePeople';
+import useAccounting from '../hooks/useAccounting';
+import CostCenterPicker from '../components/CostCenterPicker';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
@@ -120,7 +124,53 @@ const STATUS_COLORS = {
 };
 const EXPENSE_TYPES = ['ORE', 'ACCESS'];
 const PAYMENT_MODES = ['CASH', 'GCASH', 'CARD', 'BANK_TRANSFER', 'CHECK', 'ONLINE', 'OTHER'];
-const EXPENSE_CATEGORIES = ['Courier/Shipping', 'Parking', 'Toll', 'Hotel/Accommodation', 'Food/Meals', 'Office Supplies', 'Communication', 'Transportation', 'Miscellaneous'];
+const EXPENSE_CATEGORIES = [
+  'Transportation', 'Travel/Accommodation', 'Fuel & Gas', 'Parking/Toll',
+  'Courier/Shipping', 'ACCESS/Meals', 'Office Supplies',
+  'Utilities/Communication', 'Rent', 'Marketing — HCP/Doctor', 'Marketing — Hospital', 'Marketing — Retail',
+  'Vehicle Maintenance', 'Repairs/Maintenance', 'Professional Fees',
+  'Regulatory/Licensing', 'IT/Software', 'Miscellaneous'
+];
+
+const BIR_FLAGS = ['BOTH', 'INTERNAL', 'BIR'];
+// Static fallback — overridden at runtime by COA API when available
+const COA_OPTIONS_FALLBACK = [
+  // COGS
+  { code: '5000', label: '5000 — Cost of Goods Sold' },
+  { code: '5400', label: '5400 — Food Cost' },
+  { code: '5500', label: '5500 — Beverage Cost' },
+  // OpEx — Sales Force
+  { code: '6100', label: '6100 — Per Diem Expense' },
+  { code: '6150', label: '6150 — Transport Expense' },
+  { code: '6155', label: '6155 — Travel & Accommodation' },
+  { code: '6200', label: '6200 — Fuel & Gas' },
+  { code: '6250', label: '6250 — Vehicle Maintenance' },
+  { code: '6260', label: '6260 — Repairs & Maintenance' },
+  // OpEx — Marketing
+  { code: '6300', label: '6300 — Marketing Expense' },
+  { code: '6310', label: '6310 — Marketing — HCP/Doctor' },
+  { code: '6320', label: '6320 — Marketing — Hospital' },
+  { code: '6330', label: '6330 — Marketing — Retail' },
+  { code: '6350', label: '6350 — ACCESS Expense' },
+  // OpEx — Admin
+  { code: '6400', label: '6400 — Office Supplies' },
+  { code: '6450', label: '6450 — Rent Expense' },
+  { code: '6460', label: '6460 — Utilities & Communication' },
+  { code: '6500', label: '6500 — Courier & Delivery' },
+  { code: '6600', label: '6600 — Parking & Tolls' },
+  { code: '6800', label: '6800 — Professional Fees' },
+  { code: '6810', label: '6810 — Regulatory & Licensing' },
+  { code: '6820', label: '6820 — IT Hardware & Software' },
+  // OpEx — F&B
+  { code: '6830', label: '6830 — F&B Supplies & Packaging' },
+  { code: '6840', label: '6840 — Kitchen Equipment & Maintenance' },
+  // OpEx — Rental/Property
+  { code: '6870', label: '6870 — Property Maintenance' },
+  { code: '6880', label: '6880 — Property Insurance' },
+  { code: '6890', label: '6890 — Property Tax & Fees' },
+  // Catch-all
+  { code: '6900', label: '6900 — Miscellaneous' },
+];
 const pageStyles = `
 .erp-expenses-page .admin-main {
   padding: 24px;
@@ -355,7 +405,11 @@ const pageStyles = `
 `;
 
 export default function Expenses() {
-  const { getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense, validateExpenses, submitExpenses, reopenExpenses, getExpenseSummary, loading } = useExpenses();
+  const { getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense, validateExpenses, submitExpenses, reopenExpenses, getExpenseSummary, batchUploadExpenses, saveBatchExpenses, loading } = useExpenses();
+  const { getPeopleList } = usePeople();
+  const { getMyCards, getMyBankAccounts, listAccounts } = useAccounting();
+  const { hasSubPermission } = useErpSubAccess();
+  const canBatchUpload = hasSubPermission('expenses', 'batch_upload');
 
   const [expenses, setExpenses] = useState([]);
   const [editingExpense, setEditingExpense] = useState(null);
@@ -369,6 +423,119 @@ export default function Expenses() {
   const [lines, setLines] = useState([]);
   const [scanOpen, setScanOpen] = useState(false);
   const [scanTargetIdx, setScanTargetIdx] = useState(null);
+
+  // ── Batch Upload State (President/Admin) ──
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchBirFlag, setBatchBirFlag] = useState('BOTH');
+  const [batchAssignedTo, setBatchAssignedTo] = useState('');
+  const [batchFiles, setBatchFiles] = useState([]);
+  const [batchLines, setBatchLines] = useState([]);
+  const [batchSummary, setBatchSummary] = useState(null);
+  const [batchErrors, setBatchErrors] = useState([]);
+  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState('');
+  const [batchFundingType, setBatchFundingType] = useState(''); // '', 'CARD', 'BANK'
+  const [batchFundingCardId, setBatchFundingCardId] = useState('');
+  const [batchFundingAccountId, setBatchFundingAccountId] = useState('');
+  const [batchCategory, setBatchCategory] = useState(''); // optional category override
+  const [batchCostCenter, setBatchCostCenter] = useState('');
+  const [people, setPeople] = useState([]);
+  const [myCards, setMyCards] = useState([]);
+  const [myBankAccounts, setMyBankAccounts] = useState([]);
+  const [coaOptions, setCoaOptions] = useState(COA_OPTIONS_FALLBACK);
+  const batchFileRef = useRef(null);
+
+  // Load people, cards, bank accounts, COA for batch dropdowns
+  useEffect(() => {
+    if (!canBatchUpload) return;
+    getPeopleList({ limit: 0 }).then(res => setPeople(res?.data || [])).catch(err => console.error('[Expenses] People load failed:', err.message));
+    getMyCards().then(res => setMyCards(res?.data || [])).catch(err => console.error('[Expenses] Cards load failed:', err.message));
+    getMyBankAccounts().then(res => setMyBankAccounts(res?.data || [])).catch(err => console.error('[Expenses] Bank accounts load failed:', err.message));
+    listAccounts({ is_active: true }).then(res => {
+      const accounts = res?.data || [];
+      if (accounts.length) {
+        const expenseAccounts = accounts
+          .filter(a => a.account_type === 'EXPENSE')
+          .map(a => ({ code: a.account_code, label: `${a.account_code} — ${a.account_name}` }));
+        if (expenseAccounts.length) setCoaOptions(expenseAccounts);
+      }
+    }).catch(err => console.error('[Expenses] COA load failed:', err.message));
+  }, [canBatchUpload]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleBatchFileChange = (e) => {
+    const files = Array.from(e.target.files || []).slice(0, 20);
+    setBatchFiles(files);
+    e.target.value = '';
+  };
+
+  const handleBatchProcess = async () => {
+    if (!batchFiles.length) return;
+    setBatchProcessing(true);
+    setBatchLines([]);
+    setBatchErrors([]);
+    setBatchSummary(null);
+    setBatchProgress(`Processing 0 of ${batchFiles.length}...`);
+
+    const formData = new FormData();
+    batchFiles.forEach(f => formData.append('photos', f));
+    formData.append('bir_flag', batchBirFlag);
+    formData.append('period', period);
+    formData.append('cycle', cycle);
+    if (batchAssignedTo) formData.append('assigned_to', batchAssignedTo);
+    if (batchCategory) formData.append('category_override', batchCategory);
+    if (batchFundingCardId) formData.append('funding_card_id', batchFundingCardId);
+    if (batchFundingAccountId) formData.append('funding_account_id', batchFundingAccountId);
+    if (batchCostCenter) formData.append('cost_center_id', batchCostCenter);
+    const paymentMode = batchFundingType === 'CARD' ? 'CARD' : batchFundingType === 'BANK' ? 'BANK_TRANSFER' : 'CASH';
+    formData.append('payment_mode', paymentMode);
+
+    try {
+      setBatchProgress(`Processing ${batchFiles.length} images via OCR...`);
+      const res = await batchUploadExpenses(formData);
+      setBatchLines(res?.data?.lines || []);
+      setBatchErrors(res?.data?.errors || []);
+      setBatchSummary(res?.data?.summary || null);
+      setBatchProgress('');
+    } catch (err) {
+      showMsg(err.response?.data?.message || 'Batch upload failed', true);
+      setBatchProgress('');
+    }
+    setBatchProcessing(false);
+  };
+
+  const updateBatchLine = (idx, field, value) => {
+    setBatchLines(prev => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], [field]: value };
+      return updated;
+    });
+  };
+
+  const removeBatchLine = (idx) => setBatchLines(prev => prev.filter((_, i) => i !== idx));
+
+  const handleBatchSave = async () => {
+    if (!batchLines.length) return;
+    try {
+      const res = await saveBatchExpenses({
+        bir_flag: batchBirFlag,
+        assigned_to: batchAssignedTo || undefined,
+        funding_card_id: batchFundingCardId || undefined,
+        funding_account_id: batchFundingAccountId || undefined,
+        cost_center_id: batchCostCenter || undefined,
+        period, cycle,
+        lines: batchLines
+      });
+      showMsg(res?.message || `Saved ${batchLines.length} lines as DRAFT`);
+      setBatchLines([]);
+      setBatchFiles([]);
+      setBatchSummary(null);
+      setBatchErrors([]);
+      setBatchOpen(false);
+      loadExpenses();
+    } catch (err) {
+      showMsg(err.response?.data?.message || 'Save failed', true);
+    }
+  };
 
   const handleScanOR = (idx) => { setScanTargetIdx(idx); setScanOpen(true); };
   const handleScanApply = (data) => {
@@ -391,7 +558,7 @@ export default function Expenses() {
       ]);
       setExpenses(res?.data || []);
       if (sumRes?.data) setSummary(sumRes.data);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[Expenses] Load failed:', err.message); }
   }, [period, cycle]);
 
   useEffect(() => { loadExpenses(); }, [loadExpenses]);
@@ -433,17 +600,31 @@ export default function Expenses() {
       setEditingExpense(data);
       setLines(data.lines || []);
       setShowForm(true);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[Expenses] Edit failed:', err.message); alert(err.response?.data?.message || 'Failed to load expense'); }
   };
 
+  const savingRef = useRef(false);
   const handleSave = async () => {
+    if (savingRef.current) return; // prevent double-submit on slow mobile networks
+    // Frontend validation before save
+    const issues = [];
+    lines.forEach((l, i) => {
+      if (!l.establishment?.trim()) issues.push(`Line ${i + 1}: Establishment is required`);
+      if (!l.amount || l.amount <= 0) issues.push(`Line ${i + 1}: Amount must be > 0`);
+      if (!l.expense_date) issues.push(`Line ${i + 1}: Date is required`);
+    });
+    if (!lines.length) issues.push('Add at least one expense line');
+    if (issues.length) { alert(issues.join('\n')); return; }
+
+    savingRef.current = true;
     const data = { period, cycle, lines };
     try {
       if (editingExpense) { await updateExpense(editingExpense._id, data); }
       else { await createExpense(data); }
       setShowForm(false);
       loadExpenses();
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[Expenses] Save failed:', err.message); alert(err.response?.data?.message || 'Failed to save expense'); }
+    finally { savingRef.current = false; }
   };
 
   const [actionMsg, setActionMsg] = useState(null);
@@ -514,6 +695,178 @@ export default function Expenses() {
               <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
             </div>
           </div>
+
+          {/* ═══ Batch Upload Section (President/Admin) ═══ */}
+          {canBatchUpload && (
+            <div style={{ marginBottom: 16, border: '1px solid #a78bfa', borderRadius: 10, background: '#faf5ff' }}>
+              <button onClick={() => setBatchOpen(p => !p)} style={{ width: '100%', padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 14, fontWeight: 600, color: '#6d28d9' }}>
+                <span>Batch OR Upload (OCR)</span>
+                <span>{batchOpen ? '▲' : '▼'}</span>
+              </button>
+
+              {batchOpen && (
+                <div style={{ padding: '0 16px 16px' }}>
+                  {/* Step 1: Setup — Row 1 */}
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 8 }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: '#6d28d9', fontWeight: 600, display: 'block', marginBottom: 2 }}>BIR Classification</label>
+                      <select value={batchBirFlag} onChange={e => setBatchBirFlag(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #a78bfa', fontSize: 13, background: '#fff' }}>
+                        {BIR_FLAGS.map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: '#6d28d9', fontWeight: 600, display: 'block', marginBottom: 2 }}>Category (optional)</label>
+                      <select value={batchCategory} onChange={e => setBatchCategory(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #a78bfa', fontSize: 13, background: '#fff' }}>
+                        <option value="">Auto-classify</option>
+                        {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: '#6d28d9', fontWeight: 600, display: 'block', marginBottom: 2 }}>Assign To</label>
+                      <select value={batchAssignedTo} onChange={e => setBatchAssignedTo(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #a78bfa', fontSize: 13, background: '#fff', minWidth: 160 }}>
+                        <option value="">Self (President)</option>
+                        {people.map(p => <option key={p._id} value={p.user_id?._id || p.user_id}>{p.full_name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: '#6d28d9', fontWeight: 600, display: 'block', marginBottom: 2 }}>Cost Center</label>
+                      <CostCenterPicker value={batchCostCenter} onChange={setBatchCostCenter} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: '#6d28d9', fontWeight: 600, display: 'block', marginBottom: 2 }}>Period / Cycle</label>
+                      <span style={{ fontSize: 13, color: '#374151' }}>{period} — {cycle}</span>
+                    </div>
+                  </div>
+
+                  {/* Setup — Row 2: Funding */}
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: '#6d28d9', fontWeight: 600, display: 'block', marginBottom: 2 }}>Funding Source</label>
+                      <select value={batchFundingType} onChange={e => { setBatchFundingType(e.target.value); setBatchFundingCardId(''); setBatchFundingAccountId(''); }} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #a78bfa', fontSize: 13, background: '#fff' }}>
+                        <option value="">Cash (default)</option>
+                        <option value="CARD">Credit / Debit Card</option>
+                        <option value="BANK">Bank Account</option>
+                      </select>
+                    </div>
+                    {batchFundingType === 'CARD' && (
+                      <div>
+                        <label style={{ fontSize: 11, color: '#6d28d9', fontWeight: 600, display: 'block', marginBottom: 2 }}>Card</label>
+                        <select value={batchFundingCardId} onChange={e => setBatchFundingCardId(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #a78bfa', fontSize: 13, background: '#fff', minWidth: 180 }}>
+                          <option value="">Select card...</option>
+                          {myCards.map(c => <option key={c._id} value={c._id}>{c.card_name} ({c.bank})</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {batchFundingType === 'BANK' && (
+                      <div>
+                        <label style={{ fontSize: 11, color: '#6d28d9', fontWeight: 600, display: 'block', marginBottom: 2 }}>Bank Account</label>
+                        <select value={batchFundingAccountId} onChange={e => setBatchFundingAccountId(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #a78bfa', fontSize: 13, background: '#fff', minWidth: 180 }}>
+                          <option value="">Select account...</option>
+                          {myBankAccounts.map(b => <option key={b._id} value={b._id}>{b.bank_name} — {b.account_number}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Step 2: Upload */}
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+                    <button onClick={() => batchFileRef.current?.click()} style={{ padding: '8px 16px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+                      Select OR Images
+                    </button>
+                    <input ref={batchFileRef} type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={handleBatchFileChange} />
+                    <span style={{ fontSize: 13, color: '#6d28d9', fontWeight: 600 }}>
+                      {batchFiles.length > 0 ? `${batchFiles.length} of 20 ORs selected` : 'No files selected'}
+                    </span>
+                    {batchFiles.length > 0 && (
+                      <button onClick={handleBatchProcess} disabled={batchProcessing} style={{ padding: '8px 16px', borderRadius: 6, background: batchProcessing ? '#9ca3af' : '#16a34a', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+                        {batchProcessing ? 'Processing...' : 'Process All'}
+                      </button>
+                    )}
+                  </div>
+
+                  {batchProgress && <div style={{ fontSize: 13, color: '#7c3aed', marginBottom: 8, fontWeight: 500 }}>{batchProgress}</div>}
+
+                  {/* Batch Errors */}
+                  {batchErrors.length > 0 && (
+                    <div style={{ padding: 8, borderRadius: 6, background: '#fef2f2', border: '1px solid #fca5a5', marginBottom: 10, fontSize: 12 }}>
+                      {batchErrors.map((e, i) => <div key={i} style={{ color: '#dc2626' }}>Image {e.index + 1} ({e.filename}): {e.error}</div>)}
+                    </div>
+                  )}
+
+                  {/* Step 3: Review Table */}
+                  {batchLines.length > 0 && (
+                    <div>
+                      {batchSummary && (
+                        <div style={{ display: 'flex', gap: 12, marginBottom: 10, flexWrap: 'wrap', fontSize: 13 }}>
+                          <span style={{ fontWeight: 600 }}>Processed: {batchSummary.processed}/{batchSummary.total_images}</span>
+                          {batchSummary.assorted_count > 0 && <span style={{ color: '#b45309', fontWeight: 600 }}>Assorted: {batchSummary.assorted_count}</span>}
+                          <span style={{ color: '#2563eb', fontWeight: 700 }}>Total: ₱{(batchSummary.total_amount || 0).toLocaleString()}</span>
+                        </div>
+                      )}
+
+                      <div style={{ overflowX: 'auto', marginBottom: 12 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ background: '#ede9fe', borderBottom: '2px solid #a78bfa' }}>
+                              <th style={{ padding: 6, textAlign: 'left' }}>#</th>
+                              <th style={{ padding: 6, textAlign: 'left' }}>Date</th>
+                              <th style={{ padding: 6, textAlign: 'left' }}>Establishment</th>
+                              <th style={{ padding: 6, textAlign: 'right' }}>Amount</th>
+                              <th style={{ padding: 6, textAlign: 'right' }}>VAT</th>
+                              <th style={{ padding: 6, textAlign: 'left' }}>COA</th>
+                              <th style={{ padding: 6, textAlign: 'left' }}>Category</th>
+                              <th style={{ padding: 6, textAlign: 'left' }}>OR#</th>
+                              <th style={{ padding: 6, textAlign: 'center' }}>Photo</th>
+                              <th style={{ padding: 6, textAlign: 'center' }}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {batchLines.map((line, idx) => (
+                              <tr key={idx} style={{ borderBottom: '1px solid #ddd6fe', background: line.is_assorted ? '#fef3c7' : '#fff' }}>
+                                <td style={{ padding: 6 }}>
+                                  {idx + 1}
+                                  {line.is_assorted && <span style={{ marginLeft: 4, fontSize: 10, padding: '1px 4px', borderRadius: 3, background: '#f59e0b', color: '#fff', fontWeight: 600 }}>ASSORTED</span>}
+                                </td>
+                                <td style={{ padding: 6 }}>
+                                  <input type="date" value={(line.expense_date || '').split('T')[0]} onChange={e => updateBatchLine(idx, 'expense_date', e.target.value)} style={{ padding: '2px 4px', borderRadius: 4, border: '1px solid #ddd6fe', fontSize: 11, width: 110 }} />
+                                </td>
+                                <td style={{ padding: 6 }}>
+                                  <input value={line.establishment || ''} onChange={e => updateBatchLine(idx, 'establishment', e.target.value)} style={{ padding: '2px 4px', borderRadius: 4, border: '1px solid #ddd6fe', fontSize: 11, width: 140 }} />
+                                </td>
+                                <td style={{ padding: 6, textAlign: 'right' }}>
+                                  <input type="number" value={line.amount || ''} onChange={e => updateBatchLine(idx, 'amount', Number(e.target.value))} style={{ padding: '2px 4px', borderRadius: 4, border: '1px solid #ddd6fe', fontSize: 11, width: 80, textAlign: 'right' }} />
+                                </td>
+                                <td style={{ padding: 6, textAlign: 'right', fontSize: 11, color: '#6b7280' }}>₱{(line.vat_amount || 0).toLocaleString()}</td>
+                                <td style={{ padding: 6 }}>
+                                  <select value={line.coa_code || '6900'} onChange={e => updateBatchLine(idx, 'coa_code', e.target.value)} style={{ padding: '2px 4px', borderRadius: 4, border: '1px solid #ddd6fe', fontSize: 11 }}>
+                                    {coaOptions.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+                                  </select>
+                                </td>
+                                <td style={{ padding: 6, fontSize: 11, color: '#6b7280' }}>{line.expense_category || '—'}</td>
+                                <td style={{ padding: 6 }}>
+                                  <input value={line.or_number || ''} onChange={e => updateBatchLine(idx, 'or_number', e.target.value)} style={{ padding: '2px 4px', borderRadius: 4, border: '1px solid #ddd6fe', fontSize: 11, width: 70 }} />
+                                </td>
+                                <td style={{ padding: 6, textAlign: 'center' }}>
+                                  {line.or_photo_url ? <a href={line.or_photo_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>View</a> : '—'}
+                                </td>
+                                <td style={{ padding: 6, textAlign: 'center' }}>
+                                  <button onClick={() => removeBatchLine(idx)} style={{ padding: '1px 6px', borderRadius: 4, border: '1px solid #ef4444', color: '#ef4444', background: '#fff', cursor: 'pointer', fontSize: 10 }}>X</button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <button onClick={handleBatchSave} disabled={loading} style={{ padding: '8px 20px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14 }}>
+                        Save All as Draft ({batchLines.length} lines)
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {actionMsg && (
             <div style={{ padding: '6px 12px', marginBottom: 12, borderRadius: 6, fontSize: 13, background: actionMsg.isError ? '#fef2f2' : '#f0fdf4', border: `1px solid ${actionMsg.isError ? '#fca5a5' : '#bbf7d0'}`, color: actionMsg.isError ? '#dc2626' : '#166534' }}>
@@ -682,7 +1035,11 @@ export default function Expenses() {
                     <SelectField value={line.payment_mode} onChange={e => updateLine(idx, 'payment_mode', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                       {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
                     </SelectField>
-                    {line.calf_required && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>CALF Required</span>}
+                    {line.calf_required && (
+                      line.calf_id
+                        ? <a href={`/erp/prf-calf?id=${line.calf_id}`} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600, textDecoration: 'none' }}>CALF ✓ →</a>
+                        : <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>CALF Pending (save first)</span>
+                    )}
                   </div>
                 </div>
               ))}

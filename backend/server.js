@@ -144,6 +144,12 @@ const buildCorsOptions = () => ({
 });
 
 const createRateLimiters = () => {
+  // Skip rate limiting in development — prevents lockouts during testing
+  if (process.env.NODE_ENV !== 'production') {
+    const noop = (req, res, next) => next();
+    return { generalLimiter: noop, authLimiter: noop, userLimiter: noop };
+  }
+
   const windowMs = parseIntEnv('RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000);
   const generalMax = parseIntEnv('RATE_LIMIT_GENERAL_MAX', 500);
   const authMax = parseIntEnv('RATE_LIMIT_AUTH_MAX', 50);

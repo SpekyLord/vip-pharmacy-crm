@@ -548,6 +548,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   // Shared infrastructure — no module gate
   items.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
   items.push({ path: '/erp/customers', label: 'Customers', icon: Users });
+  items.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
   if (hasModule('inventory'))   items.push({ path: '/erp/my-stock', label: 'Inventory', icon: Package });
   if (hasModule('inventory'))   items.push({ path: '/erp/grn', label: 'GRN Entry', icon: FileInput });
   if (hasModule('inventory'))   items.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
@@ -555,6 +556,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   if (hasModule('inventory') && ['admin', 'president'].includes(role)) items.push({ path: '/erp/warehouses', label: 'Warehouses', icon: Package });
   if (hasModule('inventory'))   items.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
   if (hasModule('collections')) items.push({ path: '/erp/collections', label: 'Collections', icon: Wallet });
+  if (hasModule('collections')) items.push({ path: '/erp/collections/ar', label: 'AR Aging', icon: BarChart3 });
   if (hasModule('expenses'))    items.push({ path: '/erp/expenses', label: 'Expenses', icon: CreditCard });
   if (hasModule('reports'))     items.push({ path: '/erp/reports', label: 'Reports', icon: BarChart3 });
   if (hasModule('reports'))     items.push({ path: '/erp/budget-allocations', label: 'Budget Allocations', icon: DollarSign });
@@ -564,6 +566,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   if (hasModule('accounting')) {
     items.push({ path: '/erp/coa', label: 'Chart of Accounts', icon: BookOpen });
     items.push({ path: '/erp/journals', label: 'Journal Entries', icon: BookOpen });
+    items.push({ path: '/erp/recurring-journals', label: 'Recurring Journals', icon: BookOpen });
     items.push({ path: '/erp/trial-balance', label: 'Trial Balance', icon: BookOpen });
     items.push({ path: '/erp/profit-loss', label: 'P&L Statement', icon: BookOpen });
     items.push({ path: '/erp/vat-compliance', label: 'VAT & CWT', icon: BookOpen });
@@ -572,6 +575,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     items.push({ path: '/erp/loans', label: 'Loans', icon: BookOpen });
     items.push({ path: '/erp/owner-equity', label: 'Owner Equity', icon: BookOpen });
     items.push({ path: '/erp/month-end-close', label: 'Month-End Close', icon: BookOpen });
+    items.push({ path: '/erp/period-locks', label: 'Period Locks', icon: BookOpen });
     items.push({ path: '/erp/bank-accounts', label: 'Bank Accounts', icon: Landmark });
     items.push({ path: '/erp/bank-recon', label: 'Bank Reconciliation', icon: Scale });
     items.push({ path: '/erp/credit-card-ledger', label: 'CC Ledger', icon: CreditCard });
@@ -580,6 +584,9 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     items.push({ path: '/erp/office-supplies', label: 'Office Supplies', icon: Package });
     items.push({ path: '/erp/data-archive', label: 'Data Archive', icon: Archive });
   }
+  // Government Rates & BIR Calculator — available to admin/finance/president (no module gate)
+  items.push({ path: '/erp/government-rates', label: 'Gov. Rates', icon: BookOpen });
+  items.push({ path: '/erp/bir-calculator', label: 'BIR Calculator', icon: BookOpen });
   if (hasModule('purchasing')) {
     items.push({ path: '/erp/vendors', label: 'Vendors', icon: Truck });
     items.push({ path: '/erp/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart });

@@ -22,7 +22,7 @@ const { createAndPostJournal } = require('../services/journalEngine');
  */
 const getFunds = catchAsync(async (req, res) => {
   const funds = await PettyCashFund.find({ ...req.tenantFilter })
-    .populate('custodian_id', 'firstName lastName email')
+    .populate('custodian_id', 'name email')
     .sort({ created_at: -1 })
     .lean();
 
@@ -36,7 +36,7 @@ const getFundById = catchAsync(async (req, res) => {
   const fund = await PettyCashFund.findOne({
     _id: req.params.id,
     ...req.tenantFilter
-  }).populate('custodian_id', 'firstName lastName email').lean();
+  }).populate('custodian_id', 'name email').lean();
 
   if (!fund) {
     return res.status(404).json({ success: false, message: 'Fund not found' });
@@ -126,8 +126,9 @@ const getTransactions = catchAsync(async (req, res) => {
 });
 
 /**
- * POST /transactions — create DEPOSIT or DISBURSEMENT
- * Atomically updates fund current_balance.
+ * POST /transactions — create DEPOSIT or DISBURSEMENT as DRAFT
+ * Balance does NOT move until POST — DRAFT is just a recorded intent.
+ * This prevents phantom balance changes from un-posted transactions.
  */
 const createTransaction = catchAsync(async (req, res) => {
   const { fund_id, txn_type, amount } = req.body;
@@ -139,83 +140,124 @@ const createTransaction = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'fund_id and positive amount are required' });
   }
 
+  const fund = await PettyCashFund.findOne({ _id: fund_id, ...req.tenantFilter });
+  if (!fund) return res.status(404).json({ success: false, message: 'Fund not found' });
+
+  // BDMs can only transact on funds they're custodian of
+  const isPrivileged = ['admin', 'finance', 'president'].includes(req.user.role);
+  if (!isPrivileged && fund.custodian_id?.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ success: false, message: 'Only the fund custodian can create transactions on this fund' });
+  }
+
+  // Respect fund_mode
+  const mode = fund.fund_mode || 'REVOLVING';
+  if (mode === 'EXPENSE_ONLY' && txn_type === 'DEPOSIT') {
+    return res.status(400).json({ success: false, message: 'This fund is EXPENSE_ONLY — deposits not allowed' });
+  }
+  if (mode === 'DEPOSIT_ONLY' && txn_type === 'DISBURSEMENT') {
+    return res.status(400).json({ success: false, message: 'This fund is DEPOSIT_ONLY — disbursements not allowed' });
+  }
+
+  // Soft check: warn if disbursement would exceed balance (hard check at POST time)
+  if (txn_type === 'DISBURSEMENT' && amount > fund.current_balance) {
+    return res.status(400).json({ success: false, message: `Insufficient balance. Current: ₱${fund.current_balance}, Requested: ₱${amount}` });
+  }
+
+  // Create DRAFT — balance untouched
+  const txn = await PettyCashTransaction.create({
+    ...req.body,
+    entity_id: req.entityId,
+    created_by: req.user._id,
+    status: 'DRAFT',
+    running_balance: fund.current_balance // snapshot, not mutation
+  });
+
+  res.status(201).json({ success: true, data: txn });
+});
+
+/**
+ * POST /transactions/:id/post — atomically move balance + mark POSTED
+ * This is the ONLY place balance changes for deposit/disbursement.
+ */
+const postTransaction = catchAsync(async (req, res) => {
   const session = await mongoose.startSession();
   try {
-    let txn;
+    let result;
     await session.withTransaction(async () => {
-      const fund = await PettyCashFund.findOne({
-        _id: fund_id,
+      const txn = await PettyCashTransaction.findOne({
+        _id: req.params.id,
         ...req.tenantFilter
       }).session(session);
 
-      if (!fund) {
-        throw Object.assign(new Error('Fund not found'), { statusCode: 404 });
+      if (!txn) throw Object.assign(new Error('Transaction not found'), { statusCode: 404 });
+      if (txn.status === 'POSTED') throw Object.assign(new Error('Transaction already posted'), { statusCode: 400 });
+
+      const fund = await PettyCashFund.findById(txn.fund_id).session(session);
+      if (!fund) throw Object.assign(new Error('Fund not found'), { statusCode: 404 });
+
+      // Hard balance check at post time
+      if (txn.txn_type === 'DISBURSEMENT' && txn.amount > fund.current_balance) {
+        throw Object.assign(new Error(`Insufficient balance. Current: ₱${fund.current_balance}, Requested: ₱${txn.amount}`), { statusCode: 400 });
       }
 
-      // Respect fund_mode — restrict allowed transaction types
-      const mode = fund.fund_mode || 'REVOLVING';
-      if (mode === 'EXPENSE_ONLY' && txn_type === 'DEPOSIT') {
-        throw Object.assign(new Error('This fund is EXPENSE_ONLY mode — deposits not allowed. Change fund mode to REVOLVING first.'), { statusCode: 400 });
-      }
-      if (mode === 'DEPOSIT_ONLY' && txn_type === 'DISBURSEMENT') {
-        throw Object.assign(new Error('This fund is DEPOSIT_ONLY mode — disbursements not allowed. Change fund mode to REVOLVING first.'), { statusCode: 400 });
-      }
-
-      if (txn_type === 'DISBURSEMENT' && amount > fund.current_balance) {
-        throw Object.assign(
-          new Error(`Insufficient balance. Current: ${fund.current_balance}, Requested: ${amount}`),
-          { statusCode: 400 }
-        );
-      }
-
-      // Update fund balance atomically
-      const delta = txn_type === 'DEPOSIT' ? amount : -amount;
-      fund.current_balance += delta;
+      // Move balance atomically
+      const delta = txn.txn_type === 'DEPOSIT' ? txn.amount : -txn.amount;
+      fund.current_balance = Math.round((fund.current_balance + delta) * 100) / 100;
       await fund.save({ session });
 
-      // Create transaction
-      [txn] = await PettyCashTransaction.create([{
-        ...req.body,
-        entity_id: req.entityId,
-        created_by: req.user._id,
-        status: 'DRAFT',
-        running_balance: fund.current_balance
-      }], { session });
+      txn.status = 'POSTED';
+      txn.posted_at = new Date();
+      txn.posted_by = req.user._id;
+      txn.running_balance = fund.current_balance;
+      await txn.save({ session });
+
+      result = txn;
     });
 
-    res.status(201).json({ success: true, data: txn });
-  } catch (err) {
-    if (err.statusCode) {
-      return res.status(err.statusCode).json({ success: false, message: err.message });
+    // ── Post-commit: ceiling breach notification (non-blocking) ──
+    let ceilingBreached = false;
+    try {
+      const updatedFund = await PettyCashFund.findById(result.fund_id).lean();
+      if (updatedFund && updatedFund.current_balance > updatedFund.balance_ceiling) {
+        ceilingBreached = true;
+        const excess = Math.round((updatedFund.current_balance - updatedFund.balance_ceiling) * 100) / 100;
+        const { notify } = require('../../agents/notificationService');
+
+        // Notify custodian
+        if (updatedFund.custodian_id) {
+          await notify({
+            recipient_id: updatedFund.custodian_id,
+            title: `Petty Cash Ceiling Exceeded — ${updatedFund.fund_name}`,
+            body: `Balance ₱${updatedFund.current_balance.toLocaleString()} exceeds ceiling ₱${updatedFund.balance_ceiling.toLocaleString()} by ₱${excess.toLocaleString()}. Generate a Remittance and hand over excess cash to the owner.`,
+            category: 'compliance_alert',
+            priority: 'important',
+            channels: ['in_app'],
+            agent: 'petty_cash'
+          }).catch(() => {});
+        }
+
+        // Notify president
+        await notify({
+          recipient_id: 'PRESIDENT',
+          title: `Petty Cash Over Ceiling — ${updatedFund.fund_name}`,
+          body: `Fund ${updatedFund.fund_code} balance ₱${updatedFund.current_balance.toLocaleString()} exceeds ceiling by ₱${excess.toLocaleString()}. Custodian should remit excess.`,
+          category: 'compliance_alert',
+          priority: 'normal',
+          channels: ['in_app'],
+          agent: 'petty_cash'
+        }).catch(() => {});
+      }
+    } catch (ceilErr) {
+      console.error('[PettyCash] Ceiling notification failed:', ceilErr.message);
     }
+
+    res.json({ success: true, data: result, ceiling_breached: ceilingBreached });
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
     throw err;
   } finally {
     session.endSession();
   }
-});
-
-/**
- * POST /transactions/:id/post — mark transaction POSTED
- */
-const postTransaction = catchAsync(async (req, res) => {
-  const txn = await PettyCashTransaction.findOne({
-    _id: req.params.id,
-    ...req.tenantFilter
-  });
-
-  if (!txn) {
-    return res.status(404).json({ success: false, message: 'Transaction not found' });
-  }
-  if (txn.status === 'POSTED') {
-    return res.status(400).json({ success: false, message: 'Transaction already posted' });
-  }
-
-  txn.status = 'POSTED';
-  txn.posted_at = new Date();
-  txn.posted_by = req.user._id;
-  await txn.save();
-
-  res.json({ success: true, data: txn });
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -265,6 +307,11 @@ const generateRemittance = catchAsync(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Fund not found' });
   }
 
+  // Fund mode enforcement
+  if (fund.fund_mode === 'DEPOSIT_ONLY') {
+    return res.status(400).json({ success: false, message: 'DEPOSIT_ONLY fund cannot generate remittance' });
+  }
+
   if (fund.current_balance <= fund.balance_ceiling) {
     return res.status(400).json({ success: false, message: 'Fund is not over ceiling. No remittance needed.' });
   }
@@ -306,8 +353,9 @@ const generateRemittance = catchAsync(async (req, res) => {
 });
 
 /**
- * POST /replenishments/generate — create REPLENISHMENT document
- * Accepts amount from body, creates REPLENISHMENT transaction, adds to balance.
+ * POST /replenishments/generate — create REPLENISHMENT document (PENDING)
+ * Balance does NOT move here — only when processDocument is called.
+ * Fund mode enforcement: EXPENSE_ONLY funds cannot receive replenishment.
  */
 const generateReplenishment = catchAsync(async (req, res) => {
   const { fund_id, amount } = req.body;
@@ -316,59 +364,27 @@ const generateReplenishment = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'fund_id and positive amount are required' });
   }
 
-  const session = await mongoose.startSession();
-  try {
-    let doc;
-    await session.withTransaction(async () => {
-      const fund = await PettyCashFund.findOne({
-        _id: fund_id,
-        ...req.tenantFilter
-      }).session(session);
+  const fund = await PettyCashFund.findOne({ _id: fund_id, ...req.tenantFilter });
+  if (!fund) return res.status(404).json({ success: false, message: 'Fund not found' });
 
-      if (!fund) {
-        throw Object.assign(new Error('Fund not found'), { statusCode: 404 });
-      }
-
-      // Create replenishment transaction
-      const [txn] = await PettyCashTransaction.create([{
-        entity_id: req.entityId,
-        fund_id,
-        txn_type: 'REPLENISHMENT',
-        amount,
-        txn_date: new Date(),
-        source_description: 'Owner replenishment',
-        status: 'DRAFT',
-        created_by: req.user._id,
-        running_balance: fund.current_balance + amount
-      }], { session });
-
-      // Update fund balance
-      fund.current_balance += amount;
-      await fund.save({ session });
-
-      // Create replenishment document
-      [doc] = await PettyCashRemittance.create([{
-        entity_id: req.entityId,
-        fund_id,
-        doc_type: 'REPLENISHMENT',
-        doc_date: new Date(),
-        amount,
-        custodian_id: fund.custodian_id,
-        transaction_ids: [txn._id],
-        status: 'PENDING',
-        created_by: req.user._id
-      }], { session });
-    });
-
-    res.status(201).json({ success: true, data: doc });
-  } catch (err) {
-    if (err.statusCode) {
-      return res.status(err.statusCode).json({ success: false, message: err.message });
-    }
-    throw err;
-  } finally {
-    session.endSession();
+  // Fund mode enforcement
+  if (fund.fund_mode === 'EXPENSE_ONLY') {
+    return res.status(400).json({ success: false, message: 'EXPENSE_ONLY fund cannot receive replenishment' });
   }
+
+  const doc = await PettyCashRemittance.create({
+    entity_id: req.entityId,
+    fund_id,
+    doc_type: 'REPLENISHMENT',
+    doc_date: new Date(),
+    amount,
+    custodian_id: fund.custodian_id,
+    transaction_ids: [],
+    status: 'PENDING',
+    created_by: req.user._id
+  });
+
+  res.status(201).json({ success: true, data: doc });
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -464,10 +480,21 @@ const processDocument = catchAsync(async (req, res) => {
       const fund = await PettyCashFund.findById(doc.fund_id._id || doc.fund_id).session(session);
       if (!fund) throw Object.assign(new Error('Fund not found'), { statusCode: 404 });
 
-      // Create the transaction on the fund
-      const txnType = doc.doc_type; // REMITTANCE or REPLENISHMENT
+      // REMITTANCE: custodian sends excess cash to owner → balance DOWN
+      // REPLENISHMENT: owner sends cash to custodian → balance UP
+      const txnType = doc.doc_type;
       const delta = txnType === 'REMITTANCE' ? -doc.amount : doc.amount;
 
+      // Balance guard for remittance
+      if (txnType === 'REMITTANCE' && doc.amount > fund.current_balance) {
+        throw Object.assign(new Error(`Cannot remit ₱${doc.amount} — current balance is only ₱${fund.current_balance}`), { statusCode: 400 });
+      }
+
+      // Move balance atomically (this is the ONLY place balance changes for remit/replenish)
+      fund.current_balance = Math.round((fund.current_balance + delta) * 100) / 100;
+      await fund.save({ session });
+
+      // Create POSTED transaction as audit record
       const [txn] = await PettyCashTransaction.create([{
         entity_id: req.entityId,
         fund_id: fund._id,
@@ -479,45 +506,60 @@ const processDocument = catchAsync(async (req, res) => {
         posted_at: new Date(),
         posted_by: req.user._id,
         created_by: req.user._id,
-        running_balance: fund.current_balance + delta,
+        running_balance: fund.current_balance,
         remittance_id: doc._id
       }], { session });
 
-      // Update fund balance
-      fund.current_balance += delta;
-      await fund.save({ session });
-
-      // Create and post journal entry
-      // journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId)
-      // txn needs txn_type set to doc.doc_type (REMITTANCE or REPLENISHMENT)
+      // Journal entry — use fund's COA code (not hardcoded 6900)
+      const fundCoa = fund.coa_code || '1000';
+      const fundCoaName = fund.fund_name || 'Petty Cash';
       const jeTxn = {
-        ...txn.toObject ? txn.toObject() : txn,
+        ...(txn.toObject ? txn.toObject() : txn),
         txn_type: doc.doc_type,
         txn_number: doc.doc_number,
         txn_date: doc.doc_date
       };
-      const jeData = journalFromPettyCash(jeTxn, '6900', 'Miscellaneous Expense', req.user._id);
+      const jeData = journalFromPettyCash(jeTxn, fundCoa, fundCoaName, req.user._id);
       if (jeData) {
-        jeData.entity_id = req.entityId;
-        await createAndPostJournal(jeData, req.user._id, session);
+        await createAndPostJournal(req.entityId, jeData);
       }
 
       // Mark document processed
       doc.status = 'PROCESSED';
       doc.processed_at = new Date();
       doc.processed_by = req.user._id;
+      doc.transaction_ids = [...(doc.transaction_ids || []), txn._id];
       await doc.save({ session });
     });
 
     res.json({ success: true, data: doc });
   } catch (err) {
-    if (err.statusCode) {
-      return res.status(err.statusCode).json({ success: false, message: err.message });
-    }
+    if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
     throw err;
   } finally {
     session.endSession();
   }
+});
+
+/**
+ * DELETE /funds/:id — president only, fund must have zero balance
+ */
+const deleteFund = catchAsync(async (req, res) => {
+  const fund = await PettyCashFund.findOne({ _id: req.params.id, ...req.tenantFilter });
+  if (!fund) return res.status(404).json({ success: false, message: 'Fund not found' });
+
+  if (fund.current_balance !== 0) {
+    return res.status(400).json({ success: false, message: `Cannot delete fund with balance ₱${fund.current_balance}. Settle balance first.` });
+  }
+
+  // Check for any linked transactions
+  const txnCount = await PettyCashTransaction.countDocuments({ fund_id: fund._id });
+  if (txnCount > 0) {
+    return res.status(400).json({ success: false, message: `Cannot delete fund with ${txnCount} transaction(s). Close the fund instead.` });
+  }
+
+  await PettyCashFund.deleteOne({ _id: fund._id });
+  res.json({ success: true, message: `Fund ${fund.fund_code} deleted` });
 });
 
 module.exports = {
@@ -525,6 +567,7 @@ module.exports = {
   getFundById,
   createFund,
   updateFund,
+  deleteFund,
   getTransactions,
   createTransaction,
   postTransaction,

@@ -7,7 +7,8 @@
       "Bash(npx vite:*)",
       "Bash(NODE_OPTIONS=--max-old-space-size=4096 npx vite build)",
       "Bash(npm run:*)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(find \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend/erp/controllers\" -name \"*.js\" -exec grep -l \"batch\\\\|submit\" {} \\\\;)"
     ]
   }
 }

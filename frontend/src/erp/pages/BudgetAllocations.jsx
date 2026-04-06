@@ -109,7 +109,7 @@ export default function BudgetAllocations() {
       if (filters.status) params.status = filters.status;
       const res = await rpt.getBudgetAllocations(params);
       setAllocations(res?.data || []);
-    } catch {}
+    } catch (err) { console.error('[BudgetAllocations] load error:', err.message); }
     setLoading(false);
   }, [filters]);
 
@@ -117,7 +117,7 @@ export default function BudgetAllocations() {
     try {
       const res = await ppl.getPeopleList({ is_active: true });
       setPeople(res?.data || []);
-    } catch {}
+    } catch (err) { console.error('[BudgetAllocations] load error:', err.message); }
   }, []);
 
   useEffect(() => { loadAllocations(); loadPeople(); }, []);
@@ -161,11 +161,11 @@ export default function BudgetAllocations() {
       setEditId(null);
       resetForm();
       loadAllocations();
-    } catch {}
+    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   const handleApprove = async (id) => {
-    try { await rpt.approveBudgetAllocation(id); loadAllocations(); } catch {}
+    try { await rpt.approveBudgetAllocation(id); loadAllocations(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
   };
 
   const handleEdit = (alloc) => {

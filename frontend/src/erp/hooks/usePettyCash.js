@@ -6,6 +6,7 @@ export default function usePettyCash() {
   const getFundById = async (id) => { const { data } = await api.get(`/erp/petty-cash/funds/${id}`); return data; };
   const createFund = async (body) => { const { data } = await api.post('/erp/petty-cash/funds', body); return data; };
   const updateFund = async (id, body) => { const { data } = await api.put(`/erp/petty-cash/funds/${id}`, body); return data; };
+  const deleteFund = async (id) => { const { data } = await api.delete(`/erp/petty-cash/funds/${id}`); return data; };
 
   // Transactions
   const getTransactions = async (params) => { const { data } = await api.get('/erp/petty-cash/transactions', { params }); return data; };
@@ -23,7 +24,7 @@ export default function usePettyCash() {
   const processDocument = async (id) => { const { data } = await api.post(`/erp/petty-cash/documents/${id}/process`); return data; };
 
   return {
-    getFunds, getFundById, createFund, updateFund,
+    getFunds, getFundById, createFund, updateFund, deleteFund,
     getTransactions, createTransaction, postTransaction,
     checkCeiling,
     generateRemittance, generateReplenishment, getDocuments, signDocument, processDocument

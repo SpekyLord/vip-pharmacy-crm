@@ -26,6 +26,8 @@ export default function useBanking() {
   return {
     ...api,
     listBankAccounts, createBankAccount, updateBankAccount,
+    exportBankAccounts: () => api.get('/banking/bank-accounts/export', { responseType: 'blob' }),
+    importBankAccounts: (fd) => api.post('/banking/bank-accounts/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } }),
     importStatement, listStatements, getStatement, autoMatchStatement, manualMatchEntry, getReconSummary, finalizeRecon,
     getCardBalances, getCardLedger, createCCTransaction, recordCardPayment
   };

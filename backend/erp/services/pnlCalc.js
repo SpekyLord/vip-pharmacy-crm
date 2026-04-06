@@ -18,6 +18,9 @@ const TransactionEvent = require('../models/TransactionEvent');
 const ProductMaster = require('../models/ProductMaster');
 const { generateExpenseSummary } = require('./expenseSummary');
 const { evaluateEligibility } = require('./profitShareEngine');
+const { generatePnlInternal } = require('./pnlService');
+const { createAndPostJournal } = require('./journalEngine');
+const JournalEntry = require('../models/JournalEntry');
 
 /**
  * Parse period string "YYYY-MM" to start/end Date objects
@@ -445,6 +448,115 @@ async function executeYearEndClose(entityId, fiscalYear, userId) {
     source_image_url: 'system://year-end-close',
     created_by: userId
   });
+
+  // 7. Create closing JE — transfer net income to Retained Earnings
+  // Uses GL-based P&L (pnlService) to get authoritative revenue/expense totals
+  try {
+    // Aggregate full-year GL P&L across all 12 periods
+    const closingLines = [];
+    let totalDebit = 0;
+    let totalCredit = 0;
+
+    // Get all POSTED JE lines for revenue (4000-4999) and expense (5000-7999) accounts
+    const glAgg = await JournalEntry.aggregate([
+      {
+        $match: {
+          entity_id: new mongoose.Types.ObjectId(entityId),
+          status: 'POSTED',
+          is_reversal: { $ne: true },
+          period: { $in: periods }
+        }
+      },
+      { $unwind: '$lines' },
+      {
+        $match: {
+          'lines.account_code': { $gte: '4000', $lt: '8000' }
+        }
+      },
+      {
+        $group: {
+          _id: '$lines.account_code',
+          account_name: { $first: '$lines.account_name' },
+          total_debit: { $sum: '$lines.debit' },
+          total_credit: { $sum: '$lines.credit' }
+        }
+      }
+    ]);
+
+    for (const acct of glAgg) {
+      const net = acct.total_debit - acct.total_credit;
+      if (Math.abs(net) < 0.01) continue;
+
+      // Close revenue accounts (4xxx have credit balances → debit to close)
+      // Close expense accounts (5xxx-7xxx have debit balances → credit to close)
+      if (net < 0) {
+        // Credit balance (revenue) → debit to close
+        closingLines.push({
+          account_code: acct._id,
+          account_name: acct.account_name || acct._id,
+          debit: Math.abs(net),
+          credit: 0,
+          description: `Year-end close FY${fiscalYear}`
+        });
+        totalDebit += Math.abs(net);
+      } else {
+        // Debit balance (expense) → credit to close
+        closingLines.push({
+          account_code: acct._id,
+          account_name: acct.account_name || acct._id,
+          debit: 0,
+          credit: net,
+          description: `Year-end close FY${fiscalYear}`
+        });
+        totalCredit += net;
+      }
+    }
+
+    // Net difference goes to 3200 Retained Earnings
+    const retainedEarnings = Math.round((totalDebit - totalCredit) * 100) / 100;
+    if (Math.abs(retainedEarnings) >= 0.01) {
+      if (retainedEarnings > 0) {
+        // Net income (revenue > expenses) → credit Retained Earnings
+        closingLines.push({
+          account_code: '3200',
+          account_name: 'Retained Earnings',
+          debit: 0,
+          credit: retainedEarnings,
+          description: `Net income transfer FY${fiscalYear}`
+        });
+      } else {
+        // Net loss → debit Retained Earnings
+        closingLines.push({
+          account_code: '3200',
+          account_name: 'Retained Earnings',
+          debit: Math.abs(retainedEarnings),
+          credit: 0,
+          description: `Net loss transfer FY${fiscalYear}`
+        });
+      }
+    }
+
+    if (closingLines.length > 0) {
+      await createAndPostJournal(entityId, {
+        je_date: new Date(`${fiscalYear}-12-31`),
+        period: `${fiscalYear}-12`,
+        description: `Year-End Closing Entry FY${fiscalYear}`,
+        source_module: 'MANUAL',
+        source_doc_ref: `FY-CLOSE-${fiscalYear}`,
+        lines: closingLines,
+        bir_flag: 'BOTH',
+        vat_flag: 'N/A',
+        created_by: userId
+      });
+
+      // Mark closing entries as done
+      fyArchive.year_end_data.closing_entries_pending = false;
+      await fyArchive.save();
+    }
+  } catch (closingErr) {
+    console.error('Year-end closing JE failed:', closingErr.message);
+    // Don't fail the entire close — data capture is done, JE can be retried
+  }
 
   return fyArchive;
 }

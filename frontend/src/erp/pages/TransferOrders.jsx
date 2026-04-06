@@ -331,7 +331,7 @@ export default function TransferOrders() {
       if (!batchCache[val]) {
         getBatches(val, form.source_bdm_id, form.source_entity_id).then(res => {
           setBatchCache(prev => ({ ...prev, [val]: res.data || [] }));
-        }).catch(() => {});
+        }).catch(err => console.error('[TransferOrders]', err.message));
       }
       // Reset batch/expiry when product changes
       items[i].batch_lot_no = '';
@@ -363,7 +363,7 @@ export default function TransferOrders() {
       if (!reassignBatchCache[cacheKey]) {
         getBatches(val, reassignForm.source_bdm_id).then(res => {
           setReassignBatchCache(prev => ({ ...prev, [cacheKey]: res.data || [] }));
-        }).catch(() => {});
+        }).catch(err => console.error('[TransferOrders]', err.message));
       }
       items[i].batch_lot_no = '';
       items[i].expiry_date = '';
@@ -596,13 +596,13 @@ export default function TransferOrders() {
                     setSourceStock([]);
                     if (newBdmId) {
                       // Fetch this custodian's stock to filter product dropdown (pass source entity_id)
-                      getMyStock(newBdmId, form.source_entity_id).then(res => setSourceStock(res.data || [])).catch(() => {});
+                      getMyStock(newBdmId, form.source_entity_id).then(res => setSourceStock(res.data || [])).catch(err => console.error('[TransferOrders]', err.message));
                       // Re-fetch batches for already-selected products
                       lineItems.forEach(li => {
                         if (li.product_id) {
                           getBatches(li.product_id, newBdmId, form.source_entity_id).then(res => {
                             setBatchCache(prev => ({ ...prev, [li.product_id]: res.data || [] }));
-                          }).catch(() => {});
+                          }).catch(err => console.error('[TransferOrders]', err.message));
                         }
                       });
                     }
@@ -724,13 +724,13 @@ export default function TransferOrders() {
                     setReassignBatchCache({});
                     setReassignStock([]);
                     if (newBdmId) {
-                      getMyStock(newBdmId).then(res => setReassignStock(res.data || [])).catch(() => {});
+                      getMyStock(newBdmId).then(res => setReassignStock(res.data || [])).catch(err => console.error('[TransferOrders]', err.message));
                       reassignItems.forEach(li => {
                         if (li.product_id) {
                           const ck = `r_${li.product_id}_${newBdmId}`;
                           getBatches(li.product_id, newBdmId).then(res => {
                             setReassignBatchCache(prev => ({ ...prev, [ck]: res.data || [] }));
-                          }).catch(() => {});
+                          }).catch(err => console.error('[TransferOrders]', err.message));
                         }
                       });
                     }

@@ -1495,7 +1495,7 @@
 > **Future phases:**
 > - Phase 9.1: OCR → expense form connections (Scan OR, Scan Gas Receipt, Scan Odometer)
 > - Phase 9.1b: Document photo persistence for all expense proofs
-> - Phase 11: Journal entries from expenses (DR: 6XXX Expense, CR: 1110 AR BDM Advances)
+> - ~~Phase 11: Journal entries from expenses (DR: 6XXX Expense, CR: 1110 AR BDM Advances)~~ ✅ DONE (April 5, 2026)
 
 ### 6.1 — Expense Models ✅
 - [x] Create `backend/erp/models/SmerEntry.js` — daily entries with per diem tiers (FULL/HALF/ZERO), transport (P2P + special), ORE amount, travel advance reconciliation, auto-computed totals (pre-save), unique index on entity+bdm+period+cycle, DRAFT→VALID→ERROR→POSTED lifecycle, `erp_smer_entries` collection. **Per diem override fields:** `perdiem_override` (Boolean), `override_tier` (FULL/HALF), `override_reason`, `overridden_by`, `overridden_at` — Finance/Manager/President can override CRM-computed tier for exceptions (meetings, training). CRM `md_count` preserved for audit. Pre-save counts overridden days as working days. Validation skips hospital requirement for overridden days but requires override_reason.
@@ -1694,15 +1694,15 @@
 - [x] **Action feedback:** Car Logbook + Expenses pages show green/red message banner for validate/submit/delete actions (auto-dismiss 5s).
 - [x] **Save error handling:** SMER save shows specific error (e.g., "SMER already exists — use Edit") instead of silent failure.
 
-**COA / Journal Entry notes for Phase 11:**
-> When Phase 11 (VIP Accounting Engine) is built, the following auto-journals should be created from expense documents:
-> - **SMER POSTED:** DR: 6100 Per Diem Expense + 6150 Transport, CR: 1110 AR BDM Advances
-> - **Car Logbook POSTED:** DR: 6200 Fuel/Gas (official portion), CR: 1110 AR BDM Advances
-> - **ORE POSTED:** DR: 6XXX (per category — courier 6500, parking 6600, etc.), CR: 1110 AR BDM Advances
-> - **ACCESS POSTED:** DR: 6XXX (per category), CR: 2000 AP Trade or Bank Account (company fund)
-> - **PRF POSTED (partner rebate):** DR: 5200 Partner Rebate / Partners' Insurance, CR: Cash/Bank (payment to partner)
-> - **CALF POSTED (liquidation):** DR: 1110 AR BDM Advances (clearing), CR: Cash/Bank (advance return) or DR: 6XXX (shortfall reimbursement)
-> The `source_module: 'EXPENSE'` enum is already included in the JournalEntry model spec (Phase 11.2). Each expense model stores `event_id` linking to TransactionEvent for document flow tracing (Phase 9.3).
+**COA / Journal Entry notes for Phase 11:** ✅ WIRED (April 5, 2026)
+> All expense auto-journals are now wired into their respective submit functions in `expenseController.js`:
+> - **SMER POSTED:** DR: 6100 Per Diem + 6150 Transport + 6160 Special + 6170 ORE, CR: 1110 AR BDM Advances ✅
+> - **Car Logbook POSTED:** DR: 6200 Fuel/Gas, CR: 1110 AR BDM (cash) or funding COA (fleet card) ✅
+> - **ORE POSTED:** DR: line.coa_code (per category), CR: 1110 AR BDM Advances ✅
+> - **ACCESS POSTED:** DR: line.coa_code (per category), CR: funding COA via resolveFundingCoa() ✅
+> - **PRF POSTED (partner rebate):** DR: 5200 Partner Rebate, CR: funding COA ✅
+> - **CALF POSTED (advance):** DR: 1110 AR BDM Advances (clearing), CR: funding COA ✅
+> JE creation happens after MongoDB transaction (non-blocking, try/catch). Errors logged to console.
 
 
 ---
@@ -2213,7 +2213,7 @@
 - [x] Mounted in ERP router: `router.use('/payroll', erpAccessCheck('payroll'), require('./payrollRoutes'))`
 - [ ] Commit: `"feat(erp): payroll controller with staging-then-post workflow [v5]"`
 
-> **Note (April 4, 2026):** Payroll posting currently transitions payslips to POSTED status only. Journal entry generation (DR: Salaries/Allowances, CR: SSS/PhilHealth/PagIBIG/Tax Payables + Cash/Bank) deferred to Phase 11 when the JournalEntry model and autoJournal engine are built.
+> **Note (April 4, 2026):** ~~Payroll posting currently transitions payslips to POSTED status only. Journal entry generation deferred to Phase 11.~~ **RESOLVED (April 5, 2026):** `postPayroll` now calls `journalFromPayroll()` → `createAndPostJournal()` per posted payslip. Fixed field mapping: `sss_employee`/`philhealth_employee`/`pagibig_employee` (not `_ee`), individual allowance fields summed, `incentive` for commission. DR: 6000 Salaries + 6050 Allowances + 5100 Commission + 6060 Bonus, CR: 2200-2230 Payables + Cash/Bank.
 
 ### 10.7 — People & Payroll Frontend Pages ✅ COMPLETE
 - [x] Create `frontend/src/erp/pages/PeopleList.jsx` — table with search, person_type/status filters, add person modal, click → detail
@@ -2315,6 +2315,50 @@
   - `journalFromInterest(interestEntry)` — DR: 7050 Interest Exp, CR: Loan Payable
   - `journalFromOwnerEquity(equityEntry)` — infusion or drawing
 - [ ] Commit: `"feat(erp): journal entry engine with auto-journal from all modules [v5]"`
+
+### 11.3b — Auto-Journal Wiring into Controllers ✅ COMPLETE (April 5, 2026)
+
+All autoJournal functions are now called from their respective controller submit/post actions. JE creation is non-blocking (after MongoDB transaction, wrapped in try/catch).
+
+- [x] **salesController.submitSales()** — `journalFromSale()` for CSI/CASH_RECEIPT, `journalFromServiceRevenue()` for SERVICE_INVOICE
+- [x] **collectionController.submitCollections()** — `journalFromCollection()` with `resolveFundingCoa()`, plus `journalFromCWT()` when `cwt_amount > 0`
+- [x] **expenseController.submitSmer()** — custom multi-line JE: DR 6100 Per Diem + 6150 Transport + 6160 Special + 6170 ORE, CR 1110 AR BDM
+- [x] **expenseController.submitCarLogbook()** — DR 6200 Fuel, CR 1110 (cash) or funding COA (fleet card) via `resolveFundingCoa()`
+- [x] **expenseController.submitExpenses()** — per-line `coa_code` for DR, CR 1110 (ORE) or funding COA (ACCESS) via `resolveFundingCoa()`
+- [x] **expenseController.submitPrfCalf()** — PRF: DR 5200 Partner Rebate, CR funding. CALF: DR 1110 AR BDM, CR funding
+- [x] **payrollController.postPayroll()** — `journalFromPayroll()` per posted payslip, bank COA via `resolveFundingCoa()`
+- [x] **pettyCashController.processDocument()** — fixed broken `createAndPostJournal()` signature: was `(jeData, userId, session)`, now `(entityId, jeData)`
+- [x] Fixed `journalFromPayroll()` field mapping to match actual Payslip model: `sss_employee`/`philhealth_employee`/`pagibig_employee`, individual allowance sum, `incentive` for commission, added `6060 Bonus` line
+- [x] `journalFromCommission` — wired in collectionController.submitCollections (per settled CSI with commission_amount > 0)
+
+### 11.3c — Accounting Integrity Fixes ✅ COMPLETE (April 5, 2026)
+
+**JE Reversal on Reopen (SAP Storno):** All reopen + deletion functions now call `reverseJournal()` to create offsetting JEs:
+- [x] **salesController** — `reopenSales`, `approveDeletion` — find POSTED JEs by source_event_id, call reverseJournal
+- [x] **collectionController** — `reopenCollections`, `approveDeletion` — reverses collection JE + CWT JE
+- [x] **expenseController** — `reopenSmer`, `reopenCarLogbook`, `reopenExpenses`, `reopenPrfCalf` — all 4 reverse JEs
+
+**COGS Journal (DR 5000, CR 1200):**
+- [x] Created `journalFromCOGS(salesLine, totalCogs, userId)` in autoJournal.js
+- [x] Wired in salesController.submitSales — after FIFO consumption, looks up ProductMaster.purchase_price per line item, computes total COGS, posts JE. Skipped for SERVICE_INVOICE.
+
+**VAT/CWT Ledger Wiring (was dead code):**
+- [x] `createVatEntry()` wired in collectionController.submitCollections (OUTPUT VAT from collection amount)
+- [x] `createVatEntry()` wired in purchasingController.postInvoice (INPUT VAT from supplier invoice)
+- [x] `createCwtEntry()` wired in collectionController.submitCollections (when cwt_amount > 0)
+- [x] VAT/CWT cleanup added to collectionController.reopenCollections (deleteMany on reopen)
+
+**Inter-Company Transfer JE:**
+- [x] Created `journalFromInterCompany(transfer, perspective, amount, userId)` in autoJournal.js
+- [x] Wired in interCompanyService.postTransfer — sender JE (DR 1150 IC Receivable, CR 1200 Inventory), receiver JE (DR 1200 Inventory, CR 2050 IC Payable)
+
+**P2 gaps — ALL RESOLVED (April 5, 2026):**
+- [x] Month-End Close Phase 3 rewritten as **JE Verification** — counts POSTED docs vs JEs per module, flags orphans. Phase 4 rewritten as **VAT/CWT Verification** — checks ledger completeness.
+- [x] **Inventory adjustment JE** — `journalFromInventoryAdjustment()` created in autoJournal.js. Loss: DR 6850 Write-Off, CR 1200 Inventory. Gain: DR 1200, CR 6860. Wired in `inventoryController.recordPhysicalCount()`.
+- [x] **Bank reconciliation adjustment JEs** — `finalizeRecon()` now creates JEs for `RECONCILING_ITEM` entries (bank fees: DR 7100, CR bank; interest: DR bank, CR 4200). Links JE to statement entry.
+- [x] **P&L reconciliation** — monthEndClose Phase 5 Step 16 now compares GL revenue (account 4000) vs source-doc revenue (SalesLine). Variance stored in archive.
+- [x] **Year-end closing JE** — `executeYearEndClose()` now aggregates all 4000-7999 accounts from GL, creates closing JE transferring net income to 3200 Retained Earnings. Sets `closing_entries_pending: false`.
+- [x] Added `INVENTORY` and `IC_TRANSFER` to JournalEntry source_module enum
 
 ### 11.4 — VAT Ledger & CWT Ledger Models ✅ COMPLETE
 - [x] Create `backend/erp/models/VatLedger.js`:
@@ -2501,7 +2545,7 @@
 > - JE numbers auto-increment via DocSequence model (key: `JE-{entityId}-{YYYY}`), reusing existing atomic counter pattern.
 > - MonthlyArchive model extended with `close_progress`, `trial_balance_snapshot`, `pnl_snapshot` fields for month-end close tracking.
 > - P&L Service (`pnlService.js`) is DISTINCT from existing `pnlCalc.js` — the new service derives P&L from journal entries, while the old one computes from source documents. Both coexist.
-> - Auto-journal functions return JE data objects (not persisted). The caller (monthEndClose or controller) handles creation+posting via journalEngine.
+> - Auto-journal functions return JE data objects (not persisted). The caller (monthEndClose or controller) handles creation+posting via journalEngine. **As of April 5, 2026:** All 12 active autoJournal functions are now wired into controllers (only `journalFromCommission` awaits its controller).
 > - Month-End Close auto-close runs Steps 1-17 automatically, pauses at Step 21 for Finance review. Steps 23-25 post staged items after approval. Steps 26-29 finalize and lock the period.
 
 ### Phase 11 Summary
@@ -2510,6 +2554,9 @@
 | 11.1 COA Model + Seed | `ChartOfAccounts.js`, `seedCOA.js`, `coaController.js`, `coaRoutes.js` | ✅ |
 | 11.2 JE Model | `JournalEntry.js` | ✅ |
 | 11.3 JE Engine + Auto-Journal | `journalEngine.js`, `autoJournal.js` (+ `resolveFundingCoa`) | ✅ |
+| 11.3b Auto-Journal Wiring | `salesController`, `collectionController`, `expenseController`, `payrollController`, `pettyCashController` | ✅ |
+| 11.3c Accounting Integrity | JE reversal on reopen (10 functions), COGS JE, VAT/CWT wiring, IC transfer JE, commission JE | ✅ |
+| 11.3d P2 Cleanup | Inventory adj JE, bank recon JEs, MEC verification rewrite, P&L reconciliation, year-end closing JE | ✅ |
 | 11.4 VAT/CWT Models | `VatLedger.js`, `CwtLedger.js` | ✅ |
 | 11.5 VAT/CWT Services | `vatService.js`, `cwtService.js` | ✅ |
 | 11.6 Trial Balance | `trialBalanceService.js` | ✅ |
@@ -2825,10 +2872,14 @@
 - [x] Created `backend/erp/routes/cycleReportRoutes.js` — mounted at `/cycle-reports` with `erpAccessCheck('reports')`
 - [x] Created `frontend/src/erp/pages/CycleReports.jsx` — list, filters, workflow action buttons, status badges
 
-### 15.4 — Recurring Journal Templates (SAP FI Recurring Documents)
-- [ ] Template model: name, frequency (monthly/quarterly), line items, auto_post flag
-- [ ] Scheduler: auto-generate journal entries on schedule
-- [ ] Admin UI to create/edit/deactivate templates
+### 15.4 — Recurring Journal Templates (SAP FI Recurring Documents) ✅
+- [x] Template model: name, frequency (monthly/quarterly/annually), day_of_month, line items, auto_post flag — `backend/erp/models/RecurringJournalTemplate.js`
+- [x] Service: `runDueTemplates()`, `runSingleTemplate()`, schedule auto-advance — `backend/erp/services/recurringJournalService.js`
+- [x] Controller + Routes: full CRUD + run/export/import — `backend/erp/controllers/recurringJournalController.js`, `backend/erp/routes/recurringJournalRoutes.js`
+- [x] Admin UI to create/edit/deactivate templates, balance-validated line editor, Run Now/Run All Due — `frontend/src/erp/pages/RecurringJournals.jsx`
+- [x] Excel export/import (Google Sheets compatible) — "Templates" + "Template Lines" sheets
+- [x] Mounted at `/erp/recurring-journals` with erpAccessCheck('accounting')
+- **Completed:** Phase 21.3
 
 ### 15.5 — Cost Center Dimension (SAP CO Cost Centers) ✅
 - [x] Added optional `cost_center_id` to TransactionEvent and SalesLine schemas
@@ -2840,15 +2891,21 @@
 - [x] Added sidebar items under Accounting section
 - **Note:** JournalEntry lines already had a `cost_center` string field. CostCenter model provides the master data.
 
-### 15.6 — Per-Module Period Locks (SAP Posting Period Variant)
-- [ ] PeriodLock model: module, year, month, is_locked, locked_by, locked_at
-- [ ] Enforce in all POST/PUT endpoints: reject posting to locked periods
-- [ ] Finance UI to lock/unlock periods per module
+### 15.6 — Per-Module Period Locks (SAP Posting Period Variant) ✅
+- [x] PeriodLock model: 10 modules, year/month compound unique, audit fields — `backend/erp/models/PeriodLock.js`
+- [x] `periodLockCheck` factory middleware: rejects writes to locked periods (403) — `backend/erp/middleware/periodLockCheck.js`
+- [x] Applied to JOURNAL write routes in `accountingRoutes.js`
+- [x] Controller + Routes: getLocks matrix, toggleLock, exportLocks (XLSX)
+- [x] Finance UI: 10x12 matrix grid with padlock toggles — `frontend/src/erp/pages/PeriodLocks.jsx`
+- [x] Mounted at `/erp/period-locks` with erpAccessCheck('accounting')
+- **Completed:** Phase 21.4
 
-### 15.7 — Batch Posting with IDs (SAP Batch Input)
-- [ ] Bulk submit endpoint: POST /api/erp/sales/batch-submit
-- [ ] Accept array of document IDs, validate all, post all atomically
-- [ ] Rollback on any failure (MongoDB transaction)
+### 15.7 — Batch Posting with IDs (SAP Batch Input) ✅
+- [x] `batchPostJournals` endpoint: POST /api/erp/accounting/journals/batch-post — `backend/erp/controllers/accountingController.js`
+- [x] Accept array of JE IDs, validate all DRAFT, post atomically (MongoDB transaction)
+- [x] Rollback on any failure, return per-JE results
+- [x] Frontend: checkbox column + batch post bar + results modal — `frontend/src/erp/pages/JournalEntries.jsx`
+- **Completed:** Phase 21.5
 
 ### 15.8 — Data Archival (SAP Data Archiving) ✅
 - [x] Created `backend/erp/models/ArchiveBatch.js` — batch tracking with counts per collection, periods archived, status
@@ -3062,6 +3119,7 @@ Replaced `roleCheck('admin', 'finance', 'president')` with `erpSubAccessCheck` o
 - [x] Added `journalFromServiceRevenue()` — DR 1100 AR / CR 4100 Service Revenue
 - [x] Added `journalFromPettyCash()` — for disbursements (DR expense / CR 1015) and remittances (DR 3100 / CR 1015)
 - [x] Added `SERVICE_REVENUE`, `PETTY_CASH` to JournalEntry source_module enum
+- [x] **(April 5, 2026)** Fixed `pettyCashController.processDocument()` — broken `createAndPostJournal(jeData, userId, session)` → correct `createAndPostJournal(entityId, jeData)`
 
 ### 18.7 — Cost Center Expense + President Override ✅
 - [x] Added `cost_center_id` to ExpenseEntry line schema
@@ -3147,14 +3205,181 @@ Replaced `roleCheck('admin', 'finance', 'president')` with `erpSubAccessCheck` o
 | 13 | Banking & Cash [v5 NEW] | ~30 | 1-2 weeks |
 | 14 | New Reports & Analytics [v5 NEW] ✅ | ~35 | 1-2 weeks |
 | 15.1-15.3,15.5,15.8-15.9 | SAP-equivalent improvements + code quality (partial) ✅ | 6/8 | Completed |
-| 15.4,15.6,15.7 | Future (remaining SAP improvements) | 3 | Post-launch |
+| 15.4,15.6,15.7 | SAP improvements (Recurring Journals, Period Locks, Batch Posting) ✅ | 3 | Phase 21.3-21.5 |
 | 16 | Sub-Module Access (Granular Permissions) ✅ | ~20 | 1 week |
 | 17 | Warehouse Model + Full Migration ✅ | ~25 | 2-3 weeks |
 | 18 | Service Revenue + Cost Center Expenses ✅ | ~25 | 2-3 weeks |
 | 19 | Petty Cash / Office Supplies / Collaterals ✅ | ~25 | 2-3 weeks |
+| 20 | Batch Expense Upload + COA Expansion ✅ | ~15 | 1 week |
 
-**Total pre-launch: ~573 tasks across 18 phases → ~29-37 weeks**
+**Total pre-launch: ~588 tasks across 19 phases → ~30-38 weeks**
 **Note: Phases 4A+4B add ~13 tasks and ~2.5 weeks for entity migration + inter-company transfers**
 **Note: Phases 10-14 add ~220 tasks and ~10-14 weeks from PRD v5 (PNL Central live system integrations)**
 **Note: Phases 16-19 add ~95 tasks for warehouse, service revenue, petty cash, and sub-module access**
 **Reference PRD:** `docs/VIP ERP PRD v5.md`
+
+---
+
+## Phase 20: Batch Expense Upload + COA Expansion ✅ (April 5, 2026)
+
+### 20.1 — Batch OR Upload (President/Admin)
+- [x] `bir_flag` + `is_assorted` fields on ExpenseEntry (line + document level)
+- [x] `batchUploadExpenses` controller — up to 20 images, OCR → classify COA → assorted items (3+ line items)
+- [x] `saveBatchExpenses` controller — save reviewed lines as DRAFT with funding, cost center, bir_flag
+- [x] Routes: `POST /expenses/ore-access/batch-upload`, `POST /expenses/ore-access/batch-save` (admin/president only)
+- [x] Frontend: collapsible batch upload section in Expenses.jsx with setup dropdowns:
+  - BIR Classification (BOTH/INTERNAL/BIR)
+  - Category override (or auto-classify)
+  - Employee assignment (PeopleMaster)
+  - Cost Center (CostCenterPicker)
+  - Funding source (Cash / Card / Bank Account)
+  - Period / Cycle
+- [x] Review table with inline editing (date, establishment, amount, COA dropdown, OR#)
+- [x] COA dropdown loads dynamically from API (not hardcoded)
+- [x] `bir_flag` passthrough to autoJournal: `submitExpenses` and `submitPrfCalf` use `entry.bir_flag || 'BOTH'`
+
+### 20.2 — COA Expansion (Multi-Business-Line)
+- [x] Revenue: 4300 F&B Revenue, 4400 Rental Short-Term, 4500 Rental Long-Term
+- [x] COGS: 5400 Food Cost, 5500 Beverage Cost
+- [x] OpEx new: 6155 Travel & Accommodation, 6260 Repairs & Maintenance, 6310/6320/6330 Marketing subs (HCP/Hospital/Retail), 6460 Utilities & Communication, 6810 Regulatory & Licensing, 6820 IT Hardware & Software
+- [x] OpEx F&B: 6830 F&B Supplies & Packaging, 6840 Kitchen Equipment & Maintenance
+- [x] OpEx Rental: 6870 Property Maintenance, 6880 Property Insurance, 6890 Property Tax & Fees
+- [x] Inventory: 6850 Inventory Write-Off (was 6800), 6860 Inventory Adjustment Gain (was 6810) — resolved conflict with Professional Fees / Regulatory
+- [x] Removed: 6700 Communication (merged into 6460 Utilities & Communication)
+
+### 20.3 — COA Export/Import
+- [x] `GET /api/erp/coa/export?format=xlsx` — Excel download (Google Sheets compatible)
+- [x] `GET /api/erp/coa/export?format=json` — JSON download
+- [x] `POST /api/erp/coa/import` — accepts Excel file upload OR JSON body, upserts by account_code
+- [x] Existing COA CRUD UI unaffected
+
+### 20.4 — Expense Classifier Updates
+- [x] Updated all keyword→COA mappings to match new codes (Courier→6500, Fuel→6200, Tolls→6600, etc.)
+- [x] Added F&B rules: Food Cost→5400, Beverage→5500, F&B Supplies→6830, Kitchen→6840
+- [x] Added Rental rules: Property Tax→6890, Property Insurance→6880, Property Maintenance→6870
+- [x] Added new rules: Regulatory→6810, IT/Software→6820, Repairs→6260, Travel→6155, Rent→6450, Professional Fees→6800
+- [x] Fixed seedVendors.js — updated 13 vendor COA codes to match new mappings
+
+### 20.5 — BDM Function Fixes (April 5, 2026)
+- [x] Batch upload guard: `erpSubAccessCheck('expenses', 'batch_upload')` instead of role-based
+- [x] Added `batch_upload` to `SUB_PERMISSION_KEYS.expenses` in erpAccessController
+- [x] Fixed empty catch blocks in Smer.jsx (2), CarLogbook.jsx (3), Expenses.jsx (3) — now console.error + alert
+- [x] Added CALF linking: "CALF Required →" link to PRF/CALF page + "CALF Linked ✓" badge in CarLogbook + Expenses
+- [x] Added frontend field validation before save: Expenses (establishment, amount, date), SMER (activity_type when md_count > 0)
+- [x] Added backend role check to CRM bridge `/smer/crm-md-counts` — BDM only, admin must pass bdm_id
+- [x] Fixed updatePrfCalf — now clears old back-links and re-runs back-linking when linked source changes (was silently orphaning calf_id refs)
+
+### 20.6 — Auto-Route Landing Page ✅ (April 5, 2026)
+- [x] Auto-route after login based on role + erp_access.enabled (no CRM/ERP chooser)
+- [x] BDM (employee) → CRM BDM Dashboard (mobile-first daily work)
+- [x] Admin/President with ERP → ERP Dashboard
+- [x] Users with only CRM → CRM Dashboard
+- [x] Users with only ERP → ERP Dashboard
+- [x] Remember last-used preference via localStorage, "Always show chooser" button to reset
+
+### 20.7 �� Agent Notification Fix ✅ (April 5, 2026)
+- [x] Fixed `recipientRole is required` in notificationService.js — now resolves user role from DB before creating MessageInbox
+
+### 20.8 — Build Paid Agents (Claude API) ✅ (April 5, 2026)
+All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
+- [x] Installed `@anthropic-ai/sdk` v0.82.0 in backend
+- [x] Created shared `agents/claudeClient.js` — wraps Anthropic SDK with retry (429/529), rate limit handling, cost tracking per agent
+- [x] **#1 Smart Collection** (`smartCollectionAgent.js`) — analyzes AR aging per hospital, recent collection history, notifies president + BDMs with prioritized call list
+- [x] **#2 OCR Auto-Fill** (`ocrAutoFillAgent.js`) — Claude fallback wired into `ocrProcessor.js` Layer 2b; triggers when `classifyExpense()` returns LOW confidence
+- [x] **#5 BIR Filing Review** (`birFilingAgent.js`) — reviews previous month's JEs, VAT/CWT, expense classifications; flags compliance gaps
+- [x] **#7 BDM Performance Coach** (`performanceCoachAgent.js`) — weekly visit/sales/expense analysis + personalized coaching per BDM
+- [x] **#B Smart Visit Planner** (`visitPlannerAgent.js`) �� plans Mon-Fri schedule based on frequency targets, missed visits, geography
+- [x] **#C Engagement Decay** (`engagementDecayAgent.js`) — detects VIP Clients below 70% visit target, suggests re-engagement
+- [x] Cost tracking built into claudeClient.js (token count, estimated cost, per-agent breakdown via `getCostSummary()`)
+
+### 20.9 — SMER Mobile Redesign ✅ (April 5, 2026)
+- [x] Added `hospital_ids: [ObjectId]` array to SmerEntry dailyEntrySchema (kept `hospital_id` for backward compat)
+- [x] Multi-hospital picker with chip/tag UI — search dropdown, add/remove chips, only shown when activity_type = 'Field'
+- [x] Auto-fill `hospital_covered` as comma-joined hospital names from picked IDs
+- [x] Mobile card layout (hidden on desktop via media query) — each day is a card with 2-col grid fields
+- [x] Responsive breakpoints: controls stack vertically, summary cards wrap, desktop table hidden below 768px
+
+### 20.10 — CALF E2E Test + BDM Security Audit ✅ (April 5, 2026)
+- [x] `testCalfFlow.js` — 34/34 passed: create ACCESS expense → auto-CALF → validate → post (journal DR 1110 CR bank) → auto-submit expense → reopen (reverse journals) → edit → re-validate → re-post
+- [x] `seedCOA.js` run — 237 new accounts across 3 entities (VIP, MG AND CO, BALAI LAWAAN)
+- [x] **CRITICAL FIX**: `overridePerdiemDay` missing `req.tenantFilter` — added entity isolation
+- [x] **CRITICAL FIX**: `budgetAllocationController` had no `tenantFilter` on any endpoint — all 5 methods now use `req.tenantFilter`
+- [x] **CRITICAL FIX**: CALF back-link (create + update) had no entity_id check — now rejects cross-entity links
+- [x] **HIGH FIX**: `erpReportController` bdm_id query param unvalidated — BDMs now restricted to own data
+- [x] **HIGH FIX**: `incomeController` bdm_id query open to all — BDMs now restricted to own income reports
+- [x] **HIGH FIX**: `warehouseController` entity filter could be overridden by admin — forced baseline, only president can cross-entity
+- [x] **HIGH FIX**: `Expenses.jsx` double-submit prevention — added `savingRef` guard for slow mobile networks
+- [x] **MED FIX**: `validateExpenses` now rejects lines with missing/fallback COA code (6900) — forces explicit account mapping
+- [x] **MED FIX**: `Expenses.jsx` empty catches on card/bank/people/COA loading — now log errors to console
+- [x] **MED FIX**: `Smer.jsx` double-submit prevention — added `savingRef` guard
+- [x] **MED FIX**: `saveBatchExpenses` audit trail — logs `BATCH_UPLOAD_ON_BEHALF` to ErpAuditLog when president uploads for another BDM
+
+### 20.11 — Funding COA Wiring + Petty Cash Edit UI (April 5, 2026)
+- [x] **ROOT CAUSE FIX**: `seedLookups.js` was using `findOneAndUpdate(fullDoc)` which overwrites manual DB edits every run — changed to `$setOnInsert`
+- [x] Fixed 3 wrong COA codes in seed: BANK_TRANSFER (1010→1011), CC_MBTC (2301→2304), CC_UB (2301→1013)
+- [x] Patched PaymentMode `coa_code` in DB: all 8 modes now resolve correctly in `resolveFundingCoa` step 3
+- [x] Patched PettyCashFund `coa_code` in DB: both funds → 1000 Cash on Hand
+- [x] Created 3 missing CreditCard records: Shell Fleet (2302), RCBC Corp (2303), BDO MC (2304)
+- [x] Added `coa_code` field to PettyCashFund schema (default '1000')
+- [x] PettyCash.jsx: merged Create/Edit into single `FundFormModal` — now editable: name, custodian, authorized amount, ceiling, COA code, fund mode
+- [x] PettyCash.jsx: added Edit button on each fund card, shows COA code and fund mode
+
+---
+
+## PHASE 21 — PersonDetail, Insurance, Gov Rates, SAP Improvements, BIR Calculator, Mobile Polish ✅ COMPLETE
+**Goal:** Complete PersonDetail editable forms, Insurance Register CRUD, Government Rates admin page, SAP-style recurring journals + period locks + batch posting, BIR tax calculator with unit tests, and mobile 375px responsive polish.
+
+### 21.1 — PersonDetail Editable, Insurance Register, Excel Export/Import ✅ (commit 0accad7)
+- [x] PersonDetail.jsx rewrite: 5 editable sections (Person Info, Comp Profile, Insurance Register, ERP Access, History)
+- [x] InsurancePolicy model + CRUD controller + routes — 6 policy types
+- [x] Excel export/import: 3-sheet workbook (Person Info, Comp Profile, Insurance Register)
+- [x] CompProfile: added profit_share_eligible, commission_rate fields
+
+### 21.2 — Government Rates Admin Page ✅
+- [x] Added `exportRates`, `importRates`, `computeBreakdown` to `governmentRatesController.js`
+- [x] Updated `governmentRatesRoutes.js` with multer upload + 3 new endpoints (export, import, compute-breakdown)
+- [x] Created `frontend/src/erp/pages/GovernmentRates.jsx` — 6-tab UI (SSS, PhilHealth, PagIBIG, Withholding Tax, EC, De Minimis)
+- [x] Bracket editor tables, flat rate forms, benefit limit editors, effective/expiry date management
+- [x] Excel export (1 sheet per rate_type) and import (upsert by rate_type + effective_date)
+
+### 21.3 — Recurring Journal Templates ✅
+- [x] Created `backend/erp/models/RecurringJournalTemplate.js` — frequency, day_of_month (1-28), auto_post, lines, schedule tracking
+- [x] Created `backend/erp/services/recurringJournalService.js` — runDueTemplates, runSingleTemplate, computeNextRunDate
+- [x] Created `backend/erp/controllers/recurringJournalController.js` — CRUD + runNow + runAllDue + exportTemplates + importTemplates
+- [x] Created `backend/erp/routes/recurringJournalRoutes.js` — gated by erpSubAccessCheck('accounting', 'journal_entry')
+- [x] Created `frontend/src/erp/pages/RecurringJournals.jsx` — template list, create/edit modal with balanced line editor, Run Now/Run All Due
+- [x] Excel export/import: "Templates" + "Template Lines" sheets (Google Sheets compatible)
+
+### 21.4 — Per-Module Period Locks ✅
+- [x] Created `backend/erp/models/PeriodLock.js` — 10 modules, entity_id+module+year+month compound unique
+- [x] Created `backend/erp/middleware/periodLockCheck.js` — factory middleware, rejects writes to locked periods (403)
+- [x] Applied periodLockCheck('JOURNAL') to journal create route in accountingRoutes.js
+- [x] Created `backend/erp/controllers/periodLockController.js` — getLocks matrix, toggleLock, exportLocks (XLSX)
+- [x] Created `backend/erp/routes/periodLockRoutes.js`
+- [x] Created `frontend/src/erp/pages/PeriodLocks.jsx` — 10×12 matrix grid, padlock toggles, year selector, confirm dialog
+- [x] Mounted at `/erp/period-locks` under erpAccessCheck('accounting')
+
+### 21.5 — Batch Journal Posting ✅
+- [x] Added `batchPostJournals` to `accountingController.js` — MongoDB session+transaction, atomic all-or-nothing
+- [x] Route: POST `/journals/batch-post` (before /:id to avoid param collision)
+- [x] Frontend: checkbox column for DRAFT rows, "Select All Drafts", batch post bar, results modal in JournalEntries.jsx
+- [x] Added `batchPostJournals` to `useAccounting.js` hook
+
+### 21.6 — BIR Calculator Tests & Demo Page ✅
+- [x] Created `backend/tests/unit/withholdingTaxCalc.test.js` — 11 test cases (TRAIN law brackets, boundary values, 0/negative income)
+- [x] Created `backend/tests/unit/deMinimisCalc.test.js` — 9 test cases (rice/clothing/medical/laundry limits, within/exceeding/partial)
+- [x] All 20 unit tests pass
+- [x] Created `frontend/src/erp/pages/BirCalculator.jsx` — salary input, compute SSS/PhilHealth/PagIBIG/De Minimis/WHT/Net Pay breakdown
+- [x] Backend `computeBreakdown` endpoint calls all 5 calc services (SSS, PhilHealth, PagIBIG, de minimis, withholding tax)
+
+### 21.7 — Mobile 375px Polish ✅
+- [x] Added `@media(max-width: 375px)` breakpoints to 22 ERP pages
+- [x] Added `padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px))` safe-area padding
+- [x] Input font-size: 16px at 375px (prevents iOS auto-zoom)
+- [x] Pages fixed: GovernmentRates, PeriodLocks, RecurringJournals, BirCalculator, JournalEntries, SalesList, Collections, PeopleList, ChartOfAccounts, ErpDashboard, MonthEndClose, PayrollRun, PersonDetail, PurchaseOrders, SupplierInvoices, VendorList, CustomerList, TrialBalance, ProfitAndLoss, CostCenters + all 4 new pages
+
+### Routing & Navigation ✅
+- [x] App.jsx: 4 new lazy routes (/erp/government-rates, /erp/period-locks, /erp/recurring-journals, /erp/bir-calculator)
+- [x] Sidebar.jsx: 4 new nav items (Recurring Journals after Journal Entries, Period Locks after Month-End Close, Gov. Rates + BIR Calculator after accounting section)
+- [x] useAccounting.js: batchPostJournals + 7 recurring template API methods
+- [x] ERP routes index.js: mounted period-locks and recurring-journals routes

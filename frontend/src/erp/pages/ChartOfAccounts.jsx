@@ -33,7 +33,9 @@ const pageStyles = `
   .form-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--erp-muted); }
   .form-group input, .form-group select { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--erp-border); font-size: 13px; box-sizing: border-box; }
   .coa-empty { text-align: center; color: #64748b; padding: 40px; }
-  @media(max-width: 768px) { .coa-main { padding: 12px; } }
+  .upload-input { display: none; }
+  @media(max-width: 768px) { .coa-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } }
+  @media(max-width: 375px) { .coa-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .form-group input, .form-group select { font-size: 16px; } }
 `;
 
 const ACCOUNT_TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];
@@ -64,6 +66,28 @@ export default function ChartOfAccounts() {
 
   useEffect(() => { loadAccounts(); }, [loadAccounts]);
 
+  const handleExport = async () => {
+    try {
+      const res = await api.exportAccounts();
+      const url = URL.createObjectURL(new Blob([res]));
+      const a = document.createElement('a'); a.href = url; a.download = 'coa-export.xlsx'; a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* hook handles */ }
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await api.importAccounts(fd);
+      alert(res?.message || 'Import complete');
+      loadAccounts();
+    } catch { /* hook handles */ }
+    e.target.value = '';
+  };
+
   const handleCreate = async () => {
     try {
       await api.createAccount(form);
@@ -82,7 +106,11 @@ export default function ChartOfAccounts() {
         <main className="coa-main admin-main">
           <div className="coa-header">
             <h2>Chart of Accounts</h2>
-            {isAdmin && <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Add Account</button>}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
+              {isAdmin && <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>}
+              {isAdmin && <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Add Account</button>}
+            </div>
           </div>
 
           <div className="coa-controls">

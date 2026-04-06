@@ -3,7 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
-import userService from '../../services/userService';
+import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
 
@@ -59,7 +59,7 @@ const EMPTY_FORM = {
   card_code: '', card_name: '', card_holder: '', bank: '',
   card_type: 'CREDIT_CARD', card_brand: 'MASTERCARD',
   last_four: '', coa_code: '2301', credit_limit: '',
-  statement_cycle_day: '', assigned_to: '', is_active: true
+  statement_cycle_day: '', assigned_to: '', assigned_users: [], is_active: true
 };
 
 export default function CreditCardManager() {
@@ -75,6 +75,10 @@ export default function CreditCardManager() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [msg, setMsg] = useState({ text: '', type: '' });
 
+  const handleExport = async () => {
+    try { const res = await api.exportCreditCards(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'credit-cards-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+  };
+
   const loadCards = useCallback(async () => {
     setLoading(true);
     try {
@@ -83,16 +87,19 @@ export default function CreditCardManager() {
       if (tab === 'fleet') params.card_type = 'FLEET_CARD';
       const res = await api.listCreditCards(params);
       setCards(res?.data || []);
-    } catch { /* */ }
+    } catch (err) { console.error('[CreditCardManager] load cards error:', err.message); }
     setLoading(false);
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const { getAsUsers } = usePeople();
   const loadUsers = useCallback(async () => {
     try {
-      const res = await userService.getActiveUsers();
-      setUsers(res?.data || res || []);
-    } catch { /* */ }
-  }, []);
+      const res = await getAsUsers();
+      setUsers(res?.data || []);
+    } catch (err) {
+      console.error('[CreditCardManager] load users error:', err.message);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadCards(); }, [loadCards]);
   useEffect(() => { loadUsers(); }, [loadUsers]);
@@ -122,17 +129,20 @@ export default function CreditCardManager() {
       credit_limit: card.credit_limit || '',
       statement_cycle_day: card.statement_cycle_day || '',
       assigned_to: card.assigned_to?._id || card.assigned_to || '',
+      assigned_users: (card.assigned_users || []).map(u => u._id || u),
       is_active: card.is_active !== false
     });
     setShowModal(true);
   };
 
   const handleSave = async () => {
+    if (!form.card_code || !form.card_name) return alert('Card Code and Card Name are required');
     const data = {
       ...form,
       credit_limit: parseFloat(form.credit_limit) || 0,
       statement_cycle_day: parseInt(form.statement_cycle_day) || undefined,
-      assigned_to: form.assigned_to || undefined
+      assigned_to: form.assigned_to || undefined,
+      assigned_users: form.assigned_users.length ? form.assigned_users : undefined
     };
     try {
       if (editing) {
@@ -177,7 +187,10 @@ export default function CreditCardManager() {
         <main className="ccm-main admin-main">
           <div className="ccm-header">
             <h2>Credit Card Management</h2>
-            <button className="btn btn-primary" onClick={openCreate}>+ Add Card</button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)' }} onClick={handleExport}>Export Excel</button>
+              <button className="btn btn-primary" onClick={openCreate}>+ Add Card</button>
+            </div>
           </div>
 
           {msg.text && <div className={`ccm-msg ccm-msg-${msg.type}`}>{msg.text}</div>}
@@ -206,13 +219,17 @@ export default function CreditCardManager() {
                   {card.credit_limit > 0 && <div className="ccm-card-row"><span className="label">Limit</span><span className="value">₱{Number(card.credit_limit).toLocaleString()}</span></div>}
                   {!card.is_active && <div style={{ color: '#dc2626', fontSize: 12, fontWeight: 600, marginTop: 4 }}>INACTIVE</div>}
 
-                  {card.assigned_to && (
+                  {(card.assigned_users?.length > 0 || card.assigned_to) ? (
                     <div className="ccm-assigned">
-                      Assigned to: <span className="name">{card.assigned_to.name || card.assigned_to.email || '—'}</span>
-                      {card.assigned_at && <span style={{ marginLeft: 8, color: 'var(--erp-muted)' }}>since {new Date(card.assigned_at).toLocaleDateString()}</span>}
+                      Assigned to: <span className="name">
+                        {card.assigned_users?.length > 0
+                          ? card.assigned_users.map(u => u.name || u.email).join(', ')
+                          : card.assigned_to?.name || card.assigned_to?.email || '—'}
+                      </span>
                     </div>
+                  ) : (
+                    <div className="ccm-assigned" style={{ background: '#fef3c7' }}>Not assigned</div>
                   )}
-                  {!card.assigned_to && <div className="ccm-assigned" style={{ background: '#fef3c7' }}>Not assigned</div>}
 
                   <div className="ccm-actions">
                     <button className="btn btn-sm btn-primary" onClick={() => openEdit(card)}>Edit</button>
@@ -232,25 +249,15 @@ export default function CreditCardManager() {
               <div className="ccm-modal-body" onClick={e => e.stopPropagation()}>
                 <h3>{editing ? 'Edit Card' : 'Add New Card'}</h3>
 
+                {/* Required fields */}
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Card Code</label>
-                    <input value={form.card_code} onChange={e => f('card_code', e.target.value)} placeholder="e.g. SBC-MC-002" disabled={!!editing} />
+                    <label>Card Code *</label>
+                    <input value={form.card_code} onChange={e => f('card_code', e.target.value)} placeholder="e.g. SBC-MC-002" disabled={!!editing} required />
                   </div>
                   <div className="form-group">
-                    <label>Card Name</label>
-                    <input value={form.card_name} onChange={e => f('card_name', e.target.value)} placeholder="e.g. SBC Mastercard" />
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Bank</label>
-                    <input value={form.bank} onChange={e => f('bank', e.target.value)} placeholder="Security Bank" />
-                  </div>
-                  <div className="form-group">
-                    <label>Card Holder</label>
-                    <input value={form.card_holder} onChange={e => f('card_holder', e.target.value)} />
+                    <label>Card Name *</label>
+                    <input value={form.card_name} onChange={e => f('card_name', e.target.value)} placeholder="e.g. SBC Mastercard" required />
                   </div>
                 </div>
 
@@ -262,42 +269,62 @@ export default function CreditCardManager() {
                     </SelectField>
                   </div>
                   <div className="form-group">
-                    <label>Card Brand</label>
-                    <SelectField value={form.card_brand} onChange={e => f('card_brand', e.target.value)}>
-                      {CARD_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-                    </SelectField>
+                    <label>Assign To (select all users who can use this card)</label>
+                    <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--erp-border, #d1d5db)', borderRadius: 6, padding: 6 }}>
+                      {users.filter(u => u.isActive !== false).map(u => (
+                        <label key={u._id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', fontSize: 13, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={form.assigned_users.includes(u._id)} onChange={e => {
+                            if (e.target.checked) f('assigned_users', [...form.assigned_users, u._id]);
+                            else f('assigned_users', form.assigned_users.filter(id => id !== u._id));
+                          }} style={{ width: 'auto' }} />
+                          {u.name} <span style={{ color: 'var(--erp-muted)', fontSize: 11 }}>({u.role})</span>
+                        </label>
+                      ))}
+                      {!users.length && <div style={{ padding: 8, color: '#9ca3af', fontSize: 12 }}>No users loaded</div>}
+                    </div>
                   </div>
                 </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Last 4 Digits</label>
-                    <input value={form.last_four} onChange={e => f('last_four', e.target.value)} maxLength={4} placeholder="1234" />
+                {/* Optional details — admin can fill later */}
+                <details style={{ marginTop: 8, marginBottom: 12 }}>
+                  <summary style={{ fontSize: 13, color: 'var(--erp-muted)', cursor: 'pointer', marginBottom: 8 }}>More details (optional)</summary>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Bank</label>
+                      <input value={form.bank} onChange={e => f('bank', e.target.value)} placeholder="Security Bank" />
+                    </div>
+                    <div className="form-group">
+                      <label>Card Holder</label>
+                      <input value={form.card_holder} onChange={e => f('card_holder', e.target.value)} />
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label>COA Code</label>
-                    <input value={form.coa_code} onChange={e => f('coa_code', e.target.value)} placeholder="2301" />
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Card Brand</label>
+                      <select value={form.card_brand} onChange={e => f('card_brand', e.target.value)}>
+                        {CARD_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Last 4 Digits</label>
+                      <input value={form.last_four} onChange={e => f('last_four', e.target.value)} maxLength={4} placeholder="1234" />
+                    </div>
                   </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Credit Limit (₱)</label>
-                    <input type="number" value={form.credit_limit} onChange={e => f('credit_limit', e.target.value)} />
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>COA Code</label>
+                      <input value={form.coa_code} onChange={e => f('coa_code', e.target.value)} placeholder="2301" />
+                    </div>
+                    <div className="form-group">
+                      <label>Credit Limit (₱)</label>
+                      <input type="number" value={form.credit_limit} onChange={e => f('credit_limit', e.target.value)} />
+                    </div>
                   </div>
                   <div className="form-group">
                     <label>Statement Cycle Day</label>
                     <input type="number" min={1} max={31} value={form.statement_cycle_day} onChange={e => f('statement_cycle_day', e.target.value)} />
                   </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Assign To</label>
-                  <SelectField value={form.assigned_to} onChange={e => f('assigned_to', e.target.value)}>
-                    <option value="">Not assigned</option>
-                    {users.map(u => <option key={u._id} value={u._id}>{u.name} ({u.email})</option>)}
-                  </SelectField>
-                </div>
+                </details>
 
                 <div className="form-group">
                   <label>

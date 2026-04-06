@@ -36,6 +36,8 @@ export default function useReports() {
   const createCostCenter = (data) => api.post('/cost-centers', data);
   const updateCostCenter = (id, data) => api.put(`/cost-centers/${id}`, data);
   const getCostCenterTree = () => api.get('/cost-centers/tree');
+  const exportCostCenters = () => api.get('/cost-centers/export', { responseType: 'blob' });
+  const importCostCenters = (formData) => api.post('/cost-centers/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
   // ═══ Budget Allocations ═══
   const getBudgetAllocations = (params) => api.get('/budget-allocations', { params });
@@ -60,7 +62,7 @@ export default function useReports() {
     // Phase 15.3
     getCycleReports, generateCycleReport, reviewCycleReport, confirmCycleReport, creditCycleReport,
     // Phase 15.5
-    getCostCenters, createCostCenter, updateCostCenter, getCostCenterTree,
+    getCostCenters, createCostCenter, updateCostCenter, getCostCenterTree, exportCostCenters, importCostCenters,
     // Phase 15.8
     triggerArchive, getArchiveBatches, getArchiveBatchDetail, restoreBatch,
     // Budget Allocations

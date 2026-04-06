@@ -6,10 +6,14 @@
  */
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const ctrl = require('../controllers/bankingController');
 
 // ═══ Bank Accounts ═══
+router.get('/bank-accounts/export', ctrl.exportBankAccounts);
+router.post('/bank-accounts/import', erpSubAccessCheck('banking', 'bank_accounts'), upload.single('file'), ctrl.importBankAccounts);
 router.get('/bank-accounts', ctrl.listBankAccounts);
 router.post('/bank-accounts', erpSubAccessCheck('banking', 'bank_accounts'), ctrl.createBankAccount);
 router.put('/bank-accounts/:id', erpSubAccessCheck('banking', 'bank_accounts'), ctrl.updateBankAccount);

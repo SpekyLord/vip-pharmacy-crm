@@ -7,6 +7,8 @@
  */
 const express = require('express');
 const { roleCheck } = require('../../middleware/roleCheck');
+const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
+const { uploadMultiple } = require('../../middleware/upload');
 const {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
@@ -21,6 +23,8 @@ const {
   // PRF/CALF
   createPrfCalf, updatePrfCalf, getPrfCalfList, getPrfCalfById, deleteDraftPrfCalf,
   validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines,
+  // Batch Upload
+  batchUploadExpenses, saveBatchExpenses,
   // Summary
   getExpenseSummary
 } = require('../controllers/expenseController');
@@ -52,6 +56,10 @@ router.post('/car-logbook/reopen', reopenCarLogbook);
 router.get('/car-logbook/:id', getCarLogbookById);
 router.put('/car-logbook/:id', updateCarLogbook);
 router.delete('/car-logbook/:id', deleteDraftCarLogbook);  // DRAFT only
+
+// ═══ Batch Upload (requires expenses.batch_upload sub-permission) ═══
+router.post('/ore-access/batch-upload', erpSubAccessCheck('expenses', 'batch_upload'), uploadMultiple('photos', 20), batchUploadExpenses);
+router.post('/ore-access/batch-save', erpSubAccessCheck('expenses', 'batch_upload'), saveBatchExpenses);
 
 // ═══ ORE / ACCESS Expenses ═══
 router.post('/ore-access', createExpense);
