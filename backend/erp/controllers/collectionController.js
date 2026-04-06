@@ -22,6 +22,7 @@ const { createVatEntry } = require('../services/vatService');
 const { createCwtEntry } = require('../services/cwtService');
 const VatLedger = require('../models/VatLedger');
 const CwtLedger = require('../models/CwtLedger');
+const Settings = require('../models/Settings');
 
 // ═══ CRUD ═══
 
@@ -217,6 +218,8 @@ const submitCollections = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No VALID collections to submit' });
   }
 
+  const settings = await Settings.getSettings();
+
   // Period lock check
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
   for (const row of validRows) {
@@ -336,11 +339,12 @@ const submitCollections = catchAsync(async (req, res) => {
           }
         }
 
-        // VAT Ledger — OUTPUT VAT from collection (PH 12/112 formula)
+        // VAT Ledger — OUTPUT VAT from collection
         // TODO: use hospital.vat_status to determine if EXEMPT/ZERO — skip VAT entry if so
         const crAmount = row.cr_amount || row.total_amount || 0;
         if (crAmount > 0) {
-          const vatAmount = Math.round((crAmount * 12 / 112) * 100) / 100;
+          const vatRate = settings?.VAT_RATE || 0.12;
+          const vatAmount = Math.round((crAmount * vatRate / (1 + vatRate)) * 100) / 100;
           await createVatEntry({
             entity_id: row.entity_id,
             period: row.period || require('../utils/periodLock').dateToPeriod(row.cr_date),

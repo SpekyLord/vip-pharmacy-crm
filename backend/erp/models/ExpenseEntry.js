@@ -82,7 +82,7 @@ const expenseEntrySchema = new mongoose.Schema({
 
 // Pre-save: auto-compute totals, CALF flag, VAT
 expenseEntrySchema.pre('save', function (next) {
-  const VAT_RATE = 0.12; // TODO: load from Settings.VAT_RATE when rate changes
+  const VAT_RATE = this._vat_rate || 0.12;
   let totalOre = 0, totalAccess = 0, totalVat = 0;
 
   for (const line of this.lines) {

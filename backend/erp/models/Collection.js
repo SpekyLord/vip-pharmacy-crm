@@ -110,8 +110,9 @@ collectionSchema.pre('save', function () {
 
     for (const csi of this.settled_csis) {
       totalCsi += csi.invoice_amount || 0;
-      // Compute net_of_vat from invoice_amount (12/112 PH VAT formula)
-      csi.net_of_vat = Math.round((csi.invoice_amount || 0) * (100 / 112) * 100) / 100;
+      // Compute net_of_vat from invoice_amount using configurable VAT rate
+      const vatRate = this._vat_rate || 0.12;
+      csi.net_of_vat = Math.round((csi.invoice_amount || 0) / (1 + vatRate) * 100) / 100;
       totalNet += csi.net_of_vat;
 
       // Commission

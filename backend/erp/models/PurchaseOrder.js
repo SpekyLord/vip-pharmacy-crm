@@ -53,8 +53,9 @@ purchaseOrderSchema.pre('save', function (next) {
     item.line_total = Math.round((item.qty_ordered * item.unit_price) * 100) / 100;
     total += item.line_total;
   }
+  const vatRate = this._vat_rate || 0.12;
   this.total_amount = Math.round(total * 100) / 100;
-  this.net_amount = Math.round((total * 100 / 112) * 100) / 100;
+  this.net_amount = Math.round((total / (1 + vatRate)) * 100) / 100;
   this.vat_amount = Math.round((total - this.net_amount) * 100) / 100;
   next();
 });

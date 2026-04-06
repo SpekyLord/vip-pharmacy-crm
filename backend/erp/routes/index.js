@@ -24,6 +24,11 @@ router.use('/classify', require('./classificationRoutes'));
 router.use('/customers', require('./customerRoutes'));
 router.use('/print', require('./printRoutes'));
 
+// ═══ Phase 24 — ERP Control Center ═══
+router.use('/entities', require('./entityRoutes'));
+router.use('/control-center', require('./controlCenterRoutes'));
+router.use('/lookup-values', require('./lookupGenericRoutes'));
+
 // ═══ Phase 3 — Sales & Inventory ═══
 router.use('/sales', erpAccessCheck('sales'), require('./salesRoutes'));
 router.use('/inventory', erpAccessCheck('inventory'), require('./inventoryRoutes'));
@@ -55,7 +60,7 @@ router.use('/reports', erpAccessCheck('reports'), require('./erpReportRoutes'));
 
 // ═══ Phase 9 — Integration & Document Flow ═══
 router.use('/documents', erpAccessCheck('reports'), require('./documentRoutes'));
-router.use('/crm-bridge', require('./crmBridgeRoutes'));
+router.use('/crm-bridge', erpAccessCheck('sales'), require('./crmBridgeRoutes'));
 
 // ═══ Phase 10 — ERP Access Control, People & Payroll ═══
 router.use('/erp-access', require('./erpAccessRoutes'));

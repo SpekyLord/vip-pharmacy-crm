@@ -10,7 +10,7 @@
  * Role overrides:
  *   president        → always FULL (skip check)
  *   ceo              → always VIEW (block FULL operations)
- *   admin w/o access → FULL (backward compat — existing admins keep working)
+ *   admin w/o access → VIEW only (was FULL — deprecated in Phase 24A)
  */
 
 const LEVELS = { NONE: 0, VIEW: 1, FULL: 2 };
@@ -42,8 +42,16 @@ const erpAccessCheck = (module, requiredLevel = 'VIEW') => {
       return next();
     }
 
-    // Backward compat: admin without erp_access enabled = full access to everything
+    // Backward compat: admin without erp_access enabled gets VIEW (was: full access).
+    // This allows legacy admins to still see data while templates are being rolled out.
+    // Once all admins have erp_access.enabled, remove this block entirely.
     if (role === 'admin' && (!erp_access || !erp_access.enabled)) {
+      if (requiredLevel === 'FULL') {
+        return res.status(403).json({
+          success: false,
+          message: 'Admin account requires ERP access template for write operations. Contact president to assign one.',
+        });
+      }
       return next();
     }
 
@@ -102,9 +110,12 @@ const erpSubAccessCheck = (module, subKey) => {
       });
     }
 
-    // Backward compat: admin without erp_access enabled = full access
+    // Backward compat: admin without erp_access — deny sub-permission writes
     if (role === 'admin' && (!erp_access || !erp_access.enabled)) {
-      return next();
+      return res.status(403).json({
+        success: false,
+        message: 'Admin account requires ERP access template for this operation. Contact president to assign one.',
+      });
     }
 
     // If erp_access is not enabled, deny

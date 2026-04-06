@@ -10,6 +10,7 @@
  * Follows SAP automatic account determination pattern.
  */
 const VendorMaster = require('../models/VendorMaster');
+const Settings = require('../models/Settings');
 
 // Keyword-to-COA patterns (moved from removed EXPENSE_COA_MAP in orParser.js)
 const KEYWORD_RULES = [
@@ -58,11 +59,13 @@ async function classifyExpense(extractedFields) {
   const amount = extractedFields.amount?.value;
   const vatAmount = extractedFields.vat_amount?.value;
 
-  // VAT auto-computation (12/112 formula) if amount present but VAT missing
+  // VAT auto-computation if amount present but VAT missing
+  const settings = await Settings.getSettings();
+  const vatRate = settings?.VAT_RATE || 0.12;
   let vatComputed = false;
   let computedVat = vatAmount;
   if (amount != null && (vatAmount == null || vatAmount === 0)) {
-    computedVat = parseFloat((amount * 0.12 / 1.12).toFixed(2));
+    computedVat = parseFloat((amount * vatRate / (1 + vatRate)).toFixed(2));
     vatComputed = true;
   }
 
