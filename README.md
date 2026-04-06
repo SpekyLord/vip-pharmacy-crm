@@ -1,4 +1,6 @@
 # VIP CRM
+[![CI](https://github.com/SpekyLord/vip-pharmacy-crm/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SpekyLord/vip-pharmacy-crm/actions/workflows/ci.yml)
+[![Deploy Production](https://github.com/SpekyLord/vip-pharmacy-crm/actions/workflows/deploy-production.yml/badge.svg?branch=main)](https://github.com/SpekyLord/vip-pharmacy-crm/actions/workflows/deploy-production.yml)
 
 A pharmaceutical field sales management system designed for Business Development Managers (BDM) to track VIP Client visits, manage product assignments, and ensure compliance with visit schedules.
 
