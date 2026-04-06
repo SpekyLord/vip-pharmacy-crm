@@ -50,7 +50,7 @@ const pageStyles = `
 const EMPTY_LINE = { account_code: '', account_name: '', debit: '', credit: '', description: '' };
 const fmt = (n) => `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
-export default function RecurringJournals() {
+export function RecurringJournalsContent() {
   const { user } = useAuth();
   const api = useAccounting();
   const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
@@ -159,95 +159,103 @@ export default function RecurringJournals() {
   };
 
   return (
-    <div className="rj-page">
+    <>
       <style>{pageStyles}</style>
+      <div className="rj-header">
+        <h2>Recurring Journal Templates</h2>
+        <div className="rj-actions">
+          <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
+          {isAdmin && <>
+            <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>
+            <button className="btn btn-success" onClick={handleRunAllDue} disabled={running === 'all'}>{running === 'all' ? 'Running...' : 'Run All Due'}</button>
+            <button className="btn btn-primary" onClick={openCreate}>+ New Template</button>
+          </>}
+        </div>
+      </div>
+
+      {loading ? <div className="rj-empty">Loading...</div> : templates.length === 0 ? <div className="rj-empty">No recurring templates. Create one to automate journal entries.</div> : (
+        <div className="rj-table-wrap">
+          <table className="rj-table">
+            <thead><tr><th>Name</th><th>Frequency</th><th>Day</th><th>Auto Post</th><th>Next Run</th><th>Last Run</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+              {templates.map(t => (
+                <tr key={t._id}>
+                  <td style={{ fontWeight: 600 }}>{t.name}</td>
+                  <td>{t.frequency}</td>
+                  <td>{t.day_of_month}</td>
+                  <td>{t.auto_post ? 'Yes' : 'No'}</td>
+                  <td>{t.next_run_date ? new Date(t.next_run_date).toLocaleDateString() : '—'}</td>
+                  <td>{t.last_run_date ? new Date(t.last_run_date).toLocaleDateString() : '—'}</td>
+                  <td><span className={`badge ${t.is_active ? 'badge-active' : 'badge-inactive'}`}>{t.is_active ? 'Active' : 'Inactive'}</span></td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {isAdmin && t.is_active && <button className="btn btn-success btn-sm" onClick={() => handleRunNow(t._id)} disabled={running === t._id}>{running === t._id ? '...' : 'Run'}</button>}
+                      {isAdmin && <button className="btn btn-outline btn-sm" onClick={() => openEdit(t)}>Edit</button>}
+                      {isAdmin && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(t._id)}>Del</button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showModal && (
+        <div className="rj-modal" onClick={() => setShowModal(false)}>
+          <div className="rj-modal-body" onClick={e => e.stopPropagation()}>
+            <h3>{editing ? 'Edit' : 'New'} Recurring Template</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="form-group"><label>Name</label><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+              <div className="form-group"><label>Source Module</label><input value={form.source_module} onChange={e => setForm(f => ({ ...f, source_module: e.target.value }))} /></div>
+              <div className="form-group"><label>Frequency</label>
+                <select value={form.frequency} onChange={e => setForm(f => ({ ...f, frequency: e.target.value }))}>
+                  <option value="MONTHLY">Monthly</option><option value="QUARTERLY">Quarterly</option><option value="ANNUALLY">Annually</option>
+                </select>
+              </div>
+              <div className="form-group"><label>Day of Month (1-28)</label><input type="number" min={1} max={28} value={form.day_of_month} onChange={e => setForm(f => ({ ...f, day_of_month: parseInt(e.target.value) || 1 }))} /></div>
+            </div>
+            <div className="form-group"><label>Description</label><input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
+            <div className="form-group" style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={form.auto_post} onChange={e => setForm(f => ({ ...f, auto_post: e.target.checked }))} style={{ width: 'auto' }} />
+              <label style={{ margin: 0, fontSize: 13 }}>Auto-post after creation</label>
+            </div>
+
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--erp-muted)', display: 'block', marginTop: 12, marginBottom: 6 }}>Journal Lines</label>
+            {lines.map((l, i) => (
+              <div key={i} className="rj-line-row">
+                <input placeholder="Code" value={l.account_code} onChange={e => { const n = [...lines]; n[i].account_code = e.target.value; setLines(n); }} />
+                <input placeholder="Account name" value={l.account_name} onChange={e => { const n = [...lines]; n[i].account_name = e.target.value; setLines(n); }} />
+                <input type="number" placeholder="DR" value={l.debit} onChange={e => { const n = [...lines]; n[i].debit = e.target.value; setLines(n); }} />
+                <input type="number" placeholder="CR" value={l.credit} onChange={e => { const n = [...lines]; n[i].credit = e.target.value; setLines(n); }} />
+                <button className="btn btn-sm" style={{ background: '#fee2e2', color: '#dc2626' }} onClick={() => { if (lines.length > 2) setLines(lines.filter((_, j) => j !== i)); }}>✕</button>
+              </div>
+            ))}
+            <button className="btn btn-sm btn-outline" style={{ marginBottom: 12 }} onClick={() => setLines([...lines, { ...EMPTY_LINE }])}>+ Add Line</button>
+            <div style={{ display: 'flex', gap: 16, fontSize: 13, marginBottom: 8 }}>
+              <span>DR: {fmt(totalDR)}</span>
+              <span>CR: {fmt(totalCR)}</span>
+              <span className={isBalanced ? 'balance-ok' : 'balance-err'}>{isBalanced ? '✓ Balanced' : '✗ Unbalanced'}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
+              <button className="btn btn-primary" disabled={!isBalanced || saving} onClick={handleSave}>{saving ? 'Saving...' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function RecurringJournals() {
+  return (
+    <div className="rj-page">
       <Navbar />
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="rj-main admin-main">
-          <div className="rj-header">
-            <h2>Recurring Journal Templates</h2>
-            <div className="rj-actions">
-              <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
-              {isAdmin && <>
-                <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>
-                <button className="btn btn-success" onClick={handleRunAllDue} disabled={running === 'all'}>{running === 'all' ? 'Running...' : 'Run All Due'}</button>
-                <button className="btn btn-primary" onClick={openCreate}>+ New Template</button>
-              </>}
-            </div>
-          </div>
-
-          {loading ? <div className="rj-empty">Loading...</div> : templates.length === 0 ? <div className="rj-empty">No recurring templates. Create one to automate journal entries.</div> : (
-            <div className="rj-table-wrap">
-              <table className="rj-table">
-                <thead><tr><th>Name</th><th>Frequency</th><th>Day</th><th>Auto Post</th><th>Next Run</th><th>Last Run</th><th>Status</th><th>Actions</th></tr></thead>
-                <tbody>
-                  {templates.map(t => (
-                    <tr key={t._id}>
-                      <td style={{ fontWeight: 600 }}>{t.name}</td>
-                      <td>{t.frequency}</td>
-                      <td>{t.day_of_month}</td>
-                      <td>{t.auto_post ? 'Yes' : 'No'}</td>
-                      <td>{t.next_run_date ? new Date(t.next_run_date).toLocaleDateString() : '—'}</td>
-                      <td>{t.last_run_date ? new Date(t.last_run_date).toLocaleDateString() : '—'}</td>
-                      <td><span className={`badge ${t.is_active ? 'badge-active' : 'badge-inactive'}`}>{t.is_active ? 'Active' : 'Inactive'}</span></td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          {isAdmin && t.is_active && <button className="btn btn-success btn-sm" onClick={() => handleRunNow(t._id)} disabled={running === t._id}>{running === t._id ? '...' : 'Run'}</button>}
-                          {isAdmin && <button className="btn btn-outline btn-sm" onClick={() => openEdit(t)}>Edit</button>}
-                          {isAdmin && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(t._id)}>Del</button>}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {showModal && (
-            <div className="rj-modal" onClick={() => setShowModal(false)}>
-              <div className="rj-modal-body" onClick={e => e.stopPropagation()}>
-                <h3>{editing ? 'Edit' : 'New'} Recurring Template</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="form-group"><label>Name</label><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-                  <div className="form-group"><label>Source Module</label><input value={form.source_module} onChange={e => setForm(f => ({ ...f, source_module: e.target.value }))} /></div>
-                  <div className="form-group"><label>Frequency</label>
-                    <select value={form.frequency} onChange={e => setForm(f => ({ ...f, frequency: e.target.value }))}>
-                      <option value="MONTHLY">Monthly</option><option value="QUARTERLY">Quarterly</option><option value="ANNUALLY">Annually</option>
-                    </select>
-                  </div>
-                  <div className="form-group"><label>Day of Month (1-28)</label><input type="number" min={1} max={28} value={form.day_of_month} onChange={e => setForm(f => ({ ...f, day_of_month: parseInt(e.target.value) || 1 }))} /></div>
-                </div>
-                <div className="form-group"><label>Description</label><input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
-                <div className="form-group" style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="checkbox" checked={form.auto_post} onChange={e => setForm(f => ({ ...f, auto_post: e.target.checked }))} style={{ width: 'auto' }} />
-                  <label style={{ margin: 0, fontSize: 13 }}>Auto-post after creation</label>
-                </div>
-
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--erp-muted)', display: 'block', marginTop: 12, marginBottom: 6 }}>Journal Lines</label>
-                {lines.map((l, i) => (
-                  <div key={i} className="rj-line-row">
-                    <input placeholder="Code" value={l.account_code} onChange={e => { const n = [...lines]; n[i].account_code = e.target.value; setLines(n); }} />
-                    <input placeholder="Account name" value={l.account_name} onChange={e => { const n = [...lines]; n[i].account_name = e.target.value; setLines(n); }} />
-                    <input type="number" placeholder="DR" value={l.debit} onChange={e => { const n = [...lines]; n[i].debit = e.target.value; setLines(n); }} />
-                    <input type="number" placeholder="CR" value={l.credit} onChange={e => { const n = [...lines]; n[i].credit = e.target.value; setLines(n); }} />
-                    <button className="btn btn-sm" style={{ background: '#fee2e2', color: '#dc2626' }} onClick={() => { if (lines.length > 2) setLines(lines.filter((_, j) => j !== i)); }}>✕</button>
-                  </div>
-                ))}
-                <button className="btn btn-sm btn-outline" style={{ marginBottom: 12 }} onClick={() => setLines([...lines, { ...EMPTY_LINE }])}>+ Add Line</button>
-                <div style={{ display: 'flex', gap: 16, fontSize: 13, marginBottom: 8 }}>
-                  <span>DR: {fmt(totalDR)}</span>
-                  <span>CR: {fmt(totalCR)}</span>
-                  <span className={isBalanced ? 'balance-ok' : 'balance-err'}>{isBalanced ? '✓ Balanced' : '✗ Unbalanced'}</span>
-                </div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
-                  <button className="btn btn-primary" disabled={!isBalanced || saving} onClick={handleSave}>{saving ? 'Saving...' : 'Save'}</button>
-                </div>
-              </div>
-            </div>
-          )}
+          <RecurringJournalsContent />
         </main>
       </div>
     </div>

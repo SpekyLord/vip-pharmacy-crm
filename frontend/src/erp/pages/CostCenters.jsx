@@ -65,7 +65,7 @@ function TreeView({ nodes, onToggle }) {
   );
 }
 
-export default function CostCenters() {
+export function CostCentersContent() {
   const { user } = useAuth();
   const rpt = useReports();
   const [tree, setTree] = useState([]);
@@ -125,59 +125,67 @@ export default function CostCenters() {
   };
 
   return (
-    <div className="cc-page">
+    <>
       <style>{pageStyles}</style>
+      <div className="cc-header">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <h1>Cost Centers</h1>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
+            <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>
+          </div>
+        </div>
+        <p>Manage cost center hierarchy for financial reporting</p>
+      </div>
+
+      <div className="panel">
+        <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>New Cost Center</h3>
+        <div className="form-row">
+          <div className="form-group">
+            <label>Code</label>
+            <input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g., CC-SALES-MNL" />
+          </div>
+          <div className="form-group">
+            <label>Name</label>
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g., Sales - Manila" />
+          </div>
+          <div className="form-group">
+            <label>Parent</label>
+            <SelectField value={form.parent_cost_center} onChange={e => setForm(f => ({ ...f, parent_cost_center: e.target.value }))}>
+              <option value="">None (Root)</option>
+              {flatList.filter(c => c.is_active).map(c => (
+                <option key={c._id} value={c._id}>{c.code} - {c.name}</option>
+              ))}
+            </SelectField>
+          </div>
+          <div className="form-group">
+            <label>Description</label>
+            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+          </div>
+          <button className="btn btn-primary" onClick={handleCreate}>Create</button>
+        </div>
+      </div>
+
+      {loading && <div className="loading">Loading...</div>}
+
+      <div className="panel">
+        <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>Cost Center Hierarchy</h3>
+        {tree.length > 0 ? <TreeView nodes={tree} onToggle={handleToggle} /> : (
+          <div style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 20 }}>No cost centers created yet</div>
+        )}
+      </div>
+    </>
+  );
+}
+
+export default function CostCenters() {
+  return (
+    <div className="cc-page">
       <Navbar />
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="cc-main">
-          <div className="cc-header">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <h1>Cost Centers</h1>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
-                <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>
-              </div>
-            </div>
-            <p>Manage cost center hierarchy for financial reporting</p>
-          </div>
-
-          <div className="panel">
-            <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>New Cost Center</h3>
-            <div className="form-row">
-              <div className="form-group">
-                <label>Code</label>
-                <input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g., CC-SALES-MNL" />
-              </div>
-              <div className="form-group">
-                <label>Name</label>
-                <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g., Sales - Manila" />
-              </div>
-              <div className="form-group">
-                <label>Parent</label>
-                <SelectField value={form.parent_cost_center} onChange={e => setForm(f => ({ ...f, parent_cost_center: e.target.value }))}>
-                  <option value="">None (Root)</option>
-                  {flatList.filter(c => c.is_active).map(c => (
-                    <option key={c._id} value={c._id}>{c.code} - {c.name}</option>
-                  ))}
-                </SelectField>
-              </div>
-              <div className="form-group">
-                <label>Description</label>
-                <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-              </div>
-              <button className="btn btn-primary" onClick={handleCreate}>Create</button>
-            </div>
-          </div>
-
-          {loading && <div className="loading">Loading...</div>}
-
-          <div className="panel">
-            <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>Cost Center Hierarchy</h3>
-            {tree.length > 0 ? <TreeView nodes={tree} onToggle={handleToggle} /> : (
-              <div style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 20 }}>No cost centers created yet</div>
-            )}
-          </div>
+          <CostCentersContent />
         </div>
       </div>
     </div>

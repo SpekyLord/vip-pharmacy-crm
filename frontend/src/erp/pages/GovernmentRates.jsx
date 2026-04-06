@@ -68,7 +68,7 @@ const FLAT_TYPES = ['PHILHEALTH', 'PAGIBIG'];
 
 const fmt = (v) => v != null && v !== '' ? Number(v).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
 
-export default function GovernmentRates() {
+export function GovernmentRatesContent() {
   const { user } = useAuth();
   const api = useErpApi();
   const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
@@ -263,12 +263,8 @@ export default function GovernmentRates() {
   );
 
   return (
-    <div className="govr-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div style={{ display: 'flex', flex: 1 }}>
-        <Sidebar />
-        <main className="govr-main admin-main">
           <div className="govr-header">
             <h2>Government Rates</h2>
             <div className="govr-actions">
@@ -376,6 +372,18 @@ export default function GovernmentRates() {
               </div>
             </div>
           )}
+    </>
+  );
+}
+
+export default function GovernmentRates() {
+  return (
+    <div className="govr-page">
+      <Navbar />
+      <div style={{ display: 'flex', flex: 1 }}>
+        <Sidebar />
+        <main className="govr-main admin-main">
+          <GovernmentRatesContent />
         </main>
       </div>
     </div>

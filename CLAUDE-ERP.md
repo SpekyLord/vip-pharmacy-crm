@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 5.0
-> **Status**: Phases 0-23 Complete. System audit & governance hardening (April 6, 2026).
+> **Version**: 5.1
+> **Status**: Phases 0-24 Complete. ERP Control Center added (April 6, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -73,6 +73,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 21 | Insurance, Period Locks, Recurring Journals, BIR Calc | ✅ |
 | 22 | Accounting Hardening, COA Config, Entity Context | ✅ |
 | 23 | System Audit & Governance Hardening | ✅ |
+| 24 | ERP Control Center | ✅ |
 
 ---
 
@@ -211,7 +212,7 @@ VIP runs three business lines under one entity, tracked by cost centers:
 | Dual P&L deprecation | pnlCalc vs pnlService coexist without reconciliation | Consistency risk |
 | Commission controller | No dedicated controller — wired inline in collectionController | Works, not clean |
 | VAT 0.12 in pre-save hooks | SalesLine, ExpenseEntry, Collection etc. hardcode 12% in schema hooks | Cannot change per entity; low risk until rate changes |
-| Frontend hardcoded dropdowns | ~30 static arrays (expense categories, collateral types, activity types) serve as fallbacks | Violates lookup-driven principle but low operational risk |
+| Frontend hardcoded dropdowns | ~30 static arrays (expense categories, collateral types, activity types) serve as fallbacks | Phase 24 added Lookup model + LookupManager UI + useLookups hook. Migration of individual pages to use lookups is a follow-up task |
 | Hospital entity_id optional | Hospitals intentionally global (shared across entities) | By design, but undocumented in schema |
 
 ---
@@ -233,3 +234,54 @@ All ERP routes mounted under `/api/erp/` via `backend/erp/routes/erpRouter.js`. 
 | `/people` | peopleController | people |
 | `/reports` | erpReportController | reports |
 | `/settings` | settingsController | settings |
+| `/entities` | entityController | (shared) |
+| `/control-center` | controlCenterController | (shared) |
+| `/lookup-values` | lookupGenericController | (shared) |
+
+---
+
+## ERP Control Center (Phase 24)
+
+Single page at `/erp/control-center` for president/admin/finance. Consolidates all configuration, master data, and governance settings into one place organized by the governance hierarchy.
+
+### Architecture
+- Container page with left category sidebar + lazy-loaded content panels
+- Each existing config page exports a `*Content` named export (no Navbar/Sidebar wrapper) for embedding
+- Standalone routes (`/erp/coa`, `/erp/bank-accounts`, etc.) remain fully functional
+- URL sync via `?section=xxx` query params for deep-linking
+
+### Category Structure (8 groups)
+1. **Foundation Health** — Overview dashboard showing completeness of each governance layer
+2. **Entity & Organization** — Entity CRUD (first-ever UI for managing entities)
+3. **People & Access** — People Master + Access Templates
+4. **Financial Setup** — COA, Cost Centers, Bank Accounts, Credit Cards, Payment Modes
+5. **Tax & Compliance** — Government Rates
+6. **Operations** — Warehouses, Transfer Prices, Fixed Assets
+7. **Governance Controls** — Period Locks, Recurring Journals, Data Archive
+8. **System Settings** — ERP Settings (~30 fields) + Lookup Tables (16 categories)
+
+### New Models
+- `Lookup` (`backend/erp/models/Lookup.js`) — generic entity-scoped lookup table (category + code + label + sort_order). Replaces hardcoded frontend arrays with database-driven lookups. Unique index: `{ entity_id, category, code }`.
+
+### New Hooks
+- `useLookups(category)` (`frontend/src/erp/hooks/useLookups.js`) — fetches + caches lookup values by category with 5-minute TTL. Returns `{ options, loading }`.
+
+### Key Files
+```
+frontend/src/erp/pages/
+├── ControlCenter.jsx       # Container page (lazy-loads sections)
+├── FoundationHealth.jsx     # Governance health dashboard
+├── EntityManager.jsx        # Entity CRUD UI
+├── ErpSettingsPanel.jsx     # Settings form (~30 fields)
+├── LookupManager.jsx        # Lookup table manager (16 categories)
+└── [14 existing pages]      # Each now exports *Content for embedding
+
+backend/erp/
+├── models/Lookup.js                       # Generic lookup model
+├── controllers/entityController.js        # Entity CRUD
+├── controllers/controlCenterController.js # Health aggregation
+├── controllers/lookupGenericController.js # Lookup CRUD + seed
+├── routes/entityRoutes.js
+├── routes/controlCenterRoutes.js
+└── routes/lookupGenericRoutes.js
+```

@@ -37,7 +37,7 @@ const pageStyles = `
 const fmt = (n) => `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 const getCurrentPeriod = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 
-export default function FixedAssets() {
+export function FixedAssetsContent() {
   const { user } = useAuth();
   const api = useAccounting();
   const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
@@ -99,80 +99,88 @@ export default function FixedAssets() {
   };
 
   return (
-    <div className="fa-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div style={{ display: 'flex', flex: 1 }}>
-        <Sidebar />
-        <main className="fa-main admin-main">
-          <div className="fa-header">
-            <h2>Fixed Assets</h2>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)' }} onClick={handleExport}>Export Excel</button>
-              {isAdmin && <label className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>}
-              {isAdmin && <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Add Asset</button>}
-            </div>
-          </div>
+      <div className="fa-header">
+        <h2>Fixed Assets</h2>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)' }} onClick={handleExport}>Export Excel</button>
+          {isAdmin && <label className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>}
+          {isAdmin && <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Add Asset</button>}
+        </div>
+      </div>
 
-          {loading ? <div className="fa-empty">Loading…</div> : assets.length === 0 ? <div className="fa-empty">No fixed assets</div> : (
-            <table className="fa-table">
-              <thead><tr><th>Code</th><th>Asset</th><th>Category</th><th>Cost</th><th>Accum. Depr.</th><th>NBV</th><th>Status</th></tr></thead>
+      {loading ? <div className="fa-empty">Loading…</div> : assets.length === 0 ? <div className="fa-empty">No fixed assets</div> : (
+        <table className="fa-table">
+          <thead><tr><th>Code</th><th>Asset</th><th>Category</th><th>Cost</th><th>Accum. Depr.</th><th>NBV</th><th>Status</th></tr></thead>
+          <tbody>
+            {assets.map(a => (
+              <tr key={a._id}>
+                <td style={{ fontWeight: 600 }}>{a.asset_code}</td><td>{a.asset_name}</td><td>{a.category || '—'}</td>
+                <td>{fmt(a.acquisition_cost)}</td><td>{fmt(a.accumulated_depreciation)}</td><td>{fmt(a.net_book_value)}</td>
+                <td><span className={`badge badge-${a.status}`}>{a.status}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {isAdmin && (
+        <div className="fa-staging">
+          <h3>Depreciation Staging</h3>
+          <div className="fa-controls">
+            <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />
+            <button className="btn btn-primary" onClick={handleCompute}>Compute</button>
+            <button className="btn" onClick={loadStaging}>Load Staging</button>
+            {staging.length > 0 && <>
+              <button className="btn btn-success" onClick={handleApproveAll}>Approve All</button>
+              <button className="btn btn-primary" onClick={handlePost}>Post JEs</button>
+            </>}
+          </div>
+          {msg && <div className="fa-msg">{msg}</div>}
+          {staging.length > 0 && (
+            <table className="fa-table" style={{ marginTop: 8 }}>
+              <thead><tr><th>Asset</th><th>Amount</th><th>Status</th></tr></thead>
               <tbody>
-                {assets.map(a => (
-                  <tr key={a._id}>
-                    <td style={{ fontWeight: 600 }}>{a.asset_code}</td><td>{a.asset_name}</td><td>{a.category || '—'}</td>
-                    <td>{fmt(a.acquisition_cost)}</td><td>{fmt(a.accumulated_depreciation)}</td><td>{fmt(a.net_book_value)}</td>
-                    <td><span className={`badge badge-${a.status}`}>{a.status}</span></td>
-                  </tr>
+                {staging.map(s => (
+                  <tr key={s.entry_id}><td>{s.asset_name}</td><td>{fmt(s.amount)}</td><td>{s.status}</td></tr>
                 ))}
               </tbody>
             </table>
           )}
+        </div>
+      )}
 
-          {isAdmin && (
-            <div className="fa-staging">
-              <h3>Depreciation Staging</h3>
-              <div className="fa-controls">
-                <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />
-                <button className="btn btn-primary" onClick={handleCompute}>Compute</button>
-                <button className="btn" onClick={loadStaging}>Load Staging</button>
-                {staging.length > 0 && <>
-                  <button className="btn btn-success" onClick={handleApproveAll}>Approve All</button>
-                  <button className="btn btn-primary" onClick={handlePost}>Post JEs</button>
-                </>}
-              </div>
-              {msg && <div className="fa-msg">{msg}</div>}
-              {staging.length > 0 && (
-                <table className="fa-table" style={{ marginTop: 8 }}>
-                  <thead><tr><th>Asset</th><th>Amount</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {staging.map(s => (
-                      <tr key={s.entry_id}><td>{s.asset_name}</td><td>{fmt(s.amount)}</td><td>{s.status}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+      {showAdd && (
+        <div className="fa-modal" onClick={() => setShowAdd(false)}>
+          <div className="fa-modal-body" onClick={e => e.stopPropagation()}>
+            <h3>Add Fixed Asset</h3>
+            {['asset_code', 'asset_name', 'category'].map(f => (
+              <div key={f} className="form-group"><label>{f.replace('_', ' ')}</label><input value={form[f]} onChange={e => setForm({ ...form, [f]: e.target.value })} /></div>
+            ))}
+            <div className="form-group"><label>Acquisition Date</label><input type="date" value={form.acquisition_date} onChange={e => setForm({ ...form, acquisition_date: e.target.value })} /></div>
+            <div className="form-group"><label>Acquisition Cost</label><input type="number" value={form.acquisition_cost} onChange={e => setForm({ ...form, acquisition_cost: e.target.value })} /></div>
+            <div className="form-group"><label>Useful Life (months)</label><input type="number" value={form.useful_life_months} onChange={e => setForm({ ...form, useful_life_months: e.target.value })} /></div>
+            <div className="form-group"><label>Salvage Value</label><input type="number" value={form.salvage_value} onChange={e => setForm({ ...form, salvage_value: e.target.value })} /></div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn" onClick={() => setShowAdd(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleCreate}>Create</button>
             </div>
-          )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
-          {showAdd && (
-            <div className="fa-modal" onClick={() => setShowAdd(false)}>
-              <div className="fa-modal-body" onClick={e => e.stopPropagation()}>
-                <h3>Add Fixed Asset</h3>
-                {['asset_code', 'asset_name', 'category'].map(f => (
-                  <div key={f} className="form-group"><label>{f.replace('_', ' ')}</label><input value={form[f]} onChange={e => setForm({ ...form, [f]: e.target.value })} /></div>
-                ))}
-                <div className="form-group"><label>Acquisition Date</label><input type="date" value={form.acquisition_date} onChange={e => setForm({ ...form, acquisition_date: e.target.value })} /></div>
-                <div className="form-group"><label>Acquisition Cost</label><input type="number" value={form.acquisition_cost} onChange={e => setForm({ ...form, acquisition_cost: e.target.value })} /></div>
-                <div className="form-group"><label>Useful Life (months)</label><input type="number" value={form.useful_life_months} onChange={e => setForm({ ...form, useful_life_months: e.target.value })} /></div>
-                <div className="form-group"><label>Salvage Value</label><input type="number" value={form.salvage_value} onChange={e => setForm({ ...form, salvage_value: e.target.value })} /></div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button className="btn" onClick={() => setShowAdd(false)}>Cancel</button>
-                  <button className="btn btn-primary" onClick={handleCreate}>Create</button>
-                </div>
-              </div>
-            </div>
-          )}
+export default function FixedAssets() {
+  return (
+    <div className="fa-page">
+      <Navbar />
+      <div style={{ display: 'flex', flex: 1 }}>
+        <Sidebar />
+        <main className="fa-main admin-main">
+          <FixedAssetsContent />
         </main>
       </div>
     </div>

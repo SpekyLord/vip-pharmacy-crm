@@ -38,7 +38,7 @@ const pageStyles = `
 
 function fmtDate(d) { return d ? new Date(d).toLocaleString() : '-'; }
 
-export default function DataArchive() {
+export function DataArchiveContent() {
   const { user } = useAuth();
   const rpt = useReports();
   const [batches, setBatches] = useState([]);
@@ -84,92 +84,100 @@ export default function DataArchive() {
   };
 
   return (
-    <div className="archive-page">
+    <>
       <style>{pageStyles}</style>
+      <div className="archive-header">
+        <h1>Data Archive</h1>
+        <p>Archive closed-period data to keep the system performant. Current + prior 2 months are kept live.</p>
+      </div>
+
+      <div className="warning-box">
+        <strong>Archive Policy:</strong> Documents older than 2 months with POSTED/LOCKED status will be moved to the archive.
+        Only finalized data is archived. DRAFT/VALID/ERROR documents are never archived.
+      </div>
+
+      {!confirmArchive ? (
+        <button className="btn btn-danger" onClick={() => setConfirmArchive(true)} style={{ marginBottom: 16 }}>
+          Run Archive
+        </button>
+      ) : (
+        <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, color: '#dc2626', fontWeight: 600 }}>Confirm archive?</span>
+          <button className="btn btn-danger" onClick={handleArchive} disabled={archiving}>
+            {archiving ? 'Archiving...' : 'Yes, Archive Now'}
+          </button>
+          <button className="btn" onClick={() => setConfirmArchive(false)} style={{ background: 'var(--erp-border)' }}>Cancel</button>
+        </div>
+      )}
+
+      {loading && <div className="loading">Loading...</div>}
+
+      <div className="panel">
+        <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>Archive History</h3>
+        <table className="data-table">
+          <thead>
+            <tr><th>Batch ID</th><th>Date</th><th>Cutoff</th><th>Periods</th><th className="num">Documents</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+            {batches.map(b => [
+                <tr key={b.batch_id}>
+                  <td style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 12 }}>{b.batch_id}</td>
+                  <td>{fmtDate(b.archived_at)}</td>
+                  <td>{b.cutoff_period}</td>
+                  <td>{(b.periods_archived || []).join(', ') || '-'}</td>
+                  <td className="num">{b.total_documents}</td>
+                  <td><span className={`badge badge-${b.status?.toLowerCase()}`}>{b.status}</span></td>
+                  <td>
+                    <button className="btn btn-sm" onClick={() => handleExpand(b.batch_id)}>
+                      {expandedBatch === b.batch_id ? 'Close' : 'Details'}
+                    </button>
+                  </td>
+                </tr>,
+                expandedBatch === b.batch_id && batchDetail && (
+                  <tr key={b.batch_id + '-detail'}>
+                    <td colSpan={7}>
+                      <div className="detail-panel">
+                        <h4>Documents by Collection ({batchDetail.total} total)</h4>
+                        {Object.entries(batchDetail.collections || {}).map(([coll, docs]) => (
+                          <div className="detail-item" key={coll}>
+                            <span>{coll}</span>
+                            <span style={{ fontWeight: 600 }}>{docs.length} documents</span>
+                          </div>
+                        ))}
+                        {b.status === 'COMPLETED' && (
+                          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center' }}>
+                            <input className="confirm-input" placeholder="Reason for restore..." value={restoreReason} onChange={e => setRestoreReason(e.target.value)} />
+                            <button className="btn btn-primary btn-sm" onClick={() => handleRestore(b.batch_id)} disabled={!restoreReason.trim()}>Restore</button>
+                          </div>
+                        )}
+                        {b.status === 'RESTORED' && (
+                          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--erp-muted)' }}>
+                            Restored on {fmtDate(b.restored_at)} — Reason: {b.restore_reason}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              ])}
+            {batches.length === 0 && !loading && (
+              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No archive batches yet</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+export default function DataArchive() {
+  return (
+    <div className="archive-page">
       <Navbar />
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="archive-main">
-          <div className="archive-header">
-            <h1>Data Archive</h1>
-            <p>Archive closed-period data to keep the system performant. Current + prior 2 months are kept live.</p>
-          </div>
-
-          <div className="warning-box">
-            <strong>Archive Policy:</strong> Documents older than 2 months with POSTED/LOCKED status will be moved to the archive.
-            Only finalized data is archived. DRAFT/VALID/ERROR documents are never archived.
-          </div>
-
-          {!confirmArchive ? (
-            <button className="btn btn-danger" onClick={() => setConfirmArchive(true)} style={{ marginBottom: 16 }}>
-              Run Archive
-            </button>
-          ) : (
-            <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: '#dc2626', fontWeight: 600 }}>Confirm archive?</span>
-              <button className="btn btn-danger" onClick={handleArchive} disabled={archiving}>
-                {archiving ? 'Archiving...' : 'Yes, Archive Now'}
-              </button>
-              <button className="btn" onClick={() => setConfirmArchive(false)} style={{ background: 'var(--erp-border)' }}>Cancel</button>
-            </div>
-          )}
-
-          {loading && <div className="loading">Loading...</div>}
-
-          <div className="panel">
-            <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>Archive History</h3>
-            <table className="data-table">
-              <thead>
-                <tr><th>Batch ID</th><th>Date</th><th>Cutoff</th><th>Periods</th><th className="num">Documents</th><th>Status</th><th></th></tr>
-              </thead>
-              <tbody>
-                {batches.map(b => [
-                    <tr key={b.batch_id}>
-                      <td style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 12 }}>{b.batch_id}</td>
-                      <td>{fmtDate(b.archived_at)}</td>
-                      <td>{b.cutoff_period}</td>
-                      <td>{(b.periods_archived || []).join(', ') || '-'}</td>
-                      <td className="num">{b.total_documents}</td>
-                      <td><span className={`badge badge-${b.status?.toLowerCase()}`}>{b.status}</span></td>
-                      <td>
-                        <button className="btn btn-sm" onClick={() => handleExpand(b.batch_id)}>
-                          {expandedBatch === b.batch_id ? 'Close' : 'Details'}
-                        </button>
-                      </td>
-                    </tr>,
-                    expandedBatch === b.batch_id && batchDetail && (
-                      <tr key={b.batch_id + '-detail'}>
-                        <td colSpan={7}>
-                          <div className="detail-panel">
-                            <h4>Documents by Collection ({batchDetail.total} total)</h4>
-                            {Object.entries(batchDetail.collections || {}).map(([coll, docs]) => (
-                              <div className="detail-item" key={coll}>
-                                <span>{coll}</span>
-                                <span style={{ fontWeight: 600 }}>{docs.length} documents</span>
-                              </div>
-                            ))}
-                            {b.status === 'COMPLETED' && (
-                              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center' }}>
-                                <input className="confirm-input" placeholder="Reason for restore..." value={restoreReason} onChange={e => setRestoreReason(e.target.value)} />
-                                <button className="btn btn-primary btn-sm" onClick={() => handleRestore(b.batch_id)} disabled={!restoreReason.trim()}>Restore</button>
-                              </div>
-                            )}
-                            {b.status === 'RESTORED' && (
-                              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--erp-muted)' }}>
-                                Restored on {fmtDate(b.restored_at)} — Reason: {b.restore_reason}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  ])}
-                {batches.length === 0 && !loading && (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No archive batches yet</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataArchiveContent />
         </div>
       </div>
     </div>

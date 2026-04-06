@@ -62,7 +62,7 @@ const EMPTY_FORM = {
   statement_cycle_day: '', assigned_to: '', assigned_users: [], is_active: true
 };
 
-export default function CreditCardManager() {
+export function CreditCardManagerContent() {
   const { user } = useAuth();
   const api = useAccounting();
 
@@ -181,12 +181,8 @@ export default function CreditCardManager() {
   const f = (field, value) => setForm(p => ({ ...p, [field]: value }));
 
   return (
-    <div className="ccm-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div style={{ display: 'flex', flex: 1 }}>
-        <Sidebar />
-        <main className="ccm-main admin-main">
           <div className="ccm-header">
             <h2>Credit Card Management</h2>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -342,6 +338,18 @@ export default function CreditCardManager() {
               </div>
             </div>
           )}
+    </>
+  );
+}
+
+export default function CreditCardManager() {
+  return (
+    <div className="ccm-page">
+      <Navbar />
+      <div style={{ display: 'flex', flex: 1 }}>
+        <Sidebar />
+        <main className="ccm-main admin-main">
+          <CreditCardManagerContent />
         </main>
       </div>
     </div>

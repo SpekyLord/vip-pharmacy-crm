@@ -544,6 +544,10 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
 
   const items = [];
   items.push({ path: '/erp', label: 'ERP Home', icon: Briefcase });
+  // Phase 24 — Control Center for admin-like roles
+  if (['admin', 'finance', 'president'].includes(role)) {
+    items.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
+  }
   if (hasModule('sales'))       items.push({ path: '/erp/sales', label: 'Sales', icon: Receipt });
   if (hasModule('sales'))       items.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
   // Shared infrastructure — no module gate

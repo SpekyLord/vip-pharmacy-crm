@@ -61,7 +61,7 @@ const EMPTY_FORM = {
   position: '', department: '', employment_type: 'REGULAR', status: 'ACTIVE',
 };
 
-export default function PeopleList() {
+export function PeopleListContent() {
   const navigate = useNavigate();
   const api = usePeople();
   const [people, setPeople] = useState([]);
@@ -97,127 +97,135 @@ export default function PeopleList() {
   };
 
   return (
-    <div className="admin-page erp-page ppl-page">
+    <>
       <style>{pageStyles}</style>
+      <div className="ppl-header">
+        <h2>People Master</h2>
+        <button style={{ padding: '8px 16px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13, marginRight: 8 }}
+          onClick={async () => {
+            try {
+              const res = await api.post('/people/sync-from-crm', {});
+              alert(res?.message || `Synced: ${res?.data?.created || 0} created, ${res?.data?.skipped || 0} already exist`);
+              load();
+            } catch (err) { alert(err.response?.data?.message || 'Sync failed'); }
+          }}>Sync from CRM</button>
+        <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Add Person</button>
+      </div>
+
+      <div className="ppl-filters">
+        <input placeholder="Search name..." value={filters.search}
+          onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} />
+        <SelectField value={filters.person_type} onChange={e => setFilters(f => ({ ...f, person_type: e.target.value }))}>
+          <option value="">All Types</option>
+          {PERSON_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+        </SelectField>
+        <SelectField value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
+          <option value="">All Status</option>
+          {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+        </SelectField>
+      </div>
+
+      {loading ? (
+        <div className="ppl-empty">Loading...</div>
+      ) : !people.length ? (
+        <div className="ppl-empty">No people found</div>
+      ) : (
+        <>
+          <table className="ppl-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Position</th>
+                <th>Department</th>
+                <th>Employment</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {people.map(p => {
+                const tc = TYPE_COLORS[p.person_type] || { bg: '#f3f4f6', text: '#374151' };
+                const sc = STATUS_COLORS[p.status] || { bg: '#f3f4f6', text: '#6b7280' };
+                return (
+                  <tr key={p._id} onClick={() => navigate(`/erp/people/${p._id}`)}>
+                    <td style={{ fontWeight: 500 }}>{p.full_name}</td>
+                    <td><span className="badge" style={{ background: tc.bg, color: tc.text }}>{p.person_type.replace(/_/g, ' ')}</span></td>
+                    <td>{p.position || '—'}</td>
+                    <td>{p.department || '—'}</td>
+                    <td>{p.employment_type || '—'}</td>
+                    <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{p.status}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {pagination.pages > 1 && (
+            <div className="ppl-pag">
+              {Array.from({ length: pagination.pages }, (_, i) => (
+                <button key={i} className={pagination.page === i + 1 ? 'active' : ''} onClick={() => load(i + 1)}>{i + 1}</button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {showForm && (
+        <div className="ppl-modal" onClick={() => setShowForm(false)}>
+          <div className="ppl-panel" onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>Add Person</h3>
+            <div className="ppl-row2">
+              <div className="ppl-field">
+                <label>First Name</label>
+                <input value={form.first_name} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} />
+              </div>
+              <div className="ppl-field">
+                <label>Last Name</label>
+                <input value={form.last_name} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} />
+              </div>
+            </div>
+            <div className="ppl-row2">
+              <div className="ppl-field">
+                <label>Person Type</label>
+                <SelectField value={form.person_type} onChange={e => setForm(f => ({ ...f, person_type: e.target.value }))}>
+                  {PERSON_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+                </SelectField>
+              </div>
+              <div className="ppl-field">
+                <label>Employment Type</label>
+                <SelectField value={form.employment_type} onChange={e => setForm(f => ({ ...f, employment_type: e.target.value }))}>
+                  {EMP_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </SelectField>
+              </div>
+            </div>
+            <div className="ppl-row2">
+              <div className="ppl-field">
+                <label>Position</label>
+                <input value={form.position} onChange={e => setForm(f => ({ ...f, position: e.target.value }))} />
+              </div>
+              <div className="ppl-field">
+                <label>Department</label>
+                <input value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))} />
+              </div>
+            </div>
+            <div className="ppl-footer">
+              <button className="btn" style={{ background: '#f3f4f6' }} onClick={() => setShowForm(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleCreate}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function PeopleList() {
+  return (
+    <div className="admin-page erp-page ppl-page">
       <Navbar />
       <div className="admin-layout">
         <Sidebar />
         <main className="ppl-main">
-          <div className="ppl-header">
-            <h2>People Master</h2>
-            <button style={{ padding: '8px 16px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13, marginRight: 8 }}
-              onClick={async () => {
-                try {
-                  const res = await api.post('/people/sync-from-crm', {});
-                  alert(res?.message || `Synced: ${res?.data?.created || 0} created, ${res?.data?.skipped || 0} already exist`);
-                  load();
-                } catch (err) { alert(err.response?.data?.message || 'Sync failed'); }
-              }}>Sync from CRM</button>
-            <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Add Person</button>
-          </div>
-
-          <div className="ppl-filters">
-            <input placeholder="Search name..." value={filters.search}
-              onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} />
-            <SelectField value={filters.person_type} onChange={e => setFilters(f => ({ ...f, person_type: e.target.value }))}>
-              <option value="">All Types</option>
-              {PERSON_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
-            </SelectField>
-            <SelectField value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
-              <option value="">All Status</option>
-              {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
-            </SelectField>
-          </div>
-
-          {loading ? (
-            <div className="ppl-empty">Loading...</div>
-          ) : !people.length ? (
-            <div className="ppl-empty">No people found</div>
-          ) : (
-            <>
-              <table className="ppl-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Type</th>
-                    <th>Position</th>
-                    <th>Department</th>
-                    <th>Employment</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {people.map(p => {
-                    const tc = TYPE_COLORS[p.person_type] || { bg: '#f3f4f6', text: '#374151' };
-                    const sc = STATUS_COLORS[p.status] || { bg: '#f3f4f6', text: '#6b7280' };
-                    return (
-                      <tr key={p._id} onClick={() => navigate(`/erp/people/${p._id}`)}>
-                        <td style={{ fontWeight: 500 }}>{p.full_name}</td>
-                        <td><span className="badge" style={{ background: tc.bg, color: tc.text }}>{p.person_type.replace(/_/g, ' ')}</span></td>
-                        <td>{p.position || '—'}</td>
-                        <td>{p.department || '—'}</td>
-                        <td>{p.employment_type || '—'}</td>
-                        <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{p.status}</span></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {pagination.pages > 1 && (
-                <div className="ppl-pag">
-                  {Array.from({ length: pagination.pages }, (_, i) => (
-                    <button key={i} className={pagination.page === i + 1 ? 'active' : ''} onClick={() => load(i + 1)}>{i + 1}</button>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {showForm && (
-            <div className="ppl-modal" onClick={() => setShowForm(false)}>
-              <div className="ppl-panel" onClick={e => e.stopPropagation()}>
-                <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>Add Person</h3>
-                <div className="ppl-row2">
-                  <div className="ppl-field">
-                    <label>First Name</label>
-                    <input value={form.first_name} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} />
-                  </div>
-                  <div className="ppl-field">
-                    <label>Last Name</label>
-                    <input value={form.last_name} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} />
-                  </div>
-                </div>
-                <div className="ppl-row2">
-                  <div className="ppl-field">
-                    <label>Person Type</label>
-                    <SelectField value={form.person_type} onChange={e => setForm(f => ({ ...f, person_type: e.target.value }))}>
-                      {PERSON_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
-                    </SelectField>
-                  </div>
-                  <div className="ppl-field">
-                    <label>Employment Type</label>
-                    <SelectField value={form.employment_type} onChange={e => setForm(f => ({ ...f, employment_type: e.target.value }))}>
-                      {EMP_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </SelectField>
-                  </div>
-                </div>
-                <div className="ppl-row2">
-                  <div className="ppl-field">
-                    <label>Position</label>
-                    <input value={form.position} onChange={e => setForm(f => ({ ...f, position: e.target.value }))} />
-                  </div>
-                  <div className="ppl-field">
-                    <label>Department</label>
-                    <input value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))} />
-                  </div>
-                </div>
-                <div className="ppl-footer">
-                  <button className="btn" style={{ background: '#f3f4f6' }} onClick={() => setShowForm(false)}>Cancel</button>
-                  <button className="btn btn-primary" onClick={handleCreate}>Create</button>
-                </div>
-              </div>
-            </div>
-          )}
+          <PeopleListContent />
         </main>
       </div>
     </div>

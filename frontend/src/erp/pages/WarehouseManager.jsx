@@ -75,7 +75,7 @@ const emptyForm = () => ({
   is_default_receiving: false, can_receive_grn: false, can_transfer_out: true,
 });
 
-export default function WarehouseManager() {
+export function WarehouseManagerContent() {
   const { user } = useAuth();
   const whApi = useWarehouses();
   const { entities } = useEntities();
@@ -136,12 +136,8 @@ export default function WarehouseManager() {
   };
 
   return (
-    <div className="admin-page erp-page wm-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div className="admin-layout">
-        <Sidebar />
-        <main className="wm-main">
           <div className="wm-header">
             <h2>Warehouse Management</h2>
             <button className="wm-btn wm-btn-primary" onClick={openNew}>+ New Warehouse</button>
@@ -268,6 +264,18 @@ export default function WarehouseManager() {
               </div>
             </div>
           )}
+    </>
+  );
+}
+
+export default function WarehouseManager() {
+  return (
+    <div className="admin-page erp-page wm-page">
+      <Navbar />
+      <div className="admin-layout">
+        <Sidebar />
+        <main className="wm-main">
+          <WarehouseManagerContent />
         </main>
       </div>
     </div>

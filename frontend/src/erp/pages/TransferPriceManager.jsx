@@ -32,7 +32,7 @@ const pageStyles = `
   @media(max-width:768px) { .tpm-main { padding:16px; } .price-table { font-size:11px; } }
 `;
 
-export default function TransferPriceManager() {
+export function TransferPriceManagerContent() {
   const { user } = useAuth();
   const { getTransferPrices, setTransferPrice, getEntities, loading } = useTransfers();
 
@@ -80,89 +80,97 @@ export default function TransferPriceManager() {
   const isPresidentOrAdmin = ['president', 'ceo', 'admin'].includes(user?.role);
 
   return (
-    <div className="tpm-page" style={{ display: 'flex', minHeight: '100vh' }}>
+    <>
       <style>{pageStyles}</style>
+      <div className="tpm-inner">
+        <div className="tpm-header">
+          <h1>Transfer Price Manager</h1>
+          {savedMsg && <span className="save-msg">{savedMsg}</span>}
+        </div>
+
+        <div className="filter-row">
+          <SelectField value={sourceId} onChange={e => setSourceId(e.target.value)}>
+            <option value="">Source Entity...</option>
+            {entities.map(e => <option key={e._id} value={e._id}>{e.entity_name}</option>)}
+          </SelectField>
+          <SelectField value={targetId} onChange={e => setTargetId(e.target.value)}>
+            <option value="">Target Entity...</option>
+            {entities.filter(e => e._id !== sourceId).map(e => <option key={e._id} value={e._id}>{e.entity_name}</option>)}
+          </SelectField>
+        </div>
+
+        {(!sourceId || !targetId) ? (
+          <div className="empty-state">Select source and target entities to manage transfer prices</div>
+        ) : prices.length === 0 ? (
+          <div className="empty-state">No transfer prices configured for this entity pair</div>
+        ) : (
+          <table className="price-table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Generic Name</th>
+                <th>Selling Price</th>
+                <th>Transfer Price</th>
+                <th>Effective</th>
+                <th>Set By</th>
+                {isPresidentOrAdmin && <th></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {prices.map(p => {
+                const pid = p._id;
+                const isEditing = editingId === pid;
+                return (
+                  <tr key={pid}>
+                    <td style={{ fontWeight: 600 }}>{p.product_id?.brand_name || '—'}</td>
+                    <td>{p.product_id?.generic_name || '—'}</td>
+                    <td>₱{(p.product_id?.selling_price || 0).toLocaleString()}</td>
+                    <td>
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={editPrice}
+                          onChange={e => setEditPrice(e.target.value)}
+                          autoFocus
+                        />
+                      ) : (
+                        <span>₱{(p.transfer_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      )}
+                    </td>
+                    <td>{new Date(p.effective_date).toLocaleDateString()}</td>
+                    <td>{p.set_by?.name || '—'}</td>
+                    {isPresidentOrAdmin && (
+                      <td>
+                        {isEditing ? (
+                          <>
+                            <button className="btn btn-sm btn-success" onClick={() => handleSave(p)} disabled={loading}>Save</button>
+                            <button className="btn btn-sm" style={{ marginLeft: 4, background: '#e2e8f0' }} onClick={() => setEditingId(null)}>×</button>
+                          </>
+                        ) : (
+                          <button className="btn btn-sm btn-primary" onClick={() => { setEditingId(pid); setEditPrice(p.transfer_price); }}>Edit</button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+export default function TransferPriceManager() {
+  return (
+    <div className="tpm-page" style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
       <div className="tpm-main">
         <Navbar />
-        <div className="tpm-inner">
-          <div className="tpm-header">
-            <h1>Transfer Price Manager</h1>
-            {savedMsg && <span className="save-msg">{savedMsg}</span>}
-          </div>
-
-          <div className="filter-row">
-            <SelectField value={sourceId} onChange={e => setSourceId(e.target.value)}>
-              <option value="">Source Entity...</option>
-              {entities.map(e => <option key={e._id} value={e._id}>{e.entity_name}</option>)}
-            </SelectField>
-            <SelectField value={targetId} onChange={e => setTargetId(e.target.value)}>
-              <option value="">Target Entity...</option>
-              {entities.filter(e => e._id !== sourceId).map(e => <option key={e._id} value={e._id}>{e.entity_name}</option>)}
-            </SelectField>
-          </div>
-
-          {(!sourceId || !targetId) ? (
-            <div className="empty-state">Select source and target entities to manage transfer prices</div>
-          ) : prices.length === 0 ? (
-            <div className="empty-state">No transfer prices configured for this entity pair</div>
-          ) : (
-            <table className="price-table">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Generic Name</th>
-                  <th>Selling Price</th>
-                  <th>Transfer Price</th>
-                  <th>Effective</th>
-                  <th>Set By</th>
-                  {isPresidentOrAdmin && <th></th>}
-                </tr>
-              </thead>
-              <tbody>
-                {prices.map(p => {
-                  const pid = p._id;
-                  const isEditing = editingId === pid;
-                  return (
-                    <tr key={pid}>
-                      <td style={{ fontWeight: 600 }}>{p.product_id?.brand_name || '—'}</td>
-                      <td>{p.product_id?.generic_name || '—'}</td>
-                      <td>₱{(p.product_id?.selling_price || 0).toLocaleString()}</td>
-                      <td>
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={editPrice}
-                            onChange={e => setEditPrice(e.target.value)}
-                            autoFocus
-                          />
-                        ) : (
-                          <span>₱{(p.transfer_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                        )}
-                      </td>
-                      <td>{new Date(p.effective_date).toLocaleDateString()}</td>
-                      <td>{p.set_by?.name || '—'}</td>
-                      {isPresidentOrAdmin && (
-                        <td>
-                          {isEditing ? (
-                            <>
-                              <button className="btn btn-sm btn-success" onClick={() => handleSave(p)} disabled={loading}>Save</button>
-                              <button className="btn btn-sm" style={{ marginLeft: 4, background: '#e2e8f0' }} onClick={() => setEditingId(null)}>×</button>
-                            </>
-                          ) : (
-                            <button className="btn btn-sm btn-primary" onClick={() => { setEditingId(pid); setEditPrice(p.transfer_price); }}>Edit</button>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
+        <TransferPriceManagerContent />
       </div>
     </div>
   );

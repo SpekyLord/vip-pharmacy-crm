@@ -60,7 +60,7 @@ router.use('/reports', erpAccessCheck('reports'), require('./erpReportRoutes'));
 
 // ═══ Phase 9 — Integration & Document Flow ═══
 router.use('/documents', erpAccessCheck('reports'), require('./documentRoutes'));
-router.use('/crm-bridge', erpAccessCheck('sales'), require('./crmBridgeRoutes'));
+router.use('/crm-bridge', require('./crmBridgeRoutes'));
 
 // ═══ Phase 10 — ERP Access Control, People & Payroll ═══
 router.use('/erp-access', require('./erpAccessRoutes'));

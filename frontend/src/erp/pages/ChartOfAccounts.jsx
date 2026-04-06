@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
+import useErpApi from '../hooks/useErpApi';
 
 import SelectField from '../../components/common/Select';
 
@@ -40,9 +41,10 @@ const pageStyles = `
 
 const ACCOUNT_TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];
 
-export default function ChartOfAccounts() {
+export function ChartOfAccountsContent() {
   const { user } = useAuth();
   const api = useAccounting();
+  const erpApi = useErpApi();
   const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
 
   const [accounts, setAccounts] = useState([]);
@@ -88,6 +90,17 @@ export default function ChartOfAccounts() {
     e.target.value = '';
   };
 
+  const handleSeedCOA = async () => {
+    if (!confirm('This will create default COA accounts for this entity. Existing accounts will not be overwritten. Continue?')) return;
+    try {
+      const res = await erpApi.post('/coa/seed');
+      alert(res?.message || 'COA seed complete');
+      loadAccounts();
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Seed failed');
+    }
+  };
+
   const handleCreate = async () => {
     try {
       await api.createAccount(form);
@@ -98,94 +111,103 @@ export default function ChartOfAccounts() {
   };
 
   return (
-    <div className="coa-page">
+    <>
       <style>{pageStyles}</style>
+      <div className="coa-header">
+        <h2>Chart of Accounts</h2>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {isAdmin && accounts.length === 0 && <button className="btn btn-success" onClick={handleSeedCOA}>Seed Default COA</button>}
+          <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
+          {isAdmin && <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>}
+          {isAdmin && <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Add Account</button>}
+        </div>
+      </div>
+
+      <div className="coa-controls">
+        <input placeholder="Search code or name…" value={search} onChange={e => setSearch(e.target.value)} />
+        <SelectField value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+          <option value="">All Types</option>
+          {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </SelectField>
+      </div>
+
+      {loading ? <div className="coa-empty">Loading…</div> : accounts.length === 0 ? <div className="coa-empty">No accounts found</div> : (
+        <table className="coa-table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Account Name</th>
+              <th>Type</th>
+              <th>Subtype</th>
+              <th>Normal Bal</th>
+              <th>BIR Flag</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.map(a => (
+              <tr key={a._id}>
+                <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>{a.account_code}</td>
+                <td>{a.account_name}</td>
+                <td><span className={`type-badge type-${a.account_type}`}>{a.account_type}</span></td>
+                <td>{a.account_subtype || '—'}</td>
+                <td>{a.normal_balance}</td>
+                <td>{a.bir_flag}</td>
+                <td>{a.is_active ? '✓ Active' : '✗ Inactive'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {showModal && (
+        <div className="coa-modal" onClick={() => setShowModal(false)}>
+          <div className="coa-modal-body" onClick={e => e.stopPropagation()}>
+            <h3>New Account</h3>
+            <div className="form-group">
+              <label>Account Code</label>
+              <input value={form.account_code} onChange={e => setForm({ ...form, account_code: e.target.value })} placeholder="e.g. 1015" />
+            </div>
+            <div className="form-group">
+              <label>Account Name</label>
+              <input value={form.account_name} onChange={e => setForm({ ...form, account_name: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label>Account Type</label>
+              <SelectField value={form.account_type} onChange={e => setForm({ ...form, account_type: e.target.value })}>
+                {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </SelectField>
+            </div>
+            <div className="form-group">
+              <label>Normal Balance</label>
+              <SelectField value={form.normal_balance} onChange={e => setForm({ ...form, normal_balance: e.target.value })}>
+                <option value="DEBIT">DEBIT</option>
+                <option value="CREDIT">CREDIT</option>
+              </SelectField>
+            </div>
+            <div className="form-group">
+              <label>Subtype</label>
+              <input value={form.account_subtype} onChange={e => setForm({ ...form, account_subtype: e.target.value })} placeholder="e.g. Bank, Receivable" />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn" onClick={() => setShowModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleCreate}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function ChartOfAccounts() {
+  return (
+    <div className="coa-page">
       <Navbar />
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="coa-main admin-main">
-          <div className="coa-header">
-            <h2>Chart of Accounts</h2>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
-              {isAdmin && <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>}
-              {isAdmin && <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Add Account</button>}
-            </div>
-          </div>
-
-          <div className="coa-controls">
-            <input placeholder="Search code or name…" value={search} onChange={e => setSearch(e.target.value)} />
-            <SelectField value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
-              <option value="">All Types</option>
-              {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </SelectField>
-          </div>
-
-          {loading ? <div className="coa-empty">Loading…</div> : accounts.length === 0 ? <div className="coa-empty">No accounts found</div> : (
-            <table className="coa-table">
-              <thead>
-                <tr>
-                  <th>Code</th>
-                  <th>Account Name</th>
-                  <th>Type</th>
-                  <th>Subtype</th>
-                  <th>Normal Bal</th>
-                  <th>BIR Flag</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {accounts.map(a => (
-                  <tr key={a._id}>
-                    <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>{a.account_code}</td>
-                    <td>{a.account_name}</td>
-                    <td><span className={`type-badge type-${a.account_type}`}>{a.account_type}</span></td>
-                    <td>{a.account_subtype || '—'}</td>
-                    <td>{a.normal_balance}</td>
-                    <td>{a.bir_flag}</td>
-                    <td>{a.is_active ? '✓ Active' : '✗ Inactive'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {showModal && (
-            <div className="coa-modal" onClick={() => setShowModal(false)}>
-              <div className="coa-modal-body" onClick={e => e.stopPropagation()}>
-                <h3>New Account</h3>
-                <div className="form-group">
-                  <label>Account Code</label>
-                  <input value={form.account_code} onChange={e => setForm({ ...form, account_code: e.target.value })} placeholder="e.g. 1015" />
-                </div>
-                <div className="form-group">
-                  <label>Account Name</label>
-                  <input value={form.account_name} onChange={e => setForm({ ...form, account_name: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Account Type</label>
-                  <SelectField value={form.account_type} onChange={e => setForm({ ...form, account_type: e.target.value })}>
-                    {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </SelectField>
-                </div>
-                <div className="form-group">
-                  <label>Normal Balance</label>
-                  <SelectField value={form.normal_balance} onChange={e => setForm({ ...form, normal_balance: e.target.value })}>
-                    <option value="DEBIT">DEBIT</option>
-                    <option value="CREDIT">CREDIT</option>
-                  </SelectField>
-                </div>
-                <div className="form-group">
-                  <label>Subtype</label>
-                  <input value={form.account_subtype} onChange={e => setForm({ ...form, account_subtype: e.target.value })} placeholder="e.g. Bank, Receivable" />
-                </div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button className="btn" onClick={() => setShowModal(false)}>Cancel</button>
-                  <button className="btn btn-primary" onClick={handleCreate}>Create</button>
-                </div>
-              </div>
-            </div>
-          )}
+          <ChartOfAccountsContent />
         </main>
       </div>
     </div>

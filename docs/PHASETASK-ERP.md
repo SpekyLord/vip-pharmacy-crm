@@ -3423,9 +3423,9 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] usePurchasing.js: Fixed `searchProducts` endpoint from `/products/search` (404) to `/products?q=`
 - [x] SalesEntry.jsx: Removed premature `console.log` referencing `customerList` before useState declaration
 
-### 22.6 — Mobile UX Fixes (B1/B2) ⬜ DEFERRED
-- [ ] B1: CarLogbook.jsx — mobile card layout (currently POOR: no media queries, 10-col table)
-- [ ] B2: PrfCalf.jsx — mobile card layout (currently POOR: no media queries, 7-col table, 20px action buttons)
+### 22.6 — Mobile UX Fixes (B1/B2) ✅
+- [x] B1: CarLogbook.jsx — mobile card layout with @media 768px/480px, table hidden on mobile, card view with date/odometer/km/fuel/status/actions, 36px+ touch targets, form fields stack vertically
+- [x] B2: PrfCalf.jsx — mobile card layout with @media 768px/480px, table hidden on mobile, card view with doc type/date/amount/payee/status/actions, 36px+ action buttons, form responsive
 - [x] ERP routes index.js: mounted period-locks and recurring-journals routes
 
 ---
@@ -3475,3 +3475,50 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] `GrnEntry.jsx`: Approve/Reject buttons now visible for `'president'` (was admin/finance only)
 - [x] `GovernmentRates.jsx`: Delete button now visible for `'president'` (was admin only)
 - [x] Verified: All other ERP pages, sidebar, route protections, useErpSubAccess, EntityContext — all correctly include president
+
+---
+
+## PHASE 24 — ERP Control Center ✅ (April 6, 2026)
+**Goal:** Build one unified Control Center page for president/admin/finance to manage system structure, lookups, master data, and governance settings from a single place. Embodies the top-down governance philosophy: Entity → People → Permissions → Master Data → Lookups → Governance.
+
+### 24.1 — Backend: Generic Lookup Model & Routes ✅
+- [x] Created `backend/erp/models/Lookup.js` — entity-scoped generic lookup model (category + code + label + sort_order)
+- [x] Created `backend/erp/controllers/lookupGenericController.js` — CRUD + seed defaults for 16 categories (expense categories, person types, card types, fuel types, etc.)
+- [x] Created `backend/erp/routes/lookupGenericRoutes.js` — mounted at `/api/erp/lookup-values`
+- [x] Seed defaults cover 16 categories that were previously hardcoded in frontend
+
+### 24.2 — Backend: Entity CRUD ✅
+- [x] Created `backend/erp/controllers/entityController.js` — getAll, getById, create (president only), update (president/admin)
+- [x] Created `backend/erp/routes/entityRoutes.js` — mounted at `/api/erp/entities`
+- [x] First-ever CRUD API for entities (previously seed-only)
+
+### 24.3 — Backend: Control Center Health Endpoint ✅
+- [x] Created `backend/erp/controllers/controlCenterController.js` — aggregates counts from Entity, PeopleMaster, AccessTemplate, ChartOfAccounts, BankAccount, CreditCard, GovernmentRates, Warehouse, PeriodLock, Lookup, Settings
+- [x] Created `backend/erp/routes/controlCenterRoutes.js` — `GET /api/erp/control-center/health` (admin/finance/president)
+
+### 24.4 — Backend: Route Mounting ✅
+- [x] Mounted all Phase 24 routes in `backend/erp/routes/index.js`: `/entities`, `/control-center`, `/lookup-values`
+
+### 24.5 — Frontend: Extract *Content from 14 Existing Pages ✅
+- [x] Extracted named `*Content` export from each page (mechanical refactoring, no logic changes)
+- [x] All standalone routes continue to work identically (default export wraps Content with Navbar/Sidebar)
+- [x] Pages refactored: TransferPriceManager, DataArchive, FixedAssets, PeriodLocks, CostCenters, PaymentModes, ChartOfAccounts, PeopleList, BankAccounts, RecurringJournals, AccessTemplateManager, CreditCardManager, GovernmentRates, WarehouseManager
+
+### 24.6 — Frontend: New Components ✅
+- [x] Created `FoundationHealth.jsx` — landing dashboard showing governance layer completeness (entities, people, COA, banking, tax, warehouses, period locks, lookups, settings)
+- [x] Created `EntityManager.jsx` — first-ever entity management UI (view, edit, create subsidiaries)
+- [x] Created `ErpSettingsPanel.jsx` — form UI for ~30+ Settings model fields (per diem, fuel, tax, profit sharing, commissions, COA mapping)
+- [x] Created `LookupManager.jsx` — centralized lookup table manager (categories, seed defaults, CRUD)
+- [x] Created `useLookups.js` hook — fetches and caches lookup values by category (replaces hardcoded arrays)
+
+### 24.7 — Frontend: Control Center Container ✅
+- [x] Created `ControlCenter.jsx` — container page with left category sidebar (8 groups, 18 sub-items) + lazy-loaded content panels
+- [x] URL sync via `useSearchParams` → `?section=xxx` for deep-linking
+- [x] Categories organized by governance hierarchy: Foundation Health → Entity → People & Access → Financial Setup → Tax → Operations → Governance → System Settings
+- [x] Mobile responsive: nav collapses to dropdown selector below 768px
+
+### 24.8 — Frontend: Wiring ✅
+- [x] Registered `/erp/control-center` route in `App.jsx` with `ProtectedRoute` (admin/finance/president)
+- [x] Added "Control Center" sidebar item in `Sidebar.jsx` right after "ERP Home" (admin/finance/president only)
+- [x] All 18 lazy imports verified correct (named exports match actual exports in each file)
+- [x] All existing standalone routes remain intact

@@ -39,7 +39,7 @@ const pageStyles = `
 
 const EMPTY_FORM = { mode_code: '', mode_label: '', mode_type: 'CASH', coa_code: '', requires_calf: false, is_active: true };
 
-export default function PaymentModes() {
+export function PaymentModesContent() {
   const api = useErpApi();
   const { listAccounts } = useAccounting();
   const [modes, setModes] = useState([]);
@@ -92,97 +92,105 @@ export default function PaymentModes() {
   const coaName = (code) => coaAccounts.find(a => a.account_code === code)?.account_name || '';
 
   return (
-    <div className="pmode-page">
+    <>
       <style>{pageStyles}</style>
+      <div className="pmode-header">
+        <h2>Payment Modes</h2>
+        <button className="btn btn-primary" onClick={openCreate}>+ Add Payment Mode</button>
+      </div>
+
+      {loading ? <div className="pmode-empty">Loading...</div> : modes.length === 0 ? <div className="pmode-empty">No payment modes configured</div> : (
+        <table className="pmode-table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Label</th>
+              <th>Type</th>
+              <th>COA Account</th>
+              <th>CALF Required</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {modes.map(m => (
+              <tr key={m._id}>
+                <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>{m.mode_code}</td>
+                <td>{m.mode_label}</td>
+                <td>{m.mode_type}</td>
+                <td>{m.coa_code ? <span><strong>{m.coa_code}</strong> — {coaName(m.coa_code)}</span> : '—'}</td>
+                <td>{m.requires_calf ? <span className="badge badge-calf">Yes</span> : 'No'}</td>
+                <td><span className={`badge ${m.is_active !== false ? 'badge-active' : 'badge-inactive'}`}>{m.is_active !== false ? 'Active' : 'Inactive'}</span></td>
+                <td>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button className="btn btn-sm btn-outline" onClick={() => openEdit(m)}>Edit</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDelete(m._id, m.mode_label)}>Delete</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {showModal && (
+        <div className="pmode-modal" onClick={() => setShowModal(false)}>
+          <div className="pmode-modal-body" onClick={e => e.stopPropagation()}>
+            <h3>{editing ? 'Edit Payment Mode' : 'New Payment Mode'}</h3>
+            <div className="form-group">
+              <label>Mode Code (unique key)</label>
+              <input value={form.mode_code} onChange={e => setForm(f => ({ ...f, mode_code: e.target.value.toUpperCase() }))} placeholder="e.g. CC_BPI" disabled={!!editing} />
+            </div>
+            <div className="form-group">
+              <label>Display Label</label>
+              <input value={form.mode_label} onChange={e => setForm(f => ({ ...f, mode_label: e.target.value }))} placeholder="e.g. Credit Card (BPI)" />
+            </div>
+            <div className="form-group">
+              <label>Mode Type</label>
+              <select value={form.mode_type} onChange={e => setForm(f => ({ ...f, mode_type: e.target.value }))}>
+                {MODE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>COA Account (payment account)</label>
+              <select value={form.coa_code} onChange={e => setForm(f => ({ ...f, coa_code: e.target.value }))}>
+                <option value="">— Select COA account —</option>
+                {coaAccounts.map(a => (
+                  <option key={a.account_code} value={a.account_code}>{a.account_code} — {a.account_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={form.requires_calf} onChange={e => setForm(f => ({ ...f, requires_calf: e.target.checked }))} style={{ width: 'auto' }} />
+                Requires CALF (Cash Advance Liquidation)
+              </label>
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} style={{ width: 'auto' }} />
+                Active
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSave}>{editing ? 'Update' : 'Create'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function PaymentModes() {
+  return (
+    <div className="pmode-page">
       <Navbar />
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="pmode-main">
-          <div className="pmode-header">
-            <h2>Payment Modes</h2>
-            <button className="btn btn-primary" onClick={openCreate}>+ Add Payment Mode</button>
-          </div>
-
-          {loading ? <div className="pmode-empty">Loading...</div> : modes.length === 0 ? <div className="pmode-empty">No payment modes configured</div> : (
-            <table className="pmode-table">
-              <thead>
-                <tr>
-                  <th>Code</th>
-                  <th>Label</th>
-                  <th>Type</th>
-                  <th>COA Account</th>
-                  <th>CALF Required</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {modes.map(m => (
-                  <tr key={m._id}>
-                    <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>{m.mode_code}</td>
-                    <td>{m.mode_label}</td>
-                    <td>{m.mode_type}</td>
-                    <td>{m.coa_code ? <span><strong>{m.coa_code}</strong> — {coaName(m.coa_code)}</span> : '—'}</td>
-                    <td>{m.requires_calf ? <span className="badge badge-calf">Yes</span> : 'No'}</td>
-                    <td><span className={`badge ${m.is_active !== false ? 'badge-active' : 'badge-inactive'}`}>{m.is_active !== false ? 'Active' : 'Inactive'}</span></td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button className="btn btn-sm btn-outline" onClick={() => openEdit(m)}>Edit</button>
-                        <button className="btn btn-sm btn-danger" onClick={() => handleDelete(m._id, m.mode_label)}>Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {showModal && (
-            <div className="pmode-modal" onClick={() => setShowModal(false)}>
-              <div className="pmode-modal-body" onClick={e => e.stopPropagation()}>
-                <h3>{editing ? 'Edit Payment Mode' : 'New Payment Mode'}</h3>
-                <div className="form-group">
-                  <label>Mode Code (unique key)</label>
-                  <input value={form.mode_code} onChange={e => setForm(f => ({ ...f, mode_code: e.target.value.toUpperCase() }))} placeholder="e.g. CC_BPI" disabled={!!editing} />
-                </div>
-                <div className="form-group">
-                  <label>Display Label</label>
-                  <input value={form.mode_label} onChange={e => setForm(f => ({ ...f, mode_label: e.target.value }))} placeholder="e.g. Credit Card (BPI)" />
-                </div>
-                <div className="form-group">
-                  <label>Mode Type</label>
-                  <select value={form.mode_type} onChange={e => setForm(f => ({ ...f, mode_type: e.target.value }))}>
-                    {MODE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>COA Account (payment account)</label>
-                  <select value={form.coa_code} onChange={e => setForm(f => ({ ...f, coa_code: e.target.value }))}>
-                    <option value="">— Select COA account —</option>
-                    {coaAccounts.map(a => (
-                      <option key={a.account_code} value={a.account_code}>{a.account_code} — {a.account_name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <input type="checkbox" checked={form.requires_calf} onChange={e => setForm(f => ({ ...f, requires_calf: e.target.checked }))} style={{ width: 'auto' }} />
-                    Requires CALF (Cash Advance Liquidation)
-                  </label>
-                </div>
-                <div className="form-group">
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} style={{ width: 'auto' }} />
-                    Active
-                  </label>
-                </div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
-                  <button className="btn btn-primary" onClick={handleSave}>{editing ? 'Update' : 'Create'}</button>
-                </div>
-              </div>
-            </div>
-          )}
+          <PaymentModesContent />
         </main>
       </div>
     </div>
