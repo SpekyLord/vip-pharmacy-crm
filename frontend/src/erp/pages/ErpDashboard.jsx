@@ -92,7 +92,7 @@ const pageStyles = `
     .boss-scroll { padding-bottom: 24px; }
   }
   @media (max-width: 768px) {
-    .boss-scroll { padding: 12px 12px 110px; }
+    .boss-scroll { padding: 104px 12px 110px; }
     .summary-card .value { font-size: 16px; }
   }
 `;

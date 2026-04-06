@@ -284,6 +284,7 @@ body.dark-mode .vip-select__option--is-focused {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  --mobile-navbar-offset: 112px;
 }
 
 .admin-layout {
@@ -297,6 +298,12 @@ body.dark-mode .vip-select__option--is-focused {
   .admin-page { height: auto; min-height: 100vh; overflow-y: auto; }
   .admin-layout { overflow: visible; }
   .admin-content { overflow: visible; }
+}
+
+@media (max-width: 768px) {
+  .admin-main {
+    padding-top: var(--mobile-navbar-offset);
+  }
 }
 
 .admin-content {
