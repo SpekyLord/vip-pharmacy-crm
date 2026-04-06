@@ -9,6 +9,7 @@ import useEntities from '../hooks/useEntities';
 import EntityBadge from '../components/EntityBadge';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 function toTitleCase(str) {
   if (!str) return str;
@@ -212,6 +213,7 @@ export default function SalesList() {
       <div className="admin-layout">
         <Sidebar />
         <main className="saleslist-main">
+          <WorkflowGuide pageKey="sales-list" />
           <div className="saleslist-inner">
           <div className="saleslist-header">
             <h1>Sales</h1>

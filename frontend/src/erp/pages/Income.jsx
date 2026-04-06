@@ -12,6 +12,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useIncome from '../hooks/useIncome';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .income-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -160,6 +161,7 @@ export default function Income() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="income-main">
+          <WorkflowGuide pageKey="income" />
           <div className="income-header">
             <h1>Income Reports</h1>
             <div className="controls">

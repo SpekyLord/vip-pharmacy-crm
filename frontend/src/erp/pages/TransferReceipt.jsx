@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useTransfers from '../hooks/useTransfers';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .receipt-page { background: var(--erp-bg, #f4f7fb); }
@@ -63,6 +64,7 @@ export default function TransferReceipt() {
       <div className="receipt-main">
         <Navbar />
         <div className="receipt-inner">
+          <WorkflowGuide pageKey="transfers-receive" />
           <div className="receipt-header">
             <h1>Incoming Transfers</h1>
           </div>

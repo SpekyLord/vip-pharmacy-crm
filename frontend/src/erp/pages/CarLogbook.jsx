@@ -6,6 +6,7 @@ import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
 function ScanModal({ open, onClose, onApply, docType, title }) {
@@ -262,6 +263,7 @@ export default function CarLogbook() {
       <div className="admin-layout">
         <Sidebar />
         <main className="admin-main" style={{ padding: 24 }}>
+          <WorkflowGuide pageKey="car-logbook" />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
             <h1 style={{ margin: 0, color: 'var(--erp-text, #132238)' }}>Car Logbook</h1>
             <Link to="/erp/expenses" style={{ color: 'var(--erp-accent, #1e5eff)', fontSize: 14 }}>&larr; Back to Expenses</Link>

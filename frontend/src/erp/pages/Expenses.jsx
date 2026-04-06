@@ -13,6 +13,7 @@ import { processDocument, extractExifDateTime } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
 function ScanORModal({ open, onClose, onApply }) {
@@ -652,6 +653,7 @@ export default function Expenses() {
       <div className="admin-layout">
         <Sidebar />
         <main className="admin-main">
+          <WorkflowGuide pageKey="expenses" />
           <div className="erp-expenses-header">
             <h1 style={{ marginBottom: 0, color: 'var(--erp-text, #132238)' }}>Expenses</h1>
           </div>

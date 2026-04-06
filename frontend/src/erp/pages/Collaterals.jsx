@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import SelectField from '../../components/common/Select';
 import useCollaterals from '../hooks/useCollaterals';
 import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = {
   container: { padding: 0, maxWidth: '1200px', margin: '0 auto' },
@@ -307,6 +308,7 @@ export default function Collaterals() {
         <Sidebar />
         <main className="collaterals-main">
           <div style={styles.container}>
+            <WorkflowGuide pageKey="collaterals" />
             <div style={styles.header} className="collaterals-header">
               <h1 style={styles.title}>Collaterals</h1>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

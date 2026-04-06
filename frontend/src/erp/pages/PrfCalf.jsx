@@ -9,6 +9,7 @@ import useErpApi from '../hooks/useErpApi';
 import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -295,6 +296,7 @@ export default function PrfCalf() {
       <div className="admin-layout">
         <Sidebar />
         <main className="admin-main" style={{ padding: 24 }}>
+          <WorkflowGuide pageKey="prf-calf" />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
             <h1 style={{ margin: 0, color: 'var(--erp-text, #132238)' }}>PRF / CALF</h1>
             <Link to="/erp/expenses" style={{ color: 'var(--erp-accent, #1e5eff)', fontSize: 14 }}>&larr; Back to Expenses</Link>

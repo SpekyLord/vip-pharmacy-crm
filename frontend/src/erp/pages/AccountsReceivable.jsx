@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useCollections from '../hooks/useCollections';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const BUCKET_COLORS = {
   CURRENT: '#16a34a', OVERDUE_30: '#ca8a04', OVERDUE_60: '#d97706', OVERDUE_90: '#ea580c', OVERDUE_120: '#dc2626'
@@ -79,6 +80,7 @@ export default function AccountsReceivable() {
       <div className="admin-layout">
         <Sidebar />
         <main className="ar-main">
+          <WorkflowGuide pageKey="ar-aging" />
           <div className="ar-header">
             <h1>Accounts Receivable</h1>
           </div>

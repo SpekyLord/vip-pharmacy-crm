@@ -9,6 +9,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useIncome from '../hooks/useIncome';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .pnl-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -142,6 +143,7 @@ export default function Pnl() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="pnl-main">
+          <WorkflowGuide pageKey="pnl" />
           <div className="pnl-header">
             <h1>Territory P&L</h1>
             <div className="controls">

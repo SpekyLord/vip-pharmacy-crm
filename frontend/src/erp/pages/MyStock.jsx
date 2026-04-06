@@ -8,6 +8,7 @@ import EntityBadge from '../components/EntityBadge';
 import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const TABS = ['Stock on Hand', 'Transaction Ledger', 'Variance Report', 'Alerts'];
 
@@ -375,6 +376,7 @@ export default function MyStock() {
       <div className="admin-layout">
         <Sidebar />
         <main className="mystock-main">
+          <WorkflowGuide pageKey="my-stock" />
           <div className="mystock-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
             <div>
               <h1>My Stock {userEntity && <EntityBadge entity={userEntity} size="sm" />}</h1>

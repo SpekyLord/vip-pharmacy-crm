@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useCollections from '../hooks/useCollections';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
@@ -122,6 +123,7 @@ export default function Collections() {
       <div className="admin-layout">
         <Sidebar />
         <main className="coll-main">
+          <WorkflowGuide pageKey="collections" />
           <div className="coll-list-header">
             <h1>Collections</h1>
             <div className="coll-actions">

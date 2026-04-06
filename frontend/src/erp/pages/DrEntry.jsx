@@ -10,6 +10,7 @@ import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const TYPE_COLORS = {
   DR_CONSIGNMENT: { bg: '#dbeafe', text: '#1e40af' },
@@ -377,6 +378,7 @@ export default function DrEntry() {
       <div className="admin-layout">
         <Sidebar />
         <main className="dr-main">
+          <WorkflowGuide pageKey="dr-entry" />
           <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
           <div className="dr-header">
             <h1>Delivery Receipts</h1>

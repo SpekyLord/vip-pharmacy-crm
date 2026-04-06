@@ -15,6 +15,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useIncome from '../hooks/useIncome';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .ps-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -130,6 +131,7 @@ export default function ProfitSharing() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="ps-main">
+          <WorkflowGuide pageKey="profit-sharing" />
           <div className="ps-header">
             <h1>Profit Sharing</h1>
             <div className="controls">

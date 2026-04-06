@@ -12,6 +12,7 @@ import { processDocument, extractExifDateTime } from '../services/ocrService';
 import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },
@@ -721,6 +722,7 @@ export default function SalesEntry() {
       <div className="admin-layout">
         <Sidebar />
         <main className="sales-main">
+          <WorkflowGuide pageKey="sales-entry" />
           <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 8 }}>
             <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
           </div>

@@ -9,6 +9,7 @@ import useInventory from '../hooks/useInventory';
 import useWarehouses from '../hooks/useWarehouses';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
@@ -390,6 +391,7 @@ export default function TransferOrders() {
         <Sidebar />
         <div className="transfers-main">
           <div className="transfers-inner">
+          <WorkflowGuide pageKey="transfers" />
           <div className="transfers-header">
             <h1>Stock Transfers</h1>
             <div style={{ display: 'flex', gap: 8 }}>

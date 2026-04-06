@@ -15,6 +15,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useEntities from '../hooks/useEntities';
 import useDashboard from '../hooks/useDashboard';
 import EntityBadge from '../components/EntityBadge';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   :root {
@@ -164,6 +165,7 @@ export default function ErpDashboard() {
       <div className="admin-layout">
         <Sidebar />
         <main className="boss-main">
+          <WorkflowGuide pageKey="erp-dashboard" />
           <div className="boss-scroll">
 
             {/* Header */}

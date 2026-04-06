@@ -12,6 +12,7 @@ import doctorService from '../../services/doctorService';
 import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .coll-session { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -293,6 +294,7 @@ export default function CollectionSession() {
       <div className="admin-layout">
         <Sidebar />
         <main className="coll-main">
+          <WorkflowGuide pageKey="collection-session" />
           <div className="coll-header">
             <h1>New Collection Receipt</h1>
             <button className="btn btn-outline" onClick={() => navigate('/erp/collections')}>Back to List</button>
