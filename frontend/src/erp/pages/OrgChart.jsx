@@ -107,9 +107,9 @@ function OrgNode({ node, search, navigate, collapsed, toggleCollapse }) {
   );
 }
 
-function OrgChartContent() {
+export function OrgChartContent() {
   const navigate = useNavigate();
-  const api = useErpApi();
+  const { get: erpGet } = useErpApi();
   const [tree, setTree] = useState([]);
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -119,7 +119,7 @@ function OrgChartContent() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/people/org-chart');
+      const res = await erpGet('/people/org-chart');
       const data = res.data?.data || res.data;
       setTree((data.tree || []).map(n => ({ ...n, _isRoot: true })));
       setCount(data.count || 0);
@@ -128,7 +128,7 @@ function OrgChartContent() {
     } finally {
       setLoading(false);
     }
-  }, [api]);
+  }, [erpGet]);
 
   useEffect(() => { load(); }, [load]);
 

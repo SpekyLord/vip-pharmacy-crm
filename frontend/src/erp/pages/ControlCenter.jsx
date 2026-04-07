@@ -24,6 +24,7 @@ const SECTIONS = {
   'foundation-health': lazy(() => import('./FoundationHealth')),
   'entities': lazy(() => import('./EntityManager')),
   'people': lazy(() => import('./PeopleList').then(m => ({ default: m.PeopleListContent }))),
+  'org-chart': lazy(() => import('./OrgChart').then(m => ({ default: m.OrgChartContent }))),
   'access-templates': lazy(() => import('./AccessTemplateManager').then(m => ({ default: m.AccessTemplateManagerContent }))),
   'coa': lazy(() => import('./ChartOfAccounts').then(m => ({ default: m.ChartOfAccountsContent }))),
   'cost-centers': lazy(() => import('./CostCenters').then(m => ({ default: m.CostCentersContent }))),
@@ -72,6 +73,7 @@ const CATEGORY_CONFIG = [
     icon: Users,
     items: [
       { key: 'people', label: 'People Master', icon: Users },
+      { key: 'org-chart', label: 'Org Chart', icon: Users },
       { key: 'access-templates', label: 'Access Templates', icon: ShieldCheck }
     ]
   },
