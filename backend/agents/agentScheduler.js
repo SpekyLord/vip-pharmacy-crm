@@ -108,6 +108,17 @@ function initAgentScheduler() {
   }, { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #D Photo Audit — daily 8:30 AM');
 
+  // #S System Integrity — weekly Monday 5:00 AM
+  cron.schedule('0 5 * * 1', async () => {
+    try {
+      const { run } = require('./systemIntegrityAgent');
+      await run();
+    } catch (err) {
+      console.error('[AgentScheduler] System Integrity failed:', err.message);
+    }
+  }, { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #S System Integrity — weekly Monday 5:00 AM');
+
   // ═══════════════════════════════════════════
   // PAID AGENTS (activated when ANTHROPIC_API_KEY is set)
   // ═══════════════════════════════════════════

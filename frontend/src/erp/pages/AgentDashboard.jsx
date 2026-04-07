@@ -84,6 +84,7 @@ const AGENT_CONFIG = {
   document_expiry:    { label: 'Document Expiry',       icon: Clock,       color: '#64748b', schedule: 'Daily 7:30 AM',     type: 'Free' },
   visit_compliance:   { label: 'Visit Compliance',      icon: MapPin,      color: '#14b8a6', schedule: 'Wed + Fri',         type: 'Free' },
   photo_audit:        { label: 'Photo Audit',           icon: Camera,      color: '#a855f7', schedule: 'Daily 8:30 AM',     type: 'Free' },
+  system_integrity:   { label: 'System Integrity',     icon: ShieldAlert, color: '#0f766e', schedule: 'Mon 5:00 AM',       type: 'Free' },
 };
 
 const CAT_LABELS = { ai_coaching: 'Coaching', ai_schedule: 'Schedule', ai_alert: 'Alert' };

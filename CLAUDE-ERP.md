@@ -318,6 +318,13 @@ When creating or modifying any ERP page, you MUST also update the corresponding 
 3. **Modified page workflow** → update the steps/tips/next-links in the guide to match the new behavior
 4. **Removed page** → remove the guide entry to avoid dead references
 
-### Lint Check
+### Lint Checks
 
-Run `node scripts/check-workflow-guides.js` to verify all pages have either WorkflowGuide or DEPENDENCY_GUIDE coverage. Exit code 1 = gaps found. This should be run after adding or modifying ERP pages.
+- `node scripts/check-workflow-guides.js` — verifies all pages have WorkflowGuide or DEPENDENCY_GUIDE coverage
+- `node scripts/check-system-health.js` — comprehensive code health check:
+  - `$lookup` collection names match actual model definitions (catches typos like `erp_product_masters`)
+  - WorkflowGuide pageKeys: defined but unused, or used but undefined
+  - ControlCenter SECTIONS → file exports exist
+  - Agent enum consistency across AgentRun, AgentConfig, scheduler, dashboard, settings
+
+Run both after modifying ERP pages, agents, or models. Exit code 1 = issues found.

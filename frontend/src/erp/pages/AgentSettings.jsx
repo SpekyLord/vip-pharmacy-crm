@@ -19,6 +19,7 @@ const AGENT_META = {
   document_expiry:    { label: 'Document Expiry',       schedule: 'Daily 7:30 AM',   type: 'Free' },
   visit_compliance:   { label: 'Visit Compliance',      schedule: 'Wed + Fri',       type: 'Free' },
   photo_audit:        { label: 'Photo Audit',           schedule: 'Daily 8:30 AM',   type: 'Free' },
+  system_integrity:   { label: 'System Integrity',     schedule: 'Mon 5:00 AM',     type: 'Free' },
 };
 
 const NOTIFY_OPTIONS = ['president', 'admin', 'finance'];

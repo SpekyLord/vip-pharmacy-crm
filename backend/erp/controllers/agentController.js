@@ -15,6 +15,7 @@ const AGENT_MODULES = {
   visit_planner:     '../../agents/visitPlannerAgent',
   engagement_decay:  '../../agents/engagementDecayAgent',
   org_intelligence:  '../../agents/orgIntelligenceAgent',
+  system_integrity:  '../../agents/systemIntegrityAgent',
 };
 
 const AI_AGENTS = new Set(['smart_collection', 'bir_filing', 'performance_coach', 'visit_planner', 'engagement_decay', 'org_intelligence']);
