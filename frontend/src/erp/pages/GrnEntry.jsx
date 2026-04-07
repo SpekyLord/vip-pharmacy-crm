@@ -40,11 +40,18 @@ const pageStyles = `
   .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 13px; background: var(--erp-panel); color: var(--erp-text); }
   .form-group textarea { resize: vertical; min-height: 60px; }
 
-  .line-items-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }
+  .line-items-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; table-layout: fixed; }
+  .line-items-table col.col-product { width: 42%; }
+  .line-items-table col.col-batch  { width: 22%; }
+  .line-items-table col.col-expiry { width: 18%; }
+  .line-items-table col.col-qty    { width: 10%; }
+  .line-items-table col.col-remove { width: 8%; }
   .line-items-table th { background: var(--erp-bg); padding: 8px 10px; text-align: left; font-weight: 600; color: var(--erp-muted); font-size: 11px; text-transform: uppercase; }
-  .line-items-table td { padding: 6px 8px; border-top: 1px solid var(--erp-border); }
+  .line-items-table td { padding: 6px 8px; border-top: 1px solid var(--erp-border); vertical-align: middle; }
   .line-items-table input, .line-items-table select { width: 100%; padding: 6px 8px; border: 1px solid var(--erp-border); border-radius: 6px; font-size: 13px; }
   .add-line-btn { background: none; border: 2px dashed var(--erp-border); width: 100%; padding: 8px; text-align: center; color: var(--erp-accent); font-weight: 600; cursor: pointer; border-radius: 8px; }
+  .btn-remove-line { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: 6px; transition: background 0.15s; }
+  .btn-remove-line:hover { background: #fee2e2; }
 
   .grn-list { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; overflow: hidden; }
   .grn-list h2 { font-size: 16px; margin: 0; padding: 16px 20px 12px; color: var(--erp-text); }
@@ -103,7 +110,7 @@ const pageStyles = `
     .line-items-table tr { padding: 10px 12px; border: 1px solid var(--erp-border); border-radius: 10px; background: var(--erp-panel); margin-bottom: 10px; }
     .line-items-table td { padding: 6px 0; border: none; }
     .line-items-table td:last-child { padding-top: 4px; }
-    .line-items-table td:last-child .btn { width: 100%; }
+    .line-items-table td:last-child .btn-remove-line { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #fecaca; background: #fff5f5; border-radius: 8px; }
     .line-items-table input,
     .line-items-table .vip-select__control {
       border: 1px solid #cbd5f5;
@@ -358,8 +365,12 @@ export default function GrnEntry() {
             </div>
 
             <table className="line-items-table">
+              <colgroup>
+                <col className="col-product" /><col className="col-batch" />
+                <col className="col-expiry" /><col className="col-qty" /><col className="col-remove" />
+              </colgroup>
               <thead>
-                <tr><th>Product</th><th>Batch/Lot #</th><th>Expiry</th><th>Qty</th><th style={{ width: 40 }}></th></tr>
+                <tr><th>Product</th><th>Batch/Lot #</th><th>Expiry</th><th>Qty</th><th></th></tr>
               </thead>
               <tbody>
                 {lineItems.map((li, idx) => (
@@ -373,7 +384,7 @@ export default function GrnEntry() {
                     <td><input value={li.batch_lot_no} onChange={e => updateLine(idx, 'batch_lot_no', e.target.value)} placeholder="Batch #" /></td>
                     <td><input type="date" value={li.expiry_date} onChange={e => updateLine(idx, 'expiry_date', e.target.value)} /></td>
                     <td><input type="number" min="1" value={li.qty} onChange={e => updateLine(idx, 'qty', e.target.value)} placeholder="Qty" /></td>
-                    <td><button className="btn btn-danger btn-sm" onClick={() => removeLine(idx)}>Remove line</button></td>
+                    <td style={{ textAlign: 'center' }}><button className="btn-remove-line" onClick={() => removeLine(idx)} title="Remove line">×</button></td>
                   </tr>
                 ))}
               </tbody>
