@@ -15,6 +15,8 @@ import Sidebar from '../../components/common/Sidebar';
 import MessageBox from '../../components/employee/MessageBox';
 import messageService from '../../services/messageInboxService';
 
+import SelectField from '../../components/common/Select';
+
 const EmployeeInbox = () => {
   const navigate = useNavigate();
 
@@ -23,44 +25,59 @@ const EmployeeInbox = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-  (async () => {
-    try {
-      setLoading(true);
+    let isMounted = true;
 
-   
+    const getCurrentUserId = () => {
+      try {
+        return localStorage.getItem('userId');
+      } catch {
+        return null;
+      }
+    };
 
-    const json = await messageService.getAll(); // uses same api instance as visits
-    const data = json?.data ?? [];
+    const currentUserId = getCurrentUserId();
 
-    const currentUserId = localStorage.getItem("userId"); // or your auth source
+    const normalizeMessage = (m) => {
+      const readFromReadBy = Array.isArray(m.readBy) && currentUserId
+        ? m.readBy.some((entry) => {
+          const readById =
+            typeof entry === 'object'
+              ? (entry.userId ?? entry._id ?? entry.id)
+              : entry;
+          return readById && String(readById) === String(currentUserId);
+        })
+        : false;
 
-    const normalizeMessage = (m) => ({
-    ...m,
+      return {
+        ...m,
+        // ✅ what MessageBox renders
+        message: m.message ?? m.body ?? '',
+        from: m.from ?? m.senderName ?? 'Admin',
+        // Prefer backend-provided read boolean, fallback to readBy matching
+        read: typeof m.read === 'boolean' ? m.read : readFromReadBy,
+      };
+    };
 
-    // ✅ what MessageBox renders
-    message: m.message ?? m.body ?? "",
-    from: m.from ?? m.senderName ?? "Admin",
+    (async () => {
+      try {
+        if (isMounted) setLoading(true);
+        const json = await messageService.getAll(); // uses same api instance as visits
+        const data = json?.data ?? [];
 
-    // ✅ schema readBy = [{ userId, readAt }]
-    read: typeof m.read === "boolean"
-    ? m.read
-    : (Array.isArray(m.readBy) && currentUserId
-        ? m.readBy.some(id => String(id) === String(currentUserId))
-        : false),
+        if (!isMounted) return;
+        setMessages(Array.isArray(data) ? data.map(normalizeMessage) : []);
+      } catch (err) {
+        console.error('Failed to load inbox:', err);
+        if (isMounted) setMessages([]);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    })();
 
-    });
-
-    setMessages(Array.isArray(data) ? data.map(normalizeMessage) : []);
-
-
-    } catch (err) {
-      console.error('Failed to load inbox:', err);
-      setMessages([]);
-    } finally {
-      setLoading(false);
-    }
-  })();
-}, []);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Filters
   const [typeFilter, setTypeFilter] = useState('all');
@@ -304,7 +321,7 @@ const toggleMessage = async (msgOrId) => {
             <div className="filters-row">
               <div className="filter-group">
                 <label htmlFor="type-filter">Type</label>
-                <select
+                <SelectField
                   id="type-filter"
                   value={typeFilter}
                   onChange={(e) => {
@@ -318,12 +335,12 @@ const toggleMessage = async (msgOrId) => {
                   <option value="leave">Leave</option>
                   <option value="policy">Policy</option>
                   <option value="system">System</option>
-                </select>
+                </SelectField>
               </div>
 
               <div className="filter-group">
                 <label htmlFor="read-filter">Status</label>
-                <select
+                <SelectField
                   id="read-filter"
                   value={readFilter}
                   onChange={(e) => {
@@ -334,7 +351,7 @@ const toggleMessage = async (msgOrId) => {
                   <option value="all">All</option>
                   <option value="unread">Unread</option>
                   <option value="read">Read</option>
-                </select>
+                </SelectField>
               </div>
 
               <div className="filter-group grow">
@@ -419,7 +436,6 @@ const toggleMessage = async (msgOrId) => {
 
         </main>
       </div>
-
       <style>{`
         /* --- Header --- */
         .page-header {

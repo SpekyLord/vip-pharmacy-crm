@@ -644,6 +644,10 @@ const dashboardStyles = `
       padding: 24px;
     }
 
+    .db-main {
+      padding-top: 104px;
+    }
+
     .db-greeting-text h2 { font-size: 22px; }
 
     .db-greeting-actions {
@@ -742,7 +746,7 @@ const Dashboard = ({ user, stats = {} }) => {
         <div className="db-greeting">
           <div className="db-greeting-text">
             <h2>{greeting}, {firstName} 👋</h2>
-            <p>Here's what's happening with your pharmacy today.</p>
+            <p>Please visit your VIPs today!</p>
             <a className="db-greeting-action" href="/admin/activity">
               View Activity <ChevronRight size={13} />
             </a>

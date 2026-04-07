@@ -60,7 +60,7 @@ const messageInboxSchema = new mongoose.Schema(
       type: String,
       required: [true, "Category is required"],
       enum: {
-        values: ["announcement", "payroll", "leave", "policy", "system", "compliance_alert", "other"],
+        values: ["announcement", "payroll", "leave", "policy", "system", "compliance_alert", "other", "ai_coaching", "ai_schedule", "ai_alert"],
         message: "Invalid message category",
       },
       default: "announcement",

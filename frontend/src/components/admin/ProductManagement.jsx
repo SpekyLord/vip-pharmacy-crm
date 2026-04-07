@@ -16,6 +16,8 @@ import productService from '../../services/productService';
 import useDebounce from '../../hooks/useDebounce';
 import specializationService from '../../services/specializationService';
 
+import SelectField from '../common/Select';
+
 const pmStyles = `
   .pm-filters {
     display: flex;
@@ -848,7 +850,6 @@ const ProductManagement = ({
   return (
     <div className="product-management">
       <style>{pmStyles}</style>
-
       {/* Filters */}
       <div className="pm-filters">
         <div className="pm-search">
@@ -861,7 +862,7 @@ const ProductManagement = ({
           />
         </div>
 
-        <select
+        <SelectField
           className="pm-filter-select"
           value={filters.category || ''}
           onChange={(e) => onFilterChange?.({ ...filters, category: e.target.value })}
@@ -870,9 +871,9 @@ const ProductManagement = ({
           {categories.map((cat) => (
             <option key={cat} value={cat}>{cat}</option>
           ))}
-        </select>
+        </SelectField>
 
-        <select
+        <SelectField
           className="pm-filter-select"
           value={filters.specialization || ''}
           onChange={(e) => onFilterChange?.({ ...filters, specialization: e.target.value })}
@@ -881,22 +882,21 @@ const ProductManagement = ({
           {specializations.map((spec) => (
             <option key={spec} value={spec}>{spec}</option>
           ))}
-        </select>
+        </SelectField>
 
-        <select
+        <SelectField
           className="pm-filter-select"
           value={filters.sort || ''}
           onChange={(e) => onFilterChange?.({ ...filters, sort: e.target.value })}
         >
           <option value="">Sort: A-Z</option>
           <option value="newest">Sort: Newest</option>
-        </select>
+        </SelectField>
 
         <button className="pm-add-btn" onClick={openCreate}>
           <Plus size={16} /> Add Product
         </button>
       </div>
-
       {/* Result count + pagination shortcut */}
       {pagination.total > 0 && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, fontSize: 13, color: '#6b7280' }}>
@@ -913,7 +913,6 @@ const ProductManagement = ({
           )}
         </div>
       )}
-
       {/* Table */}
       <div className="pm-table-wrap">
         <table className="pm-table">
@@ -988,7 +987,6 @@ const ProductManagement = ({
           </tbody>
         </table>
       </div>
-
       {/* Mobile Card List */}
       <div className="pm-mobile-cards">
         {products.length === 0 ? (
@@ -1031,7 +1029,6 @@ const ProductManagement = ({
           ))
         )}
       </div>
-
       {/* Pagination */}
       {pagination.pages > 1 && (
         <div style={{ marginTop: 16 }}>
@@ -1043,7 +1040,6 @@ const ProductManagement = ({
           />
         </div>
       )}
-
       {/* Create/Edit Modal */}
       {showModal && (
         <div className="pm-overlay" onClick={() => setShowModal(false)}>
@@ -1211,7 +1207,6 @@ const ProductManagement = ({
           </div>
         </div>
       )}
-
       {/* Delete Confirmation */}
       <ConfirmDeleteModal
         isOpen={!!confirmDelete}

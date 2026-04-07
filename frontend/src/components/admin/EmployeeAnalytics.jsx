@@ -41,6 +41,8 @@ import {
 } from 'lucide-react';
 import PerformanceChart from './PerformanceChart';
 
+import SelectField from '../common/Select';
+
 /* =============================================================================
    MOCK DATA GENERATOR
    ============================================================================= */
@@ -579,7 +581,6 @@ const EmployeeAnalytics = ({
   return (
     <div className="emp-analytics">
       <style>{styles}</style>
-
       {/* Header */}
       <div className="emp-analytics-header">
         <div className="emp-analytics-title">
@@ -594,7 +595,6 @@ const EmployeeAnalytics = ({
           </div>
         </div>
       </div>
-
       {/* Controls Bar */}
       <div className="analytics-controls">
         {/* Date Range */}
@@ -636,7 +636,7 @@ const EmployeeAnalytics = ({
         {compareMode && (
           <div className="control-group">
             <UserCheck size={16} color="#6b7280" />
-            <select
+            <SelectField
               className="control-select"
               value={compareEmployeeId}
               onChange={(e) => setCompareEmployeeId(e.target.value)}
@@ -648,7 +648,7 @@ const EmployeeAnalytics = ({
                 .map(e => (
                   <option key={e.id} value={e.id}>{e.name}</option>
                 ))}
-            </select>
+            </SelectField>
           </div>
         )}
 
@@ -658,7 +658,6 @@ const EmployeeAnalytics = ({
           Export Analytics
         </button>
       </div>
-
       {/* Metrics Grid */}
       <div className="metrics-grid">
         <div className="metric-card">
@@ -725,7 +724,6 @@ const EmployeeAnalytics = ({
           </div>
         </div>
       </div>
-
       {/* Charts */}
       <div className="charts-grid">
         {/* Visits Over Time */}

@@ -39,6 +39,8 @@ import doctorService from '../../services/doctorService';
 import scheduleService from '../../services/scheduleService';
 import { exportCPTWorkbook } from '../../utils/exportCPTWorkbook';
 
+import SelectField from '../../components/common/Select';
+
 /* =============================================================================
    STYLES
    ============================================================================= */
@@ -593,7 +595,7 @@ const styles = `
 
   @media (max-width: 768px) {
     .ie-content {
-      padding: 16px;
+      padding: 104px 16px 96px;
     }
     .ie-form-row {
       grid-template-columns: 1fr;
@@ -605,8 +607,7 @@ const styles = `
 
   @media (max-width: 480px) {
     .ie-content {
-      padding: 16px;
-      padding-bottom: 80px;
+      padding: 104px 16px 96px;
     }
     .ie-header h1 {
       font-size: 22px;
@@ -867,7 +868,6 @@ const ImportTab = () => {
           <CheckCircle size={16} /> {success}
         </div>
       )}
-
       {!batch ? (
         <div className="ie-card">
           <h2 className="ie-card-title"><Upload size={18} /> Upload CPT Excel</h2>
@@ -875,12 +875,12 @@ const ImportTab = () => {
           <div className="ie-form-row">
             <div className="ie-field">
               <label>BDM</label>
-              <select value={selectedBDM} onChange={(e) => setSelectedBDM(e.target.value)}>
+              <SelectField value={selectedBDM} onChange={(e) => setSelectedBDM(e.target.value)}>
                 <option value="">Select BDM...</option>
                 {employees.map((emp) => (
                   <option key={emp._id} value={emp._id}>{emp.name || `${emp.firstName} ${emp.lastName}`}</option>
                 ))}
-              </select>
+              </SelectField>
             </div>
           </div>
 
@@ -956,7 +956,6 @@ const ImportTab = () => {
           )}
         </>
       )}
-
       {/* Reject Dialog */}
       {showRejectDialog && (
         <div className="ie-dialog-overlay" onClick={() => setShowRejectDialog(false)}>
@@ -1043,7 +1042,7 @@ const PreviewSection = ({ batch, expandedRows, toggleExpand, onApprove, onReject
                     : 'row-new';
 
                 return (
-                  <tr key={idx} className={rowClass}>
+                  <tr key={doc.rowNumber} className={rowClass}>
                     <td>{doc.rowNumber}</td>
                     <td>
                       {doc.validationStatus === 'INVALID' ? (
@@ -1215,19 +1214,18 @@ const ExportTab = () => {
           <CheckCircle size={16} /> {success}
         </div>
       )}
-
       <div className="ie-card">
         <h2 className="ie-card-title"><Download size={18} /> Export CPT Workbook</h2>
 
         <div className="ie-form-row">
           <div className="ie-field">
             <label>BDM</label>
-            <select value={selectedBDM} onChange={(e) => { setSelectedBDM(e.target.value); setPreviewStats(null); }}>
+            <SelectField value={selectedBDM} onChange={(e) => { setSelectedBDM(e.target.value); setPreviewStats(null); }}>
               <option value="">Select BDM...</option>
               {employees.map((emp) => (
                 <option key={emp._id} value={emp._id}>{emp.name || `${emp.firstName} ${emp.lastName}`}</option>
               ))}
-            </select>
+            </SelectField>
           </div>
           <div className="ie-field">
             <label>Cycle Number</label>
@@ -1352,7 +1350,7 @@ const HistoryTab = () => {
         <h2 className="ie-card-title"><History size={18} /> Import History</h2>
 
         <div className="ie-filter-row">
-          <select
+          <SelectField
             className="ie-filter-select"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -1361,7 +1359,7 @@ const HistoryTab = () => {
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
-          </select>
+          </SelectField>
           <button className="ie-btn ie-btn-outline" onClick={loadBatches} style={{ padding: '8px 12px' }}>
             <RefreshCw size={14} />
           </button>
@@ -1438,7 +1436,6 @@ const HistoryTab = () => {
           </div>
         )}
       </div>
-
       {showDetail && selectedBatch && (
         <BatchDetailModal
           batch={selectedBatch}

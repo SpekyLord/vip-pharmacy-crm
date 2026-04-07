@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html><head><title>Login Test</title><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:sans-serif;padding:20px;max-width:400px;margin:0 auto}input,button{width:100%;padding:12px;margin:8px 0;font-size:16px;box-sizing:border-box;border-radius:8px;border:1px solid #ccc}button{background:#2563eb;color:#fff;border:none;cursor:pointer}#result{margin-top:16px;padding:12px;border-radius:8px;white-space:pre-wrap;font-size:13px}</style>
+</head><body>
+<h2>Login Test</h2>
+<input id="email" value="yourpartner@viosintegrated.net" placeholder="Email">
+<input id="pass" type="password" value="pass1234" placeholder="Password">
+<button onclick="doLogin()">Login</button>
+<div id="result"></div>
+<script>
+async function doLogin(){
+  const r=document.getElementById('result');
+  r.style.background='#fef3c7';r.textContent='Logging in...';
+  try{
+    const res=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('pass').value})});
+    const data=await res.json();
+    if(data.success){r.style.background='#dcfce7';r.textContent='SUCCESS!\n'+data.data.user.name+' ('+data.data.user.role+')\n\nRedirecting in 2s...';setTimeout(()=>window.location.href='/home',2000);}
+    else{r.style.background='#fee2e2';r.textContent='FAILED: '+data.message;}
+  }catch(e){r.style.background='#fee2e2';r.textContent='ERROR: '+e.message;}
+}
+</script></body></html>

@@ -135,6 +135,194 @@ select {
   font-size: inherit;
 }
 
+select {
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--gray-300);
+  background-color: var(--white);
+  min-width: 160px;
+  padding: 0.5rem 3.1rem 0.5rem 0.75rem;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M6 8l4 4 4-4' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  background-position: calc(100% - 0.65rem) 50% !important;
+  background-size: 14px 14px !important;
+  background-repeat: no-repeat !important;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+select::-ms-expand {
+  display: none;
+}
+
+select:hover {
+  border-color: var(--primary-light);
+  transform: translateY(-1px);
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+}
+
+select:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.35);
+  outline-offset: 2px;
+}
+
+select option,
+select optgroup {
+  color: var(--gray-800);
+  background: var(--white);
+}
+
+@keyframes vipSelectFade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.vip-select__control {
+  min-height: 30px;
+  border-radius: var(--radius-xl) !important;
+  border: 1px solid var(--gray-300) !important;
+  background: var(--white) !important;
+  box-shadow: none !important;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.vip-select__control:hover {
+  border-color: var(--primary-light) !important;
+  transform: translateY(-1px);
+}
+
+.vip-select__control--is-focused {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18) !important;
+}
+
+.vip-select__value-container {
+  padding: 0 10px !important;
+}
+
+.vip-select__single-value,
+.vip-select__placeholder,
+.vip-select__input-container {
+  font-size: 12px;
+}
+
+.vip-select__indicator-separator {
+  display: none;
+}
+
+.vip-select__dropdown-indicator {
+  color: var(--gray-500);
+  transition: transform var(--transition-fast);
+}
+
+.vip-select__control--menu-is-open .vip-select__dropdown-indicator {
+  transform: rotate(180deg);
+}
+
+.vip-select__menu {
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: vipSelectFade 120ms ease-out;
+}
+
+.vip-select__menu-portal {
+  z-index: 9999;
+}
+
+.vip-select__option {
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+.vip-select__option--is-focused {
+  background: #eff6ff;
+  color: var(--gray-800);
+}
+
+.vip-select__option--is-selected {
+  background: var(--primary-color);
+  color: var(--white);
+}
+
+body.dark-mode .vip-select__control {
+  background: var(--gray-900) !important;
+  border-color: var(--gray-700) !important;
+}
+
+body.dark-mode .vip-select__menu {
+  background: var(--gray-900);
+  border: 1px solid var(--gray-700);
+}
+
+body.dark-mode .vip-select__option--is-focused {
+  background: rgba(122, 162, 255, 0.18);
+  color: #e2e8f0;
+}
+
+/* Shared page layout (used by Admin, BDM, and ERP pages) */
+.admin-page {
+  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--page-bg, var(--gray-50));
+  transition: background-color 0.3s;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  --mobile-navbar-offset: 112px;
+}
+
+.admin-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .admin-page { height: auto; min-height: 100vh; overflow-y: auto; }
+  .admin-layout { overflow: visible; }
+  .admin-content { overflow: visible; }
+}
+
+@media (max-width: 768px) {
+  .admin-main {
+    padding-top: var(--mobile-navbar-offset);
+  }
+}
+
+.admin-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.admin-main {
+  flex: 1;
+  padding: 0;
+  min-width: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Utility classes */
 .container {
   width: 100%;

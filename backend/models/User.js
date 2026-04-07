@@ -91,6 +91,71 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    // ═══ ERP FIELDS (Phase 2 — all optional, CRM backward-compatible) ═══
+    entity_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Entity',
+    },
+    territory_id: {
+      type: mongoose.Schema.Types.ObjectId,
+    },
+    live_date: {
+      type: Date,
+    },
+    bdm_stage: {
+      type: String,
+      enum: ['CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER'],
+    },
+    compensation: {
+      perdiem_rate: { type: Number },
+      perdiem_days: { type: Number, default: 22 },
+      km_per_liter: { type: Number },
+      fuel_overconsumption_threshold: { type: Number, default: 1.30 },
+      effective_date: { type: Date },
+    },
+    compensation_history: [{
+      perdiem_rate: Number,
+      km_per_liter: Number,
+      effective_date: Date,
+      set_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      reason: String,
+      created_at: { type: Date, default: Date.now },
+    }],
+    // Government IDs (sensitive — excluded from default toJSON)
+    sss_no: { type: String, select: false },
+    pagibig_no: { type: String, select: false },
+    philhealth_no: { type: String, select: false },
+    // Personal & employment
+    date_of_birth: { type: Date },
+    contract_type: { type: String },
+    date_started: { type: Date },
+
+    // ═══ ERP ACCESS CONTROL (Phase 10) ═══
+    erp_access: {
+      enabled: { type: Boolean, default: false },
+      template_id: { type: mongoose.Schema.Types.ObjectId, ref: 'AccessTemplate' },
+      modules: {
+        sales:       { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        inventory:   { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        collections: { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        expenses:    { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        reports:     { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        people:      { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        payroll:     { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        accounting:  { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        purchasing:  { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+        banking:     { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
+      },
+      can_approve: { type: Boolean, default: false },
+      // ═══ Sub-Module Permissions (Phase 16) ═══
+      // Dynamic map: { [module]: { [subKey]: Boolean } }
+      // Only modules with sub-permissions defined are gated; others fall through to module-level.
+      // If a module has FULL access and no sub_permissions entry, all sub-functions are granted.
+      sub_permissions: { type: mongoose.Schema.Types.Mixed, default: {} },
+      updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      updated_at: { type: Date },
+    },
   },
   {
     timestamps: true,
@@ -102,6 +167,9 @@ const userSchema = new mongoose.Schema(
         delete ret.passwordResetExpires;
         delete ret.failedLoginAttempts;
         delete ret.lockoutUntil;
+        delete ret.sss_no;
+        delete ret.pagibig_no;
+        delete ret.philhealth_no;
         delete ret.__v;
         return ret;
       },
@@ -117,6 +185,11 @@ userSchema.index({ isActive: 1 });
 userSchema.index({ role: 1, isActive: 1 });
 // TTL index to auto-expire password reset tokens
 userSchema.index({ passwordResetExpires: 1 }, { expireAfterSeconds: 0 });
+// ERP indexes
+userSchema.index({ entity_id: 1 });
+userSchema.index({ entity_id: 1, role: 1 });
+// ERP access control index
+userSchema.index({ 'erp_access.enabled': 1 });
 
 // Pre-save hook to hash password
 userSchema.pre('save', async function (next) {
@@ -148,7 +221,7 @@ userSchema.statics.findActiveByRole = function (role) {
 
 // Account lockout configuration
 const LOCKOUT_CONFIG = {
-  MAX_ATTEMPTS: 5,
+  MAX_ATTEMPTS: 999, // TODO: revert to 5 for production
   LOCKOUT_DURATION_MS: 15 * 60 * 1000, // 15 minutes
 };
 

@@ -12,6 +12,9 @@
 
 const XLSX = require('xlsx');
 
+const MAX_WORKBOOK_SHEETS = parseInt(process.env.IMPORT_MAX_WORKBOOK_SHEETS || '30', 10);
+const MAX_WORKSHEET_ROWS = parseInt(process.env.IMPORT_MAX_WORKSHEET_ROWS || '2000', 10);
+
 // CPT master sheet column indices (0-based)
 const CPT_COLS = {
   ROW_NUM: 0,    // A
@@ -153,17 +156,34 @@ const parseCPTWorkbook = (buffer) => {
 
   let workbook;
   try {
-    workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false });
+    workbook = XLSX.read(buffer, {
+      type: 'buffer',
+      cellDates: false,
+      dense: true,
+      WTF: false,
+    });
   } catch (err) {
     errors.push(`Failed to read Excel file: ${err.message}`);
     return { doctors: [], daySheets: [], errors };
   }
 
   const sheetNames = workbook.SheetNames;
+  if (sheetNames.length > MAX_WORKBOOK_SHEETS) {
+    errors.push(`Workbook has too many sheets (${sheetNames.length}). Maximum allowed is ${MAX_WORKBOOK_SHEETS}.`);
+    return { doctors: [], daySheets: [], errors };
+  }
 
   if (sheetNames.length < 3) {
     errors.push(`Expected at least 3 sheets, found ${sheetNames.length}. This may not be a valid CPT workbook.`);
     return { doctors: [], daySheets: [], errors };
+  }
+
+  for (const sheetName of sheetNames) {
+    const rowCount = getSheetRowCount(workbook.Sheets[sheetName]);
+    if (rowCount > MAX_WORKSHEET_ROWS) {
+      errors.push(`Sheet "${sheetName}" has too many rows (${rowCount}). Maximum allowed is ${MAX_WORKSHEET_ROWS}.`);
+      return { doctors: [], daySheets: [], errors };
+    }
   }
 
   // Parse master CPT sheet (sheet index 2 = third sheet)
@@ -197,7 +217,11 @@ const parseCPTMasterSheet = (workbook, sheetName, errors) => {
   }
 
   // Convert to array of arrays for easier row/column access
-  const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: undefined });
+  const data = XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    defval: undefined,
+    raw: true,
+  });
   const doctors = [];
 
   for (let rowIdx = CPT_DATA_START_ROW; rowIdx < Math.min(data.length, CPT_END_ROW); rowIdx++) {
@@ -325,6 +349,16 @@ const parseDaySheet = (workbook, sheetName, dayIndex, label, errors) => {
   }
 
   return result;
+};
+
+const getSheetRowCount = (sheet) => {
+  if (!sheet || !sheet['!ref']) return 0;
+  try {
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+    return range.e.r - range.s.r + 1;
+  } catch {
+    return 0;
+  }
 };
 
 /**

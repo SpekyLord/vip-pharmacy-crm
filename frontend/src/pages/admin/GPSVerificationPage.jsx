@@ -29,6 +29,8 @@ import Sidebar from '../../components/common/Sidebar';
 import VisitLocationMap from '../../components/admin/VisitLocationMap';
 import visitService from '../../services/visitService';
 
+import SelectField from '../../components/common/Select';
+
 /* =============================================================================
    STYLES
    ============================================================================= */
@@ -547,14 +549,14 @@ const GPSVerificationPage = () => {
           {/* Filter Bar */}
           <div className="gps-filter-bar">
             <Filter size={16} style={{ color: '#6b7280' }} />
-            <select
+            <SelectField
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
               <option value="all">All Visits</option>
               <option value="suspicious">Suspicious Only</option>
               <option value="verified">Verified Only</option>
-            </select>
+            </SelectField>
             <button
               className={`gps-refresh-btn ${refreshing ? 'loading' : ''}`}
               onClick={handleRefresh}
@@ -596,7 +598,7 @@ const GPSVerificationPage = () => {
             </div>
           ) : (
             /* Two Column Layout */
-            <div className="gps-two-col">
+            (<div className="gps-two-col">
               {/* Left: Visit List */}
               <div className="gps-visit-list">
                 <div className="gps-visit-list-header">
@@ -652,7 +654,6 @@ const GPSVerificationPage = () => {
                   })}
                 </div>
               </div>
-
               {/* Right: Map */}
               <div className="gps-map-panel">
                 {selectedVisit && mapProps ? (
@@ -673,7 +674,7 @@ const GPSVerificationPage = () => {
                   </div>
                 )}
               </div>
-            </div>
+            </div>)
           )}
         </main>
       </div>

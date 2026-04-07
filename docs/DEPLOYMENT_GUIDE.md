@@ -53,7 +53,7 @@ All steps completed. This section is kept for reference if re-deploying or setti
 11. ✅ **Environment Variables** - Production `.env` configured
 12. ✅ **Nginx Configured** - Reverse proxy with gzip, static file caching
 13. ✅ **SSL Certificate** - Let's Encrypt via Certbot (auto-renewal)
-14. ✅ **PM2 Running** - 2 cluster instances, auto-restart on boot
+14. ✅ **PM2 Running** - separate API + worker processes, auto-restart on boot
 
 #### Reference: Install Server Software
 - SSH into Lightsail: *See [Section 5.4](#54-connect-via-ssh)*
@@ -174,7 +174,7 @@ curl -I https://yourdomain.com
 
 **12. Test the Application** (15 minutes)
 - Visit: `https://yourdomain.com`
-- Login with admin credentials: `admin@vipcrm.com` / `Admin123!@#`
+- Login with your admin credentials (seed credentials are development-only; rotate/remove them before production-like launch)
 - Test:
   - Dashboard loads
   - VIP Client list loads
@@ -416,7 +416,8 @@ The CRM sends these automated emails:
 | SSH | TCP | 22 |
 | HTTP | TCP | 80 |
 | HTTPS | TCP | 443 |
-| Custom | TCP | 5000 (remove after nginx setup) |
+
+> Security note: Keep port `5000` private (no public firewall rule). Nginx should be the only public entrypoint.
 
 ### 5.4 Connect via SSH
 **Option 1: Browser-based SSH**
@@ -709,17 +710,36 @@ module.exports = {
       name: 'vip-crm-api',
       script: './backend/server.js',
       cwd: '/var/www/vip-crm',
-      instances: 2,
-      exec_mode: 'cluster',
+      instances: 1,
+      exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
-        PORT: 5000
+        PORT: 5000,
+        ENABLE_SCHEDULER: 'false'
       },
       error_file: './logs/err.log',
       out_file: './logs/out.log',
       log_file: './logs/combined.log',
       time: true,
       max_memory_restart: '500M',
+      exp_backoff_restart_delay: 100,
+      watch: false
+    },
+    {
+      name: 'vip-crm-worker',
+      script: './backend/worker.js',
+      cwd: '/var/www/vip-crm',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        NODE_ENV: 'production',
+        ENABLE_SCHEDULER: 'true'
+      },
+      error_file: './logs/worker-err.log',
+      out_file: './logs/worker-out.log',
+      log_file: './logs/worker-combined.log',
+      time: true,
+      max_memory_restart: '300M',
       exp_backoff_restart_delay: 100,
       watch: false
     }
@@ -773,6 +793,8 @@ Create `/var/www/vip-crm/backend/.env`:
 # Server Configuration
 NODE_ENV=production
 PORT=5000
+ENABLE_SCHEDULER=false
+HEALTH_EXPOSE_DETAILS=false
 
 # MongoDB Atlas
 MONGO_URI=mongodb+srv://vip_crm_admin:YOUR_PASSWORD@vip-crm-cluster.xxxxx.mongodb.net/vip-crm?retryWrites=true&w=majority
@@ -804,11 +826,21 @@ CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 
 # Rate Limiting
 RATE_LIMIT_WINDOW_MS=900000
-RATE_LIMIT_MAX_REQUESTS=100
+RATE_LIMIT_GENERAL_MAX=500
+RATE_LIMIT_AUTH_MAX=50
+RATE_LIMIT_USER_MAX=300
 
 # Login Rate Limiting (Account Lockout)
 LOGIN_MAX_ATTEMPTS=5
 LOGIN_LOCKOUT_DURATION=15
+
+# Admin Excel import hardening
+IMPORT_MAX_FILE_SIZE_MB=5
+IMPORT_MAX_WORKBOOK_SHEETS=30
+IMPORT_MAX_WORKSHEET_ROWS=2000
+
+# Optional alert webhook for scheduler failures
+# ALERT_WEBHOOK_URL=https://hooks.example.com/alerts
 ```
 
 ### 11.2 Generate Secure JWT Secrets
@@ -1120,7 +1152,7 @@ Before deploying to production, verify these security requirements:
 - [x] Audit logging is enabled (check AuditLog collection)
 
 ### API Security
-- [x] Rate limiting is configured (100 req/15min general, 20 req/15min auth)
+- [x] Rate limiting is configured (default: 500 req/15min general, 50 req/15min auth, 300 req/15min per user)
 - [x] HSTS headers are enabled via helmet
 - [x] S3 signed URL expiry is 1 hour (not 24 hours)
 
@@ -1173,7 +1205,7 @@ For detailed security documentation, see `docs/SECURITY_CHECKLIST.md`.
 ### Server Setup
 - [x] Node.js 20 LTS installed
 - [x] Nginx installed
-- [x] PM2 installed (2 cluster instances)
+- [x] PM2 installed (API + worker process topology)
 - [x] Git installed
 - [x] Certbot installed
 

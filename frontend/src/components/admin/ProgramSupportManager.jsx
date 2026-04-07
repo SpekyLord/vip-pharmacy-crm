@@ -175,6 +175,43 @@ const styles = `
     color: #6b7280;
     margin-bottom: 12px;
   }
+
+  @media (max-width: 640px) {
+    .psm-container {
+      max-width: 100%;
+    }
+
+    .psm-toolbar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .psm-toolbar input {
+      min-width: 0;
+      width: 100%;
+    }
+
+    .psm-btn {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .psm-item {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+
+    .psm-item-actions {
+      width: 100%;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .psm-action-btn {
+      flex: 1 1 auto;
+    }
+  }
 `;
 
 const ProgramSupportManager = ({ service, label }) => {

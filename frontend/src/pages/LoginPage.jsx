@@ -599,7 +599,11 @@ const LoginPage = () => {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      // Redirect based on role
+      // All roles go to home landing page first
+      navigate('/home');
+      return;
+      // Legacy role-based redirect (kept for reference)
+      // eslint-disable-next-line no-unreachable
       switch (user.role) {
         case 'admin':
         case 'president':
@@ -642,7 +646,7 @@ const LoginPage = () => {
             />
           </div>
           <h1>Welcome!</h1>
-          <div className="login-subtitle">Sign in to continue to VIP Pharmacy CRM</div>
+          <div className="login-subtitle">Sign in to continue to VIP</div>
         </div>
         <LoginForm />
       </div>

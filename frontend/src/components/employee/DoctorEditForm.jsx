@@ -14,16 +14,12 @@ import { useState, useEffect } from 'react';
 import doctorService from '../../services/doctorService';
 import specializationService from '../../services/specializationService';
 import useLookupData from '../../hooks/useLookupData';
-const ENGAGEMENT_LEVELS = [
-  { value: 1, label: '1 - Visited 4 times' },
-  { value: 2, label: '2 - Knows BDM/products' },
-  { value: 3, label: '3 - Tried products' },
-  { value: 4, label: '4 - In group chat' },
-  { value: 5, label: '5 - Active partner' },
-];
+import { useLookupOptions } from '../../erp/hooks/useLookups';
+import SelectField from '../common/Select';
 
 const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
   const { programs: PROGRAMS, supportTypes: SUPPORT_TYPES } = useLookupData();
+  const { options: ENGAGEMENT_LEVELS } = useLookupOptions('ENGAGEMENT_LEVEL');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [specializations, setSpecializations] = useState([]);
@@ -142,7 +138,7 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
           <div className="def-row">
             <div className="def-field">
               <label>VIP Specialty</label>
-              <select
+              <SelectField
                 name="specialization"
                 value={formData.specialization}
                 onChange={handleFormChange}
@@ -151,7 +147,7 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
                 {specializations.map((s) => (
                   <option key={s._id} value={s.name}>{s.name}</option>
                 ))}
-              </select>
+              </SelectField>
             </div>
             <div className="def-field">
               <label>Outlet Indicator</label>
@@ -192,19 +188,19 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
           <div className="def-row">
             <div className="def-field">
               <label>Visit Frequency *</label>
-              <select name="visitFrequency" value={formData.visitFrequency} onChange={handleFormChange} required>
+              <SelectField name="visitFrequency" value={formData.visitFrequency} onChange={handleFormChange} required>
                 <option value={2}>2x per month</option>
                 <option value={4}>4x per month</option>
-              </select>
+              </SelectField>
             </div>
             <div className="def-field">
               <label>Level of Engagement</label>
-              <select name="levelOfEngagement" value={formData.levelOfEngagement} onChange={handleFormChange}>
+              <SelectField name="levelOfEngagement" value={formData.levelOfEngagement} onChange={handleFormChange}>
                 <option value="">Select Level</option>
                 {ENGAGEMENT_LEVELS.map((l) => (
                   <option key={l.value} value={l.value}>{l.label}</option>
                 ))}
-              </select>
+              </SelectField>
             </div>
           </div>
 
@@ -296,7 +292,6 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
           </div>
         </form>
       </div>
-
       <style>{`
         .def-overlay {
           position: fixed; inset: 0;
