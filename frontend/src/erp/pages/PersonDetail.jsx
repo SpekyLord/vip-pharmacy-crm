@@ -380,10 +380,13 @@ export default function PersonDetail() {
             <div className="pd-grid">
               <F lbl="First Name" name="first_name" val={person.first_name} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Last Name" name="last_name" val={person.last_name} editing={editPerson} form={personForm} onChange={handlePersonChange} />
+              <F lbl="Email" name="email" val={person.email} editing={editPerson} form={personForm} onChange={handlePersonChange} />
+              <F lbl="Phone" name="phone" val={person.phone} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Person Type" name="person_type" val={person.person_type?.replace(/_/g, ' ')} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_TYPES} />
               <F lbl="Status" name="status" val={person.status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_STATUSES} />
               <F lbl="Position" name="position" val={person.position} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Department" name="department" val={person.department} editing={editPerson} form={personForm} onChange={handlePersonChange} />
+              <F lbl="BDM Stage" name="bdm_stage" val={person.bdm_stage} editing={editPerson} form={personForm} onChange={handlePersonChange} options={['', 'CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER']} />
               <F lbl="Employment Type" name="employment_type" val={person.employment_type} editing={editPerson} form={personForm} onChange={handlePersonChange} options={EMP_TYPES} />
               <F lbl="Civil Status" name="civil_status" val={person.civil_status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={CIVIL_STATUSES} />
               <F lbl="Date Hired" name="date_hired" type="date" val={fmtDate(person.date_hired)} editing={editPerson} form={personForm} onChange={handlePersonChange} />
