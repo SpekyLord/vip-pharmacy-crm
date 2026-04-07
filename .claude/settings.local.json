@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(node:*)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(powershell -Command \"\\(Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue\\).OwningProcess\")",
+      "Bash(npx vite:*)",
+      "Bash(NODE_OPTIONS=--max-old-space-size=4096 npx vite build)",
+      "Bash(npm run:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(find \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend/erp/controllers\" -name \"*.js\" -exec grep -l \"batch\\\\|submit\" {} \\\\;)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -E \"\\\\.jsx?$\")",
+      "Bash(npx -y acorn-jsx --ecma2020 --module --allow-import-export-everywhere frontend/src/erp/pages/SupplierInvoices.jsx)"
     ]
   }
 }

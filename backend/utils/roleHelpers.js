@@ -1,8 +1,8 @@
 /**
  * CRM role helpers
  *
- * These helpers centralize CRM authorization decisions.
- * ERP-specific authorization remains separate.
+ * These helpers intentionally apply to CRM authorization/access checks.
+ * ERP-specific auth remains in ERP middleware/routes.
  */
 
 const CRM_ADMIN_LIKE_ROLES = ['admin', 'finance', 'president', 'ceo'];

@@ -75,11 +75,18 @@ export const AuthProvider = ({ children }) => {
       const response = await authService.login(email, password);
       // Backend sets httpOnly cookies automatically
       // Only store user data in state - never tokens
-      const { user: userData } = response.data;
+      console.log('[AuthContext] login response:', JSON.stringify(response).substring(0, 200));
+      const userData = response?.data?.user || response?.user;
+      console.log('[AuthContext] userData:', userData?.name, userData?.role);
+      if (!userData) {
+        throw new Error('No user data in response');
+      }
       setUser(userData);
       return response;
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed');
+      const msg = err.response?.data?.message || err.message || 'Login failed';
+      console.error('[AuthContext] login error:', msg, err);
+      setError(msg);
       throw err;
     } finally {
       setLoading(false);

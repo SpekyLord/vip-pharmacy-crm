@@ -42,8 +42,9 @@ const getActiveUsers = catchAsync(async (req, res) => {
  */
 const getAllUsers = catchAsync(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
-  const skip = (page - 1) * limit;
+  const rawLimit = req.query.limit;
+  const limit = rawLimit === '0' || rawLimit === 0 ? 0 : (parseInt(rawLimit, 10) || 20);
+  const skip = limit > 0 ? (page - 1) * limit : 0;
 
   // Build filter query
   const filter = {};
@@ -68,12 +69,13 @@ const getAllUsers = catchAsync(async (req, res) => {
   }
 
   // Execute query
+  const query = User.find(filter)
+    .select('-password -refreshToken')
+    .sort({ createdAt: -1 });
+  if (limit > 0) query.skip(skip).limit(limit);
+
   const [users, total] = await Promise.all([
-    User.find(filter)
-      .select('-password -refreshToken')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit),
+    query,
     User.countDocuments(filter),
   ]);
 
@@ -84,7 +86,7 @@ const getAllUsers = catchAsync(async (req, res) => {
       page,
       limit,
       total,
-      pages: Math.ceil(total / limit),
+      pages: limit > 0 ? Math.ceil(total / limit) : 1,
     },
   });
 });

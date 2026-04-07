@@ -9,6 +9,8 @@
  * - Production vs development error details
  */
 
+const { logError } = require('../utils/logger');
+
 /**
  * Custom API Error class
  */
@@ -110,34 +112,43 @@ const handleJWTExpiredError = () => {
 /**
  * Send error response for development environment
  */
-const sendErrorDev = (err, res) => {
+const sendErrorDev = (err, req, res) => {
   res.status(err.statusCode || 500).json({
     success: false,
     message: err.message,
     error: err,
     stack: err.stack,
     errors: err.errors, // Include validation errors if present
+    requestId: req.requestId,
   });
 };
 
 /**
  * Send error response for production environment
  */
-const sendErrorProd = (err, res) => {
+const sendErrorProd = (err, req, res) => {
   // Operational errors: send message to client
   if (err.isOperational) {
     res.status(err.statusCode).json({
       success: false,
       message: err.message,
       errors: err.errors, // Include validation errors if present
+      requestId: req.requestId,
     });
   } else {
     // Programming/unknown errors: don't leak details
-    console.error('ERROR:', err);
+    logError('unhandled_application_error', {
+      requestId: req.requestId,
+      method: req.method,
+      path: req.originalUrl,
+      error: err.message,
+      stack: err.stack,
+    });
 
     res.status(500).json({
       success: false,
       message: 'Something went wrong. Please try again later.',
+      requestId: req.requestId,
     });
   }
 };
@@ -150,10 +161,13 @@ const errorHandler = (err, req, res, next) => {
   err.statusCode = err.statusCode || 500;
   err.message = err.message || 'Internal Server Error';
 
-  // Log error in development
-  if (process.env.NODE_ENV === 'development') {
-    console.error('Error:', err);
-  }
+  logError('request_error', {
+    requestId: req.requestId,
+    method: req.method,
+    path: req.originalUrl,
+    error: err.message,
+    stack: err.stack,
+  });
 
   // Handle specific error types
   let error = { ...err };
@@ -186,9 +200,9 @@ const errorHandler = (err, req, res, next) => {
 
   // Send appropriate response based on environment
   if (process.env.NODE_ENV === 'development') {
-    sendErrorDev(error, res);
+    sendErrorDev(error, req, res);
   } else {
-    sendErrorProd(error, res);
+    sendErrorProd(error, req, res);
   }
 };
 

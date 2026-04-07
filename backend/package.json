@@ -5,11 +5,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:worker": "node worker.js",
     "dev": "nodemon server.js",
     "test": "jest --watchAll --verbose",
-    "test:ci": "jest --ci --runInBand --verbose",
-    "test:smoke": "node -e \"require('./utils/roleHelpers');require('./middleware/errorHandler');require('./controllers/doctorController');require('./controllers/visitController');console.log('Smoke checks passed.');\"",
-    "startup:check": "node -e \"const req=['MONGO_URI','JWT_SECRET','JWT_REFRESH_SECRET'];const miss=req.filter(k=>!(process.env[k]||'').trim());if(miss.length){console.error('Missing required environment variables:',miss.join(', '));process.exit(1);}if((process.env.JWT_SECRET||'').length<64){console.error('SECURITY ERROR: JWT_SECRET must be at least 64 characters.');process.exit(1);}if((process.env.JWT_REFRESH_SECRET||'').length<64){console.error('SECURITY ERROR: JWT_REFRESH_SECRET must be at least 64 characters.');process.exit(1);}if(process.env.NODE_ENV==='production'&&!(process.env.CORS_ORIGINS||'').trim()){console.error('SECURITY ERROR: CORS_ORIGINS is required in production.');process.exit(1);}console.log('Startup check passed.');\"",
+    "test:ci": "jest --ci --runInBand",
+    "test:smoke": "jest --ci --runInBand --testPathPattern=smoke",
+    "startup:check": "node scripts/startupCheck.js",
     "seed": "node scripts/seedData.js"
   },
   "keywords": [
@@ -23,12 +24,18 @@
   ],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1024.0",
-    "@aws-sdk/client-ses": "^3.1024.0",
-    "@aws-sdk/lib-storage": "^3.1024.0",
-    "@aws-sdk/s3-request-presigner": "^3.1024.0",
+    "@anthropic-ai/sdk": "^0.82.0",
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@aws-sdk/client-ses": "^3.1003.0",
+    "@aws-sdk/lib-storage": "^3.700.0",
+    "@aws-sdk/s3-request-presigner": "^3.700.0",
+    "@google-cloud/vision": "^5.3.5",
     "bcryptjs": "^2.4.3",
+    "compression": "^1.7.5",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
@@ -44,8 +51,15 @@
     "node-cron": "^3.0.3",
     "resend": "^6.9.3",
     "sharp": "^0.34.5",
+    "tesseract.js": "^7.0.0",
     "uuid": "^11.0.3",
     "xlsx": "^0.18.5"
+  },
+  "overrides": {
+    "fast-xml-parser": "^5.5.10",
+    "path-to-regexp": "^0.1.13",
+    "qs": "^6.15.0",
+    "lodash": "^4.18.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",

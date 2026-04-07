@@ -4,17 +4,65 @@
  * Top navigation bar with:
  * - Logo/brand (left side)
  * - Hamburger menu (mobile/tablet)
- * - Notifications (Bell icon with dropdown)
- * - User profile dropdown
+ * - CRM/ERP platform switch
+ * - ERP quick tabs
+ * - User profile summary
  * - Logout button
- *
- * Mobile: hamburger + logo + notification bell + avatar
- * Desktop: full layout
  */
 
 import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import {
+  BarChart3,
+  Briefcase,
+  LayoutGrid,
+  LogOut,
+  Menu,
+  Moon,
+  Package,
+  Receipt,
+  Repeat,
+  ShoppingCart,
+  Sun,
+  Wallet,
+} from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import { LogOut, Menu, Moon, Sun } from 'lucide-react';
+import useWorkingEntity from '../../hooks/useWorkingEntity';
+
+const ERP_TABS = [
+  { label: 'Dashboard', path: '/erp', icon: LayoutGrid },
+  { label: 'Sales', path: '/erp/sales', icon: ShoppingCart },
+  { label: 'Inventory', path: '/erp/my-stock', icon: Package },
+  { label: 'Transfers', path: '/erp/transfers', icon: Repeat },
+  { label: 'Collections', path: '/erp/collections', icon: Wallet },
+  { label: 'Expenses', path: '/erp/expenses', icon: Receipt },
+  { label: 'Reports', path: '/erp/reports', icon: BarChart3 },
+];
+
+const ADMIN_LIKE_ROLES = ['admin', 'finance', 'president', 'ceo'];
+
+const CRM_ADMIN_TABS = [
+  { label: 'Dashboard', path: '/admin' },
+  { label: 'Activity', path: '/admin/activity' },
+  { label: 'Clients', path: '/admin/doctors' },
+  { label: 'Reports', path: '/admin/reports' },
+];
+
+const CRM_EMPLOYEE_TABS = [
+  { label: 'Dashboard', path: '/bdm' },
+  { label: 'Call Plan', path: '/bdm/cpt' },
+  { label: 'Visits', path: '/bdm/visits' },
+  { label: 'Inbox', path: '/bdm/inbox' },
+];
+
+const ERP_TAB_MODULE_MAP = {
+  '/erp/sales': 'sales',
+  '/erp/my-stock': 'inventory',
+  '/erp/transfers': 'inventory',
+  '/erp/collections': 'collections',
+  '/erp/expenses': 'expenses',
+  '/erp/reports': 'reports',
+};
 
 /* =============================================================================
    STYLES
@@ -22,11 +70,12 @@ import { LogOut, Menu, Moon, Sun } from 'lucide-react';
 
 const navbarStyles = `
   .navbar {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 24px;
-    height: 68px;
+    gap: 16px;
+    padding: 0 20px;
+    min-height: 56px;
     background: white;
     border-bottom: 1px solid #e5e7eb;
     position: sticky;
@@ -35,17 +84,145 @@ const navbarStyles = `
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
 
-  /* Logo Section */
+  .navbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .navbar-center {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    overflow: hidden;
+  }
+
+  .navbar-platform-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+
+  .navbar-platform-switch--mobile {
+    display: none;
+  }
+
+  .navbar-platform-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 0 14px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #64748b;
+    transition: all 0.2s ease;
+    gap: 6px;
+  }
+
+  .navbar-platform-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .navbar-platform-link.active {
+    background: #0f172a;
+    color: white;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+  }
+
+  .navbar-erp-tabs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .navbar-erp-tabs--fluid {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 8px;
+  }
+
+  .navbar-erp-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid #dbe3ef;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: all 0.18s ease;
+    flex-shrink: 0;
+  }
+
+  .navbar-erp-tab--stacked {
+    flex-direction: column;
+    min-height: 54px;
+    padding: 6px 10px;
+    gap: 4px;
+    flex: 1 1 0;
+    min-width: 64px;
+  }
+
+  .navbar-erp-tab-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .navbar-erp-tab-label {
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.02em;
+  }
+
+  .navbar-erp-tab:hover {
+    border-color: #c7d7fe;
+    color: #1d4ed8;
+    background: #eef4ff;
+  }
+
+  .navbar-erp-tab.active {
+    border-color: #b9d0ff;
+    background: #e8efff;
+    color: #1d4ed8;
+  }
+
   .navbar-brand {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 12px;
+    min-width: 0;
   }
 
   .navbar-logo {
-    height: 80px;
-    width: auto;
+    height: 72px;
+    width: 72px;
     object-fit: contain;
+    object-position: center;
+    flex-shrink: 0;
+    margin: 0;
   }
 
   .navbar-brand h1 {
@@ -54,13 +231,13 @@ const navbarStyles = `
     font-weight: 700;
     color: #1f2937;
     letter-spacing: -0.5px;
+    white-space: nowrap;
   }
 
   .navbar-brand h1 span {
-    color: #E8AF30;
+    color: #e8af30;
   }
 
-  /* Hamburger */
   .navbar-hamburger {
     display: none;
     width: 44px;
@@ -74,6 +251,7 @@ const navbarStyles = `
     border-radius: 10px;
     -webkit-tap-highlight-color: transparent;
     transition: background 0.15s;
+    flex-shrink: 0;
   }
 
   .navbar-hamburger:hover {
@@ -84,42 +262,69 @@ const navbarStyles = `
     background: #e5e7eb;
   }
 
-  /* Left section with hamburger + brand */
-  .navbar-left {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .navbar-entity-select {
+    padding: 5px 26px 5px 10px;
+    border: 2px solid #e8af30;
+    border-radius: 8px;
+    background: #fffbeb;
+    font-size: 13px;
+    font-weight: 600;
+    color: #92400e;
+    cursor: pointer;
+    appearance: auto;
+    max-width: 170px;
+    flex-shrink: 0;
+  }
+  .navbar-entity-select:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(232,175,48,0.25);
+  }
+  body.dark-mode .navbar-entity-select {
+    background: #422006;
+    color: #fbbf24;
+    border-color: #d97706;
   }
 
-  /* Right Menu */
   .navbar-menu {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-shrink: 0;
   }
 
-  /* User Profile */
   .navbar-profile {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 6px 12px 6px 6px;
+    padding: 4px 10px 4px 4px;
     background: #f9fafb;
     border: 1px solid #e5e7eb;
     border-radius: 12px;
   }
 
-  .navbar-avatar {
-    width: 36px;
-    height: 36px;
+  .navbar-avatar,
+  .navbar-avatar-mobile {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
     font-weight: 600;
-    font-size: 14px;
+  }
+
+  .navbar-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    font-size: 12px;
+  }
+
+  .navbar-avatar-mobile {
+    display: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    font-size: 12px;
   }
 
   .navbar-profile-info {
@@ -139,16 +344,15 @@ const navbarStyles = `
     text-transform: capitalize;
   }
 
-  /* Logout Button */
   .navbar-logout {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 16px;
+    padding: 8px 12px;
     background: white;
     border: 1px solid #e5e7eb;
     border-radius: 10px;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
     color: #6b7280;
     cursor: pointer;
@@ -165,7 +369,6 @@ const navbarStyles = `
     display: inline;
   }
 
-  /* Divider between elements */
   .navbar-divider {
     width: 1px;
     height: 32px;
@@ -173,9 +376,9 @@ const navbarStyles = `
     margin: 0 8px;
   }
 
-  /* Dark Mode Toggle */
-  .navbar-theme-btn {    width: 38px;
-    height: 38px;
+  .navbar-theme-btn {
+    width: 34px;
+    height: 34px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -194,6 +397,84 @@ const navbarStyles = `
     border-color: #d1d5db;
   }
 
+  body.dark-mode .navbar {
+    background: #0f172a;
+    border-bottom-color: #1e293b;
+  }
+
+  body.dark-mode .navbar-platform-switch {
+    background: #111827;
+    border-color: #334155;
+  }
+
+  body.dark-mode .navbar-platform-link {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .navbar-platform-link.active {
+    background: #f8fafc;
+    color: #0f172a;
+  }
+
+  body.dark-mode .navbar-erp-tab {
+    background: #111827;
+    border-color: #334155;
+    color: #cbd5e1;
+  }
+
+  body.dark-mode .navbar-erp-tab:hover {
+    background: #16233b;
+    border-color: #3b82f6;
+    color: #93c5fd;
+  }
+
+  body.dark-mode .navbar-erp-tab.active {
+    background: #1d4ed8;
+    border-color: #60a5fa;
+    color: white;
+  }
+
+  body.dark-mode .navbar-brand h1 {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .navbar-hamburger {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .navbar-hamburger:hover {
+    background: #1e293b;
+  }
+
+  body.dark-mode .navbar-profile {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  body.dark-mode .navbar-profile-name {
+    color: #f1f5f9;
+  }
+
+  body.dark-mode .navbar-profile-role {
+    color: #94a3b8;
+  }
+
+  body.dark-mode .navbar-divider {
+    background: #334155;
+  }
+
+  body.dark-mode .navbar-logout {
+    background: #1e293b;
+    border-color: #334155;
+    color: #94a3b8;
+  }
+
+  body.dark-mode .navbar-logout:hover {
+    background: #450a0a;
+    border-color: #7f1d1d;
+    color: #f87171;
+  }
+
   body.dark-mode .navbar-theme-btn {
     background: #1e293b;
     border-color: #334155;
@@ -205,60 +486,98 @@ const navbarStyles = `
     color: #f1f5f9;
   }
 
-  /* Dark mode — navbar shell */
-  body.dark-mode .navbar {
-    background: #0f172a;
-    border-bottom-color: #1e293b;
-  }
-  body.dark-mode .navbar-brand h1 { color: #f1f5f9; }
-  body.dark-mode .navbar-hamburger { color: #94a3b8; }
-  body.dark-mode .navbar-hamburger:hover { background: #1e293b; }
-  body.dark-mode .navbar-profile {
-    background: #1e293b;
-    border-color: #334155;
-  }
-  body.dark-mode .navbar-profile-name { color: #f1f5f9; }
-  body.dark-mode .navbar-profile-role { color: #94a3b8; }
-  body.dark-mode .navbar-divider { background: #334155; }
-  body.dark-mode .navbar-logout {
-    background: #1e293b;
-    border-color: #334155;
-    color: #94a3b8;
-  }
-  body.dark-mode .navbar-logout:hover {
-    background: #450a0a;
-    border-color: #7f1d1d;
-    color: #f87171;
+  @media (max-width: 1280px) {
+    .navbar {
+      padding: 0 14px;
+      gap: 10px;
+    }
+
+    .navbar-platform-link {
+      padding: 0 12px;
+    }
+
+    .navbar-erp-tab {
+      padding: 0 12px;
+      font-size: 12px;
+    }
   }
 
-  /* ===== TABLET ===== */
   @media (max-width: 1024px) {
-    .navbar {
-      padding: 0 16px;
+    .navbar-erp-tabs--fluid {
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
     }
+
+    .navbar-erp-tabs--fluid::-webkit-scrollbar {
+      display: none;
+    }
+
+    .navbar-erp-tab--stacked {
+      flex: 0 0 auto;
+    }
+
     .navbar-profile-info {
       display: none;
     }
+
     .navbar-profile {
       padding: 6px;
     }
+
     .navbar-logout-text {
       display: none;
     }
+
     .navbar-logout {
       padding: 10px;
     }
+
   }
 
-  /* ===== MOBILE ===== */
+  @media (max-width: 768px) {
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+    }
+
+    .navbar-center {
+      justify-content: flex-start;
+    }
+
+    .navbar-erp-tabs {
+      gap: 6px;
+    }
+
+    .navbar-erp-tab {
+      min-height: 34px;
+      padding: 0 10px;
+    }
+  }
+
   @media (max-width: 480px) {
     .navbar {
-      padding: 0 12px;
-      height: 60px;
+      padding: 0 10px;
+      min-height: 52px;
+      gap: 8px;
     }
 
     .navbar-hamburger {
       display: flex;
+      order: 0;
+    }
+
+    .navbar-brand {
+      order: 1;
+    }
+
+    .navbar-platform-switch {
+      order: 2;
     }
 
     .navbar-brand h1 {
@@ -266,8 +585,35 @@ const navbarStyles = `
     }
 
     .navbar-logo {
-      height: 75px;
-      width: auto;
+      height: 56px;
+    }
+
+    .navbar-center {
+      flex: 1;
+      justify-content: center;
+      min-width: 0;
+    }
+
+    .navbar-erp-tabs {
+      display: none;
+    }
+
+    .navbar-center .navbar-platform-switch {
+      display: none;
+    }
+
+    .navbar-platform-switch {
+      display: inline-flex;
+    }
+
+    .navbar-platform-switch--mobile {
+      display: none;
+    }
+
+    .navbar-platform-link {
+      min-height: 30px;
+      padding: 0 10px;
+      font-size: 11px;
     }
 
     .navbar-profile {
@@ -284,36 +630,12 @@ const navbarStyles = `
       background: none;
     }
 
-    .navbar-logout-text {
-      display: none;
-    }
-
     .navbar-avatar-mobile {
-      width: 32px;
-      height: 32px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      border-radius: 8px;
       display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-weight: 600;
-      font-size: 12px;
     }
 
     .navbar-menu {
       gap: 4px;
-    }
-  }
-
-  /* Hide mobile avatar on desktop */
-  .navbar-avatar-mobile {
-    display: none;
-  }
-
-  @media (max-width: 480px) {
-    .navbar-avatar-mobile {
-      display: flex;
     }
   }
 `;
@@ -324,6 +646,8 @@ const navbarStyles = `
 
 const Navbar = () => {
   const { user, logout } = useAuth();
+  const { entities, workingEntityId, setWorkingEntityId, isMultiEntity } = useWorkingEntity();
+  const location = useLocation();
   const [isDark, setIsDark] = useState(() => {
     try {
       const stored = localStorage.getItem('darkMode');
@@ -349,7 +673,6 @@ const Navbar = () => {
     setIsDark((prev) => !prev);
   };
 
-  // Get user initials
   const getInitials = (name) => {
     if (!name) return 'U';
     return name
@@ -360,16 +683,40 @@ const Navbar = () => {
       .slice(0, 2);
   };
 
-  // Dispatch event to open sidebar drawer
   const handleHamburgerClick = () => {
     window.dispatchEvent(new CustomEvent('sidebar:toggle'));
+  };
+
+  const isAdminLike = ADMIN_LIKE_ROLES.includes(user?.role);
+  const crmHome = isAdminLike ? '/admin' : '/bdm';
+  const isErpRoute = location.pathname.startsWith('/erp');
+
+  const hasErpModule = (moduleName) => {
+    if (!user) return false;
+    if (user.role === 'president' || user.role === 'ceo') return true;
+    if (user.role === 'admin' && (!user.erp_access || !user.erp_access.enabled)) return true;
+    if (!user.erp_access || !user.erp_access.enabled) return false;
+    return (user.erp_access.modules?.[moduleName] || 'NONE') !== 'NONE';
+  };
+
+  const erpTabs = ERP_TABS.filter((tab) => {
+    const moduleName = ERP_TAB_MODULE_MAP[tab.path];
+    if (!moduleName) return true;
+    return hasErpModule(moduleName);
+  });
+  const platformTabs = isErpRoute ? erpTabs : (isAdminLike ? CRM_ADMIN_TABS : CRM_EMPLOYEE_TABS);
+
+  const isTabActive = (path) => {
+    if (path === '/erp' || path === '/admin' || path === '/bdm') {
+      return location.pathname === path;
+    }
+    return location.pathname.startsWith(path);
   };
 
   return (
     <nav className="navbar">
       <style>{navbarStyles}</style>
 
-      {/* Left: Hamburger + Logo */}
       <div className="navbar-left">
         <button
           className="navbar-hamburger"
@@ -380,14 +727,86 @@ const Navbar = () => {
         </button>
 
         <div className="navbar-brand">
-          <img src="/VIP_LOGO-removebg.svg" alt="VIP" className="navbar-logo" />
-          <h1>VIP <span>Pharmacy</span> CRM</h1>
+          <img src="/image-removebg-preview (1).png" alt="VIP" className="navbar-logo" />
         </div>
+
+        {user && (
+          <div className="navbar-platform-switch" aria-label="Platform switch">
+            <Link
+              to={crmHome}
+              className={`navbar-platform-link ${isErpRoute ? '' : 'active'}`.trim()}
+            >
+              <span className="navbar-platform-icon" aria-hidden="true">
+                <LayoutGrid size={14} />
+              </span>
+              CRM
+            </Link>
+            <Link
+              to="/erp"
+              className={`navbar-platform-link ${isErpRoute ? 'active' : ''}`.trim()}
+            >
+              <span className="navbar-platform-icon" aria-hidden="true">
+                <Briefcase size={14} />
+              </span>
+              ERP
+            </Link>
+          </div>
+        )}
       </div>
 
-      {/* Right Menu */}
+      {user ? (
+        <div className="navbar-center">
+                <span className="navbar-platform-icon" aria-hidden="true">
+                  <LayoutGrid size={14} />
+                </span>
+
+          <div
+            className={`navbar-erp-tabs ${isErpRoute ? 'navbar-erp-tabs--fluid' : ''}`.trim()}
+            aria-label={isErpRoute ? 'ERP tabs' : 'CRM tabs'}
+          >
+            {platformTabs.map((tab) => {
+                <span className="navbar-platform-icon" aria-hidden="true">
+                  <Briefcase size={14} />
+                </span>
+              const isActive = isTabActive(tab.path);
+              const Icon = tab.icon;
+              return (
+                <Link
+                  key={tab.label}
+                  to={tab.path}
+                  className={`navbar-erp-tab ${isErpRoute ? 'navbar-erp-tab--stacked' : ''} ${isActive ? 'active' : ''}`.trim()}
+                >
+                  {Icon && (
+                    <span className="navbar-erp-tab-icon" aria-hidden="true">
+                      <Icon size={18} />
+                    </span>
+                  )}
+                  <span className="navbar-erp-tab-label">{tab.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div />
+      )}
+
       <div className="navbar-menu">
-        {/* Dark mode toggle */}
+        {isMultiEntity && entities.length > 0 && (
+          <select
+            className="navbar-entity-select"
+            value={workingEntityId || ''}
+            onChange={(e) => setWorkingEntityId(e.target.value)}
+            aria-label="Working entity"
+          >
+            {entities.map(ent => (
+              <option key={ent._id} value={ent._id}>
+                {ent.short_name || ent.entity_name}
+              </option>
+            ))}
+          </select>
+        )}
+
         <button className="navbar-theme-btn" onClick={toggleTheme} aria-label="Toggle dark mode">
           {isDark ? <Sun size={17} /> : <Moon size={17} />}
         </button>
@@ -396,23 +815,18 @@ const Navbar = () => {
           <>
             <div className="navbar-divider" />
 
-            {/* Mobile Avatar */}
-            <div className="navbar-avatar-mobile">
-              {getInitials(user.name)}
-            </div>
+            <div className="navbar-avatar-mobile">{getInitials(user.name)}</div>
 
-            {/* Desktop User Profile Display */}
             <div className="navbar-profile">
-              <div className="navbar-avatar">
-                {getInitials(user.name)}
-              </div>
+              <div className="navbar-avatar">{getInitials(user.name)}</div>
               <div className="navbar-profile-info">
                 <div className="navbar-profile-name">{user.name}</div>
-                <div className="navbar-profile-role">{user.role === 'employee' ? 'BDM' : user.role}</div>
+                <div className="navbar-profile-role">
+                  {user.role === 'employee' ? 'BDM' : user.role}
+                </div>
               </div>
             </div>
 
-            {/* Logout Button */}
             <button className="navbar-logout" onClick={logout}>
               <LogOut size={16} />
               <span className="navbar-logout-text">Logout</span>

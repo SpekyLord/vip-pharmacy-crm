@@ -2,9 +2,9 @@
 
 This file provides essential context for AI assistants working on this project. Read this before making any implementation decisions.
 
-> **Last Updated**: February 2026
-> **Version**: 4.0
-> **Status**: Phase 1 Complete. Client change requests (17 items) documented in `docs/CHANGE_LOG.md`.
+> **Last Updated**: April 2026
+> **Version**: 5.0
+> **Status**: CRM Phase 1 Complete. Client change requests (17 items) documented in `docs/CHANGE_LOG.md`. ERP context in `CLAUDE-ERP.md`.
 
 ---
 

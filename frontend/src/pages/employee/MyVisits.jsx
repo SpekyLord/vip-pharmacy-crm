@@ -19,6 +19,8 @@ import clientService from '../../services/clientService';
 import useDebounce from '../../hooks/useDebounce';
 import toast from 'react-hot-toast';
 
+import SelectField from '../../components/common/Select';
+
 const MyVisits = () => {
   const navigate = useNavigate();
 
@@ -110,10 +112,11 @@ const MyVisits = () => {
           pages: response.pagination?.pages || 1,
         }));
       } else {
-        // All visits — fetch from both sources in parallel
+        // All visits — fetch larger batches from both sources, merge + client-paginate
+        const allParams = { ...params, page: 1, limit: 200 };
         const [vipRes, extraRes] = await Promise.allSettled([
-          visitService.getMy(params, { signal }),
-          clientService.getMyVisits(params, { signal }),
+          visitService.getMy(allParams, { signal }),
+          clientService.getMyVisits(allParams, { signal }),
         ]);
 
         const vipVisits = vipRes.status === 'fulfilled'
@@ -128,14 +131,15 @@ const MyVisits = () => {
           (a, b) => new Date(b.visitDate) - new Date(a.visitDate)
         );
 
-        const vipTotal = vipRes.status === 'fulfilled' ? (vipRes.value.pagination?.total || 0) : 0;
-        const extraTotal = extraRes.status === 'fulfilled' ? (extraRes.value.pagination?.total || 0) : 0;
+        // Client-side pagination over merged results
+        const startIdx = (pagination.page - 1) * pagination.limit;
+        const pageSlice = merged.slice(startIdx, startIdx + pagination.limit);
 
-        setVisits(merged);
+        setVisits(pageSlice);
         setPagination(prev => ({
           ...prev,
-          total: vipTotal + extraTotal,
-          pages: Math.ceil((vipTotal + extraTotal) / prev.limit),
+          total: merged.length,
+          pages: Math.ceil(merged.length / prev.limit),
         }));
       }
     } catch (err) {
@@ -267,7 +271,7 @@ const MyVisits = () => {
               {/* Status Filter */}
               <div className="filter-group">
                 <label htmlFor="status-filter">Status</label>
-                <select
+                <SelectField
                   id="status-filter"
                   value={statusFilter}
                   onChange={(e) => {
@@ -278,7 +282,7 @@ const MyVisits = () => {
                   <option value="all">All Status</option>
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
-                </select>
+                </SelectField>
               </div>
 
               {/* Date Range */}
@@ -456,7 +460,6 @@ const MyVisits = () => {
           />
         </main>
       </div>
-
       <style>{`
         .category-tabs {
           display: flex;

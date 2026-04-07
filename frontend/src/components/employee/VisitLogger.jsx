@@ -9,13 +9,15 @@
  * - FormData submission to backend
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import CameraCapture from './CameraCapture';
 import ProductDetailModal from './ProductDetailModal';
 import EngagementTypeSelector from './EngagementTypeSelector';
 import visitService from '../../services/visitService';
 import productService from '../../services/productService';
+
+import SelectField from '../common/Select';
 
 const visitLoggerStyles = `
   .visit-logger {
@@ -265,6 +267,7 @@ const VisitLogger = ({ doctor, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [detailProduct, setDetailProduct] = useState(null);
   const [detailIndex, setDetailIndex] = useState(0);
+  const submittingRef = useRef(false);
   const [formData, setFormData] = useState({
     visitType: 'regular',
     purpose: '',
@@ -284,7 +287,7 @@ const VisitLogger = ({ doctor, onSuccess }) => {
         if (doctor?.specialization) {
           response = await productService.getBySpecialization(doctor.specialization);
         } else {
-          response = await productService.getAll({ limit: 200 });
+          response = await productService.getAll({ limit: 0 });
         }
         setProducts(response.data || []);
       } catch (err) {
@@ -315,31 +318,60 @@ const VisitLogger = ({ doctor, onSuccess }) => {
     setPhotos(capturedPhotos);
   };
 
-  // Convert base64 to File object
-  const base64ToFile = (base64Data, filename) => {
-    const arr = base64Data.split(',');
-    const mime = arr[0].match(/:(.*?);/)[1];
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
+  // Convert a base64 data URL to File object with strict validation
+  const dataUrlToFile = (dataUrl, filename) => {
+    if (typeof dataUrl !== 'string') {
+      throw new Error('Photo data is missing or invalid');
     }
-    return new File([u8arr], filename, { type: mime });
+
+    const match = dataUrl.match(/^data:(.*?);base64,(.*)$/);
+    if (!match) {
+      throw new Error('Photo data must be a base64 data URL');
+    }
+
+    const [, mimeType, base64Body] = match;
+    if (!base64Body) {
+      throw new Error('Photo data is empty');
+    }
+
+    let binaryString;
+    try {
+      binaryString = atob(base64Body);
+    } catch {
+      throw new Error('Photo base64 payload is corrupted');
+    }
+
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i += 1) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    return new File([bytes], filename, { type: mimeType || 'image/jpeg' });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (loading || submittingRef.current) {
+      return;
+    }
+
     // Validate photos
     if (photos.length === 0) {
-      toast.error('At least 1 photo is required as proof of visit');
+      toast.error('Please upload at least 1 photo as proof of visit. Use the camera or gallery button above.');
+      return;
+    }
+
+    // Validate engagement types
+    if (!formData.engagementTypes || formData.engagementTypes.length === 0) {
+      toast.error('Please select at least 1 engagement type (e.g. TXT/PROMATS, Voice Call).');
       return;
     }
 
     // Get GPS location if available - prefer first photo with GPS, not required
     const visitLocation = photos.find(p => p.location)?.location;
 
+    submittingRef.current = true;
     setLoading(true);
 
     try {
@@ -390,10 +422,27 @@ const VisitLogger = ({ doctor, onSuccess }) => {
       }
 
       // Convert and append photos
-      photos.forEach((photo, index) => {
-        const file = base64ToFile(photo.data, `visit-photo-${index + 1}.jpg`);
+      for (let index = 0; index < photos.length; index += 1) {
+        const photo = photos[index];
+        let file;
+
+        try {
+          if (photo.file instanceof File) {
+            file = photo.file;
+          } else if (photo.blob instanceof Blob) {
+            file = new File([photo.blob], `visit-photo-${index + 1}.jpg`, {
+              type: photo.blob.type || 'image/jpeg',
+            });
+          } else {
+            file = dataUrlToFile(photo.data, `visit-photo-${index + 1}.jpg`);
+          }
+        } catch {
+          toast.error(`Photo ${index + 1} is invalid. Please remove and recapture/upload it.`);
+          return;
+        }
+
         submitData.append('photos', file);
-      });
+      }
 
       await visitService.create(submitData);
       toast.success('Visit logged successfully!');
@@ -406,9 +455,17 @@ const VisitLogger = ({ doctor, onSuccess }) => {
         const errorMessages = err.response.data.errors.map(e => `${e.field}: ${e.message}`).join(', ');
         toast.error(`Validation failed: ${errorMessages}`);
       } else {
-        toast.error(err.response?.data?.message || 'Failed to log visit');
+        const msg = err.response?.data?.message || 'Failed to log visit';
+        if (msg.includes('weekly') || msg.includes('limit')) {
+          toast.error(`${msg} — You can only visit this VIP Client once per week.`, { duration: 6000 });
+        } else if (err.response?.status === 413) {
+          toast.error('Photos are too large. Try reducing photo quality or uploading fewer photos.', { duration: 6000 });
+        } else {
+          toast.error(msg, { duration: 5000 });
+        }
       }
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -426,7 +483,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           {doctor?.visitFrequency}x per month
         </span>
       </div>
-
       {/* Photo Capture Section */}
       <div className="form-section">
         <h3>Photo Proof *</h3>
@@ -438,14 +494,13 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           maxPhotos={5}
         />
       </div>
-
       {/* Visit Details */}
       <div className="form-section">
         <h3>Visit Details</h3>
 
         <div className="form-group">
           <label htmlFor="visitType">Visit Type</label>
-          <select
+          <SelectField
             id="visitType"
             name="visitType"
             value={formData.visitType}
@@ -454,7 +509,7 @@ const VisitLogger = ({ doctor, onSuccess }) => {
             <option value="regular">Regular</option>
             <option value="follow-up">Follow-up</option>
             <option value="emergency">Emergency</option>
-          </select>
+          </SelectField>
         </div>
 
         <div className="form-group">
@@ -469,7 +524,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           />
         </div>
       </div>
-
       {/* Products Discussed */}
       {products.length > 0 && (
         <div className="form-section">
@@ -514,7 +568,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           <p className="vl-view-hint">Tap a product to view details</p>
         </div>
       )}
-
       {/* Product Detail Modal */}
       {detailProduct && (
         <ProductDetailModal
@@ -524,7 +577,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           currentIndex={detailIndex}
         />
       )}
-
       {/* Engagement Types */}
       <div className="form-section">
         <h3>Engagement Type</h3>
@@ -536,7 +588,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           onChange={(types) => setFormData((prev) => ({ ...prev, engagementTypes: types }))}
         />
       </div>
-
       {/* Feedback & Notes */}
       <div className="form-section">
         <h3>Feedback & Notes</h3>
@@ -577,7 +628,6 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           />
         </div>
       </div>
-
       {/* Submit Button */}
       <div className="form-actions">
         <button

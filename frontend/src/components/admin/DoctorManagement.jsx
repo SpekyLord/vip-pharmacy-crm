@@ -15,13 +15,8 @@ import userService from '../../services/userService';
 import specializationService from '../../services/specializationService';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import useLookupData from '../../hooks/useLookupData';
-const ENGAGEMENT_LEVELS = [
-  { value: 1, label: '1 - Visited 4 times' },
-  { value: 2, label: '2 - Knows BDM/products' },
-  { value: 3, label: '3 - Tried products' },
-  { value: 4, label: '4 - In group chat' },
-  { value: 5, label: '5 - Active partner' },
-];
+import { useLookupOptions } from '../../erp/hooks/useLookups';
+import SelectField from '../common/Select';
 
 const doctorManagementStyles = `
   .doctor-management {
@@ -1266,6 +1261,7 @@ const DoctorManagement = ({
   onSearchChange,
 }) => {
   const { programs: lookupPrograms, supportTypes: lookupSupportTypes } = useLookupData();
+  const { options: ENGAGEMENT_LEVELS } = useLookupOptions('ENGAGEMENT_LEVEL');
 
   // Merge lookup data with unique values from loaded doctors as fallback
   const PROGRAMS = useMemo(() => {
@@ -1523,7 +1519,6 @@ const DoctorManagement = ({
   return (
     <div className="doctor-management">
       <style>{doctorManagementStyles}</style>
-
       {/* Filters Bar */}
       <div className="dm-filters-bar">
         {/* Search and Action Buttons */}
@@ -1605,7 +1600,6 @@ const DoctorManagement = ({
         )}
         </div>
       </div>
-
       {/* Table (Desktop) + Card List (Mobile) */}
       <div className={`dm-content-wrapper${loading ? ' table-loading' : ''}`}>
         {doctors.length > 0 ? (
@@ -1762,7 +1756,6 @@ const DoctorManagement = ({
           </div>
         )}
       </div>
-
       {/* Pagination */}
       {pagination.total > 0 && (
         <div className="pagination">
@@ -1792,7 +1785,6 @@ const DoctorManagement = ({
           </div>
         </div>
       )}
-
       {/* Add/Edit Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={handleCloseModal}>
@@ -1834,7 +1826,7 @@ const DoctorManagement = ({
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="specialization">VIP Specialty</label>
-                  <select
+                  <SelectField
                     id="specialization"
                     name="specialization"
                     value={formData.specialization}
@@ -1844,7 +1836,7 @@ const DoctorManagement = ({
                     {specializations.map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="form-group">
                   <label htmlFor="outletIndicator">Outlet Indicator</label>
@@ -1907,7 +1899,7 @@ const DoctorManagement = ({
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="levelOfEngagement">Level of Engagement</label>
-                  <select
+                  <SelectField
                     id="levelOfEngagement"
                     name="levelOfEngagement"
                     value={formData.levelOfEngagement}
@@ -1919,11 +1911,11 @@ const DoctorManagement = ({
                         {level.label}
                       </option>
                     ))}
-                  </select>
+                  </SelectField>
                 </div>
                 <div className="form-group">
                   <label htmlFor="visitFrequencyNew">Visit Frequency *</label>
-                  <select
+                  <SelectField
                     id="visitFrequencyNew"
                     name="visitFrequency"
                     value={formData.visitFrequency}
@@ -1932,13 +1924,13 @@ const DoctorManagement = ({
                   >
                     <option value={2}>2x per month</option>
                     <option value={4}>4x per month</option>
-                  </select>
+                  </SelectField>
                 </div>
               </div>
 
               <div className="form-group full-width">
                 <label htmlFor="assignedTo">Assigned BDM</label>
-                <select
+                <SelectField
                   id="assignedTo"
                   name="assignedTo"
                   value={formData.assignedTo}
@@ -1948,7 +1940,7 @@ const DoctorManagement = ({
                   {employees.map((emp) => (
                     <option key={emp._id} value={emp._id}>{emp.name}</option>
                   ))}
-                </select>
+                </SelectField>
               </div>
 
               <div className="form-group full-width">
@@ -2063,7 +2055,6 @@ const DoctorManagement = ({
           </div>
         </div>
       )}
-
       {/* Delete Options Modal */}
       {showConfirmDelete && selectedDoctor && (
         <div className="del-overlay" onClick={() => { setShowConfirmDelete(false); setSelectedDoctor(null); setHardDeleteTyped(''); }}>
@@ -2240,14 +2231,13 @@ const DoctorManagement = ({
           `}</style>
         </div>
       )}
-
       {/* Mass Delete - Step 1: BDM Picker */}
       {showMassDelete && (
         <div className="dm-mass-delete-modal" onClick={() => setShowMassDelete(false)}>
           <div className="dm-mass-delete-box" onClick={(e) => e.stopPropagation()}>
             <h3>Mass Deactivate VIP Clients</h3>
             <p>Select a BDM to deactivate all their assigned VIP Clients.</p>
-            <select
+            <SelectField
               value={selectedBdmId}
               onChange={(e) => setSelectedBdmId(e.target.value)}
             >
@@ -2255,7 +2245,7 @@ const DoctorManagement = ({
               {employees.map((emp) => (
                 <option key={emp._id} value={emp._id}>{emp.name}</option>
               ))}
-            </select>
+            </SelectField>
             {selectedBdmId && massDeleteCount !== null && massDeleteCount > 0 && (
               <div style={{ background: '#fef3c7', color: '#92400e', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
                 {massDeleteCount} active VIP Client{massDeleteCount !== 1 ? 's' : ''} assigned to this BDM
@@ -2282,7 +2272,6 @@ const DoctorManagement = ({
           </div>
         </div>
       )}
-
       {/* Mass Delete - Step 2: Type to Confirm */}
       <ConfirmDeleteModal
         isOpen={showMassDeleteConfirm}

@@ -13,10 +13,17 @@
 
 const { Resend } = require('resend');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@vipcrm.com';
 const isSandbox = process.env.SES_SANDBOX_MODE !== 'false';
+let resendClient = null;
+
+const getResendClient = () => {
+  if (!resendClient && process.env.RESEND_API_KEY) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+
+  return resendClient;
+};
 
 /**
  * Send an email via Resend (or log in sandbox mode)
@@ -28,7 +35,11 @@ const isSandbox = process.env.SES_SANDBOX_MODE !== 'false';
  * @returns {Promise<{messageId: string|null}>}
  */
 const sendEmail = async ({ to, subject, html, text }) => {
-  if (isSandbox) {
+  if (isSandbox || !isConfigured()) {
+    if (!isSandbox && !isConfigured()) {
+      console.warn('Email not configured; skipping outbound send.');
+    }
+
     console.log('=== EMAIL SANDBOX MODE (email not sent) ===');
     console.log(`To: ${to}`);
     console.log(`Subject: ${subject}`);
@@ -37,6 +48,7 @@ const sendEmail = async ({ to, subject, html, text }) => {
     return { messageId: null };
   }
 
+  const resend = getResendClient();
   const { data, error } = await resend.emails.send({
     from: fromEmail,
     to: [to],

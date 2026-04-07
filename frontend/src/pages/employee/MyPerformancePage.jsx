@@ -21,6 +21,8 @@ import scheduleService from '../../services/scheduleService';
 import DCRSummaryTable from '../../components/employee/DCRSummaryTable';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+import SelectField from '../../components/common/Select';
+
 const performanceStyles = `
   .main-content h1 {
     margin: 0 0 24px 0;
@@ -630,7 +632,7 @@ const MyPerformancePage = () => {
           <div className="perf-header">
             <h1>My Performance</h1>
             <div className="perf-month-picker">
-              <select
+              <SelectField
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
               >
@@ -639,7 +641,7 @@ const MyPerformancePage = () => {
                     {opt.label}
                   </option>
                 ))}
-              </select>
+              </SelectField>
             </div>
           </div>
 

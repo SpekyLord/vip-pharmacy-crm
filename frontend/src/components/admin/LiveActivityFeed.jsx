@@ -41,6 +41,8 @@ import {
 import visitService from '../../services/visitService';
 import auditLogService from '../../services/auditLogService';
 
+import SelectField from '../common/Select';
+
 /* =============================================================================
    CONSTANTS
    Activity type configurations for icons, colors, and labels.
@@ -696,7 +698,6 @@ const LiveActivityFeed = ({
   return (
     <div className="activity-feed-container">
       <style>{feedStyles}</style>
-
       {/* Filter Controls (Full mode only) */}
       {showFilters && !compact && (
         <div className="filter-controls">
@@ -710,7 +711,7 @@ const LiveActivityFeed = ({
             />
           </div>
 
-          <select
+          <SelectField
             className="filter-select"
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
@@ -720,7 +721,7 @@ const LiveActivityFeed = ({
                 {type.label}
               </option>
             ))}
-          </select>
+          </SelectField>
 
           <button
             className={`refresh-btn ${isRefreshing ? 'loading' : ''}`}
@@ -737,7 +738,6 @@ const LiveActivityFeed = ({
           </div>
         </div>
       )}
-
       {/* Header */}
       <div className="activity-feed-header">
         <h3>
@@ -754,7 +754,6 @@ const LiveActivityFeed = ({
           </button>
         )}
       </div>
-
       {/* Activity List */}
       <div className={`activity-list ${compact ? 'compact' : ''}`}>
         {displayedActivities.length > 0 ? (

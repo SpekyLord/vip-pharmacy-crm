@@ -14,6 +14,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import SelectField from '../common/Select';
+
 const AdminSentMessageBox = ({
   message,
   isOpen,
@@ -185,144 +187,142 @@ const AdminSentMessageBox = ({
           <div className="time">{formatDateTime?.(message?.createdAt)}</div>
         </div>
       </div>
-
       {/* Expanded section */}
-        {isOpen && (
-        <div className="inbox-expand" onClick={(e) => e.stopPropagation()}>
+      {isOpen && (
+      <div className="inbox-expand" onClick={(e) => e.stopPropagation()}>
 
-       
+     
 
-          {/* ✅ Message composer (mimic inbox Reply dropdown UI) */}
-          {messageOpen && !isEditing && (
-            <div className="reply-box">
-              {/* local history (optional, mimic replies list) */}
-            {sentFollowups.length > 0 && (
-            <div className="reply-thread">
-                {sentFollowups.map((r) => (
-                <div key={r.id} className="reply-bubble">
+        {/* ✅ Message composer (mimic inbox Reply dropdown UI) */}
+        {messageOpen && !isEditing && (
+          <div className="reply-box">
+            {/* local history (optional, mimic replies list) */}
+          {sentFollowups.length > 0 && (
+          <div className="reply-thread">
+              {sentFollowups.map((r) => (
+              <div key={r.id} className="reply-bubble">
 
-                      <div className="reply-meta">
-                        <strong>{r.from}</strong>
-                        <span className="reply-time">{formatDateTime?.(r.at)}</span>
-                      </div>
-                      <div className="reply-text">{r.text}</div>
+                    <div className="reply-meta">
+                      <strong>{r.from}</strong>
+                      <span className="reply-time">{formatDateTime?.(r.at)}</span>
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div className="reply-text">{r.text}</div>
+                  </div>
+                ))}
+              </div>
+            )}
 
-              <textarea
-                rows={3}
-                value={messageDraft}
-                onChange={(e) => setMessageDraft(e.target.value)}
-                placeholder="Write the message..."
-              />
+            <textarea
+              rows={3}
+              value={messageDraft}
+              onChange={(e) => setMessageDraft(e.target.value)}
+              placeholder="Write the message..."
+            />
 
-              <div className="reply-actions">
-                <button className="btn btn-secondary btn-sm" onClick={closeMessageComposer}>
-                  Cancel
-                </button>
+            <div className="reply-actions">
+              <button className="btn btn-secondary btn-sm" onClick={closeMessageComposer}>
+                Cancel
+              </button>
 
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={sendMessage}
-                  disabled={!messageDraft.trim()}
-                  title={!messageDraft.trim() ? "Message is required" : "Send"}
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={sendMessage}
+                disabled={!messageDraft.trim()}
+                title={!messageDraft.trim() ? "Message is required" : "Send"}
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ Edit box (unchanged behavior) */}
+        {isEditing && (
+          <div className="edit-box">
+            <div className="edit-grid">
+              <div className="edit-field">
+                <label>Title</label>
+                <input
+                  value={draftTitle}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  placeholder="Message title"
+                />
+              </div>
+
+              <div className="edit-field">
+                <label>Category</label>
+                <SelectField value={draftCategory} onChange={(e) => setDraftCategory(e.target.value)}>
+                  <option value="announcement">Announcement</option>
+                  <option value="payroll">Payroll</option>
+                  <option value="leave">Leave</option>
+                  <option value="policy">Policy</option>
+                  <option value="system">System</option>
+                  <option value="compliance_alert">Compliance Alert</option>
+                  <option value="other">Other</option>
+                </SelectField>
+              </div>
+
+              <div className="edit-field">
+                <label>Priority</label>
+                <SelectField value={draftPriority} onChange={(e) => setDraftPriority(e.target.value)}>
+                  <option value="normal">Normal</option>
+                  <option value="important">Important</option>
+                  <option value="high">High</option>
+                </SelectField>
+              </div>
+
+              <div className="edit-field">
+                <label>Recipient Role</label>
+                <SelectField
+                  value={draftRecipientRole}
+                  onChange={(e) => setDraftRecipientRole(e.target.value)}
                 >
-                  Send
-                </button>
+                  <option value="employee">BDM</option>
+                  <option value="admin">Admin</option>
+                </SelectField>
+              </div>
+
+              <div className="edit-field full">
+                <label>Body</label>
+                <textarea
+                  rows={4}
+                  value={draftBody}
+                  onChange={(e) => setDraftBody(e.target.value)}
+                  placeholder="Write the message..."
+                />
               </div>
             </div>
-          )}
 
-          {/* ✅ Edit box (unchanged behavior) */}
-          {isEditing && (
-            <div className="edit-box">
-              <div className="edit-grid">
-                <div className="edit-field">
-                  <label>Title</label>
-                  <input
-                    value={draftTitle}
-                    onChange={(e) => setDraftTitle(e.target.value)}
-                    placeholder="Message title"
-                  />
-                </div>
+            <div className="edit-actions">
+              <button className="btn btn-secondary btn-sm" onClick={onCancelEdit}>
+                Cancel
+              </button>
 
-                <div className="edit-field">
-                  <label>Category</label>
-                  <select value={draftCategory} onChange={(e) => setDraftCategory(e.target.value)}>
-                    <option value="announcement">Announcement</option>
-                    <option value="payroll">Payroll</option>
-                    <option value="leave">Leave</option>
-                    <option value="policy">Policy</option>
-                    <option value="system">System</option>
-                    <option value="compliance_alert">Compliance Alert</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-
-                <div className="edit-field">
-                  <label>Priority</label>
-                  <select value={draftPriority} onChange={(e) => setDraftPriority(e.target.value)}>
-                    <option value="normal">Normal</option>
-                    <option value="important">Important</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-
-                <div className="edit-field">
-                  <label>Recipient Role</label>
-                  <select
-                    value={draftRecipientRole}
-                    onChange={(e) => setDraftRecipientRole(e.target.value)}
-                  >
-                    <option value="employee">BDM</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-
-                <div className="edit-field full">
-                  <label>Body</label>
-                  <textarea
-                    rows={4}
-                    value={draftBody}
-                    onChange={(e) => setDraftBody(e.target.value)}
-                    placeholder="Write the message..."
-                  />
-                </div>
-              </div>
-
-              <div className="edit-actions">
-                <button className="btn btn-secondary btn-sm" onClick={onCancelEdit}>
-                  Cancel
-                </button>
-
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={() =>
-                    onSaveEdit?.({
-                      title: draftTitle.trim(),
-                      body: draftBody.trim(),
-                      category: draftCategory,
-                      priority: draftPriority,
-                      recipientRole: draftRecipientRole,
-                    })
-                  }
-                  disabled={!draftTitle.trim() || !draftBody.trim()}
-                  title={
-                    !draftTitle.trim() || !draftBody.trim()
-                      ? "Title and body are required"
-                      : "Save changes"
-                  }
-                >
-                  Save
-                </button>
-              </div>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() =>
+                  onSaveEdit?.({
+                    title: draftTitle.trim(),
+                    body: draftBody.trim(),
+                    category: draftCategory,
+                    priority: draftPriority,
+                    recipientRole: draftRecipientRole,
+                  })
+                }
+                disabled={!draftTitle.trim() || !draftBody.trim()}
+                title={
+                  !draftTitle.trim() || !draftBody.trim()
+                    ? "Title and body are required"
+                    : "Save changes"
+                }
+              >
+                Save
+              </button>
             </div>
-          )}
-        </div>
-      )}
-
+          </div>
+        )}
+      </div>
+    )}
       {/* Component-local styles (safe) */}
       <style>{`
        
