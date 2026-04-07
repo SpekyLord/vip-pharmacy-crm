@@ -31,7 +31,10 @@
       "Bash(grep -l \"alert\\(\" frontend/src/erp/pages/*.jsx)",
       "Bash(xargs -I {} bash -c 'echo \"{}:\"; grep -c \"alert\\(\" {}')",
       "Bash(ls \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm\\\\backend\\\\erp\\\\scripts/\"*.csv \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm\\\\backend\\\\erp\\\\scripts\\\\data/\"*.csv \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm/\"*.csv)",
-      "Read(//c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/**)"
+      "Read(//c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/**)",
+      "Bash(ls \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm\\\\docs/\"*.csv)",
+      "Bash(grep -v \"//\")",
+      "Bash(npx esbuild:*)"
     ],
     "additionalDirectories": [
       "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp"
