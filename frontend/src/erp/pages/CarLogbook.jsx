@@ -181,6 +181,7 @@ export default function CarLogbook() {
   const handleGasApply = (ocrData) => {
     const val = (f) => (f && typeof f === 'object' && 'value' in f) ? f.value : (f || '');
     const e = ocrData.extracted || {};
+    const receiptDate = val(e.date) || '';
     const newFuel = {
       station_name: val(e.station_name) || '',
       fuel_type: val(e.fuel_type) || 'UNLEADED',
@@ -190,8 +191,21 @@ export default function CarLogbook() {
       payment_mode: 'CASH',
       receipt_url: ocrData.s3_url || '',
       receipt_attachment_id: ocrData.attachment_id || null,
-      receipt_ocr_data: ocrData.extracted || null
+      receipt_ocr_data: ocrData.extracted || null,
+      receipt_date: receiptDate
     };
+
+    // Cross-check: warn if receipt date doesn't match logbook entry date
+    if (receiptDate && form.entry_date) {
+      // Normalize both to YYYY-MM-DD for comparison
+      const normalize = (d) => { try { return new Date(d).toISOString().split('T')[0]; } catch { return ''; } };
+      const normReceipt = normalize(receiptDate);
+      const normEntry = normalize(form.entry_date);
+      if (normReceipt && normEntry && normReceipt !== normEntry) {
+        showError(null, `Receipt date (${normReceipt}) does not match logbook date (${normEntry}) — verify the correct trip date.`);
+      }
+    }
+
     setForm(p => ({ ...p, fuel_entries: [...p.fuel_entries, newFuel] }));
   };
 

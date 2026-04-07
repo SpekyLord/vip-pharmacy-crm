@@ -30,6 +30,11 @@ const getMessageModel = () => {
   // Use the default connection (vip-pharmacy-crm-dev) — useDb('vip-pharmacy-crm') was causing
   // "user is not allowed to do action [find] on [vip-pharmacy-crm.messages]" because the Atlas
   // user only has access to the default database in the connection string.
+  // Guard: return existing compiled model if already registered (prevents OverwriteModelError)
+  if (mongoose.models.MessageInbox) {
+    MessageModel = mongoose.models.MessageInbox;
+    return MessageModel;
+  }
   if (!MessageModel) {
     const messageSchema = new mongoose.Schema(
     {

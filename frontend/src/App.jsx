@@ -136,6 +136,15 @@ const Collaterals = lazy(() => import('./erp/pages/Collaterals'));
 const ControlCenter = lazy(() => import('./erp/pages/ControlCenter'));
 const AgentDashboard = lazy(() => import('./erp/pages/AgentDashboard'));
 
+// Phase 25 — Returns, Expiry, Batch Trace, Orphaned Page Routes
+const CreditNotes = lazy(() => import('./erp/pages/CreditNotes'));
+const ExpiryDashboard = lazy(() => import('./erp/pages/ExpiryDashboard'));
+const BatchTrace = lazy(() => import('./erp/pages/BatchTrace'));
+// Standalone routes redirect to ControlCenter with the right section param
+const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
+const EntityManagerRedirect = () => <Navigate to="/erp/control-center?section=entities" replace />;
+const LookupManagerRedirect = () => <Navigate to="/erp/control-center?section=lookups" replace />;
+
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
   const { user } = useAuth();
@@ -662,6 +671,16 @@ function App() {
           {/* Phase 24 — ERP Control Center + Agent Intelligence */}
           <Route path="/erp/control-center" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><ControlCenter /></ProtectedRoute>} />
           <Route path="/erp/agent-dashboard" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><AgentDashboard /></ProtectedRoute>} />
+
+          {/* Phase 25 — Returns, Expiry, Batch Trace */}
+          <Route path="/erp/credit-notes" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="sales"><CreditNotes /></ProtectedRoute>} />
+          <Route path="/erp/expiry-dashboard" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="inventory"><ExpiryDashboard /></ProtectedRoute>} />
+          <Route path="/erp/batch-trace" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="inventory"><BatchTrace /></ProtectedRoute>} />
+
+          {/* Orphaned page direct routes — redirect to Control Center with correct section */}
+          <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><AgentSettingsRedirect /></ProtectedRoute>} />
+          <Route path="/erp/entity-manager" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><EntityManagerRedirect /></ProtectedRoute>} />
+          <Route path="/erp/lookup-manager" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><LookupManagerRedirect /></ProtectedRoute>} />
 
           <Route path="/employee/*" element={<EmployeeRedirect />} />
           <Route path="/employee" element={<EmployeeRedirect />} />

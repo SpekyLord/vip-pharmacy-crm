@@ -17,4 +17,8 @@ router.post('/grn/:id/approve', protect, roleCheck('admin', 'finance'), c.approv
 router.get('/grn', protect, c.getGrnList);
 router.get('/alerts', protect, c.getAlerts);
 
+// Phase 25 — Expiry management dashboard + batch traceability
+router.get('/expiry-dashboard', protect, c.getExpiryDashboard);
+router.get('/batch-trace/:productId/:batchLotNo', protect, c.getBatchTrace);
+
 module.exports = router;

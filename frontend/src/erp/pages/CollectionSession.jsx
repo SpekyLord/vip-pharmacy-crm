@@ -105,6 +105,15 @@ export default function CollectionSession() {
 
   const commRates = useMemo(() => settings?.COMMISSION_RATES || [0, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05], [settings]);
   const rebateRates = useMemo(() => settings?.PARTNER_REBATE_RATES || [1, 2, 3, 5, 20, 25], [settings]);
+  const vatRate = useMemo(() => settings?.VAT_RATE || 0.12, [settings]);
+
+  // Derive net_of_vat from invoice_amount when the original value is missing
+  const getNetOfVat = useCallback((entry, csi) => {
+    if (entry?.net_of_vat > 0) return entry.net_of_vat;
+    if (csi?.total_net_of_vat > 0) return csi.total_net_of_vat;
+    const amt = entry?.invoice_amount || csi?.balance_due || 0;
+    return Math.round(amt / (1 + vatRate) * 100) / 100;
+  }, [vatRate]);
 
   useEffect(() => {
     lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
@@ -162,9 +171,14 @@ export default function CollectionSession() {
       if (next.has(csi._id)) {
         next.delete(csi._id);
       } else {
+        // Derive net_of_vat from balance_due when total_net_of_vat is missing (e.g. OPENING_AR)
+        const invoiceAmt = csi.balance_due || 0;
+        const netVat = csi.total_net_of_vat > 0
+          ? csi.total_net_of_vat
+          : Math.round(invoiceAmt / (1 + (settings?.VAT_RATE || 0.12)) * 100) / 100;
         next.set(csi._id, {
           sales_line_id: csi._id, doc_ref: csi.doc_ref, csi_date: csi.csi_date,
-          invoice_amount: csi.balance_due, net_of_vat: csi.total_net_of_vat,
+          invoice_amount: invoiceAmt, net_of_vat: netVat,
           source: csi.source, commission_rate: 0.03, partner_tags: []
         });
       }
@@ -262,9 +276,15 @@ export default function CollectionSession() {
   };
 
   const handleSave = async () => {
-    if ((!hospitalId && !customerId) || !crNo || !selectedList.length) {
-      showError(null, 'Select a hospital or customer, enter CR#, and select at least one invoice'); return;
-    }
+    const issues = [];
+    if (!hospitalId && !customerId) issues.push('Select a hospital or customer');
+    if (!crNo) issues.push('CR number is required');
+    if (!selectedList.length) issues.push('Select at least one invoice');
+    const parsedAmount = parseFloat(crAmount) || 0;
+    if (parsedAmount <= 0) issues.push('CR amount must be greater than 0');
+    if (paymentMode === 'CHECK' && !checkNo) issues.push('Check number is required for CHECK payments');
+    if (paymentMode === 'CHECK' && !bank) issues.push('Bank name is required for CHECK payments');
+    if (issues.length) { showError(null, issues.join('. ')); return; }
     setSaving(true);
     try {
       await collections.createCollection({
@@ -369,7 +389,7 @@ export default function CollectionSession() {
                                 {commRates.map(r => <option key={r} value={r}>{(r * 100).toFixed(1)}%</option>)}
                               </SelectField>
                               <span style={{ fontSize: 11, marginLeft: 6, color: '#16a34a', fontWeight: 600 }}>
-                                = P{((entry?.net_of_vat || csi.total_net_of_vat || 0) * (entry?.commission_rate || 0)).toFixed(2)}
+                                = P{(getNetOfVat(entry, csi) * (entry?.commission_rate || 0)).toFixed(2)}
                               </span>
                             </div>
                           </div>
@@ -388,7 +408,7 @@ export default function CollectionSession() {
                                   {rebateRates.map(r => <option key={r} value={r}>{r}%</option>)}
                                 </SelectField>
                                 <span className="rebate-display">
-                                  = P{((entry?.net_of_vat || 0) * (tag.rebate_pct / 100)).toFixed(2)} rebate
+                                  = P{(getNetOfVat(entry, csi) * (tag.rebate_pct / 100)).toFixed(2)} rebate
                                 </span>
                               </div>
                             ))}

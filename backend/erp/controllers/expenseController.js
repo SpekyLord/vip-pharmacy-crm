@@ -417,6 +417,18 @@ const validateCarLogbook = catchAsync(async (req, res) => {
       }
     }
 
+    // Fuel receipt date cross-check: OCR-extracted date should match logbook entry_date
+    for (let j = 0; j < (entry.fuel_entries || []).length; j++) {
+      const fuel = entry.fuel_entries[j];
+      if (fuel.receipt_date && entry.entry_date) {
+        const receiptDay = new Date(fuel.receipt_date).toISOString().split('T')[0];
+        const entryDay = new Date(entry.entry_date).toISOString().split('T')[0];
+        if (receiptDay !== entryDay) {
+          errors.push(`Fuel ${j + 1}: receipt date (${receiptDay}) does not match logbook date (${entryDay})`);
+        }
+      }
+    }
+
     // CALF gate: non-cash fuel entries require CALF to be linked AND POSTED
     for (let j = 0; j < (entry.fuel_entries || []).length; j++) {
       const fuel = entry.fuel_entries[j];
@@ -653,6 +665,18 @@ async function autoCalfForSource(sourceDoc, sourceType) {
 // ═══════════════════════════════════════════
 
 const createExpense = catchAsync(async (req, res) => {
+  // Block future expense dates at save time (not just validation)
+  const now = new Date();
+  for (let i = 0; i < (req.body.lines || []).length; i++) {
+    const line = req.body.lines[i];
+    if (line.expense_date && new Date(line.expense_date) > now) {
+      return res.status(400).json({
+        success: false,
+        message: `Line ${i + 1}: expense date cannot be in the future`
+      });
+    }
+  }
+
   const entry = await ExpenseEntry.create({
     ...req.body,
     entity_id: req.entityId,
@@ -668,6 +692,18 @@ const createExpense = catchAsync(async (req, res) => {
 const updateExpense = catchAsync(async (req, res) => {
   const entry = await ExpenseEntry.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
   if (!entry) return res.status(404).json({ success: false, message: 'Draft expense not found' });
+
+  // Block future expense dates on update too
+  const now = new Date();
+  for (let i = 0; i < (req.body.lines || []).length; i++) {
+    const line = req.body.lines[i];
+    if (line.expense_date && new Date(line.expense_date) > now) {
+      return res.status(400).json({
+        success: false,
+        message: `Line ${i + 1}: expense date cannot be in the future`
+      });
+    }
+  }
 
   Object.assign(entry, req.body);
   await entry.save();
@@ -729,6 +765,8 @@ const validateExpenses = catchAsync(async (req, res) => {
       // OR proof gate: ORE and ACCESS lines require OR photo or OR number (PRD v5 §8.3)
       if (!line.or_photo_url && !line.or_number) {
         errors.push(`Line ${i + 1}: OR photo or OR number required for ${line.expense_type} expense`);
+      } else if (line.or_number && !line.or_photo_url) {
+        errors.push(`WARNING: Line ${i + 1}: OR# ${line.or_number} provided without receipt photo — attach photo for audit trail`);
       }
 
       // COA mapping warning: lines falling through to 6900 Miscellaneous should be flagged
@@ -915,6 +953,14 @@ const reopenExpenses = catchAsync(async (req, res) => {
 // ═══════════════════════════════════════════
 
 const createPrfCalf = catchAsync(async (req, res) => {
+  // CALF must be linked to an expense entry — prevent orphan CALFs
+  if (req.body.doc_type === 'CALF' && !req.body.linked_expense_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'CALF must be linked to an expense entry. Use "Create CALF" from pending company-funded items.'
+    });
+  }
+
   const doc = await PrfCalf.create({
     ...req.body,
     entity_id: req.entityId,

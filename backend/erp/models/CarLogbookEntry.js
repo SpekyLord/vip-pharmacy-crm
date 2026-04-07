@@ -16,6 +16,7 @@ const fuelEntrySchema = new mongoose.Schema({
   receipt_url: String,
   receipt_attachment_id: String,
   receipt_ocr_data: { type: mongoose.Schema.Types.Mixed },
+  receipt_date: { type: String, trim: true }, // OCR-extracted date for cross-check against entry_date
   payment_mode: { type: String, default: 'CASH' }, // Validated against PaymentMode lookup
   funding_card_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CreditCard' },
   calf_required: { type: Boolean, default: false },

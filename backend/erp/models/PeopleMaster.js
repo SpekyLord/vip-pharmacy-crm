@@ -67,6 +67,7 @@ const peopleMasterSchema = new mongoose.Schema(
     date_regularized: { type: Date },
     date_separated: { type: Date },
     date_of_birth: { type: Date },
+    live_date: { type: Date }, // ERP go-live date — CSI before this = OPENING_AR, after = SALES_LINE
 
     // ═══ Civil Status ═══
     civil_status: {
