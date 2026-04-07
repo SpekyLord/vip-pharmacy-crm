@@ -31,7 +31,15 @@ const styles = `
   body.dark-mode .wfg-next-label { color: #93c5fd; }
   body.dark-mode .wfg-tip { color: #64748b; }
   body.dark-mode .wfg-dismiss:hover { background: #334155; color: #93c5fd; }
-  @media(max-width: 480px) { .wfg { padding: 12px; font-size: 11px; } .wfg-next { flex-direction: column; align-items: flex-start; } }
+  @media(max-width: 600px) {
+    .wfg { padding: 12px 12px 10px; font-size: 11px; overflow: hidden; word-break: break-word; overflow-wrap: break-word; }
+    .wfg-title { font-size: 12px; padding-right: 20px; }
+    .wfg-step span:last-child { word-break: break-word; overflow-wrap: break-word; white-space: normal; min-width: 0; flex: 1; }
+    .wfg-tip { word-break: break-word; overflow-wrap: break-word; white-space: normal; }
+    .wfg-next { flex-direction: column; align-items: stretch; gap: 6px; }
+    .wfg-next-label { margin-bottom: 2px; }
+    .wfg-link { width: 100%; text-align: center; padding: 8px 12px; font-size: 12px; box-sizing: border-box; white-space: normal; word-break: break-word; }
+  }
 `;
 
 // ── Complete BDM workflow guide config ──

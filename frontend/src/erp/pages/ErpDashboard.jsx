@@ -94,7 +94,8 @@ const pageStyles = `
     .boss-scroll { padding-bottom: 24px; }
   }
   @media (max-width: 768px) {
-    .boss-scroll { padding: 104px 12px 110px; }
+    .boss-main { padding-top: 56px; }
+    .boss-scroll { padding: 16px 12px 110px; }
     .summary-card .value { font-size: 16px; }
   }
   @media (max-width: 375px) {
@@ -176,8 +177,8 @@ export default function ErpDashboard() {
       <div className="admin-layout">
         <Sidebar />
         <main className="boss-main">
-          <WorkflowGuide pageKey="erp-dashboard" />
           <div className="boss-scroll">
+            <WorkflowGuide pageKey="erp-dashboard" />
 
             {/* Header */}
             <div className="boss-header">
