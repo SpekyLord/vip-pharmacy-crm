@@ -674,13 +674,12 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   const isAdmin = isAdminLikeRole(role);
   const sections = [];
 
-  // ── ERP Home + Hospitals (always visible, no header) ──────────────────────
+  // ── ERP Home (always visible, no header) ─────────────────────────────────
   sections.push({
     title: null,
     collapsible: false,
     items: [
       { path: '/erp', label: 'ERP Home', icon: Briefcase },
-      { path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope },
     ],
   });
 
@@ -691,7 +690,6 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     if (salesHomePath !== '/erp/sales') {
       salesItems.push({ path: '/erp/sales', label: 'Sales Transactions', icon: FileText, isChild: true });
     }
-    salesItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
     sections.push({
       title: 'Sales',
       collapsible: true,
@@ -703,27 +701,33 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   // ── Inventory ─────────────────────────────────────────────────────────────
   if (hasModule('inventory')) {
     const invItems = [
-      { path: '/erp/my-stock', label: 'Inventory', icon: Package },
+      { path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen },
       { path: '/erp/grn', label: 'GRN Entry', icon: FileInput },
+      { path: '/erp/my-stock', label: 'Inventory', icon: Package },
+      { path: '/erp/office-supplies', label: 'Office Supplies', icon: Package },
+      { path: '/erp/petty-cash', label: 'Petty Cash', icon: Wallet },
       { path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight },
     ];
-    if (isAdmin) invItems.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
     if (isAdmin) invItems.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
+    if (isAdmin) invItems.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
     if (['admin', 'president'].includes(role)) {
       invItems.push({ path: '/erp/warehouses', label: 'Warehouses', icon: Package });
     }
+    // Sort alphabetically
+    invItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'Inventory', collapsible: true, defaultOpen: true, items: invItems });
   }
 
   // ── Collections ───────────────────────────────────────────────────────────
   if (hasModule('collections')) {
     const collItems = [
-      { path: '/erp/collections', label: 'Collections', icon: Wallet },
       { path: '/erp/collections/ar', label: 'AR Aging', icon: BarChart3 },
+      { path: '/erp/collections', label: 'Collections', icon: Wallet },
     ];
     if (['admin', 'finance', 'president'].includes(role)) {
       collItems.push({ path: '/erp/ic-settlements', label: 'IC Settlements', icon: Repeat });
     }
+    collItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'Collections', collapsible: true, defaultOpen: true, items: collItems });
   }
 
@@ -731,6 +735,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   if (hasModule('expenses')) {
     const expItems = [{ path: '/erp/expenses', label: 'Expenses', icon: CreditCard }];
     if (isAdmin) expItems.push({ path: '/erp/credit-cards', label: 'Credit Cards', icon: CreditCard });
+    expItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'Expenses', collapsible: true, defaultOpen: true, items: expItems });
   }
 
@@ -738,6 +743,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   if (hasModule('reports')) {
     const repItems = [{ path: '/erp/reports', label: 'Reports', icon: BarChart3 }];
     if (isAdmin) repItems.push({ path: '/erp/budget-allocations', label: 'Budget Allocations', icon: DollarSign });
+    repItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'Reports', collapsible: true, defaultOpen: false, items: repItems });
   }
 
@@ -751,76 +757,81 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     if (hasModule('payroll')) {
       hrItems.push({ path: '/erp/payroll', label: 'Payroll', icon: DollarSign });
     }
+    hrItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'People & HR', collapsible: true, defaultOpen: isAdmin, items: hrItems });
   }
 
   // ── Accounting (admin-like only) ──────────────────────────────────────────
   if (hasModule('accounting')) {
+    const accItems = [
+      { path: '/erp/bank-accounts', label: 'Bank Accounts', icon: Landmark },
+      { path: '/erp/bank-recon', label: 'Bank Reconciliation', icon: Scale },
+      { path: '/erp/cashflow', label: 'Cashflow', icon: BookOpen },
+      { path: '/erp/credit-card-ledger', label: 'CC Ledger', icon: CreditCard },
+      { path: '/erp/coa', label: 'Chart of Accounts', icon: BookOpen },
+      { path: '/erp/cost-centers', label: 'Cost Centers', icon: Layers },
+      { path: '/erp/fixed-assets', label: 'Fixed Assets', icon: BookOpen },
+      { path: '/erp/journals', label: 'Journal Entries', icon: BookOpen },
+      { path: '/erp/loans', label: 'Loans', icon: BookOpen },
+      { path: '/erp/owner-equity', label: 'Owner Equity', icon: BookOpen },
+      { path: '/erp/profit-loss', label: 'P&L Statement', icon: BookOpen },
+      { path: '/erp/recurring-journals', label: 'Recurring Journals', icon: BookOpen },
+      { path: '/erp/trial-balance', label: 'Trial Balance', icon: BookOpen },
+      { path: '/erp/vat-compliance', label: 'VAT & CWT', icon: BookOpen },
+    ];
+    accItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({
       title: 'Accounting',
       collapsible: true,
       defaultOpen: isAdmin,
-      items: [
-        { path: '/erp/coa', label: 'Chart of Accounts', icon: BookOpen },
-        { path: '/erp/journals', label: 'Journal Entries', icon: BookOpen },
-        { path: '/erp/recurring-journals', label: 'Recurring Journals', icon: BookOpen },
-        { path: '/erp/trial-balance', label: 'Trial Balance', icon: BookOpen },
-        { path: '/erp/profit-loss', label: 'P&L Statement', icon: BookOpen },
-        { path: '/erp/vat-compliance', label: 'VAT & CWT', icon: BookOpen },
-        { path: '/erp/cashflow', label: 'Cashflow', icon: BookOpen },
-        { path: '/erp/fixed-assets', label: 'Fixed Assets', icon: BookOpen },
-        { path: '/erp/loans', label: 'Loans', icon: BookOpen },
-        { path: '/erp/owner-equity', label: 'Owner Equity', icon: BookOpen },
-        { path: '/erp/month-end-close', label: 'Month-End Close', icon: BookOpen },
-        { path: '/erp/period-locks', label: 'Period Locks', icon: BookOpen },
-        { path: '/erp/bank-accounts', label: 'Bank Accounts', icon: Landmark },
-        { path: '/erp/bank-recon', label: 'Bank Reconciliation', icon: Scale },
-        { path: '/erp/credit-card-ledger', label: 'CC Ledger', icon: CreditCard },
-        { path: '/erp/cost-centers', label: 'Cost Centers', icon: Layers },
-        { path: '/erp/petty-cash', label: 'Petty Cash', icon: Wallet },
-        { path: '/erp/office-supplies', label: 'Office Supplies', icon: Package },
-        { path: '/erp/data-archive', label: 'Data Archive', icon: Archive },
-        { path: '/erp/credit-cards', label: 'Credit Cards', icon: CreditCard },
-      ],
+      items: accItems,
     });
   }
 
-  // ── Finance Tools (admin-like only) ───────────────────────────────────────
+  // ── Tools (admin-like only) ───────────────────────────────────────────────
   if (isAdmin) {
-    const ftItems = [
-      { path: '/erp/government-rates', label: 'Gov. Rates', icon: BookOpen },
+    const toolItems = [
       { path: '/erp/bir-calculator', label: 'BIR Calculator', icon: BookOpen },
+      { path: '/erp/data-archive', label: 'Data Archive', icon: Archive },
+      { path: '/erp/government-rates', label: 'Gov. Rates', icon: BookOpen },
+      { path: '/erp/month-end-close', label: 'Month-End Close', icon: BookOpen },
+      { path: '/erp/period-locks', label: 'Period Locks', icon: BookOpen },
     ];
     if (['admin', 'finance', 'president'].includes(role)) {
-      ftItems.push({ path: '/erp/payment-modes', label: 'Payment Modes', icon: BookOpen });
+      toolItems.push({ path: '/erp/payment-modes', label: 'Payment Modes', icon: BookOpen });
     }
-    sections.push({ title: 'Finance Tools', collapsible: true, defaultOpen: isAdmin, items: ftItems });
+    toolItems.sort((a, b) => a.label.localeCompare(b.label));
+    sections.push({ title: 'Tools', collapsible: true, defaultOpen: isAdmin, items: toolItems });
   }
 
   // ── Purchasing (admin-like only) ──────────────────────────────────────────
   if (hasModule('purchasing')) {
+    const purItems = [
+      { path: '/erp/accounts-payable', label: 'Accounts Payable', icon: Wallet },
+      { path: '/erp/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
+      { path: '/erp/supplier-invoices', label: 'Supplier Invoices', icon: FileInput },
+      { path: '/erp/vendors', label: 'Vendors', icon: Truck },
+    ];
+    purItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({
       title: 'Purchasing',
       collapsible: true,
       defaultOpen: isAdmin,
-      items: [
-        { path: '/erp/vendors', label: 'Vendors', icon: Truck },
-        { path: '/erp/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
-        { path: '/erp/supplier-invoices', label: 'Supplier Invoices', icon: FileInput },
-        { path: '/erp/accounts-payable', label: 'Accounts Payable', icon: Wallet },
-      ],
+      items: purItems,
     });
   }
 
   // ── Administration (admin-like only) — inserted at top, right after ERP Home ──
   if (['admin', 'finance', 'president'].includes(role)) {
     const adminItems = [];
+    adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
+    adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
     if (isAdmin) {
       adminItems.push({ path: '/erp/customers', label: 'Customers', icon: Users });
+      adminItems.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
       adminItems.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
     }
-    adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
-    adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
+    adminItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.splice(1, 0, { title: 'Administration', collapsible: true, defaultOpen: false, items: adminItems });
   }
 
