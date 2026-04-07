@@ -297,6 +297,35 @@ const DEPENDENCY_GUIDE = {
       { action: 'When you deactivate a value', deps: 'Existing records keep their value, but new entries cannot select it', section: null },
     ]
   },
+  'org-chart': {
+    title: 'Org Chart Dependencies',
+    items: [
+      { action: 'Before using the org chart', deps: 'Add people in People Master and set their "Reports To" field', section: 'people' },
+      { action: 'To see scores', deps: 'Click "Recompute Scores" to generate Partner Scorecards from visit, sales, and collection data', section: null },
+      { action: 'To see all entities', deps: 'Log in as President to view the full multi-entity org chart (VIP + subsidiaries)', section: 'entities' },
+    ]
+  },
+  'hospitals': {
+    title: 'Hospital Dependencies',
+    items: [
+      { action: 'When you add a hospital', deps: 'You can now create Sales (CSI) and Collections (CR) linked to it', section: null },
+      { action: 'When you link to a customer', deps: 'Sales and collections will flow through the customer record for AR tracking', section: 'customers' },
+    ]
+  },
+  'fnb-products': {
+    title: 'F&B Product Dependencies',
+    items: [
+      { action: 'When you add an F&B product', deps: 'Set purchase_price and assign to a Warehouse for inventory tracking', section: 'warehouses' },
+      { action: 'F&B products use stock_type "FNB"', deps: 'They appear separately from pharma products in inventory reports', section: null },
+    ]
+  },
+  'data-archive': {
+    title: 'Data Archive Dependencies',
+    items: [
+      { action: 'Before archiving', deps: 'Ensure the period is locked — archived data cannot be modified', section: 'period-locks' },
+      { action: 'When you archive transactions', deps: 'They are removed from active queries but preserved in the archive collection', section: null },
+    ]
+  },
 };
 
 function DependencyBanner({ section, onNavigate }) {
@@ -360,7 +389,14 @@ const pageStyles = `
   @media(max-width: 768px) {
     .ctlc-nav { display: none; }
     .ctlc-mobile-select { display: block; }
-    .ctlc-content { padding: 16px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+    .ctlc-content { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+    .ctlc-dep-banner { padding: 10px 12px; font-size: 11px; line-height: 1.6; margin-bottom: 12px; }
+    .ctlc-dep-item { display: flex; flex-wrap: wrap; gap: 2px; }
+    .ctlc-dep-link { display: inline-block; margin-top: 2px; margin-left: 0; font-size: 11px; }
+  }
+  @media(max-width: 375px) {
+    .ctlc-content { padding: 8px; }
+    .ctlc-dep-banner { padding: 8px 10px; font-size: 10.5px; }
   }
 `;
 
