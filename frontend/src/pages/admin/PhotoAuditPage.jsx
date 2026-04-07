@@ -24,6 +24,7 @@ const pageStyles = `
   .dashboard-layout {
     min-height: 100vh;
     background: #f3f4f6;
+    --mobile-navbar-offset: 112px;
   }
 
   .dashboard-content {
@@ -689,7 +690,7 @@ const pageStyles = `
 
   @media (max-width: 768px) {
     .main-content {
-      padding: 16px;
+      padding: var(--mobile-navbar-offset) 16px 16px;
     }
 
     .filters-row {

@@ -96,6 +96,7 @@ const styles = `
   .reports-layout {
     min-height: 100vh;
     background: #f3f4f6;
+    --mobile-navbar-offset: 112px;
   }
 
   .reports-content {
@@ -1230,10 +1231,15 @@ const styles = `
     font-weight: 500;
   }
 
+  @media (max-width: 768px) {
+    .reports-main {
+      padding-top: var(--mobile-navbar-offset);
+    }
+  }
+
   @media (max-width: 480px) {
     .reports-main {
-      padding: 16px;
-      padding-bottom: 80px;
+      padding: calc(var(--mobile-navbar-offset) + 12px) 16px 80px;
     }
     .page-header {
       flex-direction: column;

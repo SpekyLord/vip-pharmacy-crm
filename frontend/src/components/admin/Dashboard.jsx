@@ -644,6 +644,10 @@ const dashboardStyles = `
       padding: 24px;
     }
 
+    .db-main {
+      padding-top: 104px;
+    }
+
     .db-greeting-text h2 { font-size: 22px; }
 
     .db-greeting-actions {

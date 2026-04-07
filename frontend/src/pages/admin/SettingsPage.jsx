@@ -13,6 +13,7 @@ const pageStyles = `
   .dashboard-layout {
     min-height: 100vh;
     background: #f3f4f6;
+    --mobile-navbar-offset: 112px;
   }
 
   .dashboard-content {
@@ -81,7 +82,10 @@ const pageStyles = `
   body.dark-mode .dashboard-layout { background: #0f172a; }
 
   @media (max-width: 768px) {
-    .settings-main { padding: 16px; }
+    .settings-main {
+      padding: var(--mobile-navbar-offset) 16px 16px;
+      max-height: none;
+    }
     .settings-header h1 { font-size: 20px; }
   }
 `;

@@ -595,7 +595,7 @@ const styles = `
 
   @media (max-width: 768px) {
     .ie-content {
-      padding: 16px;
+      padding: 104px 16px 96px;
     }
     .ie-form-row {
       grid-template-columns: 1fr;
@@ -607,8 +607,7 @@ const styles = `
 
   @media (max-width: 480px) {
     .ie-content {
-      padding: 16px;
-      padding-bottom: 80px;
+      padding: 104px 16px 96px;
     }
     .ie-header h1 {
       font-size: 22px;
