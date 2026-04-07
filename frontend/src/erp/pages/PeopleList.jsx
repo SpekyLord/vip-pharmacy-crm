@@ -146,11 +146,11 @@ export function PeopleListContent() {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Email / Phone</th>
                 <th>Type</th>
                 <th>Position</th>
                 <th>Department</th>
                 <th>Reports To</th>
-                <th>Employment</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -161,11 +161,15 @@ export function PeopleListContent() {
                 return (
                   <tr key={p._id} onClick={() => navigate(`/erp/people/${p._id}`)}>
                     <td style={{ fontWeight: 500 }}>{p.full_name}</td>
+                    <td style={{ fontSize: 12 }}>
+                      {p.email && <div style={{ color: '#1e40af' }}>{p.email}</div>}
+                      {p.phone && <div style={{ color: '#64748b' }}>{p.phone}</div>}
+                      {!p.email && !p.phone && '—'}
+                    </td>
                     <td><span className="badge" style={{ background: tc.bg, color: tc.text }}>{p.person_type.replace(/_/g, ' ')}</span></td>
                     <td>{p.position || '—'}</td>
                     <td>{p.department || '—'}</td>
                     <td style={{ fontSize: 12, color: '#64748b' }}>{p.reports_to?.full_name || '—'}</td>
-                    <td>{p.employment_type || '—'}</td>
                     <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{p.status}</span></td>
                   </tr>
                 );
