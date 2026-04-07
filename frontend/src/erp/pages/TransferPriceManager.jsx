@@ -65,7 +65,7 @@ const pageStyles = `
 
 export function TransferPriceManagerContent() {
   const { user } = useAuth();
-  const { getTransferPriceProducts, bulkSetTransferPrices, getEntities, getSourceProducts, copyProductsToEntity, loading } = useTransfers();
+  const { getTransferPriceProducts, bulkSetTransferPrices, getEntities, loading } = useTransfers();
 
   const [entities, setEntities] = useState([]);
   const [products, setProducts] = useState([]);
@@ -78,14 +78,6 @@ export function TransferPriceManagerContent() {
   const [msg, setMsg] = useState(null); // { text, type: 'success'|'error' }
   const [fetching, setFetching] = useState(false);
   const searchRef = useRef(null);
-
-  // Import from source entity
-  const [importModal, setImportModal] = useState(false);
-  const [sourceProducts, setSourceProducts] = useState([]);
-  const [selectedImports, setSelectedImports] = useState([]);
-  const [importSearch, setImportSearch] = useState('');
-  const [importLoading, setImportLoading] = useState(false);
-  const [copying, setCopying] = useState(false);
 
   const isPresidentOrAdmin = ['president', 'ceo', 'admin'].includes(user?.role);
 
@@ -189,64 +181,15 @@ export function TransferPriceManagerContent() {
     setMsg(null);
   };
 
-  // Open import modal — load source entity products
-  const openImportModal = async () => {
-    if (!sourceId || !targetId) return;
-    setImportModal(true);
-    setImportLoading(true);
-    setSelectedImports([]);
-    setImportSearch('');
-    try {
-      const res = await getSourceProducts({ source_entity_id: sourceId, target_entity_id: targetId });
-      setSourceProducts(res.data || []);
-    } catch { setSourceProducts([]); }
-    setImportLoading(false);
-  };
-
-  const filteredImports = useMemo(() => {
-    if (!importSearch.trim()) return sourceProducts;
-    const q = importSearch.toLowerCase();
-    return sourceProducts.filter(p =>
-      p.brand_name?.toLowerCase().includes(q) || p.generic_name?.toLowerCase().includes(q)
-    );
-  }, [sourceProducts, importSearch]);
-
-  const toggleImport = (id) => setSelectedImports(prev =>
-    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-  );
-
-  const selectAllNew = () => {
-    const newOnes = sourceProducts.filter(p => !p.already_in_target).map(p => p._id);
-    setSelectedImports(newOnes);
-  };
-
-  const handleCopyProducts = async () => {
-    if (!selectedImports.length) return;
-    setCopying(true);
-    try {
-      const res = await copyProductsToEntity({
-        source_entity_id: sourceId,
-        target_entity_id: targetId,
-        product_ids: selectedImports
-      });
-      alert(res.message || `Copied ${res.data?.copied || 0} products`);
-      setImportModal(false);
-      fetchProducts(); // refresh transfer price list
-    } catch (err) { alert(err?.response?.data?.message || 'Copy failed'); }
-    setCopying(false);
-  };
-
   return (
     <>
       <style>{pageStyles}</style>
       <div className="tpm-inner">
         <div className="tpm-header">
           <h1>Transfer Price Manager</h1>
-          {isPresidentOrAdmin && sourceId && targetId && (
-            <button className="btn btn-outline" onClick={openImportModal}>
-              Import Products from Source
-            </button>
-          )}
+          <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>
+            Set a transfer price to tag a product to an entity. Clear the price to untag.
+          </p>
         </div>
 
         {/* Entity selectors */}
@@ -388,81 +331,6 @@ export function TransferPriceManagerContent() {
           </div>
         )}
       </div>
-
-      {/* Import Products Modal */}
-      {importModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-          onClick={() => setImportModal(false)}>
-          <div style={{ background: '#fff', borderRadius: 14, padding: 24, width: 700, maxWidth: '95vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}
-            onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 12px', fontSize: 18, fontWeight: 600 }}>Import Products from Source Entity</h3>
-            <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 12px' }}>
-              Select products to copy to the target entity. Already existing products are marked.
-            </p>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <input
-                type="text"
-                placeholder="Search..."
-                value={importSearch}
-                onChange={e => setImportSearch(e.target.value)}
-                style={{ flex: 1, padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13 }}
-              />
-              <button className="btn btn-outline" onClick={selectAllNew} style={{ whiteSpace: 'nowrap' }}>
-                Select All New
-              </button>
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 8 }}>
-              {importLoading ? (
-                <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Loading...</div>
-              ) : filteredImports.length === 0 ? (
-                <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>No products found</div>
-              ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc' }}>
-                      <th style={{ padding: '8px 12px', width: 36 }}></th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left' }}>Brand Name</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left' }}>Generic</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left' }}>Dosage</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left' }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredImports.map(p => (
-                      <tr key={p._id} style={{ borderTop: '1px solid #e5e7eb', opacity: p.already_in_target ? 0.5 : 1 }}>
-                        <td style={{ padding: '6px 12px' }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedImports.includes(p._id)}
-                            onChange={() => toggleImport(p._id)}
-                            disabled={p.already_in_target}
-                          />
-                        </td>
-                        <td style={{ padding: '6px 12px', fontWeight: 600 }}>{p.brand_name}</td>
-                        <td style={{ padding: '6px 12px' }}>{p.generic_name}</td>
-                        <td style={{ padding: '6px 12px' }}>{p.dosage_strength || '—'}</td>
-                        <td style={{ padding: '6px 12px' }}>
-                          {p.already_in_target ? (
-                            <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>Already exists</span>
-                          ) : (
-                            <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>New</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-              <button className="btn btn-outline" onClick={() => setImportModal(false)}>Cancel</button>
-              <button className="btn btn-primary" disabled={!selectedImports.length || copying} onClick={handleCopyProducts}>
-                {copying ? 'Copying...' : `Copy ${selectedImports.length} Product${selectedImports.length !== 1 ? 's' : ''}`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

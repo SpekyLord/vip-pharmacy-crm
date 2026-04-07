@@ -9,6 +9,7 @@ const getAll = catchAsync(async (req, res) => {
   if (req.tenantFilter?.entity_id) filter.entity_id = req.tenantFilter.entity_id;
   if (req.query.entity_id) filter.entity_id = req.query.entity_id;
   if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
+  if (req.query.stock_type) filter.stock_type = req.query.stock_type;
   if (req.query.q) {
     filter.$or = [
       { brand_name: { $regex: req.query.q, $options: 'i' } },
@@ -201,6 +202,7 @@ const exportPrices = catchAsync(async (req, res) => {
   const entityId = req.query.entity_id || req.entityId;
   const filter = { entity_id: entityId };
   if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
+  if (req.query.stock_type) filter.stock_type = req.query.stock_type;
 
   const products = await ProductMaster.find(filter)
     .select('brand_name generic_name dosage_strength sold_per purchase_price selling_price is_active')

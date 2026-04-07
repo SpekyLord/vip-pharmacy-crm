@@ -10,6 +10,7 @@ import useWarehouses from '../hooks/useWarehouses';
 
 const VAT_OPTIONS = ['VATABLE', 'EXEMPT', 'ZERO'];
 const STATUS_FILTER = ['ALL', 'ACTIVE', 'INACTIVE'];
+const STOCK_TYPES = ['PHARMA', 'FNB', 'OFFICE'];
 
 const pageStyles = `
   .pm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -220,7 +221,7 @@ function ProductModal({ open, onClose, onSave, editItem }) {
 }
 
 // ---------- Main Page ----------
-export function ProductMasterPageContent() {
+export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const api = useErpApi();
   const { getWarehouses } = useWarehouses();
   const [products, setProducts] = useState([]);
@@ -228,6 +229,7 @@ export function ProductMasterPageContent() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ACTIVE');
+  const [stockTypeFilter, setStockTypeFilter] = useState(fixedStockType || '');
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -270,12 +272,13 @@ export function ProductMasterPageContent() {
       const params = { page, limit };
       if (search) params.q = search;
       if (statusFilter !== 'ALL') params.is_active = statusFilter === 'ACTIVE' ? 'true' : 'false';
+      if (stockTypeFilter) params.stock_type = stockTypeFilter;
       const res = await api.get('/products', { params });
       setProducts(res?.data || []);
       setTotal(res?.pagination?.total || 0);
     } catch (err) { console.error('[ProductMaster] Load error:', err.message); setProducts([]); }
     finally { setLoading(false); }
-  }, [page, search, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, search, statusFilter, stockTypeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
@@ -287,6 +290,7 @@ export function ProductMasterPageContent() {
   }, [searchInput]);
 
   const handleSave = async (body, id) => {
+    if (fixedStockType && !id) body.stock_type = fixedStockType;
     if (id) await api.put(`/products/${id}`, body);
     else await api.post('/products', body);
     loadProducts();
@@ -341,8 +345,8 @@ export function ProductMasterPageContent() {
       <style>{pageStyles}</style>
           <div className="pm-header">
             <div>
-              <h1>Product Master</h1>
-              <p>ERP product catalog — pricing, VAT, reorder rules</p>
+              <h1>{fixedStockType === 'FNB' ? 'F&B Product Master' : 'Product Master'}</h1>
+              <p>{fixedStockType === 'FNB' ? 'Food & Beverage catalog — pricing, VAT' : 'ERP product catalog — pricing, VAT, reorder rules'}</p>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn btn-secondary" onClick={handleExportPrices}>Export Prices</button>
@@ -370,6 +374,12 @@ export function ProductMasterPageContent() {
             <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}>
               {STATUS_FILTER.map(s => <option key={s} value={s}>{s === 'ALL' ? 'All Status' : s}</option>)}
             </select>
+            {!fixedStockType && (
+              <select value={stockTypeFilter} onChange={e => { setStockTypeFilter(e.target.value); setPage(1); }}>
+                <option value="">All Types</option>
+                {STOCK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            )}
             <span className="pm-count">{total} product{total !== 1 ? 's' : ''}</span>
           </div>
 

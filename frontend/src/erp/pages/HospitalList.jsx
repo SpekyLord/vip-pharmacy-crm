@@ -11,7 +11,7 @@ import useHospitals from '../hooks/useHospitals';
 import usePeople from '../hooks/usePeople';
 import useErpApi from '../hooks/useErpApi';
 
-export default function HospitalList() {
+export function HospitalListContent() {
   const { user } = useAuth();
   const { hospitals, loading, refresh } = useHospitals();
   const erpApi = useErpApi();
@@ -182,12 +182,9 @@ export default function HospitalList() {
   };
 
   return (
-    <div className="admin-page erp-page hospital-page" style={styles.page}>
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div className="admin-layout">
-        <Sidebar />
-        <main className="hospital-main" style={styles.main}>
+      <main className="hospital-main" style={styles.main}>
           <div style={styles.header}>
             <div>
               <h1 style={{ fontSize: 22, margin: 0 }}>Hospitals</h1>
@@ -361,6 +358,17 @@ export default function HospitalList() {
             </div>
           )}
         </main>
+    </>
+  );
+}
+
+export default function HospitalList() {
+  return (
+    <div className="admin-page erp-page hospital-page" style={{ background: '#f4f7fb', minHeight: '100vh' }}>
+      <Navbar />
+      <div className="admin-layout">
+        <Sidebar />
+        <HospitalListContent />
       </div>
     </div>
   );

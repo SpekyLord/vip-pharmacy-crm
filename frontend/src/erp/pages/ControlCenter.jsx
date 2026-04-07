@@ -16,7 +16,7 @@ import {
   LayoutDashboard, Building2, Users, ShieldCheck, BookOpen, Landmark,
   CreditCard, Receipt, Package, ArrowLeftRight, Boxes, Lock,
   RefreshCw, Archive, Settings, List, DollarSign, MapPin, Truck,
-  Stethoscope, ShoppingCart
+  Stethoscope, ShoppingCart, Hospital, UtensilsCrossed
 } from 'lucide-react';
 
 // Lazy-load section content components
@@ -41,6 +41,11 @@ const SECTIONS = {
   'vendors': lazy(() => import('./VendorList').then(m => ({ default: m.VendorListContent }))),
   'customers': lazy(() => import('./CustomerList').then(m => ({ default: m.CustomerListContent }))),
   'products': lazy(() => import('./ProductMaster').then(m => ({ default: m.ProductMasterPageContent }))),
+  'fnb-products': lazy(() => import('./ProductMaster').then(m => {
+    const FnbProducts = () => m.ProductMasterPageContent({ stockType: 'FNB' });
+    return { default: FnbProducts };
+  })),
+  'hospitals': lazy(() => import('./HospitalList').then(m => ({ default: m.HospitalListContent }))),
   'erp-settings': lazy(() => import('./ErpSettingsPanel')),
   'lookups': lazy(() => import('./LookupManager'))
 };
@@ -95,7 +100,9 @@ const CATEGORY_CONFIG = [
     items: [
       { key: 'vendors', label: 'Vendors', icon: Truck },
       { key: 'customers', label: 'Customers', icon: Stethoscope },
-      { key: 'products', label: 'Products', icon: ShoppingCart }
+      { key: 'hospitals', label: 'Hospitals', icon: Hospital },
+      { key: 'products', label: 'Products (Pharma)', icon: ShoppingCart },
+      { key: 'fnb-products', label: 'Products (F&B)', icon: UtensilsCrossed }
     ]
   },
   {
