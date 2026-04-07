@@ -58,6 +58,13 @@ const batchPostJournals = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'je_ids array required' });
   }
 
+  // Period lock check for all JEs before starting transaction
+  const { checkPeriodOpen } = require('../utils/periodLock');
+  const jesToPost = await JournalEntry.find({ _id: { $in: je_ids }, entity_id: req.entityId, status: 'DRAFT' }).select('period').lean();
+  for (const je of jesToPost) {
+    if (je.period) await checkPeriodOpen(req.entityId, je.period);
+  }
+
   const session = await mongoose.startSession();
   session.startTransaction();
   try {

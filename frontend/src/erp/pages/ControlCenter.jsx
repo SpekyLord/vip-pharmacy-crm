@@ -43,8 +43,10 @@ const SECTIONS = {
   'customers': lazy(() => import('./CustomerList').then(m => ({ default: m.CustomerListContent }))),
   'products': lazy(() => import('./ProductMaster').then(m => ({ default: m.ProductMasterPageContent }))),
   'fnb-products': lazy(() => import('./ProductMaster').then(m => {
-    const FnbProducts = () => m.ProductMasterPageContent({ stockType: 'FNB' });
-    return { default: FnbProducts };
+    // Stable wrapper component — avoids recreating on every render
+    function FnbProductsContent(props) { return m.ProductMasterPageContent({ ...props, stockType: 'FNB' }); }
+    FnbProductsContent.displayName = 'FnbProductsContent';
+    return { default: FnbProductsContent };
   })),
   'hospitals': lazy(() => import('./HospitalList').then(m => ({ default: m.HospitalListContent }))),
   'agent-settings': lazy(() => import('./AgentSettings').then(m => ({ default: m.AgentSettingsContent }))),

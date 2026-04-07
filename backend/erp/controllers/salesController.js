@@ -473,8 +473,8 @@ const submitSales = catchAsync(async (req, res) => {
         const saleType = row.sale_type || 'CSI';
         // Revenue JE
         const jeData = saleType === 'SERVICE_INVOICE'
-          ? journalFromServiceRevenue(row, row.entity_id, req.user._id)
-          : journalFromSale(row, row.entity_id, req.user._id);
+          ? await journalFromServiceRevenue(row, row.entity_id, req.user._id)
+          : await journalFromSale(row, row.entity_id, req.user._id);
         jeData.source_event_id = row.event_id;
         await createAndPostJournal(row.entity_id, jeData);
 
@@ -484,7 +484,7 @@ const submitSales = catchAsync(async (req, res) => {
           const products = await ProductMaster.find({ _id: { $in: productIds } }).select('purchase_price').lean();
           const costMap = new Map(products.map(p => [p._id.toString(), p.purchase_price || 0]));
           const totalCogs = row.line_items.reduce((sum, li) => sum + (li.qty || 0) * (costMap.get(li.product_id?.toString()) || 0), 0);
-          const cogsData = journalFromCOGS(row, Math.round(totalCogs * 100) / 100, req.user._id);
+          const cogsData = await journalFromCOGS(row, Math.round(totalCogs * 100) / 100, req.user._id);
           if (cogsData) {
             cogsData.source_event_id = row.event_id;
             await createAndPostJournal(row.entity_id, cogsData);
@@ -527,84 +527,91 @@ const reopenSales = catchAsync(async (req, res) => {
   }
 
   let reopenedCount = 0;
+  const session = await mongoose.startSession();
 
-  for (const row of rows) {
-    // Create reversal InventoryLedger entries
-    const originalEntries = await InventoryLedger.find({ event_id: row.event_id });
+  try {
+    await session.withTransaction(async () => {
+      for (const row of rows) {
+        // Create reversal InventoryLedger entries
+        const originalEntries = await InventoryLedger.find({ event_id: row.event_id }).session(session);
 
-    for (const entry of originalEntries) {
-      await InventoryLedger.create({
-        entity_id: entry.entity_id,
-        bdm_id: entry.bdm_id,
-        warehouse_id: entry.warehouse_id || undefined,
-        product_id: entry.product_id,
-        batch_lot_no: entry.batch_lot_no,
-        expiry_date: entry.expiry_date,
-        transaction_type: 'ADJUSTMENT',
-        qty_in: entry.qty_out,  // Reverse: what went out comes back in
-        qty_out: entry.qty_in,  // Reverse: what came in goes out
-        event_id: row.event_id,
-        recorded_by: req.user._id
-      });
-    }
-
-    // Reverse ConsignmentTracker if applicable
-    for (const item of row.line_items) {
-      const consignment = await ConsignmentTracker.findOne({
-        entity_id: row.entity_id,
-        hospital_id: row.hospital_id,
-        product_id: item.product_id,
-        'conversions.sales_line_id': row._id
-      });
-
-      if (consignment) {
-        // Remove the conversion and reduce qty_consumed
-        consignment.conversions = consignment.conversions.filter(
-          c => !c.sales_line_id || c.sales_line_id.toString() !== row._id.toString()
-        );
-        consignment.qty_consumed = Math.max(0, consignment.qty_consumed - item.qty);
-        await consignment.save();
-      }
-    }
-
-    // Reverse journal entries (SAP Storno)
-    if (row.event_id) {
-      try {
-        const jes = await JournalEntry.find({
-          source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
-        });
-        for (const je of jes) {
-          await reverseJournal(je._id, 'Auto-reversal: SalesLine reopen', req.user._id);
+        for (const entry of originalEntries) {
+          await InventoryLedger.create([{
+            entity_id: entry.entity_id,
+            bdm_id: entry.bdm_id,
+            warehouse_id: entry.warehouse_id || undefined,
+            product_id: entry.product_id,
+            batch_lot_no: entry.batch_lot_no,
+            expiry_date: entry.expiry_date,
+            transaction_type: 'ADJUSTMENT',
+            qty_in: entry.qty_out,  // Reverse: what went out comes back in
+            qty_out: entry.qty_in,  // Reverse: what came in goes out
+            event_id: row.event_id,
+            recorded_by: req.user._id
+          }], { session });
         }
-      } catch (jeErr) {
-        console.error('JE reversal failed for sale reopen:', row._id, jeErr.message);
+
+        // Reverse ConsignmentTracker if applicable
+        for (const item of row.line_items) {
+          const consignment = await ConsignmentTracker.findOne({
+            entity_id: row.entity_id,
+            hospital_id: row.hospital_id,
+            product_id: item.product_id,
+            'conversions.sales_line_id': row._id
+          }).session(session);
+
+          if (consignment) {
+            consignment.conversions = consignment.conversions.filter(
+              c => !c.sales_line_id || c.sales_line_id.toString() !== row._id.toString()
+            );
+            consignment.qty_consumed = Math.max(0, consignment.qty_consumed - item.qty);
+            await consignment.save({ session });
+          }
+        }
+
+        // Update SalesLine
+        row.status = 'DRAFT';
+        row.reopen_count += 1;
+        row.posted_at = undefined;
+        row.posted_by = undefined;
+        row.event_id = undefined;
+        row.validation_errors = [];
+        await row.save({ session });
+
+        reopenedCount++;
       }
-    }
-
-    // Update SalesLine
-    row.status = 'DRAFT';
-    row.reopen_count += 1;
-    row.posted_at = undefined;
-    row.posted_by = undefined;
-    row.event_id = undefined;
-    row.validation_errors = [];
-    await row.save();
-
-    // Audit log
-    await ErpAuditLog.logChange({
-      entity_id: row.entity_id,
-      bdm_id: row.bdm_id,
-      log_type: 'REOPEN',
-      target_ref: row._id.toString(),
-      target_model: 'SalesLine',
-      changed_by: req.user._id,
-      note: `Reopened (count: ${row.reopen_count})`
     });
 
-    reopenedCount++;
-  }
+    // Reverse journal entries outside transaction (non-blocking, like submit pattern)
+    for (const row of rows) {
+      if (row.event_id) {
+        try {
+          const jes = await JournalEntry.find({
+            source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
+          });
+          for (const je of jes) {
+            await reverseJournal(je._id, 'Auto-reversal: SalesLine reopen', req.user._id);
+          }
+        } catch (jeErr) {
+          console.error('JE reversal failed for sale reopen:', row._id, jeErr.message);
+        }
+      }
 
-  res.json({ success: true, reopened_count: reopenedCount });
+      await ErpAuditLog.logChange({
+        entity_id: row.entity_id,
+        bdm_id: row.bdm_id,
+        log_type: 'REOPEN',
+        target_ref: row._id.toString(),
+        target_model: 'SalesLine',
+        changed_by: req.user._id,
+        note: `Reopened (count: ${row.reopen_count})`
+      });
+    }
+
+    res.json({ success: true, reopened_count: reopenedCount });
+  } finally {
+    await session.endSession();
+  }
 });
 
 // ═══════════════════════════════════════════════════════════

@@ -389,7 +389,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
       const product = await ProductMaster.findById(adj.product_id).select('purchase_price brand_name').lean();
       const unitCost = product?.purchase_price || 0;
       const amount = Math.round(Math.abs(adj.variance) * unitCost * 100) / 100;
-      const jeData = journalFromInventoryAdjustment({
+      const jeData = await journalFromInventoryAdjustment({
         variance: adj.variance,
         product_name: product?.brand_name || '',
         batch_lot_no: adj.batch_lot_no,

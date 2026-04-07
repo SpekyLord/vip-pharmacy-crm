@@ -268,20 +268,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Create Sale', path: '/erp/sales/entry' },
     ],
   },
-  'reports': {
-    title: 'Reports & Analytics',
-    steps: [
-      'Review your performance metrics and trends',
-      'Check cycle status for the current period',
-      'Monitor expense anomalies and fuel efficiency',
-      'View consignment aging for outstanding deliveries',
-    ],
-    next: [
-      { label: 'Cycle Status', path: '/erp/cycle-status' },
-      { label: 'P&L Statement', path: '/erp/pnl' },
-      { label: 'Profit Sharing', path: '/erp/profit-sharing' },
-    ],
-  },
+  // 'reports' key removed — use 'erp-reports' pageKey instead (stale duplicate cleaned up)
   'income': {
     title: 'Revenue Summary',
     steps: [

@@ -527,7 +527,7 @@ const processDocument = catchAsync(async (req, res) => {
         txn_number: doc.doc_number,
         txn_date: doc.doc_date
       };
-      const jeData = journalFromPettyCash(jeTxn, fundCoa, fundCoaName, req.user._id);
+      const jeData = await journalFromPettyCash(jeTxn, fundCoa, fundCoaName, req.user._id);
       if (jeData) {
         await createAndPostJournal(req.entityId, jeData);
       }

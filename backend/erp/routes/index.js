@@ -56,6 +56,8 @@ router.use('/territories', erpAccessCheck('expenses'), require('./territoryRoute
 router.use('/expenses', erpAccessCheck('expenses'), require('./expenseRoutes'));
 
 // ═══ Phase 7 — Income, PNL & Year-End Close ═══
+// Note: incomeRoutes uses absolute paths (/income/*, /pnl/*, /profit-sharing/*, /archive/*)
+// so it must be mounted at '/'. erpAccessCheck runs as passthrough for non-matching routes.
 router.use('/', erpAccessCheck('reports'), require('./incomeRoutes'));
 
 // ═══ Phase 8 — Dashboard & Reports ═══

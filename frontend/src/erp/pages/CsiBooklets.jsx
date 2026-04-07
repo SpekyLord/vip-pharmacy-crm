@@ -164,6 +164,7 @@ export default function CsiBooklets() {
       <div className="booklet-shell">
         <Sidebar />
         <div className="booklet-main">
+          <WorkflowGuide pageKey="csi-booklets" />
           <div className="booklet-header">
             <div>
               <h1>CSI Booklets</h1>

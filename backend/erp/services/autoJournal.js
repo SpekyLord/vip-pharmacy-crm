@@ -60,6 +60,7 @@ const COA_NAMES = {
   MISC_EXPENSE: 'Miscellaneous Expense',
   DEPRECIATION: 'Depreciation Expense',
   INTEREST_EXPENSE: 'Interest Expense',
+  INTEREST_PAYABLE: 'Interest Payable',
   BANK_CHARGES: 'Bank Charges',
 };
 
@@ -99,7 +100,7 @@ async function resolveFundingCoa(doc, fallback) {
     if (pm?.coa_code) return { coa_code: pm.coa_code, coa_name: pm.mode_label };
   }
 
-  return { coa_code: fb, coa_name: n('CASH_ON_HAND') };
+  return { coa_code: fb, coa_name: fallback ? `Account ${fb}` : n('CASH_ON_HAND') };
 }
 
 /**
@@ -142,7 +143,7 @@ async function journalFromSale(salesLine, entityId, userId) {
  */
 async function journalFromCollection(collection, bankCoaCode, bankName, userId) {
   const coa = await getCoaMap();
-  const amount = collection.total_amount || collection.amount_collected || 0;
+  const amount = collection.cr_amount || 0;
 
   let coaCode, coaName;
   if (collection.petty_cash_fund_id) {
@@ -154,15 +155,15 @@ async function journalFromCollection(collection, bankCoaCode, bankName, userId) 
   }
 
   return {
-    je_date: collection.collection_date || collection.created_at || new Date(),
-    period: dateToPeriod(collection.collection_date || collection.created_at || new Date()),
-    description: `Collection: ${collection.or_number || collection._id}`,
+    je_date: collection.cr_date || collection.created_at || new Date(),
+    period: dateToPeriod(collection.cr_date || collection.created_at || new Date()),
+    description: `Collection: ${collection.cr_no || collection._id}`,
     source_module: 'COLLECTION',
     source_event_id: collection.event_id || null,
-    source_doc_ref: collection.or_number || String(collection._id),
+    source_doc_ref: collection.cr_no || String(collection._id),
     lines: [
-      { account_code: coaCode, account_name: coaName, debit: amount, credit: 0, description: `Collection ${collection.or_number || ''}` },
-      { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: 0, credit: amount, description: `Collection ${collection.or_number || ''}` }
+      { account_code: coaCode, account_name: coaName, debit: amount, credit: 0, description: `Collection ${collection.cr_no || ''}` },
+      { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: 0, credit: amount, description: `Collection ${collection.cr_no || ''}` }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -179,10 +180,13 @@ async function journalFromCWT(cwtEntry, userId) {
   const coa = await getCoaMap();
   const amount = cwtEntry.cwt_amount || 0;
 
+  // hospital_name may be provided by caller; fall back to hospital_id string
+  const hospLabel = cwtEntry.hospital_name || (cwtEntry.hospital_id ? String(cwtEntry.hospital_id) : '');
+
   return {
     je_date: cwtEntry.cr_date || new Date(),
     period: dateToPeriod(cwtEntry.cr_date || new Date()),
-    description: `CWT: CR#${cwtEntry.cr_no || ''} — ${cwtEntry.hospital_name || ''}`,
+    description: `CWT: CR#${cwtEntry.cr_no || ''} — ${hospLabel}`,
     source_module: 'COLLECTION',
     source_event_id: cwtEntry.event_id || null,
     source_doc_ref: cwtEntry.cr_no || String(cwtEntry._id),
@@ -254,7 +258,8 @@ async function journalFromCommission(commission, userId) {
  * DR 6000 Salaries + DR 6050 Allowances + DR 5100 Commission
  * CR 2200 SSS + CR 2210 PhilHealth + CR 2220 PagIBIG + CR 2230 WHT + CR Cash/Bank
  */
-function journalFromPayroll(payslip, bankCoaCode, bankName, userId) {
+async function journalFromPayroll(payslip, bankCoaCode, bankName, userId) {
+  const coa = await getCoaMap();
   const lines = [];
 
   const e = payslip.earnings || {};
@@ -265,27 +270,29 @@ function journalFromPayroll(payslip, bankCoaCode, bankName, userId) {
   const commission = e.incentive || 0;
   const bonus = (e.bonus || 0) + (e.thirteenth_month || 0) + (e.holiday_pay || 0) + (e.night_diff || 0);
 
-  if (basic + overtime > 0) lines.push({ account_code: '6000', account_name: 'Salaries & Wages', debit: basic + overtime, credit: 0, description: 'Basic salary + OT' });
-  if (allowance > 0) lines.push({ account_code: '6050', account_name: 'Allowances', debit: allowance, credit: 0, description: 'Allowances / de minimis' });
-  if (commission > 0) lines.push({ account_code: '5100', account_name: 'BDM Commission', debit: commission, credit: 0, description: 'Incentive / Commission' });
-  if (bonus > 0) lines.push({ account_code: '6060', account_name: 'Bonus & 13th Month', debit: bonus, credit: 0, description: 'Bonus / 13th month / holiday' });
+  // Debit side — expense accounts from COA_MAP with fallback defaults
+  if (basic + overtime > 0) lines.push({ account_code: c(coa, 'SALARIES_WAGES') !== '9999' ? c(coa, 'SALARIES_WAGES') : '6000', account_name: 'Salaries & Wages', debit: basic + overtime, credit: 0, description: 'Basic salary + OT' });
+  if (allowance > 0) lines.push({ account_code: c(coa, 'ALLOWANCES') !== '9999' ? c(coa, 'ALLOWANCES') : '6050', account_name: 'Allowances', debit: allowance, credit: 0, description: 'Allowances / de minimis' });
+  if (commission > 0) lines.push({ account_code: c(coa, 'BDM_COMMISSION'), account_name: n('BDM_COMMISSION'), debit: commission, credit: 0, description: 'Incentive / Commission' });
+  if (bonus > 0) lines.push({ account_code: c(coa, 'BONUS_13TH') !== '9999' ? c(coa, 'BONUS_13TH') : '6060', account_name: 'Bonus & 13th Month', debit: bonus, credit: 0, description: 'Bonus / 13th month / holiday' });
 
+  // Credit side — statutory deductions from COA_MAP with fallback defaults
   const d = payslip.deductions || {};
   const sss = d.sss_employee || 0;
   const philhealth = d.philhealth_employee || 0;
   const pagibig = d.pagibig_employee || 0;
   const tax = d.withholding_tax || 0;
 
-  if (sss > 0) lines.push({ account_code: '2200', account_name: 'SSS Payable', debit: 0, credit: sss, description: 'SSS EE share' });
-  if (philhealth > 0) lines.push({ account_code: '2210', account_name: 'PhilHealth Payable', debit: 0, credit: philhealth, description: 'PhilHealth EE share' });
-  if (pagibig > 0) lines.push({ account_code: '2220', account_name: 'Pag-IBIG Payable', debit: 0, credit: pagibig, description: 'Pag-IBIG EE share' });
-  if (tax > 0) lines.push({ account_code: '2230', account_name: 'Withholding Tax Payable', debit: 0, credit: tax, description: 'WHT' });
+  if (sss > 0) lines.push({ account_code: c(coa, 'SSS_PAYABLE') !== '9999' ? c(coa, 'SSS_PAYABLE') : '2200', account_name: 'SSS Payable', debit: 0, credit: sss, description: 'SSS EE share' });
+  if (philhealth > 0) lines.push({ account_code: c(coa, 'PHILHEALTH_PAYABLE') !== '9999' ? c(coa, 'PHILHEALTH_PAYABLE') : '2210', account_name: 'PhilHealth Payable', debit: 0, credit: philhealth, description: 'PhilHealth EE share' });
+  if (pagibig > 0) lines.push({ account_code: c(coa, 'PAGIBIG_PAYABLE') !== '9999' ? c(coa, 'PAGIBIG_PAYABLE') : '2220', account_name: 'Pag-IBIG Payable', debit: 0, credit: pagibig, description: 'Pag-IBIG EE share' });
+  if (tax > 0) lines.push({ account_code: c(coa, 'WHT_PAYABLE') !== '9999' ? c(coa, 'WHT_PAYABLE') : '2230', account_name: 'Withholding Tax Payable', debit: 0, credit: tax, description: 'WHT' });
 
   const netPay = payslip.net_pay || 0;
   if (netPay > 0) {
     lines.push({
-      account_code: bankCoaCode || '1010',
-      account_name: bankName || 'RCBC Savings',
+      account_code: bankCoaCode || c(coa, 'CASH_ON_HAND'),
+      account_name: bankName || n('CASH_ON_HAND'),
       debit: 0,
       credit: netPay,
       description: 'Net pay disbursement'
@@ -366,7 +373,7 @@ async function journalFromDepreciation(deprnEntry, userId) {
 
 /**
  * Journal from Interest (Loan)
- * DR INTEREST_EXPENSE, CR LOANS_PAYABLE
+ * DR INTEREST_EXPENSE, CR INTEREST_PAYABLE (accrued liability)
  */
 async function journalFromInterest(interestEntry, userId) {
   const coa = await getCoaMap();
@@ -380,7 +387,7 @@ async function journalFromInterest(interestEntry, userId) {
     source_doc_ref: String(interestEntry.loan_id || interestEntry._id),
     lines: [
       { account_code: c(coa, 'INTEREST_EXPENSE'), account_name: n('INTEREST_EXPENSE'), debit: amount, credit: 0, description: interestEntry.loan_code || '' },
-      { account_code: c(coa, 'LOANS_PAYABLE'), account_name: n('LOANS_PAYABLE'), debit: 0, credit: amount, description: interestEntry.loan_code || '' }
+      { account_code: c(coa, 'INTEREST_PAYABLE'), account_name: n('INTEREST_PAYABLE'), debit: 0, credit: amount, description: interestEntry.loan_code || '' }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -499,6 +506,10 @@ async function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId)
   }
 
   if (txn.txn_type === 'REMITTANCE') {
+    // Remittance: cash moves from petty cash fund to main cash/bank
+    // DR Cash/Bank (or owner's designated account), CR Petty Cash
+    const remitCoa = expenseCoaCode || c(coa, 'CASH_ON_HAND');
+    const remitName = expenseCoaName || n('CASH_ON_HAND');
     return {
       je_date: txn.txn_date || new Date(),
       period: dateToPeriod(txn.txn_date || new Date()),
@@ -506,8 +517,8 @@ async function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId)
       source_module: 'PETTY_CASH',
       source_doc_ref: docRef,
       lines: [
-        { account_code: c(coa, 'OWNER_DRAWINGS'), account_name: n('OWNER_DRAWINGS'), debit: amount, credit: 0, description: 'Petty cash remittance to owner' },
-        { account_code: pc, account_name: pcName, debit: 0, credit: amount, description: 'Petty cash remittance to owner' }
+        { account_code: remitCoa, account_name: remitName, debit: amount, credit: 0, description: 'Petty cash remittance' },
+        { account_code: pc, account_name: pcName, debit: 0, credit: amount, description: 'Petty cash remittance' }
       ],
       bir_flag: 'INTERNAL',
       vat_flag: 'N/A',

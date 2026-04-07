@@ -59,6 +59,8 @@ const getAvailableBatches = async (entityId, bdmId, productId, opts) => {
       }
     },
     { $match: { available_qty: { $gt: 0 } } },
+    // Filter out expired batches — pharmaceutical compliance (FEFO)
+    { $match: { '_id.expiry_date': { $gt: new Date() } } },
     { $sort: { '_id.expiry_date': 1 } },
     {
       $project: {
@@ -136,7 +138,7 @@ const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty,
   const match = buildStockMatch(entityId, bdmId, opts, productId);
   match.batch_lot_no = normalized;
 
-  const result = await InventoryLedger.aggregate([
+  const agg = InventoryLedger.aggregate([
     { $match: match },
     {
       $group: {
@@ -151,6 +153,9 @@ const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty,
       }
     }
   ]);
+  // Apply session for transactional consistency if provided
+  if (opts?.session) agg.session(opts.session);
+  const result = await agg;
 
   if (!result.length || result[0].available_qty < qty) {
     const err = new Error('Insufficient stock in specified batch');

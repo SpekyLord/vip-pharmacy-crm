@@ -89,6 +89,11 @@ const postSettlement = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No transfers settled' });
   }
 
+  // Period lock check
+  const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+  const settlPeriod = dateToPeriod(settlement.cr_date || new Date());
+  await checkPeriodOpen(settlement.creditor_entity_id, settlPeriod);
+
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {

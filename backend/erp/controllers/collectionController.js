@@ -314,13 +314,16 @@ const submitCollections = catchAsync(async (req, res) => {
       try {
         // Collection JE
         const funding = await resolveFundingCoa(row);
-        const jeData = journalFromCollection(row, funding.coa_code, funding.coa_name, req.user._id);
+        const jeData = await journalFromCollection(row, funding.coa_code, funding.coa_name, req.user._id);
         jeData.source_event_id = row.event_id;
         await createAndPostJournal(row.entity_id, jeData);
 
         // CWT journal if applicable
         if (row.cwt_amount > 0) {
-          const cwtData = journalFromCWT(row, req.user._id);
+          // Enrich with hospital_name for JE description
+          const cwtHosp = row.hospital_id ? await Hospital.findById(row.hospital_id).select('hospital_name').lean() : null;
+          const cwtInput = { ...row.toObject(), hospital_name: cwtHosp?.hospital_name || '' };
+          const cwtData = await journalFromCWT(cwtInput, req.user._id);
           cwtData.source_event_id = row.event_id;
           await createAndPostJournal(row.entity_id, cwtData);
         }
@@ -328,7 +331,7 @@ const submitCollections = catchAsync(async (req, res) => {
         // Commission journal — for each settled CSI with commission
         for (const csi of (row.settled_csis || [])) {
           if (csi.commission_amount > 0) {
-            const commData = journalFromCommission({
+            const commData = await journalFromCommission({
               amount: csi.commission_amount,
               bdm_id: row.bdm_id,
               date: row.cr_date,
@@ -418,42 +421,55 @@ const reopenCollections = catchAsync(async (req, res) => {
   const rows = await Collection.find({ _id: { $in: collection_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!rows.length) return res.status(404).json({ success: false, message: 'No POSTED collections found' });
 
-  for (const row of rows) {
-    // Reverse journal entries (collection JE + CWT JE)
-    if (row.event_id) {
-      try {
-        const jes = await JournalEntry.find({
-          source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
-        });
-        for (const je of jes) {
-          await reverseJournal(je._id, 'Auto-reversal: Collection reopen', req.user._id);
+  // Save event_ids before clearing them inside transaction
+  const rowEventMap = rows.map(r => ({ _id: r._id, event_id: r.event_id, cr_no: r.cr_no, entity_id: r.entity_id, bdm_id: r.bdm_id }));
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      for (const row of rows) {
+        if (row.event_id) {
+          await TransactionEvent.findByIdAndUpdate(row.event_id, { status: 'DELETED' }, { session });
+          await VatLedger.deleteMany({ source_event_id: row.event_id }).session(session);
+          await CwtLedger.deleteMany({ cr_no: row.cr_no, entity_id: row.entity_id }).session(session);
         }
-      } catch (jeErr) {
-        console.error('JE reversal failed for collection reopen:', row.cr_no, jeErr.message);
+        row.status = 'DRAFT';
+        row.reopen_count = (row.reopen_count || 0) + 1;
+        row.posted_at = undefined;
+        row.posted_by = undefined;
+        row.event_id = undefined;
+        await row.save({ session });
       }
-      await TransactionEvent.findByIdAndUpdate(row.event_id, { status: 'DELETED' });
-
-      // Cleanup VAT/CWT ledger entries
-      await VatLedger.deleteMany({ source_event_id: row.event_id }).catch(() => {});
-      await CwtLedger.deleteMany({ cr_no: row.cr_no, entity_id: row.entity_id }).catch(() => {});
-    }
-    row.status = 'DRAFT';
-    row.reopen_count = (row.reopen_count || 0) + 1;
-    row.posted_at = undefined;
-    row.posted_by = undefined;
-    row.event_id = undefined;
-    await row.save();
-
-    await ErpAuditLog.logChange({
-      entity_id: row.entity_id, bdm_id: row.bdm_id,
-      log_type: 'STATUS_CHANGE', target_ref: row._id.toString(),
-      target_model: 'Collection', field_changed: 'status',
-      old_value: 'POSTED', new_value: 'DRAFT',
-      changed_by: req.user._id, note: `CR ${row.cr_no} reopened (count: ${row.reopen_count})`
     });
-  }
 
-  res.json({ success: true, message: `${rows.length} collection(s) reopened` });
+    // Reverse journal entries outside transaction (non-blocking)
+    for (const item of rowEventMap) {
+      if (item.event_id) {
+        try {
+          const jes = await JournalEntry.find({
+            source_event_id: item.event_id, status: 'POSTED', is_reversal: { $ne: true }
+          });
+          for (const je of jes) {
+            await reverseJournal(je._id, 'Auto-reversal: Collection reopen', req.user._id);
+          }
+        } catch (jeErr) {
+          console.error('JE reversal failed for collection reopen:', item.cr_no, jeErr.message);
+        }
+      }
+
+      await ErpAuditLog.logChange({
+        entity_id: item.entity_id, bdm_id: item.bdm_id,
+        log_type: 'STATUS_CHANGE', target_ref: item._id.toString(),
+        target_model: 'Collection', field_changed: 'status',
+        old_value: 'POSTED', new_value: 'DRAFT',
+        changed_by: req.user._id, note: `CR ${item.cr_no} reopened`
+      });
+    }
+
+    res.json({ success: true, message: `${rows.length} collection(s) reopened` });
+  } finally {
+    await session.endSession();
+  }
 });
 
 // ═══ DELETION ═══

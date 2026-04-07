@@ -279,7 +279,7 @@ const postInvoice = catchAsync(async (req, res) => {
   const vendor = await VendorMaster.findById(invoice.vendor_id).select('tin').lean();
 
   // Build JE data using existing journalFromAP
-  const jeData = journalFromAP(invoice.toObject(), req.user._id);
+  const jeData = await journalFromAP(invoice.toObject(), req.user._id);
   const je = await createAndPostJournal(req.entityId, jeData);
 
   invoice.status = 'POSTED';
