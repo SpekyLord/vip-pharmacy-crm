@@ -13,6 +13,7 @@ import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },
@@ -637,11 +638,11 @@ export default function SalesEntry() {
       if (savedIds.length) {
         await loadSales();
       } else if (rows.some(r => r._isNew)) {
-        alert('No rows saved. Make sure each row has a hospital or customer selected' + (saleType === 'CSI' ? ' and a CSI#' : '') + '.');
+        showError(null, 'No rows saved. Make sure each row has a hospital or customer selected' + (saleType === 'CSI' ? ' and a CSI#' : ''));
       }
     } catch (err) {
       console.error('Save error:', err);
-      alert(err?.response?.data?.message || err.message || 'Save failed');
+      showError(err, 'Could not save sale');
     } finally {
       setActionLoading('');
     }
@@ -860,7 +861,7 @@ export default function SalesEntry() {
                                   try {
                                     await sales.validateSales([r._id]);
                                     await loadSales();
-                                  } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } finally { setActionLoading(''); }
+                                  } catch (err) { showError(err, 'Could not validate sale'); } finally { setActionLoading(''); }
                                 }}>Validate</button>
                               )}
                               {r.status === 'VALID' && (
@@ -869,7 +870,7 @@ export default function SalesEntry() {
                                   try {
                                     await sales.submitSales();
                                     await loadSales();
-                                  } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } finally { setActionLoading(''); }
+                                  } catch (err) { showError(err, 'Could not post sale'); } finally { setActionLoading(''); }
                                 }}>Post</button>
                               )}
                               {r.status === 'POSTED' && (
@@ -879,7 +880,7 @@ export default function SalesEntry() {
                               )}
                               {r.status === 'DRAFT' && (
                                 <button className="btn btn-danger btn-sm" onClick={async () => {
-                                  try { await sales.deleteDraft(r._id); await loadSales(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+                                  try { await sales.deleteDraft(r._id); await loadSales(); } catch (err) { showError(err, 'Could not delete sale draft'); }
                                 }}>✕</button>
                               )}
                             </div>

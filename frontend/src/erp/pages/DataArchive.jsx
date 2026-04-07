@@ -3,6 +3,7 @@
  * Trigger archive, view batches, restore
  */
 import { useState, useEffect, useCallback } from 'react';
+import { showError } from '../utils/errorToast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -63,7 +64,7 @@ export function DataArchiveContent() {
       await rpt.triggerArchive();
       setConfirmArchive(false);
       load();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not trigger archive'); }
     setArchiving(false);
   };
 
@@ -80,7 +81,7 @@ export function DataArchiveContent() {
       setRestoreReason('');
       setExpandedBatch(null);
       load();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not restore archive batch'); }
   };
 
   return (

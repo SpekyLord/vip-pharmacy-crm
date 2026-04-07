@@ -10,6 +10,7 @@ import useWarehouses from '../hooks/useWarehouses';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
@@ -255,7 +256,7 @@ export default function TransferOrders() {
         transfer_price: parseFloat(li.transfer_price) || 0,
         batch_lot_no: li.batch_lot_no || undefined, expiry_date: li.expiry_date || undefined
       }));
-      if (!items.length) return alert('Add at least one line item');
+      if (!items.length) { showError(null, 'Add at least one line item'); return; }
       await createTransfer({ ...form, line_items: items });
       setShowCreate(false);
       setForm({ source_entity_id: '', target_entity_id: '', source_bdm_id: '', target_bdm_id: '', source_warehouse_id: '', target_warehouse_id: '', transfer_date: new Date().toISOString().slice(0, 10), csi_ref: '', notes: '' });
@@ -277,7 +278,7 @@ export default function TransferOrders() {
       }
     } catch (err) {
       const msg = err.response?.data?.message || err.message || 'Action failed';
-      alert(`${action.toUpperCase()} failed: ${msg} (HTTP ${err.response?.status || '?'})`);
+      showError(err, `Could not ${action} transfer`);
       return; // Don't refresh on error
     }
     // Always refresh list after action (success or handled error)
@@ -298,13 +299,13 @@ export default function TransferOrders() {
         product_id: li.product_id, batch_lot_no: li.batch_lot_no,
         expiry_date: li.expiry_date, qty: parseInt(li.qty)
       }));
-      if (!items.length) return alert('Add at least one line item');
+      if (!items.length) { showError(null, 'Add at least one line item'); return; }
       await createReassignment({ ...reassignForm, entity_id: user?.entity_id, line_items: items });
       setShowCreateReassign(false);
       setReassignForm({ source_bdm_id: '', target_bdm_id: '', source_warehouse_id: '', target_warehouse_id: '', reassignment_date: new Date().toISOString().slice(0, 10), territory_code: '', notes: '' });
       setReassignItems([{ product_id: '', batch_lot_no: '', expiry_date: '', qty: 1 }]);
       fetchReassignments();
-    } catch (err) { alert(err.response?.data?.message || err.message); }
+    } catch (err) { showError(err, 'Could not create reassignment'); }
   };
 
   const handleReassignAction = async (id, action) => {
@@ -317,7 +318,7 @@ export default function TransferOrders() {
         await approveReassignment(id, 'APPROVED');
       }
       fetchReassignments();
-    } catch (err) { alert(err.response?.data?.message || err.message); }
+    } catch (err) { showError(err, 'Could not process reassignment'); }
   };
 
   // Line item helpers

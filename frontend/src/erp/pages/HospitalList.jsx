@@ -11,6 +11,7 @@ import useHospitals from '../hooks/useHospitals';
 import usePeople from '../hooks/usePeople';
 import useErpApi from '../hooks/useErpApi';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
 
 export function HospitalListContent() {
   const { user } = useAuth();
@@ -82,7 +83,7 @@ export function HospitalListContent() {
       setModalOpen(false);
       refresh();
     } catch (err) {
-      alert(err.response?.data?.message || 'Save failed');
+      showError(err, 'Could not save hospital');
     }
   };
 
@@ -104,7 +105,7 @@ export function HospitalListContent() {
         setTagModal(prev => prev ? { ...prev, tagged_bdms: newTags } : null);
       }
     } catch (err) {
-      alert(err.response?.data?.message || 'Tag failed');
+      showError(err, 'Could not tag hospital');
     }
   };
 
@@ -124,7 +125,7 @@ export function HospitalListContent() {
     fd.append('file', file);
     try {
       const res = await erpApi.post('/hospitals/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       refresh();
     } catch { /* hook handles */ }
     e.target.value = '';

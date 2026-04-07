@@ -6,6 +6,7 @@ import usePayroll from '../hooks/usePayroll';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   COMPUTED: { bg: '#dbeafe', text: '#1e40af' },
@@ -85,7 +86,7 @@ export default function PayrollRun() {
       if (action === 'review') await api.reviewPayslip(id);
       if (action === 'approve') await api.approvePayslip(id);
       loadStaging();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not process payroll action'); }
   };
 
   const handlePostAll = async () => {

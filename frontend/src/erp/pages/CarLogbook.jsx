@@ -7,6 +7,7 @@ import useSettings from '../hooks/useSettings';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
 function ScanModal({ open, onClose, onApply, docType, title }) {
@@ -148,7 +149,7 @@ export default function CarLogbook() {
     try {
       const res = await getCarLogbookList({ period, cycle, limit: 0 });
       setEntries(res?.data || []);
-    } catch (err) { console.error('[CarLogbook] Load failed:', err.message); alert(err.response?.data?.message || 'Failed to load logbook entries'); }
+    } catch (err) { console.error('[CarLogbook] Load failed:', err.message); showError(err, 'Could not load logbook entries'); }
   }, [period, cycle]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
@@ -207,7 +208,7 @@ export default function CarLogbook() {
         notes: data.notes || ''
       });
       setShowForm(true);
-    } catch (err) { console.error('[CarLogbook] Edit failed:', err.message); alert(err.response?.data?.message || 'Failed to load entry'); }
+    } catch (err) { console.error('[CarLogbook] Edit failed:', err.message); showError(err, 'Could not load fuel entry'); }
   };
 
   const addFuelEntry = () => {
@@ -239,7 +240,7 @@ export default function CarLogbook() {
       else { await createCarLogbook(data); }
       setShowForm(false);
       loadEntries();
-    } catch (err) { console.error('[CarLogbook] Save failed:', err.message); alert(err.response?.data?.message || 'Failed to save entry'); }
+    } catch (err) { console.error('[CarLogbook] Save failed:', err.message); showError(err, 'Could not save fuel entry'); }
   };
 
   const [actionMsg, setActionMsg] = useState(null);

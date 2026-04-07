@@ -14,6 +14,7 @@ import { processDocument, extractExifDateTime } from '../services/ocrService';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
 function ScanORModal({ open, onClose, onApply }) {
@@ -610,7 +611,7 @@ export default function Expenses() {
       setEditingExpense(data);
       setLines(data.lines || []);
       setShowForm(true);
-    } catch (err) { console.error('[Expenses] Edit failed:', err.message); alert(err.response?.data?.message || 'Failed to load expense'); }
+    } catch (err) { console.error('[Expenses] Edit failed:', err.message); showError(err, 'Could not load expense'); }
   };
 
   const savingRef = useRef(false);
@@ -624,7 +625,7 @@ export default function Expenses() {
       if (!l.expense_date) issues.push(`Line ${i + 1}: Date is required`);
     });
     if (!lines.length) issues.push('Add at least one expense line');
-    if (issues.length) { alert(issues.join('\n')); return; }
+    if (issues.length) { showError(null, issues.join('. ')); return; }
 
     savingRef.current = true;
     const data = { period, cycle, lines };
@@ -633,7 +634,7 @@ export default function Expenses() {
       else { await createExpense(data); }
       setShowForm(false);
       loadExpenses();
-    } catch (err) { console.error('[Expenses] Save failed:', err.message); alert(err.response?.data?.message || 'Failed to save expense'); }
+    } catch (err) { console.error('[Expenses] Save failed:', err.message); showError(err, 'Could not save expense'); }
     finally { savingRef.current = false; }
   };
 

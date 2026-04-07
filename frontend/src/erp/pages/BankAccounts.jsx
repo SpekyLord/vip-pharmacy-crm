@@ -6,6 +6,7 @@ import useBanking from '../hooks/useBanking';
 import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
+import { showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .ba-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
@@ -62,7 +63,7 @@ export function BankAccountsContent() {
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try { const res = await api.importBankAccounts(fd); alert(res?.message || 'Import complete'); load(); } catch { /* */ }
+    try { const res = await api.importBankAccounts(fd); showSuccess(res?.message || 'Import complete'); load(); } catch { /* */ }
     e.target.value = '';
   };
 

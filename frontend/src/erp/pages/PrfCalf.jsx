@@ -10,6 +10,7 @@ import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -171,13 +172,13 @@ export default function PrfCalf() {
       else { await createPrfCalf(data); }
       setShowForm(false);
       loadDocs();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not save PRF/CALF'); }
   };
 
-  const handleValidate = async () => { try { await validatePrfCalf(); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
-  const handleSubmit = async () => { try { await submitPrfCalf(); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
-  const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
-  const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
+  const handleValidate = async () => { try { await validatePrfCalf(); loadDocs(); } catch (err) { showError(err, 'Could not validate PRF/CALF'); } };
+  const handleSubmit = async () => { try { await submitPrfCalf(); loadDocs(); } catch (err) { showError(err, 'Could not submit PRF/CALF'); } };
+  const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch (err) { showError(err, 'Could not reopen PRF/CALF'); } };
+  const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch (err) { showError(err, 'Could not delete PRF/CALF'); } };
 
   const isFinance = ['admin', 'finance', 'president'].includes(user?.role);
   const calfBalance = (form.advance_amount || 0) - (form.liquidation_amount || 0);

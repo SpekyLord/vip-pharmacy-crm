@@ -7,6 +7,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useDashboard from '../hooks/useDashboard';
 import useIncome from '../hooks/useIncome';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .archive-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -77,11 +78,11 @@ export default function MonthlyArchive() {
     setActionLoading(true);
     try {
       await inc.closePeriod({ period: selectedPeriod });
-      alert(`Period ${selectedPeriod} closed successfully`);
+      showSuccess(`Period ${selectedPeriod} closed successfully`);
       loadPeriodStatus();
       loadArchives();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to close period');
+      showError(err, 'Could not close period');
     }
     setActionLoading(false);
   };
@@ -91,11 +92,11 @@ export default function MonthlyArchive() {
     setActionLoading(true);
     try {
       await inc.reopenPeriod({ period: selectedPeriod });
-      alert(`Period ${selectedPeriod} re-opened successfully`);
+      showSuccess(`Period ${selectedPeriod} re-opened successfully`);
       loadPeriodStatus();
       loadArchives();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to re-open period');
+      showError(err, 'Could not re-open period');
     }
     setActionLoading(false);
   };

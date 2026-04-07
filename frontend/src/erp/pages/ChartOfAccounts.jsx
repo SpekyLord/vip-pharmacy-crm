@@ -6,6 +6,7 @@ import useAccounting from '../hooks/useAccounting';
 import useErpApi from '../hooks/useErpApi';
 
 import SelectField from '../../components/common/Select';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .coa-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -85,7 +86,7 @@ export function ChartOfAccountsContent() {
     fd.append('file', file);
     try {
       const res = await api.importAccounts(fd);
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       loadAccounts();
     } catch { /* hook handles */ }
     e.target.value = '';
@@ -95,10 +96,10 @@ export function ChartOfAccountsContent() {
     if (!confirm('This will create default COA accounts for this entity. Existing accounts will not be overwritten. Continue?')) return;
     try {
       const res = await erpApi.post('/coa/seed');
-      alert(res?.message || 'COA seed complete');
+      showSuccess(res?.message || 'COA seed complete');
       loadAccounts();
     } catch (err) {
-      alert(err?.response?.data?.message || 'Seed failed');
+      showError(err, 'Could not seed chart of accounts');
     }
   };
 

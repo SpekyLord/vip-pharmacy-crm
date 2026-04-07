@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
+import { showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .ln-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -54,7 +55,7 @@ export default function Loans() {
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try { const res = await api.importLoans(fd); alert(res?.message || 'Import complete'); loadLoans(); } catch { /* */ }
+    try { const res = await api.importLoans(fd); showSuccess(res?.message || 'Import complete'); loadLoans(); } catch { /* */ }
     e.target.value = '';
   };
 

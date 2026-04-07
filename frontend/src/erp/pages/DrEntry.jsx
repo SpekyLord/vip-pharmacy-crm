@@ -11,6 +11,7 @@ import WarehousePicker from '../components/WarehousePicker';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const TYPE_COLORS = {
   DR_CONSIGNMENT: { bg: '#dbeafe', text: '#1e40af' },
@@ -306,7 +307,7 @@ export default function DrEntry() {
 
   const handleSubmitAll = async () => {
     const validRows = rows.filter(r => r.hospital_id && r.dr_ref && r.product_id && r.qty);
-    if (!validRows.length) return alert('Fill in at least one complete row (Hospital, DR#, Product, Qty)');
+    if (!validRows.length) { showError(null, 'Fill in at least one complete row (Hospital, DR#, Product, Qty)'); return; }
 
     // Group by hospital_id + dr_ref + dr_date + dr_type → one DR per group
     const groups = new Map();
@@ -338,7 +339,7 @@ export default function DrEntry() {
       await loadDRs();
       if (warehouseId) inventory.getMyStock(null, null, warehouseId).then(res => { if (res?.data) setStockProducts(res.data); }).catch(err => console.error('[DrEntry]', err.message));
     } catch (err) {
-      alert(err.response?.data?.message || err.message || 'DR submission failed');
+      showError(err, 'Could not submit delivery receipt');
     } finally {
       setSaving(false);
     }

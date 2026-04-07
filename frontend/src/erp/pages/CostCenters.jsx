@@ -7,6 +7,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import { showError, showSuccess } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 
@@ -96,12 +97,12 @@ export function CostCentersContent() {
       setForm({ code: '', name: '', parent_cost_center: '', description: '' });
       load();
     } catch (err) {
-      alert(err?.response?.data?.message || err.message || 'Failed to create cost center');
+      showError(err, 'Could not save cost center');
     }
   };
 
   const handleToggle = async (id, is_active) => {
-    try { await rpt.updateCostCenter(id, { is_active }); load(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    try { await rpt.updateCostCenter(id, { is_active }); load(); } catch (err) { showError(err, 'Could not update cost center'); }
   };
 
   const openEdit = (node) => {
@@ -114,7 +115,7 @@ export function CostCentersContent() {
       await rpt.updateCostCenter(editModal._id, { name: editModal.name, description: editModal.description, parent_cost_center: editModal.parent_cost_center || null });
       setEditModal(null);
       load();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Update failed'); }
+    } catch (err) { showError(err, 'Could not save cost center'); }
   };
 
   const handleExport = async () => {
@@ -133,7 +134,7 @@ export function CostCentersContent() {
     fd.append('file', file);
     try {
       const res = await rpt.importCostCenters(fd);
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       load();
     } catch { /* hook handles */ }
     e.target.value = '';

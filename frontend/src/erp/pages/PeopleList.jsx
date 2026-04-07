@@ -6,6 +6,7 @@ import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const STATUS_LIST_FALLBACK = ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'];
 
@@ -104,7 +105,7 @@ export function PeopleListContent() {
       setShowForm(false);
       setForm(EMPTY_FORM);
       load();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not create person'); }
   };
 
   return (
@@ -116,9 +117,9 @@ export function PeopleListContent() {
           onClick={async () => {
             try {
               const res = await api.post('/people/sync-from-crm', {});
-              alert(res?.message || `Synced: ${res?.data?.created || 0} created, ${res?.data?.skipped || 0} already exist`);
+              showSuccess(res?.message || `Synced: ${res?.data?.created || 0} created, ${res?.data?.skipped || 0} already exist`);
               load();
-            } catch (err) { alert(err.response?.data?.message || 'Sync failed'); }
+            } catch (err) { showError(err, 'Could not sync from CRM'); }
           }}>Sync from CRM</button>
         <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Add Person</button>
       </div>

@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import usePettyCash from '../hooks/usePettyCash';
 import usePeople from '../hooks/usePeople';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const CEILING = 5000;
 
@@ -89,7 +90,7 @@ function FundFormModal({ open, onClose, onSave, editData, people }) {
         authorized_amount: Number(form.authorized_amount),
       }, editData?._id);
       onClose();
-    } catch (err) { alert(err?.response?.data?.message || `Failed to ${isEdit ? 'update' : 'create'} fund`); }
+    } catch (err) { showError(err, `Could not ${isEdit ? 'update' : 'create'} fund`); }
     finally { setSaving(false); }
   };
 
@@ -163,7 +164,7 @@ function CreateTxnModal({ open, onClose, onSave, funds }) {
     e.preventDefault();
     setSaving(true);
     try { await onSave({ ...form, amount: Number(form.amount) }); onClose(); setForm({ fund_id: '', txn_type: 'DISBURSEMENT', payee: '', particulars: '', amount: '', or_number: '' }); }
-    catch (err) { alert(err?.response?.data?.message || 'Failed to create transaction'); }
+    catch (err) { showError(err, 'Could not create petty cash transaction'); }
     finally { setSaving(false); }
   };
 
@@ -321,7 +322,7 @@ function TransactionsTab({ funds, pc }) {
   const handlePost = async (id) => {
     if (!window.confirm('Post this transaction? This cannot be undone.')) return;
     try { await pc.postTransaction(id); loadTransactions(); }
-    catch (err) { alert(err?.response?.data?.message || 'Failed to post'); }
+    catch (err) { showError(err, 'Could not post petty cash transaction'); }
   };
 
   const handleCreate = async (body) => {
@@ -424,13 +425,13 @@ function DocumentsTab({ pc }) {
 
   const handleSign = async (id) => {
     try { await pc.signDocument(id, { role: 'approver' }); loadDocs(); }
-    catch (err) { alert(err?.response?.data?.message || 'Failed to sign'); }
+    catch (err) { showError(err, 'Could not sign document'); }
   };
 
   const handleProcess = async (id) => {
     if (!window.confirm('Process this document?')) return;
     try { await pc.processDocument(id); loadDocs(); }
-    catch (err) { alert(err?.response?.data?.message || 'Failed to process'); }
+    catch (err) { showError(err, 'Could not process document'); }
   };
 
   const handlePrint = (id) => {
@@ -548,16 +549,16 @@ export default function PettyCash() {
     try {
       await pc.deleteFund(fundId);
       loadFunds();
-    } catch (err) { alert(err?.response?.data?.message || err?.message || 'Delete failed'); }
+    } catch (err) { showError(err, 'Could not delete fund'); }
   };
 
   const handleGenerateRemittance = async (fundId) => {
     try {
       await pc.generateRemittance({ fund_id: fundId });
-      alert('Remittance generated successfully.');
+      showSuccess('Remittance generated successfully.');
       setActiveTab('documents');
     } catch (err) {
-      alert(err?.response?.data?.message || 'Failed to generate remittance');
+      showError(err, 'Could not generate remittance');
     }
   };
 

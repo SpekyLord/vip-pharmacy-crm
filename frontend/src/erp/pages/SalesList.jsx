@@ -10,6 +10,7 @@ import EntityBadge from '../components/EntityBadge';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 function toTitleCase(str) {
   if (!str) return str;
@@ -167,7 +168,7 @@ export default function SalesList() {
       await sales.submitSales();
       loadSales(pagination.page);
     } catch (err) {
-      alert(err.response?.data?.message || 'Submit failed');
+      showError(err, 'Could not submit sales');
     }
   };
 
@@ -177,7 +178,7 @@ export default function SalesList() {
       await sales.reopenSales([id]);
       loadSales(pagination.page);
     } catch (err) {
-      alert(err.response?.data?.message || 'Reopen failed');
+      showError(err, 'Could not reopen sale');
     }
   };
 

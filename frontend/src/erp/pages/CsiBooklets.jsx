@@ -3,6 +3,7 @@
  * Booklet master, weekly allocation, usage stats
  */
 import { useState, useEffect, useCallback } from 'react';
+import { showError } from '../utils/errorToast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -83,7 +84,7 @@ export default function CsiBooklets() {
       await rpt.createBooklet({ booklet_code: form.booklet_code, series_start: Number(form.series_start), series_end: Number(form.series_end) });
       setForm({ booklet_code: '', series_start: '', series_end: '' });
       load();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not save booklet'); }
   };
 
   const handleAllocate = async (bookletId) => {
@@ -95,7 +96,7 @@ export default function CsiBooklets() {
       });
       setAllocForm({ week_start: '', week_end: '', range_start: '', range_end: '' });
       load();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not allocate booklet week'); }
   };
 
   return (

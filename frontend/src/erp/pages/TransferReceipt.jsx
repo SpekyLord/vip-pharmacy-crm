@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useTransfers from '../hooks/useTransfers';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .receipt-page { background: var(--erp-bg, #f4f7fb); }
@@ -53,7 +54,7 @@ export default function TransferReceipt() {
       await receiveTransfer(id);
       fetchIncoming();
     } catch (err) {
-      alert(err.response?.data?.message || err.message);
+      showError(err, 'Could not receive transfer');
     }
   };
 

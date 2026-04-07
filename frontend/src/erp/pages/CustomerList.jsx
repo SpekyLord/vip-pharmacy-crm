@@ -6,6 +6,7 @@ import usePeople from '../hooks/usePeople';
 import { useAuth } from '../../hooks/useAuth';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
+import { showError, showSuccess } from '../utils/errorToast';
 const SALE_TYPES_FALLBACK = ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'];
 const STATUS_OPTIONS = ['ALL', 'ACTIVE', 'INACTIVE'];
 const VAT_OPTIONS_FALLBACK = ['VATABLE', 'EXEMPT', 'ZERO'];
@@ -175,7 +176,7 @@ export function CustomerListContent() {
         setTagModal(prev => prev ? { ...prev, tagged_bdms: newTags } : null);
       }
     } catch (err) {
-      alert(err?.response?.data?.message || 'Tag failed');
+      showError(err, 'Could not tag customer');
     }
   };
 
@@ -308,7 +309,7 @@ export function CustomerListContent() {
     fd.append('file', file);
     try {
       const res = await customers.importCustomers(fd);
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       fetchCustomers();
     } catch { /* hook handles */ }
     e.target.value = '';

@@ -8,6 +8,7 @@ import useErpApi from '../hooks/useErpApi';
 import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .ics-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -135,7 +136,7 @@ export default function IcSettlement() {
       else if (type === 'deposit_slip') setDepositSlipUrl(url);
       // Phase 9.1b: attachment_id tracked automatically on backend
     } catch (err) {
-      alert('Upload failed: ' + (err.message || 'Unknown error'));
+      showError(err, 'Could not upload document');
     } finally { setUploading(''); }
   };
 
@@ -149,7 +150,7 @@ export default function IcSettlement() {
 
   const handleSave = async () => {
     if (!debtorId || !crNo || !selectedList.length) {
-      return alert('Select a subsidiary, enter CR#, and select at least one transfer');
+      showError(null, 'Select a subsidiary, enter CR#, and select at least one transfer'); return;
     }
     setSaving(true);
     try {
@@ -166,7 +167,7 @@ export default function IcSettlement() {
       });
       navigate('/erp/ic-settlements');
     } catch (err) {
-      alert(err.response?.data?.message || 'Save failed');
+      showError(err, 'Could not save settlement');
     } finally { setSaving(false); }
   };
 

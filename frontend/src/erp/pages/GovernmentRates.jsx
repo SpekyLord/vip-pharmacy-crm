@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useErpApi from '../hooks/useErpApi';
+import { showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .govr-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -187,7 +188,7 @@ export function GovernmentRatesContent() {
     fd.append('file', file);
     try {
       const res = await api.post('/government-rates/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       loadRates();
     } catch { /* handled */ }
     e.target.value = '';

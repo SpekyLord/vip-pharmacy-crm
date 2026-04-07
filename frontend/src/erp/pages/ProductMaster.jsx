@@ -8,6 +8,7 @@ import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
 import useWarehouses from '../hooks/useWarehouses';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const VAT_OPTIONS = ['VATABLE', 'EXEMPT', 'ZERO'];
 const STATUS_FILTER = ['ALL', 'ACTIVE', 'INACTIVE'];
@@ -122,7 +123,7 @@ function ProductModal({ open, onClose, onSave, editItem }) {
       await onSave(body, editItem?._id);
       onClose();
     } catch (err) {
-      alert(err?.response?.data?.message || 'Failed to save product');
+      showError(err, 'Could not save product');
     } finally {
       setSaving(false);
     }
@@ -260,11 +261,11 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
     if (!tagWarehouseId || !selectedProducts.length) return;
     try {
       const res = await api.post('/products/tag-warehouse', { product_ids: selectedProducts, warehouse_id: tagWarehouseId });
-      alert(res?.message || 'Tagged successfully');
+      showSuccess(res?.message || 'Tagged successfully');
       setTagModal(false);
       setSelectedProducts([]);
       setTagWarehouseId('');
-    } catch (err) { alert(err?.response?.data?.message || 'Tag failed'); }
+    } catch (err) { showError(err, 'Could not tag products to warehouse'); }
   };
 
   const loadProducts = useCallback(async () => {
@@ -303,7 +304,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
       await api.patch(`/products/${id}/deactivate`);
       loadProducts();
     } catch (err) {
-      alert(err?.response?.data?.message || 'Failed to deactivate');
+      showError(err, 'Could not deactivate product');
     }
   };
 
@@ -316,7 +317,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
       a.download = 'product_prices.xlsx';
       a.click();
       window.URL.revokeObjectURL(url);
-    } catch (err) { alert(err?.response?.data?.message || 'Export failed'); }
+    } catch (err) { showError(err, 'Could not export prices'); }
   };
 
   const handleImportPrices = async (e) => {
@@ -332,9 +333,10 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
       });
       const msg = `Updated ${res?.data?.updated || 0} product(s).`;
       const errs = res?.data?.errors || [];
-      alert(errs.length ? `${msg}\n\nErrors:\n${errs.map(e => `Row ${e.row}: ${e.message}`).join('\n')}` : msg);
+      if (errs.length) showError(null, `${msg} Errors: ${errs.map(e => `Row ${e.row}: ${e.message}`).join('; ')}`);
+      else showSuccess(msg);
       loadProducts();
-    } catch (err) { alert(err?.response?.data?.message || 'Import failed'); }
+    } catch (err) { showError(err, 'Could not import prices'); }
     finally { setImporting(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
   };
 

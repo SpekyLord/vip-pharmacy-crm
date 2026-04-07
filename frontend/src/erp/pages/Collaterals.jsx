@@ -5,6 +5,7 @@ import SelectField from '../../components/common/Select';
 import useCollaterals from '../hooks/useCollaterals';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const styles = {
   container: { padding: 0, maxWidth: '1200px', margin: '0 auto' },
@@ -96,7 +97,7 @@ function CollateralModal({ open, onClose, onSave, editItem, collateralTypes }) {
     try {
       await onSave({ ...form, qty_on_hand: Number(form.qty_on_hand) }, editItem?._id);
       onClose();
-    } catch (err) { alert(err?.response?.data?.message || 'Failed to save'); }
+    } catch (err) { showError(err, 'Could not save collateral'); }
     finally { setSaving(false); }
   };
 
@@ -156,7 +157,7 @@ function DistributionModal({ open, onClose, onSave, collaterals }) {
       await onSave({ ...form, qty: Number(form.qty) });
       onClose();
       setForm({ collateral: '', qty: 1, recipient: '', hospital: '', notes: '' });
-    } catch (err) { alert(err?.response?.data?.message || 'Failed to record distribution'); }
+    } catch (err) { showError(err, 'Could not record distribution'); }
     finally { setSaving(false); }
   };
 
@@ -213,7 +214,7 @@ function ReturnModal({ open, onClose, onSave, collaterals }) {
       await onSave({ ...form, qty: Number(form.qty) });
       onClose();
       setForm({ collateral: '', qty: 1 });
-    } catch (err) { alert(err?.response?.data?.message || 'Failed to record return'); }
+    } catch (err) { showError(err, 'Could not record return'); }
     finally { setSaving(false); }
   };
 
@@ -264,7 +265,7 @@ export default function Collaterals() {
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try { const res = await col.importCollaterals(fd); alert(res?.message || 'Import complete'); loadItems(); } catch { /* */ }
+    try { const res = await col.importCollaterals(fd); showSuccess(res?.message || 'Import complete'); loadItems(); } catch { /* */ }
     e.target.value = '';
   };
 

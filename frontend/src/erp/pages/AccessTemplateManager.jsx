@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpAccess from '../hooks/useErpAccess';
+import { showError } from '../utils/errorToast';
 
 const MODULES = [
   { key: 'sales', label: 'Sales' },
@@ -106,7 +107,7 @@ export function AccessTemplateManagerContent() {
       }
       setEditing(null);
       load();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not save access template'); }
   };
 
   const handleDelete = async (id) => {
@@ -114,7 +115,7 @@ export function AccessTemplateManagerContent() {
     try {
       await api.deleteTemplate(id);
       load();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not delete access template'); }
   };
 
   const setModuleLevel = (modKey, level) => {

@@ -14,6 +14,7 @@ import useEntities from '../hooks/useEntities';
 import usePeople from '../hooks/usePeople';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
+import { showError } from '../utils/errorToast';
 
 const TYPE_LABELS = { MAIN: 'Main Warehouse', TERRITORY: 'Territory', VIRTUAL: 'Virtual' };
 const TYPE_COLORS = { MAIN: '#1e40af', TERRITORY: '#166534', VIRTUAL: '#64748b' };
@@ -137,7 +138,7 @@ export function WarehouseManagerContent() {
       setEditing(null);
       load();
     } catch (err) {
-      alert(err.response?.data?.message || 'Save failed');
+      showError(err, 'Could not save warehouse');
     }
   };
 

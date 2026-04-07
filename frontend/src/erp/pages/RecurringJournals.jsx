@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .rj-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -97,7 +98,7 @@ export function RecurringJournalsContent() {
   const handleSave = async () => {
     const cleanLines = lines.filter(l => l.account_code && (parseFloat(l.debit) > 0 || parseFloat(l.credit) > 0))
       .map(l => ({ account_code: l.account_code, account_name: l.account_name || l.account_code, debit: parseFloat(l.debit) || 0, credit: parseFloat(l.credit) || 0, description: l.description }));
-    if (cleanLines.length < 2) { alert('At least 2 journal lines required'); return; }
+    if (cleanLines.length < 2) { showError(null, 'At least 2 journal lines required'); return; }
     setSaving(true);
     try {
       const payload = { ...form, lines: cleanLines };
@@ -119,7 +120,7 @@ export function RecurringJournalsContent() {
     setRunning(id);
     try {
       const res = await api.runRecurringTemplate(id);
-      alert(`JE #${res?.data?.je_number} created (${res?.data?.status})`);
+      showSuccess(`JE #${res?.data?.je_number} created (${res?.data?.status})`);
       loadTemplates();
     } catch { /* handled */ }
     setRunning(null);
@@ -130,7 +131,7 @@ export function RecurringJournalsContent() {
     setRunning('all');
     try {
       const res = await api.runAllDueTemplates();
-      alert(res?.message || 'Done');
+      showSuccess(res?.message || 'Done');
       loadTemplates();
     } catch { /* handled */ }
     setRunning(null);
@@ -152,7 +153,7 @@ export function RecurringJournalsContent() {
     fd.append('file', file);
     try {
       const res = await api.post('/recurring-journals/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       loadTemplates();
     } catch { /* handled */ }
     e.target.value = '';

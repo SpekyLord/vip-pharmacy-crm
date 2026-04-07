@@ -7,6 +7,7 @@ import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .ccm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -141,7 +142,7 @@ export function CreditCardManagerContent() {
   };
 
   const handleSave = async () => {
-    if (!form.card_code || !form.card_name) return alert('Card Code and Card Name are required');
+    if (!form.card_code || !form.card_name) { showError(null, 'Card Code and Card Name are required'); return; }
     const data = {
       ...form,
       credit_limit: parseFloat(form.credit_limit) || 0,
