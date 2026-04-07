@@ -3,6 +3,7 @@
  * GENERATED -> REVIEWED -> BDM_CONFIRMED -> CREDITED workflow
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -113,6 +114,11 @@ export default function CycleReports() {
             <div>
               <h1>Cycle Reports</h1>
               <p>Generate, review, confirm, and credit cycle reports from one workflow. The mobile view switches to cards for easier scanning.</p>
+              <div style={{ marginTop: 10 }}>
+                <Link to="/erp/reports" className="btn" style={{ textDecoration: 'none', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', background: 'transparent' }}>
+                  Back to Reports
+                </Link>
+              </div>
             </div>
           </div>
 

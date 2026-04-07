@@ -5,6 +5,7 @@
  * Convention: target_id = User._id (same as bdm_id in transaction models)
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -204,6 +205,11 @@ export default function BudgetAllocations() {
           <div className="ba-header">
             <h1>Budget Allocations</h1>
             <p>Set per-BDM expense budgets by period. Approved budgets feed into Expense Anomalies &gt; Budget Overruns.</p>
+            <div style={{ marginTop: 10 }}>
+              <Link to="/erp/reports" className="btn" style={{ textDecoration: 'none', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', background: 'transparent' }}>
+                Back to Reports
+              </Link>
+            </div>
           </div>
 
           <div className="controls">

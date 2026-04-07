@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -121,6 +122,9 @@ export default function AccountsReceivable() {
               <h1>Accounts Receivable</h1>
               <p>Track aging by hospital, review collection buckets, and open CSI detail rows for individual balances.</p>
             </div>
+            <Link to="/erp/reports" className="btn btn-outline" style={{ textDecoration: 'none' }}>
+              Back to Reports
+            </Link>
           </div>
 
           {/* Summary Cards */}

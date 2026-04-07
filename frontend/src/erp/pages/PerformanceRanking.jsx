@@ -3,6 +3,7 @@
  * Net Cash ranking, MoM trend, Sales/Collections trackers
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -94,6 +95,11 @@ export default function PerformanceRanking() {
           <div className="perf-header">
             <h1>Performance Ranking</h1>
             <p>Net cash ranking, sales/collections trackers, and month-over-month trends</p>
+            <div style={{ marginTop: 10 }}>
+              <Link to="/erp/reports" className="btn" style={{ textDecoration: 'none', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', background: 'transparent' }}>
+                Back to Reports
+              </Link>
+            </div>
           </div>
 
           <div className="tab-bar">

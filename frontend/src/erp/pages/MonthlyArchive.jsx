@@ -2,6 +2,7 @@
  * Monthly Archive Page — Period close/re-open controls + snapshot history
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -111,6 +112,9 @@ export default function MonthlyArchive() {
         <div className="archive-main">
           <div className="archive-header">
             <h1>Monthly Archive</h1>
+            <Link to="/erp/reports" className="btn btn-outline" style={{ textDecoration: 'none' }}>
+              Back to Reports
+            </Link>
           </div>
 
           {/* Period Control Panel */}
