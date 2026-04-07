@@ -278,6 +278,13 @@ const validateSales = catchAsync(async (req, res) => {
         rowErrors.push('Product is required for each line item');
         continue;
       }
+      if (!item.qty || item.qty <= 0) {
+        rowErrors.push(`Quantity must be greater than 0 for ${item.item_key || 'product'}`);
+        continue;
+      }
+      if (!item.unit_price || item.unit_price <= 0) {
+        rowErrors.push(`Unit price must be greater than 0 for ${item.item_key || 'product'}`);
+      }
 
       const pid = item.product_id.toString();
       const available = (productTotals.get(pid) || 0) - (deducted.get(pid) || 0);

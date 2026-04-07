@@ -1074,7 +1074,13 @@ export default function SalesEntry() {
                               ))}
                             </SelectField>
                             {item.fifo_override && (
-                              <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} disabled={row.status === 'POSTED'} />
+                              <select className="override-reason" value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} disabled={row.status === 'POSTED'}>
+                                <option value="">Select reason...</option>
+                                <option value="HOSPITAL_POLICY">Hospital Policy</option>
+                                <option value="QA_REPLACEMENT">QA Replacement</option>
+                                <option value="DAMAGED_BATCH">Damaged Batch</option>
+                                <option value="BATCH_RECALL">Batch Recall</option>
+                              </select>
                             )}
                           </div>
                         );

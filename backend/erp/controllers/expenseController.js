@@ -398,10 +398,24 @@ const validateCarLogbook = catchAsync(async (req, res) => {
     const errors = [];
 
     if (!entry.entry_date) errors.push('Date is required');
+    if (entry.entry_date && new Date(entry.entry_date) > new Date()) errors.push('Logbook date cannot be in the future');
     if (!entry.starting_km && entry.starting_km !== 0) errors.push('Starting KM is required');
     if (!entry.ending_km && entry.ending_km !== 0) errors.push('Ending KM is required');
     if (entry.ending_km < entry.starting_km) errors.push('Ending KM must be >= Starting KM');
     if (entry.personal_km > entry.total_km) errors.push('Personal KM cannot exceed total KM');
+
+    // Odometer sequential check: starting_km should be >= previous entry's ending_km
+    if (entry.entry_date && entry.starting_km > 0) {
+      const prevEntry = await CarLogbookEntry.findOne({
+        entity_id: entry.entity_id,
+        bdm_id: entry.bdm_id,
+        entry_date: { $lt: entry.entry_date },
+        status: { $in: ['VALID', 'POSTED'] }
+      }).sort({ entry_date: -1 }).select('ending_km entry_date').lean();
+      if (prevEntry && entry.starting_km < prevEntry.ending_km) {
+        errors.push(`Starting KM (${entry.starting_km}) is less than previous entry's ending KM (${prevEntry.ending_km} on ${new Date(prevEntry.entry_date).toLocaleDateString()})`);
+      }
+    }
 
     // CALF gate: non-cash fuel entries require CALF to be linked AND POSTED
     for (let j = 0; j < (entry.fuel_entries || []).length; j++) {
@@ -708,6 +722,7 @@ const validateExpenses = catchAsync(async (req, res) => {
     for (let i = 0; i < entry.lines.length; i++) {
       const line = entry.lines[i];
       if (!line.expense_date) errors.push(`Line ${i + 1}: date is required`);
+      if (line.expense_date && new Date(line.expense_date) > new Date()) errors.push(`Line ${i + 1}: expense date cannot be in the future`);
       if (!line.amount || line.amount <= 0) errors.push(`Line ${i + 1}: valid amount required`);
       if (!line.establishment) errors.push(`Line ${i + 1}: establishment is required`);
 

@@ -162,7 +162,7 @@ const validateCollections = catchAsync(async (req, res) => {
     if (row.settled_csis?.length) {
       const slIds = row.settled_csis.map(s => s.sales_line_id);
       const validSales = await SalesLine.find({
-        _id: { $in: slIds }, status: 'POSTED', hospital_id: row.hospital_id
+        _id: { $in: slIds }, status: 'POSTED', hospital_id: row.hospital_id, entity_id: row.entity_id
       }).select('_id').lean();
       const validIds = new Set(validSales.map(s => s._id.toString()));
 
