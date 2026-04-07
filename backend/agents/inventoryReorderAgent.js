@@ -40,7 +40,7 @@ async function run() {
         { $match: { current_stock: { $lte: REORDER_LEVEL } } },
         {
           $lookup: {
-            from: 'erp_product_masters',
+            from: 'erp_product_master',
             localField: '_id.product_id',
             foreignField: '_id',
             as: 'product'
@@ -115,7 +115,7 @@ async function run() {
         { $match: { conversion_ratio: { $lt: 0.5 } } },
         {
           $lookup: {
-            from: 'erp_product_masters',
+            from: 'erp_product_master',
             localField: 'product_id',
             foreignField: '_id',
             as: 'product'
