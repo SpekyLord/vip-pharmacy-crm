@@ -73,6 +73,7 @@ function getCurrentPeriod() {
 
 export default function ErpReports() {
   const { user } = useAuth();
+  const isBDM = user?.role === 'employee';
   const dash = useDashboard();
   const [period, setPeriod] = useState(getCurrentPeriod());
   const [salesData, setSalesData] = useState(null);
@@ -116,11 +117,13 @@ export default function ErpReports() {
               <h3>Territory P&L</h3>
               <p>Revenue, COGS, expenses, net income, and profit sharing status by BDM.</p>
             </Link>
+            {!isBDM && (
             <Link to="/erp/income" className="report-card">
               <div className="icon">💵</div>
               <h3>Income / Payslip</h3>
               <p>BDM payslip with earnings, deductions, and workflow tracking.</p>
             </Link>
+            )}
             <Link to="/erp/profit-sharing" className="report-card">
               <div className="icon">🤝</div>
               <h3>Profit Sharing</h3>
@@ -136,56 +139,70 @@ export default function ErpReports() {
               <h3>SOA Generator</h3>
               <p>Statement of Account per hospital.</p>
             </Link>
+            {!isBDM && (
             <Link to="/erp/monthly-archive" className="report-card">
               <div className="icon">📁</div>
               <h3>Monthly Archive</h3>
               <p>Period snapshots, close history, and fiscal year records.</p>
             </Link>
+            )}
+            {!isBDM && (
             <Link to="/erp/audit-logs" className="report-card">
               <div className="icon">🔍</div>
               <h3>Audit Logs</h3>
               <p>Searchable log of all ERP data changes.</p>
             </Link>
+            )}
           </div>
 
           {/* Phase 14 — New Reports & Analytics */}
           <div className="section-label">Analytics & Tracking</div>
           <div className="report-cards">
+            {!isBDM && (
             <Link to="/erp/performance-ranking" className="report-card">
               <div className="icon">🏆</div>
               <h3>Performance Ranking</h3>
               <p>Net cash ranking, MoM trends, sales & collections trackers by BDM.</p>
             </Link>
+            )}
             <Link to="/erp/consignment-aging" className="report-card">
               <div className="icon">📦</div>
               <h3>Consignment Aging</h3>
               <p>Cross-BDM consignment status with aging indicators and drill-down.</p>
             </Link>
+            {!isBDM && (
             <Link to="/erp/expense-anomalies" className="report-card">
               <div className="icon">⚠️</div>
               <h3>Expense Anomalies</h3>
               <p>Period-over-period expense changes and budget overrun detection.</p>
             </Link>
+            )}
+            {!isBDM && (
             <Link to="/erp/fuel-efficiency" className="report-card">
               <div className="icon">⛽</div>
               <h3>Fuel Efficiency</h3>
               <p>Per-BDM actual vs expected gas cost with variance flags.</p>
             </Link>
+            )}
+            {!isBDM && (
             <Link to="/erp/cycle-status" className="report-card">
               <div className="icon">🔄</div>
               <h3>Cycle Status</h3>
               <p>Payslip cycle progress tracking with behind-schedule alerts.</p>
             </Link>
+            )}
             <Link to="/erp/cycle-reports" className="report-card">
               <div className="icon">📋</div>
               <h3>Cycle Reports</h3>
               <p>Generate, review, confirm, and credit cycle reports.</p>
             </Link>
+            {!isBDM && (
             <Link to="/erp/budget-allocations" className="report-card">
               <div className="icon">💰</div>
               <h3>Budget Allocations</h3>
               <p>Set per-BDM expense budgets by component. Feeds Budget Overruns report.</p>
             </Link>
+            )}
           </div>
 
           {/* Quick Summary Reports */}
