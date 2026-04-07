@@ -54,6 +54,19 @@ const pageStyles = `
   .empty-state { text-align: center; color: var(--erp-muted); padding: 28px 16px; }
   .loading { text-align: center; padding: 40px; color: var(--erp-muted); }
   .booklet-body { display: grid; gap: 16px; }
+  .booklet-mobile-list { display: none; }
+  .booklet-card { border: 1px solid var(--erp-border); border-radius: 16px; background: var(--erp-panel); padding: 14px; box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05); }
+  .booklet-card-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .booklet-card-code { font-size: 15px; font-weight: 800; color: var(--erp-text); }
+  .booklet-card-series { font-size: 12px; color: var(--erp-muted); margin-top: 2px; }
+  .booklet-card-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .booklet-card-chip { background: #f8fafc; border: 1px solid var(--erp-border); border-radius: 12px; padding: 10px 12px; }
+  .booklet-card-chip-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--erp-muted); font-weight: 700; }
+  .booklet-card-chip-value { font-size: 13px; font-weight: 700; color: var(--erp-text); margin-top: 4px; }
+  .booklet-card-footer { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  .booklet-card-progress { flex: 1; min-width: 140px; }
+  .booklet-card-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .booklet-alloc-card { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--erp-border); }
   @media(max-width: 900px) {
     .booklet-main { padding: 16px; }
     .booklet-hero { grid-template-columns: 1fr; }
@@ -69,11 +82,14 @@ const pageStyles = `
     .booklet-main { padding: 76px 12px 96px; }
     .booklet-header h1 { font-size: 20px; }
     .booklet-kpis { grid-template-columns: 1fr 1fr; }
+    .booklet-mobile-list { display: grid; gap: 10px; }
+    .table-wrap { display: none; }
     .form-row { grid-template-columns: 1fr; }
     .form-group input { width: 100%; }
     .btn { width: 100%; }
-    .data-table th, .data-table td { padding: 6px 8px; }
-    .usage-bar { width: 64px; }
+    .booklet-card-meta { grid-template-columns: 1fr 1fr; }
+    .booklet-card-actions .btn { width: 100%; }
+    .usage-bar { width: 100%; }
   }
 
   @media(max-width: 480px) {
@@ -84,7 +100,9 @@ const pageStyles = `
     .booklet-header p { font-size: 12px; }
     .booklet-kpi-value { font-size: 20px; }
     .panel { padding: 12px; border-radius: 14px; }
-    .data-table th, .data-table td { padding: 6px; }
+    .booklet-card-meta { grid-template-columns: 1fr; }
+    .booklet-card-top { flex-direction: column; }
+    .booklet-card-actions { flex-direction: column; }
   }
 `;
 
@@ -288,6 +306,89 @@ export default function CsiBooklets() {
                     )}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="booklet-mobile-list">
+                {booklets.map((b) => {
+                  const usagePercent = b.total_numbers > 0 ? (b.used_count / b.total_numbers) * 100 : 0;
+                  const isOpen = expandedId === b._id;
+                  return (
+                    <div className="booklet-card" key={`mobile-${b._id}`}>
+                      <div className="booklet-card-top">
+                        <div>
+                          <div className="booklet-card-code">{b.booklet_code}</div>
+                          <div className="booklet-card-series">{b.series_start} - {b.series_end}</div>
+                        </div>
+                        <span className={`badge badge-${b.status?.toLowerCase()}`}>{b.status}</span>
+                      </div>
+
+                      <div className="booklet-card-meta">
+                        <div className="booklet-card-chip">
+                          <div className="booklet-card-chip-label">Assigned To</div>
+                          <div className="booklet-card-chip-value">{b.assigned_to?.full_name || 'Unassigned'}</div>
+                        </div>
+                        <div className="booklet-card-chip">
+                          <div className="booklet-card-chip-label">Remaining</div>
+                          <div className="booklet-card-chip-value">{b.remaining_count}</div>
+                        </div>
+                        <div className="booklet-card-chip">
+                          <div className="booklet-card-chip-label">Used</div>
+                          <div className="booklet-card-chip-value">{b.used_count}</div>
+                        </div>
+                        <div className="booklet-card-chip">
+                          <div className="booklet-card-chip-label">Usage</div>
+                          <div className="booklet-card-chip-value">{Math.round(usagePercent)}%</div>
+                        </div>
+                      </div>
+
+                      <div className="booklet-card-footer">
+                        <div className="booklet-card-progress">
+                          <div className="usage-bar" style={{ width: '100%' }}>
+                            <div className="usage-fill" style={{ width: `${usagePercent}%` }} />
+                          </div>
+                        </div>
+                        <button className="btn btn-sm" onClick={() => setExpandedId(isOpen ? null : b._id)}>
+                          {isOpen ? 'Hide Allocation' : 'Allocate'}
+                        </button>
+                      </div>
+
+                      {isOpen && (
+                        <div className="booklet-alloc-card">
+                          <div className="alloc-section" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none' }}>
+                            <strong style={{ fontSize: 12 }}>Allocations ({(b.allocations || []).length})</strong>
+                            {(b.allocations || []).map((a, i) => (
+                              <div key={i} style={{ fontSize: 12, color: 'var(--erp-muted)', marginTop: 4 }}>
+                                {a.range_start}-{a.range_end} | Used: {a.used_numbers?.length || 0}/{a.allocated_count} | {a.status}
+                              </div>
+                            ))}
+                            <div className="form-row" style={{ marginTop: 10 }}>
+                              <div className="form-group">
+                                <label>Week Start</label>
+                                <input type="date" value={allocForm.week_start} onChange={e => setAllocForm(f => ({ ...f, week_start: e.target.value }))} />
+                              </div>
+                              <div className="form-group">
+                                <label>Week End</label>
+                                <input type="date" value={allocForm.week_end} onChange={e => setAllocForm(f => ({ ...f, week_end: e.target.value }))} />
+                              </div>
+                              <div className="form-group">
+                                <label>Range Start</label>
+                                <input type="number" value={allocForm.range_start} onChange={e => setAllocForm(f => ({ ...f, range_start: e.target.value }))} />
+                              </div>
+                              <div className="form-group">
+                                <label>Range End</label>
+                                <input type="number" value={allocForm.range_end} onChange={e => setAllocForm(f => ({ ...f, range_end: e.target.value }))} />
+                              </div>
+                              <button className="btn btn-primary btn-sm" onClick={() => handleAllocate(b._id)}>Add Allocation</button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {booklets.length === 0 && !loading && (
+                  <div className="empty-state">No booklets created yet</div>
+                )}
               </div>
             </div>
           </div>

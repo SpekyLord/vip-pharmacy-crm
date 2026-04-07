@@ -11,33 +11,55 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .reports-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .reports-main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .reports-main { padding: 24px; max-width: 1240px; margin: 0 auto; }
   .reports-header { margin-bottom: 20px; }
-  .reports-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 4px; }
-  .reports-header p { color: var(--erp-muted); font-size: 13px; margin: 0; }
+  .reports-header h1 { font-size: 24px; color: var(--erp-text); margin: 0 0 4px; }
+  .reports-header p { color: var(--erp-muted); font-size: 13px; margin: 0; max-width: 760px; line-height: 1.5; }
   .report-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-bottom: 24px; }
-  .report-card { display: block; padding: 20px; background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 14px; text-decoration: none; transition: transform 0.12s, box-shadow 0.12s; }
+  .report-card { display: block; padding: 20px; background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 16px; text-decoration: none; transition: transform 0.12s, box-shadow 0.12s; box-shadow: 0 8px 18px rgba(15,23,42,0.05); }
   .report-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(15,23,42,0.08); }
   .report-card h3 { margin: 0 0 6px; font-size: 15px; color: var(--erp-text); }
   .report-card p { margin: 0; font-size: 13px; color: var(--erp-muted); line-height: 1.5; }
   .report-card .icon { font-size: 28px; margin-bottom: 8px; }
   .section-label { font-size: 11px; font-weight: 700; color: var(--erp-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
-  .summary-panel { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
+  .summary-panel { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 16px; padding: 20px; margin-bottom: 20px; box-shadow: 0 8px 18px rgba(15,23,42,0.05); }
+  .summary-panel h3 { margin: 0 0 12px; font-size: 15px; }
   .summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .summary-table-wrap { overflow-x: auto; }
-  .summary-table th { text-align: left; padding: 8px 10px; background: var(--erp-accent-soft); font-weight: 600; }
-  .summary-table td { padding: 8px 10px; border-top: 1px solid var(--erp-border); }
+  .summary-table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--erp-border); }
+  .summary-table th { text-align: left; padding: 8px 10px; background: var(--erp-accent-soft); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px; color: var(--erp-muted); }
+  .summary-table td { padding: 8px 10px; border-top: 1px solid var(--erp-border); background: var(--erp-panel); }
   .summary-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
   .controls { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-  .controls input, .controls select { padding: 8px 12px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 13px; background: var(--erp-panel); color: var(--erp-text); }
-  .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .controls input, .controls select { padding: 8px 12px; border: 1px solid var(--erp-border); border-radius: 10px; font-size: 13px; background: var(--erp-panel); color: var(--erp-text); }
+  .btn { padding: 8px 16px; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; }
   .btn-primary { background: #2563eb; color: white; }
   .btn:disabled { opacity: 0.5; }
+  .summary-mobile-list { display: none; }
+  .summary-mobile-card { border: 1px solid var(--erp-border); border-radius: 14px; background: var(--erp-panel); padding: 14px; box-shadow: 0 8px 18px rgba(15,23,42,0.05); }
+  .summary-mobile-card + .summary-mobile-card { margin-top: 10px; }
+  .summary-mobile-title { font-size: 14px; font-weight: 800; color: var(--erp-text); margin-bottom: 8px; }
+  .summary-mobile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .summary-mobile-item { background: #f8fafc; border: 1px solid var(--erp-border); border-radius: 12px; padding: 10px 12px; }
+  .summary-mobile-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--erp-muted); font-weight: 700; }
+  .summary-mobile-value { font-size: 13px; font-weight: 700; color: var(--erp-text); margin-top: 4px; }
+  .summary-mobile-actions { display: flex; gap: 8px; margin-top: 12px; }
   @media(max-width: 768px) {
     .reports-main { padding: 76px 16px 96px; }
+    .reports-header h1 { font-size: 20px; }
     .report-cards { grid-template-columns: 1fr; }
     .controls { flex-direction: column; align-items: stretch; }
     .controls input, .controls select, .controls .btn { width: 100%; }
+    .summary-table-wrap { display: none; }
+    .summary-mobile-list { display: grid; gap: 10px; }
+    .summary-mobile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media(max-width: 480px) {
+    .reports-main { padding-top: 72px; padding-bottom: 104px; }
+    .reports-header p { font-size: 12px; }
+    .report-card { padding: 16px; }
+    .summary-panel { padding: 14px; }
+    .summary-mobile-grid { grid-template-columns: 1fr; }
+    .summary-mobile-actions { flex-direction: column; }
   }
 `;
 
@@ -178,7 +200,7 @@ export default function ErpReports() {
           {/* Sales Summary */}
           {activeReport === 'sales' && salesData && !loading && (
             <div className="summary-panel">
-              <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Sales Summary — {period}</h3>
+              <h3>Sales Summary — {period}</h3>
               <div className="summary-table-wrap">
                 <table className="summary-table">
                   <thead><tr><th>Hospital</th><th>Invoices</th><th style={{ textAlign: 'right' }}>Total Sales</th><th style={{ textAlign: 'right' }}>VAT</th><th style={{ textAlign: 'right' }}>Net</th></tr></thead>
@@ -196,13 +218,27 @@ export default function ErpReports() {
                   </tbody>
                 </table>
               </div>
+              <div className="summary-mobile-list">
+                {salesData.length === 0 && <div style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 20 }}>No sales data for this period</div>}
+                {salesData.map((r) => (
+                  <div className="summary-mobile-card" key={`sales-${r._id || r.hospital_name}`}>
+                    <div className="summary-mobile-title">{r.hospital_name}</div>
+                    <div className="summary-mobile-grid">
+                      <div className="summary-mobile-item"><div className="summary-mobile-label">Invoices</div><div className="summary-mobile-value">{r.total_invoices}</div></div>
+                      <div className="summary-mobile-item"><div className="summary-mobile-label">Total Sales</div><div className="summary-mobile-value">{fmt(r.total_sales)}</div></div>
+                      <div className="summary-mobile-item"><div className="summary-mobile-label">VAT</div><div className="summary-mobile-value">{fmt(r.total_vat)}</div></div>
+                      <div className="summary-mobile-item"><div className="summary-mobile-label">Net</div><div className="summary-mobile-value">{fmt(r.total_net)}</div></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
           {/* Collection Summary */}
           {activeReport === 'collections' && collData && !loading && (
             <div className="summary-panel">
-              <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Collection Summary — {period}</h3>
+              <h3>Collection Summary — {period}</h3>
               <div className="summary-table-wrap">
                 <table className="summary-table">
                   <thead><tr><th>Hospital</th><th>CRs</th><th style={{ textAlign: 'right' }}>Collected</th><th style={{ textAlign: 'right' }}>Commission</th><th style={{ textAlign: 'right' }}>Rebates</th></tr></thead>
@@ -219,6 +255,20 @@ export default function ErpReports() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div className="summary-mobile-list">
+                {collData.length === 0 && <div style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 20 }}>No collection data for this period</div>}
+                {collData.map((r) => (
+                  <div className="summary-mobile-card" key={`coll-${r._id || r.hospital_name}`}>
+                    <div className="summary-mobile-title">{r.hospital_name}</div>
+                    <div className="summary-mobile-grid">
+                      <div className="summary-mobile-item"><div className="summary-mobile-label">CRs</div><div className="summary-mobile-value">{r.total_crs}</div></div>
+                      <div className="summary-mobile-item"><div className="summary-mobile-label">Collected</div><div className="summary-mobile-value">{fmt(r.total_collected)}</div></div>
+                      <div className="summary-mobile-item"><div className="summary-mobile-label">Commission</div><div className="summary-mobile-value">{fmt(r.total_commission)}</div></div>
+                      <div className="summary-mobile-item"><div className="summary-mobile-label">Rebates</div><div className="summary-mobile-value">{fmt(r.total_rebates)}</div></div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
