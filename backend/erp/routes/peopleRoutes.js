@@ -13,11 +13,13 @@ const {
   getAsUsers,
   syncFromCrm,
   getOrgChart,
+  createPersonUnified,
 } = require('../controllers/peopleController');
 
 // ═══ People CRUD ═══
 router.get('/as-users', getAsUsers);  // lightweight CRM-compatible user list (entity-scoped)
 router.post('/sync-from-crm', roleCheck('admin', 'president'), syncFromCrm);  // import CRM Users → PeopleMaster
+router.post('/create-with-login', roleCheck('admin', 'president'), createPersonUnified);  // unified: CRM User + PeopleMaster
 router.get('/org-chart', getOrgChart);
 router.get('/', getPeopleList);
 router.post('/', roleCheck('admin', 'finance', 'president'), createPerson);

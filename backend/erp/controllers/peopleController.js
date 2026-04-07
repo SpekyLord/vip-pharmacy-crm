@@ -82,6 +82,7 @@ const updatePerson = catchAsync(async (req, res) => {
   const allowed = [
     'full_name', 'first_name', 'last_name', 'person_type', 'position', 'department',
     'reports_to', 'bdm_code', 'role_notes',
+    'email', 'phone', 'avatar', 'territory_id', 'bdm_stage',
     'employment_type', 'date_hired', 'date_regularized', 'date_separated', 'date_of_birth',
     'civil_status', 'government_ids', 'bank_account', 'is_active', 'status', 'user_id',
   ];
@@ -181,24 +182,42 @@ const syncFromCrm = catchAsync(async (req, res) => {
   const crmUsers = await User.find({
     entity_id: req.entityId,
     'erp_access.enabled': true
-  }).select('_id name email role entity_id').lean();
+  }).select('_id name email phone role entity_id territory_id avatar bdm_stage').lean();
 
-  // Get existing PeopleMaster user_ids
-  const existing = await PeopleMaster.find({ entity_id: req.entityId })
-    .select('user_id').lean();
-  const existingUserIds = new Set(existing.map(p => p.user_id?.toString()).filter(Boolean));
+  // Get existing PeopleMaster records keyed by user_id
+  const existing = await PeopleMaster.find({ entity_id: req.entityId }).lean();
+  const existingByUserId = new Map(
+    existing.filter(p => p.user_id).map(p => [p.user_id.toString(), p])
+  );
 
-  let created = 0, skipped = 0;
+  let created = 0, updated = 0, skipped = 0;
+  const typeMap = { admin: 'EMPLOYEE', president: 'DIRECTOR', employee: 'BDM', medrep: 'SALES_REP', finance: 'EMPLOYEE' };
+
   for (const u of crmUsers) {
-    if (existingUserIds.has(u._id.toString())) { skipped++; continue; }
+    const existingPerson = existingByUserId.get(u._id.toString());
+
+    if (existingPerson) {
+      // Update contact/territory fields from CRM if changed
+      const updates = {};
+      if (u.email && u.email !== existingPerson.email) updates.email = u.email;
+      if (u.phone && u.phone !== existingPerson.phone) updates.phone = u.phone;
+      if (u.avatar && u.avatar !== existingPerson.avatar) updates.avatar = u.avatar;
+      if (u.territory_id && u.territory_id?.toString() !== existingPerson.territory_id?.toString()) updates.territory_id = u.territory_id;
+      if (u.bdm_stage && u.bdm_stage !== existingPerson.bdm_stage) updates.bdm_stage = u.bdm_stage;
+
+      if (Object.keys(updates).length > 0) {
+        await PeopleMaster.updateOne({ _id: existingPerson._id }, { $set: updates });
+        updated++;
+      } else {
+        skipped++;
+      }
+      continue;
+    }
 
     // Parse name
     const nameParts = (u.name || '').trim().split(/\s+/);
     const firstName = nameParts[0] || u.name || 'Unknown';
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-
-    // Map CRM role to person_type
-    const typeMap = { admin: 'EMPLOYEE', president: 'DIRECTOR', employee: 'BDM', medrep: 'SALES_REP', finance: 'EMPLOYEE' };
     const personType = typeMap[u.role] || 'EMPLOYEE';
 
     await PeopleMaster.create({
@@ -208,6 +227,11 @@ const syncFromCrm = catchAsync(async (req, res) => {
       full_name: u.name || 'Unknown',
       first_name: firstName,
       last_name: lastName,
+      email: u.email || '',
+      phone: u.phone || '',
+      avatar: u.avatar || '',
+      territory_id: u.territory_id || null,
+      bdm_stage: u.bdm_stage || '',
       position: u.role === 'employee' ? 'BDM' : u.role,
       department: u.role === 'employee' ? 'SALES' : 'ADMIN',
       employment_type: 'REGULAR',
@@ -216,7 +240,7 @@ const syncFromCrm = catchAsync(async (req, res) => {
     created++;
   }
 
-  res.json({ success: true, message: `Synced: ${created} created, ${skipped} already exist`, data: { created, skipped, total_crm_users: crmUsers.length } });
+  res.json({ success: true, message: `Synced: ${created} created, ${updated} updated, ${skipped} unchanged`, data: { created, updated, skipped, total_crm_users: crmUsers.length } });
 });
 
 /**
@@ -316,6 +340,75 @@ const getOrgChart = catchAsync(async (req, res) => {
   });
 });
 
+// ═══ Unified Person + Login Creation ═══
+
+const createPersonUnified = catchAsync(async (req, res) => {
+  const {
+    first_name, last_name, email, password, phone, role,
+    person_type, position, department, employment_type,
+    reports_to, territory_id, bdm_stage,
+    create_login,
+  } = req.body;
+
+  const full_name = `${first_name} ${last_name}`.trim();
+  if (!first_name || !last_name) {
+    return res.status(400).json({ success: false, message: 'First name and last name are required' });
+  }
+
+  let userId = null;
+
+  // Step 1: Create CRM User login if requested
+  if (create_login && email && password) {
+    // Check email uniqueness
+    const existing = await User.findOne({ email: email.toLowerCase() });
+    if (existing) {
+      return res.status(400).json({ success: false, message: `Email "${email}" is already registered` });
+    }
+
+    const user = await User.create({
+      name: full_name,
+      email: email.toLowerCase(),
+      password,
+      role: role || 'employee',
+      phone: phone || '',
+      entity_id: req.entityId,
+      territory_id: territory_id || null,
+      bdm_stage: bdm_stage || '',
+      'erp_access.enabled': true,
+    });
+    userId = user._id;
+  }
+
+  // Step 2: Create PeopleMaster record
+  const person = await PeopleMaster.create({
+    entity_id: req.entityId,
+    user_id: userId,
+    person_type: person_type || 'EMPLOYEE',
+    full_name,
+    first_name,
+    last_name,
+    email: email || '',
+    phone: phone || '',
+    position: position || '',
+    department: department || '',
+    employment_type: employment_type || 'REGULAR',
+    reports_to: reports_to || null,
+    territory_id: territory_id || null,
+    bdm_stage: bdm_stage || '',
+    is_active: true,
+    status: 'ACTIVE',
+    created_by: req.user._id,
+  });
+
+  res.status(201).json({
+    success: true,
+    message: userId
+      ? `${full_name} created with system login (${email})`
+      : `${full_name} created without login`,
+    data: person,
+  });
+});
+
 module.exports = {
   getPeopleList,
   getPersonById,
@@ -328,4 +421,5 @@ module.exports = {
   getAsUsers,
   syncFromCrm,
   getOrgChart,
+  createPersonUnified,
 };

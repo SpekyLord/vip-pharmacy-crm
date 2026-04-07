@@ -38,6 +38,25 @@ const peopleMasterSchema = new mongoose.Schema(
       default: null,
     },
 
+    // ═══ Contact ═══
+    email: { type: String, trim: true, default: '' },
+    phone: { type: String, trim: true, default: '' },
+    avatar: { type: String, default: '' },
+
+    // ═══ Territory ═══
+    territory_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Territory',
+      default: null,
+    },
+
+    // ═══ Partner Stage ═══
+    bdm_stage: {
+      type: String,
+      enum: ['', 'CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER'],
+      default: '',
+    },
+
     // ═══ Employment ═══
     employment_type: {
       type: String,

@@ -7,6 +7,7 @@ export default function usePeople() {
   const getAsUsers = (params) => api.get('/people/as-users', { params });  // CRM-compatible { _id, name, role }
   const getPersonById = (id) => api.get(`/people/${id}`);
   const createPerson = (data) => api.post('/people', data);
+  const createPersonUnified = (data) => api.post('/people/create-with-login', data);
   const updatePerson = (id, data) => api.put(`/people/${id}`, data);
   const deactivatePerson = (id) => api.del(`/people/${id}`);
 
@@ -20,6 +21,7 @@ export default function usePeople() {
     getPeopleList, getAsUsers,
     getPersonById,
     createPerson,
+    createPersonUnified,
     updatePerson,
     deactivatePerson,
     getCompProfile,

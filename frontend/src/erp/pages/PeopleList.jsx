@@ -57,7 +57,10 @@ const pageStyles = `
 
 const EMPTY_FORM = {
   first_name: '', last_name: '', full_name: '', person_type: 'EMPLOYEE',
-  position: '', department: '', reports_to: '', employment_type: 'REGULAR', status: 'ACTIVE',
+  email: '', phone: '', password: '',
+  position: '', department: '', reports_to: null,
+  employment_type: 'REGULAR', status: 'ACTIVE',
+  create_login: true,
 };
 
 export function PeopleListContent() {
@@ -92,9 +95,12 @@ export function PeopleListContent() {
   useEffect(() => { load(); }, [load]);
 
   const handleCreate = async () => {
-    const full_name = `${form.first_name} ${form.last_name}`.trim();
     try {
-      await api.createPerson({ ...form, full_name, reports_to: form.reports_to || null });
+      await api.createPersonUnified({
+        ...form,
+        reports_to: form.reports_to || null,
+        create_login: form.create_login && form.email && form.password,
+      });
       setShowForm(false);
       setForm(EMPTY_FORM);
       load();
@@ -182,14 +188,34 @@ export function PeopleListContent() {
             <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>Add Person</h3>
             <div className="ppl-row2">
               <div className="ppl-field">
-                <label>First Name</label>
+                <label>First Name *</label>
                 <input value={form.first_name} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} />
               </div>
               <div className="ppl-field">
-                <label>Last Name</label>
+                <label>Last Name *</label>
                 <input value={form.last_name} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} />
               </div>
             </div>
+            <div className="ppl-row2">
+              <div className="ppl-field">
+                <label>Email{form.create_login ? ' *' : ''}</label>
+                <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@example.com" />
+              </div>
+              <div className="ppl-field">
+                <label>Phone</label>
+                <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+639171234567" />
+              </div>
+            </div>
+            <div className="ppl-field" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={form.create_login} onChange={e => setForm(f => ({ ...f, create_login: e.target.checked }))} id="create_login" />
+              <label htmlFor="create_login" style={{ margin: 0, cursor: 'pointer' }}>Create system login (allows this person to log in to CRM/ERP)</label>
+            </div>
+            {form.create_login && (
+              <div className="ppl-field">
+                <label>Password *</label>
+                <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 8 chars, upper+lower+number+special" />
+              </div>
+            )}
             <div className="ppl-row2">
               <div className="ppl-field">
                 <label>Person Type</label>
@@ -216,7 +242,7 @@ export function PeopleListContent() {
             </div>
             <div className="ppl-field">
               <label>Reports To</label>
-              <SelectField value={form.reports_to} onChange={e => setForm(f => ({ ...f, reports_to: e.target.value }))}>
+              <SelectField value={form.reports_to || ''} onChange={e => setForm(f => ({ ...f, reports_to: e.target.value || null }))}>
                 <option value="">None (Top Level)</option>
                 {people.filter(p => p._id !== form._id).map(p => (
                   <option key={p._id} value={p._id}>{p.full_name}{p.position ? ` (${p.position})` : ''}</option>
@@ -225,7 +251,7 @@ export function PeopleListContent() {
             </div>
             <div className="ppl-footer">
               <button className="btn" style={{ background: '#f3f4f6' }} onClick={() => setShowForm(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleCreate}>Create</button>
+              <button className="btn btn-primary" onClick={handleCreate} disabled={!form.first_name.trim() || !form.last_name.trim() || (form.create_login && (!form.email || !form.password))}>Create</button>
             </div>
           </div>
         </div>
