@@ -241,26 +241,42 @@ export default function ErpDashboard() {
             {loading ? (
               <div className="loading-placeholder">Loading...</div>
             ) : (
-              <div className="mtd-grid">
-                <div className="mtd-card">
-                  <div className="value">{fmt(mtd?.sales_mtd)}</div>
-                  <div className="label">Sales</div>
-                </div>
-                <div className="mtd-card">
-                  <div className="value">{fmt(mtd?.collections_mtd)}</div>
-                  <div className="label">Collections</div>
-                </div>
-                <div className="mtd-card">
-                  <div className="value">
-                    {mtd?.engagements_mtd?.visited || 0}/{mtd?.engagements_mtd?.target || 0}
+              <>
+                <div className="mtd-grid">
+                  <div className="mtd-card">
+                    <div className="value">{fmt(mtd?.sales_mtd)}</div>
+                    <div className="label">Sales</div>
                   </div>
-                  <div className="label">Engagements</div>
+                  <div className="mtd-card">
+                    <div className="value">{fmt(mtd?.collections_mtd)}</div>
+                    <div className="label">Collections</div>
+                  </div>
+                  <div className="mtd-card">
+                    <div className="value">
+                      {mtd?.engagements_mtd?.visited || 0}/{mtd?.engagements_mtd?.target || 0}
+                    </div>
+                    <div className="label">Engagements</div>
+                  </div>
+                  <div className="mtd-card">
+                    <div className="value">{fmt(mtd?.income_mtd)}</div>
+                    <div className="label">Income</div>
+                  </div>
                 </div>
-                <div className="mtd-card">
-                  <div className="value">{fmt(mtd?.income_mtd)}</div>
-                  <div className="label">Income</div>
+                <div className="mtd-grid" style={{ marginTop: 8 }}>
+                  <div className="mtd-card">
+                    <div className="value" style={{ color: (mtd?.dso || 0) > 45 ? '#dc2626' : (mtd?.dso || 0) > 30 ? '#d97706' : '#16a34a' }}>{mtd?.dso || 0}d</div>
+                    <div className="label">DSO</div>
+                  </div>
+                  <div className="mtd-card">
+                    <div className="value" style={{ color: (mtd?.collection_rate || 0) >= 70 ? '#16a34a' : (mtd?.collection_rate || 0) >= 50 ? '#d97706' : '#dc2626' }}>{mtd?.collection_rate || 0}%</div>
+                    <div className="label">Collection Rate</div>
+                  </div>
+                  <div className="mtd-card">
+                    <div className="value" style={{ color: (mtd?.gross_margin || 0) >= 30 ? '#16a34a' : (mtd?.gross_margin || 0) >= 15 ? '#d97706' : '#dc2626' }}>{mtd?.gross_margin || 0}%</div>
+                    <div className="label">Gross Margin</div>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
 
             {/* PNL YTD Banner */}

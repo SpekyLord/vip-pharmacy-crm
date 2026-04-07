@@ -113,6 +113,9 @@ async function journalFromSale(salesLine, entityId, userId) {
   const vat = salesLine.total_vat || 0;
   const net = gross - vat;
 
+  // Skip journal for zero-amount sales (complimentary/samples)
+  if (gross === 0) return null;
+
   const lines = [
     { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: gross, credit: 0, description: `Sale: ${salesLine.invoice_number || ''}` },
     { account_code: c(coa, 'SALES_REVENUE'), account_name: n('SALES_REVENUE'), debit: 0, credit: net, description: `Sale: ${salesLine.invoice_number || ''}` },
