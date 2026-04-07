@@ -104,7 +104,7 @@ exports.getHealth = catchAsync(async (req, res) => {
       },
       lookups: {
         categories_configured: lookupCategories.length,
-        total_available: 16
+        total_available: Object.keys(require('./lookupGenericController').SEED_DEFAULTS || {}).length || lookupCategories.length
       },
       settings: {
         last_updated: settings.updatedAt || null

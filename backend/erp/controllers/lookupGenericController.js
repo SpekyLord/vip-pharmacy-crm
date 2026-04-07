@@ -168,3 +168,6 @@ exports.getSeedDefaults = catchAsync(async (req, res) => {
   }
   res.json({ success: true, data: summary });
 });
+
+// Export for use by controlCenterController health check
+exports.SEED_DEFAULTS = SEED_DEFAULTS;
