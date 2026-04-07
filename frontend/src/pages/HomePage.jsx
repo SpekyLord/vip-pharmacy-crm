@@ -232,7 +232,8 @@ export default function HomePage() {
 
   const isAdminLike = ADMIN_LIKE.includes(user?.role);
   const crmPath = isAdminLike ? '/admin' : '/bdm';
-  const hasErp = user?.erp_access?.enabled;
+  // Admin/finance/president always have ERP access (backend bypasses module check for them)
+  const hasErp = isAdminLike || user?.erp_access?.enabled;
 
   // ── Auto-route logic (20.6) ──
   // Always show the CRM/ERP chooser landing page.
