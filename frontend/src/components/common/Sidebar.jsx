@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import messageService from '../../services/messageInboxService';
 import {
@@ -390,6 +390,38 @@ const sidebarStyles = `
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
 
+  .mobile-drawer-platform-switch {
+    display: flex;
+    gap: 8px;
+    padding: 14px 20px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .mobile-drawer-platform-link {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: all 0.2s ease;
+  }
+
+  .mobile-drawer-platform-link.active {
+    color: #0f172a;
+    background: #f8fafc;
+    border-color: #f8fafc;
+  }
+
   .mobile-drawer-close {
     width: 36px;
     height: 36px;
@@ -747,6 +779,9 @@ const Sidebar = () => {
   }, [fetchUnreadCount]);
 
   const menuConfig = getMenuConfig(user?.role, unreadCount, user?.erp_access, location.pathname);
+  const isAdminLike = ['admin', 'finance', 'president', 'ceo'].includes(user?.role);
+  const crmHome = isAdminLike ? '/admin' : '/bdm';
+  const isErpRoute = location.pathname.startsWith('/erp');
 
   const isActive = (path) => {
     if (path === '/admin' || path === '/bdm' || path === '/erp') {
@@ -907,6 +942,24 @@ const Sidebar = () => {
             <X size={20} />
           </button>
         </div>
+        {user && (
+          <div className="mobile-drawer-platform-switch" aria-label="Platform switch">
+            <Link
+              to={crmHome}
+              className={`mobile-drawer-platform-link ${isErpRoute ? '' : 'active'}`.trim()}
+              onClick={closeDrawer}
+            >
+              CRM
+            </Link>
+            <Link
+              to="/erp"
+              className={`mobile-drawer-platform-link ${isErpRoute ? 'active' : ''}`.trim()}
+              onClick={closeDrawer}
+            >
+              ERP
+            </Link>
+          </div>
+        )}
         <nav className="mobile-drawer-nav">
           {menuConfig.sections.map((section, sectionIndex) => (
             <div key={sectionIndex} className="sidebar-section">

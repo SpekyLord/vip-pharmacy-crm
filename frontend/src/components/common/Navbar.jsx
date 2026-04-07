@@ -597,11 +597,7 @@ const navbarStyles = `
       display: none;
     }
 
-    .navbar-platform-switch--mobile {
-      display: inline-flex;
-    }
-
-    .navbar-platform-switch {
+    .navbar-left > .navbar-platform-switch {
       display: none;
     }
 
@@ -755,22 +751,6 @@ const Navbar = () => {
       )}
 
       <div className="navbar-menu">
-        {user && (
-          <div className="navbar-platform-switch navbar-platform-switch--mobile" aria-label="Platform switch">
-            <Link
-              to={crmHome}
-              className={`navbar-platform-link ${isErpRoute ? '' : 'active'}`.trim()}
-            >
-              CRM
-            </Link>
-            <Link
-              to="/erp"
-              className={`navbar-platform-link ${isErpRoute ? 'active' : ''}`.trim()}
-            >
-              ERP
-            </Link>
-          </div>
-        )}
         {isMultiEntity && entities.length > 0 && (
           <select
             className="navbar-entity-select"
