@@ -17,7 +17,15 @@
       "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/api/erp/transfers/prices/products)",
       "Bash(ls docs/PHASETASK*.md)",
       "Bash(ls PHASETASK*.md)",
-      "Bash(ls docs/PHASE*.md)"
+      "Bash(ls docs/PHASE*.md)",
+      "Read(//c/Users/LENOVO/OneDrive/Documents/VIP IP/VIP CRM ERP/vip-pharmacy-crm/frontend/src/components/**)",
+      "Bash(dir \"C:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm\\\\node_modules\\\\lucide-react\" /b)",
+      "Bash(curl -s http://localhost:5173/src/components/common/Sidebar.jsx)",
+      "Bash(curl -s http://localhost:5173/erp/org-chart)",
+      "Bash(curl -s -b \"\" http://localhost:5000/api/erp/people/org-chart)",
+      "Bash(grep -rh \"collection: '\" backend/erp/models/*.js backend/models/*.js)",
+      "Bash(grep -cE \"^\\\\s+'[a-z-]+': \\\\{$\" frontend/src/erp/pages/ControlCenter.jsx)",
+      "Bash(find \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm\\\\backend\\\\erp\\\\models\" -name \"*.js\" -exec grep -l \"ref: 'User'\" {} \\\\;)"
     ]
   }
 }
