@@ -409,6 +409,46 @@ const createPersonUnified = catchAsync(async (req, res) => {
   });
 });
 
+// ═══ Create Login for Existing Person ═══
+
+const createLoginForPerson = catchAsync(async (req, res) => {
+  const { email, password } = req.body;
+  const person = await PeopleMaster.findById(req.params.id);
+  if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
+  if (person.user_id) return res.status(400).json({ success: false, message: 'Person already has a system login' });
+  if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password are required' });
+
+  // Check email uniqueness
+  const existing = await User.findOne({ email: email.toLowerCase() });
+  if (existing) return res.status(400).json({ success: false, message: `Email "${email}" is already registered` });
+
+  // Map person_type to CRM role
+  const roleMap = { DIRECTOR: 'president', BDM: 'employee', ECOMMERCE_BDM: 'employee', SALES_REP: 'employee', CONSULTANT: 'employee', EMPLOYEE: 'employee' };
+  const crmRole = roleMap[person.person_type] || 'employee';
+
+  const user = await User.create({
+    name: person.full_name,
+    email: email.toLowerCase(),
+    password,
+    role: crmRole,
+    phone: person.phone || '',
+    entity_id: person.entity_id,
+    territory_id: person.territory_id || null,
+    'erp_access.enabled': true,
+  });
+
+  // Link PeopleMaster to new CRM User
+  person.user_id = user._id;
+  if (!person.email) person.email = email;
+  await person.save();
+
+  res.status(201).json({
+    success: true,
+    message: `Login created for ${person.full_name} (${email})`,
+    data: { person_id: person._id, user_id: user._id, email },
+  });
+});
+
 module.exports = {
   getPeopleList,
   getPersonById,
@@ -422,4 +462,5 @@ module.exports = {
   syncFromCrm,
   getOrgChart,
   createPersonUnified,
+  createLoginForPerson,
 };

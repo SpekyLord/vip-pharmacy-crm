@@ -14,6 +14,7 @@ const {
   syncFromCrm,
   getOrgChart,
   createPersonUnified,
+  createLoginForPerson,
 } = require('../controllers/peopleController');
 
 // ═══ People CRUD ═══
@@ -25,6 +26,7 @@ router.get('/', getPeopleList);
 router.post('/', roleCheck('admin', 'finance', 'president'), createPerson);
 router.get('/:id', getPersonById);
 router.put('/:id', roleCheck('admin', 'finance', 'president'), updatePerson);
+router.post('/:id/create-login', roleCheck('admin', 'president'), createLoginForPerson);
 router.delete('/:id', roleCheck('admin', 'finance', 'president'), deactivatePerson);
 
 // ═══ Compensation Profiles ═══

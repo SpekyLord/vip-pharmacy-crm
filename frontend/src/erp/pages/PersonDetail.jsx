@@ -107,6 +107,8 @@ export default function PersonDetail() {
   const [personForm, setPersonForm] = useState({});
   const [compForm, setCompForm] = useState({});
   const [insForm, setInsForm] = useState(null); // null = closed, {} = new, {_id} = editing
+  const [showLoginForm, setShowLoginForm] = useState(false);
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const savingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -183,6 +185,19 @@ export default function PersonDetail() {
       load();
     } catch (err) { alert(err?.message || 'Save failed'); }
     finally { savingRef.current = false; }
+  };
+
+  const handleCreateLogin = async () => {
+    if (!loginForm.email || !loginForm.password) return;
+    try {
+      await pplApi.createLoginForPerson(id, loginForm);
+      alert('Login created! Refreshing...');
+      setShowLoginForm(false);
+      setLoginForm({ email: '', password: '' });
+      load();
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || 'Failed to create login');
+    }
   };
 
   const saveComp = async () => {
@@ -546,11 +561,30 @@ export default function PersonDetail() {
             )}
           </div>
 
-          {/* ═══ SECTION D: ERP Module Access ═══ */}
-          {person.user_id && (
+          {/* ═══ SECTION D: ERP Module Access / Create Login ═══ */}
+          {person.user_id ? (
             <div className="pd-card">
               <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>ERP Module Access</h3>
               <ErpAccessManager userId={person.user_id?._id || person.user_id} readOnly={!canEdit} />
+            </div>
+          ) : canEdit && (
+            <div className="pd-card">
+              <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>System Login</h3>
+              <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 12px' }}>
+                This person has no system login. Create one so they can log in to CRM/ERP.
+              </p>
+              {!showLoginForm ? (
+                <button className="pd-btn pd-btn-p" onClick={() => setShowLoginForm(true)}>Create Login</button>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360 }}>
+                  <input placeholder="Email *" value={loginForm.email} onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }} />
+                  <input type="password" placeholder="Password * (min 8, upper+lower+number+special)" value={loginForm.password} onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="pd-btn pd-btn-p" disabled={!loginForm.email || !loginForm.password} onClick={handleCreateLogin}>Create</button>
+                    <button className="pd-btn" onClick={() => setShowLoginForm(false)}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
