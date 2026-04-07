@@ -37,6 +37,7 @@ router.use('/scorecards', require('./scorecardRoutes'));
 
 // ═══ Phase 3 — Sales & Inventory ═══
 router.use('/sales', erpAccessCheck('sales'), require('./salesRoutes'));
+router.use('/credit-notes', erpAccessCheck('sales'), require('./creditNoteRoutes'));
 router.use('/inventory', erpAccessCheck('inventory'), require('./inventoryRoutes'));
 
 // ═══ Phase 4 — Consignment ═══

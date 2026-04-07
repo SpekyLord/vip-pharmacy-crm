@@ -690,6 +690,166 @@ const getAlerts = catchAsync(async (req, res) => {
   });
 });
 
+// ═══════════════════════════════════════════════════════════
+// EXPIRY MANAGEMENT DASHBOARD — Phase 25
+// ═══════════════════════════════════════════════════════════
+
+const getExpiryDashboard = catchAsync(async (req, res) => {
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
+    ? (req.query.bdm_id || null)
+    : req.bdmId;
+
+  const warehouseId = req.query.warehouse_id;
+  const opts = warehouseId ? { warehouseId } : undefined;
+
+  const settings = await Settings.getSettings();
+  const nearExpiryDays = settings.NEAR_EXPIRY_DAYS || 120;
+  const now = new Date();
+
+  const rawStock = await getMyStockAgg(req.entityId, bdmId, opts);
+
+  // Bucket by expiry urgency
+  const expired = [];
+  const critical = [];   // < 30 days
+  const warning = [];    // 30-90 days
+  const caution = [];    // 90-nearExpiryDays
+
+  for (const item of rawStock) {
+    if (item.available_qty <= 0) continue;
+    const expDate = new Date(item.expiry_date);
+    const daysLeft = Math.ceil((expDate - now) / (1000 * 60 * 60 * 24));
+
+    const entry = {
+      product_id: item.product_id,
+      batch_lot_no: item.batch_lot_no,
+      expiry_date: item.expiry_date,
+      days_remaining: daysLeft,
+      available_qty: item.available_qty,
+      warehouse_id: item.warehouse_id
+    };
+
+    if (daysLeft <= 0) expired.push(entry);
+    else if (daysLeft <= 30) critical.push(entry);
+    else if (daysLeft <= 90) warning.push(entry);
+    else if (daysLeft <= nearExpiryDays) caution.push(entry);
+  }
+
+  // Enrich with product details
+  const allEntries = [...expired, ...critical, ...warning, ...caution];
+  const productIds = [...new Set(allEntries.map(e => e.product_id))];
+  const products = await ProductMaster.find({ _id: { $in: productIds } })
+    .select('brand_name generic_name dosage_strength item_key').lean();
+  const productMap = new Map(products.map(p => [p._id.toString(), p]));
+
+  for (const entry of allEntries) {
+    entry.product = productMap.get(entry.product_id.toString()) || {};
+  }
+
+  // Sort each bucket by days_remaining ASC
+  expired.sort((a, b) => a.days_remaining - b.days_remaining);
+  critical.sort((a, b) => a.days_remaining - b.days_remaining);
+  warning.sort((a, b) => a.days_remaining - b.days_remaining);
+  caution.sort((a, b) => a.days_remaining - b.days_remaining);
+
+  // Compute total value at risk
+  const totalValueAtRisk = [...expired, ...critical].reduce((sum, e) => sum + (e.available_qty * (e.unit_price || 0)), 0);
+
+  res.json({
+    success: true,
+    data: { expired, critical, warning, caution },
+    summary: {
+      expired_count: expired.length,
+      critical_count: critical.length,
+      warning_count: warning.length,
+      caution_count: caution.length,
+      total_at_risk: expired.length + critical.length,
+      near_expiry_days: nearExpiryDays
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// BATCH TRACEABILITY — Phase 25
+// ═══════════════════════════════════════════════════════════
+
+const getBatchTrace = catchAsync(async (req, res) => {
+  const { productId, batchLotNo } = req.params;
+
+  if (!productId || !batchLotNo) {
+    return res.status(400).json({ success: false, message: 'productId and batchLotNo are required' });
+  }
+
+  const filter = {
+    entity_id: req.entityId,
+    product_id: new mongoose.Types.ObjectId(productId),
+    batch_lot_no: cleanBatchNo(batchLotNo)
+  };
+
+  // Get all ledger entries for this batch
+  const ledgerEntries = await InventoryLedger.find(filter)
+    .populate('recorded_by', 'name')
+    .populate('warehouse_id', 'warehouse_name')
+    .sort({ recorded_at: 1 })
+    .lean();
+
+  if (!ledgerEntries.length) {
+    return res.status(404).json({ success: false, message: 'No records found for this batch' });
+  }
+
+  // Get product details
+  const product = await ProductMaster.findById(productId)
+    .select('brand_name generic_name dosage_strength item_key')
+    .lean();
+
+  // Build trace timeline
+  const timeline = ledgerEntries.map(entry => ({
+    _id: entry._id,
+    date: entry.recorded_at,
+    type: entry.transaction_type,
+    qty_in: entry.qty_in,
+    qty_out: entry.qty_out,
+    running_balance: entry.running_balance,
+    warehouse: entry.warehouse_id?.warehouse_name || 'N/A',
+    recorded_by: entry.recorded_by?.name || 'System',
+    event_id: entry.event_id
+  }));
+
+  // Compute summary
+  const totalIn = ledgerEntries.reduce((sum, e) => sum + (e.qty_in || 0), 0);
+  const totalOut = ledgerEntries.reduce((sum, e) => sum + (e.qty_out || 0), 0);
+  const currentBalance = ledgerEntries.length > 0 ? ledgerEntries[ledgerEntries.length - 1].running_balance : 0;
+  const expiryDate = ledgerEntries[0]?.expiry_date;
+
+  // Group by transaction type for breakdown
+  const breakdown = {};
+  for (const entry of ledgerEntries) {
+    const t = entry.transaction_type;
+    if (!breakdown[t]) breakdown[t] = { count: 0, qty_in: 0, qty_out: 0 };
+    breakdown[t].count++;
+    breakdown[t].qty_in += entry.qty_in || 0;
+    breakdown[t].qty_out += entry.qty_out || 0;
+  }
+
+  res.json({
+    success: true,
+    data: {
+      product,
+      batch_lot_no: filter.batch_lot_no,
+      expiry_date: expiryDate,
+      timeline,
+      summary: {
+        total_received: totalIn,
+        total_dispensed: totalOut,
+        current_balance: currentBalance,
+        first_receipt: ledgerEntries[0]?.recorded_at,
+        last_movement: ledgerEntries[ledgerEntries.length - 1]?.recorded_at,
+        transaction_count: ledgerEntries.length
+      },
+      breakdown
+    }
+  });
+});
+
 module.exports = {
   getMyStock,
   getBatches,
@@ -699,5 +859,7 @@ module.exports = {
   createGrn,
   approveGrn,
   getGrnList,
-  getAlerts
+  getAlerts,
+  getExpiryDashboard,
+  getBatchTrace
 };

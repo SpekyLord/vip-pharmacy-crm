@@ -52,6 +52,9 @@ import {
   Repeat,
   Network,
   ChevronDown,
+  RotateCcw,
+  AlertTriangle,
+  Search,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -691,6 +694,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     if (salesHomePath !== '/erp/sales') {
       salesItems.push({ path: '/erp/sales', label: 'Sales Transactions', icon: FileText, isChild: true });
     }
+    salesItems.push({ path: '/erp/credit-notes', label: 'Returns / CN', icon: RotateCcw });
     salesItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
     sections.push({
       title: 'Sales',
@@ -709,6 +713,8 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     ];
     if (isAdmin) invItems.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
     if (isAdmin) invItems.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
+    invItems.push({ path: '/erp/expiry-dashboard', label: 'Expiry Mgmt', icon: AlertTriangle });
+    invItems.push({ path: '/erp/batch-trace', label: 'Batch Trace', icon: Search });
     if (['admin', 'president'].includes(role)) {
       invItems.push({ path: '/erp/warehouses', label: 'Warehouses', icon: Package });
     }
