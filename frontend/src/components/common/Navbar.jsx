@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   BarChart3,
+  Briefcase,
   LayoutGrid,
   LogOut,
   Menu,
@@ -128,8 +129,14 @@ const navbarStyles = `
     text-transform: uppercase;
     color: #64748b;
     transition: all 0.2s ease;
+    gap: 6px;
   }
 
+  .navbar-platform-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
   .navbar-platform-link.active {
     background: #0f172a;
     color: white;
@@ -729,12 +736,18 @@ const Navbar = () => {
               to={crmHome}
               className={`navbar-platform-link ${isErpRoute ? '' : 'active'}`.trim()}
             >
+              <span className="navbar-platform-icon" aria-hidden="true">
+                <LayoutGrid size={14} />
+              </span>
               CRM
             </Link>
             <Link
               to="/erp"
               className={`navbar-platform-link ${isErpRoute ? 'active' : ''}`.trim()}
             >
+              <span className="navbar-platform-icon" aria-hidden="true">
+                <Briefcase size={14} />
+              </span>
               ERP
             </Link>
           </div>
@@ -743,12 +756,18 @@ const Navbar = () => {
 
       {user ? (
         <div className="navbar-center">
+                <span className="navbar-platform-icon" aria-hidden="true">
+                  <LayoutGrid size={14} />
+                </span>
 
           <div
             className={`navbar-erp-tabs ${isErpRoute ? 'navbar-erp-tabs--fluid' : ''}`.trim()}
             aria-label={isErpRoute ? 'ERP tabs' : 'CRM tabs'}
           >
             {platformTabs.map((tab) => {
+                <span className="navbar-platform-icon" aria-hidden="true">
+                  <Briefcase size={14} />
+                </span>
               const isActive = isTabActive(tab.path);
               const Icon = tab.icon;
               return (
