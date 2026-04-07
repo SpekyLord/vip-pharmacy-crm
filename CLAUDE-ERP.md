@@ -317,3 +317,7 @@ When creating or modifying any ERP page, you MUST also update the corresponding 
 2. **New Control Center section** → add entry to `DEPENDENCY_GUIDE` in ControlCenter.jsx
 3. **Modified page workflow** → update the steps/tips/next-links in the guide to match the new behavior
 4. **Removed page** → remove the guide entry to avoid dead references
+
+### Lint Check
+
+Run `node scripts/check-workflow-guides.js` to verify all pages have either WorkflowGuide or DEPENDENCY_GUIDE coverage. Exit code 1 = gaps found. This should be run after adding or modifying ERP pages.
