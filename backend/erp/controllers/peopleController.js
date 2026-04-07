@@ -449,6 +449,41 @@ const createLoginForPerson = catchAsync(async (req, res) => {
   });
 });
 
+// ═══ Disable Login (deactivate CRM User, keep link) ═══
+
+const disableLogin = catchAsync(async (req, res) => {
+  const person = await PeopleMaster.findById(req.params.id);
+  if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
+  if (!person.user_id) return res.status(400).json({ success: false, message: 'Person has no login to disable' });
+
+  await User.findByIdAndUpdate(person.user_id, { $set: { isActive: false } });
+  res.json({ success: true, message: `Login disabled for ${person.full_name}. They can no longer log in.` });
+});
+
+// ═══ Enable Login (reactivate CRM User) ═══
+
+const enableLogin = catchAsync(async (req, res) => {
+  const person = await PeopleMaster.findById(req.params.id);
+  if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
+  if (!person.user_id) return res.status(400).json({ success: false, message: 'Person has no login to enable' });
+
+  await User.findByIdAndUpdate(person.user_id, { $set: { isActive: true } });
+  res.json({ success: true, message: `Login re-enabled for ${person.full_name}.` });
+});
+
+// ═══ Unlink Login (disconnect CRM User from PeopleMaster) ═══
+
+const unlinkLogin = catchAsync(async (req, res) => {
+  const person = await PeopleMaster.findById(req.params.id);
+  if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
+  if (!person.user_id) return res.status(400).json({ success: false, message: 'Person has no login to unlink' });
+
+  const userId = person.user_id;
+  person.user_id = null;
+  await person.save();
+  res.json({ success: true, message: `Login unlinked for ${person.full_name}. CRM User ${userId} still exists but is disconnected.` });
+});
+
 module.exports = {
   getPeopleList,
   getPersonById,
@@ -463,4 +498,7 @@ module.exports = {
   getOrgChart,
   createPersonUnified,
   createLoginForPerson,
+  disableLogin,
+  enableLogin,
+  unlinkLogin,
 };

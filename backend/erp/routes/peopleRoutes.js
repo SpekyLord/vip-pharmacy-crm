@@ -15,6 +15,9 @@ const {
   getOrgChart,
   createPersonUnified,
   createLoginForPerson,
+  disableLogin,
+  enableLogin,
+  unlinkLogin,
 } = require('../controllers/peopleController');
 
 // ═══ People CRUD ═══
@@ -27,6 +30,9 @@ router.post('/', roleCheck('admin', 'finance', 'president'), createPerson);
 router.get('/:id', getPersonById);
 router.put('/:id', roleCheck('admin', 'finance', 'president'), updatePerson);
 router.post('/:id/create-login', roleCheck('admin', 'president'), createLoginForPerson);
+router.post('/:id/disable-login', roleCheck('admin', 'president'), disableLogin);
+router.post('/:id/enable-login', roleCheck('admin', 'president'), enableLogin);
+router.post('/:id/unlink-login', roleCheck('admin', 'president'), unlinkLogin);
 router.delete('/:id', roleCheck('admin', 'finance', 'president'), deactivatePerson);
 
 // ═══ Compensation Profiles ═══

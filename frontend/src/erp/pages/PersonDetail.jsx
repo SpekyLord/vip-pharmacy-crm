@@ -564,7 +564,35 @@ export default function PersonDetail() {
           {/* ═══ SECTION D: ERP Module Access / Create Login ═══ */}
           {person.user_id ? (
             <div className="pd-card">
-              <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>ERP Module Access</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>ERP Module Access</h3>
+                {canEdit && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      className="pd-btn"
+                      style={{ fontSize: 11, color: '#dc2626', border: '1px solid #fecaca', background: '#fef2f2' }}
+                      onClick={async () => {
+                        if (!confirm('Disable this person\'s login? They will no longer be able to log in.')) return;
+                        try { await pplApi.disableLogin(id); alert('Login disabled.'); load(); }
+                        catch (err) { alert(err?.response?.data?.message || 'Failed'); }
+                      }}
+                    >Disable Login</button>
+                    <button
+                      className="pd-btn"
+                      style={{ fontSize: 11, color: '#64748b', border: '1px solid #e5e7eb' }}
+                      onClick={async () => {
+                        if (!confirm('Unlink login? CRM User stays but disconnects from this person record. Use this if the login was linked by mistake.')) return;
+                        try { await pplApi.unlinkLogin(id); alert('Login unlinked.'); load(); }
+                        catch (err) { alert(err?.response?.data?.message || 'Failed'); }
+                      }}
+                    >Unlink Login</button>
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>
+                Linked to CRM User: {person.user_id?.email || person.user_id?._id || person.user_id}
+                {person.user_id?.isActive === false && <span style={{ color: '#dc2626', fontWeight: 600 }}> (DISABLED)</span>}
+              </div>
               <ErpAccessManager userId={person.user_id?._id || person.user_id} readOnly={!canEdit} />
             </div>
           ) : canEdit && (
