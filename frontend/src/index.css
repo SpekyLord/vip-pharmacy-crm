@@ -80,6 +80,7 @@
   /* Transitions */
   --transition-fast: 150ms ease;
   --transition-normal: 300ms ease;
+  --mobile-bottom-nav-offset: 80px;
 }
 
 html {
@@ -308,6 +309,10 @@ body.dark-mode .vip-select__option--is-focused {
 @media (max-width: 768px) {
   .admin-main {
     padding-top: var(--mobile-navbar-offset);
+  }
+
+  .erp-page main {
+    padding-bottom: calc(var(--mobile-bottom-nav-offset) + env(safe-area-inset-bottom, 0px));
   }
 }
 

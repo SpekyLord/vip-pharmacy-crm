@@ -138,7 +138,7 @@ export function HospitalListContent() {
 
     @media (max-width: 768px) {
       .hospital-page { padding-top: 12px; }
-      .hospital-main { padding-top: 76px !important; padding-bottom: 96px !important; }
+      .hospital-main { padding-top: 76px !important; padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
       .hospital-table-wrap { display: none; }
       .hospital-card-list { display: grid; gap: 12px; }
       .hospital-card { background: #fff; border: 1px solid #dbe4f0; border-radius: 14px; padding: 12px; }
@@ -155,7 +155,7 @@ export function HospitalListContent() {
 
     @media (max-width: 480px) {
       .hospital-page { padding-top: 16px; }
-      .hospital-main { padding-top: 72px !important; padding-bottom: 104px !important; }
+      .hospital-main { padding-top: 72px !important; padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px)) !important; }
       .hospital-card-grid { grid-template-columns: 1fr; }
     }
   `;

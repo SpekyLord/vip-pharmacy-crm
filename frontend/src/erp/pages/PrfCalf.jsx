@@ -190,7 +190,7 @@ export default function PrfCalf() {
 
 @media (max-width: 768px) {
   .prf-calf-page .admin-main {
-    padding: 76px 12px 96px !important;
+    padding: 76px 12px calc(96px + env(safe-area-inset-bottom, 0px)) !important;
   }
   .prf-calf-controls {
     flex-direction: column !important;

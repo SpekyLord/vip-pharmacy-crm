@@ -370,7 +370,7 @@ const sidebarStyles = `
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 300;
+    z-index: 1001;
     opacity: 0;
     transition: opacity 0.2s ease;
   }
@@ -387,7 +387,7 @@ const sidebarStyles = `
     width: 280px;
     max-width: 85vw;
     background: #0f172a;
-    z-index: 301;
+    z-index: 1002;
     transform: translateX(-100%);
     transition: transform 0.25s ease;
     display: flex;
@@ -458,7 +458,7 @@ const sidebarStyles = `
 
   .mobile-drawer-nav {
     flex: 1;
-    padding: 12px;
+    padding: 12px 12px calc(88px + env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
   }
 
@@ -566,6 +566,13 @@ const sidebarStyles = `
     .gps-page-main,
     .doctors-main,
     .employees-main {
+      padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
+    }
+
+    .boss-scroll,
+    .ba-main,
+    .hospital-main,
+    .coll-main {
       padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
     }
   }

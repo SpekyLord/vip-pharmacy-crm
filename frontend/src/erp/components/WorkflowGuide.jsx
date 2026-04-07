@@ -617,8 +617,8 @@ export default function WorkflowGuide({ pageKey }) {
       // Recover the natural top before any offset we already applied.
       const naturalTop = currentTop - offsetRef.current;
       const rawOffset = Math.max(0, Math.ceil(minTop - naturalTop));
-      // Guardrail: prevent runaway spacing on pages with extra top padding.
-      const neededOffset = Math.min(rawOffset, 96);
+      // Guardrail: keep mobile guide close to content and avoid oversized gaps.
+      const neededOffset = Math.min(rawOffset, 48);
 
       offsetRef.current = neededOffset;
       setMobileTopOffset(neededOffset);
