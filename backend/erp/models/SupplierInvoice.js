@@ -60,17 +60,18 @@ const supplierInvoiceSchema = new mongoose.Schema({
 });
 
 // Pre-save: compute line totals and header totals
-supplierInvoiceSchema.pre('save', function (next) {
+supplierInvoiceSchema.pre('save', async function () {
   let total = 0;
   for (const item of this.line_items) {
     item.line_total = Math.round((item.qty_invoiced * item.unit_price) * 100) / 100;
     total += item.line_total;
   }
+  const Settings = require('./Settings');
+  const vatRate = await Settings.getVatRate();
   this.total_amount = Math.round(total * 100) / 100;
-  this.net_amount = Math.round((total * 100 / 112) * 100) / 100;
+  this.net_amount = Math.round((total / (1 + vatRate)) * 100) / 100;
   this.vat_amount = Math.round((total - this.net_amount) * 100) / 100;
   this.input_vat = this.vat_amount;
-  next();
 });
 
 supplierInvoiceSchema.index({ entity_id: 1, status: 1 });

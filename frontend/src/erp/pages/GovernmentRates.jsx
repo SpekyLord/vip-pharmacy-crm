@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useErpApi from '../hooks/useErpApi';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .govr-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -68,7 +69,7 @@ const FLAT_TYPES = ['PHILHEALTH', 'PAGIBIG'];
 
 const fmt = (v) => v != null && v !== '' ? Number(v).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
 
-export default function GovernmentRates() {
+export function GovernmentRatesContent() {
   const { user } = useAuth();
   const api = useErpApi();
   const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
@@ -88,7 +89,7 @@ export default function GovernmentRates() {
     try {
       const res = await api.get('/government-rates');
       setRates(res?.data || []);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Government rates operation failed'); }
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -159,7 +160,7 @@ export default function GovernmentRates() {
       }
       setShowModal(false);
       loadRates();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Government rates operation failed'); }
     setSaving(false);
   };
 
@@ -168,7 +169,7 @@ export default function GovernmentRates() {
     try {
       await api.del(`/government-rates/${id}`);
       loadRates();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Government rates operation failed'); }
   };
 
   const handleExport = async () => {
@@ -177,7 +178,7 @@ export default function GovernmentRates() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'government-rates-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Government rates operation failed'); }
   };
 
   const handleImport = async (e) => {
@@ -187,9 +188,9 @@ export default function GovernmentRates() {
     fd.append('file', file);
     try {
       const res = await api.post('/government-rates/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       loadRates();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Government rates operation failed'); }
     e.target.value = '';
   };
 
@@ -263,12 +264,8 @@ export default function GovernmentRates() {
   );
 
   return (
-    <div className="govr-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div style={{ display: 'flex', flex: 1 }}>
-        <Sidebar />
-        <main className="govr-main admin-main">
           <div className="govr-header">
             <h2>Government Rates</h2>
             <div className="govr-actions">
@@ -307,7 +304,7 @@ export default function GovernmentRates() {
                   {isAdmin && (
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button className="btn btn-outline btn-sm" onClick={() => openEdit(rate)}>Edit</button>
-                      {user?.role === 'admin' && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(rate._id)}>Delete</button>}
+                      {['admin', 'president'].includes(user?.role) && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(rate._id)}>Delete</button>}
                     </div>
                   )}
                 </div>
@@ -376,6 +373,18 @@ export default function GovernmentRates() {
               </div>
             </div>
           )}
+    </>
+  );
+}
+
+export default function GovernmentRates() {
+  return (
+    <div className="govr-page">
+      <Navbar />
+      <div style={{ display: 'flex', flex: 1 }}>
+        <Sidebar />
+        <main className="govr-main admin-main">
+          <GovernmentRatesContent />
         </main>
       </div>
     </div>

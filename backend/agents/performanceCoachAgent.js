@@ -12,6 +12,7 @@
  */
 const { askClaude } = require('./claudeClient');
 const { notify } = require('./notificationService');
+const AgentRun = require('../erp/models/AgentRun');
 
 async function run() {
   console.log('[PerformanceCoach] Running...');
@@ -104,7 +105,7 @@ Keep it encouraging and actionable. 3-4 bullet points max. Use Philippine busine
         recipient_id: bdm.id,
         title: 'Weekly Performance Coaching',
         body: text,
-        category: 'performance',
+        category: 'ai_coaching',
         priority: 'normal',
         channels: ['in_app'],
         agent: 'performance_coach'
@@ -120,15 +121,30 @@ Keep it encouraging and actionable. 3-4 bullet points max. Use Philippine busine
       recipient_id: 'PRESIDENT',
       title: 'Weekly BDM Performance Summary',
       body: `BDM metrics for the week ending ${now.toLocaleDateString('en-PH')}:\n\n${summaryLines}`,
-      category: 'performance',
+      category: 'ai_coaching',
       priority: 'normal',
       channels: ['in_app'],
       agent: 'performance_coach'
     });
 
+    // Log agent run
+    const topPerformers = [...bdmSummaries].sort((a, b) => b.salesTotal - a.salesTotal).slice(0, 3);
+    await AgentRun.create({
+      agent_key: 'performance_coach',
+      agent_label: 'BDM Performance Coach',
+      status: 'success',
+      summary: {
+        bdms_processed: bdmSummaries.length,
+        alerts_generated: bdmSummaries.length,
+        messages_sent: bdmSummaries.length + 1,
+        key_findings: topPerformers.map(b => `${b.name}: ₱${b.salesTotal.toLocaleString()} sales, ${b.weekVisits} visits`)
+      }
+    });
+
     console.log(`[PerformanceCoach] Coached ${bdmSummaries.length} BDMs.`);
   } catch (err) {
     console.error('[PerformanceCoach] Error:', err.message);
+    try { await AgentRun.create({ agent_key: 'performance_coach', agent_label: 'BDM Performance Coach', status: 'error', error_msg: err.message }); } catch {}
   }
 }
 

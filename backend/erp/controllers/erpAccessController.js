@@ -5,8 +5,15 @@ const { catchAsync } = require('../../middleware/errorHandler');
 // ═══ Sub-Permission Keys Definition (Phase 16) ═══
 // Served from backend so frontend never hardcodes these — add new keys here to auto-populate UI.
 const SUB_PERMISSION_KEYS = {
+  sales: [
+    { key: 'reopen', label: 'Re-open Posted Sales' },
+  ],
+  collections: [
+    { key: 'reopen', label: 'Re-open Posted Collections' },
+  ],
   expenses: [
     { key: 'batch_upload', label: 'Batch OR Upload (OCR)' },
+    { key: 'reopen', label: 'Re-open Posted Expenses' },
   ],
   purchasing: [
     { key: 'po_create', label: 'Create/Edit Purchase Orders' },

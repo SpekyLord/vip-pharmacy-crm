@@ -3,7 +3,7 @@
  * Used by Hospital model pre-save hook and smart dropdown search.
  */
 const cleanName = (name) =>
-  name.toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+  String(name ?? '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
 
 /**
  * Common Philippine hospital name abbreviations.

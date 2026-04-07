@@ -47,16 +47,17 @@ const purchaseOrderSchema = new mongoose.Schema({
 });
 
 // Pre-save: compute line totals and header totals
-purchaseOrderSchema.pre('save', function (next) {
+purchaseOrderSchema.pre('save', async function () {
   let total = 0;
   for (const item of this.line_items) {
     item.line_total = Math.round((item.qty_ordered * item.unit_price) * 100) / 100;
     total += item.line_total;
   }
+  const Settings = require('./Settings');
+  const vatRate = await Settings.getVatRate();
   this.total_amount = Math.round(total * 100) / 100;
-  this.net_amount = Math.round((total * 100 / 112) * 100) / 100;
+  this.net_amount = Math.round((total / (1 + vatRate)) * 100) / 100;
   this.vat_amount = Math.round((total - this.net_amount) * 100) / 100;
-  next();
 });
 
 purchaseOrderSchema.index({ entity_id: 1, status: 1 });

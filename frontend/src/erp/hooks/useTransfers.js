@@ -15,7 +15,9 @@ export default function useTransfers() {
 
   // Transfer Prices
   const getTransferPrices = (params = {}) => api.get('/transfers/prices/list', { params });
+  const getTransferPriceProducts = (params = {}) => api.get('/transfers/prices/products', { params });
   const setTransferPrice = (data) => api.put('/transfers/prices', data);
+  const bulkSetTransferPrices = (data) => api.put('/transfers/prices/bulk', data);
 
   // Entities & BDMs
   const getEntities = () => api.get('/transfers/entities');
@@ -32,7 +34,7 @@ export default function useTransfers() {
     ...api,
     getTransfers, getTransferById, createTransfer,
     approveTransfer, shipTransfer, receiveTransfer, postTransfer, cancelTransfer,
-    getTransferPrices, setTransferPrice,
+    getTransferPrices, getTransferPriceProducts, setTransferPrice, bulkSetTransferPrices,
     getEntities, getBdmsByEntity,
     getReassignments, createReassignment, approveReassignment
   };

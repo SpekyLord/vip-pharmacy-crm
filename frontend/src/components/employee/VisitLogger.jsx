@@ -358,7 +358,13 @@ const VisitLogger = ({ doctor, onSuccess }) => {
 
     // Validate photos
     if (photos.length === 0) {
-      toast.error('At least 1 photo is required as proof of visit');
+      toast.error('Please upload at least 1 photo as proof of visit. Use the camera or gallery button above.');
+      return;
+    }
+
+    // Validate engagement types
+    if (!formData.engagementTypes || formData.engagementTypes.length === 0) {
+      toast.error('Please select at least 1 engagement type (e.g. TXT/PROMATS, Voice Call).');
       return;
     }
 
@@ -449,7 +455,14 @@ const VisitLogger = ({ doctor, onSuccess }) => {
         const errorMessages = err.response.data.errors.map(e => `${e.field}: ${e.message}`).join(', ');
         toast.error(`Validation failed: ${errorMessages}`);
       } else {
-        toast.error(err.response?.data?.message || 'Failed to log visit');
+        const msg = err.response?.data?.message || 'Failed to log visit';
+        if (msg.includes('weekly') || msg.includes('limit')) {
+          toast.error(`${msg} — You can only visit this VIP Client once per week.`, { duration: 6000 });
+        } else if (err.response?.status === 413) {
+          toast.error('Photos are too large. Try reducing photo quality or uploading fewer photos.', { duration: 6000 });
+        } else {
+          toast.error(msg, { duration: 5000 });
+        }
       }
     } finally {
       submittingRef.current = false;

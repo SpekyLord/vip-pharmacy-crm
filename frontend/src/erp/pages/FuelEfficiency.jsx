@@ -3,10 +3,12 @@
  * Per-BDM fuel tracking with variance detection
  */
 import { useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .fuel-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -57,7 +59,13 @@ export default function FuelEfficiency() {
           <div className="fuel-header">
             <h1>Fuel Efficiency Report</h1>
             <p>Per-BDM actual vs expected gas cost with variance detection</p>
+            <div style={{ marginTop: 10 }}>
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
+            </div>
           </div>
+          <WorkflowGuide pageKey="fuel-efficiency" />
 
           <div className="controls">
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />

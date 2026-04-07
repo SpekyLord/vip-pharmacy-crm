@@ -26,6 +26,7 @@ const updateSettings = catchAsync(async (req, res) => {
     { new: true, upsert: true, runValidators: true }
   );
 
+  Settings.clearVatCache();
   res.json({ success: true, message: 'Settings updated', data: settings });
 });
 

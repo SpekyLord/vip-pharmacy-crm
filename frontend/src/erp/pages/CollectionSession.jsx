@@ -7,10 +7,13 @@ import useCollections from '../hooks/useCollections';
 import useHospitals from '../hooks/useHospitals';
 import useSettings from '../hooks/useSettings';
 import useAccounting from '../hooks/useAccounting';
+import useErpApi from '../hooks/useErpApi';
 import doctorService from '../../services/doctorService';
 import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .coll-session { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -52,7 +55,7 @@ const pageStyles = `
   .summary-row strong { font-weight: 700; }
 
   .btn-sm { padding: 4px 10px; font-size: 11px; }
-  @media(max-width: 768px) { .coll-main { padding: 12px; } .form-row { flex-direction: column; } .csi-card-meta { flex-direction: column; gap: 4px; } }
+  @media(max-width: 768px) { .coll-main { padding: 76px 12px calc(96px + env(safe-area-inset-bottom, 0px)); } .form-row { flex-direction: column; } .csi-card-meta { flex-direction: column; gap: 4px; } }
 `;
 
 export default function CollectionSession() {
@@ -61,7 +64,9 @@ export default function CollectionSession() {
   const { hospitals } = useHospitals();
   const { settings } = useSettings();
   const { getMyBankAccounts } = useAccounting();
+  const lookupApi = useErpApi();
   const navigate = useNavigate();
+  const [paymentModes, setPaymentModes] = useState([]);
 
   const [hospitalId, setHospitalId] = useState('');
   const [customerId, setCustomerId] = useState('');
@@ -91,6 +96,7 @@ export default function CollectionSession() {
   const [attachmentIds, setAttachmentIds] = useState([]);
   const [uploading, setUploading] = useState('');
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const [pendingUploadType, setPendingUploadType] = useState('');
 
   // CRM Doctor list for partner tags
@@ -99,6 +105,10 @@ export default function CollectionSession() {
 
   const commRates = useMemo(() => settings?.COMMISSION_RATES || [0, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05], [settings]);
   const rebateRates = useMemo(() => settings?.PARTNER_REBATE_RATES || [1, 2, 3, 5, 20, 25], [settings]);
+
+  useEffect(() => {
+    lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load CRM doctors once
   useEffect(() => {
@@ -231,13 +241,18 @@ export default function CollectionSession() {
       // Phase 9.1b: collect attachment IDs for linking
       if (result?.attachment_id) setAttachmentIds(prev => [...prev, result.attachment_id]);
     } catch (err) {
-      alert('Upload failed: ' + (err.message || 'Unknown error'));
+      showError(err, 'Could not upload document');
     } finally { setUploading(''); }
   };
 
   const triggerUpload = (type) => {
     setPendingUploadType(type);
     fileInputRef.current?.click();
+  };
+
+  const triggerCamera = (type) => {
+    setPendingUploadType(type);
+    cameraInputRef.current?.click();
   };
 
   const onFileSelected = (e) => {
@@ -248,7 +263,7 @@ export default function CollectionSession() {
 
   const handleSave = async () => {
     if ((!hospitalId && !customerId) || !crNo || !selectedList.length) {
-      return alert('Select a hospital or customer, enter CR#, and select at least one invoice');
+      showError(null, 'Select a hospital or customer, enter CR#, and select at least one invoice'); return;
     }
     setSaving(true);
     try {
@@ -269,7 +284,7 @@ export default function CollectionSession() {
       });
       navigate('/erp/collections');
     } catch (err) {
-      alert(err.response?.data?.message || 'Save failed');
+      showError(err, 'Could not save collection');
     } finally { setSaving(false); }
   };
 
@@ -280,6 +295,7 @@ export default function CollectionSession() {
       <div className="admin-layout">
         <Sidebar />
         <main className="coll-main">
+          <WorkflowGuide pageKey="collection-session" />
           <div className="coll-header">
             <h1>New Collection Receipt</h1>
             <button className="btn btn-outline" onClick={() => navigate('/erp/collections')}>Back to List</button>
@@ -421,7 +437,7 @@ export default function CollectionSession() {
                       const { default: api } = await import('../../services/api');
                       const res = await api.post('/erp/sales', { sale_type: 'CASH_RECEIPT', hospital_id: hospitalId || undefined, customer_id: customerId || undefined, csi_date: crDate, line_items: [] });
                       if (res.data?.data?.invoice_number) { setCrNo(res.data.data.invoice_number); await api.delete(`/erp/sales/draft/${res.data.data._id}`).catch(err => console.error('[CollectionSession]', err.message)); }
-                    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+                    } catch (err) { showError(err, 'Could not auto-generate CR number'); }
                   }}>(auto-generate)</span>}</label>
                   <input value={crNo} onChange={e => setCrNo(e.target.value)} placeholder={paymentMode === 'CASH' ? 'Click auto-generate or enter manually' : 'e.g. 002905'} />
                 </div>
@@ -438,10 +454,7 @@ export default function CollectionSession() {
                 <div className="form-group">
                   <label>Payment Mode</label>
                   <SelectField value={paymentMode} onChange={e => { setPaymentMode(e.target.value); setBankAccountId(''); setPettyCashFundId(''); }}>
-                    <option value="CASH">Cash</option>
-                    <option value="CHECK">Check</option>
-                    <option value="GCASH">GCash</option>
-                    <option value="ONLINE">Online / Bank Transfer</option>
+                    {paymentModes.filter(pm => pm.is_active !== false).map(pm => <option key={pm.mode_code} value={pm.mode_code}>{pm.mode_label}</option>)}
                   </SelectField>
                 </div>
                 <div className="form-group">
@@ -499,7 +512,8 @@ export default function CollectionSession() {
           {selectedList.length > 0 && (
             <div className="section">
               <h2>4. Attach Documents (required for validation)</h2>
-              <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onFileSelected} />
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onFileSelected} />
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onFileSelected} />
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
                 {/* CR Photo — not required for CASH */}
@@ -512,9 +526,14 @@ export default function CollectionSession() {
                       <button className="btn btn-sm btn-outline" onClick={() => setCrPhotoUrl('')} style={{ fontSize: 10 }}>Remove</button>
                     </div>
                   ) : (
-                    <button className="btn btn-sm btn-primary" onClick={() => triggerUpload('cr_photo')} disabled={!!uploading}>
-                      {uploading === 'cr_photo' ? 'Uploading...' : 'Upload CR Photo'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-sm btn-primary" onClick={() => triggerCamera('cr_photo')} disabled={!!uploading}>
+                        {uploading === 'cr_photo' ? 'Uploading...' : 'Scan'}
+                      </button>
+                      <button className="btn btn-sm btn-outline" onClick={() => triggerUpload('cr_photo')} disabled={!!uploading}>
+                        Gallery
+                      </button>
+                    </div>
                   )}
                 </div>
                 )}
@@ -529,9 +548,14 @@ export default function CollectionSession() {
                       <button className="btn btn-sm btn-outline" onClick={() => setDepositSlipUrl('')} style={{ fontSize: 10 }}>Remove</button>
                     </div>
                   ) : (
-                    <button className="btn btn-sm btn-primary" onClick={() => triggerUpload('deposit_slip')} disabled={!!uploading}>
-                      {uploading === 'deposit_slip' ? 'Uploading...' : 'Upload Deposit Slip'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-sm btn-primary" onClick={() => triggerCamera('deposit_slip')} disabled={!!uploading}>
+                        {uploading === 'deposit_slip' ? 'Uploading...' : 'Scan'}
+                      </button>
+                      <button className="btn btn-sm btn-outline" onClick={() => triggerUpload('deposit_slip')} disabled={!!uploading}>
+                        Gallery
+                      </button>
+                    </div>
                   )}
                 </div>
                 )}
@@ -547,9 +571,14 @@ export default function CollectionSession() {
                       <button className="btn btn-sm btn-outline" onClick={() => setCwtCertUrl('')} style={{ fontSize: 10 }}>Remove</button>
                     </div>
                   ) : (
-                    <button className="btn btn-sm btn-primary" onClick={() => triggerUpload('cwt_cert')} disabled={!!uploading}>
-                      {uploading === 'cwt_cert' ? 'Uploading...' : 'Upload 2307'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-sm btn-primary" onClick={() => triggerCamera('cwt_cert')} disabled={!!uploading}>
+                        {uploading === 'cwt_cert' ? 'Uploading...' : 'Scan'}
+                      </button>
+                      <button className="btn btn-sm btn-outline" onClick={() => triggerUpload('cwt_cert')} disabled={!!uploading}>
+                        Gallery
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -564,9 +593,14 @@ export default function CollectionSession() {
                     </div>
                   ))}
                   <div>
-                    <button className="btn btn-sm btn-primary" onClick={() => triggerUpload('csi_photo')} disabled={!!uploading}>
-                      {uploading === 'csi_photo' ? 'Uploading...' : '+ Add CSI Photo'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-sm btn-primary" onClick={() => triggerCamera('csi_photo')} disabled={!!uploading}>
+                        {uploading === 'csi_photo' ? 'Uploading...' : 'Scan'}
+                      </button>
+                      <button className="btn btn-sm btn-outline" onClick={() => triggerUpload('csi_photo')} disabled={!!uploading}>
+                        Gallery
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

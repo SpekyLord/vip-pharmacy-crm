@@ -1,9 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
+import useErpApi from '../hooks/useErpApi';
+import useProducts from '../hooks/useProducts';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = `
   .si-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -49,7 +53,21 @@ const styles = `
   .si-actions { display: flex; gap: 4px; }
   .si-pag { display: flex; justify-content: center; gap: 8px; margin-top: 14px; align-items: center; font-size: 13px; }
   .si-pay-form { background: #f8fafc; padding: 14px; border-radius: 8px; margin-top: 12px; }
-  @media(max-width: 768px) { .si-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .form-row { grid-template-columns: 1fr; } .si-modal-body { width: 95vw; } }
+  .si-cards { display: none; }
+  @media(max-width: 768px) {
+    .si-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+    .form-row { grid-template-columns: 1fr; }
+    .si-modal-body { width: 95vw; }
+    .si-table { display: none !important; }
+    .si-cards { display: flex; flex-direction: column; gap: 10px; }
+    .si-card { border: 1px solid var(--erp-border, #e2e8f0); border-radius: 10px; padding: 14px; background: var(--erp-panel, #fff); }
+    .si-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .si-card-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 12px; font-size: 13px; margin-bottom: 10px; }
+    .si-card-label { font-size: 11px; color: var(--erp-muted, #64748b); }
+    .si-card-value { font-weight: 600; }
+    .si-card-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .si-card-actions button { flex: 1; padding: 6px 0; font-size: 13px; }
+  }
   @media(max-width: 375px) { .si-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .si-main input, .si-main select { font-size: 16px; } }
 `;
 
@@ -57,12 +75,16 @@ const EMPTY_LINE = { product_id: '', item_key: '', qty_invoiced: 1, unit_price: 
 
 export default function SupplierInvoices() {
   const api = usePurchasing();
+  const lookupApi = useErpApi();
+  const { products } = useProducts();
+  const productOptions = useMemo(() => (products || []).filter(p => p.is_active !== false), [products]);
 
   const [invoices, setInvoices] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [pos, setPOs] = useState([]);
   const [bankAccounts, setBankAccounts] = useState([]);
   const [creditCards, setCreditCards] = useState([]);
+  const [paymentModes, setPaymentModes] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0 });
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
@@ -84,7 +106,7 @@ export default function SupplierInvoices() {
       const res = await api.listInvoices(params);
       setInvoices(res?.data || []);
       setPagination(res?.pagination || { page, limit: 20, total: 0 });
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load invoices'); }
     setLoading(false);
   }, [statusFilter, matchFilter, payFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -100,11 +122,14 @@ export default function SupplierInvoices() {
       setPOs(poRes?.data || []);
       setBankAccounts(baRes?.data || []);
       setCreditCards(ccRes?.data || []);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load lookups'); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
   useEffect(() => { loadLookups(); }, [loadLookups]);
+  useEffect(() => {
+    lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showMsg = (text, type = 'ok') => {
     setMsg({ text, type });
@@ -123,6 +148,17 @@ export default function SupplierInvoices() {
     items[i] = { ...items[i], [key]: val };
     return { ...f, line_items: items };
   });
+  const handleProductSelect = (i, productId) => {
+    if (!productId) { setLineField(i, 'product_id', ''); return; }
+    const p = productOptions.find(x => x._id === productId);
+    if (!p) return;
+    const label = `${p.brand_name}${p.dosage_strength ? ` ${p.dosage_strength}` : ''} — ${p.qty || ''} ${p.unit_code || 'PC'}`.trim();
+    setForm(f => {
+      const items = [...f.line_items];
+      items[i] = { ...items[i], product_id: productId, item_key: label };
+      return { ...f, line_items: items };
+    });
+  };
 
   const handleSave = async () => {
     try {
@@ -184,6 +220,7 @@ export default function SupplierInvoices() {
         <div style={{ display: 'flex' }}>
           <Sidebar />
           <main className="si-main">
+            <WorkflowGuide pageKey="supplier-invoices" />
             <div className="si-header">
               <h2>Supplier Invoices</h2>
               <button className="btn btn-primary" onClick={openCreate}>+ New Invoice</button>
@@ -253,6 +290,38 @@ export default function SupplierInvoices() {
                     ))}
                   </tbody>
                 </table>
+
+                {/* Mobile Card View */}
+                <div className="si-cards">
+                  {invoices.map(inv => (
+                    <div key={inv._id} className="si-card" style={{ borderLeft: `4px solid ${inv.status === 'POSTED' ? '#16a34a' : inv.status === 'VALIDATED' ? '#1e40af' : '#6b7280'}` }}>
+                      <div className="si-card-header">
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 15 }}>{inv.invoice_ref}</div>
+                          <span className={`si-badge si-badge-${inv.status}`}>{inv.status}</span>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--erp-accent, #1e5eff)' }}>{fmt(inv.total_amount)}</div>
+                          <div style={{ fontSize: 11, color: 'var(--erp-muted, #64748b)' }}>{fmtDate(inv.invoice_date)}</div>
+                        </div>
+                      </div>
+                      <div className="si-card-grid">
+                        <div><span className="si-card-label">Vendor</span><br /><span className="si-card-value">{inv.vendor_id?.vendor_name || inv.vendor_name || '—'}</span></div>
+                        <div><span className="si-card-label">Match</span><br /><span className={`si-badge si-badge-${inv.match_status}`}>{inv.match_status?.replace(/_/g, ' ')}</span></div>
+                        <div><span className="si-card-label">Payment</span><br /><span className={`si-badge si-badge-${inv.payment_status}`}>{inv.payment_status}</span></div>
+                        <div><span className="si-card-label">PO #</span><br /><span className="si-card-value" style={{ fontFamily: 'monospace', fontSize: 11 }}>{inv.po_number || '—'}</span></div>
+                        <div><span className="si-card-label">Paid</span><br /><span className="si-card-value">{fmt(inv.amount_paid)}</span></div>
+                        <div><span className="si-card-label">Due</span><br /><span className="si-card-value">{fmtDate(inv.due_date)}</span></div>
+                      </div>
+                      <div className="si-card-actions">
+                        {inv.status === 'DRAFT' && <button className="btn btn-warning btn-sm" onClick={() => handleValidate(inv._id)}>Validate</button>}
+                        {['DRAFT', 'VALIDATED'].includes(inv.status) && <button className="btn btn-success btn-sm" onClick={() => handlePost(inv._id)}>Post</button>}
+                        {inv.status === 'POSTED' && inv.payment_status !== 'PAID' && <button className="btn btn-primary btn-sm" onClick={() => openPay(inv)}>Pay</button>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
                 {pagination.total > pagination.limit && (
                   <div className="si-pag">
                     <button className="btn btn-sm" disabled={pagination.page <= 1} onClick={() => loadInvoices(pagination.page - 1)}>Prev</button>
@@ -306,11 +375,17 @@ export default function SupplierInvoices() {
                     <button className="btn btn-sm btn-primary" onClick={addLine}>+ Add Line</button>
                   </div>
                   <table className="line-items-table">
-                    <thead><tr><th>Item Key</th><th style={{ width: 80 }}>Qty</th><th style={{ width: 100 }}>Unit Price</th><th style={{ width: 100 }}>Total</th><th style={{ width: 40 }}></th></tr></thead>
+                    <thead><tr><th>Product</th><th style={{ width: 80 }}>Qty</th><th style={{ width: 100 }}>Unit Price</th><th style={{ width: 100 }}>Total</th><th style={{ width: 40 }}></th></tr></thead>
                     <tbody>
                       {form.line_items.map((line, i) => (
                         <tr key={i}>
-                          <td><input value={line.item_key} onChange={e => setLineField(i, 'item_key', e.target.value)} placeholder="Item description" /></td>
+                          <td>
+                            <SelectField value={line.product_id} onChange={e => handleProductSelect(i, e.target.value)}>
+                              <option value="">Select product...</option>
+                              {productOptions.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.qty || ''} {p.unit_code || 'PC'}</option>)}
+                            </SelectField>
+                            {!line.product_id && <input value={line.item_key} onChange={e => setLineField(i, 'item_key', e.target.value)} placeholder="Or type custom item..." style={{ marginTop: 4 }} />}
+                          </td>
                           <td><input type="number" min="1" value={line.qty_invoiced} onChange={e => setLineField(i, 'qty_invoiced', Number(e.target.value))} /></td>
                           <td><input type="number" min="0" step="0.01" value={line.unit_price} onChange={e => setLineField(i, 'unit_price', Number(e.target.value))} /></td>
                           <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt((line.qty_invoiced || 0) * (line.unit_price || 0))}</td>
@@ -350,14 +425,10 @@ export default function SupplierInvoices() {
                     <label>Payment Mode</label>
                     <SelectField value={payForm.payment_mode} onChange={e => setPayForm(f => ({ ...f, payment_mode: e.target.value, funding_card_id: '', bank_account_id: '' }))}>
                       <option value="">Select...</option>
-                      <option value="CASH">Cash</option>
-                      <option value="CHECK">Check</option>
-                      <option value="BANK_TRANSFER">Bank Transfer</option>
-                      <option value="GCASH">GCash</option>
-                      <option value="CARD">Credit Card</option>
+                      {paymentModes.filter(pm => pm.is_active !== false).map(pm => <option key={pm.mode_code} value={pm.mode_code}>{pm.mode_label}</option>)}
                     </SelectField>
                   </div>
-                  {payForm.payment_mode === 'CHECK' && (
+                  {paymentModes.find(pm => pm.mode_code === payForm.payment_mode)?.mode_type === 'CHECK' && (
                     <div className="form-row">
                       <div className="form-group">
                         <label>Check No.</label>
@@ -372,7 +443,7 @@ export default function SupplierInvoices() {
                       </div>
                     </div>
                   )}
-                  {payForm.payment_mode === 'BANK_TRANSFER' && (
+                  {paymentModes.find(pm => pm.mode_code === payForm.payment_mode)?.mode_type === 'BANK_TRANSFER' && (
                     <div className="form-row">
                       <div className="form-group">
                         <label>Bank Account</label>
@@ -387,7 +458,7 @@ export default function SupplierInvoices() {
                       </div>
                     </div>
                   )}
-                  {payForm.payment_mode === 'CARD' && (
+                  {paymentModes.find(pm => pm.mode_code === payForm.payment_mode)?.mode_type === 'CARD' && (
                     <div className="form-group">
                       <label>Credit Card</label>
                       <SelectField value={payForm.funding_card_id} onChange={e => setPayForm(f => ({ ...f, funding_card_id: e.target.value }))}>

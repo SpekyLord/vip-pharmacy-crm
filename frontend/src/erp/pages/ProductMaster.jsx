@@ -2,13 +2,17 @@
  * Product Master Page — ERP product catalog management
  * Full CRUD + reorder rules + search/filter + deactivate
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
+import useWarehouses from '../hooks/useWarehouses';
+import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const VAT_OPTIONS = ['VATABLE', 'EXEMPT', 'ZERO'];
 const STATUS_FILTER = ['ALL', 'ACTIVE', 'INACTIVE'];
+const STOCK_TYPES = ['PHARMA', 'FNB', 'OFFICE'];
 
 const pageStyles = `
   .pm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -119,7 +123,7 @@ function ProductModal({ open, onClose, onSave, editItem }) {
       await onSave(body, editItem?._id);
       onClose();
     } catch (err) {
-      alert(err?.response?.data?.message || 'Failed to save product');
+      showError(err, 'Could not save product');
     } finally {
       setSaving(false);
     }
@@ -219,17 +223,50 @@ function ProductModal({ open, onClose, onSave, editItem }) {
 }
 
 // ---------- Main Page ----------
-export default function ProductMasterPage() {
+export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const api = useErpApi();
+  const { getWarehouses } = useWarehouses();
   const [products, setProducts] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ACTIVE');
+  const [stockTypeFilter, setStockTypeFilter] = useState(fixedStockType || '');
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const limit = 50;
+
+  // Tag to Warehouse state
+  const [tagModal, setTagModal] = useState(false);
+  const [warehouses, setWarehouses] = useState([]);
+  const [tagWarehouseId, setTagWarehouseId] = useState('');
+  const [selectedProducts, setSelectedProducts] = useState([]);
+
+  // Price import/export
+  const fileInputRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+
+  useEffect(() => {
+    getWarehouses({ limit: 0 }).then(res => setWarehouses(res?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleSelect = (id) => setSelectedProducts(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleSelectAll = () => {
+    if (selectedProducts.length === products.length) setSelectedProducts([]);
+    else setSelectedProducts(products.map(p => p._id));
+  };
+
+  const handleTagToWarehouse = async () => {
+    if (!tagWarehouseId || !selectedProducts.length) return;
+    try {
+      const res = await api.post('/products/tag-warehouse', { product_ids: selectedProducts, warehouse_id: tagWarehouseId });
+      showSuccess(res?.message || 'Tagged successfully');
+      setTagModal(false);
+      setSelectedProducts([]);
+      setTagWarehouseId('');
+    } catch (err) { showError(err, 'Could not tag products to warehouse'); }
+  };
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
@@ -237,12 +274,13 @@ export default function ProductMasterPage() {
       const params = { page, limit };
       if (search) params.q = search;
       if (statusFilter !== 'ALL') params.is_active = statusFilter === 'ACTIVE' ? 'true' : 'false';
+      if (stockTypeFilter) params.stock_type = stockTypeFilter;
       const res = await api.get('/products', { params });
       setProducts(res?.data || []);
       setTotal(res?.pagination?.total || 0);
     } catch (err) { console.error('[ProductMaster] Load error:', err.message); setProducts([]); }
     finally { setLoading(false); }
-  }, [page, search, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, search, statusFilter, stockTypeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
@@ -254,6 +292,7 @@ export default function ProductMasterPage() {
   }, [searchInput]);
 
   const handleSave = async (body, id) => {
+    if (fixedStockType && !id) body.stock_type = fixedStockType;
     if (id) await api.put(`/products/${id}`, body);
     else await api.post('/products', body);
     loadProducts();
@@ -265,28 +304,69 @@ export default function ProductMasterPage() {
       await api.patch(`/products/${id}/deactivate`);
       loadProducts();
     } catch (err) {
-      alert(err?.response?.data?.message || 'Failed to deactivate');
+      showError(err, 'Could not deactivate product');
     }
+  };
+
+  const handleExportPrices = async () => {
+    try {
+      const blob = await api.get('/products/export-prices', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(blob instanceof Blob ? blob : new Blob([blob]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'product_prices.xlsx';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) { showError(err, 'Could not export prices'); }
+  };
+
+  const handleImportPrices = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      // Let axios auto-detect Content-Type boundary from FormData
+      const res = await api.put('/products/import-prices', formData, {
+        headers: { 'Content-Type': undefined }
+      });
+      const msg = `Updated ${res?.data?.updated || 0} product(s).`;
+      const errs = res?.data?.errors || [];
+      if (errs.length) showError(null, `${msg} Errors: ${errs.map(e => `Row ${e.row}: ${e.message}`).join('; ')}`);
+      else showSuccess(msg);
+      loadProducts();
+    } catch (err) { showError(err, 'Could not import prices'); }
+    finally { setImporting(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
   };
 
   const totalPages = Math.ceil(total / limit);
   const margin = (p) => peso(p.selling_price - p.purchase_price);
 
   return (
-    <div className="pm-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div style={{ display: 'flex' }}>
-        <Sidebar />
-        <div className="pm-main">
+          <WorkflowGuide pageKey="product-master" />
           <div className="pm-header">
             <div>
-              <h1>Product Master</h1>
-              <p>ERP product catalog — pricing, VAT, reorder rules</p>
+              <h1>{fixedStockType === 'FNB' ? 'F&B Product Master' : 'Product Master'}</h1>
+              <p>{fixedStockType === 'FNB' ? 'Food & Beverage catalog — pricing, VAT' : 'ERP product catalog — pricing, VAT, reorder rules'}</p>
             </div>
-            <button className="btn btn-primary" onClick={() => { setEditItem(null); setShowModal(true); }}>
-              + New Product
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-secondary" onClick={handleExportPrices}>Export Prices</button>
+              <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+                {importing ? 'Importing...' : 'Import Prices'}
+              </button>
+              <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportPrices} style={{ display: 'none' }} />
+              {selectedProducts.length > 0 && (
+                <button className="btn btn-secondary" onClick={() => setTagModal(true)}>
+                  Tag {selectedProducts.length} to Warehouse
+                </button>
+              )}
+              <button className="btn btn-primary" onClick={() => { setEditItem(null); setShowModal(true); }}>
+                + New Product
+              </button>
+            </div>
           </div>
 
           <div className="pm-controls">
@@ -298,6 +378,12 @@ export default function ProductMasterPage() {
             <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}>
               {STATUS_FILTER.map(s => <option key={s} value={s}>{s === 'ALL' ? 'All Status' : s}</option>)}
             </select>
+            {!fixedStockType && (
+              <select value={stockTypeFilter} onChange={e => { setStockTypeFilter(e.target.value); setPage(1); }}>
+                <option value="">All Types</option>
+                {STOCK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            )}
             <span className="pm-count">{total} product{total !== 1 ? 's' : ''}</span>
           </div>
 
@@ -310,6 +396,7 @@ export default function ProductMasterPage() {
               <table className="pm-table">
                 <thead>
                   <tr>
+                    <th style={{ width: 36 }}><input type="checkbox" checked={selectedProducts.length === products.length && products.length > 0} onChange={toggleSelectAll} style={{ width: 'auto' }} /></th>
                     <th>Product</th>
                     <th>Unit</th>
                     <th style={{ textAlign: 'right' }}>Purchase</th>
@@ -324,6 +411,7 @@ export default function ProductMasterPage() {
                 <tbody>
                   {products.map(p => (
                     <tr key={p._id}>
+                      <td><input type="checkbox" checked={selectedProducts.includes(p._id)} onChange={() => toggleSelect(p._id)} style={{ width: 'auto' }} /></td>
                       <td>
                         <div className="pm-brand">{p.brand_name}</div>
                         <div className="pm-generic">{p.generic_name}</div>
@@ -376,6 +464,43 @@ export default function ProductMasterPage() {
             onSave={handleSave}
             editItem={editItem}
           />
+
+          {/* Tag to Warehouse Modal */}
+          {tagModal && (
+            <div className="modal-overlay" onClick={() => setTagModal(false)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()} style={{ width: 420 }}>
+                <h3 className="modal-title">Tag Products to Warehouse</h3>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>
+                  {selectedProducts.length} product(s) selected. Choose a warehouse to tag them to.
+                </p>
+                <div className="form-group">
+                  <label>Warehouse</label>
+                  <select value={tagWarehouseId} onChange={e => setTagWarehouseId(e.target.value)} style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}>
+                    <option value="">Select warehouse...</option>
+                    {warehouses.map(w => (
+                      <option key={w._id} value={w._id}>{w.warehouse_code} — {w.warehouse_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-actions">
+                  <button className="btn btn-secondary" onClick={() => setTagModal(false)}>Cancel</button>
+                  <button className="btn btn-primary" disabled={!tagWarehouseId} onClick={handleTagToWarehouse}>Tag to Warehouse</button>
+                </div>
+              </div>
+            </div>
+          )}
+    </>
+  );
+}
+
+export default function ProductMasterPage() {
+  return (
+    <div className="pm-page">
+      <Navbar />
+      <div style={{ display: 'flex' }}>
+        <Sidebar />
+        <div className="pm-main">
+          <ProductMasterPageContent />
         </div>
       </div>
     </div>

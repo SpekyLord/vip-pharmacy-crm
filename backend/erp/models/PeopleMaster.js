@@ -31,6 +31,32 @@ const peopleMasterSchema = new mongoose.Schema(
     position: { type: String, trim: true, default: '' },
     department: { type: String, trim: true, default: '' },
 
+    // ═══ Org Chart ═══
+    reports_to: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PeopleMaster',
+      default: null,
+    },
+
+    // ═══ Contact ═══
+    email: { type: String, trim: true, default: '' },
+    phone: { type: String, trim: true, default: '' },
+    avatar: { type: String, default: '' },
+
+    // ═══ Territory ═══
+    territory_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Territory',
+      default: null,
+    },
+
+    // ═══ Partner Stage ═══
+    bdm_stage: {
+      type: String,
+      enum: ['', 'CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER'],
+      default: '',
+    },
+
     // ═══ Employment ═══
     employment_type: {
       type: String,
@@ -91,5 +117,6 @@ peopleMasterSchema.index({ entity_id: 1, person_type: 1 });
 peopleMasterSchema.index({ entity_id: 1, is_active: 1 });
 peopleMasterSchema.index({ user_id: 1 }, { sparse: true });
 peopleMasterSchema.index({ entity_id: 1, full_name: 'text' });
+peopleMasterSchema.index({ entity_id: 1, reports_to: 1 });
 
 module.exports = mongoose.model('PeopleMaster', peopleMasterSchema);

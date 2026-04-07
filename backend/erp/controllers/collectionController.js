@@ -22,6 +22,7 @@ const { createVatEntry } = require('../services/vatService');
 const { createCwtEntry } = require('../services/cwtService');
 const VatLedger = require('../models/VatLedger');
 const CwtLedger = require('../models/CwtLedger');
+const Settings = require('../models/Settings');
 
 // ═══ CRUD ═══
 
@@ -79,7 +80,9 @@ const getCollections = catchAsync(async (req, res) => {
 });
 
 const getCollectionById = catchAsync(async (req, res) => {
-  const collection = await Collection.findOne({ _id: req.params.id })
+  // President sees all; others scoped by entity (+ bdm for employees)
+  const filter = { _id: req.params.id, ...req.tenantFilter };
+  const collection = await Collection.findOne(filter)
     .populate('hospital_id', 'hospital_name tin cwt_rate payment_terms')
     .populate('customer_id', 'customer_name customer_type tin payment_terms')
     .populate('bdm_id', 'name')
@@ -159,7 +162,7 @@ const validateCollections = catchAsync(async (req, res) => {
     if (row.settled_csis?.length) {
       const slIds = row.settled_csis.map(s => s.sales_line_id);
       const validSales = await SalesLine.find({
-        _id: { $in: slIds }, status: 'POSTED', hospital_id: row.hospital_id
+        _id: { $in: slIds }, status: 'POSTED', hospital_id: row.hospital_id, entity_id: row.entity_id
       }).select('_id').lean();
       const validIds = new Set(validSales.map(s => s._id.toString()));
 
@@ -209,10 +212,18 @@ const validateCollections = catchAsync(async (req, res) => {
 // ═══ SUBMIT ═══
 
 const submitCollections = catchAsync(async (req, res) => {
-  const validRows = await Collection.find({ ...req.tenantFilter, status: 'VALID' });
+  let warnings;
+  const { collection_ids } = req.body;
+  const filter = { ...req.tenantFilter, status: 'VALID' };
+  if (collection_ids && collection_ids.length) {
+    filter._id = { $in: collection_ids.map(id => new mongoose.Types.ObjectId(id)) };
+  }
+  const validRows = await Collection.find(filter);
   if (!validRows.length) {
     return res.status(400).json({ success: false, message: 'No VALID collections to submit' });
   }
+
+  const settings = await Settings.getSettings();
 
   // Period lock check
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
@@ -303,13 +314,16 @@ const submitCollections = catchAsync(async (req, res) => {
       try {
         // Collection JE
         const funding = await resolveFundingCoa(row);
-        const jeData = journalFromCollection(row, funding.coa_code, funding.coa_name, req.user._id);
+        const jeData = await journalFromCollection(row, funding.coa_code, funding.coa_name, req.user._id);
         jeData.source_event_id = row.event_id;
         await createAndPostJournal(row.entity_id, jeData);
 
         // CWT journal if applicable
         if (row.cwt_amount > 0) {
-          const cwtData = journalFromCWT(row, req.user._id);
+          // Enrich with hospital_name for JE description
+          const cwtHosp = row.hospital_id ? await Hospital.findById(row.hospital_id).select('hospital_name').lean() : null;
+          const cwtInput = { ...row.toObject(), hospital_name: cwtHosp?.hospital_name || '' };
+          const cwtData = await journalFromCWT(cwtInput, req.user._id);
           cwtData.source_event_id = row.event_id;
           await createAndPostJournal(row.entity_id, cwtData);
         }
@@ -317,7 +331,7 @@ const submitCollections = catchAsync(async (req, res) => {
         // Commission journal — for each settled CSI with commission
         for (const csi of (row.settled_csis || [])) {
           if (csi.commission_amount > 0) {
-            const commData = journalFromCommission({
+            const commData = await journalFromCommission({
               amount: csi.commission_amount,
               bdm_id: row.bdm_id,
               date: row.cr_date,
@@ -333,10 +347,13 @@ const submitCollections = catchAsync(async (req, res) => {
           }
         }
 
-        // VAT Ledger — OUTPUT VAT from collection
+        // VAT Ledger — OUTPUT VAT from collection (skip for EXEMPT/ZERO hospitals)
         const crAmount = row.cr_amount || row.total_amount || 0;
-        if (crAmount > 0) {
-          const vatAmount = Math.round((crAmount * 12 / 112) * 100) / 100;
+        const hospital = row.hospital_id ? await Hospital.findById(row.hospital_id).select('vat_status').lean() : null;
+        const hospitalVatStatus = hospital?.vat_status || 'VATABLE';
+        if (crAmount > 0 && hospitalVatStatus === 'VATABLE') {
+          const vatRate = settings?.VAT_RATE || 0.12;
+          const vatAmount = Math.round((crAmount * vatRate / (1 + vatRate)) * 100) / 100;
           await createVatEntry({
             entity_id: row.entity_id,
             period: row.period || require('../utils/periodLock').dateToPeriod(row.cr_date),
@@ -347,7 +364,12 @@ const submitCollections = catchAsync(async (req, res) => {
             hospital_or_vendor: row.hospital_id,
             gross_amount: crAmount,
             vat_amount: vatAmount
-          }).catch(err => console.error('VAT entry failed:', row.cr_no, err.message));
+          }).catch(async (err) => {
+            console.error('VAT entry failed:', row.cr_no, err.message);
+            await ErpAuditLog.logChange({ entity_id: row.entity_id, log_type: 'LEDGER_ERROR', target_ref: row.cr_no, target_model: 'VatLedger', field_changed: 'vat_entry', old_value: '', new_value: err.message, changed_by: req.user._id, note: `VAT entry failed for CR ${row.cr_no}` }).catch(() => {});
+            if (!warnings) warnings = [];
+            warnings.push(`VAT entry failed for ${row.cr_no}: ${err.message}`);
+          });
         }
 
         // CWT Ledger
@@ -364,16 +386,25 @@ const submitCollections = catchAsync(async (req, res) => {
             cwt_amount: row.cwt_amount,
             quarter,
             year: new Date(row.cr_date).getFullYear()
-          }).catch(err => console.error('CWT entry failed:', row.cr_no, err.message));
+          }).catch(async (err) => {
+            console.error('CWT entry failed:', row.cr_no, err.message);
+            await ErpAuditLog.logChange({ entity_id: row.entity_id, log_type: 'LEDGER_ERROR', target_ref: row.cr_no, target_model: 'CwtLedger', field_changed: 'cwt_entry', old_value: '', new_value: err.message, changed_by: req.user._id, note: `CWT entry failed for CR ${row.cr_no}` }).catch(() => {});
+            if (!warnings) warnings = [];
+            warnings.push(`CWT entry failed for ${row.cr_no}: ${err.message}`);
+          });
         }
       } catch (jeErr) {
         console.error('Auto-journal failed for collection:', row.cr_no || row._id, jeErr.message);
+        await ErpAuditLog.logChange({ entity_id: row.entity_id, log_type: 'LEDGER_ERROR', target_ref: row.cr_no || row._id?.toString(), target_model: 'JournalEntry', field_changed: 'auto_journal', old_value: '', new_value: jeErr.message, changed_by: req.user._id, note: `Auto-journal failed for collection ${row.cr_no}` }).catch(() => {});
+        if (!warnings) warnings = [];
+        warnings.push(`Journal failed for ${row.cr_no}: ${jeErr.message}`);
       }
     }
 
     res.json({
       success: true,
       message: `${validRows.length} collection(s) posted`,
+      warnings: warnings || undefined,
       posted_count: validRows.length
     });
   } finally {
@@ -390,42 +421,55 @@ const reopenCollections = catchAsync(async (req, res) => {
   const rows = await Collection.find({ _id: { $in: collection_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!rows.length) return res.status(404).json({ success: false, message: 'No POSTED collections found' });
 
-  for (const row of rows) {
-    // Reverse journal entries (collection JE + CWT JE)
-    if (row.event_id) {
-      try {
-        const jes = await JournalEntry.find({
-          source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
-        });
-        for (const je of jes) {
-          await reverseJournal(je._id, 'Auto-reversal: Collection reopen', req.user._id);
+  // Save event_ids before clearing them inside transaction
+  const rowEventMap = rows.map(r => ({ _id: r._id, event_id: r.event_id, cr_no: r.cr_no, entity_id: r.entity_id, bdm_id: r.bdm_id }));
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      for (const row of rows) {
+        if (row.event_id) {
+          await TransactionEvent.findByIdAndUpdate(row.event_id, { status: 'DELETED' }, { session });
+          await VatLedger.deleteMany({ source_event_id: row.event_id }).session(session);
+          await CwtLedger.deleteMany({ cr_no: row.cr_no, entity_id: row.entity_id }).session(session);
         }
-      } catch (jeErr) {
-        console.error('JE reversal failed for collection reopen:', row.cr_no, jeErr.message);
+        row.status = 'DRAFT';
+        row.reopen_count = (row.reopen_count || 0) + 1;
+        row.posted_at = undefined;
+        row.posted_by = undefined;
+        row.event_id = undefined;
+        await row.save({ session });
       }
-      await TransactionEvent.findByIdAndUpdate(row.event_id, { status: 'DELETED' });
-
-      // Cleanup VAT/CWT ledger entries
-      await VatLedger.deleteMany({ source_event_id: row.event_id }).catch(() => {});
-      await CwtLedger.deleteMany({ cr_no: row.cr_no, entity_id: row.entity_id }).catch(() => {});
-    }
-    row.status = 'DRAFT';
-    row.reopen_count = (row.reopen_count || 0) + 1;
-    row.posted_at = undefined;
-    row.posted_by = undefined;
-    row.event_id = undefined;
-    await row.save();
-
-    await ErpAuditLog.logChange({
-      entity_id: row.entity_id, bdm_id: row.bdm_id,
-      log_type: 'STATUS_CHANGE', target_ref: row._id.toString(),
-      target_model: 'Collection', field_changed: 'status',
-      old_value: 'POSTED', new_value: 'DRAFT',
-      changed_by: req.user._id, note: `CR ${row.cr_no} reopened (count: ${row.reopen_count})`
     });
-  }
 
-  res.json({ success: true, message: `${rows.length} collection(s) reopened` });
+    // Reverse journal entries outside transaction (non-blocking)
+    for (const item of rowEventMap) {
+      if (item.event_id) {
+        try {
+          const jes = await JournalEntry.find({
+            source_event_id: item.event_id, status: 'POSTED', is_reversal: { $ne: true }
+          });
+          for (const je of jes) {
+            await reverseJournal(je._id, 'Auto-reversal: Collection reopen', req.user._id);
+          }
+        } catch (jeErr) {
+          console.error('JE reversal failed for collection reopen:', item.cr_no, jeErr.message);
+        }
+      }
+
+      await ErpAuditLog.logChange({
+        entity_id: item.entity_id, bdm_id: item.bdm_id,
+        log_type: 'STATUS_CHANGE', target_ref: item._id.toString(),
+        target_model: 'Collection', field_changed: 'status',
+        old_value: 'POSTED', new_value: 'DRAFT',
+        changed_by: req.user._id, note: `CR ${item.cr_no} reopened`
+      });
+    }
+
+    res.json({ success: true, message: `${rows.length} collection(s) reopened` });
+  } finally {
+    await session.endSession();
+  }
 });
 
 // ═══ DELETION ═══

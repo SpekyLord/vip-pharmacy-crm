@@ -2,8 +2,9 @@ const VendorMaster = require('../models/VendorMaster');
 const { catchAsync } = require('../../middleware/errorHandler');
 
 const getAll = catchAsync(async (req, res) => {
-  const filter = {};
-  if (req.query.entity_id) filter.entity_id = req.query.entity_id;
+  // President sees all; others scoped by entity
+  const filter = req.isPresident ? {} : { entity_id: req.entityId };
+  if (req.query.entity_id && req.isPresident) filter.entity_id = req.query.entity_id;
   if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
   if (req.query.q) {
     filter.$or = [
@@ -17,7 +18,8 @@ const getAll = catchAsync(async (req, res) => {
 });
 
 const getById = catchAsync(async (req, res) => {
-  const vendor = await VendorMaster.findById(req.params.id).lean();
+  const filter = req.isPresident ? { _id: req.params.id } : { _id: req.params.id, entity_id: req.entityId };
+  const vendor = await VendorMaster.findOne(filter).lean();
   if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
   res.json({ success: true, data: vendor });
 });
@@ -26,7 +28,9 @@ const search = catchAsync(async (req, res) => {
   const q = req.query.q || '';
   if (!q) return res.json({ success: true, data: [] });
 
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
   const vendors = await VendorMaster.find({
+    ...entityScope,
     is_active: true,
     $or: [
       { vendor_name: { $regex: q, $options: 'i' } },
@@ -45,8 +49,9 @@ const create = catchAsync(async (req, res) => {
 
 const update = catchAsync(async (req, res) => {
   req.body.updated_by = req.user._id;
-  const vendor = await VendorMaster.findByIdAndUpdate(
-    req.params.id,
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const vendor = await VendorMaster.findOneAndUpdate(
+    { _id: req.params.id, ...entityScope },
     { $set: req.body },
     { new: true, runValidators: true }
   );
@@ -58,8 +63,9 @@ const addAlias = catchAsync(async (req, res) => {
   const { alias } = req.body;
   if (!alias) return res.status(400).json({ success: false, message: 'Alias is required' });
 
-  const vendor = await VendorMaster.findByIdAndUpdate(
-    req.params.id,
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const vendor = await VendorMaster.findOneAndUpdate(
+    { _id: req.params.id, ...entityScope },
     { $addToSet: { vendor_aliases: alias.trim() } },
     { new: true }
   );
@@ -68,8 +74,9 @@ const addAlias = catchAsync(async (req, res) => {
 });
 
 const deactivate = catchAsync(async (req, res) => {
-  const vendor = await VendorMaster.findByIdAndUpdate(
-    req.params.id,
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const vendor = await VendorMaster.findOneAndUpdate(
+    { _id: req.params.id, ...entityScope },
     { $set: { is_active: false } },
     { new: true }
   );

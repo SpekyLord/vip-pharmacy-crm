@@ -9,8 +9,8 @@
  * - Active route highlighting
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import messageService from '../../services/messageInboxService';
 import {
@@ -49,6 +49,9 @@ import {
   Layers,
   Archive,
   ArrowLeftRight,
+  Repeat,
+  Network,
+  ChevronDown,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -351,7 +354,7 @@ const sidebarStyles = `
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 300;
+    z-index: 1001;
     opacity: 0;
     transition: opacity 0.2s ease;
   }
@@ -368,7 +371,7 @@ const sidebarStyles = `
     width: 280px;
     max-width: 85vw;
     background: #0f172a;
-    z-index: 301;
+    z-index: 1002;
     transform: translateX(-100%);
     transition: transform 0.25s ease;
     display: flex;
@@ -386,6 +389,38 @@ const sidebarStyles = `
     justify-content: space-between;
     padding: 16px 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .mobile-drawer-platform-switch {
+    display: flex;
+    gap: 8px;
+    padding: 14px 20px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .mobile-drawer-platform-link {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: all 0.2s ease;
+  }
+
+  .mobile-drawer-platform-link.active {
+    color: #0f172a;
+    background: #f8fafc;
+    border-color: #f8fafc;
   }
 
   .mobile-drawer-close {
@@ -407,7 +442,7 @@ const sidebarStyles = `
 
   .mobile-drawer-nav {
     flex: 1;
-    padding: 12px;
+    padding: 12px 12px calc(88px + env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
   }
 
@@ -436,6 +471,95 @@ const sidebarStyles = `
     letter-spacing: 1px;
     color: rgba(255, 255, 255, 0.3);
   }
+
+  /* ===== COLLAPSIBLE SECTION HEADERS ===== */
+  .sidebar-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    cursor: pointer;
+    padding: 7px 10px;
+    margin-bottom: 4px;
+    transition: background 0.15s;
+  }
+
+  .sidebar-section-header:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .sidebar-section-header .sidebar-section-title {
+    padding: 0;
+    margin: 0;
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  .sidebar-section-header:hover .sidebar-section-title {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .sidebar-section-chevron {
+    color: rgba(255, 255, 255, 0.35);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+
+  .sidebar-section-chevron.open {
+    transform: rotate(180deg);
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  /* Indent child items under collapsible sections */
+  .sidebar-section-collapsible-items {
+    padding-left: 10px;
+    border-left: 2px solid rgba(255, 255, 255, 0.07);
+    margin-left: 6px;
+    margin-bottom: 4px;
+  }
+
+  .sidebar.collapsed .sidebar-section-header {
+    display: none;
+  }
+
+  .mobile-drawer .sidebar-section-header {
+    padding: 8px 12px;
+    margin-bottom: 4px;
+  }
+
+  .mobile-drawer .sidebar-section-collapsible-items {
+    padding-left: 10px;
+    border-left: 2px solid rgba(255, 255, 255, 0.07);
+    margin-left: 6px;
+  }
+
+  .sidebar-link.sidebar-link-child {
+    margin-left: 14px;
+    padding-left: 18px;
+    position: relative;
+  }
+
+  .sidebar-link.sidebar-link-child::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 8px;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.35);
+  }
+
+  .sidebar.collapsed .sidebar-link.sidebar-link-child {
+    margin-left: 0;
+    padding-left: 11px;
+  }
+
+  .sidebar.collapsed .sidebar-link.sidebar-link-child::before {
+    display: none;
+  }
+
 
   /* ===== TABLET RESPONSIVE ===== */
   @media (max-width: 1024px) and (min-width: 481px) {
@@ -517,6 +641,13 @@ const sidebarStyles = `
     .employees-main {
       padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
     }
+
+    .boss-scroll,
+    .ba-main,
+    .hospital-main,
+    .coll-main {
+      padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
+    }
   }
 `;
 
@@ -533,7 +664,6 @@ const ADMIN_LIKE_ROLES = ['admin', 'finance', 'president', 'ceo'];
 const isAdminLikeRole = (role) => ADMIN_LIKE_ROLES.includes(role);
 
 const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
-  // Determine effective access per module
   const hasModule = (mod) => {
     if (role === 'president' || role === 'ceo') return true;
     if (role === 'admin' && (!erpAccess || !erpAccess.enabled)) return true;
@@ -541,62 +671,163 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     return erpAccess.modules?.[mod] && erpAccess.modules[mod] !== 'NONE';
   };
 
-  const items = [];
-  items.push({ path: '/erp', label: 'ERP Home', icon: Briefcase });
-  if (hasModule('sales'))       items.push({ path: '/erp/sales', label: 'Sales', icon: Receipt });
-  if (hasModule('sales'))       items.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
-  // Shared infrastructure — no module gate
-  items.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
-  items.push({ path: '/erp/customers', label: 'Customers', icon: Users });
-  items.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
-  if (hasModule('inventory'))   items.push({ path: '/erp/my-stock', label: 'Inventory', icon: Package });
-  if (hasModule('inventory'))   items.push({ path: '/erp/grn', label: 'GRN Entry', icon: FileInput });
-  if (hasModule('inventory'))   items.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
-  if (hasModule('inventory'))   items.push({ path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight });
-  if (hasModule('inventory') && ['admin', 'president'].includes(role)) items.push({ path: '/erp/warehouses', label: 'Warehouses', icon: Package });
-  if (hasModule('inventory'))   items.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
-  if (hasModule('collections')) items.push({ path: '/erp/collections', label: 'Collections', icon: Wallet });
-  if (hasModule('collections')) items.push({ path: '/erp/collections/ar', label: 'AR Aging', icon: BarChart3 });
-  if (hasModule('expenses'))    items.push({ path: '/erp/expenses', label: 'Expenses', icon: CreditCard });
-  if (hasModule('reports'))     items.push({ path: '/erp/reports', label: 'Reports', icon: BarChart3 });
-  if (hasModule('reports'))     items.push({ path: '/erp/budget-allocations', label: 'Budget Allocations', icon: DollarSign });
-  if (hasModule('people'))      items.push({ path: '/erp/people', label: 'People', icon: UserCheck });
-  if (hasModule('payroll'))     items.push({ path: '/erp/payroll', label: 'Payroll', icon: DollarSign });
-  if (hasModule('accounting') || hasModule('expenses')) items.push({ path: '/erp/credit-cards', label: 'Credit Cards', icon: CreditCard });
-  if (hasModule('accounting')) {
-    items.push({ path: '/erp/coa', label: 'Chart of Accounts', icon: BookOpen });
-    items.push({ path: '/erp/journals', label: 'Journal Entries', icon: BookOpen });
-    items.push({ path: '/erp/recurring-journals', label: 'Recurring Journals', icon: BookOpen });
-    items.push({ path: '/erp/trial-balance', label: 'Trial Balance', icon: BookOpen });
-    items.push({ path: '/erp/profit-loss', label: 'P&L Statement', icon: BookOpen });
-    items.push({ path: '/erp/vat-compliance', label: 'VAT & CWT', icon: BookOpen });
-    items.push({ path: '/erp/cashflow', label: 'Cashflow', icon: BookOpen });
-    items.push({ path: '/erp/fixed-assets', label: 'Fixed Assets', icon: BookOpen });
-    items.push({ path: '/erp/loans', label: 'Loans', icon: BookOpen });
-    items.push({ path: '/erp/owner-equity', label: 'Owner Equity', icon: BookOpen });
-    items.push({ path: '/erp/month-end-close', label: 'Month-End Close', icon: BookOpen });
-    items.push({ path: '/erp/period-locks', label: 'Period Locks', icon: BookOpen });
-    items.push({ path: '/erp/bank-accounts', label: 'Bank Accounts', icon: Landmark });
-    items.push({ path: '/erp/bank-recon', label: 'Bank Reconciliation', icon: Scale });
-    items.push({ path: '/erp/credit-card-ledger', label: 'CC Ledger', icon: CreditCard });
-    items.push({ path: '/erp/cost-centers', label: 'Cost Centers', icon: Layers });
-    items.push({ path: '/erp/petty-cash', label: 'Petty Cash', icon: Wallet });
-    items.push({ path: '/erp/office-supplies', label: 'Office Supplies', icon: Package });
-    items.push({ path: '/erp/data-archive', label: 'Data Archive', icon: Archive });
-  }
-  // Government Rates & BIR Calculator — available to admin/finance/president (no module gate)
-  items.push({ path: '/erp/government-rates', label: 'Gov. Rates', icon: BookOpen });
-  items.push({ path: '/erp/bir-calculator', label: 'BIR Calculator', icon: BookOpen });
-  if (hasModule('purchasing')) {
-    items.push({ path: '/erp/vendors', label: 'Vendors', icon: Truck });
-    items.push({ path: '/erp/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart });
-    items.push({ path: '/erp/supplier-invoices', label: 'Supplier Invoices', icon: FileInput });
-    items.push({ path: '/erp/accounts-payable', label: 'Accounts Payable', icon: Wallet });
+  const isAdmin = isAdminLikeRole(role);
+  const sections = [];
+
+  // ── ERP Home + Hospitals (always visible, no header) ──────────────────────
+  sections.push({
+    title: null,
+    collapsible: false,
+    items: [
+      { path: '/erp', label: 'ERP Home', icon: Briefcase },
+      { path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope },
+    ],
+  });
+
+  // ── Sales ──────────────────────────────────────────────────────────────────
+  if (hasModule('sales')) {
+    const salesHomePath = role === 'finance' ? '/erp/sales' : '/erp/sales/entry';
+    const salesItems = [{ path: salesHomePath, label: 'Sales', icon: Receipt }];
+    if (salesHomePath !== '/erp/sales') {
+      salesItems.push({ path: '/erp/sales', label: 'Sales Transactions', icon: FileText, isChild: true });
+    }
+    salesItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
+    sections.push({
+      title: 'Sales',
+      collapsible: true,
+      defaultOpen: true,
+      items: salesItems,
+    });
   }
 
-  // For CRM sidebars, hide ERP section when only ERP Home is available.
-  if (!includeHomeOnly && items.length <= 1) return null;
-  return { title: 'ERP', items };
+  // ── Inventory ─────────────────────────────────────────────────────────────
+  if (hasModule('inventory')) {
+    const invItems = [
+      { path: '/erp/my-stock', label: 'Inventory', icon: Package },
+      { path: '/erp/grn', label: 'GRN Entry', icon: FileInput },
+      { path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight },
+    ];
+    if (isAdmin) invItems.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
+    if (isAdmin) invItems.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
+    if (['admin', 'president'].includes(role)) {
+      invItems.push({ path: '/erp/warehouses', label: 'Warehouses', icon: Package });
+    }
+    sections.push({ title: 'Inventory', collapsible: true, defaultOpen: true, items: invItems });
+  }
+
+  // ── Collections ───────────────────────────────────────────────────────────
+  if (hasModule('collections')) {
+    const collItems = [
+      { path: '/erp/collections', label: 'Collections', icon: Wallet },
+      { path: '/erp/collections/ar', label: 'AR Aging', icon: BarChart3 },
+    ];
+    if (['admin', 'finance', 'president'].includes(role)) {
+      collItems.push({ path: '/erp/ic-settlements', label: 'IC Settlements', icon: Repeat });
+    }
+    sections.push({ title: 'Collections', collapsible: true, defaultOpen: true, items: collItems });
+  }
+
+  // ── Expenses ──────────────────────────────────────────────────────────────
+  if (hasModule('expenses')) {
+    const expItems = [{ path: '/erp/expenses', label: 'Expenses', icon: CreditCard }];
+    if (isAdmin) expItems.push({ path: '/erp/credit-cards', label: 'Credit Cards', icon: CreditCard });
+    sections.push({ title: 'Expenses', collapsible: true, defaultOpen: true, items: expItems });
+  }
+
+  // ── Reports ───────────────────────────────────────────────────────────────
+  if (hasModule('reports')) {
+    const repItems = [{ path: '/erp/reports', label: 'Reports', icon: BarChart3 }];
+    if (isAdmin) repItems.push({ path: '/erp/budget-allocations', label: 'Budget Allocations', icon: DollarSign });
+    sections.push({ title: 'Reports', collapsible: true, defaultOpen: false, items: repItems });
+  }
+
+  // ── People & HR (admin-like only) ─────────────────────────────────────────
+  if (hasModule('people') || hasModule('payroll')) {
+    const hrItems = [];
+    if (hasModule('people')) {
+      hrItems.push({ path: '/erp/people', label: 'People', icon: UserCheck });
+      hrItems.push({ path: '/erp/org-chart', label: 'Org Chart', icon: Network });
+    }
+    if (hasModule('payroll')) {
+      hrItems.push({ path: '/erp/payroll', label: 'Payroll', icon: DollarSign });
+    }
+    sections.push({ title: 'People & HR', collapsible: true, defaultOpen: isAdmin, items: hrItems });
+  }
+
+  // ── Accounting (admin-like only) ──────────────────────────────────────────
+  if (hasModule('accounting')) {
+    sections.push({
+      title: 'Accounting',
+      collapsible: true,
+      defaultOpen: isAdmin,
+      items: [
+        { path: '/erp/coa', label: 'Chart of Accounts', icon: BookOpen },
+        { path: '/erp/journals', label: 'Journal Entries', icon: BookOpen },
+        { path: '/erp/recurring-journals', label: 'Recurring Journals', icon: BookOpen },
+        { path: '/erp/trial-balance', label: 'Trial Balance', icon: BookOpen },
+        { path: '/erp/profit-loss', label: 'P&L Statement', icon: BookOpen },
+        { path: '/erp/vat-compliance', label: 'VAT & CWT', icon: BookOpen },
+        { path: '/erp/cashflow', label: 'Cashflow', icon: BookOpen },
+        { path: '/erp/fixed-assets', label: 'Fixed Assets', icon: BookOpen },
+        { path: '/erp/loans', label: 'Loans', icon: BookOpen },
+        { path: '/erp/owner-equity', label: 'Owner Equity', icon: BookOpen },
+        { path: '/erp/month-end-close', label: 'Month-End Close', icon: BookOpen },
+        { path: '/erp/period-locks', label: 'Period Locks', icon: BookOpen },
+        { path: '/erp/bank-accounts', label: 'Bank Accounts', icon: Landmark },
+        { path: '/erp/bank-recon', label: 'Bank Reconciliation', icon: Scale },
+        { path: '/erp/credit-card-ledger', label: 'CC Ledger', icon: CreditCard },
+        { path: '/erp/cost-centers', label: 'Cost Centers', icon: Layers },
+        { path: '/erp/petty-cash', label: 'Petty Cash', icon: Wallet },
+        { path: '/erp/office-supplies', label: 'Office Supplies', icon: Package },
+        { path: '/erp/data-archive', label: 'Data Archive', icon: Archive },
+        { path: '/erp/credit-cards', label: 'Credit Cards', icon: CreditCard },
+      ],
+    });
+  }
+
+  // ── Finance Tools (admin-like only) ───────────────────────────────────────
+  if (isAdmin) {
+    const ftItems = [
+      { path: '/erp/government-rates', label: 'Gov. Rates', icon: BookOpen },
+      { path: '/erp/bir-calculator', label: 'BIR Calculator', icon: BookOpen },
+    ];
+    if (['admin', 'finance', 'president'].includes(role)) {
+      ftItems.push({ path: '/erp/payment-modes', label: 'Payment Modes', icon: BookOpen });
+    }
+    sections.push({ title: 'Finance Tools', collapsible: true, defaultOpen: isAdmin, items: ftItems });
+  }
+
+  // ── Purchasing (admin-like only) ──────────────────────────────────────────
+  if (hasModule('purchasing')) {
+    sections.push({
+      title: 'Purchasing',
+      collapsible: true,
+      defaultOpen: isAdmin,
+      items: [
+        { path: '/erp/vendors', label: 'Vendors', icon: Truck },
+        { path: '/erp/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
+        { path: '/erp/supplier-invoices', label: 'Supplier Invoices', icon: FileInput },
+        { path: '/erp/accounts-payable', label: 'Accounts Payable', icon: Wallet },
+      ],
+    });
+  }
+
+  // ── Administration (admin-like only) — inserted at top, right after ERP Home ──
+  if (['admin', 'finance', 'president'].includes(role)) {
+    const adminItems = [];
+    if (isAdmin) {
+      adminItems.push({ path: '/erp/customers', label: 'Customers', icon: Users });
+      adminItems.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
+    }
+    adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
+    adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
+    sections.splice(1, 0, { title: 'Administration', collapsible: true, defaultOpen: false, items: adminItems });
+  }
+
+  // For CRM sidebars, hide ERP section when only ERP Home+Hospitals available.
+  const totalItems = sections.flatMap(s => s.items).length;
+  if (!includeHomeOnly && totalItems <= 2) return null;
+  return sections;
 };
 
 const getCrmMenuConfig = (role, unreadCount = 0) => {
@@ -619,6 +850,8 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
           },
           {
             title: 'Management',
+            collapsible: true,
+            defaultOpen: true,
             items: [
               { path: '/admin/doctors', label: 'VIP Clients', icon: Stethoscope },
               { path: '/admin/employees', label: 'BDMs', icon: Users },
@@ -627,6 +860,8 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
           },
           {
             title: 'Operations',
+            collapsible: true,
+            defaultOpen: false,
             items: [
               { path: '/admin/approvals', label: 'Import / Export', icon: FileSpreadsheet },
               { path: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
@@ -655,6 +890,8 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
           },
           {
             title: 'Work',
+            collapsible: true,
+            defaultOpen: true,
             items: [
               { path: '/bdm/cpt', label: 'Call Plan', icon: CalendarRange },
               { path: '/bdm/products', label: 'Products', icon: Package },
@@ -674,19 +911,20 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
 };
 
 const getErpMenuConfig = (role, erpAccess = null) => {
-  const erpSection = getErpSection(role, erpAccess, { includeHomeOnly: true });
-  const erpItems = erpSection?.items || [{ path: '/erp', label: 'ERP Home', icon: Briefcase }];
+  const erpSections = getErpSection(role, erpAccess, { includeHomeOnly: true });
+  const sections = erpSections || [{ title: null, collapsible: false, items: [{ path: '/erp', label: 'ERP Home', icon: Briefcase }] }];
   const isAdminLike = isAdminLikeRole(role);
+
+  // Bottom tabs: first 4 items across all sections
+  const allErpItems = sections.flatMap(s => s.items);
+  const bottomTabs = allErpItems.slice(0, 4).map((item) => ({ ...item, end: item.path === '/erp' }));
 
   return {
     roleTitle: isAdminLike ? 'Administrator' : 'Field BDM',
     roleSubtitle: isAdminLike ? 'Full Access' : 'BDM',
     roleIcon: isAdminLike ? Shield : UserCog,
-    sections: [{ title: 'ERP', items: erpItems }],
-    bottomTabs: erpItems.slice(0, 4).map((item) => ({
-      ...item,
-      end: item.path === '/erp',
-    })),
+    sections,
+    bottomTabs,
   };
 };
 
@@ -709,8 +947,12 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [expandedSections, setExpandedSections] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('sidebar_expanded') || '{}'); } catch { return {}; }
+  });
 
   const [unreadCount, setUnreadCount] = useState(0);
+  const navRef = useRef(null);
 
   // Fetch unread message count for employee role
   const fetchUnreadCount = useCallback(async () => {
@@ -735,12 +977,34 @@ const Sidebar = () => {
   }, [fetchUnreadCount]);
 
   const menuConfig = getMenuConfig(user?.role, unreadCount, user?.erp_access, location.pathname);
+  const isAdminLike = ['admin', 'finance', 'president', 'ceo'].includes(user?.role);
+  const crmHome = isAdminLike ? '/admin' : '/bdm';
+  const isErpRoute = location.pathname.startsWith('/erp');
+
+  const activePath = useMemo(() => {
+    const allPaths = menuConfig.sections.flatMap(section => section.items.map(item => item.path));
+    let bestPath = null;
+    let bestLength = -1;
+
+    for (const path of allPaths) {
+      const isMatch = location.pathname === path || location.pathname.startsWith(`${path}/`);
+      if (isMatch && path.length > bestLength) {
+        bestPath = path;
+        bestLength = path.length;
+      }
+    }
+
+    return bestPath;
+  }, [menuConfig.sections, location.pathname]);
 
   const isActive = (path) => {
-    if (path === '/admin' || path === '/bdm' || path === '/erp') {
-      return location.pathname === path;
+    if (path === '/erp/sales/entry') {
+      return location.pathname === '/erp/sales/entry' || location.pathname === '/erp/sales';
     }
-    return location.pathname.startsWith(path);
+    if (path === '/erp/sales') {
+      return location.pathname === '/erp/sales';
+    }
+    return activePath === path;
   };
 
   // Listen for sidebar:toggle events from Navbar hamburger
@@ -754,6 +1018,18 @@ const Sidebar = () => {
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
+
+  // Preserve sidebar scroll position across navigation
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const saved = sessionStorage.getItem('sidebar_scroll');
+    if (saved) nav.scrollTop = parseInt(saved, 10);
+  }, [location.pathname]);
+
+  const handleNavScroll = useCallback((e) => {
+    sessionStorage.setItem('sidebar_scroll', e.currentTarget.scrollTop);
+  }, []);
 
   // Prevent body scroll when drawer is open
   useEffect(() => {
@@ -804,13 +1080,29 @@ const Sidebar = () => {
 
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
+  const toggleSection = useCallback((title) => {
+    setExpandedSections(prev => {
+      const next = { ...prev, [title]: !prev[title] };
+      try { sessionStorage.setItem('sidebar_expanded', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  const isSectionOpen = useCallback((section) => {
+    if (!section.collapsible) return true;
+    if (collapsed) return true; // icon-only: always show items
+    const title = section.title;
+    if (title in expandedSections) return expandedSections[title];
+    // Auto-open if section contains the active route
+    const hasActive = section.items.some(item => isActive(item.path));
+    return section.defaultOpen || hasActive;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collapsed, expandedSections, location.pathname]);
+
   const handleDrawerNav = (path) => {
     navigate(path);
     setDrawerOpen(false);
   };
-
-  // Get all flat items for the drawer
-  const allItems = menuConfig.sections.flatMap(s => s.items);
 
   return (
     <>
@@ -827,31 +1119,45 @@ const Sidebar = () => {
         </button>
 
         {/* Navigation */}
-        <nav className="sidebar-nav">
-          {menuConfig.sections.map((section, sectionIndex) => (
-            <div key={sectionIndex} className="sidebar-section">
-              <div className="sidebar-section-title">{section.title}</div>
-              {section.items.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    className={`sidebar-link ${isActive(item.path) ? 'active' : ''}`}
-                  >
-                    <span className="sidebar-link-icon">
-                      <Icon size={20} />
-                    </span>
-                    <span className="sidebar-link-label">{item.label}</span>
-                    {item.badge && (
-                      <span className={typeof item.badge === 'string' ? 'sidebar-badge-text' : 'sidebar-badge'}>{item.badge}</span>
-                    )}
-                    <span className="sidebar-tooltip">{item.label}</span>
-                  </NavLink>
-                );
-              })}
-            </div>
-          ))}
+        <nav className="sidebar-nav" ref={navRef} onScroll={handleNavScroll}>
+          {menuConfig.sections.map((section, sectionIndex) => {
+            const isOpen = isSectionOpen(section);
+            return (
+              <div key={sectionIndex} className="sidebar-section">
+                {section.title && (
+                  section.collapsible ? (
+                    <button className="sidebar-section-header" onClick={() => toggleSection(section.title)}>
+                      <span className="sidebar-section-title">{section.title}</span>
+                      <ChevronDown className={`sidebar-section-chevron ${isOpen ? 'open' : ''}`} size={14} />
+                    </button>
+                  ) : (
+                    <div className="sidebar-section-title">{section.title}</div>
+                  )
+                )}
+                {isOpen && (
+                  <div className={section.collapsible ? 'sidebar-section-collapsible-items' : ''}>
+                    {section.items.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <NavLink
+                          key={item.path}
+                          to={item.path}
+                          className={`sidebar-link ${item.isChild ? 'sidebar-link-child' : ''} ${isActive(item.path) ? 'active' : ''}`}
+                        >
+                          <span className="sidebar-link-icon"><Icon size={20} /></span>
+                          <span className="sidebar-link-label">{item.label}</span>
+                          {item.badge && (
+                            <span className={typeof item.badge === 'string' ? 'sidebar-badge-text' : 'sidebar-badge'}>{item.badge}</span>
+                          )}
+                          <span className="sidebar-tooltip">{item.label}</span>
+                        </NavLink>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
       </aside>
 
@@ -895,33 +1201,63 @@ const Sidebar = () => {
             <X size={20} />
           </button>
         </div>
+        {user && (
+          <div className="mobile-drawer-platform-switch" aria-label="Platform switch">
+            <Link
+              to={crmHome}
+              className={`mobile-drawer-platform-link ${isErpRoute ? '' : 'active'}`.trim()}
+              onClick={closeDrawer}
+            >
+              CRM
+            </Link>
+            <Link
+              to="/erp"
+              className={`mobile-drawer-platform-link ${isErpRoute ? 'active' : ''}`.trim()}
+              onClick={closeDrawer}
+            >
+              ERP
+            </Link>
+          </div>
+        )}
         <nav className="mobile-drawer-nav">
-          {menuConfig.sections.map((section, sectionIndex) => (
-            <div key={sectionIndex} className="sidebar-section">
-              <div className="sidebar-section-title">{section.title}</div>
-              {section.items.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.path}
-                    className={`sidebar-link ${isActive(item.path) ? 'active' : ''}`}
-                    onClick={() => handleDrawerNav(item.path)}
-                    style={{ width: '100%', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                  >
-                    <span className="sidebar-link-icon">
-                      <Icon size={22} />
-                    </span>
-                    <span className="sidebar-link-label" style={{ display: 'block' }}>
-                      {item.label}
-                    </span>
-                    {item.badge && (
-                      <span className={typeof item.badge === 'string' ? 'sidebar-badge-text' : 'sidebar-badge'}>{item.badge}</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+          {menuConfig.sections.map((section, sectionIndex) => {
+            const isOpen = isSectionOpen(section);
+            return (
+              <div key={sectionIndex} className="sidebar-section">
+                {section.title && (
+                  section.collapsible ? (
+                    <button className="sidebar-section-header" onClick={() => toggleSection(section.title)}>
+                      <span className="sidebar-section-title">{section.title}</span>
+                      <ChevronDown className={`sidebar-section-chevron ${isOpen ? 'open' : ''}`} size={14} />
+                    </button>
+                  ) : (
+                    <div className="sidebar-section-title">{section.title}</div>
+                  )
+                )}
+                {isOpen && (
+                  <div className={section.collapsible ? 'sidebar-section-collapsible-items' : ''}>
+                    {section.items.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          key={item.path}
+                          className={`sidebar-link ${item.isChild ? 'sidebar-link-child' : ''} ${isActive(item.path) ? 'active' : ''}`}
+                          onClick={() => handleDrawerNav(item.path)}
+                          style={{ width: '100%', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                        >
+                          <span className="sidebar-link-icon"><Icon size={22} /></span>
+                          <span className="sidebar-link-label" style={{ display: 'block' }}>{item.label}</span>
+                          {item.badge && (
+                            <span className={typeof item.badge === 'string' ? 'sidebar-badge-text' : 'sidebar-badge'}>{item.badge}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
       </div>
     </>

@@ -3,8 +3,10 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useBanking from '../hooks/useBanking';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .br-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
@@ -74,7 +76,7 @@ export default function BankReconciliation() {
         const accts = res?.data || [];
         setBankAccounts(accts);
         if (accts.length > 0 && !selectedBank) setSelectedBank(accts[0]._id);
-      } catch { /* */ }
+      } catch (err) { showError(err, 'Could not load bank accounts'); }
     })();
   }, []);
 
@@ -87,7 +89,7 @@ export default function BankReconciliation() {
       setStatements(res?.data || []);
       setActiveStatement(null);
       setReconSummary(null);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load bank statements'); }
     setLoading(false);
   }, [selectedBank, period]);
 
@@ -139,7 +141,7 @@ export default function BankReconciliation() {
     try {
       const res = await api.getReconSummary(stmt._id);
       setReconSummary(res?.data || null);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load reconciliation summary'); }
   };
 
   const handleAutoMatch = async () => {
@@ -185,6 +187,7 @@ export default function BankReconciliation() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="br-main admin-main">
+          <WorkflowGuide pageKey="bank-reconciliation" />
           <div className="br-header">
             <h2>Bank Reconciliation</h2>
             <button className="btn btn-primary" onClick={() => setShowUpload(true)}>Upload Statement</button>

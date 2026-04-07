@@ -36,11 +36,16 @@ const api = axios.create({
   withCredentials: true, // CRITICAL: Send cookies with every request
 });
 
-// Request interceptor - no token injection needed (cookies sent automatically)
+// Working entity header — set by EntityContext for president/ceo users
+let _workingEntityId = null;
+export const setWorkingEntityHeader = (id) => { _workingEntityId = id; };
+
+// Request interceptor - inject X-Entity-Id header when set
 api.interceptors.request.use(
   (config) => {
-    // Cookies are sent automatically with withCredentials: true
-    // No need to manually add Authorization header
+    if (_workingEntityId) {
+      config.headers['X-Entity-Id'] = _workingEntityId;
+    }
     return config;
   },
   (error) => {

@@ -5,6 +5,7 @@
  * Convention: target_id = User._id (same as bdm_id in transaction models)
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -12,6 +13,7 @@ import useReports from '../hooks/useReports';
 import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
+import { showError } from '../utils/errorToast';
 
 const EXPENSE_COMPONENTS = [
   { code: 'SMER', label: 'SMER (Per Diem + Transport)' },
@@ -70,7 +72,7 @@ const pageStyles = `
   .modal-content { background: var(--erp-panel); border-radius: 16px; padding: 24px; width: 90%; max-width: 640px; max-height: 80vh; overflow-y: auto; }
   .modal-content h3 { margin: 0 0 16px; font-size: 17px; }
   @media(max-width: 768px) {
-    .ba-main { padding: 96px 16px 88px; }
+    .ba-main { padding: 76px 16px calc(96px + env(safe-area-inset-bottom, 0px)); }
     .form-grid { grid-template-columns: 1fr; }
     .comp-grid { grid-template-columns: 1fr; }
     .controls { flex-direction: column; align-items: stretch; }
@@ -161,11 +163,11 @@ export default function BudgetAllocations() {
       setEditId(null);
       resetForm();
       loadAllocations();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not save budget allocation'); }
   };
 
   const handleApprove = async (id) => {
-    try { await rpt.approveBudgetAllocation(id); loadAllocations(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    try { await rpt.approveBudgetAllocation(id); loadAllocations(); } catch (err) { showError(err, 'Could not approve budget allocation'); }
   };
 
   const handleEdit = (alloc) => {
@@ -204,6 +206,11 @@ export default function BudgetAllocations() {
           <div className="ba-header">
             <h1>Budget Allocations</h1>
             <p>Set per-BDM expense budgets by period. Approved budgets feed into Expense Anomalies &gt; Budget Overruns.</p>
+            <div style={{ marginTop: 10 }}>
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
+            </div>
           </div>
 
           <div className="controls">

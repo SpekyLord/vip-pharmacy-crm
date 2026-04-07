@@ -1,18 +1,42 @@
 const ProductMaster = require('../models/ProductMaster');
+const Warehouse = require('../models/Warehouse');
+const InventoryLedger = require('../models/InventoryLedger');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
 
 const getAll = catchAsync(async (req, res) => {
-  // ProductMaster is entity-level (no bdm_id field), so only apply entity_id from tenantFilter
   const filter = {};
   if (req.tenantFilter?.entity_id) filter.entity_id = req.tenantFilter.entity_id;
   if (req.query.entity_id) filter.entity_id = req.query.entity_id;
   if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
+  if (req.query.stock_type) filter.stock_type = req.query.stock_type;
   if (req.query.q) {
     filter.$or = [
       { brand_name: { $regex: req.query.q, $options: 'i' } },
       { generic_name: { $regex: req.query.q, $options: 'i' } }
     ];
+  }
+
+  // BDMs only see products that have inventory in their assigned warehouse
+  const bdmRoles = ['employee'];
+  if (bdmRoles.includes(req.user?.role)) {
+    const myWarehouses = await Warehouse.find({
+      $or: [{ manager_id: req.user._id }, { assigned_users: req.user._id }]
+    }).select('_id').lean();
+    const whIds = myWarehouses.map(w => w._id);
+
+    if (whIds.length) {
+      const productIds = await InventoryLedger.distinct('product_id', { warehouse_id: { $in: whIds } });
+      filter._id = { $in: productIds };
+    } else {
+      return res.json({ success: true, data: [], pagination: { page: 1, limit: 50, total: 0, pages: 0 } });
+    }
+  }
+
+  // Optional warehouse filter (admin can filter by warehouse too)
+  if (req.query.warehouse_id) {
+    const productIds = await InventoryLedger.distinct('product_id', { warehouse_id: req.query.warehouse_id });
+    filter._id = filter._id ? { $in: productIds.filter(id => filter._id.$in.some(fid => fid.toString() === id.toString())) } : { $in: productIds };
   }
 
   const page = parseInt(req.query.page) || 1;
@@ -119,4 +143,170 @@ const updateReorderQty = catchAsync(async (req, res) => {
   res.json({ success: true, message: 'Reorder rules updated', data: product });
 });
 
-module.exports = { getAll, getById, create, update, deactivate, updateReorderQty };
+// ═══ Tag products to warehouse (creates inventory link) ═══
+const tagToWarehouse = catchAsync(async (req, res) => {
+  const { product_ids, warehouse_id, batch_lot_no, expiry_date, qty } = req.body;
+  if (!warehouse_id) return res.status(400).json({ success: false, message: 'warehouse_id is required' });
+  if (!Array.isArray(product_ids) || !product_ids.length) return res.status(400).json({ success: false, message: 'product_ids array is required' });
+
+  const warehouse = await Warehouse.findById(warehouse_id).select('_id entity_id').lean();
+  if (!warehouse) return res.status(404).json({ success: false, message: 'Warehouse not found' });
+
+  let tagged = 0, skipped = 0;
+  for (const pid of product_ids) {
+    // Check if product already has inventory in this warehouse
+    const exists = await InventoryLedger.findOne({ warehouse_id, product_id: pid }).lean();
+    if (exists) { skipped++; continue; }
+
+    await InventoryLedger.create({
+      entity_id: warehouse.entity_id || req.entityId,
+      bdm_id: req.user._id,
+      warehouse_id,
+      product_id: pid,
+      batch_lot_no: batch_lot_no || 'INITIAL',
+      expiry_date: expiry_date || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      transaction_type: 'OPENING_BALANCE',
+      qty_in: qty || 0,
+      running_balance: qty || 0,
+      recorded_by: req.user._id
+    });
+    tagged++;
+  }
+
+  res.json({
+    success: true,
+    message: `Tagged ${tagged} product(s) to warehouse, ${skipped} already existed`,
+    data: { tagged, skipped }
+  });
+});
+
+// ═══ Get warehouses that a product is tagged to ═══
+const getProductWarehouses = catchAsync(async (req, res) => {
+  const entries = await InventoryLedger.aggregate([
+    { $match: { product_id: require('mongoose').Types.ObjectId.createFromHexString(req.params.id) } },
+    { $group: { _id: '$warehouse_id' } }
+  ]);
+  const whIds = entries.map(e => e._id).filter(Boolean);
+  const warehouses = await Warehouse.find({ _id: { $in: whIds } }).select('warehouse_code warehouse_name').lean();
+  res.json({ success: true, data: warehouses });
+});
+
+// ═══ Price Export/Import ═══
+
+/**
+ * GET /export-prices — Download XLSX with product prices for editing
+ */
+const exportPrices = catchAsync(async (req, res) => {
+  const XLSX = require('xlsx');
+
+  const entityId = req.query.entity_id || req.entityId;
+  const filter = { entity_id: entityId };
+  if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
+  if (req.query.stock_type) filter.stock_type = req.query.stock_type;
+
+  const products = await ProductMaster.find(filter)
+    .select('brand_name generic_name dosage_strength sold_per purchase_price selling_price is_active')
+    .sort({ brand_name: 1 })
+    .lean();
+
+  const rows = products.map(p => ({
+    product_id: p._id.toString(),
+    brand_name: p.brand_name,
+    generic_name: p.generic_name,
+    dosage_strength: p.dosage_strength || '',
+    sold_per: p.sold_per || '',
+    purchase_price: p.purchase_price || 0,
+    selling_price: p.selling_price || 0,
+    is_active: p.is_active ? 'YES' : 'NO'
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Product Prices');
+
+  // Set column widths
+  ws['!cols'] = [
+    { wch: 26 }, // product_id
+    { wch: 30 }, // brand_name
+    { wch: 30 }, // generic_name
+    { wch: 15 }, // dosage_strength
+    { wch: 10 }, // sold_per
+    { wch: 15 }, // purchase_price
+    { wch: 15 }, // selling_price
+    { wch: 10 }  // is_active
+  ];
+
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  res.setHeader('Content-Disposition', 'attachment; filename=product_prices.xlsx');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
+/**
+ * PUT /import-prices — Bulk update prices from XLSX upload
+ * Expects multipart/form-data with a file field named 'file'
+ */
+const importPrices = catchAsync(async (req, res) => {
+  const XLSX = require('xlsx');
+
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No file uploaded. Send as multipart/form-data with field name "file".' });
+  }
+
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws);
+
+  if (!rows.length) {
+    return res.status(400).json({ success: false, message: 'Spreadsheet is empty' });
+  }
+
+  const errors = [];
+  const ops = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 2; // 1-indexed + header row
+
+    if (!row.product_id) {
+      errors.push({ row: rowNum, message: 'Missing product_id' });
+      continue;
+    }
+
+    const update = {};
+    if (row.selling_price != null && row.selling_price !== '') {
+      const sp = Number(row.selling_price);
+      if (isNaN(sp) || sp < 0) { errors.push({ row: rowNum, message: `Invalid selling_price: ${row.selling_price}` }); continue; }
+      update.selling_price = sp;
+    }
+    if (row.purchase_price != null && row.purchase_price !== '') {
+      const pp = Number(row.purchase_price);
+      if (isNaN(pp) || pp < 0) { errors.push({ row: rowNum, message: `Invalid purchase_price: ${row.purchase_price}` }); continue; }
+      update.purchase_price = pp;
+    }
+
+    if (!Object.keys(update).length) continue;
+
+    ops.push({
+      updateOne: {
+        filter: { _id: row.product_id },
+        update: { $set: update }
+      }
+    });
+  }
+
+  let updated = 0;
+  if (ops.length) {
+    const result = await ProductMaster.bulkWrite(ops);
+    updated = result.modifiedCount;
+  }
+
+  res.json({
+    success: true,
+    message: `Updated ${updated} product(s)`,
+    data: { updated, total_rows: rows.length, errors }
+  });
+});
+
+module.exports = { getAll, getById, create, update, deactivate, updateReorderQty, tagToWarehouse, getProductWarehouses, exportPrices, importPrices };

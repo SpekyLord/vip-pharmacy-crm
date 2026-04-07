@@ -38,6 +38,13 @@ const entitySchema = new mongoose.Schema({
     default: 'ACTIVE'
   },
 
+  // Entity management — who runs this entity
+  managed_by: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PeopleMaster',
+    default: null,
+  },
+
   // Branding (Phase 4B.7)
   brand_color: { type: String, default: '#6B7280' },
   brand_text_color: { type: String, default: '#FFFFFF' },

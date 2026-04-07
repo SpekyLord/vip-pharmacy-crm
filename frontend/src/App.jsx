@@ -72,6 +72,7 @@ const AuditLogs = lazy(() => import('./erp/pages/AuditLogs'));
 // Phase 10 — ERP Access Control, People & Payroll
 const AccessTemplateManager = lazy(() => import('./erp/pages/AccessTemplateManager'));
 const PeopleList = lazy(() => import('./erp/pages/PeopleList'));
+const OrgChart = lazy(() => import('./erp/pages/OrgChart'));
 const PersonDetail = lazy(() => import('./erp/pages/PersonDetail'));
 const PayrollRun = lazy(() => import('./erp/pages/PayrollRun'));
 const PayslipView = lazy(() => import('./erp/pages/PayslipView'));
@@ -91,6 +92,7 @@ const MonthEndClose = lazy(() => import('./erp/pages/MonthEndClose'));
 
 // Phase 21 — Government Rates, Period Locks, Recurring Journals, BIR Calculator
 const GovernmentRates = lazy(() => import('./erp/pages/GovernmentRates'));
+const PaymentModes = lazy(() => import('./erp/pages/PaymentModes'));
 const PeriodLocks = lazy(() => import('./erp/pages/PeriodLocks'));
 const RecurringJournals = lazy(() => import('./erp/pages/RecurringJournals'));
 const BirCalculator = lazy(() => import('./erp/pages/BirCalculator'));
@@ -130,6 +132,10 @@ const ProductMasterPage = lazy(() => import('./erp/pages/ProductMaster'));
 const PettyCash = lazy(() => import('./erp/pages/PettyCash'));
 const OfficeSupplies = lazy(() => import('./erp/pages/OfficeSupplies'));
 const Collaterals = lazy(() => import('./erp/pages/Collaterals'));
+
+// Phase 24 — ERP Control Center + Agent Intelligence
+const ControlCenter = lazy(() => import('./erp/pages/ControlCenter'));
+const AgentDashboard = lazy(() => import('./erp/pages/AgentDashboard'));
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -343,7 +349,7 @@ function App() {
           <Route
             path="/erp/sales"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']} requiredErpModule="sales">
                 <SalesList />
               </ProtectedRoute>
             }
@@ -351,7 +357,7 @@ function App() {
           <Route
             path="/erp/sales/entry"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin']} requiredErpModule="sales">
                 <SalesEntry />
               </ProtectedRoute>
             }
@@ -359,7 +365,7 @@ function App() {
           <Route
             path="/erp/my-stock"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']} requiredErpModule="inventory">
                 <MyStock />
               </ProtectedRoute>
             }
@@ -367,7 +373,7 @@ function App() {
           <Route
             path="/erp/grn"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']} requiredErpModule="inventory">
                 <GrnEntry />
               </ProtectedRoute>
             }
@@ -375,7 +381,7 @@ function App() {
           <Route
             path="/erp/dr"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin']} requiredErpModule="sales">
                 <DrEntry />
               </ProtectedRoute>
             }
@@ -383,7 +389,7 @@ function App() {
           <Route
             path="/erp/consignment"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']} requiredErpModule="inventory">
                 <ConsignmentDashboard />
               </ProtectedRoute>
             }
@@ -391,7 +397,7 @@ function App() {
           <Route
             path="/erp/collections"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']} requiredErpModule="collections">
                 <Collections />
               </ProtectedRoute>
             }
@@ -399,7 +405,7 @@ function App() {
           <Route
             path="/erp/collections/session"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']} requiredErpModule="collections">
                 <CollectionSession />
               </ProtectedRoute>
             }
@@ -407,7 +413,7 @@ function App() {
           <Route
             path="/erp/collections/ar"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']} requiredErpModule="collections">
                 <AccountsReceivable />
               </ProtectedRoute>
             }
@@ -415,7 +421,7 @@ function App() {
           <Route
             path="/erp/collections/soa"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']} requiredErpModule="collections">
                 <SoaGenerator />
               </ProtectedRoute>
             }
@@ -439,7 +445,7 @@ function App() {
           <Route
             path="/erp/expenses"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="expenses">
                 <Expenses />
               </ProtectedRoute>
             }
@@ -447,7 +453,7 @@ function App() {
           <Route
             path="/erp/smer"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="expenses">
                 <Smer />
               </ProtectedRoute>
             }
@@ -455,7 +461,7 @@ function App() {
           <Route
             path="/erp/car-logbook"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="expenses">
                 <CarLogbook />
               </ProtectedRoute>
             }
@@ -463,7 +469,7 @@ function App() {
           <Route
             path="/erp/prf-calf"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="expenses">
                 <PrfCalf />
               </ProtectedRoute>
             }
@@ -471,7 +477,7 @@ function App() {
           <Route
             path="/erp/reports"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin']} requiredErpModule="reports">
                 <ErpReports />
               </ProtectedRoute>
             }
@@ -479,7 +485,7 @@ function App() {
           <Route
             path="/erp/transfers"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin']} requiredErpModule="inventory">
                 <TransferOrders />
               </ProtectedRoute>
             }
@@ -495,7 +501,7 @@ function App() {
           <Route
             path="/erp/transfers/receive"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin']} requiredErpModule="inventory">
                 <TransferReceipt />
               </ProtectedRoute>
             }
@@ -511,7 +517,7 @@ function App() {
           <Route
             path="/erp/income"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']} requiredErpModule="people">
                 <Income />
               </ProtectedRoute>
             }
@@ -519,7 +525,7 @@ function App() {
           <Route
             path="/erp/pnl"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']} requiredErpModule="people">
                 <Pnl />
               </ProtectedRoute>
             }
@@ -527,7 +533,7 @@ function App() {
           <Route
             path="/erp/profit-sharing"
             element={
-              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']}>
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance']} requiredErpModule="people">
                 <ProfitSharing />
               </ProtectedRoute>
             }
@@ -575,6 +581,14 @@ function App() {
             }
           />
           <Route
+            path="/erp/org-chart"
+            element={
+              <ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="people">
+                <OrgChart />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/erp/payroll"
             element={
               <ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="payroll">
@@ -614,6 +628,7 @@ function App() {
 
           {/* Phase 21 — Government Rates, Period Locks, Recurring Journals, BIR Calculator */}
           <Route path="/erp/government-rates" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><GovernmentRates /></ProtectedRoute>} />
+          <Route path="/erp/payment-modes" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><PaymentModes /></ProtectedRoute>} />
           <Route path="/erp/period-locks" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><PeriodLocks /></ProtectedRoute>} />
           <Route path="/erp/recurring-journals" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><RecurringJournals /></ProtectedRoute>} />
           <Route path="/erp/bir-calculator" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><BirCalculator /></ProtectedRoute>} />
@@ -652,6 +667,10 @@ function App() {
           <Route path="/erp/petty-cash" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><PettyCash /></ProtectedRoute>} />
           <Route path="/erp/office-supplies" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']} requiredErpModule="accounting"><OfficeSupplies /></ProtectedRoute>} />
           <Route path="/erp/collaterals" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="inventory"><Collaterals /></ProtectedRoute>} />
+
+          {/* Phase 24 — ERP Control Center + Agent Intelligence */}
+          <Route path="/erp/control-center" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><ControlCenter /></ProtectedRoute>} />
+          <Route path="/erp/agent-dashboard" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><AgentDashboard /></ProtectedRoute>} />
 
           <Route path="/employee/*" element={<EmployeeRedirect />} />
           <Route path="/employee" element={<EmployeeRedirect />} />

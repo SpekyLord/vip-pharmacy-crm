@@ -373,7 +373,8 @@ function parseOR(ocrResult) {
   }
 
   // --- Auto-compute VAT if not readable ---
-  // Philippine VAT: 12% of VAT-exclusive amount, or 12/112 of VAT-inclusive total
+  // Philippine VAT default 12% — OCR parser uses hardcoded rate for preview only;
+  // authoritative VAT is computed in model pre-save hooks using Settings.VAT_RATE
   let vatComputed = false;
   if (vatAmount == null && amount != null) {
     // If we have VATable sales, compute VAT from that

@@ -13,12 +13,12 @@ const periodLockCheck = require('../middleware/periodLockCheck');
 const ac = require('../controllers/accountingController');
 
 // ═══ Journal Entries ═══
-router.post('/journals/batch-post', erpSubAccessCheck('accounting', 'journal_entry'), ac.batchPostJournals);
+router.post('/journals/batch-post', erpSubAccessCheck('accounting', 'journal_entry'), periodLockCheck('JOURNAL'), ac.batchPostJournals);
 router.post('/journals', erpSubAccessCheck('accounting', 'journal_entry'), periodLockCheck('JOURNAL'), ac.createManualJournal);
 router.get('/journals', ac.listJournals);
 router.get('/journals/:id', ac.getJournalById);
-router.post('/journals/:id/post', erpSubAccessCheck('accounting', 'journal_entry'), ac.postJournalEndpoint);
-router.post('/journals/:id/reverse', erpSubAccessCheck('accounting', 'journal_entry'), ac.reverseJournalEndpoint);
+router.post('/journals/:id/post', erpSubAccessCheck('accounting', 'journal_entry'), periodLockCheck('JOURNAL'), ac.postJournalEndpoint);
+router.post('/journals/:id/reverse', erpSubAccessCheck('accounting', 'journal_entry'), periodLockCheck('JOURNAL'), ac.reverseJournalEndpoint);
 
 // ═══ General Ledger ═══
 router.get('/general-ledger/:accountCode', ac.getGeneralLedgerEndpoint);

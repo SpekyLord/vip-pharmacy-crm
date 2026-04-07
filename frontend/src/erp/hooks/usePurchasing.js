@@ -37,7 +37,7 @@ export default function usePurchasing() {
   const getPaymentHistory = (params) => api.get('/purchasing/ap/payments', { params });
 
   // ═══ Products (for PO line items) ═══
-  const searchProducts = (q) => api.get('/products/search', { params: { q } });
+  const searchProducts = (q) => api.get('/products', { params: { q } });
 
   // ═══ Bank Accounts & Credit Cards (for payments) ═══
   const listBankAccounts = () => api.get('/lookups/bank-accounts');

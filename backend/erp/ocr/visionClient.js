@@ -82,10 +82,15 @@ function buildOcrResult(response, featureUsed) {
     response.textAnnotations?.[0]?.description ||
     '';
 
+  const pages = response.fullTextAnnotation?.pages || [];
+
   return {
     featureUsed,
     fullText,
     words: extractWords(response.fullTextAnnotation),
+    pageDimensions: pages.length > 0
+      ? { width: pages[0].width || 0, height: pages[0].height || 0 }
+      : null,
     textAnnotations: response.textAnnotations || [],
     fullTextAnnotation: response.fullTextAnnotation || null,
     raw: response,

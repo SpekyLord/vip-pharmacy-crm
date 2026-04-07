@@ -26,7 +26,7 @@ async function getOpenCsis(entityId, bdmId, hospitalId, customerId) {
         from: 'erp_collections',
         let: { slId: '$_id' },
         pipeline: [
-          { $match: { status: 'POSTED' } },
+          { $match: { status: 'POSTED', deletion_event_id: { $exists: false } } },
           { $unwind: '$settled_csis' },
           { $match: { $expr: { $eq: ['$settled_csis.sales_line_id', '$$slId'] } } },
           { $group: { _id: null, total_collected: { $sum: '$settled_csis.invoice_amount' } } }
@@ -128,7 +128,7 @@ async function getArAging(entityId, bdmId, hospitalId) {
  */
 async function getCollectionRate(entityId, bdmId, dateFrom, dateTo) {
   const salesMatch = { status: 'POSTED', deletion_event_id: { $exists: false } };
-  const collMatch = { status: 'POSTED' };
+  const collMatch = { status: 'POSTED', deletion_event_id: { $exists: false } };
 
   if (entityId) {
     salesMatch.entity_id = new mongoose.Types.ObjectId(entityId);

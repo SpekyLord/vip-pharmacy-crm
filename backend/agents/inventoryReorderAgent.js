@@ -40,7 +40,7 @@ async function run() {
         { $match: { current_stock: { $lte: REORDER_LEVEL } } },
         {
           $lookup: {
-            from: 'erp_product_masters',
+            from: 'erp_product_master',
             localField: '_id.product_id',
             foreignField: '_id',
             as: 'product'
@@ -61,7 +61,7 @@ async function run() {
       ]);
 
       for (const item of stockLevels) {
-        const productName = item.product?.brand_name || item.product?.generic_name || String(item._id.product_id);
+        const productName = item.product ? `${item.product.brand_name} ${item.product.dosage_strength || ''}`.trim() : String(item._id.product_id);
         const warehouseName = item.warehouse?.name || String(item._id.warehouse_id || 'Unknown');
         const stock = item.current_stock;
 
@@ -115,7 +115,7 @@ async function run() {
         { $match: { conversion_ratio: { $lt: 0.5 } } },
         {
           $lookup: {
-            from: 'erp_product_masters',
+            from: 'erp_product_master',
             localField: 'product_id',
             foreignField: '_id',
             as: 'product'
@@ -127,7 +127,7 @@ async function run() {
       ]);
 
       for (const c of slowConsignments) {
-        const productName = c.product?.brand_name || c.product?.generic_name || String(c.product_id);
+        const productName = c.product ? `${c.product.brand_name} ${c.product.dosage_strength || ''}`.trim() : String(c.product_id);
         const daysOpen = Math.floor((Date.now() - new Date(c.created_at).getTime()) / (1000 * 60 * 60 * 24));
         const pct = ((c.qty_consumed / c.qty_delivered) * 100).toFixed(0);
 

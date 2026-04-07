@@ -59,6 +59,7 @@ jobs:
       - name: Frontend changed-file risk lint gate
         run: node scripts/lintChangedRisk.js
 
+
       - name: Frontend production build
         working-directory: frontend
         env:
@@ -82,4 +83,5 @@ jobs:
         if: always()
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high || true
+
 

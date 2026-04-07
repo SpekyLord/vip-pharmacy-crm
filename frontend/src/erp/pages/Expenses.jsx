@@ -7,9 +7,14 @@ import usePeople from '../hooks/usePeople';
 import useAccounting from '../hooks/useAccounting';
 import CostCenterPicker from '../components/CostCenterPicker';
 import useErpSubAccess from '../hooks/useErpSubAccess';
+import useErpApi from '../hooks/useErpApi';
+import { useAuth } from '../../hooks/useAuth';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
 function ScanORModal({ open, onClose, onApply }) {
@@ -20,7 +25,7 @@ function ScanORModal({ open, onClose, onApply }) {
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
 
-  const reset = () => { setStep('capture'); setPreview(null); setOcrData(null); setErrorMsg(''); };
+  const reset = () => { if (preview) URL.revokeObjectURL(preview); setStep('capture'); setPreview(null); setOcrData(null); setErrorMsg(''); };
   const handleClose = () => { reset(); onClose(); };
 
   const handleFile = async (file) => {
@@ -122,17 +127,7 @@ function ScanORModal({ open, onClose, onApply }) {
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
-const EXPENSE_TYPES = ['ORE', 'ACCESS'];
-const PAYMENT_MODES = ['CASH', 'GCASH', 'CARD', 'BANK_TRANSFER', 'CHECK', 'ONLINE', 'OTHER'];
-const EXPENSE_CATEGORIES = [
-  'Transportation', 'Travel/Accommodation', 'Fuel & Gas', 'Parking/Toll',
-  'Courier/Shipping', 'ACCESS/Meals', 'Office Supplies',
-  'Utilities/Communication', 'Rent', 'Marketing — HCP/Doctor', 'Marketing — Hospital', 'Marketing — Retail',
-  'Vehicle Maintenance', 'Repairs/Maintenance', 'Professional Fees',
-  'Regulatory/Licensing', 'IT/Software', 'Miscellaneous'
-];
-
-const BIR_FLAGS = ['BOTH', 'INTERNAL', 'BIR'];
+const EXPENSE_TYPES_FALLBACK = ['ORE', 'ACCESS'];
 // Static fallback — overridden at runtime by COA API when available
 const COA_OPTIONS_FALLBACK = [
   // COGS
@@ -361,7 +356,7 @@ const pageStyles = `
 
 @media (max-width: 768px) {
   .erp-expenses-page .admin-main {
-    padding: 96px 16px 88px;
+    padding: 76px 16px 96px;
   }
 
   .erp-expenses-controls {
@@ -405,11 +400,21 @@ const pageStyles = `
 `;
 
 export default function Expenses() {
+  const { user } = useAuth();
   const { getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense, validateExpenses, submitExpenses, reopenExpenses, getExpenseSummary, batchUploadExpenses, saveBatchExpenses, loading } = useExpenses();
   const { getPeopleList } = usePeople();
   const { getMyCards, getMyBankAccounts, listAccounts } = useAccounting();
   const { hasSubPermission } = useErpSubAccess();
-  const canBatchUpload = hasSubPermission('expenses', 'batch_upload');
+  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const canBatchUpload = hasSubPermission('expenses', 'batch_upload') && isAdmin;
+  const lookupApi = useErpApi();
+  const { options: expCatOpts } = useLookupOptions('EXPENSE_CATEGORY');
+  const EXPENSE_CATEGORIES = expCatOpts.map(o => o.label);
+  const { options: birFlagOpts } = useLookupOptions('BIR_FLAG');
+  const { options: expTypeOpts } = useLookupOptions('EXPENSE_TYPE');
+  const EXPENSE_TYPES = expTypeOpts.length > 0 ? expTypeOpts.map(o => o.code) : EXPENSE_TYPES_FALLBACK;
+  const BIR_FLAGS = birFlagOpts.map(o => o.code);
+  const [paymentModes, setPaymentModes] = useState([]);
 
   const [expenses, setExpenses] = useState([]);
   const [editingExpense, setEditingExpense] = useState(null);
@@ -446,6 +451,10 @@ export default function Expenses() {
   const batchFileRef = useRef(null);
 
   // Load people, cards, bank accounts, COA for batch dropdowns
+  useEffect(() => {
+    lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!canBatchUpload) return;
     getPeopleList({ limit: 0 }).then(res => setPeople(res?.data || [])).catch(err => console.error('[Expenses] People load failed:', err.message));
@@ -486,8 +495,9 @@ export default function Expenses() {
     if (batchFundingCardId) formData.append('funding_card_id', batchFundingCardId);
     if (batchFundingAccountId) formData.append('funding_account_id', batchFundingAccountId);
     if (batchCostCenter) formData.append('cost_center_id', batchCostCenter);
-    const paymentMode = batchFundingType === 'CARD' ? 'CARD' : batchFundingType === 'BANK' ? 'BANK_TRANSFER' : 'CASH';
-    formData.append('payment_mode', paymentMode);
+    const modeType = batchFundingType === 'CARD' ? 'CARD' : batchFundingType === 'BANK' ? 'BANK_TRANSFER' : 'CASH';
+    const matchedMode = paymentModes.find(pm => pm.mode_type === modeType && pm.is_active !== false);
+    formData.append('payment_mode', matchedMode?.mode_code || modeType);
 
     try {
       setBatchProgress(`Processing ${batchFiles.length} images via OCR...`);
@@ -581,9 +591,11 @@ export default function Expenses() {
     setLines(prev => {
       const updated = [...prev];
       updated[idx] = { ...updated[idx], [field]: value };
-      // Auto-set CALF required for ACCESS non-cash
+      // Auto-set CALF required for ACCESS non-cash (company-funded)
       if (field === 'expense_type' || field === 'payment_mode') {
-        updated[idx].calf_required = updated[idx].expense_type === 'ACCESS' && updated[idx].payment_mode !== 'CASH';
+        const pm = paymentModes.find(p => p.mode_code === updated[idx].payment_mode);
+        const needsCalf = pm ? pm.requires_calf : updated[idx].payment_mode !== 'CASH';
+        updated[idx].calf_required = updated[idx].expense_type === 'ACCESS' && needsCalf;
       }
       return updated;
     });
@@ -600,7 +612,7 @@ export default function Expenses() {
       setEditingExpense(data);
       setLines(data.lines || []);
       setShowForm(true);
-    } catch (err) { console.error('[Expenses] Edit failed:', err.message); alert(err.response?.data?.message || 'Failed to load expense'); }
+    } catch (err) { console.error('[Expenses] Edit failed:', err.message); showError(err, 'Could not load expense'); }
   };
 
   const savingRef = useRef(false);
@@ -614,7 +626,7 @@ export default function Expenses() {
       if (!l.expense_date) issues.push(`Line ${i + 1}: Date is required`);
     });
     if (!lines.length) issues.push('Add at least one expense line');
-    if (issues.length) { alert(issues.join('\n')); return; }
+    if (issues.length) { showError(null, issues.join('. ')); return; }
 
     savingRef.current = true;
     const data = { period, cycle, lines };
@@ -623,7 +635,7 @@ export default function Expenses() {
       else { await createExpense(data); }
       setShowForm(false);
       loadExpenses();
-    } catch (err) { console.error('[Expenses] Save failed:', err.message); alert(err.response?.data?.message || 'Failed to save expense'); }
+    } catch (err) { console.error('[Expenses] Save failed:', err.message); showError(err, 'Could not save expense'); }
     finally { savingRef.current = false; }
   };
 
@@ -645,6 +657,7 @@ export default function Expenses() {
       <div className="admin-layout">
         <Sidebar />
         <main className="admin-main">
+          <WorkflowGuide pageKey="expenses" />
           <div className="erp-expenses-header">
             <h1 style={{ marginBottom: 0, color: 'var(--erp-text, #132238)' }}>Expenses</h1>
           </div>
@@ -910,7 +923,7 @@ export default function Expenses() {
                         {e.status === 'DRAFT' && (
                           <button onClick={() => handleDelete(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                         )}
-                        {e.status === 'POSTED' && <button onClick={() => handleReopen(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
+                        {e.status === 'POSTED' && isAdmin && <button onClick={() => handleReopen(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
                       </td>
                     </tr>
                     {e.status === 'ERROR' && e.validation_errors?.length > 0 && (
@@ -973,7 +986,7 @@ export default function Expenses() {
                     {e.status === 'DRAFT' && (
                       <button onClick={() => handleDelete(e._id)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                     )}
-                    {e.status === 'POSTED' && (
+                    {e.status === 'POSTED' && isAdmin && (
                       <button onClick={() => handleReopen(e._id)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>
                     )}
                   </div>
@@ -1026,14 +1039,15 @@ export default function Expenses() {
                           const result = await processDocument(file, 'OR');
                           updateLine(idx, 'or_photo_url', result.s3_url || URL.createObjectURL(file));
                           if (result.attachment_id) updateLine(idx, 'or_attachment_id', result.attachment_id);
-                        } catch {
+                        } catch (err) {
+                          console.error('[Expenses] OR photo upload failed, using local preview:', err.message);
                           updateLine(idx, 'or_photo_url', URL.createObjectURL(file));
                         }
                       }} />
                     </label>
                     {line.or_photo_url && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600 }}>OR Photo ✓</span>}
                     <SelectField value={line.payment_mode} onChange={e => updateLine(idx, 'payment_mode', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
-                      {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                      {paymentModes.filter(pm => pm.is_active !== false).map(pm => <option key={pm.mode_code} value={pm.mode_code}>{pm.mode_label}{pm.coa_code ? ` (${pm.coa_code})` : ''}</option>)}
                     </SelectField>
                     {line.calf_required && (
                       line.calf_id

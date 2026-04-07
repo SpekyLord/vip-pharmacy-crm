@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .oe-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -42,7 +43,7 @@ export default function OwnerEquity() {
 
   const loadEntries = useCallback(async () => {
     setLoading(true);
-    try { const res = await api.getEquityLedger(); setEntries(res?.data || []); } catch { /* */ }
+    try { const res = await api.getEquityLedger(); setEntries(res?.data || []); } catch (err) { showError(err, 'Could not load equity ledger'); }
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -56,7 +57,7 @@ export default function OwnerEquity() {
       setShowModal(false);
       setForm({ amount: '', description: '', entry_date: new Date().toISOString().slice(0, 10), bank_coa_code: '1010', bank_name: 'RCBC Savings' });
       loadEntries();
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not record equity entry'); }
   };
 
   const currentBalance = entries.length > 0 ? entries[entries.length - 1].running_balance : 0;

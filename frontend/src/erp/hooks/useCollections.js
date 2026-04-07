@@ -10,7 +10,7 @@ export default function useCollections() {
   const updateCollection = (id, data) => api.put(`/collections/${id}`, data);
   const deleteDraft = (id) => api.del(`/collections/draft/${id}`);
   const validateCollections = (ids) => api.post('/collections/validate', { collection_ids: ids });
-  const submitCollections = () => api.post('/collections/submit', {});
+  const submitCollections = (collectionIds) => api.post('/collections/submit', collectionIds ? { collection_ids: collectionIds } : {});
   const reopenCollections = (ids) => api.post('/collections/reopen', { collection_ids: ids });
   const getArAging = (params) => api.get('/collections/ar-aging', { params });
   const getCollectionRate = (params) => api.get('/collections/collection-rate', { params });

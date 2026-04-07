@@ -3,6 +3,8 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
+import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .mec-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -66,7 +68,7 @@ export default function MonthEndClose() {
     try {
       const res = await api.getCloseProgress(period);
       setProgress(res?.data || null);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load close progress'); }
   }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadProgress(); }, [loadProgress]);
@@ -84,23 +86,23 @@ export default function MonthEndClose() {
     try {
       await api.runAutoClose({ period });
       await loadProgress();
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Auto-close failed'); }
     setRunning(false);
   };
 
   const handleStaging = async () => {
     setRunning(true);
-    try { await api.runStaging({ period }); await loadProgress(); } catch { /* */ }
+    try { await api.runStaging({ period }); await loadProgress(); } catch (err) { showError(err, 'Staging failed'); }
     setRunning(false);
   };
 
   const handlePostStaged = async () => {
-    try { await api.postStagedItems({ period }); await loadProgress(); } catch { /* */ }
+    try { await api.postStagedItems({ period }); await loadProgress(); } catch (err) { showError(err, 'Post staged items failed'); }
   };
 
   const handleFinalize = async () => {
     if (!confirm(`Lock period ${period}? This cannot be undone.`)) return;
-    try { await api.finalizeClose({ period }); await loadProgress(); } catch { /* */ }
+    try { await api.finalizeClose({ period }); await loadProgress(); } catch (err) { showError(err, 'Finalize close failed'); }
   };
 
   const steps = progress?.steps || [];
@@ -122,6 +124,7 @@ export default function MonthEndClose() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="mec-main admin-main">
+          <WorkflowGuide pageKey="month-end-close" />
           <div className="mec-header"><h2>Month-End Close</h2></div>
           <div className="mec-controls">
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />

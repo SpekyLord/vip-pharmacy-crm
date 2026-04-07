@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useErpApi from '../hooks/useErpApi';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .plk-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -49,7 +50,7 @@ const MODULE_LABELS = {
   BANKING: 'Banking', PETTY_CASH: 'Petty Cash', IC_TRANSFER: 'IC Transfers'
 };
 
-export default function PeriodLocks() {
+export function PeriodLocksContent() {
   const { user } = useAuth();
   const api = useErpApi();
   const canToggle = ['admin', 'finance', 'president'].includes(user?.role);
@@ -65,7 +66,7 @@ export default function PeriodLocks() {
     try {
       const res = await api.get('/period-locks', { params: { year } });
       setMatrix(res?.data?.matrix || {});
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Period locks operation failed'); }
     setLoading(false);
   }, [year]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -78,7 +79,7 @@ export default function PeriodLocks() {
       await api.post('/period-locks/toggle', { module: confirm.module, year, month: confirm.month });
       setConfirm(null);
       loadLocks();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Period locks operation failed'); }
     setToggling(false);
   };
 
@@ -88,7 +89,7 @@ export default function PeriodLocks() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = `period-locks-${year}.xlsx`; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Period locks operation failed'); }
   };
 
   const years = [];
@@ -96,84 +97,92 @@ export default function PeriodLocks() {
   for (let y = thisYear - 2; y <= thisYear + 1; y++) years.push(y);
 
   return (
-    <div className="plk-page">
+    <>
       <style>{pageStyles}</style>
+      <div className="plk-header">
+        <h2>Period Locks</h2>
+        <div className="plk-controls">
+          <select className="plk-year-select" value={year} onChange={e => setYear(parseInt(e.target.value))}>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
+        </div>
+      </div>
+
+      <div className="plk-panel">
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>Loading...</div>
+        ) : (
+          <table className="plk-table">
+            <thead>
+              <tr>
+                <th>Module</th>
+                {MONTHS.map(m => <th key={m}>{m}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {Object.keys(MODULE_LABELS).map(mod => (
+                <tr key={mod}>
+                  <td>{MODULE_LABELS[mod]}</td>
+                  {MONTHS.map((_, i) => {
+                    const isLocked = matrix[mod]?.[i + 1] || false;
+                    return (
+                      <td key={i}>
+                        <span
+                          className={`lock-cell ${isLocked ? 'locked' : 'unlocked'}`}
+                          onClick={() => canToggle && setConfirm({ module: mod, month: i + 1 })}
+                          title={canToggle ? `Click to ${isLocked ? 'unlock' : 'lock'}` : (isLocked ? 'Locked' : 'Unlocked')}
+                          style={{ cursor: canToggle ? 'pointer' : 'default' }}
+                        >
+                          <span className="lock-icon">{isLocked ? '🔒' : '🔓'}</span>
+                        </span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="plk-legend">
+        <span><span className="lock-icon">🔒</span> Locked — no posting allowed</span>
+        <span><span className="lock-icon">🔓</span> Unlocked — posting allowed</span>
+      </div>
+
+      {/* Confirm Dialog */}
+      {confirm && (
+        <div className="plk-confirm" onClick={() => setConfirm(null)}>
+          <div className="plk-confirm-body" onClick={e => e.stopPropagation()}>
+            <h3>{matrix[confirm.module]?.[confirm.month] ? 'Unlock' : 'Lock'} Period?</h3>
+            <p>
+              {matrix[confirm.module]?.[confirm.month] ? 'Unlock' : 'Lock'}{' '}
+              <strong>{MODULE_LABELS[confirm.module]}</strong> for{' '}
+              <strong>{MONTHS[confirm.month - 1]} {year}</strong>?
+              {!matrix[confirm.module]?.[confirm.month] && <><br />This will prevent any posting to this module for the selected month.</>}
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+              <button className="btn btn-outline" onClick={() => setConfirm(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleToggle} disabled={toggling}>
+                {toggling ? 'Processing...' : (matrix[confirm.module]?.[confirm.month] ? 'Unlock' : 'Lock')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function PeriodLocks() {
+  return (
+    <div className="plk-page">
       <Navbar />
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="plk-main admin-main">
-          <div className="plk-header">
-            <h2>Period Locks</h2>
-            <div className="plk-controls">
-              <select className="plk-year-select" value={year} onChange={e => setYear(parseInt(e.target.value))}>
-                {years.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-              <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
-            </div>
-          </div>
-
-          <div className="plk-panel">
-            {loading ? (
-              <div style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>Loading...</div>
-            ) : (
-              <table className="plk-table">
-                <thead>
-                  <tr>
-                    <th>Module</th>
-                    {MONTHS.map(m => <th key={m}>{m}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.keys(MODULE_LABELS).map(mod => (
-                    <tr key={mod}>
-                      <td>{MODULE_LABELS[mod]}</td>
-                      {MONTHS.map((_, i) => {
-                        const isLocked = matrix[mod]?.[i + 1] || false;
-                        return (
-                          <td key={i}>
-                            <span
-                              className={`lock-cell ${isLocked ? 'locked' : 'unlocked'}`}
-                              onClick={() => canToggle && setConfirm({ module: mod, month: i + 1 })}
-                              title={canToggle ? `Click to ${isLocked ? 'unlock' : 'lock'}` : (isLocked ? 'Locked' : 'Unlocked')}
-                              style={{ cursor: canToggle ? 'pointer' : 'default' }}
-                            >
-                              <span className="lock-icon">{isLocked ? '🔒' : '🔓'}</span>
-                            </span>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <div className="plk-legend">
-            <span><span className="lock-icon">🔒</span> Locked — no posting allowed</span>
-            <span><span className="lock-icon">🔓</span> Unlocked — posting allowed</span>
-          </div>
-
-          {/* Confirm Dialog */}
-          {confirm && (
-            <div className="plk-confirm" onClick={() => setConfirm(null)}>
-              <div className="plk-confirm-body" onClick={e => e.stopPropagation()}>
-                <h3>{matrix[confirm.module]?.[confirm.month] ? 'Unlock' : 'Lock'} Period?</h3>
-                <p>
-                  {matrix[confirm.module]?.[confirm.month] ? 'Unlock' : 'Lock'}{' '}
-                  <strong>{MODULE_LABELS[confirm.module]}</strong> for{' '}
-                  <strong>{MONTHS[confirm.month - 1]} {year}</strong>?
-                  {!matrix[confirm.module]?.[confirm.month] && <><br />This will prevent any posting to this module for the selected month.</>}
-                </p>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                  <button className="btn btn-outline" onClick={() => setConfirm(null)}>Cancel</button>
-                  <button className="btn btn-primary" onClick={handleToggle} disabled={toggling}>
-                    {toggling ? 'Processing...' : (matrix[confirm.module]?.[confirm.month] ? 'Unlock' : 'Lock')}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <PeriodLocksContent />
         </main>
       </div>
     </div>

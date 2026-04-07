@@ -24,8 +24,9 @@ const { createAndPostJournal } = require('../services/journalEngine');
  * Admin/Finance: pass ?bdm_id=X to view any BDM's stock.
  */
 const getMyStock = catchAsync(async (req, res) => {
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.bdm_id
-    ? req.query.bdm_id
+  // President/admin/finance: use query.bdm_id if provided, else null (entity-wide)
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
+    ? (req.query.bdm_id || null)
     : req.bdmId;
 
   // Allow privileged users to query a different entity's stock (for IC transfers)
@@ -37,7 +38,7 @@ const getMyStock = catchAsync(async (req, res) => {
   const warehouseId = req.query.warehouse_id;
   const opts = warehouseId ? { warehouseId } : undefined;
 
-  if (!bdmId && !warehouseId) {
+  if (!bdmId && !warehouseId && !(req.isAdmin || req.isFinance || req.isPresident)) {
     return res.status(400).json({ success: false, message: 'BDM ID or Warehouse ID required' });
   }
 
@@ -388,7 +389,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
       const product = await ProductMaster.findById(adj.product_id).select('purchase_price brand_name').lean();
       const unitCost = product?.purchase_price || 0;
       const amount = Math.round(Math.abs(adj.variance) * unitCost * 100) / 100;
-      const jeData = journalFromInventoryAdjustment({
+      const jeData = await journalFromInventoryAdjustment({
         variance: adj.variance,
         product_name: product?.brand_name || '',
         batch_lot_no: adj.batch_lot_no,
@@ -470,7 +471,8 @@ const approveGrn = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Action must be APPROVED or REJECTED' });
   }
 
-  const grn = await GrnEntry.findOne({ _id: req.params.id, status: 'PENDING' });
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const grn = await GrnEntry.findOne({ _id: req.params.id, status: 'PENDING', ...entityScope });
   if (!grn) {
     return res.status(404).json({ success: false, message: 'GRN not found or not in PENDING status' });
   }
@@ -497,6 +499,11 @@ const approveGrn = catchAsync(async (req, res) => {
 
     return res.json({ success: true, message: 'GRN rejected', data: grn });
   }
+
+  // Period lock check
+  const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+  const grnPeriod = dateToPeriod(grn.grn_date || new Date());
+  await checkPeriodOpen(grn.entity_id, grnPeriod);
 
   // APPROVED — atomic transaction
   const session = await mongoose.startSession();
@@ -593,8 +600,9 @@ const getGrnList = catchAsync(async (req, res) => {
  * Enriched with SAP-level reorder data (min qty, suggested order, lead time, order-by date).
  */
 const getAlerts = catchAsync(async (req, res) => {
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.bdm_id
-    ? req.query.bdm_id
+  // President/admin/finance: use query.bdm_id if provided, else null (entity-wide)
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
+    ? (req.query.bdm_id || null)
     : req.bdmId;
 
   // Phase 17: warehouse_id takes priority

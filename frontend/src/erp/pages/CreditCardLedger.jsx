@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useBanking from '../hooks/useBanking';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 
@@ -73,7 +74,7 @@ export default function CreditCardLedger() {
     try {
       const res = await api.getCardBalances();
       setCards(res?.data || []);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load credit card balances'); }
     setLoading(false);
   }, []);
 
@@ -85,7 +86,7 @@ export default function CreditCardLedger() {
       try {
         const res = await api.listBankAccounts({ is_active: true });
         setBankAccounts(res?.data || []);
-      } catch { /* */ }
+      } catch (err) { console.error('[CreditCardLedger] load bank accounts:', err.message); }
     })();
   }, []);
 
@@ -95,7 +96,7 @@ export default function CreditCardLedger() {
     try {
       const res = await api.getCardLedger(selectedCard._id, { period });
       setLedger(res?.data || []);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load card ledger'); }
   }, [selectedCard, period]);
 
   useEffect(() => { loadLedger(); }, [loadLedger]);

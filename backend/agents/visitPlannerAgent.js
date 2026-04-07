@@ -11,6 +11,7 @@
  */
 const { askClaude } = require('./claudeClient');
 const { notify } = require('./notificationService');
+const AgentRun = require('../erp/models/AgentRun');
 
 async function run() {
   console.log('[VisitPlanner] Running...');
@@ -18,7 +19,6 @@ async function run() {
     const User = require('../models/User');
     const Doctor = require('../models/Doctor');
     const Visit = require('../models/Visit');
-    const Region = require('../models/Region');
 
     const bdms = await User.find({ role: 'employee', isActive: true }).select('_id name regions').lean();
     if (!bdms.length) { console.log('[VisitPlanner] No active BDMs.'); return; }
@@ -35,19 +35,12 @@ async function run() {
     const monthStart = new Date(nextMon.getFullYear(), nextMon.getMonth(), 1);
 
     for (const bdm of bdms) {
-      // Get BDM's assigned VIP Clients
-      let regionIds = bdm.regions || [];
-      if (regionIds.length) {
-        const allRegionIds = [];
-        for (const rId of regionIds) {
-          const descendants = await Region.getDescendantIds(rId);
-          allRegionIds.push(rId, ...descendants);
-        }
-        regionIds = allRegionIds;
-      }
-
+      // Get BDM's assigned VIP Clients (via assignedEmployee field)
       const doctors = await Doctor.find({
-        ...(regionIds.length ? { region: { $in: regionIds } } : {}),
+        $or: [
+          { assignedEmployee: bdm._id },
+          ...(bdm.regions?.length ? [{ region: { $in: bdm.regions } }] : [])
+        ],
         isActive: true
       }).select('firstName lastName visitFrequency region clinicAddress').lean();
 
@@ -107,7 +100,7 @@ Output a simple Mon-Fri schedule. Be practical and concise.`,
         recipient_id: bdm._id,
         title: `Visit Plan — Week of ${nextMon.toLocaleDateString('en-PH')}`,
         body: text,
-        category: 'schedule',
+        category: 'ai_schedule',
         priority: 'normal',
         channels: ['in_app'],
         agent: 'visit_planner'
@@ -116,9 +109,23 @@ Output a simple Mon-Fri schedule. Be practical and concise.`,
       console.log(`[VisitPlanner] ${bdm.name}: ${clientStatus.length} clients need visits next week`);
     }
 
+    // Log agent run
+    await AgentRun.create({
+      agent_key: 'visit_planner',
+      agent_label: 'Smart Visit Planner',
+      status: 'success',
+      summary: {
+        bdms_processed: bdms.length,
+        alerts_generated: 0,
+        messages_sent: bdms.length,
+        key_findings: [`${bdms.length} BDMs received visit plans for week of ${nextMon.toLocaleDateString('en-PH')}`]
+      }
+    });
+
     console.log('[VisitPlanner] Done.');
   } catch (err) {
     console.error('[VisitPlanner] Error:', err.message);
+    try { await AgentRun.create({ agent_key: 'visit_planner', agent_label: 'Smart Visit Planner', status: 'error', error_msg: err.message }); } catch {}
   }
 }
 

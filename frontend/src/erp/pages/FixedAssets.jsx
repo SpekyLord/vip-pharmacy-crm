@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .fa-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -37,7 +38,7 @@ const pageStyles = `
 const fmt = (n) => `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 const getCurrentPeriod = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 
-export default function FixedAssets() {
+export function FixedAssetsContent() {
   const { user } = useAuth();
   const api = useAccounting();
   const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
@@ -56,18 +57,18 @@ export default function FixedAssets() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'fixed-assets-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Export failed'); }
   };
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try { const res = await api.importFixedAssets(fd); alert(res?.message || 'Import complete'); loadAssets(); } catch { /* */ }
+    try { const res = await api.importFixedAssets(fd); showSuccess(res?.message || 'Import complete'); loadAssets(); } catch (err) { showError(err, 'Import failed'); }
     e.target.value = '';
   };
 
   const loadAssets = useCallback(async () => {
     setLoading(true);
-    try { const res = await api.listFixedAssets(); setAssets(res?.data || []); } catch { /* */ }
+    try { const res = await api.listFixedAssets(); setAssets(res?.data || []); } catch (err) { showError(err, 'Could not load fixed assets'); }
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -78,101 +79,109 @@ export default function FixedAssets() {
       await api.createFixedAsset({ ...form, acquisition_cost: parseFloat(form.acquisition_cost), useful_life_months: parseInt(form.useful_life_months), salvage_value: parseFloat(form.salvage_value) || 0 });
       setShowAdd(false);
       loadAssets();
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not create fixed asset'); }
   };
 
   const handleCompute = async () => {
-    try { const res = await api.computeDepreciation({ period }); setMsg(`Computed: ${JSON.stringify(res?.data?.length || 0)} entries`); loadStaging(); } catch { /* */ }
+    try { const res = await api.computeDepreciation({ period }); setMsg(`Computed: ${JSON.stringify(res?.data?.length || 0)} entries`); loadStaging(); } catch (err) { showError(err, 'Depreciation computation failed'); }
   };
 
   const loadStaging = async () => {
-    try { const res = await api.getDepreciationStaging(period); setStaging(res?.data || []); } catch { /* */ }
+    try { const res = await api.getDepreciationStaging(period); setStaging(res?.data || []); } catch (err) { showError(err, 'Could not load depreciation staging'); }
   };
 
   const handleApproveAll = async () => {
     const ids = staging.map(s => s.entry_id);
-    try { await api.approveDepreciation({ entry_ids: ids }); setMsg('Approved'); loadStaging(); } catch { /* */ }
+    try { await api.approveDepreciation({ entry_ids: ids }); setMsg('Approved'); loadStaging(); } catch (err) { showError(err, 'Approval failed'); }
   };
 
   const handlePost = async () => {
-    try { const res = await api.postDepreciation({ period }); setMsg(`Posted ${res?.data?.length || 0} JEs`); loadStaging(); loadAssets(); } catch { /* */ }
+    try { const res = await api.postDepreciation({ period }); setMsg(`Posted ${res?.data?.length || 0} JEs`); loadStaging(); loadAssets(); } catch (err) { showError(err, 'Post depreciation failed'); }
   };
 
   return (
-    <div className="fa-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div style={{ display: 'flex', flex: 1 }}>
-        <Sidebar />
-        <main className="fa-main admin-main">
-          <div className="fa-header">
-            <h2>Fixed Assets</h2>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)' }} onClick={handleExport}>Export Excel</button>
-              {isAdmin && <label className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>}
-              {isAdmin && <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Add Asset</button>}
-            </div>
-          </div>
+      <div className="fa-header">
+        <h2>Fixed Assets</h2>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)' }} onClick={handleExport}>Export Excel</button>
+          {isAdmin && <label className="btn" style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>}
+          {isAdmin && <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Add Asset</button>}
+        </div>
+      </div>
 
-          {loading ? <div className="fa-empty">Loading…</div> : assets.length === 0 ? <div className="fa-empty">No fixed assets</div> : (
-            <table className="fa-table">
-              <thead><tr><th>Code</th><th>Asset</th><th>Category</th><th>Cost</th><th>Accum. Depr.</th><th>NBV</th><th>Status</th></tr></thead>
+      {loading ? <div className="fa-empty">Loading…</div> : assets.length === 0 ? <div className="fa-empty">No fixed assets</div> : (
+        <table className="fa-table">
+          <thead><tr><th>Code</th><th>Asset</th><th>Category</th><th>Cost</th><th>Accum. Depr.</th><th>NBV</th><th>Status</th></tr></thead>
+          <tbody>
+            {assets.map(a => (
+              <tr key={a._id}>
+                <td style={{ fontWeight: 600 }}>{a.asset_code}</td><td>{a.asset_name}</td><td>{a.category || '—'}</td>
+                <td>{fmt(a.acquisition_cost)}</td><td>{fmt(a.accumulated_depreciation)}</td><td>{fmt(a.net_book_value)}</td>
+                <td><span className={`badge badge-${a.status}`}>{a.status}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {isAdmin && (
+        <div className="fa-staging">
+          <h3>Depreciation Staging</h3>
+          <div className="fa-controls">
+            <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />
+            <button className="btn btn-primary" onClick={handleCompute}>Compute</button>
+            <button className="btn" onClick={loadStaging}>Load Staging</button>
+            {staging.length > 0 && <>
+              <button className="btn btn-success" onClick={handleApproveAll}>Approve All</button>
+              <button className="btn btn-primary" onClick={handlePost}>Post JEs</button>
+            </>}
+          </div>
+          {msg && <div className="fa-msg">{msg}</div>}
+          {staging.length > 0 && (
+            <table className="fa-table" style={{ marginTop: 8 }}>
+              <thead><tr><th>Asset</th><th>Amount</th><th>Status</th></tr></thead>
               <tbody>
-                {assets.map(a => (
-                  <tr key={a._id}>
-                    <td style={{ fontWeight: 600 }}>{a.asset_code}</td><td>{a.asset_name}</td><td>{a.category || '—'}</td>
-                    <td>{fmt(a.acquisition_cost)}</td><td>{fmt(a.accumulated_depreciation)}</td><td>{fmt(a.net_book_value)}</td>
-                    <td><span className={`badge badge-${a.status}`}>{a.status}</span></td>
-                  </tr>
+                {staging.map(s => (
+                  <tr key={s.entry_id}><td>{s.asset_name}</td><td>{fmt(s.amount)}</td><td>{s.status}</td></tr>
                 ))}
               </tbody>
             </table>
           )}
+        </div>
+      )}
 
-          {isAdmin && (
-            <div className="fa-staging">
-              <h3>Depreciation Staging</h3>
-              <div className="fa-controls">
-                <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />
-                <button className="btn btn-primary" onClick={handleCompute}>Compute</button>
-                <button className="btn" onClick={loadStaging}>Load Staging</button>
-                {staging.length > 0 && <>
-                  <button className="btn btn-success" onClick={handleApproveAll}>Approve All</button>
-                  <button className="btn btn-primary" onClick={handlePost}>Post JEs</button>
-                </>}
-              </div>
-              {msg && <div className="fa-msg">{msg}</div>}
-              {staging.length > 0 && (
-                <table className="fa-table" style={{ marginTop: 8 }}>
-                  <thead><tr><th>Asset</th><th>Amount</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {staging.map(s => (
-                      <tr key={s.entry_id}><td>{s.asset_name}</td><td>{fmt(s.amount)}</td><td>{s.status}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+      {showAdd && (
+        <div className="fa-modal" onClick={() => setShowAdd(false)}>
+          <div className="fa-modal-body" onClick={e => e.stopPropagation()}>
+            <h3>Add Fixed Asset</h3>
+            {['asset_code', 'asset_name', 'category'].map(f => (
+              <div key={f} className="form-group"><label>{f.replace('_', ' ')}</label><input value={form[f]} onChange={e => setForm({ ...form, [f]: e.target.value })} /></div>
+            ))}
+            <div className="form-group"><label>Acquisition Date</label><input type="date" value={form.acquisition_date} onChange={e => setForm({ ...form, acquisition_date: e.target.value })} /></div>
+            <div className="form-group"><label>Acquisition Cost</label><input type="number" value={form.acquisition_cost} onChange={e => setForm({ ...form, acquisition_cost: e.target.value })} /></div>
+            <div className="form-group"><label>Useful Life (months)</label><input type="number" value={form.useful_life_months} onChange={e => setForm({ ...form, useful_life_months: e.target.value })} /></div>
+            <div className="form-group"><label>Salvage Value</label><input type="number" value={form.salvage_value} onChange={e => setForm({ ...form, salvage_value: e.target.value })} /></div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn" onClick={() => setShowAdd(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleCreate}>Create</button>
             </div>
-          )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
-          {showAdd && (
-            <div className="fa-modal" onClick={() => setShowAdd(false)}>
-              <div className="fa-modal-body" onClick={e => e.stopPropagation()}>
-                <h3>Add Fixed Asset</h3>
-                {['asset_code', 'asset_name', 'category'].map(f => (
-                  <div key={f} className="form-group"><label>{f.replace('_', ' ')}</label><input value={form[f]} onChange={e => setForm({ ...form, [f]: e.target.value })} /></div>
-                ))}
-                <div className="form-group"><label>Acquisition Date</label><input type="date" value={form.acquisition_date} onChange={e => setForm({ ...form, acquisition_date: e.target.value })} /></div>
-                <div className="form-group"><label>Acquisition Cost</label><input type="number" value={form.acquisition_cost} onChange={e => setForm({ ...form, acquisition_cost: e.target.value })} /></div>
-                <div className="form-group"><label>Useful Life (months)</label><input type="number" value={form.useful_life_months} onChange={e => setForm({ ...form, useful_life_months: e.target.value })} /></div>
-                <div className="form-group"><label>Salvage Value</label><input type="number" value={form.salvage_value} onChange={e => setForm({ ...form, salvage_value: e.target.value })} /></div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button className="btn" onClick={() => setShowAdd(false)}>Cancel</button>
-                  <button className="btn btn-primary" onClick={handleCreate}>Create</button>
-                </div>
-              </div>
-            </div>
-          )}
+export default function FixedAssets() {
+  return (
+    <div className="fa-page">
+      <Navbar />
+      <div style={{ display: 'flex', flex: 1 }}>
+        <Sidebar />
+        <main className="fa-main admin-main">
+          <FixedAssetsContent />
         </main>
       </div>
     </div>

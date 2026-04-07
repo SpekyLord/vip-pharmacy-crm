@@ -165,3 +165,4 @@ if (require.main === module) {
 }
 
 module.exports = seedCOA;
+module.exports.COA_TEMPLATE = COA_TEMPLATE;

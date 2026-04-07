@@ -8,12 +8,14 @@ import useSettings from '../hooks/useSettings';
 import api from '../../services/api';
 
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
 const DAYS_OF_WEEK = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-const ACTIVITY_TYPES = ['Office', 'Field', 'Other'];
 
 // ── Mobile-responsive SMER styles ──
 const smerMobileStyles = `
@@ -129,6 +131,8 @@ export default function Smer() {
   const { user } = useAuth();
   const { getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer, validateSmer, submitSmer, reopenSmer, getSmerCrmMdCounts, loading } = useExpenses();
   const { settings } = useSettings();
+  const { options: activityTypeOpts } = useLookupOptions('ACTIVITY_TYPE');
+  const ACTIVITY_TYPES = activityTypeOpts.map(o => o.code);
 
   const [smers, setSmers] = useState([]);
   const [editingSmer, setEditingSmer] = useState(null);
@@ -172,7 +176,7 @@ export default function Smer() {
     try {
       const res = await getSmerList({ period, cycle });
       setSmers(res?.data || []);
-    } catch (err) { console.error('[SMER]', err.message); alert(err.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { console.error('[SMER]', err.message); showError(err, 'Could not load SMER list'); }
   }, [period, cycle]);
 
   useEffect(() => { loadSmers(); }, [loadSmers]);
@@ -235,7 +239,7 @@ export default function Smer() {
       setTravelAdvance(data.travel_advance || 0);
       setPerdiemRate(data.perdiem_rate || 800);
       setShowForm(true);
-    } catch (err) { console.error('[SMER]', err.message); alert(err.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { console.error('[SMER]', err.message); showError(err, 'Could not load SMER'); }
   };
 
   const handleEntryChange = (index, field, value) => {
@@ -262,7 +266,7 @@ export default function Smer() {
     dailyEntries.forEach(e => {
       if (e.md_count > 0 && !e.activity_type) issues.push(`${e.day_of_week} ${e.entry_date?.split('T')[0] || ''}: Activity type required when MDs > 0`);
     });
-    if (issues.length) { alert(issues.join('\n')); return; }
+    if (issues.length) { showError(null, issues.join('. ')); return; }
 
     const data = {
       period, cycle,
@@ -319,10 +323,10 @@ export default function Smer() {
     }
   };
 
-  const handleValidate = async () => { try { await validateSmer(); loadSmers(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Validation failed'); } };
-  const handleSubmit = async () => { try { await submitSmer(); loadSmers(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Submit failed'); } };
-  const handleReopen = async (id) => { try { await reopenSmer([id]); loadSmers(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Reopen failed'); } };
-  const handleDelete = async (id) => { try { await deleteDraftSmer(id); loadSmers(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Delete failed'); } };
+  const handleValidate = async () => { try { await validateSmer(); loadSmers(); } catch (err) { showError(err, 'Could not validate SMER'); } };
+  const handleSubmit = async () => { try { await submitSmer(); loadSmers(); } catch (err) { showError(err, 'Could not submit SMER'); } };
+  const handleReopen = async (id) => { try { await reopenSmer([id]); loadSmers(); } catch (err) { showError(err, 'Could not reopen SMER'); } };
+  const handleDelete = async (id) => { try { await deleteDraftSmer(id); loadSmers(); } catch (err) { showError(err, 'Could not delete SMER'); } };
 
   const canOverride = ['admin', 'finance', 'president'].includes(user?.role);
 
@@ -459,6 +463,7 @@ export default function Smer() {
       <div className="admin-layout">
         <Sidebar />
         <main className="admin-main" style={{ padding: 24 }}>
+          <WorkflowGuide pageKey="smer" />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
             <h1 style={{ margin: 0, color: 'var(--erp-text, #132238)' }}>SMER — Per Diem</h1>
             <Link to="/erp/expenses" style={{ color: 'var(--erp-accent, #1e5eff)', fontSize: 14 }}>&larr; Back to Expenses</Link>

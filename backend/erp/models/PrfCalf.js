@@ -82,7 +82,7 @@ const prfCalfSchema = new mongoose.Schema({
   // Shared fields
   // ═══════════════════════════════════════════
   amount: { type: Number, required: true, min: 0 },            // PRF: rebate_amount, CALF: advance_amount
-  payment_mode: { type: String, enum: ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'CARD', 'OTHER'], default: 'CASH' },
+  payment_mode: { type: String, default: 'CASH' }, // Validated against PaymentMode lookup
   funding_account_id: { type: mongoose.Schema.Types.ObjectId, ref: 'BankAccount' },
   funding_card_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CreditCard' },
   petty_cash_fund_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PettyCashFund' },

@@ -5,8 +5,10 @@ import Sidebar from '../../components/common/Sidebar';
 import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
-
-import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
+import { useAuth } from '../../hooks/useAuth';
 
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
 function ScanModal({ open, onClose, onApply, docType, title }) {
@@ -17,7 +19,7 @@ function ScanModal({ open, onClose, onApply, docType, title }) {
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
 
-  const reset = () => { setStep('capture'); setPreview(null); setOcrData(null); setErrorMsg(''); };
+  const reset = () => { if (preview) URL.revokeObjectURL(preview); setStep('capture'); setPreview(null); setOcrData(null); setErrorMsg(''); };
   const handleClose = () => { reset(); onClose(); };
 
   const handleFile = async (file) => {
@@ -85,12 +87,50 @@ function ScanModal({ open, onClose, onApply, docType, title }) {
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
-const FUEL_TYPES = ['UNLEADED', 'DIESEL', 'PREMIUM', 'V-POWER', 'XCS', 'OTHER'];
-const PAYMENT_MODES = ['CASH', 'FLEET_CARD', 'GCASH', 'CARD', 'OTHER'];
+const PAYMENT_MODES_FALLBACK = ['CASH', 'FLEET_CARD', 'GCASH', 'CARD', 'OTHER'];
+
+const mobileStyles = `
+  .cl-table { display: table; }
+  .cl-cards { display: none; }
+  @media (max-width: 768px) {
+    .cl-table { display: none !important; }
+    .cl-cards { display: flex; flex-direction: column; gap: 10px; }
+    .cl-card { border: 1px solid var(--erp-border, #dbe4f0); border-radius: 10px; padding: 14px; background: #fff; }
+    .cl-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .cl-card-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 12px; font-size: 13px; margin-bottom: 10px; }
+    .cl-card-label { font-size: 11px; color: var(--erp-muted, #5f7188); }
+    .cl-card-value { font-weight: 600; }
+    .cl-card-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .cl-card-actions button { flex: 1; padding: 6px 0; font-size: 13px; }
+    .cl-form-row { flex-direction: column !important; }
+    .cl-form-row label { width: 100% !important; }
+    .cl-form-row input { width: 100% !important; }
+    .cl-fuel-entry { flex-direction: column !important; }
+    .cl-fuel-entry input, .cl-fuel-entry select { width: 100% !important; }
+    .cl-controls { flex-direction: column !important; }
+    .cl-controls > * { width: 100%; }
+    .cl-controls button, .cl-controls a { text-align: center; min-height: 40px; }
+    .cl-card-actions button { min-height: 36px; border-radius: 6px; cursor: pointer; border: 1px solid var(--erp-border, #dbe4f0); background: #fff; }
+  }
+  @media (max-width: 480px) {
+    .cl-cards { gap: 8px; }
+    .cl-card { padding: 10px; }
+    .cl-card-header { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .cl-card-grid { grid-template-columns: 1fr 1fr; gap: 4px 8px; font-size: 12px; }
+    .cl-card-actions button { font-size: 12px; padding: 8px 0; }
+    .cl-controls { gap: 8px !important; }
+  }
+`;
 
 export default function CarLogbook() {
+  const { user } = useAuth();
+  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
   const { getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook, validateCarLogbook, submitCarLogbook, reopenCarLogbook, loading } = useExpenses();
   const { settings } = useSettings();
+  const { options: fuelTypeOpts } = useLookupOptions('FUEL_TYPE');
+  const { options: pmOpts } = useLookupOptions('PAYMENT_MODE_TYPE');
+  const PAYMENT_MODES = pmOpts.length > 0 ? pmOpts.map(o => o.code) : PAYMENT_MODES_FALLBACK;
+  const FUEL_TYPES = fuelTypeOpts.map(o => o.code);
 
   const [entries, setEntries] = useState([]);
   const [editingEntry, setEditingEntry] = useState(null);
@@ -112,7 +152,7 @@ export default function CarLogbook() {
     try {
       const res = await getCarLogbookList({ period, cycle, limit: 0 });
       setEntries(res?.data || []);
-    } catch (err) { console.error('[CarLogbook] Load failed:', err.message); alert(err.response?.data?.message || 'Failed to load logbook entries'); }
+    } catch (err) { console.error('[CarLogbook] Load failed:', err.message); showError(err, 'Could not load logbook entries'); }
   }, [period, cycle]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
@@ -171,7 +211,7 @@ export default function CarLogbook() {
         notes: data.notes || ''
       });
       setShowForm(true);
-    } catch (err) { console.error('[CarLogbook] Edit failed:', err.message); alert(err.response?.data?.message || 'Failed to load entry'); }
+    } catch (err) { console.error('[CarLogbook] Edit failed:', err.message); showError(err, 'Could not load fuel entry'); }
   };
 
   const addFuelEntry = () => {
@@ -203,7 +243,7 @@ export default function CarLogbook() {
       else { await createCarLogbook(data); }
       setShowForm(false);
       loadEntries();
-    } catch (err) { console.error('[CarLogbook] Save failed:', err.message); alert(err.response?.data?.message || 'Failed to save entry'); }
+    } catch (err) { console.error('[CarLogbook] Save failed:', err.message); showError(err, 'Could not save fuel entry'); }
   };
 
   const [actionMsg, setActionMsg] = useState(null);
@@ -224,21 +264,23 @@ export default function CarLogbook() {
 
   return (
     <div className="admin-page erp-page">
+      <style>{mobileStyles}</style>
       <Navbar />
       <div className="admin-layout">
         <Sidebar />
         <main className="admin-main" style={{ padding: 24 }}>
+          <WorkflowGuide pageKey="car-logbook" />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
             <h1 style={{ margin: 0, color: 'var(--erp-text, #132238)' }}>Car Logbook</h1>
             <Link to="/erp/expenses" style={{ color: 'var(--erp-accent, #1e5eff)', fontSize: 14 }}>&larr; Back to Expenses</Link>
           </div>
 
           {/* Controls */}
-          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="cl-controls" style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }} />
-            <SelectField value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
+            <select value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
               <option value="C1">Cycle 1</option><option value="C2">Cycle 2</option><option value="MONTHLY">Monthly</option>
-            </SelectField>
+            </select>
             <button onClick={handleNew} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New Entry</button>
             <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
             <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
@@ -260,8 +302,8 @@ export default function CarLogbook() {
           )}
 
           {/* Entry List */}
-          {!showForm && (
-            <div style={{ overflowX: 'auto' }}>
+          {!showForm && (<>
+            <div className="cl-table" style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
                   <tr style={{ background: 'var(--erp-bg-alt, #f1f5f9)', borderBottom: '2px solid var(--erp-border, #dbe4f0)' }}>
@@ -300,7 +342,7 @@ export default function CarLogbook() {
                         {e.status === 'DRAFT' && (
                           <button onClick={() => handleDelete(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                         )}
-                        {e.status === 'POSTED' && <button onClick={() => handleReopen(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
+                        {e.status === 'POSTED' && isAdmin && <button onClick={() => handleReopen(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
                       </td>
                     </tr>
                   ))}
@@ -308,7 +350,41 @@ export default function CarLogbook() {
                 </tbody>
               </table>
             </div>
-          )}
+
+            {/* Mobile Card View */}
+            <div className="cl-cards">
+              {entries.map(e => (
+                <div key={e._id} className="cl-card" style={{ borderLeft: `4px solid ${STATUS_COLORS[e.status] || '#6b7280'}`, background: e.overconsumption_flag ? '#fef2f2' : '#fff' }}>
+                  <div className="cl-card-header">
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{e.entry_date ? new Date(e.entry_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '—'}</div>
+                      <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, color: '#fff', background: STATUS_COLORS[e.status] || '#6b7280' }}>{e.status}</span>
+                      {e.overconsumption_flag && <span style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#dc2626', background: '#fef2f2', border: '1px solid #fca5a5' }}>OVER</span>}
+                      {(e.fuel_entries || []).some(f => f.calf_required && !f.calf_id) && <span style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#92400e', background: '#fef3c7', fontWeight: 600 }}>CALF</span>}
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#2563eb' }}>₱{(e.total_fuel_amount || 0).toLocaleString()}</div>
+                      <div style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{(e.actual_liters || 0).toFixed(1)} L</div>
+                    </div>
+                  </div>
+                  <div className="cl-card-grid">
+                    <div><span className="cl-card-label">Start</span><br/><span className="cl-card-value">{(e.starting_km || 0).toLocaleString()}</span></div>
+                    <div><span className="cl-card-label">End</span><br/><span className="cl-card-value">{(e.ending_km || 0).toLocaleString()}</span></div>
+                    <div><span className="cl-card-label">Total</span><br/><span className="cl-card-value">{(e.total_km || 0).toLocaleString()} km</span></div>
+                    <div><span className="cl-card-label">Personal</span><br/><span className="cl-card-value">{(e.personal_km || 0).toLocaleString()}</span></div>
+                    <div><span className="cl-card-label">Official</span><br/><span className="cl-card-value" style={{ color: '#2563eb' }}>{(e.official_km || 0).toLocaleString()}</span></div>
+                    <div><span className="cl-card-label">Fuel</span><br/><span className="cl-card-value">{(e.fuel_entries || []).length} entry(s)</span></div>
+                  </div>
+                  <div className="cl-card-actions">
+                    {['DRAFT', 'ERROR'].includes(e.status) && <button onClick={() => handleEdit(e)} style={{ border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', color: 'var(--erp-text, #132238)' }}>Edit</button>}
+                    {e.status === 'DRAFT' && <button onClick={() => handleDelete(e._id)} style={{ border: '1px solid #ef4444', background: '#fff', color: '#ef4444' }}>Delete</button>}
+                    {e.status === 'POSTED' && isAdmin && <button onClick={() => handleReopen(e._id)} style={{ padding: '6px 0', fontSize: 13, borderRadius: 6, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer', flex: 1 }}>Re-open</button>}
+                  </div>
+                </div>
+              ))}
+              {!entries.length && <div style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>No logbook entries</div>}
+            </div>
+          </>)}
 
           {/* Entry Form */}
           {showForm && (
@@ -319,7 +395,7 @@ export default function CarLogbook() {
               </div>
 
               {/* Odometer */}
-              <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+              <div className="cl-form-row" style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
                 <label style={{ fontSize: 13 }}>Date: <input type="date" value={form.entry_date} onChange={e => setForm(p => ({ ...p, entry_date: e.target.value }))} style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
                 <label style={{ fontSize: 13 }}>Starting KM (Morning): <input type="number" value={form.starting_km} onChange={e => setForm(p => ({ ...p, starting_km: Number(e.target.value) }))} style={{ width: 100, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
                 <button onClick={() => handleScanOdometer('starting')} style={{ padding: '4px 10px', borderRadius: 4, background: '#16a34a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>Scan Start</button>
@@ -353,15 +429,15 @@ export default function CarLogbook() {
               {form.fuel_entries.map((fuel, idx) => (
                 <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center', padding: 8, borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
                   <input placeholder="Station" value={fuel.station_name} onChange={e => updateFuelEntry(idx, 'station_name', e.target.value)} style={{ width: 120, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
-                  <SelectField value={fuel.fuel_type} onChange={e => updateFuelEntry(idx, 'fuel_type', e.target.value)} style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
+                  <select value={fuel.fuel_type} onChange={e => updateFuelEntry(idx, 'fuel_type', e.target.value)} style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                     {FUEL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </SelectField>
+                  </select>
                   <input type="number" placeholder="Liters" value={fuel.liters || ''} onChange={e => updateFuelEntry(idx, 'liters', Number(e.target.value))} style={{ width: 70, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
                   <input type="number" placeholder="₱/L" value={fuel.price_per_liter || ''} onChange={e => updateFuelEntry(idx, 'price_per_liter', Number(e.target.value))} style={{ width: 70, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
                   <span style={{ fontSize: 13, fontWeight: 600, minWidth: 80 }}>₱{(fuel.total_amount || 0).toLocaleString()}</span>
-                  <SelectField value={fuel.payment_mode} onChange={e => updateFuelEntry(idx, 'payment_mode', e.target.value)} style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
+                  <select value={fuel.payment_mode} onChange={e => updateFuelEntry(idx, 'payment_mode', e.target.value)} style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                     {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
-                  </SelectField>
+                  </select>
                   <label style={{ padding: '2px 8px', borderRadius: 4, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, display: 'inline-block' }}>
                     Upload Receipt
                     <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
@@ -372,7 +448,8 @@ export default function CarLogbook() {
                         const result = await processDocument(file, 'GAS_RECEIPT');
                         updateFuelEntry(idx, 'receipt_url', result.s3_url || URL.createObjectURL(file));
                         if (result.attachment_id) updateFuelEntry(idx, 'receipt_attachment_id', result.attachment_id);
-                      } catch {
+                      } catch (err) {
+                        console.error('[CarLogbook] Receipt upload failed, using local preview:', err.message);
                         updateFuelEntry(idx, 'receipt_url', URL.createObjectURL(file));
                       }
                     }} />

@@ -7,7 +7,7 @@
  */
 const SupplierInvoice = require('../models/SupplierInvoice');
 const ApPayment = require('../models/ApPayment');
-const { resolveFundingCoa } = require('./autoJournal');
+const { resolveFundingCoa, getCoaMap } = require('./autoJournal');
 const { createAndPostJournal } = require('./journalEngine');
 
 /**
@@ -49,7 +49,7 @@ async function recordApPayment(invoiceId, paymentData, entityId, userId) {
     source_doc_ref: invoice.invoice_ref || String(invoice._id),
     lines: [
       {
-        account_code: '2000',
+        account_code: (await getCoaMap()).AP_TRADE || '2000',
         account_name: 'Accounts Payable — Trade',
         debit: paymentData.amount,
         credit: 0,

@@ -24,7 +24,12 @@ const SECTION_MAP = {
   DEPRECIATION: null,       // non-cash, exclude
   INTEREST: 'financing',
   OWNER: 'financing',
-  MANUAL: 'operating'       // default
+  MANUAL: 'operating',
+  BANKING: 'operating',
+  SERVICE_REVENUE: 'operating',
+  PETTY_CASH: 'operating',
+  INVENTORY: 'operating',
+  IC_TRANSFER: 'financing'
 };
 
 /**

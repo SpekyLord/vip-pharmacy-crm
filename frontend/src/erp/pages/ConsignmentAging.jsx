@@ -3,7 +3,7 @@
  * Cross-BDM consignment aging with color-coded status and drill-down
  */
 import { useState, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -11,6 +11,7 @@ import useReports from '../hooks/useReports';
 import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .aging-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -74,10 +75,16 @@ export default function ConsignmentAging() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="aging-main">
+          <WorkflowGuide pageKey="consignment-aging" />
           <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
           <div className="aging-header">
             <h1>Consignment Aging</h1>
             <p>Consolidated cross-BDM consignment status with aging indicators</p>
+            <div style={{ marginTop: 10 }}>
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
+            </div>
           </div>
 
           <div className="controls">

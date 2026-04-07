@@ -18,7 +18,7 @@ const { computePerdiemAmount } = require('../services/perdiemCalc');
 // fuelTracker computations handled by CarLogbookEntry pre-save hook
 const { generateExpenseSummary } = require('../services/expenseSummary');
 const { getDailyMdCounts, getDailyVisitDetails } = require('../services/smerCrmBridge');
-const { journalFromExpense, resolveFundingCoa } = require('../services/autoJournal');
+const { journalFromExpense, resolveFundingCoa, getCoaMap } = require('../services/autoJournal');
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
 const JournalEntry = require('../models/JournalEntry');
 
@@ -185,17 +185,18 @@ const submitSmer = catchAsync(async (req, res) => {
     }
   }
 
-  // Phase 11: Auto-journal — SMER multi-line (DR 6100+6150+6160+6170, CR 1110)
+  // Phase 11/22: Auto-journal — SMER multi-line (COA from Settings.COA_MAP)
+  const coaMap = await getCoaMap();
   for (const smer of smers) {
     try {
       const lines = [];
       const desc = `SMER ${smer.period}-${smer.cycle}`;
-      if (smer.total_perdiem > 0) lines.push({ account_code: '6100', account_name: 'Per Diem Expense', debit: smer.total_perdiem, credit: 0, description: desc });
-      if (smer.total_transpo > 0) lines.push({ account_code: '6150', account_name: 'Transport Expense', debit: smer.total_transpo, credit: 0, description: desc });
-      if (smer.total_special_cases > 0) lines.push({ account_code: '6160', account_name: 'Special Transport Expense', debit: smer.total_special_cases, credit: 0, description: desc });
-      if (smer.total_ore > 0) lines.push({ account_code: '6170', account_name: 'Other Reimbursable Expense', debit: smer.total_ore, credit: 0, description: desc });
+      if (smer.total_perdiem > 0) lines.push({ account_code: coaMap.PER_DIEM || '6100', account_name: 'Per Diem Expense', debit: smer.total_perdiem, credit: 0, description: desc });
+      if (smer.total_transpo > 0) lines.push({ account_code: coaMap.TRANSPORT || '6150', account_name: 'Transport Expense', debit: smer.total_transpo, credit: 0, description: desc });
+      if (smer.total_special_cases > 0) lines.push({ account_code: coaMap.SPECIAL_TRANSPORT || '6160', account_name: 'Special Transport Expense', debit: smer.total_special_cases, credit: 0, description: desc });
+      if (smer.total_ore > 0) lines.push({ account_code: coaMap.OTHER_REIMBURSABLE || '6170', account_name: 'Other Reimbursable Expense', debit: smer.total_ore, credit: 0, description: desc });
       if (lines.length > 0) {
-        lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: smer.total_reimbursable, description: desc });
+        lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: smer.total_reimbursable, description: desc });
         await createAndPostJournal(smer.entity_id, {
           je_date: smer.posted_at || new Date(),
           period: smer.period,
@@ -397,10 +398,24 @@ const validateCarLogbook = catchAsync(async (req, res) => {
     const errors = [];
 
     if (!entry.entry_date) errors.push('Date is required');
+    if (entry.entry_date && new Date(entry.entry_date) > new Date()) errors.push('Logbook date cannot be in the future');
     if (!entry.starting_km && entry.starting_km !== 0) errors.push('Starting KM is required');
     if (!entry.ending_km && entry.ending_km !== 0) errors.push('Ending KM is required');
     if (entry.ending_km < entry.starting_km) errors.push('Ending KM must be >= Starting KM');
     if (entry.personal_km > entry.total_km) errors.push('Personal KM cannot exceed total KM');
+
+    // Odometer sequential check: starting_km should be >= previous entry's ending_km
+    if (entry.entry_date && entry.starting_km > 0) {
+      const prevEntry = await CarLogbookEntry.findOne({
+        entity_id: entry.entity_id,
+        bdm_id: entry.bdm_id,
+        entry_date: { $lt: entry.entry_date },
+        status: { $in: ['VALID', 'POSTED'] }
+      }).sort({ entry_date: -1 }).select('ending_km entry_date').lean();
+      if (prevEntry && entry.starting_km < prevEntry.ending_km) {
+        errors.push(`Starting KM (${entry.starting_km}) is less than previous entry's ending KM (${prevEntry.ending_km} on ${new Date(prevEntry.entry_date).toLocaleDateString()})`);
+      }
+    }
 
     // CALF gate: non-cash fuel entries require CALF to be linked AND POSTED
     for (let j = 0; j < (entry.fuel_entries || []).length; j++) {
@@ -489,7 +504,8 @@ const submitCarLogbook = catchAsync(async (req, res) => {
     }
   }
 
-  // Phase 11: Auto-journal — Car Logbook (DR 6200 Fuel, CR 1110 or funding COA)
+  // Phase 11/22: Auto-journal — Car Logbook (COA from Settings.COA_MAP)
+  const coaMap = await getCoaMap();
   for (const entry of entries) {
     try {
       if (!entry.total_fuel_amount || entry.total_fuel_amount <= 0) continue;
@@ -508,8 +524,8 @@ const submitCarLogbook = catchAsync(async (req, res) => {
       const desc = `Logbook ${entry.period} ${entry.entry_date.toISOString().split('T')[0]}`;
       const lines = [];
       const totalFuel = cashTotal + fundedTotal;
-      if (totalFuel > 0) lines.push({ account_code: '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: desc });
-      if (cashTotal > 0) lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: desc });
+      if (totalFuel > 0) lines.push({ account_code: coaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: desc });
+      if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: desc });
       if (fundedTotal > 0 && fundedCoa) lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: desc });
       if (lines.length >= 2) {
         await createAndPostJournal(entry.entity_id, {
@@ -706,6 +722,7 @@ const validateExpenses = catchAsync(async (req, res) => {
     for (let i = 0; i < entry.lines.length; i++) {
       const line = entry.lines[i];
       if (!line.expense_date) errors.push(`Line ${i + 1}: date is required`);
+      if (line.expense_date && new Date(line.expense_date) > new Date()) errors.push(`Line ${i + 1}: expense date cannot be in the future`);
       if (!line.amount || line.amount <= 0) errors.push(`Line ${i + 1}: valid amount required`);
       if (!line.establishment) errors.push(`Line ${i + 1}: establishment is required`);
 
@@ -799,7 +816,8 @@ const submitExpenses = catchAsync(async (req, res) => {
     }
   }
 
-  // Phase 11: Auto-journal — Expenses (ORE: DR 6XXX CR 1110, ACCESS: DR 6XXX CR funding)
+  // Phase 11: Auto-journal — Expenses (ORE: DR 6XXX CR coaMap.AR_BDM, ACCESS: DR 6XXX CR funding)
+  const expCoaMap = await getCoaMap();
   for (const entry of entries) {
     try {
       const lines = [];
@@ -811,7 +829,7 @@ const submitExpenses = catchAsync(async (req, res) => {
       for (const line of (entry.lines || [])) {
         const amt = line.amount || 0;
         if (amt <= 0) continue;
-        const drCode = line.coa_code || '6900';
+        const drCode = line.coa_code || expCoaMap.MISC_EXPENSE || '6900';
         const drName = line.expense_category || 'Miscellaneous Expense';
         lines.push({ account_code: drCode, account_name: drName, debit: amt, credit: 0, description: line.establishment || desc });
         if (line.expense_type === 'ACCESS') {
@@ -822,11 +840,11 @@ const submitExpenses = catchAsync(async (req, res) => {
         }
       }
 
-      // ORE credit → 1110 AR BDM Advances (personal reimbursement)
-      if (creditOre > 0) lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: creditOre, description: desc });
+      // ORE credit → AR BDM Advances (personal reimbursement)
+      if (creditOre > 0) lines.push({ account_code: expCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: creditOre, description: desc });
       // ACCESS credit → funding source (company-funded)
       if (creditAccess > 0) {
-        const coa = accessCoa || { coa_code: '2000', coa_name: 'Accounts Payable — Trade' };
+        const coa = accessCoa || { coa_code: expCoaMap.AP_TRADE || '2000', coa_name: 'Accounts Payable — Trade' };
         lines.push({ account_code: coa.coa_code, account_name: coa.coa_name, debit: 0, credit: creditAccess, description: desc });
       }
 
@@ -1170,7 +1188,8 @@ const submitPrfCalf = catchAsync(async (req, res) => {
     }
   }
 
-  // Phase 11: Auto-journal — PRF (DR 5200, CR bank) / CALF (DR 1110, CR bank)
+  // Phase 11/22: Auto-journal — PRF/CALF (COA from Settings.COA_MAP)
+  const calfCoaMap = await getCoaMap();
   for (const doc of docs) {
     try {
       const amount = doc.amount || 0;
@@ -1180,13 +1199,12 @@ const submitPrfCalf = catchAsync(async (req, res) => {
       let lines;
       if (doc.doc_type === 'PRF') {
         lines = [
-          { account_code: '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
+          { account_code: calfCoaMap.PARTNER_REBATE || '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
           { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}` }
         ];
       } else {
-        // CALF: company advance to BDM → DR 1110 AR BDM, CR bank
         lines = [
-          { account_code: '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
+          { account_code: calfCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
           { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}` }
         ];
       }
@@ -1267,16 +1285,17 @@ const submitPrfCalf = catchAsync(async (req, res) => {
 
       // Auto-journal (non-blocking)
       try {
+        const reopenCoaMap = await getCoaMap();
         if (sourceType === 'EXPENSE') {
           const lines = [];
           let totalOre = 0, totalAccess = 0;
           const desc = `EXP-${source.period}-${source.cycle}`;
           for (const line of source.lines) {
-            lines.push({ account_code: line.coa_code || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
+            lines.push({ account_code: line.coa_code || reopenCoaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
             if (line.expense_type === 'ORE') totalOre += line.amount || 0;
             else totalAccess += line.amount || 0;
           }
-          if (totalOre > 0) lines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
+          if (totalOre > 0) lines.push({ account_code: reopenCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
           if (totalAccess > 0) {
             const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source);
             lines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
@@ -1300,7 +1319,7 @@ const submitPrfCalf = catchAsync(async (req, res) => {
               description: `Car Logbook: ${source.period}`, source_module: 'EXPENSE',
               source_event_id: source.event_id, source_doc_ref: `LOGBOOK-${source.period}`,
               lines: [
-                { account_code: '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
+                { account_code: calfCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
                 { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}` }
               ],
               bir_flag: 'BOTH', vat_flag: 'N/A',
@@ -1844,7 +1863,7 @@ const saveBatchExpenses = catchAsync(async (req, res) => {
       target_model: 'ExpenseEntry',
       changed_by: req.user._id,
       note: `Batch upload: ${cleanLines.length} lines assigned to BDM ${bdmId} by ${req.user.name || req.user._id} (${req.user.role})`
-    }).catch(err => console.error('[BatchSave] Audit log failed:', err.message));
+    }).catch(err => console.error('[BatchSave] Audit log write failed (non-critical):', err.message));
   }
 
   res.status(201).json({

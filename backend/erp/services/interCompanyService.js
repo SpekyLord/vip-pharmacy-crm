@@ -263,6 +263,11 @@ const postTransfer = async (transferId, postedBy) => {
     throw new Error(`Cannot post transfer in ${transfer.status} status. Must be RECEIVED.`);
   }
 
+  // Period lock check
+  const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+  const period = dateToPeriod(transfer.received_at || new Date());
+  await checkPeriodOpen(transfer.source_entity_id, period);
+
   transfer.status = 'POSTED';
   transfer.posted_by = postedBy;
   transfer.posted_at = new Date();
@@ -309,11 +314,11 @@ const postTransfer = async (transferId, postedBy) => {
   if (amount > 0) {
     try {
       // Sender JE: DR 1150 IC Receivable, CR 1200 Inventory
-      const senderJe = journalFromInterCompany(transfer, 'SENDER', amount, postedBy);
+      const senderJe = await journalFromInterCompany(transfer, 'SENDER', amount, postedBy);
       if (senderJe) await createAndPostJournal(transfer.source_entity_id, senderJe);
 
       // Receiver JE: DR 1200 Inventory, CR 2050 IC Payable
-      const receiverJe = journalFromInterCompany(transfer, 'RECEIVER', amount, postedBy);
+      const receiverJe = await journalFromInterCompany(transfer, 'RECEIVER', amount, postedBy);
       if (receiverJe) await createAndPostJournal(transfer.target_entity_id, receiverJe);
     } catch (jeErr) {
       console.error('IC Transfer JE failed:', transfer.transfer_ref, jeErr.message);

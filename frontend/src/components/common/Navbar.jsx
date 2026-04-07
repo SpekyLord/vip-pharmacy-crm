@@ -26,6 +26,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import useWorkingEntity from '../../hooks/useWorkingEntity';
 
 const ERP_TABS = [
   { label: 'Dashboard', path: '/erp', icon: LayoutGrid },
@@ -52,6 +53,15 @@ const CRM_EMPLOYEE_TABS = [
   { label: 'Visits', path: '/bdm/visits' },
   { label: 'Inbox', path: '/bdm/inbox' },
 ];
+
+const ERP_TAB_MODULE_MAP = {
+  '/erp/sales': 'sales',
+  '/erp/my-stock': 'inventory',
+  '/erp/transfers': 'inventory',
+  '/erp/collections': 'collections',
+  '/erp/expenses': 'expenses',
+  '/erp/reports': 'reports',
+};
 
 /* =============================================================================
    STYLES
@@ -140,8 +150,7 @@ const navbarStyles = `
     row-gap: 8px;
   }
 
-  .navbar-erp-tab,
-  .navbar-erp-tab-disabled {
+  .navbar-erp-tab {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -190,11 +199,6 @@ const navbarStyles = `
     border-color: #b9d0ff;
     background: #e8efff;
     color: #1d4ed8;
-  }
-
-  .navbar-erp-tab-disabled {
-    opacity: 0.75;
-    cursor: not-allowed;
   }
 
   .navbar-brand {
@@ -249,6 +253,29 @@ const navbarStyles = `
 
   .navbar-hamburger:active {
     background: #e5e7eb;
+  }
+
+  .navbar-entity-select {
+    padding: 5px 26px 5px 10px;
+    border: 2px solid #e8af30;
+    border-radius: 8px;
+    background: #fffbeb;
+    font-size: 13px;
+    font-weight: 600;
+    color: #92400e;
+    cursor: pointer;
+    appearance: auto;
+    max-width: 170px;
+    flex-shrink: 0;
+  }
+  .navbar-entity-select:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(232,175,48,0.25);
+  }
+  body.dark-mode .navbar-entity-select {
+    background: #422006;
+    color: #fbbf24;
+    border-color: #d97706;
   }
 
   .navbar-menu {
@@ -382,8 +409,7 @@ const navbarStyles = `
     color: #0f172a;
   }
 
-  body.dark-mode .navbar-erp-tab,
-  body.dark-mode .navbar-erp-tab-disabled {
+  body.dark-mode .navbar-erp-tab {
     background: #111827;
     border-color: #334155;
     color: #cbd5e1;
@@ -463,8 +489,7 @@ const navbarStyles = `
       padding: 0 12px;
     }
 
-    .navbar-erp-tab,
-    .navbar-erp-tab-disabled {
+    .navbar-erp-tab {
       padding: 0 12px;
       font-size: 12px;
     }
@@ -503,9 +528,6 @@ const navbarStyles = `
       padding: 10px;
     }
 
-    .navbar-erp-tab-disabled {
-      display: none;
-    }
   }
 
   @media (max-width: 768px) {
@@ -617,6 +639,7 @@ const navbarStyles = `
 
 const Navbar = () => {
   const { user, logout } = useAuth();
+  const { entities, workingEntityId, setWorkingEntityId, isMultiEntity } = useWorkingEntity();
   const location = useLocation();
   const [isDark, setIsDark] = useState(() => {
     try {
@@ -660,7 +683,21 @@ const Navbar = () => {
   const isAdminLike = ADMIN_LIKE_ROLES.includes(user?.role);
   const crmHome = isAdminLike ? '/admin' : '/bdm';
   const isErpRoute = location.pathname.startsWith('/erp');
-  const platformTabs = isErpRoute ? ERP_TABS : (isAdminLike ? CRM_ADMIN_TABS : CRM_EMPLOYEE_TABS);
+
+  const hasErpModule = (moduleName) => {
+    if (!user) return false;
+    if (user.role === 'president' || user.role === 'ceo') return true;
+    if (user.role === 'admin' && (!user.erp_access || !user.erp_access.enabled)) return true;
+    if (!user.erp_access || !user.erp_access.enabled) return false;
+    return (user.erp_access.modules?.[moduleName] || 'NONE') !== 'NONE';
+  };
+
+  const erpTabs = ERP_TABS.filter((tab) => {
+    const moduleName = ERP_TAB_MODULE_MAP[tab.path];
+    if (!moduleName) return true;
+    return hasErpModule(moduleName);
+  });
+  const platformTabs = isErpRoute ? erpTabs : (isAdminLike ? CRM_ADMIN_TABS : CRM_EMPLOYEE_TABS);
 
   const isTabActive = (path) => {
     if (path === '/erp' || path === '/admin' || path === '/bdm') {
@@ -736,22 +773,21 @@ const Navbar = () => {
       )}
 
       <div className="navbar-menu">
-        {user && (
-          <div className="navbar-platform-switch navbar-platform-switch--mobile" aria-label="Platform switch">
-            <Link
-              to={crmHome}
-              className={`navbar-platform-link ${isErpRoute ? '' : 'active'}`.trim()}
-            >
-              CRM
-            </Link>
-            <Link
-              to="/erp"
-              className={`navbar-platform-link ${isErpRoute ? 'active' : ''}`.trim()}
-            >
-              ERP
-            </Link>
-          </div>
+        {isMultiEntity && entities.length > 0 && (
+          <select
+            className="navbar-entity-select"
+            value={workingEntityId || ''}
+            onChange={(e) => setWorkingEntityId(e.target.value)}
+            aria-label="Working entity"
+          >
+            {entities.map(ent => (
+              <option key={ent._id} value={ent._id}>
+                {ent.short_name || ent.entity_name}
+              </option>
+            ))}
+          </select>
         )}
+
         <button className="navbar-theme-btn" onClick={toggleTheme} aria-label="Toggle dark mode">
           {isDark ? <Sun size={17} /> : <Moon size={17} />}
         </button>

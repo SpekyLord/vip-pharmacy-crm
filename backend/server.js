@@ -9,6 +9,7 @@
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const compression = require('compression');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
@@ -262,6 +263,7 @@ const createApp = () => {
   const { generalLimiter, authLimiter, userLimiter } = createRateLimiters();
   app.use('/api/', generalLimiter);
 
+  app.use(compression());
   app.use(cookieParser());
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));

@@ -13,10 +13,11 @@ import useWarehouses from '../hooks/useWarehouses';
 import useEntities from '../hooks/useEntities';
 import usePeople from '../hooks/usePeople';
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
+import { showError } from '../utils/errorToast';
 
 const TYPE_LABELS = { MAIN: 'Main Warehouse', TERRITORY: 'Territory', VIRTUAL: 'Virtual' };
 const TYPE_COLORS = { MAIN: '#1e40af', TERRITORY: '#166534', VIRTUAL: '#64748b' };
-const STOCK_TYPES = ['PHARMA', 'FNB', 'OFFICE'];
 
 const pageStyles = `
   .wm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -75,9 +76,11 @@ const emptyForm = () => ({
   is_default_receiving: false, can_receive_grn: false, can_transfer_out: true,
 });
 
-export default function WarehouseManager() {
+export function WarehouseManagerContent() {
   const { user } = useAuth();
   const whApi = useWarehouses();
+  const { options: stockTypeOpts } = useLookupOptions('STOCK_TYPE');
+  const STOCK_TYPES = stockTypeOpts.map(o => o.code);
   const { entities } = useEntities();
   const { getAsUsers } = usePeople();
 
@@ -123,25 +126,25 @@ export default function WarehouseManager() {
 
   const handleSave = async () => {
     try {
+      // Clean empty-string ObjectId fields to null (Mongoose rejects '' as ObjectId)
+      const payload = { ...form };
+      if (!payload.manager_id) payload.manager_id = null;
+      if (!payload.draws_from) payload.draws_from = null;
       if (editing === 'new') {
-        await whApi.createWarehouse(form);
+        await whApi.createWarehouse(payload);
       } else {
-        await whApi.updateWarehouse(editing._id, form);
+        await whApi.updateWarehouse(editing._id, payload);
       }
       setEditing(null);
       load();
     } catch (err) {
-      alert(err.response?.data?.message || 'Save failed');
+      showError(err, 'Could not save warehouse');
     }
   };
 
   return (
-    <div className="admin-page erp-page wm-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div className="admin-layout">
-        <Sidebar />
-        <main className="wm-main">
           <div className="wm-header">
             <h2>Warehouse Management</h2>
             <button className="wm-btn wm-btn-primary" onClick={openNew}>+ New Warehouse</button>
@@ -268,6 +271,18 @@ export default function WarehouseManager() {
               </div>
             </div>
           )}
+    </>
+  );
+}
+
+export default function WarehouseManager() {
+  return (
+    <div className="admin-page erp-page wm-page">
+      <Navbar />
+      <div className="admin-layout">
+        <Sidebar />
+        <main className="wm-main">
+          <WarehouseManagerContent />
         </main>
       </div>
     </div>

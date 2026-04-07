@@ -71,10 +71,12 @@ pettyCashTransactionSchema.pre('save', async function () {
     });
   }
 
-  // VAT computation for disbursements (12/112 PH formula)
+  // VAT computation for disbursements
   if (this.txn_type === 'DISBURSEMENT' && this.amount > 0) {
+    const Settings = require('./Settings');
+    const vatRate = await Settings.getVatRate();
     if (!this.vat_amount) {
-      this.vat_amount = Math.round(this.amount * (0.12 / 1.12) * 100) / 100;
+      this.vat_amount = Math.round(this.amount * (vatRate / (1 + vatRate)) * 100) / 100;
     }
     this.net_of_vat = Math.round((this.amount - this.vat_amount) * 100) / 100;
   }

@@ -6,6 +6,8 @@ import useAccounting from '../hooks/useAccounting';
 import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .ccm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -52,8 +54,6 @@ const pageStyles = `
 `;
 
 const TYPE_BADGES = { CREDIT_CARD: 'ccm-badge-cc', FLEET_CARD: 'ccm-badge-fleet', DEBIT_CARD: 'ccm-badge-debit' };
-const CARD_TYPES = ['CREDIT_CARD', 'FLEET_CARD', 'DEBIT_CARD'];
-const CARD_BRANDS = ['VISA', 'MASTERCARD', 'JCB', 'AMEX', 'FLEET'];
 
 const EMPTY_FORM = {
   card_code: '', card_name: '', card_holder: '', bank: '',
@@ -62,9 +62,13 @@ const EMPTY_FORM = {
   statement_cycle_day: '', assigned_to: '', assigned_users: [], is_active: true
 };
 
-export default function CreditCardManager() {
+export function CreditCardManagerContent() {
   const { user } = useAuth();
   const api = useAccounting();
+  const { options: cardTypeOpts } = useLookupOptions('CARD_TYPE');
+  const CARD_TYPES = cardTypeOpts.map(o => o.code);
+  const { options: cardBrandOpts } = useLookupOptions('CARD_BRAND');
+  const CARD_BRANDS = cardBrandOpts.map(o => o.code);
 
   const [cards, setCards] = useState([]);
   const [users, setUsers] = useState([]);
@@ -76,7 +80,7 @@ export default function CreditCardManager() {
   const [msg, setMsg] = useState({ text: '', type: '' });
 
   const handleExport = async () => {
-    try { const res = await api.exportCreditCards(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'credit-cards-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+    try { const res = await api.exportCreditCards(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'credit-cards-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch (err) { showError(err, 'Export failed'); }
   };
 
   const loadCards = useCallback(async () => {
@@ -116,6 +120,8 @@ export default function CreditCardManager() {
   };
 
   const openEdit = (card) => {
+    const assignedUsers = (card.assigned_users || []).map(u => u._id || u);
+    const legacyAssignedTo = card.assigned_to?._id || card.assigned_to || '';
     setEditing(card);
     setForm({
       card_code: card.card_code || '',
@@ -128,21 +134,21 @@ export default function CreditCardManager() {
       coa_code: card.coa_code || '2301',
       credit_limit: card.credit_limit || '',
       statement_cycle_day: card.statement_cycle_day || '',
-      assigned_to: card.assigned_to?._id || card.assigned_to || '',
-      assigned_users: (card.assigned_users || []).map(u => u._id || u),
+      assigned_to: legacyAssignedTo,
+      assigned_users: assignedUsers.length ? assignedUsers : (legacyAssignedTo ? [legacyAssignedTo] : []),
       is_active: card.is_active !== false
     });
     setShowModal(true);
   };
 
   const handleSave = async () => {
-    if (!form.card_code || !form.card_name) return alert('Card Code and Card Name are required');
+    if (!form.card_code || !form.card_name) { showError(null, 'Card Code and Card Name are required'); return; }
     const data = {
       ...form,
       credit_limit: parseFloat(form.credit_limit) || 0,
       statement_cycle_day: parseInt(form.statement_cycle_day) || undefined,
-      assigned_to: form.assigned_to || undefined,
-      assigned_users: form.assigned_users.length ? form.assigned_users : undefined
+      assigned_to: form.assigned_users[0] || undefined,
+      assigned_users: form.assigned_users
     };
     try {
       if (editing) {
@@ -165,7 +171,7 @@ export default function CreditCardManager() {
       await api.updateCreditCard(card._id, { is_active: false });
       showMsg('Card deactivated');
       loadCards();
-    } catch { showMsg('Error', 'err'); }
+    } catch (err) { showError(err, 'Could not deactivate card'); }
   };
 
   const handleActivate = async (card) => {
@@ -173,18 +179,14 @@ export default function CreditCardManager() {
       await api.updateCreditCard(card._id, { is_active: true });
       showMsg('Card reactivated');
       loadCards();
-    } catch { showMsg('Error', 'err'); }
+    } catch (err) { showError(err, 'Could not activate card'); }
   };
 
   const f = (field, value) => setForm(p => ({ ...p, [field]: value }));
 
   return (
-    <div className="ccm-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div style={{ display: 'flex', flex: 1 }}>
-        <Sidebar />
-        <main className="ccm-main admin-main">
           <div className="ccm-header">
             <h2>Credit Card Management</h2>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -340,6 +342,18 @@ export default function CreditCardManager() {
               </div>
             </div>
           )}
+    </>
+  );
+}
+
+export default function CreditCardManager() {
+  return (
+    <div className="ccm-page">
+      <Navbar />
+      <div style={{ display: 'flex', flex: 1 }}>
+        <Sidebar />
+        <main className="ccm-main admin-main">
+          <CreditCardManagerContent />
         </main>
       </div>
     </div>

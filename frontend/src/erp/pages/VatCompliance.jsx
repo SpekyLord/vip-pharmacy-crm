@@ -3,8 +3,10 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .vat-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -52,30 +54,30 @@ export default function VatCompliance() {
 
   const loadVatLedger = useCallback(async () => {
     setLoading(true);
-    try { const res = await api.getVatLedger(period); setData(res?.data || []); } catch { /* */ }
+    try { const res = await api.getVatLedger(period); setData(res?.data || []); } catch (err) { showError(err, 'Could not load VAT ledger'); }
     setLoading(false);
   }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadVatReturn = useCallback(async () => {
     setLoading(true);
-    try { const res = await api.getVatReturn(quarter, year); setSummary(res?.data || null); } catch { /* */ }
+    try { const res = await api.getVatReturn(quarter, year); setSummary(res?.data || null); } catch (err) { showError(err, 'Could not load VAT return'); }
     setLoading(false);
   }, [quarter, year]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadCwtLedger = useCallback(async () => {
     setLoading(true);
-    try { const res = await api.getCwtLedger(period); setData(res?.data || []); } catch { /* */ }
+    try { const res = await api.getCwtLedger(period); setData(res?.data || []); } catch (err) { showError(err, 'Could not load CWT ledger'); }
     setLoading(false);
   }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadCwtSummary = useCallback(async () => {
     setLoading(true);
-    try { const res = await api.getCwtSummary(quarter, year); setSummary(res?.data || null); } catch { /* */ }
+    try { const res = await api.getCwtSummary(quarter, year); setSummary(res?.data || null); } catch (err) { showError(err, 'Could not load CWT summary'); }
     setLoading(false);
   }, [quarter, year]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTag = async (id, tag) => {
-    try { await api.tagVatEntry(id, { tag }); loadVatLedger(); } catch { /* */ }
+    try { await api.tagVatEntry(id, { tag }); loadVatLedger(); } catch (err) { showError(err, 'Could not tag VAT entry'); }
   };
 
   return (
@@ -85,6 +87,7 @@ export default function VatCompliance() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="vat-main admin-main">
+          <WorkflowGuide pageKey="vat-compliance" />
           <div className="vat-header"><h2>VAT & CWT Compliance</h2></div>
           <div className="vat-tabs">
             {['vat-ledger', '2550Q', 'cwt-ledger', '2307'].map(t => (

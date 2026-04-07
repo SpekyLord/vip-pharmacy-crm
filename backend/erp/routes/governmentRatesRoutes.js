@@ -10,14 +10,14 @@ const {
 } = require('../controllers/governmentRatesController');
 
 // Static routes BEFORE /:id
-router.get('/export', protect, roleCheck('admin', 'finance'), exportRates);
-router.post('/import', protect, roleCheck('admin', 'finance'), upload.single('file'), importRates);
+router.get('/export', protect, roleCheck('admin', 'finance', 'president'), exportRates);
+router.post('/import', protect, roleCheck('admin', 'finance', 'president'), upload.single('file'), importRates);
 router.post('/compute-breakdown', protect, computeBreakdown);
 
 router.get('/', protect, getRates);
 router.get('/:id', protect, getRateById);
-router.post('/', protect, roleCheck('admin', 'finance'), createRate);
-router.put('/:id', protect, roleCheck('admin', 'finance'), updateRate);
-router.delete('/:id', protect, roleCheck('admin'), deleteRate);
+router.post('/', protect, roleCheck('admin', 'finance', 'president'), createRate);
+router.put('/:id', protect, roleCheck('admin', 'finance', 'president'), updateRate);
+router.delete('/:id', protect, roleCheck('admin', 'president'), deleteRate);
 
 module.exports = router;

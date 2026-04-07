@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -7,7 +7,9 @@ import useEntities from '../hooks/useEntities';
 import EntityBadge from '../components/EntityBadge';
 import WarehousePicker from '../components/WarehousePicker';
 
+import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const TABS = ['Stock on Hand', 'Transaction Ledger', 'Variance Report', 'Alerts'];
 
@@ -347,7 +349,7 @@ export default function MyStock() {
           try {
             const res = await inventory.getBatches(item.product_id);
             return { ...item, batches: res?.data || [] };
-          } catch { return item; }
+          } catch (err) { console.error('[MyStock] batch load failed:', err.message); return item; }
         })
       );
       setStockData(enriched);
@@ -375,6 +377,7 @@ export default function MyStock() {
       <div className="admin-layout">
         <Sidebar />
         <main className="mystock-main">
+          <WorkflowGuide pageKey="my-stock" />
           <div className="mystock-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
             <div>
               <h1>My Stock {userEntity && <EntityBadge entity={userEntity} size="sm" />}</h1>
@@ -433,8 +436,8 @@ export default function MyStock() {
               </thead>
               <tbody>
                 {stockData.map(item => (
-                  <>
-                    <tr key={item.product_id} className={`expandable ${item.near_expiry ? 'near-expiry' : ''}`} onClick={() => toggleExpand(item.product_id)}>
+                  <Fragment key={item.product_id}>
+                    <tr className={`expandable ${item.near_expiry ? 'near-expiry' : ''}`} onClick={() => toggleExpand(item.product_id)}>
                       <td data-label="Product">
                         <strong>{item.product?.brand_name || 'Unknown'}</strong>
                         <br /><span style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{item.product?.generic_name}</span>
@@ -458,7 +461,7 @@ export default function MyStock() {
                         <td data-label=""></td>
                       </tr>
                     ))}
-                  </>
+                  </Fragment>
                 ))}
                 {!stockData.length && (
                   <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No stock data available</td></tr>

@@ -5,10 +5,40 @@ const CreditCard = require('../models/CreditCard');
 const { catchAsync } = require('../../middleware/errorHandler');
 const XLSX = require('xlsx');
 
+const normalizeAssignments = (body = {}) => {
+  const assignedUsers = Array.isArray(body.assigned_users)
+    ? [...new Set(body.assigned_users.filter(Boolean).map(String))]
+    : undefined;
+  const legacyAssignedTo = body.assigned_to ? String(body.assigned_to) : null;
+
+  if (assignedUsers !== undefined) {
+    return {
+      assigned_users: assignedUsers,
+      assigned_to: assignedUsers[0] || legacyAssignedTo || null,
+      assignmentTouched: true
+    };
+  }
+
+  if (body.assigned_to !== undefined) {
+    return {
+      assigned_users: legacyAssignedTo ? [legacyAssignedTo] : [],
+      assigned_to: legacyAssignedTo,
+      assignmentTouched: true
+    };
+  }
+
+  return { assignmentTouched: false };
+};
+
 // ═══ List all cards (optionally filter by assigned_to, card_type) ═══
 const listCards = catchAsync(async (req, res) => {
   const filter = { entity_id: req.entityId };
-  if (req.query.assigned_to) filter.assigned_to = req.query.assigned_to;
+  if (req.query.assigned_to) {
+    filter.$or = [
+      { assigned_to: req.query.assigned_to },
+      { assigned_users: req.query.assigned_to }
+    ];
+  }
   if (req.query.card_type) filter.card_type = req.query.card_type;
   if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
 
@@ -40,11 +70,13 @@ const getMyCards = catchAsync(async (req, res) => {
 
 // ═══ Create card ═══
 const createCard = catchAsync(async (req, res) => {
+  const assignment = normalizeAssignments(req.body);
   const card = await CreditCard.create({
     entity_id: req.entityId,
     ...req.body,
-    assigned_by: req.body.assigned_to ? req.user._id : undefined,
-    assigned_at: req.body.assigned_to ? new Date() : undefined
+    ...(assignment.assignmentTouched ? assignment : {}),
+    assigned_by: assignment.assignmentTouched && (assignment.assigned_users?.length || assignment.assigned_to) ? req.user._id : undefined,
+    assigned_at: assignment.assignmentTouched && (assignment.assigned_users?.length || assignment.assigned_to) ? new Date() : undefined
   });
   res.status(201).json({ success: true, data: card });
 });
@@ -59,11 +91,17 @@ const updateCard = catchAsync(async (req, res) => {
     if (req.body[field] !== undefined) card[field] = req.body[field];
   }
 
-  // Handle assignment change
-  if (req.body.assigned_to !== undefined) {
-    card.assigned_to = req.body.assigned_to || null;
-    card.assigned_by = req.user._id;
-    card.assigned_at = new Date();
+  const assignment = normalizeAssignments(req.body);
+  if (assignment.assignmentTouched) {
+    card.assigned_users = assignment.assigned_users;
+    card.assigned_to = assignment.assigned_to;
+    if (assignment.assigned_users?.length || assignment.assigned_to) {
+      card.assigned_by = req.user._id;
+      card.assigned_at = new Date();
+    } else {
+      card.assigned_by = undefined;
+      card.assigned_at = undefined;
+    }
   }
 
   await card.save();

@@ -1,10 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import usePayroll from '../hooks/usePayroll';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   COMPUTED: { bg: '#dbeafe', text: '#1e40af' },
@@ -64,7 +66,9 @@ export default function PayrollRun() {
       setPayslips(res?.data || []);
       setSummary(res?.summary || null);
     } catch (err) { console.error('[PayrollRun] load error:', err.message); } finally { setLoading(false); }
-  }, [period, cycle]);
+  }, [period, cycle]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadStaging(); }, [loadStaging]);
 
   const handleCompute = async () => {
     setMsg(null);
@@ -82,7 +86,7 @@ export default function PayrollRun() {
       if (action === 'review') await api.reviewPayslip(id);
       if (action === 'approve') await api.approvePayslip(id);
       loadStaging();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not process payroll action'); }
   };
 
   const handlePostAll = async () => {
@@ -102,6 +106,7 @@ export default function PayrollRun() {
       <div className="admin-layout">
         <Sidebar />
         <main className="pr-main">
+          <WorkflowGuide pageKey="payroll-run" />
           <div className="pr-header">
             <h2>Payroll Run</h2>
           </div>

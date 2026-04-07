@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
+import useProducts from '../hooks/useProducts';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = `
   .po-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -58,6 +61,8 @@ const EMPTY_LINE = { product_id: '', item_key: '', qty_ordered: 1, unit_price: 0
 
 export default function PurchaseOrders() {
   const api = usePurchasing();
+  const { products } = useProducts();
+  const productOptions = useMemo(() => (products || []).filter(p => p.is_active !== false), [products]);
 
   const [pos, setPOs] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -77,7 +82,7 @@ export default function PurchaseOrders() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'purchase-orders-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const loadPOs = useCallback(async (page = 1) => {
@@ -88,7 +93,7 @@ export default function PurchaseOrders() {
       const res = await api.listPOs(params);
       setPOs(res?.data || []);
       setPagination(res?.pagination || { page, limit: 20, total: 0 });
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load purchase orders'); }
     setLoading(false);
   }, [statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -96,7 +101,7 @@ export default function PurchaseOrders() {
     try {
       const res = await api.listVendors({ is_active: true });
       setVendors(res?.data || []);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load vendors'); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadPOs(); }, [loadPOs]);
@@ -132,6 +137,17 @@ export default function PurchaseOrders() {
     items[i] = { ...items[i], [key]: val };
     return { ...f, line_items: items };
   });
+  const handleProductSelect = (i, productId) => {
+    if (!productId) { setLineField(i, 'product_id', ''); return; }
+    const p = productOptions.find(x => x._id === productId);
+    if (!p) return;
+    const label = `${p.brand_name}${p.dosage_strength ? ` ${p.dosage_strength}` : ''} — ${p.qty || ''} ${p.unit_code || 'PC'}`.trim();
+    setForm(f => {
+      const items = [...f.line_items];
+      items[i] = { ...items[i], product_id: productId, item_key: label };
+      return { ...f, line_items: items };
+    });
+  };
 
   const computeTotal = () => form.line_items.reduce((s, l) => s + (l.qty_ordered || 0) * (l.unit_price || 0), 0);
 
@@ -193,6 +209,7 @@ export default function PurchaseOrders() {
         <div style={{ display: 'flex' }}>
           <Sidebar />
           <main className="po-main">
+            <WorkflowGuide pageKey="purchase-orders" />
             <div className="po-header">
               <h2>Purchase Orders</h2>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -292,12 +309,18 @@ export default function PurchaseOrders() {
                   </div>
                   <table className="line-items-table">
                     <thead>
-                      <tr><th>Product / Item Key</th><th style={{ width: 80 }}>Qty</th><th style={{ width: 100 }}>Unit Price</th><th style={{ width: 100 }}>Total</th><th style={{ width: 40 }}></th></tr>
+                      <tr><th>Product</th><th style={{ width: 80 }}>Qty</th><th style={{ width: 100 }}>Unit Price</th><th style={{ width: 100 }}>Total</th><th style={{ width: 40 }}></th></tr>
                     </thead>
                     <tbody>
                       {form.line_items.map((line, i) => (
                         <tr key={i}>
-                          <td><input value={line.item_key} onChange={e => setLineField(i, 'item_key', e.target.value)} placeholder="Item description" /></td>
+                          <td>
+                            <SelectField value={line.product_id} onChange={e => handleProductSelect(i, e.target.value)}>
+                              <option value="">Select product...</option>
+                              {productOptions.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.qty || ''} {p.unit_code || 'PC'}</option>)}
+                            </SelectField>
+                            {!line.product_id && <input value={line.item_key} onChange={e => setLineField(i, 'item_key', e.target.value)} placeholder="Or type custom item..." style={{ marginTop: 4 }} />}
+                          </td>
                           <td><input type="number" min="1" value={line.qty_ordered} onChange={e => setLineField(i, 'qty_ordered', Number(e.target.value))} /></td>
                           <td><input type="number" min="0" step="0.01" value={line.unit_price} onChange={e => setLineField(i, 'unit_price', Number(e.target.value))} /></td>
                           <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt((line.qty_ordered || 0) * (line.unit_price || 0))}</td>

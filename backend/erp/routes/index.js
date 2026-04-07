@@ -24,6 +24,17 @@ router.use('/classify', require('./classificationRoutes'));
 router.use('/customers', require('./customerRoutes'));
 router.use('/print', require('./printRoutes'));
 
+// ═══ Phase 24 — ERP Control Center ═══
+router.use('/entities', require('./entityRoutes'));
+router.use('/control-center', require('./controlCenterRoutes'));
+router.use('/lookup-values', require('./lookupGenericRoutes'));
+
+// ═══ Phase 24 — Agent Intelligence ═══
+router.use('/agents', require('./agentRoutes'));
+
+// ═══ Phase 24B — Partner Scorecards ═══
+router.use('/scorecards', require('./scorecardRoutes'));
+
 // ═══ Phase 3 — Sales & Inventory ═══
 router.use('/sales', erpAccessCheck('sales'), require('./salesRoutes'));
 router.use('/inventory', erpAccessCheck('inventory'), require('./inventoryRoutes'));
@@ -45,6 +56,8 @@ router.use('/territories', erpAccessCheck('expenses'), require('./territoryRoute
 router.use('/expenses', erpAccessCheck('expenses'), require('./expenseRoutes'));
 
 // ═══ Phase 7 — Income, PNL & Year-End Close ═══
+// Note: incomeRoutes uses absolute paths (/income/*, /pnl/*, /profit-sharing/*, /archive/*)
+// so it must be mounted at '/'. erpAccessCheck runs as passthrough for non-matching routes.
 router.use('/', erpAccessCheck('reports'), require('./incomeRoutes'));
 
 // ═══ Phase 8 — Dashboard & Reports ═══
@@ -59,6 +72,8 @@ router.use('/crm-bridge', require('./crmBridgeRoutes'));
 
 // ═══ Phase 10 — ERP Access Control, People & Payroll ═══
 router.use('/erp-access', require('./erpAccessRoutes'));
+// as-users is a lightweight lookup needed by tagging UIs — no module check
+router.get('/people/as-users', require('../controllers/peopleController').getAsUsers);
 router.use('/people', erpAccessCheck('people'), require('./peopleRoutes'));
 router.use('/payroll', erpAccessCheck('payroll'), require('./payrollRoutes'));
 

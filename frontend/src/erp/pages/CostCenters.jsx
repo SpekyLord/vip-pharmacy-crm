@@ -7,6 +7,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import { showError, showSuccess } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 
@@ -42,7 +43,7 @@ const pageStyles = `
   @media(max-width: 375px) { .cc-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .cc-main input, .cc-main select { font-size: 16px; } }
 `;
 
-function TreeView({ nodes, onToggle }) {
+function TreeView({ nodes, onToggle, onEdit }) {
   if (!nodes || nodes.length === 0) return null;
   return (
     <div className="tree-node">
@@ -50,28 +51,30 @@ function TreeView({ nodes, onToggle }) {
         <div key={n._id}>
           <div className="tree-item">
             <span className="tree-code">{n.code}</span>
-            <span style={{ flex: 1 }}>{n.name}</span>
+            <span style={{ flex: 1 }}>{n.name}{n.description ? <span style={{ color: 'var(--erp-muted)', fontSize: 11, marginLeft: 6 }}>— {n.description}</span> : ''}</span>
             <span className={`badge badge-${n.is_active ? 'active' : 'inactive'}`}>{n.is_active ? 'Active' : 'Inactive'}</span>
+            {onEdit && <button className="btn btn-sm btn-outline" onClick={() => onEdit(n)} style={{ marginRight: 4 }}>Edit</button>}
             {onToggle && (
               <button className="btn btn-sm" onClick={() => onToggle(n._id, !n.is_active)}>
                 {n.is_active ? 'Deactivate' : 'Activate'}
               </button>
             )}
           </div>
-          {n.children && n.children.length > 0 && <TreeView nodes={n.children} onToggle={onToggle} />}
+          {n.children && n.children.length > 0 && <TreeView nodes={n.children} onToggle={onToggle} onEdit={onEdit} />}
         </div>
       ))}
     </div>
   );
 }
 
-export default function CostCenters() {
+export function CostCentersContent() {
   const { user } = useAuth();
   const rpt = useReports();
   const [tree, setTree] = useState([]);
   const [flatList, setFlatList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ code: '', name: '', parent_cost_center: '', description: '' });
+  const [editModal, setEditModal] = useState(null); // null or { _id, name, description, parent_cost_center }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -94,12 +97,25 @@ export default function CostCenters() {
       setForm({ code: '', name: '', parent_cost_center: '', description: '' });
       load();
     } catch (err) {
-      alert(err?.response?.data?.message || err.message || 'Failed to create cost center');
+      showError(err, 'Could not save cost center');
     }
   };
 
   const handleToggle = async (id, is_active) => {
-    try { await rpt.updateCostCenter(id, { is_active }); load(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    try { await rpt.updateCostCenter(id, { is_active }); load(); } catch (err) { showError(err, 'Could not update cost center'); }
+  };
+
+  const openEdit = (node) => {
+    setEditModal({ _id: node._id, name: node.name, description: node.description || '', parent_cost_center: node.parent_cost_center || '' });
+  };
+
+  const handleEditSave = async () => {
+    if (!editModal) return;
+    try {
+      await rpt.updateCostCenter(editModal._id, { name: editModal.name, description: editModal.description, parent_cost_center: editModal.parent_cost_center || null });
+      setEditModal(null);
+      load();
+    } catch (err) { showError(err, 'Could not save cost center'); }
   };
 
   const handleExport = async () => {
@@ -108,7 +124,7 @@ export default function CostCenters() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'cost-centers-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const handleImport = async (e) => {
@@ -118,66 +134,103 @@ export default function CostCenters() {
     fd.append('file', file);
     try {
       const res = await rpt.importCostCenters(fd);
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       load();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
     e.target.value = '';
   };
 
   return (
-    <div className="cc-page">
+    <>
       <style>{pageStyles}</style>
+      <div className="cc-header">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <h1>Cost Centers</h1>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
+            <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>
+          </div>
+        </div>
+        <p>Manage cost center hierarchy for financial reporting</p>
+      </div>
+
+      <div className="panel">
+        <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>New Cost Center</h3>
+        <div className="form-row">
+          <div className="form-group">
+            <label>Code</label>
+            <input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g., CC-SALES-MNL" />
+          </div>
+          <div className="form-group">
+            <label>Name</label>
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g., Sales - Manila" />
+          </div>
+          <div className="form-group">
+            <label>Parent</label>
+            <SelectField value={form.parent_cost_center} onChange={e => setForm(f => ({ ...f, parent_cost_center: e.target.value }))}>
+              <option value="">None (Root)</option>
+              {flatList.filter(c => c.is_active).map(c => (
+                <option key={c._id} value={c._id}>{c.code} - {c.name}</option>
+              ))}
+            </SelectField>
+          </div>
+          <div className="form-group">
+            <label>Description</label>
+            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+          </div>
+          <button className="btn btn-primary" onClick={handleCreate}>Create</button>
+        </div>
+      </div>
+
+      {loading && <div className="loading">Loading...</div>}
+
+      <div className="panel">
+        <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>Cost Center Hierarchy</h3>
+        {tree.length > 0 ? <TreeView nodes={tree} onToggle={handleToggle} onEdit={openEdit} /> : (
+          <div style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 20 }}>No cost centers created yet</div>
+        )}
+      </div>
+
+      {editModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => { if (e.target === e.currentTarget) setEditModal(null); }}>
+          <div style={{ background: 'var(--erp-panel, #fff)', borderRadius: 14, padding: 24, width: 420, maxWidth: '95vw' }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>Edit Cost Center</h3>
+            <div className="form-group">
+              <label>Name</label>
+              <input value={editModal.name} onChange={e => setEditModal(m => ({ ...m, name: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label>Description</label>
+              <input value={editModal.description} onChange={e => setEditModal(m => ({ ...m, description: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label>Parent</label>
+              <SelectField value={editModal.parent_cost_center} onChange={e => setEditModal(m => ({ ...m, parent_cost_center: e.target.value }))}>
+                <option value="">None (Root)</option>
+                {flatList.filter(c => c.is_active && c._id !== editModal._id).map(c => (
+                  <option key={c._id} value={c._id}>{c.code} - {c.name}</option>
+                ))}
+              </SelectField>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button className="btn btn-outline" onClick={() => setEditModal(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleEditSave}>Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function CostCenters() {
+  return (
+    <div className="cc-page">
       <Navbar />
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="cc-main">
-          <div className="cc-header">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <h1>Cost Centers</h1>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
-                <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>
-              </div>
-            </div>
-            <p>Manage cost center hierarchy for financial reporting</p>
-          </div>
-
-          <div className="panel">
-            <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>New Cost Center</h3>
-            <div className="form-row">
-              <div className="form-group">
-                <label>Code</label>
-                <input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g., CC-SALES-MNL" />
-              </div>
-              <div className="form-group">
-                <label>Name</label>
-                <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g., Sales - Manila" />
-              </div>
-              <div className="form-group">
-                <label>Parent</label>
-                <SelectField value={form.parent_cost_center} onChange={e => setForm(f => ({ ...f, parent_cost_center: e.target.value }))}>
-                  <option value="">None (Root)</option>
-                  {flatList.filter(c => c.is_active).map(c => (
-                    <option key={c._id} value={c._id}>{c.code} - {c.name}</option>
-                  ))}
-                </SelectField>
-              </div>
-              <div className="form-group">
-                <label>Description</label>
-                <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-              </div>
-              <button className="btn btn-primary" onClick={handleCreate}>Create</button>
-            </div>
-          </div>
-
-          {loading && <div className="loading">Loading...</div>}
-
-          <div className="panel">
-            <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>Cost Center Hierarchy</h3>
-            {tree.length > 0 ? <TreeView nodes={tree} onToggle={handleToggle} /> : (
-              <div style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 20 }}>No cost centers created yet</div>
-            )}
-          </div>
+          <CostCentersContent />
         </div>
       </div>
     </div>

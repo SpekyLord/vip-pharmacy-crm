@@ -127,8 +127,8 @@ const journalEntrySchema = new mongoose.Schema({
   collection: 'erp_journal_entries'
 });
 
-// Pre-save: auto-sum lines and validate balance when POSTED
-journalEntrySchema.pre('save', function (next) {
+// Pre-save: auto-sum lines, validate balance, and verify COA codes when POSTED
+journalEntrySchema.pre('save', async function (next) {
   if (this.lines && this.lines.length > 0) {
     this.total_debit = this.lines.reduce((sum, l) => sum + (l.debit || 0), 0);
     this.total_credit = this.lines.reduce((sum, l) => sum + (l.credit || 0), 0);
@@ -140,6 +140,18 @@ journalEntrySchema.pre('save', function (next) {
     if (diff > 0.01) {
       return next(new Error(`Journal entry is unbalanced: DR ${this.total_debit.toFixed(2)} ≠ CR ${this.total_credit.toFixed(2)} (diff ${diff.toFixed(2)})`));
     }
+
+    // Validate all account_codes exist in ChartOfAccounts
+    const ChartOfAccounts = mongoose.model('ChartOfAccounts');
+    const codes = [...new Set(this.lines.map(l => l.account_code))];
+    const existing = await ChartOfAccounts.find(
+      { entity_id: this.entity_id, account_code: { $in: codes } }
+    ).select('account_code').lean();
+    const existingCodes = new Set(existing.map(c => c.account_code));
+    const invalid = codes.filter(c => !existingCodes.has(c));
+    if (invalid.length) {
+      return next(new Error(`Invalid COA codes: ${invalid.join(', ')}. Verify Settings → COA mapping.`));
+    }
   }
   next();
 });
@@ -150,6 +162,6 @@ journalEntrySchema.index({ entity_id: 1, period: 1, status: 1 });
 journalEntrySchema.index({ entity_id: 1, source_module: 1 });
 journalEntrySchema.index({ entity_id: 1, source_module: 1, source_event_id: 1 });
 journalEntrySchema.index({ 'lines.account_code': 1, entity_id: 1 });
-journalEntrySchema.index({ corrects_je_id: 1 });
+journalEntrySchema.index({ corrects_je_id: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('JournalEntry', journalEntrySchema);

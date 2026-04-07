@@ -180,6 +180,14 @@ const createTransaction = catchAsync(async (req, res) => {
  * This is the ONLY place balance changes for deposit/disbursement.
  */
 const postTransaction = catchAsync(async (req, res) => {
+  // Period lock check before entering transaction
+  const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+  const txnPrecheck = await PettyCashTransaction.findOne({ _id: req.params.id, ...req.tenantFilter }).lean();
+  if (txnPrecheck) {
+    const pcPeriod = dateToPeriod(txnPrecheck.txn_date || new Date());
+    await checkPeriodOpen(req.entityId, pcPeriod);
+  }
+
   const session = await mongoose.startSession();
   try {
     let result;
@@ -519,7 +527,7 @@ const processDocument = catchAsync(async (req, res) => {
         txn_number: doc.doc_number,
         txn_date: doc.doc_date
       };
-      const jeData = journalFromPettyCash(jeTxn, fundCoa, fundCoaName, req.user._id);
+      const jeData = await journalFromPettyCash(jeTxn, fundCoa, fundCoaName, req.user._id);
       if (jeData) {
         await createAndPostJournal(req.entityId, jeData);
       }

@@ -107,6 +107,13 @@ const postPayroll = catchAsync(async (req, res) => {
   if (cycle) filter.cycle = cycle;
 
   const approved = await Payslip.find(filter);
+
+  // Period lock check — prevent posting payroll to closed periods
+  if (period) {
+    const { checkPeriodOpen } = require('../utils/periodLock');
+    await checkPeriodOpen(req.entityId, period);
+  }
+
   let posted = 0;
   const errors = [];
 
@@ -121,7 +128,7 @@ const postPayroll = catchAsync(async (req, res) => {
           .populate('person_id', 'full_name')
           .lean();
         const bankCoa = await resolveFundingCoa({ payment_mode: 'BANK_TRANSFER' });
-        const jeData = journalFromPayroll(
+        const jeData = await journalFromPayroll(
           { ...fullPs, employee_name: fullPs.person_id?.full_name || '' },
           bankCoa.coa_code, bankCoa.coa_name, req.user._id
         );
@@ -143,7 +150,8 @@ const postPayroll = catchAsync(async (req, res) => {
 
 // ═══ Read ═══
 const getPayslip = catchAsync(async (req, res) => {
-  const payslip = await Payslip.findById(req.params.id)
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const payslip = await Payslip.findOne({ _id: req.params.id, ...entityScope })
     .populate('person_id', 'full_name person_type department position')
     .populate('reviewed_by', 'name')
     .populate('approved_by', 'name')

@@ -2,11 +2,14 @@
  * Monthly Archive Page — Period close/re-open controls + snapshot history
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useDashboard from '../hooks/useDashboard';
 import useIncome from '../hooks/useIncome';
+import { showError, showSuccess } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .archive-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -58,7 +61,7 @@ export default function MonthlyArchive() {
     try {
       const res = await dash.getMonthlyArchives();
       setArchives(res?.data || []);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not load archives'); }
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -66,7 +69,7 @@ export default function MonthlyArchive() {
     try {
       const res = await inc.getPeriodStatus({ period: selectedPeriod });
       setPeriodStatus(res?.data || null);
-    } catch { setPeriodStatus(null); }
+    } catch (err) { showError(err, 'Could not load period status'); setPeriodStatus(null); }
   }, [selectedPeriod]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadArchives(); }, [loadArchives]);
@@ -77,11 +80,11 @@ export default function MonthlyArchive() {
     setActionLoading(true);
     try {
       await inc.closePeriod({ period: selectedPeriod });
-      alert(`Period ${selectedPeriod} closed successfully`);
+      showSuccess(`Period ${selectedPeriod} closed successfully`);
       loadPeriodStatus();
       loadArchives();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to close period');
+      showError(err, 'Could not close period');
     }
     setActionLoading(false);
   };
@@ -91,11 +94,11 @@ export default function MonthlyArchive() {
     setActionLoading(true);
     try {
       await inc.reopenPeriod({ period: selectedPeriod });
-      alert(`Period ${selectedPeriod} re-opened successfully`);
+      showSuccess(`Period ${selectedPeriod} re-opened successfully`);
       loadPeriodStatus();
       loadArchives();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to re-open period');
+      showError(err, 'Could not re-open period');
     }
     setActionLoading(false);
   };
@@ -111,7 +114,11 @@ export default function MonthlyArchive() {
         <div className="archive-main">
           <div className="archive-header">
             <h1>Monthly Archive</h1>
+            <Link to="/erp/reports" className="erp-back-btn">
+              Back to Reports
+            </Link>
           </div>
+          <WorkflowGuide pageKey="month-end-close" />
 
           {/* Period Control Panel */}
           {isAdmin && (

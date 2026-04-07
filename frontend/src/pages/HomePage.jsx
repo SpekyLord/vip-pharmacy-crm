@@ -14,43 +14,83 @@ const styles = `
   .home-page {
     min-height: 100vh;
     min-height: 100dvh;
-    background: #f8f9fb;
+    background: #fffbeb;
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+      "Segoe UI Emoji";
+  }
+
+  .home-page::before {
+    content: '';
+    position: relative;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(
+      640px 640px at 10% 12%,
+      rgba(245, 158, 11, 0.22) 0%,
+      rgba(245, 158, 11, 0) 62%
+    );
+    filter: blur(18px);
+  }
+
+  .home-shell {
+    width: 100%;
+    max-width: 620px;
+    max-height: calc(100dvh - 32px);
+    overflow: auto;
+    border-radius: 22px;
+    padding: 28px 24px 22px;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 247, 237, 0.92) 0%,
+      rgba(255, 255, 255, 0.72) 100%
+    );
+    border: 1px solid rgba(255, 255, 255, 0.86);
+    backdrop-filter: blur(20px) saturate(120%);
+    -webkit-backdrop-filter: blur(20px) saturate(120%);
+    box-shadow: 0 22px 60px rgba(245, 158, 11, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.82);
   }
 
   .home-header {
-    background: #ffffff;
-    padding: 24px 20px 32px;
     text-align: center;
-    position: relative;
+    margin-bottom: 18px;
   }
 
   .home-logo {
-    height: 200px;
-    margin-bottom: 12px;
+    height: 124px;
+    margin-bottom: 8px;
+    object-fit: contain;
   }
 
   .home-greeting {
-    color: #64748b;
-    font-size: 14px;
+    color: rgba(120, 83, 50, 0.82);
+    font-size: 13px;
     margin: 0;
   }
 
   .home-name {
-    color: #0f172a;
-    font-size: 20px;
+    color: #d97706;
+    font-size: 34px;
     font-weight: 700;
-    margin: 4px 0 0;
+    letter-spacing: -0.02em;
+    margin: 2px 0 0;
   }
 
   .home-role {
     display: inline-block;
     margin-top: 8px;
-    padding: 3px 12px;
-    background: #f1f5f9;
-    border-radius: 20px;
-    color: #475569;
+    padding: 5px 12px;
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    border-radius: 999px;
+    color: rgba(120, 83, 50, 0.9);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -58,16 +98,14 @@ const styles = `
   }
 
   .home-body {
-    flex: 1;
     padding: 0;
   }
 
-  /* Platform selector */
   .platform-section {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    padding: 20px;
+    gap: 10px;
+    margin-top: 12px;
   }
 
   .platform-card {
@@ -75,140 +113,113 @@ const styles = `
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 24px 16px;
-    border-radius: 16px;
-    border: 2px solid transparent;
+    padding: 20px 14px;
+    border-radius: 18px;
+    border: 1px solid transparent;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
     text-decoration: none;
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.07);
   }
 
   .platform-card-crm {
-    background: linear-gradient(135deg, #eff6ff, #dbeafe);
-    border-color: #93c5fd;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(254, 240, 138, 0.45) 100%);
+    border-color: rgba(245, 158, 11, 0.34);
   }
 
-  .platform-card-crm:active {
-    transform: scale(0.97);
-    border-color: #3b82f6;
+  .platform-card-crm:hover {
+    transform: translateY(-2px);
+    border-color: rgba(245, 158, 11, 0.55);
+    box-shadow: 0 18px 36px rgba(245, 158, 11, 0.2);
   }
 
   .platform-card-erp {
-    background: linear-gradient(135deg, #f0fdf4, #dcfce7);
-    border-color: #86efac;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(254, 215, 170, 0.48) 100%);
+    border-color: rgba(217, 119, 6, 0.34);
   }
 
-  .platform-card-erp:active {
-    transform: scale(0.97);
-    border-color: #22c55e;
+  .platform-card-erp:hover {
+    transform: translateY(-2px);
+    border-color: rgba(217, 119, 6, 0.55);
+    box-shadow: 0 18px 36px rgba(217, 119, 6, 0.22);
   }
 
   .platform-icon {
-    font-size: 32px;
+    font-size: 30px;
     margin-bottom: 8px;
   }
 
   .platform-label {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
-    color: #0f172a;
+    color: #7c2d12;
   }
 
   .platform-desc {
     font-size: 12px;
-    color: #64748b;
+    color: rgba(120, 83, 50, 0.86);
     margin-top: 4px;
     text-align: center;
   }
 
-  /* Entity list */
-  .section-title {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #94a3b8;
-    padding: 16px 20px 8px;
-  }
-
-  .entity-list {
-    background: #fff;
-    border-top: 1px solid #e5e7eb;
-    border-bottom: 1px solid #e5e7eb;
-  }
-
-  .entity-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 20px;
-    border-bottom: 1px solid #f1f5f9;
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-
-  .entity-item:last-child {
-    border-bottom: none;
-  }
-
-  .entity-item:active {
-    background: #f1f5f9;
-  }
-
-  .entity-name {
-    font-size: 15px;
-    font-weight: 500;
-    color: #1e293b;
-  }
-
-  .entity-code {
+  .home-meta {
+    margin-top: 12px;
+    text-align: center;
     font-size: 12px;
-    color: #94a3b8;
-    margin-top: 2px;
+    color: rgba(120, 83, 50, 0.74);
   }
 
-  .entity-chevron {
-    color: #cbd5e1;
-    font-size: 18px;
+  .home-meta strong {
+    color: rgba(120, 83, 50, 0.9);
   }
 
-  .entity-active {
-    background: #f0f9ff;
-  }
-
-  .entity-active .entity-name {
-    color: #2563eb;
-    font-weight: 600;
-  }
-
-  /* Logout */
   .home-logout {
-    padding: 20px;
+    padding: 16px 0 0;
     text-align: center;
   }
 
   .home-logout button {
-    padding: 10px 32px;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
-    background: #fff;
-    color: #64748b;
+    width: 100%;
+    min-height: 48px;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.8);
+    color: #7c2d12;
     font-size: 14px;
+    font-weight: 700;
     cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .home-logout button:hover {
+    box-shadow: 0 14px 28px rgba(245, 158, 11, 0.18);
+    background: rgba(255, 255, 255, 0.95);
   }
 
   .home-loading {
     text-align: center;
-    padding: 40px;
-    color: #94a3b8;
-    font-size: 14px;
+    margin-top: 12px;
+    color: rgba(120, 83, 50, 0.75);
+    font-size: 13px;
   }
 
-  @media (min-width: 600px) {
-    .home-body {
-      max-width: 480px;
-      margin: 0 auto;
-      width: 100%;
+  @media (max-width: 480px) {
+    .home-shell {
+      padding: 22px 14px 16px;
+      border-radius: 20px;
+    }
+
+    .home-logo {
+      height: 102px;
+    }
+
+    .home-name {
+      font-size: 30px;
+    }
+
+    .platform-section {
+      grid-template-columns: 1fr;
+      gap: 8px;
     }
   }
 `;
@@ -218,51 +229,25 @@ export default function HomePage() {
   const navigate = useNavigate();
   const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [autoRouteBlocked, setAutoRouteBlocked] = useState(false);
 
   const isAdminLike = ADMIN_LIKE.includes(user?.role);
   const crmPath = isAdminLike ? '/admin' : '/bdm';
-  const hasErp = user?.erp_access?.enabled;
+  // Admin/finance/president always have ERP access (backend bypasses module check for them)
+  const hasErp = isAdminLike || user?.erp_access?.enabled;
 
   // ── Auto-route logic (20.6) ──
-  // BDM → CRM dashboard (phone-first daily work)
-  // Admin/President with ERP → ERP
-  // Only CRM users → CRM
-  // Last preference as fallback
+  // Always show the CRM/ERP chooser landing page.
+  // Only auto-route BDMs (employees) who don't have ERP access — they only use CRM.
   useEffect(() => {
-    if (!user || autoRouteBlocked) return;
+    if (!user) return;
 
-    const lastPref = localStorage.getItem('vip_last_platform');
-
-    // BDMs always go to CRM (their daily tool is the phone CRM)
-    if (user.role === 'employee') {
+    // BDMs without ERP → go straight to CRM (phone-first daily work)
+    if (user.role === 'employee' && !hasErp) {
       navigate('/bdm');
       return;
     }
 
-    // If user has a saved preference, use it
-    if (lastPref === 'erp' && hasErp) {
-      navigate('/erp');
-      return;
-    }
-    if (lastPref === 'crm') {
-      navigate(crmPath);
-      return;
-    }
-
-    // Admin/President/Finance with ERP → ERP by default
-    if (isAdminLike && hasErp) {
-      navigate('/erp');
-      return;
-    }
-
-    // Only CRM → CRM
-    if (!hasErp) {
-      navigate(crmPath);
-      return;
-    }
-
-    // Fallback: show chooser (don't auto-route)
+    // Everyone else (president, admin, finance, BDMs with ERP) → show chooser
   }, [user]);
 
   useEffect(() => {
@@ -303,52 +288,63 @@ export default function HomePage() {
     <div className="home-page">
       <style>{styles}</style>
 
-      <div className="home-header">
-        <img src="/VIP_LOGO_R.png" alt="VIP" className="home-logo" />
-        <p className="home-greeting">Welcome back,</p>
-        <h1 className="home-name">{user?.name || 'User'}</h1>
-        <span className="home-role">{roleLabel[user?.role] || user?.role}</span>
-      </div>
+      <div className="home-shell">
 
-      <div className="home-body">
-        {/* CRM / ERP Platform Selection */}
-        <div className="platform-section">
-          <div className="platform-card platform-card-crm" onClick={() => goTo('crm', crmPath)}>
-            <div className="platform-icon">📋</div>
-            <div className="platform-label">CRM</div>
-            <div className="platform-desc">Visits & Clients</div>
+        <div className="home-header">
+          <img src="/cip-logo.svg" alt="VIP" className="home-logo" onError={(e) => { e.currentTarget.src = '/VIP_LOGO_R.png'; }} />
+          <p className="home-greeting">Welcome back,</p>
+          <h1 className="home-name">{user?.name || 'User'}</h1>
+          <span className="home-role">{roleLabel[user?.role] || user?.role}</span>
+        </div>
+
+        <div className="home-body">
+          <div className="platform-section">
+            <div className="platform-card platform-card-crm" onClick={() => goTo('crm', crmPath)}>
+              <div className="platform-icon">📋</div>
+              <div className="platform-label">CRM</div>
+              <div className="platform-desc">Visits & Clients</div>
+            </div>
+
+            {hasErp ? (
+              <div className="platform-card platform-card-erp" onClick={() => goTo('erp', '/erp')}>
+                <div className="platform-icon">📊</div>
+                <div className="platform-label">ERP</div>
+                <div className="platform-desc">Sales & Accounting</div>
+              </div>
+            ) : (
+              <div className="platform-card platform-card-erp" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+                <div className="platform-icon">🔒</div>
+                <div className="platform-label">ERP</div>
+                <div className="platform-desc">Not enabled</div>
+              </div>
+            )}
           </div>
 
-          {hasErp ? (
-            <div className="platform-card platform-card-erp" onClick={() => goTo('erp', '/erp')}>
-              <div className="platform-icon">📊</div>
-              <div className="platform-label">ERP</div>
-              <div className="platform-desc">Sales & Accounting</div>
-            </div>
-          ) : (
-            <div className="platform-card platform-card-erp" style={{ opacity: 0.4, cursor: 'not-allowed' }}>
-              <div className="platform-icon">🔒</div>
-              <div className="platform-label">ERP</div>
-              <div className="platform-desc">Not enabled</div>
+          {hasErp && (
+            <div style={{ textAlign: 'center', fontSize: 12, color: 'rgba(120, 83, 50, 0.74)', marginTop: 10 }}>
+              <button
+                onClick={() => { localStorage.removeItem('vip_last_platform'); }}
+                style={{ background: 'none', border: 'none', color: 'rgba(120, 83, 50, 0.74)', cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}
+              >
+                Always show this chooser
+              </button>
             </div>
           )}
-        </div>
 
-        {hasErp && (
-          <div style={{ textAlign: 'center', fontSize: 12, color: '#94a3b8', marginTop: -4, marginBottom: 8 }}>
-            <button
-              onClick={() => { setAutoRouteBlocked(true); localStorage.removeItem('vip_last_platform'); }}
-              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}
-            >
-              Always show this chooser
-            </button>
+          {hasErp && (
+            <div className="home-meta">
+              Assigned warehouses: <strong>{warehouses.length}</strong>
+            </div>
+          )}
+
+          {loading && hasErp && <div className="home-loading">Loading ERP access...</div>}
+
+          <div className="home-logout">
+            <button onClick={handleLogout}>Logout</button>
           </div>
-        )}
-
-        <div className="home-logout">
-          <button onClick={handleLogout}>Logout</button>
         </div>
       </div>
+
     </div>
   );
 }

@@ -9,12 +9,15 @@
  * Year-End Close section for admin/finance roles.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useIncome from '../hooks/useIncome';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .ps-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -30,6 +33,15 @@ const pageStyles = `
   .ps-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; overflow: hidden; }
   .ps-table th { background: var(--erp-accent-soft, #e8efff); padding: 10px 12px; text-align: left; font-weight: 600; white-space: nowrap; }
   .ps-table td { padding: 10px 12px; border-top: 1px solid var(--erp-border); }
+  .ps-table-wrap { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; overflow-x: auto; }
+  .ps-mobile-list { display: none; gap: 10px; }
+  .ps-mobile-card { border: 1px solid var(--erp-border); border-radius: 14px; background: var(--erp-panel); padding: 14px; box-shadow: 0 8px 18px rgba(15,23,42,0.05); }
+  .ps-mobile-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+  .ps-mobile-title { font-size: 14px; font-weight: 800; color: var(--erp-text); }
+  .ps-mobile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .ps-mobile-item { background: #f8fafc; border: 1px solid var(--erp-border); border-radius: 12px; padding: 10px 12px; }
+  .ps-mobile-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--erp-muted); font-weight: 700; }
+  .ps-mobile-value { font-size: 13px; font-weight: 700; color: var(--erp-text); margin-top: 4px; }
   .cond { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; font-size: 12px; font-weight: 700; }
   .cond-pass { background: #d1fae5; color: #065f46; }
   .cond-fail { background: #fee2e2; color: #991b1b; }
@@ -51,7 +63,8 @@ const pageStyles = `
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .confirm-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
   .confirm-modal-content { background: var(--erp-panel); border-radius: 12px; padding: 24px; width: 420px; max-width: 90vw; }
-  @media(max-width: 768px) { .ps-main { padding: 12px; } .ps-table { font-size: 11px; } }
+  @media(max-width: 768px) { .ps-main { padding: 12px; } .ps-table { font-size: 11px; } .ps-table-wrap { display: none; } .ps-mobile-list { display: grid; } }
+  @media(max-width: 480px) { .ps-mobile-grid { grid-template-columns: 1fr; } }
 `;
 
 function fmt(n) { return '₱' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -84,7 +97,7 @@ export default function ProfitSharing() {
       if (bdmId) params.bdm_id = bdmId;
       const res = await inc.getProfitShareStatus(params);
       setPsData(res?.data || null);
-    } catch { setPsData(null); }
+    } catch (err) { showError(err, 'Could not load profit sharing data'); setPsData(null); }
     setLoading(false);
   }, [period, bdmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -95,7 +108,7 @@ export default function ProfitSharing() {
     try {
       const res = await inc.getFiscalYearStatus({ fiscal_year: fyYear });
       setFyStatus(res?.data || null);
-    } catch { setFyStatus(null); }
+    } catch (err) { showError(err, 'Could not load fiscal year status'); setFyStatus(null); }
   }, [fyYear, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadFyStatus(); }, [loadFyStatus]);
@@ -105,7 +118,7 @@ export default function ProfitSharing() {
     try {
       const res = await inc.validateYearEnd({ fiscal_year: fyYear });
       setFyValidation(res?.data || null);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Year-end validation failed'); }
     setLoading(false);
   };
 
@@ -116,7 +129,7 @@ export default function ProfitSharing() {
       setShowConfirm(false);
       setFyValidation(null);
       loadFyStatus();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Year-end close failed'); }
     setLoading(false);
   };
 
@@ -130,6 +143,7 @@ export default function ProfitSharing() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="ps-main">
+          <WorkflowGuide pageKey="profit-sharing" />
           <div className="ps-header">
             <h1>Profit Sharing</h1>
             <div className="controls">
@@ -138,6 +152,9 @@ export default function ProfitSharing() {
                 <input type="text" placeholder="BDM ID (optional)" value={bdmId}
                   onChange={e => setBdmId(e.target.value)} style={{ width: 160 }} />
               )}
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
             </div>
           </div>
 
@@ -174,50 +191,83 @@ export default function ProfitSharing() {
               </div>
 
               {/* ═══ Product Eligibility Table ═══ */}
-              <table className="ps-table">
-                <thead>
-                  <tr>
-                    <th>Product</th>
-                    <th style={{ textAlign: 'center' }}>Hospitals (A)</th>
-                    <th style={{ textAlign: 'center' }}>MD Tags (B)</th>
-                    <th style={{ textAlign: 'center' }}>Streak (C)</th>
-                    <th style={{ textAlign: 'center' }}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 24 }}>No product data for this period</td></tr>
-                  )}
-                  {products.map((p) => {
-                    const passA = p.hospital_count >= 2;
-                    const passB = p.md_count >= 1;
-                    return (
-                      <tr key={p.product_id || p.product_name}>
-                        <td>{p.product_name || p.product_id}</td>
-                        <td style={{ textAlign: 'center' }}>
-                          <span className={`cond ${passA ? 'cond-pass' : 'cond-fail'}`}>{passA ? '✓' : '✗'}</span>
-                          <span style={{ marginLeft: 6, fontSize: 12 }}>{p.hospital_count}</span>
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <span className={`cond ${passB ? 'cond-pass' : 'cond-fail'}`}>{passB ? '✓' : '✗'}</span>
-                          <span style={{ marginLeft: 6, fontSize: 12 }}>{p.md_count}</span>
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <span style={{ fontSize: 14, fontWeight: 600 }}>{p.consecutive_months}</span>
-                          <span style={{ fontSize: 11, color: 'var(--erp-muted)', marginLeft: 4 }}>months</span>
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          {p.qualified
-                            ? <span className="badge badge-qualified">Qualified</span>
-                            : passA && passB
-                              ? <span className="badge badge-building">Building ({p.consecutive_months}/3)</span>
-                              : <span className="badge badge-not-met">Not Met</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="ps-table-wrap">
+                <table className="ps-table">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th style={{ textAlign: 'center' }}>Hospitals (A)</th>
+                      <th style={{ textAlign: 'center' }}>MD Tags (B)</th>
+                      <th style={{ textAlign: 'center' }}>Streak (C)</th>
+                      <th style={{ textAlign: 'center' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products.length === 0 && (
+                      <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 24 }}>No product data for this period</td></tr>
+                    )}
+                    {products.map((p) => {
+                      const passA = p.hospital_count >= 2;
+                      const passB = p.md_count >= 1;
+                      return (
+                        <tr key={p.product_id || p.product_name}>
+                          <td>{p.product_name || p.product_id}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span className={`cond ${passA ? 'cond-pass' : 'cond-fail'}`}>{passA ? '✓' : '✗'}</span>
+                            <span style={{ marginLeft: 6, fontSize: 12 }}>{p.hospital_count}</span>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span className={`cond ${passB ? 'cond-pass' : 'cond-fail'}`}>{passB ? '✓' : '✗'}</span>
+                            <span style={{ marginLeft: 6, fontSize: 12 }}>{p.md_count}</span>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span style={{ fontSize: 14, fontWeight: 600 }}>{p.consecutive_months}</span>
+                            <span style={{ fontSize: 11, color: 'var(--erp-muted)', marginLeft: 4 }}>months</span>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {p.qualified
+                              ? <span className="badge badge-qualified">Qualified</span>
+                              : passA && passB
+                                ? <span className="badge badge-building">Building ({p.consecutive_months}/3)</span>
+                                : <span className="badge badge-not-met">Not Met</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="ps-mobile-list">
+                {products.length === 0 && (
+                  <div className="ps-mobile-card" style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No product data for this period</div>
+                )}
+                {products.map((p) => {
+                  const passA = p.hospital_count >= 2;
+                  const passB = p.md_count >= 1;
+                  return (
+                    <div className="ps-mobile-card" key={`mobile-${p.product_id || p.product_name}`}>
+                      <div className="ps-mobile-top">
+                        <div>
+                          <div className="ps-mobile-title">{p.product_name || p.product_id}</div>
+                          <div className="list-mobile-sub">Eligibility by product</div>
+                        </div>
+                        {p.qualified
+                          ? <span className="badge badge-qualified">Qualified</span>
+                          : passA && passB
+                            ? <span className="badge badge-building">Building ({p.consecutive_months}/3)</span>
+                            : <span className="badge badge-not-met">Not Met</span>}
+                      </div>
+                      <div className="ps-mobile-grid">
+                        <div className="ps-mobile-item"><div className="ps-mobile-label">Hospitals</div><div className="ps-mobile-value">{p.hospital_count} {passA ? '✓' : '✗'}</div></div>
+                        <div className="ps-mobile-item"><div className="ps-mobile-label">MD Tags</div><div className="ps-mobile-value">{p.md_count} {passB ? '✓' : '✗'}</div></div>
+                        <div className="ps-mobile-item"><div className="ps-mobile-label">Streak</div><div className="ps-mobile-value">{p.consecutive_months} months</div></div>
+                        <div className="ps-mobile-item"><div className="ps-mobile-label">Status</div><div className="ps-mobile-value">{p.qualified ? 'Qualified' : 'Not Met'}</div></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </>
           )}
 

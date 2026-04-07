@@ -16,6 +16,7 @@ const { createAndPostJournal } = require('../services/journalEngine');
 const { getApLedger, getApAging, getApConsolidated, getGrni } = require('../services/apService');
 const { recordApPayment, getPaymentHistory } = require('../services/apPaymentService');
 const { createVatEntry } = require('../services/vatService');
+const ErpAuditLog = require('../models/ErpAuditLog');
 const XLSX = require('xlsx');
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -242,7 +243,7 @@ const validateInvoice = catchAsync(async (req, res) => {
   const matchResult = await matchInvoice(invoice._id, req.body.tolerance || 0.02);
 
   // Re-fetch after matchInvoice (it saves match_status + per-line flags on its own copy)
-  invoice = await SupplierInvoice.findById(req.params.id);
+  invoice = await SupplierInvoice.findOne({ _id: req.params.id, entity_id: req.entityId });
 
   // Auto-validate if no discrepancies, or force with override
   if (matchResult.overall_status !== 'DISCREPANCY' || req.body.force) {
@@ -269,8 +270,16 @@ const postInvoice = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invoice must be VALIDATED before posting. Use force=true to bypass.' });
   }
 
+  // Period lock check
+  const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+  const invPeriod = dateToPeriod(invoice.invoice_date || new Date());
+  await checkPeriodOpen(req.entityId, invPeriod);
+
+  // Fetch vendor TIN for VAT ledger entry
+  const vendor = await VendorMaster.findById(invoice.vendor_id).select('tin').lean();
+
   // Build JE data using existing journalFromAP
-  const jeData = journalFromAP(invoice.toObject(), req.user._id);
+  const jeData = await journalFromAP(invoice.toObject(), req.user._id);
   const je = await createAndPostJournal(req.entityId, jeData);
 
   invoice.status = 'POSTED';
@@ -288,10 +297,13 @@ const postInvoice = catchAsync(async (req, res) => {
       source_doc_ref: invoice.invoice_ref,
       source_event_id: je._id,
       hospital_or_vendor: invoice.vendor_id,
-      tin: invoice.vendor_tin,
+      tin: vendor?.tin || '',
       gross_amount: invoice.total_amount || (invoice.net_amount + inputVat),
       vat_amount: inputVat
-    }).catch(err => console.error('VAT entry failed for SI:', invoice.invoice_ref, err.message));
+    }).catch(async (err) => {
+      console.error('VAT entry failed for SI:', invoice.invoice_ref, err.message);
+      await ErpAuditLog.logChange({ entity_id: req.entityId, log_type: 'LEDGER_ERROR', target_ref: invoice.invoice_ref, target_model: 'VatLedger', field_changed: 'vat_entry', old_value: '', new_value: err.message, changed_by: req.user._id, note: `INPUT VAT entry failed for SI ${invoice.invoice_ref}` }).catch(() => {});
+    });
   }
 
   res.json({ success: true, data: { invoice, journal_entry: je } });

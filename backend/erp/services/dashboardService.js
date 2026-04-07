@@ -185,11 +185,53 @@ async function getMtd(entityId, bdmId, isAdmin) {
   // Engagements MTD — Phase 9.2: real CRM Visit counts
   const engagementsMtd = await computeEngagements(bdmId, start, end);
 
+  // KPIs: DSO, Collection Rate, Gross Margin
+  // DSO = (AR / Sales MTD) × days elapsed in month
+  const daysElapsed = Math.max(1, new Date().getDate());
+  const arBalance = Math.max(0, salesMtd - collectionsMtd);
+  const dso = salesMtd > 0 ? Math.round((arBalance / salesMtd) * daysElapsed) : 0;
+
+  // Collection Rate = Collections / Sales (%)
+  const collectionRate = salesMtd > 0 ? Math.round((collectionsMtd / salesMtd) * 10000) / 100 : 0;
+
+  // Gross Margin = (Sales Net of VAT - COGS) / Sales Net of VAT (%)
+  const salesNetAgg = await SalesLine.aggregate([
+    { $match: { ...filter, status: 'POSTED', csi_date: { $gte: start, $lt: end } } },
+    { $group: { _id: null, netSales: { $sum: '$total_net_of_vat' } } }
+  ]);
+  const netSalesMtd = salesNetAgg[0]?.netSales || 0;
+
+  // COGS from POSTED sales line items × purchase_price
+  const cogsAgg = await SalesLine.aggregate([
+    { $match: { ...filter, status: 'POSTED', csi_date: { $gte: start, $lt: end }, sale_type: { $ne: 'SERVICE_INVOICE' } } },
+    { $unwind: '$line_items' },
+    {
+      $lookup: {
+        from: 'erp_product_master',
+        localField: 'line_items.product_id',
+        foreignField: '_id',
+        as: 'product'
+      }
+    },
+    { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: null,
+        total_cogs: { $sum: { $multiply: ['$line_items.qty', { $ifNull: ['$product.purchase_price', 0] }] } }
+      }
+    }
+  ]);
+  const cogsMtd = cogsAgg[0]?.total_cogs || 0;
+  const grossMargin = netSalesMtd > 0 ? Math.round(((netSalesMtd - cogsMtd) / netSalesMtd) * 10000) / 100 : 0;
+
   return {
     sales_mtd: Math.round(salesMtd * 100) / 100,
     collections_mtd: Math.round(collectionsMtd * 100) / 100,
     engagements_mtd: engagementsMtd,
-    income_mtd: Math.round(incomeMtd * 100) / 100
+    income_mtd: Math.round(incomeMtd * 100) / 100,
+    dso,
+    collection_rate: collectionRate,
+    gross_margin: grossMargin
   };
 }
 

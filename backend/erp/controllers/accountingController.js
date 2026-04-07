@@ -42,13 +42,13 @@ const getJournalById = catchAsync(async (req, res) => {
 });
 
 const postJournalEndpoint = catchAsync(async (req, res) => {
-  const je = await postJournal(req.params.id, req.user._id);
+  const je = await postJournal(req.params.id, req.user._id, req.entityId);
   res.json({ success: true, data: je });
 });
 
 const reverseJournalEndpoint = catchAsync(async (req, res) => {
   const { reason } = req.body;
-  const reversal = await reverseJournal(req.params.id, reason, req.user._id);
+  const reversal = await reverseJournal(req.params.id, reason, req.user._id, req.entityId);
   res.json({ success: true, data: reversal });
 });
 
@@ -56,6 +56,13 @@ const batchPostJournals = catchAsync(async (req, res) => {
   const { je_ids } = req.body;
   if (!Array.isArray(je_ids) || !je_ids.length) {
     return res.status(400).json({ success: false, message: 'je_ids array required' });
+  }
+
+  // Period lock check for all JEs before starting transaction
+  const { checkPeriodOpen } = require('../utils/periodLock');
+  const jesToPost = await JournalEntry.find({ _id: { $in: je_ids }, entity_id: req.entityId, status: 'DRAFT' }).select('period').lean();
+  for (const je of jesToPost) {
+    if (je.period) await checkPeriodOpen(req.entityId, je.period);
   }
 
   const session = await mongoose.startSession();

@@ -91,7 +91,7 @@ async function run() {
         { $match: { current_stock: { $gt: 0 } } },
         {
           $lookup: {
-            from: 'erp_product_masters',
+            from: 'erp_product_master',
             localField: '_id.product_id',
             foreignField: '_id',
             as: 'product'
@@ -103,7 +103,7 @@ async function run() {
       ]);
 
       for (const batch of expiringBatches) {
-        const productName = batch.product?.brand_name || batch.product?.generic_name || String(batch._id.product_id);
+        const productName = batch.product ? `${batch.product.brand_name} ${batch.product.dosage_strength || ''}`.trim() : String(batch._id.product_id);
         const daysToExpiry = Math.floor((new Date(batch.expiry_date) - now) / (1000 * 60 * 60 * 24));
         const severity = daysToExpiry <= 30 ? 'critical' : 'warning';
 
@@ -142,7 +142,7 @@ async function run() {
         { $match: { current_stock: { $gt: 0 } } },
         {
           $lookup: {
-            from: 'erp_product_masters',
+            from: 'erp_product_master',
             localField: '_id.product_id',
             foreignField: '_id',
             as: 'product'
@@ -153,7 +153,7 @@ async function run() {
       ]);
 
       for (const batch of expiredWithStock) {
-        const productName = batch.product?.brand_name || batch.product?.generic_name || String(batch._id.product_id);
+        const productName = batch.product ? `${batch.product.brand_name} ${batch.product.dosage_strength || ''}`.trim() : String(batch._id.product_id);
         const daysExpired = Math.floor((now - new Date(batch.expiry_date)) / (1000 * 60 * 60 * 24));
 
         alerts.push({

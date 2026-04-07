@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import usePurchasing from '../hooks/usePurchasing';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 
@@ -47,7 +48,7 @@ const EMPTY_FORM = {
   bank_account: { bank: '', account_no: '', account_name: '' }
 };
 
-export default function VendorList() {
+export function VendorListContent() {
   const { user } = useAuth();
   const api = usePurchasing();
 
@@ -66,7 +67,7 @@ export default function VendorList() {
       if (search) params.q = search;
       const res = await api.listVendors(params);
       setVendors(res?.data || []);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load vendors'); }
     setLoading(false);
   }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -133,11 +134,6 @@ export default function VendorList() {
   return (
     <>
       <style>{styles}</style>
-      <div className="vl-page">
-        <Navbar />
-        <div style={{ display: 'flex' }}>
-          <Sidebar />
-          <main className="vl-main">
             <div className="vl-header">
               <h2>Vendor Master</h2>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -256,9 +252,20 @@ export default function VendorList() {
                 </div>
               </div>
             )}
-          </main>
-        </div>
-      </div>
     </>
+  );
+}
+
+export default function VendorList() {
+  return (
+    <div className="vl-page">
+      <Navbar />
+      <div style={{ display: 'flex' }}>
+        <Sidebar />
+        <main className="vl-main">
+          <VendorListContent />
+        </main>
+      </div>
+    </div>
   );
 }

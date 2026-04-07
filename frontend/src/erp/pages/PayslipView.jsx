@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePayroll from '../hooks/usePayroll';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .psv-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -59,6 +60,7 @@ export default function PayslipView() {
         <Sidebar />
         <main className="psv-main">
           <span className="psv-back" onClick={() => navigate(-1)}>← Back</span>
+          <WorkflowGuide pageKey="payslip-view" />
 
           <div className="psv-card">
             <div className="psv-header">

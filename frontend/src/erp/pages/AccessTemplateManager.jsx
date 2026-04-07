@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpAccess from '../hooks/useErpAccess';
+import { showError } from '../utils/errorToast';
 
 const MODULES = [
   { key: 'sales', label: 'Sales' },
@@ -61,7 +62,7 @@ const pageStyles = `
   @media(max-width: 768px) { .atm-main { padding: 12px; } .atm-table { font-size: 12px; } }
 `;
 
-export default function AccessTemplateManager() {
+export function AccessTemplateManagerContent() {
   const api = useErpAccess();
   const [templates, setTemplates] = useState([]);
   const [subPermKeys, setSubPermKeys] = useState({});
@@ -106,7 +107,7 @@ export default function AccessTemplateManager() {
       }
       setEditing(null);
       load();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not save access template'); }
   };
 
   const handleDelete = async (id) => {
@@ -114,7 +115,7 @@ export default function AccessTemplateManager() {
     try {
       await api.deleteTemplate(id);
       load();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not delete access template'); }
   };
 
   const setModuleLevel = (modKey, level) => {
@@ -160,12 +161,8 @@ export default function AccessTemplateManager() {
   };
 
   return (
-    <div className="admin-page erp-page atm-page">
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div className="admin-layout">
-        <Sidebar />
-        <main className="atm-main">
           <div className="atm-header">
             <h2>ERP Access Templates</h2>
             <button className="atm-btn atm-btn-primary" onClick={openNew}>+ New Template</button>
@@ -300,6 +297,18 @@ export default function AccessTemplateManager() {
               </div>
             </div>
           )}
+    </>
+  );
+}
+
+export default function AccessTemplateManager() {
+  return (
+    <div className="admin-page erp-page atm-page">
+      <Navbar />
+      <div className="admin-layout">
+        <Sidebar />
+        <main className="atm-main">
+          <AccessTemplateManagerContent />
         </main>
       </div>
     </div>

@@ -32,7 +32,8 @@ const productMasterSchema = new mongoose.Schema({
   brand_name_clean: { type: String, index: true },
   unit_code: {
     type: String,
-    enum: UNIT_CODES
+    // No enum restriction — validated via Lookup table (UNIT_CODE category)
+    trim: true,
   },
 
   // Pricing
@@ -57,6 +58,11 @@ const productMasterSchema = new mongoose.Schema({
   lead_time_days: { type: Number, default: null, min: 0 },
 
   // Classification
+  stock_type: {
+    type: String,
+    enum: ['PHARMA', 'FNB', 'OFFICE'],
+    default: 'PHARMA'
+  },
   category: { type: String, trim: true },
   is_active: { type: Boolean, default: true },
 
@@ -90,6 +96,7 @@ productMasterSchema.pre('save', function (next) {
 // Indexes
 productMasterSchema.index({ entity_id: 1, item_key: 1 }, { unique: true });
 productMasterSchema.index({ entity_id: 1, is_active: 1 });
+productMasterSchema.index({ entity_id: 1, stock_type: 1 });
 productMasterSchema.index({ entity_id: 1, brand_name_clean: 1 });
 productMasterSchema.index({ brand_name: 'text', generic_name: 'text', product_aliases: 'text' });
 

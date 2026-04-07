@@ -2,10 +2,12 @@
  * Audit Logs Page — Searchable ERP audit log viewer
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useDashboard from '../hooks/useDashboard';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 
@@ -57,7 +59,7 @@ export default function AuditLogs() {
       const res = await dash.getAuditLogs(params);
       setLogs(res?.data || []);
       setPagination(res?.pagination || { page: 1, pages: 1, total: 0 });
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not load audit logs'); }
     setLoading(false);
   }, [page, filters]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -77,7 +79,12 @@ export default function AuditLogs() {
         <div className="audit-main">
           <div className="audit-header">
             <h1>Audit Logs</h1>
-            <span style={{ fontSize: 13, color: 'var(--erp-muted)' }}>{pagination.total} entries</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: 'var(--erp-muted)' }}>{pagination.total} entries</span>
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
+            </div>
           </div>
 
           <div className="filters">

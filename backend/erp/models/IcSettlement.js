@@ -36,7 +36,7 @@ const icSettlementSchema = new mongoose.Schema({
   cwt_na: { type: Boolean, default: false },
 
   // Payment
-  payment_mode: { type: String, enum: ['CHECK', 'CASH', 'ONLINE'], default: 'CHECK' },
+  payment_mode: { type: String, default: 'CHECK' }, // Validated against PaymentMode lookup
   check_no: { type: String, trim: true },
   check_date: { type: Date },
   bank: { type: String, trim: true },

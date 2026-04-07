@@ -15,6 +15,9 @@ import { useAuth } from '../../hooks/useAuth';
 import useEntities from '../hooks/useEntities';
 import useDashboard from '../hooks/useDashboard';
 import EntityBadge from '../components/EntityBadge';
+import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
+import api from '../../services/api';
 
 const pageStyles = `
   :root {
@@ -92,11 +95,12 @@ const pageStyles = `
     .boss-scroll { padding-bottom: 24px; }
   }
   @media (max-width: 768px) {
-    .boss-scroll { padding: 104px 12px 110px; }
+    .boss-main { padding-top: 56px; }
+    .boss-scroll { padding: 16px 12px calc(96px + env(safe-area-inset-bottom, 0px)); }
     .summary-card .value { font-size: 16px; }
   }
   @media (max-width: 375px) {
-    .boss-scroll { padding: 8px 8px 90px; }
+    .boss-scroll { padding: 8px 8px calc(96px + env(safe-area-inset-bottom, 0px)); }
     .summary-card .value { font-size: 14px; }
     .summary-card .label { font-size: 10px; }
     .boss-scroll input, .boss-scroll select { font-size: 16px; }
@@ -121,7 +125,17 @@ export default function ErpDashboard() {
   const [activeTab, setActiveTab] = useState('products');
   const [tabData, setTabData] = useState(null);
   const [tabLoading, setTabLoading] = useState(false);
+  const [agentStats, setAgentStats] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const isAdminRole = ['admin', 'finance', 'president', 'ceo'].includes(user?.role);
+
+  // Load agent stats for admin/president
+  useEffect(() => {
+    if (isAdminRole) {
+      api.get('/erp/agents/runs/stats').then(res => setAgentStats(res.data?.data || null)).catch(() => {});
+    }
+  }, [isAdminRole]);
 
   // Load KPIs
   useEffect(() => {
@@ -151,7 +165,7 @@ export default function ErpDashboard() {
         default: break;
       }
       setTabData(res?.data || null);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not load dashboard tab data'); }
     setTabLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -165,6 +179,7 @@ export default function ErpDashboard() {
         <Sidebar />
         <main className="boss-main">
           <div className="boss-scroll">
+            <WorkflowGuide pageKey="erp-dashboard" />
 
             {/* Header */}
             <div className="boss-header">
@@ -226,26 +241,42 @@ export default function ErpDashboard() {
             {loading ? (
               <div className="loading-placeholder">Loading...</div>
             ) : (
-              <div className="mtd-grid">
-                <div className="mtd-card">
-                  <div className="value">{fmt(mtd?.sales_mtd)}</div>
-                  <div className="label">Sales</div>
-                </div>
-                <div className="mtd-card">
-                  <div className="value">{fmt(mtd?.collections_mtd)}</div>
-                  <div className="label">Collections</div>
-                </div>
-                <div className="mtd-card">
-                  <div className="value">
-                    {mtd?.engagements_mtd?.visited || 0}/{mtd?.engagements_mtd?.target || 0}
+              <>
+                <div className="mtd-grid">
+                  <div className="mtd-card">
+                    <div className="value">{fmt(mtd?.sales_mtd)}</div>
+                    <div className="label">Sales</div>
                   </div>
-                  <div className="label">Engagements</div>
+                  <div className="mtd-card">
+                    <div className="value">{fmt(mtd?.collections_mtd)}</div>
+                    <div className="label">Collections</div>
+                  </div>
+                  <div className="mtd-card">
+                    <div className="value">
+                      {mtd?.engagements_mtd?.visited || 0}/{mtd?.engagements_mtd?.target || 0}
+                    </div>
+                    <div className="label">Engagements</div>
+                  </div>
+                  <div className="mtd-card">
+                    <div className="value">{fmt(mtd?.income_mtd)}</div>
+                    <div className="label">Income</div>
+                  </div>
                 </div>
-                <div className="mtd-card">
-                  <div className="value">{fmt(mtd?.income_mtd)}</div>
-                  <div className="label">Income</div>
+                <div className="mtd-grid" style={{ marginTop: 8 }}>
+                  <div className="mtd-card">
+                    <div className="value" style={{ color: (mtd?.dso || 0) > 45 ? '#dc2626' : (mtd?.dso || 0) > 30 ? '#d97706' : '#16a34a' }}>{mtd?.dso || 0}d</div>
+                    <div className="label">DSO</div>
+                  </div>
+                  <div className="mtd-card">
+                    <div className="value" style={{ color: (mtd?.collection_rate || 0) >= 70 ? '#16a34a' : (mtd?.collection_rate || 0) >= 50 ? '#d97706' : '#dc2626' }}>{mtd?.collection_rate || 0}%</div>
+                    <div className="label">Collection Rate</div>
+                  </div>
+                  <div className="mtd-card">
+                    <div className="value" style={{ color: (mtd?.gross_margin || 0) >= 30 ? '#16a34a' : (mtd?.gross_margin || 0) >= 15 ? '#d97706' : '#dc2626' }}>{mtd?.gross_margin || 0}%</div>
+                    <div className="label">Gross Margin</div>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
 
             {/* PNL YTD Banner */}
@@ -284,6 +315,76 @@ export default function ErpDashboard() {
               <Link to="/erp/pnl" className="quick-link">P&L</Link>
               <Link to="/erp/reports" className="quick-link">Reports</Link>
             </div>
+
+            {/* Agent Intelligence */}
+            {isAdminRole && agentStats && (() => {
+              const agents = agentStats.agents || [];
+              const totalAlerts = agents.reduce((sum, a) => sum + (a.total_alerts || 0), 0);
+              const criticalAgents = agents.filter(a => a.last_status === 'error' || (a.last_summary?.alerts_generated || 0) > 0);
+              const allFindings = agents.flatMap(a => (a.last_summary?.key_findings || []).map(f => ({ agent: a.label || a._id, finding: f })));
+              const recentFindings = allFindings.slice(0, 5);
+              const recentRuns = agentStats.recent_runs || [];
+
+              return (
+                <div style={{ background: 'var(--erp-panel)', border: '1px solid var(--erp-border)', borderRadius: 14, padding: 16, marginBottom: 20 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Agent Intelligence</div>
+                    <Link to="/erp/agent-dashboard" style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-accent)', textDecoration: 'none' }}>View All →</Link>
+                  </div>
+
+                  {/* Alert summary badges */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                    <span style={{ padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: totalAlerts > 0 ? '#fef2f2' : '#dcfce7', color: totalAlerts > 0 ? '#dc2626' : '#16a34a' }}>
+                      {totalAlerts} alert{totalAlerts !== 1 ? 's' : ''}
+                    </span>
+                    <span style={{ padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'var(--erp-accent-soft)', color: 'var(--erp-accent)' }}>
+                      {agents.length} agent{agents.length !== 1 ? 's' : ''} active
+                    </span>
+                    {agents.filter(a => a.last_status === 'error').length > 0 && (
+                      <span style={{ padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: '#fef3c7', color: '#92400e' }}>
+                        {agents.filter(a => a.last_status === 'error').length} failed
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Key findings */}
+                  {recentFindings.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      {recentFindings.map((f, i) => (
+                        <div key={i} style={{ padding: '6px 0', borderTop: i > 0 ? '1px solid var(--erp-border)' : 'none', fontSize: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                          <span style={{ color: '#f59e0b', flexShrink: 0 }}>●</span>
+                          <div>
+                            <span style={{ color: 'var(--erp-text)' }}>{f.finding}</span>
+                            <span style={{ color: 'var(--erp-muted)', fontSize: 10, marginLeft: 6 }}>— {f.agent}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Recent runs */}
+                  {recentFindings.length === 0 && recentRuns.length > 0 && (
+                    <div>
+                      {recentRuns.slice(0, 3).map((r, i) => (
+                        <div key={r._id || i} style={{ padding: '6px 0', borderTop: i > 0 ? '1px solid var(--erp-border)' : 'none', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <span style={{ fontWeight: 600, color: 'var(--erp-text)' }}>{r.agent_label}</span>
+                            <span style={{ color: 'var(--erp-muted)', fontSize: 11, marginLeft: 8 }}>{r.run_date ? new Date(r.run_date).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}</span>
+                          </div>
+                          <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: r.status === 'success' ? '#dcfce7' : '#fef2f2', color: r.status === 'success' ? '#16a34a' : '#dc2626' }}>
+                            {r.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {recentFindings.length === 0 && recentRuns.length === 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--erp-muted)', textAlign: 'center', padding: 12 }}>No agent activity yet. Agents run on schedule or via Run Now.</div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Section 4: Bottom Tab Content */}
             <div className="section-label">Data Views</div>

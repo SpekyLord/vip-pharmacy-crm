@@ -30,14 +30,14 @@ const ProductRecommendations = ({ products = [], onSelectProduct }) => {
             {product.image && (
               <img
                 src={product.image}
-                alt={product.name}
+                alt={product.brand_name || product.name}
                 className="product-image"
               />
             )}
             <div className="product-info">
-              <h4>{product.name}</h4>
-              <p className="product-generic">{product.genericName}</p>
-              <p className="product-dosage">{product.dosage}</p>
+              <h4>{product.brand_name || product.name}{product.dosage_strength ? ` ${product.dosage_strength}` : ''}</h4>
+              <p className="product-generic">{product.genericName || product.generic_name || ''}</p>
+              <p className="product-dosage">{product.dosage || product.unit_code || ''}</p>
               <span className="product-category">{product.category}</span>
             </div>
           </div>

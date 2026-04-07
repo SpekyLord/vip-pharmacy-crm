@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -7,10 +7,13 @@ import useSales from '../hooks/useSales';
 import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
 import useCustomers from '../hooks/useCustomers';
+import useErpApi from '../hooks/useErpApi';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },
@@ -34,10 +37,66 @@ const emptyRow = () => ({
 const pageStyles = `
   .sales-entry-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .sales-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .sales-top-panel {
+    background: var(--erp-panel, #fff);
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 14px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+  }
+  .sales-toolbar-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
   .sales-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+  .sales-header:last-child { margin-bottom: 0; }
   .sales-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0; }
-  .sales-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sales-subtitle {
+    margin: 4px 0 0;
+    color: var(--erp-muted, #5f7188);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .sales-nav-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 12px;
+    padding: 6px;
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 10px;
+    background: var(--erp-panel, #fff);
+  }
+  .sales-nav-tabs::-webkit-scrollbar { height: 0; }
+  .sales-nav-tab {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    color: var(--erp-text, #132238);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .sales-nav-tab.active {
+    background: var(--erp-accent, #1e5eff);
+    color: #fff;
+  }
+  .sales-nav-tab:hover {
+    border-color: var(--erp-border, #dbe4f0);
+  }
+  .sales-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .sales-actions-group { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .sales-actions .btn { min-height: 42px; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-primary { background: var(--erp-accent, #1e5eff); color: #fff; }
   .btn-success { background: #16a34a; color: #fff; }
@@ -67,7 +126,7 @@ const pageStyles = `
   .override-reason::placeholder { color: #b45309; font-style: italic; }
   .add-row-btn { display: block; width: 100%; padding: 10px; text-align: center; color: var(--erp-accent); background: transparent; border: 2px dashed var(--erp-border); border-radius: 0 0 12px 12px; cursor: pointer; font-weight: 600; }
 
-  .sale-type-tabs { display: flex; gap: 4px; margin-bottom: 12px; background: var(--erp-bg, #f4f7fb); padding: 4px; border-radius: 10px; width: fit-content; }
+  .sale-type-tabs { display: flex; gap: 4px; margin-bottom: 8px; background: var(--erp-bg, #f4f7fb); padding: 4px; border-radius: 10px; width: fit-content; }
   .sale-type-tab { padding: 8px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: var(--erp-muted, #5f7188); transition: all 0.15s; }
   .sale-type-tab.active { background: var(--erp-accent, #1e5eff); color: #fff; }
   .service-form { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 12px; padding: 20px; }
@@ -109,12 +168,32 @@ const pageStyles = `
     .sale-card input, .sale-card select { width: 100%; padding: 8px; margin-top: 4px; margin-bottom: 10px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 14px; }
     .sale-card .card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
     .sales-main { padding-bottom: 96px; }
+    .sales-top-panel { padding: 12px; }
+    .sales-toolbar-row { margin-bottom: 10px; }
     .sales-header { flex-direction: column; align-items: flex-start; gap: 10px; }
     .sales-actions { width: 100%; }
-    .sales-actions .btn { flex: 1 1 48%; }
-    .sale-type-tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .sale-type-tab { white-space: nowrap; }
+    .sales-actions-group { width: 100%; }
+    .sales-actions .btn { flex: 1 1 calc(50% - 6px); }
+    .sale-type-tabs {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      overflow: hidden;
+    }
+    .sale-type-tab {
+      white-space: normal;
+      text-align: center;
+      padding: 10px 8px;
+    }
     .service-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 480px) {
+    .sales-main { padding: 12px; padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+    .sales-cards { padding: 0; }
+    .sales-actions .btn { flex: 1 1 100%; }
+    .sales-header h1 { font-size: 20px; }
+    .sale-type-tab { font-size: 12px; }
   }
   @media (min-width: 769px) {
     .sales-cards { display: none; }
@@ -197,6 +276,7 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
   const galleryRef = useRef(null);
 
   const reset = () => {
+    if (preview) URL.revokeObjectURL(preview);
     setStep('capture');
     setPhoto(null);
     setPreview(null);
@@ -439,6 +519,8 @@ export default function SalesEntry() {
   const inventory = useInventory();
   const { hospitals } = useHospitals();
   const customers = useCustomers();
+  const lookupApi = useErpApi();
+  const [paymentModes, setPaymentModes] = useState([]);
 
   const [saleType, setSaleType] = useState('CSI'); // CSI, CASH_RECEIPT, SERVICE_INVOICE
   const [warehouseId, setWarehouseId] = useState('');
@@ -451,6 +533,10 @@ export default function SalesEntry() {
 
   // Phase 18: Service Invoice state (no line items — just description + total)
   const [serviceForm, setServiceForm] = useState({ customer_type: 'hospital', customer_ref: '', csi_date: new Date().toISOString().split('T')[0], service_description: '', invoice_total: '', payment_mode: 'CASH' });
+
+  useEffect(() => {
+    lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prefill from navigation (e.g. "Issue CSI" from Consignment Aging)
   const location = useLocation();
@@ -597,9 +683,33 @@ export default function SalesEntry() {
     setActionLoading('save');
     try {
       const savedIds = [];
+      const warnings = [];
       for (const row of rows) {
         if (!row._isNew) continue;
-        if (!row.hospital_id || !row.doc_ref) continue;
+
+        // Warn instead of silently skipping rows missing hospital/customer
+        if (!row.hospital_id && !row.customer_id) {
+          warnings.push('Row skipped: hospital or customer is required before saving.');
+          continue;
+        }
+        if (saleType === 'CSI' && !row.doc_ref) {
+          warnings.push('Row skipped: CSI# is required for CSI sales.');
+          continue;
+        }
+
+        // Warn about line items dropped due to missing qty (instead of silent filter)
+        const droppedItems = row.line_items.filter(li => li.product_id && (!li.qty || parseFloat(li.qty) <= 0));
+        if (droppedItems.length > 0) {
+          warnings.push(`${droppedItems.length} line item(s) removed: quantity must be greater than 0.`);
+        }
+
+        const validItems = row.line_items.filter(li => li.product_id && li.qty && parseFloat(li.qty) > 0);
+
+        // Warn about line items with zero price
+        const zeroPriceItems = validItems.filter(li => !li.unit_price || parseFloat(li.unit_price) <= 0);
+        if (zeroPriceItems.length > 0) {
+          warnings.push(`${zeroPriceItems.length} line item(s) have ₱0 unit price — please set a price.`);
+        }
 
         const payload = {
           sale_type: saleType,
@@ -609,7 +719,7 @@ export default function SalesEntry() {
           doc_ref: row.doc_ref || undefined,
           warehouse_id: warehouseId || undefined,
           payment_mode: row.payment_mode || undefined,
-          line_items: row.line_items.filter(li => li.product_id && li.qty).map(li => ({
+          line_items: validItems.map(li => ({
             product_id: li.product_id,
             item_key: li.item_key,
             qty: parseFloat(li.qty),
@@ -624,12 +734,19 @@ export default function SalesEntry() {
         if (res?.data) savedIds.push(res.data._id);
       }
 
+      // Show accumulated warnings to BDM
+      if (warnings.length > 0) {
+        showError(null, warnings.join('\n'));
+      }
+
       if (savedIds.length) {
-        // Reload from server
         await loadSales();
+      } else if (rows.some(r => r._isNew) && warnings.length === 0) {
+        showError(null, 'No rows saved. Make sure each row has a hospital or customer selected' + (saleType === 'CSI' ? ' and a CSI#' : ''));
       }
     } catch (err) {
       console.error('Save error:', err);
+      showError(err, 'Could not save sale');
     } finally {
       setActionLoading('');
     }
@@ -710,44 +827,63 @@ export default function SalesEntry() {
       <div className="admin-layout">
         <Sidebar />
         <main className="sales-main">
-          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 8 }}>
-            <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
-          </div>
-          {/* Phase 18: Sale Type Tabs */}
-          <div className="sale-type-tabs">
-            {[
-              { key: 'CSI', label: 'CSI (Booklet)' },
-              { key: 'CASH_RECEIPT', label: 'Cash Receipt' },
-              { key: 'SERVICE_INVOICE', label: 'Service Invoice' }
-            ].map(t => (
-              <button key={t.key} className={`sale-type-tab ${saleType === t.key ? 'active' : ''}`} onClick={() => setSaleType(t.key)}>
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <WorkflowGuide pageKey="sales-entry" />
+          <div className="sales-top-panel">
+            <div className="sales-nav-tabs" role="tablist" aria-label="Sales navigation">
+              <Link to="/erp/sales/entry" className="sales-nav-tab active" aria-current="page">Sales</Link>
+              <Link to="/erp/sales" className="sales-nav-tab">Sales Transactions</Link>
+              <Link to="/erp/csi-booklets" className="sales-nav-tab">CSI Booklets</Link>
+            </div>
+            <div className="sales-toolbar-row">
+              <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
+            </div>
+            {/* Phase 18: Sale Type Tabs */}
+            <div className="sale-type-tabs">
+              {[
+                { key: 'CSI', label: 'CSI (Booklet)' },
+                { key: 'CASH_RECEIPT', label: 'Cash Receipt' },
+                { key: 'SERVICE_INVOICE', label: 'Service Invoice' }
+              ].map(t => (
+                <button key={t.key} className={`sale-type-tab ${saleType === t.key ? 'active' : ''}`} onClick={() => setSaleType(t.key)}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
 
-          <div className="sales-header">
-            <h1>{saleType === 'SERVICE_INVOICE' ? 'Service Invoice' : saleType === 'CASH_RECEIPT' ? 'Cash Receipt' : 'Sales Entry'}</h1>
-            {saleType !== 'SERVICE_INVOICE' && (
-              <div className="sales-actions">
-                <button className="btn btn-primary" onClick={() => setScanModalOpen(true)} style={{ background: '#7c3aed' }}>📷 Scan CSI</button>
-                <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
-                <button className="btn btn-primary" onClick={saveAll} disabled={actionLoading === 'save'}>
-                  {actionLoading === 'save' ? 'Saving...' : 'Save Drafts'}
-                </button>
-                <button className="btn btn-warning" onClick={handleValidate} disabled={!hasDraftOrError || !!actionLoading}>
-                  {actionLoading === 'validate' ? 'Validating...' : 'Validate Sales'}
-                </button>
-                <button className="btn btn-success" onClick={handleSubmit} disabled={!allValid || !!actionLoading}>
-                  {actionLoading === 'submit' ? 'Submitting...' : 'Submit Sales'}
-                </button>
-                {hasPosted && (
-                  <button className="btn btn-danger" onClick={handleReopen} disabled={!!actionLoading}>
-                    {actionLoading === 'reopen' ? 'Reopening...' : 'Re-open'}
-                  </button>
-                )}
+            <div className="sales-header">
+              <div>
+                <h1>{saleType === 'SERVICE_INVOICE' ? 'Service Invoice' : saleType === 'CASH_RECEIPT' ? 'Cash Receipt' : 'Sales Entry'}</h1>
+                <p className="sales-subtitle">
+                  {saleType === 'SERVICE_INVOICE'
+                    ? 'Create and save service invoices with customer details and payment mode.'
+                    : 'Capture sales lines, validate entries, then submit to post stock and ledger effects.'}
+                </p>
               </div>
-            )}
+              {saleType !== 'SERVICE_INVOICE' && (
+                <div className="sales-actions">
+                  <div className="sales-actions-group">
+                    <button className="btn btn-primary" onClick={() => setScanModalOpen(true)} style={{ background: '#7c3aed' }}>📷 Scan CSI</button>
+                    <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
+                  </div>
+                  <div className="sales-actions-group">
+                    <button className="btn btn-primary" onClick={saveAll} disabled={actionLoading === 'save'}>
+                      {actionLoading === 'save' ? 'Saving...' : 'Save Drafts'}
+                    </button>
+                    <button className="btn btn-warning" onClick={handleValidate} disabled={!hasDraftOrError || !!actionLoading}>
+                      {actionLoading === 'validate' ? 'Validating...' : 'Validate Sales'}
+                    </button>
+                    <button className="btn btn-success" onClick={handleSubmit} disabled={!allValid || !!actionLoading}>
+                      {actionLoading === 'submit' ? 'Submitting...' : 'Submit Sales'}
+                    </button>
+                    {hasPosted && (
+                      <button className="btn btn-danger" onClick={handleReopen} disabled={!!actionLoading}>
+                        {actionLoading === 'reopen' ? 'Reopening...' : 'Re-open'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Phase 18: Service Invoice Form (no line items — description + total) */}
@@ -784,11 +920,7 @@ export default function SalesEntry() {
                 <div>
                   <label>Payment Mode</label>
                   <SelectField value={serviceForm.payment_mode} onChange={e => setServiceForm(f => ({ ...f, payment_mode: e.target.value }))}>
-                    <option value="CASH">Cash</option>
-                    <option value="CHECK">Check</option>
-                    <option value="GCASH">GCash</option>
-                    <option value="BANK_TRANSFER">Bank Transfer</option>
-                    <option value="ONLINE">Online</option>
+                    {paymentModes.filter(pm => pm.is_active !== false).map(pm => <option key={pm.mode_code} value={pm.mode_code}>{pm.mode_label}</option>)}
                   </SelectField>
                 </div>
               </div>
@@ -851,7 +983,7 @@ export default function SalesEntry() {
                                   try {
                                     await sales.validateSales([r._id]);
                                     await loadSales();
-                                  } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } finally { setActionLoading(''); }
+                                  } catch (err) { showError(err, 'Could not validate sale'); } finally { setActionLoading(''); }
                                 }}>Validate</button>
                               )}
                               {r.status === 'VALID' && (
@@ -860,7 +992,7 @@ export default function SalesEntry() {
                                   try {
                                     await sales.submitSales();
                                     await loadSales();
-                                  } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } finally { setActionLoading(''); }
+                                  } catch (err) { showError(err, 'Could not post sale'); } finally { setActionLoading(''); }
                                 }}>Post</button>
                               )}
                               {r.status === 'POSTED' && (
@@ -870,7 +1002,7 @@ export default function SalesEntry() {
                               )}
                               {r.status === 'DRAFT' && (
                                 <button className="btn btn-danger btn-sm" onClick={async () => {
-                                  try { await sales.deleteDraft(r._id); await loadSales(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+                                  try { await sales.deleteDraft(r._id); await loadSales(); } catch (err) { showError(err, 'Could not delete sale draft'); }
                                 }}>✕</button>
                               )}
                             </div>
@@ -970,7 +1102,13 @@ export default function SalesEntry() {
                               ))}
                             </SelectField>
                             {item.fifo_override && (
-                              <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} disabled={row.status === 'POSTED'} />
+                              <select className="override-reason" value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} disabled={row.status === 'POSTED'}>
+                                <option value="">Select reason...</option>
+                                <option value="HOSPITAL_POLICY">Hospital Policy</option>
+                                <option value="QA_REPLACEMENT">QA Replacement</option>
+                                <option value="DAMAGED_BATCH">Damaged Batch</option>
+                                <option value="BATCH_RECALL">Batch Recall</option>
+                              </select>
                             )}
                           </div>
                         );

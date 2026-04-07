@@ -1,0 +1,58 @@
+name: Deploy Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy-prod-ssh
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+    steps:
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+
+      - name: Add host to known_hosts
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${PROD_SSH_PORT:-22}"
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PORT" -H "$PROD_SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy on server
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+        run: |
+          set -euo pipefail
+          PORT="${PROD_SSH_PORT:-22}"
+          ssh -T -o BatchMode=yes -p "$PORT" "$PROD_SSH_USER@$PROD_SSH_HOST" <<'EOF'
+            set -euo pipefail
+            cd /var/www/vip-pharmacy-crm
+            git fetch origin
+            git checkout main
+            git pull --ff-only origin main
+            cd backend
+            npm ci --omit=dev
+            cd ../frontend
+            npm ci
+            npm run build
+            cd ..
+            pm2 restart ecosystem.config.js --update-env
+            pm2 save
+            pm2 status
+          EOF

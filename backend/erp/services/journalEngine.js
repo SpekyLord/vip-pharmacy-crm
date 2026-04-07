@@ -5,8 +5,11 @@
  * Uses DocSequence for auto-incrementing JE numbers per entity per year.
  * Reversal uses SAP Storno pattern (new opposite JE, original stays POSTED).
  */
+const mongoose = require('mongoose');
 const JournalEntry = require('../models/JournalEntry');
 const DocSequence = require('../models/DocSequence');
+const VatLedger = require('../models/VatLedger');
+const CwtLedger = require('../models/CwtLedger');
 
 /**
  * Create a journal entry in DRAFT status with auto-assigned JE number
@@ -43,10 +46,14 @@ async function createJournal(entityId, data) {
  * Post a DRAFT journal entry — validates DR=CR balance
  * @param {String} jeId — JournalEntry _id
  * @param {String} userId — who is posting
+ * @param {String} entityId — entity scope (prevents cross-entity posting)
  * @returns {Object} posted JournalEntry
  */
-async function postJournal(jeId, userId) {
-  const je = await JournalEntry.findById(jeId);
+async function postJournal(jeId, userId, entityId) {
+  const query = { _id: jeId };
+  if (entityId) query.entity_id = entityId;
+
+  const je = await JournalEntry.findOne(query);
   if (!je) throw new Error('Journal entry not found');
   if (je.status !== 'DRAFT') throw new Error(`Cannot post JE in status: ${je.status}`);
 
@@ -62,14 +69,15 @@ async function postJournal(jeId, userId) {
  * Create and immediately post a journal entry (convenience for auto-journals)
  * @param {String} entityId
  * @param {Object} data — same as createJournal
+ * @param {Object} [options] — { session } for transaction support
  * @returns {Object} posted JournalEntry
  */
-async function createAndPostJournal(entityId, data) {
+async function createAndPostJournal(entityId, data, options = {}) {
   const year = new Date(data.je_date).getFullYear();
   const seqKey = `JE-${entityId}-${year}`;
   const jeNumber = await DocSequence.getNext(seqKey);
 
-  const je = await JournalEntry.create({
+  const doc = {
     entity_id: entityId,
     bdm_id: data.bdm_id || null,
     je_number: jeNumber,
@@ -86,7 +94,10 @@ async function createAndPostJournal(entityId, data) {
     posted_by: data.created_by,
     posted_at: new Date(),
     created_by: data.created_by
-  });
+  };
+
+  const createOpts = options.session ? { session: options.session } : {};
+  const [je] = await JournalEntry.create([doc], createOpts);
 
   return je;
 }
@@ -94,48 +105,75 @@ async function createAndPostJournal(entityId, data) {
 /**
  * Reverse a POSTED journal entry (SAP Storno pattern)
  * Creates a NEW JE with all amounts flipped. Original stays POSTED.
+ * Uses MongoDB transaction for atomicity.
  * @param {String} jeId — original JE _id
  * @param {String} reason — reversal reason
  * @param {String} userId — who is reversing
+ * @param {String} entityId — entity scope (prevents cross-entity reversal)
  * @returns {Object} reversal JournalEntry
  */
-async function reverseJournal(jeId, reason, userId) {
-  const original = await JournalEntry.findById(jeId);
-  if (!original) throw new Error('Journal entry not found');
-  if (original.status !== 'POSTED') throw new Error('Only POSTED entries can be reversed');
+async function reverseJournal(jeId, reason, userId, entityId) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  // Check not already reversed
-  const existing = await JournalEntry.findOne({ corrects_je_id: original._id });
-  if (existing) throw new Error(`JE already reversed by JE #${existing.je_number}`);
+  try {
+    const query = { _id: jeId };
+    if (entityId) query.entity_id = entityId;
 
-  // Flip debit/credit on each line
-  const reversedLines = original.lines.map(line => ({
-    account_code: line.account_code,
-    account_name: line.account_name,
-    debit: line.credit,
-    credit: line.debit,
-    description: line.description ? `Reversal: ${line.description}` : 'Reversal',
-    bdm_id: line.bdm_id,
-    cost_center: line.cost_center
-  }));
+    const original = await JournalEntry.findOne(query).session(session);
+    if (!original) throw new Error('Journal entry not found');
+    if (original.status !== 'POSTED') throw new Error('Only POSTED entries can be reversed');
 
-  const reversal = await createAndPostJournal(original.entity_id, {
-    je_date: new Date(),
-    period: original.period,
-    description: `Reversal of JE #${original.je_number}: ${reason || ''}`.trim(),
-    source_module: original.source_module,
-    lines: reversedLines,
-    bir_flag: original.bir_flag,
-    vat_flag: original.vat_flag,
-    created_by: userId
-  });
+    // Check not already reversed
+    const existing = await JournalEntry.findOne({ corrects_je_id: original._id }).session(session);
+    if (existing) throw new Error(`JE already reversed by JE #${existing.je_number}`);
 
-  // Link reversal
-  reversal.corrects_je_id = original._id;
-  reversal.is_reversal = true;
-  await reversal.save();
+    // Flip debit/credit on each line
+    const reversedLines = original.lines.map(line => ({
+      account_code: line.account_code,
+      account_name: line.account_name,
+      debit: line.credit,
+      credit: line.debit,
+      description: line.description ? `Reversal: ${line.description}` : 'Reversal',
+      bdm_id: line.bdm_id,
+      cost_center: line.cost_center
+    }));
 
-  return reversal;
+    // Derive period from reversal date (not original)
+    const now = new Date();
+    const reversalPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const reversal = await createAndPostJournal(original.entity_id, {
+      je_date: now,
+      period: reversalPeriod,
+      description: `Reversal of JE #${original.je_number}: ${reason || ''}`.trim(),
+      source_module: original.source_module,
+      source_event_id: original.source_event_id,
+      lines: reversedLines,
+      bir_flag: original.bir_flag,
+      vat_flag: original.vat_flag,
+      created_by: userId
+    }, { session });
+
+    // Link reversal — same transaction
+    reversal.corrects_je_id = original._id;
+    reversal.is_reversal = true;
+    await reversal.save({ session });
+
+    // Clean up VAT/CWT ledger entries linked to the original source event
+    if (original.source_event_id) {
+      await VatLedger.deleteMany({ source_event_id: original.source_event_id }).session(session);
+      await CwtLedger.deleteMany({ entity_id: original.entity_id, cr_no: original.source_doc_ref }).session(session);
+    }
+
+    await session.commitTransaction();
+    return reversal;
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
 }
 
 /**

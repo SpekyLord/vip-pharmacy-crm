@@ -27,9 +27,9 @@ const { isCrmAdminLike } = require('../utils/roleHelpers');
 let MessageModel;
 
 const getMessageModel = () => {
-  // ensures we are reading/writing specifically inside vip-pharmacy-crm
-  const db = mongoose.connection.useDb('vip-pharmacy-crm');
-
+  // Use the default connection (vip-pharmacy-crm-dev) — useDb('vip-pharmacy-crm') was causing
+  // "user is not allowed to do action [find] on [vip-pharmacy-crm.messages]" because the Atlas
+  // user only has access to the default database in the connection string.
   if (!MessageModel) {
     const messageSchema = new mongoose.Schema(
     {
@@ -60,7 +60,7 @@ const getMessageModel = () => {
 
 
     // IMPORTANT: third argument forces collection name = "messages"
-    MessageModel = db.model('MessageInbox', messageSchema, 'messages');
+    MessageModel = mongoose.model('MessageInbox', messageSchema, 'messages');
   }
 
   return MessageModel;

@@ -7,8 +7,10 @@ import useHospitals from '../hooks/useHospitals';
 import useProducts from '../hooks/useProducts';
 
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
 
-const DOC_TYPES = [
+const DOC_TYPES_FALLBACK = [
   { value: 'CSI', label: 'Charge Sales Invoice (CSI)' },
   { value: 'CR', label: 'Collection Receipt (CR)' },
   { value: 'CWT_2307', label: 'BIR 2307 (Withholding Tax)' },
@@ -243,6 +245,8 @@ function LineItems({ items, onItemChange, fieldSuggestions }) {
 
 /* ─── Main component ─── */
 const OcrTest = () => {
+  const { options: docTypeOpts } = useLookupOptions('DOC_TYPE');
+  const DOC_TYPES = docTypeOpts.length > 0 ? docTypeOpts : DOC_TYPES_FALLBACK;
   const [docType, setDocType] = useState('CSI');
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -351,6 +355,8 @@ const OcrTest = () => {
       <div className="admin-content">
         <Sidebar />
         <main className="admin-main ocr-main">
+          <WorkflowGuide pageKey="expenses" />
+
           {/* Header */}
           <section className="ocr-panel">
             <h1>OCR Document Scanner</h1>

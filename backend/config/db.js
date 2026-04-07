@@ -10,6 +10,7 @@
 
 const mongoose = require('mongoose');
 const dns = require('dns');
+const { logInfo, logWarn, logError } = require('../utils/logger');
 
 // Use Google DNS to resolve MongoDB Atlas SRV records reliably
 dns.setServers(['8.8.8.8', '8.8.4.4']);
@@ -18,30 +19,30 @@ const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGO_URI, {
       maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 15000,
       socketTimeoutMS: 45000,
       retryWrites: true,
       w: 'majority',
     });
 
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    logInfo(`MongoDB Connected: ${conn.connection.host}`);
 
     // Connection event handlers
     mongoose.connection.on('error', (err) => {
-      console.error(`MongoDB connection error: ${err}`);
+      logError(`MongoDB connection error: ${err}`);
     });
 
     mongoose.connection.on('disconnected', () => {
-      console.warn('MongoDB disconnected. Attempting to reconnect...');
+      logWarn('MongoDB disconnected. Attempting to reconnect...');
     });
 
     mongoose.connection.on('reconnected', () => {
-      console.log('MongoDB reconnected');
+      logInfo('MongoDB reconnected');
     });
 
     return conn;
   } catch (error) {
-    console.error(`MongoDB connection failed: ${error.message}`);
+    logError(`MongoDB connection failed: ${error.message}`);
     process.exit(1);
   }
 };

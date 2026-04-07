@@ -10,8 +10,10 @@ import { useAuth } from '../../hooks/useAuth';
 import useHospitals from '../hooks/useHospitals';
 import usePeople from '../hooks/usePeople';
 import useErpApi from '../hooks/useErpApi';
+import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
 
-export default function HospitalList() {
+export function HospitalListContent() {
   const { user } = useAuth();
   const { hospitals, loading, refresh } = useHospitals();
   const erpApi = useErpApi();
@@ -29,7 +31,7 @@ export default function HospitalList() {
 
   const { getAsUsers } = usePeople();
   useEffect(() => {
-    getAsUsers({ role: 'employee' }).then(res => {
+    getAsUsers().then(res => {
       setBdmList(res?.data || []);
     }).catch(err => console.error('[HospitalList]', err.message));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -74,14 +76,14 @@ export default function HospitalList() {
       if (form.credit_limit_action) data.credit_limit_action = form.credit_limit_action;
 
       if (editing) {
-        await api.put(`/erp/hospitals/${editing._id}`, data);
+        await erpApi.put(`/hospitals/${editing._id}`, data);
       } else {
-        await api.post('/erp/hospitals', data);
+        await erpApi.post('/hospitals', data);
       }
       setModalOpen(false);
       refresh();
     } catch (err) {
-      alert(err.response?.data?.message || 'Save failed');
+      showError(err, 'Could not save hospital');
     }
   };
 
@@ -95,7 +97,7 @@ export default function HospitalList() {
       } else {
         newTags = [...(h.tagged_bdms || []), { bdm_id: bdmId, tagged_by: user._id, is_active: true }];
       }
-      const res = await api.put(`/erp/hospitals/${hospitalId}`, { tagged_bdms: newTags });
+      const res = await erpApi.put(`/hospitals/${hospitalId}`, { tagged_bdms: newTags });
       // Update tagModal immediately so checkboxes reflect change
       if (res.data?.data) {
         setTagModal(res.data.data);
@@ -103,7 +105,7 @@ export default function HospitalList() {
         setTagModal(prev => prev ? { ...prev, tagged_bdms: newTags } : null);
       }
     } catch (err) {
-      alert(err.response?.data?.message || 'Tag failed');
+      showError(err, 'Could not tag hospital');
     }
   };
 
@@ -113,7 +115,7 @@ export default function HospitalList() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'hospitals-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const handleImport = async (e) => {
@@ -123,9 +125,9 @@ export default function HospitalList() {
     fd.append('file', file);
     try {
       const res = await erpApi.post('/hospitals/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       refresh();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
     e.target.value = '';
   };
 
@@ -137,7 +139,7 @@ export default function HospitalList() {
 
     @media (max-width: 768px) {
       .hospital-page { padding-top: 12px; }
-      .hospital-main { padding-top: 76px !important; padding-bottom: 96px !important; }
+      .hospital-main { padding-top: 76px !important; padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
       .hospital-table-wrap { display: none; }
       .hospital-card-list { display: grid; gap: 12px; }
       .hospital-card { background: #fff; border: 1px solid #dbe4f0; border-radius: 14px; padding: 12px; }
@@ -154,7 +156,7 @@ export default function HospitalList() {
 
     @media (max-width: 480px) {
       .hospital-page { padding-top: 16px; }
-      .hospital-main { padding-top: 72px !important; padding-bottom: 104px !important; }
+      .hospital-main { padding-top: 72px !important; padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px)) !important; }
       .hospital-card-grid { grid-template-columns: 1fr; }
     }
   `;
@@ -182,12 +184,10 @@ export default function HospitalList() {
   };
 
   return (
-    <div className="admin-page erp-page hospital-page" style={styles.page}>
+    <>
       <style>{pageStyles}</style>
-      <Navbar />
-      <div className="admin-layout">
-        <Sidebar />
-        <main className="hospital-main" style={styles.main}>
+      <main className="hospital-main" style={styles.main}>
+          <WorkflowGuide pageKey="hospitals" />
           <div style={styles.header}>
             <div>
               <h1 style={{ fontSize: 22, margin: 0 }}>Hospitals</h1>
@@ -361,6 +361,17 @@ export default function HospitalList() {
             </div>
           )}
         </main>
+    </>
+  );
+}
+
+export default function HospitalList() {
+  return (
+    <div className="admin-page erp-page hospital-page" style={{ background: '#f4f7fb', minHeight: '100vh' }}>
+      <Navbar />
+      <div className="admin-layout">
+        <Sidebar />
+        <HospitalListContent />
       </div>
     </div>
   );

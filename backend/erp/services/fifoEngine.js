@@ -44,11 +44,11 @@ const buildStockMatch = (entityId, bdmId, opts, productId) => {
  * @returns {Array<{ batch_lot_no, expiry_date, available_qty }>}
  */
 const getAvailableBatches = async (entityId, bdmId, productId, opts) => {
-  const result = await InventoryLedger.aggregate([
+  const pipeline = [
     { $match: buildStockMatch(entityId, bdmId, opts, productId) },
     {
       $group: {
-        _id: { batch_lot_no: '$batch_lot_no', expiry_date: '$expiry_date' },
+        _id: { batch_lot_no: '$batch_lot_no', expiry_date: '$expiry_date', bdm_id: '$bdm_id' },
         total_in: { $sum: '$qty_in' },
         total_out: { $sum: '$qty_out' }
       }
@@ -59,18 +59,24 @@ const getAvailableBatches = async (entityId, bdmId, productId, opts) => {
       }
     },
     { $match: { available_qty: { $gt: 0 } } },
+    // Filter out expired batches — pharmaceutical compliance (FEFO)
+    { $match: { '_id.expiry_date': { $gt: new Date() } } },
     { $sort: { '_id.expiry_date': 1 } },
     {
       $project: {
         _id: 0,
         batch_lot_no: '$_id.batch_lot_no',
         expiry_date: '$_id.expiry_date',
+        bdm_id: '$_id.bdm_id',
         available_qty: 1
       }
     }
-  ]);
+  ];
 
-  return result;
+  // Use session for transactional consistency if provided
+  const agg = InventoryLedger.aggregate(pipeline);
+  if (opts?.session) agg.session(opts.session);
+  return agg;
 };
 
 /**
@@ -81,7 +87,7 @@ const getAvailableBatches = async (entityId, bdmId, productId, opts) => {
  * @param {ObjectId|string} bdmId
  * @param {ObjectId|string} productId
  * @param {number} qty - Total quantity to consume
- * @returns {Array<{ batch_lot_no, expiry_date, qty_consumed }>}
+ * @returns {Array<{ batch_lot_no, expiry_date, qty_consumed, bdm_id }>}
  * @throws {Error} INSUFFICIENT_STOCK if total available < qty
  */
 const consumeFIFO = async (entityId, bdmId, productId, qty, opts) => {
@@ -106,7 +112,8 @@ const consumeFIFO = async (entityId, bdmId, productId, qty, opts) => {
     consumed.push({
       batch_lot_no: batch.batch_lot_no,
       expiry_date: batch.expiry_date,
-      qty_consumed: take
+      qty_consumed: take,
+      bdm_id: batch.bdm_id
     });
     remaining -= take;
   }
@@ -131,11 +138,11 @@ const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty,
   const match = buildStockMatch(entityId, bdmId, opts, productId);
   match.batch_lot_no = normalized;
 
-  const result = await InventoryLedger.aggregate([
+  const agg = InventoryLedger.aggregate([
     { $match: match },
     {
       $group: {
-        _id: { batch_lot_no: '$batch_lot_no', expiry_date: '$expiry_date' },
+        _id: { batch_lot_no: '$batch_lot_no', expiry_date: '$expiry_date', bdm_id: '$bdm_id' },
         total_in: { $sum: '$qty_in' },
         total_out: { $sum: '$qty_out' }
       }
@@ -146,6 +153,9 @@ const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty,
       }
     }
   ]);
+  // Apply session for transactional consistency if provided
+  if (opts?.session) agg.session(opts.session);
+  const result = await agg;
 
   if (!result.length || result[0].available_qty < qty) {
     const err = new Error('Insufficient stock in specified batch');
@@ -159,7 +169,8 @@ const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty,
   return {
     batch_lot_no: result[0]._id.batch_lot_no,
     expiry_date: result[0]._id.expiry_date,
-    qty_consumed: qty
+    qty_consumed: qty,
+    bdm_id: result[0]._id.bdm_id
   };
 };
 
@@ -181,7 +192,8 @@ const getMyStock = async (entityId, bdmId, opts) => {
         _id: {
           product_id: '$product_id',
           batch_lot_no: '$batch_lot_no',
-          expiry_date: '$expiry_date'
+          expiry_date: '$expiry_date',
+          bdm_id: '$bdm_id'
         },
         total_in: { $sum: '$qty_in' },
         total_out: { $sum: '$qty_out' }
@@ -200,6 +212,7 @@ const getMyStock = async (entityId, bdmId, opts) => {
         product_id: '$_id.product_id',
         batch_lot_no: '$_id.batch_lot_no',
         expiry_date: '$_id.expiry_date',
+        bdm_id: '$_id.bdm_id',
         available_qty: 1
       }
     }

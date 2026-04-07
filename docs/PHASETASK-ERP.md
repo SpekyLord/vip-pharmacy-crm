@@ -3382,4 +3382,200 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] App.jsx: 4 new lazy routes (/erp/government-rates, /erp/period-locks, /erp/recurring-journals, /erp/bir-calculator)
 - [x] Sidebar.jsx: 4 new nav items (Recurring Journals after Journal Entries, Period Locks after Month-End Close, Gov. Rates + BIR Calculator after accounting section)
 - [x] useAccounting.js: batchPostJournals + 7 recurring template API methods
+
+---
+
+## PHASE 22 — Accounting Hardening, COA Configurability, Entity Context, Wiring Fixes ✅ PARTIAL (April 6, 2026)
+**Goal:** Fix critical accounting engine issues, make COA codes configurable, add multi-entity support for president, fix OCR scan/upload gaps, fix frontend wiring bugs.
+
+### 22.1 — Multi-Entity Context (President) ✅
+- [x] `tenantFilter.js`: Strip X-Entity-Id header for non-president (security); president reads header to set req.entityId
+- [x] `EntityContext.jsx`: New context — manages working entity state, fetches entities for president, persists in sessionStorage
+- [x] `useWorkingEntity.js`: Hook to consume EntityContext
+- [x] `api.js`: Request interceptor injects X-Entity-Id header
+- [x] `main.jsx`: EntityProvider wired inside AuthProvider
+- [x] `Navbar.jsx`: Entity selector dropdown for president/ceo (gold/amber styled)
+- [x] Fixes 55 controllers where req.entityId was null for president
+
+### 22.2 — Accounting Engine Hardening ✅
+- [x] A1: Entity isolation on `postJournal` & `reverseJournal` — added entityId param, uses `findOne({ _id, entity_id })` instead of `findById`
+- [x] A2: Unique sparse index on `corrects_je_id` — prevents double reversal at DB level (JournalEntry.js)
+- [x] A3: Period lock on post/reverse/batch journal routes — added `periodLockCheck('JOURNAL')` to 3 routes (accountingRoutes.js)
+- [x] A4: MongoDB session/transaction on `reverseJournal` — wraps create+link in atomic transaction (journalEngine.js)
+- [x] A5: Reversal period derived from reversal date — no longer copies original's period (fixes date/period mismatch)
+
+### 22.3 — COA Configurability (Settings.COA_MAP) ✅
+- [x] C1: Added `COA_MAP` field to Settings model with 31 configurable account codes (all with sensible defaults)
+- [x] C2: `autoJournal.js` — added `getCoaMap()` with 1-min cache, all 16 `journalFrom*()` functions now async and read from Settings
+- [x] C3: `expenseController.js` — SMER, Car Logbook fuel, PRF/CALF journal lines use COA_MAP
+- [x] C3: `bankReconService.js` — bank charges and interest income use COA_MAP
+- [x] C3: `apPaymentService.js` — AP trade uses COA_MAP
+- [x] Exported `getCoaMap()` for use by any future module
+
+### 22.4 — OCR Scan/Upload Fixes ✅
+- [x] CollectionSession.jsx: Added camera capture buttons (Scan + Gallery) for CR, Deposit Slip, CWT, CSI photos
+- [x] IcSettlement.jsx: Added camera capture buttons for CR and Deposit Slip photos
+- [x] PrfCalf.jsx: Added camera + gallery photo upload (was missing UI despite importing OCR service)
+- [x] Sidebar.jsx: Added IC Settlements nav item under Collections
+
+### 22.5 — Frontend Wiring Fixes ✅
+- [x] HospitalList.jsx: Fixed `api` → `erpApi` (ReferenceError on create/edit/tag) + path prefix fix
+- [x] usePurchasing.js: Fixed `searchProducts` endpoint from `/products/search` (404) to `/products?q=`
+- [x] SalesEntry.jsx: Removed premature `console.log` referencing `customerList` before useState declaration
+
+### 22.6 — Mobile UX Fixes (B1/B2) ✅
+- [x] B1: CarLogbook.jsx — mobile card layout with @media 768px/480px, table hidden on mobile, card view with date/odometer/km/fuel/status/actions, 36px+ touch targets, form fields stack vertically
+- [x] B2: PrfCalf.jsx — mobile card layout with @media 768px/480px, table hidden on mobile, card view with doc type/date/amount/payee/status/actions, 36px+ action buttons, form responsive
 - [x] ERP routes index.js: mounted period-locks and recurring-journals routes
+
+---
+
+## PHASE 23 — System Audit & Governance Hardening ✅ (April 6, 2026)
+**Goal:** Full system audit against governance principles (multi-entity, lookup-driven, finance-authoritative). Fix cross-entity data leaks, missing period locks, hardcoded COA/payment mode enums, silent error handling, route security gaps, and president UI exclusions.
+
+### 23.1 — Cross-Entity Data Leak Fixes (CRITICAL) ✅
+- [x] `collectionController.js`: `getCollectionById` — added `...req.tenantFilter` (was `findOne({ _id })` without entity scope)
+- [x] `interCompanyController.js`: `getTransferById` — changed from `findById` to `findOne` with entity filter ($or source/target)
+- [x] `interCompanyController.js`: `approveTransfer` — same entity scope fix
+- [x] `vendorController.js`: `getAll`, `getById`, `search`, `update`, `addAlias`, `deactivate` — all now scope by entity (president sees all)
+- [x] `inventoryController.js`: `approveGrn` — added entity scope to GRN lookup
+- [x] `icSettlementController.js`: `getSettlementById`, `postSettlement` — added entity filter ($or creditor/debtor)
+- [x] `payrollController.js`: `getPayslip` — added entity scope
+- [x] `peopleController.js`: `getPersonById`, `updatePerson`, `deactivatePerson` — added entity scope
+- [x] `purchasingController.js`: `validateInvoice` re-fetch — added entity scope
+
+### 23.2 — Route Security ✅
+- [x] `creditCardRoutes.js`: Added `roleCheck('admin', 'finance', 'president')` to `/export` endpoint (was unprotected)
+- [x] Verified: crmBridgeRoutes, hospitalRoutes, productMasterRoutes are behind `protect + tenantFilter` via index.js line 13 (not vulnerable — false alarm from audit)
+
+### 23.3 — Silent Error Handling → Audit Trail ✅
+- [x] `collectionController.js`: VAT/CWT `.catch()` now logs to `ErpAuditLog` (log_type: 'LEDGER_ERROR') + surfaces `warnings` array in response
+- [x] `collectionController.js`: Journal failure catch now logs to `ErpAuditLog` + surfaces warning
+- [x] `purchasingController.js`: VAT `.catch()` now logs to `ErpAuditLog` (was console.error only)
+
+### 23.4 — Missing Period Lock Checks ✅
+- [x] `purchasingController.js`: `postInvoice` — added `checkPeriodOpen()` before posting SI
+- [x] `inventoryController.js`: `approveGrn` — added `checkPeriodOpen()` before GRN approval
+- [x] `pettyCashController.js`: `postTransaction` — added `checkPeriodOpen()` before petty cash posting
+
+### 23.5 — Hardcoded COA Codes → COA_MAP ✅
+- [x] `expenseController.js` `submitExpenses`: Replaced hardcoded `'1110'` (AR_BDM), `'2000'` (AP_TRADE), `'6900'` (MISC) with `getCoaMap()` lookups
+- [x] `expenseController.js` `reopenExpense`: Same COA_MAP fix for reopen journal re-posting
+
+### 23.6 — Payment Mode Enum → Lookup-Driven ✅
+- [x] `Collection.js`: Removed restrictive `enum: ['CHECK', 'CASH', 'ONLINE']` — now `type: String` (PaymentMode lookup is authoritative)
+- [x] `SalesLine.js`: Removed `enum: ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'ONLINE']`
+- [x] `ExpenseEntry.js`: Removed `enum: ['CASH', 'GCASH', 'CARD', 'BANK_TRANSFER', 'CHECK', 'ONLINE', 'OTHER']`
+- [x] `PrfCalf.js`: Removed `enum: ['CASH', 'CHECK', 'GCASH', 'BANK_TRANSFER', 'CARD', 'OTHER']`
+- [x] `CarLogbookEntry.js`: Removed `enum: ['CASH', 'FLEET_CARD', 'CARD', 'GCASH', 'OTHER']`
+- [x] `IcSettlement.js`: Removed `enum: ['CHECK', 'CASH', 'ONLINE']`
+
+### 23.7 — President UI Full Control ✅
+- [x] `SalesList.jsx`: `isAdmin` now includes `'president'` (was missing — president couldn't approve/request deletion)
+- [x] `GrnEntry.jsx`: Approve/Reject buttons now visible for `'president'` (was admin/finance only)
+- [x] `GovernmentRates.jsx`: Delete button now visible for `'president'` (was admin only)
+- [x] Verified: All other ERP pages, sidebar, route protections, useErpSubAccess, EntityContext — all correctly include president
+
+---
+
+## PHASE 24 — ERP Control Center ✅ (April 6, 2026)
+**Goal:** Build one unified Control Center page for president/admin/finance to manage system structure, lookups, master data, and governance settings from a single place. Embodies the top-down governance philosophy: Entity → People → Permissions → Master Data → Lookups → Governance.
+
+### 24.1 — Backend: Generic Lookup Model & Routes ✅
+- [x] Created `backend/erp/models/Lookup.js` — entity-scoped generic lookup model (category + code + label + sort_order)
+- [x] Created `backend/erp/controllers/lookupGenericController.js` — CRUD + seed defaults for 16 categories (expense categories, person types, card types, fuel types, etc.)
+- [x] Created `backend/erp/routes/lookupGenericRoutes.js` — mounted at `/api/erp/lookup-values`
+- [x] Seed defaults cover 16 categories that were previously hardcoded in frontend
+
+### 24.2 — Backend: Entity CRUD ✅
+- [x] Created `backend/erp/controllers/entityController.js` — getAll, getById, create (president only), update (president/admin)
+- [x] Created `backend/erp/routes/entityRoutes.js` — mounted at `/api/erp/entities`
+- [x] First-ever CRUD API for entities (previously seed-only)
+
+### 24.3 — Backend: Control Center Health Endpoint ✅
+- [x] Created `backend/erp/controllers/controlCenterController.js` — aggregates counts from Entity, PeopleMaster, AccessTemplate, ChartOfAccounts, BankAccount, CreditCard, GovernmentRates, Warehouse, PeriodLock, Lookup, Settings
+- [x] Created `backend/erp/routes/controlCenterRoutes.js` — `GET /api/erp/control-center/health` (admin/finance/president)
+
+### 24.4 — Backend: Route Mounting ✅
+- [x] Mounted all Phase 24 routes in `backend/erp/routes/index.js`: `/entities`, `/control-center`, `/lookup-values`
+
+### 24.5 — Frontend: Extract *Content from 14 Existing Pages ✅
+- [x] Extracted named `*Content` export from each page (mechanical refactoring, no logic changes)
+- [x] All standalone routes continue to work identically (default export wraps Content with Navbar/Sidebar)
+- [x] Pages refactored: TransferPriceManager, DataArchive, FixedAssets, PeriodLocks, CostCenters, PaymentModes, ChartOfAccounts, PeopleList, BankAccounts, RecurringJournals, AccessTemplateManager, CreditCardManager, GovernmentRates, WarehouseManager
+
+### 24.6 — Frontend: New Components ✅
+- [x] Created `FoundationHealth.jsx` — landing dashboard showing governance layer completeness (entities, people, COA, banking, tax, warehouses, period locks, lookups, settings)
+- [x] Created `EntityManager.jsx` — first-ever entity management UI (view, edit, create subsidiaries)
+- [x] Created `ErpSettingsPanel.jsx` — form UI for ~30+ Settings model fields (per diem, fuel, tax, profit sharing, commissions, COA mapping)
+- [x] Created `LookupManager.jsx` — centralized lookup table manager (categories, seed defaults, CRUD)
+- [x] Created `useLookups.js` hook — fetches and caches lookup values by category (replaces hardcoded arrays)
+
+### 24.7 — Frontend: Control Center Container ✅
+- [x] Created `ControlCenter.jsx` — container page with left category sidebar (8 groups, 18 sub-items) + lazy-loaded content panels
+- [x] URL sync via `useSearchParams` → `?section=xxx` for deep-linking
+- [x] Categories organized by governance hierarchy: Foundation Health → Entity → People & Access → Financial Setup → Tax → Operations → Governance → System Settings
+- [x] Mobile responsive: nav collapses to dropdown selector below 768px
+
+### 24.8 — Frontend: Wiring ✅
+- [x] Registered `/erp/control-center` route in `App.jsx` with `ProtectedRoute` (admin/finance/president)
+- [x] Added "Control Center" sidebar item in `Sidebar.jsx` right after "ERP Home" (admin/finance/president only)
+- [x] All 18 lazy imports verified correct (named exports match actual exports in each file)
+- [x] All existing standalone routes remain intact
+
+---
+
+## PHASE 24B — Partner Intelligence + Org Chart + Lookup Migration ✅ (April 7, 2026)
+
+### 24B.1 — Frontend Dropdown → Lookup API Migration ✅
+- [x] Enhanced `lookupGenericController.js`: object-format seeds `{code, label}`, auto-seed on first GET, `buildSeedOps` helper
+- [x] Added 10 new seed categories (ENGAGEMENT_TYPE, ENGAGEMENT_LEVEL, DOC_TYPE, SALE_TYPE, VAT_TYPE, EXPENSE_TYPE, OFFICE_SUPPLY_TXN_TYPE, PAYMENT_MODE_TYPE, PEOPLE_STATUS) — total 26 categories
+- [x] Migrated 10+ frontend files from hardcoded arrays to `useLookupOptions()` with fallbacks
+- [x] Deleted dead constants: `engagementTypes.js`, `specializations.js`
+
+### 24B.2 — PeopleMaster Enhancements ✅
+- [x] Added `reports_to` self-ref field + index (org chart hierarchy)
+- [x] Added missing fields: `email`, `phone`, `avatar`, `territory_id`, `bdm_stage`
+- [x] Updated allowed update fields in controller
+- [x] Enhanced `syncFromCrm` to copy contact/territory fields + update existing records
+- [x] Unified creation endpoint `POST /people/create-with-login` — creates CRM User + PeopleMaster in one call
+- [x] Login management: `POST /:id/create-login`, `/:id/disable-login`, `/:id/enable-login`, `/:id/unlink-login`
+- [x] PeopleList: email/phone column, unified create form with login toggle
+- [x] PersonDetail: email/phone/bdm_stage editable, Create/Disable/Enable/Unlink Login buttons
+
+### 24B.3 — Multi-Entity Org Chart ✅
+- [x] `getOrgChart` enhanced for multi-entity: president sees all entities (VIP, MG AND CO., Balai Lawaan)
+- [x] Response: entity header bars with `_type: 'entity'` + nested person trees
+- [x] Frontend: entity header bars with brand_color accent, collapsible person trees, search
+- [x] Score badges on partner nodes (green 70+, amber 40-69, red <40)
+- [x] Graduation cap icon on partners with readiness ≥ 85%
+- [x] Top bar: org summary stats (entities, partners, avg score, near graduation, at risk)
+- [x] "Recompute Scores" button
+- [x] Added to Control Center sidebar + SECTIONS map
+- [x] Route `/erp/org-chart` in App.jsx + Network icon in Sidebar
+
+### 24B.4 — Partner Scorecard System ✅
+- [x] `PartnerScorecard` model: monthly snapshots with 5 scores + graduation checklist + AI insights
+- [x] `scorecardController`: aggregation from CRM (Visit, Doctor) + ERP (SalesLine, Collection, ExpenseEntry)
+- [x] Endpoints: POST /compute, GET /, GET /rankings, GET /group-summary, GET /:personId
+- [x] `ErpSettings`: configurable GRADUATION_CRITERIA (7 defaults) + SCORECARD_WEIGHTS
+- [x] PartnerScorecard slide-out panel with 3 tabs: Performance, Graduation, AI Insights
+- [x] Click partner in Org Chart → scorecard panel opens
+
+### 24B.5 — Org Intelligence Agent (#O) ✅
+- [x] `orgIntelligenceAgent.js`: weekly Claude-powered digest analyzing partner performance
+- [x] Produces: top performers, at-risk partners, graduation pipeline, trends, 3 recommendations
+- [x] Sends digest to President via MessageInbox
+- [x] Registered in agentScheduler: Monday 5:30 AM
+- [x] Added to AgentRun enum + AgentDashboard config
+
+### 24B.6 — Entity managed_by ✅
+- [x] Entity model: `managed_by` field (ref PeopleMaster)
+- [x] Controller: in create/update allowed, populated in queries, empty string → null sanitization
+- [x] EntityManager UI: "Managed By" dropdown from PeopleMaster (direct, not CRM-filtered)
+- [x] Entity cards show manager name
+
+### 24B.7 — Dependency Banners ✅
+- [x] Added banners for org-chart, hospitals, fnb-products, data-archive, agent-settings (24+ total)
+- [x] Updated entities banner with managed_by guidance
+- [x] Mobile responsive CSS for banners at 768px and 375px breakpoints

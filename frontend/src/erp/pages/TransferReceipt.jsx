@@ -3,6 +3,8 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useTransfers from '../hooks/useTransfers';
+import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .receipt-page { background: var(--erp-bg, #f4f7fb); }
@@ -52,7 +54,7 @@ export default function TransferReceipt() {
       await receiveTransfer(id);
       fetchIncoming();
     } catch (err) {
-      alert(err.response?.data?.message || err.message);
+      showError(err, 'Could not receive transfer');
     }
   };
 
@@ -63,6 +65,7 @@ export default function TransferReceipt() {
       <div className="receipt-main">
         <Navbar />
         <div className="receipt-inner">
+          <WorkflowGuide pageKey="transfers-receive" />
           <div className="receipt-header">
             <h1>Incoming Transfers</h1>
           </div>

@@ -13,9 +13,12 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import usePeople from '../hooks/usePeople';
 import usePayroll from '../hooks/usePayroll';
+import { showError, showSuccess } from '../utils/errorToast';
 import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
 import * as XLSX from 'xlsx';
+import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const css = `
   .pd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -48,13 +51,10 @@ const css = `
   @media(max-width: 375px) { .pd-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .pd-main input, .pd-main select { font-size: 16px; } }
 `;
 
-const PERSON_TYPES = ['BDM', 'EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'];
-const EMP_TYPES = ['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'CONSULTANT', 'PARTNERSHIP'];
 const CIVIL_STATUSES = ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'];
 const PERSON_STATUSES = ['ACTIVE', 'ON_LEAVE', 'SEPARATED'];
 const SALARY_TYPES = ['FIXED_SALARY', 'COMMISSION_BASED', 'HYBRID'];
 const TAX_STATUSES = ['S', 'S1', 'S2', 'ME', 'ME1', 'ME2', 'ME3', 'ME4'];
-const VEHICLE_TYPES = ['CAR', 'MOTORCYCLE', 'COMPANY_CAR', 'NONE'];
 const INCENTIVE_TYPES = ['CASH', 'IN_KIND', 'COMMISSION', 'NONE'];
 const INS_TYPES = ['LIFE', 'KEYMAN', 'INCOME_LOSS', 'ACCIDENT', 'VEHICLE_COMPREHENSIVE', 'VEHICLE_CTPL'];
 const INS_FREQ = ['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL'];
@@ -88,6 +88,13 @@ export default function PersonDetail() {
   const pplApi = usePeople();
   const payApi = usePayroll();
 
+  const { options: personTypeOpts } = useLookupOptions('PERSON_TYPE');
+  const PERSON_TYPES = personTypeOpts.map(o => o.code);
+  const { options: empTypeOpts } = useLookupOptions('EMPLOYMENT_TYPE');
+  const EMP_TYPES = empTypeOpts.map(o => o.code);
+  const { options: vehicleTypeOpts } = useLookupOptions('VEHICLE_TYPE');
+  const VEHICLE_TYPES = vehicleTypeOpts.map(o => o.code);
+
   const canEdit = ['admin', 'finance', 'president'].includes(user?.role);
   const isPresident = user?.role === 'president';
 
@@ -102,6 +109,8 @@ export default function PersonDetail() {
   const [personForm, setPersonForm] = useState({});
   const [compForm, setCompForm] = useState({});
   const [insForm, setInsForm] = useState(null); // null = closed, {} = new, {_id} = editing
+  const [showLoginForm, setShowLoginForm] = useState(false);
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const savingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -119,6 +128,7 @@ export default function PersonDetail() {
       if (p) {
         setPersonForm({
           full_name: p.full_name || '', first_name: p.first_name || '', last_name: p.last_name || '',
+          email: p.email || '', phone: p.phone || '', bdm_stage: p.bdm_stage || '',
           person_type: p.person_type || '', position: p.position || '', department: p.department || '',
           employment_type: p.employment_type || '', status: p.status || 'ACTIVE',
           date_hired: toInput(p.date_hired), date_regularized: toInput(p.date_regularized), date_separated: toInput(p.date_separated),
@@ -130,7 +140,7 @@ export default function PersonDetail() {
         });
         const c = p.comp_profile || {};
         setCompForm({
-          salary_type: c.salary_type || '', effective_date: toInput(c.effective_date),
+          salary_type: c.salary_type || 'FIXED_SALARY', effective_date: toInput(c.effective_date) || toInput(new Date()),
           basic_salary: c.basic_salary || 0, rice_allowance: c.rice_allowance || 0,
           clothing_allowance: c.clothing_allowance || 0, medical_allowance: c.medical_allowance || 0,
           laundry_allowance: c.laundry_allowance || 0, transport_allowance: c.transport_allowance || 0,
@@ -176,8 +186,21 @@ export default function PersonDetail() {
       await pplApi.updatePerson(id, data);
       setEditPerson(false);
       load();
-    } catch (err) { alert(err?.message || 'Save failed'); }
+    } catch (err) { showError(err, 'Could not save changes'); }
     finally { savingRef.current = false; }
+  };
+
+  const handleCreateLogin = async () => {
+    if (!loginForm.email || !loginForm.password) return;
+    try {
+      await pplApi.createLoginForPerson(id, loginForm);
+      showSuccess('Login created! Refreshing...');
+      setShowLoginForm(false);
+      setLoginForm({ email: '', password: '' });
+      load();
+    } catch (err) {
+      showError(err, 'Could not create login — check email and password requirements');
+    }
   };
 
   const saveComp = async () => {
@@ -192,7 +215,7 @@ export default function PersonDetail() {
       }
       setEditComp(false);
       load();
-    } catch (err) { alert(err?.message || 'Save failed'); }
+    } catch (err) { showError(err, 'Could not save changes'); }
     finally { savingRef.current = false; }
   };
 
@@ -219,13 +242,13 @@ export default function PersonDetail() {
       else await api.post('/erp/insurance', data);
       setInsForm(null);
       load();
-    } catch (err) { alert(err?.response?.data?.message || 'Save failed'); }
+    } catch (err) { showError(err, 'Could not save compensation profile'); }
     finally { savingRef.current = false; }
   };
   const deleteIns = async (policyId) => {
     if (!confirm('Delete this insurance policy?')) return;
     try { await api.delete(`/erp/insurance/${policyId}`); load(); }
-    catch (err) { alert(err?.response?.data?.message || 'Delete failed'); }
+    catch (err) { showError(err, 'Could not delete insurance record'); }
   };
 
   // ── Export All (Person + Comp + Insurance → multi-sheet Excel) ──
@@ -343,9 +366,9 @@ export default function PersonDetail() {
         await api.post('/erp/insurance', policyData);
         imported++;
       }
-      alert(`Imported ${imported} insurance policy(ies)`);
+      showSuccess(`Imported ${imported} insurance policy(ies)`);
       load();
-    } catch (err) { alert(err?.response?.data?.message || err?.message || 'Import failed'); }
+    } catch (err) { showError(err, 'Insurance import failed — check file format'); }
   };
 
   if (loading) return <div className="admin-page erp-page pd-page"><Navbar /><div className="admin-layout"><Sidebar /><main className="pd-main"><div className="pd-empty">Loading...</div></main></div></div>;
@@ -364,6 +387,7 @@ export default function PersonDetail() {
             <span className="pd-back" style={{ marginBottom: 0 }} onClick={() => navigate('/erp/people')}>← Back to People</span>
             <button className="pd-btn" onClick={exportAll}>Export All to Excel</button>
           </div>
+          <WorkflowGuide pageKey="person-detail" />
 
           {/* ═��═ SECTION A: Person Info ═══ */}
           <div className="pd-card">
@@ -375,10 +399,13 @@ export default function PersonDetail() {
             <div className="pd-grid">
               <F lbl="First Name" name="first_name" val={person.first_name} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Last Name" name="last_name" val={person.last_name} editing={editPerson} form={personForm} onChange={handlePersonChange} />
+              <F lbl="Email" name="email" val={person.email} editing={editPerson} form={personForm} onChange={handlePersonChange} />
+              <F lbl="Phone" name="phone" val={person.phone} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Person Type" name="person_type" val={person.person_type?.replace(/_/g, ' ')} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_TYPES} />
               <F lbl="Status" name="status" val={person.status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_STATUSES} />
               <F lbl="Position" name="position" val={person.position} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Department" name="department" val={person.department} editing={editPerson} form={personForm} onChange={handlePersonChange} />
+              <F lbl="BDM Stage" name="bdm_stage" val={person.bdm_stage} editing={editPerson} form={personForm} onChange={handlePersonChange} options={['', 'CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER']} />
               <F lbl="Employment Type" name="employment_type" val={person.employment_type} editing={editPerson} form={personForm} onChange={handlePersonChange} options={EMP_TYPES} />
               <F lbl="Civil Status" name="civil_status" val={person.civil_status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={CIVIL_STATUSES} />
               <F lbl="Date Hired" name="date_hired" type="date" val={fmtDate(person.date_hired)} editing={editPerson} form={personForm} onChange={handlePersonChange} />
@@ -538,11 +565,70 @@ export default function PersonDetail() {
             )}
           </div>
 
-          {/* ═══ SECTION D: ERP Module Access ═══ */}
-          {person.user_id && (
+          {/* ═══ SECTION D: ERP Module Access / Create Login ═══ */}
+          {person.user_id ? (
             <div className="pd-card">
-              <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>ERP Module Access</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>ERP Module Access</h3>
+                {canEdit && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {person.user_id?.isActive === false ? (
+                      <button
+                        className="pd-btn"
+                        style={{ fontSize: 11, color: '#166534', border: '1px solid #bbf7d0', background: '#f0fdf4' }}
+                        onClick={async () => {
+                          if (!confirm('Re-enable this person\'s login?')) return;
+                          try { await pplApi.enableLogin(id); showSuccess('Login re-enabled.'); load(); }
+                          catch (err) { showError(err, 'Could not re-enable login'); }
+                        }}
+                      >Enable Login</button>
+                    ) : (
+                      <button
+                        className="pd-btn"
+                        style={{ fontSize: 11, color: '#dc2626', border: '1px solid #fecaca', background: '#fef2f2' }}
+                        onClick={async () => {
+                          if (!confirm('Disable this person\'s login? They will no longer be able to log in.')) return;
+                          try { await pplApi.disableLogin(id); showSuccess('Login disabled.'); load(); }
+                          catch (err) { showError(err, 'Could not disable login'); }
+                        }}
+                      >Disable Login</button>
+                    )}
+                    <button
+                      className="pd-btn"
+                      style={{ fontSize: 11, color: '#64748b', border: '1px solid #e5e7eb' }}
+                      onClick={async () => {
+                        if (!confirm('Unlink login? CRM User stays but disconnects from this person record. Use this if the login was linked by mistake.')) return;
+                        try { await pplApi.unlinkLogin(id); showSuccess('Login unlinked.'); load(); }
+                        catch (err) { showError(err, 'Could not unlink login'); }
+                      }}
+                    >Unlink Login</button>
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>
+                Linked to CRM User: {person.user_id?.email || person.user_id?._id || person.user_id}
+                {person.user_id?.isActive === false && <span style={{ color: '#dc2626', fontWeight: 600 }}> (DISABLED)</span>}
+              </div>
               <ErpAccessManager userId={person.user_id?._id || person.user_id} readOnly={!canEdit} />
+            </div>
+          ) : canEdit && (
+            <div className="pd-card">
+              <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>System Login</h3>
+              <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 12px' }}>
+                This person has no system login. Create one so they can log in to CRM/ERP.
+              </p>
+              {!showLoginForm ? (
+                <button className="pd-btn pd-btn-p" onClick={() => setShowLoginForm(true)}>Create Login</button>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360 }}>
+                  <input placeholder="Email *" value={loginForm.email} onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }} />
+                  <input type="password" placeholder="Password * (min 8, upper+lower+number+special)" value={loginForm.password} onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="pd-btn pd-btn-p" disabled={!loginForm.email || !loginForm.password} onClick={handleCreateLogin}>Create</button>
+                    <button className="pd-btn" onClick={() => setShowLoginForm(false)}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

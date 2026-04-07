@@ -14,17 +14,12 @@ import { useState, useEffect } from 'react';
 import doctorService from '../../services/doctorService';
 import specializationService from '../../services/specializationService';
 import useLookupData from '../../hooks/useLookupData';
+import { useLookupOptions } from '../../erp/hooks/useLookups';
 import SelectField from '../common/Select';
-const ENGAGEMENT_LEVELS = [
-  { value: 1, label: '1 - Visited 4 times' },
-  { value: 2, label: '2 - Knows BDM/products' },
-  { value: 3, label: '3 - Tried products' },
-  { value: 4, label: '4 - In group chat' },
-  { value: 5, label: '5 - Active partner' },
-];
 
 const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
   const { programs: PROGRAMS, supportTypes: SUPPORT_TYPES } = useLookupData();
+  const { options: ENGAGEMENT_LEVELS } = useLookupOptions('ENGAGEMENT_LEVEL');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [specializations, setSpecializations] = useState([]);

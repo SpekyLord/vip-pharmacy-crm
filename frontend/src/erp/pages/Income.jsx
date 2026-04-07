@@ -6,12 +6,15 @@
  * Deductions: Cash Advance + Credit Card + Credit Payment + Purchased Goods + Other + Over Payment
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useIncome from '../hooks/useIncome';
 
+import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .income-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -50,10 +53,22 @@ const pageStyles = `
   .list-table th { background: var(--erp-accent-soft); padding: 10px 12px; text-align: left; font-weight: 600; }
   .list-table td { padding: 10px 12px; border-top: 1px solid var(--erp-border); }
   .list-table tr:hover { background: var(--erp-accent-soft); cursor: pointer; }
+  .list-table-wrap { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; overflow-x: auto; }
+  .list-mobile-list { display: none; gap: 10px; }
+  .list-mobile-card { border: 1px solid var(--erp-border); border-radius: 14px; background: var(--erp-panel); padding: 14px; box-shadow: 0 8px 18px rgba(15,23,42,0.05); }
+  .list-mobile-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+  .list-mobile-title { font-size: 14px; font-weight: 800; color: var(--erp-text); }
+  .list-mobile-sub { font-size: 12px; color: var(--erp-muted); margin-top: 2px; }
+  .list-mobile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .list-mobile-item { background: #f8fafc; border: 1px solid var(--erp-border); border-radius: 12px; padding: 10px 12px; }
+  .list-mobile-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--erp-muted); font-weight: 700; }
+  .list-mobile-value { font-size: 13px; font-weight: 700; color: var(--erp-text); margin-top: 4px; }
+  .list-mobile-actions { display: flex; gap: 8px; margin-top: 12px; }
   .return-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
   .return-modal-content { background: var(--erp-panel); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; }
   .return-modal textarea { width: 100%; padding: 8px; border: 1px solid var(--erp-border); border-radius: 8px; min-height: 80px; font-size: 13px; margin: 12px 0; }
-  @media(max-width: 768px) { .income-main { padding: 12px; } .payslip-grid { grid-template-columns: 1fr; } }
+  @media(max-width: 768px) { .income-main { padding: 12px; } .payslip-grid { grid-template-columns: 1fr; } .list-table-wrap { display: none; } .list-mobile-list { display: grid; } }
+  @media(max-width: 480px) { .list-mobile-grid { grid-template-columns: 1fr; } .workflow-actions { flex-direction: column; } }
 `;
 
 const STATUS_BADGES = {
@@ -92,7 +107,7 @@ export default function Income() {
       if (bdmId) params.bdm_id = bdmId;
       const res = await inc.getIncomeList(params);
       setReports(res?.data || []);
-    } catch { /* handled by hook */ }
+    } catch (err) { showError(err, 'Could not load income reports'); }
     setLoading(false);
   }, [period, cycle, bdmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -107,7 +122,7 @@ export default function Income() {
       const res = await inc.generateIncome({ bdm_id: targetBdm, period, cycle: cycle === 'ALL' ? 'MONTHLY' : cycle });
       if (res?.data) { setSelected(res.data); setView('detail'); }
       loadReports();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not generate income report'); }
     setLoading(false);
   };
 
@@ -116,7 +131,7 @@ export default function Income() {
     try {
       const res = await inc.getIncomeById(report._id);
       if (res?.data) { setSelected(res.data); setView('detail'); setManualEdits({}); }
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not load income detail'); }
     setLoading(false);
   };
 
@@ -128,7 +143,7 @@ export default function Income() {
       const res = await inc.getIncomeById(selected._id);
       if (res?.data) setSelected(res.data);
       setManualEdits({});
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not save manual edits'); }
     setLoading(false);
   };
 
@@ -146,7 +161,7 @@ export default function Income() {
       }
       if (res?.data) setSelected(res.data);
       loadReports();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Workflow action failed'); }
     setLoading(false);
   };
 
@@ -160,6 +175,7 @@ export default function Income() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="income-main">
+          <WorkflowGuide pageKey="income" />
           <div className="income-header">
             <h1>Income Reports</h1>
             <div className="controls">
@@ -184,6 +200,9 @@ export default function Income() {
                   ← Back to List
                 </button>
               )}
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
             </div>
           </div>
 
@@ -191,35 +210,65 @@ export default function Income() {
 
           {/* ═══ LIST VIEW ═══ */}
           {view === 'list' && !loading && (
-            <table className="list-table">
-              <thead>
-                <tr>
-                  <th>BDM</th>
-                  <th>Period</th>
-                  <th>Cycle</th>
-                  <th>Earnings</th>
-                  <th>Deductions</th>
-                  <th>Net Pay</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
+            <>
+              <div className="list-table-wrap">
+                <table className="list-table">
+                  <thead>
+                    <tr>
+                      <th>BDM</th>
+                      <th>Period</th>
+                      <th>Cycle</th>
+                      <th>Earnings</th>
+                      <th>Deductions</th>
+                      <th>Net Pay</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reports.length === 0 && (
+                      <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 24 }}>No income reports found</td></tr>
+                    )}
+                    {reports.map(r => (
+                      <tr key={r._id} onClick={() => handleSelect(r)}>
+                        <td>{bdmName(r)}</td>
+                        <td>{r.period}</td>
+                        <td>{r.cycle}</td>
+                        <td style={{ textAlign: 'right' }}>{fmt(r.total_earnings)}</td>
+                        <td style={{ textAlign: 'right' }}>{fmt(r.total_deductions)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(r.net_pay)}</td>
+                        <td><span className={`badge ${STATUS_BADGES[r.status] || ''}`}>{r.status}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="list-mobile-list">
                 {reports.length === 0 && (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 24 }}>No income reports found</td></tr>
+                  <div className="list-mobile-card" style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No income reports found</div>
                 )}
                 {reports.map(r => (
-                  <tr key={r._id} onClick={() => handleSelect(r)}>
-                    <td>{bdmName(r)}</td>
-                    <td>{r.period}</td>
-                    <td>{r.cycle}</td>
-                    <td style={{ textAlign: 'right' }}>{fmt(r.total_earnings)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmt(r.total_deductions)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(r.net_pay)}</td>
-                    <td><span className={`badge ${STATUS_BADGES[r.status] || ''}`}>{r.status}</span></td>
-                  </tr>
+                  <div className="list-mobile-card" key={`mobile-${r._id}`} onClick={() => handleSelect(r)} role="button" tabIndex={0}>
+                    <div className="list-mobile-top">
+                      <div>
+                        <div className="list-mobile-title">{bdmName(r)}</div>
+                        <div className="list-mobile-sub">{r.period} · {r.cycle}</div>
+                      </div>
+                      <span className={`badge ${STATUS_BADGES[r.status] || ''}`}>{r.status}</span>
+                    </div>
+                    <div className="list-mobile-grid">
+                      <div className="list-mobile-item"><div className="list-mobile-label">Earnings</div><div className="list-mobile-value">{fmt(r.total_earnings)}</div></div>
+                      <div className="list-mobile-item"><div className="list-mobile-label">Deductions</div><div className="list-mobile-value">{fmt(r.total_deductions)}</div></div>
+                      <div className="list-mobile-item"><div className="list-mobile-label">Net Pay</div><div className="list-mobile-value">{fmt(r.net_pay)}</div></div>
+                      <div className="list-mobile-item"><div className="list-mobile-label">Status</div><div className="list-mobile-value">{r.status}</div></div>
+                    </div>
+                    <div className="list-mobile-actions">
+                      <button className="btn btn-outline" type="button">Open Payslip</button>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </>
           )}
 
           {/* ═══ DETAIL VIEW ═══ */}

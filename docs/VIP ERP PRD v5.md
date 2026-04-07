@@ -196,6 +196,18 @@ Every output and input VAT entry starts as PENDING. Finance tags: INCLUDE, EXCLU
 ### P7 — Four-View Financial Reporting
 Every journal entry has BIR_FLAG and VAT_FLAG. Four reports: Internal P&L, BIR Income Tax P&L, VAT Return 2550Q, Withholding Tax Summary.
 
+### P8 — Governance-First, Lookup-Driven Structure
+President, Admin, and Finance are the system control layer. They own the setup and maintenance of the structures that all other users depend on.
+
+- Entity structure, subsidiary structure, and inter-entity relationships
+- People structure, reporting lines, role assignments, and approval paths
+- Master data and lookups such as products, hospitals, vendors, banks, cards, payment modes, tax tables, cost centers, compensation settings, and COA
+- Access control boundaries, visibility rules, and approval authority
+
+The ERP must remain scalable and must not depend on hardcoded business options in code or UI. Wherever possible, business choices must come from controlled master data, setup tables, and API lookups maintained by President/Admin/Finance.
+
+Operational users work inside the structure defined above. Transactions, reports, accounting behavior, approvals, and dashboard visibility must inherit from entity structure and people structure rather than one-off logic. If President/Admin/Finance setup is incomplete or inconsistent, downstream modules become unreliable.
+
 ### 2.1 ERP Design Reference Standards
 
 **Client Direction (March 31, 2026):** Use SAP, NetSuite, or QuickBooks as standard references for all ERP patterns and workflows.

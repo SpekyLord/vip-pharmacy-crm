@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SelectField from '../../components/common/Select';
 import useOfficeSupplies from '../hooks/useOfficeSupplies';
-
-const CATEGORIES = ['ALL', 'PAPER', 'INK_TONER', 'CLEANING', 'STATIONERY', 'ELECTRONICS', 'OTHER'];
-const TXN_TYPES = ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'];
+import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
+const TXN_TYPES_FALLBACK = ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'];
 
 const styles = {
   container: { padding: '24px', maxWidth: '1200px', margin: '0 auto' },
@@ -38,8 +39,23 @@ const styles = {
   peso: (val) => `₱${Number(val || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 };
 
+const mobileCSS = `
+  .os-cards { display: none; }
+  @media (max-width: 768px) {
+    .os-table { display: none !important; }
+    .os-cards { display: flex; flex-direction: column; gap: 10px; }
+    .os-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; background: #fff; }
+    .os-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .os-card-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 12px; font-size: 13px; margin-bottom: 10px; }
+    .os-card-label { font-size: 11px; color: #6b7280; }
+    .os-card-value { font-weight: 600; }
+    .os-card-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .os-card-actions button { flex: 1; }
+  }
+`;
+
 // ---------- Item Modal ----------
-function ItemModal({ open, onClose, onSave, editItem }) {
+function ItemModal({ open, onClose, onSave, editItem, categories }) {
   const [form, setForm] = useState({ item_name: '', item_code: '', category: 'PAPER', qty_on_hand: 0, reorder_level: 5, unit: 'pc', last_purchase_price: 0 });
   const [saving, setSaving] = useState(false);
 
@@ -72,7 +88,7 @@ function ItemModal({ open, onClose, onSave, editItem }) {
         last_purchase_price: Number(form.last_purchase_price)
       }, editItem?._id);
       onClose();
-    } catch (err) { alert(err?.response?.data?.message || 'Failed to save'); }
+    } catch (err) { showError(err, 'Could not save supply record'); }
     finally { setSaving(false); }
   };
 
@@ -93,7 +109,7 @@ function ItemModal({ open, onClose, onSave, editItem }) {
           <div style={styles.formGroup}>
             <label style={styles.label}>Category</label>
             <SelectField style={styles.formInput} name="category" value={form.category} onChange={handleChange}>
-              {CATEGORIES.filter(c => c !== 'ALL').map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+              {categories.filter(c => c !== 'ALL').map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
             </SelectField>
           </div>
           <div style={styles.formGroup}>
@@ -136,7 +152,7 @@ function TxnModal({ open, onClose, onSave, supplies }) {
       await onSave({ ...form, qty: Number(form.qty), unit_cost: Number(form.unit_cost) });
       onClose();
       setForm({ supply: '', txn_type: 'PURCHASE', qty: 1, unit_cost: 0, issued_to: '', notes: '' });
-    } catch (err) { alert(err?.response?.data?.message || 'Failed to record'); }
+    } catch (err) { showError(err, 'Could not record supply transaction'); }
     finally { setSaving(false); }
   };
 
@@ -192,6 +208,10 @@ function TxnModal({ open, onClose, onSave, supplies }) {
 // ---------- Main Page ----------
 export default function OfficeSupplies() {
   const os = useOfficeSupplies();
+  const { options: catOpts } = useLookupOptions('OFFICE_SUPPLY_CATEGORY');
+  const { options: txnOpts } = useLookupOptions('OFFICE_SUPPLY_TXN_TYPE');
+  const TXN_TYPES = txnOpts.length > 0 ? txnOpts.map(o => o.code) : TXN_TYPES_FALLBACK;
+  const CATEGORIES = ['ALL', ...catOpts.map(o => o.code)];
   const [supplies, setSupplies] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -203,12 +223,12 @@ export default function OfficeSupplies() {
   const [txnLoading, setTxnLoading] = useState(false);
 
   const handleExport = async () => {
-    try { const res = await os.exportSupplies(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'office-supplies-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+    try { const res = await os.exportSupplies(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'office-supplies-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch (err) { showError(err, 'Export failed'); }
   };
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try { const res = await os.importSupplies(fd); alert(res?.message || 'Import complete'); loadSupplies(); } catch { /* */ }
+    try { const res = await os.importSupplies(fd); showSuccess(res?.message || 'Import complete'); loadSupplies(); } catch (err) { showError(err, 'Import failed'); }
     e.target.value = '';
   };
 
@@ -218,7 +238,7 @@ export default function OfficeSupplies() {
       const params = activeCategory !== 'ALL' ? { category: activeCategory } : {};
       const res = await os.getSupplies(params);
       setSupplies(res.data || res || []);
-    } catch { setSupplies([]); }
+    } catch (err) { showError(err, 'Could not load supplies'); setSupplies([]); }
     finally { setLoading(false); }
   }, [os, activeCategory]);
 
@@ -229,7 +249,7 @@ export default function OfficeSupplies() {
     try {
       const res = await os.getTransactions({});
       setTransactions(res.data || res || []);
-    } catch { setTransactions([]); }
+    } catch (err) { showError(err, 'Could not load transactions'); setTransactions([]); }
     finally { setTxnLoading(false); }
   }, [os]);
 
@@ -254,7 +274,10 @@ export default function OfficeSupplies() {
   };
 
   return (
+    <>
+    <style>{mobileCSS}</style>
     <div style={styles.container}>
+      <WorkflowGuide pageKey="office-supplies" />
       <div style={{ ...styles.header, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <h1 style={styles.title}>Office Supplies</h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -286,7 +309,8 @@ export default function OfficeSupplies() {
       ) : supplies.length === 0 ? (
         <div style={styles.empty}>No items found{activeCategory !== 'ALL' ? ` in ${activeCategory.replace('_', ' ')}` : ''}.</div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <>
+        <div className="os-table" style={{ overflowX: 'auto' }}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -322,6 +346,39 @@ export default function OfficeSupplies() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile Supply Cards */}
+        <div className="os-cards">
+          {supplies.map(item => {
+            const isLow = item.qty_on_hand <= item.reorder_level;
+            return (
+              <div key={item._id} className="os-card" style={{ borderLeft: `4px solid ${isLow ? '#dc2626' : '#22c55e'}` }}>
+                <div className="os-card-header">
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{item.item_name}</div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      {catBadge(item.category)}
+                      {isLow && <span style={{ ...styles.badge('red') }}>REORDER</span>}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: isLow ? '#dc2626' : '#111' }}>{item.qty_on_hand} {item.unit || ''}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>{styles.peso(item.last_purchase_price)}</div>
+                  </div>
+                </div>
+                <div className="os-card-grid">
+                  <div><span className="os-card-label">Code</span><br /><span className="os-card-value">{item.item_code}</span></div>
+                  <div><span className="os-card-label">On Hand</span><br /><span className="os-card-value">{item.qty_on_hand} {item.unit || ''}</span></div>
+                  <div><span className="os-card-label">Reorder At</span><br /><span className="os-card-value">{item.reorder_level}</span></div>
+                </div>
+                <div className="os-card-actions">
+                  <button style={styles.btnSecondary} onClick={() => { setEditItem(item); setShowItemModal(true); }}>Edit</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        </>
       )}
 
       {showTxns && (
@@ -332,7 +389,8 @@ export default function OfficeSupplies() {
           ) : transactions.length === 0 ? (
             <div style={styles.empty}>No transactions recorded.</div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <>
+            <div className="os-table" style={{ overflowX: 'auto' }}>
               <table style={styles.table}>
                 <thead>
                   <tr>
@@ -364,12 +422,39 @@ export default function OfficeSupplies() {
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile Transaction Cards */}
+            <div className="os-cards">
+              {transactions.map(txn => (
+                <div key={txn._id} className="os-card">
+                  <div className="os-card-header">
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{txn.supply?.item_name || txn.supply || '-'}</div>
+                      <span style={styles.badge(txn.txn_type === 'PURCHASE' ? 'green' : txn.txn_type === 'ISSUE' ? 'blue' : txn.txn_type === 'RETURN' ? 'amber' : 'gray')}>
+                        {txn.txn_type}
+                      </span>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 16, fontWeight: 700 }}>{txn.qty}</div>
+                      <div style={{ fontSize: 11, color: '#6b7280' }}>{txn.createdAt ? new Date(txn.createdAt).toLocaleDateString() : '-'}</div>
+                    </div>
+                  </div>
+                  <div className="os-card-grid">
+                    <div><span className="os-card-label">Unit Cost</span><br /><span className="os-card-value">{txn.unit_cost ? styles.peso(txn.unit_cost) : '-'}</span></div>
+                    <div><span className="os-card-label">Issued To</span><br /><span className="os-card-value">{txn.issued_to || '-'}</span></div>
+                    <div><span className="os-card-label">Notes</span><br /><span className="os-card-value">{txn.notes || '-'}</span></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            </>
           )}
         </div>
       )}
 
-      <ItemModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} />
+      <ItemModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} categories={CATEGORIES} />
       <TxnModal open={showTxnModal} onClose={() => setShowTxnModal(false)} onSave={handleRecordTxn} supplies={supplies} />
     </div>
+    </>
   );
 }

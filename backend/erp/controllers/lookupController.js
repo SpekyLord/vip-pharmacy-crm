@@ -7,9 +7,11 @@ const { catchAsync } = require('../../middleware/errorHandler');
 const createCrud = (Model, name) => ({
   getAll: catchAsync(async (req, res) => {
     const filter = {};
-    // Filter by entity — use query param or tenant filter
-    if (req.query.entity_id) filter.entity_id = req.query.entity_id;
-    else if (req.entityId) filter.entity_id = req.entityId;
+    // Filter by entity — only if the model has an entity_id field
+    if (Model.schema.paths.entity_id) {
+      if (req.query.entity_id) filter.entity_id = req.query.entity_id;
+      else if (req.entityId) filter.entity_id = req.entityId;
+    }
     if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
     let query = Model.find(filter).sort({ _id: 1 });
     // Populate assigned_users if the model has it (e.g., BankAccount)

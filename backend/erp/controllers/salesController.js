@@ -37,6 +37,25 @@ const createSale = catchAsync(async (req, res) => {
       ? 'OPENING_AR' : 'SALES_LINE';
   }
 
+  // Validate line items before saving — catch qty ≤ 0 and unit_price ≤ 0 early
+  const saleType = saleData.sale_type || 'CSI';
+  if (saleType !== 'SERVICE_INVOICE' && Array.isArray(saleData.line_items)) {
+    for (const item of saleData.line_items) {
+      if (!item.qty || item.qty <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Quantity must be greater than 0 for ${item.item_key || 'product'}`
+        });
+      }
+      if (!item.unit_price || item.unit_price <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Unit price must be greater than 0 for ${item.item_key || 'product'}`
+        });
+      }
+    }
+  }
+
   // Phase 18: auto-generate invoice_number for non-CSI sales
   if (saleData.sale_type && saleData.sale_type !== 'CSI' && !saleData.invoice_number) {
     const { generateDocNumber } = require('../services/docNumbering');
@@ -195,7 +214,9 @@ const validateSales = catchAsync(async (req, res) => {
   // For now, all rows for a BDM share one warehouse, so first row's warehouse is used.
   const firstWarehouseId = rows[0]?.warehouse_id;
   const snapOpts = firstWarehouseId ? { warehouseId: firstWarehouseId.toString() } : undefined;
-  const { productTotals } = await buildStockSnapshot(req.entityId, req.bdmId, snapOpts);
+  // President/admin/finance without a warehouse scope → query all entity stock
+  const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && !firstWarehouseId ? null : req.bdmId;
+  const { productTotals } = await buildStockSnapshot(req.entityId, bdmId, snapOpts);
 
   // In-memory deduction tracker (prevents double-allocation across rows)
   const deducted = new Map(); // productId → qty deducted so far
@@ -276,6 +297,18 @@ const validateSales = catchAsync(async (req, res) => {
         rowErrors.push('Product is required for each line item');
         continue;
       }
+      if (!item.qty || item.qty <= 0) {
+        rowErrors.push(`Quantity must be greater than 0 for ${item.item_key || 'product'}`);
+        continue;
+      }
+      if (!item.unit_price || item.unit_price <= 0) {
+        rowErrors.push(`Unit price must be greater than 0 for ${item.item_key || 'product'}`);
+      }
+
+      // FIFO override requires a reason from the allowed list
+      if (item.fifo_override && !item.override_reason) {
+        rowErrors.push(`FIFO override reason is required for ${item.item_key || 'product'}. Choose: Hospital Policy, QA Replacement, Damaged Batch, or Batch Recall.`);
+      }
 
       const pid = item.product_id.toString();
       const available = (productTotals.get(pid) || 0) - (deducted.get(pid) || 0);
@@ -326,10 +359,12 @@ const validateSales = catchAsync(async (req, res) => {
 // ═══════════════════════════════════════════════════════════
 
 const submitSales = catchAsync(async (req, res) => {
-  const validRows = await SalesLine.find({
-    ...req.tenantFilter,
-    status: 'VALID'
-  });
+  const { sale_ids } = req.body;
+  const filter = { ...req.tenantFilter, status: 'VALID' };
+  if (sale_ids && sale_ids.length) {
+    filter._id = { $in: sale_ids.map(id => new mongoose.Types.ObjectId(id)) };
+  }
+  const validRows = await SalesLine.find(filter);
 
   if (!validRows.length) {
     return res.status(400).json({
@@ -411,15 +446,18 @@ const submitSales = catchAsync(async (req, res) => {
           } else {
             // Regular CSI: consume inventory via FIFO
             // Phase 17: warehouse-scoped FIFO consumption
-            const fifoOpts = row.warehouse_id ? { warehouseId: row.warehouse_id.toString() } : undefined;
+            const fifoOpts = { ...(row.warehouse_id && { warehouseId: row.warehouse_id.toString() }), session };
+            // President/admin/finance without warehouse → entity-wide FIFO
+            const submitBdmId = (req.isPresident || req.isAdmin || req.isFinance) && !row.warehouse_id
+              ? null : row.bdm_id;
             let consumed;
             if (item.fifo_override && item.batch_lot_no) {
               consumed = [await consumeSpecificBatch(
-                row.entity_id, row.bdm_id, item.product_id, item.batch_lot_no, item.qty, fifoOpts
+                row.entity_id, submitBdmId, item.product_id, item.batch_lot_no, item.qty, fifoOpts
               )];
             } else {
               consumed = await consumeFIFO(
-                row.entity_id, row.bdm_id, item.product_id, item.qty, fifoOpts
+                row.entity_id, submitBdmId, item.product_id, item.qty, fifoOpts
               );
             }
 
@@ -427,7 +465,7 @@ const submitSales = catchAsync(async (req, res) => {
             for (const c of consumed) {
               await InventoryLedger.create([{
                 entity_id: row.entity_id,
-                bdm_id: row.bdm_id,
+                bdm_id: c.bdm_id || row.bdm_id,
                 warehouse_id: row.warehouse_id || undefined,
                 product_id: item.product_id,
                 batch_lot_no: c.batch_lot_no,
@@ -466,8 +504,8 @@ const submitSales = catchAsync(async (req, res) => {
         const saleType = row.sale_type || 'CSI';
         // Revenue JE
         const jeData = saleType === 'SERVICE_INVOICE'
-          ? journalFromServiceRevenue(row, row.entity_id, req.user._id)
-          : journalFromSale(row, row.entity_id, req.user._id);
+          ? await journalFromServiceRevenue(row, row.entity_id, req.user._id)
+          : await journalFromSale(row, row.entity_id, req.user._id);
         jeData.source_event_id = row.event_id;
         await createAndPostJournal(row.entity_id, jeData);
 
@@ -477,7 +515,7 @@ const submitSales = catchAsync(async (req, res) => {
           const products = await ProductMaster.find({ _id: { $in: productIds } }).select('purchase_price').lean();
           const costMap = new Map(products.map(p => [p._id.toString(), p.purchase_price || 0]));
           const totalCogs = row.line_items.reduce((sum, li) => sum + (li.qty || 0) * (costMap.get(li.product_id?.toString()) || 0), 0);
-          const cogsData = journalFromCOGS(row, Math.round(totalCogs * 100) / 100, req.user._id);
+          const cogsData = await journalFromCOGS(row, Math.round(totalCogs * 100) / 100, req.user._id);
           if (cogsData) {
             cogsData.source_event_id = row.event_id;
             await createAndPostJournal(row.entity_id, cogsData);
@@ -520,84 +558,91 @@ const reopenSales = catchAsync(async (req, res) => {
   }
 
   let reopenedCount = 0;
+  const session = await mongoose.startSession();
 
-  for (const row of rows) {
-    // Create reversal InventoryLedger entries
-    const originalEntries = await InventoryLedger.find({ event_id: row.event_id });
+  try {
+    await session.withTransaction(async () => {
+      for (const row of rows) {
+        // Create reversal InventoryLedger entries
+        const originalEntries = await InventoryLedger.find({ event_id: row.event_id }).session(session);
 
-    for (const entry of originalEntries) {
-      await InventoryLedger.create({
-        entity_id: entry.entity_id,
-        bdm_id: entry.bdm_id,
-        warehouse_id: entry.warehouse_id || undefined,
-        product_id: entry.product_id,
-        batch_lot_no: entry.batch_lot_no,
-        expiry_date: entry.expiry_date,
-        transaction_type: 'ADJUSTMENT',
-        qty_in: entry.qty_out,  // Reverse: what went out comes back in
-        qty_out: entry.qty_in,  // Reverse: what came in goes out
-        event_id: row.event_id,
-        recorded_by: req.user._id
-      });
-    }
-
-    // Reverse ConsignmentTracker if applicable
-    for (const item of row.line_items) {
-      const consignment = await ConsignmentTracker.findOne({
-        entity_id: row.entity_id,
-        hospital_id: row.hospital_id,
-        product_id: item.product_id,
-        'conversions.sales_line_id': row._id
-      });
-
-      if (consignment) {
-        // Remove the conversion and reduce qty_consumed
-        consignment.conversions = consignment.conversions.filter(
-          c => !c.sales_line_id || c.sales_line_id.toString() !== row._id.toString()
-        );
-        consignment.qty_consumed = Math.max(0, consignment.qty_consumed - item.qty);
-        await consignment.save();
-      }
-    }
-
-    // Reverse journal entries (SAP Storno)
-    if (row.event_id) {
-      try {
-        const jes = await JournalEntry.find({
-          source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
-        });
-        for (const je of jes) {
-          await reverseJournal(je._id, 'Auto-reversal: SalesLine reopen', req.user._id);
+        for (const entry of originalEntries) {
+          await InventoryLedger.create([{
+            entity_id: entry.entity_id,
+            bdm_id: entry.bdm_id,
+            warehouse_id: entry.warehouse_id || undefined,
+            product_id: entry.product_id,
+            batch_lot_no: entry.batch_lot_no,
+            expiry_date: entry.expiry_date,
+            transaction_type: 'ADJUSTMENT',
+            qty_in: entry.qty_out,  // Reverse: what went out comes back in
+            qty_out: entry.qty_in,  // Reverse: what came in goes out
+            event_id: row.event_id,
+            recorded_by: req.user._id
+          }], { session });
         }
-      } catch (jeErr) {
-        console.error('JE reversal failed for sale reopen:', row._id, jeErr.message);
+
+        // Reverse ConsignmentTracker if applicable
+        for (const item of row.line_items) {
+          const consignment = await ConsignmentTracker.findOne({
+            entity_id: row.entity_id,
+            hospital_id: row.hospital_id,
+            product_id: item.product_id,
+            'conversions.sales_line_id': row._id
+          }).session(session);
+
+          if (consignment) {
+            consignment.conversions = consignment.conversions.filter(
+              c => !c.sales_line_id || c.sales_line_id.toString() !== row._id.toString()
+            );
+            consignment.qty_consumed = Math.max(0, consignment.qty_consumed - item.qty);
+            await consignment.save({ session });
+          }
+        }
+
+        // Update SalesLine
+        row.status = 'DRAFT';
+        row.reopen_count += 1;
+        row.posted_at = undefined;
+        row.posted_by = undefined;
+        row.event_id = undefined;
+        row.validation_errors = [];
+        await row.save({ session });
+
+        reopenedCount++;
       }
-    }
-
-    // Update SalesLine
-    row.status = 'DRAFT';
-    row.reopen_count += 1;
-    row.posted_at = undefined;
-    row.posted_by = undefined;
-    row.event_id = undefined;
-    row.validation_errors = [];
-    await row.save();
-
-    // Audit log
-    await ErpAuditLog.logChange({
-      entity_id: row.entity_id,
-      bdm_id: row.bdm_id,
-      log_type: 'REOPEN',
-      target_ref: row._id.toString(),
-      target_model: 'SalesLine',
-      changed_by: req.user._id,
-      note: `Reopened (count: ${row.reopen_count})`
     });
 
-    reopenedCount++;
-  }
+    // Reverse journal entries outside transaction (non-blocking, like submit pattern)
+    for (const row of rows) {
+      if (row.event_id) {
+        try {
+          const jes = await JournalEntry.find({
+            source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
+          });
+          for (const je of jes) {
+            await reverseJournal(je._id, 'Auto-reversal: SalesLine reopen', req.user._id);
+          }
+        } catch (jeErr) {
+          console.error('JE reversal failed for sale reopen:', row._id, jeErr.message);
+        }
+      }
 
-  res.json({ success: true, reopened_count: reopenedCount });
+      await ErpAuditLog.logChange({
+        entity_id: row.entity_id,
+        bdm_id: row.bdm_id,
+        log_type: 'REOPEN',
+        target_ref: row._id.toString(),
+        target_model: 'SalesLine',
+        changed_by: req.user._id,
+        note: `Reopened (count: ${row.reopen_count})`
+      });
+    }
+
+    res.json({ success: true, reopened_count: reopenedCount });
+  } finally {
+    await session.endSession();
+  }
 });
 
 // ═══════════════════════════════════════════════════════════

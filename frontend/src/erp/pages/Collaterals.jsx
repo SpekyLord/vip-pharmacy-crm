@@ -3,8 +3,9 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import SelectField from '../../components/common/Select';
 import useCollaterals from '../hooks/useCollaterals';
-
-const COLLATERAL_TYPES = ['ALL', 'BROCHURE', 'SAMPLE', 'MERCHANDISE', 'BANNER', 'FLYER', 'OTHER'];
+import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const styles = {
   container: { padding: 0, maxWidth: '1200px', margin: '0 auto' },
@@ -69,7 +70,7 @@ const pageStyles = `
 const TYPE_COLORS = { BROCHURE: 'blue', SAMPLE: 'green', MERCHANDISE: 'purple', BANNER: 'amber', FLYER: 'gray', OTHER: 'gray' };
 
 // ---------- Create/Edit Modal ----------
-function CollateralModal({ open, onClose, onSave, editItem }) {
+function CollateralModal({ open, onClose, onSave, editItem, collateralTypes }) {
   const [form, setForm] = useState({ name: '', collateral_type: 'BROCHURE', qty_on_hand: 0, assigned_to: '', description: '', photo_url: '' });
   const [saving, setSaving] = useState(false);
 
@@ -96,7 +97,7 @@ function CollateralModal({ open, onClose, onSave, editItem }) {
     try {
       await onSave({ ...form, qty_on_hand: Number(form.qty_on_hand) }, editItem?._id);
       onClose();
-    } catch (err) { alert(err?.response?.data?.message || 'Failed to save'); }
+    } catch (err) { showError(err, 'Could not save collateral'); }
     finally { setSaving(false); }
   };
 
@@ -113,7 +114,7 @@ function CollateralModal({ open, onClose, onSave, editItem }) {
           <div style={styles.formGroup}>
             <label style={styles.label}>Type</label>
             <SelectField style={styles.formInput} name="collateral_type" value={form.collateral_type} onChange={handleChange}>
-              {COLLATERAL_TYPES.filter(t => t !== 'ALL').map(t => <option key={t} value={t}>{t}</option>)}
+              {collateralTypes.filter(t => t !== 'ALL').map(t => <option key={t} value={t}>{t}</option>)}
             </SelectField>
           </div>
           <div style={styles.formGroup}>
@@ -156,7 +157,7 @@ function DistributionModal({ open, onClose, onSave, collaterals }) {
       await onSave({ ...form, qty: Number(form.qty) });
       onClose();
       setForm({ collateral: '', qty: 1, recipient: '', hospital: '', notes: '' });
-    } catch (err) { alert(err?.response?.data?.message || 'Failed to record distribution'); }
+    } catch (err) { showError(err, 'Could not record distribution'); }
     finally { setSaving(false); }
   };
 
@@ -213,7 +214,7 @@ function ReturnModal({ open, onClose, onSave, collaterals }) {
       await onSave({ ...form, qty: Number(form.qty) });
       onClose();
       setForm({ collateral: '', qty: 1 });
-    } catch (err) { alert(err?.response?.data?.message || 'Failed to record return'); }
+    } catch (err) { showError(err, 'Could not record return'); }
     finally { setSaving(false); }
   };
 
@@ -247,6 +248,8 @@ function ReturnModal({ open, onClose, onSave, collaterals }) {
 // ---------- Main Page ----------
 export default function Collaterals() {
   const col = useCollaterals();
+  const { options: collatOpts } = useLookupOptions('COLLATERAL_TYPE');
+  const COLLATERAL_TYPES = ['ALL', ...collatOpts.map(o => o.code)];
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState('ALL');
@@ -257,12 +260,12 @@ export default function Collaterals() {
   const [showReturnModal, setShowReturnModal] = useState(false);
 
   const handleExport = async () => {
-    try { const res = await col.exportCollaterals(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'collaterals-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+    try { const res = await col.exportCollaterals(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'collaterals-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch (err) { showError(err, 'Export failed'); }
   };
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try { const res = await col.importCollaterals(fd); alert(res?.message || 'Import complete'); loadItems(); } catch { /* */ }
+    try { const res = await col.importCollaterals(fd); showSuccess(res?.message || 'Import complete'); loadItems(); } catch (err) { showError(err, 'Import failed'); }
     e.target.value = '';
   };
 
@@ -272,7 +275,7 @@ export default function Collaterals() {
       const params = typeFilter !== 'ALL' ? { collateral_type: typeFilter } : {};
       const res = await col.getAll(params);
       setItems(res.data || res || []);
-    } catch { setItems([]); }
+    } catch (err) { showError(err, 'Could not load collaterals'); setItems([]); }
     finally { setLoading(false); }
   }, [col, typeFilter]);
 
@@ -306,6 +309,7 @@ export default function Collaterals() {
         <Sidebar />
         <main className="collaterals-main">
           <div style={styles.container}>
+            <WorkflowGuide pageKey="collaterals" />
             <div style={styles.header} className="collaterals-header">
               <h1 style={styles.title}>Collaterals</h1>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -400,7 +404,7 @@ export default function Collaterals() {
               </div>
             )}
 
-            <CollateralModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} />
+            <CollateralModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} collateralTypes={COLLATERAL_TYPES} />
             <DistributionModal open={showDistModal} onClose={() => setShowDistModal(false)} onSave={handleDistribute} collaterals={items} />
             <ReturnModal open={showReturnModal} onClose={() => setShowReturnModal(false)} onSave={handleReturn} collaterals={items} />
           </div>

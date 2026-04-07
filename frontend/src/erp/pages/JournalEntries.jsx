@@ -3,8 +3,10 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .je-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -87,7 +89,7 @@ export default function JournalEntries() {
       if (statusFilter) params.status = statusFilter;
       const res = await api.listJournals(params);
       setJournals(res?.data || []);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load journals'); }
     setLoading(false);
   }, [period, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -105,11 +107,11 @@ export default function JournalEntries() {
       setShowCreate(false);
       setLines([{ ...EMPTY_LINE }, { ...EMPTY_LINE }]);
       loadJournals();
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not create journal entry'); }
   };
 
   const handlePost = async (id) => {
-    try { await api.postJournal(id); loadJournals(); if (selected?._id === id) viewDetail(id); } catch { /* */ }
+    try { await api.postJournal(id); loadJournals(); if (selected?._id === id) viewDetail(id); } catch (err) { showError(err, 'Could not post journal'); }
   };
 
   const draftIds = journals.filter(j => j.status === 'DRAFT').map(j => j._id);
@@ -137,7 +139,7 @@ export default function JournalEntries() {
   const handleReverse = async (id) => {
     const reason = prompt('Reversal reason:');
     if (!reason) return;
-    try { await api.reverseJournal(id, { reason }); loadJournals(); } catch { /* */ }
+    try { await api.reverseJournal(id, { reason }); loadJournals(); } catch (err) { showError(err, 'Could not reverse journal'); }
   };
 
   const viewDetail = async (id) => {
@@ -145,7 +147,7 @@ export default function JournalEntries() {
       const res = await api.getJournal(id);
       setSelected(res?.data || null);
       setView('detail');
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load journal details'); }
   };
 
   return (
@@ -155,6 +157,7 @@ export default function JournalEntries() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="je-main admin-main">
+          <WorkflowGuide pageKey="journal-entries" />
           {view === 'list' ? (
             <>
               <div className="je-header">
