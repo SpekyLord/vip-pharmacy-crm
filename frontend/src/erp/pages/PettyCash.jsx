@@ -3,6 +3,7 @@ import SelectField from '../../components/common/Select';
 import { useAuth } from '../../hooks/useAuth';
 import usePettyCash from '../hooks/usePettyCash';
 import usePeople from '../hooks/usePeople';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const CEILING = 5000;
 
@@ -343,6 +344,7 @@ function TransactionsTab({ funds, pc }) {
 
   return (
     <div>
+      <WorkflowGuide pageKey="petty-cash" />
       <div style={styles.filterRow}>
         <SelectField style={styles.select} value={fundFilter} onChange={e => setFundFilter(e.target.value)}>
           <option value="">All Funds</option>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = `
   .ap-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -217,6 +218,7 @@ export default function AccountsPayable() {
         <div style={{ display: 'flex' }}>
           <Sidebar />
           <main className="ap-main">
+            <WorkflowGuide pageKey="accounts-payable" />
             <div className="ap-header"><h2>Accounts Payable</h2></div>
 
             <div className="ap-tabs">

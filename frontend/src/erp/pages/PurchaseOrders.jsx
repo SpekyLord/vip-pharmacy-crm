@@ -5,6 +5,7 @@ import usePurchasing from '../hooks/usePurchasing';
 import useProducts from '../hooks/useProducts';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = `
   .po-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -207,6 +208,7 @@ export default function PurchaseOrders() {
         <div style={{ display: 'flex' }}>
           <Sidebar />
           <main className="po-main">
+            <WorkflowGuide pageKey="purchase-orders" />
             <div className="po-header">
               <h2>Purchase Orders</h2>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

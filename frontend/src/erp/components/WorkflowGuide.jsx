@@ -312,6 +312,263 @@ const WORKFLOW_GUIDES = {
     ],
     tip: 'BDM share and VIP share percentages are configured in ERP Settings by admin/finance.',
   },
+
+  // ═══ Supply Chain & Procurement ═══
+  'product-master': {
+    title: 'Product Master',
+    steps: [
+      'Search/filter products by name, status, or stock type (Pharma, F&B, Office)',
+      'Click "+ New Product" to add — set prices, VAT status, and unit',
+      'Use Export/Import buttons for bulk price updates via Excel',
+      'Tag products to warehouses for inventory tracking',
+    ],
+    next: [
+      { label: 'My Stock', path: '/erp/my-stock' },
+      { label: 'GRN', path: '/erp/grn' },
+      { label: 'Transfer Prices', path: '/erp/control-center?section=transfer-prices' },
+    ],
+    tip: 'Set purchase_price accurately — it drives COGS in journal entries.',
+  },
+  'grn-entry': {
+    title: 'Goods Receipt Note (GRN)',
+    steps: [
+      'Select supplier and warehouse to receive into',
+      'Scan or enter batch numbers and expiry dates',
+      'Match against Purchase Order if applicable',
+      'Validate and Post — stock is added to inventory',
+    ],
+    next: [
+      { label: 'My Stock', path: '/erp/my-stock' },
+      { label: 'Purchase Orders', path: '/erp/purchasing/orders' },
+    ],
+    tip: 'OCR can auto-read batch/expiry from photos of delivery receipts.',
+  },
+  'purchase-orders': {
+    title: 'Purchase Orders',
+    steps: [
+      'Select vendor and add line items (product, qty, price)',
+      'Submit for approval (DRAFT → APPROVED)',
+      'Receive goods via GRN — PO auto-updates to PARTIALLY_RECEIVED',
+      'Match with Supplier Invoice for 3-way match',
+    ],
+    next: [
+      { label: 'GRN', path: '/erp/grn' },
+      { label: 'Supplier Invoices', path: '/erp/purchasing/invoices' },
+    ],
+    tip: 'Link POs to GRNs for accurate inventory costing.',
+  },
+  'supplier-invoices': {
+    title: 'Supplier Invoices',
+    steps: [
+      'Enter supplier invoice details and line items',
+      'Match against PO and GRN (3-way match)',
+      'Validate — check totals, VAT, CWT',
+      'Post — creates Accounts Payable journal entry',
+    ],
+    next: [
+      { label: 'Accounts Payable', path: '/erp/purchasing/ap' },
+      { label: 'Purchase Orders', path: '/erp/purchasing/orders' },
+    ],
+    tip: 'Unmatched invoices are flagged for review before posting.',
+  },
+
+  // ═══ Operations & Agent Management ═══
+  'hospitals': {
+    title: 'Hospital Management',
+    steps: [
+      'Add hospitals with type, beds, and engagement level',
+      'Set financial terms (payment days, VAT, CWT, credit limit)',
+      'Tag BDMs to hospitals for visibility control',
+      'Export/Import via Excel for bulk updates',
+    ],
+    next: [
+      { label: 'New Sale', path: '/erp/sales/entry' },
+      { label: 'Collections', path: '/erp/collections' },
+    ],
+    tip: 'Credit limits can WARN or BLOCK sales — set the action per hospital.',
+  },
+  'transfer-price-manager': {
+    title: 'Transfer Price Manager',
+    steps: [
+      'Select source entity (VIP) and target entity (subsidiary)',
+      'All VIP products are listed — set a price to tag to entity',
+      'Clear a price to untag (entity no longer carries the product)',
+      'Save changes — bulk update in one click',
+    ],
+    next: [
+      { label: 'Products', path: '/erp/products' },
+      { label: 'Warehouses', path: '/erp/control-center?section=warehouses' },
+    ],
+    tip: 'Transfer prices drive inter-company COGS and inventory valuation.',
+  },
+  'agent-dashboard': {
+    title: 'AI Agent Intelligence',
+    steps: [
+      'View status of all 12 agents (6 AI-powered + 6 rule-based)',
+      'Check recent runs, alerts generated, and key findings',
+      'Click "Run Now" on any agent for instant data gathering',
+      'Configure agent settings in Control Center → Intelligence',
+    ],
+    next: [
+      { label: 'Control Center', path: '/erp/control-center?section=agent-settings' },
+    ],
+    tip: 'Free agents always run on schedule. AI agents require ANTHROPIC_API_KEY.',
+  },
+  'consignment-dashboard': {
+    title: 'Consignment Dashboard',
+    steps: [
+      'View all active consignments by BDM and hospital',
+      'Check status: OPEN, OVERDUE, FORCE_CSI, COLLECTED',
+      'Drill down into aging details per product batch',
+      'Follow up on overdue consignments for CSI conversion or return',
+    ],
+    next: [
+      { label: 'DR Entry', path: '/erp/dr' },
+      { label: 'New Sale', path: '/erp/sales/entry' },
+      { label: 'Consignment Aging', path: '/erp/consignment-aging' },
+    ],
+    tip: 'Consignment aging affects BDM profit sharing eligibility.',
+  },
+
+  // ═══ Finance & Accounting ═══
+  'accounts-payable': {
+    title: 'Accounts Payable',
+    steps: [
+      'View outstanding supplier balances by aging bucket',
+      'Drill down: Current, 30, 60, 90, 90+ days',
+      'Process payments to reduce AP balance',
+      'Posted payments create journal entries automatically',
+    ],
+    next: [
+      { label: 'Supplier Invoices', path: '/erp/purchasing/invoices' },
+      { label: 'Bank Reconciliation', path: '/erp/banking/reconciliation' },
+    ],
+  },
+  'journal-entries': {
+    title: 'Journal Entries',
+    steps: [
+      'Create manual JE with debit and credit lines (must balance)',
+      'Add reference document or description',
+      'Post — entries flow to Trial Balance and P&L',
+      'Void if needed — creates reversal JE (Storno pattern)',
+    ],
+    next: [
+      { label: 'Trial Balance', path: '/erp/accounting/trial-balance' },
+      { label: 'P&L', path: '/erp/pnl' },
+    ],
+    tip: 'Auto-journals are created by Sales, Collections, Expenses. Manual JEs are for adjustments only.',
+  },
+  'month-end-close': {
+    title: 'Month-End Close',
+    steps: [
+      'Review the checklist — each step shows PENDING/COMPLETE status',
+      'Run steps in order (reconciliation → accruals → depreciation → close)',
+      'Fix any ERROR steps before proceeding',
+      'Lock the period when all steps are complete',
+    ],
+    next: [
+      { label: 'Period Locks', path: '/erp/control-center?section=period-locks' },
+      { label: 'Trial Balance', path: '/erp/accounting/trial-balance' },
+    ],
+    tip: 'Always run Trial Balance before closing to catch imbalances.',
+  },
+  'bank-reconciliation': {
+    title: 'Bank Reconciliation',
+    steps: [
+      'Select bank account and reconciliation period',
+      'Match bank statement entries to GL transactions',
+      'Mark unmatched items as reconciling items',
+      'Complete when bank balance = GL balance',
+    ],
+    next: [
+      { label: 'Journal Entries', path: '/erp/accounting/journal' },
+      { label: 'Bank Accounts', path: '/erp/control-center?section=bank-accounts' },
+    ],
+  },
+  'vat-compliance': {
+    title: 'VAT Compliance',
+    steps: [
+      'Review transactions for the filing period',
+      'Classify each as INCLUDE, EXCLUDE, or DEFER',
+      'Check summary totals match expected VAT return',
+      'Generate 2550Q data for BIR filing',
+    ],
+    next: [
+      { label: 'BIR Calculator', path: '/erp/bir-calculator' },
+      { label: 'ERP Settings', path: '/erp/control-center?section=erp-settings' },
+    ],
+    tip: 'DEFERRED items carry forward to the next filing period.',
+  },
+
+  // ═══ Payroll & Miscellaneous ═══
+  'payroll-run': {
+    title: 'Payroll Run',
+    steps: [
+      'Select pay period and review employee list',
+      'Compute — calculates gross, deductions, net per employee',
+      'Review and adjust if needed (COMPUTED → REVIEWED)',
+      'Approve and Post — creates payroll journal entries',
+    ],
+    next: [
+      { label: 'Payslips', path: '/erp/payroll/payslips' },
+      { label: 'Journal Entries', path: '/erp/accounting/journal' },
+    ],
+    tip: 'Government rates (SSS, PhilHealth, PagIBIG) are pulled from Settings automatically.',
+  },
+  'office-supplies': {
+    title: 'Office Supplies',
+    steps: [
+      'Record purchases (PURCHASE) or issues to staff (ISSUE)',
+      'Track returns and adjustments',
+      'View current stock levels by category',
+      'Categories are lookup-driven — manage in Lookup Tables',
+    ],
+    next: [
+      { label: 'Petty Cash', path: '/erp/petty-cash' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+  },
+  'petty-cash': {
+    title: 'Petty Cash',
+    steps: [
+      'View fund balance and ceiling limit',
+      'Create disbursements with receipts and COA coding',
+      'Replenish when fund is low',
+      'Each disbursement posts a journal entry',
+    ],
+    next: [
+      { label: 'Expenses', path: '/erp/expenses' },
+      { label: 'Journal Entries', path: '/erp/accounting/journal' },
+    ],
+    tip: 'Fund ceiling is configurable in ERP Settings.',
+  },
+  'consignment-aging': {
+    title: 'Consignment Aging',
+    steps: [
+      'View cross-BDM aging summary by status',
+      'Identify OVERDUE and FORCE_CSI consignments',
+      'Drill down to hospital-level detail',
+      'Follow up with BDMs for conversion or return',
+    ],
+    next: [
+      { label: 'Consignment Dashboard', path: '/erp/consignment-dashboard' },
+      { label: 'DR Entry', path: '/erp/dr' },
+    ],
+  },
+  'erp-reports': {
+    title: 'Reports & Analytics',
+    steps: [
+      'Browse available reports by category',
+      'Click to navigate to detailed report pages',
+      'Use date and entity filters on each report',
+      'Export data to Excel where available',
+    ],
+    next: [
+      { label: 'P&L', path: '/erp/pnl' },
+      { label: 'Trial Balance', path: '/erp/accounting/trial-balance' },
+      { label: 'AR Aging', path: '/erp/collections/ar' },
+    ],
+  },
 };
 
 /**

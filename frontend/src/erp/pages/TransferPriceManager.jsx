@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useTransfers from '../hooks/useTransfers';
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .tpm-page { background: var(--erp-bg, #f4f7fb); }
@@ -184,6 +185,7 @@ export function TransferPriceManagerContent() {
   return (
     <>
       <style>{pageStyles}</style>
+      <WorkflowGuide pageKey="transfer-price-manager" />
       <div className="tpm-inner">
         <div className="tpm-header">
           <h1>Transfer Price Manager</h1>

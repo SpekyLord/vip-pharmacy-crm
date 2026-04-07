@@ -6,6 +6,7 @@ import useErpApi from '../hooks/useErpApi';
 import useProducts from '../hooks/useProducts';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = `
   .si-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -218,6 +219,7 @@ export default function SupplierInvoices() {
         <div style={{ display: 'flex' }}>
           <Sidebar />
           <main className="si-main">
+            <WorkflowGuide pageKey="supplier-invoices" />
             <div className="si-header">
               <h2>Supplier Invoices</h2>
               <button className="btn btn-primary" onClick={openCreate}>+ New Invoice</button>

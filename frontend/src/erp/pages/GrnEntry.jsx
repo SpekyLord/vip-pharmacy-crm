@@ -8,6 +8,7 @@ import { processDocument, extractExifDateTime } from '../services/ocrService';
 import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const STATUS_COLORS = {
   PENDING: { bg: '#fef3c7', text: '#92400e', label: 'Pending' },
@@ -331,6 +332,7 @@ export default function GrnEntry() {
       <div className="admin-layout">
         <Sidebar />
         <main className="grn-main">
+          <WorkflowGuide pageKey="grn-entry" />
           <div className="grn-header">
             <h1>Goods Received Notes</h1>
             <div className="grn-actions">

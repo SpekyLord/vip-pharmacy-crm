@@ -11,6 +11,7 @@ import useReports from '../hooks/useReports';
 import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .aging-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -74,6 +75,7 @@ export default function ConsignmentAging() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="aging-main">
+          <WorkflowGuide pageKey="consignment-aging" />
           <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
           <div className="aging-header">
             <h1>Consignment Aging</h1>

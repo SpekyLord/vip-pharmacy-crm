@@ -285,3 +285,35 @@ backend/erp/
 ├── routes/controlCenterRoutes.js
 └── routes/lookupGenericRoutes.js
 ```
+
+---
+
+## Workflow Guide & Dependency Guide Governance
+
+Every user-facing page MUST have a helper banner. Two systems exist — use one per page, never both.
+
+### WorkflowGuide — for standalone pages
+
+Used on transaction, reporting, and management pages (Sales, Collections, GRN, Hospitals, etc.).
+
+- **Config**: `frontend/src/erp/components/WorkflowGuide.jsx` → `WORKFLOW_GUIDES` object
+- **Structure**: Each pageKey has `title`, `steps[]` (numbered), `next[]` (links), optional `tip`
+- **Usage**: Import and render `<WorkflowGuide pageKey="..." />` at top of page content
+- **Dismissal**: Session-based via `sessionStorage` (key: `wfg_dismiss_{pageKey}`)
+
+### DEPENDENCY_GUIDE — for Control Center panels only
+
+Used on embedded panels inside ControlCenter (Entities, COA, Warehouses, Agent Config, etc.).
+
+- **Config**: `frontend/src/erp/pages/ControlCenter.jsx` → `DEPENDENCY_GUIDE` object
+- **Structure**: Each section key has `title`, `items[]` (action → deps → optional section link)
+- **Rendered by**: `DependencyBanner` component inside ControlCenter
+
+### Rule: Always Update Guides When Modifying Pages
+
+When creating or modifying any ERP page, you MUST also update the corresponding guide:
+
+1. **New standalone page** → add a pageKey entry to `WORKFLOW_GUIDES` + import WorkflowGuide in the page
+2. **New Control Center section** → add entry to `DEPENDENCY_GUIDE` in ControlCenter.jsx
+3. **Modified page workflow** → update the steps/tips/next-links in the guide to match the new behavior
+4. **Removed page** → remove the guide entry to avoid dead references

@@ -10,6 +10,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useHospitals from '../hooks/useHospitals';
 import usePeople from '../hooks/usePeople';
 import useErpApi from '../hooks/useErpApi';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 export function HospitalListContent() {
   const { user } = useAuth();
@@ -184,6 +185,7 @@ export function HospitalListContent() {
   return (
     <>
       <style>{pageStyles}</style>
+      <WorkflowGuide pageKey="hospitals" />
       <main className="hospital-main" style={styles.main}>
           <div style={styles.header}>
             <div>

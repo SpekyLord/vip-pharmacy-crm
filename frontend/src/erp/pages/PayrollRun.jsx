@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import usePayroll from '../hooks/usePayroll';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const STATUS_COLORS = {
   COMPUTED: { bg: '#dbeafe', text: '#1e40af' },
@@ -104,6 +105,7 @@ export default function PayrollRun() {
       <div className="admin-layout">
         <Sidebar />
         <main className="pr-main">
+          <WorkflowGuide pageKey="payroll-run" />
           <div className="pr-header">
             <h2>Payroll Run</h2>
           </div>

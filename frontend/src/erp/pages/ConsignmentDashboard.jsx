@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useConsignment from '../hooks/useConsignment';
 import WarehousePicker from '../components/WarehousePicker';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const AGING_COLORS = {
   OPEN: { bg: '#dbeafe', text: '#1e40af' },
@@ -89,6 +90,7 @@ export default function ConsignmentDashboard() {
       <div className="admin-layout">
         <Sidebar />
         <main className="consignment-main">
+          <WorkflowGuide pageKey="consignment-dashboard" />
           <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
           <div className="consignment-header">
             <h1>Consignment Tracking</h1>

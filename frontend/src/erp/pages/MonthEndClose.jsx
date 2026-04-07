@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .mec-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -122,6 +123,7 @@ export default function MonthEndClose() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="mec-main admin-main">
+          <WorkflowGuide pageKey="month-end-close" />
           <div className="mec-header"><h2>Month-End Close</h2></div>
           <div className="mec-controls">
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />

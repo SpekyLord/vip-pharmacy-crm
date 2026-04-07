@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import SelectField from '../../components/common/Select';
 import useOfficeSupplies from '../hooks/useOfficeSupplies';
 import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
 const TXN_TYPES_FALLBACK = ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'];
 
 const styles = {
@@ -275,6 +276,7 @@ export default function OfficeSupplies() {
     <>
     <style>{mobileCSS}</style>
     <div style={styles.container}>
+      <WorkflowGuide pageKey="office-supplies" />
       <div style={{ ...styles.header, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <h1 style={styles.title}>Office Supplies</h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

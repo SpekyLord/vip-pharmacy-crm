@@ -7,6 +7,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
 import useWarehouses from '../hooks/useWarehouses';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const VAT_OPTIONS = ['VATABLE', 'EXEMPT', 'ZERO'];
 const STATUS_FILTER = ['ALL', 'ACTIVE', 'INACTIVE'];
@@ -343,6 +344,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   return (
     <>
       <style>{pageStyles}</style>
+          <WorkflowGuide pageKey="product-master" />
           <div className="pm-header">
             <div>
               <h1>{fixedStockType === 'FNB' ? 'F&B Product Master' : 'Product Master'}</h1>

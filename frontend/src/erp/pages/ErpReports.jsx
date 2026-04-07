@@ -7,6 +7,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useDashboard from '../hooks/useDashboard';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .reports-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -78,6 +79,7 @@ export default function ErpReports() {
       <div className="admin-layout">
         <Sidebar />
         <main className="admin-main reports-main">
+          <WorkflowGuide pageKey="erp-reports" />
           <div className="reports-header">
             <h1>ERP Reports</h1>
             <p>Sales summaries, collection reports, expense breakdowns, and P&L analysis</p>

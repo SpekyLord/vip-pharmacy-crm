@@ -11,6 +11,7 @@ import { useAuth } from '../../hooks/useAuth';
 import api from '../../services/api';
 import messageService from '../../services/messageInboxService';
 import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, Users, MessageSquare, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap } from 'lucide-react';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .agd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -149,6 +150,7 @@ export default function AgentDashboard() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="agd-main">
+          <WorkflowGuide pageKey="agent-dashboard" />
           <div className="agd-header">
             <h1><Bot size={28} /> AI Agent Intelligence</h1>
           </div>

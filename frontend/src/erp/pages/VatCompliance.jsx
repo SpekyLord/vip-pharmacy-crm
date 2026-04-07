@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .vat-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -85,6 +86,7 @@ export default function VatCompliance() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="vat-main admin-main">
+          <WorkflowGuide pageKey="vat-compliance" />
           <div className="vat-header"><h2>VAT & CWT Compliance</h2></div>
           <div className="vat-tabs">
             {['vat-ledger', '2550Q', 'cwt-ledger', '2307'].map(t => (

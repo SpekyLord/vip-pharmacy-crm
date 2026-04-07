@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .je-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -155,6 +156,7 @@ export default function JournalEntries() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="je-main admin-main">
+          <WorkflowGuide pageKey="journal-entries" />
           {view === 'list' ? (
             <>
               <div className="je-header">

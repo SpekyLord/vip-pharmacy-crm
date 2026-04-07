@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useBanking from '../hooks/useBanking';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .br-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
@@ -185,6 +186,7 @@ export default function BankReconciliation() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="br-main admin-main">
+          <WorkflowGuide pageKey="bank-reconciliation" />
           <div className="br-header">
             <h2>Bank Reconciliation</h2>
             <button className="btn btn-primary" onClick={() => setShowUpload(true)}>Upload Statement</button>
