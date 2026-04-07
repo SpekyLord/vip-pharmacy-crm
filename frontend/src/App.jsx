@@ -12,134 +12,149 @@ import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
+// Auto-retry dynamic imports: on chunk-hash mismatch after deploy, reload once
+const lazyRetry = (importFn) =>
+  lazy(() =>
+    importFn().catch(() => {
+      const reloaded = sessionStorage.getItem('chunk_reload');
+      if (!reloaded) {
+        sessionStorage.setItem('chunk_reload', '1');
+        window.location.reload();
+        return new Promise(() => {}); // never resolves — page is reloading
+      }
+      sessionStorage.removeItem('chunk_reload');
+      return importFn(); // second attempt after reload — let it fail naturally
+    })
+  );
+
 // Lazy-loaded pages — split by role for smaller bundles
-const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
-const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
+const ForgotPasswordPage = lazyRetry(() => import('./pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazyRetry(() => import('./pages/ResetPasswordPage'));
 
 // BDM pages
-const EmployeeDashboard = lazy(() => import('./pages/employee/EmployeeDashboard'));
-const MyVisits = lazy(() => import('./pages/employee/MyVisits'));
-const NewVisitPage = lazy(() => import('./pages/employee/NewVisitPage'));
-const NewClientVisitPage = lazy(() => import('./pages/employee/NewClientVisitPage'));
-const EmployeeInbox = lazy(() => import('./pages/employee/EMP_InboxPage'));
-const CallPlanPage = lazy(() => import('./pages/employee/CallPlanPage'));
-const DoctorDetailPage = lazy(() => import('./pages/employee/DoctorDetailPage'));
-const ProductSpecPage = lazy(() => import('./pages/employee/ProductSpecPage'));
+const EmployeeDashboard = lazyRetry(() => import('./pages/employee/EmployeeDashboard'));
+const MyVisits = lazyRetry(() => import('./pages/employee/MyVisits'));
+const NewVisitPage = lazyRetry(() => import('./pages/employee/NewVisitPage'));
+const NewClientVisitPage = lazyRetry(() => import('./pages/employee/NewClientVisitPage'));
+const EmployeeInbox = lazyRetry(() => import('./pages/employee/EMP_InboxPage'));
+const CallPlanPage = lazyRetry(() => import('./pages/employee/CallPlanPage'));
+const DoctorDetailPage = lazyRetry(() => import('./pages/employee/DoctorDetailPage'));
+const ProductSpecPage = lazyRetry(() => import('./pages/employee/ProductSpecPage'));
 
 // Admin pages
-const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
-const DoctorsPage = lazy(() => import('./pages/admin/DoctorsPage'));
-const EmployeesPage = lazy(() => import('./pages/admin/EmployeesPage'));
-const BDMVisitsPage = lazy(() => import('./pages/admin/BDMVisitsPage'));
-const ProductsPage = lazy(() => import('./pages/admin/ProductsPage'));
-const ReportsPage = lazy(() => import('./pages/admin/ReportsPage'));
-const StatisticsPage = lazy(() => import('./pages/admin/StatisticsPage'));
-const ActivityMonitor = lazy(() => import('./pages/admin/ActivityMonitor'));
-const PendingApprovalsPage = lazy(() => import('./pages/admin/PendingApprovalsPage'));
-const GPSVerificationPage = lazy(() => import('./pages/admin/GPSVerificationPage'));
-const PhotoAuditPage = lazy(() => import('./pages/admin/PhotoAuditPage'));
-const SettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
+const AdminDashboard = lazyRetry(() => import('./pages/admin/AdminDashboard'));
+const DoctorsPage = lazyRetry(() => import('./pages/admin/DoctorsPage'));
+const EmployeesPage = lazyRetry(() => import('./pages/admin/EmployeesPage'));
+const BDMVisitsPage = lazyRetry(() => import('./pages/admin/BDMVisitsPage'));
+const ProductsPage = lazyRetry(() => import('./pages/admin/ProductsPage'));
+const ReportsPage = lazyRetry(() => import('./pages/admin/ReportsPage'));
+const StatisticsPage = lazyRetry(() => import('./pages/admin/StatisticsPage'));
+const ActivityMonitor = lazyRetry(() => import('./pages/admin/ActivityMonitor'));
+const PendingApprovalsPage = lazyRetry(() => import('./pages/admin/PendingApprovalsPage'));
+const GPSVerificationPage = lazyRetry(() => import('./pages/admin/GPSVerificationPage'));
+const PhotoAuditPage = lazyRetry(() => import('./pages/admin/PhotoAuditPage'));
+const SettingsPage = lazyRetry(() => import('./pages/admin/SettingsPage'));
 
 // ERP pages
-const ErpDashboard = lazy(() => import('./erp/pages/ErpDashboard'));
-const SalesEntry = lazy(() => import('./erp/pages/SalesEntry'));
-const SalesList = lazy(() => import('./erp/pages/SalesList'));
-const MyStock = lazy(() => import('./erp/pages/MyStock'));
-const GrnEntry = lazy(() => import('./erp/pages/GrnEntry'));
-const DrEntry = lazy(() => import('./erp/pages/DrEntry'));
-const ConsignmentDashboard = lazy(() => import('./erp/pages/ConsignmentDashboard'));
-const Collections = lazy(() => import('./erp/pages/Collections'));
-const CollectionSession = lazy(() => import('./erp/pages/CollectionSession'));
-const AccountsReceivable = lazy(() => import('./erp/pages/AccountsReceivable'));
-const SoaGenerator = lazy(() => import('./erp/pages/SoaGenerator'));
-const IcArDashboard = lazy(() => import('./erp/pages/IcArDashboard'));
-const IcSettlement = lazy(() => import('./erp/pages/IcSettlement'));
-const Expenses = lazy(() => import('./erp/pages/Expenses'));
-const Smer = lazy(() => import('./erp/pages/Smer'));
-const CarLogbook = lazy(() => import('./erp/pages/CarLogbook'));
-const PrfCalf = lazy(() => import('./erp/pages/PrfCalf'));
-const ErpReports = lazy(() => import('./erp/pages/ErpReports'));
-const TransferOrders = lazy(() => import('./erp/pages/TransferOrders'));
-const TransferReceipt = lazy(() => import('./erp/pages/TransferReceipt'));
-const TransferPriceManager = lazy(() => import('./erp/pages/TransferPriceManager'));
-const WarehouseManager = lazy(() => import('./erp/pages/WarehouseManager'));
-const Income = lazy(() => import('./erp/pages/Income'));
-const Pnl = lazy(() => import('./erp/pages/Pnl'));
-const ProfitSharing = lazy(() => import('./erp/pages/ProfitSharing'));
-const MonthlyArchivePage = lazy(() => import('./erp/pages/MonthlyArchive'));
-const AuditLogs = lazy(() => import('./erp/pages/AuditLogs'));
+const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
+const SalesEntry = lazyRetry(() => import('./erp/pages/SalesEntry'));
+const SalesList = lazyRetry(() => import('./erp/pages/SalesList'));
+const MyStock = lazyRetry(() => import('./erp/pages/MyStock'));
+const GrnEntry = lazyRetry(() => import('./erp/pages/GrnEntry'));
+const DrEntry = lazyRetry(() => import('./erp/pages/DrEntry'));
+const ConsignmentDashboard = lazyRetry(() => import('./erp/pages/ConsignmentDashboard'));
+const Collections = lazyRetry(() => import('./erp/pages/Collections'));
+const CollectionSession = lazyRetry(() => import('./erp/pages/CollectionSession'));
+const AccountsReceivable = lazyRetry(() => import('./erp/pages/AccountsReceivable'));
+const SoaGenerator = lazyRetry(() => import('./erp/pages/SoaGenerator'));
+const IcArDashboard = lazyRetry(() => import('./erp/pages/IcArDashboard'));
+const IcSettlement = lazyRetry(() => import('./erp/pages/IcSettlement'));
+const Expenses = lazyRetry(() => import('./erp/pages/Expenses'));
+const Smer = lazyRetry(() => import('./erp/pages/Smer'));
+const CarLogbook = lazyRetry(() => import('./erp/pages/CarLogbook'));
+const PrfCalf = lazyRetry(() => import('./erp/pages/PrfCalf'));
+const ErpReports = lazyRetry(() => import('./erp/pages/ErpReports'));
+const TransferOrders = lazyRetry(() => import('./erp/pages/TransferOrders'));
+const TransferReceipt = lazyRetry(() => import('./erp/pages/TransferReceipt'));
+const TransferPriceManager = lazyRetry(() => import('./erp/pages/TransferPriceManager'));
+const WarehouseManager = lazyRetry(() => import('./erp/pages/WarehouseManager'));
+const Income = lazyRetry(() => import('./erp/pages/Income'));
+const Pnl = lazyRetry(() => import('./erp/pages/Pnl'));
+const ProfitSharing = lazyRetry(() => import('./erp/pages/ProfitSharing'));
+const MonthlyArchivePage = lazyRetry(() => import('./erp/pages/MonthlyArchive'));
+const AuditLogs = lazyRetry(() => import('./erp/pages/AuditLogs'));
 // Phase 10 — ERP Access Control, People & Payroll
-const AccessTemplateManager = lazy(() => import('./erp/pages/AccessTemplateManager'));
-const PeopleList = lazy(() => import('./erp/pages/PeopleList'));
-const OrgChart = lazy(() => import('./erp/pages/OrgChart'));
-const PersonDetail = lazy(() => import('./erp/pages/PersonDetail'));
-const PayrollRun = lazy(() => import('./erp/pages/PayrollRun'));
-const PayslipView = lazy(() => import('./erp/pages/PayslipView'));
-const ThirteenthMonth = lazy(() => import('./erp/pages/ThirteenthMonth'));
+const AccessTemplateManager = lazyRetry(() => import('./erp/pages/AccessTemplateManager'));
+const PeopleList = lazyRetry(() => import('./erp/pages/PeopleList'));
+const OrgChart = lazyRetry(() => import('./erp/pages/OrgChart'));
+const PersonDetail = lazyRetry(() => import('./erp/pages/PersonDetail'));
+const PayrollRun = lazyRetry(() => import('./erp/pages/PayrollRun'));
+const PayslipView = lazyRetry(() => import('./erp/pages/PayslipView'));
+const ThirteenthMonth = lazyRetry(() => import('./erp/pages/ThirteenthMonth'));
 // Phase 11 — Accounting Engine + Card Management
-const CreditCardManager = lazy(() => import('./erp/pages/CreditCardManager'));
-const ChartOfAccounts = lazy(() => import('./erp/pages/ChartOfAccounts'));
-const JournalEntries = lazy(() => import('./erp/pages/JournalEntries'));
-const TrialBalance = lazy(() => import('./erp/pages/TrialBalance'));
-const ProfitAndLoss = lazy(() => import('./erp/pages/ProfitAndLoss'));
-const VatCompliance = lazy(() => import('./erp/pages/VatCompliance'));
-const CashflowStatement = lazy(() => import('./erp/pages/CashflowStatement'));
-const FixedAssetsPage = lazy(() => import('./erp/pages/FixedAssets'));
-const LoansPage = lazy(() => import('./erp/pages/Loans'));
-const OwnerEquity = lazy(() => import('./erp/pages/OwnerEquity'));
-const MonthEndClose = lazy(() => import('./erp/pages/MonthEndClose'));
+const CreditCardManager = lazyRetry(() => import('./erp/pages/CreditCardManager'));
+const ChartOfAccounts = lazyRetry(() => import('./erp/pages/ChartOfAccounts'));
+const JournalEntries = lazyRetry(() => import('./erp/pages/JournalEntries'));
+const TrialBalance = lazyRetry(() => import('./erp/pages/TrialBalance'));
+const ProfitAndLoss = lazyRetry(() => import('./erp/pages/ProfitAndLoss'));
+const VatCompliance = lazyRetry(() => import('./erp/pages/VatCompliance'));
+const CashflowStatement = lazyRetry(() => import('./erp/pages/CashflowStatement'));
+const FixedAssetsPage = lazyRetry(() => import('./erp/pages/FixedAssets'));
+const LoansPage = lazyRetry(() => import('./erp/pages/Loans'));
+const OwnerEquity = lazyRetry(() => import('./erp/pages/OwnerEquity'));
+const MonthEndClose = lazyRetry(() => import('./erp/pages/MonthEndClose'));
 
 // Phase 21 — Government Rates, Period Locks, Recurring Journals, BIR Calculator
-const GovernmentRates = lazy(() => import('./erp/pages/GovernmentRates'));
-const PaymentModes = lazy(() => import('./erp/pages/PaymentModes'));
-const PeriodLocks = lazy(() => import('./erp/pages/PeriodLocks'));
-const RecurringJournals = lazy(() => import('./erp/pages/RecurringJournals'));
-const BirCalculator = lazy(() => import('./erp/pages/BirCalculator'));
+const GovernmentRates = lazyRetry(() => import('./erp/pages/GovernmentRates'));
+const PaymentModes = lazyRetry(() => import('./erp/pages/PaymentModes'));
+const PeriodLocks = lazyRetry(() => import('./erp/pages/PeriodLocks'));
+const RecurringJournals = lazyRetry(() => import('./erp/pages/RecurringJournals'));
+const BirCalculator = lazyRetry(() => import('./erp/pages/BirCalculator'));
 
 // Phase 13 — Banking & Cash
-const BankAccounts = lazy(() => import('./erp/pages/BankAccounts'));
-const BankReconciliation = lazy(() => import('./erp/pages/BankReconciliation'));
-const CreditCardLedger = lazy(() => import('./erp/pages/CreditCardLedger'));
+const BankAccounts = lazyRetry(() => import('./erp/pages/BankAccounts'));
+const BankReconciliation = lazyRetry(() => import('./erp/pages/BankReconciliation'));
+const CreditCardLedger = lazyRetry(() => import('./erp/pages/CreditCardLedger'));
 
 // Phase 12 — Purchasing & AP
-const VendorList = lazy(() => import('./erp/pages/VendorList'));
-const PurchaseOrders = lazy(() => import('./erp/pages/PurchaseOrders'));
-const SupplierInvoices = lazy(() => import('./erp/pages/SupplierInvoices'));
-const AccountsPayable = lazy(() => import('./erp/pages/AccountsPayable'));
+const VendorList = lazyRetry(() => import('./erp/pages/VendorList'));
+const PurchaseOrders = lazyRetry(() => import('./erp/pages/PurchaseOrders'));
+const SupplierInvoices = lazyRetry(() => import('./erp/pages/SupplierInvoices'));
+const AccountsPayable = lazyRetry(() => import('./erp/pages/AccountsPayable'));
 
 // Phase 14 — New Reports & Analytics
-const PerformanceRanking = lazy(() => import('./erp/pages/PerformanceRanking'));
-const ConsignmentAging = lazy(() => import('./erp/pages/ConsignmentAging'));
-const ExpenseAnomalies = lazy(() => import('./erp/pages/ExpenseAnomalies'));
-const FuelEfficiency = lazy(() => import('./erp/pages/FuelEfficiency'));
-const CycleStatusDashboard = lazy(() => import('./erp/pages/CycleStatusDashboard'));
+const PerformanceRanking = lazyRetry(() => import('./erp/pages/PerformanceRanking'));
+const ConsignmentAging = lazyRetry(() => import('./erp/pages/ConsignmentAging'));
+const ExpenseAnomalies = lazyRetry(() => import('./erp/pages/ExpenseAnomalies'));
+const FuelEfficiency = lazyRetry(() => import('./erp/pages/FuelEfficiency'));
+const CycleStatusDashboard = lazyRetry(() => import('./erp/pages/CycleStatusDashboard'));
 
-const BudgetAllocations = lazy(() => import('./erp/pages/BudgetAllocations'));
+const BudgetAllocations = lazyRetry(() => import('./erp/pages/BudgetAllocations'));
 
 // Phase 15 — SAP-Equivalent Improvements
-const CsiBooklets = lazy(() => import('./erp/pages/CsiBooklets'));
-const CycleReports = lazy(() => import('./erp/pages/CycleReports'));
-const CostCenters = lazy(() => import('./erp/pages/CostCenters'));
-const DataArchive = lazy(() => import('./erp/pages/DataArchive'));
+const CsiBooklets = lazyRetry(() => import('./erp/pages/CsiBooklets'));
+const CycleReports = lazyRetry(() => import('./erp/pages/CycleReports'));
+const CostCenters = lazyRetry(() => import('./erp/pages/CostCenters'));
+const DataArchive = lazyRetry(() => import('./erp/pages/DataArchive'));
 
 // Phase 18 — Service Revenue & Cost Center Expenses
-const HospitalList = lazy(() => import('./erp/pages/HospitalList'));
-const CustomerList = lazy(() => import('./erp/pages/CustomerList'));
-const ProductMasterPage = lazy(() => import('./erp/pages/ProductMaster'));
+const HospitalList = lazyRetry(() => import('./erp/pages/HospitalList'));
+const CustomerList = lazyRetry(() => import('./erp/pages/CustomerList'));
+const ProductMasterPage = lazyRetry(() => import('./erp/pages/ProductMaster'));
 
 // Phase 19 — Petty Cash, Office Supplies & Collaterals
-const PettyCash = lazy(() => import('./erp/pages/PettyCash'));
-const OfficeSupplies = lazy(() => import('./erp/pages/OfficeSupplies'));
-const Collaterals = lazy(() => import('./erp/pages/Collaterals'));
+const PettyCash = lazyRetry(() => import('./erp/pages/PettyCash'));
+const OfficeSupplies = lazyRetry(() => import('./erp/pages/OfficeSupplies'));
+const Collaterals = lazyRetry(() => import('./erp/pages/Collaterals'));
 
 // Phase 24 — ERP Control Center + Agent Intelligence
-const ControlCenter = lazy(() => import('./erp/pages/ControlCenter'));
-const AgentDashboard = lazy(() => import('./erp/pages/AgentDashboard'));
+const ControlCenter = lazyRetry(() => import('./erp/pages/ControlCenter'));
+const AgentDashboard = lazyRetry(() => import('./erp/pages/AgentDashboard'));
 
 // Phase 25 — Returns, Expiry, Batch Trace, Orphaned Page Routes
-const CreditNotes = lazy(() => import('./erp/pages/CreditNotes'));
-const ExpiryDashboard = lazy(() => import('./erp/pages/ExpiryDashboard'));
-const BatchTrace = lazy(() => import('./erp/pages/BatchTrace'));
+const CreditNotes = lazyRetry(() => import('./erp/pages/CreditNotes'));
+const ExpiryDashboard = lazyRetry(() => import('./erp/pages/ExpiryDashboard'));
+const BatchTrace = lazyRetry(() => import('./erp/pages/BatchTrace'));
 // Standalone routes redirect to ControlCenter with the right section param
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
 const EntityManagerRedirect = () => <Navigate to="/erp/control-center?section=entities" replace />;
