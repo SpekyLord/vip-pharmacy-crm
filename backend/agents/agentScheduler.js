@@ -171,6 +171,17 @@ function initAgentScheduler() {
       }
     }, { timezone: TIMEZONE });
     console.log('[AgentScheduler]   ✓ #C Engagement Decay — Monday 7:00 AM');
+
+    // #O Org Intelligence — Monday 5:30 AM
+    cron.schedule('30 5 * * 1', async () => {
+      try {
+        const { run } = require('./orgIntelligenceAgent');
+        await run();
+      } catch (err) {
+        console.error('[AgentScheduler] Org Intelligence failed:', err.message);
+      }
+    }, { timezone: TIMEZONE });
+    console.log('[AgentScheduler]   ✓ #O Org Intelligence — Monday 5:30 AM');
   } else {
     console.log('[AgentScheduler] No ANTHROPIC_API_KEY — paid agents disabled. Add key to .env to enable.');
   }

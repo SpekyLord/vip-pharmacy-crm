@@ -75,6 +75,7 @@ const AGENT_CONFIG = {
   bir_filing:         { label: 'BIR Filing Review',     icon: FileSearch,  color: '#0891b2', schedule: '15th monthly 9 AM', type: 'AI' },
   visit_planner:      { label: 'Smart Visit Planner',   icon: Calendar,    color: '#10b981', schedule: 'Sun 6:00 PM',       type: 'AI' },
   engagement_decay:   { label: 'Engagement Decay',      icon: ShieldAlert, color: '#ef4444', schedule: 'Mon 7:00 AM',       type: 'AI' },
+  org_intelligence:   { label: 'Org Intelligence',      icon: TrendingUp,  color: '#0d9488', schedule: 'Mon 5:30 AM',       type: 'AI' },
   // Free agents (rule-based)
   expense_anomaly:    { label: 'Expense Anomaly',       icon: FileWarning, color: '#f59e0b', schedule: 'Daily 6:00 AM',     type: 'Free' },
   inventory_reorder:  { label: 'Inventory Reorder',     icon: Package,     color: '#8b5cf6', schedule: 'Daily 6:30 AM',     type: 'Free' },

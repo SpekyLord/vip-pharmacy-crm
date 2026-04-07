@@ -8,7 +8,7 @@ const agentRunSchema = new mongoose.Schema({
   agent_key: {
     type: String,
     required: true,
-    enum: ['performance_coach', 'visit_planner', 'engagement_decay', 'smart_collection', 'bir_filing', 'expense_anomaly', 'inventory_reorder', 'credit_risk', 'document_expiry', 'visit_compliance', 'photo_audit'],
+    enum: ['performance_coach', 'visit_planner', 'engagement_decay', 'smart_collection', 'bir_filing', 'expense_anomaly', 'inventory_reorder', 'credit_risk', 'document_expiry', 'visit_compliance', 'photo_audit', 'org_intelligence'],
     index: true
   },
   agent_label: { type: String, required: true },

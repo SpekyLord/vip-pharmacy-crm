@@ -32,6 +32,9 @@ router.use('/lookup-values', require('./lookupGenericRoutes'));
 // ═══ Phase 24 — Agent Intelligence ═══
 router.use('/agents', require('./agentRoutes'));
 
+// ═══ Phase 24B — Partner Scorecards ═══
+router.use('/scorecards', require('./scorecardRoutes'));
+
 // ═══ Phase 3 — Sales & Inventory ═══
 router.use('/sales', erpAccessCheck('sales'), require('./salesRoutes'));
 router.use('/inventory', erpAccessCheck('inventory'), require('./inventoryRoutes'));

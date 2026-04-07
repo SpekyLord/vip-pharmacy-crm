@@ -255,26 +255,65 @@ const getAsUsers = catchAsync(async (req, res) => {
 // ═══ Org Chart ═══
 
 const getOrgChart = catchAsync(async (req, res) => {
-  const filter = { entity_id: req.entityId, is_active: true };
-  const people = await PeopleMaster.find(filter)
-    .select('full_name position department person_type reports_to bdm_code')
+  const Entity = require('../models/Entity');
+
+  // President sees all entities; others see their own
+  let entityFilter;
+  if (req.isPresident) {
+    entityFilter = { status: 'ACTIVE' };
+  } else {
+    entityFilter = { _id: req.entityId, status: 'ACTIVE' };
+  }
+
+  const entities = await Entity.find(entityFilter)
+    .select('entity_name short_name entity_type parent_entity_id brand_color')
+    .sort({ entity_type: 1, entity_name: 1 })
+    .lean();
+
+  const entityIds = entities.map(e => e._id);
+
+  // Get all people across visible entities
+  const people = await PeopleMaster.find({ entity_id: { $in: entityIds }, is_active: true })
+    .select('full_name position department person_type reports_to bdm_code entity_id')
     .sort({ full_name: 1 })
     .lean();
 
-  // Build tree: index by _id, attach children to parents
-  const map = new Map(people.map(p => [p._id.toString(), { ...p, children: [] }]));
-  const roots = [];
+  // Build per-entity trees
+  const entityTree = entities.map(entity => {
+    const entityPeople = people.filter(p => p.entity_id.toString() === entity._id.toString());
+    const map = new Map(entityPeople.map(p => [p._id.toString(), { ...p, _type: 'person', children: [] }]));
+    const roots = [];
 
-  for (const node of map.values()) {
-    const parentId = node.reports_to?.toString();
-    if (parentId && map.has(parentId)) {
-      map.get(parentId).children.push(node);
-    } else {
-      roots.push(node);
+    for (const node of map.values()) {
+      const parentId = node.reports_to?.toString();
+      if (parentId && map.has(parentId)) {
+        map.get(parentId).children.push(node);
+      } else {
+        roots.push(node);
+      }
     }
-  }
 
-  res.json({ success: true, data: { tree: roots, count: people.length } });
+    return {
+      _type: 'entity',
+      _id: entity._id,
+      entity_name: entity.entity_name,
+      short_name: entity.short_name,
+      entity_type: entity.entity_type,
+      parent_entity_id: entity.parent_entity_id,
+      brand_color: entity.brand_color,
+      people_count: entityPeople.length,
+      children: roots,
+    };
+  });
+
+  res.json({
+    success: true,
+    data: {
+      tree: entityTree,
+      total_people: people.length,
+      total_entities: entities.length,
+    },
+  });
 });
 
 module.exports = {

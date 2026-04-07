@@ -82,6 +82,34 @@ const settingsSchema = new mongoose.Schema({
     BANK_CHARGES:        { type: String, default: '7100' },
   },
 
+  // Partner Graduation Criteria
+  GRADUATION_CRITERIA: {
+    type: [{
+      key: String,
+      label: String,
+      target: Number,
+      comparator: { type: String, enum: ['gte', 'lte'], default: 'gte' },
+    }],
+    default: [
+      { key: 'min_months_active', label: 'Months Active', target: 6, comparator: 'gte' },
+      { key: 'min_clients', label: 'VIP Clients Assigned', target: 15, comparator: 'gte' },
+      { key: 'min_monthly_sales', label: 'Monthly Sales (₱)', target: 50000, comparator: 'gte' },
+      { key: 'min_collection_rate', label: 'Collection Rate (%)', target: 70, comparator: 'gte' },
+      { key: 'max_expense_ratio', label: 'Expense/Sales Ratio (%)', target: 30, comparator: 'lte' },
+      { key: 'min_compliance', label: 'Visit Compliance (%)', target: 80, comparator: 'gte' },
+      { key: 'min_engagement', label: 'Avg Engagement Level', target: 3.0, comparator: 'gte' },
+    ],
+  },
+
+  // Scorecard Score Weights (must sum to 100)
+  SCORECARD_WEIGHTS: {
+    visits: { type: Number, default: 25 },
+    sales: { type: Number, default: 25 },
+    collections: { type: Number, default: 20 },
+    efficiency: { type: Number, default: 15 },
+    engagement: { type: Number, default: 15 },
+  },
+
   // Updated by
   updated_by: {
     type: mongoose.Schema.Types.ObjectId,
