@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useDashboard from '../hooks/useDashboard';
 import useIncome from '../hooks/useIncome';
 import { showError, showSuccess } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .archive-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -59,7 +60,7 @@ export default function MonthlyArchive() {
     try {
       const res = await dash.getMonthlyArchives();
       setArchives(res?.data || []);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not load archives'); }
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -67,7 +68,7 @@ export default function MonthlyArchive() {
     try {
       const res = await inc.getPeriodStatus({ period: selectedPeriod });
       setPeriodStatus(res?.data || null);
-    } catch { setPeriodStatus(null); }
+    } catch (err) { showError(err, 'Could not load period status'); setPeriodStatus(null); }
   }, [selectedPeriod]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadArchives(); }, [loadArchives]);
@@ -113,6 +114,7 @@ export default function MonthlyArchive() {
           <div className="archive-header">
             <h1>Monthly Archive</h1>
           </div>
+          <WorkflowGuide pageKey="month-end-close" />
 
           {/* Period Control Panel */}
           {isAdmin && (

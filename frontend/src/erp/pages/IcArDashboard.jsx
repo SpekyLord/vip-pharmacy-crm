@@ -77,7 +77,7 @@ export default function IcArDashboard() {
     try {
       const res = await ic.getOpenIcTransfers(debtorId);
       setSubTransfers(res?.data || []);
-    } catch { setSubTransfers([]); }
+    } catch (err) { showError(err, 'Could not load IC transfers'); setSubTransfers([]); }
   };
 
   const handlePost = async (id) => {

@@ -7,6 +7,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .perf-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -95,6 +96,7 @@ export default function PerformanceRanking() {
             <h1>Performance Ranking</h1>
             <p>Net cash ranking, sales/collections trackers, and month-over-month trends</p>
           </div>
+          <WorkflowGuide pageKey="performance-ranking" />
 
           <div className="tab-bar">
             <button className={`tab-btn ${tab === 'ranking' ? 'active' : ''}`} onClick={() => handleTabChange('ranking')}>Ranking</button>

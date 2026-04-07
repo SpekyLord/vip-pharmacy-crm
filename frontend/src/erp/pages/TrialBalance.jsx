@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useAccounting from '../hooks/useAccounting';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .tb-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -40,7 +41,7 @@ export default function TrialBalance() {
     try {
       const res = await api.getTrialBalance(period);
       setData(res?.data || null);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load trial balance'); }
     setLoading(false);
   }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -7,6 +7,7 @@ import usePeople from '../hooks/usePeople';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import { showError, showSuccess } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const STATUS_LIST_FALLBACK = ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'];
 
@@ -111,6 +112,7 @@ export function PeopleListContent() {
   return (
     <>
       <style>{pageStyles}</style>
+      <WorkflowGuide pageKey="people-list" />
       <div className="ppl-header">
         <h2>People Master</h2>
         <button style={{ padding: '8px 16px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13, marginRight: 8 }}

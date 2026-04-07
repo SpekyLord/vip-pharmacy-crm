@@ -58,7 +58,7 @@ export function PaymentModesContent() {
     try {
       const res = await api.get('/lookups/payment-modes');
       setModes(res?.data || []);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load payment modes'); }
     setLoading(false);
   }, []);
 

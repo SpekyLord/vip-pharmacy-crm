@@ -260,12 +260,12 @@ export default function Collaterals() {
   const [showReturnModal, setShowReturnModal] = useState(false);
 
   const handleExport = async () => {
-    try { const res = await col.exportCollaterals(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'collaterals-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+    try { const res = await col.exportCollaterals(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'collaterals-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch (err) { showError(err, 'Export failed'); }
   };
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try { const res = await col.importCollaterals(fd); showSuccess(res?.message || 'Import complete'); loadItems(); } catch { /* */ }
+    try { const res = await col.importCollaterals(fd); showSuccess(res?.message || 'Import complete'); loadItems(); } catch (err) { showError(err, 'Import failed'); }
     e.target.value = '';
   };
 
@@ -275,7 +275,7 @@ export default function Collaterals() {
       const params = typeFilter !== 'ALL' ? { collateral_type: typeFilter } : {};
       const res = await col.getAll(params);
       setItems(res.data || res || []);
-    } catch { setItems([]); }
+    } catch (err) { showError(err, 'Could not load collaterals'); setItems([]); }
     finally { setLoading(false); }
   }, [col, typeFilter]);
 

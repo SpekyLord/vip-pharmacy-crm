@@ -213,7 +213,12 @@ const validateCollections = catchAsync(async (req, res) => {
 
 const submitCollections = catchAsync(async (req, res) => {
   let warnings;
-  const validRows = await Collection.find({ ...req.tenantFilter, status: 'VALID' });
+  const { collection_ids } = req.body;
+  const filter = { ...req.tenantFilter, status: 'VALID' };
+  if (collection_ids && collection_ids.length) {
+    filter._id = { $in: collection_ids.map(id => new mongoose.Types.ObjectId(id)) };
+  }
+  const validRows = await Collection.find(filter);
   if (!validRows.length) {
     return res.status(400).json({ success: false, message: 'No VALID collections to submit' });
   }

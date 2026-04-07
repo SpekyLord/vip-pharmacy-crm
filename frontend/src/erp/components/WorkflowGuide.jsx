@@ -569,6 +569,164 @@ const WORKFLOW_GUIDES = {
       { label: 'AR Aging', path: '/erp/collections/ar' },
     ],
   },
+
+  // ═══ People & Organization ═══
+  'people-list': {
+    title: 'People Directory',
+    steps: [
+      'View all employee and partner records in the system',
+      'Use search and filters to find people by name, type, or status',
+      'Click any row to view full person details and profile',
+    ],
+    next: [
+      { label: 'Org Chart', path: '/erp/org-chart' },
+      { label: 'Add Person', path: '/erp/people' },
+    ],
+    tip: 'Use "Sync from CRM" to import existing CRM users into the People Master.',
+  },
+  'person-detail': {
+    title: 'Person Profile',
+    steps: [
+      'View and review person information, compensation, and insurance',
+      'Edit details (admin/finance/president only) and save changes',
+      'Manage system login access and ERP module permissions',
+    ],
+    next: [
+      { label: 'People List', path: '/erp/people' },
+      { label: 'Org Chart', path: '/erp/org-chart' },
+      { label: 'Payroll', path: '/erp/payroll' },
+    ],
+    tip: 'Changes to compensation profile affect future payroll computations.',
+  },
+  'org-chart': {
+    title: 'Organization Chart',
+    steps: [
+      'View the company structure organized by entity and reporting lines',
+      'Expand or collapse departments and teams to explore hierarchy',
+      'Click a partner node to view their scorecard and graduation status',
+    ],
+    next: [
+      { label: 'People List', path: '/erp/people' },
+      { label: 'Performance Ranking', path: '/erp/performance-ranking' },
+    ],
+    tip: 'Set "Reports To" on each person to build the org chart hierarchy.',
+  },
+
+  // ═══ Payroll & Performance ═══
+  'payslip-view': {
+    title: 'Payslip Viewer',
+    steps: [
+      'View the full pay breakdown: earnings, deductions, and employer contributions',
+      'Review net pay and government contribution details',
+      'Download or print the payslip for records',
+    ],
+    next: [
+      { label: 'Payroll Run', path: '/erp/payroll' },
+      { label: 'People List', path: '/erp/people' },
+    ],
+    tip: 'Payslips are generated during Payroll Run. Status flows: COMPUTED → REVIEWED → APPROVED → POSTED.',
+  },
+  'performance-ranking': {
+    title: 'Performance Ranking',
+    steps: [
+      'View BDM rankings by net cash (sales minus expenses) for the selected period',
+      'Switch tabs to see Sales Tracker or Collections Tracker by month',
+      'Click any BDM row to expand month-over-month trend details',
+    ],
+    next: [
+      { label: 'Cycle Status', path: '/erp/cycle-status' },
+      { label: 'Expense Anomalies', path: '/erp/expense-anomalies' },
+      { label: 'P&L', path: '/erp/pnl' },
+    ],
+    tip: 'Top 3 performers are highlighted green; bottom 3 are highlighted red.',
+  },
+
+  // ═══ Expense & Fuel Reports ═══
+  'expense-anomalies': {
+    title: 'Expense Anomalies',
+    steps: [
+      'Review flagged expenses that exceed period-over-period thresholds',
+      'Switch to Budget Overruns tab to check actual vs. budgeted amounts',
+      'Investigate outliers and follow up with the responsible BDM',
+    ],
+    next: [
+      { label: 'Fuel Efficiency', path: '/erp/fuel-efficiency' },
+      { label: 'Performance Ranking', path: '/erp/performance-ranking' },
+      { label: 'Expenses', path: '/erp/expenses' },
+    ],
+    tip: 'Anomaly threshold percentage is configurable in ERP Settings.',
+  },
+  'fuel-efficiency': {
+    title: 'Fuel Efficiency',
+    steps: [
+      'Monitor per-BDM fuel consumption: actual vs expected gas cost',
+      'Identify trends and variance in kilometers-per-liter efficiency',
+      'Flag BDMs exceeding the fuel variance threshold for review',
+    ],
+    next: [
+      { label: 'Expense Anomalies', path: '/erp/expense-anomalies' },
+      { label: 'Car Logbook', path: '/erp/car-logbook' },
+    ],
+    tip: 'Fuel overconsumption above 30% triggers automatic flagging.',
+  },
+
+  // ═══ Cycle & CSI Management ═══
+  'cycle-status': {
+    title: 'Cycle Status Dashboard',
+    steps: [
+      'View the current payslip cycle progress across all BDMs',
+      'Check the pipeline showing how many are at each stage',
+      'Identify BDMs behind schedule and follow up for completion',
+    ],
+    next: [
+      { label: 'Cycle Reports', path: '/erp/cycle-reports' },
+      { label: 'Payroll Run', path: '/erp/payroll' },
+    ],
+    tip: 'Behind-schedule BDMs are highlighted in red. Aim for 100% completion before payroll run.',
+  },
+  'csi-booklets': {
+    title: 'CSI Booklets',
+    steps: [
+      'Create and manage CSI booklet series with start/end numbers',
+      'Allocate weekly ranges to BDMs for invoice numbering',
+      'Track usage and remaining numbers per booklet',
+    ],
+    next: [
+      { label: 'Create Sale', path: '/erp/sales/entry' },
+      { label: 'View Sales', path: '/erp/sales' },
+    ],
+    tip: 'Exhausted booklets cannot issue new CSI numbers. Create a new booklet before running out.',
+  },
+  'cycle-reports': {
+    title: 'Cycle Reports',
+    steps: [
+      'View periodic cycle reports with sales, collections, and expense summaries',
+      'Advance reports through the workflow: GENERATED → REVIEWED → CONFIRMED → CREDITED',
+      'Export report data for external sharing or archival',
+    ],
+    next: [
+      { label: 'Cycle Status', path: '/erp/cycle-status' },
+      { label: 'P&L', path: '/erp/pnl' },
+      { label: 'Profit Sharing', path: '/erp/profit-sharing' },
+    ],
+    tip: 'Only CREDITED reports affect profit sharing calculations.',
+  },
+
+  // ═══ Customer Management ═══
+  'customer-list': {
+    title: 'Customer Management',
+    steps: [
+      'View and manage all customers with search, type, and status filters',
+      'Create new customers or edit existing ones via the modal form',
+      'Tag BDMs to customers for visibility and access control',
+    ],
+    next: [
+      { label: 'New Sale', path: '/erp/sales/entry' },
+      { label: 'Collections', path: '/erp/collections' },
+      { label: 'Hospitals', path: '/erp/hospitals' },
+    ],
+    tip: 'Use Import/Export Excel for bulk customer updates. Tagged BDMs control who can sell to each customer.',
+  },
 };
 
 /**

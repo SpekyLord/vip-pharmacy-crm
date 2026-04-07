@@ -64,7 +64,7 @@ export function ChartOfAccountsContent() {
       if (typeFilter) params.account_type = typeFilter;
       const res = await api.listAccounts(params);
       setAccounts(res?.data || []);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
     setLoading(false);
   }, [search, typeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -76,7 +76,7 @@ export function ChartOfAccountsContent() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'coa-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const handleImport = async (e) => {
@@ -88,7 +88,7 @@ export function ChartOfAccountsContent() {
       const res = await api.importAccounts(fd);
       showSuccess(res?.message || 'Import complete');
       loadAccounts();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
     e.target.value = '';
   };
 
@@ -112,7 +112,7 @@ export function ChartOfAccountsContent() {
       setEditingId(null);
       resetForm();
       loadAccounts();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const openEdit = (acct) => {
@@ -139,14 +139,14 @@ export function ChartOfAccountsContent() {
       setEditingId(null);
       resetForm();
       loadAccounts();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const handleToggleActive = async (acct) => {
     try {
       await api.updateAccount(acct._id, { is_active: !acct.is_active });
       loadAccounts();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   return (

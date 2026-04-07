@@ -7,6 +7,7 @@ import { useAuth } from '../../hooks/useAuth';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import { showError, showSuccess } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 const SALE_TYPES_FALLBACK = ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'];
 const STATUS_OPTIONS = ['ALL', 'ACTIVE', 'INACTIVE'];
 const VAT_OPTIONS_FALLBACK = ['VATABLE', 'EXEMPT', 'ZERO'];
@@ -194,9 +195,7 @@ export function CustomerListContent() {
         setTotalPages(res.pagination.pages || 1);
         setTotal(res.pagination.total || 0);
       }
-    } catch {
-      // error is captured by useErpApi
-    } finally {
+    } catch (err) { console.error(err); } finally {
       setLoading(false);
     }
   }, [page, filters.q, filters.customer_type, filters.status]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -276,9 +275,7 @@ export function CustomerListContent() {
       }
       closeModal();
       fetchCustomers();
-    } catch {
-      // error shown via useErpApi
-    } finally {
+    } catch (err) { console.error(err); } finally {
       setSaving(false);
     }
   };
@@ -288,9 +285,7 @@ export function CustomerListContent() {
     try {
       await customers.deactivate(id);
       fetchCustomers();
-    } catch {
-      // error shown via useErpApi
-    }
+    } catch (err) { console.error(err); }
   };
 
   const handleExport = async () => {
@@ -299,7 +294,7 @@ export function CustomerListContent() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'customers-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const handleImport = async (e) => {
@@ -311,7 +306,7 @@ export function CustomerListContent() {
       const res = await customers.importCustomers(fd);
       showSuccess(res?.message || 'Import complete');
       fetchCustomers();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
     e.target.value = '';
   };
 
@@ -320,6 +315,7 @@ export function CustomerListContent() {
   return (
     <>
       <style>{pageStyles}</style>
+          <WorkflowGuide pageKey="customer-list" />
           <div className="cust-header">
             <div>
               <h1>Customers</h1>

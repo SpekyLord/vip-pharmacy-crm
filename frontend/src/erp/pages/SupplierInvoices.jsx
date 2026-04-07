@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
 import useErpApi from '../hooks/useErpApi';
 import useProducts from '../hooks/useProducts';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -105,7 +106,7 @@ export default function SupplierInvoices() {
       const res = await api.listInvoices(params);
       setInvoices(res?.data || []);
       setPagination(res?.pagination || { page, limit: 20, total: 0 });
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load invoices'); }
     setLoading(false);
   }, [statusFilter, matchFilter, payFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -121,7 +122,7 @@ export default function SupplierInvoices() {
       setPOs(poRes?.data || []);
       setBankAccounts(baRes?.data || []);
       setCreditCards(ccRes?.data || []);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load lookups'); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadInvoices(); }, [loadInvoices]);

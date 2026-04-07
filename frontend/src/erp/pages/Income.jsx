@@ -11,6 +11,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useIncome from '../hooks/useIncome';
 
+import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -93,7 +94,7 @@ export default function Income() {
       if (bdmId) params.bdm_id = bdmId;
       const res = await inc.getIncomeList(params);
       setReports(res?.data || []);
-    } catch { /* handled by hook */ }
+    } catch (err) { showError(err, 'Could not load income reports'); }
     setLoading(false);
   }, [period, cycle, bdmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -108,7 +109,7 @@ export default function Income() {
       const res = await inc.generateIncome({ bdm_id: targetBdm, period, cycle: cycle === 'ALL' ? 'MONTHLY' : cycle });
       if (res?.data) { setSelected(res.data); setView('detail'); }
       loadReports();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not generate income report'); }
     setLoading(false);
   };
 
@@ -117,7 +118,7 @@ export default function Income() {
     try {
       const res = await inc.getIncomeById(report._id);
       if (res?.data) { setSelected(res.data); setView('detail'); setManualEdits({}); }
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not load income detail'); }
     setLoading(false);
   };
 
@@ -129,7 +130,7 @@ export default function Income() {
       const res = await inc.getIncomeById(selected._id);
       if (res?.data) setSelected(res.data);
       setManualEdits({});
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not save manual edits'); }
     setLoading(false);
   };
 
@@ -147,7 +148,7 @@ export default function Income() {
       }
       if (res?.data) setSelected(res.data);
       loadReports();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Workflow action failed'); }
     setLoading(false);
   };
 

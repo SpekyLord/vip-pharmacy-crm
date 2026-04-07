@@ -71,7 +71,7 @@ export function RecurringJournalsContent() {
     try {
       const res = await api.listRecurringTemplates();
       setTemplates(res?.data || []);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Recurring journals operation failed'); }
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -106,13 +106,13 @@ export function RecurringJournalsContent() {
       else await api.createRecurringTemplate(payload);
       setShowModal(false);
       loadTemplates();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Recurring journals operation failed'); }
     setSaving(false);
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this template?')) return;
-    try { await api.deleteRecurringTemplate(id); loadTemplates(); } catch { /* handled */ }
+    try { await api.deleteRecurringTemplate(id); loadTemplates(); } catch (err) { showError(err, 'Recurring journals operation failed'); }
   };
 
   const handleRunNow = async (id) => {
@@ -122,7 +122,7 @@ export function RecurringJournalsContent() {
       const res = await api.runRecurringTemplate(id);
       showSuccess(`JE #${res?.data?.je_number} created (${res?.data?.status})`);
       loadTemplates();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Recurring journals operation failed'); }
     setRunning(null);
   };
 
@@ -133,7 +133,7 @@ export function RecurringJournalsContent() {
       const res = await api.runAllDueTemplates();
       showSuccess(res?.message || 'Done');
       loadTemplates();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Recurring journals operation failed'); }
     setRunning(null);
   };
 
@@ -143,7 +143,7 @@ export function RecurringJournalsContent() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'recurring-journal-templates.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Recurring journals operation failed'); }
   };
 
   const handleImport = async (e) => {
@@ -155,7 +155,7 @@ export function RecurringJournalsContent() {
       const res = await api.post('/recurring-journals/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       showSuccess(res?.message || 'Import complete');
       loadTemplates();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Recurring journals operation failed'); }
     e.target.value = '';
   };
 

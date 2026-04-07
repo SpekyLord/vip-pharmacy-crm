@@ -171,7 +171,7 @@ export default function TransferOrders() {
 
   // Fetch entities on mount
   const fetchEntities = useCallback(async () => {
-    try { const res = await getEntities(); setEntities(res.data || []); } catch { /* */ }
+    try { const res = await getEntities(); setEntities(res.data || []); } catch (err) { showError(err, 'Could not load entities'); }
   }, []);
   useEffect(() => { fetchEntities(); }, []);
 
@@ -183,12 +183,12 @@ export default function TransferOrders() {
       const res = await getTransfers(params);
       setTransfers(res.data || []);
       setPagination(res.pagination || { page: 1, pages: 1, total: 0 });
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load transfers'); }
   }, [statusFilter]);
 
   // Fetch reassignments
   const fetchReassignments = useCallback(async () => {
-    try { const res = await getReassignments(); setReassignments(res.data || []); } catch { /* */ }
+    try { const res = await getReassignments(); setReassignments(res.data || []); } catch (err) { showError(err, 'Could not load reassignments'); }
   }, []);
 
   useEffect(() => {
@@ -199,23 +199,23 @@ export default function TransferOrders() {
   // Load BDMs when source/target entity changes (IC Transfer)
   useEffect(() => {
     if (!form.source_entity_id) { setSourceBdms([]); return; }
-    (async () => { try { const r = await getBdmsByEntity(form.source_entity_id); setSourceBdms(r.data || []); } catch { /* */ } })();
+    (async () => { try { const r = await getBdmsByEntity(form.source_entity_id); setSourceBdms(r.data || []); } catch (err) { console.error('[TransferOrders] load source BDMs:', err.message); } })();
   }, [form.source_entity_id]);
 
   useEffect(() => {
     if (!form.target_entity_id) { setTargetBdms([]); return; }
-    (async () => { try { const r = await getBdmsByEntity(form.target_entity_id, true); setTargetBdms(r.data || []); } catch { /* */ } })();
+    (async () => { try { const r = await getBdmsByEntity(form.target_entity_id, true); setTargetBdms(r.data || []); } catch (err) { console.error('[TransferOrders] load target BDMs:', err.message); } })();
   }, [form.target_entity_id]);
 
   // Phase 17: Load warehouses when source/target entity changes (IC Transfer)
   useEffect(() => {
     if (!form.source_entity_id) { setSourceWarehouses([]); return; }
-    (async () => { try { const r = await whApi.getWarehousesByEntity(form.source_entity_id); setSourceWarehouses(r.data || []); } catch { /* */ } })();
+    (async () => { try { const r = await whApi.getWarehousesByEntity(form.source_entity_id); setSourceWarehouses(r.data || []); } catch (err) { console.error('[TransferOrders] load source warehouses:', err.message); } })();
   }, [form.source_entity_id]);
 
   useEffect(() => {
     if (!form.target_entity_id) { setTargetWarehouses([]); return; }
-    (async () => { try { const r = await whApi.getWarehousesByEntity(form.target_entity_id); setTargetWarehouses(r.data || []); } catch { /* */ } })();
+    (async () => { try { const r = await whApi.getWarehousesByEntity(form.target_entity_id); setTargetWarehouses(r.data || []); } catch (err) { console.error('[TransferOrders] load target warehouses:', err.message); } })();
   }, [form.target_entity_id]);
 
   // Load BDMs for internal reassignment (user's entity)
@@ -230,7 +230,7 @@ export default function TransferOrders() {
         ]);
         setEntityBdms(bdmRes.data || []);
         setInternalWarehouses(whRes.data || []);
-      } catch { /* */ }
+      } catch (err) { console.error('[TransferOrders] load entity BDMs/warehouses:', err.message); }
     })();
   }, [user?.entity_id]);
 
@@ -262,7 +262,7 @@ export default function TransferOrders() {
       setForm({ source_entity_id: '', target_entity_id: '', source_bdm_id: '', target_bdm_id: '', source_warehouse_id: '', target_warehouse_id: '', transfer_date: new Date().toISOString().slice(0, 10), csi_ref: '', notes: '' });
       setLineItems([{ product_id: '', qty: 1, transfer_price: 0, batch_lot_no: '', expiry_date: '' }]);
       fetchTransfers(1);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not create transfer'); }
   };
 
   const handleAction = async (id, action) => {
@@ -282,14 +282,14 @@ export default function TransferOrders() {
       return; // Don't refresh on error
     }
     // Always refresh list after action (success or handled error)
-    try { await fetchTransfers(pagination.page); } catch { /* */ }
+    try { await fetchTransfers(pagination.page); } catch (err) { console.error('[TransferOrders] refresh after action:', err.message); }
     if (detail?._id === id) {
-      try { const res = await getTransferById(id); setDetail(res.data); } catch { /* */ }
+      try { const res = await getTransferById(id); setDetail(res.data); } catch (err) { console.error('[TransferOrders] refresh detail:', err.message); }
     }
   };
 
   const openDetail = async (id) => {
-    try { const res = await getTransferById(id); setDetail(res.data); } catch { /* */ }
+    try { const res = await getTransferById(id); setDetail(res.data); } catch (err) { showError(err, 'Could not load transfer details'); }
   };
 
   // Internal Reassignment handlers

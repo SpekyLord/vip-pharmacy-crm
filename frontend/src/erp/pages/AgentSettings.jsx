@@ -47,7 +47,7 @@ export function AgentSettingsContent() {
     try {
       const res = await api.get('/erp/agents/config');
       setConfigs(res.data?.data || []);
-    } catch { setConfigs([]); }
+    } catch (err) { showError(err, 'Could not load agent configs'); setConfigs([]); }
     setLoading(false);
   }, []);
 

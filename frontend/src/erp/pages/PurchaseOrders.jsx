@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
 import useProducts from '../hooks/useProducts';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -81,7 +82,7 @@ export default function PurchaseOrders() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'purchase-orders-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const loadPOs = useCallback(async (page = 1) => {
@@ -92,7 +93,7 @@ export default function PurchaseOrders() {
       const res = await api.listPOs(params);
       setPOs(res?.data || []);
       setPagination(res?.pagination || { page, limit: 20, total: 0 });
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load purchase orders'); }
     setLoading(false);
   }, [statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -100,7 +101,7 @@ export default function PurchaseOrders() {
     try {
       const res = await api.listVendors({ is_active: true });
       setVendors(res?.data || []);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load vendors'); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadPOs(); }, [loadPOs]);

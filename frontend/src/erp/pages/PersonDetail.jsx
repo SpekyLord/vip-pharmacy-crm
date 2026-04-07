@@ -18,6 +18,7 @@ import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
 import * as XLSX from 'xlsx';
 import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const css = `
   .pd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -386,6 +387,7 @@ export default function PersonDetail() {
             <span className="pd-back" style={{ marginBottom: 0 }} onClick={() => navigate('/erp/people')}>← Back to People</span>
             <button className="pd-btn" onClick={exportAll}>Export All to Excel</button>
           </div>
+          <WorkflowGuide pageKey="person-detail" />
 
           {/* ═��═ SECTION A: Person Info ═══ */}
           <div className="pd-card">

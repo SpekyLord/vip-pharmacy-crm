@@ -8,6 +8,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .booklet-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -110,6 +111,7 @@ export default function CsiBooklets() {
             <h1>CSI Booklets</h1>
             <p>Manage CSI booklet series, weekly allocations, and number validation</p>
           </div>
+          <WorkflowGuide pageKey="csi-booklets" />
 
           <div className="panel">
             <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>New Booklet</h3>

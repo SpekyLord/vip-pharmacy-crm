@@ -124,7 +124,7 @@ export function CostCentersContent() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'cost-centers-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const handleImport = async (e) => {
@@ -136,7 +136,7 @@ export function CostCentersContent() {
       const res = await rpt.importCostCenters(fd);
       showSuccess(res?.message || 'Import complete');
       load();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
     e.target.value = '';
   };
 

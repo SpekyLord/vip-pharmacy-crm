@@ -6,7 +6,7 @@ import useBanking from '../hooks/useBanking';
 import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
-import { showSuccess } from '../utils/errorToast';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .ba-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
@@ -58,12 +58,12 @@ export function BankAccountsContent() {
   const showMsg = (text, type = 'ok') => { setMsg({ text, type }); setTimeout(() => setMsg(null), 4000); };
 
   const handleExport = async () => {
-    try { const res = await api.exportBankAccounts(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'bank-accounts-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+    try { const res = await api.exportBankAccounts(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'bank-accounts-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch (err) { showError(err, 'Export failed'); }
   };
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try { const res = await api.importBankAccounts(fd); showSuccess(res?.message || 'Import complete'); load(); } catch { /* */ }
+    try { const res = await api.importBankAccounts(fd); showSuccess(res?.message || 'Import complete'); load(); } catch (err) { showError(err, 'Import failed'); }
     e.target.value = '';
   };
 

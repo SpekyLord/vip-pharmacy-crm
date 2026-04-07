@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .bir-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -64,7 +65,7 @@ export default function BirCalculator() {
         laundry_allowance: parseFloat(laundry) || 0,
       });
       setResult(res?.data || null);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'BIR calculation failed'); }
     setLoading(false);
   };
 

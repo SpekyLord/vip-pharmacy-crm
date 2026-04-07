@@ -55,7 +55,7 @@ export default function PrfCalf() {
       if (docTypeFilter) params.doc_type = docTypeFilter;
       const res = await getPrfCalfList(params);
       setDocs(res?.data || []);
-    } catch { /* ignore */ }
+    } catch (err) { showError(err, 'Could not load PRF/CALF documents'); }
   }, [period, docTypeFilter]);
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
@@ -74,7 +74,7 @@ export default function PrfCalf() {
       ]);
       setPendingRebates(rebRes?.data || []);
       setPendingCalfLines(calfRes?.data || []);
-    } catch { /* ignore */ }
+    } catch (err) { showError(err, 'Could not load pending rebates'); }
   }, []);
   useEffect(() => { loadPendingData(); }, [loadPendingData]);
 
@@ -593,7 +593,8 @@ export default function PrfCalf() {
                         try {
                           const result = await processDocument(file, 'PRF_CALF');
                           setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), result.s3_url] }));
-                        } catch {
+                        } catch (err) {
+                          console.error('[PrfCalf] Scan upload failed, using local preview:', err.message);
                           setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), URL.createObjectURL(file)] }));
                         }
                       }} />
@@ -607,7 +608,8 @@ export default function PrfCalf() {
                         try {
                           const result = await processDocument(file, 'PRF_CALF');
                           setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), result.s3_url] }));
-                        } catch {
+                        } catch (err) {
+                          console.error('[PrfCalf] Gallery upload failed, using local preview:', err.message);
                           setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), URL.createObjectURL(file)] }));
                         }
                       }} />

@@ -7,6 +7,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .fuel-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -58,6 +59,7 @@ export default function FuelEfficiency() {
             <h1>Fuel Efficiency Report</h1>
             <p>Per-BDM actual vs expected gas cost with variance detection</p>
           </div>
+          <WorkflowGuide pageKey="fuel-efficiency" />
 
           <div className="controls">
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />

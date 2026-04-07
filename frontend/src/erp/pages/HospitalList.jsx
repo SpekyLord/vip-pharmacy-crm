@@ -115,7 +115,7 @@ export function HospitalListContent() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'hospitals-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const handleImport = async (e) => {
@@ -127,7 +127,7 @@ export function HospitalListContent() {
       const res = await erpApi.post('/hospitals/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       showSuccess(res?.message || 'Import complete');
       refresh();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
     e.target.value = '';
   };
 

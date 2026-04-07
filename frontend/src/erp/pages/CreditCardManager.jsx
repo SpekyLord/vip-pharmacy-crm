@@ -80,7 +80,7 @@ export function CreditCardManagerContent() {
   const [msg, setMsg] = useState({ text: '', type: '' });
 
   const handleExport = async () => {
-    try { const res = await api.exportCreditCards(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'credit-cards-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+    try { const res = await api.exportCreditCards(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'credit-cards-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch (err) { showError(err, 'Export failed'); }
   };
 
   const loadCards = useCallback(async () => {
@@ -171,7 +171,7 @@ export function CreditCardManagerContent() {
       await api.updateCreditCard(card._id, { is_active: false });
       showMsg('Card deactivated');
       loadCards();
-    } catch { showMsg('Error', 'err'); }
+    } catch (err) { showError(err, 'Could not deactivate card'); }
   };
 
   const handleActivate = async (card) => {
@@ -179,7 +179,7 @@ export function CreditCardManagerContent() {
       await api.updateCreditCard(card._id, { is_active: true });
       showMsg('Card reactivated');
       loadCards();
-    } catch { showMsg('Error', 'err'); }
+    } catch (err) { showError(err, 'Could not activate card'); }
   };
 
   const f = (field, value) => setForm(p => ({ ...p, [field]: value }));

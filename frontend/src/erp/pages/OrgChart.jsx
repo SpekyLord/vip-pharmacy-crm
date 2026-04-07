@@ -9,6 +9,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
 import PartnerScorecard from './PartnerScorecard';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const TYPE_COLORS = {
   BDM: { bg: '#dbeafe', text: '#1e40af' },
@@ -217,6 +218,7 @@ export function OrgChartContent() {
   return (
     <>
       <style>{pageStyles}</style>
+      <WorkflowGuide pageKey="org-chart" />
       <div className="org-header">
         <h2>Org Chart</h2>
         <div className="org-toolbar">

@@ -3,7 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
-import { showSuccess } from '../utils/errorToast';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .ln-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -50,18 +50,18 @@ export default function Loans() {
   const [msg, setMsg] = useState('');
 
   const handleExport = async () => {
-    try { const res = await api.exportLoans(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'loans-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+    try { const res = await api.exportLoans(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'loans-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch (err) { showError(err, 'Export failed'); }
   };
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try { const res = await api.importLoans(fd); showSuccess(res?.message || 'Import complete'); loadLoans(); } catch { /* */ }
+    try { const res = await api.importLoans(fd); showSuccess(res?.message || 'Import complete'); loadLoans(); } catch (err) { showError(err, 'Import failed'); }
     e.target.value = '';
   };
 
   const loadLoans = useCallback(async () => {
     setLoading(true);
-    try { const res = await api.listLoans(); setLoans(res?.data || []); } catch { /* */ }
+    try { const res = await api.listLoans(); setLoans(res?.data || []); } catch (err) { showError(err, 'Could not load loans'); }
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -71,13 +71,13 @@ export default function Loans() {
     try {
       await api.createLoan({ ...form, principal: parseFloat(form.principal), annual_rate: parseFloat(form.annual_rate), term_months: parseInt(form.term_months) });
       setShowAdd(false); loadLoans();
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not create loan'); }
   };
 
-  const handleCompute = async () => { try { await api.computeInterest({ period }); loadStaging(); } catch { /* */ } };
-  const loadStaging = async () => { try { const res = await api.getInterestStaging(period); setStaging(res?.data || []); } catch { /* */ } };
-  const handleApproveAll = async () => { try { await api.approveInterest({ entry_ids: staging.map(s => s.entry_id) }); setMsg('Approved'); loadStaging(); } catch { /* */ } };
-  const handlePost = async () => { try { const res = await api.postInterest({ period }); setMsg(`Posted ${res?.data?.length || 0} JEs`); loadStaging(); loadLoans(); } catch { /* */ } };
+  const handleCompute = async () => { try { await api.computeInterest({ period }); loadStaging(); } catch (err) { showError(err, 'Interest computation failed'); } };
+  const loadStaging = async () => { try { const res = await api.getInterestStaging(period); setStaging(res?.data || []); } catch (err) { showError(err, 'Could not load interest staging'); } };
+  const handleApproveAll = async () => { try { await api.approveInterest({ entry_ids: staging.map(s => s.entry_id) }); setMsg('Approved'); loadStaging(); } catch (err) { showError(err, 'Approval failed'); } };
+  const handlePost = async () => { try { const res = await api.postInterest({ period }); setMsg(`Posted ${res?.data?.length || 0} JEs`); loadStaging(); loadLoans(); } catch (err) { showError(err, 'Post interest failed'); } };
 
   return (
     <div className="ln-page">

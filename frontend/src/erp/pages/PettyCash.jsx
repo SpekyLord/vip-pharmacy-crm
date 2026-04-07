@@ -313,7 +313,7 @@ function TransactionsTab({ funds, pc }) {
       if (dateTo) params.date_to = dateTo;
       const res = await pc.getTransactions(params);
       setTransactions(res.data || res || []);
-    } catch { setTransactions([]); }
+    } catch (err) { showError(err, 'Could not load petty cash transactions'); setTransactions([]); }
     finally { setLoading(false); }
   }, [pc, fundFilter, typeFilter, dateFrom, dateTo]);
 
@@ -417,7 +417,7 @@ function DocumentsTab({ pc }) {
     try {
       const res = await pc.getDocuments({});
       setDocuments(res.data || res || []);
-    } catch { setDocuments([]); }
+    } catch (err) { showError(err, 'Could not load petty cash documents'); setDocuments([]); }
     finally { setLoading(false); }
   }, [pc]);
 
@@ -523,7 +523,7 @@ export default function PettyCash() {
     try {
       const res = await pc.getFunds();
       setFunds(res.data || res || []);
-    } catch { setFunds([]); }
+    } catch (err) { showError(err, 'Could not load petty cash funds'); setFunds([]); }
     finally { setLoading(false); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

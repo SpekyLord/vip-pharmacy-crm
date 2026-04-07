@@ -8,6 +8,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 import SelectField from '../../components/common/Select';
 
@@ -86,6 +87,7 @@ export default function CycleReports() {
             <h1>Cycle Reports</h1>
             <p>Generate, review, confirm, and credit cycle reports</p>
           </div>
+          <WorkflowGuide pageKey="cycle-reports" />
 
           <div className="controls">
             <input type="month" value={filters.period} onChange={e => setFilters(f => ({ ...f, period: e.target.value }))} />

@@ -15,6 +15,7 @@ import { useAuth } from '../../hooks/useAuth';
 import useEntities from '../hooks/useEntities';
 import useDashboard from '../hooks/useDashboard';
 import EntityBadge from '../components/EntityBadge';
+import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 import api from '../../services/api';
 
@@ -163,7 +164,7 @@ export default function ErpDashboard() {
         default: break;
       }
       setTabData(res?.data || null);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not load dashboard tab data'); }
     setTabLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

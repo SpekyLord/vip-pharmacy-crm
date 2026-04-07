@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useAccounting from '../hooks/useAccounting';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .cf-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -35,7 +36,7 @@ export default function CashflowStatement() {
 
   const generate = useCallback(async () => {
     setLoading(true);
-    try { const res = await api.getCashflow(period); setData(res?.data || null); } catch { /* */ }
+    try { const res = await api.getCashflow(period); setData(res?.data || null); } catch (err) { showError(err, 'Could not load cashflow statement'); }
     setLoading(false);
   }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
 

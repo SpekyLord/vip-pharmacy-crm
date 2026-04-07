@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useTransfers from '../hooks/useTransfers';
+import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -94,7 +95,7 @@ export function TransferPriceManagerContent() {
         const sub = list.find(e => e.entity_type === 'SUBSIDIARY');
         if (parent) setSourceId(parent._id);
         if (sub) setTargetId(sub._id);
-      } catch { /* */ }
+      } catch (err) { showError(err, 'Could not load entities'); }
     })();
   }, []);
 

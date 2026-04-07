@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
+import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = `
@@ -69,7 +70,7 @@ export default function AccountsPayable() {
         const res = await api.getPaymentHistory();
         setPayments(res?.data || []);
       }
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load accounts payable data'); }
     setLoading(false);
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
