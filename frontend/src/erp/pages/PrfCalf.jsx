@@ -161,6 +161,21 @@ export default function PrfCalf() {
   };
 
   const handleSave = async () => {
+    // Frontend validation before save
+    const issues = [];
+    if (form.doc_type === 'CALF') {
+      if (!form.advance_amount || form.advance_amount <= 0) issues.push('Advance amount is required');
+      if (!form.linked_expense_id) issues.push('CALF must be linked to an expense entry — use "Create CALF" from pending items below');
+    }
+    if (form.doc_type === 'PRF') {
+      if (!form.payee_name?.trim()) issues.push('Payee name is required');
+      if (!form.purpose?.trim()) issues.push('Purpose is required');
+      if (form.prf_type === 'PARTNER_REBATE') {
+        if (!form.rebate_amount || form.rebate_amount <= 0) issues.push('Rebate amount is required');
+      }
+    }
+    if (issues.length) { showError(null, issues.join('. ')); return; }
+
     const { calf_number: _excluded, ...formData } = form;
     const data = {
       ...formData,
