@@ -37,6 +37,25 @@ const createSale = catchAsync(async (req, res) => {
       ? 'OPENING_AR' : 'SALES_LINE';
   }
 
+  // Validate line items before saving — catch qty ≤ 0 and unit_price ≤ 0 early
+  const saleType = saleData.sale_type || 'CSI';
+  if (saleType !== 'SERVICE_INVOICE' && Array.isArray(saleData.line_items)) {
+    for (const item of saleData.line_items) {
+      if (!item.qty || item.qty <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Quantity must be greater than 0 for ${item.item_key || 'product'}`
+        });
+      }
+      if (!item.unit_price || item.unit_price <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Unit price must be greater than 0 for ${item.item_key || 'product'}`
+        });
+      }
+    }
+  }
+
   // Phase 18: auto-generate invoice_number for non-CSI sales
   if (saleData.sale_type && saleData.sale_type !== 'CSI' && !saleData.invoice_number) {
     const { generateDocNumber } = require('../services/docNumbering');
@@ -284,6 +303,11 @@ const validateSales = catchAsync(async (req, res) => {
       }
       if (!item.unit_price || item.unit_price <= 0) {
         rowErrors.push(`Unit price must be greater than 0 for ${item.item_key || 'product'}`);
+      }
+
+      // FIFO override requires a reason from the allowed list
+      if (item.fifo_override && !item.override_reason) {
+        rowErrors.push(`FIFO override reason is required for ${item.item_key || 'product'}. Choose: Hospital Policy, QA Replacement, Damaged Batch, or Batch Recall.`);
       }
 
       const pid = item.product_id.toString();

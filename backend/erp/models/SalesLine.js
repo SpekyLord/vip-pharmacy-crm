@@ -18,7 +18,7 @@ const lineItemSchema = new mongoose.Schema({
   fifo_override: { type: Boolean, default: false },
   override_reason: {
     type: String,
-    enum: ['HOSPITAL_POLICY', 'QA_REPLACEMENT', 'DAMAGED_BATCH', 'BATCH_RECALL']
+    enum: [null, '', 'HOSPITAL_POLICY', 'QA_REPLACEMENT', 'DAMAGED_BATCH', 'BATCH_RECALL']
   }
 }, { _id: true });
 

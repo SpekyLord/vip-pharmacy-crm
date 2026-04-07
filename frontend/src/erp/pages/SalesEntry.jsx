@@ -683,10 +683,33 @@ export default function SalesEntry() {
     setActionLoading('save');
     try {
       const savedIds = [];
+      const warnings = [];
       for (const row of rows) {
         if (!row._isNew) continue;
-        if (!row.hospital_id && !row.customer_id) continue;
-        if (saleType === 'CSI' && !row.doc_ref) continue;
+
+        // Warn instead of silently skipping rows missing hospital/customer
+        if (!row.hospital_id && !row.customer_id) {
+          warnings.push('Row skipped: hospital or customer is required before saving.');
+          continue;
+        }
+        if (saleType === 'CSI' && !row.doc_ref) {
+          warnings.push('Row skipped: CSI# is required for CSI sales.');
+          continue;
+        }
+
+        // Warn about line items dropped due to missing qty (instead of silent filter)
+        const droppedItems = row.line_items.filter(li => li.product_id && (!li.qty || parseFloat(li.qty) <= 0));
+        if (droppedItems.length > 0) {
+          warnings.push(`${droppedItems.length} line item(s) removed: quantity must be greater than 0.`);
+        }
+
+        const validItems = row.line_items.filter(li => li.product_id && li.qty && parseFloat(li.qty) > 0);
+
+        // Warn about line items with zero price
+        const zeroPriceItems = validItems.filter(li => !li.unit_price || parseFloat(li.unit_price) <= 0);
+        if (zeroPriceItems.length > 0) {
+          warnings.push(`${zeroPriceItems.length} line item(s) have ₱0 unit price — please set a price.`);
+        }
 
         const payload = {
           sale_type: saleType,
@@ -696,7 +719,7 @@ export default function SalesEntry() {
           doc_ref: row.doc_ref || undefined,
           warehouse_id: warehouseId || undefined,
           payment_mode: row.payment_mode || undefined,
-          line_items: row.line_items.filter(li => li.product_id && li.qty).map(li => ({
+          line_items: validItems.map(li => ({
             product_id: li.product_id,
             item_key: li.item_key,
             qty: parseFloat(li.qty),
@@ -711,9 +734,14 @@ export default function SalesEntry() {
         if (res?.data) savedIds.push(res.data._id);
       }
 
+      // Show accumulated warnings to BDM
+      if (warnings.length > 0) {
+        showError(null, warnings.join('\n'));
+      }
+
       if (savedIds.length) {
         await loadSales();
-      } else if (rows.some(r => r._isNew)) {
+      } else if (rows.some(r => r._isNew) && warnings.length === 0) {
         showError(null, 'No rows saved. Make sure each row has a hospital or customer selected' + (saleType === 'CSI' ? ' and a CSI#' : ''));
       }
     } catch (err) {
