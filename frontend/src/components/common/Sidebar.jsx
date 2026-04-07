@@ -255,23 +255,6 @@ const sidebarStyles = `
     display: none;
   }
 
-  /* Disabled (greyed-out) nav items */
-  .sidebar-link-disabled {
-    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
-    border-radius: 8px; color: #475569; cursor: not-allowed;
-    opacity: 0.45; position: relative; user-select: none;
-  }
-  .sidebar-link-disabled .sidebar-link-icon { display: flex; align-items: center; }
-  .sidebar-link-disabled .sidebar-link-label { flex: 1; font-size: 14px; font-weight: 500; }
-  .sidebar-link-disabled:hover .sidebar-coming-soon { display: block; }
-  .sidebar-coming-soon {
-    display: none; position: absolute; left: calc(100% + 8px); top: 50%;
-    transform: translateY(-50%); background: #1e293b; color: #94a3b8;
-    font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 4px;
-    white-space: nowrap; z-index: 200; pointer-events: none;
-  }
-  .sidebar.collapsed .sidebar-link-disabled .sidebar-link-label { display: none; }
-
   /* Scrollbar */
   .sidebar-nav::-webkit-scrollbar {
     width: 4px;
@@ -614,20 +597,20 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   if (isAdminLikeRole(role)) items.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
   if (hasModule('inventory'))   items.push({ path: '/erp/my-stock', label: 'Inventory', icon: Package });
   if (hasModule('inventory'))   items.push({ path: '/erp/grn', label: 'GRN Entry', icon: FileInput });
-  if (hasModule('inventory'))   items.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck, disabled: !isAdminLikeRole(role) });
+  if (hasModule('inventory'))   items.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
   if (hasModule('inventory'))   items.push({ path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight });
   if (hasModule('inventory') && ['admin', 'president'].includes(role)) items.push({ path: '/erp/warehouses', label: 'Warehouses', icon: Package });
-  if (hasModule('inventory'))   items.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers, disabled: !isAdminLikeRole(role) });
+  if (hasModule('inventory'))   items.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
   if (hasModule('collections')) items.push({ path: '/erp/collections', label: 'Collections', icon: Wallet });
   if (hasModule('collections')) items.push({ path: '/erp/collections/ar', label: 'AR Aging', icon: BarChart3 });
   if (hasModule('collections') && ['admin', 'finance', 'president'].includes(role)) items.push({ path: '/erp/ic-settlements', label: 'IC Settlements', icon: Repeat });
   if (hasModule('expenses'))    items.push({ path: '/erp/expenses', label: 'Expenses', icon: CreditCard });
-  if (hasModule('reports'))     items.push({ path: '/erp/reports', label: 'Reports', icon: BarChart3, disabled: !isAdminLikeRole(role) });
+  if (hasModule('reports'))     items.push({ path: '/erp/reports', label: 'Reports', icon: BarChart3 });
   if (hasModule('reports') && isAdminLikeRole(role)) items.push({ path: '/erp/budget-allocations', label: 'Budget Allocations', icon: DollarSign });
   if (hasModule('people'))      items.push({ path: '/erp/people', label: 'People', icon: UserCheck });
   if (hasModule('people'))      items.push({ path: '/erp/org-chart', label: 'Org Chart', icon: Network });
   if (hasModule('payroll'))     items.push({ path: '/erp/payroll', label: 'Payroll', icon: DollarSign });
-  if (hasModule('accounting') || hasModule('expenses')) items.push({ path: '/erp/credit-cards', label: 'Credit Cards', icon: CreditCard, disabled: !isAdminLikeRole(role) });
+  if (hasModule('accounting') || hasModule('expenses')) items.push({ path: '/erp/credit-cards', label: 'Credit Cards', icon: CreditCard });
   if (hasModule('accounting')) {
     items.push({ path: '/erp/coa', label: 'Chart of Accounts', icon: BookOpen });
     items.push({ path: '/erp/journals', label: 'Journal Entries', icon: BookOpen });
@@ -904,15 +887,6 @@ const Sidebar = () => {
               <div className="sidebar-section-title">{section.title}</div>
               {section.items.map((item) => {
                 const Icon = item.icon;
-                if (item.disabled) {
-                  return (
-                    <div key={item.path} className="sidebar-link-disabled">
-                      <span className="sidebar-link-icon"><Icon size={20} /></span>
-                      <span className="sidebar-link-label">{item.label}</span>
-                      <span className="sidebar-coming-soon">Coming Soon</span>
-                    </div>
-                  );
-                }
                 return (
                   <NavLink
                     key={item.path}
@@ -999,15 +973,6 @@ const Sidebar = () => {
               <div className="sidebar-section-title">{section.title}</div>
               {section.items.map((item) => {
                 const Icon = item.icon;
-                if (item.disabled) {
-                  return (
-                    <div key={item.path} className="sidebar-link-disabled">
-                      <span className="sidebar-link-icon"><Icon size={22} /></span>
-                      <span className="sidebar-link-label" style={{ display: 'block' }}>{item.label}</span>
-                      <span style={{ marginLeft: 'auto', fontSize: 10, color: '#64748b', fontWeight: 600 }}>Soon</span>
-                    </div>
-                  );
-                }
                 return (
                   <button
                     key={item.path}
