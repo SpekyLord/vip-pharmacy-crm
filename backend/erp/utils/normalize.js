@@ -128,7 +128,13 @@ const UNIT_MAP = {
   // Can
   CAN: 'CAN', CANS: 'CAN',
   // Pair
-  PAIR: 'PAIR', PAIRS: 'PAIR', PR: 'PAIR'
+  PAIR: 'PAIR', PAIRS: 'PAIR', PR: 'PAIR',
+  // Pre-filled syringe
+  PFS: 'PFS', PREFILLED: 'PFS', SYRINGE: 'PFS',
+  // Jar / Tub
+  JAR: 'JAR', TUB: 'JAR',
+  // Yard / Length
+  YARD: 'YARD', YARDS: 'YARD', YD: 'YARD'
 };
 
 /**
