@@ -5,7 +5,7 @@
  * Shows what the page is for, what to do, and what comes next.
  * Dismissible per session via sessionStorage.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const styles = `
@@ -587,19 +587,70 @@ export default function WorkflowGuide({ pageKey }) {
   const navigate = useNavigate();
   const storageKey = `wfg_dismiss_${pageKey}`;
   const [dismissed, setDismissed] = useState(() => sessionStorage.getItem(storageKey) === '1');
+  const [mobileTopOffset, setMobileTopOffset] = useState(0);
+  const guideRef = useRef(null);
+  const offsetRef = useRef(0);
 
   const guide = WORKFLOW_GUIDES[pageKey];
-  if (!guide || dismissed) return null;
+
+  useEffect(() => {
+    if (!guide || dismissed) return;
+
+    let rafId = 0;
+
+    const adjustOffset = () => {
+      const guideEl = guideRef.current;
+      if (!guideEl) return;
+
+      const isMobile = window.matchMedia('(max-width: 768px)').matches;
+      if (!isMobile) {
+        offsetRef.current = 0;
+        setMobileTopOffset(0);
+        return;
+      }
+
+      const navEl = document.querySelector('.navbar');
+      const navBottom = navEl ? navEl.getBoundingClientRect().bottom : 56;
+      const minTop = navBottom + 8;
+      const currentTop = guideEl.getBoundingClientRect().top;
+
+      // Recover the natural top before any offset we already applied.
+      const naturalTop = currentTop - offsetRef.current;
+      const rawOffset = Math.max(0, Math.ceil(minTop - naturalTop));
+      // Guardrail: prevent runaway spacing on pages with extra top padding.
+      const neededOffset = Math.min(rawOffset, 96);
+
+      offsetRef.current = neededOffset;
+      setMobileTopOffset(neededOffset);
+    };
+
+    const scheduleAdjust = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(adjustOffset);
+    };
+
+    scheduleAdjust();
+
+    window.addEventListener('resize', scheduleAdjust);
+    window.addEventListener('orientationchange', scheduleAdjust);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', scheduleAdjust);
+      window.removeEventListener('orientationchange', scheduleAdjust);
+    };
+  }, [pageKey, guide, dismissed]);
 
   const handleDismiss = () => {
     sessionStorage.setItem(storageKey, '1');
     setDismissed(true);
   };
 
+  if (!guide || dismissed) return null;
+
   return (
     <>
       <style>{styles}</style>
-      <div className="wfg">
+      <div className="wfg" ref={guideRef} style={mobileTopOffset ? { marginTop: `${mobileTopOffset}px` } : undefined}>
         <button className="wfg-dismiss" onClick={handleDismiss} title="Dismiss for this session">×</button>
         <div className="wfg-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>

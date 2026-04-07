@@ -34,7 +34,7 @@ const pageStyles = `
   .btn-primary { background: #2563eb; color: white; }
   .btn:disabled { opacity: 0.5; }
   @media(max-width: 768px) {
-    .reports-main { padding: 96px 16px 88px; }
+    .reports-main { padding: 76px 16px 96px; }
     .report-cards { grid-template-columns: 1fr; }
     .controls { flex-direction: column; align-items: stretch; }
     .controls input, .controls select, .controls .btn { width: 100%; }

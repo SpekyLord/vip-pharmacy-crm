@@ -70,7 +70,7 @@ const pageStyles = `
   .modal-content { background: var(--erp-panel); border-radius: 16px; padding: 24px; width: 90%; max-width: 640px; max-height: 80vh; overflow-y: auto; }
   .modal-content h3 { margin: 0 0 16px; font-size: 17px; }
   @media(max-width: 768px) {
-    .ba-main { padding: 96px 16px 88px; }
+    .ba-main { padding: 76px 16px 96px; }
     .form-grid { grid-template-columns: 1fr; }
     .comp-grid { grid-template-columns: 1fr; }
     .controls { flex-direction: column; align-items: stretch; }

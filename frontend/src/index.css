@@ -287,6 +287,11 @@ body.dark-mode .vip-select__option--is-focused {
   --mobile-navbar-offset: 112px;
 }
 
+/* ERP pages use a tighter mobile top offset than legacy CRM/admin pages. */
+.erp-page {
+  --mobile-navbar-offset: 72px;
+}
+
 .admin-layout {
   display: flex;
   flex: 1;

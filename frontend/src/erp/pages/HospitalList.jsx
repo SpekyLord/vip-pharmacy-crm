@@ -185,8 +185,8 @@ export function HospitalListContent() {
   return (
     <>
       <style>{pageStyles}</style>
-      <WorkflowGuide pageKey="hospitals" />
       <main className="hospital-main" style={styles.main}>
+          <WorkflowGuide pageKey="hospitals" />
           <div style={styles.header}>
             <div>
               <h1 style={{ fontSize: 22, margin: 0 }}>Hospitals</h1>
