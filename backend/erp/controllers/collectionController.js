@@ -158,38 +158,61 @@ const validateCollections = catchAsync(async (req, res) => {
     if (!isCash && !row.deposit_slip_url) errors.push('Deposit slip photo is required');
     if (!row.cwt_na && !row.cwt_certificate_url) errors.push('CWT certificate is required (or mark CWT as N/A)');
 
-    // Validate settled CSIs reference valid POSTED SalesLines
+    // Validate settled CSIs reference valid POSTED SalesLines (entity_id + hospital_id enforced)
     if (row.settled_csis?.length) {
+      if (!row.entity_id) {
+        errors.push('Collection must have an entity_id to validate CSIs');
+      }
+
       const slIds = row.settled_csis.map(s => s.sales_line_id);
       const validSales = await SalesLine.find({
         _id: { $in: slIds }, status: 'POSTED', hospital_id: row.hospital_id, entity_id: row.entity_id
-      }).select('_id').lean();
-      const validIds = new Set(validSales.map(s => s._id.toString()));
+      }).select('_id invoice_total').lean();
+      const validMap = new Map(validSales.map(s => [s._id.toString(), s]));
 
       for (const csi of row.settled_csis) {
-        if (!validIds.has(csi.sales_line_id?.toString())) {
-          errors.push(`CSI ${csi.doc_ref || csi.sales_line_id} is not a valid POSTED sale for this hospital`);
+        if (!validMap.has(csi.sales_line_id?.toString())) {
+          errors.push(`CSI ${csi.doc_ref || csi.sales_line_id} is not a valid POSTED sale for this hospital/entity`);
         }
       }
 
-      // Double-settlement check: ensure CSIs aren't already fully settled
+      // Double-settlement check: scoped by entity_id to prevent cross-entity interference
       for (const csi of row.settled_csis) {
         const otherSettlements = await Collection.aggregate([
-          { $match: { status: 'POSTED', _id: { $ne: row._id } } },
+          { $match: { status: 'POSTED', entity_id: row.entity_id, _id: { $ne: row._id } } },
           { $unwind: '$settled_csis' },
           { $match: { 'settled_csis.sales_line_id': csi.sales_line_id } },
           { $group: { _id: null, total: { $sum: '$settled_csis.invoice_amount' } } }
         ]);
         const alreadyCollected = otherSettlements[0]?.total || 0;
-        const originalSale = await SalesLine.findById(csi.sales_line_id).select('invoice_total').lean();
+        const originalSale = validMap.get(csi.sales_line_id?.toString());
         if (originalSale && alreadyCollected + csi.invoice_amount > originalSale.invoice_total + 1) {
           errors.push(`CSI ${csi.doc_ref} would exceed invoice total (already collected: P${alreadyCollected.toFixed(2)})`);
         }
       }
+
+      // Hospital-wide AR balance check: total collection must not exceed total outstanding AR
+      const hospitalArBalance = await getHospitalArBalance(row.hospital_id, row.entity_id);
+      const thisCollectionTotal = row.settled_csis.reduce((sum, c) => sum + (c.invoice_amount || 0), 0);
+      if (hospitalArBalance > 0 && thisCollectionTotal > hospitalArBalance + 1) {
+        errors.push(`Total settlement (P${thisCollectionTotal.toFixed(2)}) exceeds hospital AR balance (P${hospitalArBalance.toFixed(2)})`);
+      }
+    }
+
+    // CWT recomputation — backend is authoritative, don't trust frontend cwt_amount
+    const totalCsiForCwt = row.total_csi_amount || row.settled_csis?.reduce((s, c) => s + (c.invoice_amount || 0), 0) || 0;
+    if (!row.cwt_na && row.cwt_rate > 0) {
+      const recomputedCwt = Math.round(totalCsiForCwt * row.cwt_rate * 100) / 100;
+      if (Math.abs((row.cwt_amount || 0) - recomputedCwt) > 1) {
+        errors.push(`CWT amount mismatch: stored P${(row.cwt_amount || 0).toFixed(2)} vs computed P${recomputedCwt.toFixed(2)} (rate: ${(row.cwt_rate * 100).toFixed(1)}%)`);
+        row.cwt_amount = recomputedCwt; // auto-correct
+      }
+    } else if (row.cwt_na) {
+      row.cwt_amount = 0;
     }
 
     // CR formula validation
-    const expectedCr = (row.total_csi_amount || 0) - (row.cwt_amount || 0);
+    const expectedCr = (totalCsiForCwt) - (row.cwt_amount || 0);
     if (Math.abs((row.cr_amount || 0) - expectedCr) > 1.00) {
       errors.push(`CR amount (P${row.cr_amount}) does not match expected (P${expectedCr.toFixed(2)} = CSI total - CWT)`);
     }

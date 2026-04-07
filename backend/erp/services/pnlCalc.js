@@ -212,11 +212,17 @@ async function generatePnlReport(entityId, bdmId, period, userId) {
   };
 
   // Compute gross_profit and net_income for PS evaluation
+  // Include depreciation + loan_amortization from existing doc (manual Finance entries)
+  const existingForExp = await PnlReport.findOne({ entity_id: entityId, bdm_id: bdmId, period })
+    .select('expenses.depreciation expenses.loan_amortization').lean();
+  const depreciation = existingForExp?.expenses?.depreciation || 0;
+  const loanAmortization = existingForExp?.expenses?.loan_amortization || 0;
+
   const grossProfit = Math.round((collectionsNetOfVat - cogsData.total_cogs) * 100) / 100;
   const totalExp = Math.round(
     (expSummary.categories.smer_reimbursable + expSummary.categories.gasoline_less_personal +
      expSummary.categories.partners_insurance + expSummary.categories.access_total +
-     expSummary.categories.ore_total + samplingDrCost) * 100
+     expSummary.categories.ore_total + samplingDrCost + depreciation + loanAmortization) * 100
   ) / 100;
   const netIncome = Math.round((grossProfit - totalExp) * 100) / 100;
 
