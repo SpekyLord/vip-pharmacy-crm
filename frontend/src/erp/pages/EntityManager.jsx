@@ -63,10 +63,10 @@ export function EntityManagerContent() {
     try {
       const [entRes, pplRes] = await Promise.all([
         api.get('/erp/entities'),
-        api.get('/erp/people/as-users').catch(() => ({ data: { data: [] } })),
+        api.get('/erp/people?limit=200').catch(() => ({ data: { data: [] } })),
       ]);
       setEntities(entRes.data?.data || []);
-      // Get all people for managed_by dropdown
+      // Get all people from PeopleMaster for managed_by dropdown
       const pplData = pplRes.data?.data || pplRes.data || [];
       setPeople(Array.isArray(pplData) ? pplData : []);
     } catch (err) {
@@ -217,8 +217,8 @@ export function EntityManagerContent() {
                   <select value={form.managed_by || ''} onChange={e => setForm({ ...form, managed_by: e.target.value || null })}>
                     <option value="">— Not Assigned —</option>
                     {people.map(p => (
-                      <option key={p.person_id || p._id} value={p.person_id || p._id}>
-                        {p.full_name || p.name}{p.department ? ` (${p.department})` : ''}
+                      <option key={p._id} value={p._id}>
+                        {p.full_name}{p.position ? ` — ${p.position}` : ''}{p.person_type ? ` (${p.person_type.replace(/_/g, ' ')})` : ''}
                       </option>
                     ))}
                   </select>
