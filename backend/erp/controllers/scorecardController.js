@@ -29,11 +29,7 @@ function monthStartEnd(period) {
   return { start, end };
 }
 
-function normalize(value, max, inverse = false) {
-  if (max <= 0) return 0;
-  const raw = inverse ? Math.max(0, 100 - (value / max) * 100) : Math.min(100, (value / max) * 100);
-  return Math.round(raw * 10) / 10;
-}
+
 
 // ═══ Compute all scorecards ═══
 

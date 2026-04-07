@@ -41,7 +41,7 @@ const getPersonById = catchAsync(async (req, res) => {
   const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
   const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope })
     .select('+government_ids.sss_no +government_ids.philhealth_no +government_ids.pagibig_no +government_ids.tin +bank_account.bank +bank_account.account_no +bank_account.account_name')
-    .populate('user_id', 'name email role')
+    .populate('user_id', 'name email role isActive')
     .populate('reports_to', 'full_name position department')
     .lean();
 

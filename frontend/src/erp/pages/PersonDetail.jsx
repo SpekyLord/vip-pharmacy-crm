@@ -126,6 +126,7 @@ export default function PersonDetail() {
       if (p) {
         setPersonForm({
           full_name: p.full_name || '', first_name: p.first_name || '', last_name: p.last_name || '',
+          email: p.email || '', phone: p.phone || '', bdm_stage: p.bdm_stage || '',
           person_type: p.person_type || '', position: p.position || '', department: p.department || '',
           employment_type: p.employment_type || '', status: p.status || 'ACTIVE',
           date_hired: toInput(p.date_hired), date_regularized: toInput(p.date_regularized), date_separated: toInput(p.date_separated),
@@ -568,15 +569,27 @@ export default function PersonDetail() {
                 <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>ERP Module Access</h3>
                 {canEdit && (
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      className="pd-btn"
-                      style={{ fontSize: 11, color: '#dc2626', border: '1px solid #fecaca', background: '#fef2f2' }}
-                      onClick={async () => {
-                        if (!confirm('Disable this person\'s login? They will no longer be able to log in.')) return;
-                        try { await pplApi.disableLogin(id); alert('Login disabled.'); load(); }
-                        catch (err) { alert(err?.response?.data?.message || 'Failed'); }
-                      }}
-                    >Disable Login</button>
+                    {person.user_id?.isActive === false ? (
+                      <button
+                        className="pd-btn"
+                        style={{ fontSize: 11, color: '#166534', border: '1px solid #bbf7d0', background: '#f0fdf4' }}
+                        onClick={async () => {
+                          if (!confirm('Re-enable this person\'s login?')) return;
+                          try { await pplApi.enableLogin(id); alert('Login re-enabled.'); load(); }
+                          catch (err) { alert(err?.response?.data?.message || 'Failed'); }
+                        }}
+                      >Enable Login</button>
+                    ) : (
+                      <button
+                        className="pd-btn"
+                        style={{ fontSize: 11, color: '#dc2626', border: '1px solid #fecaca', background: '#fef2f2' }}
+                        onClick={async () => {
+                          if (!confirm('Disable this person\'s login? They will no longer be able to log in.')) return;
+                          try { await pplApi.disableLogin(id); alert('Login disabled.'); load(); }
+                          catch (err) { alert(err?.response?.data?.message || 'Failed'); }
+                        }}
+                      >Disable Login</button>
+                    )}
                     <button
                       className="pd-btn"
                       style={{ fontSize: 11, color: '#64748b', border: '1px solid #e5e7eb' }}
