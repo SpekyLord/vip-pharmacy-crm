@@ -123,15 +123,17 @@ export default function ErpDashboard() {
   const [activeTab, setActiveTab] = useState('products');
   const [tabData, setTabData] = useState(null);
   const [tabLoading, setTabLoading] = useState(false);
-  const [agentRuns, setAgentRuns] = useState([]);
+  const [agentStats, setAgentStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Load agent runs for admin/president
+  const isAdminRole = ['admin', 'finance', 'president', 'ceo'].includes(user?.role);
+
+  // Load agent stats for admin/president
   useEffect(() => {
-    if (['admin', 'finance', 'president', 'ceo'].includes(user?.role)) {
-      api.get('/erp/agents/runs?limit=3').then(res => setAgentRuns(res.data?.data || [])).catch(() => {});
+    if (isAdminRole) {
+      api.get('/erp/agents/runs/stats').then(res => setAgentStats(res.data?.data || null)).catch(() => {});
     }
-  }, [user?.role]);
+  }, [isAdminRole]);
 
   // Load KPIs
   useEffect(() => {
@@ -296,23 +298,75 @@ export default function ErpDashboard() {
               <Link to="/erp/reports" className="quick-link">Reports</Link>
             </div>
 
-            {/* Agent Activity */}
-            {agentRuns.length > 0 && (
-              <div style={{ background: 'var(--erp-panel)', border: '1px solid var(--erp-border)', borderRadius: 14, padding: 16, marginBottom: 20 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Agent Activity</div>
-                {agentRuns.map((r, i) => (
-                  <div key={r._id || i} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--erp-border)' : 'none', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, color: 'var(--erp-text)' }}>{r.agent_label || 'Agent'}</div>
-                      <div style={{ color: 'var(--erp-muted)', fontSize: 11 }}>{r.run_date ? new Date(r.run_date).toLocaleString() : '--'}</div>
-                    </div>
-                    <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: r.status === 'success' ? '#dcfce7' : r.status === 'error' ? '#fef2f2' : 'var(--erp-accent-soft)', color: r.status === 'success' ? '#16a34a' : r.status === 'error' ? '#dc2626' : 'var(--erp-accent)' }}>
-                      {r.status || 'unknown'}
-                    </span>
+            {/* Agent Intelligence */}
+            {isAdminRole && agentStats && (() => {
+              const agents = agentStats.agents || [];
+              const totalAlerts = agents.reduce((sum, a) => sum + (a.total_alerts || 0), 0);
+              const criticalAgents = agents.filter(a => a.last_status === 'error' || (a.last_summary?.alerts_generated || 0) > 0);
+              const allFindings = agents.flatMap(a => (a.last_summary?.key_findings || []).map(f => ({ agent: a.label || a._id, finding: f })));
+              const recentFindings = allFindings.slice(0, 5);
+              const recentRuns = agentStats.recent_runs || [];
+
+              return (
+                <div style={{ background: 'var(--erp-panel)', border: '1px solid var(--erp-border)', borderRadius: 14, padding: 16, marginBottom: 20 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Agent Intelligence</div>
+                    <Link to="/erp/agent-dashboard" style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-accent)', textDecoration: 'none' }}>View All →</Link>
                   </div>
-                ))}
-              </div>
-            )}
+
+                  {/* Alert summary badges */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                    <span style={{ padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: totalAlerts > 0 ? '#fef2f2' : '#dcfce7', color: totalAlerts > 0 ? '#dc2626' : '#16a34a' }}>
+                      {totalAlerts} alert{totalAlerts !== 1 ? 's' : ''}
+                    </span>
+                    <span style={{ padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: 'var(--erp-accent-soft)', color: 'var(--erp-accent)' }}>
+                      {agents.length} agent{agents.length !== 1 ? 's' : ''} active
+                    </span>
+                    {agents.filter(a => a.last_status === 'error').length > 0 && (
+                      <span style={{ padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: '#fef3c7', color: '#92400e' }}>
+                        {agents.filter(a => a.last_status === 'error').length} failed
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Key findings */}
+                  {recentFindings.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      {recentFindings.map((f, i) => (
+                        <div key={i} style={{ padding: '6px 0', borderTop: i > 0 ? '1px solid var(--erp-border)' : 'none', fontSize: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                          <span style={{ color: '#f59e0b', flexShrink: 0 }}>●</span>
+                          <div>
+                            <span style={{ color: 'var(--erp-text)' }}>{f.finding}</span>
+                            <span style={{ color: 'var(--erp-muted)', fontSize: 10, marginLeft: 6 }}>— {f.agent}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Recent runs */}
+                  {recentFindings.length === 0 && recentRuns.length > 0 && (
+                    <div>
+                      {recentRuns.slice(0, 3).map((r, i) => (
+                        <div key={r._id || i} style={{ padding: '6px 0', borderTop: i > 0 ? '1px solid var(--erp-border)' : 'none', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <span style={{ fontWeight: 600, color: 'var(--erp-text)' }}>{r.agent_label}</span>
+                            <span style={{ color: 'var(--erp-muted)', fontSize: 11, marginLeft: 8 }}>{r.run_date ? new Date(r.run_date).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}</span>
+                          </div>
+                          <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: r.status === 'success' ? '#dcfce7' : '#fef2f2', color: r.status === 'success' ? '#16a34a' : '#dc2626' }}>
+                            {r.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {recentFindings.length === 0 && recentRuns.length === 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--erp-muted)', textAlign: 'center', padding: 12 }}>No agent activity yet. Agents run on schedule or via Run Now.</div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Section 4: Bottom Tab Content */}
             <div className="section-label">Data Views</div>
