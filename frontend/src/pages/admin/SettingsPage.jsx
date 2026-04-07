@@ -13,7 +13,9 @@ const pageStyles = `
   .dashboard-layout {
     min-height: 100vh;
     background: #f3f4f6;
+    --navbar-offset: 64px;
     --mobile-navbar-offset: 112px;
+    --mobile-bottom-offset: 88px;
   }
 
   .dashboard-content {
@@ -22,9 +24,9 @@ const pageStyles = `
 
   .settings-main {
     flex: 1;
-    padding: 24px;
+    padding: calc(24px + var(--navbar-offset)) 24px 24px;
     overflow-y: auto;
-    max-height: calc(100vh - 64px);
+    max-height: none;
   }
 
   .settings-header {
@@ -83,7 +85,7 @@ const pageStyles = `
 
   @media (max-width: 768px) {
     .settings-main {
-      padding: var(--mobile-navbar-offset) 16px 16px;
+      padding: var(--mobile-navbar-offset) 16px var(--mobile-bottom-offset);
       max-height: none;
     }
     .settings-header h1 { font-size: 20px; }

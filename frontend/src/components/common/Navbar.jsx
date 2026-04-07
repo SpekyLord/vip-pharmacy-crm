@@ -573,12 +573,18 @@ const navbarStyles = `
       display: none;
     }
 
-    .navbar-platform-switch--mobile {
+    .navbar-platform-switch {
       display: inline-flex;
     }
 
-    .navbar-platform-switch {
+    .navbar-platform-switch--mobile {
       display: none;
+    }
+
+    .navbar-platform-link {
+      min-height: 30px;
+      padding: 0 10px;
+      font-size: 11px;
     }
 
     .navbar-profile {
