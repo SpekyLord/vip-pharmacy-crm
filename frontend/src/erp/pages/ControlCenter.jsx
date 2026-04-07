@@ -267,7 +267,9 @@ const DEPENDENCY_GUIDE = {
   'transfer-prices': {
     title: 'Transfer Price Dependencies',
     items: [
-      { action: 'When you set a transfer price', deps: 'Inter-company transfers between entities will use this price for COGS/inventory valuation', section: null },
+      { action: 'When you set a transfer price', deps: 'This tags the product to the target entity — VIP supplies it at the set price', section: null },
+      { action: 'When you clear a transfer price', deps: 'The product is untagged from the entity — VIP no longer supplies it', section: null },
+      { action: 'All products belong to VIP', deps: 'Transfer prices list VIP products; setting a price tags them to a subsidiary', section: 'products' },
     ]
   },
   'fixed-assets': {
@@ -334,6 +336,14 @@ const DEPENDENCY_GUIDE = {
     items: [
       { action: 'Before archiving', deps: 'Ensure the period is locked — archived data cannot be modified', section: 'period-locks' },
       { action: 'When you archive transactions', deps: 'They are removed from active queries but preserved in the archive collection', section: null },
+    ]
+  },
+  'agent-settings': {
+    title: 'Agent Config Dependencies',
+    items: [
+      { action: 'When you disable an agent', deps: 'It will stop running on its cron schedule — existing data is preserved', section: null },
+      { action: 'When you change notification routing', deps: 'Only the selected roles (president/admin/finance) will receive agent alerts', section: null },
+      { action: 'Use "Run Now"', deps: 'Triggers instant data gathering — results appear in the Agent Dashboard', section: null },
     ]
   },
 };
