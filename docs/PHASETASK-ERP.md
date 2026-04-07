@@ -3522,3 +3522,60 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] Added "Control Center" sidebar item in `Sidebar.jsx` right after "ERP Home" (admin/finance/president only)
 - [x] All 18 lazy imports verified correct (named exports match actual exports in each file)
 - [x] All existing standalone routes remain intact
+
+---
+
+## PHASE 24B — Partner Intelligence + Org Chart + Lookup Migration ✅ (April 7, 2026)
+
+### 24B.1 — Frontend Dropdown → Lookup API Migration ✅
+- [x] Enhanced `lookupGenericController.js`: object-format seeds `{code, label}`, auto-seed on first GET, `buildSeedOps` helper
+- [x] Added 10 new seed categories (ENGAGEMENT_TYPE, ENGAGEMENT_LEVEL, DOC_TYPE, SALE_TYPE, VAT_TYPE, EXPENSE_TYPE, OFFICE_SUPPLY_TXN_TYPE, PAYMENT_MODE_TYPE, PEOPLE_STATUS) — total 26 categories
+- [x] Migrated 10+ frontend files from hardcoded arrays to `useLookupOptions()` with fallbacks
+- [x] Deleted dead constants: `engagementTypes.js`, `specializations.js`
+
+### 24B.2 — PeopleMaster Enhancements ✅
+- [x] Added `reports_to` self-ref field + index (org chart hierarchy)
+- [x] Added missing fields: `email`, `phone`, `avatar`, `territory_id`, `bdm_stage`
+- [x] Updated allowed update fields in controller
+- [x] Enhanced `syncFromCrm` to copy contact/territory fields + update existing records
+- [x] Unified creation endpoint `POST /people/create-with-login` — creates CRM User + PeopleMaster in one call
+- [x] Login management: `POST /:id/create-login`, `/:id/disable-login`, `/:id/enable-login`, `/:id/unlink-login`
+- [x] PeopleList: email/phone column, unified create form with login toggle
+- [x] PersonDetail: email/phone/bdm_stage editable, Create/Disable/Enable/Unlink Login buttons
+
+### 24B.3 — Multi-Entity Org Chart ✅
+- [x] `getOrgChart` enhanced for multi-entity: president sees all entities (VIP, MG AND CO., Balai Lawaan)
+- [x] Response: entity header bars with `_type: 'entity'` + nested person trees
+- [x] Frontend: entity header bars with brand_color accent, collapsible person trees, search
+- [x] Score badges on partner nodes (green 70+, amber 40-69, red <40)
+- [x] Graduation cap icon on partners with readiness ≥ 85%
+- [x] Top bar: org summary stats (entities, partners, avg score, near graduation, at risk)
+- [x] "Recompute Scores" button
+- [x] Added to Control Center sidebar + SECTIONS map
+- [x] Route `/erp/org-chart` in App.jsx + Network icon in Sidebar
+
+### 24B.4 — Partner Scorecard System ✅
+- [x] `PartnerScorecard` model: monthly snapshots with 5 scores + graduation checklist + AI insights
+- [x] `scorecardController`: aggregation from CRM (Visit, Doctor) + ERP (SalesLine, Collection, ExpenseEntry)
+- [x] Endpoints: POST /compute, GET /, GET /rankings, GET /group-summary, GET /:personId
+- [x] `ErpSettings`: configurable GRADUATION_CRITERIA (7 defaults) + SCORECARD_WEIGHTS
+- [x] PartnerScorecard slide-out panel with 3 tabs: Performance, Graduation, AI Insights
+- [x] Click partner in Org Chart → scorecard panel opens
+
+### 24B.5 — Org Intelligence Agent (#O) ✅
+- [x] `orgIntelligenceAgent.js`: weekly Claude-powered digest analyzing partner performance
+- [x] Produces: top performers, at-risk partners, graduation pipeline, trends, 3 recommendations
+- [x] Sends digest to President via MessageInbox
+- [x] Registered in agentScheduler: Monday 5:30 AM
+- [x] Added to AgentRun enum + AgentDashboard config
+
+### 24B.6 — Entity managed_by ✅
+- [x] Entity model: `managed_by` field (ref PeopleMaster)
+- [x] Controller: in create/update allowed, populated in queries, empty string → null sanitization
+- [x] EntityManager UI: "Managed By" dropdown from PeopleMaster (direct, not CRM-filtered)
+- [x] Entity cards show manager name
+
+### 24B.7 — Dependency Banners ✅
+- [x] Added banners for org-chart, hospitals, fnb-products, data-archive, agent-settings (24+ total)
+- [x] Updated entities banner with managed_by guidance
+- [x] Mobile responsive CSS for banners at 768px and 375px breakpoints
