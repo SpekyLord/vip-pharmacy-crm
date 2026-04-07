@@ -8,30 +8,32 @@ const { catchAsync } = require('../../middleware/errorHandler');
 
 exports.getAll = catchAsync(async (req, res) => {
   const entities = await Entity.find()
+    .populate('managed_by', 'full_name position person_type')
     .sort({ entity_type: 1, entity_name: 1 })
     .lean();
   res.json({ success: true, data: entities });
 });
 
 exports.getById = catchAsync(async (req, res) => {
-  const entity = await Entity.findById(req.params.id).lean();
+  const entity = await Entity.findById(req.params.id).populate('managed_by', 'full_name position person_type').lean();
   if (!entity) return res.status(404).json({ success: false, message: 'Entity not found' });
   res.json({ success: true, data: entity });
 });
 
 exports.create = catchAsync(async (req, res) => {
-  const { entity_name, short_name, tin, address, vat_registered, entity_type, parent_entity_id, brand_color, brand_text_color, tagline } = req.body;
+  const { entity_name, short_name, tin, address, vat_registered, entity_type, parent_entity_id, brand_color, brand_text_color, tagline, managed_by } = req.body;
   const entity = await Entity.create({
     entity_name, short_name, tin, address, vat_registered,
     entity_type: entity_type || 'SUBSIDIARY',
     parent_entity_id: parent_entity_id || null,
+    managed_by: managed_by || null,
     brand_color, brand_text_color, tagline
   });
   res.status(201).json({ success: true, data: entity });
 });
 
 exports.update = catchAsync(async (req, res) => {
-  const allowed = ['entity_name', 'short_name', 'tin', 'address', 'vat_registered', 'status', 'brand_color', 'brand_text_color', 'tagline', 'logo_url'];
+  const allowed = ['entity_name', 'short_name', 'tin', 'address', 'vat_registered', 'status', 'brand_color', 'brand_text_color', 'tagline', 'logo_url', 'managed_by'];
   const updates = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];

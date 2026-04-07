@@ -173,6 +173,7 @@ const DEPENDENCY_GUIDE = {
     title: 'Entity Dependencies',
     items: [
       { action: 'When you add a new entity', deps: 'Set up Territories, Warehouses, Bank Accounts, Credit Cards, COA, and Access Templates for it', section: 'territories' },
+      { action: 'When you add a new entity', deps: 'Assign a manager using the "Managed By" dropdown — this person will appear as entity head in the Org Chart', section: 'people' },
       { action: 'When you change VAT status', deps: 'Review Government Rates and COA Mapping in ERP Settings', section: 'government-rates' },
     ]
   },

@@ -44,11 +44,12 @@ const pageStyles = `
   @media(max-width: 768px) { .em-grid { grid-template-columns: 1fr; } }
 `;
 
-const EMPTY_FORM = { entity_name: '', short_name: '', tin: '', address: '', vat_registered: false, entity_type: 'SUBSIDIARY', parent_entity_id: '', brand_color: '#6B7280', brand_text_color: '#FFFFFF', tagline: '' };
+const EMPTY_FORM = { entity_name: '', short_name: '', tin: '', address: '', vat_registered: false, entity_type: 'SUBSIDIARY', parent_entity_id: '', managed_by: '', brand_color: '#6B7280', brand_text_color: '#FFFFFF', tagline: '' };
 
 export function EntityManagerContent() {
   const { user } = useAuth();
   const [entities, setEntities] = useState([]);
+  const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -60,8 +61,14 @@ export function EntityManagerContent() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/erp/entities');
-      setEntities(res.data?.data || []);
+      const [entRes, pplRes] = await Promise.all([
+        api.get('/erp/entities'),
+        api.get('/erp/people/as-users').catch(() => ({ data: { data: [] } })),
+      ]);
+      setEntities(entRes.data?.data || []);
+      // Get all people for managed_by dropdown
+      const pplData = pplRes.data?.data || pplRes.data || [];
+      setPeople(Array.isArray(pplData) ? pplData : []);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to load entities');
     }
@@ -86,6 +93,7 @@ export function EntityManagerContent() {
       vat_registered: entity.vat_registered || false,
       entity_type: entity.entity_type || 'SUBSIDIARY',
       parent_entity_id: entity.parent_entity_id || '',
+      managed_by: entity.managed_by?._id || entity.managed_by || '',
       brand_color: entity.brand_color || '#6B7280',
       brand_text_color: entity.brand_text_color || '#FFFFFF',
       tagline: entity.tagline || '',
@@ -145,6 +153,7 @@ export function EntityManagerContent() {
                   <dt>TIN</dt><dd>{entity.tin || '—'}</dd>
                   <dt>Address</dt><dd>{entity.address || '—'}</dd>
                   <dt>VAT</dt><dd>{entity.vat_registered ? 'Registered' : 'Non-VAT'}</dd>
+                  <dt>Managed By</dt><dd>{entity.managed_by?.full_name || '— not assigned'}</dd>
                   {entity.tagline && <><dt>Tagline</dt><dd>{entity.tagline}</dd></>}
                 </dl>
                 {canEdit && (
@@ -197,9 +206,22 @@ export function EntityManagerContent() {
                   </div>
                 )}
               </div>
-              <div className="form-group">
-                <label>Tagline</label>
-                <input value={form.tagline} onChange={e => setForm({ ...form, tagline: e.target.value })} placeholder="Company tagline" />
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Tagline</label>
+                  <input value={form.tagline} onChange={e => setForm({ ...form, tagline: e.target.value })} placeholder="Company tagline" />
+                </div>
+                <div className="form-group">
+                  <label>Managed By</label>
+                  <select value={form.managed_by} onChange={e => setForm({ ...form, managed_by: e.target.value || null })}>
+                    <option value="">— Not Assigned —</option>
+                    {people.map(p => (
+                      <option key={p.person_id || p._id} value={p.person_id || p._id}>
+                        {p.full_name || p.name}{p.department ? ` (${p.department})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
