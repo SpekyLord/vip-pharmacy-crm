@@ -44,7 +44,7 @@ const pageStyles = `
   .detail-panel { background: var(--erp-panel); border-radius: 16px; padding: 24px; max-width: 700px; width: 95%; max-height: 85vh; overflow-y: auto; }
   @media(max-width: 768px) {
     .coll-page { padding-top: 12px; }
-    .coll-main { padding: 76px 12px 96px; }
+    .coll-main { padding: 76px 12px calc(96px + env(safe-area-inset-bottom, 0px)); }
     .coll-list-header { flex-direction: column; align-items: flex-start; }
     .coll-actions { width: 100%; }
     .coll-actions .btn { width: 100%; }
@@ -64,7 +64,7 @@ const pageStyles = `
 
   @media(max-width: 480px) {
     .coll-page { padding-top: 16px; }
-    .coll-main { padding-top: 72px; padding-bottom: 104px; }
+    .coll-main { padding-top: 72px; padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
     .coll-card-grid { grid-template-columns: 1fr; }
   }
 `;

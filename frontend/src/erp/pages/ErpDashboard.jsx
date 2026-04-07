@@ -95,11 +95,12 @@ const pageStyles = `
     .boss-scroll { padding-bottom: 24px; }
   }
   @media (max-width: 768px) {
-    .boss-scroll { padding: 104px 12px 110px; }
+    .boss-main { padding-top: 56px; }
+    .boss-scroll { padding: 16px 12px calc(96px + env(safe-area-inset-bottom, 0px)); }
     .summary-card .value { font-size: 16px; }
   }
   @media (max-width: 375px) {
-    .boss-scroll { padding: 8px 8px 90px; }
+    .boss-scroll { padding: 8px 8px calc(96px + env(safe-area-inset-bottom, 0px)); }
     .summary-card .value { font-size: 14px; }
     .summary-card .label { font-size: 10px; }
     .boss-scroll input, .boss-scroll select { font-size: 16px; }
@@ -177,8 +178,8 @@ export default function ErpDashboard() {
       <div className="admin-layout">
         <Sidebar />
         <main className="boss-main">
-          <WorkflowGuide pageKey="erp-dashboard" />
           <div className="boss-scroll">
+            <WorkflowGuide pageKey="erp-dashboard" />
 
             {/* Header */}
             <div className="boss-header">

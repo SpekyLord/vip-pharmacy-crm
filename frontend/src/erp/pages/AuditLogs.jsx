@@ -2,6 +2,7 @@
  * Audit Logs Page — Searchable ERP audit log viewer
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -78,7 +79,12 @@ export default function AuditLogs() {
         <div className="audit-main">
           <div className="audit-header">
             <h1>Audit Logs</h1>
-            <span style={{ fontSize: 13, color: 'var(--erp-muted)' }}>{pagination.total} entries</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: 'var(--erp-muted)' }}>{pagination.total} entries</span>
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
+            </div>
           </div>
 
           <div className="filters">

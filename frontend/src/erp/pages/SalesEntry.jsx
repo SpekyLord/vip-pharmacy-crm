@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -37,10 +37,66 @@ const emptyRow = () => ({
 const pageStyles = `
   .sales-entry-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .sales-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .sales-top-panel {
+    background: var(--erp-panel, #fff);
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 14px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+  }
+  .sales-toolbar-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
   .sales-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+  .sales-header:last-child { margin-bottom: 0; }
   .sales-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0; }
-  .sales-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sales-subtitle {
+    margin: 4px 0 0;
+    color: var(--erp-muted, #5f7188);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .sales-nav-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 12px;
+    padding: 6px;
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 10px;
+    background: var(--erp-panel, #fff);
+  }
+  .sales-nav-tabs::-webkit-scrollbar { height: 0; }
+  .sales-nav-tab {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    color: var(--erp-text, #132238);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .sales-nav-tab.active {
+    background: var(--erp-accent, #1e5eff);
+    color: #fff;
+  }
+  .sales-nav-tab:hover {
+    border-color: var(--erp-border, #dbe4f0);
+  }
+  .sales-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .sales-actions-group { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .sales-actions .btn { min-height: 42px; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-primary { background: var(--erp-accent, #1e5eff); color: #fff; }
   .btn-success { background: #16a34a; color: #fff; }
@@ -70,7 +126,7 @@ const pageStyles = `
   .override-reason::placeholder { color: #b45309; font-style: italic; }
   .add-row-btn { display: block; width: 100%; padding: 10px; text-align: center; color: var(--erp-accent); background: transparent; border: 2px dashed var(--erp-border); border-radius: 0 0 12px 12px; cursor: pointer; font-weight: 600; }
 
-  .sale-type-tabs { display: flex; gap: 4px; margin-bottom: 12px; background: var(--erp-bg, #f4f7fb); padding: 4px; border-radius: 10px; width: fit-content; }
+  .sale-type-tabs { display: flex; gap: 4px; margin-bottom: 8px; background: var(--erp-bg, #f4f7fb); padding: 4px; border-radius: 10px; width: fit-content; }
   .sale-type-tab { padding: 8px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: var(--erp-muted, #5f7188); transition: all 0.15s; }
   .sale-type-tab.active { background: var(--erp-accent, #1e5eff); color: #fff; }
   .service-form { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 12px; padding: 20px; }
@@ -112,12 +168,32 @@ const pageStyles = `
     .sale-card input, .sale-card select { width: 100%; padding: 8px; margin-top: 4px; margin-bottom: 10px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 14px; }
     .sale-card .card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
     .sales-main { padding-bottom: 96px; }
+    .sales-top-panel { padding: 12px; }
+    .sales-toolbar-row { margin-bottom: 10px; }
     .sales-header { flex-direction: column; align-items: flex-start; gap: 10px; }
     .sales-actions { width: 100%; }
-    .sales-actions .btn { flex: 1 1 48%; }
-    .sale-type-tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .sale-type-tab { white-space: nowrap; }
+    .sales-actions-group { width: 100%; }
+    .sales-actions .btn { flex: 1 1 calc(50% - 6px); }
+    .sale-type-tabs {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      overflow: hidden;
+    }
+    .sale-type-tab {
+      white-space: normal;
+      text-align: center;
+      padding: 10px 8px;
+    }
     .service-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 480px) {
+    .sales-main { padding: 12px; padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+    .sales-cards { padding: 0; }
+    .sales-actions .btn { flex: 1 1 100%; }
+    .sales-header h1 { font-size: 20px; }
+    .sale-type-tab { font-size: 12px; }
   }
   @media (min-width: 769px) {
     .sales-cards { display: none; }
@@ -724,44 +800,62 @@ export default function SalesEntry() {
         <Sidebar />
         <main className="sales-main">
           <WorkflowGuide pageKey="sales-entry" />
-          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 8 }}>
-            <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
-          </div>
-          {/* Phase 18: Sale Type Tabs */}
-          <div className="sale-type-tabs">
-            {[
-              { key: 'CSI', label: 'CSI (Booklet)' },
-              { key: 'CASH_RECEIPT', label: 'Cash Receipt' },
-              { key: 'SERVICE_INVOICE', label: 'Service Invoice' }
-            ].map(t => (
-              <button key={t.key} className={`sale-type-tab ${saleType === t.key ? 'active' : ''}`} onClick={() => setSaleType(t.key)}>
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <div className="sales-top-panel">
+            <div className="sales-nav-tabs" role="tablist" aria-label="Sales navigation">
+              <Link to="/erp/sales/entry" className="sales-nav-tab active" aria-current="page">Sales</Link>
+              <Link to="/erp/sales" className="sales-nav-tab">Sales Transactions</Link>
+              <Link to="/erp/csi-booklets" className="sales-nav-tab">CSI Booklets</Link>
+            </div>
+            <div className="sales-toolbar-row">
+              <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
+            </div>
+            {/* Phase 18: Sale Type Tabs */}
+            <div className="sale-type-tabs">
+              {[
+                { key: 'CSI', label: 'CSI (Booklet)' },
+                { key: 'CASH_RECEIPT', label: 'Cash Receipt' },
+                { key: 'SERVICE_INVOICE', label: 'Service Invoice' }
+              ].map(t => (
+                <button key={t.key} className={`sale-type-tab ${saleType === t.key ? 'active' : ''}`} onClick={() => setSaleType(t.key)}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
 
-          <div className="sales-header">
-            <h1>{saleType === 'SERVICE_INVOICE' ? 'Service Invoice' : saleType === 'CASH_RECEIPT' ? 'Cash Receipt' : 'Sales Entry'}</h1>
-            {saleType !== 'SERVICE_INVOICE' && (
-              <div className="sales-actions">
-                <button className="btn btn-primary" onClick={() => setScanModalOpen(true)} style={{ background: '#7c3aed' }}>📷 Scan CSI</button>
-                <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
-                <button className="btn btn-primary" onClick={saveAll} disabled={actionLoading === 'save'}>
-                  {actionLoading === 'save' ? 'Saving...' : 'Save Drafts'}
-                </button>
-                <button className="btn btn-warning" onClick={handleValidate} disabled={!hasDraftOrError || !!actionLoading}>
-                  {actionLoading === 'validate' ? 'Validating...' : 'Validate Sales'}
-                </button>
-                <button className="btn btn-success" onClick={handleSubmit} disabled={!allValid || !!actionLoading}>
-                  {actionLoading === 'submit' ? 'Submitting...' : 'Submit Sales'}
-                </button>
-                {hasPosted && (
-                  <button className="btn btn-danger" onClick={handleReopen} disabled={!!actionLoading}>
-                    {actionLoading === 'reopen' ? 'Reopening...' : 'Re-open'}
-                  </button>
-                )}
+            <div className="sales-header">
+              <div>
+                <h1>{saleType === 'SERVICE_INVOICE' ? 'Service Invoice' : saleType === 'CASH_RECEIPT' ? 'Cash Receipt' : 'Sales Entry'}</h1>
+                <p className="sales-subtitle">
+                  {saleType === 'SERVICE_INVOICE'
+                    ? 'Create and save service invoices with customer details and payment mode.'
+                    : 'Capture sales lines, validate entries, then submit to post stock and ledger effects.'}
+                </p>
               </div>
-            )}
+              {saleType !== 'SERVICE_INVOICE' && (
+                <div className="sales-actions">
+                  <div className="sales-actions-group">
+                    <button className="btn btn-primary" onClick={() => setScanModalOpen(true)} style={{ background: '#7c3aed' }}>📷 Scan CSI</button>
+                    <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
+                  </div>
+                  <div className="sales-actions-group">
+                    <button className="btn btn-primary" onClick={saveAll} disabled={actionLoading === 'save'}>
+                      {actionLoading === 'save' ? 'Saving...' : 'Save Drafts'}
+                    </button>
+                    <button className="btn btn-warning" onClick={handleValidate} disabled={!hasDraftOrError || !!actionLoading}>
+                      {actionLoading === 'validate' ? 'Validating...' : 'Validate Sales'}
+                    </button>
+                    <button className="btn btn-success" onClick={handleSubmit} disabled={!allValid || !!actionLoading}>
+                      {actionLoading === 'submit' ? 'Submitting...' : 'Submit Sales'}
+                    </button>
+                    {hasPosted && (
+                      <button className="btn btn-danger" onClick={handleReopen} disabled={!!actionLoading}>
+                        {actionLoading === 'reopen' ? 'Reopening...' : 'Re-open'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Phase 18: Service Invoice Form (no line items — description + total) */}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -436,8 +436,8 @@ export default function MyStock() {
               </thead>
               <tbody>
                 {stockData.map(item => (
-                  <>
-                    <tr key={item.product_id} className={`expandable ${item.near_expiry ? 'near-expiry' : ''}`} onClick={() => toggleExpand(item.product_id)}>
+                  <Fragment key={item.product_id}>
+                    <tr className={`expandable ${item.near_expiry ? 'near-expiry' : ''}`} onClick={() => toggleExpand(item.product_id)}>
                       <td data-label="Product">
                         <strong>{item.product?.brand_name || 'Unknown'}</strong>
                         <br /><span style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{item.product?.generic_name}</span>
@@ -461,7 +461,7 @@ export default function MyStock() {
                         <td data-label=""></td>
                       </tr>
                     ))}
-                  </>
+                  </Fragment>
                 ))}
                 {!stockData.length && (
                   <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No stock data available</td></tr>

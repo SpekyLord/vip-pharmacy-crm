@@ -3,6 +3,7 @@
  * Per-BDM fuel tracking with variance detection
  */
 import { useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -58,6 +59,11 @@ export default function FuelEfficiency() {
           <div className="fuel-header">
             <h1>Fuel Efficiency Report</h1>
             <p>Per-BDM actual vs expected gas cost with variance detection</p>
+            <div style={{ marginTop: 10 }}>
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
+            </div>
           </div>
           <WorkflowGuide pageKey="fuel-efficiency" />
 

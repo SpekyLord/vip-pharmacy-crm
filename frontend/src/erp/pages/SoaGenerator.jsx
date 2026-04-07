@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useCollections from '../hooks/useCollections';
@@ -56,7 +57,12 @@ export default function SoaGenerator() {
       <div className="admin-layout">
         <Sidebar />
         <main className="soa-main">
-          <div className="soa-header"><h1>Statement of Account Generator</h1></div>
+          <div className="soa-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <h1>Statement of Account Generator</h1>
+            <Link to="/erp/reports" className="erp-back-btn">
+              Back to Reports
+            </Link>
+          </div>
           <WorkflowGuide pageKey="collections" />
           <div className="section">
             <div className="form-group">

@@ -356,7 +356,7 @@ const pageStyles = `
 
 @media (max-width: 768px) {
   .erp-expenses-page .admin-main {
-    padding: 96px 16px 88px;
+    padding: 76px 16px 96px;
   }
 
   .erp-expenses-controls {

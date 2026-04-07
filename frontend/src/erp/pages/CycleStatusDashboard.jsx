@@ -3,6 +3,7 @@
  * Per-BDM payslip cycle progress tracking
  */
 import { useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -75,6 +76,11 @@ export default function CycleStatusDashboard() {
           <div className="cycle-header">
             <h1>Cycle Status Dashboard</h1>
             <p>Payslip cycle progress tracking by BDM</p>
+            <div style={{ marginTop: 10 }}>
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
+            </div>
           </div>
           <WorkflowGuide pageKey="cycle-status" />
 

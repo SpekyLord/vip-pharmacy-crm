@@ -54,6 +54,15 @@ const CRM_EMPLOYEE_TABS = [
   { label: 'Inbox', path: '/bdm/inbox' },
 ];
 
+const ERP_TAB_MODULE_MAP = {
+  '/erp/sales': 'sales',
+  '/erp/my-stock': 'inventory',
+  '/erp/transfers': 'inventory',
+  '/erp/collections': 'collections',
+  '/erp/expenses': 'expenses',
+  '/erp/reports': 'reports',
+};
+
 /* =============================================================================
    STYLES
    ============================================================================= */
@@ -141,8 +150,7 @@ const navbarStyles = `
     row-gap: 8px;
   }
 
-  .navbar-erp-tab,
-  .navbar-erp-tab-disabled {
+  .navbar-erp-tab {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -191,11 +199,6 @@ const navbarStyles = `
     border-color: #b9d0ff;
     background: #e8efff;
     color: #1d4ed8;
-  }
-
-  .navbar-erp-tab-disabled {
-    opacity: 0.75;
-    cursor: not-allowed;
   }
 
   .navbar-brand {
@@ -406,8 +409,7 @@ const navbarStyles = `
     color: #0f172a;
   }
 
-  body.dark-mode .navbar-erp-tab,
-  body.dark-mode .navbar-erp-tab-disabled {
+  body.dark-mode .navbar-erp-tab {
     background: #111827;
     border-color: #334155;
     color: #cbd5e1;
@@ -487,8 +489,7 @@ const navbarStyles = `
       padding: 0 12px;
     }
 
-    .navbar-erp-tab,
-    .navbar-erp-tab-disabled {
+    .navbar-erp-tab {
       padding: 0 12px;
       font-size: 12px;
     }
@@ -527,9 +528,6 @@ const navbarStyles = `
       padding: 10px;
     }
 
-    .navbar-erp-tab-disabled {
-      display: none;
-    }
   }
 
   @media (max-width: 768px) {
@@ -597,11 +595,7 @@ const navbarStyles = `
       display: none;
     }
 
-    .navbar-platform-switch--mobile {
-      display: inline-flex;
-    }
-
-    .navbar-platform-switch {
+    .navbar-left > .navbar-platform-switch {
       display: none;
     }
 
@@ -679,7 +673,21 @@ const Navbar = () => {
   const isAdminLike = ADMIN_LIKE_ROLES.includes(user?.role);
   const crmHome = isAdminLike ? '/admin' : '/bdm';
   const isErpRoute = location.pathname.startsWith('/erp');
-  const platformTabs = isErpRoute ? ERP_TABS : (isAdminLike ? CRM_ADMIN_TABS : CRM_EMPLOYEE_TABS);
+
+  const hasErpModule = (moduleName) => {
+    if (!user) return false;
+    if (user.role === 'president' || user.role === 'ceo') return true;
+    if (user.role === 'admin' && (!user.erp_access || !user.erp_access.enabled)) return true;
+    if (!user.erp_access || !user.erp_access.enabled) return false;
+    return (user.erp_access.modules?.[moduleName] || 'NONE') !== 'NONE';
+  };
+
+  const erpTabs = ERP_TABS.filter((tab) => {
+    const moduleName = ERP_TAB_MODULE_MAP[tab.path];
+    if (!moduleName) return true;
+    return hasErpModule(moduleName);
+  });
+  const platformTabs = isErpRoute ? erpTabs : (isAdminLike ? CRM_ADMIN_TABS : CRM_EMPLOYEE_TABS);
 
   const isTabActive = (path) => {
     if (path === '/erp' || path === '/admin' || path === '/bdm') {
@@ -755,22 +763,6 @@ const Navbar = () => {
       )}
 
       <div className="navbar-menu">
-        {user && (
-          <div className="navbar-platform-switch navbar-platform-switch--mobile" aria-label="Platform switch">
-            <Link
-              to={crmHome}
-              className={`navbar-platform-link ${isErpRoute ? '' : 'active'}`.trim()}
-            >
-              CRM
-            </Link>
-            <Link
-              to="/erp"
-              className={`navbar-platform-link ${isErpRoute ? 'active' : ''}`.trim()}
-            >
-              ERP
-            </Link>
-          </div>
-        )}
         {isMultiEntity && entities.length > 0 && (
           <select
             className="navbar-entity-select"

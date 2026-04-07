@@ -5,6 +5,7 @@
  * Includes manual fields for depreciation and loan amortization.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -49,7 +50,19 @@ const pageStyles = `
   .list-table th { background: var(--erp-accent-soft); padding: 10px 12px; text-align: left; font-weight: 600; }
   .list-table td { padding: 10px 12px; border-top: 1px solid var(--erp-border); }
   .list-table tr:hover { background: var(--erp-accent-soft); cursor: pointer; }
-  @media(max-width: 768px) { .pnl-main { padding: 12px; } .pnl-row { font-size: 12px; padding: 6px 12px; } }
+  .pnl-list-wrap { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; overflow-x: auto; }
+  .list-mobile-list { display: none; gap: 10px; }
+  .list-mobile-card { border: 1px solid var(--erp-border); border-radius: 14px; background: var(--erp-panel); padding: 14px; box-shadow: 0 8px 18px rgba(15,23,42,0.05); }
+  .list-mobile-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+  .list-mobile-title { font-size: 14px; font-weight: 800; color: var(--erp-text); }
+  .list-mobile-sub { font-size: 12px; color: var(--erp-muted); margin-top: 2px; }
+  .list-mobile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .list-mobile-item { background: #f8fafc; border: 1px solid var(--erp-border); border-radius: 12px; padding: 10px 12px; }
+  .list-mobile-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--erp-muted); font-weight: 700; }
+  .list-mobile-value { font-size: 13px; font-weight: 700; color: var(--erp-text); margin-top: 4px; }
+  .list-mobile-actions { display: flex; gap: 8px; margin-top: 12px; }
+  @media(max-width: 768px) { .pnl-main { padding: 12px; } .pnl-row { font-size: 12px; padding: 6px 12px; } .pnl-list-wrap { display: none; } .list-mobile-list { display: grid; } }
+  @media(max-width: 480px) { .list-mobile-grid { grid-template-columns: 1fr; } .list-mobile-actions { flex-direction: column; } }
 `;
 
 function fmt(n) { return '₱' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -163,6 +176,9 @@ export default function Pnl() {
                   ← Back to List
                 </button>
               )}
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
             </div>
           </div>
 
@@ -170,34 +186,67 @@ export default function Pnl() {
 
           {/* ═══ LIST VIEW ═══ */}
           {view === 'list' && !loading && (
-            <table className="list-table">
-              <thead>
-                <tr>
-                  <th>BDM</th><th>Period</th><th>Net Sales</th><th>COGS</th>
-                  <th>Gross Profit</th><th>Expenses</th><th>Net Income</th><th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
+            <>
+              <div className="pnl-list-wrap">
+                <table className="list-table">
+                  <thead>
+                    <tr>
+                      <th>BDM</th><th>Period</th><th>Net Sales</th><th>COGS</th>
+                      <th>Gross Profit</th><th>Expenses</th><th>Net Income</th><th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reports.length === 0 && (
+                      <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 24 }}>No PNL reports found</td></tr>
+                    )}
+                    {reports.map(r => (
+                      <tr key={r._id} onClick={() => handleSelect(r)}>
+                        <td>{bdmName(r)}</td>
+                        <td>{r.period}</td>
+                        <td style={{ textAlign: 'right' }}>{fmt(r.revenue?.net_sales)}</td>
+                        <td style={{ textAlign: 'right' }}>{fmt(r.cogs?.total_cogs)}</td>
+                        <td style={{ textAlign: 'right' }}>{fmt(r.gross_profit)}</td>
+                        <td style={{ textAlign: 'right' }}>{fmt(r.total_expenses)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: (r.net_income || 0) >= 0 ? '#16a34a' : '#dc2626' }}>{fmt(r.net_income)}</td>
+                        <td>
+                          <span className={`badge badge-${(r.status || '').toLowerCase()}`}>{r.status}</span>
+                          {r.locked && <span className="badge badge-locked" style={{ marginLeft: 4 }}>LOCKED</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="list-mobile-list">
                 {reports.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 24 }}>No PNL reports found</td></tr>
+                  <div className="list-mobile-card" style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No PNL reports found</div>
                 )}
                 {reports.map(r => (
-                  <tr key={r._id} onClick={() => handleSelect(r)}>
-                    <td>{bdmName(r)}</td>
-                    <td>{r.period}</td>
-                    <td style={{ textAlign: 'right' }}>{fmt(r.revenue?.net_sales)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmt(r.cogs?.total_cogs)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmt(r.gross_profit)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmt(r.total_expenses)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: (r.net_income || 0) >= 0 ? '#16a34a' : '#dc2626' }}>{fmt(r.net_income)}</td>
-                    <td>
-                      <span className={`badge badge-${(r.status || '').toLowerCase()}`}>{r.status}</span>
-                      {r.locked && <span className="badge badge-locked" style={{ marginLeft: 4 }}>LOCKED</span>}
-                    </td>
-                  </tr>
+                  <div className="list-mobile-card" key={`mobile-${r._id}`} onClick={() => handleSelect(r)} role="button" tabIndex={0}>
+                    <div className="list-mobile-top">
+                      <div>
+                        <div className="list-mobile-title">{bdmName(r)}</div>
+                        <div className="list-mobile-sub">{r.period}</div>
+                      </div>
+                      <div>
+                        <span className={`badge badge-${(r.status || '').toLowerCase()}`}>{r.status}</span>
+                        {r.locked && <span className="badge badge-locked" style={{ marginLeft: 4 }}>LOCKED</span>}
+                      </div>
+                    </div>
+                    <div className="list-mobile-grid">
+                      <div className="list-mobile-item"><div className="list-mobile-label">Net Sales</div><div className="list-mobile-value">{fmt(r.revenue?.net_sales)}</div></div>
+                      <div className="list-mobile-item"><div className="list-mobile-label">COGS</div><div className="list-mobile-value">{fmt(r.cogs?.total_cogs)}</div></div>
+                      <div className="list-mobile-item"><div className="list-mobile-label">Gross Profit</div><div className="list-mobile-value">{fmt(r.gross_profit)}</div></div>
+                      <div className="list-mobile-item"><div className="list-mobile-label">Net Income</div><div className="list-mobile-value" style={{ color: (r.net_income || 0) >= 0 ? '#16a34a' : '#dc2626' }}>{fmt(r.net_income)}</div></div>
+                    </div>
+                    <div className="list-mobile-actions">
+                      <button className="btn btn-outline" type="button">Open Report</button>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </>
           )}
 
           {/* ═══ DETAIL VIEW ═══ */}

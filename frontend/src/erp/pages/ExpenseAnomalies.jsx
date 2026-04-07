@@ -3,6 +3,7 @@
  * Period-over-period anomaly detection + budget overrun tracking
  */
 import { useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -72,6 +73,11 @@ export default function ExpenseAnomalies() {
           <div className="anomaly-header">
             <h1>Expense Anomalies</h1>
             <p>Detect period-over-period expense changes and budget overruns</p>
+            <div style={{ marginTop: 10 }}>
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
+            </div>
           </div>
           <WorkflowGuide pageKey="expense-anomalies" />
 

@@ -80,14 +80,16 @@ export function PeopleListContent() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
-  const load = useCallback(async (page = 1) => {
+  const load = useCallback(async (page = 1, bust = false) => {
     setLoading(true);
     try {
       const params = { page, limit: 50 };
       if (filters.search) params.search = filters.search;
       if (filters.person_type) params.person_type = filters.person_type;
       if (filters.status) params.status = filters.status;
+      if (bust) params._t = Date.now(); // bypass 304 cache after mutations
       const res = await api.getPeopleList(params);
       setPeople(res?.data || []);
       setPagination(res?.pagination || { page: 1, limit: 50, total: 0, pages: 0 });
@@ -105,7 +107,7 @@ export function PeopleListContent() {
       });
       setShowForm(false);
       setForm(EMPTY_FORM);
-      load();
+      load(1, true);
     } catch (err) { showError(err, 'Could not create person'); }
   };
 
@@ -115,14 +117,17 @@ export function PeopleListContent() {
       <WorkflowGuide pageKey="people-list" />
       <div className="ppl-header">
         <h2>People Master</h2>
-        <button style={{ padding: '8px 16px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13, marginRight: 8 }}
+        <button
+          style={{ padding: '8px 16px', borderRadius: 6, background: syncing ? '#6d28d9' : '#7c3aed', color: '#fff', border: 'none', cursor: syncing ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, marginRight: 8, opacity: syncing ? 0.7 : 1 }}
+          disabled={syncing}
           onClick={async () => {
+            setSyncing(true);
             try {
               const res = await api.post('/people/sync-from-crm', {});
               showSuccess(res?.message || `Synced: ${res?.data?.created || 0} created, ${res?.data?.skipped || 0} already exist`);
-              load();
-            } catch (err) { showError(err, 'Could not sync from CRM'); }
-          }}>Sync from CRM</button>
+              load(1, true);
+            } catch (err) { showError(err, 'Could not sync from CRM'); } finally { setSyncing(false); }
+          }}>{syncing ? 'Syncing...' : 'Sync from CRM'}</button>
         <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Add Person</button>
       </div>
 

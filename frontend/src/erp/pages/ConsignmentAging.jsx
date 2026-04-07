@@ -3,7 +3,7 @@
  * Cross-BDM consignment aging with color-coded status and drill-down
  */
 import { useState, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -80,6 +80,11 @@ export default function ConsignmentAging() {
           <div className="aging-header">
             <h1>Consignment Aging</h1>
             <p>Consolidated cross-BDM consignment status with aging indicators</p>
+            <div style={{ marginTop: 10 }}>
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
+            </div>
           </div>
 
           <div className="controls">

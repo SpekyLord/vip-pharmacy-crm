@@ -20,11 +20,17 @@ const emptyLine = () => ({ product_id: '', batch_lot_no: '', expiry_date: '', qt
 
 const pageStyles = `
   .grn-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .grn-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1200px; margin: 0 auto; }
-  .grn-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
-  .grn-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0; }
+  .grn-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 24px; max-width: 1280px; margin: 0 auto; }
+  .grn-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+  .grn-header h1 { font-size: 24px; color: var(--erp-text, #132238); margin: 0; }
+  .grn-header p { margin: 4px 0 0; color: var(--erp-muted); font-size: 13px; line-height: 1.5; max-width: 720px; }
   .grn-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-  .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .grn-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 16px; }
+  .grn-summary-card { background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%); border: 1px solid var(--erp-border); border-radius: 16px; padding: 14px; box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05); }
+  .grn-summary-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--erp-muted); font-weight: 700; }
+  .grn-summary-value { font-size: 24px; font-weight: 800; color: var(--erp-text); margin-top: 4px; }
+  .grn-summary-sub { font-size: 12px; color: var(--erp-muted); margin-top: 2px; }
+  .btn { padding: 8px 16px; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-primary { background: var(--erp-accent, #1e5eff); color: #fff; }
   .btn-success { background: #16a34a; color: #fff; }
@@ -32,24 +38,44 @@ const pageStyles = `
   .btn-outline { background: transparent; border: 1px solid var(--erp-border, #dbe4f0); color: var(--erp-text); }
   .btn-sm { padding: 4px 10px; font-size: 12px; }
 
-  .grn-form { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .grn-form { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border); border-radius: 18px; padding: 20px; margin-bottom: 20px; box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05); }
   .grn-form h2 { font-size: 16px; margin: 0 0 16px; color: var(--erp-text); }
+  .grn-form-grid { display: grid; grid-template-columns: 1.1fr 0.6fr 1.3fr; gap: 12px; margin-bottom: 12px; }
   .form-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
   .form-group { flex: 1; min-width: 150px; }
   .form-group label { display: block; font-size: 11px; color: var(--erp-muted); font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
   .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 13px; background: var(--erp-panel); color: var(--erp-text); }
   .form-group textarea { resize: vertical; min-height: 60px; }
+  .grn-line-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 14px 0 10px; flex-wrap: wrap; }
+  .grn-line-header h3 { margin: 0; font-size: 14px; color: var(--erp-text); }
+  .grn-line-header p { margin: 0; font-size: 12px; color: var(--erp-muted); }
+  .grn-line-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .grn-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background: #f8fafc; border: 1px solid var(--erp-border); border-radius: 999px; font-size: 12px; color: var(--erp-text); font-weight: 600; }
 
-  .line-items-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }
+  .line-items-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; table-layout: fixed; }
+  .line-items-table col.col-product { width: 42%; }
+  .line-items-table col.col-batch  { width: 22%; }
+  .line-items-table col.col-expiry { width: 18%; }
+  .line-items-table col.col-qty    { width: 10%; }
+  .line-items-table col.col-remove { width: 8%; }
   .line-items-table th { background: var(--erp-bg); padding: 8px 10px; text-align: left; font-weight: 600; color: var(--erp-muted); font-size: 11px; text-transform: uppercase; }
-  .line-items-table td { padding: 6px 8px; border-top: 1px solid var(--erp-border); }
+  .line-items-table td { padding: 6px 8px; border-top: 1px solid var(--erp-border); vertical-align: middle; }
   .line-items-table input, .line-items-table select { width: 100%; padding: 6px 8px; border: 1px solid var(--erp-border); border-radius: 6px; font-size: 13px; }
   .add-line-btn { background: none; border: 2px dashed var(--erp-border); width: 100%; padding: 8px; text-align: center; color: var(--erp-accent); font-weight: 600; cursor: pointer; border-radius: 8px; }
+  .btn-remove-line { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: 6px; transition: background 0.15s; }
+  .btn-remove-line:hover { background: #fee2e2; }
+  .line-items-mobile { display: none; }
+  .line-item-card { background: #f8fafc; border: 1px solid var(--erp-border); border-radius: 14px; padding: 14px; }
+  .line-item-card + .line-item-card { margin-top: 10px; }
+  .line-item-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .line-item-card-title { font-weight: 700; font-size: 13px; color: var(--erp-text); }
+  .line-item-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 10px; }
+  .line-item-grid .form-group { min-width: 0; }
 
   .grn-list { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; overflow: hidden; }
   .grn-list h2 { font-size: 16px; margin: 0; padding: 16px 20px 12px; color: var(--erp-text); }
-  .filter-tabs { display: flex; gap: 0; padding: 0 20px; border-bottom: 1px solid var(--erp-border); }
-  .filter-tab { padding: 8px 16px; border: none; background: none; font-size: 13px; font-weight: 600; color: var(--erp-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .filter-tabs { display: flex; gap: 0; padding: 0 20px; border-bottom: 1px solid var(--erp-border); overflow-x: auto; }
+  .filter-tab { padding: 8px 16px; border: none; background: none; font-size: 13px; font-weight: 600; color: var(--erp-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
   .filter-tab.active { color: var(--erp-accent); border-bottom-color: var(--erp-accent); }
   .grn-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .grn-table th { padding: 10px 16px; text-align: left; font-weight: 600; color: var(--erp-muted); background: var(--erp-bg); }
@@ -88,24 +114,20 @@ const pageStyles = `
     .grn-page { padding-top: 12px; }
     .grn-main { padding: 76px 12px 96px; }
     .grn-header { flex-direction: column; align-items: flex-start; }
+    .grn-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grn-summary-value { font-size: 20px; }
     .grn-actions { width: 100%; }
     .grn-actions .btn { flex: 1; }
+    .grn-form-grid { grid-template-columns: 1fr; }
     .form-row { flex-direction: column; }
     .form-group { min-width: 100%; }
     .grn-form { padding: 16px; }
-    .line-items-table { display: block; overflow-x: auto; }
-    .line-items-table th,
-    .line-items-table td { white-space: nowrap; }
-    .line-items-table thead { display: none; }
-    .line-items-table tbody,
-    .line-items-table tr,
-    .line-items-table td { display: block; width: 100%; }
-    .line-items-table tr { padding: 10px 12px; border: 1px solid var(--erp-border); border-radius: 10px; background: var(--erp-panel); margin-bottom: 10px; }
-    .line-items-table td { padding: 6px 0; border: none; }
-    .line-items-table td:last-child { padding-top: 4px; }
-    .line-items-table td:last-child .btn { width: 100%; }
-    .line-items-table input,
-    .line-items-table .vip-select__control {
+    .line-items-table { display: none; }
+    .line-items-mobile { display: grid; gap: 10px; margin-top: 12px; }
+    .line-item-grid { grid-template-columns: 1fr; }
+    .line-item-card .btn-remove-line { width: 100%; border: 1px solid #fecaca; background: #fff5f5; font-size: 16px; padding: 10px; }
+    .line-item-card input,
+    .line-item-card .vip-select__control {
       border: 1px solid #cbd5f5;
       background: #ffffff;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
@@ -124,8 +146,16 @@ const pageStyles = `
   @media (max-width: 480px) {
     .grn-page { padding-top: 16px; }
     .grn-main { padding-top: 72px; padding-bottom: 104px; }
+    .grn-summary { grid-template-columns: 1fr; }
+    .grn-summary-card { padding: 12px; }
+    .grn-summary-value { font-size: 18px; }
+    .grn-form h2,
+    .grn-list h2 { font-size: 15px; }
     .grn-card { margin: 10px 10px 0; }
     .grn-card-grid { grid-template-columns: 1fr; }
+    .scan-capture-btns { flex-direction: column; }
+    .scan-modal { padding: 18px 14px; }
+    .scan-item-table { display: block; overflow-x: auto; }
   }
 `;
 
@@ -267,6 +297,13 @@ export default function GrnEntry() {
   const [scanMeta, setScanMeta] = useState({});
 
   const productOptions = useMemo(() => (products || []).filter(p => p.is_active !== false), [products]);
+  const grnStats = useMemo(() => {
+    const total = grnList.length;
+    const pending = grnList.filter(g => g.status === 'PENDING').length;
+    const approved = grnList.filter(g => g.status === 'APPROVED').length;
+    const rejected = grnList.filter(g => g.status === 'REJECTED').length;
+    return { total, pending, approved, rejected };
+  }, [grnList]);
 
   useEffect(() => { loadList(); }, [listFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -334,16 +371,42 @@ export default function GrnEntry() {
         <main className="grn-main">
           <WorkflowGuide pageKey="grn-entry" />
           <div className="grn-header">
-            <h1>Goods Received Notes</h1>
+            <div>
+              <h1>Goods Received Notes</h1>
+              <p>Select supplier and warehouse, add batch/expiry lines, then submit for approval. You can also OCR a delivery undertaking to auto-fill line items.</p>
+            </div>
             <div className="grn-actions">
               <button className="btn btn-primary" onClick={() => setScanOpen(true)} style={{ background: '#7c3aed' }}>Scan Undertaking</button>
+            </div>
+          </div>
+
+          <div className="grn-summary">
+            <div className="grn-summary-card">
+              <div className="grn-summary-label">Total GRNs</div>
+              <div className="grn-summary-value">{grnStats.total}</div>
+              <div className="grn-summary-sub">All statuses combined</div>
+            </div>
+            <div className="grn-summary-card">
+              <div className="grn-summary-label">Pending</div>
+              <div className="grn-summary-value">{grnStats.pending}</div>
+              <div className="grn-summary-sub">Waiting for review</div>
+            </div>
+            <div className="grn-summary-card">
+              <div className="grn-summary-label">Approved</div>
+              <div className="grn-summary-value">{grnStats.approved}</div>
+              <div className="grn-summary-sub">Already posted to stock</div>
+            </div>
+            <div className="grn-summary-card">
+              <div className="grn-summary-label">Rejected</div>
+              <div className="grn-summary-value">{grnStats.rejected}</div>
+              <div className="grn-summary-sub">Needs correction</div>
             </div>
           </div>
 
           {/* GRN Entry Form */}
           <div className="grn-form">
             <h2>New GRN</h2>
-            <div className="form-row">
+            <div className="grn-form-grid">
               <div className="form-group">
                 <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterGrn />
               </div>
@@ -357,9 +420,24 @@ export default function GrnEntry() {
               </div>
             </div>
 
+            <div className="grn-line-header">
+              <div>
+                <h3>Line Items</h3>
+                <p>Add the products received, together with batch and expiry details.</p>
+              </div>
+              <div className="grn-line-meta">
+                <span className="grn-chip">{lineItems.length} line(s)</span>
+                <span className="grn-chip">Qty required before submit</span>
+              </div>
+            </div>
+
             <table className="line-items-table">
+              <colgroup>
+                <col className="col-product" /><col className="col-batch" />
+                <col className="col-expiry" /><col className="col-qty" /><col className="col-remove" />
+              </colgroup>
               <thead>
-                <tr><th>Product</th><th>Batch/Lot #</th><th>Expiry</th><th>Qty</th><th style={{ width: 40 }}></th></tr>
+                <tr><th>Product</th><th>Batch/Lot #</th><th>Expiry</th><th>Qty</th><th></th></tr>
               </thead>
               <tbody>
                 {lineItems.map((li, idx) => (
@@ -373,11 +451,43 @@ export default function GrnEntry() {
                     <td><input value={li.batch_lot_no} onChange={e => updateLine(idx, 'batch_lot_no', e.target.value)} placeholder="Batch #" /></td>
                     <td><input type="date" value={li.expiry_date} onChange={e => updateLine(idx, 'expiry_date', e.target.value)} /></td>
                     <td><input type="number" min="1" value={li.qty} onChange={e => updateLine(idx, 'qty', e.target.value)} placeholder="Qty" /></td>
-                    <td><button className="btn btn-danger btn-sm" onClick={() => removeLine(idx)}>Remove line</button></td>
+                    <td style={{ textAlign: 'center' }}><button className="btn-remove-line" onClick={() => removeLine(idx)} title="Remove line">×</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
+
+            <div className="line-items-mobile">
+              {lineItems.map((li, idx) => (
+                <div className="line-item-card" key={`mobile-line-${idx}`}>
+                  <div className="line-item-card-head">
+                    <div className="line-item-card-title">Line {idx + 1}</div>
+                    <button className="btn-remove-line" onClick={() => removeLine(idx)} title="Remove line">×</button>
+                  </div>
+                  <div className="line-item-grid">
+                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                      <label>Product</label>
+                      <SelectField value={li.product_id} onChange={e => updateLine(idx, 'product_id', e.target.value)}>
+                        <option value="">Select product...</option>
+                        {productOptions.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.unit_code || 'PC'}</option>)}
+                      </SelectField>
+                    </div>
+                    <div className="form-group">
+                      <label>Batch/Lot #</label>
+                      <input value={li.batch_lot_no} onChange={e => updateLine(idx, 'batch_lot_no', e.target.value)} placeholder="Batch #" />
+                    </div>
+                    <div className="form-group">
+                      <label>Expiry</label>
+                      <input type="date" value={li.expiry_date} onChange={e => updateLine(idx, 'expiry_date', e.target.value)} />
+                    </div>
+                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                      <label>Qty</label>
+                      <input type="number" min="1" value={li.qty} onChange={e => updateLine(idx, 'qty', e.target.value)} placeholder="Qty" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
             <button className="add-line-btn" onClick={addLine}>+ Add Line</button>
 
             <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -390,6 +500,7 @@ export default function GrnEntry() {
           {/* GRN List */}
           <div className="grn-list">
             <h2>GRN History</h2>
+            <p style={{ margin: '0 20px 12px', color: 'var(--erp-muted)', fontSize: 12 }}>Toggle between status filters to review pending, approved, and rejected receipts.</p>
             <div className="filter-tabs">
               {['', 'PENDING', 'APPROVED', 'REJECTED'].map(f => (
                 <button key={f} className={`filter-tab ${listFilter === f ? 'active' : ''}`} onClick={() => setListFilter(f)}>

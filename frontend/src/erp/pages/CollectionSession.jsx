@@ -55,7 +55,7 @@ const pageStyles = `
   .summary-row strong { font-weight: 700; }
 
   .btn-sm { padding: 4px 10px; font-size: 11px; }
-  @media(max-width: 768px) { .coll-main { padding: 12px; } .form-row { flex-direction: column; } .csi-card-meta { flex-direction: column; gap: 4px; } }
+  @media(max-width: 768px) { .coll-main { padding: 76px 12px calc(96px + env(safe-area-inset-bottom, 0px)); } .form-row { flex-direction: column; } .csi-card-meta { flex-direction: column; gap: 4px; } }
 `;
 
 export default function CollectionSession() {
