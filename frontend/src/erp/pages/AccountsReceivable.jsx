@@ -5,6 +5,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useCollections from '../hooks/useCollections';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const BUCKET_COLORS = {
   CURRENT: '#16a34a', OVERDUE_30: '#ca8a04', OVERDUE_60: '#d97706', OVERDUE_90: '#ea580c', OVERDUE_120: '#dc2626'
@@ -106,7 +107,7 @@ export default function AccountsReceivable() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `SOA_${hospitalId}.xlsx`; a.click();
       URL.revokeObjectURL(url);
-    } catch (err) { alert('SOA generation failed'); }
+    } catch (err) { showError(err, 'Could not generate SOA'); }
   };
 
   return (

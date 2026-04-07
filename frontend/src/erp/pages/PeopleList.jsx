@@ -6,6 +6,8 @@ import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
+import { showError, showSuccess } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const STATUS_LIST_FALLBACK = ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'];
 
@@ -106,12 +108,13 @@ export function PeopleListContent() {
       setShowForm(false);
       setForm(EMPTY_FORM);
       load(1, true);
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not create person'); }
   };
 
   return (
     <>
       <style>{pageStyles}</style>
+      <WorkflowGuide pageKey="people-list" />
       <div className="ppl-header">
         <h2>People Master</h2>
         <button
@@ -121,9 +124,9 @@ export function PeopleListContent() {
             setSyncing(true);
             try {
               const res = await api.post('/people/sync-from-crm', {});
-              alert(res?.message || `Synced: ${res?.data?.created || 0} created, ${res?.data?.skipped || 0} already exist`);
+              showSuccess(res?.message || `Synced: ${res?.data?.created || 0} created, ${res?.data?.skipped || 0} already exist`);
               load(1, true);
-            } catch (err) { alert(err.response?.data?.message || 'Sync failed'); } finally { setSyncing(false); }
+            } catch (err) { showError(err, 'Could not sync from CRM'); } finally { setSyncing(false); }
           }}>{syncing ? 'Syncing...' : 'Sync from CRM'}</button>
         <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Add Person</button>
       </div>

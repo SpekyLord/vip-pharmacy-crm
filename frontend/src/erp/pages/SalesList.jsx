@@ -10,6 +10,7 @@ import EntityBadge from '../components/EntityBadge';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 function toTitleCase(str) {
   if (!str) return str;
@@ -152,7 +153,7 @@ export default function SalesList() {
       const res = await sales.getSales(params);
       if (res?.data) setData(res.data);
       if (res?.pagination) setPagination(res.pagination);
-    } catch {} finally { setLoading(false); }
+    } catch (err) { showError(err, 'Could not load sales'); } finally { setLoading(false); }
   }, [filters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadSales(); }, [loadSales]);
@@ -161,13 +162,16 @@ export default function SalesList() {
     setFilters(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleSubmit = async () => {
-    if (!window.confirm('Submit all validated sales? Stock will be deducted via FIFO.')) return;
+  const handleSubmit = async (saleId) => {
+    const msg = saleId
+      ? 'Submit this sale? Stock will be deducted via FIFO.'
+      : 'Submit all validated sales? Stock will be deducted via FIFO.';
+    if (!window.confirm(msg)) return;
     try {
-      await sales.submitSales();
+      await sales.submitSales(saleId ? [saleId] : undefined);
       loadSales(pagination.page);
     } catch (err) {
-      alert(err.response?.data?.message || 'Submit failed');
+      showError(err, 'Could not submit sales');
     }
   };
 
@@ -177,7 +181,7 @@ export default function SalesList() {
       await sales.reopenSales([id]);
       loadSales(pagination.page);
     } catch (err) {
-      alert(err.response?.data?.message || 'Reopen failed');
+      showError(err, 'Could not reopen sale');
     }
   };
 
@@ -186,7 +190,7 @@ export default function SalesList() {
     try {
       await sales.requestDeletion(id);
       loadSales(pagination.page);
-    } catch {}
+    } catch (err) { showError(err, 'Could not request deletion'); }
   };
 
   const handleApproveDeletion = async (id) => {
@@ -194,14 +198,14 @@ export default function SalesList() {
     try {
       await sales.approveDeletion(id, 'Approved by admin');
       loadSales(pagination.page);
-    } catch {}
+    } catch (err) { showError(err, 'Could not approve deletion'); }
   };
 
   const viewDetail = async (id) => {
     try {
       const res = await sales.getSaleById(id);
       if (res?.data) setSelectedSale(res.data);
-    } catch {}
+    } catch (err) { showError(err, 'Could not load sale details'); }
   };
 
   const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
@@ -278,11 +282,11 @@ export default function SalesList() {
                   <td data-label="Actions" onClick={e => e.stopPropagation()}>
                     <div className="sales-actions">
                     {sale.status === 'VALID' && (
-                      <button className="btn btn-sm" style={{ background: '#16a34a', color: '#fff' }} onClick={() => handleSubmit()}>
+                      <button className="btn btn-sm" style={{ background: '#16a34a', color: '#fff' }} onClick={() => handleSubmit(sale._id)}>
                         Submit
                       </button>
                     )}
-                    {sale.status === 'POSTED' && (
+                    {sale.status === 'POSTED' && isAdmin && (
                       <button className="btn btn-warning btn-sm" onClick={() => handleReopen(sale._id)}>
                         Re-open
                       </button>

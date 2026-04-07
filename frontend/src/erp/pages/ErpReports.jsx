@@ -7,6 +7,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useDashboard from '../hooks/useDashboard';
+import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
@@ -90,7 +91,7 @@ export default function ErpReports() {
         const res = await dash.getCollectionSummary({ period });
         setCollData(res?.data || []);
       }
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not load report data'); }
     setLoading(false);
   };
 

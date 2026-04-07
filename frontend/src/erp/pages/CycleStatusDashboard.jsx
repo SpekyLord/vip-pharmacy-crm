@@ -8,6 +8,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .cycle-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -81,6 +82,7 @@ export default function CycleStatusDashboard() {
               </Link>
             </div>
           </div>
+          <WorkflowGuide pageKey="cycle-status" />
 
           <div className="controls">
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />

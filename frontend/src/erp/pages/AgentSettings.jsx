@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { Bot, Zap, CheckCircle, XCircle, Play, Clock } from 'lucide-react';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const AGENT_META = {
   smart_collection:   { label: 'Smart Collection',      schedule: 'Weekdays 7 AM',  type: 'AI' },
@@ -46,7 +47,7 @@ export function AgentSettingsContent() {
     try {
       const res = await api.get('/erp/agents/config');
       setConfigs(res.data?.data || []);
-    } catch { setConfigs([]); }
+    } catch (err) { showError(err, 'Could not load agent configs'); setConfigs([]); }
     setLoading(false);
   }, []);
 
@@ -57,7 +58,7 @@ export function AgentSettingsContent() {
     try {
       await api.put(`/erp/agents/config/${agentKey}`, { enabled: !currentEnabled });
       setConfigs(prev => prev.map(c => c.agent_key === agentKey ? { ...c, enabled: !currentEnabled } : c));
-    } catch (err) { alert(err.response?.data?.message || 'Failed to update'); }
+    } catch (err) { showError(err, 'Could not update agent setting'); }
     setSaving(null);
   };
 
@@ -69,7 +70,7 @@ export function AgentSettingsContent() {
     try {
       await api.put(`/erp/agents/config/${agentKey}`, { notify_roles: updated });
       setConfigs(prev => prev.map(c => c.agent_key === agentKey ? { ...c, notify_roles: updated } : c));
-    } catch (err) { alert(err.response?.data?.message || 'Failed to update'); }
+    } catch (err) { showError(err, 'Could not update notification settings'); }
     setSaving(null);
   };
 
@@ -78,8 +79,8 @@ export function AgentSettingsContent() {
     setRunningAgent(agentKey);
     try {
       const res = await api.post(`/erp/agents/run/${agentKey}`);
-      alert(res.data?.message || `Agent completed`);
-    } catch (err) { alert(err.response?.data?.message || `Agent failed`); }
+      showSuccess(res.data?.message || 'Agent completed');
+    } catch (err) { showError(err, 'Agent run failed'); }
     setRunningAgent(null);
   };
 

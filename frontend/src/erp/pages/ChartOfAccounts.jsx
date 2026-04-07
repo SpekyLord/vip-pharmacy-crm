@@ -6,6 +6,7 @@ import useAccounting from '../hooks/useAccounting';
 import useErpApi from '../hooks/useErpApi';
 
 import SelectField from '../../components/common/Select';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .coa-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -63,7 +64,7 @@ export function ChartOfAccountsContent() {
       if (typeFilter) params.account_type = typeFilter;
       const res = await api.listAccounts(params);
       setAccounts(res?.data || []);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
     setLoading(false);
   }, [search, typeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -75,7 +76,7 @@ export function ChartOfAccountsContent() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'coa-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const handleImport = async (e) => {
@@ -85,9 +86,9 @@ export function ChartOfAccountsContent() {
     fd.append('file', file);
     try {
       const res = await api.importAccounts(fd);
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       loadAccounts();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
     e.target.value = '';
   };
 
@@ -95,10 +96,10 @@ export function ChartOfAccountsContent() {
     if (!confirm('This will create default COA accounts for this entity. Existing accounts will not be overwritten. Continue?')) return;
     try {
       const res = await erpApi.post('/coa/seed');
-      alert(res?.message || 'COA seed complete');
+      showSuccess(res?.message || 'COA seed complete');
       loadAccounts();
     } catch (err) {
-      alert(err?.response?.data?.message || 'Seed failed');
+      showError(err, 'Could not seed chart of accounts');
     }
   };
 
@@ -111,7 +112,7 @@ export function ChartOfAccountsContent() {
       setEditingId(null);
       resetForm();
       loadAccounts();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const openEdit = (acct) => {
@@ -138,14 +139,14 @@ export function ChartOfAccountsContent() {
       setEditingId(null);
       resetForm();
       loadAccounts();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const handleToggleActive = async (acct) => {
     try {
       await api.updateAccount(acct._id, { is_active: !acct.is_active });
       loadAccounts();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   return (

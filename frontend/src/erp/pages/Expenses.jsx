@@ -14,6 +14,7 @@ import { processDocument, extractExifDateTime } from '../services/ocrService';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
 function ScanORModal({ open, onClose, onApply }) {
@@ -404,7 +405,8 @@ export default function Expenses() {
   const { getPeopleList } = usePeople();
   const { getMyCards, getMyBankAccounts, listAccounts } = useAccounting();
   const { hasSubPermission } = useErpSubAccess();
-  const canBatchUpload = hasSubPermission('expenses', 'batch_upload') && ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const canBatchUpload = hasSubPermission('expenses', 'batch_upload') && isAdmin;
   const lookupApi = useErpApi();
   const { options: expCatOpts } = useLookupOptions('EXPENSE_CATEGORY');
   const EXPENSE_CATEGORIES = expCatOpts.map(o => o.label);
@@ -610,7 +612,7 @@ export default function Expenses() {
       setEditingExpense(data);
       setLines(data.lines || []);
       setShowForm(true);
-    } catch (err) { console.error('[Expenses] Edit failed:', err.message); alert(err.response?.data?.message || 'Failed to load expense'); }
+    } catch (err) { console.error('[Expenses] Edit failed:', err.message); showError(err, 'Could not load expense'); }
   };
 
   const savingRef = useRef(false);
@@ -624,7 +626,7 @@ export default function Expenses() {
       if (!l.expense_date) issues.push(`Line ${i + 1}: Date is required`);
     });
     if (!lines.length) issues.push('Add at least one expense line');
-    if (issues.length) { alert(issues.join('\n')); return; }
+    if (issues.length) { showError(null, issues.join('. ')); return; }
 
     savingRef.current = true;
     const data = { period, cycle, lines };
@@ -633,7 +635,7 @@ export default function Expenses() {
       else { await createExpense(data); }
       setShowForm(false);
       loadExpenses();
-    } catch (err) { console.error('[Expenses] Save failed:', err.message); alert(err.response?.data?.message || 'Failed to save expense'); }
+    } catch (err) { console.error('[Expenses] Save failed:', err.message); showError(err, 'Could not save expense'); }
     finally { savingRef.current = false; }
   };
 
@@ -921,7 +923,7 @@ export default function Expenses() {
                         {e.status === 'DRAFT' && (
                           <button onClick={() => handleDelete(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                         )}
-                        {e.status === 'POSTED' && <button onClick={() => handleReopen(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
+                        {e.status === 'POSTED' && isAdmin && <button onClick={() => handleReopen(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
                       </td>
                     </tr>
                     {e.status === 'ERROR' && e.validation_errors?.length > 0 && (
@@ -984,7 +986,7 @@ export default function Expenses() {
                     {e.status === 'DRAFT' && (
                       <button onClick={() => handleDelete(e._id)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                     )}
-                    {e.status === 'POSTED' && (
+                    {e.status === 'POSTED' && isAdmin && (
                       <button onClick={() => handleReopen(e._id)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>
                     )}
                   </div>
@@ -1037,7 +1039,8 @@ export default function Expenses() {
                           const result = await processDocument(file, 'OR');
                           updateLine(idx, 'or_photo_url', result.s3_url || URL.createObjectURL(file));
                           if (result.attachment_id) updateLine(idx, 'or_attachment_id', result.attachment_id);
-                        } catch {
+                        } catch (err) {
+                          console.error('[Expenses] OR photo upload failed, using local preview:', err.message);
                           updateLine(idx, 'or_photo_url', URL.createObjectURL(file));
                         }
                       }} />

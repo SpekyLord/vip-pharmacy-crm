@@ -14,6 +14,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useIncome from '../hooks/useIncome';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -96,7 +97,7 @@ export default function ProfitSharing() {
       if (bdmId) params.bdm_id = bdmId;
       const res = await inc.getProfitShareStatus(params);
       setPsData(res?.data || null);
-    } catch { setPsData(null); }
+    } catch (err) { showError(err, 'Could not load profit sharing data'); setPsData(null); }
     setLoading(false);
   }, [period, bdmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -107,7 +108,7 @@ export default function ProfitSharing() {
     try {
       const res = await inc.getFiscalYearStatus({ fiscal_year: fyYear });
       setFyStatus(res?.data || null);
-    } catch { setFyStatus(null); }
+    } catch (err) { showError(err, 'Could not load fiscal year status'); setFyStatus(null); }
   }, [fyYear, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadFyStatus(); }, [loadFyStatus]);
@@ -117,7 +118,7 @@ export default function ProfitSharing() {
     try {
       const res = await inc.validateYearEnd({ fiscal_year: fyYear });
       setFyValidation(res?.data || null);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Year-end validation failed'); }
     setLoading(false);
   };
 
@@ -128,7 +129,7 @@ export default function ProfitSharing() {
       setShowConfirm(false);
       setFyValidation(null);
       loadFyStatus();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Year-end close failed'); }
     setLoading(false);
   };
 

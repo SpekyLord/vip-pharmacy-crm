@@ -13,6 +13,7 @@ import useReports from '../hooks/useReports';
 import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
+import { showError } from '../utils/errorToast';
 
 const EXPENSE_COMPONENTS = [
   { code: 'SMER', label: 'SMER (Per Diem + Transport)' },
@@ -162,11 +163,11 @@ export default function BudgetAllocations() {
       setEditId(null);
       resetForm();
       loadAllocations();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not save budget allocation'); }
   };
 
   const handleApprove = async (id) => {
-    try { await rpt.approveBudgetAllocation(id); loadAllocations(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    try { await rpt.approveBudgetAllocation(id); loadAllocations(); } catch (err) { showError(err, 'Could not approve budget allocation'); }
   };
 
   const handleEdit = (alloc) => {

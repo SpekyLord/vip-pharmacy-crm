@@ -7,6 +7,7 @@ import useEntities from '../hooks/useEntities';
 import EntityBadge from '../components/EntityBadge';
 import WarehousePicker from '../components/WarehousePicker';
 
+import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -348,7 +349,7 @@ export default function MyStock() {
           try {
             const res = await inventory.getBatches(item.product_id);
             return { ...item, batches: res?.data || [] };
-          } catch { return item; }
+          } catch (err) { console.error('[MyStock] batch load failed:', err.message); return item; }
         })
       );
       setStockData(enriched);

@@ -7,6 +7,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useDashboard from '../hooks/useDashboard';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 
@@ -58,7 +59,7 @@ export default function AuditLogs() {
       const res = await dash.getAuditLogs(params);
       setLogs(res?.data || []);
       setPagination(res?.pagination || { page: 1, pages: 1, total: 0 });
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not load audit logs'); }
     setLoading(false);
   }, [page, filters]); // eslint-disable-line react-hooks/exhaustive-deps
 

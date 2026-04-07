@@ -13,10 +13,12 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import usePeople from '../hooks/usePeople';
 import usePayroll from '../hooks/usePayroll';
+import { showError, showSuccess } from '../utils/errorToast';
 import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
 import * as XLSX from 'xlsx';
 import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const css = `
   .pd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -184,7 +186,7 @@ export default function PersonDetail() {
       await pplApi.updatePerson(id, data);
       setEditPerson(false);
       load();
-    } catch (err) { alert(err?.message || 'Save failed'); }
+    } catch (err) { showError(err, 'Could not save changes'); }
     finally { savingRef.current = false; }
   };
 
@@ -192,12 +194,12 @@ export default function PersonDetail() {
     if (!loginForm.email || !loginForm.password) return;
     try {
       await pplApi.createLoginForPerson(id, loginForm);
-      alert('Login created! Refreshing...');
+      showSuccess('Login created! Refreshing...');
       setShowLoginForm(false);
       setLoginForm({ email: '', password: '' });
       load();
     } catch (err) {
-      alert(err?.response?.data?.message || err?.message || 'Failed to create login');
+      showError(err, 'Could not create login — check email and password requirements');
     }
   };
 
@@ -213,7 +215,7 @@ export default function PersonDetail() {
       }
       setEditComp(false);
       load();
-    } catch (err) { alert(err?.message || 'Save failed'); }
+    } catch (err) { showError(err, 'Could not save changes'); }
     finally { savingRef.current = false; }
   };
 
@@ -240,13 +242,13 @@ export default function PersonDetail() {
       else await api.post('/erp/insurance', data);
       setInsForm(null);
       load();
-    } catch (err) { alert(err?.response?.data?.message || 'Save failed'); }
+    } catch (err) { showError(err, 'Could not save compensation profile'); }
     finally { savingRef.current = false; }
   };
   const deleteIns = async (policyId) => {
     if (!confirm('Delete this insurance policy?')) return;
     try { await api.delete(`/erp/insurance/${policyId}`); load(); }
-    catch (err) { alert(err?.response?.data?.message || 'Delete failed'); }
+    catch (err) { showError(err, 'Could not delete insurance record'); }
   };
 
   // ── Export All (Person + Comp + Insurance → multi-sheet Excel) ──
@@ -364,9 +366,9 @@ export default function PersonDetail() {
         await api.post('/erp/insurance', policyData);
         imported++;
       }
-      alert(`Imported ${imported} insurance policy(ies)`);
+      showSuccess(`Imported ${imported} insurance policy(ies)`);
       load();
-    } catch (err) { alert(err?.response?.data?.message || err?.message || 'Import failed'); }
+    } catch (err) { showError(err, 'Insurance import failed — check file format'); }
   };
 
   if (loading) return <div className="admin-page erp-page pd-page"><Navbar /><div className="admin-layout"><Sidebar /><main className="pd-main"><div className="pd-empty">Loading...</div></main></div></div>;
@@ -385,6 +387,7 @@ export default function PersonDetail() {
             <span className="pd-back" style={{ marginBottom: 0 }} onClick={() => navigate('/erp/people')}>← Back to People</span>
             <button className="pd-btn" onClick={exportAll}>Export All to Excel</button>
           </div>
+          <WorkflowGuide pageKey="person-detail" />
 
           {/* ═��═ SECTION A: Person Info ═══ */}
           <div className="pd-card">
@@ -575,8 +578,8 @@ export default function PersonDetail() {
                         style={{ fontSize: 11, color: '#166534', border: '1px solid #bbf7d0', background: '#f0fdf4' }}
                         onClick={async () => {
                           if (!confirm('Re-enable this person\'s login?')) return;
-                          try { await pplApi.enableLogin(id); alert('Login re-enabled.'); load(); }
-                          catch (err) { alert(err?.response?.data?.message || 'Failed'); }
+                          try { await pplApi.enableLogin(id); showSuccess('Login re-enabled.'); load(); }
+                          catch (err) { showError(err, 'Could not re-enable login'); }
                         }}
                       >Enable Login</button>
                     ) : (
@@ -585,8 +588,8 @@ export default function PersonDetail() {
                         style={{ fontSize: 11, color: '#dc2626', border: '1px solid #fecaca', background: '#fef2f2' }}
                         onClick={async () => {
                           if (!confirm('Disable this person\'s login? They will no longer be able to log in.')) return;
-                          try { await pplApi.disableLogin(id); alert('Login disabled.'); load(); }
-                          catch (err) { alert(err?.response?.data?.message || 'Failed'); }
+                          try { await pplApi.disableLogin(id); showSuccess('Login disabled.'); load(); }
+                          catch (err) { showError(err, 'Could not disable login'); }
                         }}
                       >Disable Login</button>
                     )}
@@ -595,8 +598,8 @@ export default function PersonDetail() {
                       style={{ fontSize: 11, color: '#64748b', border: '1px solid #e5e7eb' }}
                       onClick={async () => {
                         if (!confirm('Unlink login? CRM User stays but disconnects from this person record. Use this if the login was linked by mistake.')) return;
-                        try { await pplApi.unlinkLogin(id); alert('Login unlinked.'); load(); }
-                        catch (err) { alert(err?.response?.data?.message || 'Failed'); }
+                        try { await pplApi.unlinkLogin(id); showSuccess('Login unlinked.'); load(); }
+                        catch (err) { showError(err, 'Could not unlink login'); }
                       }}
                     >Unlink Login</button>
                   </div>

@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useErpApi from '../hooks/useErpApi';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .plk-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -65,7 +66,7 @@ export function PeriodLocksContent() {
     try {
       const res = await api.get('/period-locks', { params: { year } });
       setMatrix(res?.data?.matrix || {});
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Period locks operation failed'); }
     setLoading(false);
   }, [year]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -78,7 +79,7 @@ export function PeriodLocksContent() {
       await api.post('/period-locks/toggle', { module: confirm.module, year, month: confirm.month });
       setConfirm(null);
       loadLocks();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Period locks operation failed'); }
     setToggling(false);
   };
 
@@ -88,7 +89,7 @@ export function PeriodLocksContent() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = `period-locks-${year}.xlsx`; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Period locks operation failed'); }
   };
 
   const years = [];

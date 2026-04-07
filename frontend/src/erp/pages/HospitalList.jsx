@@ -11,6 +11,7 @@ import useHospitals from '../hooks/useHospitals';
 import usePeople from '../hooks/usePeople';
 import useErpApi from '../hooks/useErpApi';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
 
 export function HospitalListContent() {
   const { user } = useAuth();
@@ -82,7 +83,7 @@ export function HospitalListContent() {
       setModalOpen(false);
       refresh();
     } catch (err) {
-      alert(err.response?.data?.message || 'Save failed');
+      showError(err, 'Could not save hospital');
     }
   };
 
@@ -104,7 +105,7 @@ export function HospitalListContent() {
         setTagModal(prev => prev ? { ...prev, tagged_bdms: newTags } : null);
       }
     } catch (err) {
-      alert(err.response?.data?.message || 'Tag failed');
+      showError(err, 'Could not tag hospital');
     }
   };
 
@@ -114,7 +115,7 @@ export function HospitalListContent() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'hospitals-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
   };
 
   const handleImport = async (e) => {
@@ -124,9 +125,9 @@ export function HospitalListContent() {
     fd.append('file', file);
     try {
       const res = await erpApi.post('/hospitals/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       refresh();
-    } catch { /* hook handles */ }
+    } catch (err) { console.error(err); }
     e.target.value = '';
   };
 

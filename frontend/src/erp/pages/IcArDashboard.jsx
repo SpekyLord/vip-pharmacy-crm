@@ -4,6 +4,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useIcSettlements from '../hooks/useIcSettlements';
+import { showError } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
@@ -76,7 +77,7 @@ export default function IcArDashboard() {
     try {
       const res = await ic.getOpenIcTransfers(debtorId);
       setSubTransfers(res?.data || []);
-    } catch { setSubTransfers([]); }
+    } catch (err) { showError(err, 'Could not load IC transfers'); setSubTransfers([]); }
   };
 
   const handlePost = async (id) => {
@@ -84,7 +85,7 @@ export default function IcArDashboard() {
     try {
       await ic.postSettlement(id);
       loadData();
-    } catch (err) { alert(err.response?.data?.message || 'Post failed'); }
+    } catch (err) { showError(err, 'Could not post settlement'); }
   };
 
   const totalSettled = settlements.filter(s => s.status === 'POSTED').reduce((sum, s) => sum + (s.cr_amount || 0), 0);

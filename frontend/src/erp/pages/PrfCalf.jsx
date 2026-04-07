@@ -10,6 +10,7 @@ import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -54,7 +55,7 @@ export default function PrfCalf() {
       if (docTypeFilter) params.doc_type = docTypeFilter;
       const res = await getPrfCalfList(params);
       setDocs(res?.data || []);
-    } catch { /* ignore */ }
+    } catch (err) { showError(err, 'Could not load PRF/CALF documents'); }
   }, [period, docTypeFilter]);
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
@@ -73,7 +74,7 @@ export default function PrfCalf() {
       ]);
       setPendingRebates(rebRes?.data || []);
       setPendingCalfLines(calfRes?.data || []);
-    } catch { /* ignore */ }
+    } catch (err) { showError(err, 'Could not load pending rebates'); }
   }, []);
   useEffect(() => { loadPendingData(); }, [loadPendingData]);
 
@@ -171,13 +172,13 @@ export default function PrfCalf() {
       else { await createPrfCalf(data); }
       setShowForm(false);
       loadDocs();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not save PRF/CALF'); }
   };
 
-  const handleValidate = async () => { try { await validatePrfCalf(); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
-  const handleSubmit = async () => { try { await submitPrfCalf(); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
-  const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
-  const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); } };
+  const handleValidate = async () => { try { await validatePrfCalf(); loadDocs(); } catch (err) { showError(err, 'Could not validate PRF/CALF'); } };
+  const handleSubmit = async () => { try { await submitPrfCalf(); loadDocs(); } catch (err) { showError(err, 'Could not submit PRF/CALF'); } };
+  const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch (err) { showError(err, 'Could not reopen PRF/CALF'); } };
+  const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch (err) { showError(err, 'Could not delete PRF/CALF'); } };
 
   const isFinance = ['admin', 'finance', 'president'].includes(user?.role);
   const calfBalance = (form.advance_amount || 0) - (form.liquidation_amount || 0);
@@ -592,7 +593,8 @@ export default function PrfCalf() {
                         try {
                           const result = await processDocument(file, 'PRF_CALF');
                           setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), result.s3_url] }));
-                        } catch {
+                        } catch (err) {
+                          console.error('[PrfCalf] Scan upload failed, using local preview:', err.message);
                           setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), URL.createObjectURL(file)] }));
                         }
                       }} />
@@ -606,7 +608,8 @@ export default function PrfCalf() {
                         try {
                           const result = await processDocument(file, 'PRF_CALF');
                           setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), result.s3_url] }));
-                        } catch {
+                        } catch (err) {
+                          console.error('[PrfCalf] Gallery upload failed, using local preview:', err.message);
                           setForm(p => ({ ...p, photo_urls: [...(p.photo_urls || []), URL.createObjectURL(file)] }));
                         }
                       }} />

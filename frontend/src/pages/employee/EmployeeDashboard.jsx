@@ -23,6 +23,7 @@ import visitService from '../../services/visitService';
 import clientService from '../../services/clientService';
 import scheduleService from '../../services/scheduleService';
 import messageService from '../../services/messageInboxService';
+import { getWeekOfMonth, getCycleWeekRange } from '../../utils/cycleUtils';
 
 const dashboardStyles = `
   .main-content h1 {
@@ -563,8 +564,8 @@ const EmployeeDashboard = () => {
         ? (weeklyResult.value.data || {})
         : {};
 
-      // Get current week's visits from weekly breakdown
-      const currentWeek = Math.ceil(new Date().getDate() / 7);
+      // Get current cycle week (4-week anchor-based, matches backend)
+      const currentWeek = getWeekOfMonth(new Date());
       const weeklyBreakdown = statsData.weeklyBreakdown || [];
       const thisWeekData = weeklyBreakdown.find(w => w.week === currentWeek) || {};
 
@@ -706,7 +707,7 @@ const EmployeeDashboard = () => {
             </div>
             <div className="stat-card">
               <span className="stat-value">{stats.visitsThisWeek}</span>
-              <span className="stat-label">This Week</span>
+              <span className="stat-label">Cycle Week {getWeekOfMonth(new Date())} {(() => { const { weekStart, weekEnd } = getCycleWeekRange(new Date()); return `(${weekStart.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}–${weekEnd.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })})`; })()}</span>
               <div className="stat-breakdown">
                 <span>
                   <span className="vip-badge"></span>

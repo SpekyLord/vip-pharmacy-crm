@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .fa-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -56,18 +57,18 @@ export function FixedAssetsContent() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'fixed-assets-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Export failed'); }
   };
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try { const res = await api.importFixedAssets(fd); alert(res?.message || 'Import complete'); loadAssets(); } catch { /* */ }
+    try { const res = await api.importFixedAssets(fd); showSuccess(res?.message || 'Import complete'); loadAssets(); } catch (err) { showError(err, 'Import failed'); }
     e.target.value = '';
   };
 
   const loadAssets = useCallback(async () => {
     setLoading(true);
-    try { const res = await api.listFixedAssets(); setAssets(res?.data || []); } catch { /* */ }
+    try { const res = await api.listFixedAssets(); setAssets(res?.data || []); } catch (err) { showError(err, 'Could not load fixed assets'); }
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -78,24 +79,24 @@ export function FixedAssetsContent() {
       await api.createFixedAsset({ ...form, acquisition_cost: parseFloat(form.acquisition_cost), useful_life_months: parseInt(form.useful_life_months), salvage_value: parseFloat(form.salvage_value) || 0 });
       setShowAdd(false);
       loadAssets();
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not create fixed asset'); }
   };
 
   const handleCompute = async () => {
-    try { const res = await api.computeDepreciation({ period }); setMsg(`Computed: ${JSON.stringify(res?.data?.length || 0)} entries`); loadStaging(); } catch { /* */ }
+    try { const res = await api.computeDepreciation({ period }); setMsg(`Computed: ${JSON.stringify(res?.data?.length || 0)} entries`); loadStaging(); } catch (err) { showError(err, 'Depreciation computation failed'); }
   };
 
   const loadStaging = async () => {
-    try { const res = await api.getDepreciationStaging(period); setStaging(res?.data || []); } catch { /* */ }
+    try { const res = await api.getDepreciationStaging(period); setStaging(res?.data || []); } catch (err) { showError(err, 'Could not load depreciation staging'); }
   };
 
   const handleApproveAll = async () => {
     const ids = staging.map(s => s.entry_id);
-    try { await api.approveDepreciation({ entry_ids: ids }); setMsg('Approved'); loadStaging(); } catch { /* */ }
+    try { await api.approveDepreciation({ entry_ids: ids }); setMsg('Approved'); loadStaging(); } catch (err) { showError(err, 'Approval failed'); }
   };
 
   const handlePost = async () => {
-    try { const res = await api.postDepreciation({ period }); setMsg(`Posted ${res?.data?.length || 0} JEs`); loadStaging(); loadAssets(); } catch { /* */ }
+    try { const res = await api.postDepreciation({ period }); setMsg(`Posted ${res?.data?.length || 0} JEs`); loadStaging(); loadAssets(); } catch (err) { showError(err, 'Post depreciation failed'); }
   };
 
   return (

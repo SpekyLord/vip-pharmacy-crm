@@ -7,6 +7,8 @@ import useSettings from '../hooks/useSettings';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
+import { useAuth } from '../../hooks/useAuth';
 
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
 function ScanModal({ open, onClose, onApply, docType, title }) {
@@ -121,6 +123,8 @@ const mobileStyles = `
 `;
 
 export default function CarLogbook() {
+  const { user } = useAuth();
+  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
   const { getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook, validateCarLogbook, submitCarLogbook, reopenCarLogbook, loading } = useExpenses();
   const { settings } = useSettings();
   const { options: fuelTypeOpts } = useLookupOptions('FUEL_TYPE');
@@ -148,7 +152,7 @@ export default function CarLogbook() {
     try {
       const res = await getCarLogbookList({ period, cycle, limit: 0 });
       setEntries(res?.data || []);
-    } catch (err) { console.error('[CarLogbook] Load failed:', err.message); alert(err.response?.data?.message || 'Failed to load logbook entries'); }
+    } catch (err) { console.error('[CarLogbook] Load failed:', err.message); showError(err, 'Could not load logbook entries'); }
   }, [period, cycle]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
@@ -207,7 +211,7 @@ export default function CarLogbook() {
         notes: data.notes || ''
       });
       setShowForm(true);
-    } catch (err) { console.error('[CarLogbook] Edit failed:', err.message); alert(err.response?.data?.message || 'Failed to load entry'); }
+    } catch (err) { console.error('[CarLogbook] Edit failed:', err.message); showError(err, 'Could not load fuel entry'); }
   };
 
   const addFuelEntry = () => {
@@ -239,7 +243,7 @@ export default function CarLogbook() {
       else { await createCarLogbook(data); }
       setShowForm(false);
       loadEntries();
-    } catch (err) { console.error('[CarLogbook] Save failed:', err.message); alert(err.response?.data?.message || 'Failed to save entry'); }
+    } catch (err) { console.error('[CarLogbook] Save failed:', err.message); showError(err, 'Could not save fuel entry'); }
   };
 
   const [actionMsg, setActionMsg] = useState(null);
@@ -338,7 +342,7 @@ export default function CarLogbook() {
                         {e.status === 'DRAFT' && (
                           <button onClick={() => handleDelete(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                         )}
-                        {e.status === 'POSTED' && <button onClick={() => handleReopen(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
+                        {e.status === 'POSTED' && isAdmin && <button onClick={() => handleReopen(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
                       </td>
                     </tr>
                   ))}
@@ -374,7 +378,7 @@ export default function CarLogbook() {
                   <div className="cl-card-actions">
                     {['DRAFT', 'ERROR'].includes(e.status) && <button onClick={() => handleEdit(e)} style={{ border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', color: 'var(--erp-text, #132238)' }}>Edit</button>}
                     {e.status === 'DRAFT' && <button onClick={() => handleDelete(e._id)} style={{ border: '1px solid #ef4444', background: '#fff', color: '#ef4444' }}>Delete</button>}
-                    {e.status === 'POSTED' && <button onClick={() => handleReopen(e._id)} style={{ padding: '6px 0', fontSize: 13, borderRadius: 6, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer', flex: 1 }}>Re-open</button>}
+                    {e.status === 'POSTED' && isAdmin && <button onClick={() => handleReopen(e._id)} style={{ padding: '6px 0', fontSize: 13, borderRadius: 6, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer', flex: 1 }}>Re-open</button>}
                   </div>
                 </div>
               ))}
@@ -444,7 +448,8 @@ export default function CarLogbook() {
                         const result = await processDocument(file, 'GAS_RECEIPT');
                         updateFuelEntry(idx, 'receipt_url', result.s3_url || URL.createObjectURL(file));
                         if (result.attachment_id) updateFuelEntry(idx, 'receipt_attachment_id', result.attachment_id);
-                      } catch {
+                      } catch (err) {
+                        console.error('[CarLogbook] Receipt upload failed, using local preview:', err.message);
                         updateFuelEntry(idx, 'receipt_url', URL.createObjectURL(file));
                       }
                     }} />

@@ -7,6 +7,7 @@ import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .ccm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -79,7 +80,7 @@ export function CreditCardManagerContent() {
   const [msg, setMsg] = useState({ text: '', type: '' });
 
   const handleExport = async () => {
-    try { const res = await api.exportCreditCards(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'credit-cards-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+    try { const res = await api.exportCreditCards(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'credit-cards-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch (err) { showError(err, 'Export failed'); }
   };
 
   const loadCards = useCallback(async () => {
@@ -141,7 +142,7 @@ export function CreditCardManagerContent() {
   };
 
   const handleSave = async () => {
-    if (!form.card_code || !form.card_name) return alert('Card Code and Card Name are required');
+    if (!form.card_code || !form.card_name) { showError(null, 'Card Code and Card Name are required'); return; }
     const data = {
       ...form,
       credit_limit: parseFloat(form.credit_limit) || 0,
@@ -170,7 +171,7 @@ export function CreditCardManagerContent() {
       await api.updateCreditCard(card._id, { is_active: false });
       showMsg('Card deactivated');
       loadCards();
-    } catch { showMsg('Error', 'err'); }
+    } catch (err) { showError(err, 'Could not deactivate card'); }
   };
 
   const handleActivate = async (card) => {
@@ -178,7 +179,7 @@ export function CreditCardManagerContent() {
       await api.updateCreditCard(card._id, { is_active: true });
       showMsg('Card reactivated');
       loadCards();
-    } catch { showMsg('Error', 'err'); }
+    } catch (err) { showError(err, 'Could not activate card'); }
   };
 
   const f = (field, value) => setForm(p => ({ ...p, [field]: value }));

@@ -25,7 +25,16 @@
       "Bash(curl -s -b \"\" http://localhost:5000/api/erp/people/org-chart)",
       "Bash(grep -rh \"collection: '\" backend/erp/models/*.js backend/models/*.js)",
       "Bash(grep -cE \"^\\\\s+'[a-z-]+': \\\\{$\" frontend/src/erp/pages/ControlCenter.jsx)",
-      "Bash(find \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm\\\\backend\\\\erp\\\\models\" -name \"*.js\" -exec grep -l \"ref: 'User'\" {} \\\\;)"
+      "Bash(find \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm\\\\backend\\\\erp\\\\models\" -name \"*.js\" -exec grep -l \"ref: 'User'\" {} \\\\;)",
+      "Read(//c/Users/LENOVO/.claude/**)",
+      "Read(//c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/**)",
+      "Bash(grep -l \"alert\\(\" frontend/src/erp/pages/*.jsx)",
+      "Bash(xargs -I {} bash -c 'echo \"{}:\"; grep -c \"alert\\(\" {}')",
+      "Bash(ls \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm\\\\backend\\\\erp\\\\scripts/\"*.csv \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm\\\\backend\\\\erp\\\\scripts\\\\data/\"*.csv \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm/\"*.csv)",
+      "Read(//c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp"
     ]
   }
 }

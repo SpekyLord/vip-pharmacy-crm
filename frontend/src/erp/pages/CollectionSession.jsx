@@ -13,6 +13,7 @@ import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .coll-session { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -240,7 +241,7 @@ export default function CollectionSession() {
       // Phase 9.1b: collect attachment IDs for linking
       if (result?.attachment_id) setAttachmentIds(prev => [...prev, result.attachment_id]);
     } catch (err) {
-      alert('Upload failed: ' + (err.message || 'Unknown error'));
+      showError(err, 'Could not upload document');
     } finally { setUploading(''); }
   };
 
@@ -262,7 +263,7 @@ export default function CollectionSession() {
 
   const handleSave = async () => {
     if ((!hospitalId && !customerId) || !crNo || !selectedList.length) {
-      return alert('Select a hospital or customer, enter CR#, and select at least one invoice');
+      showError(null, 'Select a hospital or customer, enter CR#, and select at least one invoice'); return;
     }
     setSaving(true);
     try {
@@ -283,7 +284,7 @@ export default function CollectionSession() {
       });
       navigate('/erp/collections');
     } catch (err) {
-      alert(err.response?.data?.message || 'Save failed');
+      showError(err, 'Could not save collection');
     } finally { setSaving(false); }
   };
 
@@ -436,7 +437,7 @@ export default function CollectionSession() {
                       const { default: api } = await import('../../services/api');
                       const res = await api.post('/erp/sales', { sale_type: 'CASH_RECEIPT', hospital_id: hospitalId || undefined, customer_id: customerId || undefined, csi_date: crDate, line_items: [] });
                       if (res.data?.data?.invoice_number) { setCrNo(res.data.data.invoice_number); await api.delete(`/erp/sales/draft/${res.data.data._id}`).catch(err => console.error('[CollectionSession]', err.message)); }
-                    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+                    } catch (err) { showError(err, 'Could not auto-generate CR number'); }
                   }}>(auto-generate)</span>}</label>
                   <input value={crNo} onChange={e => setCrNo(e.target.value)} placeholder={paymentMode === 'CASH' ? 'Click auto-generate or enter manually' : 'e.g. 002905'} />
                 </div>

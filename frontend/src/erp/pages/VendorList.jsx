@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import usePurchasing from '../hooks/usePurchasing';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 
@@ -66,7 +67,7 @@ export function VendorListContent() {
       if (search) params.q = search;
       const res = await api.listVendors(params);
       setVendors(res?.data || []);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load vendors'); }
     setLoading(false);
   }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 

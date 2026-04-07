@@ -7,6 +7,7 @@ import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
 import useAccounting from '../hooks/useAccounting';
 import { useLookupOptions } from '../hooks/useLookups';
+import { showError } from '../utils/errorToast';
 
 const MODE_TYPES_FALLBACK = ['CASH', 'CHECK', 'BANK_TRANSFER', 'GCASH', 'CARD', 'OTHER'];
 
@@ -57,7 +58,7 @@ export function PaymentModesContent() {
     try {
       const res = await api.get('/lookups/payment-modes');
       setModes(res?.data || []);
-    } catch { /* */ }
+    } catch (err) { showError(err, 'Could not load payment modes'); }
     setLoading(false);
   }, []);
 
@@ -84,12 +85,12 @@ export function PaymentModesContent() {
       else await api.post('/lookups/payment-modes', form);
       setShowModal(false);
       load();
-    } catch (err) { alert(err?.response?.data?.message || 'Save failed'); }
+    } catch (err) { showError(err, 'Could not save payment mode'); }
   };
 
   const handleDelete = async (id, label) => {
     if (!window.confirm(`Delete "${label}"?`)) return;
-    try { await api.del(`/lookups/payment-modes/${id}`); load(); } catch (err) { alert(err?.response?.data?.message || 'Delete failed'); }
+    try { await api.del(`/lookups/payment-modes/${id}`); load(); } catch (err) { showError(err, 'Could not delete payment mode'); }
   };
 
   const coaName = (code) => coaAccounts.find(a => a.account_code === code)?.account_name || '';

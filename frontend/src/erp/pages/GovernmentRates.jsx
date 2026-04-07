@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useErpApi from '../hooks/useErpApi';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .govr-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -88,7 +89,7 @@ export function GovernmentRatesContent() {
     try {
       const res = await api.get('/government-rates');
       setRates(res?.data || []);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Government rates operation failed'); }
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -159,7 +160,7 @@ export function GovernmentRatesContent() {
       }
       setShowModal(false);
       loadRates();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Government rates operation failed'); }
     setSaving(false);
   };
 
@@ -168,7 +169,7 @@ export function GovernmentRatesContent() {
     try {
       await api.del(`/government-rates/${id}`);
       loadRates();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Government rates operation failed'); }
   };
 
   const handleExport = async () => {
@@ -177,7 +178,7 @@ export function GovernmentRatesContent() {
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'government-rates-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Government rates operation failed'); }
   };
 
   const handleImport = async (e) => {
@@ -187,9 +188,9 @@ export function GovernmentRatesContent() {
     fd.append('file', file);
     try {
       const res = await api.post('/government-rates/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      alert(res?.message || 'Import complete');
+      showSuccess(res?.message || 'Import complete');
       loadRates();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Government rates operation failed'); }
     e.target.value = '';
   };
 

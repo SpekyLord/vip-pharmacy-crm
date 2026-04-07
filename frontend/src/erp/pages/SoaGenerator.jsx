@@ -4,8 +4,10 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useCollections from '../hooks/useCollections';
 import useHospitals from '../hooks/useHospitals';
+import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .soa-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -43,8 +45,8 @@ export default function SoaGenerator() {
       const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
       URL.revokeObjectURL(url);
       setMsg({ type: 'ok', text: `SOA generated for ${hospital?.hospital_name || 'hospital'}` });
-    } catch {
-      setMsg({ type: 'err', text: 'SOA generation failed' });
+    } catch (err) {
+      showError(err, 'SOA generation failed');
     } finally { setGenerating(false); }
   };
 
@@ -61,6 +63,7 @@ export default function SoaGenerator() {
               Back to Reports
             </Link>
           </div>
+          <WorkflowGuide pageKey="collections" />
           <div className="section">
             <div className="form-group">
               <label>Select Hospital</label>

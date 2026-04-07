@@ -8,6 +8,7 @@ import useProducts from '../hooks/useProducts';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const DOC_TYPES_FALLBACK = [
   { value: 'CSI', label: 'Charge Sales Invoice (CSI)' },
@@ -354,6 +355,8 @@ const OcrTest = () => {
       <div className="admin-content">
         <Sidebar />
         <main className="admin-main ocr-main">
+          <WorkflowGuide pageKey="expenses" />
+
           {/* Header */}
           <section className="ocr-panel">
             <h1>OCR Document Scanner</h1>

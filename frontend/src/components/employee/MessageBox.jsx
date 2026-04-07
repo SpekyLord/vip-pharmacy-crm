@@ -21,15 +21,6 @@ const MessageBox = ({
   onToggleRead,
   formatDateTime,
   getTypeMeta,
-
-  // Reply props (passed from EmployeeInbox)
-  isReplyOpen,
-  replyDraft,
-  replies,
-  onOpenReply,
-  onCloseReply,
-  onChangeReply,
-  onSendReply,
 }) => {
   const meta = getTypeMeta(message.category);
 
@@ -82,30 +73,11 @@ const MessageBox = ({
               <button
                 type="button"
                 className="micro-link"
-                onClick={() => (isReplyOpen ? onCloseReply() : onOpenReply())}
-              >
-                Reply
-              </button>
-
-              <span className="micro-dot">·</span>
-
-              <button
-                type="button"
-                className="micro-link"
                 onClick={() => onToggleRead(message._id)}
               >
                 {message.read ? "Mark Unread" : "Mark Read"}
               </button>
 
-              <span className="micro-dot">·</span>
-
-              <button
-                type="button"
-                className="micro-link danger"
-                onClick={() => alert("Hardcoded: Trash action")}
-              >
-                Trash
-              </button>
             </div>
           </div>
         </div>
@@ -115,66 +87,9 @@ const MessageBox = ({
         </div>
       </div>
 
-    {/* ✅ Inline expanded area (ONLY when open) */}
+    {/* Inline expanded area (ONLY when open) */}
     {isOpen && (
       <div className="inbox-expand">
-        {/* Reply input box */}
-        {isReplyOpen && (
-          <div className="reply-box">
-            <div className="reply-head">
-              <span className="replying-as">
-                Replying as <strong>You</strong>
-              </span>
-
-              <button
-                type="button"
-                className="reply-x"
-                onClick={onCloseReply}
-                aria-label="Close reply"
-              >
-                ✕
-              </button>
-            </div>
-
-            <textarea
-              className="reply-textarea"
-              rows={3}
-              placeholder="Write a reply..."
-              value={replyDraft}
-              onChange={(e) => onChangeReply(e.target.value)}
-            />
-
-            <div className="reply-actions">
-              <button className="btn btn-ghost btn-sm" onClick={onCloseReply}>
-                Cancel
-              </button>
-
-              <button
-                className="btn btn-soft btn-sm"
-                onClick={onSendReply}
-                disabled={!replyDraft?.trim()}
-                title={!replyDraft?.trim() ? "Type something to send" : "Send"}
-              >
-                Send
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Threaded replies */}
-        {Array.isArray(replies) && replies.length > 0 && (
-          <div className="reply-thread">
-            {replies.map((r) => (
-              <div key={r.id} className="reply-bubble">
-                <div className="reply-meta">
-                  <span className="reply-from">{r.from}</span>
-                  <span className="reply-at">{formatDateTime(r.at)}</span>
-                </div>
-                <div className="reply-text">{r.text}</div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     )}
 

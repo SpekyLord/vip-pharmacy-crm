@@ -3,6 +3,7 @@ import SelectField from '../../components/common/Select';
 import useOfficeSupplies from '../hooks/useOfficeSupplies';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
 const TXN_TYPES_FALLBACK = ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'];
 
 const styles = {
@@ -87,7 +88,7 @@ function ItemModal({ open, onClose, onSave, editItem, categories }) {
         last_purchase_price: Number(form.last_purchase_price)
       }, editItem?._id);
       onClose();
-    } catch (err) { alert(err?.response?.data?.message || 'Failed to save'); }
+    } catch (err) { showError(err, 'Could not save supply record'); }
     finally { setSaving(false); }
   };
 
@@ -151,7 +152,7 @@ function TxnModal({ open, onClose, onSave, supplies }) {
       await onSave({ ...form, qty: Number(form.qty), unit_cost: Number(form.unit_cost) });
       onClose();
       setForm({ supply: '', txn_type: 'PURCHASE', qty: 1, unit_cost: 0, issued_to: '', notes: '' });
-    } catch (err) { alert(err?.response?.data?.message || 'Failed to record'); }
+    } catch (err) { showError(err, 'Could not record supply transaction'); }
     finally { setSaving(false); }
   };
 
@@ -222,12 +223,12 @@ export default function OfficeSupplies() {
   const [txnLoading, setTxnLoading] = useState(false);
 
   const handleExport = async () => {
-    try { const res = await os.exportSupplies(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'office-supplies-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch { /* */ }
+    try { const res = await os.exportSupplies(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'office-supplies-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch (err) { showError(err, 'Export failed'); }
   };
   const handleImport = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const fd = new FormData(); fd.append('file', file);
-    try { const res = await os.importSupplies(fd); alert(res?.message || 'Import complete'); loadSupplies(); } catch { /* */ }
+    try { const res = await os.importSupplies(fd); showSuccess(res?.message || 'Import complete'); loadSupplies(); } catch (err) { showError(err, 'Import failed'); }
     e.target.value = '';
   };
 
@@ -237,7 +238,7 @@ export default function OfficeSupplies() {
       const params = activeCategory !== 'ALL' ? { category: activeCategory } : {};
       const res = await os.getSupplies(params);
       setSupplies(res.data || res || []);
-    } catch { setSupplies([]); }
+    } catch (err) { showError(err, 'Could not load supplies'); setSupplies([]); }
     finally { setLoading(false); }
   }, [os, activeCategory]);
 
@@ -248,7 +249,7 @@ export default function OfficeSupplies() {
     try {
       const res = await os.getTransactions({});
       setTransactions(res.data || res || []);
-    } catch { setTransactions([]); }
+    } catch (err) { showError(err, 'Could not load transactions'); setTransactions([]); }
     finally { setTxnLoading(false); }
   }, [os]);
 

@@ -10,6 +10,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useIncome from '../hooks/useIncome';
+import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
@@ -92,7 +93,7 @@ export default function Pnl() {
       if (bdmId) params.bdm_id = bdmId;
       const res = await inc.getPnlList(params);
       setReports(res?.data || []);
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not load P&L reports'); }
     setLoading(false);
   }, [period, bdmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -106,7 +107,7 @@ export default function Pnl() {
       const res = await inc.generatePnl({ bdm_id: targetBdm, period });
       if (res?.data) { setSelected(res.data); setView('detail'); }
       loadReports();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not generate P&L'); }
     setLoading(false);
   };
 
@@ -115,7 +116,7 @@ export default function Pnl() {
     try {
       const res = await inc.getPnlById(report._id);
       if (res?.data) { setSelected(res.data); setView('detail'); setManualEdits({}); }
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not load P&L detail'); }
     setLoading(false);
   };
 
@@ -127,7 +128,7 @@ export default function Pnl() {
       const res = await inc.getPnlById(selected._id);
       if (res?.data) setSelected(res.data);
       setManualEdits({});
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not save P&L manual edits'); }
     setLoading(false);
   };
 
@@ -138,7 +139,7 @@ export default function Pnl() {
       const res = await inc.postPnl(selected._id);
       if (res?.data) setSelected(res.data);
       loadReports();
-    } catch { /* handled */ }
+    } catch (err) { showError(err, 'Could not post P&L'); }
     setLoading(false);
   };
 

@@ -15,7 +15,7 @@ const CrmProduct = require('../models/CrmProduct');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, getMonthYear, getScheduleMatchForVisit } = require('../utils/validateWeeklyVisit');
-const { MANILA_OFFSET_MS, getCycleStartDate, getCycleEndDate } = require('../utils/scheduleCycleUtils');
+const { MANILA_OFFSET_MS, getWeekOfMonth, getCycleStartDate, getCycleEndDate } = require('../utils/scheduleCycleUtils');
 const { normalizeEngagementTypesQuery } = require('../utils/engagementTypes');
 const { signVisitPhotos } = require('../config/s3');
 const { isCrmAdminLike } = require('../utils/roleHelpers');
@@ -126,13 +126,13 @@ const createVisit = catchAsync(async (req, res) => {
     };
   });
 
-  // Detect photo flags
+  // Detect photo flags (use Manila timezone for date boundary comparison)
   const photoFlags = [];
   const photoFlagDetails = [];
-  const visitDateStart = new Date(visitDateObj);
-  visitDateStart.setHours(0, 0, 0, 0);
-  const visitDateEnd = new Date(visitDateObj);
-  visitDateEnd.setHours(23, 59, 59, 999);
+  const visitManila = new Date(visitDateObj.getTime() + MANILA_OFFSET_MS);
+  const manilaDateStr = visitManila.toISOString().split('T')[0]; // YYYY-MM-DD in Manila time
+  const visitDateStart = new Date(`${manilaDateStr}T00:00:00+08:00`);
+  const visitDateEnd = new Date(`${manilaDateStr}T23:59:59.999+08:00`);
 
   // Check for date mismatch (photo taken on different day than visit)
   photos.forEach((photo, index) => {
@@ -446,6 +446,18 @@ const cancelVisit = catchAsync(async (req, res) => {
   visit.cancelReason = reason;
   await visit.save();
 
+  // Release linked schedule entry back to its pre-visit state
+  const Schedule = require('../models/Schedule');
+  const linkedEntry = await Schedule.findOne({ visit: visit._id });
+  if (linkedEntry) {
+    linkedEntry.visit = null;
+    linkedEntry.completedAt = null;
+    linkedEntry.completedInWeek = null;
+    const currentWeek = getWeekOfMonth(new Date());
+    linkedEntry.status = linkedEntry.scheduledWeek < currentWeek ? 'carried' : 'planned';
+    await linkedEntry.save();
+  }
+
   res.json({
     success: true,
     message: 'Visit cancelled',
@@ -537,7 +549,7 @@ const getWeeklyCompliance = catchAsync(async (req, res) => {
 const checkCanVisit = catchAsync(async (req, res) => {
   const { doctorId } = req.params;
 
-  const result = await canVisitDoctor(doctorId, req.user._id);
+  const result = await canVisitDoctor(doctorId, req.user);
 
   res.json({
     success: true,

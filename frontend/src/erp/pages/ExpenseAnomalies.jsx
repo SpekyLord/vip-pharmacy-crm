@@ -8,6 +8,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .anomaly-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -78,6 +79,7 @@ export default function ExpenseAnomalies() {
               </Link>
             </div>
           </div>
+          <WorkflowGuide pageKey="expense-anomalies" />
 
           <div className="tab-bar">
             <button className={`tab-btn ${tab === 'anomalies' ? 'active' : ''}`} onClick={() => setTab('anomalies')}>Anomalies</button>

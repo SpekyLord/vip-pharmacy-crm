@@ -14,11 +14,14 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import MessageBox from '../../components/employee/MessageBox';
 import messageService from '../../services/messageInboxService';
+import { useAuth } from '../../hooks/useAuth';
 
 import SelectField from '../../components/common/Select';
 
 const EmployeeInbox = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const currentUserId = user?._id;
 
   // ✅ Dynamic data
   const [messages, setMessages] = useState([]);
@@ -26,16 +29,6 @@ const EmployeeInbox = () => {
 
   useEffect(() => {
     let isMounted = true;
-
-    const getCurrentUserId = () => {
-      try {
-        return localStorage.getItem('userId');
-      } catch {
-        return null;
-      }
-    };
-
-    const currentUserId = getCurrentUserId();
 
     const normalizeMessage = (m) => {
       const readFromReadBy = Array.isArray(m.readBy) && currentUserId
@@ -90,46 +83,6 @@ const EmployeeInbox = () => {
   // Modal
   const [expandedId, setExpandedId] = useState(null);
 
-  // ✅ Reply UI state (client-only)
-  const [replyOpenId, setReplyOpenId] = useState(null);
-  const [replyDraftById, setReplyDraftById] = useState({});     // { [msgId]: "draft text" }
-  const [repliesById, setRepliesById] = useState({});         
-
-
-const openReply = (id) => {
-  setExpandedId(id);     // ✅ force dropdown open
-  setReplyOpenId(id);    // ✅ open reply UI
-};
-
-
-const closeReply = () => {
-  setReplyOpenId(null);
-};
-
-const setReplyDraft = (id, text) => {
-  setReplyDraftById(prev => ({ ...prev, [id]: text }));
-};
-
-const sendReply = (id) => {
-  const text = (replyDraftById[id] ?? "").trim();
-  if (!text) return;
-
-  const newReply = {
-    id: `${id}-${Date.now()}`,
-    text,
-    at: new Date().toISOString(),
-    from: "You", // hardcoded sender (employee)
-  };
-
-  setRepliesById(prev => ({
-    ...prev,
-    [id]: [...(prev[id] ?? []), newReply],
-  }));
-
-  // clear draft + close
-  setReplyDraftById(prev => ({ ...prev, [id]: "" }));
-  setReplyOpenId(null);
-};
 
 
   // Derived data
@@ -389,15 +342,6 @@ const toggleMessage = async (msgOrId) => {
                     onToggleRead={toggleRead}
                     formatDateTime={formatDateTime}
                     getTypeMeta={getTypeMeta}
-
-                    // ✅ Reply feature props
-                    isReplyOpen={replyOpenId === msg._id}
-                    replyDraft={replyDraftById[msg._id] ?? ""}
-                    replies={repliesById[msg._id] ?? []}
-                    onOpenReply={() => openReply(msg._id)}
-                    onCloseReply={closeReply}
-                    onChangeReply={(text) => setReplyDraft(msg._id, text)}
-                    onSendReply={() => sendReply(msg._id)}
                   />
 
                 ))

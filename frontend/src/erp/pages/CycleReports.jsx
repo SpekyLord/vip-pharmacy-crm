@@ -4,10 +4,12 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { showError } from '../utils/errorToast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 import SelectField from '../../components/common/Select';
 
@@ -100,7 +102,7 @@ export default function CycleReports() {
       else if (action === 'confirm') await rpt.confirmCycleReport(id, extraData);
       else if (action === 'credit') await rpt.creditCycleReport(id, extraData);
       load();
-    } catch (err) { alert(err?.response?.data?.message || err.message || 'Operation failed'); }
+    } catch (err) { showError(err, 'Could not process cycle report'); }
   };
 
   return (
@@ -121,6 +123,7 @@ export default function CycleReports() {
               </div>
             </div>
           </div>
+          <WorkflowGuide pageKey="cycle-reports" />
 
           <div className="controls">
             <input type="month" value={filters.period} onChange={e => setFilters(f => ({ ...f, period: e.target.value }))} />

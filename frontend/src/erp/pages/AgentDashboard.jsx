@@ -12,6 +12,7 @@ import api from '../../services/api';
 import messageService from '../../services/messageInboxService';
 import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, Users, MessageSquare, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap } from 'lucide-react';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const pageStyles = `
   .agd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -115,10 +116,10 @@ export default function AgentDashboard() {
     setRunningAgent(agentKey);
     try {
       const res = await api.post(`/erp/agents/run/${agentKey}`);
-      alert(res.data?.message || `Agent "${agentKey}" completed`);
+      showSuccess(res.data?.message || `Agent "${agentKey}" completed`);
       load(); // refresh stats
     } catch (err) {
-      alert(err.response?.data?.message || `Agent "${agentKey}" failed`);
+      showError(err, `Agent "${agentKey}" failed`);
     }
     setRunningAgent(null);
   };

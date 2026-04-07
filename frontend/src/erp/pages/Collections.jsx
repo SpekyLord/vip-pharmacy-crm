@@ -9,6 +9,7 @@ import useCollections from '../hooks/useCollections';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
@@ -95,22 +96,25 @@ export default function Collections() {
     try {
       const res = await coll.validateCollections(ids);
       const msg = `Validated: ${res?.valid_count || 0} valid, ${res?.error_count || 0} errors`;
-      if (res?.error_count) alert(msg + '\n\nCheck missing documents (CR photo, CSI photos, deposit slip, CWT cert) or CR formula mismatch.');
-      else alert(msg);
+      if (res?.error_count) showError(null, msg + '. Check missing documents (CR photo, CSI photos, deposit slip, CWT cert) or CR formula mismatch.');
+      else showSuccess(msg);
       loadData(pagination.page);
-    } catch (err) { alert(err.response?.data?.message || 'Validation failed'); }
+    } catch (err) { showError(err, 'Could not validate collection'); }
   };
-  const handleSubmit = async () => {
-    if (!window.confirm('Submit all validated collections?')) return;
-    try { await coll.submitCollections(); loadData(pagination.page); } catch (err) { alert(err.response?.data?.message || 'Submit failed'); }
+  const handleSubmit = async (collectionId) => {
+    const msg = collectionId
+      ? 'Submit this collection?'
+      : 'Submit all validated collections?';
+    if (!window.confirm(msg)) return;
+    try { await coll.submitCollections(collectionId ? [collectionId] : undefined); loadData(pagination.page); } catch (err) { showError(err, 'Could not submit collections'); }
   };
   const handleReopen = async (id) => {
     if (!window.confirm('Re-open this collection?')) return;
-    try { await coll.reopenCollections([id]); loadData(pagination.page); } catch (err) { alert(err.response?.data?.message || 'Reopen failed'); }
+    try { await coll.reopenCollections([id]); loadData(pagination.page); } catch (err) { showError(err, 'Could not reopen collection'); }
   };
   const handleDeleteDraft = async (id) => {
     if (!window.confirm('Delete this draft collection?')) return;
-    try { await coll.deleteDraft(id); loadData(pagination.page); } catch (err) { alert(err.response?.data?.message || 'Delete failed'); }
+    try { await coll.deleteDraft(id); loadData(pagination.page); } catch (err) { showError(err, 'Could not delete collection'); }
   };
   const viewDetail = async (id) => {
     try { const res = await coll.getCollectionById(id); if (res?.data) setSelected(res.data); } catch (err) { console.error('[Collections] load error:', err.message); }
@@ -159,8 +163,8 @@ export default function Collections() {
                     <td onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {(c.status === 'DRAFT' || c.status === 'ERROR') && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
                       {c.status === 'DRAFT' && <button className="btn btn-sm" style={{ border: '1px solid #ef4444', color: '#ef4444', background: '#fff' }} onClick={() => handleDeleteDraft(c._id)}>Del</button>}
-                      {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={handleSubmit}>Submit</button>}
-                      {c.status === 'POSTED' && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}
+                      {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={() => handleSubmit(c._id)}>Submit</button>}
+                      {c.status === 'POSTED' && isAdmin && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}
                     </td>
                   </tr>
                 );
@@ -201,8 +205,8 @@ export default function Collections() {
                   <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
                     {(c.status === 'DRAFT' || c.status === 'ERROR') && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
                     {c.status === 'DRAFT' && <button className="btn btn-sm" style={{ border: '1px solid #ef4444', color: '#ef4444', background: '#fff' }} onClick={() => handleDeleteDraft(c._id)}>Del</button>}
-                    {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={handleSubmit}>Submit</button>}
-                    {c.status === 'POSTED' && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}
+                    {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={() => handleSubmit(c._id)}>Submit</button>}
+                    {c.status === 'POSTED' && isAdmin && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}
                   </div>
                 </div>
               );

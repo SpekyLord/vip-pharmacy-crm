@@ -328,10 +328,12 @@ const validateSales = catchAsync(async (req, res) => {
 // ═══════════════════════════════════════════════════════════
 
 const submitSales = catchAsync(async (req, res) => {
-  const validRows = await SalesLine.find({
-    ...req.tenantFilter,
-    status: 'VALID'
-  });
+  const { sale_ids } = req.body;
+  const filter = { ...req.tenantFilter, status: 'VALID' };
+  if (sale_ids && sale_ids.length) {
+    filter._id = { $in: sale_ids.map(id => new mongoose.Types.ObjectId(id)) };
+  }
+  const validRows = await SalesLine.find(filter);
 
   if (!validRows.length) {
     return res.status(400).json({
