@@ -9,7 +9,7 @@
  * - Active route highlighting
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import messageService from '../../services/messageInboxService';
@@ -784,7 +784,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     });
   }
 
-  // ── Administration (admin-like only) ──────────────────────────────────────
+  // ── Administration (admin-like only) — inserted at top, right after ERP Home ──
   if (['admin', 'finance', 'president'].includes(role)) {
     const adminItems = [];
     if (isAdmin) {
@@ -793,7 +793,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     }
     adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
     adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
-    sections.push({ title: 'Administration', collapsible: true, defaultOpen: false, items: adminItems });
+    sections.splice(1, 0, { title: 'Administration', collapsible: true, defaultOpen: false, items: adminItems });
   }
 
   // For CRM sidebars, hide ERP section when only ERP Home+Hospitals available.
@@ -924,6 +924,7 @@ const Sidebar = () => {
   });
 
   const [unreadCount, setUnreadCount] = useState(0);
+  const navRef = useRef(null);
 
   // Fetch unread message count for employee role
   const fetchUnreadCount = useCallback(async () => {
@@ -970,6 +971,18 @@ const Sidebar = () => {
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
+
+  // Preserve sidebar scroll position across navigation
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const saved = sessionStorage.getItem('sidebar_scroll');
+    if (saved) nav.scrollTop = parseInt(saved, 10);
+  }, [location.pathname]);
+
+  const handleNavScroll = useCallback((e) => {
+    sessionStorage.setItem('sidebar_scroll', e.currentTarget.scrollTop);
+  }, []);
 
   // Prevent body scroll when drawer is open
   useEffect(() => {
@@ -1059,7 +1072,7 @@ const Sidebar = () => {
         </button>
 
         {/* Navigation */}
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" ref={navRef} onScroll={handleNavScroll}>
           {menuConfig.sections.map((section, sectionIndex) => {
             const isOpen = isSectionOpen(section);
             return (
