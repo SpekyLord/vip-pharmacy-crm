@@ -359,7 +359,7 @@ export default function SalesList() {
                 <tr key={sale._id} onClick={() => viewDetail(sale._id)}>
                   <td data-label="Date">{new Date(sale.csi_date).toLocaleDateString('en-PH')}</td>
                   <td data-label="CSI #"><strong>{sale.doc_ref}</strong></td>
-                  <td data-label="Hospital">{toTitleCase(sale.hospital_id?.hospital_name) || '-'}</td>
+                  <td data-label="Hospital">{toTitleCase(sale.hospital_id?.hospital_name) || sale.customer_id?.customer_name || '-'}</td>
                   <td data-label="Total">P{(sale.invoice_total || 0).toLocaleString()}</td>
                   <td data-label="Source" style={{ fontSize: 11 }}>{sale.source}</td>
                   <td data-label="Status">
@@ -424,7 +424,7 @@ export default function SalesList() {
                   <h2>CSI# {selectedSale.doc_ref}</h2>
                   <button className="btn" onClick={() => setSelectedSale(null)} style={{ background: 'none', fontSize: 20, padding: 4 }}>&times;</button>
                 </div>
-                <p><strong>Hospital:</strong> {toTitleCase(selectedSale.hospital_id?.hospital_name) || '-'}</p>
+                <p><strong>Hospital/Customer:</strong> {toTitleCase(selectedSale.hospital_id?.hospital_name) || selectedSale.customer_id?.customer_name || '-'}</p>
                 <p><strong>Date:</strong> {new Date(selectedSale.csi_date).toLocaleDateString('en-PH')}</p>
                 <p><strong>Status:</strong> <span className="badge" style={STATUS_COLORS[selectedSale.status] || {}}>{selectedSale.status}</span></p>
                 <p><strong>Source:</strong> {selectedSale.source}</p>
