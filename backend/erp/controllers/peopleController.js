@@ -88,9 +88,13 @@ const updatePerson = catchAsync(async (req, res) => {
     'civil_status', 'government_ids', 'bank_account', 'is_active', 'status', 'user_id',
   ];
 
+  // Date fields that need empty-string → null conversion
+  const dateFields = new Set(['date_hired', 'date_regularized', 'date_separated', 'date_of_birth', 'live_date']);
+
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
-      person[key] = req.body[key];
+      // Empty strings on date fields → null (Mongoose CastError prevention)
+      person[key] = (dateFields.has(key) && req.body[key] === '') ? null : req.body[key];
       if (key === 'government_ids' || key === 'bank_account') person.markModified(key);
     }
   }
