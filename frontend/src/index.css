@@ -333,6 +333,35 @@ body.dark-mode .vip-select__option--is-focused {
   flex-direction: column;
 }
 
+.erp-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid #c2410c;
+  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff !important;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-decoration: none !important;
+  text-transform: uppercase;
+  box-shadow: 0 10px 22px rgba(217, 119, 6, 0.24);
+  transition: transform 120ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+.erp-back-btn:hover {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(217, 119, 6, 0.32);
+}
+
+.erp-back-btn:active {
+  transform: translateY(0);
+}
+
 /* Utility classes */
 .container {
   width: 100%;

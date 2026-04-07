@@ -207,7 +207,7 @@ export default function BudgetAllocations() {
             <h1>Budget Allocations</h1>
             <p>Set per-BDM expense budgets by period. Approved budgets feed into Expense Anomalies &gt; Budget Overruns.</p>
             <div style={{ marginTop: 10 }}>
-              <Link to="/erp/reports" className="btn" style={{ textDecoration: 'none', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', background: 'transparent' }}>
+              <Link to="/erp/reports" className="erp-back-btn">
                 Back to Reports
               </Link>
             </div>

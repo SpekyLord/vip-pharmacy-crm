@@ -114,7 +114,7 @@ export default function MonthlyArchive() {
         <div className="archive-main">
           <div className="archive-header">
             <h1>Monthly Archive</h1>
-            <Link to="/erp/reports" className="btn btn-outline" style={{ textDecoration: 'none' }}>
+            <Link to="/erp/reports" className="erp-back-btn">
               Back to Reports
             </Link>
           </div>

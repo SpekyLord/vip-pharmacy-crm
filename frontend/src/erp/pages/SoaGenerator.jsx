@@ -59,7 +59,7 @@ export default function SoaGenerator() {
         <main className="soa-main">
           <div className="soa-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h1>Statement of Account Generator</h1>
-            <Link to="/erp/reports" className="btn btn-primary" style={{ textDecoration: 'none' }}>
+            <Link to="/erp/reports" className="erp-back-btn">
               Back to Reports
             </Link>
           </div>

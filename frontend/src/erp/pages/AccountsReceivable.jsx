@@ -123,7 +123,7 @@ export default function AccountsReceivable() {
               <h1>Accounts Receivable</h1>
               <p>Track aging by hospital, review collection buckets, and open CSI detail rows for individual balances.</p>
             </div>
-            <Link to="/erp/reports" className="btn btn-outline" style={{ textDecoration: 'none' }}>
+            <Link to="/erp/reports" className="erp-back-btn">
               Back to Reports
             </Link>
           </div>

@@ -81,7 +81,7 @@ export default function ConsignmentAging() {
             <h1>Consignment Aging</h1>
             <p>Consolidated cross-BDM consignment status with aging indicators</p>
             <div style={{ marginTop: 10 }}>
-              <Link to="/erp/reports" className="btn" style={{ textDecoration: 'none', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', background: 'transparent' }}>
+              <Link to="/erp/reports" className="erp-back-btn">
                 Back to Reports
               </Link>
             </div>

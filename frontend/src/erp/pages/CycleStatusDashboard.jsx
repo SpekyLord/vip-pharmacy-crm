@@ -77,7 +77,7 @@ export default function CycleStatusDashboard() {
             <h1>Cycle Status Dashboard</h1>
             <p>Payslip cycle progress tracking by BDM</p>
             <div style={{ marginTop: 10 }}>
-              <Link to="/erp/reports" className="btn" style={{ textDecoration: 'none', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', background: 'transparent' }}>
+              <Link to="/erp/reports" className="erp-back-btn">
                 Back to Reports
               </Link>
             </div>

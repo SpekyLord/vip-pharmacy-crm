@@ -60,7 +60,7 @@ export default function FuelEfficiency() {
             <h1>Fuel Efficiency Report</h1>
             <p>Per-BDM actual vs expected gas cost with variance detection</p>
             <div style={{ marginTop: 10 }}>
-              <Link to="/erp/reports" className="btn" style={{ textDecoration: 'none', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', background: 'transparent' }}>
+              <Link to="/erp/reports" className="erp-back-btn">
                 Back to Reports
               </Link>
             </div>

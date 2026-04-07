@@ -81,7 +81,7 @@ export default function AuditLogs() {
             <h1>Audit Logs</h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, color: 'var(--erp-muted)' }}>{pagination.total} entries</span>
-              <Link to="/erp/reports" style={{ fontSize: 12, color: 'var(--erp-accent, #1e5eff)', fontWeight: 700, textDecoration: 'none' }}>
+              <Link to="/erp/reports" className="erp-back-btn">
                 Back to Reports
               </Link>
             </div>

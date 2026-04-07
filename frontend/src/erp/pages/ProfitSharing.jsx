@@ -152,7 +152,7 @@ export default function ProfitSharing() {
                 <input type="text" placeholder="BDM ID (optional)" value={bdmId}
                   onChange={e => setBdmId(e.target.value)} style={{ width: 160 }} />
               )}
-              <Link to="/erp/reports" className="btn btn-outline" style={{ textDecoration: 'none' }}>
+              <Link to="/erp/reports" className="erp-back-btn">
                 Back to Reports
               </Link>
             </div>

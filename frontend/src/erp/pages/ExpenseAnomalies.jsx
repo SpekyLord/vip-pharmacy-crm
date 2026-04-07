@@ -74,7 +74,7 @@ export default function ExpenseAnomalies() {
             <h1>Expense Anomalies</h1>
             <p>Detect period-over-period expense changes and budget overruns</p>
             <div style={{ marginTop: 10 }}>
-              <Link to="/erp/reports" className="btn" style={{ textDecoration: 'none', border: '1px solid var(--erp-border)', color: 'var(--erp-text)', background: 'transparent' }}>
+              <Link to="/erp/reports" className="erp-back-btn">
                 Back to Reports
               </Link>
             </div>
