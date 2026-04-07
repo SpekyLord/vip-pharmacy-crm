@@ -39,10 +39,63 @@ const pageStyles = `
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
   .saleslist-inner { max-width: 1200px; margin: 0 auto; }
+  .saleslist-toolbar-card {
+    background: var(--erp-panel, #fff);
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 14px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+  }
   .saleslist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+  .saleslist-header:last-child { margin-bottom: 0; }
   .saleslist-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0; }
+  .saleslist-subtitle {
+    margin: 4px 0 0;
+    color: var(--erp-muted, #5f7188);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .sales-nav-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 12px;
+    padding: 6px;
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 10px;
+    background: var(--erp-panel, #fff);
+  }
+  .sales-nav-tabs::-webkit-scrollbar { height: 0; }
+  .sales-nav-tab {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    color: var(--erp-text, #132238);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .sales-nav-tab.active {
+    background: var(--erp-accent, #1e5eff);
+    color: #fff;
+  }
+  .sales-nav-tab:hover {
+    border-color: var(--erp-border, #dbe4f0);
+  }
 
-  .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; }
+  .filter-bar {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 0;
+    align-items: center;
+  }
   .filter-bar input, .filter-bar select {
     padding: 8px 12px;
     border: 1px solid var(--erp-border, #dbe4f0);
@@ -54,7 +107,15 @@ const pageStyles = `
   }
 
   .filter-bar select {
-    min-width: 140px;
+    min-width: 0;
+  }
+
+  .saleslist-table-card {
+    background: var(--erp-panel, #fff);
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
   }
 
   .sales-list-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--erp-panel, #fff); border: 1px solid var(--erp-border); border-radius: 12px; overflow: hidden; }
@@ -79,6 +140,7 @@ const pageStyles = `
 
   .sales-actions .btn {
     min-width: 86px;
+    min-height: 38px;
   }
 
   .detail-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
@@ -91,8 +153,10 @@ const pageStyles = `
   @media (max-width: 768px) {
     .saleslist-main { padding: 16px; }
     .saleslist-main { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+    .saleslist-toolbar-card,
+    .saleslist-table-card { padding: 12px; }
     .sales-list-table { font-size: 12px; }
-    .filter-bar { flex-direction: column; }
+    .filter-bar { grid-template-columns: 1fr; }
     .filter-bar input, .filter-bar select { width: 100%; }
 
     .sales-list-table { border: none; background: transparent; }
@@ -114,6 +178,23 @@ const pageStyles = `
       border-top: 1px solid var(--erp-border);
       white-space: normal;
     }
+    .sales-list-table td[data-label="Actions"] {
+      display: block;
+    }
+    .sales-list-table td[data-label="Actions"]::before {
+      display: block;
+      margin-bottom: 8px;
+    }
+    .sales-list-table td[data-label="Actions"] .sales-actions {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .sales-list-table td[data-label="Actions"] .sales-actions .btn {
+      width: 100%;
+      min-width: 0;
+    }
     .sales-list-table td:first-child { border-top: none; }
     .sales-list-table td::before {
       content: attr(data-label);
@@ -126,6 +207,9 @@ const pageStyles = `
     .saleslist-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
     .btn { font-size: 12px; padding: 6px 10px; }
     .filter-bar input, .filter-bar select { font-size: 16px; }
+    .sales-list-table td[data-label="Actions"] .sales-actions {
+      grid-template-columns: 1fr;
+    }
   }
 `;
 
@@ -209,6 +293,7 @@ export default function SalesList() {
   };
 
   const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const canCreateSales = ['employee', 'admin'].includes(user?.role);
 
   return (
     <div className="admin-page erp-page saleslist-page">
@@ -219,32 +304,43 @@ export default function SalesList() {
         <main className="saleslist-main">
           <WorkflowGuide pageKey="sales-list" />
           <div className="saleslist-inner">
-          <div className="saleslist-header">
-            <h1>Sales</h1>
-            <Link to="/erp/sales/entry" className="btn btn-primary">+ New Sales Entry</Link>
-          </div>
+            <div className="saleslist-toolbar-card">
+              <div className="sales-nav-tabs" role="tablist" aria-label="Sales navigation">
+                {canCreateSales && <Link to="/erp/sales/entry" className="sales-nav-tab">Sales</Link>}
+                <Link to="/erp/sales" className="sales-nav-tab active" aria-current="page">Sales Transactions</Link>
+                <Link to="/erp/csi-booklets" className="sales-nav-tab">CSI Booklets</Link>
+              </div>
+              <div className="saleslist-header">
+                <div>
+                  <h1>Sales Transactions</h1>
+                  <p className="saleslist-subtitle">Track draft, validated, posted, and deletion-requested sales in one place.</p>
+                </div>
+                {canCreateSales && <Link to="/erp/sales/entry" className="btn btn-primary">+ New Sales Entry</Link>}
+              </div>
 
-          {/* Filters */}
-          <div className="filter-bar">
-            <SelectField value={filters.status} onChange={e => handleFilterChange('status', e.target.value)}>
-              <option value="">All Status</option>
-              <option value="DRAFT">Draft</option>
-              <option value="VALID">Valid</option>
-              <option value="ERROR">Error</option>
-              <option value="POSTED">Posted</option>
-              <option value="DELETION_REQUESTED">Deletion Requested</option>
-            </SelectField>
-            <SelectField value={filters.source} onChange={e => handleFilterChange('source', e.target.value)}>
-              <option value="">All Sources</option>
-              <option value="SALES_LINE">Sales Line</option>
-              <option value="OPENING_AR">Opening AR</option>
-            </SelectField>
-            <input type="date" value={filters.csi_date_from} onChange={e => handleFilterChange('csi_date_from', e.target.value)} placeholder="From" />
-            <input type="date" value={filters.csi_date_to} onChange={e => handleFilterChange('csi_date_to', e.target.value)} placeholder="To" />
-          </div>
+              {/* Filters */}
+              <div className="filter-bar">
+                <SelectField value={filters.status} onChange={e => handleFilterChange('status', e.target.value)}>
+                  <option value="">All Status</option>
+                  <option value="DRAFT">Draft</option>
+                  <option value="VALID">Valid</option>
+                  <option value="ERROR">Error</option>
+                  <option value="POSTED">Posted</option>
+                  <option value="DELETION_REQUESTED">Deletion Requested</option>
+                </SelectField>
+                <SelectField value={filters.source} onChange={e => handleFilterChange('source', e.target.value)}>
+                  <option value="">All Sources</option>
+                  <option value="SALES_LINE">Sales Line</option>
+                  <option value="OPENING_AR">Opening AR</option>
+                </SelectField>
+                <input type="date" value={filters.csi_date_from} onChange={e => handleFilterChange('csi_date_from', e.target.value)} placeholder="From" />
+                <input type="date" value={filters.csi_date_to} onChange={e => handleFilterChange('csi_date_to', e.target.value)} placeholder="To" />
+              </div>
+            </div>
 
-          {/* Table */}
-          <table className="sales-list-table">
+            <div className="saleslist-table-card">
+            {/* Table */}
+            <table className="sales-list-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -311,13 +407,14 @@ export default function SalesList() {
                 </td></tr>
               )}
             </tbody>
-          </table>
+            </table>
 
-          {pagination.pages > 1 && (
-            <div style={{ marginTop: 16 }}>
-              <Pagination currentPage={pagination.page} totalPages={pagination.pages} onPageChange={loadSales} />
+            {pagination.pages > 1 && (
+              <div style={{ marginTop: 16 }}>
+                <Pagination currentPage={pagination.page} totalPages={pagination.pages} onPageChange={loadSales} />
+              </div>
+            )}
             </div>
-          )}
 
           {/* Detail Modal */}
           {selectedSale && (

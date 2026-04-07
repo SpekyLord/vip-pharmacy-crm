@@ -9,7 +9,7 @@
  * - Active route highlighting
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import messageService from '../../services/messageInboxService';
@@ -535,6 +535,31 @@ const sidebarStyles = `
     margin-left: 6px;
   }
 
+  .sidebar-link.sidebar-link-child {
+    margin-left: 14px;
+    padding-left: 18px;
+    position: relative;
+  }
+
+  .sidebar-link.sidebar-link-child::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 8px;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.35);
+  }
+
+  .sidebar.collapsed .sidebar-link.sidebar-link-child {
+    margin-left: 0;
+    padding-left: 11px;
+  }
+
+  .sidebar.collapsed .sidebar-link.sidebar-link-child::before {
+    display: none;
+  }
+
 
   /* ===== TABLET RESPONSIVE ===== */
   @media (max-width: 1024px) and (min-width: 481px) {
@@ -661,14 +686,17 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
 
   // ── Sales ──────────────────────────────────────────────────────────────────
   if (hasModule('sales')) {
+    const salesHomePath = role === 'finance' ? '/erp/sales' : '/erp/sales/entry';
+    const salesItems = [{ path: salesHomePath, label: 'Sales', icon: Receipt }];
+    if (salesHomePath !== '/erp/sales') {
+      salesItems.push({ path: '/erp/sales', label: 'Sales Transactions', icon: FileText, isChild: true });
+    }
+    salesItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
     sections.push({
       title: 'Sales',
       collapsible: true,
       defaultOpen: true,
-      items: [
-        { path: '/erp/sales', label: 'Sales', icon: Receipt },
-        { path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen },
-      ],
+      items: salesItems,
     });
   }
 
@@ -953,11 +981,30 @@ const Sidebar = () => {
   const crmHome = isAdminLike ? '/admin' : '/bdm';
   const isErpRoute = location.pathname.startsWith('/erp');
 
-  const isActive = (path) => {
-    if (path === '/admin' || path === '/bdm' || path === '/erp') {
-      return location.pathname === path;
+  const activePath = useMemo(() => {
+    const allPaths = menuConfig.sections.flatMap(section => section.items.map(item => item.path));
+    let bestPath = null;
+    let bestLength = -1;
+
+    for (const path of allPaths) {
+      const isMatch = location.pathname === path || location.pathname.startsWith(`${path}/`);
+      if (isMatch && path.length > bestLength) {
+        bestPath = path;
+        bestLength = path.length;
+      }
     }
-    return location.pathname.startsWith(path);
+
+    return bestPath;
+  }, [menuConfig.sections, location.pathname]);
+
+  const isActive = (path) => {
+    if (path === '/erp/sales/entry') {
+      return location.pathname === '/erp/sales/entry' || location.pathname === '/erp/sales';
+    }
+    if (path === '/erp/sales') {
+      return location.pathname === '/erp/sales';
+    }
+    return activePath === path;
   };
 
   // Listen for sidebar:toggle events from Navbar hamburger
@@ -1095,7 +1142,7 @@ const Sidebar = () => {
                         <NavLink
                           key={item.path}
                           to={item.path}
-                          className={`sidebar-link ${isActive(item.path) ? 'active' : ''}`}
+                          className={`sidebar-link ${item.isChild ? 'sidebar-link-child' : ''} ${isActive(item.path) ? 'active' : ''}`}
                         >
                           <span className="sidebar-link-icon"><Icon size={20} /></span>
                           <span className="sidebar-link-label">{item.label}</span>
@@ -1194,7 +1241,7 @@ const Sidebar = () => {
                       return (
                         <button
                           key={item.path}
-                          className={`sidebar-link ${isActive(item.path) ? 'active' : ''}`}
+                          className={`sidebar-link ${item.isChild ? 'sidebar-link-child' : ''} ${isActive(item.path) ? 'active' : ''}`}
                           onClick={() => handleDrawerNav(item.path)}
                           style={{ width: '100%', border: 'none', cursor: 'pointer', textAlign: 'left' }}
                         >
