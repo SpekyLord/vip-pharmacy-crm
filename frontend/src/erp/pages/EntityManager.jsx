@@ -44,7 +44,7 @@ const pageStyles = `
   @media(max-width: 768px) { .em-grid { grid-template-columns: 1fr; } }
 `;
 
-const EMPTY_FORM = { entity_name: '', short_name: '', tin: '', address: '', vat_registered: false, entity_type: 'SUBSIDIARY', parent_entity_id: '', managed_by: '', brand_color: '#6B7280', brand_text_color: '#FFFFFF', tagline: '' };
+const EMPTY_FORM = { entity_name: '', short_name: '', tin: '', address: '', vat_registered: false, entity_type: 'SUBSIDIARY', parent_entity_id: '', managed_by: null, brand_color: '#6B7280', brand_text_color: '#FFFFFF', tagline: '' };
 
 export function EntityManagerContent() {
   const { user } = useAuth();
@@ -93,7 +93,7 @@ export function EntityManagerContent() {
       vat_registered: entity.vat_registered || false,
       entity_type: entity.entity_type || 'SUBSIDIARY',
       parent_entity_id: entity.parent_entity_id || '',
-      managed_by: entity.managed_by?._id || entity.managed_by || '',
+      managed_by: entity.managed_by?._id || entity.managed_by || null,
       brand_color: entity.brand_color || '#6B7280',
       brand_text_color: entity.brand_text_color || '#FFFFFF',
       tagline: entity.tagline || '',
@@ -104,12 +104,13 @@ export function EntityManagerContent() {
   };
 
   const handleSave = async () => {
+    const payload = { ...form, managed_by: form.managed_by || null };
     try {
       if (editingId) {
-        await api.put(`/erp/entities/${editingId}`, form);
+        await api.put(`/erp/entities/${editingId}`, payload);
         toast.success('Entity updated');
       } else {
-        await api.post('/erp/entities', form);
+        await api.post('/erp/entities', payload);
         toast.success('Entity created');
       }
       setShowModal(false);
@@ -213,7 +214,7 @@ export function EntityManagerContent() {
                 </div>
                 <div className="form-group">
                   <label>Managed By</label>
-                  <select value={form.managed_by} onChange={e => setForm({ ...form, managed_by: e.target.value || null })}>
+                  <select value={form.managed_by || ''} onChange={e => setForm({ ...form, managed_by: e.target.value || null })}>
                     <option value="">— Not Assigned —</option>
                     {people.map(p => (
                       <option key={p.person_id || p._id} value={p.person_id || p._id}>

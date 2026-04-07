@@ -38,6 +38,8 @@ exports.update = catchAsync(async (req, res) => {
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
   }
+  // Sanitize ObjectId fields — empty string → null
+  if (updates.managed_by === '' || updates.managed_by === 'null') updates.managed_by = null;
   // Non-president users can only update their own entity
   const filter = { _id: req.params.id };
   if (!req.isPresident && req.entityId) {
