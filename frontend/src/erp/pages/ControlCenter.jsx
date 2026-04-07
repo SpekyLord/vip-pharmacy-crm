@@ -16,7 +16,7 @@ import {
   LayoutDashboard, Building2, Users, ShieldCheck, BookOpen, Landmark,
   CreditCard, Receipt, Package, ArrowLeftRight, Boxes, Lock,
   RefreshCw, Archive, Settings, List, DollarSign, MapPin, Truck,
-  Stethoscope, ShoppingCart, Hospital, UtensilsCrossed
+  Stethoscope, ShoppingCart, Hospital, UtensilsCrossed, Bot
 } from 'lucide-react';
 
 // Lazy-load section content components
@@ -47,6 +47,7 @@ const SECTIONS = {
     return { default: FnbProducts };
   })),
   'hospitals': lazy(() => import('./HospitalList').then(m => ({ default: m.HospitalListContent }))),
+  'agent-settings': lazy(() => import('./AgentSettings').then(m => ({ default: m.AgentSettingsContent }))),
   'erp-settings': lazy(() => import('./ErpSettingsPanel')),
   'lookups': lazy(() => import('./LookupManager'))
 };
@@ -125,6 +126,14 @@ const CATEGORY_CONFIG = [
       { key: 'period-locks', label: 'Period Locks', icon: Lock },
       { key: 'recurring-journals', label: 'Recurring Journals', icon: RefreshCw },
       { key: 'data-archive', label: 'Data Archive', icon: Archive }
+    ]
+  },
+  {
+    id: 'intelligence',
+    label: 'Intelligence',
+    icon: Bot,
+    items: [
+      { key: 'agent-settings', label: 'Agent Config', icon: Bot }
     ]
   },
   {

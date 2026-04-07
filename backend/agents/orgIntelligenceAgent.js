@@ -139,12 +139,14 @@ Keep it concise, specific, and actionable. Use real names and numbers from the d
 
     for (const pres of presidents) {
       const msg = await MessageInbox.create({
-        recipient: pres._id,
-        subject: `Org Intelligence — ${period}`,
+        recipientUserId: pres._id,
+        recipientRole: 'president',
+        title: `Org Intelligence — ${period}`,
         body: digest,
         category: 'ai_coaching',
         priority: 'normal',
-        sender_label: 'Org Intelligence Agent',
+        senderName: 'Org Intelligence Agent',
+        senderRole: 'system',
       });
       messageIds.push(msg._id);
     }

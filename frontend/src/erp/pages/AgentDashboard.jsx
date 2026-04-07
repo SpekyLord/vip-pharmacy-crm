@@ -104,6 +104,22 @@ export default function AgentDashboard() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [msgTab, setMsgTab] = useState('all');
+  const [runningAgent, setRunningAgent] = useState(null);
+
+  const isPresidentOrAdmin = ['president', 'admin'].includes(user?.role);
+
+  const handleRunNow = async (agentKey) => {
+    if (runningAgent) return;
+    setRunningAgent(agentKey);
+    try {
+      const res = await api.post(`/erp/agents/run/${agentKey}`);
+      alert(res.data?.message || `Agent "${agentKey}" completed`);
+      load(); // refresh stats
+    } catch (err) {
+      alert(err.response?.data?.message || `Agent "${agentKey}" failed`);
+    }
+    setRunningAgent(null);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -169,7 +185,18 @@ export default function AgentDashboard() {
                           {agent.last_summary.key_findings.slice(0, 2).map((f, i) => <div key={i} className="agd-finding">{f}</div>)}
                         </div>
                       )}
-                      <div style={{ marginTop: 8, fontSize: 11, color: '#94a3b8' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {cfg.schedule}</div>
+                      <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 11, color: '#94a3b8' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {cfg.schedule}</span>
+                        {isPresidentOrAdmin && (
+                          <button
+                            onClick={() => handleRunNow(key)}
+                            disabled={!!runningAgent}
+                            style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid #dbe4f0', background: runningAgent === key ? '#f1f5f9' : '#fff', color: runningAgent === key ? '#94a3b8' : cfg.color, cursor: runningAgent ? 'not-allowed' : 'pointer' }}
+                          >
+                            {runningAgent === key ? 'Running...' : 'Run Now'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -205,7 +232,18 @@ export default function AgentDashboard() {
                           {agent.last_summary.key_findings.slice(0, 2).map((f, i) => <div key={i} className="agd-finding">{f}</div>)}
                         </div>
                       )}
-                      <div style={{ marginTop: 8, fontSize: 11, color: '#94a3b8' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {cfg.schedule}</div>
+                      <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 11, color: '#94a3b8' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {cfg.schedule}</span>
+                        {isPresidentOrAdmin && (
+                          <button
+                            onClick={() => handleRunNow(key)}
+                            disabled={!!runningAgent}
+                            style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid #dbe4f0', background: runningAgent === key ? '#f1f5f9' : '#fff', color: runningAgent === key ? '#94a3b8' : cfg.color, cursor: runningAgent ? 'not-allowed' : 'pointer' }}
+                          >
+                            {runningAgent === key ? 'Running...' : 'Run Now'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
