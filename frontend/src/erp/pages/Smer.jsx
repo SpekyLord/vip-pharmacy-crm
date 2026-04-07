@@ -294,17 +294,9 @@ export default function Smer() {
   const handlePullFromCrm = async () => {
     try {
       const res = await getSmerCrmMdCounts(period, cycle);
-      console.log('[SMER] CRM pull response:', res);
       const crmEntries = res?.data?.daily_entries || [];
-      console.log('[SMER] CRM entries:', crmEntries.length, 'Frontend entries:', dailyEntries.length);
-      if (!crmEntries.length) {
-        console.warn('[SMER] No CRM entries returned');
-        return;
-      }
-      // Log date matching
+      if (!crmEntries.length) return;
       const crmMap = Object.fromEntries(crmEntries.map(e => [e.entry_date, e]));
-      console.log('[SMER] CRM dates:', Object.keys(crmMap));
-      console.log('[SMER] Frontend dates:', dailyEntries.map(e => e.entry_date));
 
       setDailyEntries(prev => {
         return prev.map(entry => {

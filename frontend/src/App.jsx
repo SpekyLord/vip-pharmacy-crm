@@ -42,7 +42,6 @@ const SettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
 
 // ERP pages
 const ErpDashboard = lazy(() => import('./erp/pages/ErpDashboard'));
-const OcrTest = lazy(() => import('./erp/pages/OcrTest'));
 const SalesEntry = lazy(() => import('./erp/pages/SalesEntry'));
 const SalesList = lazy(() => import('./erp/pages/SalesList'));
 const MyStock = lazy(() => import('./erp/pages/MyStock'));
@@ -335,14 +334,6 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['employee', 'admin']}>
                 <ErpDashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/erp/ocr-test"
-            element={
-              <ProtectedRoute allowedRoles={['employee', 'admin']}>
-                <OcrTest />
               </ProtectedRoute>
             }
           />
