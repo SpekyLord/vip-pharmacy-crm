@@ -8,6 +8,8 @@
 const mongoose = require('mongoose');
 const JournalEntry = require('../models/JournalEntry');
 const DocSequence = require('../models/DocSequence');
+const VatLedger = require('../models/VatLedger');
+const CwtLedger = require('../models/CwtLedger');
 
 /**
  * Create a journal entry in DRAFT status with auto-assigned JE number
@@ -157,6 +159,12 @@ async function reverseJournal(jeId, reason, userId, entityId) {
     reversal.corrects_je_id = original._id;
     reversal.is_reversal = true;
     await reversal.save({ session });
+
+    // Clean up VAT/CWT ledger entries linked to the original source event
+    if (original.source_event_id) {
+      await VatLedger.deleteMany({ source_event_id: original.source_event_id }).session(session);
+      await CwtLedger.deleteMany({ entity_id: original.entity_id, cr_no: original.source_doc_ref }).session(session);
+    }
 
     await session.commitTransaction();
     return reversal;

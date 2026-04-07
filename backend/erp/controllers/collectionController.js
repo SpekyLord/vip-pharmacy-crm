@@ -344,10 +344,11 @@ const submitCollections = catchAsync(async (req, res) => {
           }
         }
 
-        // VAT Ledger — OUTPUT VAT from collection
-        // TODO: use hospital.vat_status to determine if EXEMPT/ZERO — skip VAT entry if so
+        // VAT Ledger — OUTPUT VAT from collection (skip for EXEMPT/ZERO hospitals)
         const crAmount = row.cr_amount || row.total_amount || 0;
-        if (crAmount > 0) {
+        const hospital = row.hospital_id ? await Hospital.findById(row.hospital_id).select('vat_status').lean() : null;
+        const hospitalVatStatus = hospital?.vat_status || 'VATABLE';
+        if (crAmount > 0 && hospitalVatStatus === 'VATABLE') {
           const vatRate = settings?.VAT_RATE || 0.12;
           const vatAmount = Math.round((crAmount * vatRate / (1 + vatRate)) * 100) / 100;
           await createVatEntry({

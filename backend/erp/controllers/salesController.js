@@ -415,7 +415,7 @@ const submitSales = catchAsync(async (req, res) => {
           } else {
             // Regular CSI: consume inventory via FIFO
             // Phase 17: warehouse-scoped FIFO consumption
-            const fifoOpts = row.warehouse_id ? { warehouseId: row.warehouse_id.toString() } : undefined;
+            const fifoOpts = { ...(row.warehouse_id && { warehouseId: row.warehouse_id.toString() }), session };
             // President/admin/finance without warehouse → entity-wide FIFO
             const submitBdmId = (req.isPresident || req.isAdmin || req.isFinance) && !row.warehouse_id
               ? null : row.bdm_id;

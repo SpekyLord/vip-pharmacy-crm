@@ -44,7 +44,7 @@ const buildStockMatch = (entityId, bdmId, opts, productId) => {
  * @returns {Array<{ batch_lot_no, expiry_date, available_qty }>}
  */
 const getAvailableBatches = async (entityId, bdmId, productId, opts) => {
-  const result = await InventoryLedger.aggregate([
+  const pipeline = [
     { $match: buildStockMatch(entityId, bdmId, opts, productId) },
     {
       $group: {
@@ -69,9 +69,12 @@ const getAvailableBatches = async (entityId, bdmId, productId, opts) => {
         available_qty: 1
       }
     }
-  ]);
+  ];
 
-  return result;
+  // Use session for transactional consistency if provided
+  const agg = InventoryLedger.aggregate(pipeline);
+  if (opts?.session) agg.session(opts.session);
+  return agg;
 };
 
 /**
