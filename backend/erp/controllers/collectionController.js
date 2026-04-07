@@ -146,7 +146,7 @@ const validateCollections = catchAsync(async (req, res) => {
     if (!row.hospital_id && !row.customer_id) errors.push('Hospital or Customer is required');
     if (!row.cr_no) errors.push('CR number is required');
     if (!row.cr_date) errors.push('CR date is required');
-    if (!row.cr_amount) errors.push('CR amount is required');
+    if (!row.cr_amount || row.cr_amount <= 0) errors.push('CR amount must be greater than 0');
     if (!row.settled_csis?.length) errors.push('At least one CSI must be selected');
 
     // Future date check
@@ -157,6 +157,12 @@ const validateCollections = catchAsync(async (req, res) => {
     if (!isCash && !row.cr_photo_url) errors.push('CR photo is required');
     if (!isCash && !row.deposit_slip_url) errors.push('Deposit slip photo is required');
     if (!row.cwt_na && !row.cwt_certificate_url) errors.push('CWT certificate is required (or mark CWT as N/A)');
+
+    // Payment mode-specific field validation
+    if (row.payment_mode === 'CHECK') {
+      if (!row.check_no) errors.push('Check number is required for CHECK payments');
+      if (!row.bank) errors.push('Bank name is required for CHECK payments');
+    }
 
     // Validate settled CSIs reference valid POSTED SalesLines (entity_id + hospital_id enforced)
     if (row.settled_csis?.length) {
@@ -186,7 +192,7 @@ const validateCollections = catchAsync(async (req, res) => {
         ]);
         const alreadyCollected = otherSettlements[0]?.total || 0;
         const originalSale = validMap.get(csi.sales_line_id?.toString());
-        if (originalSale && alreadyCollected + csi.invoice_amount > originalSale.invoice_total + 1) {
+        if (originalSale && alreadyCollected + csi.invoice_amount > originalSale.invoice_total + 0.01) {
           errors.push(`CSI ${csi.doc_ref} would exceed invoice total (already collected: P${alreadyCollected.toFixed(2)})`);
         }
       }
@@ -194,16 +200,18 @@ const validateCollections = catchAsync(async (req, res) => {
       // Hospital-wide AR balance check: total collection must not exceed total outstanding AR
       const hospitalArBalance = await getHospitalArBalance(row.hospital_id, row.entity_id);
       const thisCollectionTotal = row.settled_csis.reduce((sum, c) => sum + (c.invoice_amount || 0), 0);
-      if (hospitalArBalance > 0 && thisCollectionTotal > hospitalArBalance + 1) {
+      if (hospitalArBalance > 0 && thisCollectionTotal > hospitalArBalance + 0.01) {
         errors.push(`Total settlement (P${thisCollectionTotal.toFixed(2)}) exceeds hospital AR balance (P${hospitalArBalance.toFixed(2)})`);
       }
+
+
     }
 
     // CWT recomputation — backend is authoritative, don't trust frontend cwt_amount
     const totalCsiForCwt = row.total_csi_amount || row.settled_csis?.reduce((s, c) => s + (c.invoice_amount || 0), 0) || 0;
     if (!row.cwt_na && row.cwt_rate > 0) {
       const recomputedCwt = Math.round(totalCsiForCwt * row.cwt_rate * 100) / 100;
-      if (Math.abs((row.cwt_amount || 0) - recomputedCwt) > 1) {
+      if (Math.abs((row.cwt_amount || 0) - recomputedCwt) > 0.01) {
         errors.push(`CWT amount mismatch: stored P${(row.cwt_amount || 0).toFixed(2)} vs computed P${recomputedCwt.toFixed(2)} (rate: ${(row.cwt_rate * 100).toFixed(1)}%)`);
         row.cwt_amount = recomputedCwt; // auto-correct
       }
@@ -211,9 +219,9 @@ const validateCollections = catchAsync(async (req, res) => {
       row.cwt_amount = 0;
     }
 
-    // CR formula validation
+    // CR formula validation: cr_amount = CSI total - CWT
     const expectedCr = (totalCsiForCwt) - (row.cwt_amount || 0);
-    if (Math.abs((row.cr_amount || 0) - expectedCr) > 1.00) {
+    if (Math.abs((row.cr_amount || 0) - expectedCr) > 0.01) {
       errors.push(`CR amount (P${row.cr_amount}) does not match expected (P${expectedCr.toFixed(2)} = CSI total - CWT)`);
     }
 

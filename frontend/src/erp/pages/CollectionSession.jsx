@@ -276,9 +276,15 @@ export default function CollectionSession() {
   };
 
   const handleSave = async () => {
-    if ((!hospitalId && !customerId) || !crNo || !selectedList.length) {
-      showError(null, 'Select a hospital or customer, enter CR#, and select at least one invoice'); return;
-    }
+    const issues = [];
+    if (!hospitalId && !customerId) issues.push('Select a hospital or customer');
+    if (!crNo) issues.push('CR number is required');
+    if (!selectedList.length) issues.push('Select at least one invoice');
+    const parsedAmount = parseFloat(crAmount) || 0;
+    if (parsedAmount <= 0) issues.push('CR amount must be greater than 0');
+    if (paymentMode === 'CHECK' && !checkNo) issues.push('Check number is required for CHECK payments');
+    if (paymentMode === 'CHECK' && !bank) issues.push('Bank name is required for CHECK payments');
+    if (issues.length) { showError(null, issues.join('. ')); return; }
     setSaving(true);
     try {
       await collections.createCollection({

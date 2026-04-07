@@ -159,12 +159,17 @@ async function getCollectionRate(entityId, bdmId, dateFrom, dateTo) {
   const totalCollections = collAgg?.total || 0;
   const rate = totalSales > 0 ? (totalCollections / totalSales) : 0;
 
+  // Use configurable threshold from Settings (not hardcoded 70%)
+  const Settings = require('../models/Settings');
+  const settings = await Settings.getSettings();
+  const thresholdPct = (settings?.COLLECTION_OK_THRESHOLD || 0.70) * 100;
+
   return {
     total_sales: Math.round(totalSales * 100) / 100,
     total_collections: Math.round(totalCollections * 100) / 100,
     collection_rate: Math.round(rate * 10000) / 100,
-    threshold: 70,
-    status: rate >= 0.70 ? 'GREEN' : 'RED'
+    threshold: thresholdPct,
+    status: rate >= (thresholdPct / 100) ? 'GREEN' : 'RED'
   };
 }
 
