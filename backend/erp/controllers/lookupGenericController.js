@@ -62,6 +62,11 @@ const SEED_DEFAULTS = {
   OFFICE_SUPPLY_TXN_TYPE: ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'],
   PAYMENT_MODE_TYPE: ['CASH', 'CHECK', 'BANK_TRANSFER', 'GCASH', 'CARD', 'OTHER'],
   PEOPLE_STATUS: ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'],
+  UNIT_CODE: [
+    'PC', 'BOX', 'VIAL', 'BOTTLE', 'TUBE', 'SACHET', 'STRIP',
+    'TABLET', 'CAPSULE', 'AMPULE', 'PACK', 'ROLL', 'SET',
+    'BAG', 'CAN', 'PAIR', 'PFS', 'JAR', 'YARD',
+  ],
 };
 
 // List all distinct categories for current entity

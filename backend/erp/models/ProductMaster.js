@@ -32,7 +32,8 @@ const productMasterSchema = new mongoose.Schema({
   brand_name_clean: { type: String, index: true },
   unit_code: {
     type: String,
-    enum: UNIT_CODES
+    // No enum restriction — validated via Lookup table (UNIT_CODE category)
+    trim: true,
   },
 
   // Pricing
