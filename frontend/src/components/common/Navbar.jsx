@@ -675,7 +675,8 @@ const Navbar = () => {
   const isAdminLike = ADMIN_LIKE_ROLES.includes(user?.role);
   const crmHome = isAdminLike ? '/admin' : '/bdm';
   const isErpRoute = location.pathname.startsWith('/erp');
-  const platformTabs = isErpRoute ? ERP_TABS : (isAdminLike ? CRM_ADMIN_TABS : CRM_EMPLOYEE_TABS);
+  const erpTabs = isAdminLike ? ERP_TABS : ERP_TABS.filter(t => t.path !== '/erp/reports');
+  const platformTabs = isErpRoute ? erpTabs : (isAdminLike ? CRM_ADMIN_TABS : CRM_EMPLOYEE_TABS);
 
   const isTabActive = (path) => {
     if (path === '/erp' || path === '/admin' || path === '/bdm') {
