@@ -111,12 +111,18 @@ collectionSchema.pre('save', async function () {
     let totalCsi = 0, totalNet = 0, totalComm = 0, totalRebates = 0;
 
     for (const csi of this.settled_csis) {
-      totalCsi += csi.invoice_amount || 0;
-      csi.net_of_vat = Math.round((csi.invoice_amount || 0) / (1 + vatRate) * 100) / 100;
+      const invoiceAmt = csi.invoice_amount || 0;
+      totalCsi += invoiceAmt;
+      // Always recompute net_of_vat from invoice_amount — guards against null/stale values
+      csi.net_of_vat = invoiceAmt > 0
+        ? Math.round(invoiceAmt / (1 + vatRate) * 100) / 100
+        : 0;
       totalNet += csi.net_of_vat;
 
-      // Commission
-      csi.commission_amount = Math.round(csi.net_of_vat * (csi.commission_rate || 0) * 100) / 100;
+      // Commission — requires valid net_of_vat
+      csi.commission_amount = csi.net_of_vat > 0
+        ? Math.round(csi.net_of_vat * (csi.commission_rate || 0) * 100) / 100
+        : 0;
       totalComm += csi.commission_amount;
 
       // Partner rebates

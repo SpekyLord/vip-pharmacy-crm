@@ -67,4 +67,54 @@ const getPettyCashFormHtml = catchAsync(async (req, res) => {
   res.send(html);
 });
 
-module.exports = { getReceiptHtml, getPettyCashFormHtml };
+// Phase 25: GRN printable HTML
+const getGrnHtml = catchAsync(async (req, res) => {
+  const GrnEntry = require('../models/GrnEntry');
+  const { renderGrnReceipt } = require('../templates/grnReceipt');
+
+  const grn = await GrnEntry.findOne({ _id: req.params.id, ...req.tenantFilter }).lean();
+  if (!grn) return res.status(404).json({ success: false, message: 'GRN not found' });
+
+  let lineProducts = [];
+  if (grn.line_items?.length) {
+    try {
+      const ProductMaster = require('../models/ProductMaster');
+      const productIds = grn.line_items.map(li => li.product_id).filter(Boolean);
+      lineProducts = await ProductMaster.find({ _id: { $in: productIds } })
+        .select('product_name brand_name').lean();
+    } catch { /* non-critical */ }
+  }
+
+  const html = renderGrnReceipt(grn, lineProducts);
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+});
+
+// Phase 25: Credit Note printable HTML
+const getCreditNoteHtml = catchAsync(async (req, res) => {
+  const CreditNote = require('../models/CreditNote');
+  const { renderCreditNote } = require('../templates/creditNoteReceipt');
+
+  const cn = await CreditNote.findOne({ _id: req.params.id, ...req.tenantFilter })
+    .populate('hospital_id', 'hospital_name')
+    .populate('customer_id', 'customer_name customer_type')
+    .lean();
+
+  if (!cn) return res.status(404).json({ success: false, message: 'Credit note not found' });
+
+  let lineProducts = [];
+  if (cn.line_items?.length) {
+    try {
+      const ProductMaster = require('../models/ProductMaster');
+      const productIds = cn.line_items.map(li => li.product_id).filter(Boolean);
+      lineProducts = await ProductMaster.find({ _id: { $in: productIds } })
+        .select('product_name brand_name').lean();
+    } catch { /* non-critical */ }
+  }
+
+  const html = renderCreditNote(cn, lineProducts);
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+});
+
+module.exports = { getReceiptHtml, getPettyCashFormHtml, getGrnHtml, getCreditNoteHtml };

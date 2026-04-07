@@ -132,6 +132,17 @@ const deleteDraftRow = catchAsync(async (req, res) => {
   }
 
   await SalesLine.findByIdAndDelete(sale._id);
+
+  await ErpAuditLog.logChange({
+    entity_id: sale.entity_id,
+    bdm_id: sale.bdm_id,
+    log_type: 'DELETION',
+    target_ref: sale._id.toString(),
+    target_model: 'SalesLine',
+    changed_by: req.user._id,
+    note: `Draft deleted: ${sale.doc_ref || sale._id}`
+  });
+
   res.json({ success: true, message: 'Draft row deleted' });
 });
 
@@ -272,11 +283,12 @@ const validateSales = catchAsync(async (req, res) => {
       } catch { /* AR engine not critical for validation */ }
     }
 
-    // Duplicate check: same doc_ref + hospital/customer (CSI and CASH_RECEIPT only)
+    // Duplicate check: same doc_ref + hospital/customer + sale_type (CSI and CASH_RECEIPT only)
     if (saleType !== 'SERVICE_INVOICE' && row.doc_ref) {
       const dupFilter = {
         _id: { $ne: row._id },
         entity_id: row.entity_id,
+        sale_type: saleType,
         doc_ref: row.doc_ref,
         status: { $nin: ['DELETION_REQUESTED'] }
       };
@@ -557,6 +569,9 @@ const reopenSales = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No POSTED rows found to reopen' });
   }
 
+  // Save event_ids BEFORE the transaction clears them (needed for JE reversal after)
+  const rowEventMap = rows.map(r => ({ _id: r._id, event_id: r.event_id, entity_id: r.entity_id, bdm_id: r.bdm_id, doc_ref: r.doc_ref }));
+
   let reopenedCount = 0;
   const session = await mongoose.startSession();
 
@@ -613,29 +628,29 @@ const reopenSales = catchAsync(async (req, res) => {
       }
     });
 
-    // Reverse journal entries outside transaction (non-blocking, like submit pattern)
-    for (const row of rows) {
-      if (row.event_id) {
+    // Reverse journal entries outside transaction using saved event_ids
+    for (const item of rowEventMap) {
+      if (item.event_id) {
         try {
           const jes = await JournalEntry.find({
-            source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
+            source_event_id: item.event_id, status: 'POSTED', is_reversal: { $ne: true }
           });
           for (const je of jes) {
             await reverseJournal(je._id, 'Auto-reversal: SalesLine reopen', req.user._id);
           }
         } catch (jeErr) {
-          console.error('JE reversal failed for sale reopen:', row._id, jeErr.message);
+          console.error('JE reversal failed for sale reopen:', item._id, jeErr.message);
         }
       }
 
       await ErpAuditLog.logChange({
-        entity_id: row.entity_id,
-        bdm_id: row.bdm_id,
+        entity_id: item.entity_id,
+        bdm_id: item.bdm_id,
         log_type: 'REOPEN',
-        target_ref: row._id.toString(),
+        target_ref: item._id.toString(),
         target_model: 'SalesLine',
         changed_by: req.user._id,
-        note: `Reopened (count: ${row.reopen_count})`
+        note: `Reopened CSI ${item.doc_ref || ''}`
       });
     }
 
@@ -679,6 +694,7 @@ const requestDeletion = catchAsync(async (req, res) => {
 const approveDeletion = catchAsync(async (req, res) => {
   const sale = await SalesLine.findOne({
     _id: req.params.id,
+    ...req.tenantFilter,
     status: 'DELETION_REQUESTED'
   });
 

@@ -84,18 +84,28 @@ const updatePerson = catchAsync(async (req, res) => {
     'full_name', 'first_name', 'last_name', 'person_type', 'position', 'department',
     'reports_to', 'bdm_code', 'role_notes',
     'email', 'phone', 'avatar', 'territory_id', 'bdm_stage',
-    'employment_type', 'date_hired', 'date_regularized', 'date_separated', 'date_of_birth',
+    'employment_type', 'date_hired', 'date_regularized', 'date_separated', 'date_of_birth', 'live_date',
     'civil_status', 'government_ids', 'bank_account', 'is_active', 'status', 'user_id',
   ];
 
+  // Date fields that need empty-string → null conversion
+  const dateFields = new Set(['date_hired', 'date_regularized', 'date_separated', 'date_of_birth', 'live_date']);
+
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
-      person[key] = req.body[key];
+      // Empty strings on date fields → null (Mongoose CastError prevention)
+      person[key] = (dateFields.has(key) && req.body[key] === '') ? null : req.body[key];
       if (key === 'government_ids' || key === 'bank_account') person.markModified(key);
     }
   }
 
   await person.save();
+
+  // Sync live_date to linked CRM User (used by salesController for OPENING_AR routing)
+  if (req.body.live_date !== undefined && person.user_id) {
+    await User.findByIdAndUpdate(person.user_id, { live_date: person.live_date });
+  }
+
   res.json({ success: true, data: person });
 });
 
@@ -183,7 +193,7 @@ const syncFromCrm = catchAsync(async (req, res) => {
   const crmUsers = await User.find({
     entity_id: req.entityId,
     'erp_access.enabled': true
-  }).select('_id name email phone role entity_id territory_id avatar bdm_stage').lean();
+  }).select('_id name email phone role entity_id territory_id avatar bdm_stage live_date').lean();
 
   // Get existing PeopleMaster records keyed by user_id
   const existing = await PeopleMaster.find({ entity_id: req.entityId }).lean();
@@ -205,6 +215,7 @@ const syncFromCrm = catchAsync(async (req, res) => {
       if (u.avatar && u.avatar !== existingPerson.avatar) updates.avatar = u.avatar;
       if (u.territory_id && u.territory_id?.toString() !== existingPerson.territory_id?.toString()) updates.territory_id = u.territory_id;
       if (u.bdm_stage && u.bdm_stage !== existingPerson.bdm_stage) updates.bdm_stage = u.bdm_stage;
+      if (u.live_date && u.live_date?.toISOString() !== existingPerson.live_date?.toISOString()) updates.live_date = u.live_date;
 
       if (Object.keys(updates).length > 0) {
         await PeopleMaster.updateOne({ _id: existingPerson._id }, { $set: updates });
@@ -233,6 +244,7 @@ const syncFromCrm = catchAsync(async (req, res) => {
       avatar: u.avatar || '',
       territory_id: u.territory_id || null,
       bdm_stage: u.bdm_stage || '',
+      live_date: u.live_date || null,
       position: u.role === 'employee' ? 'BDM' : u.role,
       department: u.role === 'employee' ? 'SALES' : 'ADMIN',
       employment_type: 'REGULAR',

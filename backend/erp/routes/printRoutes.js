@@ -12,4 +12,8 @@ router.get('/receipt/:id', printCtrl.getReceiptHtml);
 // Phase 19: Petty cash remittance/replenishment forms
 router.get('/petty-cash/:id', printCtrl.getPettyCashFormHtml);
 
+// Phase 25: GRN + Credit Note printable documents
+router.get('/grn/:id', printCtrl.getGrnHtml);
+router.get('/credit-note/:id', printCtrl.getCreditNoteHtml);
+
 module.exports = router;

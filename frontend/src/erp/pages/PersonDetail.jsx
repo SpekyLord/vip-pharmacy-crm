@@ -132,7 +132,7 @@ export default function PersonDetail() {
           person_type: p.person_type || '', position: p.position || '', department: p.department || '',
           employment_type: p.employment_type || '', status: p.status || 'ACTIVE',
           date_hired: toInput(p.date_hired), date_regularized: toInput(p.date_regularized), date_separated: toInput(p.date_separated),
-          date_of_birth: toInput(p.date_of_birth), civil_status: p.civil_status || '',
+          date_of_birth: toInput(p.date_of_birth), live_date: toInput(p.live_date), civil_status: p.civil_status || '',
           'government_ids.sss_no': p.government_ids?.sss_no || '', 'government_ids.philhealth_no': p.government_ids?.philhealth_no || '',
           'government_ids.pagibig_no': p.government_ids?.pagibig_no || '', 'government_ids.tin': p.government_ids?.tin || '',
           'bank_account.bank': p.bank_account?.bank || '', 'bank_account.account_no': p.bank_account?.account_no || '',
@@ -406,6 +406,7 @@ export default function PersonDetail() {
               <F lbl="Position" name="position" val={person.position} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Department" name="department" val={person.department} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="BDM Stage" name="bdm_stage" val={person.bdm_stage} editing={editPerson} form={personForm} onChange={handlePersonChange} options={['', 'CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER']} />
+              <F lbl="ERP Live Date" name="live_date" type="date" val={fmtDate(person.live_date)} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Employment Type" name="employment_type" val={person.employment_type} editing={editPerson} form={personForm} onChange={handlePersonChange} options={EMP_TYPES} />
               <F lbl="Civil Status" name="civil_status" val={person.civil_status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={CIVIL_STATUSES} />
               <F lbl="Date Hired" name="date_hired" type="date" val={fmtDate(person.date_hired)} editing={editPerson} form={personForm} onChange={handlePersonChange} />
