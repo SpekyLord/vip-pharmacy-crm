@@ -225,44 +225,18 @@ export default function HomePage() {
   const hasErp = user?.erp_access?.enabled;
 
   // ── Auto-route logic (20.6) ──
-  // BDM → CRM dashboard (phone-first daily work)
-  // Admin/President with ERP → ERP
-  // Only CRM users → CRM
-  // Last preference as fallback
+  // Always show the CRM/ERP chooser landing page.
+  // Only auto-route BDMs (employees) who don't have ERP access — they only use CRM.
   useEffect(() => {
-    if (!user || autoRouteBlocked) return;
+    if (!user) return;
 
-    const lastPref = localStorage.getItem('vip_last_platform');
-
-    // BDMs always go to CRM (their daily tool is the phone CRM)
-    if (user.role === 'employee') {
+    // BDMs without ERP → go straight to CRM (phone-first daily work)
+    if (user.role === 'employee' && !hasErp) {
       navigate('/bdm');
       return;
     }
 
-    // If user has a saved preference, use it
-    if (lastPref === 'erp' && hasErp) {
-      navigate('/erp');
-      return;
-    }
-    if (lastPref === 'crm') {
-      navigate(crmPath);
-      return;
-    }
-
-    // Admin/President/Finance with ERP → ERP by default
-    if (isAdminLike && hasErp) {
-      navigate('/erp');
-      return;
-    }
-
-    // Only CRM → CRM
-    if (!hasErp) {
-      navigate(crmPath);
-      return;
-    }
-
-    // Fallback: show chooser (don't auto-route)
+    // Everyone else (president, admin, finance, BDMs with ERP) → show chooser
   }, [user]);
 
   useEffect(() => {
