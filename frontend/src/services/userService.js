@@ -62,6 +62,24 @@ const userService = {
     const response = await api.put('/users/profile', profileData);
     return response.data;
   },
+
+  // Admin: reset a user's password
+  resetPassword: async (id, newPassword) => {
+    const response = await api.put(`/users/${id}/reset-password`, { newPassword });
+    return response.data;
+  },
+
+  // Admin: unlock a locked/deactivated account
+  unlockAccount: async (id) => {
+    const response = await api.put(`/users/${id}/unlock`);
+    return response.data;
+  },
+
+  // Admin: permanently delete a user (for duplicate/orphaned logins)
+  permanentDelete: async (id) => {
+    const response = await api.delete(`/users/${id}/permanent`);
+    return response.data;
+  },
 };
 
 export default userService;
