@@ -8,6 +8,9 @@
  * POST /api/users - Create new user (admin only)
  * PUT /api/users/:id - Update user (admin only)
  * DELETE /api/users/:id - Soft delete user (admin only)
+ * PUT /api/users/:id/reset-password - Admin reset user password (admin only)
+ * PUT /api/users/:id/unlock - Unlock locked/deactivated account (admin only)
+ * DELETE /api/users/:id/permanent - Permanently delete user (admin only)
  * GET /api/users/profile - Get current user profile
  * PUT /api/users/profile - Update current user profile
  */
@@ -25,6 +28,9 @@ const {
   deleteUser,
   getProfile,
   updateProfile,
+  resetUserPassword,
+  unlockAccount,
+  hardDeleteUser,
 } = require('../controllers/userController');
 
 const { protect } = require('../middleware/auth');
@@ -51,5 +57,10 @@ router.post('/', adminOnly, createUserValidation, createUser);
 router.get('/:id', adminOnly, getUserById);
 router.put('/:id', adminOnly, updateUserValidation, updateUser);
 router.delete('/:id', adminOnly, deleteUser);
+
+// Account management routes (admin only) — must be after /:id routes
+router.put('/:id/reset-password', adminOnly, resetUserPassword);
+router.put('/:id/unlock', adminOnly, unlockAccount);
+router.delete('/:id/permanent', adminOnly, hardDeleteUser);
 
 module.exports = router;
