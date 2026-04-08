@@ -386,45 +386,6 @@ const EmployeesPage = () => {
     }
   };
 
-  // Handle admin password reset
-  const handleResetPassword = async (employeeId, newPassword) => {
-    try {
-      await userService.resetPassword(employeeId, newPassword);
-      toast.success('Password reset successfully. BDM can now log in with the new password.');
-      fetchEmployees();
-      return true;
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to reset password');
-      return false;
-    }
-  };
-
-  // Handle unlock account
-  const handleUnlockAccount = async (employeeId) => {
-    try {
-      await userService.unlockAccount(employeeId);
-      toast.success('Account unlocked and reactivated. All ERP access preserved.');
-      fetchEmployees();
-      return true;
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to unlock account');
-      return false;
-    }
-  };
-
-  // Handle permanent delete
-  const handlePermanentDelete = async (employeeId) => {
-    try {
-      await userService.permanentDelete(employeeId);
-      toast.success('User permanently deleted');
-      fetchEmployees();
-      return true;
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to delete user');
-      return false;
-    }
-  };
-
   // Handle filter changes
   const handleFilterChange = (newFilters) => {
     setFilters(newFilters);
@@ -514,9 +475,6 @@ const EmployeesPage = () => {
             onSave={handleSaveEmployee}
             onDelete={handleDeleteEmployee}
             onToggleStatus={handleToggleStatus}
-            onResetPassword={handleResetPassword}
-            onUnlock={handleUnlockAccount}
-            onPermanentDelete={handlePermanentDelete}
             onFilterChange={handleFilterChange}
             onPageChange={handlePageChange}
           />
