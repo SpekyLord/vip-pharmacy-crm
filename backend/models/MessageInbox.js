@@ -155,13 +155,13 @@ messageInboxSchema.statics.findVisibleFor = function ({ role, userId }) {
   return this.find(query).sort({ createdAt: -1 });
 };
 
-const MessageInbox = mongoose.model("MessageInbox", messageInboxSchema, "messages");
-
 messageInboxSchema.statics.findSentBy = function ({ senderUserId }) {
   return this.find({
     isArchived: false,
     senderUserId: new mongoose.Types.ObjectId(senderUserId),
   }).sort({ createdAt: -1 });
 };
+
+const MessageInbox = mongoose.models.MessageInbox || mongoose.model("MessageInbox", messageInboxSchema, "messages");
 
 module.exports = MessageInbox;
