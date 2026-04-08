@@ -389,112 +389,6 @@ const employeeManagementStyles = `
     background: #bbf7d0;
   }
 
-  .action-btn.reset-pw {
-    background: #e0e7ff;
-    color: #4338ca;
-  }
-
-  .action-btn.reset-pw:hover {
-    background: #c7d2fe;
-  }
-
-  .action-btn.unlock {
-    background: #d1fae5;
-    color: #059669;
-  }
-
-  .action-btn.unlock:hover {
-    background: #a7f3d0;
-  }
-
-  .action-btn.delete-perm {
-    background: #fce7f3;
-    color: #be185d;
-  }
-
-  .action-btn.delete-perm:hover {
-    background: #fbcfe8;
-  }
-
-  /* Reset Password Modal */
-  .reset-pw-modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-  }
-
-  .reset-pw-modal {
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    width: 400px;
-    max-width: 90vw;
-  }
-
-  .reset-pw-modal h3 {
-    margin: 0 0 16px;
-    font-size: 16px;
-    color: #1f2937;
-  }
-
-  .reset-pw-modal input {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    font-size: 14px;
-    margin-bottom: 16px;
-    box-sizing: border-box;
-  }
-
-  .reset-pw-modal .modal-actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-  }
-
-  .reset-pw-modal .btn {
-    padding: 8px 16px;
-    border-radius: 8px;
-    border: none;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .reset-pw-modal .btn-cancel {
-    background: #f3f4f6;
-    color: #374151;
-  }
-
-  .reset-pw-modal .btn-confirm {
-    background: #4338ca;
-    color: white;
-  }
-
-  .reset-pw-modal .btn-confirm:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  body.dark-mode .reset-pw-modal {
-    background: #1e293b;
-  }
-
-  body.dark-mode .reset-pw-modal h3 {
-    color: #f1f5f9;
-  }
-
-  body.dark-mode .reset-pw-modal input {
-    background: #0f172a;
-    border-color: #334155;
-    color: #f1f5f9;
-  }
-
   /* Pagination */
   .pagination {
     display: flex;
@@ -1267,7 +1161,7 @@ const EmployeeManagement = ({
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [localFilters.search, filters, onFilterChange]);
+  }, [localFilters.search]);
 
   const handleFilterChange = (field, value) => {
     if (field === 'search') {
@@ -1299,6 +1193,11 @@ const EmployeeManagement = ({
       role: employee.role || 'employee',
     });
     setShowModal(true);
+  };
+
+  const handleDeleteClick = (employee) => {
+    setSelectedEmployee(employee);
+    setShowConfirmDelete(true);
   };
 
   const handleConfirmDelete = async () => {
@@ -1694,9 +1593,6 @@ EmployeeManagement.propTypes = {
   onSave: PropTypes.func,
   onDelete: PropTypes.func,
   onToggleStatus: PropTypes.func,
-  onResetPassword: PropTypes.func,
-  onUnlock: PropTypes.func,
-  onPermanentDelete: PropTypes.func,
   onFilterChange: PropTypes.func,
   onPageChange: PropTypes.func,
 };
