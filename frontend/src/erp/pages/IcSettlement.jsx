@@ -9,6 +9,7 @@ import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .ics-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -178,6 +179,7 @@ export default function IcSettlement() {
       <div className="admin-layout">
         <Sidebar />
         <main className="ics-main">
+          <WorkflowGuide pageKey="ic-settlement" />
           <div className="ics-header">
             <h1>IC Settlement — Collect from Subsidiary</h1>
             <button className="btn btn-outline" onClick={() => navigate('/erp/ic-settlements')}>Back to List</button>

@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useErpApi from '../hooks/useErpApi';
 import { showError, showSuccess } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .govr-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -384,6 +385,7 @@ export default function GovernmentRates() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="govr-main admin-main">
+          <WorkflowGuide pageKey="government-rates" />
           <GovernmentRatesContent />
         </main>
       </div>

@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpAccess from '../hooks/useErpAccess';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const MODULES = [
   { key: 'sales', label: 'Sales' },
@@ -308,6 +309,7 @@ export default function AccessTemplateManager() {
       <div className="admin-layout">
         <Sidebar />
         <main className="atm-main">
+          <WorkflowGuide pageKey="access-templates" />
           <AccessTemplateManagerContent />
         </main>
       </div>

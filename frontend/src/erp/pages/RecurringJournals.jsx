@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 import { showError, showSuccess } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .rj-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -256,6 +257,7 @@ export default function RecurringJournals() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="rj-main admin-main">
+          <WorkflowGuide pageKey="recurring-journals" />
           <RecurringJournalsContent />
         </main>
       </div>

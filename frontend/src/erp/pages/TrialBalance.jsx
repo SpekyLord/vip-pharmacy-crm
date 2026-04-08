@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useAccounting from '../hooks/useAccounting';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .tb-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -52,6 +53,7 @@ export default function TrialBalance() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="tb-main admin-main">
+          <WorkflowGuide pageKey="trial-balance" />
           <div className="tb-header"><h2>Trial Balance</h2></div>
           <div className="tb-controls">
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />

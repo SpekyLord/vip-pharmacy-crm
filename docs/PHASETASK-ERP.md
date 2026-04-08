@@ -3694,3 +3694,62 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] `vendorController.getAll`: Return clear error when user has no entity assigned
 - [x] `warehouseController.getMyWarehouses`: ERP-enabled employees see all entity warehouses (not just managed/assigned)
 - [x] `PurchaseOrders.jsx`: Product dropdown uses ProductMaster catalog instead of empty inventory stock
+
+---
+
+## PHASE 27 — FULL SYSTEM AUDIT + PERIOD LOCK + BANNER COMPLIANCE ✅ COMPLETE
+**Goal:** Comprehensive audit of all wiring, logic, dependencies, helper banners, and workflow guide alignment across CRM + ERP.
+
+### 27.1 — Wiring Fixes ✅
+- [x] Fix `sentRoutes.js` not mounted in `server.js` — added `/api/sent` route mount
+- [x] Verified all 52 ERP route files are mounted in `backend/erp/routes/index.js`
+- [x] Verified all 17 CRM route files are mounted in `backend/server.js`
+- [x] All 398 backend JS files pass syntax check (`node -c`)
+- [x] Frontend build succeeds with zero errors (`npx vite build`)
+- [x] All 15 autoJournal functions verified to have callers (no orphaned functions)
+- [x] All $lookup `from:` fields match actual model collection names
+- [x] TerritoryManager.jsx confirmed embedded in ControlCenter (not orphaned)
+
+### 27.2 — Period Lock Enforcement (Critical Security Fix) ✅
+- [x] `periodLockCheck` was ONLY on accounting routes — extended to all transactional modules
+- [x] `salesRoutes.js`: Added `periodLockCheck('SALES')` to submit/reopen endpoints
+- [x] `collectionRoutes.js`: Added `periodLockCheck('COLLECTION')` to submit/reopen
+- [x] `expenseRoutes.js`: Added `periodLockCheck('EXPENSE')` to SMER/CarLogbook/ORE-ACCESS/PRF-CALF submit/reopen
+- [x] `purchasingRoutes.js`: Added `periodLockCheck('PURCHASING')` to invoice post/payment
+- [x] `incomeRoutes.js`: Added `periodLockCheck('INCOME')` to confirm/credit/post endpoints
+- [x] Added `INCOME` to PeriodLock model enum (was missing from module list)
+- [x] Added `INCOME: 'Income'` to PeriodLocks.jsx frontend MODULE_LABELS
+
+### 27.3 — WorkflowGuide Navigation Link Fixes ✅
+- [x] Fixed 8 broken next-step links in WorkflowGuide.jsx:
+  - `/erp/accounting/trial-balance` → `/erp/trial-balance`
+  - `/erp/accounting/journal` → `/erp/journals`
+  - `/erp/banking/reconciliation` → `/erp/bank-recon`
+  - `/erp/consignment-dashboard` → `/erp/consignment`
+  - `/erp/payroll/payslips` → `/erp/payroll`
+  - `/erp/purchasing/ap` → `/erp/accounts-payable`
+  - `/erp/purchasing/invoices` → `/erp/supplier-invoices`
+  - `/erp/purchasing/orders` → `/erp/purchase-orders`
+
+### 27.4 — ERP WorkflowGuide Banner Coverage ✅
+- [x] Added 25 new WORKFLOW_GUIDES definitions to WorkflowGuide.jsx (total now ~72 guides)
+- [x] Added WorkflowGuide import + component to 25 standalone ERP pages:
+  - ChartOfAccounts, TrialBalance, ProfitAndLoss, CashflowStatement, FixedAssets, Loans, OwnerEquity
+  - BankAccounts, CreditCardManager, CreditCardLedger, PaymentModes
+  - GovernmentRates, BirCalculator, PeriodLocks, RecurringJournals, DataArchive
+  - VendorList, WarehouseManager, CostCenters, BudgetAllocations
+  - AccessTemplateManager, IcSettlement, IcArDashboard, ThirteenthMonth, AuditLogs
+- [x] 8 pages skipped (ControlCenter embedded panels, covered by DEPENDENCY_GUIDE): AgentSettings, EntityManager, ErpSettingsPanel, FoundationHealth, LookupManager, TerritoryManager, PartnerScorecard, ControlCenter
+
+### 27.5 — CRM PageGuide Banner System ✅
+- [x] Created new `frontend/src/components/common/PageGuide.jsx` component (matches WorkflowGuide style)
+- [x] Defined 13 PAGE_GUIDES: admin-dashboard, bdm-dashboard, doctors-page, employees-page, reports-page, regions-page, my-visits, new-visit, call-plan, products-page, settings-page, doctor-detail, inbox
+- [x] Added PageGuide to 12 CRM pages: AdminDashboard, EmployeeDashboard, DoctorsPage, EmployeesPage, ReportsPage, MyVisits, NewVisitPage, CallPlanPage, ProductsPage, SettingsPage, DoctorDetailPage, EMP_InboxPage
+
+### 27.6 — Bug/Logic Review ✅
+- [x] VAT 0.12: Centralized in Settings.js with fallback `?? 0.12` — acceptable, not scattered across models
+- [x] Dual P&L: pnlService (GL-based, authoritative) and pnlCalc (source-doc-based, used by income module) — both active in separate controllers, no direct conflict
+- [x] Zero COGS: `journalFromCOGS` returns null for zero/negative COGS (graceful handling)
+- [x] CALF Gate: Properly enforced in `submitExpenses` and `submitCarLogbook` with dual validation gates
+- [x] All autoJournal functions have callers (15/15 verified)
+- [x] Frontend hardcoded dropdowns: ~9 instances, most with API fallback mechanism

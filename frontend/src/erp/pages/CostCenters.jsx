@@ -10,6 +10,7 @@ import useReports from '../hooks/useReports';
 import { showError, showSuccess } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .cc-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -230,6 +231,7 @@ export default function CostCenters() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="cc-main">
+          <WorkflowGuide pageKey="cost-centers" />
           <CostCentersContent />
         </div>
       </div>

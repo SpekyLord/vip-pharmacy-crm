@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 5.3
-> **Status**: Phases 0-26 Complete. Multi-Entity Access + Stock Import Fix (April 8, 2026).
+> **Version**: 5.4
+> **Status**: Phases 0-27 Complete. Full System Audit + Period Lock + Banner Compliance (April 8, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -85,6 +85,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 24 | ERP Control Center | ✅ |
 | 25 | Admin Account Management (BDM Access Preservation) | ✅ |
 | 26 | Multi-Entity Access + Stock Import Fix | ✅ |
+| 27 | Full System Audit + Period Lock + Banner Compliance | ✅ |
 
 ---
 
@@ -187,7 +188,7 @@ All reopen functions call `journalEngine.reverseJournal()` (SAP Storno pattern: 
 5. **Dual P&L**: `pnlService.js` (GL-based) vs `pnlCalc.js` (source-doc-based). `pnlService` is authoritative; `pnlCalc` used for legacy year-end close.
 6. **AR Engine vs GL mismatch risk**: `arEngine.js` computes from source docs, `trialBalanceService.js` from JEs. They can diverge if JEs fail.
 7. **CALF gate**: Expenses with `calf_required=true` cannot be posted until linked CALF is POSTED (enforced in `submitExpenses` and `submitCarLogbook`).
-8. **Period lock**: `checkPeriodOpen()` prevents posting to closed/locked months. Import from `../utils/periodLock`.
+8. **Period lock**: `periodLockCheck(moduleKey)` middleware prevents posting to locked periods. Applied to all transactional routes: Sales, Collections, Expenses, Purchasing, Income, and Journals. Module keys in PeriodLock model: SALES, COLLECTION, EXPENSE, JOURNAL, PAYROLL, PURCHASING, INVENTORY, BANKING, PETTY_CASH, IC_TRANSFER, INCOME.
 9. **Product dropdown format**: All dropdowns must show `brand_name dosage — qty unit_code` (dosage required, never omit).
 10. **IC_TRANSFER** source_module — added to JournalEntry enum for inter-company transfer JEs.
 

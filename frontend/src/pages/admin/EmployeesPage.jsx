@@ -15,6 +15,7 @@ import Sidebar from '../../components/common/Sidebar';
 import EmployeeManagement from '../../components/admin/EmployeeManagement';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import userService from '../../services/userService';
+import PageGuide from '../../components/common/PageGuide';
 
 const employeesPageStyles = `
   .employees-layout {
@@ -453,6 +454,7 @@ const EmployeesPage = () => {
       <div className="employees-content">
         <Sidebar />
         <main className="employees-main">
+          <PageGuide pageKey="employees-page" />
           {/* Page Header */}
           <div className="page-header">
             <div className="page-header-left">

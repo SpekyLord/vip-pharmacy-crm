@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 import { showError, showSuccess } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .ln-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -86,6 +87,7 @@ export default function Loans() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="ln-main admin-main">
+          <WorkflowGuide pageKey="loans" />
           <div className="ln-header">
             <h2>Loans & Amortization</h2>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

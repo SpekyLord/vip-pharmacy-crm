@@ -48,6 +48,7 @@ import ReportGenerator from '../../components/admin/ReportGenerator';
 import CallPlanView from '../../components/employee/CallPlanView';
 import EmployeeVisitReport from '../../components/admin/EmployeeVisitReport';
 import userService from '../../services/userService';
+import PageGuide from '../../components/common/PageGuide';
 import visitService from '../../services/visitService';
 import scheduleService from '../../services/scheduleService';
 import { exportEmployeeReportToExcel, exportEmployeeReportToCSV } from '../../utils/exportEmployeeReport';
@@ -1572,6 +1573,7 @@ const ReportsPage = () => {
       <div className="reports-content">
         <Sidebar />
         <main className="reports-main">
+          <PageGuide pageKey="reports-page" />
           {/* Page Header */}
           <div className="page-header">
             <div className="page-header-left">

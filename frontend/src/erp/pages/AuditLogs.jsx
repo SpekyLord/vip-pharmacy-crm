@@ -10,6 +10,7 @@ import useDashboard from '../hooks/useDashboard';
 import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .audit-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -77,6 +78,7 @@ export default function AuditLogs() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="audit-main">
+          <WorkflowGuide pageKey="audit-logs" />
           <div className="audit-header">
             <h1>Audit Logs</h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>

@@ -8,6 +8,7 @@ import usePeople from '../hooks/usePeople';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .ccm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -353,6 +354,7 @@ export default function CreditCardManager() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="ccm-main admin-main">
+          <WorkflowGuide pageKey="credit-card-manager" />
           <CreditCardManagerContent />
         </main>
       </div>

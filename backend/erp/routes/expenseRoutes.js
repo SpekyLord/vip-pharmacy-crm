@@ -8,6 +8,7 @@
 const express = require('express');
 const { roleCheck } = require('../../middleware/roleCheck');
 const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
+const periodLockCheck = require('../middleware/periodLockCheck');
 const { uploadMultiple } = require('../../middleware/upload');
 const {
   // SMER
@@ -40,8 +41,8 @@ router.get('/smer', getSmerList);
 router.get('/smer/crm-md-counts', getSmerCrmMdCounts);       // CRM bridge: auto-populate MD counts
 router.get('/smer/crm-visits/:date', getSmerCrmVisitDetail);  // CRM bridge: drill-down visit detail
 router.post('/smer/validate', validateSmer);
-router.post('/smer/submit', submitSmer);
-router.post('/smer/reopen', reopenSmer);
+router.post('/smer/submit', periodLockCheck('EXPENSE'), submitSmer);
+router.post('/smer/reopen', periodLockCheck('EXPENSE'), reopenSmer);
 router.get('/smer/:id', getSmerById);
 router.put('/smer/:id', updateSmer);
 router.delete('/smer/:id', deleteDraftSmer);  // DRAFT only — backend enforces status check
@@ -51,8 +52,8 @@ router.post('/smer/:id/override-perdiem', roleCheck('admin', 'finance', 'preside
 router.post('/car-logbook', createCarLogbook);
 router.get('/car-logbook', getCarLogbookList);
 router.post('/car-logbook/validate', validateCarLogbook);
-router.post('/car-logbook/submit', submitCarLogbook);
-router.post('/car-logbook/reopen', reopenCarLogbook);
+router.post('/car-logbook/submit', periodLockCheck('EXPENSE'), submitCarLogbook);
+router.post('/car-logbook/reopen', periodLockCheck('EXPENSE'), reopenCarLogbook);
 router.get('/car-logbook/:id', getCarLogbookById);
 router.put('/car-logbook/:id', updateCarLogbook);
 router.delete('/car-logbook/:id', deleteDraftCarLogbook);  // DRAFT only
@@ -65,8 +66,8 @@ router.post('/ore-access/batch-save', erpSubAccessCheck('expenses', 'batch_uploa
 router.post('/ore-access', createExpense);
 router.get('/ore-access', getExpenseList);
 router.post('/ore-access/validate', validateExpenses);
-router.post('/ore-access/submit', submitExpenses);
-router.post('/ore-access/reopen', reopenExpenses);
+router.post('/ore-access/submit', periodLockCheck('EXPENSE'), submitExpenses);
+router.post('/ore-access/reopen', periodLockCheck('EXPENSE'), reopenExpenses);
 router.get('/ore-access/:id', getExpenseById);
 router.put('/ore-access/:id', updateExpense);
 router.delete('/ore-access/:id', deleteDraftExpense);  // DRAFT only
@@ -79,8 +80,8 @@ router.get('/prf-calf/pending-calf', getPendingCalfLines);
 router.post('/prf-calf', createPrfCalf);
 router.get('/prf-calf', getPrfCalfList);
 router.post('/prf-calf/validate', validatePrfCalf);
-router.post('/prf-calf/submit', submitPrfCalf);
-router.post('/prf-calf/reopen', roleCheck('admin', 'finance', 'president'), reopenPrfCalf);
+router.post('/prf-calf/submit', periodLockCheck('EXPENSE'), submitPrfCalf);
+router.post('/prf-calf/reopen', periodLockCheck('EXPENSE'), roleCheck('admin', 'finance', 'president'), reopenPrfCalf);
 router.get('/prf-calf/:id', getPrfCalfById);
 router.put('/prf-calf/:id', updatePrfCalf);
 router.delete('/prf-calf/:id', deleteDraftPrfCalf);  // DRAFT only

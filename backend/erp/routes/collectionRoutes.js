@@ -2,14 +2,15 @@ const express = require('express');
 const router = express.Router();
 const c = require('../controllers/collectionController');
 const { roleCheck } = require('../../middleware/roleCheck');
+const periodLockCheck = require('../middleware/periodLockCheck');
 
 // Static routes first (before /:id)
 router.get('/open-csis', c.getOpenCsisEndpoint);
 router.get('/ar-aging', c.getArAgingEndpoint);
 router.get('/collection-rate', c.getCollectionRateEndpoint);
 router.post('/validate', c.validateCollections);
-router.post('/submit', c.submitCollections);
-router.post('/reopen', c.reopenCollections);
+router.post('/submit', periodLockCheck('COLLECTION'), c.submitCollections);
+router.post('/reopen', periodLockCheck('COLLECTION'), c.reopenCollections);
 router.post('/soa', c.generateSoaEndpoint);
 router.delete('/draft/:id', c.deleteDraftCollection);
 
