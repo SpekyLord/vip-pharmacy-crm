@@ -34,10 +34,14 @@ const {
   registerValidation,
 } = require('../middleware/validation');
 
+// Skip route-level rate limiting in development to prevent lockouts during testing
+const isDev = process.env.NODE_ENV !== 'production';
+const noop = (req, res, next) => next();
+
 // Rate limiting for auth routes (security: prevent brute force attacks)
-const authLimiter = rateLimit({
+const authLimiter = isDev ? noop : rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 attempts per window
+  max: 20, // 20 attempts per window
   message: {
     success: false,
     message: 'Too many authentication attempts. Please try again after 15 minutes.',
@@ -47,7 +51,7 @@ const authLimiter = rateLimit({
 });
 
 // Separate rate limiter for refresh-token (higher limit since frontend may fire multiple parallel requests)
-const refreshLimiter = rateLimit({
+const refreshLimiter = isDev ? noop : rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 60, // Allow more since each page load can trigger multiple refreshes
   message: {
@@ -58,7 +62,7 @@ const refreshLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const passwordResetLimiter = rateLimit({
+const passwordResetLimiter = isDev ? noop : rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5, // 5 attempts per hour
   message: {
