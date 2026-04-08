@@ -13,6 +13,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import usePeople from '../hooks/usePeople';
 import usePayroll from '../hooks/usePayroll';
+import useErpAccess from '../hooks/useErpAccess';
 import { showError, showSuccess } from '../utils/errorToast';
 import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
@@ -110,7 +111,9 @@ export default function PersonDetail() {
   const [compForm, setCompForm] = useState({});
   const [insForm, setInsForm] = useState(null); // null = closed, {} = new, {_id} = editing
   const [showLoginForm, setShowLoginForm] = useState(false);
-  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [loginForm, setLoginForm] = useState({ email: '', password: '', template_id: '' });
+  const [accessTemplates, setAccessTemplates] = useState([]);
+  const erpAccess = useErpAccess();
   const savingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -163,6 +166,9 @@ export default function PersonDetail() {
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    erpAccess.getTemplates().then(res => setAccessTemplates(res?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePersonChange = (e) => setPersonForm(f => ({ ...f, [e.target.name]: e.target.value }));
   const handleCompChange = (e) => {
@@ -193,10 +199,12 @@ export default function PersonDetail() {
   const handleCreateLogin = async () => {
     if (!loginForm.email || !loginForm.password) return;
     try {
-      await pplApi.createLoginForPerson(id, loginForm);
-      showSuccess('Login created! Refreshing...');
+      const payload = { email: loginForm.email, password: loginForm.password };
+      if (loginForm.template_id) payload.template_id = loginForm.template_id;
+      await pplApi.createLoginForPerson(id, payload);
+      showSuccess(loginForm.template_id ? 'Login created with ERP access template!' : 'Login created! Configure ERP access below.');
       setShowLoginForm(false);
-      setLoginForm({ email: '', password: '' });
+      setLoginForm({ email: '', password: '', template_id: '' });
       load();
     } catch (err) {
       showError(err, 'Could not create login — check email and password requirements');
@@ -624,6 +632,16 @@ export default function PersonDetail() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360 }}>
                   <input placeholder="Email *" value={loginForm.email} onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }} />
                   <input type="password" placeholder="Password * (min 8, upper+lower+number+special)" value={loginForm.password} onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }} />
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', marginBottom: 4 }}>ERP Access Template</div>
+                    <select value={loginForm.template_id} onChange={e => setLoginForm(f => ({ ...f, template_id: e.target.value }))} style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}>
+                      <option value="">— No template (configure later) —</option>
+                      {accessTemplates.map(t => <option key={t._id} value={t._id}>{t.template_name}{t.description ? ` — ${t.description}` : ''}</option>)}
+                    </select>
+                  </div>
+                  {!loginForm.template_id && (
+                    <p style={{ fontSize: 11, color: '#f59e0b', margin: 0 }}>Warning: Without a template, this user will have no ERP module access.</p>
+                  )}
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button className="pd-btn pd-btn-p" disabled={!loginForm.email || !loginForm.password} onClick={handleCreateLogin}>Create</button>
                     <button className="pd-btn" onClick={() => setShowLoginForm(false)}>Cancel</button>

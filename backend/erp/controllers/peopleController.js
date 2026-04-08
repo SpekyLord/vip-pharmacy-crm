@@ -425,7 +425,7 @@ const createPersonUnified = catchAsync(async (req, res) => {
 // ═══ Create Login for Existing Person ═══
 
 const createLoginForPerson = catchAsync(async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, template_id } = req.body;
   const person = await PeopleMaster.findById(req.params.id);
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
   if (person.user_id) return res.status(400).json({ success: false, message: 'Person already has a system login' });
@@ -439,6 +439,24 @@ const createLoginForPerson = catchAsync(async (req, res) => {
   const roleMap = { DIRECTOR: 'president', BDM: 'employee', ECOMMERCE_BDM: 'employee', SALES_REP: 'employee', CONSULTANT: 'employee', EMPLOYEE: 'employee' };
   const crmRole = roleMap[person.person_type] || 'employee';
 
+  // Build ERP access — apply template if provided, otherwise just enable
+  let erpAccess = { enabled: true };
+  if (template_id) {
+    const AccessTemplate = require('../models/AccessTemplate');
+    const template = await AccessTemplate.findById(template_id).lean();
+    if (template) {
+      erpAccess = {
+        enabled: true,
+        template_id: template._id,
+        modules: { ...template.modules },
+        can_approve: template.can_approve || false,
+        sub_permissions: template.sub_permissions || {},
+        updated_by: req.user._id,
+        updated_at: new Date(),
+      };
+    }
+  }
+
   const user = await User.create({
     name: person.full_name,
     email: email.toLowerCase(),
@@ -447,7 +465,7 @@ const createLoginForPerson = catchAsync(async (req, res) => {
     phone: person.phone || '',
     entity_id: person.entity_id,
     territory_id: person.territory_id || null,
-    'erp_access.enabled': true,
+    erp_access: erpAccess,
   });
 
   // Link PeopleMaster to new CRM User
