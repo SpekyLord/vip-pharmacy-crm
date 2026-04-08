@@ -31,6 +31,8 @@ const {
   resetUserPassword,
   unlockAccount,
   hardDeleteUser,
+  getEntitiesLookup,
+  getAccessTemplatesLookup,
 } = require('../controllers/userController');
 
 const { protect } = require('../middleware/auth');
@@ -50,6 +52,10 @@ router.get('/employees', adminOnly, getEmployees);
 
 // Active users (admin only)
 router.get('/active', adminOnly, getActiveUsers);
+
+// Lookup routes for BDM form dropdowns (admin only)
+router.get('/lookup/entities', adminOnly, getEntitiesLookup);
+router.get('/lookup/access-templates', adminOnly, getAccessTemplatesLookup);
 
 // Admin only routes
 router.get('/', adminOnly, getAllUsers);

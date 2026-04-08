@@ -409,6 +409,20 @@ const hardDeleteUser = catchAsync(async (req, res) => {
   });
 });
 
+// Lookup: entities for BDM assignment dropdown
+const getEntitiesLookup = catchAsync(async (req, res) => {
+  const Entity = require('../erp/models/Entity');
+  const entities = await Entity.find({ is_active: true }).select('entity_name short_name').lean();
+  res.json({ success: true, data: entities });
+});
+
+// Lookup: ERP access templates for BDM assignment dropdown
+const getAccessTemplatesLookup = catchAsync(async (req, res) => {
+  const AccessTemplate = require('../erp/models/AccessTemplate');
+  const templates = await AccessTemplate.find().select('template_name description').lean();
+  res.json({ success: true, data: templates });
+});
+
 module.exports = {
   getActiveUsers,
   getAllUsers,
@@ -422,4 +436,6 @@ module.exports = {
   resetUserPassword,
   unlockAccount,
   hardDeleteUser,
+  getEntitiesLookup,
+  getAccessTemplatesLookup,
 };
