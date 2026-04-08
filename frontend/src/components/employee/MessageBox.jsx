@@ -65,7 +65,7 @@ const MessageBox = ({
 
             {/* ✅ Preview becomes full text when open */}
             <div className={`preview ${isOpen ? "preview-expanded" : ""}`}>
-              {message.message}
+              {message.body || message.message}
             </div>
 
             {/* Micro actions */}

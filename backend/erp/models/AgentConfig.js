@@ -20,6 +20,11 @@ const agentConfigSchema = new mongoose.Schema({
       message: 'notify_roles must be president, admin, or finance'
     }
   },
+  is_running: { type: Boolean, default: false, index: true },
+  current_run_id: { type: mongoose.Schema.Types.ObjectId, ref: 'AgentRun', default: null },
+  last_started_at: { type: Date, default: null },
+  last_finished_at: { type: Date, default: null },
+  run_lock_until: { type: Date, default: null, index: true },
   updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, {
   timestamps: true,

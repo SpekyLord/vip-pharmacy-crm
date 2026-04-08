@@ -2,18 +2,13 @@
  * Org Intelligence Agent (#O)
  *
  * Weekly AI agent that analyzes partner scorecards across all entities
- * and produces actionable intelligence digest for the President.
- *
- * Schedule: Monday 5:30 AM (after daily scorecard refresh at 5:00 AM)
- * Type: Paid (uses Claude API)
+ * and produces an actionable intelligence digest for the President.
  */
-const Anthropic = require('@anthropic-ai/sdk');
+
 const PartnerScorecard = require('../erp/models/PartnerScorecard');
-const PeopleMaster = require('../erp/models/PeopleMaster');
 const Entity = require('../erp/models/Entity');
-const AgentRun = require('../erp/models/AgentRun');
-const MessageInbox = require('../models/MessageInbox');
-const User = require('../models/User');
+const { askClaude } = require('./claudeClient');
+const { notify, countSuccessfulChannels, getInAppMessageIds } = require('./notificationService');
 
 function currentPeriod() {
   const now = new Date();
@@ -22,168 +17,124 @@ function currentPeriod() {
 
 function previousPeriod() {
   const now = new Date();
-  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+  const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}`;
 }
 
 async function run() {
-  const startTime = Date.now();
   const period = currentPeriod();
   const prevPeriod = previousPeriod();
 
-  try {
-    // Get all entities
-    const entities = await Entity.find({ status: 'ACTIVE' }).select('entity_name short_name entity_type').lean();
+  const entities = await Entity.find({ status: 'ACTIVE' }).select('entity_name short_name entity_type').lean();
 
-    // Get current and previous scorecards
-    const current = await PartnerScorecard.find({ period })
-      .populate('person_id', 'full_name person_type position bdm_code date_hired entity_id')
-      .populate('entity_id', 'short_name')
-      .sort({ score_overall: -1 })
-      .lean();
+  const current = await PartnerScorecard.find({ period })
+    .populate('person_id', 'full_name person_type position bdm_code date_hired entity_id')
+    .populate('entity_id', 'short_name')
+    .sort({ score_overall: -1 })
+    .lean();
 
-    const previous = await PartnerScorecard.find({ period: prevPeriod })
-      .select('person_id score_overall')
-      .lean();
-    const prevMap = new Map(previous.map(s => [s.person_id.toString(), s.score_overall]));
+  const previous = await PartnerScorecard.find({ period: prevPeriod })
+    .select('person_id score_overall')
+    .lean();
+  const prevMap = new Map(previous.map((scorecard) => [scorecard.person_id.toString(), scorecard.score_overall]));
 
-    if (current.length === 0) {
-      console.log('[OrgIntelligence] No scorecards found — skipping.');
-      return;
-    }
-
-    // Build data summary for Claude
-    const partnerData = current.map((s, i) => {
-      const prevScore = prevMap.get(s.person_id?._id?.toString()) || null;
-      const delta = prevScore !== null ? s.score_overall - prevScore : null;
-      return {
-        rank: i + 1,
-        name: s.person_id?.full_name || 'Unknown',
-        type: s.person_id?.person_type || 'BDM',
-        entity: s.entity_id?.short_name || '?',
-        score_overall: s.score_overall,
-        delta: delta !== null ? `${delta >= 0 ? '+' : ''}${delta}` : 'new',
-        visits: `${s.visits_completed}/${s.visits_expected} (${s.visit_compliance_pct}%)`,
-        sales: `₱${(s.sales_total || 0).toLocaleString()}`,
-        collections: `₱${(s.collections_total || 0).toLocaleString()} (${s.collection_rate_pct}%)`,
-        expense_ratio: `${s.expense_sales_ratio_pct}%`,
-        engagement: s.avg_engagement_level,
-        clients: `${s.total_clients_assigned} assigned, ${s.clients_at_risk} at risk`,
-        graduation: `${s.graduation?.checklist_met || 0}/${s.graduation?.checklist_total || 7}`,
-        graduation_ready: s.graduation?.ready || false,
-        blocking_criteria: (s.graduation?.criteria || []).filter(c => !c.met).map(c => `${c.label}: ${c.actual} (need ${c.comparator === 'lte' ? '≤' : '≥'}${c.target})`),
-        ai_insights: (s.ai_insights || []).map(i => `[${i.agent}] ${i.message}`),
-      };
-    });
-
-    const entitySummary = entities.map(e => {
-      const ePeople = current.filter(s => s.entity_id?._id?.toString() === e._id.toString());
-      return {
-        name: e.short_name || e.entity_name,
-        type: e.entity_type,
-        partners: ePeople.length,
-        avg_score: ePeople.length > 0 ? Math.round(ePeople.reduce((s, p) => s + p.score_overall, 0) / ePeople.length) : 0,
-      };
-    });
-
-    // Call Claude API
-    const client = new Anthropic();
-    const prompt = `You are the Org Intelligence Analyst for VIP Group (VIOS INTEGRATED PROJECTS INC.), a pharmaceutical company.
-
-CONTEXT:
-- VIP is a parent company that supplies subsidiaries.
-- BDMs are partners/entrepreneurs-to-be who can graduate to own their own subsidiary.
-- Graduation requires meeting 7 criteria (months active, clients, sales, collection rate, expense ratio, visit compliance, engagement).
-- The President (Gregg) needs actionable, concise insights — not just numbers.
-
-ENTITIES:
-${JSON.stringify(entitySummary, null, 2)}
-
-PARTNER SCORECARDS (${period}):
-${JSON.stringify(partnerData, null, 2)}
-
-Produce a weekly org intelligence digest. Use this exact format:
-
-📊 ORG INTELLIGENCE — Week of [date]
-
-GROUP HEALTH: [1 line summary with avg score and trend]
-
-🏆 TOP PERFORMERS (top 3)
-[rank. name — score (delta) — key strength]
-
-⚠️ NEEDS ATTENTION
-[partners with score <50 or declining >10 points — what's wrong]
-
-🎓 GRADUATION PIPELINE
-[partners closest to graduation — what criteria they still need — specific recommendation]
-
-📈 TRENDS
-[3 bullet points on org-wide patterns]
-
-💡 RECOMMENDATIONS
-[3 specific, actionable recommendations for the President]
-
-Keep it concise, specific, and actionable. Use real names and numbers from the data.`;
-
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1000,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const digest = response.content[0]?.text || 'Unable to generate digest.';
-
-    // Send message to President
-    const presidents = await User.find({ role: 'president' }).select('_id').lean();
-    const messageIds = [];
-
-    for (const pres of presidents) {
-      const msg = await MessageInbox.create({
-        recipientUserId: pres._id,
-        recipientRole: 'president',
-        title: `Org Intelligence — ${period}`,
-        body: digest,
-        category: 'ai_coaching',
-        priority: 'normal',
-        senderName: 'Org Intelligence Agent',
-        senderRole: 'system',
-      });
-      messageIds.push(msg._id);
-    }
-
-    // Log agent run
-    const topPerformers = partnerData.slice(0, 3).map(p => `${p.name}: ${p.score_overall}`);
-    const nearGrad = partnerData.filter(p => p.graduation.startsWith('6/') || p.graduation.startsWith('7/')).map(p => p.name);
-
-    await AgentRun.create({
-      agent_key: 'org_intelligence',
-      agent_label: 'Org Intelligence',
+  if (!current.length) {
+    console.log('[OrgIntelligence] No scorecards found - skipping.');
+    return {
       status: 'success',
       summary: {
-        bdms_processed: current.length,
-        alerts_generated: partnerData.filter(p => p.score_overall < 50).length,
-        messages_sent: messageIds.length,
-        key_findings: [
-          `Avg score: ${Math.round(current.reduce((s, c) => s + c.score_overall, 0) / current.length)}`,
-          `Top: ${topPerformers.join(', ')}`,
-          nearGrad.length > 0 ? `Near graduation: ${nearGrad.join(', ')}` : 'No partners near graduation yet',
-        ],
+        bdms_processed: 0,
+        alerts_generated: 0,
+        messages_sent: 0,
+        key_findings: [`No partner scorecards found for ${period}.`],
       },
-      message_ids: messageIds,
-      execution_ms: Date.now() - startTime,
-    });
-
-    console.log(`[OrgIntelligence] Digest sent to ${messageIds.length} president(s). ${current.length} partners analyzed.`);
-  } catch (err) {
-    console.error('[OrgIntelligence] Error:', err.message);
-    await AgentRun.create({
-      agent_key: 'org_intelligence',
-      agent_label: 'Org Intelligence',
-      status: 'error',
-      error_msg: err.message,
-      execution_ms: Date.now() - startTime,
-    });
+      message_ids: [],
+    };
   }
+
+  const partnerData = current.map((scorecard, index) => {
+    const prevScore = prevMap.get(scorecard.person_id?._id?.toString()) || null;
+    const delta = prevScore !== null ? scorecard.score_overall - prevScore : null;
+
+    return {
+      rank: index + 1,
+      name: scorecard.person_id?.full_name || 'Unknown',
+      type: scorecard.person_id?.person_type || 'BDM',
+      entity: scorecard.entity_id?.short_name || '?',
+      score_overall: scorecard.score_overall,
+      delta: delta !== null ? `${delta >= 0 ? '+' : ''}${delta}` : 'new',
+      visits: `${scorecard.visits_completed}/${scorecard.visits_expected} (${scorecard.visit_compliance_pct}%)`,
+      sales: `PHP ${(scorecard.sales_total || 0).toLocaleString()}`,
+      collections: `PHP ${(scorecard.collections_total || 0).toLocaleString()} (${scorecard.collection_rate_pct}%)`,
+      expense_ratio: `${scorecard.expense_sales_ratio_pct}%`,
+      engagement: scorecard.avg_engagement_level,
+      clients: `${scorecard.total_clients_assigned} assigned, ${scorecard.clients_at_risk} at risk`,
+      graduation: `${scorecard.graduation?.checklist_met || 0}/${scorecard.graduation?.checklist_total || 7}`,
+      graduation_ready: scorecard.graduation?.ready || false,
+      blocking_criteria: (scorecard.graduation?.criteria || [])
+        .filter((criterion) => !criterion.met)
+        .map((criterion) => `${criterion.label}: ${criterion.actual} (need ${criterion.comparator === 'lte' ? '<=' : '>='}${criterion.target})`),
+      ai_insights: (scorecard.ai_insights || []).map((insight) => `[${insight.agent}] ${insight.message}`),
+    };
+  });
+
+  const entitySummary = entities.map((entity) => {
+    const people = current.filter((scorecard) => scorecard.entity_id?._id?.toString() === entity._id.toString());
+    return {
+      name: entity.short_name || entity.entity_name,
+      type: entity.entity_type,
+      partners: people.length,
+      avg_score: people.length > 0 ? Math.round(people.reduce((sum, person) => sum + person.score_overall, 0) / people.length) : 0,
+    };
+  });
+
+  const { text } = await askClaude({
+    system: `You are the Org Intelligence Analyst for VIP Group, a Philippine pharmaceutical company.
+
+The President needs actionable, concise insights on:
+- Group health and score trends
+- Top performers
+- People needing attention
+- Graduation pipeline readiness
+- Org-wide patterns and next actions
+
+Use real names and numbers from the supplied data.`,
+    prompt: `Entities:\n${JSON.stringify(entitySummary, null, 2)}\n\nPartner scorecards for ${period}:\n${JSON.stringify(partnerData, null, 2)}\n\nProduce a weekly org intelligence digest with short sections for group health, top performers, needs attention, graduation pipeline, trends, and recommendations.`,
+    maxTokens: 1000,
+    agent: 'org_intelligence',
+  });
+
+  const notificationResults = await notify({
+    recipient_id: 'PRESIDENT',
+    title: `Org Intelligence - ${period}`,
+    body: text,
+    category: 'ai_coaching',
+    priority: 'normal',
+    channels: ['in_app'],
+    agent: 'org_intelligence',
+  });
+
+  const topPerformers = partnerData.slice(0, 3).map((partner) => `${partner.name}: ${partner.score_overall}`);
+  const nearGraduation = partnerData
+    .filter((partner) => partner.graduation.startsWith('6/') || partner.graduation.startsWith('7/'))
+    .map((partner) => partner.name);
+
+  console.log(`[OrgIntelligence] Digest sent to ${countSuccessfulChannels(notificationResults, 'in_app')} president recipient(s). ${current.length} partners analyzed.`);
+
+  return {
+    status: 'success',
+    summary: {
+      bdms_processed: current.length,
+      alerts_generated: partnerData.filter((partner) => partner.score_overall < 50).length,
+      messages_sent: countSuccessfulChannels(notificationResults, 'in_app'),
+      key_findings: [
+        `Avg score: ${Math.round(current.reduce((sum, scorecard) => sum + scorecard.score_overall, 0) / current.length)}`,
+        `Top: ${topPerformers.join(', ')}`,
+        nearGraduation.length > 0 ? `Near graduation: ${nearGraduation.join(', ')}` : 'No partners near graduation yet',
+      ],
+    },
+    message_ids: getInAppMessageIds(notificationResults),
+  };
 }
 
 module.exports = { run };

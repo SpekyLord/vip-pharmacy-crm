@@ -31,7 +31,7 @@ async function sendInApp({ recipientId, title, body, category, priority }) {
       const recipient = await User.findById(recipientId).select('role').lean();
       if (recipient) recipientRole = recipient.role;
     }
-    await MessageInbox.create({
+    const message = await MessageInbox.create({
       title,
       body,
       category: category || 'system',
@@ -41,7 +41,7 @@ async function sendInApp({ recipientId, title, body, category, priority }) {
       senderName: 'System Agent',
       senderId: null
     });
-    return { channel: 'in_app', success: true };
+    return { channel: 'in_app', success: true, messageId: message._id?.toString?.() || null };
   } catch (err) {
     console.error('[Agent Notify] In-app failed:', err.message);
     return { channel: 'in_app', success: false, error: err.message };
@@ -226,6 +226,16 @@ async function notify({ recipient_id, title, body, category, priority, channels,
   return results;
 }
 
+function countSuccessfulChannels(results = [], channel = 'in_app') {
+  return (Array.isArray(results) ? results : []).filter((result) => result?.channel === channel && result?.success).length;
+}
+
+function getInAppMessageIds(results = []) {
+  return (Array.isArray(results) ? results : [])
+    .filter((result) => result?.channel === 'in_app' && result?.success && result?.messageId)
+    .map((result) => result.messageId);
+}
+
 /**
  * Broadcast to a role group (convenience)
  */
@@ -238,4 +248,4 @@ async function broadcastToRole(role, { title, body, category, priority, channels
   return notify({ recipient_id: roleMap[role] || role, title, body, category, priority, channels, agent });
 }
 
-module.exports = { notify, broadcastToRole };
+module.exports = { notify, broadcastToRole, countSuccessfulChannels, getInAppMessageIds };
