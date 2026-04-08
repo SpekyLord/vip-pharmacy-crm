@@ -160,6 +160,19 @@ exports.seedCategory = catchAsync(async (req, res) => {
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });
 
+// Seed ALL categories at once
+exports.seedAll = catchAsync(async (req, res) => {
+  if (!req.entityId) return res.status(400).json({ success: false, message: 'Entity context required. President must select a working entity first.' });
+  const results = {};
+  for (const [category, defaults] of Object.entries(SEED_DEFAULTS)) {
+    const ops = buildSeedOps(defaults, category, req.entityId, req.user._id);
+    const result = await Lookup.bulkWrite(ops);
+    results[category] = { defaults: defaults.length, inserted: result.upsertedCount };
+  }
+  const populated = await Lookup.distinct('category', { entity_id: req.entityId });
+  res.json({ success: true, data: results, message: `Seeded ${populated.length}/${Object.keys(SEED_DEFAULTS).length} categories` });
+});
+
 // Get seed defaults (for frontend to show available categories)
 exports.getSeedDefaults = catchAsync(async (req, res) => {
   const summary = {};

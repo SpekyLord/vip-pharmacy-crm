@@ -710,7 +710,6 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
       { path: '/erp/grn', label: 'GRN Entry', icon: FileInput },
       { path: '/erp/my-stock', label: 'Inventory', icon: Package },
       { path: '/erp/office-supplies', label: 'Office Supplies', icon: Package },
-      { path: '/erp/petty-cash', label: 'Petty Cash', icon: Wallet },
       { path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight },
     ];
     if (isAdmin) invItems.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
@@ -781,6 +780,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
       { path: '/erp/journals', label: 'Journal Entries', icon: BookOpen },
       { path: '/erp/loans', label: 'Loans', icon: BookOpen },
       { path: '/erp/owner-equity', label: 'Owner Equity', icon: BookOpen },
+      { path: '/erp/petty-cash', label: 'Petty Cash', icon: Wallet },
       { path: '/erp/profit-loss', label: 'P&L Statement', icon: BookOpen },
       { path: '/erp/recurring-journals', label: 'Recurring Journals', icon: BookOpen },
       { path: '/erp/trial-balance', label: 'Trial Balance', icon: BookOpen },

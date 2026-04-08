@@ -147,7 +147,7 @@ async function run() {
       const Settings = require('../erp/models/Settings');
       const settings = await Settings.getSettings();
 
-      const requiredFields = ['VAT_RATE', 'CWT_RATE_WC158', 'NEAR_EXPIRY_DAYS', 'PAYMENT_TERMS_DEFAULT'];
+      const requiredFields = ['VAT_RATE', 'CWT_RATE_WC158', 'NEAR_EXPIRY_DAYS', 'DEFAULT_PAYMENT_TERMS'];
       const missingSettings = requiredFields.filter(f => settings[f] == null);
 
       if (missingSettings.length > 0) {
