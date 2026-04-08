@@ -46,14 +46,6 @@ const createSmer = catchAsync(async (req, res) => {
     return { ...entry, perdiem_tier: tier, perdiem_amount: amount };
   });
 
-  // Strip empty strings from enum fields to avoid Mongoose validation errors
-  dailyEntries = dailyEntries.map(e => {
-    const cleaned = { ...e };
-    if (!cleaned.activity_type) delete cleaned.activity_type;
-    if (!cleaned.override_tier) delete cleaned.override_tier;
-    return cleaned;
-  });
-
   const smer = await SmerEntry.create({
     ...req.body,
     daily_entries: dailyEntries,
@@ -76,17 +68,12 @@ const updateSmer = catchAsync(async (req, res) => {
   // Re-compute per diem if daily entries changed (skip overridden entries)
   if (req.body.daily_entries) {
     req.body.daily_entries = req.body.daily_entries.map(entry => {
-      // Strip empty strings from enum fields
-      const cleaned = { ...entry };
-      if (!cleaned.activity_type) delete cleaned.activity_type;
-      if (!cleaned.override_tier) delete cleaned.override_tier;
-
-      if (cleaned.perdiem_override && cleaned.override_tier) {
-        const { amount } = computePerdiemAmount(cleaned.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings);
-        return { ...cleaned, perdiem_tier: cleaned.override_tier, perdiem_amount: amount };
+      if (entry.perdiem_override && entry.override_tier) {
+        const { amount } = computePerdiemAmount(entry.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings);
+        return { ...entry, perdiem_tier: entry.override_tier, perdiem_amount: amount };
       }
-      const { tier, amount } = computePerdiemAmount(cleaned.md_count || 0, perdiemRate, settings);
-      return { ...cleaned, perdiem_tier: tier, perdiem_amount: amount };
+      const { tier, amount } = computePerdiemAmount(entry.md_count || 0, perdiemRate, settings);
+      return { ...entry, perdiem_tier: tier, perdiem_amount: amount };
     });
   }
 
