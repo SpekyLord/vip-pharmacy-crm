@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
-import { Search, Plus, Eye, Edit2, Power, X, ChevronDown, KeyRound, Unlock, Trash2 } from 'lucide-react';
+import { Search, Plus, Eye, Edit2, Power, X, ChevronDown } from 'lucide-react';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 
 const employeeManagementStyles = `
@@ -1267,7 +1267,7 @@ const EmployeeManagement = ({
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [localFilters.search]);
+  }, [localFilters.search, filters, onFilterChange]);
 
   const handleFilterChange = (field, value) => {
     if (field === 'search') {
@@ -1299,11 +1299,6 @@ const EmployeeManagement = ({
       role: employee.role || 'employee',
     });
     setShowModal(true);
-  };
-
-  const handleDeleteClick = (employee) => {
-    setSelectedEmployee(employee);
-    setShowConfirmDelete(true);
   };
 
   const handleConfirmDelete = async () => {
