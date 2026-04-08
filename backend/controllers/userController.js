@@ -164,7 +164,7 @@ const updateUser = catchAsync(async (req, res) => {
 
   // Admin can update additional fields
   if (isAdmin) {
-    allowedFields.push('role', 'isActive');
+    allowedFields.push('role', 'isActive', 'entity_id', 'entity_ids');
   }
 
   // Update only allowed fields
@@ -173,6 +173,12 @@ const updateUser = catchAsync(async (req, res) => {
       user[field] = req.body[field];
     }
   });
+
+  // ERP access — handled separately (nested object needs markModified)
+  if (isAdmin && req.body.erp_access !== undefined) {
+    user.erp_access = req.body.erp_access;
+    user.markModified('erp_access');
+  }
 
   await user.save();
 
@@ -423,6 +429,30 @@ const getAccessTemplatesLookup = catchAsync(async (req, res) => {
   res.json({ success: true, data: templates });
 });
 
+/**
+ * @desc    Get entities the current user can access (multi-entity support)
+ * @route   GET /api/users/my-entities
+ * @access  Authenticated
+ */
+const getMyEntities = catchAsync(async (req, res) => {
+  const Entity = require('../erp/models/Entity');
+  const { entity_id, entity_ids } = req.user;
+
+  // Build list of entity IDs from entity_ids (if set) or fallback to [entity_id]
+  const ids = (entity_ids && entity_ids.length > 0)
+    ? entity_ids
+    : (entity_id ? [entity_id] : []);
+
+  if (ids.length === 0) return res.json({ success: true, data: [] });
+
+  const entities = await Entity.find({ _id: { $in: ids }, status: 'ACTIVE' })
+    .select('entity_name short_name entity_type brand_color brand_text_color')
+    .sort({ entity_type: 1, entity_name: 1 })
+    .lean();
+
+  res.json({ success: true, data: entities });
+});
+
 module.exports = {
   getActiveUsers,
   getAllUsers,
@@ -438,4 +468,5 @@ module.exports = {
   hardDeleteUser,
   getEntitiesLookup,
   getAccessTemplatesLookup,
+  getMyEntities,
 };

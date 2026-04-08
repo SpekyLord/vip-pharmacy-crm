@@ -42,13 +42,21 @@ const getMyWarehouses = catchAsync(async (req, res) => {
   if (role === 'president' || role === 'admin') {
     // President/admin see all warehouses (optionally filter by entity)
     if (req.query.entity_id) filter.entity_id = req.query.entity_id;
-  } else {
-    // BDM/employee: only warehouses they manage or are assigned to
-    filter.$or = [
-      { manager_id: userId },
-      { assigned_users: userId },
-    ];
+  } else if (role === 'finance') {
+    // Finance sees all warehouses within their entity
     if (userEntityId) filter.entity_id = userEntityId;
+  } else {
+    // BDM/employee: warehouses they manage, are assigned to, OR in their entity if they have ERP access
+    if (req.user.erp_access?.enabled && userEntityId) {
+      // ERP-enabled employees can see all warehouses in their entity
+      filter.entity_id = userEntityId;
+    } else {
+      filter.$or = [
+        { manager_id: userId },
+        { assigned_users: userId },
+      ];
+      if (userEntityId) filter.entity_id = userEntityId;
+    }
   }
 
   const warehouses = await Warehouse.find(filter)

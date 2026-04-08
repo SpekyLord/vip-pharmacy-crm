@@ -13,9 +13,11 @@ export const EntityProvider = ({ children }) => {
   const [workingEntityId, setWorkingEntityIdRaw] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
-  const isMultiEntity = user?.role === 'president' || user?.role === 'ceo';
+  // Multi-entity: president/ceo OR users with entity_ids > 1
+  const isMultiEntity = user?.role === 'president' || user?.role === 'ceo'
+    || (Array.isArray(user?.entity_ids) && user.entity_ids.length > 1);
 
-  // Fetch entities for president; for others just use their fixed entity_id
+  // Fetch entities for multi-entity users; for others just use their fixed entity_id
   useEffect(() => {
     if (!user) {
       setWorkingEntityIdRaw(null);
@@ -32,8 +34,12 @@ export const EntityProvider = ({ children }) => {
       return;
     }
 
-    // President: fetch all entities and restore selection
-    api.get('/erp/transfers/entities')
+    // Multi-entity user: president fetches all entities, others fetch their allowed list
+    const endpoint = (user.role === 'president' || user.role === 'ceo')
+      ? '/erp/transfers/entities'
+      : '/users/my-entities';
+
+    api.get(endpoint)
       .then(res => {
         const list = res.data?.data || res.data || [];
         setEntities(list);

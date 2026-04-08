@@ -3642,3 +3642,55 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] Reset Password modal with password input + validation (min 8 chars)
 - [x] Permanent Delete confirmation modal with warning text
 - [x] Dark mode styles for all new action buttons
+
+---
+
+## PHASE 26 — Multi-Entity Access + Stock Import Fix ✅ (April 8, 2026)
+
+**Problem:** Non-president users were locked to a single entity. BDMs like Jay Ann and Judy Mae needed access to both VIP and MG entities for PO creation, accounting, and people management. Also, the stock import script created duplicate products instead of matching against the cleaned ProductMaster.
+
+**Goal:** Scalable multi-entity access for any user, assignable via the BDM Management UI. Fix stock import to match existing products.
+
+### 26.1 — Backend: Multi-Entity User Model ✅
+- [x] `User.js`: Added `entity_ids: [ObjectId]` field (array of accessible entities)
+- [x] Added `{ entity_ids: 1 }` index for query performance
+- [x] `entity_id` remains primary/default; `entity_ids` is the full list (superset)
+
+### 26.2 — Backend: Tenant Filter Multi-Entity Validation ✅
+- [x] `tenantFilter.js`: Multi-entity users (`entity_ids.length > 1`) can use X-Entity-Id header
+- [x] Header value validated against user's `entity_ids` array — rejects unauthorized entities
+- [x] Single-entity users: header stripped (unchanged behavior)
+- [x] President/CEO: unchanged (see all entities)
+- [x] `req.tenantFilter` always uses single working entity — no multi-entity queries
+
+### 26.3 — Backend: My-Entities Endpoint + User Update ✅
+- [x] `GET /api/users/my-entities` — returns entities current user can access
+- [x] `userController.updateUser`: now allows `entity_id`, `entity_ids`, `erp_access` in admin updates
+- [x] `erp_access` handled with `markModified()` for nested object persistence
+
+### 26.4 — Frontend: EntityContext Multi-Entity Support ✅
+- [x] `EntityContext.jsx`: `isMultiEntity` now includes users with `entity_ids.length > 1`
+- [x] Non-president multi-entity users fetch from `/users/my-entities`
+- [x] Entity switcher appears in navbar for all multi-entity users
+
+### 26.5 — Frontend: BDM Management Multi-Entity UI ✅
+- [x] `EmployeeManagement.jsx`: Replaced single entity `<select>` with checkbox list
+- [x] Each entity has checkbox (toggle access) + "Primary" badge/button
+- [x] `entity_ids` array sent on save alongside `entity_id` (primary)
+- [x] Scalable: admin/president can assign any entity combination to any user
+
+### 26.6 — Stock Import: Match Against Cleaned ProductMaster ✅
+- [x] `importStockOnHand.js`: 3-tier matching strategy:
+  1. Exact `entity_id + item_key` match
+  2. `entity_id + brand_name_clean + dosage_strength` match
+  3. `brand_name_clean + dosage_strength` across all entities
+- [x] Unmatched products logged as warnings (no auto-create duplicates)
+- [x] Dedup check: skips if OPENING_BALANCE already exists for same combo
+- [x] Uses `cleanName()` from `backend/erp/utils/nameClean.js`
+
+### 26.7 — Bug Fixes (discovered during investigation) ✅
+- [x] `userController.getEntitiesLookup`: Fixed query `{ is_active: true }` → `{ status: 'ACTIVE' }` (Entity model uses `status` field)
+- [x] `vendorController.create`: Strip empty `vendor_code` to avoid unique index collision
+- [x] `vendorController.getAll`: Return clear error when user has no entity assigned
+- [x] `warehouseController.getMyWarehouses`: ERP-enabled employees see all entity warehouses (not just managed/assigned)
+- [x] `PurchaseOrders.jsx`: Product dropdown uses ProductMaster catalog instead of empty inventory stock

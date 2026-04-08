@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 5.2
-> **Status**: Phases 0-24B Complete. Admin Account Management added (April 8, 2026).
+> **Version**: 5.3
+> **Status**: Phases 0-26 Complete. Multi-Entity Access + Stock Import Fix (April 8, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -25,9 +25,18 @@ Full ERP system under `backend/erp/` and `frontend/src/erp/`. Multi-entity pharm
 
 VIP is the parent company, supplies subsidiaries (MG AND CO. INC. first). BDMs can graduate to own subsidiary. Scalability is critical — every model is scoped by `entity_id`.
 
-- `req.entityId` — resolved from user's assigned entity
+- `req.entityId` — resolved from user's assigned entity (or X-Entity-Id header for multi-entity users)
 - `req.bdmId` — the BDM user (for BDM-scoped queries)
 - `req.tenantFilter` — `{ entity_id: req.entityId, bdm_id: req.bdmId }` (convenience)
+
+### Multi-Entity Access (Phase 26)
+
+Users can access multiple entities via `entity_ids: [ObjectId]` on the User model. The tenant filter validates the `X-Entity-Id` header against this list. Admin/president assigns entities via the BDM Management UI (checkbox list with primary entity selection).
+
+- **President/CEO**: sees all entities (unchanged)
+- **Multi-entity users** (`entity_ids.length > 1`): get an entity switcher in the navbar, can switch working entity
+- **Single-entity users**: unchanged, locked to `entity_id`
+- Controllers are unaffected — they keep using `req.entityId` and `req.tenantFilter`
 
 ## Governance Principles
 
@@ -75,6 +84,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 23 | System Audit & Governance Hardening | ✅ |
 | 24 | ERP Control Center | ✅ |
 | 25 | Admin Account Management (BDM Access Preservation) | ✅ |
+| 26 | Multi-Entity Access + Stock Import Fix | ✅ |
 
 ---
 
