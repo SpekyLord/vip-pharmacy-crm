@@ -412,7 +412,7 @@ const hardDeleteUser = catchAsync(async (req, res) => {
 // Lookup: entities for BDM assignment dropdown
 const getEntitiesLookup = catchAsync(async (req, res) => {
   const Entity = require('../erp/models/Entity');
-  const entities = await Entity.find({ is_active: true }).select('entity_name short_name').lean();
+  const entities = await Entity.find({ status: 'ACTIVE' }).select('entity_name short_name').lean();
   res.json({ success: true, data: entities });
 });
 

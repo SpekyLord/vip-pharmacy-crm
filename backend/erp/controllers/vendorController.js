@@ -50,6 +50,8 @@ const create = catchAsync(async (req, res) => {
   }
   req.body.entity_id = req.entityId;
   req.body.created_by = req.user._id;
+  // Strip empty vendor_code to avoid unique index collision
+  if (!req.body.vendor_code || !req.body.vendor_code.trim()) delete req.body.vendor_code;
   const vendor = await VendorMaster.create(req.body);
   res.status(201).json({ success: true, data: vendor });
 });
