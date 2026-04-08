@@ -15,6 +15,7 @@ import usePeople from '../hooks/usePeople';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const TYPE_LABELS = { MAIN: 'Main Warehouse', TERRITORY: 'Territory', VIRTUAL: 'Virtual' };
 const TYPE_COLORS = { MAIN: '#1e40af', TERRITORY: '#166534', VIRTUAL: '#64748b' };
@@ -77,11 +78,11 @@ const emptyForm = () => ({
 });
 
 export function WarehouseManagerContent() {
-  const { user } = useAuth();
+  useAuth();
   const whApi = useWarehouses();
   const { options: stockTypeOpts } = useLookupOptions('STOCK_TYPE');
   const STOCK_TYPES = stockTypeOpts.map(o => o.code);
-  const { entities } = useEntities();
+  useEntities();
   const { getAsUsers } = usePeople();
 
   const [warehouses, setWarehouses] = useState([]);
@@ -282,6 +283,7 @@ export default function WarehouseManager() {
       <div className="admin-layout">
         <Sidebar />
         <main className="wm-main">
+          <WorkflowGuide pageKey="warehouse-manager" />
           <WarehouseManagerContent />
         </main>
       </div>

@@ -7,6 +7,7 @@ import useErpApi from '../hooks/useErpApi';
 
 import SelectField from '../../components/common/Select';
 import { showError, showSuccess } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .coa-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -265,6 +266,7 @@ export default function ChartOfAccounts() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="coa-main admin-main">
+          <WorkflowGuide pageKey="chart-of-accounts" />
           <ChartOfAccountsContent />
         </main>
       </div>

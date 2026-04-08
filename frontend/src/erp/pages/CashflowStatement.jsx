@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useAccounting from '../hooks/useAccounting';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .cf-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -57,6 +58,7 @@ export default function CashflowStatement() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="cf-main admin-main">
+          <WorkflowGuide pageKey="cashflow-statement" />
           <div className="cf-header"><h2>Cashflow Statement</h2></div>
           <div className="cf-controls">
             <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />

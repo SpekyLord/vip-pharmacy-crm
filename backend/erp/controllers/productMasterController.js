@@ -60,7 +60,9 @@ const getAll = catchAsync(async (req, res) => {
 });
 
 const getById = catchAsync(async (req, res) => {
-  const product = await ProductMaster.findOne({ _id: req.params.id, entity_id: req.entityId }).lean();
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  const product = await ProductMaster.findOne(filter).lean();
   if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
   res.json({ success: true, data: product });
 });
@@ -73,8 +75,10 @@ const create = catchAsync(async (req, res) => {
 });
 
 const update = catchAsync(async (req, res) => {
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
   const product = await ProductMaster.findOneAndUpdate(
-    { _id: req.params.id, entity_id: req.entityId },
+    filter,
     { $set: req.body },
     { new: true, runValidators: true }
   );
@@ -83,8 +87,11 @@ const update = catchAsync(async (req, res) => {
 });
 
 const deactivate = catchAsync(async (req, res) => {
+  const filter = { _id: req.params.id };
+  // President/CEO can deactivate any product; others scoped to their entity
+  if (!req.isPresident) filter.entity_id = req.entityId;
   const product = await ProductMaster.findOneAndUpdate(
-    { _id: req.params.id, entity_id: req.entityId },
+    filter,
     { $set: { is_active: false } },
     { new: true }
   );
@@ -98,7 +105,9 @@ const deactivate = catchAsync(async (req, res) => {
 const updateReorderQty = catchAsync(async (req, res) => {
   const { reorder_min_qty, reorder_qty, safety_stock_qty, lead_time_days } = req.body;
 
-  const product = await ProductMaster.findOne({ _id: req.params.id, entity_id: req.entityId });
+  const reorderFilter = { _id: req.params.id };
+  if (!req.isPresident) reorderFilter.entity_id = req.entityId;
+  const product = await ProductMaster.findOne(reorderFilter);
   if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
 
   const changes = {};

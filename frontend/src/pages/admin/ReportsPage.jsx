@@ -48,6 +48,7 @@ import ReportGenerator from '../../components/admin/ReportGenerator';
 import CallPlanView from '../../components/employee/CallPlanView';
 import EmployeeVisitReport from '../../components/admin/EmployeeVisitReport';
 import userService from '../../services/userService';
+import PageGuide from '../../components/common/PageGuide';
 import visitService from '../../services/visitService';
 import scheduleService from '../../services/scheduleService';
 import { exportEmployeeReportToExcel, exportEmployeeReportToCSV } from '../../utils/exportEmployeeReport';
@@ -1411,7 +1412,7 @@ const ReportsPage = () => {
     try {
       const res = await reportService.downloadReport(report._id);
       window.open(res.data.url, '_blank');
-    } catch (err) {
+    } catch {
       toast.error('Failed to download report');
     }
   };
@@ -1424,7 +1425,7 @@ const ReportsPage = () => {
       setReports(prev => prev.filter(r => r._id !== reportId));
       fetchReportStats();
       toast.success('Report deleted');
-    } catch (err) {
+    } catch {
       toast.error('Failed to delete report');
     }
   };
@@ -1438,7 +1439,7 @@ const ReportsPage = () => {
       fetchReports();
       fetchScheduledReports();
       fetchReportStats();
-    } catch (err) {
+    } catch {
       toast.error('Failed to run report', { id: 'run-scheduled' });
     }
   };
@@ -1449,7 +1450,7 @@ const ReportsPage = () => {
       await reportService.updateScheduledReport(scheduled._id, { status: newStatus });
       setScheduledReports(prev => prev.map(s => s._id === scheduled._id ? { ...s, status: newStatus } : s));
       fetchReportStats();
-    } catch (err) {
+    } catch {
       toast.error('Failed to update scheduled report');
     }
   };
@@ -1461,7 +1462,7 @@ const ReportsPage = () => {
       setScheduledReports(prev => prev.filter(s => s._id !== id));
       fetchReportStats();
       toast.success('Scheduled report deleted');
-    } catch (err) {
+    } catch {
       toast.error('Failed to delete scheduled report');
     }
   };
@@ -1572,6 +1573,7 @@ const ReportsPage = () => {
       <div className="reports-content">
         <Sidebar />
         <main className="reports-main">
+          <PageGuide pageKey="reports-page" />
           {/* Page Header */}
           <div className="page-header">
             <div className="page-header-left">

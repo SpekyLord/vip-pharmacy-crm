@@ -11,6 +11,7 @@ const User = require('../models/User');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { isCrmAdminLike } = require('../utils/roleHelpers');
+const { logAuditEvent, AuditActions } = require('../utils/auditLogger');
 
 /**
  * @desc    Get currently active users (lastActivity within 15 minutes)
@@ -163,7 +164,7 @@ const updateUser = catchAsync(async (req, res) => {
 
   // Admin can update additional fields
   if (isAdmin) {
-    allowedFields.push('role', 'isActive');
+    allowedFields.push('role', 'isActive', 'entity_id', 'entity_ids');
   }
 
   // Update only allowed fields
@@ -172,6 +173,12 @@ const updateUser = catchAsync(async (req, res) => {
       user[field] = req.body[field];
     }
   });
+
+  // ERP access — handled separately (nested object needs markModified)
+  if (isAdmin && req.body.erp_access !== undefined) {
+    user.erp_access = req.body.erp_access;
+    user.markModified('erp_access');
+  }
 
   await user.save();
 
@@ -279,6 +286,173 @@ const updateProfile = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Admin reset a user's password (preserves all other fields including erp_access)
+ * @route   PUT /api/users/:id/reset-password
+ * @access  Admin only
+ */
+const resetUserPassword = catchAsync(async (req, res) => {
+  const { newPassword } = req.body;
+
+  if (!newPassword || newPassword.length < 8) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 8 characters',
+    });
+  }
+
+  const user = await User.findById(req.params.id);
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  // Set new password (pre-save hook hashes it), clear lockout, re-activate
+  user.password = newPassword;
+  user.failedLoginAttempts = 0;
+  user.lockoutUntil = null;
+  user.isActive = true;
+  user.refreshToken = null; // Invalidate existing sessions
+  await user.save();
+
+  await logAuditEvent(AuditActions.PASSWORD_RESET_COMPLETE, {
+    userId: user._id,
+    req,
+    details: { resetBy: req.user._id, adminReset: true },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Password reset for ${user.name}. They can now log in with the new password.`,
+  });
+});
+
+/**
+ * @desc    Unlock a locked/deactivated user account (preserves erp_access)
+ * @route   PUT /api/users/:id/unlock
+ * @access  Admin only
+ */
+const unlockAccount = catchAsync(async (req, res) => {
+  // Use $set to only touch lockout + active fields — never overwrites erp_access
+  const result = await User.findByIdAndUpdate(
+    req.params.id,
+    {
+      $set: {
+        failedLoginAttempts: 0,
+        lockoutUntil: null,
+        isActive: true,
+      },
+    },
+    { new: true }
+  );
+
+  if (!result) {
+    throw new NotFoundError('User not found');
+  }
+
+  await logAuditEvent(AuditActions.ACCOUNT_UNLOCKED, {
+    userId: result._id,
+    req,
+    details: { unlockedBy: req.user._id },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Account unlocked and re-activated for ${result.name}.`,
+  });
+});
+
+/**
+ * @desc    Permanently delete a user (for cleaning up duplicate/orphaned logins)
+ * @route   DELETE /api/users/:id/permanent
+ * @access  Admin only
+ */
+const hardDeleteUser = catchAsync(async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  // Prevent self-deletion
+  if (req.user._id.toString() === user._id.toString()) {
+    throw new ForbiddenError('You cannot delete your own account');
+  }
+
+  // Safety: prevent deleting the last active admin
+  if (user.role === 'admin' && user.isActive) {
+    const activeAdminCount = await User.countDocuments({ role: 'admin', isActive: true });
+    if (activeAdminCount <= 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete the last active admin account',
+      });
+    }
+  }
+
+  // Unlink any PeopleMaster record that references this user
+  try {
+    const PeopleMaster = require('../erp/models/PeopleMaster');
+    await PeopleMaster.updateMany(
+      { user_id: user._id },
+      { $set: { user_id: null } }
+    );
+  } catch {
+    // PeopleMaster may not exist in CRM-only deployments — safe to ignore
+  }
+
+  const userName = user.name;
+  const userEmail = user.email;
+  await User.findByIdAndDelete(user._id);
+
+  await logAuditEvent(AuditActions.USER_DELETED, {
+    userId: user._id,
+    req,
+    details: { deletedBy: req.user._id, deletedUser: userName, deletedEmail: userEmail, permanent: true },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `User "${userName}" (${userEmail}) permanently deleted.`,
+  });
+});
+
+// Lookup: entities for BDM assignment dropdown
+const getEntitiesLookup = catchAsync(async (req, res) => {
+  const Entity = require('../erp/models/Entity');
+  const entities = await Entity.find({ status: 'ACTIVE' }).select('entity_name short_name').lean();
+  res.json({ success: true, data: entities });
+});
+
+// Lookup: ERP access templates for BDM assignment dropdown
+const getAccessTemplatesLookup = catchAsync(async (req, res) => {
+  const AccessTemplate = require('../erp/models/AccessTemplate');
+  const templates = await AccessTemplate.find().select('template_name description').lean();
+  res.json({ success: true, data: templates });
+});
+
+/**
+ * @desc    Get entities the current user can access (multi-entity support)
+ * @route   GET /api/users/my-entities
+ * @access  Authenticated
+ */
+const getMyEntities = catchAsync(async (req, res) => {
+  const Entity = require('../erp/models/Entity');
+  const { entity_id, entity_ids } = req.user;
+
+  // Build list of entity IDs from entity_ids (if set) or fallback to [entity_id]
+  const ids = (entity_ids && entity_ids.length > 0)
+    ? entity_ids
+    : (entity_id ? [entity_id] : []);
+
+  if (ids.length === 0) return res.json({ success: true, data: [] });
+
+  const entities = await Entity.find({ _id: { $in: ids }, status: 'ACTIVE' })
+    .select('entity_name short_name entity_type brand_color brand_text_color')
+    .sort({ entity_type: 1, entity_name: 1 })
+    .lean();
+
+  res.json({ success: true, data: entities });
+});
+
 module.exports = {
   getActiveUsers,
   getAllUsers,
@@ -289,4 +463,10 @@ module.exports = {
   getEmployees,
   getProfile,
   updateProfile,
+  resetUserPassword,
+  unlockAccount,
+  hardDeleteUser,
+  getEntitiesLookup,
+  getAccessTemplatesLookup,
+  getMyEntities,
 };

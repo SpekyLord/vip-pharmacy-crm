@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { showError } from '../utils/errorToast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
+import WorkflowGuide from '../components/WorkflowGuide';
 import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 
@@ -178,6 +179,7 @@ export default function DataArchive() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <div className="archive-main">
+          <WorkflowGuide pageKey="data-archive" />
           <DataArchiveContent />
         </div>
       </div>

@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useErpApi from '../hooks/useErpApi';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .plk-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -47,7 +48,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const MODULE_LABELS = {
   SALES: 'Sales', COLLECTION: 'Collections', EXPENSE: 'Expenses', JOURNAL: 'Journals',
   PAYROLL: 'Payroll', PURCHASING: 'Purchasing', INVENTORY: 'Inventory',
-  BANKING: 'Banking', PETTY_CASH: 'Petty Cash', IC_TRANSFER: 'IC Transfers'
+  BANKING: 'Banking', PETTY_CASH: 'Petty Cash', IC_TRANSFER: 'IC Transfers',
+  INCOME: 'Income'
 };
 
 export function PeriodLocksContent() {
@@ -182,6 +184,7 @@ export default function PeriodLocks() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="plk-main admin-main">
+          <WorkflowGuide pageKey="period-locks" />
           <PeriodLocksContent />
         </main>
       </div>

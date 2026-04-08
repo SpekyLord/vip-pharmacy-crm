@@ -20,6 +20,7 @@ import useDebounce from '../../hooks/useDebounce';
 import toast from 'react-hot-toast';
 
 import SelectField from '../../components/common/Select';
+import PageGuide from '../../components/common/PageGuide';
 
 const MyVisits = () => {
   const navigate = useNavigate();
@@ -233,6 +234,7 @@ const MyVisits = () => {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <PageGuide pageKey="my-visits" />
           {/* Page Header */}
           <div className="page-header">
             <h1>My Visits</h1>

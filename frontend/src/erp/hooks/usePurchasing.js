@@ -49,7 +49,7 @@ export default function usePurchasing() {
     listVendors, getVendor, searchVendors, createVendor, updateVendor, deactivateVendor,
     // PO
     listPOs, getPO, createPO, updatePO, approvePO, cancelPO, receivePO,
-    exportPOs: () => api.get('/purchasing/orders/export', { responseType: 'blob' }),
+    exportPOs: (params) => api.get('/purchasing/orders/export', { params, responseType: 'blob' }),
     // Invoices
     listInvoices, getInvoice, createInvoice, updateInvoice, validateInvoice, postInvoice, payInvoice,
     // AP

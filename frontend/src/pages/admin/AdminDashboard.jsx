@@ -15,6 +15,7 @@ import visitService from '../../services/visitService';
 import clientService from '../../services/clientService';
 import scheduleService from '../../services/scheduleService';
 import api from '../../services/api';
+import PageGuide from '../../components/common/PageGuide';
 
 const CYCLE_ANCHOR = new Date(2026, 0, 5);
 
@@ -213,6 +214,7 @@ const AdminDashboard = () => {
       <div className="admin-content">
         <Sidebar />
         <main className="admin-main">
+          <PageGuide pageKey="admin-dashboard" />
           {error && <div className="error-banner">{error}</div>}
           {agentRuns.length > 0 && (
             <div style={{ background: 'var(--erp-panel, #fff)', border: '1px solid var(--erp-border, #e5e7eb)', borderRadius: 12, padding: 16, margin: '16px 24px 0' }}>

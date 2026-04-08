@@ -17,6 +17,7 @@ import DoctorManagement from '../../components/admin/DoctorManagement';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
 import clientService from '../../services/clientService';
+import PageGuide from '../../components/common/PageGuide';
 
 const doctorsPageStyles = `
   .doctors-layout {
@@ -500,6 +501,7 @@ const DoctorsPage = () => {
       <div className="doctors-content">
         <Sidebar />
         <main className="doctors-main">
+          <PageGuide pageKey="doctors-page" />
           {/* Page Header */}
           <div className="page-header">
             <div className="page-header-left">

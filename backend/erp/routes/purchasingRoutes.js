@@ -7,6 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
+const periodLockCheck = require('../middleware/periodLockCheck');
 const c = require('../controllers/purchasingController');
 
 // ═══ AP Ledger & Reports (read-only, module-level VIEW sufficient) ═══
@@ -22,8 +23,8 @@ router.post('/invoices', erpSubAccessCheck('purchasing', 'supplier_invoice'), c.
 router.get('/invoices/:id', c.getInvoiceById);
 router.put('/invoices/:id', erpSubAccessCheck('purchasing', 'supplier_invoice'), c.updateInvoice);
 router.post('/invoices/:id/validate', erpSubAccessCheck('purchasing', 'supplier_invoice'), c.validateInvoice);
-router.post('/invoices/:id/post', erpSubAccessCheck('purchasing', 'supplier_invoice'), c.postInvoice);
-router.post('/invoices/:id/pay', erpSubAccessCheck('purchasing', 'ap_payment'), c.recordPayment);
+router.post('/invoices/:id/post', erpSubAccessCheck('purchasing', 'supplier_invoice'), periodLockCheck('PURCHASING'), c.postInvoice);
+router.post('/invoices/:id/pay', erpSubAccessCheck('purchasing', 'ap_payment'), periodLockCheck('PURCHASING'), c.recordPayment);
 
 // ═══ Purchase Orders ═══
 router.get('/orders/export', c.exportPOs);

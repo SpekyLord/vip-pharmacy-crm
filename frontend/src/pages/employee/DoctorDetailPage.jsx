@@ -21,6 +21,7 @@ import ProductDetailModal from '../../components/employee/ProductDetailModal';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
 import productService from '../../services/productService';
+import PageGuide from '../../components/common/PageGuide';
 
 const ENGAGEMENT_LABELS = {
   1: 'Visited 4x',
@@ -720,6 +721,7 @@ const DoctorDetailPage = () => {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <PageGuide pageKey="doctor-detail" />
           {/* Back button */}
           <div className="ddp-back-row">
             <button className="ddp-back-btn" onClick={() => navigate('/bdm')}>

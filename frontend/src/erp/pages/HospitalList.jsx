@@ -132,6 +132,8 @@ export function HospitalListContent() {
   };
 
   const pageStyles = `
+    .hospital-card-list { display: none; }
+
     @media (max-width: 900px) {
       .hospital-table-wrap { overflow-x: auto; border-radius: 12px; }
       .hospital-table { min-width: 720px; }

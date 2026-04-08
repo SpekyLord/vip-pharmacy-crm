@@ -19,6 +19,7 @@ const siLineItemSchema = new mongoose.Schema({
 
 const supplierInvoiceSchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
+  warehouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' },
   vendor_id: { type: mongoose.Schema.Types.ObjectId, ref: 'VendorMaster', required: [true, 'Vendor is required'] },
   vendor_name: { type: String, trim: true },
   invoice_ref: { type: String, required: [true, 'Invoice reference is required'], trim: true },

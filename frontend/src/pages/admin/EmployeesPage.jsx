@@ -7,7 +7,7 @@
  * - Account status management
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { Users, UserCheck, UserX, RefreshCw } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
@@ -15,6 +15,7 @@ import Sidebar from '../../components/common/Sidebar';
 import EmployeeManagement from '../../components/admin/EmployeeManagement';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import userService from '../../services/userService';
+import PageGuide from '../../components/common/PageGuide';
 
 const employeesPageStyles = `
   .employees-layout {
@@ -306,7 +307,7 @@ const EmployeesPage = () => {
   };
 
   // Fetch employees with current filters and pagination
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -333,11 +334,11 @@ const EmployeesPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.page, pagination.limit, filters]);
 
   useEffect(() => {
     fetchEmployees();
-  }, [pagination.page, filters]);
+  }, [fetchEmployees]);
 
   // Handle create/update employee
   const handleSaveEmployee = async (employeeData) => {
@@ -386,6 +387,45 @@ const EmployeesPage = () => {
     }
   };
 
+  // Handle admin password reset
+  const handleResetPassword = async (employeeId, newPassword) => {
+    try {
+      await userService.resetPassword(employeeId, newPassword);
+      toast.success('Password reset successfully. BDM can now log in with the new password.');
+      fetchEmployees();
+      return true;
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to reset password');
+      return false;
+    }
+  };
+
+  // Handle unlock account
+  const handleUnlockAccount = async (employeeId) => {
+    try {
+      await userService.unlockAccount(employeeId);
+      toast.success('Account unlocked and reactivated. All ERP access preserved.');
+      fetchEmployees();
+      return true;
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to unlock account');
+      return false;
+    }
+  };
+
+  // Handle permanent delete
+  const handlePermanentDelete = async (employeeId) => {
+    try {
+      await userService.permanentDelete(employeeId);
+      toast.success('User permanently deleted');
+      fetchEmployees();
+      return true;
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete user');
+      return false;
+    }
+  };
+
   // Handle filter changes
   const handleFilterChange = (newFilters) => {
     setFilters(newFilters);
@@ -414,6 +454,7 @@ const EmployeesPage = () => {
       <div className="employees-content">
         <Sidebar />
         <main className="employees-main">
+          <PageGuide pageKey="employees-page" />
           {/* Page Header */}
           <div className="page-header">
             <div className="page-header-left">
@@ -475,6 +516,9 @@ const EmployeesPage = () => {
             onSave={handleSaveEmployee}
             onDelete={handleDeleteEmployee}
             onToggleStatus={handleToggleStatus}
+            onResetPassword={handleResetPassword}
+            onUnlock={handleUnlockAccount}
+            onPermanentDelete={handlePermanentDelete}
             onFilterChange={handleFilterChange}
             onPageChange={handlePageChange}
           />

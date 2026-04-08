@@ -425,11 +425,36 @@ const createPersonUnified = catchAsync(async (req, res) => {
 // ═══ Create Login for Existing Person ═══
 
 const createLoginForPerson = catchAsync(async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, template_id } = req.body;
   const person = await PeopleMaster.findById(req.params.id);
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
-  if (person.user_id) return res.status(400).json({ success: false, message: 'Person already has a system login' });
   if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password are required' });
+
+  // If person already has a linked user, check if it's deactivated — re-enable instead of rejecting
+  if (person.user_id) {
+    const existingUser = await User.findById(person.user_id);
+    if (existingUser && !existingUser.isActive) {
+      // Re-enable the existing user: reset password, clear lockout, preserve erp_access
+      existingUser.password = password;
+      existingUser.isActive = true;
+      existingUser.failedLoginAttempts = 0;
+      existingUser.lockoutUntil = null;
+      existingUser.refreshToken = null;
+      if (email) existingUser.email = email.toLowerCase();
+      await existingUser.save();
+
+      return res.status(200).json({
+        success: true,
+        message: `Existing login re-enabled for ${person.full_name} (${existingUser.email}). Password reset. All ERP access preserved.`,
+        data: { person_id: person._id, user_id: existingUser._id, email: existingUser.email, reactivated: true },
+      });
+    }
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'Person already has an active system login. Use "Reset Password" to fix login issues.' });
+    }
+    // existingUser is null (orphaned user_id) — clear the stale link and continue to create new
+    person.user_id = null;
+  }
 
   // Check email uniqueness
   const existing = await User.findOne({ email: email.toLowerCase() });
@@ -439,6 +464,24 @@ const createLoginForPerson = catchAsync(async (req, res) => {
   const roleMap = { DIRECTOR: 'president', BDM: 'employee', ECOMMERCE_BDM: 'employee', SALES_REP: 'employee', CONSULTANT: 'employee', EMPLOYEE: 'employee' };
   const crmRole = roleMap[person.person_type] || 'employee';
 
+  // Build ERP access — apply template if provided, otherwise just enable
+  let erpAccess = { enabled: true };
+  if (template_id) {
+    const AccessTemplate = require('../models/AccessTemplate');
+    const template = await AccessTemplate.findById(template_id).lean();
+    if (template) {
+      erpAccess = {
+        enabled: true,
+        template_id: template._id,
+        modules: { ...template.modules },
+        can_approve: template.can_approve || false,
+        sub_permissions: template.sub_permissions || {},
+        updated_by: req.user._id,
+        updated_at: new Date(),
+      };
+    }
+  }
+
   const user = await User.create({
     name: person.full_name,
     email: email.toLowerCase(),
@@ -447,7 +490,7 @@ const createLoginForPerson = catchAsync(async (req, res) => {
     phone: person.phone || '',
     entity_id: person.entity_id,
     territory_id: person.territory_id || null,
-    'erp_access.enabled': true,
+    erp_access: erpAccess,
   });
 
   // Link PeopleMaster to new CRM User

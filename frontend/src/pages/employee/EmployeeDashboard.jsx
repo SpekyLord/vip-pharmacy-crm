@@ -24,6 +24,7 @@ import clientService from '../../services/clientService';
 import scheduleService from '../../services/scheduleService';
 import messageService from '../../services/messageInboxService';
 import { getWeekOfMonth, getCycleWeekRange } from '../../utils/cycleUtils';
+import PageGuide from '../../components/common/PageGuide';
 
 const dashboardStyles = `
   .main-content h1 {
@@ -681,6 +682,7 @@ const EmployeeDashboard = () => {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <PageGuide pageKey="bdm-dashboard" />
           <h1>Welcome, {user?.name}</h1>
 
           {error && (

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePayroll from '../hooks/usePayroll';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .tm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -49,6 +50,7 @@ export default function ThirteenthMonth() {
       <div className="admin-layout">
         <Sidebar />
         <main className="tm-main">
+          <WorkflowGuide pageKey="thirteenth-month" />
           <div className="tm-header"><h2>13th Month Pay</h2></div>
 
           <div className="tm-controls">
@@ -78,7 +80,7 @@ export default function ThirteenthMonth() {
               </tbody>
             </table>
           ) : (
-            <div className="tm-empty">Select a year and click "Compute 13th Month" to generate.</div>
+            <div className="tm-empty">Select a year and click &quot;Compute 13th Month&quot; to generate.</div>
           )}
         </main>
       </div>

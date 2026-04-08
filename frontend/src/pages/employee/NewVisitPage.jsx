@@ -17,6 +17,7 @@ import VisitLogger from '../../components/employee/VisitLogger';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
+import PageGuide from '../../components/common/PageGuide';
 
 const newVisitStyles = `
   .dashboard-layout {
@@ -249,6 +250,7 @@ const NewVisitPage = () => {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <PageGuide pageKey="new-visit" />
           <div className="page-header">
             <Link to="/bdm" className="back-link">
               &larr; Back to Dashboard

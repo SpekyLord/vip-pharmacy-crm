@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import useWorkingEntity from '../../hooks/useWorkingEntity';
 import api from '../../services/api';
 
 const pageStyles = `
@@ -31,12 +32,15 @@ const pageStyles = `
 
 export function FoundationHealthContent() {
   const { user } = useAuth();
+  const { workingEntityId, loaded: entityLoaded } = useWorkingEntity();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (!entityLoaded) return;
     let mounted = true;
+    setLoading(true);
     (async () => {
       try {
         const res = await api.get('/erp/control-center/health');
@@ -48,7 +52,7 @@ export function FoundationHealthContent() {
       }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [entityLoaded, workingEntityId]);
 
   if (loading) return <><style>{pageStyles}</style><div className="fh-loading">Loading foundation health...</div></>;
   if (error) return <><style>{pageStyles}</style><div className="fh-error">{error}</div></>;

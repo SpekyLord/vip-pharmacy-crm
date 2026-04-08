@@ -6,6 +6,7 @@
  */
 const express = require('express');
 const { roleCheck } = require('../../middleware/roleCheck');
+const periodLockCheck = require('../middleware/periodLockCheck');
 const {
   // Income
   generateIncome, getIncomeList, getIncomeById, updateIncomeManual,
@@ -29,15 +30,15 @@ router.get('/income/:id', getIncomeById);
 router.put('/income/:id', roleCheck('admin', 'finance', 'president'), updateIncomeManual);
 router.post('/income/:id/review', roleCheck('admin', 'finance', 'president'), reviewIncome);
 router.post('/income/:id/return', roleCheck('admin', 'finance', 'president'), returnIncome);
-router.post('/income/:id/confirm', confirmIncome);  // BDM self-confirm
-router.post('/income/:id/credit', roleCheck('admin', 'finance', 'president'), creditIncome);
+router.post('/income/:id/confirm', periodLockCheck('INCOME'), confirmIncome);  // BDM self-confirm
+router.post('/income/:id/credit', roleCheck('admin', 'finance', 'president'), periodLockCheck('INCOME'), creditIncome);
 
 // ═══ PNL Reports ═══
 router.post('/pnl/generate', roleCheck('admin', 'finance', 'president'), generatePnl);
 router.get('/pnl', getPnlList);
 router.get('/pnl/:id', getPnlById);
 router.put('/pnl/:id', roleCheck('admin', 'finance', 'president'), updatePnlManual);
-router.post('/pnl/:id/post', roleCheck('admin', 'finance', 'president'), postPnl);
+router.post('/pnl/:id/post', roleCheck('admin', 'finance', 'president'), periodLockCheck('INCOME'), postPnl);
 
 // ═══ Profit Sharing ═══
 router.get('/profit-sharing', getProfitShareStatus);

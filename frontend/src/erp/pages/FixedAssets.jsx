@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 import { showError, showSuccess } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .fa-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -181,6 +182,7 @@ export default function FixedAssets() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="fa-main admin-main">
+          <WorkflowGuide pageKey="fixed-assets" />
           <FixedAssetsContent />
         </main>
       </div>

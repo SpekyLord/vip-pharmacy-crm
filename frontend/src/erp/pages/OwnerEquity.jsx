@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .oe-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -69,6 +70,7 @@ export default function OwnerEquity() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="oe-main admin-main">
+          <WorkflowGuide pageKey="owner-equity" />
           <div className="oe-header">
             <h2>Owner Equity</h2>
             {isAdmin && (
