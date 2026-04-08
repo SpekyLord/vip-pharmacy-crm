@@ -110,6 +110,17 @@ export function LookupManagerContent() {
     }
   };
 
+  const handleSeedAll = async () => {
+    try {
+      const res = await api.post('/erp/lookup-values/seed-all');
+      toast.success(res.data?.message || 'All categories seeded');
+      loadCategories();
+      if (activeCat) loadItems();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Seed all failed');
+    }
+  };
+
   const openCreate = () => {
     setEditItem(null);
     setForm({ code: '', label: '', sort_order: items.length * 10 });
@@ -157,6 +168,11 @@ export function LookupManagerContent() {
       <div className="lm-container">
         <div className="lm-header">
           <h1>Lookup Tables</h1>
+          {canEdit && (
+            <button className="btn btn-success" onClick={handleSeedAll}>
+              Seed All Categories
+            </button>
+          )}
         </div>
 
         <div className="lm-layout">

@@ -9,6 +9,9 @@ const adminFinance = roleCheck('admin', 'finance', 'president');
 router.get('/categories', ctrl.getCategories);
 router.get('/seed-defaults', ctrl.getSeedDefaults);
 
+// Seed all categories at once
+router.post('/seed-all', adminFinance, ctrl.seedAll);
+
 // Category-level CRUD
 router.get('/:category', ctrl.getByCategory);
 router.post('/:category', adminFinance, ctrl.create);

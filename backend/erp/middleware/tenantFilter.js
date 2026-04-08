@@ -11,6 +11,8 @@
  * - employee (BDM): filter by entity_id AND bdm_id
  * - no entity_id on user: skip filtering (backward compat with CRM-only users)
  */
+const mongoose = require('mongoose');
+
 const tenantFilter = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({ success: false, message: 'Authentication required' });
@@ -36,7 +38,7 @@ const tenantFilter = (req, res, next) => {
     req.tenantFilter = {};
     const headerEntityId = req.headers['x-entity-id'];
     if (headerEntityId && /^[a-f\d]{24}$/i.test(headerEntityId)) {
-      req.entityId = headerEntityId;
+      req.entityId = new mongoose.Types.ObjectId(headerEntityId);
     }
     return next();
   }
