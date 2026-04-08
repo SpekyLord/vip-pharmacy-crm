@@ -26,7 +26,7 @@ const EmployeeInbox = () => {
 
   // ✅ Dynamic data
   const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
@@ -83,8 +83,7 @@ const EmployeeInbox = () => {
 
   // Modal
   const [expandedId, setExpandedId] = useState(null);
-
-
+  const [, setReplyOpenId] = useState(null);
 
   // Derived data
   const filteredMessages = useMemo(() => {
@@ -153,9 +152,8 @@ return messages
 
   const unreadCount = useMemo(() => messages.filter(m => !m.read).length, [messages]);
 
-    const markAsRead = (id) => {
-    setMessages(prev => prev.map(m => (m._id === id ? { ...m, read: true } : m)));
-    };
+    // markAsRead is handled inline by toggleMessage
+
 
 
   const toggleRead = async (id, nextRead) => {
@@ -223,7 +221,7 @@ const toggleMessage = async (msgOrId) => {
 
 
 
-  const closeModal = () => setExpandedId(null);
+  // closeModal functionality is handled by toggleMessage
 
 
   const changePage = (delta) => {

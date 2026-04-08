@@ -78,11 +78,11 @@ const emptyForm = () => ({
 });
 
 export function WarehouseManagerContent() {
-  const { user } = useAuth();
+  useAuth();
   const whApi = useWarehouses();
   const { options: stockTypeOpts } = useLookupOptions('STOCK_TYPE');
   const STOCK_TYPES = stockTypeOpts.map(o => o.code);
-  const { entities } = useEntities();
+  useEntities();
   const { getAsUsers } = usePeople();
 
   const [warehouses, setWarehouses] = useState([]);
