@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import PropTypes from 'prop-types';
 import { Search, Plus, Eye, Edit2, Power, X, ChevronDown } from 'lucide-react';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import userService from '../../services/userService';
@@ -1122,6 +1123,12 @@ function EmployeeDropdown({ value, onChange, options }) {
   );
 }
 
+EmployeeDropdown.propTypes = {
+  value: PropTypes.string,
+  onChange: PropTypes.func.isRequired,
+  options: PropTypes.arrayOf(PropTypes.shape({ value: PropTypes.string, label: PropTypes.string })).isRequired,
+};
+
 const EmployeeManagement = ({
   employees = [],
   filters = {},
@@ -1667,6 +1674,18 @@ const EmployeeManagement = ({
       />
     </div>
   );
+};
+
+EmployeeManagement.propTypes = {
+  employees: PropTypes.array,
+  filters: PropTypes.object,
+  pagination: PropTypes.object,
+  loading: PropTypes.bool,
+  onSave: PropTypes.func,
+  onDelete: PropTypes.func,
+  onToggleStatus: PropTypes.func,
+  onFilterChange: PropTypes.func,
+  onPageChange: PropTypes.func,
 };
 
 export default EmployeeManagement;
