@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 5.1
-> **Status**: Phases 0-24 Complete. ERP Control Center added (April 6, 2026).
+> **Version**: 5.2
+> **Status**: Phases 0-24B Complete. Admin Account Management added (April 8, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -74,6 +74,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 22 | Accounting Hardening, COA Config, Entity Context | ✅ |
 | 23 | System Audit & Governance Hardening | ✅ |
 | 24 | ERP Control Center | ✅ |
+| 25 | Admin Account Management (BDM Access Preservation) | ✅ |
 
 ---
 
