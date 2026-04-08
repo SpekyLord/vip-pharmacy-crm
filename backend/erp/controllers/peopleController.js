@@ -428,8 +428,33 @@ const createLoginForPerson = catchAsync(async (req, res) => {
   const { email, password, template_id } = req.body;
   const person = await PeopleMaster.findById(req.params.id);
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
-  if (person.user_id) return res.status(400).json({ success: false, message: 'Person already has a system login' });
   if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password are required' });
+
+  // If person already has a linked user, check if it's deactivated — re-enable instead of rejecting
+  if (person.user_id) {
+    const existingUser = await User.findById(person.user_id);
+    if (existingUser && !existingUser.isActive) {
+      // Re-enable the existing user: reset password, clear lockout, preserve erp_access
+      existingUser.password = password;
+      existingUser.isActive = true;
+      existingUser.failedLoginAttempts = 0;
+      existingUser.lockoutUntil = null;
+      existingUser.refreshToken = null;
+      if (email) existingUser.email = email.toLowerCase();
+      await existingUser.save();
+
+      return res.status(200).json({
+        success: true,
+        message: `Existing login re-enabled for ${person.full_name} (${existingUser.email}). Password reset. All ERP access preserved.`,
+        data: { person_id: person._id, user_id: existingUser._id, email: existingUser.email, reactivated: true },
+      });
+    }
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'Person already has an active system login. Use "Reset Password" to fix login issues.' });
+    }
+    // existingUser is null (orphaned user_id) — clear the stale link and continue to create new
+    person.user_id = null;
+  }
 
   // Check email uniqueness
   const existing = await User.findOne({ email: email.toLowerCase() });
