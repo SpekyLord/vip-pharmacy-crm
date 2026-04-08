@@ -47,7 +47,7 @@ const updatePO = catchAsync(async (req, res) => {
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
   if (po.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'Only DRAFT POs can be edited' });
 
-  const allowed = ['vendor_id', 'po_date', 'expected_delivery_date', 'line_items', 'notes'];
+  const allowed = ['vendor_id', 'warehouse_id', 'po_date', 'expected_delivery_date', 'line_items', 'notes'];
   for (const key of allowed) {
     if (req.body[key] !== undefined) po[key] = req.body[key];
   }
@@ -62,6 +62,7 @@ const getPOs = catchAsync(async (req, res) => {
     filter.status = statuses.length === 1 ? statuses[0] : { $in: statuses };
   }
   if (req.query.vendor_id) filter.vendor_id = req.query.vendor_id;
+  if (req.query.warehouse_id) filter.warehouse_id = req.query.warehouse_id;
   if (req.query.from || req.query.to) {
     filter.po_date = {};
     if (req.query.from) filter.po_date.$gte = new Date(req.query.from);
@@ -74,6 +75,7 @@ const getPOs = catchAsync(async (req, res) => {
   const [data, total] = await Promise.all([
     PurchaseOrder.find(filter)
       .populate('vendor_id', 'vendor_name vendor_code')
+      .populate('warehouse_id', 'warehouse_code warehouse_name')
       .sort({ created_at: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -87,6 +89,7 @@ const getPOs = catchAsync(async (req, res) => {
 const getPOById = catchAsync(async (req, res) => {
   const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId })
     .populate('vendor_id', 'vendor_name vendor_code tin address payment_terms_days vat_status')
+    .populate('warehouse_id', 'warehouse_code warehouse_name')
     .lean();
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
   res.json({ success: true, data: po });
@@ -191,7 +194,7 @@ const updateInvoice = catchAsync(async (req, res) => {
   if (!invoice) return res.status(404).json({ success: false, message: 'Supplier invoice not found' });
   if (invoice.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'Only DRAFT invoices can be edited' });
 
-  const allowed = ['vendor_id', 'vendor_name', 'invoice_ref', 'invoice_date', 'due_date', 'po_id', 'po_number', 'grn_id', 'line_items'];
+  const allowed = ['vendor_id', 'vendor_name', 'warehouse_id', 'invoice_ref', 'invoice_date', 'due_date', 'po_id', 'po_number', 'grn_id', 'line_items'];
   for (const key of allowed) {
     if (req.body[key] !== undefined) invoice[key] = req.body[key];
   }
@@ -203,6 +206,7 @@ const getInvoices = catchAsync(async (req, res) => {
   const filter = { entity_id: req.entityId };
   if (req.query.status) filter.status = req.query.status;
   if (req.query.vendor_id) filter.vendor_id = req.query.vendor_id;
+  if (req.query.warehouse_id) filter.warehouse_id = req.query.warehouse_id;
   if (req.query.match_status) filter.match_status = req.query.match_status;
   if (req.query.payment_status) filter.payment_status = req.query.payment_status;
   if (req.query.from || req.query.to) {
@@ -217,6 +221,7 @@ const getInvoices = catchAsync(async (req, res) => {
   const [data, total] = await Promise.all([
     SupplierInvoice.find(filter)
       .populate('vendor_id', 'vendor_name vendor_code')
+      .populate('warehouse_id', 'warehouse_code warehouse_name')
       .sort({ created_at: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -230,6 +235,7 @@ const getInvoices = catchAsync(async (req, res) => {
 const getInvoiceById = catchAsync(async (req, res) => {
   const invoice = await SupplierInvoice.findOne({ _id: req.params.id, entity_id: req.entityId })
     .populate('vendor_id', 'vendor_name vendor_code tin payment_terms_days vat_status')
+    .populate('warehouse_id', 'warehouse_code warehouse_name')
     .populate('po_id', 'po_number po_date status')
     .lean();
   if (!invoice) return res.status(404).json({ success: false, message: 'Supplier invoice not found' });
@@ -349,8 +355,11 @@ const paymentHistory = catchAsync(async (req, res) => {
 
 // ═══ Export Purchase Orders (Excel) ═══
 const exportPOs = catchAsync(async (req, res) => {
-  const pos = await PurchaseOrder.find({ entity_id: req.entityId })
+  const filter = { entity_id: req.entityId };
+  if (req.query.warehouse_id) filter.warehouse_id = req.query.warehouse_id;
+  const pos = await PurchaseOrder.find(filter)
     .populate('vendor_id', 'vendor_name vendor_code')
+    .populate('warehouse_id', 'warehouse_code warehouse_name')
     .sort({ created_at: -1 })
     .lean();
 
@@ -359,6 +368,7 @@ const exportPOs = catchAsync(async (req, res) => {
     for (const li of po.line_items || []) {
       rows.push({
         'PO Number': po.po_number || '',
+        'Warehouse': po.warehouse_id?.warehouse_code || '',
         'PO Date': po.po_date ? new Date(po.po_date).toISOString().slice(0, 10) : '',
         'Vendor Code': po.vendor_id?.vendor_code || '',
         'Vendor Name': po.vendor_id?.vendor_name || '',
