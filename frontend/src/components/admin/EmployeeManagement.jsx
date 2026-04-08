@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
-import { Search, Plus, Eye, Edit2, Power, X, ChevronDown } from 'lucide-react';
+import { Search, Plus, Eye, Edit2, Power, X, ChevronDown, KeyRound, Unlock, Trash2 } from 'lucide-react';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 
 const employeeManagementStyles = `
@@ -1242,12 +1242,20 @@ const EmployeeManagement = ({
   onSave,
   onDelete,
   onToggleStatus,
+  onResetPassword,
+  onUnlock,
+  onPermanentDelete,
   onFilterChange,
   onPageChange,
 }) => {
   const [showModal, setShowModal] = useState(false);
   const navigate = useNavigate();
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [showResetPwModal, setShowResetPwModal] = useState(false);
+  const [resetPwTarget, setResetPwTarget] = useState(null);
+  const [resetPwValue, setResetPwValue] = useState('');
+  const [showConfirmPermDelete, setShowConfirmPermDelete] = useState(false);
+  const [permDeleteTarget, setPermDeleteTarget] = useState(null);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -1462,6 +1470,32 @@ const EmployeeManagement = ({
                             <Power size={14} />
                             {employee.isActive ? 'Deactivate' : 'Activate'}
                           </button>
+                          <button
+                            onClick={() => { setResetPwTarget(employee); setResetPwValue(''); setShowResetPwModal(true); }}
+                            className="action-btn reset-pw"
+                            title="Reset Password"
+                          >
+                            <KeyRound size={14} />
+                            Reset PW
+                          </button>
+                          {!employee.isActive && (
+                            <button
+                              onClick={() => onUnlock?.(employee._id)}
+                              className="action-btn unlock"
+                              title="Unlock & Reactivate"
+                            >
+                              <Unlock size={14} />
+                              Unlock
+                            </button>
+                          )}
+                          <button
+                            onClick={() => { setPermDeleteTarget(employee); setShowConfirmPermDelete(true); }}
+                            className="action-btn delete-perm"
+                            title="Permanently Delete"
+                          >
+                            <Trash2 size={14} />
+                            Delete
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1524,6 +1558,32 @@ const EmployeeManagement = ({
                     >
                       <Power size={16} />
                       {employee.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button
+                      onClick={() => { setResetPwTarget(employee); setResetPwValue(''); setShowResetPwModal(true); }}
+                      className="action-btn reset-pw"
+                      title="Reset Password"
+                    >
+                      <KeyRound size={16} />
+                      Reset PW
+                    </button>
+                    {!employee.isActive && (
+                      <button
+                        onClick={() => onUnlock?.(employee._id)}
+                        className="action-btn unlock"
+                        title="Unlock & Reactivate"
+                      >
+                        <Unlock size={16} />
+                        Unlock
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setPermDeleteTarget(employee); setShowConfirmPermDelete(true); }}
+                      className="action-btn delete-perm"
+                      title="Permanently Delete"
+                    >
+                      <Trash2 size={16} />
+                      Delete
                     </button>
                   </div>
                 </div>
@@ -1681,6 +1741,56 @@ const EmployeeManagement = ({
           </p>
         }
         confirmButtonText="Deactivate"
+      />
+
+      {/* Reset Password Modal */}
+      {showResetPwModal && resetPwTarget && (
+        <div className="reset-pw-modal-overlay" onClick={() => setShowResetPwModal(false)}>
+          <div className="reset-pw-modal" onClick={e => e.stopPropagation()}>
+            <h3>Reset Password for {resetPwTarget.name}</h3>
+            <input
+              type="password"
+              placeholder="Enter new password (min 8 chars)"
+              value={resetPwValue}
+              onChange={e => setResetPwValue(e.target.value)}
+              autoFocus
+            />
+            <div className="modal-actions">
+              <button className="btn btn-cancel" onClick={() => setShowResetPwModal(false)}>Cancel</button>
+              <button
+                className="btn btn-confirm"
+                disabled={resetPwValue.length < 8}
+                onClick={async () => {
+                  await onResetPassword?.(resetPwTarget._id, resetPwValue);
+                  setShowResetPwModal(false);
+                  setResetPwTarget(null);
+                  setResetPwValue('');
+                }}
+              >
+                Reset Password
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permanent Delete Confirmation */}
+      <ConfirmDeleteModal
+        isOpen={showConfirmPermDelete}
+        onClose={() => { setShowConfirmPermDelete(false); setPermDeleteTarget(null); }}
+        onConfirm={async () => {
+          await onPermanentDelete?.(permDeleteTarget?._id);
+          setShowConfirmPermDelete(false);
+          setPermDeleteTarget(null);
+        }}
+        title="Permanently Delete User"
+        message={
+          <p>
+            Are you sure you want to <strong>permanently delete</strong> {permDeleteTarget?.name} ({permDeleteTarget?.email})?
+            This cannot be undone. Their PeopleMaster record will be unlinked.
+          </p>
+        }
+        confirmButtonText="Delete Permanently"
       />
     </div>
   );
