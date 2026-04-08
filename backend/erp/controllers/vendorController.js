@@ -42,6 +42,7 @@ const search = catchAsync(async (req, res) => {
 });
 
 const create = catchAsync(async (req, res) => {
+  req.body.entity_id = req.entityId;
   req.body.created_by = req.user._id;
   const vendor = await VendorMaster.create(req.body);
   res.status(201).json({ success: true, data: vendor });

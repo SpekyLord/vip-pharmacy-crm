@@ -10,8 +10,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
-import { Search, Plus, Eye, Edit2, Power, X, ChevronDown } from 'lucide-react';
+import { Search, Plus, Eye, Edit2, Power, X, ChevronDown, KeyRound, Unlock, Trash2 } from 'lucide-react';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
+import userService from '../../services/userService';
 
 const employeeManagementStyles = `
   .employee-management {
@@ -1242,12 +1243,20 @@ const EmployeeManagement = ({
   onSave,
   onDelete,
   onToggleStatus,
+  onResetPassword,
+  onUnlock,
+  onPermanentDelete,
   onFilterChange,
   onPageChange,
 }) => {
   const [showModal, setShowModal] = useState(false);
   const navigate = useNavigate();
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [showResetPwModal, setShowResetPwModal] = useState(false);
+  const [resetPwTarget, setResetPwTarget] = useState(null);
+  const [resetPwValue, setResetPwValue] = useState('');
+  const [showConfirmPermDelete, setShowConfirmPermDelete] = useState(false);
+  const [permDeleteTarget, setPermDeleteTarget] = useState(null);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -1255,9 +1264,30 @@ const EmployeeManagement = ({
     password: '',
     phone: '',
     role: 'employee',
+    entity_id: '',
+    erp_access_enabled: false,
+    erp_access_template_id: '',
   });
   const [saving, setSaving] = useState(false);
   const [localFilters, setLocalFilters] = useState(filters);
+  const [entities, setEntities] = useState([]);
+  const [accessTemplates, setAccessTemplates] = useState([]);
+
+  // Fetch entities and access templates for dropdowns
+  useEffect(() => {
+    (async () => {
+      try {
+        const [entRes, tmplRes] = await Promise.all([
+          userService.getEntities(),
+          userService.getAccessTemplates(),
+        ]);
+        setEntities(entRes.data || []);
+        setAccessTemplates(tmplRes.data || []);
+      } catch (err) {
+        console.error('[EmployeeManagement] Failed to load lookups:', err.message);
+      }
+    })();
+  }, []);
 
   // Debounce search
   useEffect(() => {
@@ -1285,6 +1315,9 @@ const EmployeeManagement = ({
       password: '',
       phone: '',
       role: 'employee',
+      entity_id: '',
+      erp_access_enabled: false,
+      erp_access_template_id: '',
     });
     setShowModal(true);
   };
@@ -1297,6 +1330,9 @@ const EmployeeManagement = ({
       password: '', // Don't show existing password
       phone: employee.phone || '',
       role: employee.role || 'employee',
+      entity_id: employee.entity_id?._id || employee.entity_id || '',
+      erp_access_enabled: employee.erp_access?.enabled || false,
+      erp_access_template_id: employee.erp_access?.template_id || '',
     });
     setShowModal(true);
   };
@@ -1327,6 +1363,23 @@ const EmployeeManagement = ({
       phone: formData.phone,
       role: formData.role,
     };
+
+    // Entity assignment
+    if (formData.entity_id) {
+      employeeData.entity_id = formData.entity_id;
+    }
+
+    // ERP access — build the erp_access object
+    const erpAccess = { enabled: formData.erp_access_enabled };
+    if (formData.erp_access_enabled && formData.erp_access_template_id) {
+      const tmpl = accessTemplates.find(t => t._id === formData.erp_access_template_id);
+      if (tmpl) {
+        erpAccess.template_id = tmpl._id;
+        erpAccess.modules = { ...tmpl.modules };
+        erpAccess.can_approve = tmpl.can_approve || false;
+      }
+    }
+    employeeData.erp_access = erpAccess;
 
     // Only include password for new employees or if it's been changed
     if (!selectedEmployee && formData.password) {
@@ -1404,6 +1457,7 @@ const EmployeeManagement = ({
                     <th>Name</th>
                     <th>Email</th>
                     <th>Phone</th>
+                    <th>Entity</th>
                     <th>Role</th>
                     <th>Status</th>
                     <th className="col-actions">Actions</th>
@@ -1422,6 +1476,7 @@ const EmployeeManagement = ({
                         <span className="employee-email">{employee.email}</span>
                       </td>
                       <td>{employee.phone || '-'}</td>
+                      <td>{employee.entity_id?.short_name || employee.entity_id?.entity_name || '-'}</td>
                       <td>
                         <span className={`role-badge role-${employee.role}`}>
                           {employee.role === 'employee' ? 'BDM' : 'Admin'}
@@ -1461,6 +1516,32 @@ const EmployeeManagement = ({
                           >
                             <Power size={14} />
                             {employee.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <button
+                            onClick={() => { setResetPwTarget(employee); setResetPwValue(''); setShowResetPwModal(true); }}
+                            className="action-btn reset-pw"
+                            title="Reset Password"
+                          >
+                            <KeyRound size={14} />
+                            Reset PW
+                          </button>
+                          {!employee.isActive && (
+                            <button
+                              onClick={() => onUnlock?.(employee._id)}
+                              className="action-btn unlock"
+                              title="Unlock & Reactivate"
+                            >
+                              <Unlock size={14} />
+                              Unlock
+                            </button>
+                          )}
+                          <button
+                            onClick={() => { setPermDeleteTarget(employee); setShowConfirmPermDelete(true); }}
+                            className="action-btn delete-perm"
+                            title="Permanently Delete"
+                          >
+                            <Trash2 size={14} />
+                            Delete
                           </button>
                         </div>
                       </td>
@@ -1524,6 +1605,32 @@ const EmployeeManagement = ({
                     >
                       <Power size={16} />
                       {employee.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button
+                      onClick={() => { setResetPwTarget(employee); setResetPwValue(''); setShowResetPwModal(true); }}
+                      className="action-btn reset-pw"
+                      title="Reset Password"
+                    >
+                      <KeyRound size={16} />
+                      Reset PW
+                    </button>
+                    {!employee.isActive && (
+                      <button
+                        onClick={() => onUnlock?.(employee._id)}
+                        className="action-btn unlock"
+                        title="Unlock & Reactivate"
+                      >
+                        <Unlock size={16} />
+                        Unlock
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setPermDeleteTarget(employee); setShowConfirmPermDelete(true); }}
+                      className="action-btn delete-perm"
+                      title="Permanently Delete"
+                    >
+                      <Trash2 size={16} />
+                      Delete
                     </button>
                   </div>
                 </div>
@@ -1644,6 +1751,48 @@ const EmployeeManagement = ({
                     ]}
                   />
                 </div>
+
+                <div className="form-group">
+                  <label htmlFor="entity_id">Entity</label>
+                  <select
+                    id="entity_id"
+                    value={formData.entity_id}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, entity_id: e.target.value }))}
+                  >
+                    <option value="">Select entity...</option>
+                    {entities.map(ent => (
+                      <option key={ent._id} value={ent._id}>{ent.short_name || ent.entity_name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={formData.erp_access_enabled}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, erp_access_enabled: e.target.checked }))}
+                      style={{ marginRight: 8 }}
+                    />
+                    ERP Access Enabled
+                  </label>
+                </div>
+
+                {formData.erp_access_enabled && (
+                  <div className="form-group">
+                    <label htmlFor="erp_access_template_id">ERP Access Template</label>
+                    <select
+                      id="erp_access_template_id"
+                      value={formData.erp_access_template_id}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, erp_access_template_id: e.target.value }))}
+                    >
+                      <option value="">Select template...</option>
+                      {accessTemplates.map(t => (
+                        <option key={t._id} value={t._id}>{t.template_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </form>
             </div>
 
@@ -1681,6 +1830,56 @@ const EmployeeManagement = ({
           </p>
         }
         confirmButtonText="Deactivate"
+      />
+
+      {/* Reset Password Modal */}
+      {showResetPwModal && resetPwTarget && (
+        <div className="reset-pw-modal-overlay" onClick={() => setShowResetPwModal(false)}>
+          <div className="reset-pw-modal" onClick={e => e.stopPropagation()}>
+            <h3>Reset Password for {resetPwTarget.name}</h3>
+            <input
+              type="password"
+              placeholder="Enter new password (min 8 chars)"
+              value={resetPwValue}
+              onChange={e => setResetPwValue(e.target.value)}
+              autoFocus
+            />
+            <div className="modal-actions">
+              <button className="btn btn-cancel" onClick={() => setShowResetPwModal(false)}>Cancel</button>
+              <button
+                className="btn btn-confirm"
+                disabled={resetPwValue.length < 8}
+                onClick={async () => {
+                  await onResetPassword?.(resetPwTarget._id, resetPwValue);
+                  setShowResetPwModal(false);
+                  setResetPwTarget(null);
+                  setResetPwValue('');
+                }}
+              >
+                Reset Password
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permanent Delete Confirmation */}
+      <ConfirmDeleteModal
+        isOpen={showConfirmPermDelete}
+        onClose={() => { setShowConfirmPermDelete(false); setPermDeleteTarget(null); }}
+        onConfirm={async () => {
+          await onPermanentDelete?.(permDeleteTarget?._id);
+          setShowConfirmPermDelete(false);
+          setPermDeleteTarget(null);
+        }}
+        title="Permanently Delete User"
+        message={
+          <p>
+            Are you sure you want to <strong>permanently delete</strong> {permDeleteTarget?.name} ({permDeleteTarget?.email})?
+            This cannot be undone. Their PeopleMaster record will be unlinked.
+          </p>
+        }
+        confirmButtonText="Delete Permanently"
       />
     </div>
   );

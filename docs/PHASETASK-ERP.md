@@ -3598,6 +3598,26 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 
 ## PHASE 25 — Admin Account Management (BDM Access Preservation) ✅ (April 8, 2026)
 
+**Problem:** Every time a BDM couldn't log in, admin had to create a new login, losing all ERP module permissions.
+
+### 25.1 — Backend: Admin Password Reset + Unlock + Hard Delete ✅
+- [x] `PUT /api/users/:id/reset-password` — admin resets password, clears lockout, re-activates, preserves erp_access
+- [x] `PUT /api/users/:id/unlock` — clears failedLoginAttempts + lockoutUntil via $set (never touches erp_access)
+- [x] `DELETE /api/users/:id/permanent` — permanently deletes duplicate/orphaned users, unlinks PeopleMaster
+
+### 25.2 — Backend: Smart Login Re-enable in PeopleController ✅
+- [x] `createLoginForPerson` detects deactivated existing user → re-enables + resets password, preserves erp_access
+- [x] Handles orphaned user_id by clearing stale link
+
+### 25.3 — Frontend: Admin Account Actions ✅
+- [x] `userService.js`: `resetPassword()`, `unlockAccount()`, `permanentDelete()` methods
+- [x] `EmployeesPage.jsx`: handler functions for all 3 actions
+- [x] `EmployeeManagement.jsx`: Reset PW, Unlock, Delete buttons + modals + dark mode styles
+
+---
+
+## PHASE 25 — Admin Account Management (BDM Access Preservation) ✅ (April 8, 2026)
+
 **Problem:** Every time a BDM couldn't log in (forgot password, locked out), admin had to create a new login. This created a new User with default `erp_access` (all modules NONE), losing all the ERP permissions that were configured on the original account.
 
 **Goal:** Give admin tools to fix login issues without creating new accounts, preserving all ERP access.

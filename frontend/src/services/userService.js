@@ -80,6 +80,18 @@ const userService = {
     const response = await api.delete(`/users/${id}/permanent`);
     return response.data;
   },
+
+  // Lookup: entities for BDM assignment dropdown
+  getEntities: async () => {
+    const response = await api.get('/users/lookup/entities');
+    return response.data;
+  },
+
+  // Lookup: ERP access templates for BDM assignment dropdown
+  getAccessTemplates: async () => {
+    const response = await api.get('/users/lookup/access-templates');
+    return response.data;
+  },
 };
 
 export default userService;
