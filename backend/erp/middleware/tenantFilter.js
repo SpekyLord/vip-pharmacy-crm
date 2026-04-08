@@ -22,8 +22,8 @@ const tenantFilter = (req, res, next) => {
 
   const { role, entity_id, entity_ids, _id } = req.user;
 
-  // Attach tenant context
-  req.entityId = entity_id || null;
+  // Attach tenant context — prefer entity_id (primary), fallback to first entity_ids entry
+  req.entityId = entity_id || (entity_ids && entity_ids.length > 0 ? entity_ids[0] : null);
   req.bdmId = _id;
   req.isAdmin = role === 'admin';
   req.isFinance = role === 'finance';

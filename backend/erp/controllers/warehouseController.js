@@ -35,27 +35,29 @@ const getWarehouses = catchAsync(async (req, res) => {
  * President/admin get all. Others get warehouses where manager or assigned.
  */
 const getMyWarehouses = catchAsync(async (req, res) => {
-  const { role, _id: userId, entity_id: userEntityId } = req.user;
+  const { role, _id: userId } = req.user;
+  // Use req.entityId (set by tenantFilter, respects X-Entity-Id header for multi-entity users)
+  const workingEntityId = req.entityId;
 
   let filter = { is_active: true };
 
-  if (role === 'president' || role === 'admin') {
-    // President/admin see all warehouses (optionally filter by entity)
+  if (role === 'president') {
+    // President sees all warehouses (optionally filter by entity via query or working entity)
     if (req.query.entity_id) filter.entity_id = req.query.entity_id;
-  } else if (role === 'finance') {
-    // Finance sees all warehouses within their entity
-    if (userEntityId) filter.entity_id = userEntityId;
+    else if (workingEntityId) filter.entity_id = workingEntityId;
+  } else if (role === 'admin' || role === 'finance') {
+    // Admin/Finance see warehouses within their working entity
+    if (workingEntityId) filter.entity_id = workingEntityId;
   } else {
-    // BDM/employee: warehouses they manage, are assigned to, OR in their entity if they have ERP access
-    if (req.user.erp_access?.enabled && userEntityId) {
-      // ERP-enabled employees can see all warehouses in their entity
-      filter.entity_id = userEntityId;
+    // BDM/employee: warehouses in their working entity if ERP-enabled, else only managed/assigned
+    if (req.user.erp_access?.enabled && workingEntityId) {
+      filter.entity_id = workingEntityId;
     } else {
       filter.$or = [
         { manager_id: userId },
         { assigned_users: userId },
       ];
-      if (userEntityId) filter.entity_id = userEntityId;
+      if (workingEntityId) filter.entity_id = workingEntityId;
     }
   }
 
