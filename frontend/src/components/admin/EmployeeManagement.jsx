@@ -1766,13 +1766,26 @@ const EmployeeManagement = ({
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label>
+                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
+                  <label htmlFor="erp_access_enabled" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', margin: 0 }}>
+                    <span
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 20, height: 20, borderRadius: 4,
+                        border: formData.erp_access_enabled ? 'none' : '2px solid #cbd5e1',
+                        background: formData.erp_access_enabled ? 'var(--erp-accent, #1e5eff)' : '#fff',
+                        color: '#fff', fontSize: 13, flexShrink: 0,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {formData.erp_access_enabled && '✓'}
+                    </span>
                     <input
                       type="checkbox"
+                      id="erp_access_enabled"
                       checked={formData.erp_access_enabled}
                       onChange={(e) => setFormData((prev) => ({ ...prev, erp_access_enabled: e.target.checked }))}
-                      style={{ marginRight: 8 }}
+                      style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
                     />
                     ERP Access Enabled
                   </label>

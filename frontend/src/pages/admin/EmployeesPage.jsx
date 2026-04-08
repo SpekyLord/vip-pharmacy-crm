@@ -7,7 +7,7 @@
  * - Account status management
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { Users, UserCheck, UserX, RefreshCw } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
@@ -306,7 +306,7 @@ const EmployeesPage = () => {
   };
 
   // Fetch employees with current filters and pagination
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -333,11 +333,11 @@ const EmployeesPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.page, pagination.limit, filters]);
 
   useEffect(() => {
     fetchEmployees();
-  }, [pagination.page, filters]);
+  }, [fetchEmployees]);
 
   // Handle create/update employee
   const handleSaveEmployee = async (employeeData) => {
