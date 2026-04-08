@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePayroll from '../hooks/usePayroll';
@@ -80,7 +80,7 @@ export default function ThirteenthMonth() {
               </tbody>
             </table>
           ) : (
-            <div className="tm-empty">Select a year and click "Compute 13th Month" to generate.</div>
+            <div className="tm-empty">Select a year and click &quot;Compute 13th Month&quot; to generate.</div>
           )}
         </main>
       </div>
