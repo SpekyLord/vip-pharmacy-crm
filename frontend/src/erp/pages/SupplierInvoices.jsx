@@ -3,10 +3,11 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
 import useErpApi from '../hooks/useErpApi';
-import useProducts from '../hooks/useProducts';
+import useInventory from '../hooks/useInventory';
 import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WarehousePicker from '../components/WarehousePicker';
 import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = `
@@ -14,7 +15,7 @@ const styles = `
   .si-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1300px; margin: 0 auto; }
   .si-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .si-header h2 { font-size: 20px; font-weight: 700; margin: 0; }
-  .si-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .si-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
   .si-filters select { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--erp-border, #e2e8f0); font-size: 12px; }
   .btn { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; }
   .btn-primary { background: var(--erp-accent, #1e5eff); color: #fff; }
@@ -54,6 +55,7 @@ const styles = `
   .si-pag { display: flex; justify-content: center; gap: 8px; margin-top: 14px; align-items: center; font-size: 13px; }
   .si-pay-form { background: #f8fafc; padding: 14px; border-radius: 8px; margin-top: 12px; }
   .si-cards { display: none; }
+  .si-info { background: #dbeafe; color: #1e40af; padding: 8px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 12px; }
   @media(max-width: 768px) {
     .si-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
     .form-row { grid-template-columns: 1fr; }
@@ -76,8 +78,33 @@ const EMPTY_LINE = { product_id: '', item_key: '', qty_invoiced: 1, unit_price: 
 export default function SupplierInvoices() {
   const api = usePurchasing();
   const lookupApi = useErpApi();
-  const { products } = useProducts();
-  const productOptions = useMemo(() => (products || []).filter(p => p.is_active !== false), [products]);
+  const inventory = useInventory();
+
+  // Warehouse state
+  const [warehouseId, setWarehouseId] = useState('');
+  const [stockProducts, setStockProducts] = useState([]);
+
+  // Build product options from warehouse stock
+  const productOptions = useMemo(() => {
+    return stockProducts.map(sp => ({
+      product_id: sp.product_id,
+      label: `${sp.product?.brand_name || 'Unknown'}${sp.product?.dosage_strength ? ' ' + sp.product.dosage_strength : ''} — ${sp.total_qty} ${sp.product?.unit_code || 'PC'}`,
+      brand_name: sp.product?.brand_name,
+      dosage_strength: sp.product?.dosage_strength,
+      unit_code: sp.product?.unit_code || 'PC',
+      purchase_price: sp.product?.purchase_price || 0,
+      item_key: sp.product?.item_key || '',
+      total_qty: sp.total_qty
+    }));
+  }, [stockProducts]);
+
+  // Load stock when warehouse changes
+  useEffect(() => {
+    if (!warehouseId) { setStockProducts([]); return; }
+    inventory.getMyStock(null, null, warehouseId).then(res => {
+      if (res?.data) setStockProducts(res.data);
+    }).catch(err => console.error('[SupplierInvoices] stock load error:', err.message));
+  }, [warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [invoices, setInvoices] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -92,7 +119,7 @@ export default function SupplierInvoices() {
   const [payFilter, setPayFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showPay, setShowPay] = useState(null);
-  const [form, setForm] = useState({ vendor_id: '', invoice_ref: '', invoice_date: '', due_date: '', po_id: '', line_items: [{ ...EMPTY_LINE }] });
+  const [form, setForm] = useState({ vendor_id: '', warehouse_id: '', invoice_ref: '', invoice_date: '', due_date: '', po_id: '', line_items: [{ ...EMPTY_LINE }] });
   const [payForm, setPayForm] = useState({ amount: 0, payment_date: '', payment_mode: '', bank_account_id: '', funding_card_id: '', check_no: '', reference: '' });
   const [msg, setMsg] = useState({ text: '', type: '' });
 
@@ -103,12 +130,13 @@ export default function SupplierInvoices() {
       if (statusFilter) params.status = statusFilter;
       if (matchFilter) params.match_status = matchFilter;
       if (payFilter) params.payment_status = payFilter;
+      if (warehouseId) params.warehouse_id = warehouseId;
       const res = await api.listInvoices(params);
       setInvoices(res?.data || []);
       setPagination(res?.pagination || { page, limit: 20, total: 0 });
     } catch (err) { showError(err, 'Could not load invoices'); }
     setLoading(false);
-  }, [statusFilter, matchFilter, payFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [statusFilter, matchFilter, payFilter, warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadLookups = useCallback(async () => {
     try {
@@ -137,7 +165,7 @@ export default function SupplierInvoices() {
   };
 
   const openCreate = () => {
-    setForm({ vendor_id: '', invoice_ref: '', invoice_date: new Date().toISOString().slice(0, 10), due_date: '', po_id: '', line_items: [{ ...EMPTY_LINE }] });
+    setForm({ vendor_id: '', warehouse_id: warehouseId, invoice_ref: '', invoice_date: new Date().toISOString().slice(0, 10), due_date: '', po_id: '', line_items: [{ ...EMPTY_LINE }] });
     setShowModal(true);
   };
 
@@ -148,16 +176,47 @@ export default function SupplierInvoices() {
     items[i] = { ...items[i], [key]: val };
     return { ...f, line_items: items };
   });
+
   const handleProductSelect = (i, productId) => {
     if (!productId) { setLineField(i, 'product_id', ''); return; }
-    const p = productOptions.find(x => x._id === productId);
+    const p = productOptions.find(x => x.product_id === productId || x.product_id?.toString() === productId);
     if (!p) return;
-    const label = `${p.brand_name}${p.dosage_strength ? ` ${p.dosage_strength}` : ''} — ${p.qty || ''} ${p.unit_code || 'PC'}`.trim();
+    const label = `${p.brand_name}${p.dosage_strength ? ` ${p.dosage_strength}` : ''} — ${p.total_qty} ${p.unit_code}`.trim();
     setForm(f => {
       const items = [...f.line_items];
-      items[i] = { ...items[i], product_id: productId, item_key: label };
+      items[i] = { ...items[i], product_id: productId, item_key: p.item_key || label, unit_price: p.purchase_price || 0 };
       return { ...f, line_items: items };
     });
+  };
+
+  // Auto-fill from linked PO — vendor + line items pre-populate
+  const handlePOSelect = (poId) => {
+    if (!poId) {
+      setForm(f => ({ ...f, po_id: '' }));
+      return;
+    }
+    const po = pos.find(p => p._id === poId);
+    if (!po) {
+      setForm(f => ({ ...f, po_id: poId }));
+      return;
+    }
+    const vendorId = po.vendor_id?._id || po.vendor_id;
+    const whId = po.warehouse_id?._id || po.warehouse_id || '';
+    // Map PO line items to invoice lines (remaining uninvoiced qty)
+    const lines = (po.line_items || []).map(l => ({
+      product_id: l.product_id || '',
+      item_key: l.item_key || '',
+      qty_invoiced: Math.max(0, (l.qty_ordered || 0) - (l.qty_invoiced || 0)),
+      unit_price: l.unit_price || 0
+    })).filter(l => l.qty_invoiced > 0);
+
+    setForm(f => ({
+      ...f,
+      po_id: poId,
+      vendor_id: vendorId || f.vendor_id,
+      warehouse_id: whId || f.warehouse_id,
+      line_items: lines.length ? lines : [{ ...EMPTY_LINE }]
+    }));
   };
 
   const handleSave = async () => {
@@ -212,6 +271,11 @@ export default function SupplierInvoices() {
   const fmt = (n) => (n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 
+  // Filtered POs for the Link-to-PO dropdown (match vendor if selected)
+  const filteredPOs = useMemo(() => {
+    return pos.filter(p => !form.vendor_id || (p.vendor_id?._id || p.vendor_id) === form.vendor_id);
+  }, [pos, form.vendor_id]);
+
   return (
     <>
       <style>{styles}</style>
@@ -227,6 +291,7 @@ export default function SupplierInvoices() {
             </div>
 
             <div className="si-filters">
+              <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
               <SelectField value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                 <option value="">All Statuses</option>
                 <option value="DRAFT">Draft</option>
@@ -259,6 +324,7 @@ export default function SupplierInvoices() {
                     <tr>
                       <th>Invoice Ref</th>
                       <th>Date</th>
+                      <th>Warehouse</th>
                       <th>Vendor</th>
                       <th>PO #</th>
                       <th>Total</th>
@@ -273,6 +339,7 @@ export default function SupplierInvoices() {
                       <tr key={inv._id}>
                         <td style={{ fontWeight: 600 }}>{inv.invoice_ref}</td>
                         <td>{fmtDate(inv.invoice_date)}</td>
+                        <td>{inv.warehouse_id?.warehouse_code || '—'}</td>
                         <td>{inv.vendor_id?.vendor_name || inv.vendor_name || '—'}</td>
                         <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{inv.po_number || '—'}</td>
                         <td style={{ fontWeight: 600 }}>{fmt(inv.total_amount)}</td>
@@ -337,6 +404,25 @@ export default function SupplierInvoices() {
               <div className="si-modal" onClick={() => setShowModal(false)}>
                 <div className="si-modal-body" onClick={e => e.stopPropagation()}>
                   <h3>New Supplier Invoice</h3>
+
+                  <div className="form-group">
+                    <label>Link to PO (auto-fills vendor + line items)</label>
+                    <SelectField value={form.po_id} onChange={e => handlePOSelect(e.target.value)}>
+                      <option value="">No PO link</option>
+                      {pos.map(p => (
+                        <option key={p._id} value={p._id}>
+                          {p.po_number} — {p.vendor_id?.vendor_name || ''} {p.warehouse_id?.warehouse_code ? `[${p.warehouse_id.warehouse_code}]` : ''}
+                        </option>
+                      ))}
+                    </SelectField>
+                  </div>
+
+                  {form.po_id && (
+                    <div className="si-info">
+                      Line items auto-filled from PO. You can adjust quantities and prices below.
+                    </div>
+                  )}
+
                   <div className="form-row">
                     <div className="form-group">
                       <label>Vendor *</label>
@@ -346,28 +432,23 @@ export default function SupplierInvoices() {
                       </SelectField>
                     </div>
                     <div className="form-group">
-                      <label>Invoice Ref *</label>
-                      <input value={form.invoice_ref} onChange={e => setForm(f => ({ ...f, invoice_ref: e.target.value }))} placeholder="Vendor invoice number" />
+                      <label>Warehouse</label>
+                      <WarehousePicker value={form.warehouse_id} onChange={v => setForm(f => ({ ...f, warehouse_id: v }))} filterType="PHARMA" />
                     </div>
                   </div>
                   <div className="form-row">
                     <div className="form-group">
+                      <label>Invoice Ref *</label>
+                      <input value={form.invoice_ref} onChange={e => setForm(f => ({ ...f, invoice_ref: e.target.value }))} placeholder="Vendor invoice number" />
+                    </div>
+                    <div className="form-group">
                       <label>Invoice Date *</label>
                       <input type="date" value={form.invoice_date} onChange={e => setForm(f => ({ ...f, invoice_date: e.target.value }))} />
                     </div>
-                    <div className="form-group">
-                      <label>Due Date</label>
-                      <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
-                    </div>
                   </div>
                   <div className="form-group">
-                    <label>Link to PO (optional)</label>
-                    <SelectField value={form.po_id} onChange={e => setForm(f => ({ ...f, po_id: e.target.value }))}>
-                      <option value="">No PO link</option>
-                      {pos.filter(p => !form.vendor_id || p.vendor_id?._id === form.vendor_id || p.vendor_id === form.vendor_id).map(p => (
-                        <option key={p._id} value={p._id}>{p.po_number} — {p.vendor_id?.vendor_name || ''}</option>
-                      ))}
-                    </SelectField>
+                    <label>Due Date</label>
+                    <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 6px' }}>
@@ -382,7 +463,7 @@ export default function SupplierInvoices() {
                           <td>
                             <SelectField value={line.product_id} onChange={e => handleProductSelect(i, e.target.value)}>
                               <option value="">Select product...</option>
-                              {productOptions.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.qty || ''} {p.unit_code || 'PC'}</option>)}
+                              {productOptions.map(p => <option key={p.product_id} value={p.product_id}>{p.label}</option>)}
                             </SelectField>
                             {!line.product_id && <input value={line.item_key} onChange={e => setLineField(i, 'item_key', e.target.value)} placeholder="Or type custom item..." style={{ marginTop: 4 }} />}
                           </td>

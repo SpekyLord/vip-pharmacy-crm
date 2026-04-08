@@ -2665,6 +2665,20 @@ All autoJournal functions are now called from their respective controller submit
 - [x] Add routes to App.jsx: `/erp/vendors`, `/erp/purchase-orders`, `/erp/supplier-invoices`, `/erp/accounts-payable` (requiredErpModule="purchasing")
 - [x] Add sidebar items under Purchasing section with Truck/ShoppingCart/FileInput/Wallet icons
 
+### 12.8 — Purchasing Enhancements: Warehouse Scoping, Auto-Price, CSI Pre-fill ✅ (April 8, 2026)
+- [x] Added `warehouse_id` to PurchaseOrder model + index
+- [x] Added `warehouse_id` to SupplierInvoice model
+- [x] Updated `purchasingController.js` — warehouse filter on getPOs/getInvoices, populate warehouse on list/detail, warehouse in export
+- [x] Reworked `PurchaseOrders.jsx` — WarehousePicker integration, stock-based product dropdown (shows availability per warehouse), auto-populate `unit_price` from ProductMaster `purchase_price` on product select (editable for override)
+- [x] Reworked `SupplierInvoices.jsx` — WarehousePicker integration, stock-based product dropdown, auto-populate price, auto-fill line items from linked PO (vendor + products + remaining qty + prices pre-populated as dropdowns to avoid encoding errors)
+- [x] Updated `usePurchasing.js` — exportPOs accepts warehouse_id params
+
+> **Key behaviors:**
+> - PO ref format unchanged: `PO-{TERRITORY_CODE}{MMDDYY}-{NNN}` via `generateDocNumber`
+> - Product dropdown shows warehouse stock: `BrandName Dosage — QTY UNIT` (same pattern as SalesEntry)
+> - Unit price auto-fills from `purchase_price` but remains editable (prices change per order)
+> - SI "Link to PO" auto-fills: vendor, warehouse, and all line items (products in dropdowns, qty = remaining uninvoiced, prices from PO)
+
 ---
 
 ## PHASE 13 — BANKING & CASH [v5 NEW]

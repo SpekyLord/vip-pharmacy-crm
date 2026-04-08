@@ -20,6 +20,7 @@ const poLineItemSchema = new mongoose.Schema({
 const purchaseOrderSchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  warehouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' },
   po_number: { type: String, trim: true },
   vendor_id: { type: mongoose.Schema.Types.ObjectId, ref: 'VendorMaster', required: [true, 'Vendor is required'] },
   po_date: { type: Date, required: [true, 'PO date is required'] },
@@ -61,6 +62,7 @@ purchaseOrderSchema.pre('save', async function () {
 });
 
 purchaseOrderSchema.index({ entity_id: 1, status: 1 });
+purchaseOrderSchema.index({ entity_id: 1, warehouse_id: 1, status: 1 });
 purchaseOrderSchema.index({ entity_id: 1, vendor_id: 1, po_date: -1 });
 purchaseOrderSchema.index({ entity_id: 1, po_number: 1 }, { unique: true, partialFilterExpression: { po_number: { $type: 'string' } } });
 purchaseOrderSchema.index({ created_at: -1 });

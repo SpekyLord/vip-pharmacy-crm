@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
-import useProducts from '../hooks/useProducts';
+import useInventory from '../hooks/useInventory';
 import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WarehousePicker from '../components/WarehousePicker';
 import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = `
@@ -13,7 +14,7 @@ const styles = `
   .po-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1300px; margin: 0 auto; }
   .po-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .po-header h2 { font-size: 20px; font-weight: 700; margin: 0; }
-  .po-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .po-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
   .po-filters select, .po-filters input { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--erp-border, #e2e8f0); font-size: 12px; }
   .btn { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; }
   .btn-primary { background: var(--erp-accent, #1e5eff); color: #fff; }
@@ -61,8 +62,11 @@ const EMPTY_LINE = { product_id: '', item_key: '', qty_ordered: 1, unit_price: 0
 
 export default function PurchaseOrders() {
   const api = usePurchasing();
-  const { products } = useProducts();
-  const productOptions = useMemo(() => (products || []).filter(p => p.is_active !== false), [products]);
+  const inventory = useInventory();
+
+  // Warehouse state
+  const [warehouseId, setWarehouseId] = useState('');
+  const [stockProducts, setStockProducts] = useState([]);
 
   const [pos, setPOs] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -71,14 +75,38 @@ export default function PurchaseOrders() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ vendor_id: '', po_date: '', expected_delivery_date: '', notes: '', line_items: [{ ...EMPTY_LINE }] });
+  const [form, setForm] = useState({ vendor_id: '', warehouse_id: '', po_date: '', expected_delivery_date: '', notes: '', line_items: [{ ...EMPTY_LINE }] });
   const [msg, setMsg] = useState({ text: '', type: '' });
   const [showReceive, setShowReceive] = useState(null);
   const [receiveQtys, setReceiveQtys] = useState([]);
 
+  // Build product options from warehouse stock (shows availability)
+  const productOptions = useMemo(() => {
+    return stockProducts.map(sp => ({
+      product_id: sp.product_id,
+      label: `${sp.product?.brand_name || 'Unknown'}${sp.product?.dosage_strength ? ' ' + sp.product.dosage_strength : ''} — ${sp.total_qty} ${sp.product?.unit_code || 'PC'}`,
+      brand_name: sp.product?.brand_name,
+      dosage_strength: sp.product?.dosage_strength,
+      unit_code: sp.product?.unit_code || 'PC',
+      purchase_price: sp.product?.purchase_price || 0,
+      item_key: sp.product?.item_key || '',
+      total_qty: sp.total_qty
+    }));
+  }, [stockProducts]);
+
+  // Load stock when warehouse changes
+  useEffect(() => {
+    if (!warehouseId) { setStockProducts([]); return; }
+    inventory.getMyStock(null, null, warehouseId).then(res => {
+      if (res?.data) setStockProducts(res.data);
+    }).catch(err => console.error('[PurchaseOrders] stock load error:', err.message));
+  }, [warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleExport = async () => {
     try {
-      const res = await api.exportPOs();
+      const params = {};
+      if (warehouseId) params.warehouse_id = warehouseId;
+      const res = await api.exportPOs(params);
       const url = URL.createObjectURL(new Blob([res]));
       const a = document.createElement('a'); a.href = url; a.download = 'purchase-orders-export.xlsx'; a.click();
       URL.revokeObjectURL(url);
@@ -90,12 +118,13 @@ export default function PurchaseOrders() {
     try {
       const params = { page, limit: 20 };
       if (statusFilter) params.status = statusFilter;
+      if (warehouseId) params.warehouse_id = warehouseId;
       const res = await api.listPOs(params);
       setPOs(res?.data || []);
       setPagination(res?.pagination || { page, limit: 20, total: 0 });
     } catch (err) { showError(err, 'Could not load purchase orders'); }
     setLoading(false);
-  }, [statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [statusFilter, warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadVendors = useCallback(async () => {
     try {
@@ -114,7 +143,7 @@ export default function PurchaseOrders() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ vendor_id: '', po_date: new Date().toISOString().slice(0, 10), expected_delivery_date: '', notes: '', line_items: [{ ...EMPTY_LINE }] });
+    setForm({ vendor_id: '', warehouse_id: warehouseId, po_date: new Date().toISOString().slice(0, 10), expected_delivery_date: '', notes: '', line_items: [{ ...EMPTY_LINE }] });
     setShowModal(true);
   };
 
@@ -122,6 +151,7 @@ export default function PurchaseOrders() {
     setEditing(po);
     setForm({
       vendor_id: po.vendor_id?._id || po.vendor_id || '',
+      warehouse_id: po.warehouse_id?._id || po.warehouse_id || warehouseId,
       po_date: po.po_date ? new Date(po.po_date).toISOString().slice(0, 10) : '',
       expected_delivery_date: po.expected_delivery_date ? new Date(po.expected_delivery_date).toISOString().slice(0, 10) : '',
       notes: po.notes || '',
@@ -137,14 +167,15 @@ export default function PurchaseOrders() {
     items[i] = { ...items[i], [key]: val };
     return { ...f, line_items: items };
   });
+
   const handleProductSelect = (i, productId) => {
     if (!productId) { setLineField(i, 'product_id', ''); return; }
-    const p = productOptions.find(x => x._id === productId);
+    const p = productOptions.find(x => x.product_id === productId || x.product_id?.toString() === productId);
     if (!p) return;
-    const label = `${p.brand_name}${p.dosage_strength ? ` ${p.dosage_strength}` : ''} — ${p.qty || ''} ${p.unit_code || 'PC'}`.trim();
+    const label = `${p.brand_name}${p.dosage_strength ? ` ${p.dosage_strength}` : ''} — ${p.total_qty} ${p.unit_code}`.trim();
     setForm(f => {
       const items = [...f.line_items];
-      items[i] = { ...items[i], product_id: productId, item_key: label };
+      items[i] = { ...items[i], product_id: productId, item_key: p.item_key || label, unit_price: p.purchase_price || 0 };
       return { ...f, line_items: items };
     });
   };
@@ -219,6 +250,7 @@ export default function PurchaseOrders() {
             </div>
 
             <div className="po-filters">
+              <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
               <SelectField value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                 <option value="">All Statuses</option>
                 {STATUSES.filter(Boolean).map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
@@ -236,6 +268,7 @@ export default function PurchaseOrders() {
                     <tr>
                       <th>PO #</th>
                       <th>Date</th>
+                      <th>Warehouse</th>
                       <th>Vendor</th>
                       <th>Items</th>
                       <th>Total</th>
@@ -248,6 +281,7 @@ export default function PurchaseOrders() {
                       <tr key={po._id}>
                         <td style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 12 }}>{po.po_number || '—'}</td>
                         <td>{fmtDate(po.po_date)}</td>
+                        <td>{po.warehouse_id?.warehouse_code || '—'}</td>
                         <td>{po.vendor_id?.vendor_name || '—'}</td>
                         <td>{po.line_items?.length || 0}</td>
                         <td style={{ fontWeight: 600 }}>{fmt(po.total_amount)}</td>
@@ -288,19 +322,23 @@ export default function PurchaseOrders() {
                       </SelectField>
                     </div>
                     <div className="form-group">
-                      <label>PO Date *</label>
-                      <input type="date" value={form.po_date} onChange={e => setForm(f => ({ ...f, po_date: e.target.value }))} />
+                      <label>Warehouse *</label>
+                      <WarehousePicker value={form.warehouse_id} onChange={v => setForm(f => ({ ...f, warehouse_id: v }))} filterType="PHARMA" />
                     </div>
                   </div>
                   <div className="form-row">
                     <div className="form-group">
+                      <label>PO Date *</label>
+                      <input type="date" value={form.po_date} onChange={e => setForm(f => ({ ...f, po_date: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
                       <label>Expected Delivery</label>
                       <input type="date" value={form.expected_delivery_date} onChange={e => setForm(f => ({ ...f, expected_delivery_date: e.target.value }))} />
                     </div>
-                    <div className="form-group">
-                      <label>Notes</label>
-                      <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
-                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label>Notes</label>
+                    <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 6px' }}>
@@ -317,7 +355,7 @@ export default function PurchaseOrders() {
                           <td>
                             <SelectField value={line.product_id} onChange={e => handleProductSelect(i, e.target.value)}>
                               <option value="">Select product...</option>
-                              {productOptions.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.qty || ''} {p.unit_code || 'PC'}</option>)}
+                              {productOptions.map(p => <option key={p.product_id} value={p.product_id}>{p.label}</option>)}
                             </SelectField>
                             {!line.product_id && <input value={line.item_key} onChange={e => setLineField(i, 'item_key', e.target.value)} placeholder="Or type custom item..." style={{ marginTop: 4 }} />}
                           </td>
