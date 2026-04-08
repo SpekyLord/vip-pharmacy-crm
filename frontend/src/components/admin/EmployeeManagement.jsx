@@ -11,6 +11,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus, Eye, Edit2, Power, X, ChevronDown } from 'lucide-react';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
+import userService from '../../services/userService';
 
 const employeeManagementStyles = `
   .employee-management {
@@ -1142,9 +1143,30 @@ const EmployeeManagement = ({
     password: '',
     phone: '',
     role: 'employee',
+    entity_id: '',
+    erp_access_enabled: false,
+    erp_access_template_id: '',
   });
   const [saving, setSaving] = useState(false);
   const [localFilters, setLocalFilters] = useState(filters);
+  const [entities, setEntities] = useState([]);
+  const [accessTemplates, setAccessTemplates] = useState([]);
+
+  // Fetch entities and access templates for dropdowns
+  useEffect(() => {
+    (async () => {
+      try {
+        const [entRes, tmplRes] = await Promise.all([
+          userService.getEntities(),
+          userService.getAccessTemplates(),
+        ]);
+        setEntities(entRes.data || []);
+        setAccessTemplates(tmplRes.data || []);
+      } catch (err) {
+        console.error('[EmployeeManagement] Failed to load lookups:', err.message);
+      }
+    })();
+  }, []);
 
   // Debounce search
   useEffect(() => {
@@ -1172,6 +1194,9 @@ const EmployeeManagement = ({
       password: '',
       phone: '',
       role: 'employee',
+      entity_id: '',
+      erp_access_enabled: false,
+      erp_access_template_id: '',
     });
     setShowModal(true);
   };
@@ -1184,6 +1209,9 @@ const EmployeeManagement = ({
       password: '', // Don't show existing password
       phone: employee.phone || '',
       role: employee.role || 'employee',
+      entity_id: employee.entity_id?._id || employee.entity_id || '',
+      erp_access_enabled: employee.erp_access?.enabled || false,
+      erp_access_template_id: employee.erp_access?.template_id || '',
     });
     setShowModal(true);
   };
@@ -1219,6 +1247,23 @@ const EmployeeManagement = ({
       phone: formData.phone,
       role: formData.role,
     };
+
+    // Entity assignment
+    if (formData.entity_id) {
+      employeeData.entity_id = formData.entity_id;
+    }
+
+    // ERP access — build the erp_access object
+    const erpAccess = { enabled: formData.erp_access_enabled };
+    if (formData.erp_access_enabled && formData.erp_access_template_id) {
+      const tmpl = accessTemplates.find(t => t._id === formData.erp_access_template_id);
+      if (tmpl) {
+        erpAccess.template_id = tmpl._id;
+        erpAccess.modules = { ...tmpl.modules };
+        erpAccess.can_approve = tmpl.can_approve || false;
+      }
+    }
+    employeeData.erp_access = erpAccess;
 
     // Only include password for new employees or if it's been changed
     if (!selectedEmployee && formData.password) {
@@ -1296,6 +1341,7 @@ const EmployeeManagement = ({
                     <th>Name</th>
                     <th>Email</th>
                     <th>Phone</th>
+                    <th>Entity</th>
                     <th>Role</th>
                     <th>Status</th>
                     <th className="col-actions">Actions</th>
@@ -1314,6 +1360,7 @@ const EmployeeManagement = ({
                         <span className="employee-email">{employee.email}</span>
                       </td>
                       <td>{employee.phone || '-'}</td>
+                      <td>{employee.entity_id?.short_name || employee.entity_id?.entity_name || '-'}</td>
                       <td>
                         <span className={`role-badge role-${employee.role}`}>
                           {employee.role === 'employee' ? 'BDM' : 'Admin'}
@@ -1378,6 +1425,10 @@ const EmployeeManagement = ({
                     <div className="mobile-card-row">
                       <span>Email</span>
                       <span>{employee.email}</span>
+                    </div>
+                    <div className="mobile-card-row">
+                      <span>Entity</span>
+                      <span>{employee.entity_id?.short_name || employee.entity_id?.entity_name || '-'}</span>
                     </div>
                     <div className="mobile-card-row">
                       <span>Role</span>
@@ -1536,6 +1587,46 @@ const EmployeeManagement = ({
                     ]}
                   />
                 </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="entity_id">Entity</label>
+                    <EmployeeDropdown
+                      value={formData.entity_id}
+                      onChange={(value) => setFormData((prev) => ({ ...prev, entity_id: value, erp_access_template_id: '' }))}
+                      options={[
+                        { value: '', label: 'No Entity' },
+                        ...entities.map(e => ({ value: e._id, label: `${e.short_name || e.entity_name} (${e.entity_type})` })),
+                      ]}
+                    />
+                  </div>
+                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 24 }}>
+                    <input
+                      type="checkbox"
+                      id="erp_access_enabled"
+                      checked={formData.erp_access_enabled}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, erp_access_enabled: e.target.checked }))}
+                      style={{ width: 'auto', margin: 0 }}
+                    />
+                    <label htmlFor="erp_access_enabled" style={{ margin: 0, cursor: 'pointer' }}>Enable ERP Access</label>
+                  </div>
+                </div>
+
+                {formData.erp_access_enabled && formData.entity_id && (
+                  <div className="form-group">
+                    <label htmlFor="erp_access_template_id">Access Template</label>
+                    <EmployeeDropdown
+                      value={formData.erp_access_template_id}
+                      onChange={(value) => setFormData((prev) => ({ ...prev, erp_access_template_id: value }))}
+                      options={[
+                        { value: '', label: 'No Template (manual)' },
+                        ...accessTemplates
+                          .filter(t => t.entity_id === formData.entity_id)
+                          .map(t => ({ value: t._id, label: t.template_name })),
+                      ]}
+                    />
+                  </div>
+                )}
               </form>
             </div>
 

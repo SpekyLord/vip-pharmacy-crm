@@ -62,6 +62,25 @@ const userService = {
     const response = await api.put('/users/profile', profileData);
     return response.data;
   },
+
+  // Get active entities for dropdown (CRM-accessible)
+  getEntities: async () => {
+    const response = await api.get('/users/lookup/entities');
+    return response.data;
+  },
+
+  // Get active access templates for dropdown (CRM-accessible)
+  getAccessTemplates: async (entityId) => {
+    const params = entityId ? { entity_id: entityId } : {};
+    const response = await api.get('/users/lookup/access-templates', { params });
+    return response.data;
+  },
+
+  // Sync CRM users to ERP People Master
+  syncToErp: async () => {
+    const response = await api.post('/users/sync-to-erp');
+    return response.data;
+  },
 };
 
 export default userService;
