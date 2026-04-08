@@ -403,6 +403,20 @@ const EmployeesPage = () => {
     toast.success('Data refreshed');
   };
 
+  // Sync CRM users to ERP People Master
+  const [syncing, setSyncing] = useState(false);
+  const handleSyncToErp = async () => {
+    setSyncing(true);
+    try {
+      const result = await userService.syncToErp();
+      toast.success(result.message || 'Sync complete');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Sync to ERP failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   if (loading && employees.length === 0) {
     return <LoadingSpinner fullScreen />;
   }
@@ -423,6 +437,10 @@ const EmployeesPage = () => {
               <h1>BDM Management</h1>
             </div>
             <div className="page-header-actions">
+              <button className="header-action-btn" onClick={handleSyncToErp} disabled={syncing} title="Sync users with ERP access to People Master">
+                <RefreshCw size={16} />
+                {syncing ? 'Syncing...' : 'Sync to ERP'}
+              </button>
               <button className="header-action-btn" onClick={handleRefresh} title="Refresh">
                 <RefreshCw size={16} />
                 Refresh
