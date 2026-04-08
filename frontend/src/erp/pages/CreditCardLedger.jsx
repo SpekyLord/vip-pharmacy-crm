@@ -6,6 +6,7 @@ import useBanking from '../hooks/useBanking';
 import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .ccl-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
@@ -146,6 +147,7 @@ export default function CreditCardLedger() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="ccl-main admin-main">
+          <WorkflowGuide pageKey="credit-card-ledger" />
           <div className="ccl-header">
             <h2>Credit Card Ledger</h2>
             {selectedCard && (

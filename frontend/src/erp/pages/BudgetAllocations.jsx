@@ -14,6 +14,7 @@ import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const EXPENSE_COMPONENTS = [
   { code: 'SMER', label: 'SMER (Per Diem + Transport)' },
@@ -203,6 +204,7 @@ export default function BudgetAllocations() {
       <div className="admin-layout">
         <Sidebar />
         <main className="admin-main ba-main">
+          <WorkflowGuide pageKey="budget-allocations" />
           <div className="ba-header">
             <h1>Budget Allocations</h1>
             <p>Set per-BDM expense budgets by period. Approved budgets feed into Expense Anomalies &gt; Budget Overruns.</p>

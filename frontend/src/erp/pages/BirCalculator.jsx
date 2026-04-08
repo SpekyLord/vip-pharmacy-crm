@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .bir-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -76,6 +77,7 @@ export default function BirCalculator() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="bir-main admin-main">
+          <WorkflowGuide pageKey="bir-calculator" />
           <div className="bir-header">
             <h2>BIR Tax Calculator</h2>
             <p>Compute mandatory contributions and withholding tax based on current government rates</p>

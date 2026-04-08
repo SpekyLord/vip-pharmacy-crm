@@ -1265,6 +1265,7 @@ const EmployeeManagement = ({
     phone: '',
     role: 'employee',
     entity_id: '',
+    entity_ids: [],
     erp_access_enabled: false,
     erp_access_template_id: '',
   });
@@ -1316,6 +1317,7 @@ const EmployeeManagement = ({
       phone: '',
       role: 'employee',
       entity_id: '',
+      entity_ids: [],
       erp_access_enabled: false,
       erp_access_template_id: '',
     });
@@ -1324,13 +1326,19 @@ const EmployeeManagement = ({
 
   const handleEdit = (employee) => {
     setSelectedEmployee(employee);
+    const primaryEid = employee.entity_id?._id || employee.entity_id || '';
+    // Initialize entity_ids from the user's data, fallback to [primary] if not set
+    const existingIds = (employee.entity_ids && employee.entity_ids.length > 0)
+      ? employee.entity_ids.map(id => id?._id || id).filter(Boolean)
+      : (primaryEid ? [primaryEid] : []);
     setFormData({
       name: employee.name || '',
       email: employee.email || '',
       password: '', // Don't show existing password
       phone: employee.phone || '',
       role: employee.role || 'employee',
-      entity_id: employee.entity_id?._id || employee.entity_id || '',
+      entity_id: primaryEid,
+      entity_ids: existingIds,
       erp_access_enabled: employee.erp_access?.enabled || false,
       erp_access_template_id: employee.erp_access?.template_id || '',
     });
@@ -1367,6 +1375,10 @@ const EmployeeManagement = ({
     // Entity assignment
     if (formData.entity_id) {
       employeeData.entity_id = formData.entity_id;
+    }
+    // Multi-entity access
+    if (formData.entity_ids && formData.entity_ids.length > 0) {
+      employeeData.entity_ids = formData.entity_ids;
     }
 
     // ERP access — build the erp_access object
@@ -1753,17 +1765,75 @@ const EmployeeManagement = ({
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="entity_id">Entity</label>
-                  <select
-                    id="entity_id"
-                    value={formData.entity_id}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, entity_id: e.target.value }))}
-                  >
-                    <option value="">Select entity...</option>
-                    {entities.map(ent => (
-                      <option key={ent._id} value={ent._id}>{ent.short_name || ent.entity_name}</option>
-                    ))}
-                  </select>
+                  <label style={{ marginBottom: 6, display: 'block' }}>Entity Access</label>
+                  <div style={{ border: '1px solid var(--erp-border, #d1d5db)', borderRadius: 8, padding: '8px 12px', background: 'var(--erp-panel, #fff)' }}>
+                    {entities.length === 0 && <span style={{ color: '#94a3b8', fontSize: 12 }}>No entities available</span>}
+                    {entities.map(ent => {
+                      const eid = ent._id;
+                      const isChecked = formData.entity_ids.includes(eid);
+                      const isPrimary = formData.entity_id === eid;
+                      return (
+                        <div key={eid} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '1px solid #f1f5f9' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flex: 1, margin: 0 }}>
+                            <span
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                                border: isChecked ? 'none' : '2px solid #cbd5e1',
+                                background: isChecked ? 'var(--erp-accent, #1e5eff)' : '#fff',
+                                color: '#fff', fontSize: 12, transition: 'all 0.15s ease',
+                              }}
+                            >
+                              {isChecked && '✓'}
+                            </span>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setFormData(prev => {
+                                  const ids = isChecked
+                                    ? prev.entity_ids.filter(id => id !== eid)
+                                    : [...prev.entity_ids, eid];
+                                  // If unchecking the primary, set first remaining as primary
+                                  let primary = prev.entity_id;
+                                  if (isChecked && primary === eid) {
+                                    primary = ids[0] || '';
+                                  }
+                                  // If checking first entity, make it primary
+                                  if (!isChecked && !primary) {
+                                    primary = eid;
+                                  }
+                                  return { ...prev, entity_ids: ids, entity_id: primary };
+                                });
+                              }}
+                              style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+                            />
+                            <span style={{ fontSize: 13 }}>{ent.short_name || ent.entity_name}</span>
+                          </label>
+                          {isChecked && (
+                            <button
+                              type="button"
+                              onClick={() => setFormData(prev => ({ ...prev, entity_id: eid }))}
+                              style={{
+                                fontSize: 10, padding: '2px 8px', borderRadius: 999,
+                                border: isPrimary ? '1px solid var(--erp-accent, #1e5eff)' : '1px solid #d1d5db',
+                                background: isPrimary ? 'var(--erp-accent, #1e5eff)' : 'transparent',
+                                color: isPrimary ? '#fff' : '#64748b',
+                                cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {isPrimary ? 'Primary' : 'Set Primary'}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {formData.entity_ids.length > 1 && (
+                    <p style={{ fontSize: 11, color: '#64748b', margin: '4px 0 0' }}>
+                      This user can switch between {formData.entity_ids.length} entities. Primary entity is the default on login.
+                    </p>
+                  )}
                 </div>
 
                 <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>

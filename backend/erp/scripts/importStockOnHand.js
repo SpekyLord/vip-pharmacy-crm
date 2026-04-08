@@ -23,6 +23,7 @@ const ProductMaster = require('../models/ProductMaster');
 const Warehouse = require('../models/Warehouse');
 const Entity = require('../models/Entity');
 const User = require('../../models/User');
+const { cleanName } = require('../utils/nameClean');
 
 // Fallback BDM name → warehouse code mapping (if WarehouseCode column not in CSV)
 const BDM_TO_WAREHOUSE = {
@@ -107,7 +108,7 @@ async function run() {
   const entityById = new Map(entities.map(e => [e._id.toString(), e]));
 
   // Stats
-  let imported = 0, skipped = 0, productCreated = 0, productUpdated = 0, errors = 0;
+  let imported = 0, skipped = 0, productUpdated = 0, errors = 0;
   const perWarehouse = {};
 
   for (let i = 0; i < rows.length; i++) {
@@ -142,39 +143,62 @@ async function run() {
     const batchLotNo = row.BatchLotNo || 'OPENING';
     const expiryDate = parseDate(row.ExpiryDate);
 
-    // Find or create ProductMaster
-    const itemKey = row.ItemKey || `${row.BrandName} | ${row.DosageStrength} | ${batchLotNo}`;
+    // Match against cleaned ProductMaster — DO NOT auto-create duplicates
+    const itemKey = row.ItemKey || `${row.BrandName}|${row.DosageStrength}`;
+    const csvBrandClean = cleanName(row.BrandName || '');
+    const csvDosage = (row.DosageStrength || '').trim();
+
+    // Strategy 1: exact item_key match within entity
     let product = await ProductMaster.findOne({ entity_id: entityId, item_key: itemKey }).lean();
 
-    if (!product) {
-      product = await ProductMaster.create({
+    // Strategy 2: brand_name_clean + dosage_strength within entity
+    if (!product && csvBrandClean) {
+      product = await ProductMaster.findOne({
         entity_id: entityId,
-        item_key: itemKey,
-        generic_name: row.GenericName || '',
-        brand_name: row.BrandName || '',
-        dosage_strength: row.DosageStrength || '',
-        unit_code: row.SoldPer || 'pc.',
-        purchase_price: parseFloat(row.PurchasePrice) || 0,
-        selling_price: parseFloat(row.SellingPrice) || 0,
-        reorder_min_qty: parseInt(row.MinimalStock) || null,
-        is_active: row.IsActive === 'TRUE',
-        created_by: managerId,
-      });
-      productCreated++;
-    } else {
-      // Update prices if currently zero and CSV has values
-      const updates = {};
-      if (!product.purchase_price && parseFloat(row.PurchasePrice)) updates.purchase_price = parseFloat(row.PurchasePrice);
-      if (!product.selling_price && parseFloat(row.SellingPrice)) updates.selling_price = parseFloat(row.SellingPrice);
-      if (!product.reorder_min_qty && parseInt(row.MinimalStock)) updates.reorder_min_qty = parseInt(row.MinimalStock);
-      if (Object.keys(updates).length) {
-        await ProductMaster.updateOne({ _id: product._id }, { $set: updates });
-        productUpdated++;
-      }
+        brand_name_clean: csvBrandClean,
+        dosage_strength: csvDosage || { $in: [null, ''] },
+      }).lean();
     }
 
-    // Skip zero-stock but keep product (already created/updated above)
+    // Strategy 3: brand_name_clean + dosage_strength across ALL entities (shared products)
+    if (!product && csvBrandClean) {
+      product = await ProductMaster.findOne({
+        brand_name_clean: csvBrandClean,
+        dosage_strength: csvDosage || { $in: [null, ''] },
+      }).lean();
+    }
+
+    if (!product) {
+      console.log(`  Row ${i + 2}: NO MATCH for "${row.BrandName} ${row.DosageStrength}" (clean: "${csvBrandClean}") — SKIPPED (review manually)`);
+      errors++;
+      continue;
+    }
+
+    // Update prices if currently zero and CSV has values
+    const updates = {};
+    if (!product.purchase_price && parseFloat(row.PurchasePrice)) updates.purchase_price = parseFloat(row.PurchasePrice);
+    if (!product.selling_price && parseFloat(row.SellingPrice)) updates.selling_price = parseFloat(row.SellingPrice);
+    if (!product.reorder_min_qty && parseInt(row.MinimalStock)) updates.reorder_min_qty = parseInt(row.MinimalStock);
+    if (Object.keys(updates).length) {
+      await ProductMaster.updateOne({ _id: product._id }, { $set: updates });
+      productUpdated++;
+    }
+
+    // Skip zero-stock
     if (stockQty <= 0) {
+      skipped++;
+      continue;
+    }
+
+    // Dedup check: skip if OPENING_BALANCE already exists for this combo
+    const existingLedger = await InventoryLedger.findOne({
+      entity_id: entityId,
+      warehouse_id: warehouse._id,
+      product_id: product._id,
+      batch_lot_no: batchLotNo,
+      transaction_type: 'OPENING_BALANCE',
+    }).lean();
+    if (existingLedger) {
       skipped++;
       continue;
     }
@@ -199,10 +223,9 @@ async function run() {
 
   console.log('\n=== Import Complete ===');
   console.log(`Imported: ${imported} ledger entries`);
-  console.log(`Skipped: ${skipped} (zero stock / inactive)`);
-  console.log(`Errors: ${errors}`);
-  console.log(`Products created: ${productCreated}`);
-  console.log(`Products updated: ${productUpdated}`);
+  console.log(`Skipped: ${skipped} (zero stock / inactive / dedup)`);
+  console.log(`Unmatched (review manually): ${errors}`);
+  console.log(`Products price-updated: ${productUpdated}`);
   console.log('\nPer warehouse:');
   for (const [code, count] of Object.entries(perWarehouse).sort((a, b) => b[1] - a[1])) {
     console.log(`  ${code}: ${count} entries`);

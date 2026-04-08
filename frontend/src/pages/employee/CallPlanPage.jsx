@@ -24,6 +24,7 @@ import toast from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 import SelectField from '../../components/common/Select';
+import PageGuide from '../../components/common/PageGuide';
 
 /* =============================================================================
    HELPERS
@@ -843,6 +844,7 @@ const CallPlanPage = () => {
       <div className="cpt-content">
         <Sidebar />
         <main className="cpt-main">
+          <PageGuide pageKey="call-plan" />
           {/* Page Header */}
           <div className="cpt-page-header">
             <div>

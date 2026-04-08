@@ -8,6 +8,7 @@ import Sidebar from '../../components/common/Sidebar';
 import ProgramSupportManager from '../../components/admin/ProgramSupportManager';
 import programService from '../../services/programService';
 import supportTypeService from '../../services/supportTypeService';
+import PageGuide from '../../components/common/PageGuide';
 
 const pageStyles = `
   .dashboard-layout {
@@ -103,6 +104,7 @@ const SettingsPage = () => {
         <div className="dashboard-content">
           <Sidebar />
           <main className="settings-main">
+            <PageGuide pageKey="settings-page" />
             <div className="settings-header">
               <h1>Programs & Support Types</h1>
               <p>Manage configurable programs and support types for VIP Client profiles</p>

@@ -8,6 +8,7 @@ import useErpApi from '../hooks/useErpApi';
 import useAccounting from '../hooks/useAccounting';
 import { useLookupOptions } from '../hooks/useLookups';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const MODE_TYPES_FALLBACK = ['CASH', 'CHECK', 'BANK_TRANSFER', 'GCASH', 'CARD', 'OTHER'];
 
@@ -194,6 +195,7 @@ export default function PaymentModes() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="pmode-main">
+          <WorkflowGuide pageKey="payment-modes" />
           <PaymentModesContent />
         </main>
       </div>

@@ -5,6 +5,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useIcSettlements from '../hooks/useIcSettlements';
 import { showError } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
@@ -97,6 +98,7 @@ export default function IcArDashboard() {
       <div className="admin-layout">
         <Sidebar />
         <main className="icar-main">
+          <WorkflowGuide pageKey="ic-ar-dashboard" />
           <div className="icar-header">
             <h1>IC Receivables — Subsidiary Collections</h1>
             <Link to="/erp/ic-settlements/new" className="btn btn-primary">+ New IC Settlement</Link>

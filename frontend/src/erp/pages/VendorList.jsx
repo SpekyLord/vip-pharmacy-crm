@@ -6,6 +6,7 @@ import usePurchasing from '../hooks/usePurchasing';
 import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = `
   .vl-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -263,6 +264,7 @@ export default function VendorList() {
       <div style={{ display: 'flex' }}>
         <Sidebar />
         <main className="vl-main">
+          <WorkflowGuide pageKey="vendor-list" />
           <VendorListContent />
         </main>
       </div>

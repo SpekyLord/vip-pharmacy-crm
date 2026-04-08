@@ -7,6 +7,7 @@ import usePeople from '../hooks/usePeople';
 
 import SelectField from '../../components/common/Select';
 import { showError, showSuccess } from '../utils/errorToast';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .ba-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
@@ -248,6 +249,7 @@ export default function BankAccounts() {
       <div style={{ display: 'flex', flex: 1 }}>
         <Sidebar />
         <main className="ba-main admin-main">
+          <WorkflowGuide pageKey="bank-accounts" />
           <BankAccountsContent />
         </main>
       </div>

@@ -17,6 +17,7 @@ import ProductManagement from '../../components/admin/ProductManagement';
 import SpecializationManagement from '../../components/admin/SpecializationManagement';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import productService from '../../services/productService';
+import PageGuide from '../../components/common/PageGuide';
 
 const productsPageStyles = `
   .dashboard-layout {
@@ -245,6 +246,7 @@ const ProductsPage = () => {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <PageGuide pageKey="products-page" />
           <div className="page-header">
             <h1>Product Management</h1>
           </div>

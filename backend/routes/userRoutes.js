@@ -33,6 +33,7 @@ const {
   hardDeleteUser,
   getEntitiesLookup,
   getAccessTemplatesLookup,
+  getMyEntities,
 } = require('../controllers/userController');
 
 const { protect } = require('../middleware/auth');
@@ -52,6 +53,9 @@ router.get('/employees', adminOnly, getEmployees);
 
 // Active users (admin only)
 router.get('/active', adminOnly, getActiveUsers);
+
+// Multi-entity: get entities current user can access (any authenticated user)
+router.get('/my-entities', getMyEntities);
 
 // Lookup routes for BDM form dropdowns (admin only)
 router.get('/lookup/entities', adminOnly, getEntitiesLookup);

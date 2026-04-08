@@ -3642,3 +3642,114 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] Reset Password modal with password input + validation (min 8 chars)
 - [x] Permanent Delete confirmation modal with warning text
 - [x] Dark mode styles for all new action buttons
+
+---
+
+## PHASE 26 — Multi-Entity Access + Stock Import Fix ✅ (April 8, 2026)
+
+**Problem:** Non-president users were locked to a single entity. BDMs like Jay Ann and Judy Mae needed access to both VIP and MG entities for PO creation, accounting, and people management. Also, the stock import script created duplicate products instead of matching against the cleaned ProductMaster.
+
+**Goal:** Scalable multi-entity access for any user, assignable via the BDM Management UI. Fix stock import to match existing products.
+
+### 26.1 — Backend: Multi-Entity User Model ✅
+- [x] `User.js`: Added `entity_ids: [ObjectId]` field (array of accessible entities)
+- [x] Added `{ entity_ids: 1 }` index for query performance
+- [x] `entity_id` remains primary/default; `entity_ids` is the full list (superset)
+
+### 26.2 — Backend: Tenant Filter Multi-Entity Validation ✅
+- [x] `tenantFilter.js`: Multi-entity users (`entity_ids.length > 1`) can use X-Entity-Id header
+- [x] Header value validated against user's `entity_ids` array — rejects unauthorized entities
+- [x] Single-entity users: header stripped (unchanged behavior)
+- [x] President/CEO: unchanged (see all entities)
+- [x] `req.tenantFilter` always uses single working entity — no multi-entity queries
+
+### 26.3 — Backend: My-Entities Endpoint + User Update ✅
+- [x] `GET /api/users/my-entities` — returns entities current user can access
+- [x] `userController.updateUser`: now allows `entity_id`, `entity_ids`, `erp_access` in admin updates
+- [x] `erp_access` handled with `markModified()` for nested object persistence
+
+### 26.4 — Frontend: EntityContext Multi-Entity Support ✅
+- [x] `EntityContext.jsx`: `isMultiEntity` now includes users with `entity_ids.length > 1`
+- [x] Non-president multi-entity users fetch from `/users/my-entities`
+- [x] Entity switcher appears in navbar for all multi-entity users
+
+### 26.5 — Frontend: BDM Management Multi-Entity UI ✅
+- [x] `EmployeeManagement.jsx`: Replaced single entity `<select>` with checkbox list
+- [x] Each entity has checkbox (toggle access) + "Primary" badge/button
+- [x] `entity_ids` array sent on save alongside `entity_id` (primary)
+- [x] Scalable: admin/president can assign any entity combination to any user
+
+### 26.6 — Stock Import: Match Against Cleaned ProductMaster ✅
+- [x] `importStockOnHand.js`: 3-tier matching strategy:
+  1. Exact `entity_id + item_key` match
+  2. `entity_id + brand_name_clean + dosage_strength` match
+  3. `brand_name_clean + dosage_strength` across all entities
+- [x] Unmatched products logged as warnings (no auto-create duplicates)
+- [x] Dedup check: skips if OPENING_BALANCE already exists for same combo
+- [x] Uses `cleanName()` from `backend/erp/utils/nameClean.js`
+
+### 26.7 — Bug Fixes (discovered during investigation) ✅
+- [x] `userController.getEntitiesLookup`: Fixed query `{ is_active: true }` → `{ status: 'ACTIVE' }` (Entity model uses `status` field)
+- [x] `vendorController.create`: Strip empty `vendor_code` to avoid unique index collision
+- [x] `vendorController.getAll`: Return clear error when user has no entity assigned
+- [x] `warehouseController.getMyWarehouses`: ERP-enabled employees see all entity warehouses (not just managed/assigned)
+- [x] `PurchaseOrders.jsx`: Product dropdown uses ProductMaster catalog instead of empty inventory stock
+
+---
+
+## PHASE 27 — FULL SYSTEM AUDIT + PERIOD LOCK + BANNER COMPLIANCE ✅ COMPLETE
+**Goal:** Comprehensive audit of all wiring, logic, dependencies, helper banners, and workflow guide alignment across CRM + ERP.
+
+### 27.1 — Wiring Fixes ✅
+- [x] Fix `sentRoutes.js` not mounted in `server.js` — added `/api/sent` route mount
+- [x] Verified all 52 ERP route files are mounted in `backend/erp/routes/index.js`
+- [x] Verified all 17 CRM route files are mounted in `backend/server.js`
+- [x] All 398 backend JS files pass syntax check (`node -c`)
+- [x] Frontend build succeeds with zero errors (`npx vite build`)
+- [x] All 15 autoJournal functions verified to have callers (no orphaned functions)
+- [x] All $lookup `from:` fields match actual model collection names
+- [x] TerritoryManager.jsx confirmed embedded in ControlCenter (not orphaned)
+
+### 27.2 — Period Lock Enforcement (Critical Security Fix) ✅
+- [x] `periodLockCheck` was ONLY on accounting routes — extended to all transactional modules
+- [x] `salesRoutes.js`: Added `periodLockCheck('SALES')` to submit/reopen endpoints
+- [x] `collectionRoutes.js`: Added `periodLockCheck('COLLECTION')` to submit/reopen
+- [x] `expenseRoutes.js`: Added `periodLockCheck('EXPENSE')` to SMER/CarLogbook/ORE-ACCESS/PRF-CALF submit/reopen
+- [x] `purchasingRoutes.js`: Added `periodLockCheck('PURCHASING')` to invoice post/payment
+- [x] `incomeRoutes.js`: Added `periodLockCheck('INCOME')` to confirm/credit/post endpoints
+- [x] Added `INCOME` to PeriodLock model enum (was missing from module list)
+- [x] Added `INCOME: 'Income'` to PeriodLocks.jsx frontend MODULE_LABELS
+
+### 27.3 — WorkflowGuide Navigation Link Fixes ✅
+- [x] Fixed 8 broken next-step links in WorkflowGuide.jsx:
+  - `/erp/accounting/trial-balance` → `/erp/trial-balance`
+  - `/erp/accounting/journal` → `/erp/journals`
+  - `/erp/banking/reconciliation` → `/erp/bank-recon`
+  - `/erp/consignment-dashboard` → `/erp/consignment`
+  - `/erp/payroll/payslips` → `/erp/payroll`
+  - `/erp/purchasing/ap` → `/erp/accounts-payable`
+  - `/erp/purchasing/invoices` → `/erp/supplier-invoices`
+  - `/erp/purchasing/orders` → `/erp/purchase-orders`
+
+### 27.4 — ERP WorkflowGuide Banner Coverage ✅
+- [x] Added 25 new WORKFLOW_GUIDES definitions to WorkflowGuide.jsx (total now ~72 guides)
+- [x] Added WorkflowGuide import + component to 25 standalone ERP pages:
+  - ChartOfAccounts, TrialBalance, ProfitAndLoss, CashflowStatement, FixedAssets, Loans, OwnerEquity
+  - BankAccounts, CreditCardManager, CreditCardLedger, PaymentModes
+  - GovernmentRates, BirCalculator, PeriodLocks, RecurringJournals, DataArchive
+  - VendorList, WarehouseManager, CostCenters, BudgetAllocations
+  - AccessTemplateManager, IcSettlement, IcArDashboard, ThirteenthMonth, AuditLogs
+- [x] 8 pages skipped (ControlCenter embedded panels, covered by DEPENDENCY_GUIDE): AgentSettings, EntityManager, ErpSettingsPanel, FoundationHealth, LookupManager, TerritoryManager, PartnerScorecard, ControlCenter
+
+### 27.5 — CRM PageGuide Banner System ✅
+- [x] Created new `frontend/src/components/common/PageGuide.jsx` component (matches WorkflowGuide style)
+- [x] Defined 13 PAGE_GUIDES: admin-dashboard, bdm-dashboard, doctors-page, employees-page, reports-page, regions-page, my-visits, new-visit, call-plan, products-page, settings-page, doctor-detail, inbox
+- [x] Added PageGuide to 12 CRM pages: AdminDashboard, EmployeeDashboard, DoctorsPage, EmployeesPage, ReportsPage, MyVisits, NewVisitPage, CallPlanPage, ProductsPage, SettingsPage, DoctorDetailPage, EMP_InboxPage
+
+### 27.6 — Bug/Logic Review ✅
+- [x] VAT 0.12: Centralized in Settings.js with fallback `?? 0.12` — acceptable, not scattered across models
+- [x] Dual P&L: pnlService (GL-based, authoritative) and pnlCalc (source-doc-based, used by income module) — both active in separate controllers, no direct conflict
+- [x] Zero COGS: `journalFromCOGS` returns null for zero/negative COGS (graceful handling)
+- [x] CALF Gate: Properly enforced in `submitExpenses` and `submitCarLogbook` with dual validation gates
+- [x] All autoJournal functions have callers (15/15 verified)
+- [x] Frontend hardcoded dropdowns: ~9 instances, most with API fallback mechanism

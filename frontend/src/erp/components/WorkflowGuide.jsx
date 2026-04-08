@@ -334,7 +334,7 @@ const WORKFLOW_GUIDES = {
     ],
     next: [
       { label: 'My Stock', path: '/erp/my-stock' },
-      { label: 'Purchase Orders', path: '/erp/purchasing/orders' },
+      { label: 'Purchase Orders', path: '/erp/purchase-orders' },
     ],
     tip: 'OCR can auto-read batch/expiry from photos of delivery receipts.',
   },
@@ -348,7 +348,7 @@ const WORKFLOW_GUIDES = {
     ],
     next: [
       { label: 'GRN', path: '/erp/grn' },
-      { label: 'Supplier Invoices', path: '/erp/purchasing/invoices' },
+      { label: 'Supplier Invoices', path: '/erp/supplier-invoices' },
     ],
     tip: 'Link POs to GRNs for accurate inventory costing.',
   },
@@ -361,8 +361,8 @@ const WORKFLOW_GUIDES = {
       'Post — creates Accounts Payable journal entry',
     ],
     next: [
-      { label: 'Accounts Payable', path: '/erp/purchasing/ap' },
-      { label: 'Purchase Orders', path: '/erp/purchasing/orders' },
+      { label: 'Accounts Payable', path: '/erp/accounts-payable' },
+      { label: 'Purchase Orders', path: '/erp/purchase-orders' },
     ],
     tip: 'Unmatched invoices are flagged for review before posting.',
   },
@@ -435,8 +435,8 @@ const WORKFLOW_GUIDES = {
       'Posted payments create journal entries automatically',
     ],
     next: [
-      { label: 'Supplier Invoices', path: '/erp/purchasing/invoices' },
-      { label: 'Bank Reconciliation', path: '/erp/banking/reconciliation' },
+      { label: 'Supplier Invoices', path: '/erp/supplier-invoices' },
+      { label: 'Bank Reconciliation', path: '/erp/bank-recon' },
     ],
   },
   'journal-entries': {
@@ -448,7 +448,7 @@ const WORKFLOW_GUIDES = {
       'Void if needed — creates reversal JE (Storno pattern)',
     ],
     next: [
-      { label: 'Trial Balance', path: '/erp/accounting/trial-balance' },
+      { label: 'Trial Balance', path: '/erp/trial-balance' },
       { label: 'P&L', path: '/erp/pnl' },
     ],
     tip: 'Auto-journals are created by Sales, Collections, Expenses. Manual JEs are for adjustments only.',
@@ -463,7 +463,7 @@ const WORKFLOW_GUIDES = {
     ],
     next: [
       { label: 'Period Locks', path: '/erp/control-center?section=period-locks' },
-      { label: 'Trial Balance', path: '/erp/accounting/trial-balance' },
+      { label: 'Trial Balance', path: '/erp/trial-balance' },
     ],
     tip: 'Always run Trial Balance before closing to catch imbalances.',
   },
@@ -476,7 +476,7 @@ const WORKFLOW_GUIDES = {
       'Complete when bank balance = GL balance',
     ],
     next: [
-      { label: 'Journal Entries', path: '/erp/accounting/journal' },
+      { label: 'Journal Entries', path: '/erp/journals' },
       { label: 'Bank Accounts', path: '/erp/control-center?section=bank-accounts' },
     ],
   },
@@ -505,8 +505,8 @@ const WORKFLOW_GUIDES = {
       'Approve and Post — creates payroll journal entries',
     ],
     next: [
-      { label: 'Payslips', path: '/erp/payroll/payslips' },
-      { label: 'Journal Entries', path: '/erp/accounting/journal' },
+      { label: 'Payslips', path: '/erp/payroll' },
+      { label: 'Journal Entries', path: '/erp/journals' },
     ],
     tip: 'Government rates (SSS, PhilHealth, PagIBIG) are pulled from Settings automatically.',
   },
@@ -533,7 +533,7 @@ const WORKFLOW_GUIDES = {
     ],
     next: [
       { label: 'Expenses', path: '/erp/expenses' },
-      { label: 'Journal Entries', path: '/erp/accounting/journal' },
+      { label: 'Journal Entries', path: '/erp/journals' },
     ],
     tip: 'Fund ceiling is configurable in ERP Settings.',
   },
@@ -546,7 +546,7 @@ const WORKFLOW_GUIDES = {
       'Follow up with BDMs for conversion or return',
     ],
     next: [
-      { label: 'Consignment Dashboard', path: '/erp/consignment-dashboard' },
+      { label: 'Consignment Dashboard', path: '/erp/consignment' },
       { label: 'DR Entry', path: '/erp/dr' },
     ],
   },
@@ -560,7 +560,7 @@ const WORKFLOW_GUIDES = {
     ],
     next: [
       { label: 'P&L', path: '/erp/pnl' },
-      { label: 'Trial Balance', path: '/erp/accounting/trial-balance' },
+      { label: 'Trial Balance', path: '/erp/trial-balance' },
       { label: 'AR Aging', path: '/erp/collections/ar' },
     ],
   },
@@ -721,6 +721,345 @@ const WORKFLOW_GUIDES = {
       { label: 'Hospitals', path: '/erp/hospitals' },
     ],
     tip: 'Use Import/Export Excel for bulk customer updates. Tagged BDMs control who can sell to each customer.',
+  },
+
+  // ═══ Accounting & Financial Setup ═══
+  'chart-of-accounts': {
+    title: 'Chart of Accounts',
+    steps: [
+      'View all accounts organized by type (Asset, Liability, Equity, Revenue, Expense)',
+      'Create new accounts with proper codes following the COA numbering convention',
+      'Edit or deactivate accounts — active accounts cannot be deleted if used in journals',
+      'Import/Export via Excel for bulk setup or migration',
+    ],
+    next: [
+      { label: 'Journal Entries', path: '/erp/journals' },
+      { label: 'Trial Balance', path: '/erp/trial-balance' },
+    ],
+    tip: 'Account codes follow ranges: 1000-1999 Assets, 2000-2999 Liabilities, 3000-3999 Equity, 4000-4999 Revenue, 5000-9999 Expenses.',
+  },
+  'trial-balance': {
+    title: 'Trial Balance',
+    steps: [
+      'Select entity and period to generate the trial balance',
+      'Review debit and credit totals — they must balance',
+      'Drill down into any account to see underlying journal entries',
+      'Export to Excel for external auditors or review',
+    ],
+    next: [
+      { label: 'P&L', path: '/erp/pnl' },
+      { label: 'Journal Entries', path: '/erp/journals' },
+    ],
+    tip: 'Run Trial Balance before Month-End Close to catch any imbalances.',
+  },
+  'profit-and-loss': {
+    title: 'Profit & Loss Statement',
+    steps: [
+      'Select entity, period range, and P&L view (Internal or BIR)',
+      'Review revenue, COGS, gross profit, and operating expenses',
+      'Compare periods side-by-side for trend analysis',
+      'Export the report for stakeholder review',
+    ],
+    next: [
+      { label: 'Trial Balance', path: '/erp/trial-balance' },
+      { label: 'Income', path: '/erp/income' },
+    ],
+    tip: 'GL-based P&L is the authoritative view. Use Internal view for management, BIR view for tax filing.',
+  },
+  'cashflow-statement': {
+    title: 'Cashflow Statement',
+    steps: [
+      'Select entity and period to generate cashflow',
+      'Review Operating, Investing, and Financing activities',
+      'Verify net cash change matches bank balance movement',
+      'Export for financial reporting',
+    ],
+    next: [
+      { label: 'Bank Reconciliation', path: '/erp/bank-recon' },
+      { label: 'P&L', path: '/erp/pnl' },
+    ],
+  },
+  'fixed-assets': {
+    title: 'Fixed Assets',
+    steps: [
+      'Register new assets with cost, useful life, and depreciation method',
+      'Run depreciation computation for the period',
+      'Review staging entries before posting',
+      'Post depreciation — journal entries are created automatically',
+    ],
+    next: [
+      { label: 'Journal Entries', path: '/erp/journals' },
+      { label: 'Trial Balance', path: '/erp/trial-balance' },
+    ],
+    tip: 'Depreciation uses straight-line method. Adjust useful life in months for accuracy.',
+  },
+  'loans': {
+    title: 'Loan Management',
+    steps: [
+      'Register loans with principal, interest rate, and term',
+      'Compute interest for the period',
+      'Review and approve interest staging entries',
+      'Post to create journal entries for interest expense',
+    ],
+    next: [
+      { label: 'Journal Entries', path: '/erp/journals' },
+      { label: 'Cashflow', path: '/erp/cashflow' },
+    ],
+  },
+  'owner-equity': {
+    title: 'Owner Equity',
+    steps: [
+      'Record capital infusions (investments) or drawings (withdrawals)',
+      'Each entry creates a journal entry linking to equity accounts',
+      'View the equity ledger for a complete history',
+    ],
+    next: [
+      { label: 'Journal Entries', path: '/erp/journals' },
+      { label: 'Trial Balance', path: '/erp/trial-balance' },
+    ],
+  },
+
+  // ═══ Banking & Payment Setup ═══
+  'bank-accounts': {
+    title: 'Bank Accounts',
+    steps: [
+      'Add bank accounts with account number, bank name, and linked COA code',
+      'Edit or deactivate accounts as needed',
+      'Import/Export via Excel for bulk management',
+    ],
+    next: [
+      { label: 'Bank Reconciliation', path: '/erp/bank-recon' },
+      { label: 'COA', path: '/erp/control-center?section=coa' },
+    ],
+    tip: 'Each bank account must link to a COA code for proper journal posting.',
+  },
+  'credit-card-manager': {
+    title: 'Credit Card Manager',
+    steps: [
+      'Register corporate credit cards with masked numbers and linked COA',
+      'Assign cardholders from the People Master',
+      'Track balances and spending limits',
+    ],
+    next: [
+      { label: 'Credit Card Ledger', path: '/erp/credit-card-ledger' },
+      { label: 'COA', path: '/erp/control-center?section=coa' },
+    ],
+  },
+  'credit-card-ledger': {
+    title: 'Credit Card Ledger',
+    steps: [
+      'View all credit card transactions by card and period',
+      'Record new transactions or payments against balances',
+      'Reconcile card statements against recorded transactions',
+    ],
+    next: [
+      { label: 'Credit Cards', path: '/erp/control-center?section=credit-cards' },
+      { label: 'Expenses', path: '/erp/expenses' },
+    ],
+  },
+  'payment-modes': {
+    title: 'Payment Modes',
+    steps: [
+      'Define payment methods (Cash, GCash, Bank Transfer, Check, etc.)',
+      'Link each mode to a COA code for proper journal posting',
+      'Activate or deactivate modes as business needs change',
+    ],
+    next: [
+      { label: 'Collections', path: '/erp/collections' },
+      { label: 'COA', path: '/erp/control-center?section=coa' },
+    ],
+    tip: 'Payment modes drive the funding COA resolution in auto-journals.',
+  },
+
+  // ═══ Tax & Compliance ═══
+  'government-rates': {
+    title: 'Government Rates',
+    steps: [
+      'View SSS, PhilHealth, PagIBIG, and Withholding Tax brackets',
+      'Update rates when government publishes new schedules',
+      'Import/Export rates via Excel for batch updates',
+      'Use the BIR Calculator to test computation outputs',
+    ],
+    next: [
+      { label: 'Payroll', path: '/erp/payroll' },
+      { label: 'BIR Calculator', path: '/erp/bir-calculator' },
+    ],
+    tip: 'Rates are versioned by effective date. Payroll pulls the latest applicable rate automatically.',
+  },
+  'bir-calculator': {
+    title: 'BIR Tax Calculator',
+    steps: [
+      'Enter gross compensation to compute tax breakdown',
+      'Review SSS, PhilHealth, PagIBIG, and withholding tax amounts',
+      'Compare results against actual payslip deductions',
+      'Useful for payroll verification and employee inquiries',
+    ],
+    next: [
+      { label: 'Government Rates', path: '/erp/control-center?section=government-rates' },
+      { label: 'Payroll', path: '/erp/payroll' },
+    ],
+  },
+
+  // ═══ Period & Governance Controls ═══
+  'period-locks': {
+    title: 'Period Locks',
+    steps: [
+      'View lock status for each module by month',
+      'Toggle locks to prevent or allow posting in specific periods',
+      'Lock periods after month-end close to protect financial integrity',
+    ],
+    next: [
+      { label: 'Month-End Close', path: '/erp/month-end-close' },
+      { label: 'Journal Entries', path: '/erp/journals' },
+    ],
+    tip: 'Locked periods block all posting (Sales, Collections, Expenses, Journals, etc.). Unlock temporarily if corrections are needed.',
+  },
+  'recurring-journals': {
+    title: 'Recurring Journals',
+    steps: [
+      'Create journal templates for entries that repeat (rent, depreciation, etc.)',
+      'Set frequency (monthly, quarterly) and next run date',
+      'Run manually or let the system auto-generate on schedule',
+      'Import/Export templates via Excel for backup',
+    ],
+    next: [
+      { label: 'Journal Entries', path: '/erp/journals' },
+      { label: 'Period Locks', path: '/erp/control-center?section=period-locks' },
+    ],
+  },
+  'data-archive': {
+    title: 'Data Archive',
+    steps: [
+      'Select the period range to archive',
+      'Review the document count and types to be archived',
+      'Trigger archival — documents move to archive collections',
+      'Restore archived batches if needed for audit',
+    ],
+    next: [
+      { label: 'Period Locks', path: '/erp/control-center?section=period-locks' },
+      { label: 'Audit Logs', path: '/erp/audit-logs' },
+    ],
+    tip: 'Archive after year-end close to improve system performance. Archived data remains queryable.',
+  },
+
+  // ═══ Master Data & Setup ═══
+  'vendor-list': {
+    title: 'Vendor Management',
+    steps: [
+      'View and search all vendors with status filters',
+      'Create new vendors with contact info and aliases',
+      'Edit or deactivate vendors — active vendors cannot be deleted if referenced in POs',
+    ],
+    next: [
+      { label: 'Purchase Orders', path: '/erp/purchase-orders' },
+      { label: 'Supplier Invoices', path: '/erp/supplier-invoices' },
+    ],
+  },
+  'warehouse-manager': {
+    title: 'Warehouse Management',
+    steps: [
+      'Create and manage warehouse locations per entity',
+      'Tag products to specific warehouses for inventory tracking',
+      'View stock levels by warehouse',
+    ],
+    next: [
+      { label: 'My Stock', path: '/erp/stock' },
+      { label: 'Products', path: '/erp/control-center?section=products' },
+    ],
+    tip: 'BDMs see only stock in their assigned warehouse(s).',
+  },
+  'cost-centers': {
+    title: 'Cost Centers',
+    steps: [
+      'Define cost centers in a hierarchical tree structure',
+      'Assign cost centers to expenses and sales for tracking',
+      'Import/Export via Excel for bulk setup',
+    ],
+    next: [
+      { label: 'Budget Allocations', path: '/erp/budget-allocations' },
+      { label: 'Expenses', path: '/erp/expenses' },
+    ],
+  },
+  'budget-allocations': {
+    title: 'Budget Allocations',
+    steps: [
+      'Define budgets per cost center and period',
+      'Set component-level allocations (travel, supplies, etc.)',
+      'Review and approve budget submissions',
+      'Monitor actual vs budget in the Expense Anomalies report',
+    ],
+    next: [
+      { label: 'Cost Centers', path: '/erp/control-center?section=cost-centers' },
+      { label: 'Expense Anomalies', path: '/erp/expense-anomalies' },
+    ],
+  },
+
+  // ═══ People & Access ═══
+  'access-templates': {
+    title: 'Access Templates',
+    steps: [
+      'Create templates defining module-level and sub-module access',
+      'Assign templates to users for consistent permission management',
+      'Edit templates — changes apply to all users using that template',
+    ],
+    next: [
+      { label: 'People', path: '/erp/people' },
+      { label: 'Control Center', path: '/erp/control-center?section=access-templates' },
+    ],
+    tip: 'Templates simplify access management. Create one per role (BDM, Finance, Admin) and assign to new users.',
+  },
+
+  // ═══ Settlement & IC ═══
+  'ic-settlement': {
+    title: 'Inter-Company Settlement',
+    steps: [
+      'View open IC transfers awaiting settlement',
+      'Create settlement records linking transfers to payments',
+      'Post settlements to update AR/AP between entities',
+    ],
+    next: [
+      { label: 'Transfers', path: '/erp/transfers' },
+      { label: 'IC AR Dashboard', path: '/erp/ic-ar' },
+    ],
+  },
+  'ic-ar-dashboard': {
+    title: 'IC AR Dashboard',
+    steps: [
+      'View inter-company accounts receivable summary by entity',
+      'Drill down to individual transfer details',
+      'Track settlement progress across entities',
+    ],
+    next: [
+      { label: 'IC Settlement', path: '/erp/ic-settlement' },
+      { label: 'Transfers', path: '/erp/transfers' },
+    ],
+  },
+
+  // ═══ Payroll Extras ═══
+  'thirteenth-month': {
+    title: '13th Month Pay',
+    steps: [
+      'Select the fiscal year to compute 13th month pay',
+      'Review per-employee computation based on basic salary',
+      'Approve and post — creates journal entries for the liability',
+    ],
+    next: [
+      { label: 'Payroll', path: '/erp/payroll' },
+      { label: 'Journal Entries', path: '/erp/journals' },
+    ],
+    tip: 'Philippine law requires 13th month pay for all rank-and-file employees by December 24.',
+  },
+  'audit-logs': {
+    title: 'Audit Logs',
+    steps: [
+      'Search audit entries by user, action type, or date range',
+      'Review document changes with before/after values',
+      'Export logs for compliance reporting or investigation',
+    ],
+    next: [
+      { label: 'Control Center', path: '/erp/control-center' },
+    ],
+    tip: 'Audit logs are retained for 90 days. Archive older records if needed for compliance.',
   },
 };
 

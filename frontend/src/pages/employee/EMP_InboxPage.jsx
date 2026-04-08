@@ -17,6 +17,7 @@ import messageService from '../../services/messageInboxService';
 import { useAuth } from '../../hooks/useAuth';
 
 import SelectField from '../../components/common/Select';
+import PageGuide from '../../components/common/PageGuide';
 
 const EmployeeInbox = () => {
   const navigate = useNavigate();
@@ -246,6 +247,7 @@ const toggleMessage = async (msgOrId) => {
         <Sidebar />
 
         <main className="main-content">
+          <PageGuide pageKey="inbox" />
           {/* Header */}
           <div className="page-header">
             <div className="header-left">

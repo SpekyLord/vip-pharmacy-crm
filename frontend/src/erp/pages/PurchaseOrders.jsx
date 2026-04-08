@@ -3,6 +3,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
 import useInventory from '../hooks/useInventory';
+import useProducts from '../hooks/useProducts';
 import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
@@ -67,6 +68,7 @@ export default function PurchaseOrders() {
   // Warehouse state
   const [warehouseId, setWarehouseId] = useState('');
   const [stockProducts, setStockProducts] = useState([]);
+  const { products: allProducts } = useProducts();
 
   const [pos, setPOs] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -80,26 +82,39 @@ export default function PurchaseOrders() {
   const [showReceive, setShowReceive] = useState(null);
   const [receiveQtys, setReceiveQtys] = useState([]);
 
-  // Build product options from warehouse stock (shows availability)
-  const productOptions = useMemo(() => {
-    return stockProducts.map(sp => ({
-      product_id: sp.product_id,
-      label: `${sp.product?.brand_name || 'Unknown'}${sp.product?.dosage_strength ? ' ' + sp.product.dosage_strength : ''} — ${sp.total_qty} ${sp.product?.unit_code || 'PC'}`,
-      brand_name: sp.product?.brand_name,
-      dosage_strength: sp.product?.dosage_strength,
-      unit_code: sp.product?.unit_code || 'PC',
-      purchase_price: sp.product?.purchase_price || 0,
-      item_key: sp.product?.item_key || '',
-      total_qty: sp.total_qty
-    }));
+  // Build product options from ProductMaster (PO = ordering new products, not selecting from stock)
+  // Enrich with stock qty when warehouse is selected
+  const stockMap = useMemo(() => {
+    const m = new Map();
+    stockProducts.forEach(sp => m.set(sp.product_id?.toString(), sp.total_qty || 0));
+    return m;
   }, [stockProducts]);
 
-  // Load stock when warehouse changes
+  const productOptions = useMemo(() => {
+    return allProducts
+      .filter(p => p.is_active !== false)
+      .map(p => {
+        const stockQty = stockMap.get(p._id?.toString());
+        const stockLabel = stockQty != null ? ` (stock: ${stockQty})` : '';
+        return {
+          product_id: p._id,
+          label: `${p.brand_name || 'Unknown'}${p.dosage_strength ? ' ' + p.dosage_strength : ''}${stockLabel}`,
+          brand_name: p.brand_name,
+          dosage_strength: p.dosage_strength,
+          unit_code: p.unit_code || 'PC',
+          purchase_price: p.purchase_price || 0,
+          item_key: p.item_key || '',
+          total_qty: stockQty || 0
+        };
+      });
+  }, [allProducts, stockMap]);
+
+  // Optionally load stock when warehouse changes (for enrichment only)
   useEffect(() => {
     if (!warehouseId) { setStockProducts([]); return; }
     inventory.getMyStock(null, null, warehouseId).then(res => {
       if (res?.data) setStockProducts(res.data);
-    }).catch(err => console.error('[PurchaseOrders] stock load error:', err.message));
+    }).catch(() => setStockProducts([]));
   }, [warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleExport = async () => {

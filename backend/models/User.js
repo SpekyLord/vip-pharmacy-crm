@@ -97,6 +97,12 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Entity',
     },
+    // Phase 26: Multi-entity access — lists ALL entities this user can work with.
+    // Superset of entity_id (primary). If empty, user only has access to entity_id.
+    entity_ids: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Entity',
+    }],
     territory_id: {
       type: mongoose.Schema.Types.ObjectId,
     },
@@ -188,6 +194,7 @@ userSchema.index({ passwordResetExpires: 1 }, { expireAfterSeconds: 0 });
 // ERP indexes
 userSchema.index({ entity_id: 1 });
 userSchema.index({ entity_id: 1, role: 1 });
+userSchema.index({ entity_ids: 1 });
 // ERP access control index
 userSchema.index({ 'erp_access.enabled': 1 });
 

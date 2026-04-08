@@ -5,7 +5,7 @@ const periodLockSchema = new mongoose.Schema({
   module: {
     type: String,
     enum: ['SALES', 'COLLECTION', 'EXPENSE', 'JOURNAL', 'PAYROLL',
-           'PURCHASING', 'INVENTORY', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER'],
+           'PURCHASING', 'INVENTORY', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER', 'INCOME'],
     required: true
   },
   year: { type: Number, required: true },
