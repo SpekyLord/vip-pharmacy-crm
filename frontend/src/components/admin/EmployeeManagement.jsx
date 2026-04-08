@@ -1699,6 +1699,9 @@ EmployeeManagement.propTypes = {
   onSave: PropTypes.func,
   onDelete: PropTypes.func,
   onToggleStatus: PropTypes.func,
+  onResetPassword: PropTypes.func,
+  onUnlock: PropTypes.func,
+  onPermanentDelete: PropTypes.func,
   onFilterChange: PropTypes.func,
   onPageChange: PropTypes.func,
 };
