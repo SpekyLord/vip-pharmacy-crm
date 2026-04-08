@@ -3,6 +3,9 @@ const { catchAsync } = require('../../middleware/errorHandler');
 
 const getAll = catchAsync(async (req, res) => {
   // President sees all; others scoped by entity
+  if (!req.isPresident && !req.entityId) {
+    return res.status(400).json({ success: false, message: 'Your account has no entity assigned. Contact the president to assign you to an entity.' });
+  }
   const filter = req.isPresident ? {} : { entity_id: req.entityId };
   if (req.query.entity_id && req.isPresident) filter.entity_id = req.query.entity_id;
   if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
@@ -42,6 +45,9 @@ const search = catchAsync(async (req, res) => {
 });
 
 const create = catchAsync(async (req, res) => {
+  if (!req.entityId) {
+    return res.status(400).json({ success: false, message: 'Cannot create vendor: your account has no entity assigned. Contact the president to assign you to an entity.' });
+  }
   req.body.entity_id = req.entityId;
   req.body.created_by = req.user._id;
   const vendor = await VendorMaster.create(req.body);
