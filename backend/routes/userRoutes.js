@@ -25,9 +25,6 @@ const {
   deleteUser,
   getProfile,
   updateProfile,
-  getEntities,
-  getAccessTemplates,
-  syncToErp,
 } = require('../controllers/userController');
 
 const { protect } = require('../middleware/auth');
@@ -47,13 +44,6 @@ router.get('/employees', adminOnly, getEmployees);
 
 // Active users (admin only)
 router.get('/active', adminOnly, getActiveUsers);
-
-// Lookup routes (must be before /:id to avoid param conflicts)
-router.get('/lookup/entities', adminOnly, getEntities);
-router.get('/lookup/access-templates', adminOnly, getAccessTemplates);
-
-// Sync CRM → ERP People Master
-router.post('/sync-to-erp', adminOnly, syncToErp);
 
 // Admin only routes
 router.get('/', adminOnly, getAllUsers);
