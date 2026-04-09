@@ -14,7 +14,17 @@ export default function useErpApi() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.request({ method, url, data, ...config });
+      // Use method-specific Axios calls to guarantee the HTTP method is correct
+      // (api.request() can lose the method during token-refresh retries)
+      let res;
+      switch (method) {
+        case 'get':    res = await api.get(url, config); break;
+        case 'post':   res = await api.post(url, data, config); break;
+        case 'put':    res = await api.put(url, data, config); break;
+        case 'patch':  res = await api.patch(url, data, config); break;
+        case 'delete': res = await api.delete(url, config); break;
+        default:       res = await api.request({ method, url, data, ...config });
+      }
       return res.data;
     } catch (err) {
       console.error('[useErpApi] ERROR on', method.toUpperCase(), url, {
