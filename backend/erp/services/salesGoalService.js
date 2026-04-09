@@ -50,6 +50,8 @@ async function getIncentiveTiers(entityId) {
       attainment_min: e.metadata?.attainment_min ?? 0,
       budget_per_bdm: e.metadata?.budget_per_bdm ?? 0,
       reward_description: e.metadata?.reward_description ?? '',
+      bg_color: e.metadata?.bg_color ?? '',
+      text_color: e.metadata?.text_color ?? '',
     }))
     .sort((a, b) => b.attainment_min - a.attainment_min); // highest first
 }
@@ -112,14 +114,14 @@ async function getAutoKpiValue(kpiCode, entityId, bdmId, startDate, endDate) {
       }).select('engagement_level').lean();
       if (tagged.length === 0) return 0;
       const config = await getGoalConfig(entityId);
-      const threshold = config.ACCREDITATION_LEVEL || 4;
+      const threshold = config.ACCREDITATION_LEVEL;
       const accredited = tagged.filter(h => (h.engagement_level || 0) >= threshold).length;
       return Math.round((accredited / tagged.length) * 100);
     }
 
     case 'REV_PER_ACCREDITED_HOSP': {
       const config = await getGoalConfig(entityId);
-      const threshold = config.ACCREDITATION_LEVEL || 4;
+      const threshold = config.ACCREDITATION_LEVEL;
       const accreditedHosps = await Hospital.find({
         'tagged_bdms.bdm_id': bdmId,
         'tagged_bdms.is_active': true,
@@ -231,7 +233,7 @@ async function getAutoKpiValue(kpiCode, entityId, bdmId, startDate, endDate) {
 async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, period, periodType) {
   const isYTD = periodType === 'YTD';
   const config = await getGoalConfig(entityId);
-  const fiscalStart = config.FISCAL_START_MONTH || 1;
+  const fiscalStart = config.FISCAL_START_MONTH;
 
   let startDate, endDate;
   if (isYTD) {
@@ -329,7 +331,7 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
       currentTier = computeIncentiveTier(attainmentPct, tiers);
       // Projected: how many months have elapsed in fiscal year?
       const now = new Date();
-      const fyStart = new Date(plan.fiscal_year, (config.FISCAL_START_MONTH || 1) - 1, 1);
+      const fyStart = new Date(plan.fiscal_year, (config.FISCAL_START_MONTH) - 1, 1);
       const monthsElapsed = Math.max(1, (now.getFullYear() - fyStart.getFullYear()) * 12 + now.getMonth() - fyStart.getMonth() + 1);
       projectedTier = computeProjectedTier(actualAmount, qualifyingAmount, monthsElapsed, 12, tiers);
     }
@@ -411,7 +413,7 @@ async function computeAllSnapshots(plan, period, periodType) {
 async function getIncentiveBudgetAdvisor(entityId, plan) {
   const config = await getGoalConfig(entityId);
   const tiers = await getIncentiveTiers(entityId);
-  const { start, end } = fiscalYearRange(plan.fiscal_year, config.FISCAL_START_MONTH || 1);
+  const { start, end } = fiscalYearRange(plan.fiscal_year, config.FISCAL_START_MONTH);
 
   // Total sales YTD
   const salesAgg = await SalesLine.aggregate([

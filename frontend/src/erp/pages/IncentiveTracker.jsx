@@ -48,18 +48,26 @@ const pageStyles = `
   @media(max-width: 768px) { .ict-main { padding: 12px; } .ict-tier-row { flex-direction: column; } }
 `;
 
-function tierStyle(tier) {
-  const t = (tier || '').toLowerCase();
-  if (t.includes('platinum')) return { bg: '#fef3c7', color: '#92400e', border: '#fcd34d' };
-  if (t.includes('gold')) return { bg: '#fef9c3', color: '#854d0e', border: '#fde68a' };
-  if (t.includes('silver')) return { bg: '#f1f5f9', color: '#475569', border: '#cbd5e1' };
-  if (t.includes('bronze')) return { bg: '#fed7aa', color: '#9a3412', border: '#fdba74' };
-  return { bg: '#dbeafe', color: '#1e40af', border: '#93c5fd' };
+// Tier colors from Lookup metadata (database-driven, not hardcoded)
+function buildTierColorMap(tiers) {
+  const map = {};
+  if (tiers) {
+    for (const t of tiers) {
+      if (t.label) map[t.label.toLowerCase()] = { bg: t.bg_color || '#dbeafe', color: t.text_color || '#1e40af' };
+    }
+  }
+  return map;
 }
 
-function attainColor(pctVal) {
-  if (pctVal >= 100) return '#22c55e';
-  if (pctVal >= 80) return '#f59e0b';
+function tierStyle(tier, colorMap) {
+  const t = (tier || '').toLowerCase();
+  const c = colorMap[t] || { bg: '#dbeafe', color: '#1e40af' };
+  return { ...c, border: c.bg };
+}
+
+function attainColor(pctVal, config) {
+  if (config?.attainment_green && pctVal >= config.attainment_green) return '#22c55e';
+  if (config?.attainment_yellow && pctVal >= config.attainment_yellow) return '#f59e0b';
   return '#ef4444';
 }
 
@@ -82,9 +90,11 @@ export default function IncentiveTracker() {
   useEffect(() => { loadBoard(); }, []);
 
   const tiers = board?.tiers || [];
-  const leaderboard = board?.leaderboard || [];
+  const leaderboard = board?.board || [];
   const advisor = board?.advisor || {};
-  const fiscalYear = board?.fiscal_year || new Date().getFullYear();
+  const fiscalYear = board?.plan?.fiscal_year || new Date().getFullYear();
+  const config = board?.config || {};
+  const colorMap = buildTierColorMap(tiers);
 
   // Fiscal year countdown: months remaining in FY
   const now = new Date();
@@ -134,7 +144,7 @@ export default function IncentiveTracker() {
               {tiers.length > 0 && (
                 <div className="ict-tier-row">
                   {tiers.map((t, i) => {
-                    const ts = tierStyle(t.tier_label);
+                    const ts = tierStyle(t.label, colorMap);
                     return (
                       <div key={t.tier_label || i} className="ict-tier-card" style={{ background: ts.bg, borderColor: ts.border }}>
                         <div className="ict-tier-label" style={{ color: ts.color }}>{t.tier_label}</div>
@@ -199,9 +209,9 @@ export default function IncentiveTracker() {
                     <tbody>
                       {leaderboard.map((row, i) => {
                         const att = row.attainment_pct || 0;
-                        const color = attainColor(att);
-                        const ts = tierStyle(row.current_tier);
-                        const pts = tierStyle(row.projected_tier);
+                        const color = attainColor(att, config);
+                        const ts = tierStyle(row.current_tier, colorMap);
+                        const pts = tierStyle(row.projected_tier, colorMap);
                         return (
                           <tr key={row.bdm_id || i}>
                             <td className="num" style={{ fontWeight: 700 }}>{row.rank || i + 1}</td>

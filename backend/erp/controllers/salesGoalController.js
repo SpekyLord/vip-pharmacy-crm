@@ -205,7 +205,7 @@ exports.updateTarget = catchAsync(async (req, res) => {
 
   if (req.body.sales_target && !req.body.collection_target) {
     const plan = await SalesGoalPlan.findById(target.plan_id).lean();
-    req.body.collection_target = Math.round(req.body.sales_target * (plan?.collection_target_pct || 0.70));
+    req.body.collection_target = Math.round(req.body.sales_target * (plan?.collection_target_pct));
   }
 
   Object.assign(target, req.body);
@@ -337,8 +337,8 @@ exports.getGoalDashboard = catchAsync(async (req, res) => {
     incentive_tier: s.incentive_status?.[0]?.tier_label || '',
     incentive_budget: s.incentive_status?.[0]?.tier_budget || 0,
     projected_tier: s.incentive_status?.[0]?.projected_tier_label || '',
-    status: s.sales_attainment_pct >= (config.ATTAINMENT_GREEN || 90) ? 'on_track'
-      : s.sales_attainment_pct >= (config.ATTAINMENT_YELLOW || 70) ? 'needs_attention'
+    status: s.sales_attainment_pct >= config.ATTAINMENT_GREEN ? 'on_track'
+      : s.sales_attainment_pct >= config.ATTAINMENT_YELLOW ? 'needs_attention'
       : 'at_risk',
   }));
 
@@ -364,10 +364,11 @@ exports.getGoalDashboard = catchAsync(async (req, res) => {
       },
       entity_targets: entityTargets,
       leaderboard,
+      tiers: await salesGoalService.getIncentiveTiers(req.entityId),
       config: {
-        attainment_green: config.ATTAINMENT_GREEN || 90,
-        attainment_yellow: config.ATTAINMENT_YELLOW || 70,
-        attainment_red: config.ATTAINMENT_RED || 50,
+        attainment_green: config.ATTAINMENT_GREEN,
+        attainment_yellow: config.ATTAINMENT_YELLOW,
+        attainment_red: config.ATTAINMENT_RED,
       },
     },
   });
@@ -407,10 +408,11 @@ exports.getBdmGoalDetail = catchAsync(async (req, res) => {
     .lean();
 
   const config = await salesGoalService.getGoalConfig(req.entityId);
+  const tiers = await salesGoalService.getIncentiveTiers(req.entityId);
 
   res.json({
     success: true,
-    data: { plan, target, person, ytdSnapshot, monthlyHistory, actions, config },
+    data: { plan, target, person, ytdSnapshot, monthlyHistory, actions, config, tiers },
   });
 });
 
@@ -474,6 +476,7 @@ exports.getIncentiveBoard = catchAsync(async (req, res) => {
 
   const tiers = await salesGoalService.getIncentiveTiers(req.entityId);
   const advisor = await salesGoalService.getIncentiveBudgetAdvisor(req.entityId, plan);
+  const config = await salesGoalService.getGoalConfig(req.entityId);
 
   const board = snapshots.map(s => ({
     bdm_name: s.person_id?.full_name,
@@ -495,6 +498,11 @@ exports.getIncentiveBoard = catchAsync(async (req, res) => {
       tiers,
       board,
       advisor,
+      config: {
+        attainment_green: config.ATTAINMENT_GREEN,
+        attainment_yellow: config.ATTAINMENT_YELLOW,
+        attainment_red: config.ATTAINMENT_RED,
+      },
     },
   });
 });

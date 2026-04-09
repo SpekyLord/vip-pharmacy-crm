@@ -60,19 +60,25 @@ const pageStyles = `
 `;
 
 function statusColor(attPct, config) {
-  const thresholds = config?.attainment_thresholds || { green: 100, yellow: 80 };
-  if (attPct >= thresholds.green) return '#22c55e';
-  if (attPct >= thresholds.yellow) return '#f59e0b';
+  if (attPct >= config?.attainment_green) return '#22c55e';
+  if (attPct >= config?.attainment_yellow) return '#f59e0b';
   return '#ef4444';
 }
 
-function tierColor(tier) {
+// tierColorMap built from API tiers data (Lookup-driven, not hardcoded)
+function buildTierColorMap(tiers) {
+  const map = {};
+  if (tiers) {
+    for (const t of tiers) {
+      if (t.label) map[t.label.toLowerCase()] = { bg: t.bg_color || '#dbeafe', color: t.text_color || '#1e40af' };
+    }
+  }
+  return map;
+}
+
+function tierColor(tier, colorMap) {
   const t = (tier || '').toLowerCase();
-  if (t.includes('platinum')) return { bg: '#fef3c7', color: '#92400e' };
-  if (t.includes('gold')) return { bg: '#fef9c3', color: '#854d0e' };
-  if (t.includes('silver')) return { bg: '#f1f5f9', color: '#475569' };
-  if (t.includes('bronze')) return { bg: '#fed7aa', color: '#9a3412' };
-  return { bg: '#dbeafe', color: '#1e40af' };
+  return colorMap[t] || { bg: '#dbeafe', color: '#1e40af' };
 }
 
 export default function SalesGoalDashboard() {
@@ -311,7 +317,7 @@ export default function SalesGoalDashboard() {
                     <tbody>
                       {sortedLeaderboard().map((row, i) => {
                         const attColor = statusColor(row.attainment_pct || 0, config);
-                        const tc = tierColor(row.tier);
+                        const tc = tierColor(row.tier, buildTierColorMap(dashboard?.tiers));
                         return (
                           <tr key={row.bdm_id || i}>
                             <td className="num">{row.rank || i + 1}</td>
@@ -360,7 +366,7 @@ export default function SalesGoalDashboard() {
                         tiers[t]++;
                       });
                       return Object.entries(tiers).map(([tier, count]) => {
-                        const tc = tierColor(tier);
+                        const tc = tierColor(tier, buildTierColorMap(dashboard?.tiers));
                         return (
                           <div key={tier} style={{
                             background: tc.bg,

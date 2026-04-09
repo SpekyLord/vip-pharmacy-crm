@@ -73,19 +73,26 @@ const pageStyles = `
   @media(max-width: 768px) { .bdv-main { padding: 12px; } .bdv-row { flex-direction: column; } }
 `;
 
-function attainColor(pctVal) {
-  if (pctVal >= 100) return '#22c55e';
-  if (pctVal >= 80) return '#f59e0b';
+// Colors from Lookup config (database-driven, not hardcoded)
+function attainColor(pctVal, config) {
+  if (config?.attainment_green && pctVal >= config.attainment_green) return '#22c55e';
+  if (config?.attainment_yellow && pctVal >= config.attainment_yellow) return '#f59e0b';
   return '#ef4444';
 }
 
-function tierColorStyle(tier) {
+function buildTierColorMap(tiers) {
+  const map = {};
+  if (tiers) {
+    for (const t of tiers) {
+      if (t.label) map[t.label.toLowerCase()] = { bg: t.bg_color || '#dbeafe', color: t.text_color || '#1e40af' };
+    }
+  }
+  return map;
+}
+
+function tierColorStyle(tier, colorMap) {
   const t = (tier || '').toLowerCase();
-  if (t.includes('platinum')) return { bg: '#fef3c7', color: '#92400e' };
-  if (t.includes('gold')) return { bg: '#fef9c3', color: '#854d0e' };
-  if (t.includes('silver')) return { bg: '#f1f5f9', color: '#475569' };
-  if (t.includes('bronze')) return { bg: '#fed7aa', color: '#9a3412' };
-  return { bg: '#dbeafe', color: '#1e40af' };
+  return colorMap[t] || { bg: '#dbeafe', color: '#1e40af' };
 }
 
 function actionStatusStyle(status) {
@@ -151,20 +158,23 @@ export default function SalesGoalBdmView() {
 
   const person = detail?.person || {};
   const target = detail?.target || {};
-  const incentive = detail?.incentive || {};
-  const monthly = detail?.monthly || [];
-  const drivers = detail?.drivers || [];
+  const ytdSnap = detail?.ytdSnapshot || {};
+  const incentive = ytdSnap?.incentive_status?.[0] || {};
+  const monthly = detail?.monthlyHistory || [];
+  const drivers = ytdSnap?.driver_kpis || [];
   const actions = detail?.actions || [];
+  const goalConfig = detail?.config || {};
+  const colorMap = buildTierColorMap(detail?.tiers);
 
-  const attainPct = target.sales_target ? ((target.actual || 0) / target.sales_target) * 100 : 0;
-  const ringColor = attainColor(attainPct);
+  const attainPct = ytdSnap.sales_attainment_pct || 0;
+  const ringColor = attainColor(attainPct, goalConfig);
   const ringRadius = 50;
   const ringCircumference = 2 * Math.PI * ringRadius;
   const ringOffset = ringCircumference - (Math.min(attainPct, 100) / 100) * ringCircumference;
 
-  const maxMonthly = Math.max(...monthly.map(m => Math.max(m.actual || 0, m.target || 0)), 1);
+  const maxMonthly = Math.max(...monthly.map(m => Math.max(m.sales_actual || 0, m.sales_target || 0)), 1);
 
-  const tc = tierColorStyle(incentive.current_tier);
+  const tc = tierColorStyle(incentive.tier_label, colorMap);
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -317,7 +327,7 @@ export default function SalesGoalBdmView() {
                                   <div className="bdv-kpi-track">
                                     <div className="bdv-kpi-fill" style={{
                                       width: `${Math.min(kpiPct, 100)}%`,
-                                      background: attainColor(kpiPct)
+                                      background: attainColor(kpiPct, goalConfig)
                                     }} />
                                   </div>
                                   <span className="bdv-kpi-nums">

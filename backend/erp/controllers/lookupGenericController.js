@@ -101,11 +101,11 @@ const SEED_DEFAULTS = {
     { code: 'GROSS_MARGIN_PER_SKU', label: 'Gross Margin per SKU', metadata: { unit: '%', direction: 'higher_better', computation: 'auto' } },
   ],
   INCENTIVE_TIER: [
-    { code: 'TIER_1', label: 'Platinum', metadata: { attainment_min: 100, budget_per_bdm: 150000, reward_description: '', sort_order: 1 } },
-    { code: 'TIER_2', label: 'Gold', metadata: { attainment_min: 90, budget_per_bdm: 80000, reward_description: '', sort_order: 2 } },
-    { code: 'TIER_3', label: 'Silver', metadata: { attainment_min: 80, budget_per_bdm: 50000, reward_description: '', sort_order: 3 } },
-    { code: 'TIER_4', label: 'Bronze', metadata: { attainment_min: 70, budget_per_bdm: 30000, reward_description: '', sort_order: 4 } },
-    { code: 'TIER_5', label: 'Participant', metadata: { attainment_min: 50, budget_per_bdm: 15000, reward_description: '', sort_order: 5 } },
+    { code: 'TIER_1', label: 'Platinum', metadata: { attainment_min: 100, budget_per_bdm: 150000, reward_description: '', sort_order: 1, bg_color: '#fef3c7', text_color: '#92400e' } },
+    { code: 'TIER_2', label: 'Gold', metadata: { attainment_min: 90, budget_per_bdm: 80000, reward_description: '', sort_order: 2, bg_color: '#fef9c3', text_color: '#854d0e' } },
+    { code: 'TIER_3', label: 'Silver', metadata: { attainment_min: 80, budget_per_bdm: 50000, reward_description: '', sort_order: 3, bg_color: '#f1f5f9', text_color: '#475569' } },
+    { code: 'TIER_4', label: 'Bronze', metadata: { attainment_min: 70, budget_per_bdm: 30000, reward_description: '', sort_order: 4, bg_color: '#fed7aa', text_color: '#9a3412' } },
+    { code: 'TIER_5', label: 'Participant', metadata: { attainment_min: 50, budget_per_bdm: 15000, reward_description: '', sort_order: 5, bg_color: '#dbeafe', text_color: '#1e40af' } },
   ],
   ACTION_TYPE: [
     { code: 'ACCREDITATION', label: 'Hospital Accreditation' },
