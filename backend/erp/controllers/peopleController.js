@@ -1,4 +1,4 @@
-const { ROLES } = require('../../constants/roles');
+const { ROLES, ALL_ROLES } = require('../../constants/roles');
 const PeopleMaster = require('../models/PeopleMaster');
 const CompProfile = require('../models/CompProfile');
 const User = require('../../models/User');
@@ -461,9 +461,19 @@ const createLoginForPerson = catchAsync(async (req, res) => {
   const existing = await User.findOne({ email: email.toLowerCase() });
   if (existing) return res.status(400).json({ success: false, message: `Email "${email}" is already registered` });
 
-  // Map person_type to CRM role
-  const roleMap = { DIRECTOR: ROLES.PRESIDENT, BDM: ROLES.CONTRACTOR, ECOMMERCE_BDM: ROLES.CONTRACTOR, SALES_REP: ROLES.CONTRACTOR, CONSULTANT: ROLES.CONTRACTOR, EMPLOYEE: ROLES.CONTRACTOR };
-  const crmRole = roleMap[person.person_type] || ROLES.CONTRACTOR;
+  // Map person_type to CRM role via ROLE_MAPPING lookup (falls back to request body or CONTRACTOR)
+  let crmRole = req.body.role || null;
+  if (!crmRole) {
+    const Lookup = require('../models/Lookup');
+    const mapping = await Lookup.findOne({
+      entity_id: person.entity_id,
+      category: 'ROLE_MAPPING',
+      'metadata.person_type': person.person_type,
+      is_active: true,
+    }).lean();
+    crmRole = mapping?.metadata?.system_role || ROLES.CONTRACTOR;
+  }
+  if (!ALL_ROLES.includes(crmRole)) crmRole = ROLES.CONTRACTOR;
 
   // Build ERP access — apply template if provided, otherwise just enable
   let erpAccess = { enabled: true };
@@ -541,6 +551,35 @@ const unlinkLogin = catchAsync(async (req, res) => {
   res.json({ success: true, message: `Login unlinked for ${person.full_name}. CRM User ${userId} still exists but is disconnected.` });
 });
 
+// ═══ Change System Role (update User.role from PersonDetail) ═══
+
+const changeSystemRole = catchAsync(async (req, res) => {
+  const { role } = req.body;
+  if (!role) return res.status(400).json({ success: false, message: 'Role is required' });
+  if (!ALL_ROLES.includes(role)) {
+    return res.status(400).json({ success: false, message: `Invalid role "${role}". Must be one of: ${ALL_ROLES.join(', ')}` });
+  }
+
+  const person = await PeopleMaster.findById(req.params.id);
+  if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
+  if (!person.user_id) return res.status(400).json({ success: false, message: 'Person has no linked login — create one first' });
+
+  const user = await User.findById(person.user_id);
+  if (!user) return res.status(404).json({ success: false, message: 'Linked user not found (orphaned reference)' });
+
+  const oldRole = user.role;
+  if (oldRole === role) return res.json({ success: true, message: `Role is already "${role}" — no change needed` });
+
+  user.role = role;
+  await user.save();
+
+  res.json({
+    success: true,
+    message: `System role changed from "${oldRole}" to "${role}" for ${person.full_name}`,
+    data: { person_id: person._id, user_id: user._id, old_role: oldRole, new_role: role },
+  });
+});
+
 module.exports = {
   getPeopleList,
   getPersonById,
@@ -558,4 +597,5 @@ module.exports = {
   disableLogin,
   enableLogin,
   unlinkLogin,
+  changeSystemRole,
 };

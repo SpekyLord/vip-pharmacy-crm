@@ -7,12 +7,13 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
 import useWarehouses from '../hooks/useWarehouses';
+import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
 
-const VAT_OPTIONS = ['VATABLE', 'EXEMPT', 'ZERO'];
+const VAT_OPTIONS_FALLBACK = ['VATABLE', 'EXEMPT', 'ZERO'];
 const STATUS_FILTER = ['ALL', 'ACTIVE', 'INACTIVE'];
-const STOCK_TYPES = ['PHARMA', 'FNB', 'OFFICE'];
+const STOCK_TYPES_FALLBACK = ['PHARMA', 'FNB', 'OFFICE'];
 
 const pageStyles = `
   .pm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -67,7 +68,7 @@ const peso = (val) => `₱${Number(val || 0).toLocaleString('en-PH', { minimumFr
 
 // ---------- Product Modal ----------
 /* eslint-disable react/prop-types */
-function ProductModal({ open, onClose, onSave, editItem }) {
+function ProductModal({ open, onClose, onSave, editItem, vatOptions }) {
   const [form, setForm] = useState({
     brand_name: '', generic_name: '', dosage_strength: '', sold_per: '',
     purchase_price: '', selling_price: '', vat_status: 'VATABLE',
@@ -170,7 +171,7 @@ function ProductModal({ open, onClose, onSave, editItem }) {
             <div className="form-group">
               <label>VAT Status</label>
               <select name="vat_status" value={form.vat_status} onChange={set}>
-                {VAT_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+                {vatOptions.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
             <div className="form-group">
@@ -229,6 +230,10 @@ function ProductModal({ open, onClose, onSave, editItem }) {
 export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const api = useErpApi();
   const { getWarehouses } = useWarehouses();
+  const { options: vatOpts } = useLookupOptions('VAT_TYPE');
+  const { options: stockTypeOpts } = useLookupOptions('STOCK_TYPE');
+  const VAT_OPTIONS = vatOpts.length > 0 ? vatOpts.map(o => o.code) : VAT_OPTIONS_FALLBACK;
+  const STOCK_TYPES = stockTypeOpts.length > 0 ? stockTypeOpts.map(o => o.code) : STOCK_TYPES_FALLBACK;
   const [products, setProducts] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -507,6 +512,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
             onClose={() => { setShowModal(false); setEditItem(null); }}
             onSave={handleSave}
             editItem={editItem}
+            vatOptions={VAT_OPTIONS}
           />
 
           {/* Tag to Warehouse Modal */}

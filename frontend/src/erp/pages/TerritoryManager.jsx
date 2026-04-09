@@ -41,13 +41,14 @@ const pageStyles = `
   @media(max-width: 768px) { .ter-table { font-size: 11px; } .ter-table th, .ter-table td { padding: 8px; } }
 `;
 
-const EMPTY_FORM = { territory_code: '', territory_name: '', region: '', is_active: true };
+const EMPTY_FORM = { territory_code: '', territory_name: '', region: '', is_active: true, assigned_bdms: [] };
 
 export function TerritoryManagerContent() {
   const { user } = useAuth();
   const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [territories, setTerritories] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -56,8 +57,12 @@ export function TerritoryManagerContent() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/erp/territories?active_only=false');
-      setTerritories(res.data?.data || []);
+      const [terRes, usrRes] = await Promise.all([
+        api.get('/erp/territories?active_only=false'),
+        api.get('/erp/people/as-users'),
+      ]);
+      setTerritories(terRes.data?.data || []);
+      setAllUsers(usrRes.data?.data || []);
     } catch {
       toast.error('Failed to load territories');
     }
@@ -79,6 +84,7 @@ export function TerritoryManagerContent() {
       territory_name: t.territory_name || '',
       region: t.region || '',
       is_active: t.is_active !== false,
+      assigned_bdms: (t.assigned_bdms || []).map(b => b._id || b),
     });
     setShowModal(true);
   };
@@ -174,6 +180,34 @@ export function TerritoryManagerContent() {
               <div className="form-group">
                 <label>Region</label>
                 <input value={form.region} onChange={e => setForm({ ...form, region: e.target.value })} placeholder="e.g. Western Visayas" />
+              </div>
+              <div className="form-group">
+                <label>Assigned BDMs</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                  {form.assigned_bdms.map(uid => {
+                    const u = allUsers.find(x => x._id === uid);
+                    return (
+                      <span key={uid} className="bdm-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        {u?.name || uid}
+                        <span style={{ cursor: 'pointer', fontWeight: 700, fontSize: 13, lineHeight: 1 }} onClick={() => setForm(f => ({ ...f, assigned_bdms: f.assigned_bdms.filter(id => id !== uid) }))}>×</span>
+                      </span>
+                    );
+                  })}
+                </div>
+                <select
+                  value=""
+                  onChange={e => {
+                    const uid = e.target.value;
+                    if (uid && !form.assigned_bdms.includes(uid)) {
+                      setForm(f => ({ ...f, assigned_bdms: [...f.assigned_bdms, uid] }));
+                    }
+                  }}
+                >
+                  <option value="">— Add a BDM —</option>
+                  {allUsers
+                    .filter(u => !form.assigned_bdms.includes(u._id))
+                    .map(u => <option key={u._id} value={u._id}>{u.name} ({u.role})</option>)}
+                </select>
               </div>
               {editingId && (
                 <div className="form-group">

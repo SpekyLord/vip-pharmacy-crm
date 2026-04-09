@@ -12,6 +12,7 @@ export default function usePeople() {
   const disableLogin = (personId) => api.post(`/people/${personId}/disable-login`);
   const enableLogin = (personId) => api.post(`/people/${personId}/enable-login`);
   const unlinkLogin = (personId) => api.post(`/people/${personId}/unlink-login`);
+  const changeSystemRole = (personId, role) => api.post(`/people/${personId}/change-role`, { role });
   const updatePerson = (id, data) => api.put(`/people/${id}`, data);
   const deactivatePerson = (id) => api.del(`/people/${id}`);
 
@@ -30,6 +31,7 @@ export default function usePeople() {
     disableLogin,
     enableLogin,
     unlinkLogin,
+    changeSystemRole,
     updatePerson,
     deactivatePerson,
     getCompProfile,
