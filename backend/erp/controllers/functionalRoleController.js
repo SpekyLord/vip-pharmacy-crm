@@ -9,6 +9,13 @@ const FunctionalRoleAssignment = require('../models/FunctionalRoleAssignment');
 const PeopleMaster = require('../models/PeopleMaster');
 const { catchAsync } = require('../../middleware/errorHandler');
 
+// Build query filter — president can operate cross-entity, others scoped to working entity
+const idFilter = (req, id) => {
+  const filter = { _id: id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  return filter;
+};
+
 const POPULATE_FIELDS = [
   { path: 'person_id', select: 'full_name position department person_type is_active' },
   { path: 'entity_id', select: 'entity_name short_name' },
@@ -36,10 +43,7 @@ const listAssignments = catchAsync(async (req, res) => {
 // ═══ Get single assignment ═══
 
 const getAssignment = catchAsync(async (req, res) => {
-  const assignment = await FunctionalRoleAssignment.findOne({
-    _id: req.params.id,
-    entity_id: req.entityId,
-  })
+  const assignment = await FunctionalRoleAssignment.findOne(idFilter(req, req.params.id))
     .populate(POPULATE_FIELDS)
     .lean();
 
@@ -115,7 +119,7 @@ const updateAssignment = catchAsync(async (req, res) => {
   updates.updated_by = req.user._id;
 
   const assignment = await FunctionalRoleAssignment.findOneAndUpdate(
-    { _id: req.params.id, entity_id: req.entityId },
+    idFilter(req, req.params.id),
     { $set: updates },
     { new: true, runValidators: true }
   ).populate(POPULATE_FIELDS).lean();
@@ -128,7 +132,7 @@ const updateAssignment = catchAsync(async (req, res) => {
 
 const deactivateAssignment = catchAsync(async (req, res) => {
   const assignment = await FunctionalRoleAssignment.findOneAndUpdate(
-    { _id: req.params.id, entity_id: req.entityId },
+    idFilter(req, req.params.id),
     { $set: { is_active: false, status: 'REVOKED', updated_by: req.user._id } },
     { new: true }
   ).populate(POPULATE_FIELDS).lean();
