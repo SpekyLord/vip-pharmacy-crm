@@ -6,7 +6,7 @@
  *
  * Edit mode: admin/finance/president only. BDMs see read-only.
  */
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
 import Navbar from '../../components/common/Navbar';
@@ -65,6 +65,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString() : '—';
 const toInput = (d) => d ? new Date(d).toISOString().split('T')[0] : '';
 
 // ── Field component: view/edit toggle ──
+/* eslint-disable react/prop-types */
 function F({ lbl, val, name, type = 'text', editing, form, onChange, options, className }) {
   if (!editing) return <div className={`pd-field ${className || ''}`}><div className="lbl">{lbl}</div><div className="val">{val ?? '—'}</div></div>;
   if (options) return (
@@ -80,6 +81,7 @@ function F({ lbl, val, name, type = 'text', editing, form, onChange, options, cl
       <input type={type} name={name} value={form[name] ?? ''} onChange={onChange} /></div>
   );
 }
+/* eslint-enable react/prop-types */
 
 export default function PersonDetail() {
   const { id } = useParams();
@@ -95,7 +97,7 @@ export default function PersonDetail() {
   const EMP_TYPES = codes('EMPLOYMENT_TYPE');
   const VEHICLE_TYPES = codes('VEHICLE_TYPE');
   const BDM_STAGES = codes('BDM_STAGE');
-  const roleMappingOpts = lookups.ROLE_MAPPING || [];
+  const roleMappingOpts = useMemo(() => lookups.ROLE_MAPPING || [], [lookups.ROLE_MAPPING]);
   const CIVIL_STATUSES = codes('CIVIL_STATUS');
   const PERSON_STATUSES = codes('PERSON_STATUS');
   const SALARY_TYPES = codes('SALARY_TYPE');
@@ -185,10 +187,10 @@ export default function PersonDetail() {
     if (lookupsLoading || lookupWarnShown.current) return;
     const empty = LOOKUP_CATEGORIES.filter(c => c !== 'ROLE_MAPPING' && (!lookups[c] || lookups[c].length === 0));
     if (empty.length > 0) {
-      showWarning(`Some dropdown options are empty: ${empty.join(', ')}. Seed them in Control Center → Lookup Tables.`);
+      showWarning(`Some dropdown options are empty: ${empty.join(', ')}. Seed them in Control Center > Lookup Tables.`);
       lookupWarnShown.current = true;
     }
-  }, [lookupsLoading, lookups]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lookupsLoading, lookups]);
 
   // Role-People alignment warning: check person_type vs linked user role via ROLE_MAPPING
   const roleMismatchShown = useRef(null);
@@ -204,7 +206,7 @@ export default function PersonDetail() {
       showWarning(`Role mismatch: ${person.person_type} should map to '${expectedRole}' but linked user has role '${actualRole}'`);
     }
     roleMismatchShown.current = checkKey;
-  }, [id, person, roleMappingOpts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, person, roleMappingOpts]);
 
   const handlePersonChange = (e) => setPersonForm(f => ({ ...f, [e.target.name]: e.target.value }));
   const handleCompChange = (e) => {
