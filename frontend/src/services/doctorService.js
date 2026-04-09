@@ -71,6 +71,12 @@ const doctorService = {
     return response.data;
   },
 
+  // Get doctors assigned to or visited by a specific BDM
+  getByBdm: async (bdmId) => {
+    const response = await api.get(`/doctors/by-bdm/${bdmId}`);
+    return response.data;
+  },
+
   // Get distinct specializations from all VIP Clients
   getSpecializations: async () => {
     const response = await api.get('/doctors/specializations');

@@ -99,9 +99,8 @@ export default function CollectionSession() {
   const cameraInputRef = useRef(null);
   const [pendingUploadType, setPendingUploadType] = useState('');
 
-  // CRM Doctor list for partner tags
+  // CRM Doctor list for partner tags (filtered by BDMs who own the open CSIs)
   const [crmDoctors, setCrmDoctors] = useState([]);
-  const [doctorsLoaded, setDoctorsLoaded] = useState(false);
 
   const commRates = useMemo(() => settings?.COMMISSION_RATES || [0, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05], [settings]);
   const rebateRates = useMemo(() => settings?.PARTNER_REBATE_RATES || [1, 2, 3, 5, 20, 25], [settings]);
@@ -119,20 +118,54 @@ export default function CollectionSession() {
     lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load CRM doctors once
+  // Load CRM doctors (assigned to + visited by) the BDM who owns the CSIs
+  // Priority: CSI bdm_id → warehouse manager (fallback)
   useEffect(() => {
-    if (doctorsLoaded) return;
-    doctorService.getAll({ limit: 0 }).then(res => {
-      const docs = (res.data?.data || res.data || []).map(d => ({
-        _id: d._id,
-        name: `${d.lastName}, ${d.firstName}`,
-        specialty: d.specialization || ''
-      }));
-      docs.sort((a, b) => a.name.localeCompare(b.name));
-      setCrmDoctors(docs);
-      setDoctorsLoaded(true);
-    }).catch(() => setDoctorsLoaded(true));
-  }, [doctorsLoaded]);
+    if (!openCsis.length) { setCrmDoctors([]); return; }
+
+    const fetchDoctorsForBdm = async (bdmId) => {
+      const res = await doctorService.getByBdm(bdmId);
+      return (res.data?.data || res.data || []);
+    };
+
+    (async () => {
+      try {
+        // 1. Try CSI bdm_id first
+        const csiBdmIds = [...new Set(openCsis.map(c => c.bdm_id).filter(Boolean))];
+        let allDocs = [];
+        for (const id of csiBdmIds) {
+          const docs = await fetchDoctorsForBdm(id);
+          allDocs.push(...docs);
+        }
+
+        // 2. Fallback: warehouse manager if CSI bdm_id yielded no doctors
+        if (!allDocs.length) {
+          const warehouseIds = [...new Set(openCsis.map(c => c.warehouse_id).filter(Boolean))];
+          for (const whId of warehouseIds) {
+            try {
+              const wh = await lookupApi.get(`/warehouse/${whId}`);
+              const mgrId = wh?.data?.manager_id?._id || wh?.data?.manager_id;
+              if (mgrId) {
+                const docs = await fetchDoctorsForBdm(mgrId);
+                allDocs.push(...docs);
+              }
+            } catch { /* skip */ }
+          }
+        }
+
+        // Dedupe, format, sort
+        const seen = new Set();
+        const docs = [];
+        for (const d of allDocs) {
+          if (seen.has(d._id)) continue;
+          seen.add(d._id);
+          docs.push({ _id: d._id, name: `${d.lastName}, ${d.firstName}`, specialty: d.specialization || '' });
+        }
+        docs.sort((a, b) => a.name.localeCompare(b.name));
+        setCrmDoctors(docs);
+      } catch { setCrmDoctors([]); }
+    })();
+  }, [openCsis]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load bank accounts + petty cash funds for "Deposited At" dropdown
   useEffect(() => {

@@ -12,7 +12,8 @@
       "Bash(xargs grep:*)",
       "Bash(grep -E \"\\\\.jsx?$\")",
       "Bash(npx -y acorn-jsx --ecma2020 --module --allow-import-export-everywhere frontend/src/erp/pages/SupplierInvoices.jsx)",
-      "Read(//c/Users/LENOVO/OneDrive/Documents/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend/routes/**)"
+      "Read(//c/Users/LENOVO/OneDrive/Documents/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend/routes/**)",
+      "Bash(curl -s \"http://localhost:5000/api/erp/inventory/my-stock?warehouse_id=69d1098d8a949881a5eac252\" -H \"Cookie: accessToken=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5YTEyNmU3YTJmZWVmYzMzNzUzZmYwZSIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NTcyNzkxOSwiZXhwIjoxNzc1NzI4MjE5fQ.mn_HmZgOgl682R7X3QzGis7VEmJKu2Y2zbtVGhJNuDQ\")"
     ]
   }
 }

@@ -659,6 +659,38 @@ const getSpecializations = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get doctors assigned to OR visited by a specific BDM
+ * @route   GET /api/doctors/by-bdm/:bdmId
+ * @access  Admin, President, Finance
+ */
+const getDoctorsByBdm = catchAsync(async (req, res) => {
+  const bdmId = req.params.bdmId;
+  if (!mongoose.Types.ObjectId.isValid(bdmId)) {
+    return res.status(400).json({ success: false, message: 'Invalid BDM ID' });
+  }
+  const oid = new mongoose.Types.ObjectId(bdmId);
+
+  // 1. Doctors assigned to this BDM
+  const assigned = await Doctor.find({ assignedTo: oid, isActive: true })
+    .select('firstName lastName specialization')
+    .lean();
+
+  // 2. Doctor IDs visited by this BDM (not already in assigned set)
+  const assignedIds = new Set(assigned.map(d => d._id.toString()));
+  const visitedIds = await Visit.distinct('doctor', { user: oid });
+  const extraIds = visitedIds.filter(id => !assignedIds.has(id.toString()));
+
+  let visited = [];
+  if (extraIds.length) {
+    visited = await Doctor.find({ _id: { $in: extraIds }, isActive: true })
+      .select('firstName lastName specialization')
+      .lean();
+  }
+
+  res.status(200).json({ success: true, data: [...assigned, ...visited] });
+});
+
 module.exports = {
   getAllDoctors,
   getDoctorById,
@@ -673,4 +705,5 @@ module.exports = {
   assignEmployee,
   updateTargetProducts,
   getSpecializations,
+  getDoctorsByBdm,
 };
