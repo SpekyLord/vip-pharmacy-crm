@@ -13,6 +13,7 @@ const InterCompanyTransfer = require('../models/InterCompanyTransfer');
 const InventoryLedger = require('../models/InventoryLedger');
 const TransactionEvent = require('../models/TransactionEvent');
 const ProductMaster = require('../models/ProductMaster');
+const { ROLES } = require('../../constants/roles');
 const { journalFromInterCompany } = require('./autoJournal');
 const { createAndPostJournal } = require('./journalEngine');
 const ErpAuditLog = require('../models/ErpAuditLog');
@@ -35,7 +36,7 @@ const shipTransfer = async (transferId, shippedBy) => {
   if (!sourceBdmId) {
     const sourceBdm = await User.findOne({
       entity_id: transfer.source_entity_id,
-      role: 'employee',
+      role: ROLES.CONTRACTOR,
       isActive: true
     }).select('_id').lean();
     sourceBdmId = sourceBdm ? sourceBdm._id : shippedBy;
@@ -157,7 +158,7 @@ const receiveTransfer = async (transferId, receivedBy) => {
   if (!targetBdmId) {
     const targetBdm = await User.findOne({
       entity_id: transfer.target_entity_id,
-      role: 'employee',
+      role: ROLES.CONTRACTOR,
       isActive: true
     }).select('_id').lean();
     targetBdmId = targetBdm ? targetBdm._id : receivedBy;
@@ -358,7 +359,7 @@ const cancelTransfer = async (transferId, cancelledBy, reason) => {
   if (transfer.status === 'SHIPPED') {
     const sourceBdm = await User.findOne({
       entity_id: transfer.source_entity_id,
-      role: 'employee',
+      role: ROLES.CONTRACTOR,
       isActive: true
     }).select('_id').lean();
     const sourceBdmId = sourceBdm ? sourceBdm._id : cancelledBy;
@@ -383,7 +384,7 @@ const cancelTransfer = async (transferId, cancelledBy, reason) => {
   if (transfer.status === 'RECEIVED') {
     const targetBdm = await User.findOne({
       entity_id: transfer.target_entity_id,
-      role: 'employee',
+      role: ROLES.CONTRACTOR,
       isActive: true
     }).select('_id').lean();
     const targetBdmId = targetBdm ? targetBdm._id : cancelledBy;
@@ -407,7 +408,7 @@ const cancelTransfer = async (transferId, cancelledBy, reason) => {
     // Also reverse source TRANSFER_OUT
     const sourceBdm = await User.findOne({
       entity_id: transfer.source_entity_id,
-      role: 'employee',
+      role: ROLES.CONTRACTOR,
       isActive: true
     }).select('_id').lean();
     const sourceBdmId = sourceBdm ? sourceBdm._id : cancelledBy;

@@ -15,21 +15,21 @@ const Entity = require('../models/Entity');
 const TEMPLATES = [
   {
     template_name: 'Field BDM',
-    description: 'Standard field BDM — full sales/collections/expenses, view inventory/reports',
+    description: 'Standard field BDM — full sales/collections/expenses, view inventory/reports/goals',
     modules: {
       sales: 'FULL', inventory: 'VIEW', collections: 'FULL', expenses: 'FULL',
       reports: 'VIEW', people: 'NONE', payroll: 'NONE', accounting: 'NONE',
-      purchasing: 'NONE', banking: 'NONE',
+      purchasing: 'NONE', banking: 'NONE', sales_goals: 'VIEW',
     },
     can_approve: false,
   },
   {
     template_name: 'e-Commerce BDM',
-    description: 'e-Commerce BDM — full sales/collections, view inventory/expenses/reports',
+    description: 'e-Commerce BDM — full sales/collections, view inventory/expenses/reports/goals',
     modules: {
       sales: 'FULL', inventory: 'VIEW', collections: 'FULL', expenses: 'VIEW',
       reports: 'VIEW', people: 'NONE', payroll: 'NONE', accounting: 'NONE',
-      purchasing: 'NONE', banking: 'NONE',
+      purchasing: 'NONE', banking: 'NONE', sales_goals: 'VIEW',
     },
     can_approve: false,
   },
@@ -39,7 +39,7 @@ const TEMPLATES = [
     modules: {
       sales: 'FULL', inventory: 'VIEW', collections: 'FULL', expenses: 'VIEW',
       reports: 'VIEW', people: 'NONE', payroll: 'NONE', accounting: 'NONE',
-      purchasing: 'NONE', banking: 'NONE',
+      purchasing: 'NONE', banking: 'NONE', sales_goals: 'NONE',
     },
     can_approve: false,
   },
@@ -49,7 +49,7 @@ const TEMPLATES = [
     modules: {
       sales: 'FULL', inventory: 'FULL', collections: 'FULL', expenses: 'FULL',
       reports: 'FULL', people: 'FULL', payroll: 'FULL', accounting: 'FULL',
-      purchasing: 'FULL', banking: 'FULL',
+      purchasing: 'FULL', banking: 'FULL', sales_goals: 'FULL',
     },
     can_approve: true,
   },
@@ -59,17 +59,17 @@ const TEMPLATES = [
     modules: {
       sales: 'VIEW', inventory: 'VIEW', collections: 'VIEW', expenses: 'VIEW',
       reports: 'VIEW', people: 'VIEW', payroll: 'VIEW', accounting: 'VIEW',
-      purchasing: 'VIEW', banking: 'VIEW',
+      purchasing: 'VIEW', banking: 'VIEW', sales_goals: 'VIEW',
     },
     can_approve: false,
   },
   {
     template_name: 'Executive',
-    description: 'Executive — view most modules, full reports and accounting',
+    description: 'Executive — view most modules, full reports/accounting/goals',
     modules: {
       sales: 'VIEW', inventory: 'VIEW', collections: 'VIEW', expenses: 'VIEW',
       reports: 'FULL', people: 'VIEW', payroll: 'VIEW', accounting: 'FULL',
-      purchasing: 'VIEW', banking: 'VIEW',
+      purchasing: 'VIEW', banking: 'VIEW', sales_goals: 'FULL',
     },
     can_approve: false,
   },
@@ -79,7 +79,7 @@ const TEMPLATES = [
     modules: {
       sales: 'NONE', inventory: 'NONE', collections: 'NONE', expenses: 'NONE',
       reports: 'NONE', people: 'NONE', payroll: 'NONE', accounting: 'NONE',
-      purchasing: 'NONE', banking: 'NONE',
+      purchasing: 'NONE', banking: 'NONE', sales_goals: 'NONE',
     },
     can_approve: false,
   },

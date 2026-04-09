@@ -10,10 +10,11 @@
  * - multi-entity users (entity_ids.length > 1): can switch via X-Entity-Id
  *     header, validated against their allowed entity list.
  * - admin/finance: filter by entity_id only
- * - employee (BDM): filter by entity_id AND bdm_id
+ * - contractor (BDM): filter by entity_id AND bdm_id
  * - no entity_id on user: skip filtering (backward compat with CRM-only users)
  */
 const mongoose = require('mongoose');
+const { ROLES, isPresidentLike } = require('../../constants/roles');
 
 const tenantFilter = (req, res, next) => {
   if (!req.user) {
@@ -25,9 +26,9 @@ const tenantFilter = (req, res, next) => {
   // Attach tenant context — prefer entity_id (primary), fallback to first entity_ids entry
   req.entityId = entity_id || (entity_ids && entity_ids.length > 0 ? entity_ids[0] : null);
   req.bdmId = _id;
-  req.isAdmin = role === 'admin';
-  req.isFinance = role === 'finance';
-  req.isPresident = role === 'president' || role === 'ceo';
+  req.isAdmin = role === ROLES.ADMIN;
+  req.isFinance = role === ROLES.FINANCE;
+  req.isPresident = isPresidentLike(role);
 
   // Build allowed entity set for header validation (multi-entity users)
   const allowedSet = new Set();
@@ -73,7 +74,7 @@ const tenantFilter = (req, res, next) => {
     return next();
   }
 
-  // BDM (employee): filter by working entity AND own bdm_id
+  // BDM (contractor): filter by working entity AND own bdm_id
   req.tenantFilter = { entity_id: req.entityId, bdm_id: _id };
   next();
 };

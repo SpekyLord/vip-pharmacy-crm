@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 
@@ -44,7 +45,7 @@ const EMPTY_FORM = { territory_code: '', territory_name: '', region: '', is_acti
 
 export function TerritoryManagerContent() {
   const { user } = useAuth();
-  const canEdit = ['admin', 'finance', 'president'].includes(user?.role);
+  const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [territories, setTerritories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -57,7 +58,7 @@ export function TerritoryManagerContent() {
     try {
       const res = await api.get('/erp/territories?active_only=false');
       setTerritories(res.data?.data || []);
-    } catch (err) {
+    } catch {
       toast.error('Failed to load territories');
     }
     setLoading(false);

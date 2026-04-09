@@ -7,6 +7,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useSettings from '../hooks/useSettings';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
@@ -57,7 +58,7 @@ export function ErpSettingsPanelContent() {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const canEdit = ['admin', 'finance', 'president'].includes(user?.role);
+  const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const buildForm = (s) => {
     // Ensure COA_MAP has all expected keys (fill missing with empty string)

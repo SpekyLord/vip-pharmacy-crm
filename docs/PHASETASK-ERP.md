@@ -3753,3 +3753,116 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] CALF Gate: Properly enforced in `submitExpenses` and `submitCarLogbook` with dual validation gates
 - [x] All autoJournal functions have callers (15/15 verified)
 - [x] Frontend hardcoded dropdowns: ~9 instances, most with API fallback mechanism
+
+---
+
+## Phase 29 — Email Notifications + Approval Workflow (Authority Matrix) ✅
+
+### 29.1 — ERP Email Notification Service ✅
+- [x] Created `backend/templates/erpEmails.js` — 5 HTML email templates (posted, reopened, approval request, approval decision, payroll posted)
+- [x] Created `backend/erp/services/erpNotificationService.js` — non-blocking notification orchestration
+- [x] Extended `backend/models/EmailLog.js` with 5 new ERP email types: ERP_DOCUMENT_POSTED, ERP_DOCUMENT_REOPENED, ERP_APPROVAL_REQUEST, ERP_APPROVAL_DECISION, ERP_PAYROLL_POSTED
+- [x] Recipients resolved dynamically from User model (role + entity scope) — no hardcoded lists
+- [x] Entity name caching (5-minute TTL) for email context
+- [x] All sends fire-and-forget — notification failure never breaks business logic
+
+### 29.2 — Controller Notification Hooks ✅
+- [x] `salesController.submitSales` — notifies management on CSI posted (amount, doc refs, period)
+- [x] `salesController.reopenSales` — notifies management on CSI reopened (with reason)
+- [x] `collectionController.submitCollections` — notifies management on CR posted
+- [x] `collectionController.reopenCollections` — notifies management on CR reopened
+- [x] `payrollController.postPayroll` — notifies management on payslip batch posted (count, total net pay)
+- [x] `purchasingController.approvePO` — notifies management on PO approved
+- [x] `purchasingController.postInvoice` — notifies management on Supplier Invoice posted
+
+### 29.3 — Approval Workflow Model ✅
+- [x] Created `backend/erp/models/ApprovalRule.js` — entity-scoped rules (module, doc_type, amount_threshold, level, approver config)
+- [x] Created `backend/erp/models/ApprovalRequest.js` — tracks PENDING → APPROVED/REJECTED with immutable history
+- [x] Approver types: ROLE (by role name), USER (specific user IDs), REPORTS_TO (PeopleMaster.reports_to chain)
+- [x] Multi-level support: up to 5 levels, auto-escalation on Level N approval
+
+### 29.4 — Approval Service ✅
+- [x] Created `backend/erp/services/approvalService.js` — business logic for checking, resolving, and deciding
+- [x] `isApprovalEnabled()` — reads Settings.ENFORCE_AUTHORITY_MATRIX
+- [x] `findMatchingRules()` — entity + module + doc_type + amount threshold matching
+- [x] `resolveApprovers()` — dynamic resolution from ROLE/USER/REPORTS_TO
+- [x] `checkApprovalRequired()` — called by controllers before posting; creates request if needed
+- [x] `processDecision()` — approve/reject with authorization check and auto-escalation
+- [x] `isFullyApproved()` — checks all levels approved for a document
+- [x] `getPendingForApprover()` — finds pending requests for a specific user
+
+### 29.5 — Approval Controller & Routes ✅
+- [x] Created `backend/erp/controllers/approvalController.js` — rules CRUD + request management
+- [x] Created `backend/erp/routes/approvalRoutes.js` — mounted at `/api/erp/approvals`
+- [x] Mounted in `backend/erp/routes/index.js`
+- [x] Routes: GET /status, GET /my-pending, GET /requests, POST /requests/:id/approve|reject|cancel, CRUD /rules
+
+### 29.6 — Controller Integration ✅
+- [x] Wired `checkApprovalRequired()` into `purchasingController.approvePO` — returns 202 if pending approval
+- [x] Pattern documented in CLAUDE-ERP.md for adding to other controllers
+
+### 29.7 — Frontend Approval UI ✅
+- [x] Created `frontend/src/erp/hooks/useApprovals.js` — hook for all approval API operations
+- [x] Created `frontend/src/erp/pages/ApprovalManager.jsx` — full management page (requests tab + rules tab)
+- [x] Added lazy import and route in App.jsx at `/erp/approvals`
+- [x] Added sidebar link (ClipboardCheck icon) for admin/finance/president roles
+- [x] Added WorkflowGuide entry `approval-manager` with steps and navigation
+- [x] Exports `ApprovalManagerContent` for Control Center embedding
+
+### 29.8 — Verification ✅
+- [x] All new backend files pass `node -c` syntax check
+- [x] All modified controllers pass syntax check
+- [x] Frontend builds cleanly with `npx vite build`
+- [x] System health check passes (0 new issues)
+- [x] CLAUDE-ERP.md updated with Phase 29 documentation
+- [x] PHASETASK-ERP.md updated with full task breakdown
+
+---
+
+## Phase 30 — Role Centralization + Lookup-Driven Enums ✅ (April 9, 2026)
+
+### 30.1 — Role Rename: employee → contractor ✅
+- [x] Created `backend/constants/roles.js` — single source of truth for all role strings and permission sets (CommonJS)
+- [x] Created `frontend/src/constants/roles.js` — ES module mirror of backend constants
+- [x] Renamed role `employee` → `contractor` across all backend middleware, controllers, and routes
+- [x] Updated all frontend role checks to use `ROLES.*` and `ROLE_SETS.*` constants
+- [x] Created migration script `backend/scripts/migrateEmployeeToContractor.js` — renames role in Users collection (idempotent)
+- [x] Retired `backend/utils/roleHelpers.js` — replaced by constants/roles.js
+
+### 30.2 — New Lookup Categories ✅
+- [x] Added `BDM_STAGE` lookup category — career path stages (CONTRACTOR, PS_ELIGIBLE, TRANSITIONING, SUBSIDIARY, SHAREHOLDER)
+- [x] Added `ROLE_MAPPING` lookup category — maps person_type → system_role for login creation (6 mappings with metadata)
+- [x] Added `SYSTEM_ROLE` lookup category — documents system roles with editable labels
+- [x] All three categories auto-seeded on first access via lookupGenericController SEED_DEFAULTS
+
+### 30.3 — PersonDetail Full Lookup Migration ✅
+- [x] `person_type` dropdown driven by `useLookupOptions('PERSON_TYPE')` (done in Phase 24)
+- [x] `employment_type` dropdown driven by `useLookupOptions('EMPLOYMENT_TYPE')` (done in Phase 24)
+- [x] `bdm_stage` dropdown driven by `useLookupOptions('BDM_STAGE')`
+- [x] `civil_status` dropdown driven by `useLookupOptions('CIVIL_STATUS')`
+- [x] `status` (person status) dropdown driven by `useLookupOptions('PERSON_STATUS')`
+- [x] `salary_type` dropdown driven by `useLookupOptions('SALARY_TYPE')`
+- [x] `tax_status` dropdown driven by `useLookupOptions('TAX_STATUS')`
+- [x] `incentive_type` dropdown driven by `useLookupOptions('INCENTIVE_TYPE')`
+- [x] Insurance `policy_type` dropdown driven by `useLookupOptions('INSURANCE_TYPE')`
+- [x] Insurance `premium_frequency` dropdown driven by `useLookupOptions('INSURANCE_FREQUENCY')`
+- [x] Insurance `status` dropdown driven by `useLookupOptions('INSURANCE_STATUS')`
+- [x] Added 8 new seed default categories to `lookupGenericController.js` SEED_DEFAULTS
+- [x] Removed all hardcoded const arrays from PersonDetail.jsx — zero remaining
+- [x] Backend PeopleMaster pre-validate hook validates against Lookup tables with hardcoded fallback
+
+### 30.4 — Role-People Alignment Warning ✅
+- [x] Added `showWarning()` helper to `frontend/src/erp/utils/errorToast.js` — amber toast (8s duration) for non-fatal alerts
+- [x] Added `useLookupOptions('ROLE_MAPPING')` in PersonDetail.jsx to fetch person_type → system_role mappings
+- [x] Added useEffect alignment check — fires on person load when `user_id` is linked, compares `user_id.role` vs expected role from ROLE_MAPPING
+- [x] Uses `useRef` guard (`roleMismatchShown`) keyed on `${id}-${person_type}-${role}` to prevent duplicate toasts
+
+### 30.5 — Pre-Deployment Steps
+- [x] Run `node backend/scripts/migrateEmployeeToContractor.js` before deploying (renames role 'employee' → 'contractor' in Users collection)
+- [x] Migration is idempotent — safe to run multiple times
+- [x] Verify lookup categories BDM_STAGE, ROLE_MAPPING, SYSTEM_ROLE auto-seed on first Control Center access
+
+### 30.6 — Verification ✅
+- [x] All modified frontend files pass `npx vite build`
+- [x] CLAUDE-ERP.md updated — Known Gaps table entries resolved
+- [x] PHASETASK-ERP.md updated with full Phase 30 task breakdown

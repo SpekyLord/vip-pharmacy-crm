@@ -4,6 +4,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import Pagination from '../../components/common/Pagination';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES, ROLE_SETS } from '../../constants/roles';
 import useSales from '../hooks/useSales';
 import useEntities from '../hooks/useEntities';
 import EntityBadge from '../components/EntityBadge';
@@ -217,7 +218,7 @@ export default function SalesList() {
   const { user } = useAuth();
   const sales = useSales();
   const { getEntityById } = useEntities();
-  const isMultiEntity = ['president', 'ceo', 'admin'].includes(user?.role);
+  const isMultiEntity = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN].includes(user?.role);
 
   const [data, setData] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
@@ -292,8 +293,8 @@ export default function SalesList() {
     } catch (err) { showError(err, 'Could not load sale details'); }
   };
 
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
-  const canCreateSales = ['employee', 'admin'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const canCreateSales = ROLE_SETS.BDM_ADMIN.includes(user?.role);
 
   return (
     <div className="admin-page erp-page saleslist-page">

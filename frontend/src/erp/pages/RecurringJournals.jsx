@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useAccounting from '../hooks/useAccounting';
 import { showError, showSuccess } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -55,7 +56,7 @@ const fmt = (n) => `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractio
 export function RecurringJournalsContent() {
   const { user } = useAuth();
   const api = useAccounting();
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(false);

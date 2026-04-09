@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES } from '../../constants/roles';
 import useTransfers from '../hooks/useTransfers';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError } from '../utils/errorToast';
@@ -41,13 +42,13 @@ export default function TransferReceipt() {
       const res = await getTransfers({ status: 'SHIPPED', limit: 0 });
       // Filter to show only transfers targeting the user's entity
       const filtered = (res.data || []).filter(t =>
-        t.target_entity_id?._id === user?.entity_id || ['president', 'ceo', 'admin'].includes(user?.role)
+        t.target_entity_id?._id === user?.entity_id || [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN].includes(user?.role)
       );
       setIncoming(filtered);
     } catch (err) { console.error('[TransferReceipt] load error:', err.message); }
-  }, [user]);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { fetchIncoming(); }, []);
+  useEffect(() => { fetchIncoming(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleReceive = async (id) => {
     try {

@@ -10,7 +10,7 @@
 const User = require('../models/User');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
-const { isCrmAdminLike } = require('../utils/roleHelpers');
+const { ROLES, ALL_ROLES, isAdminLike } = require('../constants/roles');
 const { logAuditEvent, AuditActions } = require('../utils/auditLogger');
 
 /**
@@ -23,7 +23,7 @@ const getActiveUsers = catchAsync(async (req, res) => {
 
   const users = await User.find({
     isActive: true,
-    role: 'employee',
+    role: ROLES.CONTRACTOR,
     lastActivity: { $gte: fifteenMinAgo },
   })
     .select('name email lastActivity')
@@ -51,7 +51,7 @@ const getAllUsers = catchAsync(async (req, res) => {
   const filter = {};
 
   // Filter by role
-  if (req.query.role && ['admin', 'employee', 'finance', 'president', 'ceo'].includes(req.query.role)) {
+  if (req.query.role && ALL_ROLES.includes(req.query.role)) {
     filter.role = req.query.role;
   }
 
@@ -106,7 +106,7 @@ const getUserById = catchAsync(async (req, res) => {
   }
 
   // Check if user can access this resource
-  if (!isCrmAdminLike(req.user.role) && req.user._id.toString() !== user._id.toString()) {
+  if (!isAdminLike(req.user.role) && req.user._id.toString() !== user._id.toString()) {
     throw new ForbiddenError('You can only view your own profile');
   }
 
@@ -129,7 +129,7 @@ const createUser = catchAsync(async (req, res) => {
     name,
     email,
     password,
-    role: role || 'employee',
+    role: role || ROLES.CONTRACTOR,
     phone,
   });
 
@@ -152,7 +152,7 @@ const updateUser = catchAsync(async (req, res) => {
     throw new NotFoundError('User not found');
   }
 
-  const isAdmin = isCrmAdminLike(req.user.role);
+  const isAdmin = isAdminLike(req.user.role);
   const isSelf = req.user._id.toString() === user._id.toString();
 
   if (!isAdmin && !isSelf) {
@@ -223,7 +223,7 @@ const deleteUser = catchAsync(async (req, res) => {
  * @access  Admin
  */
 const getEmployees = catchAsync(async (req, res) => {
-  const filter = { role: 'employee', isActive: true };
+  const filter = { role: ROLES.CONTRACTOR, isActive: true };
 
   const employees = await User.find(filter)
     .select('name email phone isActive lastLogin')
@@ -378,8 +378,8 @@ const hardDeleteUser = catchAsync(async (req, res) => {
   }
 
   // Safety: prevent deleting the last active admin
-  if (user.role === 'admin' && user.isActive) {
-    const activeAdminCount = await User.countDocuments({ role: 'admin', isActive: true });
+  if (user.role === ROLES.ADMIN && user.isActive) {
+    const activeAdminCount = await User.countDocuments({ role: ROLES.ADMIN, isActive: true });
     if (activeAdminCount <= 1) {
       return res.status(400).json({
         success: false,

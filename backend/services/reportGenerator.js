@@ -13,6 +13,7 @@ const User = require('../models/User');
 const ProductAssignment = require('../models/ProductAssignment');
 const Report = require('../models/Report');
 const { uploadToS3, generateS3Key } = require('../config/s3');
+const { ROLES } = require('../constants/roles');
 const { getWebsiteProductModel } = require('../models/WebsiteProduct');
 
 /**
@@ -153,7 +154,7 @@ async function gatherData(type, filters) {
 
 async function gatherCompliance(visitQuery, filters) {
   // Get all active BDMs
-  const bdmFilter = { role: 'employee', isActive: true };
+  const bdmFilter = { role: ROLES.CONTRACTOR, isActive: true };
   if (filters.employeeId) bdmFilter._id = filters.employeeId;
   const bdms = await User.find(bdmFilter).select('name email').lean();
 
@@ -200,7 +201,7 @@ async function gatherVisits(visitQuery) {
 }
 
 async function gatherPerformance(visitQuery, filters) {
-  const bdmFilter = { role: 'employee', isActive: true };
+  const bdmFilter = { role: ROLES.CONTRACTOR, isActive: true };
   if (filters.employeeId) bdmFilter._id = filters.employeeId;
   const bdms = await User.find(bdmFilter).select('name email').lean();
 

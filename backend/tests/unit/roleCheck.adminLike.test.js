@@ -30,7 +30,7 @@ describe('roleCheck admin-like behavior', () => {
   );
 
   test('adminOnly denies employee', () => {
-    const req = { user: { role: 'employee' } };
+    const req = { user: { role: 'contractor' } };
     const res = buildRes();
     const next = jest.fn();
 
@@ -41,7 +41,7 @@ describe('roleCheck admin-like behavior', () => {
   });
 
   test('adminOrEmployee allows employee', () => {
-    const req = { user: { role: 'employee' } };
+    const req = { user: { role: 'contractor' } };
     const res = buildRes();
     const next = jest.fn();
 

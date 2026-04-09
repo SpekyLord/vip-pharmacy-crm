@@ -6,12 +6,10 @@
  * - Permission checking
  * - Access denial handling
  *
- * Roles:
- * - admin: Full system access
- * - employee: Field employee (BDM) - can only access assigned doctors
+ * Roles defined in backend/constants/roles.js
  */
 
-const { CRM_ADMIN_LIKE_ROLES, isCrmAdminLike } = require('../utils/roleHelpers');
+const { ROLES, ROLE_SETS, isAdminLike } = require('../constants/roles');
 
 /**
  * Check if user has one of the allowed roles
@@ -29,7 +27,7 @@ const roleCheck = (...allowedRoles) => {
     }
 
     // President always has full access (supersedes all role checks)
-    if (req.user.role === 'president') return next();
+    if (req.user.role === ROLES.PRESIDENT) return next();
 
     // Check if user's role is in the allowed roles list
     if (!allowedRoles.includes(req.user.role)) {
@@ -45,27 +43,27 @@ const roleCheck = (...allowedRoles) => {
 
 /**
  * Admin only middleware
- * Shortcut for roleCheck('admin')
+ * Shortcut for roleCheck with admin-like roles
  */
-const adminOnly = roleCheck(...CRM_ADMIN_LIKE_ROLES);
+const adminOnly = roleCheck(...ROLE_SETS.ADMIN_LIKE);
 
 /**
- * Employee only middleware
- * Shortcut for roleCheck('employee')
+ * Contractor only middleware (BDMs, field staff)
+ * Shortcut for roleCheck('contractor')
  */
-const employeeOnly = roleCheck('employee');
+const employeeOnly = roleCheck(ROLES.CONTRACTOR);
 
 /**
- * Admin or Employee middleware
- * For routes accessible by both admin and employees
+ * Admin or Contractor middleware
+ * For routes accessible by both admin and contractors
  */
-const adminOrEmployee = roleCheck(...CRM_ADMIN_LIKE_ROLES, 'employee');
+const adminOrEmployee = roleCheck(...ROLE_SETS.ADMIN_LIKE, ROLES.CONTRACTOR);
 
 /**
  * All authenticated users middleware
  * For routes accessible by any authenticated user
  */
-const anyRole = roleCheck(...CRM_ADMIN_LIKE_ROLES, 'employee');
+const anyRole = roleCheck(...ROLE_SETS.ADMIN_LIKE, ROLES.CONTRACTOR);
 
 /**
  * Check if user owns the resource (for user profile updates)
@@ -82,8 +80,8 @@ const isOwnerOrAdmin = (userIdParam = 'id') => {
       });
     }
 
-    // Admin can access any user
-    if (isCrmAdminLike(req.user.role)) {
+    // Admin-like can access any user
+    if (isAdminLike(req.user.role)) {
       return next();
     }
 
@@ -103,8 +101,8 @@ const isOwnerOrAdmin = (userIdParam = 'id') => {
 };
 
 /**
- * Validate that the current user is the assigned employee for a doctor
- * Use for visit creation to ensure employees only visit doctors assigned to them
+ * Validate that the current user is the assigned contractor for a doctor
+ * Use for visit creation to ensure contractors only visit doctors assigned to them
  */
 const isAssignedToDoctor = async (req, res, next) => {
   // Check if user is authenticated
@@ -115,8 +113,8 @@ const isAssignedToDoctor = async (req, res, next) => {
     });
   }
 
-  // Admin can access any doctor
-  if (isCrmAdminLike(req.user.role)) {
+  // Admin-like can access any doctor
+  if (isAdminLike(req.user.role)) {
     return next();
   }
 
@@ -141,8 +139,8 @@ const isAssignedToDoctor = async (req, res, next) => {
       });
     }
 
-    // Check if doctor is assigned to this BDM
-    if (req.user.role === 'employee') {
+    // Check if doctor is assigned to this contractor/BDM
+    if (req.user.role === ROLES.CONTRACTOR) {
       const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
       if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
         return res.status(403).json({

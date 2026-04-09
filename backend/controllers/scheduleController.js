@@ -15,7 +15,7 @@ const Visit = require('../models/Visit');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { getCycleNumber, getDisplayCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getDayOfWeek, isWorkDay } = require('../utils/scheduleCycleUtils');
-const { isCrmAdminLike } = require('../utils/roleHelpers');
+const { ROLES, isAdminLike: isCrmAdminLike } = require('../constants/roles');
 
 // ─── Reconciliation ────────────────────────────────────────────────────────────
 
@@ -293,7 +293,7 @@ const generateSchedule = catchAsync(async (req, res) => {
 
   const User = require('../models/User');
   const user = await User.findById(userId);
-  if (!user || user.role !== 'employee') {
+  if (!user || user.role !== ROLES.CONTRACTOR) {
     return res.status(400).json({ success: false, message: 'Valid BDM user required' });
   }
 
@@ -805,7 +805,7 @@ const getCPTGridSummary = catchAsync(async (req, res) => {
   const cycleEnd = getCycleEndDate(requestedCycle);
 
   // Fetch all active BDMs
-  const employees = await User.find({ role: 'employee', isActive: true })
+  const employees = await User.find({ role: ROLES.CONTRACTOR, isActive: true })
     .select('_id name firstName lastName')
     .lean();
 

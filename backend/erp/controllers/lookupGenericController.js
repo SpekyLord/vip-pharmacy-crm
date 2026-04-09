@@ -1,5 +1,6 @@
 const Lookup = require('../models/Lookup');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { ROLES } = require('../../constants/roles');
 
 /**
  * Generic Lookup Controller — Phase 24
@@ -67,6 +68,113 @@ const SEED_DEFAULTS = {
     'TABLET', 'CAPSULE', 'AMPULE', 'PACK', 'ROLL', 'SET',
     'BAG', 'CAN', 'PAIR', 'PFS', 'JAR', 'YARD',
   ],
+  // Phase 28 — Sales Goals & KPI
+  GOAL_CONFIG: [
+    { code: 'COLLECTION_TARGET_PCT', label: 'Default Collection Target %', metadata: { value: 70 } },
+    { code: 'FISCAL_START_MONTH', label: 'Fiscal Year Start Month', metadata: { value: 1 } },
+    { code: 'ATTAINMENT_GREEN', label: 'On Track Threshold %', metadata: { value: 90 } },
+    { code: 'ATTAINMENT_YELLOW', label: 'Needs Attention Threshold %', metadata: { value: 70 } },
+    { code: 'ATTAINMENT_RED', label: 'At Risk Threshold %', metadata: { value: 50 } },
+    { code: 'SNAPSHOT_AUTO_COMPUTE', label: 'Auto-Compute Monthly Snapshots', metadata: { value: true } },
+    { code: 'LOST_SALES_THRESHOLD_DAYS', label: 'Stock-Out Threshold (days)', metadata: { value: 3 } },
+    { code: 'ACCREDITATION_LEVEL', label: 'Hospital Accreditation Engagement Level', metadata: { value: 4 } },
+  ],
+  GROWTH_DRIVER: [
+    { code: 'HOSP_ACCRED', label: 'Hospital Accreditation' },
+    { code: 'PHARMACY_CSR', label: 'Pharmacy & CSR Inclusion' },
+    { code: 'ZERO_LOST_SALES', label: 'Inventory Optimization / Zero Lost Sales' },
+    { code: 'STRATEGIC_MD', label: 'Strategic Partnerships with MDs' },
+    { code: 'PRICE_INCREASE', label: 'Surgical Price Increases' },
+  ],
+  KPI_CODE: [
+    { code: 'PCT_HOSP_ACCREDITED', label: '% Hospitals Accredited', metadata: { unit: '%', direction: 'higher_better', computation: 'auto', source_model: 'Hospital' } },
+    { code: 'TIME_TO_ACCREDITATION', label: 'Time to Accreditation (days)', metadata: { unit: 'days', direction: 'lower_better', computation: 'manual' } },
+    { code: 'REV_PER_ACCREDITED_HOSP', label: 'Revenue per Accredited Hospital', metadata: { unit: 'PHP', direction: 'higher_better', computation: 'auto' } },
+    { code: 'SKUS_LISTED_PER_HOSP', label: 'SKUs Listed per Hospital', metadata: { unit: 'count', direction: 'higher_better', computation: 'auto' } },
+    { code: 'FORMULARY_APPROVAL_RATE', label: 'Formulary Approval Success Rate', metadata: { unit: '%', direction: 'higher_better', computation: 'manual' } },
+    { code: 'MONTHLY_REORDER_FREQ', label: 'Monthly Reorder Frequency', metadata: { unit: 'count', direction: 'higher_better', computation: 'auto' } },
+    { code: 'LOST_SALES_INCIDENTS', label: 'Lost Sales Incidents', metadata: { unit: 'count', direction: 'lower_better', computation: 'auto' } },
+    { code: 'INVENTORY_TURNOVER', label: 'Inventory Turnover', metadata: { unit: 'ratio', direction: 'higher_better', computation: 'auto' } },
+    { code: 'EXPIRY_RETURNS', label: 'Expiry Returns', metadata: { unit: 'count', direction: 'lower_better', computation: 'auto' } },
+    { code: 'MD_ENGAGEMENT_COVERAGE', label: 'MD Engagement Coverage', metadata: { unit: '%', direction: 'higher_better', computation: 'auto' } },
+    { code: 'HOSP_REORDER_CYCLE_TIME', label: 'Hospital Reorder Cycle Time', metadata: { unit: 'days', direction: 'lower_better', computation: 'manual' } },
+    { code: 'VOLUME_RETENTION_POST_INCREASE', label: 'Volume Retention Post Price Increase', metadata: { unit: '%', direction: 'higher_better', computation: 'auto' } },
+    { code: 'GROSS_MARGIN_PER_SKU', label: 'Gross Margin per SKU', metadata: { unit: '%', direction: 'higher_better', computation: 'auto' } },
+  ],
+  INCENTIVE_TIER: [
+    { code: 'TIER_1', label: 'Platinum', metadata: { attainment_min: 100, budget_per_bdm: 150000, reward_description: '', sort_order: 1, bg_color: '#fef3c7', text_color: '#92400e' } },
+    { code: 'TIER_2', label: 'Gold', metadata: { attainment_min: 90, budget_per_bdm: 80000, reward_description: '', sort_order: 2, bg_color: '#fef9c3', text_color: '#854d0e' } },
+    { code: 'TIER_3', label: 'Silver', metadata: { attainment_min: 80, budget_per_bdm: 50000, reward_description: '', sort_order: 3, bg_color: '#f1f5f9', text_color: '#475569' } },
+    { code: 'TIER_4', label: 'Bronze', metadata: { attainment_min: 70, budget_per_bdm: 30000, reward_description: '', sort_order: 4, bg_color: '#fed7aa', text_color: '#9a3412' } },
+    { code: 'TIER_5', label: 'Participant', metadata: { attainment_min: 50, budget_per_bdm: 15000, reward_description: '', sort_order: 5, bg_color: '#dbeafe', text_color: '#1e40af' } },
+  ],
+  ACTION_TYPE: [
+    { code: 'ACCREDITATION', label: 'Hospital Accreditation' },
+    { code: 'FORMULARY_LISTING', label: 'Formulary/CSR Listing' },
+    { code: 'MD_ENGAGEMENT', label: 'MD Engagement Activity' },
+    { code: 'PRICE_ADJUSTMENT', label: 'Price Adjustment' },
+    { code: 'STOCK_REPLENISH', label: 'Stock Replenishment' },
+    { code: 'GENERAL', label: 'General Action' },
+  ],
+  INCENTIVE_PROGRAM: [
+    { code: 'JAPAN_TRIP_2026', label: 'Japan Trip 2026', metadata: { fiscal_year: 2026, qualification_metric: 'sales', use_tiers: true } },
+  ],
+  // Phase 29 — Approval Workflow
+  APPROVER_TYPE: [
+    { code: 'ROLE', label: 'By Role' },
+    { code: 'USER', label: 'Specific Users' },
+    { code: 'REPORTS_TO', label: 'Direct Manager' },
+  ],
+  APPROVER_ROLE: [
+    { code: 'ADMIN', label: 'Admin' },
+    { code: 'FINANCE', label: 'Finance' },
+    { code: 'PRESIDENT', label: 'President' },
+  ],
+  APPROVAL_MODULE: [
+    { code: 'SALES', label: 'Sales' },
+    { code: 'COLLECTIONS', label: 'Collections' },
+    { code: 'EXPENSES', label: 'Expenses' },
+    { code: 'PURCHASING', label: 'Purchasing' },
+    { code: 'PAYROLL', label: 'Payroll' },
+    { code: 'INVENTORY', label: 'Inventory' },
+    { code: 'JOURNAL', label: 'Journal Entries' },
+    { code: 'BANKING', label: 'Banking' },
+    { code: 'PETTY_CASH', label: 'Petty Cash' },
+    { code: 'IC_TRANSFER', label: 'Inter-Company Transfers' },
+    { code: 'INCOME', label: 'Income' },
+  ],
+  // Phase 30 — PersonDetail dropdowns (migrated from hardcoded arrays)
+  CIVIL_STATUS: ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'],
+  PERSON_STATUS: ['ACTIVE', 'ON_LEAVE', 'SEPARATED'],
+  SALARY_TYPE: ['FIXED_SALARY', 'COMMISSION_BASED', 'HYBRID'],
+  TAX_STATUS: ['S', 'S1', 'S2', 'ME', 'ME1', 'ME2', 'ME3', 'ME4'],
+  INCENTIVE_TYPE: ['CASH', 'IN_KIND', 'COMMISSION', 'NONE'],
+  INSURANCE_TYPE: ['LIFE', 'KEYMAN', 'INCOME_LOSS', 'ACCIDENT', 'VEHICLE_COMPREHENSIVE', 'VEHICLE_CTPL'],
+  INSURANCE_FREQUENCY: ['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL'],
+  INSURANCE_STATUS: ['ACTIVE', 'EXPIRED', 'CANCELLED', 'PENDING_RENEWAL'],
+  // Phase 30 — Role Centralization
+  BDM_STAGE: [
+    { code: 'CONTRACTOR', label: 'Contractor', metadata: { sort_order: 1, description: 'Starting stage — independent contractor' } },
+    { code: 'PS_ELIGIBLE', label: 'Profit-Sharing Eligible', metadata: { sort_order: 2, description: 'Proven performer, eligible for profit sharing partnership' } },
+    { code: 'TRANSITIONING', label: 'Transitioning to Subsidiary', metadata: { sort_order: 3, description: 'Moving toward autonomy, managing subsidiary operations' } },
+    { code: 'SUBSIDIARY', label: 'Subsidiary Owner', metadata: { sort_order: 4, description: 'Operating own legal entity under VIP' } },
+    { code: 'SHAREHOLDER', label: 'Shareholder', metadata: { sort_order: 5, description: 'Equity stakeholder in parent company' } },
+  ],
+  ROLE_MAPPING: [
+    { code: 'BDM', label: 'BDM → Contractor', metadata: { person_type: 'BDM', system_role: ROLES.CONTRACTOR } },
+    { code: 'ECOMMERCE_BDM', label: 'eBDM → Contractor', metadata: { person_type: 'ECOMMERCE_BDM', system_role: ROLES.CONTRACTOR } },
+    { code: 'SALES_REP', label: 'Sales Rep → Contractor', metadata: { person_type: 'SALES_REP', system_role: ROLES.CONTRACTOR } },
+    { code: 'CONSULTANT', label: 'Consultant → Contractor', metadata: { person_type: 'CONSULTANT', system_role: ROLES.CONTRACTOR } },
+    { code: 'EMPLOYEE', label: 'Employee → Contractor', metadata: { person_type: 'EMPLOYEE', system_role: ROLES.CONTRACTOR } },
+    { code: 'DIRECTOR', label: 'Director → President', metadata: { person_type: 'DIRECTOR', system_role: ROLES.PRESIDENT } },
+  ],
+  SYSTEM_ROLE: [
+    { code: 'ADMIN', label: 'Admin', metadata: { description: 'System administrator' } },
+    { code: 'CONTRACTOR', label: 'Contractor', metadata: { description: 'BDMs, IT, cleaners, pharmacists, consultants — all non-management workers' } },
+    { code: 'FINANCE', label: 'Finance', metadata: { description: 'Finance/accounting manager' } },
+    { code: 'PRESIDENT', label: 'President', metadata: { description: 'Company president — full cross-entity access' } },
+    { code: 'CEO', label: 'CEO', metadata: { description: 'Chief Executive — view-only on ERP' } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -110,6 +218,32 @@ exports.getByCategory = catchAsync(async (req, res) => {
   }
 
   res.json({ success: true, data: items });
+});
+
+// Batch fetch — multiple categories in one request
+// GET /erp/lookup-values-batch?categories=CAT1,CAT2,CAT3&active_only=true
+exports.getBatch = catchAsync(async (req, res) => {
+  const raw = req.query.categories || '';
+  const categories = raw.split(',').map(c => c.trim().toUpperCase()).filter(Boolean);
+  if (categories.length === 0) return res.status(400).json({ success: false, message: 'categories query param required' });
+
+  const result = {};
+  for (const category of categories) {
+    const filter = { category };
+    if (req.entityId) filter.entity_id = req.entityId;
+    if (req.query.active_only === 'true') filter.is_active = true;
+    let items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+
+    // Auto-seed if empty
+    if (items.length === 0 && req.entityId && SEED_DEFAULTS[category]) {
+      const ops = buildSeedOps(SEED_DEFAULTS[category], category, req.entityId, req.user?._id);
+      await Lookup.bulkWrite(ops);
+      items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+    }
+    result[category] = items;
+  }
+
+  res.json({ success: true, data: result });
 });
 
 // Create a lookup item

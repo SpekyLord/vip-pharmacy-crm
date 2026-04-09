@@ -5,6 +5,7 @@
  */
 const mongoose = require('mongoose');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { ROLES } = require('../../constants/roles');
 const { getSummary, getMtd, getPnlYtd, getProductStockLevels } = require('../services/dashboardService');
 const { generateExpenseSummary } = require('../services/expenseSummary');
 const Hospital = require('../models/Hospital');
@@ -61,7 +62,7 @@ const getDashboardProducts = catchAsync(async (req, res) => {
 const getDashboardHospitals = catchAsync(async (req, res) => {
   const filter = {};
   // BDM sees only their tagged hospitals; admin/president/finance see all
-  const bdmRoles = ['employee'];
+  const bdmRoles = [ROLES.CONTRACTOR];
   if (bdmRoles.includes(req.user?.role)) {
     filter.tagged_bdms = {
       $elemMatch: { bdm_id: req.user._id, is_active: { $ne: false } }

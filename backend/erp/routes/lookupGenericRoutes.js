@@ -12,6 +12,9 @@ router.get('/seed-defaults', ctrl.getSeedDefaults);
 // Seed all categories at once
 router.post('/seed-all', adminFinance, ctrl.seedAll);
 
+// Batch fetch — multiple categories in one request
+router.get('/batch', ctrl.getBatch);
+
 // Category-level CRUD
 router.get('/:category', ctrl.getByCategory);
 router.post('/:category', adminFinance, ctrl.create);

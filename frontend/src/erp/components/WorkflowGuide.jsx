@@ -314,7 +314,8 @@ const WORKFLOW_GUIDES = {
     steps: [
       'Search/filter products by name, status, or stock type (Pharma, F&B, Office)',
       'Click "+ New Product" to add — set prices, VAT status, and unit',
-      'Use Export/Import buttons for bulk price updates via Excel',
+      'Use Export/Import Prices buttons for bulk price updates via Excel',
+      'Use "Refresh Master" to sync from the cleaned Item Master CSV — deduplicates, updates, and deactivates stale products',
       'Tag products to warehouses for inventory tracking',
     ],
     next: [
@@ -322,7 +323,7 @@ const WORKFLOW_GUIDES = {
       { label: 'GRN', path: '/erp/grn' },
       { label: 'Transfer Prices', path: '/erp/control-center?section=transfer-prices' },
     ],
-    tip: 'Set purchase_price accurately — it drives COGS in journal entries.',
+    tip: 'Run "Refresh Master" from the cleaned CSV before importing stock on hand — ensures no duplicates and correct dosage formats.',
   },
   'grn-entry': {
     title: 'Goods Receipt Note (GRN)',
@@ -408,6 +409,62 @@ const WORKFLOW_GUIDES = {
       { label: 'Control Center', path: '/erp/control-center?section=agent-settings' },
     ],
     tip: 'Free agents always run on schedule. AI agents require ANTHROPIC_API_KEY.',
+  },
+  'approval-manager': {
+    title: 'Approval Workflow Manager',
+    steps: [
+      'View pending approval requests assigned to you',
+      'Approve or reject with a reason (rejections require a reason)',
+      'Admin: create approval rules per module, doc type, and amount threshold',
+      'Rules support multi-level approval chains (Level 1 → Level 2 → etc.)',
+    ],
+    next: [
+      { label: 'Control Center', path: '/erp/control-center?section=approval-rules' },
+      { label: 'Settings', path: '/erp/control-center?section=settings' },
+    ],
+    tip: 'Enable ENFORCE_AUTHORITY_MATRIX in Settings to activate approval workflows.',
+  },
+  'batch-trace': {
+    title: 'Batch Trace',
+    steps: [
+      'Search for a product by name or item key',
+      'View all batches with lot numbers, expiry dates, and current quantities',
+      'Trace each batch movement: GRN receipt, sales consumption, transfers, adjustments',
+      'Identify near-expiry or expired batches for action',
+    ],
+    next: [
+      { label: 'My Stock', path: '/erp/inventory' },
+      { label: 'Expiry Dashboard', path: '/erp/expiry-dashboard' },
+    ],
+    tip: 'Batch trace follows FIFO — oldest expiry batches are consumed first.',
+  },
+  'credit-notes': {
+    title: 'Credit Notes',
+    steps: [
+      'Create credit notes for returned goods, damaged items, or pricing adjustments',
+      'Link each credit note to the original CSI (sales invoice)',
+      'Validate and submit — inventory is returned and AR is reduced',
+      'Posted credit notes create reversal journal entries automatically',
+    ],
+    next: [
+      { label: 'Sales List', path: '/erp/sales' },
+      { label: 'AR Dashboard', path: '/erp/collections/ar' },
+    ],
+    tip: 'Credit notes reduce AR and can trigger inventory FIFO reversal.',
+  },
+  'expiry-dashboard': {
+    title: 'Expiry Dashboard',
+    steps: [
+      'View all inventory batches grouped by expiry status: expired, near-expiry, safe',
+      'Filter by BDM territory, product, or warehouse',
+      'Take action on expired batches: write-off, return to supplier, or transfer',
+      'Near-expiry threshold is configurable in Settings (default: 120 days)',
+    ],
+    next: [
+      { label: 'Batch Trace', path: '/erp/batch-trace' },
+      { label: 'My Stock', path: '/erp/inventory' },
+    ],
+    tip: 'Near-expiry items should be prioritized for sale or consignment conversion.',
   },
   'consignment-dashboard': {
     title: 'Consignment Dashboard',
@@ -585,13 +642,14 @@ const WORKFLOW_GUIDES = {
       'View and review person information, compensation, and insurance',
       'Edit details (admin/finance/president only) and save changes',
       'Manage system login access and ERP module permissions',
+      'Person types, employment types, and BDM stages are managed via Lookup Tables (Control Center → System Settings)',
     ],
     next: [
       { label: 'People List', path: '/erp/people' },
       { label: 'Org Chart', path: '/erp/org-chart' },
       { label: 'Payroll', path: '/erp/payroll' },
     ],
-    tip: 'Changes to compensation profile affect future payroll computations.',
+    tip: 'Changes to compensation profile affect future payroll computations. Career path: CONTRACTOR → PS_ELIGIBLE → TRANSITIONING → SUBSIDIARY → SHAREHOLDER.',
   },
   'org-chart': {
     title: 'Organization Chart',
@@ -959,6 +1017,7 @@ const WORKFLOW_GUIDES = {
     title: 'Warehouse Management',
     steps: [
       'Create and manage warehouse locations per entity',
+      'Use "Import Opening Stock" to seed stock on hand from CSV — matches products by brand + dosage, creates OPENING_BALANCE entries per warehouse',
       'Tag products to specific warehouses for inventory tracking',
       'View stock levels by warehouse',
     ],
@@ -966,7 +1025,7 @@ const WORKFLOW_GUIDES = {
       { label: 'My Stock', path: '/erp/stock' },
       { label: 'Products', path: '/erp/control-center?section=products' },
     ],
-    tip: 'BDMs see only stock in their assigned warehouse(s).',
+    tip: 'Refresh the Product Master before importing stock — unmatched products will be skipped. Duplicate imports are safely ignored.',
   },
   'cost-centers': {
     title: 'Cost Centers',
@@ -1061,12 +1120,86 @@ const WORKFLOW_GUIDES = {
     ],
     tip: 'Audit logs are retained for 90 days. Archive older records if needed for compliance.',
   },
+
+  // ═══ Phase 28 — Sales Goals & KPI ═══
+
+  salesGoalDashboard: {
+    title: 'Sales Goal Dashboard',
+    steps: [
+      'President creates the annual Sales Goal Plan from the Setup page',
+      'Define growth drivers (Hospital Accreditation, Pharmacy/CSR, etc.) with KPI definitions',
+      'Assign per-entity and per-BDM sales targets',
+      'Activate the plan — targets become visible to BDMs',
+      'Click "Compute KPIs" to refresh KPI snapshots from live ERP data',
+      'Monitor the BDM leaderboard, incentive tiers, and driver progress',
+    ],
+    next: [
+      { label: 'Goal Setup', path: '/erp/sales-goals/setup' },
+      { label: 'Incentive Tracker', path: '/erp/sales-goals/incentives' },
+      { label: 'My Goals', path: '/erp/sales-goals/my' },
+    ],
+    tip: 'BDMs see only their own goals. President and delegates with FULL sales_goals access see all BDMs.',
+  },
+
+  salesGoalSetup: {
+    title: 'Sales Goal Plan Setup',
+    type: 'dependency',
+    items: [
+      { action: 'Before creating a plan', deps: 'Seed Lookup categories (GROWTH_DRIVER, KPI_CODE, INCENTIVE_TIER) from Control Center → Lookup Tables', section: null },
+      { action: 'When you set entity targets', deps: 'Sum of entity targets should match the plan target revenue. Over-allocation is allowed for execution buffer.', section: null },
+      { action: 'When you set BDM targets', deps: 'Sum of BDM targets under an entity should match the entity target. Check the validation message.', section: null },
+      { action: 'When you add a growth driver', deps: 'Select driver codes from Lookup GROWTH_DRIVER. Add KPI definitions using codes from Lookup KPI_CODE.', section: null },
+      { action: 'When you activate the plan', deps: 'All targets move from DRAFT to ACTIVE. BDMs can then see their goals on the dashboard.', section: null },
+      { action: 'To adjust incentive tiers mid-year', deps: 'Edit INCENTIVE_TIER in Control Center → Lookup Tables. Change budgets, add reward descriptions.', section: null },
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+      { label: 'Access Templates', path: '/erp/control-center?section=access-templates' },
+    ],
+    tip: 'Assign sales_goals: FULL access to an OM via Access Templates so they can help manage goals.',
+  },
+
+  salesGoalBdmView: {
+    title: 'My Sales Goals',
+    steps: [
+      'Review your annual sales target and current YTD attainment',
+      'Check your incentive tier — see the budget you\'ve earned and what\'s needed for the next tier',
+      'Monitor monthly sales trends to identify patterns and momentum',
+      'Review KPIs per growth driver — these indicate the health of your territory',
+      'Create action items to drive each growth driver (accreditation, formulary listing, MD engagement)',
+      'Enter manual KPI values for metrics the system can\'t auto-compute (e.g., time-to-accreditation)',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Incentive Tracker', path: '/erp/sales-goals/incentives' },
+      { label: 'My Sales', path: '/erp/sales' },
+    ],
+    tip: 'Complete action items consistently — they drive the KPIs that determine your incentive tier.',
+  },
+
+  incentiveTracker: {
+    title: 'Incentive Tier Tracker',
+    steps: [
+      'View the tier summary cards — see how many BDMs are in each tier (Platinum/Gold/Silver/Bronze)',
+      'Check the leaderboard — sorted by attainment %, showing current and projected tiers',
+      'See "distance to next tier" — how much more sales you need to move up',
+      'President: use the Budget Advisor panel to see total incentive spend vs. company revenue',
+      'Tiers and budgets can be adjusted anytime via Control Center → Lookup Tables → INCENTIVE_TIER',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'Tier budgets represent the amount — the president decides what reward matches that budget (trip, gadget, cash).',
+  },
 };
 
 /**
  * WorkflowGuide component
  * @param {string} pageKey — key from WORKFLOW_GUIDES config
  */
+/* eslint-disable react/prop-types */
 export default function WorkflowGuide({ pageKey }) {
   const navigate = useNavigate();
   const storageKey = `wfg_dismiss_${pageKey}`;
@@ -1163,3 +1296,4 @@ export default function WorkflowGuide({ pageKey }) {
     </>
   );
 }
+/* eslint-enable react/prop-types */

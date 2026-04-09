@@ -6,19 +6,20 @@
  *
  * Edit mode: admin/finance/president only. BDMs see read-only.
  */
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ROLES, ROLE_SETS } from '../../constants/roles';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import usePeople from '../hooks/usePeople';
 import usePayroll from '../hooks/usePayroll';
 import useErpAccess from '../hooks/useErpAccess';
-import { showError, showSuccess } from '../utils/errorToast';
+import { showError, showSuccess, showWarning } from '../utils/errorToast';
 import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
 import * as XLSX from 'xlsx';
-import { useLookupOptions } from '../hooks/useLookups';
+import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
 
 const css = `
@@ -52,20 +53,19 @@ const css = `
   @media(max-width: 375px) { .pd-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .pd-main input, .pd-main select { font-size: 16px; } }
 `;
 
-const CIVIL_STATUSES = ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'];
-const PERSON_STATUSES = ['ACTIVE', 'ON_LEAVE', 'SEPARATED'];
-const SALARY_TYPES = ['FIXED_SALARY', 'COMMISSION_BASED', 'HYBRID'];
-const TAX_STATUSES = ['S', 'S1', 'S2', 'ME', 'ME1', 'ME2', 'ME3', 'ME4'];
-const INCENTIVE_TYPES = ['CASH', 'IN_KIND', 'COMMISSION', 'NONE'];
-const INS_TYPES = ['LIFE', 'KEYMAN', 'INCOME_LOSS', 'ACCIDENT', 'VEHICLE_COMPREHENSIVE', 'VEHICLE_CTPL'];
-const INS_FREQ = ['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL'];
-const INS_STATUS = ['ACTIVE', 'EXPIRED', 'CANCELLED', 'PENDING_RENEWAL'];
+// All dropdown categories fetched in a single batch call (was 13 individual calls)
+const LOOKUP_CATEGORIES = [
+  'PERSON_TYPE', 'EMPLOYMENT_TYPE', 'VEHICLE_TYPE', 'BDM_STAGE', 'ROLE_MAPPING',
+  'CIVIL_STATUS', 'PERSON_STATUS', 'SALARY_TYPE', 'TAX_STATUS', 'INCENTIVE_TYPE',
+  'INSURANCE_TYPE', 'INSURANCE_FREQUENCY', 'INSURANCE_STATUS',
+];
 
 const fmt = (n) => n != null ? `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString() : '—';
 const toInput = (d) => d ? new Date(d).toISOString().split('T')[0] : '';
 
 // ── Field component: view/edit toggle ──
+/* eslint-disable react/prop-types */
 function F({ lbl, val, name, type = 'text', editing, form, onChange, options, className }) {
   if (!editing) return <div className={`pd-field ${className || ''}`}><div className="lbl">{lbl}</div><div className="val">{val ?? '—'}</div></div>;
   if (options) return (
@@ -81,6 +81,7 @@ function F({ lbl, val, name, type = 'text', editing, form, onChange, options, cl
       <input type={type} name={name} value={form[name] ?? ''} onChange={onChange} /></div>
   );
 }
+/* eslint-enable react/prop-types */
 
 export default function PersonDetail() {
   const { id } = useParams();
@@ -89,15 +90,25 @@ export default function PersonDetail() {
   const pplApi = usePeople();
   const payApi = usePayroll();
 
-  const { options: personTypeOpts } = useLookupOptions('PERSON_TYPE');
-  const PERSON_TYPES = personTypeOpts.map(o => o.code);
-  const { options: empTypeOpts } = useLookupOptions('EMPLOYMENT_TYPE');
-  const EMP_TYPES = empTypeOpts.map(o => o.code);
-  const { options: vehicleTypeOpts } = useLookupOptions('VEHICLE_TYPE');
-  const VEHICLE_TYPES = vehicleTypeOpts.map(o => o.code);
+  const { data: lookups, loading: lookupsLoading } = useLookupBatch(LOOKUP_CATEGORIES);
+  const codes = (cat) => (lookups[cat] || []).map(o => o.code);
 
-  const canEdit = ['admin', 'finance', 'president'].includes(user?.role);
-  const isPresident = user?.role === 'president';
+  const PERSON_TYPES = codes('PERSON_TYPE');
+  const EMP_TYPES = codes('EMPLOYMENT_TYPE');
+  const VEHICLE_TYPES = codes('VEHICLE_TYPE');
+  const BDM_STAGES = codes('BDM_STAGE');
+  const roleMappingOpts = useMemo(() => lookups.ROLE_MAPPING || [], [lookups.ROLE_MAPPING]);
+  const CIVIL_STATUSES = codes('CIVIL_STATUS');
+  const PERSON_STATUSES = codes('PERSON_STATUS');
+  const SALARY_TYPES = codes('SALARY_TYPE');
+  const TAX_STATUSES = codes('TAX_STATUS');
+  const INCENTIVE_TYPES = codes('INCENTIVE_TYPE');
+  const INS_TYPES = codes('INSURANCE_TYPE');
+  const INS_FREQ = codes('INSURANCE_FREQUENCY');
+  const INS_STATUS = codes('INSURANCE_STATUS');
+
+  const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const isPresident = user?.role === ROLES.PRESIDENT;
 
   const [person, setPerson] = useState(null);
   const [payslips, setPayslips] = useState([]);
@@ -169,6 +180,33 @@ export default function PersonDetail() {
   useEffect(() => {
     erpAccess.getTemplates().then(res => setAccessTemplates(res?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Warn if any lookup categories loaded empty (seeding may be needed)
+  const lookupWarnShown = useRef(false);
+  useEffect(() => {
+    if (lookupsLoading || lookupWarnShown.current) return;
+    const empty = LOOKUP_CATEGORIES.filter(c => c !== 'ROLE_MAPPING' && (!lookups[c] || lookups[c].length === 0));
+    if (empty.length > 0) {
+      showWarning(`Some dropdown options are empty: ${empty.join(', ')}. Seed them in Control Center > Lookup Tables.`);
+      lookupWarnShown.current = true;
+    }
+  }, [lookupsLoading, lookups]);
+
+  // Role-People alignment warning: check person_type vs linked user role via ROLE_MAPPING
+  const roleMismatchShown = useRef(null);
+  useEffect(() => {
+    if (!person?.user_id?.role || !person?.person_type || roleMappingOpts.length === 0) return;
+    const checkKey = `${id}-${person.person_type}-${person.user_id.role}`;
+    if (roleMismatchShown.current === checkKey) return;
+    const mapping = roleMappingOpts.find(m => m.metadata?.person_type === person.person_type);
+    if (!mapping) return;
+    const expectedRole = mapping.metadata?.system_role;
+    const actualRole = person.user_id.role;
+    if (expectedRole && actualRole && expectedRole !== actualRole) {
+      showWarning(`Role mismatch: ${person.person_type} should map to '${expectedRole}' but linked user has role '${actualRole}'`);
+    }
+    roleMismatchShown.current = checkKey;
+  }, [id, person, roleMappingOpts]);
 
   const handlePersonChange = (e) => setPersonForm(f => ({ ...f, [e.target.name]: e.target.value }));
   const handleCompChange = (e) => {
@@ -413,7 +451,7 @@ export default function PersonDetail() {
               <F lbl="Status" name="status" val={person.status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_STATUSES} />
               <F lbl="Position" name="position" val={person.position} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Department" name="department" val={person.department} editing={editPerson} form={personForm} onChange={handlePersonChange} />
-              <F lbl="BDM Stage" name="bdm_stage" val={person.bdm_stage} editing={editPerson} form={personForm} onChange={handlePersonChange} options={['', 'CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER']} />
+              <F lbl="BDM Stage" name="bdm_stage" val={person.bdm_stage} editing={editPerson} form={personForm} onChange={handlePersonChange} options={BDM_STAGES} />
               <F lbl="ERP Live Date" name="live_date" type="date" val={fmtDate(person.live_date)} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Employment Type" name="employment_type" val={person.employment_type} editing={editPerson} form={personForm} onChange={handlePersonChange} options={EMP_TYPES} />
               <F lbl="Civil Status" name="civil_status" val={person.civil_status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={CIVIL_STATUSES} />

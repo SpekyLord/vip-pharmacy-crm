@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useIncome from '../hooks/useIncome';
 
 import { showError } from '../utils/errorToast';
@@ -86,7 +87,7 @@ function getCurrentPeriod() {
 export default function Income() {
   const { user } = useAuth();
   const inc = useIncome();
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [view, setView] = useState('list'); // list | detail
   const [period, setPeriod] = useState(getCurrentPeriod());

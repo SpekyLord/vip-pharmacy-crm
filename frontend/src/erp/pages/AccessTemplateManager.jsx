@@ -16,6 +16,7 @@ const MODULES = [
   { key: 'accounting', label: 'Acctg' },
   { key: 'purchasing', label: 'Purch' },
   { key: 'banking', label: 'Bank' },
+  { key: 'sales_goals', label: 'Goals' },
 ];
 
 const LEVEL_COLORS = {
@@ -79,7 +80,7 @@ export function AccessTemplateManagerContent() {
       setTemplates(tplRes?.data || []);
       setSubPermKeys(spkRes?.data || {});
     } catch (err) { console.error('[AccessTemplateManager] load error:', err.message); }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
 

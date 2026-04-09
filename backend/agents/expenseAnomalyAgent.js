@@ -10,6 +10,7 @@
  */
 
 const { notify } = require('./notificationService');
+const { ROLES } = require('../constants/roles');
 
 async function run() {
   console.log('[ExpenseAnomaly] Running...');
@@ -57,7 +58,7 @@ async function run() {
       const currentCycle = now.getDate() <= 15 ? 'C1' : 'C2';
 
       // Get all active BDMs
-      const bdms = await User.find({ role: 'employee', isActive: true }).select('_id name').lean();
+      const bdms = await User.find({ role: ROLES.CONTRACTOR, isActive: true }).select('_id name').lean();
 
       // Build 3-month lookback periods
       const lookbackPeriods = [];

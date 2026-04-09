@@ -7,7 +7,7 @@
  * Left category sidebar (governance hierarchy) + right lazy-loaded content panels.
  * URL sync via ?section= query param for deep-linking.
  */
-import React, { useState, useEffect, Suspense, lazy, useMemo, Component } from 'react';
+import { useState, Suspense, lazy, useMemo, Component } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -150,6 +150,7 @@ const CATEGORY_CONFIG = [
 ];
 
 // Error boundary for lazy-loaded section failures
+/* eslint-disable react/prop-types */
 class SectionErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
@@ -168,6 +169,7 @@ class SectionErrorBoundary extends Component {
     return this.props.children;
   }
 }
+/* eslint-enable react/prop-types */
 
 // ── Dependency guide: what to configure when you change each section ──
 const DEPENDENCY_GUIDE = {
@@ -192,6 +194,7 @@ const DEPENDENCY_GUIDE = {
       { action: 'When you add a person', deps: 'Create their Comp Profile (salary, allowances, tax status) from their detail page', section: null },
       { action: 'When you add a person', deps: 'Assign an Access Template so they can use ERP modules', section: 'access-templates' },
       { action: 'New to ERP?', deps: 'Use "Sync from CRM" button to import existing CRM users', section: null },
+      { action: 'When you add a new person type or BDM stage', deps: 'Add it in Lookup Tables first (PERSON_TYPE, BDM_STAGE, EMPLOYMENT_TYPE, ROLE_MAPPING)', section: 'lookup-tables' },
     ]
   },
   'access-templates': {
@@ -257,6 +260,7 @@ const DEPENDENCY_GUIDE = {
     title: 'Product Dependencies',
     items: [
       { action: 'When you add a product', deps: 'Set purchase_price (drives COGS) and assign to a Warehouse for inventory', section: 'warehouses' },
+      { action: 'When you Refresh Master from CSV', deps: 'Existing products are updated, duplicates deactivated, new products created. Run this BEFORE importing stock on hand.', section: 'warehouses' },
     ]
   },
   'warehouses': {
@@ -264,6 +268,7 @@ const DEPENDENCY_GUIDE = {
     items: [
       { action: 'When you add a warehouse', deps: 'Set a manager, assign users, and link to a Territory if it is a field warehouse', section: 'territories' },
       { action: 'When you set "Default Receiving"', deps: 'All GRNs will route to this warehouse unless overridden', section: null },
+      { action: 'When you Import Opening Stock', deps: 'Products must exist in Product Master first (Refresh Master). Unmatched items will be skipped.', section: 'products' },
     ]
   },
   'transfer-prices': {
@@ -309,6 +314,10 @@ const DEPENDENCY_GUIDE = {
     items: [
       { action: 'When you add/edit a lookup value', deps: 'All dropdowns using that category will show the new value immediately (5-min cache)', section: null },
       { action: 'When you deactivate a value', deps: 'Existing records keep their value, but new entries cannot select it', section: null },
+      { action: 'GOAL_CONFIG — Sales Goal thresholds', deps: 'Controls attainment colors (green/yellow/red), collection %, fiscal start month on the Goal Dashboard', section: null },
+      { action: 'INCENTIVE_TIER — Incentive budgets', deps: 'Defines tier names, attainment thresholds, and budget amounts. Edit anytime to adjust rewards mid-year.', section: null },
+      { action: 'GROWTH_DRIVER — Sales growth drivers', deps: 'Used when creating Sales Goal Plans. Add new drivers here before adding them to a plan.', section: null },
+      { action: 'KPI_CODE — KPI metric definitions', deps: 'Defines auto/manual computation, units, and direction. Add here before linking to a growth driver.', section: null },
     ]
   },
   'org-chart': {
@@ -350,6 +359,7 @@ const DEPENDENCY_GUIDE = {
   },
 };
 
+/* eslint-disable react/prop-types */
 function DependencyBanner({ section, onNavigate }) {
   const guide = DEPENDENCY_GUIDE[section];
   if (!guide) return null;
@@ -368,6 +378,7 @@ function DependencyBanner({ section, onNavigate }) {
     </div>
   );
 }
+/* eslint-enable react/prop-types */
 
 const pageStyles = `
   .ctlc-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -423,7 +434,7 @@ const pageStyles = `
 `;
 
 export default function ControlCenter() {
-  const { user } = useAuth();
+  const { user: _user } = useAuth(); // eslint-disable-line no-unused-vars
   const [searchParams, setSearchParams] = useSearchParams();
   const [expandedGroups, setExpandedGroups] = useState(() => {
     // Expand all groups by default

@@ -66,6 +66,7 @@ const pageStyles = `
 const peso = (val) => `₱${Number(val || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
 // ---------- Product Modal ----------
+/* eslint-disable react/prop-types */
 function ProductModal({ open, onClose, onSave, editItem }) {
   const [form, setForm] = useState({
     brand_name: '', generic_name: '', dosage_strength: '', sold_per: '',
@@ -221,8 +222,10 @@ function ProductModal({ open, onClose, onSave, editItem }) {
     </div>
   );
 }
+/* eslint-enable react/prop-types */
 
 // ---------- Main Page ----------
+/* eslint-disable react/prop-types */
 export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const api = useErpApi();
   const { getWarehouses } = useWarehouses();
@@ -246,6 +249,11 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   // Price import/export
   const fileInputRef = useRef(null);
   const [importing, setImporting] = useState(false);
+
+  // Refresh Product Master from CSV
+  const refreshFileRef = useRef(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshResult, setRefreshResult] = useState(null);
 
   useEffect(() => {
     getWarehouses({ limit: 0 }).then(res => setWarehouses(res?.data || [])).catch(() => {});
@@ -340,6 +348,26 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
     finally { setImporting(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
   };
 
+  const handleRefreshProducts = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!window.confirm('This will refresh ALL products from the uploaded file.\n\n- Matching products will be updated\n- New products will be created\n- Duplicates will be deactivated\n- Products not in the file will be deactivated\n\nContinue?')) {
+      if (refreshFileRef.current) refreshFileRef.current.value = '';
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await api.put('/products/refresh', formData, {
+        headers: { 'Content-Type': undefined }
+      });
+      setRefreshResult(res?.data || {});
+      loadProducts();
+    } catch (err) { showError(err, 'Could not refresh products'); }
+    finally { setRefreshing(false); if (refreshFileRef.current) refreshFileRef.current.value = ''; }
+  };
+
   const totalPages = Math.ceil(total / limit);
   const margin = (p) => peso(p.selling_price - p.purchase_price);
 
@@ -358,6 +386,10 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
                 {importing ? 'Importing...' : 'Import Prices'}
               </button>
               <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportPrices} style={{ display: 'none' }} />
+              <button className="btn btn-secondary" onClick={() => refreshFileRef.current?.click()} disabled={refreshing} style={{ background: '#f59e0b', color: '#fff', border: 'none' }}>
+                {refreshing ? 'Refreshing...' : 'Refresh Master'}
+              </button>
+              <input ref={refreshFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleRefreshProducts} style={{ display: 'none' }} />
               {selectedProducts.length > 0 && (
                 <button className="btn btn-secondary" onClick={() => setTagModal(true)}>
                   Tag {selectedProducts.length} to Warehouse
@@ -489,9 +521,51 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
               </div>
             </div>
           )}
+
+          {refreshResult && (
+            <div className="modal-overlay" onClick={() => setRefreshResult(null)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()} style={{ width: 520, maxHeight: '80vh', overflowY: 'auto' }}>
+                <h3 className="modal-title">Product Master Refresh Results</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, margin: '16px 0' }}>
+                  <div style={{ background: '#f0fdf4', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#166534' }}>{refreshResult.updated || 0}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>Updated</div>
+                  </div>
+                  <div style={{ background: '#eff6ff', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#1e40af' }}>{refreshResult.created || 0}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>Created</div>
+                  </div>
+                  <div style={{ background: '#fef3c7', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#92400e' }}>{refreshResult.csv_duplicates_merged || 0}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>CSV Duplicates Merged</div>
+                  </div>
+                  <div style={{ background: '#fef2f2', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#991b1b' }}>{(refreshResult.duplicates_deactivated || 0) + (refreshResult.stale_deactivated || 0)}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>Deactivated</div>
+                  </div>
+                </div>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: '8px 0' }}>
+                  CSV rows: {refreshResult.csv_rows || 0} | Unique products: {refreshResult.unique_products || 0}
+                </p>
+                {refreshResult.errors?.length > 0 && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, marginTop: 8 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', marginBottom: 6 }}>Errors ({refreshResult.errors.length})</div>
+                    {refreshResult.errors.slice(0, 20).map((err, i) => (
+                      <div key={i} style={{ fontSize: 12, color: '#7f1d1d', margin: '2px 0' }}>{err.brand} {err.dosage}: {err.message}</div>
+                    ))}
+                    {refreshResult.errors.length > 20 && <div style={{ fontSize: 12, color: '#9ca3af' }}>...and {refreshResult.errors.length - 20} more</div>}
+                  </div>
+                )}
+                <div className="form-actions" style={{ marginTop: 16 }}>
+                  <button className="btn btn-primary" onClick={() => setRefreshResult(null)}>Close</button>
+                </div>
+              </div>
+            </div>
+          )}
     </>
   );
 }
+/* eslint-enable react/prop-types */
 
 export default function ProductMasterPage() {
   return (

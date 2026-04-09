@@ -17,6 +17,7 @@ const ProductMaster = require('../models/ProductMaster');
 const InventoryLedger = require('../models/InventoryLedger');
 const Hospital = require('../models/Hospital');
 const User = require('../../models/User');
+const { ROLES } = require('../../constants/roles');
 
 const PRODUCTS = [
   {
@@ -141,10 +142,10 @@ const seedInventory = async () => {
   let bdm = await User.findOne({ email: 'juan@vipcrm.com' });
   if (!bdm) {
     console.log('BDM user juan@vipcrm.com not found. Creating test BDM...');
-    bdm = await User.findOne({ role: 'employee' });
+    bdm = await User.findOne({ role: ROLES.CONTRACTOR });
   }
   if (!bdm) {
-    console.error('No BDM (employee) user found. Run CRM seed first.');
+    console.error('No BDM (contractor) user found. Run CRM seed first.');
     return;
   }
 

@@ -14,6 +14,7 @@ const Entity = require('../erp/models/Entity');
 const AgentRun = require('../erp/models/AgentRun');
 const MessageInbox = require('../models/MessageInbox');
 const User = require('../models/User');
+const { ROLES } = require('../constants/roles');
 
 function currentPeriod() {
   const now = new Date();
@@ -134,13 +135,13 @@ Keep it concise, specific, and actionable. Use real names and numbers from the d
     const digest = response.content[0]?.text || 'Unable to generate digest.';
 
     // Send message to President
-    const presidents = await User.find({ role: 'president' }).select('_id').lean();
+    const presidents = await User.find({ role: ROLES.PRESIDENT }).select('_id').lean();
     const messageIds = [];
 
     for (const pres of presidents) {
       const msg = await MessageInbox.create({
         recipientUserId: pres._id,
-        recipientRole: 'president',
+        recipientRole: ROLES.PRESIDENT,
         title: `Org Intelligence — ${period}`,
         body: digest,
         category: 'ai_coaching',

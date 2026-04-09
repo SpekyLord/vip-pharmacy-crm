@@ -355,8 +355,7 @@ vip-pharmacy-crm/
 │   │   │   ├── regionService.js       # Region API calls
 │   │   │   ├── assignmentService.js   # Product assignment API calls
 │   │   │   ├── userService.js         # User CRUD API calls
-│   │   │   ├── messageInboxService.js # Inbox messaging API calls
-│   │   │   └── complianceService.js   # Compliance endpoints (calls non-existent backend)
+│   │   │   └── messageInboxService.js # Inbox messaging API calls
 │   │   └── utils/
 │   │       ├── exportCallPlan.js      # VIP Client export (Call Plan Template format)
 │   │       ├── exportEmployeeReport.js # BDM Visit Report export
@@ -594,7 +593,7 @@ App.jsx
 - [x] `services/assignmentService.js` - Product assignment API calls
 - [x] `services/userService.js` - User CRUD API calls
 - [x] `services/messageInboxService.js` - Inbox messaging API calls
-- [x] `services/complianceService.js` - Compliance endpoints (calls non-existent backend APIs)
+- [x] ~`services/complianceService.js`~ - Removed (was calling non-existent backend APIs)
 
 #### Context & Hooks
 - [x] `context/AuthContext.jsx` - Cookie-based auth, auth:logout event listener

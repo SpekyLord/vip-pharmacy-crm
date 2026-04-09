@@ -1,5 +1,5 @@
 /**
- * Seed ALL 27 lookup categories for every entity.
+ * Seed ALL lookup categories for every entity.
  * Idempotent — uses upsert so existing items are not overwritten.
  *
  * Usage: node backend/erp/scripts/seedAllLookups.js
@@ -24,7 +24,8 @@ async function seedAllLookups() {
     return;
   }
 
-  console.log(`Found ${entities.length} entities. Seeding 27 lookup categories for each...\n`);
+  const categoryCount = Object.keys(SEED_DEFAULTS).length;
+  console.log(`Found ${entities.length} entities. Seeding ${categoryCount} lookup categories for each...\n`);
 
   for (const entity of entities) {
     const entityId = entity._id;
@@ -53,7 +54,7 @@ async function seedAllLookups() {
     }
 
     const populated = await Lookup.distinct('category', { entity_id: entityId });
-    console.log(`  → ${populated.length}/27 categories populated (${totalInserted} new items)\n`);
+    console.log(`  → ${populated.length}/${categoryCount} categories populated (${totalInserted} new items)\n`);
   }
 
   console.log('Done.');

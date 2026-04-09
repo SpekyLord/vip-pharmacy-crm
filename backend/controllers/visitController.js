@@ -18,7 +18,7 @@ const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, getMonthYear,
 const { MANILA_OFFSET_MS, getWeekOfMonth, getCycleStartDate, getCycleEndDate } = require('../utils/scheduleCycleUtils');
 const { normalizeEngagementTypesQuery } = require('../utils/engagementTypes');
 const { signVisitPhotos } = require('../config/s3');
-const { isCrmAdminLike } = require('../utils/roleHelpers');
+const { ROLES, isAdminLike } = require('../constants/roles');
 
 /**
  * @desc    Create a new visit
@@ -277,7 +277,7 @@ const getAllVisits = catchAsync(async (req, res) => {
   const parsedEngagementTypes = normalizeEngagementTypesQuery(engagementTypes);
 
   // Role-based filtering
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     query.user = req.user._id;
   } else if (userId) {
     query.user = userId;
@@ -361,7 +361,7 @@ const getVisitById = catchAsync(async (req, res) => {
   }
 
   // Check access
-  if (req.user.role === 'employee' && visit.user._id.toString() !== req.user._id.toString()) {
+  if (req.user.role === ROLES.CONTRACTOR && visit.user._id.toString() !== req.user._id.toString()) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
@@ -390,7 +390,7 @@ const updateVisit = catchAsync(async (req, res) => {
   }
 
   // Check access
-  if (req.user.role === 'employee' && visit.user.toString() !== req.user._id.toString()) {
+  if (req.user.role === ROLES.CONTRACTOR && visit.user.toString() !== req.user._id.toString()) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
@@ -435,7 +435,7 @@ const cancelVisit = catchAsync(async (req, res) => {
   }
 
   // Check access
-  if (req.user.role === 'employee' && visit.user.toString() !== req.user._id.toString()) {
+  if (req.user.role === ROLES.CONTRACTOR && visit.user.toString() !== req.user._id.toString()) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
@@ -475,7 +475,7 @@ const getVisitsByUser = catchAsync(async (req, res) => {
   const { page = 1, limit = 20, monthYear } = req.query;
 
   // Check access
-  if (req.user.role === 'employee' && userId !== req.user._id.toString()) {
+  if (req.user.role === ROLES.CONTRACTOR && userId !== req.user._id.toString()) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
@@ -522,7 +522,7 @@ const getWeeklyCompliance = catchAsync(async (req, res) => {
   const userId = req.params.userId || req.user._id.toString();
 
   // Check access - employees can only see their own compliance
-  if (req.user.role === 'employee' && userId !== req.user._id.toString()) {
+  if (req.user.role === ROLES.CONTRACTOR && userId !== req.user._id.toString()) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
@@ -606,7 +606,7 @@ const getVisitStats = catchAsync(async (req, res) => {
 
   const matchQuery = { status: 'completed' };
 
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     matchQuery.user = req.user._id;
   } else if (userId) {
     matchQuery.user = new mongoose.Types.ObjectId(userId);
@@ -815,7 +815,7 @@ const refreshPhotoUrls = catchAsync(async (req, res) => {
   }
 
   // Check if user has access to this visit
-  if (!isCrmAdminLike(req.user.role) && visit.user.toString() !== req.user._id.toString()) {
+  if (!isAdminLike(req.user.role) && visit.user.toString() !== req.user._id.toString()) {
     return res.status(403).json({
       success: false,
       message: 'You do not have permission to access this visit',

@@ -22,6 +22,7 @@ const { journalFromExpense, resolveFundingCoa, getCoaMap } = require('../service
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
 const JournalEntry = require('../models/JournalEntry');
 
+const { ROLES } = require('../../constants/roles');
 const { detectText } = require('../ocr/visionClient');
 const { processOcr } = require('../ocr/ocrProcessor');
 const { classifyExpense } = require('../services/expenseClassifier');
@@ -445,7 +446,7 @@ const validateCarLogbook = catchAsync(async (req, res) => {
     // CALF gate: non-cash fuel entries require CALF to be linked AND POSTED
     for (let j = 0; j < (entry.fuel_entries || []).length; j++) {
       const fuel = entry.fuel_entries[j];
-      if (fuel.calf_required && req.user.role !== 'president') {
+      if (fuel.calf_required && req.user.role !== ROLES.PRESIDENT) {
         if (!fuel.calf_id) {
           errors.push(`Fuel ${j + 1}: CALF required for ${fuel.payment_mode} fuel (${fuel.station_name || 'unknown station'})`);
         } else {
@@ -484,7 +485,7 @@ const submitCarLogbook = catchAsync(async (req, res) => {
   // Pre-submit gate: verify all linked CALFs are POSTED
   for (const entry of entries) {
     for (const fuel of (entry.fuel_entries || [])) {
-      if (fuel.calf_required && fuel.calf_id && req.user.role !== 'president') {
+      if (fuel.calf_required && fuel.calf_id && req.user.role !== ROLES.PRESIDENT) {
         const calf = await PrfCalf.findById(fuel.calf_id).select('status').lean();
         if (!calf || calf.status !== 'POSTED') {
           return res.status(400).json({
@@ -788,7 +789,7 @@ const validateExpenses = catchAsync(async (req, res) => {
       }
 
       // CALF gate: ACCESS with non-cash requires CALF to be linked AND POSTED
-      if (line.calf_required && req.user.role !== 'president') {
+      if (line.calf_required && req.user.role !== ROLES.PRESIDENT) {
         if (!line.calf_id) {
           errors.push(`Line ${i + 1}: CALF required for non-cash ACCESS expense`);
         } else {
@@ -822,7 +823,7 @@ const submitExpenses = catchAsync(async (req, res) => {
   // Pre-submit gate: verify all linked CALFs are POSTED
   for (const entry of entries) {
     for (const line of (entry.lines || [])) {
-      if (line.calf_required && line.calf_id && req.user.role !== 'president') {
+      if (line.calf_required && line.calf_id && req.user.role !== ROLES.PRESIDENT) {
         const calf = await PrfCalf.findById(line.calf_id).select('status').lean();
         if (!calf || calf.status !== 'POSTED') {
           return res.status(400).json({
@@ -1480,7 +1481,7 @@ const getExpenseSummary = catchAsync(async (req, res) => {
  */
 const getSmerCrmMdCounts = catchAsync(async (req, res) => {
   // Only BDMs (employees) should pull their own CRM visit data
-  if (req.user.role !== 'employee' && !req.query.bdm_id) {
+  if (req.user.role !== ROLES.CONTRACTOR && !req.query.bdm_id) {
     return res.status(403).json({ success: false, message: 'CRM bridge is for BDM users. Pass bdm_id query param if admin.' });
   }
   const { period, cycle } = req.query;

@@ -8,9 +8,10 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES } from '../../constants/roles';
 import api from '../../services/api';
 import messageService from '../../services/messageInboxService';
-import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, Users, MessageSquare, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap } from 'lucide-react';
+import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap } from 'lucide-react';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
 
@@ -91,12 +92,14 @@ const AGENT_CONFIG = {
 const CAT_LABELS = { ai_coaching: 'Coaching', ai_schedule: 'Schedule', ai_alert: 'Alert' };
 const CAT_CSS = { ai_coaching: 'coaching', ai_schedule: 'schedule', ai_alert: 'alert' };
 
+/* eslint-disable react/prop-types */
 function StatusBadge({ status }) {
   const cfg = { success: { icon: CheckCircle, css: 'success' }, error: { icon: XCircle, css: 'error' }, partial: { icon: AlertTriangle, css: 'partial' } };
   const c = cfg[status] || cfg.success;
   const Icon = c.icon;
   return <span className={`agd-badge agd-badge-${c.css}`}><Icon />{status}</span>;
 }
+/* eslint-enable react/prop-types */
 
 function fmtDate(d) { return d ? new Date(d).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'; }
 
@@ -109,7 +112,7 @@ export default function AgentDashboard() {
   const [msgTab, setMsgTab] = useState('all');
   const [runningAgent, setRunningAgent] = useState(null);
 
-  const isPresidentOrAdmin = ['president', 'admin'].includes(user?.role);
+  const isPresidentOrAdmin = [ROLES.PRESIDENT, ROLES.ADMIN].includes(user?.role);
 
   const handleRunNow = async (agentKey) => {
     if (runningAgent) return;

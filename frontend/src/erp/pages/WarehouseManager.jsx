@@ -5,16 +5,17 @@
  * Shows list of warehouses with stock counts, manager, assigned users.
  * Create/edit modal for warehouse properties.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useWarehouses from '../hooks/useWarehouses';
 import useEntities from '../hooks/useEntities';
 import usePeople from '../hooks/usePeople';
+import useErpApi from '../hooks/useErpApi';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
-import { showError } from '../utils/errorToast';
+import { showError, showSuccess } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
 const TYPE_LABELS = { MAIN: 'Main Warehouse', TERRITORY: 'Territory', VIRTUAL: 'Virtual' };
@@ -91,6 +92,12 @@ export function WarehouseManagerContent() {
   const [form, setForm] = useState(emptyForm());
   const [loading, setLoading] = useState(false);
 
+  // Seed stock on hand
+  const api = useErpApi();
+  const seedFileRef = useRef(null);
+  const [seeding, setSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -103,7 +110,7 @@ export function WarehouseManagerContent() {
     } catch (err) {
       console.error('[WarehouseManager] load failed:', err.message);
     } finally { setLoading(false); }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
 
@@ -143,12 +150,38 @@ export function WarehouseManagerContent() {
     }
   };
 
+  const handleSeedStock = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!window.confirm('Import opening stock from CSV?\n\nThis will create OPENING_BALANCE entries for each product/batch/warehouse.\nDuplicate entries will be skipped.\nProducts not in Product Master will be skipped.')) {
+      if (seedFileRef.current) seedFileRef.current.value = '';
+      return;
+    }
+    setSeeding(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await api.post('/inventory/seed-stock-on-hand', formData, {
+        headers: { 'Content-Type': undefined }
+      });
+      setSeedResult(res?.data || {});
+      showSuccess(`Imported ${res?.data?.imported || 0} stock entries`);
+    } catch (err) { showError(err, 'Could not import stock'); }
+    finally { setSeeding(false); if (seedFileRef.current) seedFileRef.current.value = ''; }
+  };
+
   return (
     <>
       <style>{pageStyles}</style>
           <div className="wm-header">
             <h2>Warehouse Management</h2>
-            <button className="wm-btn wm-btn-primary" onClick={openNew}>+ New Warehouse</button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="wm-btn wm-btn-primary" onClick={() => seedFileRef.current?.click()} disabled={seeding} style={{ background: '#059669' }}>
+                {seeding ? 'Importing...' : 'Import Opening Stock'}
+              </button>
+              <input ref={seedFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleSeedStock} style={{ display: 'none' }} />
+              <button className="wm-btn wm-btn-primary" onClick={openNew}>+ New Warehouse</button>
+            </div>
           </div>
 
           {loading && !warehouses.length && <p style={{ color: '#64748b' }}>Loading...</p>}
@@ -268,6 +301,55 @@ export function WarehouseManagerContent() {
                 <div className="wm-footer">
                   <button className="wm-btn wm-btn-outline" onClick={() => setEditing(null)}>Cancel</button>
                   <button className="wm-btn wm-btn-primary" onClick={handleSave}>{editing === 'new' ? 'Create' : 'Save'}</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {seedResult && (
+            <div className="wm-modal" onClick={() => setSeedResult(null)}>
+              <div className="wm-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: 560, maxHeight: '80vh', overflowY: 'auto' }}>
+                <h3>Stock Import Results</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, margin: '16px 0' }}>
+                  <div style={{ background: '#f0fdf4', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#166534' }}>{seedResult.imported || 0}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>Imported</div>
+                  </div>
+                  <div style={{ background: '#fef3c7', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#92400e' }}>{seedResult.skipped || 0}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>Skipped</div>
+                  </div>
+                  <div style={{ background: '#fef2f2', padding: 12, borderRadius: 8, textAlign: 'center' }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#991b1b' }}>{seedResult.errors || 0}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>Unmatched</div>
+                  </div>
+                </div>
+                {seedResult.productUpdated > 0 && (
+                  <p style={{ fontSize: 13, color: '#6b7280' }}>Products price-updated: {seedResult.productUpdated}</p>
+                )}
+                {seedResult.perWarehouse && Object.keys(seedResult.perWarehouse).length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Per Warehouse</div>
+                    {Object.entries(seedResult.perWarehouse).sort((a, b) => b[1] - a[1]).map(([code, count]) => (
+                      <div key={code} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '2px 0' }}>
+                        <span>{code}</span><strong>{count}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {seedResult.unmatchedItems?.length > 0 && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, marginTop: 12 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', marginBottom: 6 }}>Unmatched Items ({seedResult.unmatchedItems.length})</div>
+                    {seedResult.unmatchedItems.slice(0, 20).map((item, i) => (
+                      <div key={i} style={{ fontSize: 12, color: '#7f1d1d', margin: '2px 0' }}>
+                        Row {item.row}: {item.brand} {item.dosage} — {item.reason}
+                      </div>
+                    ))}
+                    {seedResult.unmatchedItems.length > 20 && <div style={{ fontSize: 12, color: '#9ca3af' }}>...and {seedResult.unmatchedItems.length - 20} more</div>}
+                  </div>
+                )}
+                <div className="wm-footer" style={{ marginTop: 16 }}>
+                  <button className="wm-btn wm-btn-primary" onClick={() => setSeedResult(null)}>Close</button>
                 </div>
               </div>
             </div>

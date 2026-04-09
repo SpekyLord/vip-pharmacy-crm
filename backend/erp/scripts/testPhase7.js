@@ -14,6 +14,7 @@ const connectDB = require('../../config/db');
 
 // Models
 const User = require('../../models/User');
+const { ROLES } = require('../../constants/roles');
 const Entity = require('../models/Entity');
 const Hospital = require('../models/Hospital');
 const ProductMaster = require('../models/ProductMaster');
@@ -89,8 +90,8 @@ async function main() {
     log('Entity:', `${entity.entity_name} (${entity._id})`);
 
     // Use Jake Montero's BDM account (fallback to any employee)
-    const bdm = await User.findOne({ email: 's19.vippharmacy@gmail.com' }) || await User.findOne({ role: 'employee' });
-    if (!bdm) throw new Error('No BDM (employee) user found. Run CRM seed first.');
+    const bdm = await User.findOne({ email: 's19.vippharmacy@gmail.com' }) || await User.findOne({ role: ROLES.CONTRACTOR });
+    if (!bdm) throw new Error('No BDM (contractor) user found. Run CRM seed first.');
     log('BDM:', `${bdm.firstName || bdm.name} (${bdm._id})`);
 
     const adminUser = await User.findOne({ role: { $in: ['admin', 'president'] } });
