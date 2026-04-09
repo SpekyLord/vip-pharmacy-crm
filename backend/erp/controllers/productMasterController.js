@@ -477,4 +477,24 @@ const refreshProducts = catchAsync(async (req, res) => {
   });
 });
 
-module.exports = { getAll, getById, create, update, deactivate, updateReorderQty, tagToWarehouse, getProductWarehouses, exportPrices, importPrices, refreshProducts };
+/**
+ * DELETE /:id — Hard delete a product (only if no inventory transactions exist)
+ */
+const deleteProduct = catchAsync(async (req, res) => {
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+
+  const product = await ProductMaster.findOne(filter);
+  if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+
+  // Check for any inventory ledger entries
+  const hasInventory = await InventoryLedger.exists({ product_id: product._id });
+  if (hasInventory) {
+    return res.status(409).json({ success: false, message: 'Cannot delete — product has inventory transactions. Deactivate instead.' });
+  }
+
+  await ProductMaster.deleteOne({ _id: product._id });
+  res.json({ success: true, message: 'Product deleted' });
+});
+
+module.exports = { getAll, getById, create, update, deactivate, deleteProduct, updateReorderQty, tagToWarehouse, getProductWarehouses, exportPrices, importPrices, refreshProducts };

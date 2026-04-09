@@ -61,20 +61,27 @@ async function run() {
   const entityId = vipEntity._id;
   console.log(`Entity: ${vipEntity.entity_name} (${entityId})\n`);
 
-  // Deduplicate CSV by BrandName|DosageStrength
+  // Deduplicate CSV by BrandName|DosageStrength (case-insensitive)
+  // Same product from different BDMs = same product, keep the one with better prices
   const dedupMap = new Map();
   for (const row of rows) {
     const brand = (row.BrandName || '').trim();
     const dosage = (row.DosageStrength || '').trim();
     if (!brand) continue;
 
-    const key = `${brand}|${dosage}`;
+    // Case-insensitive key for dedup
+    const key = `${brand.toUpperCase()}|${dosage.toLowerCase()}`;
     const isActive = (row.IsActive || 'TRUE').toUpperCase() !== 'FALSE';
+    const sp = parseFloat((row.DefaultSellingPrice || '0').replace(/,/g, '')) || 0;
 
     if (!dedupMap.has(key)) {
-      dedupMap.set(key, { row, isActive });
-    } else if (!dedupMap.get(key).isActive && isActive) {
-      dedupMap.set(key, { row, isActive });
+      dedupMap.set(key, { row, isActive, sp });
+    } else {
+      const existing = dedupMap.get(key);
+      // Prefer: active over inactive, then higher selling price (more likely the real product)
+      if ((!existing.isActive && isActive) || (existing.sp === 0 && sp > 0)) {
+        dedupMap.set(key, { row, isActive, sp });
+      }
     }
   }
 
@@ -93,15 +100,16 @@ async function run() {
     const itemKey = `${brand}|${dosage}`;
     const brandClean = cleanName(brand);
 
-    processedCleanKeys.add(`${brandClean}|${dosage.toLowerCase()}`);
+    processedCleanKeys.add(`${brandClean}|${dosage.toLowerCase().replace(/\s+/g, '')}`);
 
     try {
-      // Find ALL candidates that could be this product
+      // Find ALL candidates that could be this product (case-insensitive dosage)
+      const dosageRegex = dosage ? new RegExp(`^${dosage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') : null;
       const candidates = await ProductMaster.find({
         entity_id: entityId,
         $or: [
           { item_key: itemKey },
-          { brand_name_clean: brandClean, dosage_strength: dosage || { $in: [null, ''] } },
+          { brand_name_clean: brandClean, ...(dosageRegex ? { dosage_strength: dosageRegex } : { dosage_strength: { $in: [null, ''] } }) },
         ],
       }).lean();
 
@@ -160,7 +168,7 @@ async function run() {
   let staleDeactivated = 0;
   const activeProducts = await ProductMaster.find({ entity_id: entityId, is_active: true }).lean();
   for (const prod of activeProducts) {
-    const prodClean = `${cleanName(prod.brand_name)}|${(prod.dosage_strength || '').toLowerCase()}`;
+    const prodClean = `${cleanName(prod.brand_name)}|${(prod.dosage_strength || '').toLowerCase().replace(/\s+/g, '')}`;
     if (!processedCleanKeys.has(prodClean)) {
       await ProductMaster.updateOne({ _id: prod._id }, { $set: { is_active: false } });
       staleDeactivated++;

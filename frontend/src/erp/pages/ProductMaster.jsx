@@ -316,6 +316,17 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
     }
   };
 
+  const handleDelete = async (id, name) => {
+    if (!window.confirm(`Permanently DELETE "${name}"?\n\nThis cannot be undone. Only works if the product has no inventory transactions.`)) return;
+    try {
+      await api.del(`/products/${id}`);
+      showSuccess(`"${name}" deleted`);
+      loadProducts();
+    } catch (err) {
+      showError(err, 'Could not delete product');
+    }
+  };
+
   const handleExportPrices = async () => {
     try {
       const blob = await api.get('/products/export-prices', { responseType: 'blob' });
@@ -473,6 +484,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
                           {p.is_active && (
                             <button className="btn btn-danger" onClick={() => handleDeactivate(p._id, p.brand_name)}>Deactivate</button>
                           )}
+                          <button className="btn btn-outline" onClick={() => handleDelete(p._id, p.brand_name)} style={{ color: '#991b1b', borderColor: '#fca5a5', fontSize: 11 }}>Delete</button>
                         </div>
                       </td>
                     </tr>

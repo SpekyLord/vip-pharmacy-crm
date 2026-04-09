@@ -16,6 +16,7 @@ router.get('/:id/warehouses', c.getProductWarehouses);
 router.post('/', roleCheck('admin', 'finance', 'president'), c.create);
 router.put('/:id', roleCheck('admin', 'finance', 'president'), c.update);
 router.patch('/:id/deactivate', roleCheck('admin', 'finance', 'president'), c.deactivate);
+router.delete('/:id', roleCheck('admin', 'finance', 'president'), c.deleteProduct);
 router.patch('/:id/reorder-qty', roleCheck('admin', 'finance', 'president'), c.updateReorderQty);
 
 module.exports = router;
