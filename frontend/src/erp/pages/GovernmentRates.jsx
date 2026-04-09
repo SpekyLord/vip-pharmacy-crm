@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES, ROLE_SETS } from '../../constants/roles';
 import useErpApi from '../hooks/useErpApi';
 import { showError, showSuccess } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -73,7 +74,7 @@ const fmt = (v) => v != null && v !== '' ? Number(v).toLocaleString('en-PH', { m
 export function GovernmentRatesContent() {
   const { user } = useAuth();
   const api = useErpApi();
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [rates, setRates] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -305,7 +306,7 @@ export function GovernmentRatesContent() {
                   {isAdmin && (
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button className="btn btn-outline btn-sm" onClick={() => openEdit(rate)}>Edit</button>
-                      {['admin', 'president'].includes(user?.role) && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(rate._id)}>Delete</button>}
+                      {[ROLES.ADMIN, ROLES.PRESIDENT].includes(user?.role) && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(rate._id)}>Delete</button>}
                     </div>
                   )}
                 </div>

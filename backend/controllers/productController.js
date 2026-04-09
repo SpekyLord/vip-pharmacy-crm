@@ -13,7 +13,7 @@ const CrmProduct = require('../models/CrmProduct');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { deleteFromS3, getSignedDownloadUrl, extractKeyFromUrl } = require('../config/s3');
-const { isCrmAdminLike } = require('../utils/roleHelpers');
+const { isAdminLike: isCrmAdminLike } = require('../constants/roles');
 
 /**
  * Sign product image URLs (replace raw S3 URLs with signed URLs)

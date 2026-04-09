@@ -11,6 +11,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import LoadingSpinner from '../common/LoadingSpinner';
+import { ROLES, ROLE_SETS, isAdminLike as checkAdminLike } from '../../constants/roles';
 
 /**
  * Check if user has access to an ERP module.
@@ -19,9 +20,9 @@ import LoadingSpinner from '../common/LoadingSpinner';
 const hasErpModuleAccess = (user, module) => {
   if (!user || !module) return true;
   const { role, erp_access } = user;
-  if (role === 'president') return true;
-  if (role === 'ceo') return true; // VIEW-only enforced at backend
-  if (role === 'admin' && (!erp_access || !erp_access.enabled)) return true;
+  if (role === ROLES.PRESIDENT) return true;
+  if (role === ROLES.CEO) return true; // VIEW-only enforced at backend
+  if (role === ROLES.ADMIN && (!erp_access || !erp_access.enabled)) return true;
   if (!erp_access || !erp_access.enabled) return false;
   const level = erp_access.modules?.[module] || 'NONE';
   return level !== 'NONE';
@@ -30,9 +31,7 @@ const hasErpModuleAccess = (user, module) => {
 const ProtectedRoute = ({ children, allowedRoles = [], requiredErpModule = null }) => {
   const { user, loading, isAuthenticated } = useAuth();
   const location = useLocation();
-  const adminLikeRoles = ['admin', 'president', 'ceo', 'finance'];
-  const elevatedAdminLikeRoles = ['president', 'ceo', 'finance'];
-  const isAdminLike = adminLikeRoles.includes(user?.role);
+  const isAdminLike = checkAdminLike(user?.role);
 
   if (loading) {
     return <LoadingSpinner fullScreen text="Checking authentication..." />;
@@ -49,16 +48,16 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredErpModule = null 
 
   if (allowedRoles.length > 0 && !allowedRoles.includes(user?.role)) {
     // president/ceo/finance get admin-level access
-    if (allowedRoles.includes('admin') && elevatedAdminLikeRoles.includes(user?.role)) {
+    if (allowedRoles.includes(ROLES.ADMIN) && ROLE_SETS.PRESIDENT_ROLES.concat(ROLES.FINANCE).includes(user?.role)) {
       // Continue to ERP module check below
     } else {
       // Redirect to appropriate dashboard based on user role instead of showing error
       const roleRedirects = {
-        admin: '/admin',
-        president: '/admin',
-        ceo: '/admin',
-        finance: '/admin',
-        employee: '/bdm',
+        [ROLES.ADMIN]: '/admin',
+        [ROLES.PRESIDENT]: '/admin',
+        [ROLES.CEO]: '/admin',
+        [ROLES.FINANCE]: '/admin',
+        [ROLES.CONTRACTOR]: '/bdm',
       };
       const redirectTo = roleRedirects[user?.role] || '/login';
       return <Navigate to={redirectTo} replace />;

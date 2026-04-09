@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES } from '../../constants/roles';
 import useDashboard from '../hooks/useDashboard';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -73,7 +74,7 @@ function getCurrentPeriod() {
 
 export default function ErpReports() {
   const { user } = useAuth();
-  const isBDM = user?.role === 'employee';
+  const isBDM = user?.role === ROLES.CONTRACTOR;
   const dash = useDashboard();
   const [period, setPeriod] = useState(getCurrentPeriod());
   const [salesData, setSalesData] = useState(null);

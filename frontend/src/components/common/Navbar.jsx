@@ -39,7 +39,8 @@ const ERP_TABS = [
   { label: 'Reports', path: '/erp/reports', icon: BarChart3 },
 ];
 
-const ADMIN_LIKE_ROLES = ['admin', 'finance', 'president', 'ceo'];
+import { ROLES, ROLE_SETS, isAdminLike as checkAdminLike, isPresidentLike } from '../../constants/roles';
+const ADMIN_LIKE_ROLES = ROLE_SETS.ADMIN_LIKE;
 
 const CRM_ADMIN_TABS = [
   { label: 'Dashboard', path: '/admin' },
@@ -693,8 +694,8 @@ const Navbar = () => {
 
   const hasErpModule = (moduleName) => {
     if (!user) return false;
-    if (user.role === 'president' || user.role === 'ceo') return true;
-    if (user.role === 'admin' && (!user.erp_access || !user.erp_access.enabled)) return true;
+    if (isPresidentLike(user.role)) return true;
+    if (user.role === ROLES.ADMIN && (!user.erp_access || !user.erp_access.enabled)) return true;
     if (!user.erp_access || !user.erp_access.enabled) return false;
     return (user.erp_access.modules?.[moduleName] || 'NONE') !== 'NONE';
   };
@@ -822,7 +823,7 @@ const Navbar = () => {
               <div className="navbar-profile-info">
                 <div className="navbar-profile-name">{user.name}</div>
                 <div className="navbar-profile-role">
-                  {user.role === 'employee' ? 'BDM' : user.role}
+                  {user.role === ROLES.CONTRACTOR ? 'BDM' : user.role}
                 </div>
               </div>
             </div>

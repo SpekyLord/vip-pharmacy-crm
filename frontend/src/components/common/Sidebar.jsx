@@ -664,14 +664,13 @@ const sidebarStyles = `
  * Build ERP sidebar section based on user's erp_access.
  * Returns null if no ERP modules are accessible.
  */
-const ADMIN_LIKE_ROLES = ['admin', 'finance', 'president', 'ceo'];
-
-const isAdminLikeRole = (role) => ADMIN_LIKE_ROLES.includes(role);
+import { ROLES, ROLE_SETS, isAdminLike as isAdminLikeRole, isPresidentLike } from '../../constants/roles';
+const ADMIN_LIKE_ROLES = ROLE_SETS.ADMIN_LIKE;
 
 const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   const hasModule = (mod) => {
-    if (role === 'president' || role === 'ceo') return true;
-    if (role === 'admin' && (!erpAccess || !erpAccess.enabled)) return true;
+    if (isPresidentLike(role)) return true;
+    if (role === ROLES.ADMIN && (!erpAccess || !erpAccess.enabled)) return true;
     if (!erpAccess || !erpAccess.enabled) return false;
     return erpAccess.modules?.[mod] && erpAccess.modules[mod] !== 'NONE';
   };
@@ -690,7 +689,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
 
   // ── Sales ──────────────────────────────────────────────────────────────────
   if (hasModule('sales')) {
-    const salesHomePath = role === 'finance' ? '/erp/sales' : '/erp/sales/entry';
+    const salesHomePath = role === ROLES.FINANCE ? '/erp/sales' : '/erp/sales/entry';
     const salesItems = [{ path: salesHomePath, label: 'Sales', icon: Receipt }];
     if (salesHomePath !== '/erp/sales') {
       salesItems.push({ path: '/erp/sales', label: 'Sales Transactions', icon: FileText, isChild: true });
@@ -718,7 +717,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     if (isAdmin) invItems.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
     invItems.push({ path: '/erp/expiry-dashboard', label: 'Expiry Mgmt', icon: AlertTriangle });
     invItems.push({ path: '/erp/batch-trace', label: 'Batch Trace', icon: Search });
-    if (['admin', 'president'].includes(role)) {
+    if ([ROLES.ADMIN, ROLES.PRESIDENT].includes(role)) {
       invItems.push({ path: '/erp/warehouses', label: 'Warehouses', icon: Package });
     }
     // Sort alphabetically
@@ -732,7 +731,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
       { path: '/erp/collections/ar', label: 'AR Aging', icon: BarChart3 },
       { path: '/erp/collections', label: 'Collections', icon: Wallet },
     ];
-    if (['admin', 'finance', 'president'].includes(role)) {
+    if (ROLE_SETS.MANAGEMENT.includes(role)) {
       collItems.push({ path: '/erp/ic-settlements', label: 'IC Settlements', icon: Repeat });
     }
     collItems.sort((a, b) => a.label.localeCompare(b.label));
@@ -819,7 +818,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
       { path: '/erp/month-end-close', label: 'Month-End Close', icon: BookOpen },
       { path: '/erp/period-locks', label: 'Period Locks', icon: BookOpen },
     ];
-    if (['admin', 'finance', 'president'].includes(role)) {
+    if (ROLE_SETS.MANAGEMENT.includes(role)) {
       toolItems.push({ path: '/erp/payment-modes', label: 'Payment Modes', icon: BookOpen });
     }
     toolItems.sort((a, b) => a.label.localeCompare(b.label));
@@ -844,7 +843,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   }
 
   // ── Administration (admin-like only) — inserted at top, right after ERP Home ──
-  if (['admin', 'finance', 'president'].includes(role)) {
+  if (ROLE_SETS.MANAGEMENT.includes(role)) {
     const adminItems = [];
     adminItems.push({ path: '/erp/approvals', label: 'Approvals', icon: ClipboardCheck });
     adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
@@ -866,10 +865,10 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
 
 const getCrmMenuConfig = (role, unreadCount = 0) => {
   switch (role) {
-    case 'admin':
-    case 'finance':
-    case 'president':
-    case 'ceo':
+    case ROLES.ADMIN:
+    case ROLES.FINANCE:
+    case ROLES.PRESIDENT:
+    case ROLES.CEO:
       return {
         roleTitle: 'Administrator',
         roleSubtitle: 'Full Access',
@@ -967,7 +966,7 @@ const getMenuConfig = (role, unreadCount = 0, erpAccess = null, pathname = '') =
     return getErpMenuConfig(role, erpAccess);
   }
 
-  const crmRole = isAdminLikeRole(role) ? 'admin' : 'employee';
+  const crmRole = isAdminLikeRole(role) ? ROLES.ADMIN : ROLES.CONTRACTOR;
   return getCrmMenuConfig(crmRole, unreadCount);
 };
 
@@ -990,7 +989,7 @@ const Sidebar = () => {
 
   // Fetch unread message count for employee role
   const fetchUnreadCount = useCallback(async () => {
-    if (user?.role !== 'employee') return;
+    if (user?.role !== ROLES.CONTRACTOR) return;
     try {
       const res = await messageService.getAll({ limit: 100 });
       const messages = res.data || res.messages || [];
@@ -1011,7 +1010,7 @@ const Sidebar = () => {
   }, [fetchUnreadCount]);
 
   const menuConfig = getMenuConfig(user?.role, unreadCount, user?.erp_access, location.pathname);
-  const isAdminLike = ['admin', 'finance', 'president', 'ceo'].includes(user?.role);
+  const isAdminLike = isAdminLikeRole(user?.role);
   const crmHome = isAdminLike ? '/admin' : '/bdm';
   const isErpRoute = location.pathname.startsWith('/erp');
 

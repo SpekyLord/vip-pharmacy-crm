@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useApprovals from '../hooks/useApprovals';
 import useLookups from '../hooks/useLookups';
 import { showError } from '../utils/errorToast';
@@ -46,9 +47,9 @@ export default function ApprovalManager() {
 
   const MODULE_OPTIONS = moduleOpts.length > 0 ? moduleOpts.map(o => o.code || o.value) : MODULE_FALLBACK;
   const APPROVER_TYPES = approverTypeOpts.length > 0 ? approverTypeOpts.map(o => ({ value: o.code || o.value, label: o.label })) : APPROVER_TYPE_FALLBACK;
-  const APPROVER_ROLES = approverRoleOpts.length > 0 ? approverRoleOpts.map(o => (o.code || o.value).toLowerCase()) : ['admin', 'finance', 'president'];
+  const APPROVER_ROLES = approverRoleOpts.length > 0 ? approverRoleOpts.map(o => (o.code || o.value).toLowerCase()) : [...ROLE_SETS.MANAGEMENT];
 
-  const isAdmin = ['admin', 'president', 'finance'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   useEffect(() => {
     checkStatus().then(d => setApprovalEnabled(d.enabled)).catch(() => {});

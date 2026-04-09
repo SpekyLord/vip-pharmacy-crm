@@ -7,6 +7,7 @@ import useTransfers from '../hooks/useTransfers';
 import useProducts from '../hooks/useProducts';
 import useInventory from '../hooks/useInventory';
 import useWarehouses from '../hooks/useWarehouses';
+import { ROLES, ROLE_SETS } from '../../constants/roles';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -117,7 +118,7 @@ const pageStyles = `
 
 function formatBdmLabel(u) {
   if (!u) return '—';
-  const role = u.role === 'employee' ? 'BDM' : u.role;
+  const role = u.role === ROLES.CONTRACTOR ? 'BDM' : u.role;
   return `${u.name} (${role})${u._unassigned ? ' — Unassigned' : ''}`;
 }
 
@@ -166,8 +167,8 @@ export default function TransferOrders() {
   const [reassignBatchCache, setReassignBatchCache] = useState({});
   const [internalWarehouses, setInternalWarehouses] = useState([]);
 
-  const isPresidentOrAdmin = ['president', 'ceo', 'admin'].includes(user?.role);
-  const isFinanceOrAdmin = ['finance', 'admin'].includes(user?.role);
+  const isPresidentOrAdmin = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN].includes(user?.role);
+  const isFinanceOrAdmin = [ROLES.FINANCE, ROLES.ADMIN].includes(user?.role);
 
   // Fetch entities on mount
   const fetchEntities = useCallback(async () => {

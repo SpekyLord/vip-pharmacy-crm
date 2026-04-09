@@ -8,6 +8,7 @@ import { processDocument, extractExifDateTime } from '../services/ocrService';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError } from '../utils/errorToast';
+import { ROLE_SETS } from '../../constants/roles';
 import { useAuth } from '../../hooks/useAuth';
 
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
@@ -124,7 +125,7 @@ const mobileStyles = `
 
 export default function CarLogbook() {
   const { user } = useAuth();
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const { getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook, validateCarLogbook, submitCarLogbook, reopenCarLogbook, loading } = useExpenses();
   const { settings } = useSettings();
   const { options: fuelTypeOpts } = useLookupOptions('FUEL_TYPE');

@@ -1,15 +1,19 @@
 /**
  * User Model
  *
- * This model represents system users (admins, field employees/BDMs)
+ * This model represents system users (admins, contractors/BDMs, finance, president, CEO)
  *
  * Roles:
  * - admin: Full system access, manage all users
- * - employee: Field employee (BDM) - logs visits to assigned doctors
+ * - contractor: Independent contractors (BDMs, IT, cleaners, pharmacists, consultants)
+ * - finance: Finance/accounting manager
+ * - president: Company president — full cross-entity access
+ * - ceo: Chief Executive — view-only on ERP
  */
 
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { ALL_ROLES, ROLES } = require('../constants/roles');
 
 const userSchema = new mongoose.Schema(
   {
@@ -40,10 +44,10 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: {
-        values: ['admin', 'employee', 'finance', 'president', 'ceo'],
-        message: 'Role must be admin, employee, finance, president, or ceo',
+        values: ALL_ROLES,
+        message: `Role must be one of: ${ALL_ROLES.join(', ')}`,
       },
-      default: 'employee',
+      default: ROLES.CONTRACTOR,
     },
     phone: {
       type: String,
@@ -111,7 +115,8 @@ const userSchema = new mongoose.Schema(
     },
     bdm_stage: {
       type: String,
-      enum: ['CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER'],
+      uppercase: true,
+      trim: true,
     },
     compensation: {
       perdiem_rate: { type: Number },

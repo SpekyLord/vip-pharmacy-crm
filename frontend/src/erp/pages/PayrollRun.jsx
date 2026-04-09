@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import usePayroll from '../hooks/usePayroll';
 
 import SelectField from '../../components/common/Select';
@@ -57,7 +58,7 @@ export default function PayrollRun() {
   const [summary, setSummary] = useState(null);
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(false);
-  const isFinance = ['admin', 'finance', 'president'].includes(user?.role);
+  const isFinance = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const loadStaging = useCallback(async () => {
     setLoading(true);

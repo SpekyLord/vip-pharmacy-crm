@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { ROLE_SETS } = require('../../constants/roles');
 
 const settingsSchema = new mongoose.Schema({
   version: {
@@ -49,7 +50,7 @@ const settingsSchema = new mongoose.Schema({
   // Notification — which roles receive ERP document notifications
   NOTIFICATION_RECIPIENT_ROLES: {
     type: [String],
-    default: ['admin', 'finance', 'president'],
+    default: ROLE_SETS.MANAGEMENT,
   },
 
   // COA Mapping — configurable account codes for auto-journal posting

@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../services/api';
+import { ROLES } from '../constants/roles';
 
 const ADMIN_LIKE = ['admin', 'president', 'ceo', 'finance'];
 
@@ -242,7 +243,7 @@ export default function HomePage() {
     if (!user) return;
 
     // BDMs without ERP → go straight to CRM (phone-first daily work)
-    if (user.role === 'employee' && !hasErp) {
+    if (user.role === ROLES.CONTRACTOR && !hasErp) {
       navigate('/bdm');
       return;
     }

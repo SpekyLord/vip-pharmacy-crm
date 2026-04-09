@@ -6,6 +6,7 @@
  */
 import { useState, useEffect, useCallback, useContext } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import { EntityContext } from '../../context/EntityContext';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
@@ -55,7 +56,7 @@ export function LookupManagerContent() {
   const { user } = useAuth();
   const entityCtx = useContext(EntityContext);
   const workingEntityId = entityCtx?.workingEntityId || null;
-  const canEdit = ['admin', 'finance', 'president'].includes(user?.role);
+  const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [categories, setCategories] = useState([]);
   const [seedDefaults, setSeedDefaults] = useState({});

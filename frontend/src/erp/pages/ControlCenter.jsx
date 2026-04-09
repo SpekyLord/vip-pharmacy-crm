@@ -192,6 +192,7 @@ const DEPENDENCY_GUIDE = {
       { action: 'When you add a person', deps: 'Create their Comp Profile (salary, allowances, tax status) from their detail page', section: null },
       { action: 'When you add a person', deps: 'Assign an Access Template so they can use ERP modules', section: 'access-templates' },
       { action: 'New to ERP?', deps: 'Use "Sync from CRM" button to import existing CRM users', section: null },
+      { action: 'When you add a new person type or BDM stage', deps: 'Add it in Lookup Tables first (PERSON_TYPE, BDM_STAGE, EMPLOYMENT_TYPE, ROLE_MAPPING)', section: 'lookup-tables' },
     ]
   },
   'access-templates': {

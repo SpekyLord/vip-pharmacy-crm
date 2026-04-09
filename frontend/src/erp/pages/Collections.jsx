@@ -5,6 +5,7 @@ import Sidebar from '../../components/common/Sidebar';
 import Pagination from '../../components/common/Pagination';
 import DocumentFlowChain from '../components/DocumentFlowChain';
 import { useAuth } from '../../hooks/useAuth';
+import { isAdminLike } from '../../constants/roles';
 import useCollections from '../hooks/useCollections';
 
 import SelectField from '../../components/common/Select';
@@ -77,7 +78,7 @@ export default function Collections() {
   const [filters, setFilters] = useState({ status: '' });
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
-  const isAdmin = ['admin', 'finance', 'president', 'ceo'].includes(user?.role);
+  const isAdmin = isAdminLike(user?.role);
 
   const loadData = useCallback(async (page = 1) => {
     setLoading(true);

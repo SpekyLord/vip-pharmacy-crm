@@ -18,6 +18,7 @@ const SupportType = require('../models/SupportType');
 const { parseCPTWorkbook, detectDuplicates } = require('../utils/excelParser');
 const { catchAsync, ApiError } = require('../middleware/errorHandler');
 const { getCycleStartDate } = require('../utils/scheduleCycleUtils');
+const { ROLES } = require('../constants/roles');
 
 /**
  * POST /api/imports/upload
@@ -44,8 +45,8 @@ const upload = catchAsync(async (req, res) => {
 
   // Validate BDM exists and is an employee
   const bdm = await User.findById(assignedToBDM);
-  if (!bdm || bdm.role !== 'employee') {
-    throw new ApiError(400, 'Invalid BDM user. Must be an employee.');
+  if (!bdm || bdm.role !== ROLES.CONTRACTOR) {
+    throw new ApiError(400, 'Invalid BDM user. Must be a contractor.');
   }
 
   // Parse the Excel file

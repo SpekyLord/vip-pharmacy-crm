@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useGrn from '../hooks/useGrn';
 import useProducts from '../hooks/useProducts';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
@@ -525,7 +526,7 @@ export default function GrnEntry() {
                       </td>
                       <td>{g.reviewed_by?.name || '—'}</td>
                       <td>
-                        {g.status === 'PENDING' && (['admin', 'finance', 'president'].includes(user?.role)) && (
+                        {g.status === 'PENDING' && (ROLE_SETS.MANAGEMENT.includes(user?.role)) && (
                           <div style={{ display: 'flex', gap: 4 }}>
                             <button className="btn btn-success btn-sm" onClick={() => handleApprove(g._id, 'APPROVED')}>Approve</button>
                             <button className="btn btn-danger btn-sm" onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>
@@ -569,7 +570,7 @@ export default function GrnEntry() {
                       <div style={{ marginTop: 8, fontSize: 12, color: '#991b1b' }}>{g.rejection_reason}</div>
                     )}
 
-                    {g.status === 'PENDING' && (['admin', 'finance', 'president'].includes(user?.role)) && (
+                    {g.status === 'PENDING' && (ROLE_SETS.MANAGEMENT.includes(user?.role)) && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
                         <button className="btn btn-success btn-sm" style={{ flex: 1 }} onClick={() => handleApprove(g._id, 'APPROVED')}>Approve</button>
                         <button className="btn btn-danger btn-sm" style={{ flex: 1 }} onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>

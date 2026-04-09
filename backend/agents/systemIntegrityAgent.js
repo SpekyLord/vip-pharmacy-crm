@@ -13,6 +13,7 @@
  */
 
 const { notify } = require('./notificationService');
+const { ROLE_SETS } = require('../constants/roles');
 
 async function run() {
   const start = Date.now();
@@ -71,7 +72,7 @@ async function run() {
     try {
       const User = require('../../models/User');
       const usersWithoutAccess = await User.countDocuments({
-        role: { $in: ['employee', 'admin', 'finance'] },
+        role: { $in: ROLE_SETS.ERP_FINANCE },
         erp_access: { $ne: true },
         isActive: { $ne: false }
       });

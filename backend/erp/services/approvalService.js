@@ -12,6 +12,7 @@
  *   - All decisions recorded in ApprovalRequest.history (immutable audit trail)
  */
 
+const { ROLES, ROLE_SETS } = require('../../constants/roles');
 const Settings = require('../models/Settings');
 const ApprovalRule = require('../models/ApprovalRule');
 const ApprovalRequest = require('../models/ApprovalRequest');
@@ -76,7 +77,7 @@ const resolveApprovers = async (rule, entityId, requesterId) => {
         $or: [
           { entity_id: entityId },
           { entity_ids: entityId },
-          { role: { $in: ['president', 'ceo'] } },
+          { role: { $in: ROLE_SETS.PRESIDENT_ROLES } },
         ],
       }).select('_id email name role').lean();
     }
@@ -221,7 +222,7 @@ const processDecision = async (requestId, decision, deciderId, reason) => {
 
     // Presidents can always approve
     const decider = await User.findById(deciderId).select('role').lean();
-    if (!isAuthorized && decider?.role !== 'president') {
+    if (!isAuthorized && decider?.role !== ROLES.PRESIDENT) {
       throw new Error('You are not authorized to approve this request');
     }
   }
@@ -351,7 +352,7 @@ const getPendingForApprover = async (userId, entityId) => {
   const ruleIds = [...roleRules, ...userRules].map(r => r._id);
 
   // Presidents see all pending requests
-  const query = user.role === 'president'
+  const query = user.role === ROLES.PRESIDENT
     ? { entity_id: entityId, status: 'PENDING' }
     : { entity_id: entityId, status: 'PENDING', rule_id: { $in: ruleIds } };
 

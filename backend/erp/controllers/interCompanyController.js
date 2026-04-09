@@ -12,6 +12,7 @@ const Entity = require('../models/Entity');
 const ProductMaster = require('../models/ProductMaster');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { ROLES } = require('../../constants/roles');
 const interCompanyService = require('../services/interCompanyService');
 
 /**
@@ -412,7 +413,7 @@ const getBdmsByEntity = catchAsync(async (req, res) => {
   const filter = { isActive: { $ne: false } };
   if (req.query.entity_id) filter.entity_id = req.query.entity_id;
   // Include employees + president/admin (warehouse keepers)
-  filter.role = { $in: ['employee', 'president', 'admin'] };
+  filter.role = { $in: [ROLES.CONTRACTOR, ROLES.PRESIDENT, ROLES.ADMIN] };
 
   const users = await User.find(filter)
     .select('name email role entity_id bdm_stage')
@@ -423,7 +424,7 @@ const getBdmsByEntity = catchAsync(async (req, res) => {
   if (req.query.include_unassigned === 'true') {
     const unassigned = await User.find({
       $or: [{ entity_id: { $exists: false } }, { entity_id: null }],
-      role: 'employee',
+      role: ROLES.CONTRACTOR,
       isActive: { $ne: false }
     }).select('name email role entity_id bdm_stage').lean();
 

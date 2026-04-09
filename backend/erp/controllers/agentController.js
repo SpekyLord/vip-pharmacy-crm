@@ -1,3 +1,4 @@
+const { ROLES } = require('../../constants/roles');
 const AgentRun = require('../models/AgentRun');
 const { catchAsync } = require('../../middleware/errorHandler');
 
@@ -132,7 +133,7 @@ exports.getConfig = catchAsync(async (req, res) => {
   // Merge with known agents to show all agents even if no config exists
   const merged = Object.entries(AGENT_MODULES).map(([key]) => {
     const existing = configs.find(c => c.agent_key === key);
-    return existing || { agent_key: key, enabled: true, schedule: null, notify_roles: ['president'] };
+    return existing || { agent_key: key, enabled: true, schedule: null, notify_roles: [ROLES.PRESIDENT] };
   });
 
   res.json({ success: true, data: merged });

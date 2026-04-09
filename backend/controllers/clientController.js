@@ -16,7 +16,7 @@ const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { normalizeEngagementTypesQuery } = require('../utils/engagementTypes');
 const { signVisitPhotos } = require('../config/s3');
 const { getWeekOfMonth, getDayOfWeek, isWorkDay, MANILA_OFFSET_MS, getCycleStartDate, getCycleEndDate } = require('../utils/scheduleCycleUtils');
-const { isCrmAdminLike } = require('../utils/roleHelpers');
+const { ROLES, isAdminLike } = require('../constants/roles');
 
 /**
  * Build access filter based on user role
@@ -24,7 +24,7 @@ const { isCrmAdminLike } = require('../utils/roleHelpers');
  * - Employee: only their own clients (createdBy)
  */
 const getAccessFilter = (user) => {
-  if (isCrmAdminLike(user.role)) {
+  if (isAdminLike(user.role)) {
     return {};
   }
   return { createdBy: user._id };
@@ -101,7 +101,7 @@ const getClientById = catchAsync(async (req, res) => {
   }
 
   // Ownership check for BDMs
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     if (client.createdBy._id.toString() !== req.user._id.toString()) {
       throw new ForbiddenError('You can only view your own clients');
     }
@@ -189,7 +189,7 @@ const updateClient = catchAsync(async (req, res) => {
   }
 
   // Ownership check for BDMs
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     if (client.createdBy.toString() !== req.user._id.toString()) {
       throw new ForbiddenError('You can only edit your own clients');
     }
@@ -246,7 +246,7 @@ const deleteClient = catchAsync(async (req, res) => {
   }
 
   // Ownership check for BDMs
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     if (client.createdBy.toString() !== req.user._id.toString()) {
       throw new ForbiddenError('You can only delete your own clients');
     }
@@ -294,7 +294,7 @@ const createClientVisit = catchAsync(async (req, res) => {
     throw new NotFoundError('Client not found');
   }
 
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     if (client.createdBy.toString() !== req.user._id.toString()) {
       throw new ForbiddenError('You can only log visits for your own clients');
     }
@@ -486,7 +486,7 @@ const getClientVisits = catchAsync(async (req, res) => {
   }
 
   // Ownership check for BDMs
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     if (client.createdBy.toString() !== req.user._id.toString()) {
       throw new ForbiddenError('You can only view visits for your own clients');
     }
@@ -670,7 +670,7 @@ const getClientVisitStats = catchAsync(async (req, res) => {
   const matchQuery = {};
 
   // Role-based filtering
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     matchQuery.user = req.user._id;
   } else if (userId) {
     matchQuery.user = new mongoose.Types.ObjectId(userId);
@@ -777,7 +777,7 @@ const getScheduledToday = catchAsync(async (req, res) => {
   };
 
   // BDMs see only their own; admin sees all
-  if (!isCrmAdminLike(req.user.role)) {
+  if (!isAdminLike(req.user.role)) {
     filter.createdBy = req.user._id;
   }
 
@@ -835,7 +835,7 @@ const getClientVisitById = catchAsync(async (req, res) => {
   }
 
   // Ownership check for BDMs
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     if (visit.user._id.toString() !== req.user._id.toString()) {
       throw new ForbiddenError('You can only view your own visits');
     }
@@ -863,7 +863,7 @@ const refreshClientVisitPhotos = catchAsync(async (req, res) => {
   }
 
   // Check if user has access to this visit
-  if (!isCrmAdminLike(req.user.role) && visit.user.toString() !== req.user._id.toString()) {
+  if (!isAdminLike(req.user.role) && visit.user.toString() !== req.user._id.toString()) {
     throw new ForbiddenError('You do not have permission to access this visit');
   }
 

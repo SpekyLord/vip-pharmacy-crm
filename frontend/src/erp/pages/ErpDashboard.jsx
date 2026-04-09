@@ -12,6 +12,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { isAdminLike } from '../../constants/roles';
 import useEntities from '../hooks/useEntities';
 import useDashboard from '../hooks/useDashboard';
 import EntityBadge from '../components/EntityBadge';
@@ -117,7 +118,7 @@ export default function ErpDashboard() {
   const { getEntityById } = useEntities();
   const dash = useDashboard();
   const userEntity = getEntityById(user?.entity_id);
-  const crmHome = ['admin', 'finance', 'president', 'ceo'].includes(user?.role) ? '/admin' : '/bdm';
+  const crmHome = isAdminLike(user?.role) ? '/admin' : '/bdm';
 
   const [summary, setSummary] = useState(null);
   const [mtd, setMtd] = useState(null);
@@ -128,7 +129,7 @@ export default function ErpDashboard() {
   const [agentStats, setAgentStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const isAdminRole = ['admin', 'finance', 'president', 'ceo'].includes(user?.role);
+  const isAdminRole = isAdminLike(user?.role);
 
   // Load agent stats for admin/president
   useEffect(() => {

@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LoginForm from '../components/auth/LoginForm';
 import { useAuth } from '../hooks/useAuth';
+import { ROLES } from '../constants/roles';
 import { Sun, Moon } from 'lucide-react';
 
 const loginPageStyles = `
@@ -614,7 +615,7 @@ const LoginPage = () => {
         case 'medrep':
           navigate('/medrep');
           break;
-        case 'employee':
+        case ROLES.CONTRACTOR:
           navigate('/bdm');
           break;
         default:

@@ -13,6 +13,7 @@
 const { askClaude } = require('./claudeClient');
 const { notify } = require('./notificationService');
 const AgentRun = require('../erp/models/AgentRun');
+const { ROLES } = require('../constants/roles');
 
 async function run() {
   console.log('[PerformanceCoach] Running...');
@@ -23,7 +24,7 @@ async function run() {
     const ExpenseEntry = require('../erp/models/ExpenseEntry');
     const Collection = require('../erp/models/Collection');
 
-    const bdms = await User.find({ role: 'employee', isActive: true }).select('_id name entity_id').lean();
+    const bdms = await User.find({ role: ROLES.CONTRACTOR, isActive: true }).select('_id name entity_id').lean();
     if (!bdms.length) { console.log('[PerformanceCoach] No active BDMs.'); return; }
 
     const now = new Date();

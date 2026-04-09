@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 5.6
-> **Status**: Phases 0-29 Complete. Sales Goals & KPI + Email Notifications + Approval Workflow (April 9, 2026).
+> **Version**: 5.7
+> **Status**: Phases 0-30 Complete. Role Centralization + PeopleMaster Lookup-Driven (April 9, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -88,6 +88,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 27 | Full System Audit + Period Lock + Banner Compliance | ✅ |
 | 28 | Sales Goals, KPI & Partnership Performance | ✅ |
 | 29 | Email Notifications + Approval Workflow (Authority Matrix) | ✅ |
+| 30 | Role Centralization + PeopleMaster Lookup-Driven Validation | ✅ |
 
 ---
 
@@ -242,18 +243,69 @@ if (approvalCheck.required) {
 
 ---
 
+## Role Centralization (Phase 30)
+
+### Single Source of Truth
+All role strings centralized in two constants files:
+- **Backend**: `backend/constants/roles.js` (CommonJS)
+- **Frontend**: `frontend/src/constants/roles.js` (ES module)
+
+### Role Rename: `employee` → `contractor`
+BDMs, IT professionals, cleaners, pharmacists, consultants are all independent contractors, not employees. The `employee` role is reserved for future actual hires.
+
+### System Roles
+| Role | Constant | Description |
+|------|----------|-------------|
+| `admin` | `ROLES.ADMIN` | System administrator |
+| `contractor` | `ROLES.CONTRACTOR` | BDMs, IT, cleaners, pharmacists — all non-management workers |
+| `finance` | `ROLES.FINANCE` | Finance/accounting manager |
+| `president` | `ROLES.PRESIDENT` | Company president — full cross-entity access |
+| `ceo` | `ROLES.CEO` | Chief Executive — view-only on ERP |
+
+### Permission Sets (ROLE_SETS)
+| Set | Roles | Used For |
+|-----|-------|----------|
+| `ADMIN_LIKE` | admin, finance, president, ceo | Admin-level access checks |
+| `PRESIDENT_ROLES` | president, ceo | Cross-entity superusers |
+| `ERP_ALL` | contractor, admin, finance, president | All ERP page access |
+| `BDM_ADMIN` | contractor, admin | CRM field routes |
+| `ADMIN_ONLY` | admin | Admin-exclusive routes |
+| `ERP_FINANCE` | contractor, admin, finance | Finance-tier routes |
+| `MANAGEMENT` | admin, finance, president | Config/write access |
+
+### PeopleMaster Lookup-Driven Validation
+`person_type`, `employment_type`, `bdm_stage` no longer use hardcoded enums. They validate against Lookup tables (auto-seeded on first access). President can add new values via Control Center → Lookup Tables.
+
+### Career Path (bdm_stage — universal)
+Applies to ALL roles. Everyone can progress:
+`CONTRACTOR → PS_ELIGIBLE → TRANSITIONING → SUBSIDIARY → SHAREHOLDER`
+
+### New Lookup Categories (Phase 30)
+| Category | Purpose |
+|----------|---------|
+| `BDM_STAGE` | Career path stages (5 values, editable in Control Center) |
+| `ROLE_MAPPING` | Maps person_type → system_role for login creation (6 mappings) |
+| `SYSTEM_ROLE` | Documents system roles (informational, editable labels) |
+
+### Retired: `backend/utils/roleHelpers.js`
+Replaced by `backend/constants/roles.js`. All importers updated.
+
+---
+
 ## Key ERP Files
 
 ### Backend Structure
 ```
-backend/erp/
-├── models/          # 30+ models (SalesLine, Collection, ExpenseEntry, PrfCalf, Payslip, JournalEntry, etc.)
-├── controllers/     # 15+ controllers (sales, collection, expense, payroll, purchasing, accounting, banking, etc.)
-├── services/        # Business logic (fifoEngine, arEngine, autoJournal, journalEngine, pnlService, etc.)
-├── routes/          # Mounted under /api/erp/* via erpRouter.js
-├── middleware/       # erpAccessCheck (entity+module guard)
-├── scripts/         # Seed scripts (COA, products, hospitals, bank accounts, credit cards)
-└── utils/           # periodLock, docNumbering
+backend/
+├── constants/       # roles.js — centralized role constants (single source of truth for CRM+ERP)
+└── erp/
+    ├── models/          # 30+ models (SalesLine, Collection, ExpenseEntry, PrfCalf, Payslip, JournalEntry, etc.)
+    ├── controllers/     # 15+ controllers (sales, collection, expense, payroll, purchasing, accounting, banking, etc.)
+    ├── services/        # Business logic (fifoEngine, arEngine, autoJournal, journalEngine, pnlService, etc.)
+    ├── routes/          # Mounted under /api/erp/* via erpRouter.js
+    ├── middleware/       # erpAccessCheck (entity+module guard)
+    ├── scripts/         # Seed scripts (COA, products, hospitals, bank accounts, credit cards)
+    └── utils/           # periodLock, docNumbering
 ```
 
 ### Frontend Structure
@@ -377,7 +429,8 @@ VIP runs three business lines under one entity, tracked by cost centers:
 | Dual P&L deprecation | pnlCalc vs pnlService coexist without reconciliation | Consistency risk |
 | Commission controller | No dedicated controller — wired inline in collectionController | Works, not clean |
 | VAT 0.12 in pre-save hooks | SalesLine, ExpenseEntry, Collection etc. hardcode 12% in schema hooks | Cannot change per entity; low risk until rate changes |
-| Frontend hardcoded dropdowns | ~30 static arrays (expense categories, collateral types, activity types) serve as fallbacks | Phase 24 added Lookup model + LookupManager UI + useLookups hook. Migration of individual pages to use lookups is a follow-up task |
+| Frontend hardcoded dropdowns | ~30 static arrays (expense categories, collateral types, activity types) serve as fallbacks | Phase 24 added Lookup model + LookupManager UI + useLookups hook. Phase 30 migrated PeopleMaster enums. Migration of remaining pages is follow-up |
+| Role-People alignment warnings | No toast/warning when User.role doesn't match PeopleMaster.person_type via ROLE_MAPPING | Phase 30 follow-up: add alignment check toast in PersonDetail |
 | Hospital entity_id optional | Hospitals intentionally global (shared across entities) | By design, but undocumented in schema |
 
 ---

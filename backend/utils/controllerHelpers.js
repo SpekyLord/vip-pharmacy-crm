@@ -6,6 +6,7 @@
  */
 
 const { ForbiddenError } = require('../middleware/errorHandler');
+const { ROLES } = require('../constants/roles');
 
 /**
  * Update allowed fields from request body to a document
@@ -32,7 +33,7 @@ const updateFields = (doc, data, allowedFields) => {
  */
 const ensureOwnerOrAdmin = (req, resource, message = 'Access denied. You can only access your own resources.') => {
   // Admin can access anything
-  if (req.user.role === 'admin') {
+  if (req.user.role === ROLES.ADMIN) {
     return;
   }
 

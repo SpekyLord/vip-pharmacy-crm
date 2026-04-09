@@ -18,7 +18,7 @@ const CrmProduct = require('../models/CrmProduct');
 const Specialization = require('../models/Specialization');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
-const { isCrmAdminLike } = require('../utils/roleHelpers');
+const { ROLES, isAdminLike } = require('../constants/roles');
 
 /**
  * Build access filter based on user role
@@ -26,12 +26,12 @@ const { isCrmAdminLike } = require('../utils/roleHelpers');
  * - Employee (BDM): only doctors assigned to them via assignedTo field
  */
 const getRegionFilter = (user) => {
-  if (isCrmAdminLike(user.role)) {
+  if (isAdminLike(user.role)) {
     return {}; // No filter for admin
   }
 
   // BDMs see only doctors assigned to them (set by CPT import)
-  if (user.role === 'employee') {
+  if (user.role === ROLES.CONTRACTOR) {
     return { assignedTo: user._id };
   }
 
@@ -145,7 +145,7 @@ const getDoctorById = catchAsync(async (req, res) => {
   }
 
   // Check access for non-admin users: BDMs can only see doctors assigned to them
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
     if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
       throw new ForbiddenError('You do not have access to this VIP Client');
@@ -238,7 +238,7 @@ const updateDoctor = catchAsync(async (req, res) => {
   }
 
   // Ownership check: BDMs can only edit their own assigned VIP Clients
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
     if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
       throw new ForbiddenError('You can only edit VIP Clients assigned to you');
@@ -274,7 +274,7 @@ const updateDoctor = catchAsync(async (req, res) => {
   const employeeAllowedFields = adminAllowedFields.filter(
     (f) => !['assignedTo', 'isActive', 'isVipAssociated'].includes(f)
   );
-  const allowedFields = isCrmAdminLike(req.user.role) ? adminAllowedFields : employeeAllowedFields;
+  const allowedFields = isAdminLike(req.user.role) ? adminAllowedFields : employeeAllowedFields;
 
   // Update only allowed fields
   allowedFields.forEach((field) => {
@@ -405,7 +405,7 @@ const getDoctorsByRegion = catchAsync(async (req, res) => {
   const filter = { region: regionId, isActive: true };
 
   // BDMs only see their assigned doctors even when filtering by region
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     filter.assignedTo = req.user._id;
   }
 
@@ -433,7 +433,7 @@ const getDoctorVisits = catchAsync(async (req, res) => {
   }
 
   // Check access for non-admin users: BDMs can only see visits for their assigned doctors
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
     if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
       throw new ForbiddenError('You do not have access to this VIP Client');
@@ -545,7 +545,7 @@ const assignEmployee = catchAsync(async (req, res) => {
   }
 
   if (employeeId) {
-    const employee = await User.findOne({ _id: employeeId, role: 'employee', isActive: true });
+    const employee = await User.findOne({ _id: employeeId, role: ROLES.CONTRACTOR, isActive: true });
     if (!employee) {
       throw new NotFoundError('Employee not found or inactive');
     }
@@ -577,7 +577,7 @@ const updateTargetProducts = catchAsync(async (req, res) => {
   }
 
   // Ownership check: BDMs can only update their own assigned VIP Clients
-  if (req.user.role === 'employee') {
+  if (req.user.role === ROLES.CONTRACTOR) {
     const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
     if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
       throw new ForbiddenError('You can only manage products for your assigned VIP Clients');

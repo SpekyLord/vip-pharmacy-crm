@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES } from '../../constants/roles';
 import useTransfers from '../hooks/useTransfers';
 import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
@@ -81,7 +82,7 @@ export function TransferPriceManagerContent() {
   const [fetching, setFetching] = useState(false);
   const searchRef = useRef(null);
 
-  const isPresidentOrAdmin = ['president', 'ceo', 'admin'].includes(user?.role);
+  const isPresidentOrAdmin = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN].includes(user?.role);
 
   // Load entities, auto-select VIP → MG AND CO.
   useEffect(() => {

@@ -13,6 +13,7 @@ import Pagination from '../../components/common/Pagination';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import visitService from '../../services/visitService';
 import clientService from '../../services/clientService';
+import { ROLES } from '../../constants/roles';
 import userService from '../../services/userService';
 import VisitDetailModal from '../../components/common/VisitDetailModal';
 import toast from 'react-hot-toast';
@@ -757,7 +758,7 @@ const PhotoAuditPage = () => {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await userService.getAll({ role: 'employee', limit: 0 });
+      const res = await userService.getAll({ role: ROLES.CONTRACTOR, limit: 0 });
       setUsers(res.data || []);
     } catch (err) {
       console.error('Failed to fetch users:', err);

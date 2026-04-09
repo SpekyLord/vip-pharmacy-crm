@@ -14,6 +14,7 @@
  */
 
 const { notify } = require('./notificationService');
+const { ROLES } = require('../constants/roles');
 
 /**
  * Get current ISO week number and year
@@ -41,7 +42,7 @@ async function run(mode = 'midweek') {
     const monthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     // Get all active BDMs
-    const bdms = await User.find({ role: 'employee', isActive: true }).select('_id name email').lean();
+    const bdms = await User.find({ role: ROLES.CONTRACTOR, isActive: true }).select('_id name email').lean();
 
     const bdmResults = [];
     const monthlyLowCompliance = [];

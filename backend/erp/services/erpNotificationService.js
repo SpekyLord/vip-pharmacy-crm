@@ -13,6 +13,7 @@
  * No hardcoded recipient lists — all resolved from database at send time.
  */
 
+const { ROLE_SETS } = require('../../constants/roles');
 const User = require('../../models/User');
 const Entity = require('../models/Entity');
 const Settings = require('../models/Settings');
@@ -72,7 +73,7 @@ const findNotificationRecipients = async (entityId, filter = {}) => {
       query.$or = [
         { entity_id: entityId },
         { entity_ids: entityId },
-        { role: { $in: ['president', 'ceo'] } }, // president/CEO see all entities
+        { role: { $in: ROLE_SETS.PRESIDENT_ROLES } }, // president/CEO see all entities
       ];
     }
 
@@ -95,7 +96,7 @@ const findManagementRecipients = async (entityId) => {
   } catch {
     // fallback if settings unavailable
   }
-  if (!roles || !roles.length) roles = ['admin', 'finance', 'president'];
+  if (!roles || !roles.length) roles = ROLE_SETS.MANAGEMENT;
 
   return findNotificationRecipients(entityId, {
     role: { $in: roles },

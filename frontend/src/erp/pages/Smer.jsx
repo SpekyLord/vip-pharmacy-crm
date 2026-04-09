@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES, ROLE_SETS } from '../../constants/roles';
 import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
 import api from '../../services/api';
@@ -290,7 +291,7 @@ export default function Smer() {
   };
 
   // CRM pull — only for field BDMs with CRM visit data
-  const isCrmLinked = user?.role === 'employee'; // field BDMs have CRM visits
+  const isCrmLinked = user?.role === ROLES.CONTRACTOR; // field BDMs have CRM visits
   const handlePullFromCrm = async () => {
     try {
       const res = await getSmerCrmMdCounts(period, cycle);
@@ -320,7 +321,7 @@ export default function Smer() {
   const handleReopen = async (id) => { try { await reopenSmer([id]); loadSmers(); } catch (err) { showError(err, 'Could not reopen SMER'); } };
   const handleDelete = async (id) => { try { await deleteDraftSmer(id); loadSmers(); } catch (err) { showError(err, 'Could not delete SMER'); } };
 
-  const canOverride = ['admin', 'finance', 'president'].includes(user?.role);
+  const canOverride = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const handleOverride = (index) => {
     const entry = dailyEntries[index];

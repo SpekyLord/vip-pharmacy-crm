@@ -12,6 +12,7 @@
 const { askClaude } = require('./claudeClient');
 const { notify } = require('./notificationService');
 const AgentRun = require('../erp/models/AgentRun');
+const { ROLES } = require('../constants/roles');
 
 async function run() {
   console.log('[VisitPlanner] Running...');
@@ -20,7 +21,7 @@ async function run() {
     const Doctor = require('../models/Doctor');
     const Visit = require('../models/Visit');
 
-    const bdms = await User.find({ role: 'employee', isActive: true }).select('_id name regions').lean();
+    const bdms = await User.find({ role: ROLES.CONTRACTOR, isActive: true }).select('_id name regions').lean();
     if (!bdms.length) { console.log('[VisitPlanner] No active BDMs.'); return; }
 
     const now = new Date();

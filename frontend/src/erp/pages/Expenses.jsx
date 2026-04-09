@@ -9,6 +9,7 @@ import CostCenterPicker from '../components/CostCenterPicker';
 import useErpSubAccess from '../hooks/useErpSubAccess';
 import useErpApi from '../hooks/useErpApi';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
@@ -405,7 +406,7 @@ export default function Expenses() {
   const { getPeopleList } = usePeople();
   const { getMyCards, getMyBankAccounts, listAccounts } = useAccounting();
   const { hasSubPermission } = useErpSubAccess();
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const canBatchUpload = hasSubPermission('expenses', 'batch_upload') && isAdmin;
   const lookupApi = useErpApi();
   const { options: expCatOpts } = useLookupOptions('EXPENSE_CATEGORY');

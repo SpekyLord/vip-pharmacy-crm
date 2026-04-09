@@ -13,6 +13,7 @@ import PropTypes from 'prop-types';
 import { Search, Plus, Eye, Edit2, Power, X, ChevronDown, KeyRound, Unlock, Trash2 } from 'lucide-react';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import userService from '../../services/userService';
+import { ROLES } from '../../constants/roles';
 
 const employeeManagementStyles = `
   .employee-management {
@@ -1263,7 +1264,7 @@ const EmployeeManagement = ({
     email: '',
     password: '',
     phone: '',
-    role: 'employee',
+    role: ROLES.CONTRACTOR,
     entity_id: '',
     entity_ids: [],
     erp_access_enabled: false,
@@ -1315,7 +1316,7 @@ const EmployeeManagement = ({
       email: '',
       password: '',
       phone: '',
-      role: 'employee',
+      role: ROLES.CONTRACTOR,
       entity_id: '',
       entity_ids: [],
       erp_access_enabled: false,
@@ -1336,7 +1337,7 @@ const EmployeeManagement = ({
       email: employee.email || '',
       password: '', // Don't show existing password
       phone: employee.phone || '',
-      role: employee.role || 'employee',
+      role: employee.role || ROLES.CONTRACTOR,
       entity_id: primaryEid,
       entity_ids: existingIds,
       erp_access_enabled: employee.erp_access?.enabled || false,
@@ -1439,7 +1440,7 @@ const EmployeeManagement = ({
           options={[
             { value: '', label: 'All Roles' },
             { value: 'admin', label: 'Admin' },
-            { value: 'employee', label: 'BDM' },
+            { value: ROLES.CONTRACTOR, label: 'BDM' },
           ]}
         />
         <EmployeeDropdown
@@ -1491,7 +1492,7 @@ const EmployeeManagement = ({
                       <td>{employee.entity_id?.short_name || employee.entity_id?.entity_name || '-'}</td>
                       <td>
                         <span className={`role-badge role-${employee.role}`}>
-                          {employee.role === 'employee' ? 'BDM' : 'Admin'}
+                          {employee.role === ROLES.CONTRACTOR ? 'BDM' : 'Admin'}
                         </span>
                       </td>
                       <td>
@@ -1583,7 +1584,7 @@ const EmployeeManagement = ({
                     <div className="mobile-card-row">
                       <span>Role</span>
                       <span className={`role-badge role-${employee.role}`}>
-                        {employee.role === 'employee' ? 'BDM' : 'Admin'}
+                        {employee.role === ROLES.CONTRACTOR ? 'BDM' : 'Admin'}
                       </span>
                     </div>
                     {employee.phone && (
@@ -1758,7 +1759,7 @@ const EmployeeManagement = ({
                     value={formData.role}
                     onChange={(value) => setFormData((prev) => ({ ...prev, role: value }))}
                     options={[
-                      { value: 'employee', label: 'BDM (Field Rep)' },
+                      { value: ROLES.CONTRACTOR, label: 'BDM (Field Rep)' },
                       { value: 'admin', label: 'Admin' },
                     ]}
                   />

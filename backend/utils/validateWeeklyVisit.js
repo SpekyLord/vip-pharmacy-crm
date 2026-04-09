@@ -19,6 +19,7 @@ const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
 const User = require('../models/User');
 const { CYCLE_ANCHOR, MANILA_OFFSET_MS, getWeekOfMonth, getDayOfWeek, isWorkDay: isWorkDayUtil, getCycleNumber } = require('./scheduleCycleUtils');
+const { ROLES } = require('../constants/roles');
 
 /**
  * Get ISO week number for a date
@@ -125,7 +126,7 @@ const isWorkDay = isWorkDayUtil;
  */
 const canAccessDoctor = (user, doctor) => {
   // Admin can access all doctors
-  if (user.role === 'admin') {
+  if (user.role === ROLES.ADMIN) {
     return true;
   }
 
@@ -186,7 +187,7 @@ const canVisitDoctor = async (doctorId, user, visitDate = new Date()) => {
   }
 
   // Check assignment access (BDMs can only visit doctors assigned to them)
-  if (user.role === 'employee') {
+  if (user.role === ROLES.CONTRACTOR) {
     if (!canAccessDoctor(user, doctor)) {
       return {
         canVisit: false,
@@ -459,7 +460,7 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
     const monthlyCount = monthlyCountMap.get(doctorId) || 0;
 
     // Check assignment access for BDMs
-    if (user.role === 'employee') {
+    if (user.role === ROLES.CONTRACTOR) {
       if (!canAccessDoctor(user, doctor)) {
         return {
           doctorId,

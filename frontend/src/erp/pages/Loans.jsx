@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useAccounting from '../hooks/useAccounting';
 import { showError, showSuccess } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -40,7 +41,7 @@ const getCurrentPeriod = () => { const d = new Date(); return `${d.getFullYear()
 export default function Loans() {
   const { user } = useAuth();
   const api = useAccounting();
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(false);

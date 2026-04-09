@@ -7,6 +7,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import SelectField from '../../components/common/Select';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useHospitals from '../hooks/useHospitals';
 import usePeople from '../hooks/usePeople';
 import useErpApi from '../hooks/useErpApi';
@@ -197,10 +198,10 @@ export function HospitalListContent() {
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button style={{ ...styles.btn, ...styles.btnOutline }} onClick={handleExport}>Export Excel</button>
-              {['admin', 'finance', 'president'].includes(user?.role) && (
+              {ROLE_SETS.MANAGEMENT.includes(user?.role) && (
                 <label style={{ ...styles.btn, ...styles.btnOutline, cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>
               )}
-              {['admin', 'finance', 'president'].includes(user?.role) && (
+              {ROLE_SETS.MANAGEMENT.includes(user?.role) && (
                 <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={openCreate}>+ New Hospital</button>
               )}
             </div>
@@ -242,7 +243,7 @@ export function HospitalListContent() {
                   </td>
                   <td style={styles.td}>
                     <div style={{ display: 'flex', gap: 4 }}>
-                      {['admin', 'finance', 'president'].includes(user?.role) && (
+                      {ROLE_SETS.MANAGEMENT.includes(user?.role) && (
                         <>
                           <button style={{ ...styles.btn, ...styles.btnOutline }} onClick={() => openEdit(h)}>Edit</button>
                           <button style={{ ...styles.btn, ...styles.btnSuccess }} onClick={() => setTagModal(h)}>Tag</button>
@@ -287,7 +288,7 @@ export function HospitalListContent() {
                   {(!h.tagged_bdms?.length) && <span style={{ color: '#9ca3af', fontSize: 12 }}>None</span>}
                 </div>
 
-                {['admin', 'finance', 'president'].includes(user?.role) && (
+                {ROLE_SETS.MANAGEMENT.includes(user?.role) && (
                   <div className="hospital-card-actions">
                     <button style={{ ...styles.btn, ...styles.btnOutline, flex: 1 }} onClick={() => openEdit(h)}>Edit</button>
                     <button style={{ ...styles.btn, ...styles.btnSuccess, flex: 1 }} onClick={() => setTagModal(h)}>Tag</button>

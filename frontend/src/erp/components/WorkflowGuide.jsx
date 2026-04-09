@@ -641,13 +641,14 @@ const WORKFLOW_GUIDES = {
       'View and review person information, compensation, and insurance',
       'Edit details (admin/finance/president only) and save changes',
       'Manage system login access and ERP module permissions',
+      'Person types, employment types, and BDM stages are managed via Lookup Tables (Control Center → System Settings)',
     ],
     next: [
       { label: 'People List', path: '/erp/people' },
       { label: 'Org Chart', path: '/erp/org-chart' },
       { label: 'Payroll', path: '/erp/payroll' },
     ],
-    tip: 'Changes to compensation profile affect future payroll computations.',
+    tip: 'Changes to compensation profile affect future payroll computations. Career path: CONTRACTOR → PS_ELIGIBLE → TRANSITIONING → SUBSIDIARY → SHAREHOLDER.',
   },
   'org-chart': {
     title: 'Organization Chart',

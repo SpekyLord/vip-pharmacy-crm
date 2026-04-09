@@ -5,6 +5,7 @@ import usePettyCash from '../hooks/usePettyCash';
 import usePeople from '../hooks/usePeople';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
+import { ROLES, ROLE_SETS } from '../../constants/roles';
 
 const CEILING = 5000;
 
@@ -512,7 +513,7 @@ export default function PettyCash() {
   const { user } = useAuth();
   const pc = usePettyCash();
   const { getPeopleList } = usePeople();
-  const canManage = ['admin', 'finance', 'president'].includes(user?.role);
+  const canManage = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const [activeTab, setActiveTab] = useState('funds');
   const [funds, setFunds] = useState([]);
   const [people, setPeople] = useState([]);
@@ -575,7 +576,7 @@ export default function PettyCash() {
       </div>
 
       {activeTab === 'funds' && (
-        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} canManage={canManage} isPresident={user?.role === 'president'} people={people} />
+        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} canManage={canManage} isPresident={user?.role === ROLES.PRESIDENT} people={people} />
       )}
       {activeTab === 'transactions' && (
         <TransactionsTab funds={funds} pc={pc} />

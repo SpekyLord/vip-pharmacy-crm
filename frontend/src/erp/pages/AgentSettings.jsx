@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { Bot, Zap, CheckCircle, XCircle, Play, Clock } from 'lucide-react';
 import { showError, showSuccess } from '../utils/errorToast';
+import { ROLES, ROLE_SETS } from '../../constants/roles';
 
 const AGENT_META = {
   smart_collection:   { label: 'Smart Collection',      schedule: 'Weekdays 7 AM',  type: 'AI' },
@@ -23,7 +24,7 @@ const AGENT_META = {
   system_integrity:   { label: 'System Integrity',     schedule: 'Mon 5:00 AM',     type: 'Free' },
 };
 
-const NOTIFY_OPTIONS = ['president', 'admin', 'finance'];
+const NOTIFY_OPTIONS = [...ROLE_SETS.MANAGEMENT];
 
 const styles = {
   panel: { fontSize: 13 },
@@ -64,7 +65,7 @@ export function AgentSettingsContent() {
 
   const handleNotifyChange = async (agentKey, role, checked) => {
     const config = configs.find(c => c.agent_key === agentKey);
-    const current = config?.notify_roles || ['president'];
+    const current = config?.notify_roles || [ROLES.PRESIDENT];
     const updated = checked ? [...new Set([...current, role])] : current.filter(r => r !== role);
     setSaving(agentKey);
     try {
@@ -106,7 +107,7 @@ export function AgentSettingsContent() {
           <tbody>
             {agentKeys.map(key => {
               const meta = AGENT_META[key];
-              const config = configs.find(c => c.agent_key === key) || { enabled: true, notify_roles: ['president'] };
+              const config = configs.find(c => c.agent_key === key) || { enabled: true, notify_roles: [ROLES.PRESIDENT] };
               return (
                 <tr key={key}>
                   <td style={styles.td}>

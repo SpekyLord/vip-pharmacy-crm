@@ -3,6 +3,7 @@ const Warehouse = require('../models/Warehouse');
 const InventoryLedger = require('../models/InventoryLedger');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { ROLES } = require('../../constants/roles');
 
 const getAll = catchAsync(async (req, res) => {
   const filter = {};
@@ -18,7 +19,7 @@ const getAll = catchAsync(async (req, res) => {
   }
 
   // BDMs only see products that have inventory in their assigned warehouse
-  const bdmRoles = ['employee'];
+  const bdmRoles = [ROLES.CONTRACTOR];
   if (bdmRoles.includes(req.user?.role)) {
     const myWarehouses = await Warehouse.find({
       $or: [{ manager_id: req.user._id }, { assigned_users: req.user._id }]

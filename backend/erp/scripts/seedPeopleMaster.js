@@ -14,18 +14,19 @@ const mongoose = require('mongoose');
 const connectDB = require('../../config/db');
 const User = require('../../models/User');
 const PeopleMaster = require('../models/PeopleMaster');
+const { ROLES, ROLE_SETS } = require('../../constants/roles');
 
 const ROLE_TO_PERSON_TYPE = {
-  employee: 'BDM',
-  finance: 'EMPLOYEE',
-  admin: 'EMPLOYEE',
+  [ROLES.CONTRACTOR]: 'BDM',
+  [ROLES.FINANCE]: 'EMPLOYEE',
+  [ROLES.ADMIN]: 'EMPLOYEE',
 };
 
 const seedPeopleMaster = async () => {
   const users = await User.find({
     entity_id: { $ne: null },
     isActive: true,
-    role: { $in: ['employee', 'finance', 'admin'] },
+    role: { $in: ROLE_SETS.ERP_FINANCE },
   }).lean();
 
   let created = 0;
@@ -47,8 +48,8 @@ const seedPeopleMaster = async () => {
       full_name: user.name || 'Unknown',
       first_name: firstName,
       last_name: lastName,
-      position: user.role === 'employee' ? 'Business Development Manager' : user.role,
-      department: user.role === 'employee' ? 'Sales' : 'Operations',
+      position: user.role === ROLES.CONTRACTOR ? 'Business Development Manager' : user.role,
+      department: user.role === ROLES.CONTRACTOR ? 'Sales' : 'Operations',
       employment_type: user.contract_type === 'CONSULTANT' ? 'CONSULTANT' : 'REGULAR',
       date_hired: user.date_started || user.createdAt,
       date_of_birth: user.date_of_birth,

@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES } from '../../constants/roles';
 import useSalesGoals from '../hooks/useSalesGoals';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError } from '../utils/errorToast';
@@ -101,7 +102,7 @@ export default function IncentiveTracker() {
   const fyEnd = new Date(fiscalYear, 11, 31); // Assuming calendar year
   const monthsRemaining = Math.max(0, (fyEnd.getFullYear() - now.getFullYear()) * 12 + (fyEnd.getMonth() - now.getMonth()));
 
-  const isPresident = user?.role === 'president';
+  const isPresident = user?.role === ROLES.PRESIDENT;
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>

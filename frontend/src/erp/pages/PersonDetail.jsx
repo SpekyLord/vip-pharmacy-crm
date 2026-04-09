@@ -8,6 +8,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ROLES, ROLE_SETS } from '../../constants/roles';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -96,8 +97,8 @@ export default function PersonDetail() {
   const { options: vehicleTypeOpts } = useLookupOptions('VEHICLE_TYPE');
   const VEHICLE_TYPES = vehicleTypeOpts.map(o => o.code);
 
-  const canEdit = ['admin', 'finance', 'president'].includes(user?.role);
-  const isPresident = user?.role === 'president';
+  const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const isPresident = user?.role === ROLES.PRESIDENT;
 
   const [person, setPerson] = useState(null);
   const [payslips, setPayslips] = useState([]);

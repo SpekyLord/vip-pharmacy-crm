@@ -8,6 +8,7 @@
  * - Simplified status (active/inactive only)
  * - Used to show relevant products during BDM visits
  */
+const { ROLES } = require('../constants/roles');
 
 const mongoose = require('mongoose');
 
@@ -89,7 +90,7 @@ productAssignmentSchema.index({ assignedBy: 1 });
 productAssignmentSchema.index({ status: 1 });
 productAssignmentSchema.index({ priority: 1 });
 
-// Pre-save validation to ensure assignedBy is an admin or employee
+// Pre-save validation to ensure assignedBy is an admin or contractor
 productAssignmentSchema.pre('save', async function (next) {
   if (this.isNew || this.isModified('assignedBy')) {
     const User = mongoose.model('User');
@@ -99,7 +100,7 @@ productAssignmentSchema.pre('save', async function (next) {
       return next(new Error('Assigned user not found'));
     }
 
-    if (user.role !== 'admin' && user.role !== 'employee') {
+    if (user.role !== ROLES.ADMIN && user.role !== ROLES.CONTRACTOR) {
       return next(new Error('Only admins or BDMs can assign products to doctors'));
     }
   }

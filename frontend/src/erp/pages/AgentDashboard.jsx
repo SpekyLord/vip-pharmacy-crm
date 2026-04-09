@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES } from '../../constants/roles';
 import api from '../../services/api';
 import messageService from '../../services/messageInboxService';
 import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, Users, MessageSquare, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap } from 'lucide-react';
@@ -109,7 +110,7 @@ export default function AgentDashboard() {
   const [msgTab, setMsgTab] = useState('all');
   const [runningAgent, setRunningAgent] = useState(null);
 
-  const isPresidentOrAdmin = ['president', 'admin'].includes(user?.role);
+  const isPresidentOrAdmin = [ROLES.PRESIDENT, ROLES.ADMIN].includes(user?.role);
 
   const handleRunNow = async (agentKey) => {
     if (runningAgent) return;

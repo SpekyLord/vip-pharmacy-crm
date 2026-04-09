@@ -1,5 +1,6 @@
 const Lookup = require('../models/Lookup');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { ROLES } = require('../../constants/roles');
 
 /**
  * Generic Lookup Controller — Phase 24
@@ -141,6 +142,29 @@ const SEED_DEFAULTS = {
     { code: 'PETTY_CASH', label: 'Petty Cash' },
     { code: 'IC_TRANSFER', label: 'Inter-Company Transfers' },
     { code: 'INCOME', label: 'Income' },
+  ],
+  // Phase 30 — Role Centralization
+  BDM_STAGE: [
+    { code: 'CONTRACTOR', label: 'Contractor', metadata: { sort_order: 1, description: 'Starting stage — independent contractor' } },
+    { code: 'PS_ELIGIBLE', label: 'Profit-Sharing Eligible', metadata: { sort_order: 2, description: 'Proven performer, eligible for profit sharing partnership' } },
+    { code: 'TRANSITIONING', label: 'Transitioning to Subsidiary', metadata: { sort_order: 3, description: 'Moving toward autonomy, managing subsidiary operations' } },
+    { code: 'SUBSIDIARY', label: 'Subsidiary Owner', metadata: { sort_order: 4, description: 'Operating own legal entity under VIP' } },
+    { code: 'SHAREHOLDER', label: 'Shareholder', metadata: { sort_order: 5, description: 'Equity stakeholder in parent company' } },
+  ],
+  ROLE_MAPPING: [
+    { code: 'BDM', label: 'BDM → Contractor', metadata: { person_type: 'BDM', system_role: ROLES.CONTRACTOR } },
+    { code: 'ECOMMERCE_BDM', label: 'eBDM → Contractor', metadata: { person_type: 'ECOMMERCE_BDM', system_role: ROLES.CONTRACTOR } },
+    { code: 'SALES_REP', label: 'Sales Rep → Contractor', metadata: { person_type: 'SALES_REP', system_role: ROLES.CONTRACTOR } },
+    { code: 'CONSULTANT', label: 'Consultant → Contractor', metadata: { person_type: 'CONSULTANT', system_role: ROLES.CONTRACTOR } },
+    { code: 'EMPLOYEE', label: 'Employee → Contractor', metadata: { person_type: 'EMPLOYEE', system_role: ROLES.CONTRACTOR } },
+    { code: 'DIRECTOR', label: 'Director → President', metadata: { person_type: 'DIRECTOR', system_role: ROLES.PRESIDENT } },
+  ],
+  SYSTEM_ROLE: [
+    { code: 'ADMIN', label: 'Admin', metadata: { description: 'System administrator' } },
+    { code: 'CONTRACTOR', label: 'Contractor', metadata: { description: 'BDMs, IT, cleaners, pharmacists, consultants — all non-management workers' } },
+    { code: 'FINANCE', label: 'Finance', metadata: { description: 'Finance/accounting manager' } },
+    { code: 'PRESIDENT', label: 'President', metadata: { description: 'Company president — full cross-entity access' } },
+    { code: 'CEO', label: 'CEO', metadata: { description: 'Chief Executive — view-only on ERP' } },
   ],
 };
 
