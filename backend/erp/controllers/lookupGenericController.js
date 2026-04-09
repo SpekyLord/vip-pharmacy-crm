@@ -118,6 +118,30 @@ const SEED_DEFAULTS = {
   INCENTIVE_PROGRAM: [
     { code: 'JAPAN_TRIP_2026', label: 'Japan Trip 2026', metadata: { fiscal_year: 2026, qualification_metric: 'sales', use_tiers: true } },
   ],
+  // Phase 29 — Approval Workflow
+  APPROVER_TYPE: [
+    { code: 'ROLE', label: 'By Role' },
+    { code: 'USER', label: 'Specific Users' },
+    { code: 'REPORTS_TO', label: 'Direct Manager' },
+  ],
+  APPROVER_ROLE: [
+    { code: 'ADMIN', label: 'Admin' },
+    { code: 'FINANCE', label: 'Finance' },
+    { code: 'PRESIDENT', label: 'President' },
+  ],
+  APPROVAL_MODULE: [
+    { code: 'SALES', label: 'Sales' },
+    { code: 'COLLECTIONS', label: 'Collections' },
+    { code: 'EXPENSES', label: 'Expenses' },
+    { code: 'PURCHASING', label: 'Purchasing' },
+    { code: 'PAYROLL', label: 'Payroll' },
+    { code: 'INVENTORY', label: 'Inventory' },
+    { code: 'JOURNAL', label: 'Journal Entries' },
+    { code: 'BANKING', label: 'Banking' },
+    { code: 'PETTY_CASH', label: 'Petty Cash' },
+    { code: 'IC_TRANSFER', label: 'Inter-Company Transfers' },
+    { code: 'INCOME', label: 'Income' },
+  ],
 };
 
 // List all distinct categories for current entity

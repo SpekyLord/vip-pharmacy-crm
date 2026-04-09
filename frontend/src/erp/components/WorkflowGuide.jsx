@@ -423,6 +423,48 @@ const WORKFLOW_GUIDES = {
     ],
     tip: 'Enable ENFORCE_AUTHORITY_MATRIX in Settings to activate approval workflows.',
   },
+  'batch-trace': {
+    title: 'Batch Trace',
+    steps: [
+      'Search for a product by name or item key',
+      'View all batches with lot numbers, expiry dates, and current quantities',
+      'Trace each batch movement: GRN receipt, sales consumption, transfers, adjustments',
+      'Identify near-expiry or expired batches for action',
+    ],
+    next: [
+      { label: 'My Stock', path: '/erp/inventory' },
+      { label: 'Expiry Dashboard', path: '/erp/expiry-dashboard' },
+    ],
+    tip: 'Batch trace follows FIFO — oldest expiry batches are consumed first.',
+  },
+  'credit-notes': {
+    title: 'Credit Notes',
+    steps: [
+      'Create credit notes for returned goods, damaged items, or pricing adjustments',
+      'Link each credit note to the original CSI (sales invoice)',
+      'Validate and submit — inventory is returned and AR is reduced',
+      'Posted credit notes create reversal journal entries automatically',
+    ],
+    next: [
+      { label: 'Sales List', path: '/erp/sales' },
+      { label: 'AR Dashboard', path: '/erp/collections/ar' },
+    ],
+    tip: 'Credit notes reduce AR and can trigger inventory FIFO reversal.',
+  },
+  'expiry-dashboard': {
+    title: 'Expiry Dashboard',
+    steps: [
+      'View all inventory batches grouped by expiry status: expired, near-expiry, safe',
+      'Filter by BDM territory, product, or warehouse',
+      'Take action on expired batches: write-off, return to supplier, or transfer',
+      'Near-expiry threshold is configurable in Settings (default: 120 days)',
+    ],
+    next: [
+      { label: 'Batch Trace', path: '/erp/batch-trace' },
+      { label: 'My Stock', path: '/erp/inventory' },
+    ],
+    tip: 'Near-expiry items should be prioritized for sale or consignment conversion.',
+  },
   'consignment-dashboard': {
     title: 'Consignment Dashboard',
     steps: [

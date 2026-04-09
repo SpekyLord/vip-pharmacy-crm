@@ -8,13 +8,14 @@ import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 import toast from 'react-hot-toast';
 
-const MODULE_OPTIONS = [
+// Fallbacks — overridden by lookup data from DB when available
+const MODULE_FALLBACK = [
   'SALES', 'COLLECTIONS', 'EXPENSES', 'PURCHASING',
   'PAYROLL', 'INVENTORY', 'JOURNAL', 'BANKING',
   'PETTY_CASH', 'IC_TRANSFER', 'INCOME',
 ];
 
-const APPROVER_TYPES = [
+const APPROVER_TYPE_FALLBACK = [
   { value: 'ROLE', label: 'By Role' },
   { value: 'USER', label: 'Specific Users' },
   { value: 'REPORTS_TO', label: 'Direct Manager' },
@@ -37,6 +38,15 @@ export default function ApprovalManager() {
   const [approvalEnabled, setApprovalEnabled] = useState(false);
   const [decisionModal, setDecisionModal] = useState(null); // { requestId, action }
   const [reason, setReason] = useState('');
+
+  // Lookup-driven options (database-first, fallback to hardcoded)
+  const { options: moduleOpts } = useLookups('APPROVAL_MODULE');
+  const { options: approverTypeOpts } = useLookups('APPROVER_TYPE');
+  const { options: approverRoleOpts } = useLookups('APPROVER_ROLE');
+
+  const MODULE_OPTIONS = moduleOpts.length > 0 ? moduleOpts.map(o => o.code || o.value) : MODULE_FALLBACK;
+  const APPROVER_TYPES = approverTypeOpts.length > 0 ? approverTypeOpts.map(o => ({ value: o.code || o.value, label: o.label })) : APPROVER_TYPE_FALLBACK;
+  const APPROVER_ROLES = approverRoleOpts.length > 0 ? approverRoleOpts.map(o => (o.code || o.value).toLowerCase()) : ['admin', 'finance', 'president'];
 
   const isAdmin = ['admin', 'president', 'finance'].includes(user?.role);
 
@@ -291,7 +301,7 @@ export default function ApprovalManager() {
           )}
 
           {/* ─── Rule Form Modal ─── */}
-          {showRuleForm && <RuleFormModal rule={editingRule} onSave={handleSaveRule} onClose={() => { setShowRuleForm(false); setEditingRule(null); }} />}
+          {showRuleForm && <RuleFormModal rule={editingRule} onSave={handleSaveRule} onClose={() => { setShowRuleForm(false); setEditingRule(null); }} moduleOptions={MODULE_OPTIONS} approverTypes={APPROVER_TYPES} approverRoles={APPROVER_ROLES} />}
         </main>
       </div>
     </div>
@@ -303,14 +313,14 @@ export { ApprovalManager as ApprovalManagerContent };
 
 // ─── Rule Form Modal ────────────────────────────────────────────────
 
-function RuleFormModal({ rule, onSave, onClose }) {
+function RuleFormModal({ rule, onSave, onClose, moduleOptions, approverTypes, approverRoles }) {
   const [form, setForm] = useState({
-    module: rule?.module || 'PURCHASING',
+    module: rule?.module || (moduleOptions[0] || 'PURCHASING'),
     doc_type: rule?.doc_type || '',
     level: rule?.level || 1,
     amount_threshold: rule?.amount_threshold ?? '',
-    approver_type: rule?.approver_type || 'ROLE',
-    approver_roles: rule?.approver_roles || ['admin', 'finance'],
+    approver_type: rule?.approver_type || (approverTypes[0]?.value || 'ROLE'),
+    approver_roles: rule?.approver_roles || approverRoles.slice(0, 2),
     description: rule?.description || '',
     is_active: rule?.is_active ?? true,
   });
@@ -336,7 +346,7 @@ function RuleFormModal({ rule, onSave, onClose }) {
             <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Module</span>
             <select value={form.module} onChange={e => update('module', e.target.value)}
               style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--erp-border)', fontSize: 13 }}>
-              {MODULE_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+              {moduleOptions.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </label>
 
@@ -366,7 +376,7 @@ function RuleFormModal({ rule, onSave, onClose }) {
             <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Approver Type</span>
             <select value={form.approver_type} onChange={e => update('approver_type', e.target.value)}
               style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--erp-border)', fontSize: 13 }}>
-              {APPROVER_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              {approverTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </label>
 

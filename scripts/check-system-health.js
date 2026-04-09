@@ -91,7 +91,7 @@ function checkWorkflowGuides() {
 
   // Extract defined pageKeys
   const definedKeys = new Set();
-  const keyRe = /['"]([a-z][-a-z0-9]*)['"]:\s*\{[\s\n]*title:/g;
+  const keyRe = /['"]?([a-zA-Z][-a-zA-Z0-9]*)['"]?:\s*\{[\s\n]*title:/g;
   let m;
   while ((m = keyRe.exec(wfgContent)) !== null) definedKeys.add(m[1]);
 

@@ -46,6 +46,12 @@ const settingsSchema = new mongoose.Schema({
   ENFORCE_AUTHORITY_MATRIX: { type: Boolean, default: false },
   EXPENSE_ANOMALY_THRESHOLD: { type: Number, default: 0.30 },
 
+  // Notification — which roles receive ERP document notifications
+  NOTIFICATION_RECIPIENT_ROLES: {
+    type: [String],
+    default: ['admin', 'finance', 'president'],
+  },
+
   // COA Mapping — configurable account codes for auto-journal posting
   COA_MAP: {
     AR_TRADE:            { type: String, default: '1100' },

@@ -15,6 +15,7 @@
 
 const User = require('../../models/User');
 const Entity = require('../models/Entity');
+const Settings = require('../models/Settings');
 const EmailLog = require('../../models/EmailLog');
 const { sendEmail } = require('../../config/ses');
 const {
@@ -83,11 +84,21 @@ const findNotificationRecipients = async (entityId, filter = {}) => {
 };
 
 /**
- * Find admin/finance users for a given entity (the typical "notify management" audience).
+ * Find management users for a given entity (the typical "notify management" audience).
+ * Reads NOTIFICATION_RECIPIENT_ROLES from Settings — configurable by admin.
  */
-const findManagementRecipients = (entityId) => {
+const findManagementRecipients = async (entityId) => {
+  let roles;
+  try {
+    const settings = await Settings.getSettings();
+    roles = settings.NOTIFICATION_RECIPIENT_ROLES;
+  } catch {
+    // fallback if settings unavailable
+  }
+  if (!roles || !roles.length) roles = ['admin', 'finance', 'president'];
+
   return findNotificationRecipients(entityId, {
-    role: { $in: ['admin', 'finance', 'president'] },
+    role: { $in: roles },
   });
 };
 
