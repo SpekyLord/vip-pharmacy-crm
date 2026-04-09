@@ -371,66 +371,63 @@ const refreshProducts = catchAsync(async (req, res) => {
   }
 
   const errors = [];
-  let upserted = 0, updated = 0, created = 0, deactivated = 0, csvDupsSkipped = rows.length - dedupMap.size;
-  const processedItemKeys = new Set();
+  let updated = 0, created = 0, deactivated = 0, csvDupsSkipped = rows.length - dedupMap.size;
+  const processedCleanKeys = new Set();
 
   for (const [dedupKey, { row, isActive }] of dedupMap) {
-    const brand = String(row.BrandName ?? '').trim();
-    const dosage = String(row.DosageStrength ?? '').trim();
-    const generic = String(row.GenericName ?? '').trim();
-    const soldPer = String(row.SoldPer ?? '').trim();
-    const purchasePrice = parseFloat(String(row.DefaultPurchasePrice ?? '0').replace(/,/g, '')) || 0;
-    const sellingPrice = parseFloat(String(row.DefaultSellingPrice ?? '0').replace(/,/g, '')) || 0;
-    const itemKey = `${brand}|${dosage}`;
-    const brandClean = cleanName(brand);
+    try {
+      const brand = String(row.BrandName ?? '').trim();
+      const dosage = String(row.DosageStrength ?? '').trim();
+      const generic = String(row.GenericName ?? '').trim();
+      const soldPer = String(row.SoldPer ?? '').trim();
+      const purchasePrice = parseFloat(String(row.DefaultPurchasePrice ?? '0').replace(/,/g, '')) || 0;
+      const sellingPrice = parseFloat(String(row.DefaultSellingPrice ?? '0').replace(/,/g, '')) || 0;
+      const itemKey = `${brand}|${dosage}`;
+      const brandClean = cleanName(brand);
 
-    processedItemKeys.add(itemKey);
+      processedCleanKeys.add(`${brandClean}|${dosage.toLowerCase()}`);
 
-    // Try to find existing product by item_key first
-    let existing = await ProductMaster.findOne({ entity_id: entityId, item_key: itemKey });
-
-    // If not found by exact key, try brand_name_clean + dosage (catches old format variants)
-    if (!existing && brandClean) {
-      existing = await ProductMaster.findOne({
+      // Find ALL candidates: exact item_key match OR brand_clean+dosage match
+      const candidates = await ProductMaster.find({
         entity_id: entityId,
-        brand_name_clean: brandClean,
-        dosage_strength: dosage || { $in: [null, ''] },
+        $or: [
+          { item_key: itemKey },
+          { brand_name_clean: brandClean, dosage_strength: dosage || { $in: [null, ''] } },
+        ],
       });
-    }
 
-    // Also find and deactivate any OTHER duplicates with same brand_clean + dosage
-    const allDuplicates = await ProductMaster.find({
-      entity_id: entityId,
-      brand_name_clean: brandClean,
-      ...(dosage ? { dosage_strength: dosage } : { dosage_strength: { $in: [null, ''] } }),
-    });
+      if (candidates.length > 0) {
+        // Pick the best one to keep (prefer active, then most recent)
+        const keeper = candidates.find(c => c.is_active) || candidates[0];
 
-    if (existing) {
-      // Update existing product
-      existing.brand_name = brand;
-      existing.generic_name = generic || existing.generic_name;
-      existing.dosage_strength = dosage;
-      existing.sold_per = soldPer || existing.sold_per;
-      existing.item_key = itemKey;
-      existing.brand_name_clean = brandClean;
-      if (soldPer) existing.unit_code = normalizeUnit(soldPer);
-      if (purchasePrice > 0) existing.purchase_price = purchasePrice;
-      if (sellingPrice > 0) existing.selling_price = sellingPrice;
-      existing.is_active = isActive;
-      await existing.save();
-      updated++;
-
-      // Deactivate all other duplicates (not this one)
-      for (const dup of allDuplicates) {
-        if (dup._id.toString() !== existing._id.toString() && dup.is_active) {
-          dup.is_active = false;
-          await dup.save();
-          deactivated++;
+        // Deactivate all duplicates FIRST (before updating keeper's item_key)
+        for (const dup of candidates) {
+          if (dup._id.toString() !== keeper._id.toString() && dup.is_active) {
+            await ProductMaster.updateOne({ _id: dup._id }, { $set: { is_active: false } });
+            deactivated++;
+          }
         }
-      }
-    } else {
-      // Create new product
-      try {
+
+        // Now update the keeper via updateOne (avoids pre-save hook conflicts)
+        const updateFields = {
+          brand_name: brand,
+          brand_name_clean: brandClean,
+          dosage_strength: dosage,
+          item_key: itemKey,
+          is_active: isActive,
+        };
+        if (generic) updateFields.generic_name = generic;
+        if (soldPer) {
+          updateFields.sold_per = soldPer;
+          updateFields.unit_code = normalizeUnit(soldPer);
+        }
+        if (purchasePrice > 0) updateFields.purchase_price = purchasePrice;
+        if (sellingPrice > 0) updateFields.selling_price = sellingPrice;
+
+        await ProductMaster.updateOne({ _id: keeper._id }, { $set: updateFields });
+        updated++;
+      } else {
+        // No existing product — create new
         await ProductMaster.create({
           entity_id: entityId,
           item_key: itemKey,
@@ -445,39 +442,21 @@ const refreshProducts = catchAsync(async (req, res) => {
           is_active: isActive,
         });
         created++;
-      } catch (err) {
-        if (err.code === 11000) {
-          errors.push({ brand, dosage, message: 'Duplicate key — already exists with different format' });
-        } else {
-          errors.push({ brand, dosage, message: err.message });
-        }
       }
+    } catch (err) {
+      const brand = String(row.BrandName ?? '').trim();
+      const dosage = String(row.DosageStrength ?? '').trim();
+      errors.push({ brand, dosage, message: err.code === 11000 ? 'Duplicate key conflict' : err.message });
     }
-    upserted++;
   }
 
   // Deactivate stale DB products not in the CSV (only within this entity)
-  const staleProducts = await ProductMaster.find({
-    entity_id: entityId,
-    is_active: true,
-    item_key: { $nin: [...processedItemKeys] },
-  });
-
-  // Also check by brand_name_clean + dosage before deactivating (safety check)
-  const processedCleanKeys = new Set();
-  for (const key of processedItemKeys) {
-    const [b, d] = key.split('|');
-    processedCleanKeys.add(`${cleanName(b)}|${(d || '').toLowerCase()}`);
-  }
-
   let staleDeactivated = 0;
-  for (const stale of staleProducts) {
-    const staleCleanKey = `${(stale.brand_name_clean || '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim()}|${(stale.dosage_strength || '').toLowerCase()}`;
-    // Only deactivate if brand+dosage truly not in CSV (not just a format variant)
-    const staleClean = `${cleanName(stale.brand_name)}|${(stale.dosage_strength || '').toLowerCase()}`;
-    if (!processedCleanKeys.has(staleClean)) {
-      stale.is_active = false;
-      await stale.save();
+  const activeProducts = await ProductMaster.find({ entity_id: entityId, is_active: true }).lean();
+  for (const prod of activeProducts) {
+    const prodClean = `${cleanName(prod.brand_name)}|${(prod.dosage_strength || '').toLowerCase()}`;
+    if (!processedCleanKeys.has(prodClean)) {
+      await ProductMaster.updateOne({ _id: prod._id }, { $set: { is_active: false } });
       staleDeactivated++;
     }
   }
