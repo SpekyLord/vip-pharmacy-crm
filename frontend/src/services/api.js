@@ -78,7 +78,7 @@ api.interceptors.response.use(
       if (isRefreshing) {
         try {
           await refreshPromise;
-          return api(originalRequest);
+          return api.request(originalRequest);
         } catch {
           return Promise.reject(error);
         }
@@ -92,8 +92,8 @@ api.interceptors.response.use(
 
       try {
         await refreshPromise;
-        // Retry original request - new access token cookie will be sent automatically
-        return api(originalRequest);
+        // Retry original request — use api.request() to preserve HTTP method
+        return api.request(originalRequest);
       } catch (refreshError) {
         // Refresh failed - dispatch logout event for AuthContext to handle
         window.dispatchEvent(new CustomEvent('auth:logout'));
