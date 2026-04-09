@@ -57,11 +57,13 @@ const pageStyles = `
   .stock-table tr.expandable:hover { background: var(--erp-accent-soft); }
   .stock-table tr.batch-row td { padding: 6px 12px 6px 40px; background: var(--erp-bg); font-size: 12px; }
 
-  .near-expiry { background: #fef2f2; }
+  .near-expiry { background: #fffbeb; }
+  .expired-row { background: #fef2f2; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
   .badge-ok { background: #dcfce7; color: #166534; }
   .badge-warn { background: #fef3c7; color: #92400e; }
   .badge-error { background: #fef2f2; color: #991b1b; }
+  .badge-expired { background: #991b1b; color: #fff; }
 
   .ledger-select { margin-bottom: 12px; }
   .ledger-select select { padding: 8px 12px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 14px; }
@@ -405,7 +407,13 @@ export default function MyStock() {
               <div className="label">Total Value</div>
             </div>
             <div className="summary-card">
-              <div className="value" style={{ color: summary.near_expiry_count > 0 ? '#dc2626' : undefined }}>
+              <div className="value" style={{ color: summary.expired_count > 0 ? '#991b1b' : undefined }}>
+                {summary.expired_count || 0}
+              </div>
+              <div className="label">Expired</div>
+            </div>
+            <div className="summary-card">
+              <div className="value" style={{ color: summary.near_expiry_count > 0 ? '#d97706' : undefined }}>
                 {summary.near_expiry_count || 0}
               </div>
               <div className="label">Near Expiry</div>
@@ -437,11 +445,12 @@ export default function MyStock() {
               <tbody>
                 {stockData.map(item => (
                   <Fragment key={item.product_id}>
-                    <tr className={`expandable ${item.near_expiry ? 'near-expiry' : ''}`} onClick={() => toggleExpand(item.product_id)}>
+                    <tr className={`expandable ${item.expired ? 'expired-row' : item.near_expiry ? 'near-expiry' : ''}`} onClick={() => toggleExpand(item.product_id)}>
                       <td data-label="Product">
                         <strong>{item.product?.brand_name || 'Unknown'}</strong>
-                        <br /><span style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{item.product?.generic_name}</span>
-                        {item.near_expiry && <span className="badge badge-warn" style={{ marginLeft: 6 }}>Near Expiry</span>}
+                        <br /><span style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{item.product?.dosage_strength || ''}</span>
+                        {item.expired && <span className="badge badge-expired" style={{ marginLeft: 6 }}>Expired</span>}
+                        {!item.expired && item.near_expiry && <span className="badge badge-warn" style={{ marginLeft: 6 }}>Near Expiry</span>}
                       </td>
                       <td data-label="Unit">{item.product?.unit_code || '-'}</td>
                       <td data-label="Total Qty"><strong>{item.total_qty}</strong></td>
@@ -456,7 +465,8 @@ export default function MyStock() {
                         <td data-label=""></td>
                         <td data-label="Expiry">
                           {new Date(batch.expiry_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' })}
-                          {batch.near_expiry && <span className="badge badge-error" style={{ marginLeft: 6 }}>{batch.days_to_expiry}d</span>}
+                          {batch.expired && <span className="badge badge-expired" style={{ marginLeft: 6 }}>{batch.days_to_expiry}d</span>}
+                          {!batch.expired && batch.near_expiry && <span className="badge badge-error" style={{ marginLeft: 6 }}>{batch.days_to_expiry}d</span>}
                         </td>
                         <td data-label=""></td>
                       </tr>
@@ -569,16 +579,19 @@ export default function MyStock() {
               </h3>
               <table className="stock-table" style={{ marginBottom: 24 }}>
                 <thead>
-                  <tr><th>Product</th><th>Batch</th><th>Expiry</th><th>Days Left</th><th>Qty</th></tr>
+                  <tr><th>Product</th><th>Batch</th><th>Expiry</th><th>Status</th><th>Qty</th></tr>
                 </thead>
                 <tbody>
                   {(alertData.expiry_alerts || []).map((a) => (
-                    <tr key={`${a.product_id || ''}-${a.batch_lot_no}`} style={{ background: a.days_remaining < 30 ? '#fef2f2' : a.days_remaining < 120 ? '#fffbeb' : undefined }}>
+                    <tr key={`${a.product_id || ''}-${a.batch_lot_no}`} style={{ background: a.expired ? '#fef2f2' : a.days_remaining < 30 ? '#fff1f2' : a.days_remaining < 120 ? '#fffbeb' : undefined }}>
                       <td data-label="Product"><strong>{a.product?.brand_name || 'Unknown'}</strong></td>
                       <td data-label="Batch">{a.batch_lot_no}</td>
                       <td data-label="Expiry">{new Date(a.expiry_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' })}</td>
-                      <td data-label="Days Left" style={{ color: a.days_remaining < 30 ? '#dc2626' : a.days_remaining < 120 ? '#d97706' : undefined, fontWeight: 700 }}>
-                        {a.days_remaining}d
+                      <td data-label="Status" style={{ fontWeight: 700 }}>
+                        {a.expired
+                          ? <span style={{ color: '#991b1b' }}>EXPIRED ({a.days_remaining}d)</span>
+                          : <span style={{ color: a.days_remaining < 30 ? '#dc2626' : '#d97706' }}>{a.days_remaining}d left</span>
+                        }
                       </td>
                       <td data-label="Qty">{a.available_qty}</td>
                     </tr>
