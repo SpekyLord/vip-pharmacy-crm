@@ -3928,3 +3928,75 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 ### 31.8 — Documentation ✅
 - [x] PHASETASK-ERP.md updated with Phase 31 task breakdown
 - [x] CLAUDE-ERP.md updated with Phase 31 architecture
+
+---
+
+## Phase 32 — Universal KPI Self-Rating & Performance Review System ✅
+
+Universal, lookup-driven KPI self-rating system where ALL members — regardless of function — can rate themselves on function-specific KPIs + competencies, go through a structured self → manager → approval workflow.
+
+### 32.1 — Model + Lookup Seeds ✅
+- [x] Created `backend/erp/models/KpiSelfRating.js` — entity+person+period unique rating document
+- [x] Extended KPI_CODE seeds: 13 existing sales KPIs get `functional_roles: ['SALES']` + `description`
+- [x] Added 10 new function-specific KPIs: Purchasing (3), Accounting (3), Collections (2), Inventory (2)
+- [x] Added 2 universal KPIs: ATTENDANCE_RATE, TASK_COMPLETION (`functional_roles: ['ALL']`)
+- [x] Added RATING_SCALE seed (1-5 scale with labels)
+- [x] Added COMPETENCY seed (8 universal competencies)
+- [x] Added REVIEW_PERIOD_TYPE seed (Monthly/Quarterly/Semi-Annual/Annual)
+
+### 32.2 — Controller (10 Endpoints) ✅
+- [x] Created `backend/erp/controllers/kpiSelfRatingController.js`
+- [x] `getMyRatings` — own ratings history
+- [x] `getMyCurrentDraft` — get or auto-create DRAFT (auto-fills KPIs from FunctionalRoleAssignment)
+- [x] `getRatingById` — single rating (access: self/manager/admin)
+- [x] `getRatingsForReview` — manager's pending SUBMITTED reviews
+- [x] `getRatingsByPerson` — admin: all ratings for a person
+- [x] `saveDraft` — create/update DRAFT or RETURNED rating
+- [x] `submitRating` — DRAFT/RETURNED → SUBMITTED
+- [x] `reviewRating` — manager adds scores, SUBMITTED → REVIEWED
+- [x] `approveRating` — admin: REVIEWED → APPROVED
+- [x] `returnRating` — manager/admin: SUBMITTED/REVIEWED → RETURNED
+
+### 32.3 — Routes + Registration ✅
+- [x] Created `backend/erp/routes/kpiSelfRatingRoutes.js`
+- [x] Mounted at `/api/erp/self-ratings` under `erpAccessCheck('people')`
+- [x] Static routes before parameterized /:id
+- [x] Registered in `backend/erp/routes/index.js`
+
+### 32.4 — Frontend Hook ✅
+- [x] Created `frontend/src/erp/hooks/useKpiSelfRating.js`
+- [x] Wraps all 10 endpoints, stable deps on api.get/api.post/api.put
+
+### 32.5 — KPI Library Page ✅
+- [x] Created `frontend/src/erp/pages/KpiLibrary.jsx`
+- [x] Admin-friendly SMART goal form (SAP SuccessFactors pattern)
+- [x] Grouped by function with search + filter
+- [x] Create/Edit modal: code, name, description (SMART sentence), unit, direction, computation, target, functional_roles
+- [x] WorkflowGuide helper banner
+- [x] Exports KpiLibraryContent for ControlCenter embedding
+
+### 32.6 — Self-Rating Page ✅
+- [x] Created `frontend/src/erp/pages/KpiSelfRating.jsx`
+- [x] Three tabs: My Rating, Review, History
+- [x] Self-Rating: KPI table + Competency table + Overall Assessment with save/submit
+- [x] Manager Review: side-by-side self/manager scores, complete review or return
+- [x] History: past submissions with status badges, detail modal
+- [x] Period selector (type + fiscal year)
+- [x] WorkflowGuide helper banner
+- [x] Exports KpiSelfRatingContent for ControlCenter embedding
+
+### 32.7 — App.jsx + ControlCenter Registration ✅
+- [x] Added lazy imports + routes in App.jsx
+- [x] `/erp/kpi-library` with ROLE_SETS.MANAGEMENT
+- [x] `/erp/self-rating` with ROLE_SETS.ERP_ALL (all ERP users can self-rate)
+- [x] Added to ControlCenter SECTIONS + CATEGORY_CONFIG under "People & Access"
+- [x] Added dependency banners for both kpi-library and kpi-self-rating
+
+### 32.8 — PersonDetail Section G ✅
+- [x] Added Section G "Performance Rating" to PersonDetail.jsx
+- [x] Shows latest rating: period, status badge, self score, manager score, KPI/competency rated counts
+- [x] Link to `/erp/self-rating?person=<id>` for full history
+
+### 32.9 — Documentation ✅
+- [x] PHASETASK-ERP.md updated with Phase 32 task breakdown
+- [x] CLAUDE-ERP.md updated with Phase 32 architecture, routes, lookup categories, integration points

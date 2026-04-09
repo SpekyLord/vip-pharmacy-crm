@@ -1178,6 +1178,42 @@ const WORKFLOW_GUIDES = {
     tip: 'Complete action items consistently — they drive the KPIs that determine your incentive tier.',
   },
 
+  kpiLibrary: {
+    title: 'KPI Library — SMART Goal Management',
+    steps: [
+      'Browse existing KPIs grouped by function (Sales, Purchasing, Accounting, etc.)',
+      'Create new KPIs using the SMART format: give it a name, description, unit, direction, and target',
+      'Assign KPIs to functions — when a person has that functional role, the KPI appears in their self-rating',
+      'Edit or deactivate KPIs as business priorities change',
+      'Universal KPIs (function = "ALL") apply to every person regardless of role',
+    ],
+    next: [
+      { label: 'Self-Rating', path: '/erp/self-rating' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+      { label: 'Role Assignments', path: '/erp/role-assignments' },
+    ],
+    tip: 'KPIs are stored as lookup values (KPI_CODE category). You can also manage them directly from Lookup Tables.',
+  },
+
+  kpiSelfRating: {
+    title: 'KPI Self-Rating & Performance Review',
+    steps: [
+      'Select your review period type (Monthly, Quarterly, Semi-Annual, or Annual)',
+      'The system auto-fills KPIs based on your functional role assignments + universal KPIs',
+      'Rate yourself 1–5 on each KPI and competency, and add comments',
+      'Set your overall self-assessment score and summary',
+      'Submit for your manager\'s review — they will add their scores side-by-side',
+      'Manager reviews → Admin approves → rating is finalized',
+      'If returned, edit and resubmit — your history is preserved',
+    ],
+    next: [
+      { label: 'KPI Library', path: '/erp/kpi-library' },
+      { label: 'Role Assignments', path: '/erp/role-assignments' },
+      { label: 'People Master', path: '/erp/control-center?section=people' },
+    ],
+    tip: 'Your KPIs are based on your functional role(s). If you\'re missing KPIs, ask admin to verify your role assignments.',
+  },
+
   incentiveTracker: {
     title: 'Incentive Tier Tracker',
     steps: [

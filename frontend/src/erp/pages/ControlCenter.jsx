@@ -27,6 +27,8 @@ const SECTIONS = {
   'org-chart': lazy(() => import('./OrgChart').then(m => ({ default: m.OrgChartContent }))),
   'access-templates': lazy(() => import('./AccessTemplateManager').then(m => ({ default: m.AccessTemplateManagerContent }))),
   'role-assignments': lazy(() => import('./RoleAssignmentManager').then(m => ({ default: m.RoleAssignmentManagerContent }))),
+  'kpi-library': lazy(() => import('./KpiLibrary').then(m => ({ default: m.KpiLibraryContent }))),
+  'kpi-self-rating': lazy(() => import('./KpiSelfRating').then(m => ({ default: m.KpiSelfRatingContent }))),
   'coa': lazy(() => import('./ChartOfAccounts').then(m => ({ default: m.ChartOfAccountsContent }))),
   'cost-centers': lazy(() => import('./CostCenters').then(m => ({ default: m.CostCentersContent }))),
   'payment-modes': lazy(() => import('./PaymentModes').then(m => ({ default: m.PaymentModesContent }))),
@@ -79,7 +81,9 @@ const CATEGORY_CONFIG = [
       { key: 'people', label: 'People Master', icon: Users },
       { key: 'org-chart', label: 'Org Chart', icon: Users },
       { key: 'access-templates', label: 'Access Templates', icon: ShieldCheck },
-      { key: 'role-assignments', label: 'Role Assignments', icon: ShieldCheck }
+      { key: 'role-assignments', label: 'Role Assignments', icon: ShieldCheck },
+      { key: 'kpi-library', label: 'KPI Library', icon: List },
+      { key: 'kpi-self-rating', label: 'KPI Self-Rating', icon: Users },
     ]
   },
   {
@@ -197,6 +201,23 @@ const DEPENDENCY_GUIDE = {
       { action: 'When you add a person', deps: 'Assign an Access Template so they can use ERP modules', section: 'access-templates' },
       { action: 'New to ERP?', deps: 'Use "Sync from CRM" button to import existing CRM users', section: null },
       { action: 'When you add a new person type or BDM stage', deps: 'Add it in Lookup Tables first (PERSON_TYPE, BDM_STAGE, EMPLOYMENT_TYPE, ROLE_MAPPING)', section: 'lookup-tables' },
+    ]
+  },
+  'kpi-library': {
+    title: 'KPI Library Dependencies',
+    items: [
+      { action: 'When you create a new KPI', deps: 'Assign it to the correct function(s) — it will appear in self-ratings for people with that role', section: 'role-assignments' },
+      { action: 'When you remove/deactivate a KPI', deps: 'Existing self-rating drafts will keep the old KPI; new drafts won\'t include it', section: null },
+      { action: 'When you add a new function type', deps: 'Add it in FUNCTIONAL_ROLE lookup first, then create KPIs for it', section: 'lookups' },
+    ]
+  },
+  'kpi-self-rating': {
+    title: 'Self-Rating Dependencies',
+    items: [
+      { action: 'Before using self-ratings', deps: 'Assign functional roles to people via Role Assignments', section: 'role-assignments' },
+      { action: 'Before using self-ratings', deps: 'Set up KPIs in the KPI Library for each function', section: 'kpi-library' },
+      { action: 'For manager review to work', deps: 'Set "Reports To" on each person in People Master', section: 'people' },
+      { action: 'When you add competencies', deps: 'Add them in Lookup Tables under COMPETENCY category', section: 'lookups' },
     ]
   },
   'access-templates': {

@@ -1,9 +1,10 @@
 /**
  * PersonDetail — Phase 21.1: Full editable person page
  *
- * 6 sections: A) Person Info, B) Comp Profile, C) Insurance Register,
+ * 7 sections: A) Person Info, B) Comp Profile, C) Insurance Register,
  * D) ERP Module Access (ErpAccessManager), E) History (comp + payslip),
- * F) Cross-Entity Functional Role Assignments (Phase 31)
+ * F) Cross-Entity Functional Role Assignments (Phase 31),
+ * G) KPI Self-Rating Summary (Phase 32)
  *
  * Edit mode: admin/finance/president only. BDMs see read-only.
  */
@@ -17,6 +18,7 @@ import usePeople from '../hooks/usePeople';
 import usePayroll from '../hooks/usePayroll';
 import useErpAccess from '../hooks/useErpAccess';
 import useFunctionalRoles from '../hooks/useFunctionalRoles';
+import useKpiSelfRating from '../hooks/useKpiSelfRating';
 import { showError, showSuccess, showWarning } from '../utils/errorToast';
 import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
@@ -135,6 +137,8 @@ export default function PersonDetail() {
   const erpAccess = useErpAccess();
   const { fetchByPerson: fetchFuncRoles } = useFunctionalRoles();
   const [funcRoleAssignments, setFuncRoleAssignments] = useState([]);
+  const { fetchByPerson: fetchPersonRatings } = useKpiSelfRating();
+  const [latestRating, setLatestRating] = useState(null);
   const [allPeople, setAllPeople] = useState([]);
   const savingRef = useRef(false);
 
@@ -193,6 +197,11 @@ export default function PersonDetail() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (id) fetchFuncRoles(id).then(setFuncRoleAssignments).catch(() => {});
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (id && canEdit) fetchPersonRatings(id).then(ratings => {
+      if (ratings?.length) setLatestRating(ratings[0]);
+    }).catch(() => {});
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     pplApi.getPeopleList({ limit: 200 }).then(r => setAllPeople(r?.data || [])).catch(() => {});
@@ -856,6 +865,45 @@ export default function PersonDetail() {
                 </tbody>
               </table>
             ) : <div className="pd-empty">No cross-entity assignments</div>}
+          </div>
+
+          {/* ═══ SECTION G: KPI Self-Rating Summary (Phase 32) ═══ */}
+          <div className="pd-card">
+            <div className="pd-card-hdr">
+              <h3>Performance Rating</h3>
+              <a href={`/erp/self-rating?person=${id}`} style={{ fontSize: 12, color: 'var(--erp-accent, #1e5eff)', textDecoration: 'none' }}>View All →</a>
+            </div>
+            {latestRating ? (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div className="pd-field">
+                    <div className="lbl">Period</div>
+                    <div className="val" style={{ fontWeight: 600 }}>{latestRating.period} ({latestRating.period_type})</div>
+                  </div>
+                  <div className="pd-field">
+                    <div className="lbl">Status</div>
+                    <div className="val">
+                      <span className="badge" style={{
+                        background: latestRating.status === 'APPROVED' ? '#dcfce7' : latestRating.status === 'SUBMITTED' ? '#dbeafe' : latestRating.status === 'REVIEWED' ? '#fef3c7' : latestRating.status === 'RETURNED' ? '#fee2e2' : '#f3f4f6',
+                        color: latestRating.status === 'APPROVED' ? '#166534' : latestRating.status === 'SUBMITTED' ? '#1e40af' : latestRating.status === 'REVIEWED' ? '#92400e' : latestRating.status === 'RETURNED' ? '#991b1b' : '#374151',
+                      }}>{latestRating.status}</span>
+                    </div>
+                  </div>
+                  <div className="pd-field">
+                    <div className="lbl">Self Score</div>
+                    <div className="val" style={{ fontSize: 18, fontWeight: 700 }}>{latestRating.overall_self_score || '—'}<span style={{ fontSize: 12, fontWeight: 400 }}>/5</span></div>
+                  </div>
+                  <div className="pd-field">
+                    <div className="lbl">Manager Score</div>
+                    <div className="val" style={{ fontSize: 18, fontWeight: 700, color: '#1e40af' }}>{latestRating.overall_manager_score || '—'}<span style={{ fontSize: 12, fontWeight: 400 }}>/5</span></div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>
+                  KPIs: {latestRating.kpi_ratings?.filter(k => k.self_score).length || 0}/{latestRating.kpi_ratings?.length || 0} rated
+                  {' · '}Competencies: {latestRating.competency_ratings?.filter(c => c.self_score).length || 0}/{latestRating.competency_ratings?.length || 0} rated
+                </div>
+              </div>
+            ) : <div className="pd-empty">No performance ratings yet</div>}
           </div>
 
         </main>

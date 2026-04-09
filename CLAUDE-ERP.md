@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 5.7
-> **Status**: Phases 0-31 Complete. Functional Role Assignment / Cross-Entity Deployment (April 9, 2026).
+> **Version**: 5.8
+> **Status**: Phases 0-32 Complete. Universal KPI Self-Rating & Performance Review System (April 9, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -90,6 +90,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 29 | Email Notifications + Approval Workflow (Authority Matrix) | ✅ |
 | 30 | Role Centralization + PeopleMaster Lookup-Driven Validation | ✅ |
 | 31 | Functional Role Assignment (Cross-Entity Deployment) | ✅ |
+| 32 | Universal KPI Self-Rating & Performance Review | ✅ |
 
 ---
 
@@ -320,6 +321,71 @@ frontend/src/erp/pages/RoleAssignmentManager.jsx    # Page + ControlCenter panel
 - **ControlCenter.jsx**: embedded under People & Access → Role Assignments
 - **App.jsx**: standalone route at `/erp/role-assignments`
 - **lookupGenericController.js**: FUNCTIONAL_ROLE added to SEED_DEFAULTS
+
+---
+
+## Universal KPI Self-Rating & Performance Review (Phase 32)
+
+Universal, lookup-driven KPI self-rating system where ALL members — regardless of function — can rate themselves on function-specific KPIs + competencies, go through a structured self → manager → approval workflow, and view their performance trajectory.
+
+### Architecture
+- **KpiSelfRating** — Rating document: entity-scoped, person-scoped, period-scoped (unique per person/period/type)
+- **KPI_CODE lookup** — Extended with `functional_roles` metadata to map KPIs to functions (SALES, PURCHASING, ACCOUNTING, etc.)
+- **COMPETENCY lookup** — Universal competencies (Communication, Teamwork, Leadership, etc.)
+- **RATING_SCALE lookup** — 1-5 scale definitions
+- **REVIEW_PERIOD_TYPE lookup** — Monthly, Quarterly, Semi-Annual, Annual
+- **Auto-draft creation** — System auto-populates KPIs based on person's FunctionalRoleAssignment(s) + universal 'ALL' KPIs
+
+### Workflow
+```
+DRAFT → SUBMITTED → REVIEWED → APPROVED
+                  ↘ RETURNED → (re-edit) → SUBMITTED
+```
+
+### Key Files
+```
+backend/erp/models/KpiSelfRating.js               # Rating document (entity+person+period unique)
+backend/erp/controllers/kpiSelfRatingController.js # 10 endpoints (auto-draft, review, approve)
+backend/erp/routes/kpiSelfRatingRoutes.js          # Mounted at /api/erp/self-ratings
+frontend/src/erp/hooks/useKpiSelfRating.js         # Frontend hook
+frontend/src/erp/pages/KpiSelfRating.jsx           # Self-rating form + manager review + history
+frontend/src/erp/pages/KpiLibrary.jsx              # Admin SMART goal form (SAP SuccessFactors pattern)
+```
+
+### Routes
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/self-ratings/my` | Own ratings history |
+| GET | `/self-ratings/my/current` | Get or auto-create DRAFT for current period |
+| GET | `/self-ratings/review` | Manager's pending reviews |
+| GET | `/self-ratings/by-person/:personId` | Admin: all ratings for a person |
+| POST | `/self-ratings` | Save draft |
+| POST | `/self-ratings/:id/submit` | DRAFT → SUBMITTED |
+| PUT | `/self-ratings/:id/review` | Manager adds scores → REVIEWED |
+| POST | `/self-ratings/:id/approve` | Admin approves → APPROVED |
+| POST | `/self-ratings/:id/return` | Return for revision → RETURNED |
+| GET | `/self-ratings/:id` | Single rating (self/manager/admin) |
+
+### New Lookup Categories (Phase 32)
+| Category | Purpose |
+|----------|---------|
+| `RATING_SCALE` | 1-5 performance scale (Needs Improvement → Outstanding) |
+| `COMPETENCY` | 8 universal competencies (Communication, Teamwork, Leadership, etc.) |
+| `REVIEW_PERIOD_TYPE` | Review period types (Monthly, Quarterly, Semi-Annual, Annual) |
+
+### KPI_CODE Extensions (Phase 32)
+- All 13 existing sales KPIs now have `functional_roles: ['SALES']` + `description` in metadata
+- 3 new Purchasing KPIs (PO_PROCESSING_TIME, VENDOR_PAYMENT_COMPLIANCE, COST_SAVINGS_PCT)
+- 3 new Accounting KPIs (CLOSE_TIMELINESS, JOURNAL_ACCURACY, RECONCILIATION_RATE)
+- 2 new Collections KPIs (COLLECTION_EFFICIENCY, AGING_REDUCTION)
+- 2 new Inventory KPIs (STOCKOUT_RATE, CYCLE_COUNT_ACCURACY)
+- 2 Universal KPIs (ATTENDANCE_RATE, TASK_COMPLETION) — `functional_roles: ['ALL']`
+
+### Integration Points
+- **PersonDetail.jsx** Section G: shows latest rating summary (period, status, self/manager scores)
+- **ControlCenter.jsx**: embedded under People & Access → KPI Library + KPI Self-Rating
+- **App.jsx**: standalone routes at `/erp/kpi-library` (MANAGEMENT) and `/erp/self-rating` (ERP_ALL)
+- **WorkflowGuide**: banners for both kpiLibrary and kpiSelfRating pages
 
 ---
 
