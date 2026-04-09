@@ -53,7 +53,12 @@ const css = `
   @media(max-width: 375px) { .pd-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .pd-main input, .pd-main select { font-size: 16px; } }
 `;
 
-// Hardcoded fallbacks removed — all dropdowns now driven by useLookupOptions() hooks below
+// All dropdown categories fetched in a single batch call (was 13 individual calls)
+const LOOKUP_CATEGORIES = [
+  'PERSON_TYPE', 'EMPLOYMENT_TYPE', 'VEHICLE_TYPE', 'BDM_STAGE', 'ROLE_MAPPING',
+  'CIVIL_STATUS', 'PERSON_STATUS', 'SALARY_TYPE', 'TAX_STATUS', 'INCENTIVE_TYPE',
+  'INSURANCE_TYPE', 'INSURANCE_FREQUENCY', 'INSURANCE_STATUS',
+];
 
 const fmt = (n) => n != null ? `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString() : '—';
@@ -83,12 +88,6 @@ export default function PersonDetail() {
   const pplApi = usePeople();
   const payApi = usePayroll();
 
-  // Single batch fetch for all lookup categories (1 API call instead of 13)
-  const LOOKUP_CATEGORIES = [
-    'PERSON_TYPE', 'EMPLOYMENT_TYPE', 'VEHICLE_TYPE', 'BDM_STAGE', 'ROLE_MAPPING',
-    'CIVIL_STATUS', 'PERSON_STATUS', 'SALARY_TYPE', 'TAX_STATUS', 'INCENTIVE_TYPE',
-    'INSURANCE_TYPE', 'INSURANCE_FREQUENCY', 'INSURANCE_STATUS',
-  ];
   const { data: lookups, loading: lookupsLoading } = useLookupBatch(LOOKUP_CATEGORIES);
   const codes = (cat) => (lookups[cat] || []).map(o => o.code);
 

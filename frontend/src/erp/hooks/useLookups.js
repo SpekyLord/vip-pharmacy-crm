@@ -93,8 +93,7 @@ export function invalidateLookupCache(category, entityId) {
 export function useLookupBatch(categories) {
   const entityCtx = useContext(EntityContext);
   const entityId = entityCtx?.workingEntityId || 'default';
-  const keyStr = categories.sort().join(',');
-  const batchCacheKey = `${entityId}:_batch:${keyStr}`;
+  const keyStr = [...categories].sort().join(',');
 
   const [data, setData] = useState(() => {
     // Init from individual caches if available
