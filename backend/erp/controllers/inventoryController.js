@@ -863,10 +863,10 @@ const seedStockOnHand = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No file uploaded. Send as multipart/form-data with field name "file".' });
   }
 
-  // Parse file (supports CSV and XLSX)
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  // Parse file (supports CSV and XLSX) — raw:false keeps values as strings
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer', raw: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
 
   if (!rows.length) {
     return res.status(400).json({ success: false, message: 'File is empty' });

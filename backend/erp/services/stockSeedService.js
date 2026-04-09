@@ -75,10 +75,10 @@ async function seedStockFromRows(rows, options = {}) {
       continue;
     }
 
-    // Resolve warehouse
+    // Resolve warehouse (coerce to string — XLSX may parse as number)
     const whCode = hasWarehouseCode
-      ? (row.WarehouseCode || row['Warehouse Code'] || '')?.toUpperCase()?.trim()
-      : bdmToWarehouse[row.BDM];
+      ? String(row.WarehouseCode || row['Warehouse Code'] || '').toUpperCase().trim()
+      : bdmToWarehouse[String(row.BDM || '').trim()];
 
     if (!whCode) {
       unmatchedItems.push({ row: i + 2, brand: row.BrandName, dosage: row.DosageStrength, reason: `No warehouse mapping for BDM "${row.BDM}"` });
@@ -100,9 +100,9 @@ async function seedStockFromRows(rows, options = {}) {
     const expiryDate = parseDate(row.ExpiryDate);
 
     // Match against ProductMaster — DO NOT auto-create
-    const itemKey = row.ItemKey || `${row.BrandName}|${row.DosageStrength}`;
-    const csvBrandClean = cleanName(row.BrandName || '');
-    const csvDosage = (row.DosageStrength || '').trim();
+    const itemKey = String(row.ItemKey || `${row.BrandName}|${row.DosageStrength}`).trim();
+    const csvBrandClean = cleanName(String(row.BrandName ?? ''));
+    const csvDosage = String(row.DosageStrength ?? '').trim();
 
     // Strategy 1: exact item_key
     let product = await ProductMaster.findOne({ entity_id: entityId, item_key: itemKey }).lean();
