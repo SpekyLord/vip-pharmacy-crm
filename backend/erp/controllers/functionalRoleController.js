@@ -70,6 +70,10 @@ const getByPerson = catchAsync(async (req, res) => {
 const createAssignment = catchAsync(async (req, res) => {
   const { person_id, entity_id, functional_role, valid_from, valid_to, approval_limit, description } = req.body;
 
+  if (!person_id) return res.status(400).json({ success: false, message: 'person_id is required' });
+  if (!functional_role) return res.status(400).json({ success: false, message: 'functional_role is required' });
+  if (!valid_from) return res.status(400).json({ success: false, message: 'valid_from is required' });
+
   // Look up person to get home_entity_id
   const person = await PeopleMaster.findById(person_id).select('entity_id full_name').lean();
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
@@ -146,12 +150,18 @@ const deactivateAssignment = catchAsync(async (req, res) => {
 const bulkCreate = catchAsync(async (req, res) => {
   const { person_id, entity_ids, functional_role, functional_roles, valid_from, valid_to, approval_limit, description } = req.body;
 
+  if (!person_id) return res.status(400).json({ success: false, message: 'person_id is required' });
+  if (!valid_from) return res.status(400).json({ success: false, message: 'valid_from is required' });
   if (!Array.isArray(entity_ids) || entity_ids.length === 0) {
     return res.status(400).json({ success: false, message: 'entity_ids array is required' });
   }
 
   // Support both single role (functional_role) and multi-role (functional_roles)
-  const roles = (Array.isArray(functional_roles) && functional_roles.length > 0)
+  const hasMultiRoles = Array.isArray(functional_roles) && functional_roles.length > 0;
+  if (!hasMultiRoles && !functional_role) {
+    return res.status(400).json({ success: false, message: 'functional_role or functional_roles is required' });
+  }
+  const roles = hasMultiRoles
     ? functional_roles.map(r => r.toUpperCase())
     : [functional_role.toUpperCase()];
 

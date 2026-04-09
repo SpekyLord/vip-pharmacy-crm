@@ -142,6 +142,11 @@ function RoleAssignmentManagerContent() {
   };
 
   const handleSave = async () => {
+    if (!form.person_id && !editing) return toast.error('Select a person');
+    if (!form.valid_from) return toast.error('Valid From date is required');
+    if (!editing && !bulkMode && !form.functional_role) return toast.error('Select a function');
+    if (!editing && !bulkMode && !form.entity_id) return toast.error('Select a target entity');
+    if (bulkMode && bulkEntityIds.length === 0) return toast.error('Select at least one entity');
     try {
       if (editing) {
         await updateAssignment(editing._id, {
