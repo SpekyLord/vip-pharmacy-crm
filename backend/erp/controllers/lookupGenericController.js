@@ -67,6 +67,57 @@ const SEED_DEFAULTS = {
     'TABLET', 'CAPSULE', 'AMPULE', 'PACK', 'ROLL', 'SET',
     'BAG', 'CAN', 'PAIR', 'PFS', 'JAR', 'YARD',
   ],
+  // Phase 28 — Sales Goals & KPI
+  GOAL_CONFIG: [
+    { code: 'COLLECTION_TARGET_PCT', label: 'Default Collection Target %', metadata: { value: 70 } },
+    { code: 'FISCAL_START_MONTH', label: 'Fiscal Year Start Month', metadata: { value: 1 } },
+    { code: 'ATTAINMENT_GREEN', label: 'On Track Threshold %', metadata: { value: 90 } },
+    { code: 'ATTAINMENT_YELLOW', label: 'Needs Attention Threshold %', metadata: { value: 70 } },
+    { code: 'ATTAINMENT_RED', label: 'At Risk Threshold %', metadata: { value: 50 } },
+    { code: 'SNAPSHOT_AUTO_COMPUTE', label: 'Auto-Compute Monthly Snapshots', metadata: { value: true } },
+    { code: 'LOST_SALES_THRESHOLD_DAYS', label: 'Stock-Out Threshold (days)', metadata: { value: 3 } },
+    { code: 'ACCREDITATION_LEVEL', label: 'Hospital Accreditation Engagement Level', metadata: { value: 4 } },
+  ],
+  GROWTH_DRIVER: [
+    { code: 'HOSP_ACCRED', label: 'Hospital Accreditation' },
+    { code: 'PHARMACY_CSR', label: 'Pharmacy & CSR Inclusion' },
+    { code: 'ZERO_LOST_SALES', label: 'Inventory Optimization / Zero Lost Sales' },
+    { code: 'STRATEGIC_MD', label: 'Strategic Partnerships with MDs' },
+    { code: 'PRICE_INCREASE', label: 'Surgical Price Increases' },
+  ],
+  KPI_CODE: [
+    { code: 'PCT_HOSP_ACCREDITED', label: '% Hospitals Accredited', metadata: { unit: '%', direction: 'higher_better', computation: 'auto', source_model: 'Hospital' } },
+    { code: 'TIME_TO_ACCREDITATION', label: 'Time to Accreditation (days)', metadata: { unit: 'days', direction: 'lower_better', computation: 'manual' } },
+    { code: 'REV_PER_ACCREDITED_HOSP', label: 'Revenue per Accredited Hospital', metadata: { unit: 'PHP', direction: 'higher_better', computation: 'auto' } },
+    { code: 'SKUS_LISTED_PER_HOSP', label: 'SKUs Listed per Hospital', metadata: { unit: 'count', direction: 'higher_better', computation: 'auto' } },
+    { code: 'FORMULARY_APPROVAL_RATE', label: 'Formulary Approval Success Rate', metadata: { unit: '%', direction: 'higher_better', computation: 'manual' } },
+    { code: 'MONTHLY_REORDER_FREQ', label: 'Monthly Reorder Frequency', metadata: { unit: 'count', direction: 'higher_better', computation: 'auto' } },
+    { code: 'LOST_SALES_INCIDENTS', label: 'Lost Sales Incidents', metadata: { unit: 'count', direction: 'lower_better', computation: 'auto' } },
+    { code: 'INVENTORY_TURNOVER', label: 'Inventory Turnover', metadata: { unit: 'ratio', direction: 'higher_better', computation: 'auto' } },
+    { code: 'EXPIRY_RETURNS', label: 'Expiry Returns', metadata: { unit: 'count', direction: 'lower_better', computation: 'auto' } },
+    { code: 'MD_ENGAGEMENT_COVERAGE', label: 'MD Engagement Coverage', metadata: { unit: '%', direction: 'higher_better', computation: 'auto' } },
+    { code: 'HOSP_REORDER_CYCLE_TIME', label: 'Hospital Reorder Cycle Time', metadata: { unit: 'days', direction: 'lower_better', computation: 'manual' } },
+    { code: 'VOLUME_RETENTION_POST_INCREASE', label: 'Volume Retention Post Price Increase', metadata: { unit: '%', direction: 'higher_better', computation: 'auto' } },
+    { code: 'GROSS_MARGIN_PER_SKU', label: 'Gross Margin per SKU', metadata: { unit: '%', direction: 'higher_better', computation: 'auto' } },
+  ],
+  INCENTIVE_TIER: [
+    { code: 'TIER_1', label: 'Platinum', metadata: { attainment_min: 100, budget_per_bdm: 150000, reward_description: '', sort_order: 1 } },
+    { code: 'TIER_2', label: 'Gold', metadata: { attainment_min: 90, budget_per_bdm: 80000, reward_description: '', sort_order: 2 } },
+    { code: 'TIER_3', label: 'Silver', metadata: { attainment_min: 80, budget_per_bdm: 50000, reward_description: '', sort_order: 3 } },
+    { code: 'TIER_4', label: 'Bronze', metadata: { attainment_min: 70, budget_per_bdm: 30000, reward_description: '', sort_order: 4 } },
+    { code: 'TIER_5', label: 'Participant', metadata: { attainment_min: 50, budget_per_bdm: 15000, reward_description: '', sort_order: 5 } },
+  ],
+  ACTION_TYPE: [
+    { code: 'ACCREDITATION', label: 'Hospital Accreditation' },
+    { code: 'FORMULARY_LISTING', label: 'Formulary/CSR Listing' },
+    { code: 'MD_ENGAGEMENT', label: 'MD Engagement Activity' },
+    { code: 'PRICE_ADJUSTMENT', label: 'Price Adjustment' },
+    { code: 'STOCK_REPLENISH', label: 'Stock Replenishment' },
+    { code: 'GENERAL', label: 'General Action' },
+  ],
+  INCENTIVE_PROGRAM: [
+    { code: 'JAPAN_TRIP_2026', label: 'Japan Trip 2026', metadata: { fiscal_year: 2026, qualification_metric: 'sales', use_tiers: true } },
+  ],
 };
 
 // List all distinct categories for current entity

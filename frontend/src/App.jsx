@@ -155,6 +155,13 @@ const AgentDashboard = lazyRetry(() => import('./erp/pages/AgentDashboard'));
 const CreditNotes = lazyRetry(() => import('./erp/pages/CreditNotes'));
 const ExpiryDashboard = lazyRetry(() => import('./erp/pages/ExpiryDashboard'));
 const BatchTrace = lazyRetry(() => import('./erp/pages/BatchTrace'));
+
+// Phase 28 — Sales Goals & KPI
+const SalesGoalDashboard = lazyRetry(() => import('./erp/pages/SalesGoalDashboard'));
+const SalesGoalSetup = lazyRetry(() => import('./erp/pages/SalesGoalSetup'));
+const SalesGoalBdmView = lazyRetry(() => import('./erp/pages/SalesGoalBdmView'));
+const IncentiveTracker = lazyRetry(() => import('./erp/pages/IncentiveTracker'));
+
 // Standalone routes redirect to ControlCenter with the right section param
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
 const EntityManagerRedirect = () => <Navigate to="/erp/control-center?section=entities" replace />;
@@ -691,6 +698,13 @@ function App() {
           <Route path="/erp/credit-notes" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="sales"><CreditNotes /></ProtectedRoute>} />
           <Route path="/erp/expiry-dashboard" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="inventory"><ExpiryDashboard /></ProtectedRoute>} />
           <Route path="/erp/batch-trace" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="inventory"><BatchTrace /></ProtectedRoute>} />
+
+          {/* Phase 28 — Sales Goals & KPI */}
+          <Route path="/erp/sales-goals" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="sales_goals"><SalesGoalDashboard /></ProtectedRoute>} />
+          <Route path="/erp/sales-goals/setup" element={<ProtectedRoute allowedRoles={['admin', 'president']} requiredErpModule="sales_goals"><SalesGoalSetup /></ProtectedRoute>} />
+          <Route path="/erp/sales-goals/bdm/:bdmId" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="sales_goals"><SalesGoalBdmView /></ProtectedRoute>} />
+          <Route path="/erp/sales-goals/my" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="sales_goals"><SalesGoalBdmView /></ProtectedRoute>} />
+          <Route path="/erp/sales-goals/incentives" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="sales_goals"><IncentiveTracker /></ProtectedRoute>} />
 
           {/* Orphaned page direct routes — redirect to Control Center with correct section */}
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><AgentSettingsRedirect /></ProtectedRoute>} />

@@ -16,6 +16,7 @@ const MODULES = [
   { key: 'accounting', label: 'Acctg' },
   { key: 'purchasing', label: 'Purch' },
   { key: 'banking', label: 'Bank' },
+  { key: 'sales_goals', label: 'Goals' },
 ];
 
 const LEVEL_COLORS = {

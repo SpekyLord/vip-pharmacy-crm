@@ -55,6 +55,8 @@ import {
   RotateCcw,
   AlertTriangle,
   Search,
+  Target,
+  Trophy,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -751,6 +753,19 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     if (isAdmin) repItems.push({ path: '/erp/budget-allocations', label: 'Budget Allocations', icon: DollarSign });
     repItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'Reports', collapsible: true, defaultOpen: false, items: repItems });
+  }
+
+  // ── Sales Goals & KPI (Phase 28) ────────────────────────────────────────
+  if (hasModule('sales_goals')) {
+    const goalItems = [
+      { path: '/erp/sales-goals', label: 'Goal Dashboard', icon: Target },
+      { path: '/erp/sales-goals/incentives', label: 'Incentive Tracker', icon: Trophy },
+    ];
+    if (isAdmin) {
+      goalItems.push({ path: '/erp/sales-goals/setup', label: 'Goal Setup', icon: Settings });
+    }
+    goalItems.sort((a, b) => a.label.localeCompare(b.label));
+    sections.push({ title: 'Sales Goals', collapsible: true, defaultOpen: false, items: goalItems });
   }
 
   // ── People & HR (admin-like only) ─────────────────────────────────────────

@@ -11,8 +11,9 @@ const modulesSchema = new mongoose.Schema({
   people:      { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
   payroll:     { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
   accounting:  { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  purchasing:  { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  banking:     { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
+  purchasing:   { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
+  banking:      { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
+  sales_goals:  { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
 }, { _id: false });
 
 const accessTemplateSchema = new mongoose.Schema(
