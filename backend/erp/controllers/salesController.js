@@ -17,6 +17,7 @@ const { journalFromSale, journalFromServiceRevenue, journalFromCOGS } = require(
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
 const JournalEntry = require('../models/JournalEntry');
 const ProductMaster = require('../models/ProductMaster');
+const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
 
 // ═══════════════════════════════════════════════════════════
 // CRUD
@@ -544,6 +545,17 @@ const submitSales = catchAsync(async (req, res) => {
       posted_count: validRows.length,
       event_ids: eventIds
     });
+
+    // Non-blocking: notify management of posted sales
+    notifyDocumentPosted({
+      entityId: req.entityId,
+      module: 'Sales',
+      docType: 'CSI',
+      docRef: validRows.map(r => r.doc_ref).filter(Boolean).join(', '),
+      postedBy: req.user.name || req.user.email,
+      amount: validRows.reduce((sum, r) => sum + (r.invoice_total || 0), 0),
+      period: validRows[0]?.csi_date ? new Date(validRows[0].csi_date).toISOString().slice(0, 7) : undefined,
+    }).catch(err => console.error('Sales post notification failed:', err.message));
   } finally {
     await session.endSession();
   }
@@ -655,6 +667,17 @@ const reopenSales = catchAsync(async (req, res) => {
     }
 
     res.json({ success: true, reopened_count: reopenedCount });
+
+    // Non-blocking: notify management of reopened sales
+    const reopenedRefs = sales.map(s => s.doc_ref).filter(Boolean).join(', ');
+    notifyDocumentReopened({
+      entityId: req.entityId,
+      module: 'Sales',
+      docType: 'CSI',
+      docRef: reopenedRefs,
+      reopenedBy: req.user.name || req.user.email,
+      reason: req.body.reason,
+    }).catch(err => console.error('Sales reopen notification failed:', err.message));
   } finally {
     await session.endSession();
   }

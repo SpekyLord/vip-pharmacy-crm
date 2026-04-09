@@ -151,6 +151,9 @@ const Collaterals = lazyRetry(() => import('./erp/pages/Collaterals'));
 const ControlCenter = lazyRetry(() => import('./erp/pages/ControlCenter'));
 const AgentDashboard = lazyRetry(() => import('./erp/pages/AgentDashboard'));
 
+// Phase 28 — Approval Workflow
+const ApprovalManager = lazyRetry(() => import('./erp/pages/ApprovalManager'));
+
 // Phase 25 — Returns, Expiry, Batch Trace, Orphaned Page Routes
 const CreditNotes = lazyRetry(() => import('./erp/pages/CreditNotes'));
 const ExpiryDashboard = lazyRetry(() => import('./erp/pages/ExpiryDashboard'));
@@ -693,6 +696,7 @@ function App() {
           {/* Phase 24 — ERP Control Center + Agent Intelligence */}
           <Route path="/erp/control-center" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><ControlCenter /></ProtectedRoute>} />
           <Route path="/erp/agent-dashboard" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><AgentDashboard /></ProtectedRoute>} />
+          <Route path="/erp/approvals" element={<ProtectedRoute allowedRoles={['admin', 'finance', 'president']}><ApprovalManager /></ProtectedRoute>} />
 
           {/* Phase 25 — Returns, Expiry, Batch Trace */}
           <Route path="/erp/credit-notes" element={<ProtectedRoute allowedRoles={['employee', 'admin', 'finance', 'president']} requiredErpModule="sales"><CreditNotes /></ProtectedRoute>} />

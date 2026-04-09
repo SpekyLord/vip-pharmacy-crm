@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 5.5
-> **Status**: Phases 0-28 Complete. Sales Goals & KPI Module (April 9, 2026).
+> **Version**: 5.6
+> **Status**: Phases 0-29 Complete. Sales Goals & KPI + Email Notifications + Approval Workflow (April 9, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -87,6 +87,158 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 26 | Multi-Entity Access + Stock Import Fix | ✅ |
 | 27 | Full System Audit + Period Lock + Banner Compliance | ✅ |
 | 28 | Sales Goals, KPI & Partnership Performance | ✅ |
+| 29 | Email Notifications + Approval Workflow (Authority Matrix) | ✅ |
+
+---
+
+## Sales Goals, KPI & Partnership Performance (Phase 28)
+
+Database-driven sales goal tracking with tiered incentive programs. Zero hardcoding — all config lives in Lookup tables.
+
+### Architecture
+- **SalesGoalPlan** — Annual plan container with growth drivers, KPI definitions, incentive programs
+- **SalesGoalTarget** — Hierarchical targets: Plan → Entity → Territory → BDM (rollup with validation)
+- **KpiSnapshot** — Monthly auto-computed KPI values from existing ERP data (SalesLine, Collection, Hospital, Inventory, Visit)
+- **ActionItem** — Tracked action items tied to growth drivers with polymorphic refs to Hospital/Product/Doctor
+
+### Access Control
+- 11th module `sales_goals` in AccessTemplate with 5 sub-permissions: `plan_manage`, `kpi_compute`, `action_manage_all`, `incentive_manage`, `manual_kpi_all`
+- BDMs get VIEW (see own goals), delegates get FULL with sub-permissions
+
+### Lookup Categories (6 new)
+| Category | Purpose |
+|----------|---------|
+| `GOAL_CONFIG` | Attainment thresholds, collection %, fiscal start month (metadata.value) |
+| `GROWTH_DRIVER` | Driver types: HOSP_ACCRED, PHARMACY_CSR, ZERO_LOST_SALES, STRATEGIC_MD, PRICE_INCREASE |
+| `KPI_CODE` | 13 KPI metrics with auto/manual computation, units, direction (metadata) |
+| `INCENTIVE_TIER` | Tiered rewards: Platinum/Gold/Silver/Bronze/Participant with attainment_min + budget_per_bdm (metadata) |
+| `ACTION_TYPE` | Action item types: ACCREDITATION, FORMULARY_LISTING, MD_ENGAGEMENT, etc. |
+| `INCENTIVE_PROGRAM` | Named programs: JAPAN_TRIP_2026 (metadata: fiscal_year, qualification_metric, use_tiers) |
+
+### Key Files
+```
+backend/erp/models/SalesGoalPlan.js          # Annual plan with growth_drivers[] + incentive_programs[]
+backend/erp/models/SalesGoalTarget.js        # ENTITY/TERRITORY/BDM targets with rollup
+backend/erp/models/KpiSnapshot.js            # Monthly KPI snapshots with incentive_status[]
+backend/erp/models/ActionItem.js             # Tracked actions with polymorphic refs
+backend/erp/services/salesGoalService.js     # KPI computation engine + incentive tier logic
+backend/erp/controllers/salesGoalController.js  # 20+ endpoints
+backend/erp/routes/salesGoalRoutes.js        # Mounted at /api/erp/sales-goals
+frontend/src/erp/hooks/useSalesGoals.js      # Frontend hook
+frontend/src/erp/pages/SalesGoalDashboard.jsx   # Command center with leaderboard
+frontend/src/erp/pages/SalesGoalSetup.jsx       # Plan/target/driver/incentive config (5 tabs)
+frontend/src/erp/pages/SalesGoalBdmView.jsx     # Individual BDM detail with attainment ring
+frontend/src/erp/pages/IncentiveTracker.jsx     # Tiered leaderboard with budget advisor
+```
+
+### Routes
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/sales-goals/plans` | List plans |
+| POST | `/sales-goals/plans` | Create plan (FULL + plan_manage) |
+| POST | `/sales-goals/plans/:id/activate` | Activate plan (FULL + plan_manage) |
+| POST | `/sales-goals/targets/bulk` | Bulk create BDM targets (FULL + plan_manage) |
+| GET | `/sales-goals/targets/mine` | BDM's own target |
+| POST | `/sales-goals/snapshots/compute` | Trigger KPI computation (FULL + kpi_compute) |
+| GET | `/sales-goals/dashboard` | Goal dashboard (VIEW+) |
+| GET | `/sales-goals/dashboard/incentives` | Incentive leaderboard |
+| POST | `/sales-goals/actions` | Create action item |
+| POST | `/sales-goals/kpi/manual` | Enter manual KPI value |
+
+### Incentive Tier Logic
+- Tiers defined in Lookup INCENTIVE_TIER with `metadata.attainment_min` and `metadata.budget_per_bdm`
+- System matches BDM attainment % to highest qualifying tier (sorted descending)
+- Projected tier computed from annualized run rate: `(actual / monthsElapsed) * 12 / target`
+- Budget advisor reads P&L to suggest sustainable tier budgets
+- President adjusts tiers anytime via Control Center → Lookup Tables (no code changes)
+
+---
+
+## ERP Email Notifications (Phase 29)
+
+Non-blocking email notifications on document status changes. All sends are fire-and-forget — notification failure never breaks business logic.
+
+### Notification Types
+- **Document Posted**: Sales CSI, Collection CR, Expenses, Supplier Invoices → notifies admin/finance/president
+- **Document Reopened**: Sales/Collections reopened → notifies admin/finance (includes JE reversal context)
+- **Payroll Posted**: Payslip batch posted → notifies management with count and total net pay
+- **Approval Request**: Document requires approval → notifies resolved approvers
+- **Approval Decision**: Approved/rejected → notifies the document requester
+
+### Key Files
+```
+backend/templates/erpEmails.js           # HTML email templates (5 templates)
+backend/erp/services/erpNotificationService.js  # Notification orchestration (non-blocking)
+backend/models/EmailLog.js               # Extended with 5 new ERP email types
+```
+
+### Recipient Resolution
+Recipients are resolved dynamically from the database — no hardcoded recipient lists:
+- `findManagementRecipients(entityId)` → admin/finance/president users scoped to entity
+- `findNotificationRecipients(entityId, filter)` → custom role/entity filter
+- Multi-entity users found via `entity_ids` array; president/CEO see all entities
+
+---
+
+## Approval Workflow (Phase 29 — Authority Matrix)
+
+Multi-level, database-driven approval workflow. Controlled by `Settings.ENFORCE_AUTHORITY_MATRIX` (default: `false`).
+
+### Architecture
+- **ApprovalRule** — entity-scoped rules: module + doc_type + amount threshold + level + approver config
+- **ApprovalRequest** — individual request per document, tracks PENDING → APPROVED/REJECTED with immutable history
+- Rules support 3 approver types: `ROLE` (any user with specified roles), `USER` (specific users), `REPORTS_TO` (requester's PeopleMaster.reports_to manager)
+- Multi-level: Level 1 must approve before Level 2 is evaluated. Up to 5 levels.
+
+### How It Works
+1. When a controller calls `checkApprovalRequired()`, the service checks if `ENFORCE_AUTHORITY_MATRIX` is true
+2. If true, finds matching rules for the entity/module/docType/amount
+3. If rules match, creates `ApprovalRequest(PENDING)` and notifies approvers via email
+4. Controller returns HTTP 202 (Accepted) with `approval_pending: true`
+5. Approver visits `/erp/approvals` → approves or rejects (rejection requires reason)
+6. On approve, if next-level rules exist, escalates automatically
+7. Once fully approved, the controller's next attempt proceeds without blocking
+
+### Key Files
+```
+backend/erp/models/ApprovalRule.js       # Rule configuration (entity-scoped)
+backend/erp/models/ApprovalRequest.js    # Request tracking (immutable history)
+backend/erp/services/approvalService.js  # Business logic (check, resolve, decide)
+backend/erp/controllers/approvalController.js  # CRUD + approve/reject endpoints
+backend/erp/routes/approvalRoutes.js     # Mounted at /api/erp/approvals
+frontend/src/erp/hooks/useApprovals.js   # Frontend hook
+frontend/src/erp/pages/ApprovalManager.jsx  # Approval management page
+```
+
+### Routes
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/erp/approvals/status` | Check if authority matrix is enabled |
+| GET | `/api/erp/approvals/my-pending` | Pending approvals for logged-in user |
+| GET | `/api/erp/approvals/requests` | List all requests (filterable by status/module) |
+| POST | `/api/erp/approvals/requests/:id/approve` | Approve a request |
+| POST | `/api/erp/approvals/requests/:id/reject` | Reject a request (reason required) |
+| POST | `/api/erp/approvals/requests/:id/cancel` | Cancel a pending request |
+| GET | `/api/erp/approvals/rules` | List approval rules |
+| POST | `/api/erp/approvals/rules` | Create rule (admin only) |
+| PUT | `/api/erp/approvals/rules/:id` | Update rule (admin only) |
+| DELETE | `/api/erp/approvals/rules/:id` | Delete rule (admin only) |
+
+### Controller Integration
+Currently wired into:
+- **PO Approval** (`purchasingController.approvePO`): Calls `checkApprovalRequired()` before approving. Returns 202 if pending.
+
+To add to other controllers, follow the same pattern:
+```javascript
+const approvalCheck = await checkApprovalRequired({
+  entityId: req.entityId, module: 'MODULE', docType: 'TYPE',
+  docId: doc._id, docRef: doc.ref, amount: doc.total,
+  requesterId: req.user._id, requesterName: req.user.name,
+});
+if (approvalCheck.required) {
+  return res.status(202).json({ success: true, message: approvalCheck.message, approval_pending: true });
+}
+```
 
 ---
 
@@ -250,6 +402,7 @@ All ERP routes mounted under `/api/erp/` via `backend/erp/routes/erpRouter.js`. 
 | `/entities` | entityController | (shared) |
 | `/control-center` | controlCenterController | (shared) |
 | `/lookup-values` | lookupGenericController | (shared) |
+| `/approvals` | approvalController | (shared) |
 
 ---
 

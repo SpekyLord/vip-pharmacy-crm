@@ -18,6 +18,8 @@ const { recordApPayment, getPaymentHistory } = require('../services/apPaymentSer
 const { createVatEntry } = require('../services/vatService');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const XLSX = require('xlsx');
+const { notifyDocumentPosted } = require('../services/erpNotificationService');
+const { checkApprovalRequired } = require('../services/approvalService');
 
 /* ═══════════════════════════════════════════════════════════════════════
    PURCHASE ORDERS
@@ -100,11 +102,43 @@ const approvePO = catchAsync(async (req, res) => {
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
   if (po.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'Only DRAFT POs can be approved' });
 
+  // Authority matrix check — if enabled, verify approval chain before allowing
+  const approvalCheck = await checkApprovalRequired({
+    entityId: req.entityId,
+    module: 'PURCHASING',
+    docType: 'PO',
+    docId: po._id,
+    docRef: po.po_number,
+    amount: po.total_amount,
+    description: `PO for ${po.vendor_name || 'vendor'}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  });
+
+  if (approvalCheck.required) {
+    return res.status(202).json({
+      success: true,
+      message: approvalCheck.message,
+      approval_pending: true,
+      requests: approvalCheck.requests,
+    });
+  }
+
   po.status = 'APPROVED';
   po.approved_by = req.user._id;
   po.approved_at = new Date();
   await po.save();
   res.json({ success: true, data: po });
+
+  // Non-blocking: notify management of approved PO
+  notifyDocumentPosted({
+    entityId: req.entityId,
+    module: 'Purchasing',
+    docType: 'Purchase Order',
+    docRef: po.po_number || po._id.toString(),
+    postedBy: req.user.name || req.user.email,
+    amount: po.total_amount,
+  }).catch(err => console.error('PO approval notification failed:', err.message));
 });
 
 const cancelPO = catchAsync(async (req, res) => {
@@ -313,6 +347,17 @@ const postInvoice = catchAsync(async (req, res) => {
   }
 
   res.json({ success: true, data: { invoice, journal_entry: je } });
+
+  // Non-blocking: notify management of posted supplier invoice
+  notifyDocumentPosted({
+    entityId: req.entityId,
+    module: 'Purchasing',
+    docType: 'Supplier Invoice',
+    docRef: invoice.invoice_ref,
+    postedBy: req.user.name || req.user.email,
+    amount: invoice.total_amount,
+    period: je?.period,
+  }).catch(err => console.error('SI post notification failed:', err.message));
 });
 
 /* ═══════════════════════════════════════════════════════════════════════

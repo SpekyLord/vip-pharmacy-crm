@@ -22,6 +22,7 @@ const { createVatEntry } = require('../services/vatService');
 const { createCwtEntry } = require('../services/cwtService');
 const VatLedger = require('../models/VatLedger');
 const CwtLedger = require('../models/CwtLedger');
+const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
 const Settings = require('../models/Settings');
 
 // ═══ CRUD ═══
@@ -438,6 +439,17 @@ const submitCollections = catchAsync(async (req, res) => {
       warnings: warnings || undefined,
       posted_count: validRows.length
     });
+
+    // Non-blocking: notify management of posted collections
+    notifyDocumentPosted({
+      entityId: req.entityId,
+      module: 'Collections',
+      docType: 'CR',
+      docRef: validRows.map(r => r.cr_no).filter(Boolean).join(', '),
+      postedBy: req.user.name || req.user.email,
+      amount: validRows.reduce((sum, r) => sum + (r.cr_amount || 0), 0),
+      period: validRows[0]?.cr_date ? new Date(validRows[0].cr_date).toISOString().slice(0, 7) : undefined,
+    }).catch(err => console.error('Collection post notification failed:', err.message));
   } finally {
     await session.endSession();
   }
@@ -498,6 +510,16 @@ const reopenCollections = catchAsync(async (req, res) => {
     }
 
     res.json({ success: true, message: `${rows.length} collection(s) reopened` });
+
+    // Non-blocking: notify management of reopened collections
+    notifyDocumentReopened({
+      entityId: req.entityId,
+      module: 'Collections',
+      docType: 'CR',
+      docRef: rows.map(r => r.cr_no).filter(Boolean).join(', '),
+      reopenedBy: req.user.name || req.user.email,
+      reason: req.body.reason,
+    }).catch(err => console.error('Collection reopen notification failed:', err.message));
   } finally {
     await session.endSession();
   }

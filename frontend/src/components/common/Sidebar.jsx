@@ -846,6 +846,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   // ── Administration (admin-like only) — inserted at top, right after ERP Home ──
   if (['admin', 'finance', 'president'].includes(role)) {
     const adminItems = [];
+    adminItems.push({ path: '/erp/approvals', label: 'Approvals', icon: ClipboardCheck });
     adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
     adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
     if (isAdmin) {

@@ -3753,3 +3753,66 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] CALF Gate: Properly enforced in `submitExpenses` and `submitCarLogbook` with dual validation gates
 - [x] All autoJournal functions have callers (15/15 verified)
 - [x] Frontend hardcoded dropdowns: ~9 instances, most with API fallback mechanism
+
+---
+
+## Phase 29 — Email Notifications + Approval Workflow (Authority Matrix) ✅
+
+### 29.1 — ERP Email Notification Service ✅
+- [x] Created `backend/templates/erpEmails.js` — 5 HTML email templates (posted, reopened, approval request, approval decision, payroll posted)
+- [x] Created `backend/erp/services/erpNotificationService.js` — non-blocking notification orchestration
+- [x] Extended `backend/models/EmailLog.js` with 5 new ERP email types: ERP_DOCUMENT_POSTED, ERP_DOCUMENT_REOPENED, ERP_APPROVAL_REQUEST, ERP_APPROVAL_DECISION, ERP_PAYROLL_POSTED
+- [x] Recipients resolved dynamically from User model (role + entity scope) — no hardcoded lists
+- [x] Entity name caching (5-minute TTL) for email context
+- [x] All sends fire-and-forget — notification failure never breaks business logic
+
+### 29.2 — Controller Notification Hooks ✅
+- [x] `salesController.submitSales` — notifies management on CSI posted (amount, doc refs, period)
+- [x] `salesController.reopenSales` — notifies management on CSI reopened (with reason)
+- [x] `collectionController.submitCollections` — notifies management on CR posted
+- [x] `collectionController.reopenCollections` — notifies management on CR reopened
+- [x] `payrollController.postPayroll` — notifies management on payslip batch posted (count, total net pay)
+- [x] `purchasingController.approvePO` — notifies management on PO approved
+- [x] `purchasingController.postInvoice` — notifies management on Supplier Invoice posted
+
+### 29.3 — Approval Workflow Model ✅
+- [x] Created `backend/erp/models/ApprovalRule.js` — entity-scoped rules (module, doc_type, amount_threshold, level, approver config)
+- [x] Created `backend/erp/models/ApprovalRequest.js` — tracks PENDING → APPROVED/REJECTED with immutable history
+- [x] Approver types: ROLE (by role name), USER (specific user IDs), REPORTS_TO (PeopleMaster.reports_to chain)
+- [x] Multi-level support: up to 5 levels, auto-escalation on Level N approval
+
+### 29.4 — Approval Service ✅
+- [x] Created `backend/erp/services/approvalService.js` — business logic for checking, resolving, and deciding
+- [x] `isApprovalEnabled()` — reads Settings.ENFORCE_AUTHORITY_MATRIX
+- [x] `findMatchingRules()` — entity + module + doc_type + amount threshold matching
+- [x] `resolveApprovers()` — dynamic resolution from ROLE/USER/REPORTS_TO
+- [x] `checkApprovalRequired()` — called by controllers before posting; creates request if needed
+- [x] `processDecision()` — approve/reject with authorization check and auto-escalation
+- [x] `isFullyApproved()` — checks all levels approved for a document
+- [x] `getPendingForApprover()` — finds pending requests for a specific user
+
+### 29.5 — Approval Controller & Routes ✅
+- [x] Created `backend/erp/controllers/approvalController.js` — rules CRUD + request management
+- [x] Created `backend/erp/routes/approvalRoutes.js` — mounted at `/api/erp/approvals`
+- [x] Mounted in `backend/erp/routes/index.js`
+- [x] Routes: GET /status, GET /my-pending, GET /requests, POST /requests/:id/approve|reject|cancel, CRUD /rules
+
+### 29.6 — Controller Integration ✅
+- [x] Wired `checkApprovalRequired()` into `purchasingController.approvePO` — returns 202 if pending approval
+- [x] Pattern documented in CLAUDE-ERP.md for adding to other controllers
+
+### 29.7 — Frontend Approval UI ✅
+- [x] Created `frontend/src/erp/hooks/useApprovals.js` — hook for all approval API operations
+- [x] Created `frontend/src/erp/pages/ApprovalManager.jsx` — full management page (requests tab + rules tab)
+- [x] Added lazy import and route in App.jsx at `/erp/approvals`
+- [x] Added sidebar link (ClipboardCheck icon) for admin/finance/president roles
+- [x] Added WorkflowGuide entry `approval-manager` with steps and navigation
+- [x] Exports `ApprovalManagerContent` for Control Center embedding
+
+### 29.8 — Verification ✅
+- [x] All new backend files pass `node -c` syntax check
+- [x] All modified controllers pass syntax check
+- [x] Frontend builds cleanly with `npx vite build`
+- [x] System health check passes (0 new issues)
+- [x] CLAUDE-ERP.md updated with Phase 29 documentation
+- [x] PHASETASK-ERP.md updated with full task breakdown
