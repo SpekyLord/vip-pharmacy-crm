@@ -57,7 +57,7 @@ const css = `
 
 // All dropdown categories fetched in a single batch call (was 13 individual calls)
 const LOOKUP_CATEGORIES = [
-  'PERSON_TYPE', 'EMPLOYMENT_TYPE', 'VEHICLE_TYPE', 'BDM_STAGE', 'ROLE_MAPPING',
+  'PERSON_TYPE', 'EMPLOYMENT_TYPE', 'VEHICLE_TYPE', 'BDM_STAGE', 'ROLE_MAPPING', 'SYSTEM_ROLE',
   'CIVIL_STATUS', 'PERSON_STATUS', 'SALARY_TYPE', 'TAX_STATUS', 'INCENTIVE_TYPE',
   'INSURANCE_TYPE', 'INSURANCE_FREQUENCY', 'INSURANCE_STATUS',
 ];
@@ -100,6 +100,12 @@ export default function PersonDetail() {
   const VEHICLE_TYPES = codes('VEHICLE_TYPE');
   const BDM_STAGES = codes('BDM_STAGE');
   const roleMappingOpts = useMemo(() => lookups.ROLE_MAPPING || [], [lookups.ROLE_MAPPING]);
+  const systemRoleOpts = useMemo(() => lookups.SYSTEM_ROLE || [], [lookups.SYSTEM_ROLE]);
+  // Derive role from person_type via ROLE_MAPPING lookup
+  const getMappedRole = useCallback((personType) => {
+    const mapping = roleMappingOpts.find(m => m.metadata?.person_type === personType);
+    return mapping?.metadata?.system_role || 'contractor';
+  }, [roleMappingOpts]);
   const CIVIL_STATUSES = codes('CIVIL_STATUS');
   const PERSON_STATUSES = codes('PERSON_STATUS');
   const SALARY_TYPES = codes('SALARY_TYPE');
@@ -124,11 +130,12 @@ export default function PersonDetail() {
   const [compForm, setCompForm] = useState({});
   const [insForm, setInsForm] = useState(null); // null = closed, {} = new, {_id} = editing
   const [showLoginForm, setShowLoginForm] = useState(false);
-  const [loginForm, setLoginForm] = useState({ email: '', password: '', template_id: '' });
+  const [loginForm, setLoginForm] = useState({ email: '', password: '', template_id: '', role: '' });
   const [accessTemplates, setAccessTemplates] = useState([]);
   const erpAccess = useErpAccess();
   const { fetchByPerson: fetchFuncRoles } = useFunctionalRoles();
   const [funcRoleAssignments, setFuncRoleAssignments] = useState([]);
+  const [allPeople, setAllPeople] = useState([]);
   const savingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -148,7 +155,7 @@ export default function PersonDetail() {
           full_name: p.full_name || '', first_name: p.first_name || '', last_name: p.last_name || '',
           email: p.email || '', phone: p.phone || '', bdm_stage: p.bdm_stage || '',
           person_type: p.person_type || '', position: p.position || '', department: p.department || '',
-          employment_type: p.employment_type || '', status: p.status || 'ACTIVE',
+          employment_type: p.employment_type || '', status: p.status || 'ACTIVE', reports_to: p.reports_to?._id || '',
           date_hired: toInput(p.date_hired), date_regularized: toInput(p.date_regularized), date_separated: toInput(p.date_separated),
           date_of_birth: toInput(p.date_of_birth), live_date: toInput(p.live_date), civil_status: p.civil_status || '',
           'government_ids.sss_no': p.government_ids?.sss_no || '', 'government_ids.philhealth_no': p.government_ids?.philhealth_no || '',
@@ -187,6 +194,9 @@ export default function PersonDetail() {
   useEffect(() => {
     if (id) fetchFuncRoles(id).then(setFuncRoleAssignments).catch(() => {});
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    pplApi.getPeopleList({ limit: 200 }).then(r => setAllPeople(r?.data || [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Warn if any lookup categories loaded empty (seeding may be needed)
   const lookupWarnShown = useRef(false);
@@ -246,10 +256,11 @@ export default function PersonDetail() {
     try {
       const payload = { email: loginForm.email, password: loginForm.password };
       if (loginForm.template_id) payload.template_id = loginForm.template_id;
+      if (loginForm.role) payload.role = loginForm.role;
       await pplApi.createLoginForPerson(id, payload);
       showSuccess(loginForm.template_id ? 'Login created with ERP access template!' : 'Login created! Configure ERP access below.');
       setShowLoginForm(false);
-      setLoginForm({ email: '', password: '', template_id: '' });
+      setLoginForm({ email: '', password: '', template_id: '', role: '' });
       load();
     } catch (err) {
       showError(err, 'Could not create login — check email and password requirements');
@@ -458,6 +469,20 @@ export default function PersonDetail() {
               <F lbl="Status" name="status" val={person.status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_STATUSES} />
               <F lbl="Position" name="position" val={person.position} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Department" name="department" val={person.department} editing={editPerson} form={personForm} onChange={handlePersonChange} />
+              {/* Reports To — custom dropdown (needs object options, not strings) */}
+              <div className="pd-field">
+                <div className="lbl">Reports To</div>
+                {editPerson ? (
+                  <select name="reports_to" value={personForm.reports_to || ''} onChange={handlePersonChange}>
+                    <option value="">None (Top Level)</option>
+                    {allPeople.filter(p => p._id !== id).map(p => (
+                      <option key={p._id} value={p._id}>{p.full_name}{p.position ? ` — ${p.position}` : ''}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="val">{person.reports_to?.full_name ? `${person.reports_to.full_name}${person.reports_to.position ? ` — ${person.reports_to.position}` : ''}` : '—'}</div>
+                )}
+              </div>
               <F lbl="BDM Stage" name="bdm_stage" val={person.bdm_stage} editing={editPerson} form={personForm} onChange={handlePersonChange} options={BDM_STAGES} />
               <F lbl="ERP Live Date" name="live_date" type="date" val={fmtDate(person.live_date)} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Employment Type" name="employment_type" val={person.employment_type} editing={editPerson} form={personForm} onChange={handlePersonChange} options={EMP_TYPES} />
@@ -663,6 +688,45 @@ export default function PersonDetail() {
                 Linked to CRM User: {person.user_id?.email || person.user_id?._id || person.user_id}
                 {person.user_id?.isActive === false && <span style={{ color: '#dc2626', fontWeight: 600 }}> (DISABLED)</span>}
               </div>
+              {/* System Role display + change */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '8px 12px', background: 'var(--erp-accent-soft, #e8efff)', borderRadius: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--erp-muted)', minWidth: 90 }}>System Role</span>
+                {canEdit ? (
+                  <select
+                    value={person.user_id?.role || ''}
+                    onChange={async (e) => {
+                      const newRole = e.target.value;
+                      if (!newRole || newRole === person.user_id?.role) return;
+                      try {
+                        await pplApi.changeSystemRole(id, newRole);
+                        const roleLabel = systemRoleOpts.find(r => r.code.toLowerCase() === newRole)?.label || newRole;
+                        showSuccess(`System role changed to ${roleLabel}`);
+                        load();
+                      } catch (err) { showError(err, 'Could not change system role'); }
+                    }}
+                    style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--erp-border, #d1d5db)', fontSize: 13, minWidth: 160 }}
+                  >
+                    {systemRoleOpts.length > 0 ? systemRoleOpts.map(r => (
+                      <option key={r.code} value={r.code.toLowerCase()}>{r.label} ({r.code.toLowerCase()})</option>
+                    )) : (
+                      <option value={person.user_id?.role || ''}>{person.user_id?.role || '—'}</option>
+                    )}
+                  </select>
+                ) : (
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--erp-text)' }}>
+                    {systemRoleOpts.find(r => r.code.toLowerCase() === person.user_id?.role)?.label || person.user_id?.role || '—'}
+                  </span>
+                )}
+                {/* Mismatch indicator */}
+                {person.person_type && roleMappingOpts.length > 0 && (() => {
+                  const expected = getMappedRole(person.person_type);
+                  const actual = person.user_id?.role;
+                  if (expected && actual && expected !== actual) {
+                    return <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>⚠ Expected "{expected}" for {person.person_type}</span>;
+                  }
+                  return null;
+                })()}
+              </div>
               <ErpAccessManager userId={person.user_id?._id || person.user_id} readOnly={!canEdit} />
             </div>
           ) : canEdit && (
@@ -672,11 +736,28 @@ export default function PersonDetail() {
                 This person has no system login. Create one so they can log in to CRM/ERP.
               </p>
               {!showLoginForm ? (
-                <button className="pd-btn pd-btn-p" onClick={() => setShowLoginForm(true)}>Create Login</button>
+                <button className="pd-btn pd-btn-p" onClick={() => {
+                  const mapped = getMappedRole(person.person_type);
+                  setLoginForm(f => ({ ...f, role: mapped }));
+                  setShowLoginForm(true);
+                }}>Create Login</button>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360 }}>
                   <input placeholder="Email *" value={loginForm.email} onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }} />
                   <input type="password" placeholder="Password * (min 8, upper+lower+number+special)" value={loginForm.password} onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }} />
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', marginBottom: 4 }}>System Role</div>
+                    <select value={loginForm.role} onChange={e => setLoginForm(f => ({ ...f, role: e.target.value }))} style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}>
+                      {systemRoleOpts.length > 0 ? systemRoleOpts.map(r => (
+                        <option key={r.code} value={r.code.toLowerCase()}>{r.label} ({r.code.toLowerCase()})</option>
+                      )) : (
+                        <option value="contractor">Contractor</option>
+                      )}
+                    </select>
+                    {person.person_type && (
+                      <p style={{ fontSize: 11, color: '#6b7280', margin: '4px 0 0' }}>Auto-mapped from {person.person_type} via Role Mapping lookup</p>
+                    )}
+                  </div>
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', marginBottom: 4 }}>ERP Access Template</div>
                     <select value={loginForm.template_id} onChange={e => setLoginForm(f => ({ ...f, template_id: e.target.value }))} style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}>
