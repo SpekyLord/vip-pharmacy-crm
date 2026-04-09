@@ -87,18 +87,29 @@ const update = catchAsync(async (req, res) => {
   res.json({ success: true, data: product });
 });
 
-const deactivate = catchAsync(async (req, res) => {
-  const filter = { _id: req.params.id };
-  // President/CEO can deactivate any product; others scoped to their entity
-  if (!req.isPresident) filter.entity_id = req.entityId;
-  const product = await ProductMaster.findOneAndUpdate(
-    filter,
-    { $set: { is_active: false } },
-    { new: true }
-  );
-  if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
-  res.json({ success: true, message: 'Product deactivated', data: product });
-});
+const deactivate = async (req, res) => {
+  try {
+    console.log('[deactivate] START — id:', req.params.id, 'isPresident:', req.isPresident, 'entityId:', req.entityId);
+    const mongoose = require('mongoose');
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid product ID: ' + req.params.id });
+    }
+    const filter = { _id: req.params.id };
+    if (!req.isPresident) filter.entity_id = req.entityId;
+    console.log('[deactivate] filter:', JSON.stringify(filter));
+    const product = await ProductMaster.findOneAndUpdate(
+      filter,
+      { $set: { is_active: false } },
+      { new: true }
+    );
+    console.log('[deactivate] result:', product ? product.brand_name : 'NOT FOUND');
+    if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+    res.json({ success: true, message: 'Product deactivated', data: product });
+  } catch (err) {
+    console.error('[deactivate] ERROR:', err.message, err.stack);
+    res.status(500).json({ success: false, message: 'Deactivate failed: ' + err.message });
+  }
+};
 
 /**
  * PATCH /:id/reorder-qty — Update SAP-level reorder fields (Finance/Admin only)
@@ -480,21 +491,25 @@ const refreshProducts = catchAsync(async (req, res) => {
 /**
  * DELETE /:id — Hard delete a product (only if no inventory transactions exist)
  */
-const deleteProduct = catchAsync(async (req, res) => {
-  const filter = { _id: req.params.id };
-  if (!req.isPresident) filter.entity_id = req.entityId;
+const deleteProduct = async (req, res) => {
+  try {
+    const filter = { _id: req.params.id };
+    if (!req.isPresident) filter.entity_id = req.entityId;
 
-  const product = await ProductMaster.findOne(filter);
-  if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+    const product = await ProductMaster.findOne(filter);
+    if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
 
-  // Check for any inventory ledger entries
-  const hasInventory = await InventoryLedger.exists({ product_id: product._id });
-  if (hasInventory) {
-    return res.status(409).json({ success: false, message: 'Cannot delete — product has inventory transactions. Deactivate instead.' });
+    const hasInventory = await InventoryLedger.exists({ product_id: product._id });
+    if (hasInventory) {
+      return res.status(409).json({ success: false, message: 'Cannot delete — product has inventory transactions. Deactivate instead.' });
+    }
+
+    await ProductMaster.deleteOne({ _id: product._id });
+    res.json({ success: true, message: 'Product deleted' });
+  } catch (err) {
+    console.error('[deleteProduct] ERROR:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
-
-  await ProductMaster.deleteOne({ _id: product._id });
-  res.json({ success: true, message: 'Product deleted' });
-});
+};
 
 module.exports = { getAll, getById, create, update, deactivate, deleteProduct, updateReorderQty, tagToWarehouse, getProductWarehouses, exportPrices, importPrices, refreshProducts };
