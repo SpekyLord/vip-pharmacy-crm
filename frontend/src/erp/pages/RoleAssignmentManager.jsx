@@ -62,6 +62,7 @@ function RoleAssignmentManagerContent() {
   const [form, setForm] = useState({ person_id: '', entity_id: '', functional_role: '', valid_from: '', valid_to: '', approval_limit: '', description: '' });
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkEntityIds, setBulkEntityIds] = useState([]);
+  const [bulkRoles, setBulkRoles] = useState([]);
 
   // Role options with fallback
   const ROLE_OPTIONS = useMemo(() => {
@@ -112,6 +113,7 @@ function RoleAssignmentManagerContent() {
     setEditing(null);
     setBulkMode(false);
     setBulkEntityIds([]);
+    setBulkRoles([]);
     setForm({
       person_id: presetPerson?._id || '',
       entity_id: '',
@@ -151,10 +153,12 @@ function RoleAssignmentManagerContent() {
         });
         toast.success('Assignment updated');
       } else if (bulkMode && bulkEntityIds.length > 0) {
+        const rolesToSend = bulkRoles.length > 0 ? bulkRoles : (form.functional_role ? [form.functional_role] : []);
+        if (rolesToSend.length === 0) return toast.error('Select at least one function');
         const res = await bulkCreate({
           person_id: form.person_id,
           entity_ids: bulkEntityIds,
-          functional_role: form.functional_role,
+          functional_roles: rolesToSend,
           valid_from: form.valid_from,
           valid_to: form.valid_to || null,
           approval_limit: form.approval_limit ? Number(form.approval_limit) : null,
@@ -192,6 +196,10 @@ function RoleAssignmentManagerContent() {
 
   const toggleBulkEntity = (eid) => {
     setBulkEntityIds(prev => prev.includes(eid) ? prev.filter(id => id !== eid) : [...prev, eid]);
+  };
+
+  const toggleBulkRole = (code) => {
+    setBulkRoles(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   };
 
   // ─── People selector for modal ──────
@@ -427,14 +435,28 @@ function RoleAssignmentManagerContent() {
               </div>
             )}
 
-            {/* Functional role dropdown */}
-            <div style={{ marginBottom: 12 }}>
-              <label style={lblStyle}>Function</label>
-              <select value={form.functional_role} onChange={e => setForm(f => ({ ...f, functional_role: e.target.value }))} style={inputStyle}>
-                <option value="">Select function...</option>
-                {ROLE_OPTIONS.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
-              </select>
-            </div>
+            {/* Functional role — single dropdown for normal/edit, multi-checkbox for bulk */}
+            {(!bulkMode || editing) ? (
+              <div style={{ marginBottom: 12 }}>
+                <label style={lblStyle}>Function</label>
+                <select value={form.functional_role} onChange={e => setForm(f => ({ ...f, functional_role: e.target.value }))} style={inputStyle}>
+                  <option value="">Select function...</option>
+                  {ROLE_OPTIONS.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
+                </select>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 12 }}>
+                <label style={lblStyle}>Functions ({bulkRoles.length} selected)</label>
+                <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: 8, maxHeight: 150, overflowY: 'auto' }}>
+                  {ROLE_OPTIONS.map(r => (
+                    <label key={r.code} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', fontSize: 13, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={bulkRoles.includes(r.code)} onChange={() => toggleBulkRole(r.code)} />
+                      {r.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Date range */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -462,7 +484,7 @@ function RoleAssignmentManagerContent() {
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowModal(false)} style={{ padding: '7px 16px', borderRadius: 6, fontSize: 13, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleSave} style={btnPrimary}>{editing ? 'Save Changes' : (bulkMode ? `Assign to ${bulkEntityIds.length} Entities` : 'Create Assignment')}</button>
+              <button onClick={handleSave} style={btnPrimary}>{editing ? 'Save Changes' : (bulkMode ? `Create ${bulkEntityIds.length * (bulkRoles.length || 1)} Assignment(s)` : 'Create Assignment')}</button>
             </div>
           </div>
         </div>

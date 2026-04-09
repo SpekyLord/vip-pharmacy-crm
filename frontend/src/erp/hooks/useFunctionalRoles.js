@@ -54,7 +54,7 @@ export default function useFunctionalRoles() {
 
   // ─── Deactivate ──────────────────────
   const deactivateAssignment = useCallback(async (id) => {
-    const res = await api.post(`/role-assignments/${id}/deactivate`);
+    const res = await api.post(`/role-assignments/${id}/deactivate`, {});
     return res.data;
   }, [api.post]);
 

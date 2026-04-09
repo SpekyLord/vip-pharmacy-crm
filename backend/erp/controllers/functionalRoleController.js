@@ -141,50 +141,60 @@ const deactivateAssignment = catchAsync(async (req, res) => {
   res.json({ success: true, data: assignment, message: 'Assignment revoked' });
 });
 
-// ═══ Bulk create (one person → multiple entities) ═══
+// ═══ Bulk create (one person → multiple entities × multiple roles) ═══
 
 const bulkCreate = catchAsync(async (req, res) => {
-  const { person_id, entity_ids, functional_role, valid_from, valid_to, approval_limit, description } = req.body;
+  const { person_id, entity_ids, functional_role, functional_roles, valid_from, valid_to, approval_limit, description } = req.body;
 
   if (!Array.isArray(entity_ids) || entity_ids.length === 0) {
     return res.status(400).json({ success: false, message: 'entity_ids array is required' });
   }
 
+  // Support both single role (functional_role) and multi-role (functional_roles)
+  const roles = (Array.isArray(functional_roles) && functional_roles.length > 0)
+    ? functional_roles.map(r => r.toUpperCase())
+    : [functional_role.toUpperCase()];
+
   const person = await PeopleMaster.findById(person_id).select('entity_id full_name').lean();
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
 
-  const role = functional_role.toUpperCase();
-
-  // Check for existing active duplicates
+  // Check for existing active duplicates across all entity+role combos
   const existingDups = await FunctionalRoleAssignment.find({
     person_id,
     entity_id: { $in: entity_ids },
-    functional_role: role,
+    functional_role: { $in: roles },
     is_active: true,
     status: 'ACTIVE',
-  }).select('entity_id').lean();
+  }).select('entity_id functional_role').lean();
 
-  const dupEntityIds = new Set(existingDups.map(d => d.entity_id.toString()));
-  const newEntityIds = entity_ids.filter(eid => !dupEntityIds.has(eid.toString()));
+  const dupKeys = new Set(existingDups.map(d => `${d.entity_id}:${d.functional_role}`));
 
-  if (newEntityIds.length === 0) {
-    return res.status(409).json({
-      success: false,
-      message: 'All selected entities already have an active assignment for this person and role',
-    });
+  // Build all combos of entity × role, skipping duplicates
+  const docs = [];
+  for (const eid of entity_ids) {
+    for (const role of roles) {
+      if (dupKeys.has(`${eid}:${role}`)) continue;
+      docs.push({
+        entity_id: eid,
+        person_id,
+        home_entity_id: person.entity_id,
+        functional_role: role,
+        valid_from,
+        valid_to: valid_to || null,
+        approval_limit: approval_limit || null,
+        description: description || '',
+        created_by: req.user._id,
+      });
+    }
   }
 
-  const docs = newEntityIds.map(eid => ({
-    entity_id: eid,
-    person_id,
-    home_entity_id: person.entity_id,
-    functional_role: role,
-    valid_from,
-    valid_to: valid_to || null,
-    approval_limit: approval_limit || null,
-    description: description || '',
-    created_by: req.user._id,
-  }));
+  const totalCombos = entity_ids.length * roles.length;
+  if (docs.length === 0) {
+    return res.status(409).json({
+      success: false,
+      message: 'All selected entity+role combinations already have active assignments',
+    });
+  }
 
   const created = await FunctionalRoleAssignment.insertMany(docs);
 
@@ -192,7 +202,7 @@ const bulkCreate = catchAsync(async (req, res) => {
     _id: { $in: created.map(c => c._id) },
   }).populate(POPULATE_FIELDS).lean();
 
-  const skipped = entity_ids.length - newEntityIds.length;
+  const skipped = totalCombos - docs.length;
   res.status(201).json({
     success: true,
     data: populated,
