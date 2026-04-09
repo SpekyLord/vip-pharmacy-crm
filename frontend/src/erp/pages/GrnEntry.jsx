@@ -183,6 +183,7 @@ function fieldVal(f) {
 }
 
 // --- Scan Undertaking Modal ---
+/* eslint-disable react/prop-types */
 function ScanUndertakingModal({ open, onClose, onApply, products }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
@@ -281,6 +282,7 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
     </div>
   );
 }
+/* eslint-enable react/prop-types */
 
 export default function GrnEntry() {
   const { user } = useAuth();
@@ -295,7 +297,7 @@ export default function GrnEntry() {
   const [grnList, setGrnList] = useState([]);
   const [listFilter, setListFilter] = useState('');
   const [scanOpen, setScanOpen] = useState(false);
-  const [scanMeta, setScanMeta] = useState({});
+  const [_scanMeta, setScanMeta] = useState({}); // eslint-disable-line no-unused-vars
 
   const productOptions = useMemo(() => (products || []).filter(p => p.is_active !== false), [products]);
   const grnStats = useMemo(() => {

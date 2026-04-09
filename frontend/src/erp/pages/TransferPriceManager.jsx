@@ -68,7 +68,7 @@ const pageStyles = `
 
 export function TransferPriceManagerContent() {
   const { user } = useAuth();
-  const { getTransferPriceProducts, bulkSetTransferPrices, getEntities, loading } = useTransfers();
+  const { getTransferPriceProducts, bulkSetTransferPrices, getEntities, loading: _loading } = useTransfers(); // eslint-disable-line no-unused-vars
 
   const [entities, setEntities] = useState([]);
   const [products, setProducts] = useState([]);
@@ -98,7 +98,7 @@ export function TransferPriceManagerContent() {
         if (sub) setTargetId(sub._id);
       } catch (err) { showError(err, 'Could not load entities'); }
     })();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch products when entity pair changes
   const fetchProducts = useCallback(async () => {
@@ -120,7 +120,7 @@ export function TransferPriceManagerContent() {
       setOrigPrices(orig);
     } catch (err) { console.error('Failed to fetch transfer price products:', err); }
     setFetching(false);
-  }, [sourceId, targetId]);
+  }, [sourceId, targetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 

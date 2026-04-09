@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -139,7 +139,7 @@ export default function PayrollRun() {
           {loading ? (
             <div className="pr-empty">Loading...</div>
           ) : !payslips.length ? (
-            <div className="pr-empty">No payslips. Click "Compute Payroll" to generate.</div>
+            <div className="pr-empty">No payslips. Click &quot;Compute Payroll&quot; to generate.</div>
           ) : (
             <table className="pr-table">
               <thead>

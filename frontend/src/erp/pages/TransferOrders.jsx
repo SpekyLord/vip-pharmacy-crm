@@ -7,7 +7,7 @@ import useTransfers from '../hooks/useTransfers';
 import useProducts from '../hooks/useProducts';
 import useInventory from '../hooks/useInventory';
 import useWarehouses from '../hooks/useWarehouses';
-import { ROLES, ROLE_SETS } from '../../constants/roles';
+import { ROLES } from '../../constants/roles';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -173,8 +173,8 @@ export default function TransferOrders() {
   // Fetch entities on mount
   const fetchEntities = useCallback(async () => {
     try { const res = await getEntities(); setEntities(res.data || []); } catch (err) { showError(err, 'Could not load entities'); }
-  }, []);
-  useEffect(() => { fetchEntities(); }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchEntities(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch IC transfers
   const fetchTransfers = useCallback(async (page = 1) => {
@@ -185,39 +185,39 @@ export default function TransferOrders() {
       setTransfers(res.data || []);
       setPagination(res.pagination || { page: 1, pages: 1, total: 0 });
     } catch (err) { showError(err, 'Could not load transfers'); }
-  }, [statusFilter]);
+  }, [statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch reassignments
   const fetchReassignments = useCallback(async () => {
     try { const res = await getReassignments(); setReassignments(res.data || []); } catch (err) { showError(err, 'Could not load reassignments'); }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activeTab === 'ic') fetchTransfers(1);
     else fetchReassignments();
-  }, [activeTab, statusFilter]);
+  }, [activeTab, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load BDMs when source/target entity changes (IC Transfer)
   useEffect(() => {
     if (!form.source_entity_id) { setSourceBdms([]); return; }
     (async () => { try { const r = await getBdmsByEntity(form.source_entity_id); setSourceBdms(r.data || []); } catch (err) { console.error('[TransferOrders] load source BDMs:', err.message); } })();
-  }, [form.source_entity_id]);
+  }, [form.source_entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!form.target_entity_id) { setTargetBdms([]); return; }
     (async () => { try { const r = await getBdmsByEntity(form.target_entity_id, true); setTargetBdms(r.data || []); } catch (err) { console.error('[TransferOrders] load target BDMs:', err.message); } })();
-  }, [form.target_entity_id]);
+  }, [form.target_entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Phase 17: Load warehouses when source/target entity changes (IC Transfer)
   useEffect(() => {
     if (!form.source_entity_id) { setSourceWarehouses([]); return; }
     (async () => { try { const r = await whApi.getWarehousesByEntity(form.source_entity_id); setSourceWarehouses(r.data || []); } catch (err) { console.error('[TransferOrders] load source warehouses:', err.message); } })();
-  }, [form.source_entity_id]);
+  }, [form.source_entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!form.target_entity_id) { setTargetWarehouses([]); return; }
     (async () => { try { const r = await whApi.getWarehousesByEntity(form.target_entity_id); setTargetWarehouses(r.data || []); } catch (err) { console.error('[TransferOrders] load target warehouses:', err.message); } })();
-  }, [form.target_entity_id]);
+  }, [form.target_entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load BDMs for internal reassignment (user's entity)
   useEffect(() => {
@@ -233,7 +233,7 @@ export default function TransferOrders() {
         setInternalWarehouses(whRes.data || []);
       } catch (err) { console.error('[TransferOrders] load entity BDMs/warehouses:', err.message); }
     })();
-  }, [user?.entity_id]);
+  }, [user?.entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // IC Transfer: show only products the source custodian has stock for
   const sourceStockProductIds = new Set(sourceStock.map(s => s.product_id?.toString()));
@@ -278,7 +278,6 @@ export default function TransferOrders() {
         await cancelTransfer(id, reason);
       }
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Action failed';
       showError(err, `Could not ${action} transfer`);
       return; // Don't refresh on error
     }

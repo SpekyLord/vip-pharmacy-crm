@@ -57,7 +57,7 @@ export default function PrfCalf() {
       const res = await getPrfCalfList(params);
       setDocs(res?.data || []);
     } catch (err) { showError(err, 'Could not load PRF/CALF documents'); }
-  }, [period, docTypeFilter]);
+  }, [period, docTypeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
   useEffect(() => {
@@ -76,7 +76,7 @@ export default function PrfCalf() {
       setPendingRebates(rebRes?.data || []);
       setPendingCalfLines(calfRes?.data || []);
     } catch (err) { showError(err, 'Could not load pending rebates'); }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadPendingData(); }, [loadPendingData]);
 
   // Auto-fill PRF from a pending rebate (with last known bank details if available)
@@ -177,7 +177,7 @@ export default function PrfCalf() {
     }
     if (issues.length) { showError(null, issues.join('. ')); return; }
 
-    const { calf_number: _excluded, ...formData } = form;
+    const { calf_number: _excluded, ...formData } = form; // eslint-disable-line no-unused-vars
     const data = {
       ...formData,
       period, cycle,

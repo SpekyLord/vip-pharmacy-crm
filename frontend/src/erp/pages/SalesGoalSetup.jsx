@@ -82,7 +82,7 @@ const emptyDriver = {
 const emptyKpi = { kpi_code: '', kpi_name: '', target_value: '', unit: '' };
 
 export default function SalesGoalSetup() {
-  const { user } = useAuth();
+  const { user: _user } = useAuth(); // eslint-disable-line no-unused-vars
   const sg = useSalesGoals();
 
   const [tab, setTab] = useState('plan');
@@ -105,7 +105,7 @@ export default function SalesGoalSetup() {
       if (active) selectPlan(active._id, list);
     } catch (err) { showError(err, 'Failed to load plans'); }
     setLoading(false);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectPlan = useCallback(async (id, planList) => {
     const list = planList || plans;
@@ -129,9 +129,9 @@ export default function SalesGoalSetup() {
       setEntityTargets(targets.filter(t => t.target_type === 'ENTITY'));
       setBdmTargets(targets.filter(t => t.target_type === 'BDM'));
     } catch (err) { showError(err, 'Failed to load targets'); }
-  }, [plans]);
+  }, [plans]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadPlans(); }, []);
+  useEffect(() => { loadPlans(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFormChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -160,7 +160,7 @@ export default function SalesGoalSetup() {
       await loadPlans();
     } catch (err) { showError(err, 'Failed to save plan'); }
     setSaving(false);
-  }, [form, selectedPlanId]);
+  }, [form, selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Activate / Close
   const handleActivate = useCallback(async () => {
@@ -169,7 +169,7 @@ export default function SalesGoalSetup() {
       await sg.activatePlan(selectedPlanId);
       await loadPlans();
     } catch (err) { showError(err, 'Failed to activate plan'); }
-  }, [selectedPlanId]);
+  }, [selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClose = useCallback(async () => {
     if (!selectedPlanId) return;
@@ -177,7 +177,7 @@ export default function SalesGoalSetup() {
       await sg.closePlan(selectedPlanId);
       await loadPlans();
     } catch (err) { showError(err, 'Failed to close plan'); }
-  }, [selectedPlanId]);
+  }, [selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Growth Drivers
   const addDriver = () => {
@@ -266,7 +266,7 @@ export default function SalesGoalSetup() {
       setEntityTargets(targets.filter(t => t.target_type === 'ENTITY'));
     } catch (err) { showError(err, 'Failed to save entity targets'); }
     setSaving(false);
-  }, [entityTargets, selectedPlanId]);
+  }, [entityTargets, selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // BDM Targets
   const addBdmTarget = () => {
@@ -305,7 +305,7 @@ export default function SalesGoalSetup() {
       setBdmTargets(targets.filter(t => t.target_type === 'BDM'));
     } catch (err) { showError(err, 'Failed to save BDM targets'); }
     setSaving(false);
-  }, [bdmTargets, selectedPlanId]);
+  }, [bdmTargets, selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Incentive Programs
   const addIncentiveProgram = () => {

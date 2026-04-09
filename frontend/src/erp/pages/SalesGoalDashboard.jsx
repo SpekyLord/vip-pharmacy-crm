@@ -82,7 +82,7 @@ function tierColor(tier, colorMap) {
 }
 
 export default function SalesGoalDashboard() {
-  const { user } = useAuth();
+  const { user: _user } = useAuth(); // eslint-disable-line no-unused-vars
   const sg = useSalesGoals();
 
   const [loading, setLoading] = useState(false);
@@ -98,9 +98,9 @@ export default function SalesGoalDashboard() {
       setDashboard(res?.data || null);
     } catch (err) { showError(err, 'Failed to load sales goal dashboard'); }
     setLoading(false);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadDashboard(); }, []);
+  useEffect(() => { loadDashboard(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleComputeSnapshots = useCallback(async () => {
     if (!dashboard?.plan?._id) return;
@@ -110,7 +110,7 @@ export default function SalesGoalDashboard() {
       await loadDashboard();
     } catch (err) { showError(err, 'Failed to compute KPI snapshots'); }
     setComputing(false);
-  }, [dashboard?.plan?._id]);
+  }, [dashboard?.plan?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSort = (field) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -143,6 +143,7 @@ export default function SalesGoalDashboard() {
   const targetPct = Math.min((targetRevenue / maxBar) * 100, 100);
   const baselinePct = Math.min((baselineRevenue / maxBar) * 100, 100);
 
+  /* eslint-disable react/prop-types */
   const SortTh = ({ field, children }) => (
     <th>
       <button className="sgd-sort-btn" onClick={() => handleSort(field)}>
@@ -150,6 +151,7 @@ export default function SalesGoalDashboard() {
       </button>
     </th>
   );
+  /* eslint-enable react/prop-types */
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>

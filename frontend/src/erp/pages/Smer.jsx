@@ -178,7 +178,7 @@ export default function Smer() {
       const res = await getSmerList({ period, cycle });
       setSmers(res?.data || []);
     } catch (err) { console.error('[SMER]', err.message); showError(err, 'Could not load SMER list'); }
-  }, [period, cycle]);
+  }, [period, cycle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadSmers(); }, [loadSmers]);
 
@@ -393,6 +393,7 @@ export default function Smer() {
   };
 
   // Hospital chip renderer
+  /* eslint-disable react/prop-types */
   const HospitalChips = ({ entryIdx }) => {
     const entry = dailyEntries[entryIdx];
     const ids = entry?.hospital_ids || [];
@@ -438,6 +439,7 @@ export default function Smer() {
       </div>
     );
   };
+  /* eslint-enable react/prop-types */
 
   // Compute totals
   const totals = dailyEntries.reduce((acc, e) => ({

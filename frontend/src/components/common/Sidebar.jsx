@@ -31,7 +31,6 @@ import {
   Shield,
   Menu,
   X,
-  PlusCircle,
   Camera,
   Settings,
   Briefcase,
@@ -665,7 +664,6 @@ const sidebarStyles = `
  * Returns null if no ERP modules are accessible.
  */
 import { ROLES, ROLE_SETS, isAdminLike as isAdminLikeRole, isPresidentLike } from '../../constants/roles';
-const ADMIN_LIKE_ROLES = ROLE_SETS.ADMIN_LIKE;
 
 const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   const hasModule = (mod) => {
@@ -1116,7 +1114,7 @@ const Sidebar = () => {
   const toggleSection = useCallback((title) => {
     setExpandedSections(prev => {
       const next = { ...prev, [title]: !prev[title] };
-      try { sessionStorage.setItem('sidebar_expanded', JSON.stringify(next)); } catch {}
+      try { sessionStorage.setItem('sidebar_expanded', JSON.stringify(next)); } catch { /* empty */ }
       return next;
     });
   }, []);

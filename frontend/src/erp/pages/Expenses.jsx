@@ -18,6 +18,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 import { showError } from '../utils/errorToast';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
+/* eslint-disable react/prop-types */
 function ScanORModal({ open, onClose, onApply }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
@@ -124,6 +125,7 @@ function ScanORModal({ open, onClose, onApply }) {
     </div>
   );
 }
+/* eslint-enable react/prop-types */
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -570,7 +572,7 @@ export default function Expenses() {
       setExpenses(res?.data || []);
       if (sumRes?.data) setSummary(sumRes.data);
     } catch (err) { console.error('[Expenses] Load failed:', err.message); }
-  }, [period, cycle]);
+  }, [period, cycle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadExpenses(); }, [loadExpenses]);
 

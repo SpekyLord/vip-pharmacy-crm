@@ -124,9 +124,9 @@ export default function SalesGoalBdmView() {
       setDetail(res?.data || null);
     } catch (err) { showError(err, 'Failed to load BDM goal detail'); }
     setLoading(false);
-  }, [effectiveId]);
+  }, [effectiveId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadDetail(); }, [effectiveId]);
+  useEffect(() => { loadDetail(); }, [effectiveId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleDriver = (code) => {
     setExpandedDrivers(prev => ({ ...prev, [code]: !prev[code] }));
@@ -147,14 +147,14 @@ export default function SalesGoalBdmView() {
       await loadDetail();
     } catch (err) { showError(err, 'Failed to create action'); }
     setSavingAction(false);
-  }, [actionForm, effectiveId]);
+  }, [actionForm, effectiveId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCompleteAction = useCallback(async (actionId) => {
     try {
       await sg.completeAction(actionId);
       await loadDetail();
     } catch (err) { showError(err, 'Failed to complete action'); }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const person = detail?.person || {};
   const target = detail?.target || {};

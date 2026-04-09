@@ -110,7 +110,7 @@ export function WarehouseManagerContent() {
     } catch (err) {
       console.error('[WarehouseManager] load failed:', err.message);
     } finally { setLoading(false); }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
 

@@ -58,7 +58,7 @@ export function TerritoryManagerContent() {
     try {
       const res = await api.get('/erp/territories?active_only=false');
       setTerritories(res.data?.data || []);
-    } catch (err) {
+    } catch {
       toast.error('Failed to load territories');
     }
     setLoading(false);

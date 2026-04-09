@@ -79,7 +79,7 @@ export function LookupManagerContent() {
       setCategories(cats);
       setSeedDefaults(seedRes.data?.data || {});
       if (cats.length > 0) setActiveCat(prev => prev && cats.includes(prev) ? prev : cats[0]);
-    } catch (err) {
+    } catch {
       toast.error('Failed to load categories');
     }
   }, [workingEntityId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -92,7 +92,7 @@ export function LookupManagerContent() {
       const data = res.data?.data || [];
       setItems(data);
       setCatCounts(prev => ({ ...prev, [activeCat]: data.length }));
-    } catch (err) {
+    } catch {
       toast.error('Failed to load items');
     }
     setLoading(false);
@@ -171,7 +171,7 @@ export function LookupManagerContent() {
         await api.put(`/erp/lookup-values/${activeCat}/${item._id}`, { is_active: true });
       }
       loadItems();
-    } catch (err) {
+    } catch {
       toast.error('Toggle failed');
     }
   };

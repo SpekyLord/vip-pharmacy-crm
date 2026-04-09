@@ -1199,6 +1199,7 @@ const WORKFLOW_GUIDES = {
  * WorkflowGuide component
  * @param {string} pageKey — key from WORKFLOW_GUIDES config
  */
+/* eslint-disable react/prop-types */
 export default function WorkflowGuide({ pageKey }) {
   const navigate = useNavigate();
   const storageKey = `wfg_dismiss_${pageKey}`;
@@ -1295,3 +1296,4 @@ export default function WorkflowGuide({ pageKey }) {
     </>
   );
 }
+/* eslint-enable react/prop-types */

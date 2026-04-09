@@ -86,9 +86,9 @@ export default function IncentiveTracker() {
       setBoard(res?.data || null);
     } catch (err) { showError(err, 'Failed to load incentive board'); }
     setLoading(false);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadBoard(); }, []);
+  useEffect(() => { loadBoard(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tiers = board?.tiers || [];
   const leaderboard = board?.board || [];

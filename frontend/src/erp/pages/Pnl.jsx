@@ -293,7 +293,7 @@ export default function Pnl() {
                   <div className="pnl-section-header">Operating Expenses</div>
                   <div className="pnl-row"><span className="label">SMER Reimbursable</span><span className="value">{fmt(e.smer_reimbursable)}</span></div>
                   <div className="pnl-row"><span className="label">Gasoline less Personal</span><span className="value">{fmt(e.gasoline_less_personal)}</span></div>
-                  <div className="pnl-row"><span className="label">Partners' Insurance</span><span className="value">{fmt(e.partners_insurance)}</span></div>
+                  <div className="pnl-row"><span className="label">Partners&apos; Insurance</span><span className="value">{fmt(e.partners_insurance)}</span></div>
                   <div className="pnl-row"><span className="label">ACCESS Total</span><span className="value">{fmt(e.access_total)}</span></div>
                   <div className="pnl-row"><span className="label">ORE Total</span><span className="value">{fmt(e.ore_total)}</span></div>
                   <div className="pnl-row"><span className="label">Sampling / DR Cost</span><span className="value">{fmt(e.sampling_dr_cost)}</span></div>

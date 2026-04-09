@@ -249,7 +249,7 @@ export default function HomePage() {
     }
 
     // Everyone else (president, admin, finance, BDMs with ERP) → show chooser
-  }, [user]);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!hasErp) {

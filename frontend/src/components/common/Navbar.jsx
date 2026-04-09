@@ -39,7 +39,7 @@ const ERP_TABS = [
   { label: 'Reports', path: '/erp/reports', icon: BarChart3 },
 ];
 
-import { ROLES, ROLE_SETS, isAdminLike as checkAdminLike, isPresidentLike } from '../../constants/roles';
+import { ROLES, ROLE_SETS, isPresidentLike } from '../../constants/roles';
 const ADMIN_LIKE_ROLES = ROLE_SETS.ADMIN_LIKE;
 
 const CRM_ADMIN_TABS = [

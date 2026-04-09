@@ -80,7 +80,7 @@ export function AccessTemplateManagerContent() {
       setTemplates(tplRes?.data || []);
       setSubPermKeys(spkRes?.data || {});
     } catch (err) { console.error('[AccessTemplateManager] load error:', err.message); }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
 

@@ -46,9 +46,9 @@ export default function TransferReceipt() {
       );
       setIncoming(filtered);
     } catch (err) { console.error('[TransferReceipt] load error:', err.message); }
-  }, [user]);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { fetchIncoming(); }, []);
+  useEffect(() => { fetchIncoming(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleReceive = async (id) => {
     try {

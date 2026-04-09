@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
-import { Bot, Zap, CheckCircle, XCircle, Play, Clock } from 'lucide-react';
+import { Bot, Zap, Play, Clock } from 'lucide-react';
 import { showError, showSuccess } from '../utils/errorToast';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
 

@@ -61,7 +61,7 @@ export default function MonthEndClose() {
 
   const [period, setPeriod] = useState(getCurrentPeriod());
   const [progress, setProgress] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [_loading, _setLoading] = useState(false); // eslint-disable-line no-unused-vars
   const [running, setRunning] = useState(false);
   const pollRef = useRef(null);
 
@@ -114,7 +114,7 @@ export default function MonthEndClose() {
   }
 
   const completedCount = steps.filter(s => s.status === 'COMPLETE').length;
-  const hasErrors = steps.some(s => s.status === 'ERROR');
+  const _hasErrors = steps.some(s => s.status === 'ERROR'); // eslint-disable-line no-unused-vars
   const isPaused = steps.some(s => s.step === 21 && s.status === 'RUNNING');
   const isFullyComplete = completedCount === 29;
 

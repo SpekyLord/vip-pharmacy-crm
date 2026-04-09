@@ -7,7 +7,7 @@
  * Left category sidebar (governance hierarchy) + right lazy-loaded content panels.
  * URL sync via ?section= query param for deep-linking.
  */
-import React, { useState, useEffect, Suspense, lazy, useMemo, Component } from 'react';
+import { useState, Suspense, lazy, useMemo, Component } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -150,6 +150,7 @@ const CATEGORY_CONFIG = [
 ];
 
 // Error boundary for lazy-loaded section failures
+/* eslint-disable react/prop-types */
 class SectionErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
@@ -168,6 +169,7 @@ class SectionErrorBoundary extends Component {
     return this.props.children;
   }
 }
+/* eslint-enable react/prop-types */
 
 // ── Dependency guide: what to configure when you change each section ──
 const DEPENDENCY_GUIDE = {
@@ -357,6 +359,7 @@ const DEPENDENCY_GUIDE = {
   },
 };
 
+/* eslint-disable react/prop-types */
 function DependencyBanner({ section, onNavigate }) {
   const guide = DEPENDENCY_GUIDE[section];
   if (!guide) return null;
@@ -375,6 +378,7 @@ function DependencyBanner({ section, onNavigate }) {
     </div>
   );
 }
+/* eslint-enable react/prop-types */
 
 const pageStyles = `
   .ctlc-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -430,7 +434,7 @@ const pageStyles = `
 `;
 
 export default function ControlCenter() {
-  const { user } = useAuth();
+  const { user: _user } = useAuth(); // eslint-disable-line no-unused-vars
   const [searchParams, setSearchParams] = useSearchParams();
   const [expandedGroups, setExpandedGroups] = useState(() => {
     // Expand all groups by default

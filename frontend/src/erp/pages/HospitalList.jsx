@@ -2,7 +2,7 @@
  * Hospital Management Page — ERP
  * Full CRUD + BDM tagging for hospitals
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import SelectField from '../../components/common/Select';

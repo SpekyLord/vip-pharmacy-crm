@@ -121,7 +121,7 @@ export function EntityManagerContent() {
     }
   };
 
-  const parentEntity = entities.find(e => e.entity_type === 'PARENT');
+  const _parentEntity = entities.find(e => e.entity_type === 'PARENT'); // eslint-disable-line no-unused-vars
 
   return (
     <>

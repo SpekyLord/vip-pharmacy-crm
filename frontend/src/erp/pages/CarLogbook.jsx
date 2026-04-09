@@ -12,6 +12,7 @@ import { ROLE_SETS } from '../../constants/roles';
 import { useAuth } from '../../hooks/useAuth';
 
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
+/* eslint-disable react/prop-types */
 function ScanModal({ open, onClose, onApply, docType, title }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
@@ -84,6 +85,7 @@ function ScanModal({ open, onClose, onApply, docType, title }) {
     </div>
   );
 }
+/* eslint-enable react/prop-types */
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -154,7 +156,7 @@ export default function CarLogbook() {
       const res = await getCarLogbookList({ period, cycle, limit: 0 });
       setEntries(res?.data || []);
     } catch (err) { console.error('[CarLogbook] Load failed:', err.message); showError(err, 'Could not load logbook entries'); }
-  }, [period, cycle]);
+  }, [period, cycle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
 
