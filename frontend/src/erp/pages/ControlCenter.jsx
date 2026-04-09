@@ -26,6 +26,7 @@ const SECTIONS = {
   'people': lazy(() => import('./PeopleList').then(m => ({ default: m.PeopleListContent }))),
   'org-chart': lazy(() => import('./OrgChart').then(m => ({ default: m.OrgChartContent }))),
   'access-templates': lazy(() => import('./AccessTemplateManager').then(m => ({ default: m.AccessTemplateManagerContent }))),
+  'role-assignments': lazy(() => import('./RoleAssignmentManager').then(m => ({ default: m.RoleAssignmentManagerContent }))),
   'coa': lazy(() => import('./ChartOfAccounts').then(m => ({ default: m.ChartOfAccountsContent }))),
   'cost-centers': lazy(() => import('./CostCenters').then(m => ({ default: m.CostCentersContent }))),
   'payment-modes': lazy(() => import('./PaymentModes').then(m => ({ default: m.PaymentModesContent }))),
@@ -77,7 +78,8 @@ const CATEGORY_CONFIG = [
     items: [
       { key: 'people', label: 'People Master', icon: Users },
       { key: 'org-chart', label: 'Org Chart', icon: Users },
-      { key: 'access-templates', label: 'Access Templates', icon: ShieldCheck }
+      { key: 'access-templates', label: 'Access Templates', icon: ShieldCheck },
+      { key: 'role-assignments', label: 'Role Assignments', icon: ShieldCheck }
     ]
   },
   {

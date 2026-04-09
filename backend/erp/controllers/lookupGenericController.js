@@ -175,6 +175,18 @@ const SEED_DEFAULTS = {
     { code: 'PRESIDENT', label: 'President', metadata: { description: 'Company president — full cross-entity access' } },
     { code: 'CEO', label: 'CEO', metadata: { description: 'Chief Executive — view-only on ERP' } },
   ],
+  // Phase 31 — Functional Role Assignment
+  FUNCTIONAL_ROLE: [
+    { code: 'PURCHASING', label: 'Purchasing' },
+    { code: 'ACCOUNTING', label: 'Accounting' },
+    { code: 'COLLECTIONS', label: 'Collections' },
+    { code: 'INVENTORY', label: 'Inventory Management' },
+    { code: 'SALES', label: 'Sales' },
+    { code: 'ADMIN', label: 'Administration' },
+    { code: 'AUDIT', label: 'Audit' },
+    { code: 'PAYROLL', label: 'Payroll' },
+    { code: 'LOGISTICS', label: 'Logistics & Distribution' },
+  ],
 };
 
 // List all distinct categories for current entity

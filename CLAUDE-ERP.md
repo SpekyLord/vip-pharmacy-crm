@@ -2,7 +2,7 @@
 
 > **Last Updated**: April 2026
 > **Version**: 5.7
-> **Status**: Phases 0-30 Complete. Role Centralization + PeopleMaster Lookup-Driven (April 9, 2026).
+> **Status**: Phases 0-31 Complete. Functional Role Assignment / Cross-Entity Deployment (April 9, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -89,6 +89,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 28 | Sales Goals, KPI & Partnership Performance | ✅ |
 | 29 | Email Notifications + Approval Workflow (Authority Matrix) | ✅ |
 | 30 | Role Centralization + PeopleMaster Lookup-Driven Validation | ✅ |
+| 31 | Functional Role Assignment (Cross-Entity Deployment) | ✅ |
 
 ---
 
@@ -289,6 +290,36 @@ Applies to ALL roles. Everyone can progress:
 
 ### Retired: `backend/utils/roleHelpers.js`
 Replaced by `backend/constants/roles.js`. All importers updated.
+
+---
+
+## Functional Role Assignment (Phase 31)
+
+Enables cross-entity deployment of people — assigning a person to perform specific functions at multiple entities with date ranges and approval limits.
+
+### Model
+- **FunctionalRoleAssignment** — maps person_id + entity_id + functional_role with valid_from/to, approval_limit, status
+- Collection: `erp_functional_role_assignments`
+- Functional roles are lookup-driven via `FUNCTIONAL_ROLE` category (PURCHASING, ACCOUNTING, COLLECTIONS, INVENTORY, SALES, ADMIN, AUDIT, PAYROLL, LOGISTICS)
+
+### Key Queries
+- "Who handles ACCOUNTING at Entity X?" → `{ entity_id: X, functional_role: 'ACCOUNTING', is_active: true }`
+- "What entities does Person Y serve?" → `{ person_id: Y, is_active: true }`
+
+### Key Files
+```
+backend/erp/models/FunctionalRoleAssignment.js    # Model with lookup validation
+backend/erp/controllers/functionalRoleController.js # 7 CRUD operations + bulk create
+backend/erp/routes/functionalRoleRoutes.js          # /api/erp/role-assignments
+frontend/src/erp/hooks/useFunctionalRoles.js        # Frontend hook
+frontend/src/erp/pages/RoleAssignmentManager.jsx    # Page + ControlCenter panel
+```
+
+### Integration Points
+- **PersonDetail.jsx** Section F: shows cross-entity assignments for a person
+- **ControlCenter.jsx**: embedded under People & Access → Role Assignments
+- **App.jsx**: standalone route at `/erp/role-assignments`
+- **lookupGenericController.js**: FUNCTIONAL_ROLE added to SEED_DEFAULTS
 
 ---
 

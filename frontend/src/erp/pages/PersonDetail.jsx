@@ -1,8 +1,9 @@
 /**
  * PersonDetail — Phase 21.1: Full editable person page
  *
- * 5 sections: A) Person Info, B) Comp Profile, C) Insurance Register,
- * D) ERP Module Access (ErpAccessManager), E) History (comp + payslip)
+ * 6 sections: A) Person Info, B) Comp Profile, C) Insurance Register,
+ * D) ERP Module Access (ErpAccessManager), E) History (comp + payslip),
+ * F) Cross-Entity Functional Role Assignments (Phase 31)
  *
  * Edit mode: admin/finance/president only. BDMs see read-only.
  */
@@ -15,6 +16,7 @@ import { useAuth } from '../../hooks/useAuth';
 import usePeople from '../hooks/usePeople';
 import usePayroll from '../hooks/usePayroll';
 import useErpAccess from '../hooks/useErpAccess';
+import useFunctionalRoles from '../hooks/useFunctionalRoles';
 import { showError, showSuccess, showWarning } from '../utils/errorToast';
 import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
@@ -125,6 +127,8 @@ export default function PersonDetail() {
   const [loginForm, setLoginForm] = useState({ email: '', password: '', template_id: '' });
   const [accessTemplates, setAccessTemplates] = useState([]);
   const erpAccess = useErpAccess();
+  const { fetchByPerson: fetchFuncRoles } = useFunctionalRoles();
+  const [funcRoleAssignments, setFuncRoleAssignments] = useState([]);
   const savingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -180,6 +184,9 @@ export default function PersonDetail() {
   useEffect(() => {
     erpAccess.getTemplates().then(res => setAccessTemplates(res?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (id) fetchFuncRoles(id).then(setFuncRoleAssignments).catch(() => {});
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Warn if any lookup categories loaded empty (seeding may be needed)
   const lookupWarnShown = useRef(false);
@@ -729,6 +736,45 @@ export default function PersonDetail() {
                 </tbody>
               </table>
             ) : <div className="pd-empty">No payslips yet</div>}
+          </div>
+
+          {/* ═══ SECTION F: Cross-Entity Functional Role Assignments ═══ */}
+          <div className="pd-card">
+            <div className="pd-card-hdr">
+              <h3>Cross-Entity Assignments</h3>
+              {canEdit && (
+                <a href={`/erp/role-assignments?person=${id}`} style={{ fontSize: 12, color: 'var(--erp-accent, #1e5eff)', textDecoration: 'none' }}>+ Assign Role</a>
+              )}
+            </div>
+            {funcRoleAssignments.length > 0 ? (
+              <table className="pd-tbl">
+                <thead>
+                  <tr>
+                    <th>Entity</th>
+                    <th>Function</th>
+                    <th>Period</th>
+                    <th>Limit</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {funcRoleAssignments.map(a => (
+                    <tr key={a._id}>
+                      <td>{a.entity_id?.short_name || a.entity_id?.entity_name || '—'}</td>
+                      <td style={{ fontWeight: 600 }}>{a.functional_role}</td>
+                      <td style={{ fontSize: 11 }}>{fmtDate(a.valid_from)} — {a.valid_to ? fmtDate(a.valid_to) : 'Permanent'}</td>
+                      <td>{a.approval_limit != null ? `₱${Number(a.approval_limit).toLocaleString()}` : '—'}</td>
+                      <td>
+                        <span className="badge" style={{
+                          background: a.status === 'ACTIVE' ? '#dcfce7' : a.status === 'SUSPENDED' ? '#fef3c7' : a.status === 'EXPIRED' ? '#f1f5f9' : '#fee2e2',
+                          color: a.status === 'ACTIVE' ? '#166534' : a.status === 'SUSPENDED' ? '#92400e' : a.status === 'EXPIRED' ? '#475569' : '#991b1b',
+                        }}>{a.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <div className="pd-empty">No cross-entity assignments</div>}
           </div>
 
         </main>

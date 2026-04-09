@@ -3866,3 +3866,65 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] All modified frontend files pass `npx vite build`
 - [x] CLAUDE-ERP.md updated — Known Gaps table entries resolved
 - [x] PHASETASK-ERP.md updated with full Phase 30 task breakdown
+
+---
+
+## Phase 31 — Functional Role Assignment (Cross-Entity Deployment)
+
+> Enables assigning people to perform specific functions (Purchasing, Accounting, Collections, etc.)
+> at multiple entities with date ranges and optional approval limits.
+> **Problem solved**: Previously each person was locked to a single entity_id with no cross-entity
+> functional scoping (e.g., "this accountant handles accounting for VIP HQ AND MG AND CO").
+
+### 31.1 — Model + Lookup Seed ✅
+- [x] Created `backend/erp/models/FunctionalRoleAssignment.js` with full schema:
+  - entity_id (target entity), person_id, home_entity_id (denormalized), functional_role (lookup-validated)
+  - valid_from, valid_to (nullable = permanent), approval_limit, description
+  - status enum: ACTIVE, SUSPENDED, EXPIRED, REVOKED
+  - Compound indexes for "who handles X at entity Y" and "what entities does person Z serve" queries
+- [x] Pre-validate hook validates functional_role against Lookup FUNCTIONAL_ROLE category with hardcoded fallback
+- [x] Added FUNCTIONAL_ROLE category to SEED_DEFAULTS in `lookupGenericController.js`:
+  PURCHASING, ACCOUNTING, COLLECTIONS, INVENTORY, SALES, ADMIN, AUDIT, PAYROLL, LOGISTICS
+
+### 31.2 — Controller ✅
+- [x] Created `backend/erp/controllers/functionalRoleController.js` with 7 operations:
+  - listAssignments (entity-scoped, filterable by person/role/status)
+  - getAssignment (single by ID)
+  - getByPerson (cross-entity — all assignments for one person)
+  - createAssignment (duplicate-active guard, auto-sets home_entity_id from PeopleMaster)
+  - updateAssignment (whitelist of allowed fields)
+  - deactivateAssignment (soft-delete → REVOKED status)
+  - bulkCreate (one person → multiple entities, skips duplicates)
+
+### 31.3 — Routes ✅
+- [x] Created `backend/erp/routes/functionalRoleRoutes.js` mounted at `/api/erp/role-assignments`
+- [x] Static routes before parameterized: /by-person/:personId, /bulk before /:id
+- [x] adminOnly middleware on write endpoints (POST, PUT, deactivate)
+- [x] Registered in `backend/erp/routes/index.js` under `erpAccessCheck('people')`
+
+### 31.4 — Frontend Hook ✅
+- [x] Created `frontend/src/erp/hooks/useFunctionalRoles.js`
+- [x] Wraps all API endpoints using useErpApi pattern (matching useApprovals.js)
+
+### 31.5 — Frontend Page ✅
+- [x] Created `frontend/src/erp/pages/RoleAssignmentManager.jsx`
+- [x] Two tabs: "By Entity" (who's assigned here) and "By Person" (search person → cross-entity list)
+- [x] Create/Edit modal with person search, entity selector, lookup-driven role dropdown, date range, approval limit
+- [x] Bulk mode: assign one person to multiple entities at once
+- [x] Status badges: ACTIVE (green), SUSPENDED (yellow), EXPIRED (gray), REVOKED (red)
+- [x] WorkflowGuide helper banner
+- [x] Exports RoleAssignmentManagerContent for ControlCenter embedding
+
+### 31.6 — App.jsx + ControlCenter Registration ✅
+- [x] Added lazy import + route `/erp/role-assignments` with ROLE_SETS.MANAGEMENT in App.jsx
+- [x] Added to ControlCenter SECTIONS + CATEGORY_CONFIG under "People & Access" group
+
+### 31.7 — PersonDetail Integration ✅
+- [x] Added Section F: "Cross-Entity Assignments" to PersonDetail.jsx
+- [x] Fetches via useFunctionalRoles().fetchByPerson on mount
+- [x] Compact table: Entity, Function, Period, Limit, Status
+- [x] Management users see "+ Assign Role" link to /erp/role-assignments?person=<id>
+
+### 31.8 — Documentation ✅
+- [x] PHASETASK-ERP.md updated with Phase 31 task breakdown
+- [x] CLAUDE-ERP.md updated with Phase 31 architecture
