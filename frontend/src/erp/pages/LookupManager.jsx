@@ -121,25 +121,38 @@ export function LookupManagerContent() {
     }
   };
 
+  // Categories that use metadata for configuration values
+  const METADATA_CATEGORIES = ['GOAL_CONFIG', 'KPI_CODE', 'INCENTIVE_TIER', 'INCENTIVE_PROGRAM'];
+  const hasMetadata = METADATA_CATEGORIES.includes(activeCat);
+
   const openCreate = () => {
     setEditItem(null);
-    setForm({ code: '', label: '', sort_order: items.length * 10 });
+    setForm({ code: '', label: '', sort_order: items.length * 10, metadata: '{}' });
     setShowModal(true);
   };
 
   const openEdit = (item) => {
     setEditItem(item);
-    setForm({ code: item.code, label: item.label, sort_order: item.sort_order || 0 });
+    setForm({
+      code: item.code,
+      label: item.label,
+      sort_order: item.sort_order || 0,
+      metadata: item.metadata ? JSON.stringify(item.metadata, null, 2) : '{}',
+    });
     setShowModal(true);
   };
 
   const handleSave = async () => {
     try {
+      let parsedMeta = {};
+      if (form.metadata && form.metadata.trim()) {
+        try { parsedMeta = JSON.parse(form.metadata); } catch { toast.error('Invalid JSON in metadata'); return; }
+      }
       if (editItem) {
-        await api.put(`/erp/lookup-values/${activeCat}/${editItem._id}`, { label: form.label, sort_order: parseInt(form.sort_order) || 0 });
+        await api.put(`/erp/lookup-values/${activeCat}/${editItem._id}`, { label: form.label, sort_order: parseInt(form.sort_order) || 0, metadata: parsedMeta });
         toast.success('Updated');
       } else {
-        await api.post(`/erp/lookup-values/${activeCat}`, { category: activeCat, code: form.code, label: form.label, sort_order: parseInt(form.sort_order) || 0 });
+        await api.post(`/erp/lookup-values/${activeCat}`, { category: activeCat, code: form.code, label: form.label, sort_order: parseInt(form.sort_order) || 0, metadata: parsedMeta });
         toast.success('Created');
       }
       setShowModal(false);
@@ -224,6 +237,7 @@ export function LookupManagerContent() {
                       <tr>
                         <th>Code</th>
                         <th>Label</th>
+                        {hasMetadata && <th>Config Values</th>}
                         <th>Order</th>
                         <th>Status</th>
                         {canEdit && <th></th>}
@@ -234,6 +248,19 @@ export function LookupManagerContent() {
                         <tr key={item._id}>
                           <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{item.code}</td>
                           <td>{item.label}</td>
+                          {hasMetadata && (
+                            <td style={{ fontSize: 11, color: 'var(--erp-muted)', maxWidth: 300 }}>
+                              {item.metadata && Object.keys(item.metadata).length > 0 ? (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                  {Object.entries(item.metadata).map(([k, v]) => (
+                                    <span key={k} style={{ background: 'var(--erp-accent-soft)', padding: '2px 6px', borderRadius: 4, fontSize: 11 }}>
+                                      {k}: <strong>{typeof v === 'boolean' ? (v ? 'Yes' : 'No') : typeof v === 'number' ? v.toLocaleString() : String(v || '-')}</strong>
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : '—'}
+                            </td>
+                          )}
                           <td style={{ color: 'var(--erp-muted)' }}>{item.sort_order}</td>
                           <td><span className={`badge ${item.is_active ? 'badge-active' : 'badge-inactive'}`}>{item.is_active ? 'Active' : 'Inactive'}</span></td>
                           {canEdit && (
@@ -272,6 +299,18 @@ export function LookupManagerContent() {
                 <label>Sort Order</label>
                 <input type="number" value={form.sort_order} onChange={e => setForm({ ...form, sort_order: e.target.value })} />
               </div>
+              {hasMetadata && (
+                <div className="form-group">
+                  <label>Metadata (JSON) — config values like budget, thresholds, etc.</label>
+                  <textarea
+                    value={form.metadata}
+                    onChange={e => setForm({ ...form, metadata: e.target.value })}
+                    rows={5}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--erp-border)', fontFamily: 'monospace', fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }}
+                    placeholder='{ "value": 90 }'
+                  />
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
                 <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
                 <button className="btn btn-primary" onClick={handleSave} disabled={!form.label.trim() || (!editItem && !form.code.trim())}>

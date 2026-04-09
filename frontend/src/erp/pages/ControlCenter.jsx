@@ -309,6 +309,10 @@ const DEPENDENCY_GUIDE = {
     items: [
       { action: 'When you add/edit a lookup value', deps: 'All dropdowns using that category will show the new value immediately (5-min cache)', section: null },
       { action: 'When you deactivate a value', deps: 'Existing records keep their value, but new entries cannot select it', section: null },
+      { action: 'GOAL_CONFIG — Sales Goal thresholds', deps: 'Controls attainment colors (green/yellow/red), collection %, fiscal start month on the Goal Dashboard', section: null },
+      { action: 'INCENTIVE_TIER — Incentive budgets', deps: 'Defines tier names, attainment thresholds, and budget amounts. Edit anytime to adjust rewards mid-year.', section: null },
+      { action: 'GROWTH_DRIVER — Sales growth drivers', deps: 'Used when creating Sales Goal Plans. Add new drivers here before adding them to a plan.', section: null },
+      { action: 'KPI_CODE — KPI metric definitions', deps: 'Defines auto/manual computation, units, and direction. Add here before linking to a growth driver.', section: null },
     ]
   },
   'org-chart': {
