@@ -27,6 +27,7 @@ const ClientVisit = require('../models/ClientVisit');
 const ProductAssignment = require('../models/ProductAssignment');
 const CrmProduct = require('../models/CrmProduct');
 const { getCycleNumber, getCycleStartDate } = require('../utils/scheduleCycleUtils');
+const { ROLES } = require('../constants/roles');
 
 // ─── Employee definitions ────────────────────────────────────────────────────
 
@@ -303,7 +304,7 @@ const seedDatabase = async () => {
         name: emp.name,
         email: emp.email,
         password: 'BDM123!@#',
-        role: 'employee',
+        role: ROLES.CONTRACTOR,
         isActive: true,
       });
       employees.push({ user, territory: emp.territory });

@@ -13,6 +13,8 @@
  *   admin w/o access → VIEW only (was FULL — deprecated in Phase 24A)
  */
 
+const { ROLES } = require('../../constants/roles');
+
 const LEVELS = { NONE: 0, VIEW: 1, FULL: 2 };
 
 /**
@@ -29,10 +31,10 @@ const erpAccessCheck = (module, requiredLevel = 'VIEW') => {
     const { role, erp_access } = req.user;
 
     // President always gets full access
-    if (role === 'president') return next();
+    if (role === ROLES.PRESIDENT) return next();
 
     // CEO gets view-only — block FULL operations
-    if (role === 'ceo') {
+    if (role === ROLES.CEO) {
       if (requiredLevel === 'FULL') {
         return res.status(403).json({
           success: false,
@@ -45,7 +47,7 @@ const erpAccessCheck = (module, requiredLevel = 'VIEW') => {
     // Backward compat: admin without erp_access enabled gets VIEW (was: full access).
     // This allows legacy admins to still see data while templates are being rolled out.
     // Once all admins have erp_access.enabled, remove this block entirely.
-    if (role === 'admin' && (!erp_access || !erp_access.enabled)) {
+    if (role === ROLES.ADMIN && (!erp_access || !erp_access.enabled)) {
       if (requiredLevel === 'FULL') {
         return res.status(403).json({
           success: false,
@@ -84,7 +86,7 @@ const erpAccessCheck = (module, requiredLevel = 'VIEW') => {
  *
  * Fall-through rules:
  *   - President → always pass
- *   - Admin w/o erp_access enabled ��� always pass (backward compat)
+ *   - Admin w/o erp_access enabled → always pass (backward compat)
  *   - Module = FULL with NO sub_permissions entry → all subs granted
  *   - Module = FULL/VIEW with sub_permissions entry → check specific key
  *
@@ -100,10 +102,10 @@ const erpSubAccessCheck = (module, subKey) => {
     const { role, erp_access } = req.user;
 
     // President always passes
-    if (role === 'president') return next();
+    if (role === ROLES.PRESIDENT) return next();
 
     // CEO — view-only, block sub-permission writes
-    if (role === 'ceo') {
+    if (role === ROLES.CEO) {
       return res.status(403).json({
         success: false,
         message: 'CEO role is view-only for ERP modules',
@@ -111,7 +113,7 @@ const erpSubAccessCheck = (module, subKey) => {
     }
 
     // Backward compat: admin without erp_access — deny sub-permission writes
-    if (role === 'admin' && (!erp_access || !erp_access.enabled)) {
+    if (role === ROLES.ADMIN && (!erp_access || !erp_access.enabled)) {
       return res.status(403).json({
         success: false,
         message: 'Admin account requires ERP access template for this operation. Contact president to assign one.',
@@ -168,7 +170,7 @@ const approvalCheck = (req, res, next) => {
   const { role, erp_access } = req.user;
 
   // President and admin can always approve
-  if (role === 'president' || role === 'admin') return next();
+  if (role === ROLES.PRESIDENT || role === ROLES.ADMIN) return next();
 
   if (erp_access?.can_approve) return next();
 

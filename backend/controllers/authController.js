@@ -17,6 +17,7 @@ const { generateTokens, generateAccessToken } = require('../utils/generateToken'
 const { catchAsync } = require('../middleware/errorHandler');
 const { logAuditEvent, AuditActions } = require('../utils/auditLogger');
 const { sendPasswordResetEmail } = require('../services/emailService');
+const { ROLES } = require('../constants/roles');
 
 /**
  * Hash a refresh token with SHA-256 for secure storage.
@@ -47,7 +48,7 @@ const register = catchAsync(async (req, res) => {
     name,
     email,
     password,
-    role: role || 'employee',
+    role: role || ROLES.CONTRACTOR,
     phone,
   });
 

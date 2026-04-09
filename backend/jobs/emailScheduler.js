@@ -13,6 +13,7 @@ const cron = require('node-cron');
 const User = require('../models/User');
 const Doctor = require('../models/Doctor');
 const Visit = require('../models/Visit');
+const { ROLES } = require('../constants/roles');
 const NotificationPreference = require('../models/NotificationPreference');
 const { isConfigured } = require('../config/ses');
 const { sendOperationalAlert } = require('../utils/alerts');
@@ -67,7 +68,7 @@ const runWeeklyCompliance = async () => {
     const weekLabel = getWeekLabel();
 
     // Get all active BDMs
-    const bdms = await User.find({ role: 'employee', isActive: true }).lean();
+    const bdms = await User.find({ role: ROLES.CONTRACTOR, isActive: true }).lean();
     if (bdms.length === 0) {
       logInfo('email_scheduler_no_active_bdms');
       return;

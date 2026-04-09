@@ -1,3 +1,4 @@
+const { ROLES } = require('../../constants/roles');
 const PeopleMaster = require('../models/PeopleMaster');
 const CompProfile = require('../models/CompProfile');
 const User = require('../../models/User');
@@ -202,7 +203,7 @@ const syncFromCrm = catchAsync(async (req, res) => {
   );
 
   let created = 0, updated = 0, skipped = 0;
-  const typeMap = { admin: 'EMPLOYEE', president: 'DIRECTOR', employee: 'BDM', medrep: 'SALES_REP', finance: 'EMPLOYEE' };
+  const typeMap = { [ROLES.ADMIN]: 'EMPLOYEE', [ROLES.PRESIDENT]: 'DIRECTOR', [ROLES.CONTRACTOR]: 'BDM', [ROLES.MEDREP]: 'SALES_REP', [ROLES.FINANCE]: 'EMPLOYEE' };
 
   for (const u of crmUsers) {
     const existingPerson = existingByUserId.get(u._id.toString());
@@ -245,8 +246,8 @@ const syncFromCrm = catchAsync(async (req, res) => {
       territory_id: u.territory_id || null,
       bdm_stage: u.bdm_stage || '',
       live_date: u.live_date || null,
-      position: u.role === 'employee' ? 'BDM' : u.role,
-      department: u.role === 'employee' ? 'SALES' : 'ADMIN',
+      position: u.role === ROLES.CONTRACTOR ? 'BDM' : u.role,
+      department: u.role === ROLES.CONTRACTOR ? 'SALES' : 'ADMIN',
       employment_type: 'REGULAR',
       is_active: true
     });
@@ -279,7 +280,7 @@ const getAsUsers = catchAsync(async (req, res) => {
       _id: p.user_id._id,
       name: p.user_id.name || p.full_name,
       email: p.user_id.email,
-      role: p.user_id.role || 'employee',
+      role: p.user_id.role || ROLES.CONTRACTOR,
       isActive: true,
       person_id: p._id,
       full_name: p.full_name,
@@ -382,7 +383,7 @@ const createPersonUnified = catchAsync(async (req, res) => {
       name: full_name,
       email: email.toLowerCase(),
       password,
-      role: role || 'employee',
+      role: role || ROLES.CONTRACTOR,
       phone: phone || '',
       entity_id: req.entityId,
       territory_id: territory_id || null,
@@ -461,8 +462,8 @@ const createLoginForPerson = catchAsync(async (req, res) => {
   if (existing) return res.status(400).json({ success: false, message: `Email "${email}" is already registered` });
 
   // Map person_type to CRM role
-  const roleMap = { DIRECTOR: 'president', BDM: 'employee', ECOMMERCE_BDM: 'employee', SALES_REP: 'employee', CONSULTANT: 'employee', EMPLOYEE: 'employee' };
-  const crmRole = roleMap[person.person_type] || 'employee';
+  const roleMap = { DIRECTOR: ROLES.PRESIDENT, BDM: ROLES.CONTRACTOR, ECOMMERCE_BDM: ROLES.CONTRACTOR, SALES_REP: ROLES.CONTRACTOR, CONSULTANT: ROLES.CONTRACTOR, EMPLOYEE: ROLES.CONTRACTOR };
+  const crmRole = roleMap[person.person_type] || ROLES.CONTRACTOR;
 
   // Build ERP access — apply template if provided, otherwise just enable
   let erpAccess = { enabled: true };

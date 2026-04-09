@@ -18,7 +18,7 @@
  */
 
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
-const { isCrmAdminLike } = require('../utils/roleHelpers');
+const { ROLES, isAdminLike } = require('../constants/roles');
 const MessageInbox = require('../models/MessageInbox');
 
 const getMessageModel = () => MessageInbox;
@@ -137,7 +137,7 @@ const getInboxMessages = catchAsync(async (req, res) => {
 /* @access  Admin only                                                 */
 /* ------------------------------------------------------------------ */
 const createInboxMessage = catchAsync(async (req, res) => {
-  if (!isCrmAdminLike(req.user.role)) {
+  if (!isAdminLike(req.user.role)) {
     return res.status(403).json({
       success: false,
       message: 'Only admins can create inbox messages.',
@@ -189,7 +189,7 @@ const createInboxMessage = catchAsync(async (req, res) => {
 /* @access  Admin only                                                 */
 /* ------------------------------------------------------------------ */
 const createMessageNotify = catchAsync(async (req, res) => {
-  if (!isCrmAdminLike(req.user.role)) {
+  if (!isAdminLike(req.user.role)) {
     return res.status(403).json({
       success: false,
       message: "Only admins can send compliance alerts.",
@@ -204,7 +204,7 @@ const createMessageNotify = catchAsync(async (req, res) => {
     title = "Compliance Alert",
     category = "compliance_alert",
     priority = "normal",
-    recipientRole = "employee",
+    recipientRole = ROLES.CONTRACTOR,
     senderName,
   } = req.body;
 
@@ -318,7 +318,7 @@ const markMessageUnread = catchAsync(async (req, res) => {
 /* @access  Admin only                                                 */
 /* ------------------------------------------------------------------ */
 const getSentMessages = catchAsync(async (req, res) => {
-  if (!isCrmAdminLike(req.user.role)) {
+  if (!isAdminLike(req.user.role)) {
     return res.status(403).json({
       success: false,
       message: "Only admins can view sent messages.",

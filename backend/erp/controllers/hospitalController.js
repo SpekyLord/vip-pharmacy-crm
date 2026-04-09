@@ -1,5 +1,6 @@
 const Hospital = require('../models/Hospital');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { ROLES } = require('../../constants/roles');
 const XLSX = require('xlsx');
 
 const getAll = catchAsync(async (req, res) => {
@@ -11,7 +12,7 @@ const getAll = catchAsync(async (req, res) => {
   }
 
   // BDM sees only their tagged hospitals; admin/president/finance/ceo see all
-  const bdmRoles = ['employee'];
+  const bdmRoles = [ROLES.CONTRACTOR];
   if (bdmRoles.includes(req.user?.role) || req.query.my === 'true') {
     filter.tagged_bdms = {
       $elemMatch: { bdm_id: req.user._id, is_active: { $ne: false } }

@@ -5,6 +5,7 @@ import usePettyCash from '../hooks/usePettyCash';
 import usePeople from '../hooks/usePeople';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
+import { ROLES, ROLE_SETS } from '../../constants/roles';
 
 const CEILING = 5000;
 
@@ -56,6 +57,7 @@ const styles = {
 };
 
 // ---------- Fund Form Modal (Create + Edit) ----------
+/* eslint-disable react/prop-types */
 function FundFormModal({ open, onClose, onSave, editData, people }) {
   const isEdit = !!editData;
   const [form, setForm] = useState({ fund_name: '', fund_code: '', custodian_id: '', balance_ceiling: CEILING, authorized_amount: 10000, coa_code: '1000', fund_mode: 'REVOLVING' });
@@ -152,8 +154,10 @@ function FundFormModal({ open, onClose, onSave, editData, people }) {
     </div>
   );
 }
+/* eslint-enable react/prop-types */
 
 // ---------- Create Transaction Modal ----------
+/* eslint-disable react/prop-types */
 function CreateTxnModal({ open, onClose, onSave, funds }) {
   const [form, setForm] = useState({ fund_id: '', txn_type: 'DISBURSEMENT', payee: '', particulars: '', amount: '', or_number: '' });
   const [saving, setSaving] = useState(false);
@@ -213,8 +217,10 @@ function CreateTxnModal({ open, onClose, onSave, funds }) {
     </div>
   );
 }
+/* eslint-enable react/prop-types */
 
 // ---------- Fund Overview Tab ----------
+/* eslint-disable react/prop-types */
 function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund, onGenerateRemittance, canManage, isPresident, people }) {
   const [showForm, setShowForm] = useState(false);
   const [editingFund, setEditingFund] = useState(null);
@@ -292,8 +298,10 @@ function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund
     </div>
   );
 }
+/* eslint-enable react/prop-types */
 
 // ---------- Transactions Tab ----------
+/* eslint-disable react/prop-types */
 function TransactionsTab({ funds, pc }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -407,7 +415,10 @@ function TransactionsTab({ funds, pc }) {
   );
 }
 
+/* eslint-enable react/prop-types */
+
 // ---------- Documents Tab ----------
+/* eslint-disable react/prop-types */
 function DocumentsTab({ pc }) {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -507,12 +518,14 @@ function DocumentsTab({ pc }) {
   );
 }
 
+/* eslint-enable react/prop-types */
+
 // ---------- Main Page ----------
 export default function PettyCash() {
   const { user } = useAuth();
   const pc = usePettyCash();
   const { getPeopleList } = usePeople();
-  const canManage = ['admin', 'finance', 'president'].includes(user?.role);
+  const canManage = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const [activeTab, setActiveTab] = useState('funds');
   const [funds, setFunds] = useState([]);
   const [people, setPeople] = useState([]);
@@ -575,7 +588,7 @@ export default function PettyCash() {
       </div>
 
       {activeTab === 'funds' && (
-        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} canManage={canManage} isPresident={user?.role === 'president'} people={people} />
+        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} canManage={canManage} isPresident={user?.role === ROLES.PRESIDENT} people={people} />
       )}
       {activeTab === 'transactions' && (
         <TransactionsTab funds={funds} pc={pc} />

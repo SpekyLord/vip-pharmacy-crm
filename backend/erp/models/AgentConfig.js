@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { ROLES, ROLE_SETS } = require('../../constants/roles');
 
 /**
  * AgentConfig Model — per-agent settings controlled by president/admin.
@@ -14,9 +15,9 @@ const agentConfigSchema = new mongoose.Schema({
   enabled: { type: Boolean, default: true },
   notify_roles: {
     type: [String],
-    default: ['president'],
+    default: [ROLES.PRESIDENT],
     validate: {
-      validator: arr => arr.every(r => ['president', 'admin', 'finance'].includes(r)),
+      validator: arr => arr.every(r => ROLE_SETS.MANAGEMENT.includes(r)),
       message: 'notify_roles must be president, admin, or finance'
     }
   },

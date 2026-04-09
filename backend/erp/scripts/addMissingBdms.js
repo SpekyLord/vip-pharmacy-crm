@@ -15,6 +15,7 @@ const mongoose = require('mongoose');
 const connectDB = require('../../config/db');
 const User = require('../../models/User');
 const Entity = require('../models/Entity');
+const { ROLES } = require('../../constants/roles');
 
 const BDM_PASSWORD = 'BDM123!@#';
 
@@ -84,7 +85,7 @@ async function run() {
       name: bdm.name,
       email: bdm.email,
       password: BDM_PASSWORD,
-      role: 'employee',
+      role: ROLES.CONTRACTOR,
       isActive: true,
       entity_id: entity._id,
     });

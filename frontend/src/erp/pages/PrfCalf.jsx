@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useExpenses from '../hooks/useExpenses';
 import useAccounting from '../hooks/useAccounting';
 import useErpApi from '../hooks/useErpApi';
@@ -56,7 +57,7 @@ export default function PrfCalf() {
       const res = await getPrfCalfList(params);
       setDocs(res?.data || []);
     } catch (err) { showError(err, 'Could not load PRF/CALF documents'); }
-  }, [period, docTypeFilter]);
+  }, [period, docTypeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
   useEffect(() => {
@@ -75,7 +76,7 @@ export default function PrfCalf() {
       setPendingRebates(rebRes?.data || []);
       setPendingCalfLines(calfRes?.data || []);
     } catch (err) { showError(err, 'Could not load pending rebates'); }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadPendingData(); }, [loadPendingData]);
 
   // Auto-fill PRF from a pending rebate (with last known bank details if available)
@@ -176,7 +177,7 @@ export default function PrfCalf() {
     }
     if (issues.length) { showError(null, issues.join('. ')); return; }
 
-    const { calf_number: _excluded, ...formData } = form;
+    const { calf_number: _excluded, ...formData } = form; // eslint-disable-line no-unused-vars
     const data = {
       ...formData,
       period, cycle,
@@ -195,7 +196,7 @@ export default function PrfCalf() {
   const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch (err) { showError(err, 'Could not reopen PRF/CALF'); } };
   const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch (err) { showError(err, 'Could not delete PRF/CALF'); } };
 
-  const isFinance = ['admin', 'finance', 'president'].includes(user?.role);
+  const isFinance = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const calfBalance = (form.advance_amount || 0) - (form.liquidation_amount || 0);
   const selectedModeType = paymentModes.find(pm => pm.mode_code === form.payment_mode)?.mode_type || form.payment_mode;
 

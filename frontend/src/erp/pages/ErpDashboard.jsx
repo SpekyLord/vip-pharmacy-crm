@@ -12,9 +12,9 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { isAdminLike } from '../../constants/roles';
 import useEntities from '../hooks/useEntities';
 import useDashboard from '../hooks/useDashboard';
-import EntityBadge from '../components/EntityBadge';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 import api from '../../services/api';
@@ -116,8 +116,8 @@ export default function ErpDashboard() {
   const { user } = useAuth();
   const { getEntityById } = useEntities();
   const dash = useDashboard();
-  const userEntity = getEntityById(user?.entity_id);
-  const crmHome = ['admin', 'finance', 'president', 'ceo'].includes(user?.role) ? '/admin' : '/bdm';
+  const _userEntity = getEntityById(user?.entity_id); // eslint-disable-line no-unused-vars
+  const _crmHome = isAdminLike(user?.role) ? '/admin' : '/bdm'; // eslint-disable-line no-unused-vars
 
   const [summary, setSummary] = useState(null);
   const [mtd, setMtd] = useState(null);
@@ -128,7 +128,7 @@ export default function ErpDashboard() {
   const [agentStats, setAgentStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const isAdminRole = ['admin', 'finance', 'president', 'ceo'].includes(user?.role);
+  const isAdminRole = isAdminLike(user?.role);
 
   // Load agent stats for admin/president
   useEffect(() => {
@@ -320,7 +320,7 @@ export default function ErpDashboard() {
             {isAdminRole && agentStats && (() => {
               const agents = agentStats.agents || [];
               const totalAlerts = agents.reduce((sum, a) => sum + (a.total_alerts || 0), 0);
-              const criticalAgents = agents.filter(a => a.last_status === 'error' || (a.last_summary?.alerts_generated || 0) > 0);
+              const _criticalAgents = agents.filter(a => a.last_status === 'error' || (a.last_summary?.alerts_generated || 0) > 0); // eslint-disable-line no-unused-vars
               const allFindings = agents.flatMap(a => (a.last_summary?.key_findings || []).map(f => ({ agent: a.label || a._id, finding: f })));
               const recentFindings = allFindings.slice(0, 5);
               const recentRuns = agentStats.recent_runs || [];

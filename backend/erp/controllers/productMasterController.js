@@ -3,6 +3,7 @@ const Warehouse = require('../models/Warehouse');
 const InventoryLedger = require('../models/InventoryLedger');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { ROLES } = require('../../constants/roles');
 
 const getAll = catchAsync(async (req, res) => {
   const filter = {};
@@ -18,7 +19,7 @@ const getAll = catchAsync(async (req, res) => {
   }
 
   // BDMs only see products that have inventory in their assigned warehouse
-  const bdmRoles = ['employee'];
+  const bdmRoles = [ROLES.CONTRACTOR];
   if (bdmRoles.includes(req.user?.role)) {
     const myWarehouses = await Warehouse.find({
       $or: [{ manager_id: req.user._id }, { assigned_users: req.user._id }]
@@ -86,18 +87,29 @@ const update = catchAsync(async (req, res) => {
   res.json({ success: true, data: product });
 });
 
-const deactivate = catchAsync(async (req, res) => {
-  const filter = { _id: req.params.id };
-  // President/CEO can deactivate any product; others scoped to their entity
-  if (!req.isPresident) filter.entity_id = req.entityId;
-  const product = await ProductMaster.findOneAndUpdate(
-    filter,
-    { $set: { is_active: false } },
-    { new: true }
-  );
-  if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
-  res.json({ success: true, message: 'Product deactivated', data: product });
-});
+const deactivate = async (req, res) => {
+  try {
+    console.log('[deactivate] START — id:', req.params.id, 'isPresident:', req.isPresident, 'entityId:', req.entityId);
+    const mongoose = require('mongoose');
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid product ID: ' + req.params.id });
+    }
+    const filter = { _id: req.params.id };
+    if (!req.isPresident) filter.entity_id = req.entityId;
+    console.log('[deactivate] filter:', JSON.stringify(filter));
+    const product = await ProductMaster.findOneAndUpdate(
+      filter,
+      { $set: { is_active: false } },
+      { new: true }
+    );
+    console.log('[deactivate] result:', product ? product.brand_name : 'NOT FOUND');
+    if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+    res.json({ success: true, message: 'Product deactivated', data: product });
+  } catch (err) {
+    console.error('[deactivate] ERROR:', err.message, err.stack);
+    res.status(500).json({ success: false, message: 'Deactivate failed: ' + err.message });
+  }
+};
 
 /**
  * PATCH /:id/reorder-qty — Update SAP-level reorder fields (Finance/Admin only)
@@ -318,4 +330,186 @@ const importPrices = catchAsync(async (req, res) => {
   });
 });
 
-module.exports = { getAll, getById, create, update, deactivate, updateReorderQty, tagToWarehouse, getProductWarehouses, exportPrices, importPrices };
+/**
+ * PUT /refresh — Full product master refresh from CSV/XLSX upload
+ * Reads BrandName + DosageStrength as the dedup key.
+ * Upserts matching products, deactivates stale DB records not in the file.
+ * Expects columns: ItemKey, GenericName, BrandName, DosageStrength, SoldPer,
+ *   DefaultPurchasePrice, DefaultSellingPrice, IsActive
+ */
+const refreshProducts = catchAsync(async (req, res) => {
+  const XLSX = require('xlsx');
+  const { cleanName } = require('../utils/nameClean');
+  const { normalizeUnit } = require('../utils/normalize');
+
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No file uploaded. Send as multipart/form-data with field name "file".' });
+  }
+
+  const entityId = req.entityId || req.tenantFilter?.entity_id;
+  if (!entityId) {
+    return res.status(400).json({ success: false, message: 'Entity context required' });
+  }
+
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer', raw: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+
+  if (!rows.length) {
+    return res.status(400).json({ success: false, message: 'File is empty' });
+  }
+
+  // Deduplicate CSV rows by BrandName|DosageStrength (keep first active, or first)
+  // Note: raw:false returns strings, but some values may still be coerced — use String() to be safe
+  const dedupMap = new Map();
+  for (const row of rows) {
+    const brand = String(row.BrandName ?? '').trim();
+    const dosage = String(row.DosageStrength ?? '').trim();
+    if (!brand) continue;
+
+    const dedupKey = `${brand}|${dosage}`;
+    const isActive = String(row.IsActive ?? 'TRUE').toUpperCase() !== 'FALSE';
+
+    if (!dedupMap.has(dedupKey)) {
+      dedupMap.set(dedupKey, { row, isActive });
+    } else {
+      // Prefer active version
+      const existing = dedupMap.get(dedupKey);
+      if (!existing.isActive && isActive) {
+        dedupMap.set(dedupKey, { row, isActive });
+      }
+    }
+  }
+
+  const errors = [];
+  let updated = 0, created = 0, deactivated = 0, csvDupsSkipped = rows.length - dedupMap.size;
+  const processedCleanKeys = new Set();
+
+  for (const [dedupKey, { row, isActive }] of dedupMap) {
+    try {
+      const brand = String(row.BrandName ?? '').trim();
+      const dosage = String(row.DosageStrength ?? '').trim();
+      const generic = String(row.GenericName ?? '').trim();
+      const soldPer = String(row.SoldPer ?? '').trim();
+      const purchasePrice = parseFloat(String(row.DefaultPurchasePrice ?? '0').replace(/,/g, '')) || 0;
+      const sellingPrice = parseFloat(String(row.DefaultSellingPrice ?? '0').replace(/,/g, '')) || 0;
+      const itemKey = `${brand}|${dosage}`;
+      const brandClean = cleanName(brand);
+
+      processedCleanKeys.add(`${brandClean}|${dosage.toLowerCase()}`);
+
+      // Find ALL candidates: exact item_key match OR brand_clean+dosage match
+      const candidates = await ProductMaster.find({
+        entity_id: entityId,
+        $or: [
+          { item_key: itemKey },
+          { brand_name_clean: brandClean, dosage_strength: dosage || { $in: [null, ''] } },
+        ],
+      });
+
+      if (candidates.length > 0) {
+        // Pick the best one to keep (prefer active, then most recent)
+        const keeper = candidates.find(c => c.is_active) || candidates[0];
+
+        // Deactivate all duplicates FIRST (before updating keeper's item_key)
+        for (const dup of candidates) {
+          if (dup._id.toString() !== keeper._id.toString() && dup.is_active) {
+            await ProductMaster.updateOne({ _id: dup._id }, { $set: { is_active: false } });
+            deactivated++;
+          }
+        }
+
+        // Now update the keeper via updateOne (avoids pre-save hook conflicts)
+        const updateFields = {
+          brand_name: brand,
+          brand_name_clean: brandClean,
+          dosage_strength: dosage,
+          item_key: itemKey,
+          is_active: isActive,
+        };
+        if (generic) updateFields.generic_name = generic;
+        if (soldPer) {
+          updateFields.sold_per = soldPer;
+          updateFields.unit_code = normalizeUnit(soldPer);
+        }
+        if (purchasePrice > 0) updateFields.purchase_price = purchasePrice;
+        if (sellingPrice > 0) updateFields.selling_price = sellingPrice;
+
+        await ProductMaster.updateOne({ _id: keeper._id }, { $set: updateFields });
+        updated++;
+      } else {
+        // No existing product — create new
+        await ProductMaster.create({
+          entity_id: entityId,
+          item_key: itemKey,
+          brand_name: brand,
+          brand_name_clean: brandClean,
+          generic_name: generic || brand,
+          dosage_strength: dosage,
+          sold_per: soldPer || 'PC',
+          unit_code: normalizeUnit(soldPer),
+          purchase_price: purchasePrice,
+          selling_price: sellingPrice,
+          is_active: isActive,
+        });
+        created++;
+      }
+    } catch (err) {
+      const brand = String(row.BrandName ?? '').trim();
+      const dosage = String(row.DosageStrength ?? '').trim();
+      errors.push({ brand, dosage, message: err.code === 11000 ? 'Duplicate key conflict' : err.message });
+    }
+  }
+
+  // Deactivate stale DB products not in the CSV (only within this entity)
+  let staleDeactivated = 0;
+  const activeProducts = await ProductMaster.find({ entity_id: entityId, is_active: true }).lean();
+  for (const prod of activeProducts) {
+    const prodClean = `${cleanName(prod.brand_name)}|${(prod.dosage_strength || '').toLowerCase()}`;
+    if (!processedCleanKeys.has(prodClean)) {
+      await ProductMaster.updateOne({ _id: prod._id }, { $set: { is_active: false } });
+      staleDeactivated++;
+    }
+  }
+
+  res.json({
+    success: true,
+    message: `Refresh complete: ${updated} updated, ${created} created, ${deactivated + staleDeactivated} deactivated`,
+    data: {
+      csv_rows: rows.length,
+      unique_products: dedupMap.size,
+      csv_duplicates_merged: csvDupsSkipped,
+      updated,
+      created,
+      duplicates_deactivated: deactivated,
+      stale_deactivated: staleDeactivated,
+      errors
+    }
+  });
+});
+
+/**
+ * DELETE /:id — Hard delete a product (only if no inventory transactions exist)
+ */
+const deleteProduct = async (req, res) => {
+  try {
+    const filter = { _id: req.params.id };
+    if (!req.isPresident) filter.entity_id = req.entityId;
+
+    const product = await ProductMaster.findOne(filter);
+    if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+
+    const hasInventory = await InventoryLedger.exists({ product_id: product._id });
+    if (hasInventory) {
+      return res.status(409).json({ success: false, message: 'Cannot delete — product has inventory transactions. Deactivate instead.' });
+    }
+
+    await ProductMaster.deleteOne({ _id: product._id });
+    res.json({ success: true, message: 'Product deleted' });
+  } catch (err) {
+    console.error('[deleteProduct] ERROR:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { getAll, getById, create, update, deactivate, deleteProduct, updateReorderQty, tagToWarehouse, getProductWarehouses, exportPrices, importPrices, refreshProducts };

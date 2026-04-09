@@ -11,6 +11,7 @@
  *   - Module VIEW/FULL with sub_permissions → check specific key
  */
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES } from '../../constants/roles';
 
 export default function useErpSubAccess() {
   const { user } = useAuth();
@@ -19,10 +20,10 @@ export default function useErpSubAccess() {
     if (!user) return false;
 
     // President always passes
-    if (user.role === 'president') return true;
+    if (user.role === ROLES.PRESIDENT) return true;
 
     // Admin without erp_access enabled = full
-    if (user.role === 'admin' && !user.erp_access?.enabled) return true;
+    if (user.role === ROLES.ADMIN && !user.erp_access?.enabled) return true;
 
     const moduleLevel = user.erp_access?.modules?.[module];
     if (!moduleLevel || moduleLevel === 'NONE') return false;

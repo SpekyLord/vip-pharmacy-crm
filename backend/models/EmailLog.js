@@ -30,6 +30,12 @@ const emailLogSchema = new mongoose.Schema({
       'ADMIN_WEEKLY_SUMMARY',
       'BDM_WEEKLY_REPORT',
       'BEHIND_SCHEDULE_ALERT',
+      // ERP document lifecycle notifications
+      'ERP_DOCUMENT_POSTED',
+      'ERP_DOCUMENT_REOPENED',
+      'ERP_APPROVAL_REQUEST',
+      'ERP_APPROVAL_DECISION',
+      'ERP_PAYROLL_POSTED',
     ],
     required: true,
     index: true,

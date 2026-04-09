@@ -9,6 +9,7 @@ import CostCenterPicker from '../components/CostCenterPicker';
 import useErpSubAccess from '../hooks/useErpSubAccess';
 import useErpApi from '../hooks/useErpApi';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
@@ -17,6 +18,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 import { showError } from '../utils/errorToast';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
+/* eslint-disable react/prop-types */
 function ScanORModal({ open, onClose, onApply }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
@@ -123,6 +125,7 @@ function ScanORModal({ open, onClose, onApply }) {
     </div>
   );
 }
+/* eslint-enable react/prop-types */
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -405,7 +408,7 @@ export default function Expenses() {
   const { getPeopleList } = usePeople();
   const { getMyCards, getMyBankAccounts, listAccounts } = useAccounting();
   const { hasSubPermission } = useErpSubAccess();
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const canBatchUpload = hasSubPermission('expenses', 'batch_upload') && isAdmin;
   const lookupApi = useErpApi();
   const { options: expCatOpts } = useLookupOptions('EXPENSE_CATEGORY');
@@ -569,7 +572,7 @@ export default function Expenses() {
       setExpenses(res?.data || []);
       if (sumRes?.data) setSummary(sumRes.data);
     } catch (err) { console.error('[Expenses] Load failed:', err.message); }
-  }, [period, cycle]);
+  }, [period, cycle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadExpenses(); }, [loadExpenses]);
 

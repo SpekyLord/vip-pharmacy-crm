@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useDashboard from '../hooks/useDashboard';
 import useIncome from '../hooks/useIncome';
 import { showError, showSuccess } from '../utils/errorToast';
@@ -47,7 +48,7 @@ export default function MonthlyArchive() {
   const { user } = useAuth();
   const dash = useDashboard();
   const inc = useIncome();
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [archives, setArchives] = useState([]);
   const [loading, setLoading] = useState(true);

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useErpApi from '../hooks/useErpApi';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -55,7 +56,7 @@ const MODULE_LABELS = {
 export function PeriodLocksContent() {
   const { user } = useAuth();
   const api = useErpApi();
-  const canToggle = ['admin', 'finance', 'president'].includes(user?.role);
+  const canToggle = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [year, setYear] = useState(new Date().getFullYear());
   const [matrix, setMatrix] = useState({});

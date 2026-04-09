@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES } from '../../constants/roles';
 import useTransfers from '../hooks/useTransfers';
 import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
@@ -67,7 +68,7 @@ const pageStyles = `
 
 export function TransferPriceManagerContent() {
   const { user } = useAuth();
-  const { getTransferPriceProducts, bulkSetTransferPrices, getEntities, loading } = useTransfers();
+  const { getTransferPriceProducts, bulkSetTransferPrices, getEntities, loading: _loading } = useTransfers(); // eslint-disable-line no-unused-vars
 
   const [entities, setEntities] = useState([]);
   const [products, setProducts] = useState([]);
@@ -81,7 +82,7 @@ export function TransferPriceManagerContent() {
   const [fetching, setFetching] = useState(false);
   const searchRef = useRef(null);
 
-  const isPresidentOrAdmin = ['president', 'ceo', 'admin'].includes(user?.role);
+  const isPresidentOrAdmin = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN].includes(user?.role);
 
   // Load entities, auto-select VIP → MG AND CO.
   useEffect(() => {
@@ -97,7 +98,7 @@ export function TransferPriceManagerContent() {
         if (sub) setTargetId(sub._id);
       } catch (err) { showError(err, 'Could not load entities'); }
     })();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch products when entity pair changes
   const fetchProducts = useCallback(async () => {
@@ -119,7 +120,7 @@ export function TransferPriceManagerContent() {
       setOrigPrices(orig);
     } catch (err) { console.error('Failed to fetch transfer price products:', err); }
     setFetching(false);
-  }, [sourceId, targetId]);
+  }, [sourceId, targetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 

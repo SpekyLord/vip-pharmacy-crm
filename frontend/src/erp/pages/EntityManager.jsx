@@ -6,6 +6,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES, isPresidentLike } from '../../constants/roles';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 
@@ -55,8 +56,8 @@ export function EntityManagerContent() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
 
-  const isPresident = user?.role === 'president' || user?.role === 'ceo';
-  const canEdit = ['president', 'ceo', 'admin'].includes(user?.role);
+  const isPresident = isPresidentLike(user?.role);
+  const canEdit = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN].includes(user?.role);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,7 +121,7 @@ export function EntityManagerContent() {
     }
   };
 
-  const parentEntity = entities.find(e => e.entity_type === 'PARENT');
+  const _parentEntity = entities.find(e => e.entity_type === 'PARENT'); // eslint-disable-line no-unused-vars
 
   return (
     <>

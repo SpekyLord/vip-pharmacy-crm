@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useAccounting from '../hooks/useAccounting';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -56,11 +57,11 @@ const PHASE_LABELS = {
 export default function MonthEndClose() {
   const { user } = useAuth();
   const api = useAccounting();
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [period, setPeriod] = useState(getCurrentPeriod());
   const [progress, setProgress] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [_loading, _setLoading] = useState(false); // eslint-disable-line no-unused-vars
   const [running, setRunning] = useState(false);
   const pollRef = useRef(null);
 
@@ -113,7 +114,7 @@ export default function MonthEndClose() {
   }
 
   const completedCount = steps.filter(s => s.status === 'COMPLETE').length;
-  const hasErrors = steps.some(s => s.status === 'ERROR');
+  const _hasErrors = steps.some(s => s.status === 'ERROR'); // eslint-disable-line no-unused-vars
   const isPaused = steps.some(s => s.step === 21 && s.status === 'RUNNING');
   const isFullyComplete = completedCount === 29;
 

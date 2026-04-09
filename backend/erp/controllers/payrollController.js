@@ -10,6 +10,7 @@ const {
 } = require('../services/payslipCalc');
 const { journalFromPayroll, resolveFundingCoa } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');
+const { notifyPayrollPosted } = require('../services/erpNotificationService');
 
 const GENERATOR_MAP = {
   BDM: generateBdmPayslip,
@@ -146,6 +147,21 @@ const postPayroll = catchAsync(async (req, res) => {
     message: `Posted ${posted} payslips, ${errors.length} errors`,
     data: { posted, errors },
   });
+
+  // Non-blocking: notify management of posted payroll
+  if (posted > 0) {
+    const totalNetPay = approved
+      .filter(ps => ps.status === 'POSTED' || true) // all were attempted
+      .reduce((sum, ps) => sum + (ps.net_pay || 0), 0);
+    notifyPayrollPosted({
+      entityId: req.entityId,
+      period: period || 'N/A',
+      cycle,
+      postedCount: posted,
+      totalNetPay,
+      postedBy: req.user.name || req.user.email,
+    }).catch(err => console.error('Payroll post notification failed:', err.message));
+  }
 });
 
 // ═══ Read ═══

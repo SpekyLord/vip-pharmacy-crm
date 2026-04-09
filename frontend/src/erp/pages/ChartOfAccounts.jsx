@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useAccounting from '../hooks/useAccounting';
 import useErpApi from '../hooks/useErpApi';
 
@@ -47,7 +48,7 @@ export function ChartOfAccountsContent() {
   const { user } = useAuth();
   const api = useAccounting();
   const erpApi = useErpApi();
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);

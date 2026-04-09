@@ -41,6 +41,13 @@ const SUB_PERMISSION_KEYS = {
     { key: 'cashflow', label: 'Cashflow Statement' },
     { key: 'payments', label: 'Payment Processing' },
   ],
+  sales_goals: [
+    { key: 'plan_manage', label: 'Create/Edit Plans & Targets' },
+    { key: 'kpi_compute', label: 'Trigger KPI Computation' },
+    { key: 'action_manage_all', label: 'Create Actions for Any BDM' },
+    { key: 'incentive_manage', label: 'Manage Incentive Programs' },
+    { key: 'manual_kpi_all', label: 'Enter Manual KPIs for Any BDM' },
+  ],
 };
 
 const getSubPermissionKeys = (req, res) => {

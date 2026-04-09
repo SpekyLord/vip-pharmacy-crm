@@ -1,5 +1,10 @@
 const mongoose = require('mongoose');
 
+// Fallback values if Lookup table not yet seeded for this entity
+const FALLBACK_PERSON_TYPES = ['BDM', 'ECOMMERCE_BDM', 'EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'];
+const FALLBACK_EMPLOYMENT_TYPES = ['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'CONSULTANT', 'PARTNERSHIP'];
+const FALLBACK_BDM_STAGES = ['', 'CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER'];
+
 const peopleMasterSchema = new mongoose.Schema(
   {
     entity_id: {
@@ -9,8 +14,9 @@ const peopleMasterSchema = new mongoose.Schema(
     },
     person_type: {
       type: String,
-      enum: ['BDM', 'ECOMMERCE_BDM', 'EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'],
       required: [true, 'Person type is required'],
+      uppercase: true,
+      trim: true,
     },
     user_id: {
       type: mongoose.Schema.Types.ObjectId,
@@ -50,17 +56,19 @@ const peopleMasterSchema = new mongoose.Schema(
       default: null,
     },
 
-    // ═══ Partner Stage ═══
+    // ═══ Partner Stage (career path: CONTRACTOR → PS_ELIGIBLE → TRANSITIONING → SUBSIDIARY → SHAREHOLDER) ═══
     bdm_stage: {
       type: String,
-      enum: ['', 'CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER'],
+      uppercase: true,
+      trim: true,
       default: '',
     },
 
     // ═══ Employment ═══
     employment_type: {
       type: String,
-      enum: ['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'CONSULTANT', 'PARTNERSHIP'],
+      uppercase: true,
+      trim: true,
       default: 'PROBATIONARY',
     },
     date_hired: { type: Date },
@@ -113,6 +121,47 @@ const peopleMasterSchema = new mongoose.Schema(
     collection: 'erp_people_master',
   }
 );
+
+/**
+ * Pre-validate hook: validate person_type, employment_type, bdm_stage against Lookup tables.
+ * Falls back to hardcoded defaults if Lookup table not yet seeded for this entity.
+ * This makes these fields fully manageable via Control Center → Lookup Tables.
+ */
+peopleMasterSchema.pre('validate', async function (next) {
+  const Lookup = mongoose.models.Lookup || require('./Lookup');
+  const entityId = this.entity_id;
+
+  const validateField = async (fieldName, category, fallbackValues) => {
+    if (!this.isModified(fieldName)) return;
+    const val = this[fieldName];
+    if (!val && val !== 0) return; // allow empty/null
+
+    if (entityId) {
+      const validCodes = await Lookup.distinct('code', {
+        entity_id: entityId,
+        category,
+        is_active: true,
+      });
+      if (validCodes.length > 0) {
+        if (!validCodes.includes(val)) {
+          return this.invalidate(fieldName, `Invalid ${fieldName}: ${val}. Valid values: ${validCodes.join(', ')}`);
+        }
+        return;
+      }
+    }
+    // Fallback to defaults if Lookup not yet seeded
+    if (!fallbackValues.includes(val)) {
+      this.invalidate(fieldName, `Invalid ${fieldName}: ${val}. Valid values: ${fallbackValues.join(', ')}`);
+    }
+  };
+
+  await Promise.all([
+    validateField('person_type', 'PERSON_TYPE', FALLBACK_PERSON_TYPES),
+    validateField('employment_type', 'EMPLOYMENT_TYPE', FALLBACK_EMPLOYMENT_TYPES),
+    validateField('bdm_stage', 'BDM_STAGE', FALLBACK_BDM_STAGES),
+  ]);
+  next();
+});
 
 peopleMasterSchema.index({ entity_id: 1, person_type: 1 });
 peopleMasterSchema.index({ entity_id: 1, is_active: 1 });

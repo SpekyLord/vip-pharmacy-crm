@@ -19,6 +19,7 @@
 
 const MessageInbox = require('../models/MessageInbox');
 const User = require('../models/User');
+const { ROLES, ROLE_SETS } = require('../constants/roles');
 
 // ═══════════════════════════════════════════
 // Channel: In-App Message (ready now)
@@ -163,14 +164,14 @@ async function sendMessenger({ recipientFbId, body }) {
  */
 async function resolveRecipients(recipientId) {
   if (recipientId === 'PRESIDENT') {
-    const users = await User.find({ role: { $in: ['president', 'ceo'] }, isActive: true }).lean();
+    const users = await User.find({ role: { $in: ROLE_SETS.PRESIDENT_ROLES }, isActive: true }).lean();
     return users;
   }
   if (recipientId === 'ALL_BDMS') {
-    return await User.find({ role: 'employee', isActive: true }).lean();
+    return await User.find({ role: ROLES.CONTRACTOR, isActive: true }).lean();
   }
   if (recipientId === 'ALL_ADMINS') {
-    return await User.find({ role: { $in: ['admin', 'finance', 'president', 'ceo'] }, isActive: true }).lean();
+    return await User.find({ role: { $in: ROLE_SETS.ADMIN_LIKE }, isActive: true }).lean();
   }
   // Single user
   const user = await User.findById(recipientId).lean();

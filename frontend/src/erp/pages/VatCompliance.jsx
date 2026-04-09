@@ -1,7 +1,8 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useAccounting from '../hooks/useAccounting';
 import { showError } from '../utils/errorToast';
 
@@ -42,7 +43,7 @@ const getCurrentYear = () => new Date().getFullYear();
 export default function VatCompliance() {
   const { user } = useAuth();
   const api = useAccounting();
-  const isAdmin = ['admin', 'finance', 'president'].includes(user?.role);
+  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [tab, setTab] = useState('vat-ledger');
   const [period, setPeriod] = useState(getCurrentPeriod());

@@ -73,3 +73,18 @@ export function showError(err, fallback = 'Operation failed') {
 export function showSuccess(msg) {
   toast.success(msg, { duration: 3000 });
 }
+
+/**
+ * showWarning — Amber warning toast for non-fatal alerts (e.g. role mismatches).
+ */
+export function showWarning(msg, duration = 8000) {
+  toast(msg, {
+    duration,
+    icon: '\u26a0\ufe0f',
+    style: {
+      background: '#fffbeb',
+      color: '#92400e',
+      border: '1px solid #f59e0b',
+    },
+  });
+}

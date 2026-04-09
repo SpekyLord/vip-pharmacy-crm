@@ -74,11 +74,15 @@ api.interceptors.response.use(
 
       originalRequest._retry = true;
 
+      // Preserve the original HTTP method — Axios v1.x can lose it on retry
+      const savedMethod = originalRequest.method;
+
       // If a refresh is already in progress, wait for it instead of firing another
       if (isRefreshing) {
         try {
           await refreshPromise;
-          return api(originalRequest);
+          originalRequest.method = savedMethod;
+          return api.request(originalRequest);
         } catch {
           return Promise.reject(error);
         }
@@ -92,8 +96,9 @@ api.interceptors.response.use(
 
       try {
         await refreshPromise;
-        // Retry original request - new access token cookie will be sent automatically
-        return api(originalRequest);
+        // Retry original request — explicitly restore method to prevent GET fallback
+        originalRequest.method = savedMethod;
+        return api.request(originalRequest);
       } catch (refreshError) {
         // Refresh failed - dispatch logout event for AuthContext to handle
         window.dispatchEvent(new CustomEvent('auth:logout'));
