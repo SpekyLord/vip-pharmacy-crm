@@ -19,7 +19,7 @@ import { showError, showSuccess, showWarning } from '../utils/errorToast';
 import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
 import * as XLSX from 'xlsx';
-import { useLookupOptions } from '../hooks/useLookups';
+import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
 
 const css = `
@@ -53,14 +53,7 @@ const css = `
   @media(max-width: 375px) { .pd-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .pd-main input, .pd-main select { font-size: 16px; } }
 `;
 
-const CIVIL_STATUSES = ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'];
-const PERSON_STATUSES = ['ACTIVE', 'ON_LEAVE', 'SEPARATED'];
-const SALARY_TYPES = ['FIXED_SALARY', 'COMMISSION_BASED', 'HYBRID'];
-const TAX_STATUSES = ['S', 'S1', 'S2', 'ME', 'ME1', 'ME2', 'ME3', 'ME4'];
-const INCENTIVE_TYPES = ['CASH', 'IN_KIND', 'COMMISSION', 'NONE'];
-const INS_TYPES = ['LIFE', 'KEYMAN', 'INCOME_LOSS', 'ACCIDENT', 'VEHICLE_COMPREHENSIVE', 'VEHICLE_CTPL'];
-const INS_FREQ = ['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL'];
-const INS_STATUS = ['ACTIVE', 'EXPIRED', 'CANCELLED', 'PENDING_RENEWAL'];
+// Hardcoded fallbacks removed — all dropdowns now driven by useLookupOptions() hooks below
 
 const fmt = (n) => n != null ? `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString() : '—';
@@ -90,15 +83,28 @@ export default function PersonDetail() {
   const pplApi = usePeople();
   const payApi = usePayroll();
 
-  const { options: personTypeOpts } = useLookupOptions('PERSON_TYPE');
-  const PERSON_TYPES = personTypeOpts.map(o => o.code);
-  const { options: empTypeOpts } = useLookupOptions('EMPLOYMENT_TYPE');
-  const EMP_TYPES = empTypeOpts.map(o => o.code);
-  const { options: vehicleTypeOpts } = useLookupOptions('VEHICLE_TYPE');
-  const VEHICLE_TYPES = vehicleTypeOpts.map(o => o.code);
-  const { options: bdmStageOpts } = useLookupOptions('BDM_STAGE');
-  const BDM_STAGES = bdmStageOpts.map(o => o.code);
-  const { options: roleMappingOpts } = useLookupOptions('ROLE_MAPPING');
+  // Single batch fetch for all lookup categories (1 API call instead of 13)
+  const LOOKUP_CATEGORIES = [
+    'PERSON_TYPE', 'EMPLOYMENT_TYPE', 'VEHICLE_TYPE', 'BDM_STAGE', 'ROLE_MAPPING',
+    'CIVIL_STATUS', 'PERSON_STATUS', 'SALARY_TYPE', 'TAX_STATUS', 'INCENTIVE_TYPE',
+    'INSURANCE_TYPE', 'INSURANCE_FREQUENCY', 'INSURANCE_STATUS',
+  ];
+  const { data: lookups, loading: lookupsLoading } = useLookupBatch(LOOKUP_CATEGORIES);
+  const codes = (cat) => (lookups[cat] || []).map(o => o.code);
+
+  const PERSON_TYPES = codes('PERSON_TYPE');
+  const EMP_TYPES = codes('EMPLOYMENT_TYPE');
+  const VEHICLE_TYPES = codes('VEHICLE_TYPE');
+  const BDM_STAGES = codes('BDM_STAGE');
+  const roleMappingOpts = lookups.ROLE_MAPPING || [];
+  const CIVIL_STATUSES = codes('CIVIL_STATUS');
+  const PERSON_STATUSES = codes('PERSON_STATUS');
+  const SALARY_TYPES = codes('SALARY_TYPE');
+  const TAX_STATUSES = codes('TAX_STATUS');
+  const INCENTIVE_TYPES = codes('INCENTIVE_TYPE');
+  const INS_TYPES = codes('INSURANCE_TYPE');
+  const INS_FREQ = codes('INSURANCE_FREQUENCY');
+  const INS_STATUS = codes('INSURANCE_STATUS');
 
   const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const isPresident = user?.role === ROLES.PRESIDENT;
@@ -173,6 +179,17 @@ export default function PersonDetail() {
   useEffect(() => {
     erpAccess.getTemplates().then(res => setAccessTemplates(res?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Warn if any lookup categories loaded empty (seeding may be needed)
+  const lookupWarnShown = useRef(false);
+  useEffect(() => {
+    if (lookupsLoading || lookupWarnShown.current) return;
+    const empty = LOOKUP_CATEGORIES.filter(c => c !== 'ROLE_MAPPING' && (!lookups[c] || lookups[c].length === 0));
+    if (empty.length > 0) {
+      showWarning(`Some dropdown options are empty: ${empty.join(', ')}. Seed them in Control Center → Lookup Tables.`);
+      lookupWarnShown.current = true;
+    }
+  }, [lookupsLoading, lookups]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Role-People alignment warning: check person_type vs linked user role via ROLE_MAPPING
   const roleMismatchShown = useRef(null);

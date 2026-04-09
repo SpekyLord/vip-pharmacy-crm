@@ -143,6 +143,15 @@ const SEED_DEFAULTS = {
     { code: 'IC_TRANSFER', label: 'Inter-Company Transfers' },
     { code: 'INCOME', label: 'Income' },
   ],
+  // Phase 30 — PersonDetail dropdowns (migrated from hardcoded arrays)
+  CIVIL_STATUS: ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'],
+  PERSON_STATUS: ['ACTIVE', 'ON_LEAVE', 'SEPARATED'],
+  SALARY_TYPE: ['FIXED_SALARY', 'COMMISSION_BASED', 'HYBRID'],
+  TAX_STATUS: ['S', 'S1', 'S2', 'ME', 'ME1', 'ME2', 'ME3', 'ME4'],
+  INCENTIVE_TYPE: ['CASH', 'IN_KIND', 'COMMISSION', 'NONE'],
+  INSURANCE_TYPE: ['LIFE', 'KEYMAN', 'INCOME_LOSS', 'ACCIDENT', 'VEHICLE_COMPREHENSIVE', 'VEHICLE_CTPL'],
+  INSURANCE_FREQUENCY: ['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL'],
+  INSURANCE_STATUS: ['ACTIVE', 'EXPIRED', 'CANCELLED', 'PENDING_RENEWAL'],
   // Phase 30 — Role Centralization
   BDM_STAGE: [
     { code: 'CONTRACTOR', label: 'Contractor', metadata: { sort_order: 1, description: 'Starting stage — independent contractor' } },
@@ -209,6 +218,32 @@ exports.getByCategory = catchAsync(async (req, res) => {
   }
 
   res.json({ success: true, data: items });
+});
+
+// Batch fetch — multiple categories in one request
+// GET /erp/lookup-values-batch?categories=CAT1,CAT2,CAT3&active_only=true
+exports.getBatch = catchAsync(async (req, res) => {
+  const raw = req.query.categories || '';
+  const categories = raw.split(',').map(c => c.trim().toUpperCase()).filter(Boolean);
+  if (categories.length === 0) return res.status(400).json({ success: false, message: 'categories query param required' });
+
+  const result = {};
+  for (const category of categories) {
+    const filter = { category };
+    if (req.entityId) filter.entity_id = req.entityId;
+    if (req.query.active_only === 'true') filter.is_active = true;
+    let items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+
+    // Auto-seed if empty
+    if (items.length === 0 && req.entityId && SEED_DEFAULTS[category]) {
+      const ops = buildSeedOps(SEED_DEFAULTS[category], category, req.entityId, req.user?._id);
+      await Lookup.bulkWrite(ops);
+      items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+    }
+    result[category] = items;
+  }
+
+  res.json({ success: true, data: result });
 });
 
 // Create a lookup item

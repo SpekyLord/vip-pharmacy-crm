@@ -441,7 +441,7 @@ VIP runs three business lines under one entity, tracked by cost centers:
 | Dual P&L deprecation | pnlCalc vs pnlService coexist without reconciliation | Consistency risk |
 | Commission controller | No dedicated controller — wired inline in collectionController | Works, not clean |
 | VAT 0.12 in pre-save hooks | SalesLine, ExpenseEntry, Collection etc. hardcode 12% in schema hooks | Cannot change per entity; low risk until rate changes |
-| Frontend hardcoded dropdowns | ~30 static arrays (expense categories, collateral types, activity types) serve as fallbacks | Phase 24 added Lookup model + LookupManager UI + useLookups hook. Phase 30 migrated all PeopleMaster enums (person_type, employment_type, bdm_stage). Migration of remaining non-people pages is follow-up |
+| Frontend hardcoded dropdowns | ~20 static arrays on non-people pages (expense categories, collateral types, activity types) serve as fallbacks | Phase 24 added Lookup model + LookupManager UI + useLookups hook. **Phase 30 completed PersonDetail.jsx** — all 12 dropdowns now lookup-driven (0 hardcoded arrays remain). Migration of remaining non-people pages is follow-up |
 | ~~Role-People alignment warnings~~ | ~~No toast/warning when User.role doesn't match PeopleMaster.person_type via ROLE_MAPPING~~ | **RESOLVED Phase 30**: alignment check toast in PersonDetail.jsx — fires on load when linked user role mismatches ROLE_MAPPING |
 | Hospital entity_id optional | Hospitals intentionally global (shared across entities) | By design, but undocumented in schema |
 

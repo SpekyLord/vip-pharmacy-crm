@@ -3835,10 +3835,20 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] Added `SYSTEM_ROLE` lookup category — documents system roles with editable labels
 - [x] All three categories auto-seeded on first access via lookupGenericController SEED_DEFAULTS
 
-### 30.3 — PeopleMaster Enum Migration ✅
-- [x] `person_type` dropdown in PersonDetail.jsx driven by `useLookupOptions('PERSON_TYPE')` (done in Phase 24)
-- [x] `employment_type` dropdown in PersonDetail.jsx driven by `useLookupOptions('EMPLOYMENT_TYPE')` (done in Phase 24)
-- [x] Replaced hardcoded `bdm_stage` dropdown in PersonDetail.jsx with `useLookupOptions('BDM_STAGE')`
+### 30.3 — PersonDetail Full Lookup Migration ✅
+- [x] `person_type` dropdown driven by `useLookupOptions('PERSON_TYPE')` (done in Phase 24)
+- [x] `employment_type` dropdown driven by `useLookupOptions('EMPLOYMENT_TYPE')` (done in Phase 24)
+- [x] `bdm_stage` dropdown driven by `useLookupOptions('BDM_STAGE')`
+- [x] `civil_status` dropdown driven by `useLookupOptions('CIVIL_STATUS')`
+- [x] `status` (person status) dropdown driven by `useLookupOptions('PERSON_STATUS')`
+- [x] `salary_type` dropdown driven by `useLookupOptions('SALARY_TYPE')`
+- [x] `tax_status` dropdown driven by `useLookupOptions('TAX_STATUS')`
+- [x] `incentive_type` dropdown driven by `useLookupOptions('INCENTIVE_TYPE')`
+- [x] Insurance `policy_type` dropdown driven by `useLookupOptions('INSURANCE_TYPE')`
+- [x] Insurance `premium_frequency` dropdown driven by `useLookupOptions('INSURANCE_FREQUENCY')`
+- [x] Insurance `status` dropdown driven by `useLookupOptions('INSURANCE_STATUS')`
+- [x] Added 8 new seed default categories to `lookupGenericController.js` SEED_DEFAULTS
+- [x] Removed all hardcoded const arrays from PersonDetail.jsx — zero remaining
 - [x] Backend PeopleMaster pre-validate hook validates against Lookup tables with hardcoded fallback
 
 ### 30.4 — Role-People Alignment Warning ✅
