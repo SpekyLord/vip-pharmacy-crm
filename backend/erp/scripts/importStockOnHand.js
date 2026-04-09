@@ -24,21 +24,7 @@ const Warehouse = require('../models/Warehouse');
 const Entity = require('../models/Entity');
 const User = require('../../models/User');
 const { cleanName } = require('../utils/nameClean');
-
-// Fallback BDM name → warehouse code mapping (if WarehouseCode column not in CSV)
-const BDM_TO_WAREHOUSE = {
-  'Gregg Louie Vios': 'ILO-MAIN',
-  'Mae Navarro': 'BAC',
-  'Menivie Daniela': 'DIG',
-  'Edcel Mae Arespacochaga': 'DUM',
-  'Cristina Salila': 'GSC',
-  'Roman Mabanag': 'OZA',
-  'Romela Shen Herrera': 'PAN',
-  'Jake Montero': 'MGO',
-  'Jay Ann Protacio': 'ILO1',
-  'Jenny Rose Jacosalem': 'ILO2',
-  'Judy Mae Patrocinio': 'ACC',
-};
+const { buildBdmToWarehouseMap } = require('../services/stockSeedService');
 
 function parseCSVLine(line) {
   const result = [];
@@ -94,7 +80,7 @@ async function run() {
   console.log(`Parsed ${rows.length} rows from CSV`);
   console.log(`Columns: ${headers.join(', ')}\n`);
 
-  const hasWarehouseCode = headers.includes('WarehouseCode');
+  const hasWarehouseCode = headers.includes('WarehouseCode') || headers.includes('Warehouse Code');
   if (!hasWarehouseCode) {
     console.log('WARNING: No WarehouseCode column — using BDM name fallback mapping\n');
   }
@@ -102,6 +88,10 @@ async function run() {
   // Resolve warehouses
   const warehouses = await Warehouse.find({}).lean();
   const whByCode = new Map(warehouses.map(w => [w.warehouse_code, w]));
+
+  // Build BDM→warehouse fallback from DB (no hardcoded mapping)
+  const BDM_TO_WAREHOUSE = await buildBdmToWarehouseMap();
+  console.log(`BDM→Warehouse mapping (from DB): ${Object.keys(BDM_TO_WAREHOUSE).length} entries`);
 
   // Resolve entities
   const entities = await Entity.find({}).lean();
@@ -122,7 +112,7 @@ async function run() {
     }
 
     // Resolve warehouse
-    const whCode = hasWarehouseCode ? row.WarehouseCode?.toUpperCase() : BDM_TO_WAREHOUSE[row.BDM];
+    const whCode = hasWarehouseCode ? (row.WarehouseCode || row['Warehouse Code'])?.toUpperCase() : BDM_TO_WAREHOUSE[row.BDM];
     if (!whCode) {
       console.log(`  Row ${i + 2}: No warehouse mapping for BDM "${row.BDM}" — SKIPPED`);
       errors++;

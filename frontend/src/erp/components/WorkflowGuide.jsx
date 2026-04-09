@@ -314,7 +314,8 @@ const WORKFLOW_GUIDES = {
     steps: [
       'Search/filter products by name, status, or stock type (Pharma, F&B, Office)',
       'Click "+ New Product" to add — set prices, VAT status, and unit',
-      'Use Export/Import buttons for bulk price updates via Excel',
+      'Use Export/Import Prices buttons for bulk price updates via Excel',
+      'Use "Refresh Master" to sync from the cleaned Item Master CSV — deduplicates, updates, and deactivates stale products',
       'Tag products to warehouses for inventory tracking',
     ],
     next: [
@@ -322,7 +323,7 @@ const WORKFLOW_GUIDES = {
       { label: 'GRN', path: '/erp/grn' },
       { label: 'Transfer Prices', path: '/erp/control-center?section=transfer-prices' },
     ],
-    tip: 'Set purchase_price accurately — it drives COGS in journal entries.',
+    tip: 'Run "Refresh Master" from the cleaned CSV before importing stock on hand — ensures no duplicates and correct dosage formats.',
   },
   'grn-entry': {
     title: 'Goods Receipt Note (GRN)',
@@ -1016,6 +1017,7 @@ const WORKFLOW_GUIDES = {
     title: 'Warehouse Management',
     steps: [
       'Create and manage warehouse locations per entity',
+      'Use "Import Opening Stock" to seed stock on hand from CSV — matches products by brand + dosage, creates OPENING_BALANCE entries per warehouse',
       'Tag products to specific warehouses for inventory tracking',
       'View stock levels by warehouse',
     ],
@@ -1023,7 +1025,7 @@ const WORKFLOW_GUIDES = {
       { label: 'My Stock', path: '/erp/stock' },
       { label: 'Products', path: '/erp/control-center?section=products' },
     ],
-    tip: 'BDMs see only stock in their assigned warehouse(s).',
+    tip: 'Refresh the Product Master before importing stock — unmatched products will be skipped. Duplicate imports are safely ignored.',
   },
   'cost-centers': {
     title: 'Cost Centers',

@@ -52,7 +52,7 @@ Eryssa 4000 iu | 0.4 mL | AXCEWO2,Epoetin Alfa,Eryssa 4000 iu,0.4 mL,PFS,390.00,
 Execore | 500 mg | ECT240051,Cefuroxime,Execore,500 mg,tablet,9.00,35.00,TRUE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 Execore | 750 mg | ECFML24001,Cefuroxime,Execore ,750 mg,vial,21.00,220.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
 Farsobid | 10 mg/10 mL | 3RI005,Isosorbide ,Farsobid,10 mg/10 mL,vial,370.00,500.00,TRUE,Judy Mae Patrocinio,1i1ehuB0k_2Ca9av9boBjMhaNAyU8rd3JJ7TP4XjVOtU,,4/7/2026 17:44:42
-Farsorbid | 10 mg/10 mL | 3RF007  ,Isosorbide ,Farsorbid,10mg/10 mL,vial,370.00,500.00,TRUE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
+Farsorbid | 10 mg/10 mL | 3RF007  ,Isosorbide ,Farsorbid,10 mg/10 mL,vial,370.00,500.00,TRUE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 Flucysteine 600 | 600 mg | BW24023,Acetylcysteine,Flucysteine 600,600 mg,sachet,0.00,0.00,FALSE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 Gentacare | 80 mg /2 mL | 2403237,Gentamicin,Gentacare,80 mg /mL,ampoule,4.50,30.00,TRUE,Mae Navarro,1em8X2kYF2GYrhA4gvlnQvuZb9n3-JB69s6cYxI3fKiE,,4/7/2026 17:44:42
 Gentacare | 80 mg/2 mL | 2503101,Gentamicin,Gentacare,80 mg/2 mL,ampoule,4.50,35.00,TRUE,Edcel Mae Arespacochaga,17J5RP7HqErs6Tv7daOAxKxU7nd77wX7EkUkpR06AuJY,,4/7/2026 17:44:42
@@ -89,8 +89,8 @@ Losil | 20 mg/ mL | A250560,Hyoscine-n-butylbromide,Losil,20 mg/ mL,ampoule,50.0
 LOSIL | 20 mg/ml | 8241084,HYOSCINE-N BUTYLBROMIDE,LOSIL,20 mg/ml,AMPOULE,115.00,350.00,TRUE,Roman Mabanag,1L3MURjzhk6j6BYvsPCGYn5Zqy6XAjJmNthqzGx_U-e8,,4/7/2026 17:44:42
 Losil | 20 mg/mL | A250560,Hyoscine-n-Butylbromide,Losil,20 mg/mL,ampoule,44.00,100.00,TRUE,Jake Montero,1wOWz4fba-GeFOeowYBvMaUnx-vRjQ1-ktd34GOLXx4I,,4/7/2026 17:44:42
 Lozemed Plain | 1.2/ 600 mcg | KSH23014,"2,4- Dichlorobenzyl Alcohol Amylmetacresol",Lozemed Plain,1.2/ 600 mcg,tablet,0.00,0.00,FALSE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
-MD-Cid | 20 mg/2mL | 4106,Ranitidine,MD-Cid,20 mg/2mL,ampoule,13.00,85.00,TRUE,Romela Shen Herrera,1HEfAOQUwqB2hrkJrKMYu9uLOM7LUylkpo1GhssjXCTA,,4/7/2026 17:44:42
-MD-Uretic | 20 mg/2mL | 240710,Furosemide,MD-Uretic,20 mg/2mL,ampoule,12.00,45.00,TRUE,Romela Shen Herrera,1HEfAOQUwqB2hrkJrKMYu9uLOM7LUylkpo1GhssjXCTA,,4/7/2026 17:44:42
+MD-Cid | 20 mg/2 mL | 4106,Ranitidine,MD-Cid,20 mg/2 mL,ampoule,13.00,85.00,TRUE,Romela Shen Herrera,1HEfAOQUwqB2hrkJrKMYu9uLOM7LUylkpo1GhssjXCTA,,4/7/2026 17:44:42
+MD-Uretic | 20 mg/2 mL | 240710,Furosemide,MD-Uretic,20 mg/2 mL,ampoule,12.00,45.00,TRUE,Romela Shen Herrera,1HEfAOQUwqB2hrkJrKMYu9uLOM7LUylkpo1GhssjXCTA,,4/7/2026 17:44:42
 Melatonin | 3 mg | SATA22191,Medi -Nite,Melatonin,3 mg,tablet,0.00,0.00,FALSE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 Metoclosil | 10 mg/2 mL | 2403139,Metoclopramide,Metoclosil,10 mg/2 mL,ampoule,5.50,45.00,TRUE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 NEOTALIS | 0.5 mg/mL | A240577,NEOSTIGMINE,NEOTALIS,0.5 mg/mL,AMPOULE,59.00,200.00,TRUE,Roman Mabanag,1L3MURjzhk6j6BYvsPCGYn5Zqy6XAjJmNthqzGx_U-e8,,4/7/2026 17:44:42
@@ -100,8 +100,8 @@ Nestle Pre-nan | 400 g,Milk,Nestle Pre-nan,400 g,can,981.00,"1,200.00",TRUE,Jenn
 Nipple Gel | 30 g | NU08241SR,Nursna,Nipple Gel,30 g,piece,299.33,499.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
 Noprivex 4000 iu | 0.4 mL | BNI0824056,Enoxaparin,Noprivex 4000 iu,0.4 mL,PFS,350.00,450.00,TRUE,Mae Navarro,1em8X2kYF2GYrhA4gvlnQvuZb9n3-JB69s6cYxI3fKiE,,4/7/2026 17:44:42
 Noprivex 6000 iu | 0.6 mL | BNI0824055,Enoxaparin,Noprivex 6000 iu,0.6 mL,PFS,450.00,600.00,TRUE,Mae Navarro,1em8X2kYF2GYrhA4gvlnQvuZb9n3-JB69s6cYxI3fKiE,,4/7/2026 17:44:42
-Nupira | 4mg/4 mL | L0462318E2,Norepinephrine,Nupira,4mg/4 mL,ampoule,290.00,750.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
-Nupira | 4 mg/4mL | L0462524E2,Norepinephine,Nupira,4 mg/4mL,ampoule,100.00,750.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
+Nupira | 4 mg/4 mL | L0462318E2,Norepinephrine,Nupira,4 mg/4 mL,ampoule,290.00,750.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
+Nupira | 4 mg/4 mL | L0462524E2,Norepinephrine,Nupira,4 mg/4 mL,ampoule,100.00,750.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
 Onitaz | 4.5 g | UOT24003,Piperacillin Tazobactam,Onitaz,4.5 g,vial,200.00,720.00,TRUE,Jake Montero,1wOWz4fba-GeFOeowYBvMaUnx-vRjQ1-ktd34GOLXx4I,,4/7/2026 17:44:42
 Ormed Macroset | 20 drops | 420206,Infusion Set,Ormed Macroset,20 drops,piece,17.00,30.00,TRUE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 Ormed Microset | 60 drops | 420206,Infusion Set,Ormed Microset,60 drops,piece,17.00,30.00,TRUE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
@@ -187,8 +187,8 @@ Porfever | 300 mg/2 mL | 240386,Paracetamol,Porfever,300 mg/2 mL,ampoule,6.50,35
 Porfever | 300 mg/2 mL | 240444,Paracetamol,Porfever,300 mg/2 mL,ampoule,6.50,35.00,TRUE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 Porfever | 300 mg/2 mL | 251153,Paracetamol,Porfever,300 mg/2 mL,ampoule,6.50,45.00,TRUE,Mae Navarro,1em8X2kYF2GYrhA4gvlnQvuZb9n3-JB69s6cYxI3fKiE,,4/7/2026 17:44:42
 Porfever | 300 mg/2 mL | 261167,Paracetamol,Porfever,300 mg/2 mL,ampoule,6.50,40.00,TRUE,Jenny Rose Jacosalem,17RGzSlvVOHhUojZc5ZDmDlaUvVaQWBGytKf56t0Awgk,,4/7/2026 17:44:42
-Profmax | 200mg/20 mL | 25011,Propofol,Profmax,200mg/20 mL,vial,190.00,0.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
-Qualiprazole | 40mg | 2501668,Omeprazole,Qualiprazole,40mg,vial,90.00,450.00,TRUE,Romela Shen Herrera,1HEfAOQUwqB2hrkJrKMYu9uLOM7LUylkpo1GhssjXCTA,,4/7/2026 17:44:42
+Profmax | 200 mg/20 mL | 25011,Propofol,Profmax,200 mg/20 mL,vial,190.00,0.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
+Qualiprazole | 40 mg | 2501668,Omeprazole,Qualiprazole,40 mg,vial,90.00,450.00,TRUE,Romela Shen Herrera,1HEfAOQUwqB2hrkJrKMYu9uLOM7LUylkpo1GhssjXCTA,,4/7/2026 17:44:42
 Ranicid | 50 mg/2 mL | AFU25002,Ranitidine,Ranicid,50 mg/2 mL,ampoule,33.26,85.00,TRUE,Jake Montero,1wOWz4fba-GeFOeowYBvMaUnx-vRjQ1-ktd34GOLXx4I,,4/7/2026 17:44:42
 RANITEIN | 50 mg/2 mL | 2504601,RANITIDINE HCL,RANITEIN,50 mg/2 mL,AMPOULE,11.00,65.00,TRUE,Roman Mabanag,1L3MURjzhk6j6BYvsPCGYn5Zqy6XAjJmNthqzGx_U-e8,,4/7/2026 17:44:42
 Sacriva-750 | 500 mg/250 mg | 631230602,Ampicillin Sulbactam ,Sacriva-750,500 mg/250 mg,vial,18.30,120.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
@@ -207,13 +207,13 @@ Simplex T Drain | FR 18 | 12080PM,T-Tube Drain ,Simplex T Drain,FR 18,piece,105.
 Sobinate | 84 mg/ mL (8.4% w/v) | L0732404A,Sodium Bicarbonate,Sobinate,84 mg/ mL (8.4% w/v),ampoule,119.00,300.00,TRUE,Romela Shen Herrera,1HEfAOQUwqB2hrkJrKMYu9uLOM7LUylkpo1GhssjXCTA,,4/7/2026 17:44:42
 Sodicarb | 84 mg/mL (8.4% w/v) | 5240014,Sodium Bicarbonate,Sodicarb,84 mg/mL (8.4% w/v),ampoule,92.00,250.00,TRUE,Jake Montero,1wOWz4fba-GeFOeowYBvMaUnx-vRjQ1-ktd34GOLXx4I,,4/7/2026 17:44:42
 Speeda | 0.5 mL | 202505120AY,Purified Rabies Vaccine,Speeda,0.5 mL,piece,930.00,"1,250.00",TRUE,Judy Mae Patrocinio,1i1ehuB0k_2Ca9av9boBjMhaNAyU8rd3JJ7TP4XjVOtU,,4/7/2026 17:44:42
-Stigmithyl | 500 mcg/mL  | 4RA110,Neostigmine,Stigmithyl,500 mcg/mL ,ampoule,78.40,200.00,TRUE,Romela Shen Herrera,1HEfAOQUwqB2hrkJrKMYu9uLOM7LUylkpo1GhssjXCTA,,4/7/2026 17:44:42
+Stigmithyl | 500 mcg/mL | 4RA110,Neostigmine,Stigmithyl,500 mcg/mL,ampoule,78.40,200.00,TRUE,Romela Shen Herrera,1HEfAOQUwqB2hrkJrKMYu9uLOM7LUylkpo1GhssjXCTA,,4/7/2026 17:44:42
 Tachyban | 6 mg/2 mL | 2F25006,Adenosine,Tachyban,6 mg/2 mL,ampoule,180.00,570.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
 Tachyban | 6 mg/2 mL | T230529,Adenosine,Tachyban,6 mg/2 mL,ampoule,180.00,570.00,TRUE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 Tazacin | 4.5 g | UTZ23006,Piperacillin Tazobactam,Tazacin,4.5 g,vial,200.00,600.00,TRUE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 Telmibet | 80 mg | EGT240212,Telmisartan,Telmibet,80 mg,tablet,3.83,10.00,TRUE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 Tetagam | 1 mL 250 IU | P100796966,Human Tetanus Immunoglobulin,Tetagam,1 mL 250 IU,vial,"1,394.00","1,500.00",TRUE,Jenny Rose Jacosalem,17RGzSlvVOHhUojZc5ZDmDlaUvVaQWBGytKf56t0Awgk,,4/7/2026 17:44:42
-Tropin | 1mg/mL | 2406081,Atropine,Tropin,1mg/mL,ampoule,21.50,75.00,TRUE,Judy Mae Patrocinio,1i1ehuB0k_2Ca9av9boBjMhaNAyU8rd3JJ7TP4XjVOtU,,4/7/2026 17:44:42
+Tropin | 1 mg/mL | 2406081,Atropine,Tropin,1 mg/mL,ampoule,21.50,75.00,TRUE,Judy Mae Patrocinio,1i1ehuB0k_2Ca9av9boBjMhaNAyU8rd3JJ7TP4XjVOtU,,4/7/2026 17:44:42
 Troysetron | 8 mg/4 mL | 2DS25002,Ondansetron,Troysetron,8 mg/4 mL,ampoule,76.00,285.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
 Truferacid | 500 mg | 3FU604A2,Iron Multivitamins,Truferacid,500 mg,capsules,0.00,0.00,FALSE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 Unimex Macro Set | 20 drops/mL | 16734IC,Infusion Set,Unimex Macro Set,20 drops/mL,piece,14.00,25.00,TRUE,Judy Mae Patrocinio,1i1ehuB0k_2Ca9av9boBjMhaNAyU8rd3JJ7TP4XjVOtU,,4/7/2026 17:44:42
@@ -233,4 +233,4 @@ Vitazol | 500 mg/100 mL | 230308,Metronidazole,Vitazol,500 mg/100 mL,bottle,36.0
 Vitral | 50 mg/mL | A255092,Tramadol,Vitral,50 mg/mL,ampoule,57.00,110.00,TRUE,Jake Montero,1wOWz4fba-GeFOeowYBvMaUnx-vRjQ1-ktd34GOLXx4I,,4/7/2026 17:44:42
 Xanginart | 35 mg | FK16A401,Trimetazidine,Xanginart,35 mg,tablet,4.17,15.00,TRUE,Menivie Daniela,1IR8cNNH4KOiMUFREvFXq0wOCiIePAmYcHM8vVRkPnas,,4/7/2026 17:44:42
 Xoprazole | 40 mg | XZP043,Omeprazole,Xoprazole ,40 mg,tablet,4.00,12.00,TRUE,Jay Ann Protacio,1O_SA5V6UFANT8ccPgPxYBUlnRgQd8uwRY_z2kCp9afE,,4/7/2026 17:44:42
-Zytact | 200 mg/5mL | AU23033,Azithromycin,Zytact,200 mg/5mL,15 mL bottle,55.00,75.00,TRUE,Judy Mae Patrocinio,1i1ehuB0k_2Ca9av9boBjMhaNAyU8rd3JJ7TP4XjVOtU,,4/7/2026 17:44:42
+Zytact | 200 mg/5 mL | AU23033,Azithromycin,Zytact,200 mg/5 mL,15 mL bottle,55.00,75.00,TRUE,Judy Mae Patrocinio,1i1ehuB0k_2Ca9av9boBjMhaNAyU8rd3JJ7TP4XjVOtU,,4/7/2026 17:44:42

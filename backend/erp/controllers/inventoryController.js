@@ -850,6 +850,41 @@ const getBatchTrace = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * POST /seed-stock-on-hand — Seed opening stock from CSV upload
+ * Accepts multipart/form-data with a file field named 'file' (CSV or XLSX).
+ * Matches products against existing ProductMaster — does NOT auto-create.
+ */
+const seedStockOnHand = catchAsync(async (req, res) => {
+  const XLSX = require('xlsx');
+  const { seedStockFromRows } = require('../services/stockSeedService');
+
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No file uploaded. Send as multipart/form-data with field name "file".' });
+  }
+
+  // Parse file (supports CSV and XLSX)
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+  if (!rows.length) {
+    return res.status(400).json({ success: false, message: 'File is empty' });
+  }
+
+  // Detect warehouse code column
+  const headers = Object.keys(rows[0]);
+  const hasWarehouseCode = headers.includes('WarehouseCode') || headers.includes('Warehouse Code');
+
+  const result = await seedStockFromRows(rows, { hasWarehouseCode });
+
+  res.json({
+    success: true,
+    message: `Imported ${result.imported} entries, ${result.skipped} skipped, ${result.errors} unmatched`,
+    data: result
+  });
+});
+
 module.exports = {
   getMyStock,
   getBatches,
@@ -861,5 +896,6 @@ module.exports = {
   getGrnList,
   getAlerts,
   getExpiryDashboard,
-  getBatchTrace
+  getBatchTrace,
+  seedStockOnHand
 };

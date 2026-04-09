@@ -381,6 +381,18 @@ All reopen functions call `journalEngine.reverseJournal()` (SAP Storno pattern: 
 | `vatService.js` | `backend/erp/services/vatService.js` | VAT ledger CRUD, `computeVatReturn2550Q()` |
 | `cwtService.js` | `backend/erp/services/cwtService.js` | CWT ledger CRUD, `computeCwt2307Summary()` |
 | `monthEndClose.js` | `backend/erp/services/monthEndClose.js` | 29-step SOP (Phases 1-7), depreciation/interest posting works, Phase 3 journal posting is stub |
+| `stockSeedService.js` | `backend/erp/services/stockSeedService.js` | Reusable stock seeding logic — matches products via 3-strategy fuzzy match, creates OPENING_BALANCE entries. Used by CLI script and API endpoint. BDM→warehouse mapping resolved from DB (no hardcoding). |
+
+### Product Master & Stock On Hand Import Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| PUT | `/erp/products/refresh` | Refresh Product Master from CSV/XLSX. Upserts by brand+dosage, deactivates duplicates and stale products. |
+| PUT | `/erp/products/import-prices` | Bulk update prices from XLSX (existing) |
+| GET | `/erp/products/export-prices` | Export prices to XLSX (existing) |
+| POST | `/erp/inventory/seed-stock-on-hand` | Seed opening stock from CSV. Creates OPENING_BALANCE per warehouse/product/batch. Skips unmatched products. |
+
+**Workflow**: Refresh Master (clean CSV → deduplicated DB) → Import Opening Stock (SOH CSV → OPENING_BALANCE per warehouse)
 
 ---
 
@@ -429,8 +441,8 @@ VIP runs three business lines under one entity, tracked by cost centers:
 | Dual P&L deprecation | pnlCalc vs pnlService coexist without reconciliation | Consistency risk |
 | Commission controller | No dedicated controller — wired inline in collectionController | Works, not clean |
 | VAT 0.12 in pre-save hooks | SalesLine, ExpenseEntry, Collection etc. hardcode 12% in schema hooks | Cannot change per entity; low risk until rate changes |
-| Frontend hardcoded dropdowns | ~30 static arrays (expense categories, collateral types, activity types) serve as fallbacks | Phase 24 added Lookup model + LookupManager UI + useLookups hook. Phase 30 migrated PeopleMaster enums. Migration of remaining pages is follow-up |
-| Role-People alignment warnings | No toast/warning when User.role doesn't match PeopleMaster.person_type via ROLE_MAPPING | Phase 30 follow-up: add alignment check toast in PersonDetail |
+| Frontend hardcoded dropdowns | ~30 static arrays (expense categories, collateral types, activity types) serve as fallbacks | Phase 24 added Lookup model + LookupManager UI + useLookups hook. Phase 30 migrated all PeopleMaster enums (person_type, employment_type, bdm_stage). Migration of remaining non-people pages is follow-up |
+| ~~Role-People alignment warnings~~ | ~~No toast/warning when User.role doesn't match PeopleMaster.person_type via ROLE_MAPPING~~ | **RESOLVED Phase 30**: alignment check toast in PersonDetail.jsx — fires on load when linked user role mismatches ROLE_MAPPING |
 | Hospital entity_id optional | Hospitals intentionally global (shared across entities) | By design, but undocumented in schema |
 
 ---

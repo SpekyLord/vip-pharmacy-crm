@@ -319,4 +319,182 @@ const importPrices = catchAsync(async (req, res) => {
   });
 });
 
-module.exports = { getAll, getById, create, update, deactivate, updateReorderQty, tagToWarehouse, getProductWarehouses, exportPrices, importPrices };
+/**
+ * PUT /refresh — Full product master refresh from CSV/XLSX upload
+ * Reads BrandName + DosageStrength as the dedup key.
+ * Upserts matching products, deactivates stale DB records not in the file.
+ * Expects columns: ItemKey, GenericName, BrandName, DosageStrength, SoldPer,
+ *   DefaultPurchasePrice, DefaultSellingPrice, IsActive
+ */
+const refreshProducts = catchAsync(async (req, res) => {
+  const XLSX = require('xlsx');
+  const { cleanName } = require('../utils/nameClean');
+  const { normalizeUnit } = require('../utils/normalize');
+
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No file uploaded. Send as multipart/form-data with field name "file".' });
+  }
+
+  const entityId = req.entityId || req.tenantFilter?.entity_id;
+  if (!entityId) {
+    return res.status(400).json({ success: false, message: 'Entity context required' });
+  }
+
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+  if (!rows.length) {
+    return res.status(400).json({ success: false, message: 'File is empty' });
+  }
+
+  // Deduplicate CSV rows by BrandName|DosageStrength (keep first active, or first)
+  const dedupMap = new Map();
+  for (const row of rows) {
+    const brand = (row.BrandName || '').trim();
+    const dosage = (row.DosageStrength || '').trim();
+    if (!brand) continue;
+
+    const dedupKey = `${brand}|${dosage}`;
+    const isActive = String(row.IsActive || 'TRUE').toUpperCase() !== 'FALSE';
+
+    if (!dedupMap.has(dedupKey)) {
+      dedupMap.set(dedupKey, { row, isActive });
+    } else {
+      // Prefer active version
+      const existing = dedupMap.get(dedupKey);
+      if (!existing.isActive && isActive) {
+        dedupMap.set(dedupKey, { row, isActive });
+      }
+    }
+  }
+
+  const errors = [];
+  let upserted = 0, updated = 0, created = 0, deactivated = 0, csvDupsSkipped = rows.length - dedupMap.size;
+  const processedItemKeys = new Set();
+
+  for (const [dedupKey, { row, isActive }] of dedupMap) {
+    const brand = (row.BrandName || '').trim();
+    const dosage = (row.DosageStrength || '').trim();
+    const generic = (row.GenericName || '').trim();
+    const soldPer = (row.SoldPer || '').trim();
+    const purchasePrice = parseFloat(String(row.DefaultPurchasePrice || '0').replace(/,/g, '')) || 0;
+    const sellingPrice = parseFloat(String(row.DefaultSellingPrice || '0').replace(/,/g, '')) || 0;
+    const itemKey = `${brand}|${dosage}`;
+    const brandClean = cleanName(brand);
+
+    processedItemKeys.add(itemKey);
+
+    // Try to find existing product by item_key first
+    let existing = await ProductMaster.findOne({ entity_id: entityId, item_key: itemKey });
+
+    // If not found by exact key, try brand_name_clean + dosage (catches old format variants)
+    if (!existing && brandClean) {
+      existing = await ProductMaster.findOne({
+        entity_id: entityId,
+        brand_name_clean: brandClean,
+        dosage_strength: dosage || { $in: [null, ''] },
+      });
+    }
+
+    // Also find and deactivate any OTHER duplicates with same brand_clean + dosage
+    const allDuplicates = await ProductMaster.find({
+      entity_id: entityId,
+      brand_name_clean: brandClean,
+      ...(dosage ? { dosage_strength: dosage } : { dosage_strength: { $in: [null, ''] } }),
+    });
+
+    if (existing) {
+      // Update existing product
+      existing.brand_name = brand;
+      existing.generic_name = generic || existing.generic_name;
+      existing.dosage_strength = dosage;
+      existing.sold_per = soldPer || existing.sold_per;
+      existing.item_key = itemKey;
+      existing.brand_name_clean = brandClean;
+      if (soldPer) existing.unit_code = normalizeUnit(soldPer);
+      if (purchasePrice > 0) existing.purchase_price = purchasePrice;
+      if (sellingPrice > 0) existing.selling_price = sellingPrice;
+      existing.is_active = isActive;
+      await existing.save();
+      updated++;
+
+      // Deactivate all other duplicates (not this one)
+      for (const dup of allDuplicates) {
+        if (dup._id.toString() !== existing._id.toString() && dup.is_active) {
+          dup.is_active = false;
+          await dup.save();
+          deactivated++;
+        }
+      }
+    } else {
+      // Create new product
+      try {
+        await ProductMaster.create({
+          entity_id: entityId,
+          item_key: itemKey,
+          brand_name: brand,
+          brand_name_clean: brandClean,
+          generic_name: generic || brand,
+          dosage_strength: dosage,
+          sold_per: soldPer || 'PC',
+          unit_code: normalizeUnit(soldPer),
+          purchase_price: purchasePrice,
+          selling_price: sellingPrice,
+          is_active: isActive,
+        });
+        created++;
+      } catch (err) {
+        if (err.code === 11000) {
+          errors.push({ brand, dosage, message: 'Duplicate key — already exists with different format' });
+        } else {
+          errors.push({ brand, dosage, message: err.message });
+        }
+      }
+    }
+    upserted++;
+  }
+
+  // Deactivate stale DB products not in the CSV (only within this entity)
+  const staleProducts = await ProductMaster.find({
+    entity_id: entityId,
+    is_active: true,
+    item_key: { $nin: [...processedItemKeys] },
+  });
+
+  // Also check by brand_name_clean + dosage before deactivating (safety check)
+  const processedCleanKeys = new Set();
+  for (const key of processedItemKeys) {
+    const [b, d] = key.split('|');
+    processedCleanKeys.add(`${cleanName(b)}|${(d || '').toLowerCase()}`);
+  }
+
+  let staleDeactivated = 0;
+  for (const stale of staleProducts) {
+    const staleCleanKey = `${(stale.brand_name_clean || '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim()}|${(stale.dosage_strength || '').toLowerCase()}`;
+    // Only deactivate if brand+dosage truly not in CSV (not just a format variant)
+    const staleClean = `${cleanName(stale.brand_name)}|${(stale.dosage_strength || '').toLowerCase()}`;
+    if (!processedCleanKeys.has(staleClean)) {
+      stale.is_active = false;
+      await stale.save();
+      staleDeactivated++;
+    }
+  }
+
+  res.json({
+    success: true,
+    message: `Refresh complete: ${updated} updated, ${created} created, ${deactivated + staleDeactivated} deactivated`,
+    data: {
+      csv_rows: rows.length,
+      unique_products: dedupMap.size,
+      csv_duplicates_merged: csvDupsSkipped,
+      updated,
+      created,
+      duplicates_deactivated: deactivated,
+      stale_deactivated: staleDeactivated,
+      errors
+    }
+  });
+});
+
+module.exports = { getAll, getById, create, update, deactivate, updateReorderQty, tagToWarehouse, getProductWarehouses, exportPrices, importPrices, refreshProducts };

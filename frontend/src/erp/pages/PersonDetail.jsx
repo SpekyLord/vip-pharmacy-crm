@@ -15,7 +15,7 @@ import { useAuth } from '../../hooks/useAuth';
 import usePeople from '../hooks/usePeople';
 import usePayroll from '../hooks/usePayroll';
 import useErpAccess from '../hooks/useErpAccess';
-import { showError, showSuccess } from '../utils/errorToast';
+import { showError, showSuccess, showWarning } from '../utils/errorToast';
 import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
 import * as XLSX from 'xlsx';
@@ -96,6 +96,9 @@ export default function PersonDetail() {
   const EMP_TYPES = empTypeOpts.map(o => o.code);
   const { options: vehicleTypeOpts } = useLookupOptions('VEHICLE_TYPE');
   const VEHICLE_TYPES = vehicleTypeOpts.map(o => o.code);
+  const { options: bdmStageOpts } = useLookupOptions('BDM_STAGE');
+  const BDM_STAGES = bdmStageOpts.map(o => o.code);
+  const { options: roleMappingOpts } = useLookupOptions('ROLE_MAPPING');
 
   const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const isPresident = user?.role === ROLES.PRESIDENT;
@@ -170,6 +173,22 @@ export default function PersonDetail() {
   useEffect(() => {
     erpAccess.getTemplates().then(res => setAccessTemplates(res?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Role-People alignment warning: check person_type vs linked user role via ROLE_MAPPING
+  const roleMismatchShown = useRef(null);
+  useEffect(() => {
+    if (!person?.user_id?.role || !person?.person_type || roleMappingOpts.length === 0) return;
+    const checkKey = `${id}-${person.person_type}-${person.user_id.role}`;
+    if (roleMismatchShown.current === checkKey) return;
+    const mapping = roleMappingOpts.find(m => m.metadata?.person_type === person.person_type);
+    if (!mapping) return;
+    const expectedRole = mapping.metadata?.system_role;
+    const actualRole = person.user_id.role;
+    if (expectedRole && actualRole && expectedRole !== actualRole) {
+      showWarning(`Role mismatch: ${person.person_type} should map to '${expectedRole}' but linked user has role '${actualRole}'`);
+    }
+    roleMismatchShown.current = checkKey;
+  }, [id, person, roleMappingOpts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePersonChange = (e) => setPersonForm(f => ({ ...f, [e.target.name]: e.target.value }));
   const handleCompChange = (e) => {
@@ -414,7 +433,7 @@ export default function PersonDetail() {
               <F lbl="Status" name="status" val={person.status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_STATUSES} />
               <F lbl="Position" name="position" val={person.position} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Department" name="department" val={person.department} editing={editPerson} form={personForm} onChange={handlePersonChange} />
-              <F lbl="BDM Stage" name="bdm_stage" val={person.bdm_stage} editing={editPerson} form={personForm} onChange={handlePersonChange} options={['', 'CONTRACTOR', 'PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY', 'SHAREHOLDER']} />
+              <F lbl="BDM Stage" name="bdm_stage" val={person.bdm_stage} editing={editPerson} form={personForm} onChange={handlePersonChange} options={BDM_STAGES} />
               <F lbl="ERP Live Date" name="live_date" type="date" val={fmtDate(person.live_date)} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Employment Type" name="employment_type" val={person.employment_type} editing={editPerson} form={personForm} onChange={handlePersonChange} options={EMP_TYPES} />
               <F lbl="Civil Status" name="civil_status" val={person.civil_status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={CIVIL_STATUSES} />

@@ -3816,3 +3816,43 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] System health check passes (0 new issues)
 - [x] CLAUDE-ERP.md updated with Phase 29 documentation
 - [x] PHASETASK-ERP.md updated with full task breakdown
+
+---
+
+## Phase 30 — Role Centralization + Lookup-Driven Enums ✅ (April 9, 2026)
+
+### 30.1 — Role Rename: employee → contractor ✅
+- [x] Created `backend/constants/roles.js` — single source of truth for all role strings and permission sets (CommonJS)
+- [x] Created `frontend/src/constants/roles.js` — ES module mirror of backend constants
+- [x] Renamed role `employee` → `contractor` across all backend middleware, controllers, and routes
+- [x] Updated all frontend role checks to use `ROLES.*` and `ROLE_SETS.*` constants
+- [x] Created migration script `backend/scripts/migrateEmployeeToContractor.js` — renames role in Users collection (idempotent)
+- [x] Retired `backend/utils/roleHelpers.js` — replaced by constants/roles.js
+
+### 30.2 — New Lookup Categories ✅
+- [x] Added `BDM_STAGE` lookup category — career path stages (CONTRACTOR, PS_ELIGIBLE, TRANSITIONING, SUBSIDIARY, SHAREHOLDER)
+- [x] Added `ROLE_MAPPING` lookup category — maps person_type → system_role for login creation (6 mappings with metadata)
+- [x] Added `SYSTEM_ROLE` lookup category — documents system roles with editable labels
+- [x] All three categories auto-seeded on first access via lookupGenericController SEED_DEFAULTS
+
+### 30.3 — PeopleMaster Enum Migration ✅
+- [x] `person_type` dropdown in PersonDetail.jsx driven by `useLookupOptions('PERSON_TYPE')` (done in Phase 24)
+- [x] `employment_type` dropdown in PersonDetail.jsx driven by `useLookupOptions('EMPLOYMENT_TYPE')` (done in Phase 24)
+- [x] Replaced hardcoded `bdm_stage` dropdown in PersonDetail.jsx with `useLookupOptions('BDM_STAGE')`
+- [x] Backend PeopleMaster pre-validate hook validates against Lookup tables with hardcoded fallback
+
+### 30.4 — Role-People Alignment Warning ✅
+- [x] Added `showWarning()` helper to `frontend/src/erp/utils/errorToast.js` — amber toast (8s duration) for non-fatal alerts
+- [x] Added `useLookupOptions('ROLE_MAPPING')` in PersonDetail.jsx to fetch person_type → system_role mappings
+- [x] Added useEffect alignment check — fires on person load when `user_id` is linked, compares `user_id.role` vs expected role from ROLE_MAPPING
+- [x] Uses `useRef` guard (`roleMismatchShown`) keyed on `${id}-${person_type}-${role}` to prevent duplicate toasts
+
+### 30.5 — Pre-Deployment Steps
+- [x] Run `node backend/scripts/migrateEmployeeToContractor.js` before deploying (renames role 'employee' → 'contractor' in Users collection)
+- [x] Migration is idempotent — safe to run multiple times
+- [x] Verify lookup categories BDM_STAGE, ROLE_MAPPING, SYSTEM_ROLE auto-seed on first Control Center access
+
+### 30.6 — Verification ✅
+- [x] All modified frontend files pass `npx vite build`
+- [x] CLAUDE-ERP.md updated — Known Gaps table entries resolved
+- [x] PHASETASK-ERP.md updated with full Phase 30 task breakdown

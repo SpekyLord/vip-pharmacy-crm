@@ -258,6 +258,7 @@ const DEPENDENCY_GUIDE = {
     title: 'Product Dependencies',
     items: [
       { action: 'When you add a product', deps: 'Set purchase_price (drives COGS) and assign to a Warehouse for inventory', section: 'warehouses' },
+      { action: 'When you Refresh Master from CSV', deps: 'Existing products are updated, duplicates deactivated, new products created. Run this BEFORE importing stock on hand.', section: 'warehouses' },
     ]
   },
   'warehouses': {
@@ -265,6 +266,7 @@ const DEPENDENCY_GUIDE = {
     items: [
       { action: 'When you add a warehouse', deps: 'Set a manager, assign users, and link to a Territory if it is a field warehouse', section: 'territories' },
       { action: 'When you set "Default Receiving"', deps: 'All GRNs will route to this warehouse unless overridden', section: null },
+      { action: 'When you Import Opening Stock', deps: 'Products must exist in Product Master first (Refresh Master). Unmatched items will be skipped.', section: 'products' },
     ]
   },
   'transfer-prices': {

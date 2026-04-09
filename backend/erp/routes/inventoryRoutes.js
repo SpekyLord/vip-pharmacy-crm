@@ -1,8 +1,14 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { protect } = require('../../middleware/auth');
 const { roleCheck } = require('../../middleware/roleCheck');
 const c = require('../controllers/inventoryController');
+
+const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Phase 17 — Seed stock on hand from CSV
+router.post('/seed-stock-on-hand', protect, roleCheck('admin', 'finance', 'president'), csvUpload.single('file'), c.seedStockOnHand);
 
 // Phase 3 — Stock visibility
 router.get('/my-stock', protect, c.getMyStock);

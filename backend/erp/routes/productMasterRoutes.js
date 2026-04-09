@@ -9,6 +9,7 @@ const xlsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 
 router.post('/tag-warehouse', roleCheck('admin', 'finance', 'president'), c.tagToWarehouse);
 router.get('/export-prices', roleCheck('admin', 'finance', 'president'), c.exportPrices);
 router.put('/import-prices', roleCheck('admin', 'finance', 'president'), xlsUpload.single('file'), c.importPrices);
+router.put('/refresh', roleCheck('admin', 'finance', 'president'), xlsUpload.single('file'), c.refreshProducts);
 router.get('/', c.getAll);
 router.get('/:id', c.getById);
 router.get('/:id/warehouses', c.getProductWarehouses);
