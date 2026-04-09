@@ -340,23 +340,24 @@ const refreshProducts = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Entity context required' });
   }
 
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer', raw: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
 
   if (!rows.length) {
     return res.status(400).json({ success: false, message: 'File is empty' });
   }
 
   // Deduplicate CSV rows by BrandName|DosageStrength (keep first active, or first)
+  // Note: raw:false returns strings, but some values may still be coerced — use String() to be safe
   const dedupMap = new Map();
   for (const row of rows) {
-    const brand = (row.BrandName || '').trim();
-    const dosage = (row.DosageStrength || '').trim();
+    const brand = String(row.BrandName ?? '').trim();
+    const dosage = String(row.DosageStrength ?? '').trim();
     if (!brand) continue;
 
     const dedupKey = `${brand}|${dosage}`;
-    const isActive = String(row.IsActive || 'TRUE').toUpperCase() !== 'FALSE';
+    const isActive = String(row.IsActive ?? 'TRUE').toUpperCase() !== 'FALSE';
 
     if (!dedupMap.has(dedupKey)) {
       dedupMap.set(dedupKey, { row, isActive });
@@ -374,12 +375,12 @@ const refreshProducts = catchAsync(async (req, res) => {
   const processedItemKeys = new Set();
 
   for (const [dedupKey, { row, isActive }] of dedupMap) {
-    const brand = (row.BrandName || '').trim();
-    const dosage = (row.DosageStrength || '').trim();
-    const generic = (row.GenericName || '').trim();
-    const soldPer = (row.SoldPer || '').trim();
-    const purchasePrice = parseFloat(String(row.DefaultPurchasePrice || '0').replace(/,/g, '')) || 0;
-    const sellingPrice = parseFloat(String(row.DefaultSellingPrice || '0').replace(/,/g, '')) || 0;
+    const brand = String(row.BrandName ?? '').trim();
+    const dosage = String(row.DosageStrength ?? '').trim();
+    const generic = String(row.GenericName ?? '').trim();
+    const soldPer = String(row.SoldPer ?? '').trim();
+    const purchasePrice = parseFloat(String(row.DefaultPurchasePrice ?? '0').replace(/,/g, '')) || 0;
+    const sellingPrice = parseFloat(String(row.DefaultSellingPrice ?? '0').replace(/,/g, '')) || 0;
     const itemKey = `${brand}|${dosage}`;
     const brandClean = cleanName(brand);
 
