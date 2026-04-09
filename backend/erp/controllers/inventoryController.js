@@ -51,6 +51,7 @@ const getMyStock = catchAsync(async (req, res) => {
   const rawStock = await getMyStockAgg(entityId, bdmId, opts);
 
   // Group by product
+  const now = new Date();
   const productMap = new Map();
   for (const item of rawStock) {
     const pid = item.product_id.toString();
@@ -60,23 +61,32 @@ const getMyStock = catchAsync(async (req, res) => {
         batches: [],
         total_qty: 0,
         nearest_expiry: null,
-        near_expiry: false
+        near_expiry: false,
+        expired: false
       });
     }
     const entry = productMap.get(pid);
+    const expiryDate = new Date(item.expiry_date);
+    const daysToExpiry = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
+    const isExpired = daysToExpiry <= 0;
+    const isNearExpiry = !isExpired && expiryDate <= nearExpiryDate;
+
     entry.batches.push({
       batch_lot_no: item.batch_lot_no,
       expiry_date: item.expiry_date,
       available_qty: item.available_qty,
-      days_to_expiry: Math.ceil((new Date(item.expiry_date) - new Date()) / (1000 * 60 * 60 * 24)),
-      near_expiry: new Date(item.expiry_date) <= nearExpiryDate
+      days_to_expiry: daysToExpiry,
+      expired: isExpired,
+      near_expiry: isNearExpiry
     });
     entry.total_qty += item.available_qty;
 
-    if (!entry.nearest_expiry || new Date(item.expiry_date) < new Date(entry.nearest_expiry)) {
+    if (!entry.nearest_expiry || expiryDate < new Date(entry.nearest_expiry)) {
       entry.nearest_expiry = item.expiry_date;
     }
-    if (new Date(item.expiry_date) <= nearExpiryDate) {
+    if (isExpired) {
+      entry.expired = true;
+    } else if (isNearExpiry) {
       entry.near_expiry = true;
     }
   }
@@ -94,6 +104,7 @@ const getMyStock = catchAsync(async (req, res) => {
   let totalUnits = 0;
   let totalValue = 0;
   let nearExpiryCount = 0;
+  let expiredCount = 0;
 
   for (const [pid, entry] of productMap) {
     const product = productLookup.get(pid);
@@ -106,6 +117,7 @@ const getMyStock = catchAsync(async (req, res) => {
       total_qty: entry.total_qty,
       nearest_expiry: entry.nearest_expiry,
       near_expiry: entry.near_expiry,
+      expired: entry.expired,
       value: Math.round(value * 100) / 100,
       batches: entry.batches
     });
@@ -113,7 +125,8 @@ const getMyStock = catchAsync(async (req, res) => {
     totalProducts++;
     totalUnits += entry.total_qty;
     totalValue += value;
-    if (entry.near_expiry) nearExpiryCount++;
+    if (entry.expired) expiredCount++;
+    else if (entry.near_expiry) nearExpiryCount++;
   }
 
   res.json({
@@ -123,7 +136,8 @@ const getMyStock = catchAsync(async (req, res) => {
       total_products: totalProducts,
       total_units: totalUnits,
       total_value: Math.round(totalValue * 100) / 100,
-      near_expiry_count: nearExpiryCount
+      near_expiry_count: nearExpiryCount,
+      expired_count: expiredCount
     }
   });
 });
@@ -153,11 +167,17 @@ const getBatches = catchAsync(async (req, res) => {
 
   const batches = await getAvailableBatches(entityId, bdmId, req.params.productId, opts);
 
-  const enriched = batches.map(b => ({
-    ...b,
-    days_to_expiry: Math.ceil((new Date(b.expiry_date) - new Date()) / (1000 * 60 * 60 * 24)),
-    near_expiry: new Date(b.expiry_date) <= nearExpiryDate
-  }));
+  const now = new Date();
+  const enriched = batches.map(b => {
+    const daysToExpiry = Math.ceil((new Date(b.expiry_date) - now) / (1000 * 60 * 60 * 24));
+    const isExpired = daysToExpiry <= 0;
+    return {
+      ...b,
+      days_to_expiry: daysToExpiry,
+      expired: isExpired,
+      near_expiry: !isExpired && new Date(b.expiry_date) <= nearExpiryDate
+    };
+  });
 
   res.json({ success: true, data: enriched });
 });
@@ -617,15 +637,18 @@ const getAlerts = catchAsync(async (req, res) => {
   // Get raw stock from FIFO engine
   const rawStock = await getMyStockAgg(req.entityId, bdmId, opts);
 
-  // 1. Expiry alerts: batches expiring within NEAR_EXPIRY_DAYS
+  // 1. Expiry alerts: batches expired or expiring within NEAR_EXPIRY_DAYS
+  const now = new Date();
   const expiryAlerts = [];
   for (const item of rawStock) {
     if (item.available_qty > 0 && new Date(item.expiry_date) <= nearExpiryDate) {
+      const daysRemaining = Math.ceil((new Date(item.expiry_date) - now) / (1000 * 60 * 60 * 24));
       expiryAlerts.push({
         product_id: item.product_id,
         batch_lot_no: item.batch_lot_no,
         expiry_date: item.expiry_date,
-        days_remaining: Math.ceil((new Date(item.expiry_date) - new Date()) / (1000 * 60 * 60 * 24)),
+        days_remaining: daysRemaining,
+        expired: daysRemaining <= 0,
         available_qty: item.available_qty
       });
     }
