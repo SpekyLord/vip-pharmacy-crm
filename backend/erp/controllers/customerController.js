@@ -6,6 +6,7 @@ const Customer = require('../models/Customer');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { ROLES } = require('../../constants/roles');
 const XLSX = require('xlsx');
+const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
 const getAll = catchAsync(async (req, res) => {
   const filter = { entity_id: req.entityId };
@@ -142,7 +143,7 @@ const exportCustomers = catchAsync(async (req, res) => {
 const importCustomers = catchAsync(async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
 
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws);
 

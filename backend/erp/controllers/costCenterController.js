@@ -5,6 +5,7 @@ const { catchAsync } = require('../../middleware/errorHandler');
 const svc = require('../services/costCenterService');
 const CostCenter = require('../models/CostCenter');
 const XLSX = require('xlsx');
+const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
 const create = catchAsync(async (req, res) => {
   const data = await svc.createCostCenter(req.entityId, req.body, req.user._id);
@@ -55,7 +56,7 @@ const exportCostCenters = catchAsync(async (req, res) => {
 const importCostCenters = catchAsync(async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
 
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws);
 

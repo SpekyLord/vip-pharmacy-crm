@@ -11,6 +11,7 @@
  */
 
 const XLSX = require('xlsx');
+const { safeXlsxRead } = require('./safeXlsxRead');
 
 const MAX_WORKBOOK_SHEETS = parseInt(process.env.IMPORT_MAX_WORKBOOK_SHEETS || '30', 10);
 const MAX_WORKSHEET_ROWS = parseInt(process.env.IMPORT_MAX_WORKSHEET_ROWS || '2000', 10);
@@ -156,7 +157,7 @@ const parseCPTWorkbook = (buffer) => {
 
   let workbook;
   try {
-    workbook = XLSX.read(buffer, {
+    workbook = safeXlsxRead(buffer, {
       type: 'buffer',
       cellDates: false,
       dense: true,

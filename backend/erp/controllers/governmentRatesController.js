@@ -1,6 +1,7 @@
 const GovernmentRates = require('../models/GovernmentRates');
 const { catchAsync } = require('../../middleware/errorHandler');
 const XLSX = require('xlsx');
+const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
 /**
  * GET /api/erp/government-rates
@@ -135,7 +136,7 @@ const importRates = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Upload an Excel file' });
   }
 
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
   let created = 0, updated = 0, errors = [];
 
   for (const sheetName of wb.SheetNames) {

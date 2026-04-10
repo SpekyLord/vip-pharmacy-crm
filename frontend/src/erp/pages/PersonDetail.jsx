@@ -23,6 +23,7 @@ import { showError, showSuccess, showWarning } from '../utils/errorToast';
 import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
 import * as XLSX from 'xlsx';
+import { safeXlsxRead } from '../utils/safeXlsxRead';
 import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -414,7 +415,7 @@ export default function PersonDetail() {
     e.target.value = '';
     try {
       const data = await file.arrayBuffer();
-      const wb = XLSX.read(data);
+      const wb = safeXlsxRead(data);
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws);
       let imported = 0;
