@@ -731,7 +731,7 @@ export default function PersonDetail() {
                   const expected = getMappedRole(person.person_type);
                   const actual = person.user_id?.role;
                   if (expected && actual && expected !== actual) {
-                    return <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>⚠ Expected "{expected}" for {person.person_type}</span>;
+                    return <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>⚠ Expected &quot;{expected}&quot; for {person.person_type}</span>;
                   }
                   return null;
                 })()}

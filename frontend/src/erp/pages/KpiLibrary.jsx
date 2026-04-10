@@ -77,6 +77,7 @@ function KpiLibraryContent() {
       setKpis(res.data || []);
     } catch (e) { showError(e); }
     setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.get]);
 
   useEffect(() => { loadKpis(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
