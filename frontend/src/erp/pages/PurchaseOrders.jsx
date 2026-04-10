@@ -68,7 +68,7 @@ export default function PurchaseOrders() {
   // Warehouse state
   const [warehouseId, setWarehouseId] = useState('');
   const [stockProducts, setStockProducts] = useState([]);
-  const { products: allProducts } = useProducts();
+  const { products: allProducts, error: productsError, loading: productsLoading, refresh: refreshProducts } = useProducts();
 
   const [pos, setPOs] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -360,6 +360,17 @@ export default function PurchaseOrders() {
                     <h4 style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>Line Items</h4>
                     <button className="btn btn-sm btn-primary" onClick={addLine}>+ Add Line</button>
                   </div>
+                  {productsError && (
+                    <div style={{ background: '#fff3cd', color: '#856404', padding: '8px 12px', borderRadius: 6, fontSize: 12, marginBottom: 8 }}>
+                      Failed to load products: {productsError}.{' '}
+                      <button onClick={refreshProducts} style={{ background: 'none', border: 'none', color: '#0d6efd', cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}>Retry</button>
+                    </div>
+                  )}
+                  {!productsError && !productsLoading && productOptions.length === 0 && (
+                    <div style={{ background: '#f8d7da', color: '#842029', padding: '8px 12px', borderRadius: 6, fontSize: 12, marginBottom: 8 }}>
+                      No products available. Check that products exist in the Product Master for this entity.
+                    </div>
+                  )}
                   <table className="line-items-table">
                     <thead>
                       <tr><th>Product</th><th style={{ width: 80 }}>Qty</th><th style={{ width: 100 }}>Unit Price</th><th style={{ width: 100 }}>Total</th><th style={{ width: 40 }}></th></tr>
