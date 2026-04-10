@@ -54,19 +54,19 @@ jobs:
               file="$3"
               [ -n "$value" ] || return 0
               node - "$file" "$key" "$value" <<'NODE'
-const fs = require('fs');
-const [file, key, value] = process.argv.slice(2);
-let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
-const nextLine = `${key}=${value}`;
-const matcher = new RegExp(`^${key}=.*$`, 'm');
-if (matcher.test(text)) {
-  text = text.replace(matcher, nextLine);
-} else {
-  if (text && !text.endsWith('\n')) text += '\n';
-  text += `${nextLine}\n`;
-}
-fs.writeFileSync(file, text);
-NODE
+          const fs = require('fs');
+          const [file, key, value] = process.argv.slice(2);
+          let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+          const nextLine = `${key}=${value}`;
+          const matcher = new RegExp(`^${key}=.*$`, 'm');
+          if (matcher.test(text)) {
+            text = text.replace(matcher, nextLine);
+          } else {
+            if (text && !text.endsWith('\n')) text += '\n';
+            text += `${nextLine}\n`;
+          }
+          fs.writeFileSync(file, text);
+          NODE
             }
             if [ -n "${ANTHROPIC_B64:-}" ]; then
               ANTHROPIC_API_KEY="$(printf '%s' "$ANTHROPIC_B64" | base64 -d)"
