@@ -24,7 +24,6 @@ function KpiLibraryContent() {
   const api = useErpApi();
   const [searchParams] = useSearchParams();
   const { data: lookups } = useLookupBatch(['FUNCTIONAL_ROLE', 'KPI_DIRECTION', 'KPI_UNIT', 'KPI_COMPUTATION']);
-  const roleOptions = lookups.FUNCTIONAL_ROLE || [];
   const DIRECTION_OPTIONS = (lookups.KPI_DIRECTION || []).map(o => ({ value: o.code, label: o.label }));
   const UNIT_OPTIONS = (lookups.KPI_UNIT || []).map(o => o.code);
   const COMPUTATION_OPTIONS = (lookups.KPI_COMPUTATION || []).map(o => ({ value: o.code, label: o.label }));
@@ -38,8 +37,8 @@ function KpiLibraryContent() {
   const [search, setSearch] = useState('');
 
   const FUNC_ROLES = useMemo(() => {
-    return [{ code: 'ALL', label: 'All Functions (Universal)' }, ...roleOptions];
-  }, [roleOptions]);
+    return [{ code: 'ALL', label: 'All Functions (Universal)' }, ...(lookups.FUNCTIONAL_ROLE || [])];
+  }, [lookups.FUNCTIONAL_ROLE]);
 
   const defaultForm = {
     code: '', label: '', metadata: {
