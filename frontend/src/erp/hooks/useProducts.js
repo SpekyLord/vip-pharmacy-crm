@@ -7,7 +7,7 @@ import useErpApi from './useErpApi';
 let cachedProducts = null;
 
 export default function useProducts() {
-  const api = useErpApi();
+  const { get, loading, error } = useErpApi();
   const [products, setProducts] = useState(cachedProducts || []);
 
   const fetchProducts = useCallback(async (force = false) => {
@@ -15,16 +15,16 @@ export default function useProducts() {
       setProducts(cachedProducts);
       return cachedProducts;
     }
-    const res = await api.get('/products', { params: { limit: 0 } });
+    const res = await get('/products', { params: { limit: 0 } });
     const data = res?.data || [];
     cachedProducts = data;
     setProducts(data);
     return data;
-  }, [api]);
+  }, [get]);
 
   useEffect(() => {
     if (!cachedProducts) fetchProducts();
   }, [fetchProducts]);
 
-  return { products, loading: api.loading, error: api.error, refresh: () => fetchProducts(true) };
+  return { products, loading, error, refresh: () => fetchProducts(true) };
 }

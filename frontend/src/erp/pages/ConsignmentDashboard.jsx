@@ -41,7 +41,32 @@ const pageStyles = `
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .empty-state { text-align: center; padding: 60px 20px; color: var(--erp-muted); }
-  @media (max-width: 768px) { .summary-bar { grid-template-columns: repeat(2, 1fr); } }
+  .consignment-cards { display: none; }
+  @media (max-width: 768px) {
+    .summary-bar { grid-template-columns: repeat(2, 1fr); }
+    .consignment-table { display: none; }
+    .consignment-cards { display: flex; flex-direction: column; gap: 8px; padding: 0 4px 12px; }
+    .consignment-card {
+      background: var(--erp-panel, #fff);
+      border: 1px solid var(--erp-border);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .consignment-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .consignment-card-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+    .consignment-card-label { font-size: 10px; text-transform: uppercase; color: var(--erp-muted); font-weight: 700; letter-spacing: 0.04em; }
+    .consignment-card-value { font-size: 13px; font-weight: 600; color: var(--erp-text); }
+  }
 `;
 
 export default function ConsignmentDashboard() {
@@ -132,6 +157,7 @@ export default function ConsignmentDashboard() {
               </div>
 
               {expandedHospital === h.hospital_id && (
+                <>
                 <table className="consignment-table">
                   <thead>
                     <tr><th>DR #</th><th>Product</th><th>Delivered</th><th>Consumed</th><th>Remaining</th><th>Days</th><th>Status</th><th>Action</th></tr>
@@ -172,6 +198,39 @@ export default function ConsignmentDashboard() {
                     ))}
                   </tbody>
                 </table>
+                <div className="consignment-cards">
+                  {h.consignments.map(c => (
+                    <div key={c._id} className="consignment-card">
+                      <div className="consignment-card-header">
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 14 }}>{c.product_id?.brand_name || c.item_key || '—'}</div>
+                          <div style={{ fontSize: 12, color: 'var(--erp-muted)' }}>DR# {c.dr_ref}</div>
+                        </div>
+                        <span className="badge" style={AGING_COLORS[c.aging_status] || {}}>{c.aging_status}</span>
+                      </div>
+                      <div className="consignment-card-grid">
+                        <div><div className="consignment-card-label">Delivered</div><div className="consignment-card-value">{c.qty_delivered}</div></div>
+                        <div><div className="consignment-card-label">Consumed</div><div className="consignment-card-value">{c.qty_consumed}</div></div>
+                        <div><div className="consignment-card-label">Remaining</div><div className="consignment-card-value" style={{ color: c.qty_remaining > 0 ? '#dc2626' : '#16a34a' }}>{c.qty_remaining}</div></div>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--erp-muted)', marginTop: 6 }}>{c.days_outstanding} days outstanding</div>
+                      {c.qty_remaining > 0 && converting !== c._id && (
+                        <button className="btn btn-primary btn-sm" style={{ marginTop: 8, width: '100%' }} onClick={() => { setConverting(c._id); setConvertForm({ qty: String(c.qty_remaining), csi_doc_ref: '', csi_date: '' }); }}>
+                          Convert to CSI
+                        </button>
+                      )}
+                      {converting === c._id && (
+                        <div className="convert-form" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                          <input type="number" placeholder="Qty" value={convertForm.qty} onChange={e => setConvertForm(f => ({ ...f, qty: e.target.value }))} min="1" max={c.qty_remaining} />
+                          <input placeholder="CSI #" value={convertForm.csi_doc_ref} onChange={e => setConvertForm(f => ({ ...f, csi_doc_ref: e.target.value }))} style={{ width: 90 }} />
+                          <button className="btn btn-primary btn-sm" onClick={() => handleConvert(c._id)} disabled={!convertForm.qty || !convertForm.csi_doc_ref}>OK</button>
+                          <button className="btn btn-sm" style={{ background: 'var(--erp-bg)', color: 'var(--erp-muted)' }} onClick={() => setConverting(null)}>X</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                </>
               )}
             </div>
           ))}

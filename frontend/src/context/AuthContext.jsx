@@ -1,5 +1,5 @@
 /**
- * AuthContext
+ * AuthProvider
  *
  * Authentication context providing:
  * - User state management
@@ -10,11 +10,42 @@
  * SECURITY: Tokens are stored in httpOnly cookies only.
  * The frontend never accesses tokens directly - this protects against XSS attacks.
  */
-
-import { createContext, useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import authService from '../services/authService';
+import { AuthContext } from './AuthContextObject';
 
-export const AuthContext = createContext(null);
+const authBootstrapState = {
+  promise: null,
+  hasResolved: false,
+  user: null,
+};
+
+const primeAuthBootstrapState = (user) => {
+  authBootstrapState.promise = null;
+  authBootstrapState.hasResolved = true;
+  authBootstrapState.user = user;
+};
+
+const loadInitialUser = async () => {
+  if (authBootstrapState.hasResolved) {
+    return authBootstrapState.user;
+  }
+
+  if (!authBootstrapState.promise) {
+    authBootstrapState.promise = authService.getProfile()
+      .then((response) => {
+        const user = response?.data || response || null;
+        primeAuthBootstrapState(user);
+        return user;
+      })
+      .catch((error) => {
+        primeAuthBootstrapState(null);
+        throw error;
+      });
+  }
+
+  return authBootstrapState.promise;
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -23,6 +54,7 @@ export const AuthProvider = ({ children }) => {
 
   // Handle forced logout from API interceptor
   const handleForcedLogout = useCallback(() => {
+    primeAuthBootstrapState(null);
     setUser(null);
     setLoading(false);
   }, []);
@@ -35,18 +67,16 @@ export const AuthProvider = ({ children }) => {
     };
   }, [handleForcedLogout]);
 
-  // Check for existing session on mount by calling /api/auth/me
+  // Check for an existing session on mount by calling /api/users/profile
   // Cookies are sent automatically - if valid, user is authenticated
   useEffect(() => {
     let isMounted = true;
 
     const initAuth = async () => {
       try {
-        // Try to get profile - cookie will be sent automatically
-        const response = await authService.getProfile();
-        // Backend returns { success, data: user } or { data: user }
+        const initialUser = await loadInitialUser();
         if (isMounted) {
-          setUser(response.data || response);
+          setUser(initialUser);
         }
       } catch {
         // No valid session - user is not authenticated
@@ -81,6 +111,7 @@ export const AuthProvider = ({ children }) => {
       if (!userData) {
         throw new Error('No user data in response');
       }
+      primeAuthBootstrapState(userData);
       setUser(userData);
       return response;
     } catch (err) {
@@ -101,6 +132,7 @@ export const AuthProvider = ({ children }) => {
       // Logout error - continue with local cleanup anyway
     } finally {
       // Clear user state - cookies are cleared by backend
+      primeAuthBootstrapState(null);
       setUser(null);
     }
   }, []);

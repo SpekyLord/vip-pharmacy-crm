@@ -333,6 +333,12 @@ body.dark-mode .vip-select__option--is-focused {
   flex-direction: column;
 }
 
+@media (max-width: 768px) {
+  .admin-main {
+    overflow-x: auto;
+  }
+}
+
 .erp-back-btn {
   display: inline-flex;
   align-items: center;

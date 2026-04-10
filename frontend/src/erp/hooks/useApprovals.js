@@ -6,7 +6,7 @@ import useErpApi from './useErpApi';
  * Wraps /api/erp/approvals endpoints.
  */
 export default function useApprovals() {
-  const api = useErpApi();
+  const { get, post, put, del, loading, error } = useErpApi();
   const [rules, setRules] = useState([]);
   const [requests, setRequests] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
@@ -14,67 +14,67 @@ export default function useApprovals() {
   // ─── Rules ────────────────────────────────
   const fetchRules = useCallback(async (params = {}) => {
     const qs = new URLSearchParams(params).toString();
-    const res = await api.get(`/approvals/rules${qs ? `?${qs}` : ''}`);
+    const res = await get(`/approvals/rules${qs ? `?${qs}` : ''}`);
     setRules(res.data);
     return res.data;
-  }, [api]);
+  }, [get]);
 
   const createRule = useCallback(async (data) => {
-    const res = await api.post('/approvals/rules', data);
+    const res = await post('/approvals/rules', data);
     return res.data;
-  }, [api]);
+  }, [post]);
 
   const updateRule = useCallback(async (id, data) => {
-    const res = await api.put(`/approvals/rules/${id}`, data);
+    const res = await put(`/approvals/rules/${id}`, data);
     return res.data;
-  }, [api]);
+  }, [put]);
 
   const deleteRule = useCallback(async (id) => {
-    await api.del(`/approvals/rules/${id}`);
-  }, [api]);
+    await del(`/approvals/rules/${id}`);
+  }, [del]);
 
   // ─── Requests ─────────────────────────────
   const fetchRequests = useCallback(async (params = {}) => {
     const qs = new URLSearchParams(params).toString();
-    const res = await api.get(`/approvals/requests${qs ? `?${qs}` : ''}`);
+    const res = await get(`/approvals/requests${qs ? `?${qs}` : ''}`);
     setRequests(res.data);
     return res.data;
-  }, [api]);
+  }, [get]);
 
   const fetchMyPending = useCallback(async () => {
-    const res = await api.get('/approvals/my-pending');
+    const res = await get('/approvals/my-pending');
     setRequests(res.data);
     setPendingCount(res.data.length);
     return res.data;
-  }, [api]);
+  }, [get]);
 
   const approve = useCallback(async (requestId, reason) => {
-    const res = await api.post(`/approvals/requests/${requestId}/approve`, { reason });
+    const res = await post(`/approvals/requests/${requestId}/approve`, { reason });
     return res.data;
-  }, [api]);
+  }, [post]);
 
   const reject = useCallback(async (requestId, reason) => {
-    const res = await api.post(`/approvals/requests/${requestId}/reject`, { reason });
+    const res = await post(`/approvals/requests/${requestId}/reject`, { reason });
     return res.data;
-  }, [api]);
+  }, [post]);
 
   const cancel = useCallback(async (requestId, reason) => {
-    const res = await api.post(`/approvals/requests/${requestId}/cancel`, { reason });
+    const res = await post(`/approvals/requests/${requestId}/cancel`, { reason });
     return res.data;
-  }, [api]);
+  }, [post]);
 
   // ─── Status ───────────────────────────────
   const checkStatus = useCallback(async () => {
-    const res = await api.get('/approvals/status');
+    const res = await get('/approvals/status');
     return res.data;
-  }, [api]);
+  }, [get]);
 
   return {
     rules,
     requests,
     pendingCount,
-    loading: api.loading,
-    error: api.error,
+    loading,
+    error,
     // Rules
     fetchRules,
     createRule,

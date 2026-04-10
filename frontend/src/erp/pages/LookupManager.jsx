@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, useContext } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
-import { EntityContext } from '../../context/EntityContext';
+import { EntityContext } from '../../context/EntityContextObject';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 

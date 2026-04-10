@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import api from '../../services/api';
 
 /**
@@ -46,5 +46,12 @@ export default function useErpApi() {
   const patch = useCallback((path, data, config) => request('patch', path, data, config), [request]);
   const del = useCallback((path, config) => request('delete', path, null, config), [request]);
 
-  return { get, post, put, patch, del, loading, error };
+  // Return a stable object ref for the methods so hooks depending on `api` don't
+  // get new callback references every render.  loading/error are attached directly
+  // so consumers can still read them, but they are NOT part of the memo deps — this
+  // prevents useCallback deps like [api] from changing on every loading toggle.
+  const methods = useMemo(() => ({ get, post, put, patch, del }), [get, post, put, patch, del]);
+  methods.loading = loading;
+  methods.error = error;
+  return methods;
 }
