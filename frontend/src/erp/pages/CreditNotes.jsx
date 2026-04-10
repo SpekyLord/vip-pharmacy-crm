@@ -248,7 +248,7 @@ export default function CreditNotes() {
           ))}
 
           {!docs.length && !showForm && (
-            <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>No credit notes yet. Click "+ New Return" to create one.</div>
+            <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>No credit notes yet. Click &quot;+ New Return&quot; to create one.</div>
           )}
 
           {/* Form */}

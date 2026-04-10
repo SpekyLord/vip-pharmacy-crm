@@ -27,7 +27,7 @@ const ROLES = Object.freeze({
 
 // All valid system roles (used by User.js enum)
 // 'employee' kept for backward compat — existing DB records may not yet be migrated to 'contractor'
-const ALL_ROLES = [ROLES.ADMIN, ROLES.CONTRACTOR, ROLES.FINANCE, ROLES.PRESIDENT, ROLES.CEO, 'employee'];
+const ALL_ROLES = [ROLES.ADMIN, ROLES.CONTRACTOR, ROLES.FINANCE, ROLES.PRESIDENT, ROLES.CEO, 'employee', ROLES.MEDREP];
 
 // ── Named Permission Sets ──────────────────────────────────────────
 const ROLE_SETS = Object.freeze({

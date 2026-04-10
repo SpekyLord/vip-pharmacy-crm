@@ -59,6 +59,7 @@ const pageStyles = `
 `;
 
 export default function CollectionSession() {
+  // eslint-disable-next-line no-unused-vars
   const { user } = useAuth();
   const collections = useCollections();
   const { hospitals } = useHospitals();
@@ -77,9 +78,9 @@ export default function CollectionSession() {
   const [crDate, setCrDate] = useState(new Date().toISOString().split('T')[0]);
   const [crAmount, setCrAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('CHECK');
-  const [checkNo, setCheckNo] = useState('');
-  const [checkDate, setCheckDate] = useState('');
-  const [bank, setBank] = useState('');
+  const [checkNo] = useState('');
+  const [checkDate] = useState('');
+  const [bank] = useState('');
   const [bankAccountId, setBankAccountId] = useState('');
   const [bankAccountsList, setBankAccountsList] = useState([]);
   const [pettyCashFundId, setPettyCashFundId] = useState('');
