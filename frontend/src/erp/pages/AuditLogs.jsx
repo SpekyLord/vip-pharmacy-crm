@@ -5,7 +5,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useDashboard from '../hooks/useDashboard';
 import { showError } from '../utils/errorToast';
 
@@ -40,7 +39,6 @@ const LOG_TYPE_BADGES = {
 };
 
 export default function AuditLogs() {
-  const { user } = useAuth();
   const dash = useDashboard();
 
   const [logs, setLogs] = useState([]);

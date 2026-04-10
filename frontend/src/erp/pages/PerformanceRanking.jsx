@@ -6,7 +6,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -45,7 +44,6 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 export default function PerformanceRanking() {
-  const { user } = useAuth();
   const rpt = useReports();
   const [tab, setTab] = useState('ranking');
   const [period, setPeriod] = useState(getCurrentPeriod());
@@ -56,12 +54,14 @@ export default function PerformanceRanking() {
   const [expandedPerson, setExpandedPerson] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadRanking(); }, []);
 
   const loadRanking = useCallback(async () => {
     setLoading(true);
     try { const res = await rpt.getPerformanceRanking(period); setData(res?.data || null); } catch (err) { console.error('[PerformanceRanking] load error:', err.message); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period]);
 
   const loadTracker = useCallback(async (type) => {
@@ -71,12 +71,14 @@ export default function PerformanceRanking() {
       setTrackerData(res?.data || null);
     } catch (err) { console.error('[PerformanceRanking] load error:', err.message); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year]);
 
   const loadTrend = useCallback(async (personId) => {
     if (expandedPerson === personId) { setExpandedPerson(null); return; }
     setExpandedPerson(personId);
     try { const res = await rpt.getPerformanceTrend(personId); setTrendData(res?.data || null); } catch (err) { console.error('[PerformanceRanking] load error:', err.message); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedPerson]);
 
   const handleTabChange = (t) => {

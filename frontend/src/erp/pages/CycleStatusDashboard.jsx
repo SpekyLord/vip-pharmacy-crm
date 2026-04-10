@@ -6,7 +6,6 @@ import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -52,7 +51,6 @@ function getCurrentPeriod() { const d = new Date(); return d.getFullYear() + '-'
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : '-'; }
 
 export default function CycleStatusDashboard() {
-  const { user } = useAuth();
   const rpt = useReports();
   const [period, setPeriod] = useState(getCurrentPeriod());
   const [data, setData] = useState(null);
@@ -62,6 +60,7 @@ export default function CycleStatusDashboard() {
     setLoading(true);
     try { const res = await rpt.getCycleStatus(period); setData(res?.data || null); } catch (err) { console.error('[CycleStatusDashboard] load error:', err.message); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period]);
 
   const sc = data?.status_counts || {};

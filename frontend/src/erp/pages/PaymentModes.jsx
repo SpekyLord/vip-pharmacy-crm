@@ -61,6 +61,7 @@ export function PaymentModesContent() {
       setModes(res?.data || []);
     } catch (err) { showError(err, 'Could not load payment modes'); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { load(); }, [load]);

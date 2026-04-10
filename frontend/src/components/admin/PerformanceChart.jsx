@@ -112,7 +112,7 @@ const styles = `
    CUSTOM TOOLTIP
    ============================================================================= */
 
-const CustomTooltip = ({ active, payload, label, dataKey, secondaryDataKey }) => {
+const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload || !payload.length) return null;
 
   return (
@@ -151,7 +151,6 @@ const PerformanceChart = ({
   showGrid = true,
   showTooltip = true,
   showLegend = false,
-  gradientFill = false,
 }) => {
   // Gradient ID for area charts
   const gradientId = `gradient-${dataKey}`;

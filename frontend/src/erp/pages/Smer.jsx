@@ -393,7 +393,7 @@ export default function Smer() {
   };
 
   // Hospital chip renderer
-  /* eslint-disable react/prop-types */
+   
   const HospitalChips = ({ entryIdx }) => {
     const entry = dailyEntries[entryIdx];
     const ids = entry?.hospital_ids || [];
@@ -439,7 +439,7 @@ export default function Smer() {
       </div>
     );
   };
-  /* eslint-enable react/prop-types */
+   
 
   // Compute totals
   const totals = dailyEntries.reduce((acc, e) => ({

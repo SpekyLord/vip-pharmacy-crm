@@ -6,7 +6,6 @@ import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -37,7 +36,6 @@ function fmt(n) { return '\u20B1' + (n || 0).toLocaleString(undefined, { minimum
 function getCurrentPeriod() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 
 export default function FuelEfficiency() {
-  const { user } = useAuth();
   const rpt = useReports();
   const [period, setPeriod] = useState(getCurrentPeriod());
   const [data, setData] = useState(null);
@@ -47,6 +45,7 @@ export default function FuelEfficiency() {
     setLoading(true);
     try { const res = await rpt.getFuelEfficiency(period); setData(res?.data || null); } catch (err) { console.error('[FuelEfficiency] load error:', err.message); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period]);
 
   return (

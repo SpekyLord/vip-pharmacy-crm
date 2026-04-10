@@ -143,7 +143,7 @@ export default function SalesGoalDashboard() {
   const targetPct = Math.min((targetRevenue / maxBar) * 100, 100);
   const baselinePct = Math.min((baselineRevenue / maxBar) * 100, 100);
 
-  /* eslint-disable react/prop-types */
+   
   const SortTh = ({ field, children }) => (
     <th>
       <button className="sgd-sort-btn" onClick={() => handleSort(field)}>
@@ -151,7 +151,7 @@ export default function SalesGoalDashboard() {
       </button>
     </th>
   );
-  /* eslint-enable react/prop-types */
+   
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>

@@ -6,7 +6,6 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { showError } from '../utils/errorToast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -109,7 +108,6 @@ const pageStyles = `
 `;
 
 export default function CsiBooklets() {
-  const { user } = useAuth();
   const rpt = useReports();
   const [booklets, setBooklets] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -132,8 +130,10 @@ export default function CsiBooklets() {
     setLoading(true);
     try { const res = await rpt.getCsiBooklets(); setBooklets(res?.data || []); } catch (err) { console.error('[CsiBooklets] load error:', err.message); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, []);
 
   const handleCreate = async () => {

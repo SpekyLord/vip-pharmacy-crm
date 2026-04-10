@@ -35,7 +35,6 @@ import {
   ToggleLeft,
   ToggleRight,
   Download,
-  FileSpreadsheet,
   CalendarRange,
   UserCheck,
 } from 'lucide-react';
@@ -466,7 +465,6 @@ const EmployeeAnalytics = ({
   employeeId = 'emp-001',
   employeeName = 'Juan Dela Cruz',
   month = '2025-12',
-  visits = [],
   allEmployees = MOCK_EMPLOYEES,
 }) => {
   const [compareMode, setCompareMode] = useState(false);

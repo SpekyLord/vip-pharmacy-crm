@@ -1549,8 +1549,6 @@ const CHART_COLORS = {
   gray: '#9ca3af',
 };
 
-const PIE_COLORS = ['#22c55e', '#f59e0b', '#ef4444'];
-
 /* =============================================================================
    COMPONENT: StatisticsPage
    Main parent component with tabbed interface.

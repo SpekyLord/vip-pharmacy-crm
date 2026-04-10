@@ -282,7 +282,7 @@ export default function HomePage() {
     finance: 'Finance',
     ceo: 'CEO',
     employee: 'BDM',
-    medrep: 'MedRep'
+    contractor: 'Contractor'
   };
 
   return (

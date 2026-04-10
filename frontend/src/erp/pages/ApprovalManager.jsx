@@ -314,7 +314,7 @@ export { ApprovalManager as ApprovalManagerContent };
 
 // ─── Rule Form Modal ────────────────────────────────────────────────
 
-/* eslint-disable react/prop-types */
+ 
 function RuleFormModal({ rule, onSave, onClose, moduleOptions, approverTypes, approverRoles }) {
   const [form, setForm] = useState({
     module: rule?.module || (moduleOptions[0] || 'PURCHASING'),
@@ -416,4 +416,4 @@ function RuleFormModal({ rule, onSave, onClose, moduleOptions, approverTypes, ap
     </div>
   );
 }
-/* eslint-enable react/prop-types */
+ 

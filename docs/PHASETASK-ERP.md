@@ -3866,3 +3866,173 @@ All 6 paid agents fully implemented with Claude Haiku 4.5, not just stubs.
 - [x] All modified frontend files pass `npx vite build`
 - [x] CLAUDE-ERP.md updated — Known Gaps table entries resolved
 - [x] PHASETASK-ERP.md updated with full Phase 30 task breakdown
+
+---
+
+## Phase 31 — Functional Role Assignment (Cross-Entity Deployment)
+
+> Enables assigning people to perform specific functions (Purchasing, Accounting, Collections, etc.)
+> at multiple entities with date ranges and optional approval limits.
+> **Problem solved**: Previously each person was locked to a single entity_id with no cross-entity
+> functional scoping (e.g., "this accountant handles accounting for VIP HQ AND MG AND CO").
+
+### 31.1 — Model + Lookup Seed ✅
+- [x] Created `backend/erp/models/FunctionalRoleAssignment.js` with full schema:
+  - entity_id (target entity), person_id, home_entity_id (denormalized), functional_role (lookup-validated)
+  - valid_from, valid_to (nullable = permanent), approval_limit, description
+  - status enum: ACTIVE, SUSPENDED, EXPIRED, REVOKED
+  - Compound indexes for "who handles X at entity Y" and "what entities does person Z serve" queries
+- [x] Pre-validate hook validates functional_role against Lookup FUNCTIONAL_ROLE category with hardcoded fallback
+- [x] Added FUNCTIONAL_ROLE category to SEED_DEFAULTS in `lookupGenericController.js`:
+  PURCHASING, ACCOUNTING, COLLECTIONS, INVENTORY, SALES, ADMIN, AUDIT, PAYROLL, LOGISTICS
+
+### 31.2 — Controller ✅
+- [x] Created `backend/erp/controllers/functionalRoleController.js` with 7 operations:
+  - listAssignments (entity-scoped, filterable by person/role/status)
+  - getAssignment (single by ID)
+  - getByPerson (cross-entity — all assignments for one person)
+  - createAssignment (duplicate-active guard, auto-sets home_entity_id from PeopleMaster)
+  - updateAssignment (whitelist of allowed fields)
+  - deactivateAssignment (soft-delete → REVOKED status)
+  - bulkCreate (one person → multiple entities, skips duplicates)
+
+### 31.3 — Routes ✅
+- [x] Created `backend/erp/routes/functionalRoleRoutes.js` mounted at `/api/erp/role-assignments`
+- [x] Static routes before parameterized: /by-person/:personId, /bulk before /:id
+- [x] adminOnly middleware on write endpoints (POST, PUT, deactivate)
+- [x] Registered in `backend/erp/routes/index.js` under `erpAccessCheck('people')`
+
+### 31.4 — Frontend Hook ✅
+- [x] Created `frontend/src/erp/hooks/useFunctionalRoles.js`
+- [x] Wraps all API endpoints using useErpApi pattern (matching useApprovals.js)
+
+### 31.5 — Frontend Page ✅
+- [x] Created `frontend/src/erp/pages/RoleAssignmentManager.jsx`
+- [x] Two tabs: "By Entity" (who's assigned here) and "By Person" (search person → cross-entity list)
+- [x] Create/Edit modal with person search, entity selector, lookup-driven role dropdown, date range, approval limit
+- [x] Bulk mode: assign one person to multiple entities at once
+- [x] Status badges: ACTIVE (green), SUSPENDED (yellow), EXPIRED (gray), REVOKED (red)
+- [x] WorkflowGuide helper banner
+- [x] Exports RoleAssignmentManagerContent for ControlCenter embedding
+
+### 31.6 — App.jsx + ControlCenter Registration ✅
+- [x] Added lazy import + route `/erp/role-assignments` with ROLE_SETS.MANAGEMENT in App.jsx
+- [x] Added to ControlCenter SECTIONS + CATEGORY_CONFIG under "People & Access" group
+
+### 31.7 — PersonDetail Integration ✅
+- [x] Added Section F: "Cross-Entity Assignments" to PersonDetail.jsx
+- [x] Fetches via useFunctionalRoles().fetchByPerson on mount
+- [x] Compact table: Entity, Function, Period, Limit, Status
+- [x] Management users see "+ Assign Role" link to /erp/role-assignments?person=<id>
+
+### 31.8 — Documentation ✅
+- [x] PHASETASK-ERP.md updated with Phase 31 task breakdown
+- [x] CLAUDE-ERP.md updated with Phase 31 architecture
+
+---
+
+## Phase 32 — Universal KPI Self-Rating & Performance Review System ✅
+
+Universal, lookup-driven KPI self-rating system where ALL members — regardless of function — can rate themselves on function-specific KPIs + competencies, go through a structured self → manager → approval workflow.
+
+### 32.1 — Model + Lookup Seeds ✅
+- [x] Created `backend/erp/models/KpiSelfRating.js` — entity+person+period unique rating document
+- [x] Extended KPI_CODE seeds: 13 existing sales KPIs get `functional_roles: ['SALES']` + `description`
+- [x] Added 10 new function-specific KPIs: Purchasing (3), Accounting (3), Collections (2), Inventory (2)
+- [x] Added 2 universal KPIs: ATTENDANCE_RATE, TASK_COMPLETION (`functional_roles: ['ALL']`)
+- [x] Added RATING_SCALE seed (1-5 scale with labels)
+- [x] Added COMPETENCY seed (8 universal competencies)
+- [x] Added REVIEW_PERIOD_TYPE seed (Monthly/Quarterly/Semi-Annual/Annual)
+
+### 32.2 — Controller (10 Endpoints) ✅
+- [x] Created `backend/erp/controllers/kpiSelfRatingController.js`
+- [x] `getMyRatings` — own ratings history
+- [x] `getMyCurrentDraft` — get or auto-create DRAFT (auto-fills KPIs from FunctionalRoleAssignment)
+- [x] `getRatingById` — single rating (access: self/manager/admin)
+- [x] `getRatingsForReview` — manager's pending SUBMITTED reviews
+- [x] `getRatingsByPerson` — admin: all ratings for a person
+- [x] `saveDraft` — create/update DRAFT or RETURNED rating
+- [x] `submitRating` — DRAFT/RETURNED → SUBMITTED
+- [x] `reviewRating` — manager adds scores, SUBMITTED → REVIEWED
+- [x] `approveRating` — admin: REVIEWED → APPROVED
+- [x] `returnRating` — manager/admin: SUBMITTED/REVIEWED → RETURNED
+
+### 32.3 — Routes + Registration ✅
+- [x] Created `backend/erp/routes/kpiSelfRatingRoutes.js`
+- [x] Mounted at `/api/erp/self-ratings` under `erpAccessCheck('people')`
+- [x] Static routes before parameterized /:id
+- [x] Registered in `backend/erp/routes/index.js`
+
+### 32.4 — Frontend Hook ✅
+- [x] Created `frontend/src/erp/hooks/useKpiSelfRating.js`
+- [x] Wraps all 10 endpoints, stable deps on api.get/api.post/api.put
+
+### 32.5 — KPI Library Page ✅
+- [x] Created `frontend/src/erp/pages/KpiLibrary.jsx`
+- [x] Admin-friendly SMART goal form (SAP SuccessFactors pattern)
+- [x] Grouped by function with search + filter
+- [x] Create/Edit modal: code, name, description (SMART sentence), unit, direction, computation, target, functional_roles
+- [x] WorkflowGuide helper banner
+- [x] Exports KpiLibraryContent for ControlCenter embedding
+
+### 32.6 — Self-Rating Page ✅
+- [x] Created `frontend/src/erp/pages/KpiSelfRating.jsx`
+- [x] Three tabs: My Rating, Review, History
+- [x] Self-Rating: KPI table + Competency table + Overall Assessment with save/submit
+- [x] Manager Review: side-by-side self/manager scores, complete review or return
+- [x] History: past submissions with status badges, detail modal
+- [x] Period selector (type + fiscal year)
+- [x] WorkflowGuide helper banner
+- [x] Exports KpiSelfRatingContent for ControlCenter embedding
+
+### 32.7 — App.jsx + ControlCenter Registration ✅
+- [x] Added lazy imports + routes in App.jsx
+- [x] `/erp/kpi-library` with ROLE_SETS.MANAGEMENT
+- [x] `/erp/self-rating` with ROLE_SETS.ERP_ALL (all ERP users can self-rate)
+- [x] Added to ControlCenter SECTIONS + CATEGORY_CONFIG under "People & Access"
+- [x] Added dependency banners for both kpi-library and kpi-self-rating
+
+### 32.8 — PersonDetail Section G ✅
+- [x] Added Section G "Performance Rating" to PersonDetail.jsx
+- [x] Shows latest rating: period, status badge, self score, manager score, KPI/competency rated counts
+- [x] Link to `/erp/self-rating?person=<id>` for full history
+
+### 32.9 — Documentation ✅
+- [x] PHASETASK-ERP.md updated with Phase 32 task breakdown
+- [x] CLAUDE-ERP.md updated with Phase 32 architecture, routes, lookup categories, integration points
+
+---
+
+## Phase 33 — Bulk Role Migration + Login Fix ✅ (April 10, 2026)
+
+Fixes login-blocking bug for medrep users and adds admin-facing bulk role migration via Control Center.
+
+### 33.1 — Login Bug Fix ✅
+- [x] Added `ROLES.MEDREP` back to `ALL_ROLES` in `backend/constants/roles.js` — Mongoose enum now accepts legacy medrep role on `user.save()` during login
+- [x] Root cause: login calls `user.save()` to persist refreshToken + lastLogin, which triggers Mongoose enum validation — fails if role not in `ALL_ROLES`
+
+### 33.2 — Bulk Role Migration Endpoint ✅
+- [x] Added `bulkChangeSystemRole` in `backend/erp/controllers/peopleController.js` — accepts `{ from_role, to_role }`, validates against `ALL_ROLES`, bulk-updates all matching users
+- [x] Added `getLegacyRoleCounts` in `backend/erp/controllers/peopleController.js` — returns counts of users with legacy roles (medrep, employee)
+- [x] Added routes in `backend/erp/routes/peopleRoutes.js`:
+  - `GET /people/legacy-role-counts` (admin/president)
+  - `POST /people/bulk-change-role` (admin/president)
+
+### 33.3 — Frontend Hook ✅
+- [x] Added `getLegacyRoleCounts()` and `bulkChangeRole(from_role, to_role)` to `frontend/src/erp/hooks/usePeople.js`
+
+### 33.4 — PeopleList Migration Banner ✅
+- [x] Added legacy role detection on mount in `frontend/src/erp/pages/PeopleList.jsx`
+- [x] Yellow banner with user counts per legacy role + one-click "Migrate → contractor" buttons
+- [x] Confirmation dialog before migration, success toast, banner auto-hides after migration
+
+### 33.5 — Frontend Cleanup ✅
+- [x] Removed `case 'medrep':` redirect from `frontend/src/pages/LoginPage.jsx`
+- [x] Replaced `medrep: 'MedRep'` with `contractor: 'Contractor'` in `frontend/src/pages/HomePage.jsx` role label map
+
+### 33.6 — Workflow Guide Update ✅
+- [x] Updated `people-list` banner in `frontend/src/erp/components/WorkflowGuide.jsx` — added step 4 for legacy role migration and updated tip text
+
+### 33.7 — Documentation ✅
+- [x] PHASETASK-ERP.md updated with Phase 33 task breakdown
+- [x] CLAUDE-ERP.md updated with Phase 33 architecture, routes, and key files

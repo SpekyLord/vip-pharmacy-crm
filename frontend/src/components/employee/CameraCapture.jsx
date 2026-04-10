@@ -411,14 +411,15 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
   // Start GPS tracking on mount (decoupled from camera)
   useEffect(() => {
     startGPSTracking();
+    const videoEl = videoRef.current;
 
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
+      if (videoEl) {
+        videoEl.srcObject = null;
       }
       gpsSessionRef.current += 1;
       clearGPSTracking();

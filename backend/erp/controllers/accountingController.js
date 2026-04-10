@@ -19,6 +19,7 @@ const { computeDepreciation, getDepreciationStaging, approveDepreciation, postDe
 const { computeInterest, getInterestStaging, approveInterest, postInterest } = require('../services/loanService');
 const { recordInfusion, recordDrawing, getEquityLedger } = require('../services/ownerEquityService');
 const XLSX = require('xlsx');
+const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
 // ═══════════════════════════════════════════════════════════
 // JOURNAL ENTRIES
@@ -308,7 +309,7 @@ const exportFixedAssets = catchAsync(async (req, res) => {
 // ═══ Import Fixed Assets (Excel) — upsert by asset_code ═══
 const importFixedAssets = catchAsync(async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
   let created = 0, updated = 0, errors = [];
   for (const r of rows) {
@@ -365,7 +366,7 @@ const exportLoans = catchAsync(async (req, res) => {
 // ═══ Import Loans (Excel) — upsert by loan_code ═══
 const importLoans = catchAsync(async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
   let created = 0, updated = 0, errors = [];
   for (const r of rows) {

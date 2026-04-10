@@ -80,6 +80,7 @@ const usePushNotifications = () => {
     } finally {
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -137,6 +138,7 @@ const usePushNotifications = () => {
     } finally {
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permission]);
 
   /**

@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 5.7
-> **Status**: Phases 0-30 Complete. Role Centralization + PeopleMaster Lookup-Driven (April 9, 2026).
+> **Version**: 5.8
+> **Status**: Phases 0-33 Complete. Bulk Role Migration + Login Fix (April 10, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -89,6 +89,9 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 28 | Sales Goals, KPI & Partnership Performance | ✅ |
 | 29 | Email Notifications + Approval Workflow (Authority Matrix) | ✅ |
 | 30 | Role Centralization + PeopleMaster Lookup-Driven Validation | ✅ |
+| 31 | Functional Role Assignment (Cross-Entity Deployment) | ✅ |
+| 32 | Universal KPI Self-Rating & Performance Review | ✅ |
+| 33 | Bulk Role Migration + Login Fix | ✅ |
 
 ---
 
@@ -289,6 +292,137 @@ Applies to ALL roles. Everyone can progress:
 
 ### Retired: `backend/utils/roleHelpers.js`
 Replaced by `backend/constants/roles.js`. All importers updated.
+
+---
+
+## Functional Role Assignment (Phase 31)
+
+Enables cross-entity deployment of people — assigning a person to perform specific functions at multiple entities with date ranges and approval limits.
+
+### Model
+- **FunctionalRoleAssignment** — maps person_id + entity_id + functional_role with valid_from/to, approval_limit, status
+- Collection: `erp_functional_role_assignments`
+- Functional roles are lookup-driven via `FUNCTIONAL_ROLE` category (PURCHASING, ACCOUNTING, COLLECTIONS, INVENTORY, SALES, ADMIN, AUDIT, PAYROLL, LOGISTICS)
+
+### Key Queries
+- "Who handles ACCOUNTING at Entity X?" → `{ entity_id: X, functional_role: 'ACCOUNTING', is_active: true }`
+- "What entities does Person Y serve?" → `{ person_id: Y, is_active: true }`
+
+### Key Files
+```
+backend/erp/models/FunctionalRoleAssignment.js    # Model with lookup validation
+backend/erp/controllers/functionalRoleController.js # 7 CRUD operations + bulk create
+backend/erp/routes/functionalRoleRoutes.js          # /api/erp/role-assignments
+frontend/src/erp/hooks/useFunctionalRoles.js        # Frontend hook
+frontend/src/erp/pages/RoleAssignmentManager.jsx    # Page + ControlCenter panel
+```
+
+### Integration Points
+- **PersonDetail.jsx** Section F: shows cross-entity assignments for a person
+- **ControlCenter.jsx**: embedded under People & Access → Role Assignments
+- **App.jsx**: standalone route at `/erp/role-assignments`
+- **lookupGenericController.js**: FUNCTIONAL_ROLE added to SEED_DEFAULTS
+
+---
+
+## Universal KPI Self-Rating & Performance Review (Phase 32)
+
+Universal, lookup-driven KPI self-rating system where ALL members — regardless of function — can rate themselves on function-specific KPIs + competencies, go through a structured self → manager → approval workflow, and view their performance trajectory.
+
+### Architecture
+- **KpiSelfRating** — Rating document: entity-scoped, person-scoped, period-scoped (unique per person/period/type)
+- **KPI_CODE lookup** — Extended with `functional_roles` metadata to map KPIs to functions (SALES, PURCHASING, ACCOUNTING, etc.)
+- **COMPETENCY lookup** — Universal competencies (Communication, Teamwork, Leadership, etc.)
+- **RATING_SCALE lookup** — 1-5 scale definitions
+- **REVIEW_PERIOD_TYPE lookup** — Monthly, Quarterly, Semi-Annual, Annual
+- **Auto-draft creation** — System auto-populates KPIs based on person's FunctionalRoleAssignment(s) + universal 'ALL' KPIs
+
+### Workflow
+```
+DRAFT → SUBMITTED → REVIEWED → APPROVED
+                  ↘ RETURNED → (re-edit) → SUBMITTED
+```
+
+### Key Files
+```
+backend/erp/models/KpiSelfRating.js               # Rating document (entity+person+period unique)
+backend/erp/controllers/kpiSelfRatingController.js # 10 endpoints (auto-draft, review, approve)
+backend/erp/routes/kpiSelfRatingRoutes.js          # Mounted at /api/erp/self-ratings
+frontend/src/erp/hooks/useKpiSelfRating.js         # Frontend hook
+frontend/src/erp/pages/KpiSelfRating.jsx           # Self-rating form + manager review + history
+frontend/src/erp/pages/KpiLibrary.jsx              # Admin SMART goal form (SAP SuccessFactors pattern)
+```
+
+### Routes
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/self-ratings/my` | Own ratings history |
+| GET | `/self-ratings/my/current` | Get or auto-create DRAFT for current period |
+| GET | `/self-ratings/review` | Manager's pending reviews |
+| GET | `/self-ratings/by-person/:personId` | Admin: all ratings for a person |
+| POST | `/self-ratings` | Save draft |
+| POST | `/self-ratings/:id/submit` | DRAFT → SUBMITTED |
+| PUT | `/self-ratings/:id/review` | Manager adds scores → REVIEWED |
+| POST | `/self-ratings/:id/approve` | Admin approves → APPROVED |
+| POST | `/self-ratings/:id/return` | Return for revision → RETURNED |
+| GET | `/self-ratings/:id` | Single rating (self/manager/admin) |
+
+### New Lookup Categories (Phase 32)
+| Category | Purpose |
+|----------|---------|
+| `RATING_SCALE` | 1-5 performance scale (Needs Improvement → Outstanding) |
+| `COMPETENCY` | 8 universal competencies (Communication, Teamwork, Leadership, etc.) |
+| `REVIEW_PERIOD_TYPE` | Review period types (Monthly, Quarterly, Semi-Annual, Annual) |
+
+### KPI_CODE Extensions (Phase 32)
+- All 13 existing sales KPIs now have `functional_roles: ['SALES']` + `description` in metadata
+- 3 new Purchasing KPIs (PO_PROCESSING_TIME, VENDOR_PAYMENT_COMPLIANCE, COST_SAVINGS_PCT)
+- 3 new Accounting KPIs (CLOSE_TIMELINESS, JOURNAL_ACCURACY, RECONCILIATION_RATE)
+- 2 new Collections KPIs (COLLECTION_EFFICIENCY, AGING_REDUCTION)
+- 2 new Inventory KPIs (STOCKOUT_RATE, CYCLE_COUNT_ACCURACY)
+- 2 Universal KPIs (ATTENDANCE_RATE, TASK_COMPLETION) — `functional_roles: ['ALL']`
+
+### Integration Points
+- **PersonDetail.jsx** Section G: shows latest rating summary (period, status, self/manager scores)
+- **ControlCenter.jsx**: embedded under People & Access → KPI Library + KPI Self-Rating
+- **App.jsx**: standalone routes at `/erp/kpi-library` (MANAGEMENT) and `/erp/self-rating` (ERP_ALL)
+- **WorkflowGuide**: banners for both kpiLibrary and kpiSelfRating pages
+
+---
+
+## Bulk Role Migration + Login Fix (Phase 33)
+
+Fixes a login-blocking bug where users with legacy `medrep` role could not log in (Mongoose enum validation rejected it on `user.save()` during login). Adds admin-facing bulk role migration via Control Center.
+
+### Root Cause
+`ALL_ROLES` in `backend/constants/roles.js` excluded `'medrep'`. Login calls `user.save()` to persist refreshToken — Mongoose enum validation rejects the save, returning 500.
+
+### Fix
+- Added `ROLES.MEDREP` back to `ALL_ROLES` for backward compatibility
+- Added bulk migration endpoint so admins can convert legacy roles via Control Center
+
+### New Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/erp/people/legacy-role-counts` | Returns counts of users with legacy roles (medrep, employee) |
+| POST | `/api/erp/people/bulk-change-role` | Bulk-migrates all users from one role to another (admin/president only) |
+
+### PeopleList Migration Banner
+A yellow banner auto-appears in People Master when legacy roles (medrep, employee) are detected in the database. Shows user counts per legacy role with one-click "Migrate → contractor" buttons. Banner disappears once no legacy roles remain.
+
+### Key Files
+```
+backend/constants/roles.js                    # MEDREP added back to ALL_ROLES
+backend/erp/controllers/peopleController.js   # bulkChangeSystemRole + getLegacyRoleCounts
+backend/erp/routes/peopleRoutes.js            # Two new routes (before /:id params)
+frontend/src/erp/hooks/usePeople.js           # getLegacyRoleCounts + bulkChangeRole
+frontend/src/erp/pages/PeopleList.jsx         # Migration banner UI
+frontend/src/erp/components/WorkflowGuide.jsx # Updated people-list banner
+```
+
+### Frontend Cleanup
+- `LoginPage.jsx` — removed dead `case 'medrep':` redirect
+- `HomePage.jsx` — replaced `medrep: 'MedRep'` with `contractor: 'Contractor'` in role label map
 
 ---
 

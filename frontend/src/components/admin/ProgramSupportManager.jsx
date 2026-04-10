@@ -328,7 +328,7 @@ const ProgramSupportManager = ({ service, label }) => {
         <div className="psm-list">
           {items.length === 0 ? (
             <div className="psm-empty">
-              No {label.toLowerCase()}s yet. Add one above or click "Seed from Existing" to import from VIP Client records.
+              No {label.toLowerCase()}s yet. Add one above or click &quot;Seed from Existing&quot; to import from VIP Client records.
             </div>
           ) : (
             items.map((item) => (

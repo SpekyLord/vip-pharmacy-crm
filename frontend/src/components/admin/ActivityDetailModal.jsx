@@ -530,6 +530,7 @@ const VisitDetails = ({ details, activityId }) => {
     if (details?.photos?.length > 0 && visitId) {
       fetchSignedPhotos();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visitId]);
 
   if (!details) return null;

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useCollections from '../hooks/useCollections';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError } from '../utils/errorToast';
@@ -77,7 +76,6 @@ const pageStyles = `
 function fmt(n) { return 'P' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 export default function AccountsReceivable() {
-  const { user } = useAuth();
   const coll = useCollections();
   const [arData, setArData] = useState(null);
   const [rateData, setRateData] = useState(null);
@@ -97,7 +95,6 @@ export default function AccountsReceivable() {
 
   const hospitals = arData?.hospitals || [];
   const summary = arData?.summary || {};
-  const buckets = summary.buckets || {};
   const arBuckets = Object.keys(BUCKET_LABELS);
 
   const handleSoa = async (hospitalId) => {

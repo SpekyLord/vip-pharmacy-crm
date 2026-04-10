@@ -612,9 +612,6 @@ const LoginPage = () => {
         case 'finance':
           navigate('/admin');
           break;
-        case 'medrep':
-          navigate('/medrep');
-          break;
         case ROLES.CONTRACTOR:
           navigate('/bdm');
           break;

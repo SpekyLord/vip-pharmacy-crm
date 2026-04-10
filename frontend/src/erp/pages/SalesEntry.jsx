@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useSales from '../hooks/useSales';
 import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
@@ -266,7 +265,7 @@ function fieldVal(f) {
 // --- ScanCSIModal inline component ---
 function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
   const [step, setStep] = useState('capture'); // capture | scanning | results | error
-  const [photo, setPhoto] = useState(null);
+  const [, setPhoto] = useState(null);
   const [preview, setPreview] = useState(null);
   const [ocrData, setOcrData] = useState(null);
   const [matchedHospital, setMatchedHospital] = useState(null);
@@ -514,7 +513,6 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
 }
 
 export default function SalesEntry() {
-  const { user } = useAuth();
   const sales = useSales();
   const inventory = useInventory();
   const { hospitals } = useHospitals();
@@ -565,7 +563,7 @@ export default function SalesEntry() {
         override_reason: ''
       }]
     }]);
-  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   // Load customers for non-CSI modes
   useEffect(() => {

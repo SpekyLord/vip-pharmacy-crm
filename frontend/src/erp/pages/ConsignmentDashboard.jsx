@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useConsignment from '../hooks/useConsignment';
 import WarehousePicker from '../components/WarehousePicker';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -46,7 +45,6 @@ const pageStyles = `
 `;
 
 export default function ConsignmentDashboard() {
-  const { user } = useAuth();
   const consignment = useConsignment();
 
   const [warehouseId, setWarehouseId] = useState('');

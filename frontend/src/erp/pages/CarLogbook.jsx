@@ -12,7 +12,7 @@ import { ROLE_SETS } from '../../constants/roles';
 import { useAuth } from '../../hooks/useAuth';
 
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
-/* eslint-disable react/prop-types */
+ 
 function ScanModal({ open, onClose, onApply, docType, title }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
@@ -85,7 +85,7 @@ function ScanModal({ open, onClose, onApply, docType, title }) {
     </div>
   );
 }
-/* eslint-enable react/prop-types */
+ 
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'

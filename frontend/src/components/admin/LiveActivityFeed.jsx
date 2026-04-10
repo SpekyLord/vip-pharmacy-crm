@@ -24,8 +24,6 @@ import {
   MapPin,
   LogIn,
   LogOut,
-  UserCog,
-  Package,
   Search,
   RefreshCw,
   ChevronRight,
@@ -644,6 +642,7 @@ const LiveActivityFeed = ({
     fetchActivities();
     const interval = setInterval(fetchActivities, 30000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ---------------------------------------------------------------------------

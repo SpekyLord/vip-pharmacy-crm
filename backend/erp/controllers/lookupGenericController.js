@@ -87,19 +87,42 @@ const SEED_DEFAULTS = {
     { code: 'PRICE_INCREASE', label: 'Surgical Price Increases' },
   ],
   KPI_CODE: [
-    { code: 'PCT_HOSP_ACCREDITED', label: '% Hospitals Accredited', metadata: { unit: '%', direction: 'higher_better', computation: 'auto', source_model: 'Hospital' } },
-    { code: 'TIME_TO_ACCREDITATION', label: 'Time to Accreditation (days)', metadata: { unit: 'days', direction: 'lower_better', computation: 'manual' } },
-    { code: 'REV_PER_ACCREDITED_HOSP', label: 'Revenue per Accredited Hospital', metadata: { unit: 'PHP', direction: 'higher_better', computation: 'auto' } },
-    { code: 'SKUS_LISTED_PER_HOSP', label: 'SKUs Listed per Hospital', metadata: { unit: 'count', direction: 'higher_better', computation: 'auto' } },
-    { code: 'FORMULARY_APPROVAL_RATE', label: 'Formulary Approval Success Rate', metadata: { unit: '%', direction: 'higher_better', computation: 'manual' } },
-    { code: 'MONTHLY_REORDER_FREQ', label: 'Monthly Reorder Frequency', metadata: { unit: 'count', direction: 'higher_better', computation: 'auto' } },
-    { code: 'LOST_SALES_INCIDENTS', label: 'Lost Sales Incidents', metadata: { unit: 'count', direction: 'lower_better', computation: 'auto' } },
-    { code: 'INVENTORY_TURNOVER', label: 'Inventory Turnover', metadata: { unit: 'ratio', direction: 'higher_better', computation: 'auto' } },
-    { code: 'EXPIRY_RETURNS', label: 'Expiry Returns', metadata: { unit: 'count', direction: 'lower_better', computation: 'auto' } },
-    { code: 'MD_ENGAGEMENT_COVERAGE', label: 'MD Engagement Coverage', metadata: { unit: '%', direction: 'higher_better', computation: 'auto' } },
-    { code: 'HOSP_REORDER_CYCLE_TIME', label: 'Hospital Reorder Cycle Time', metadata: { unit: 'days', direction: 'lower_better', computation: 'manual' } },
-    { code: 'VOLUME_RETENTION_POST_INCREASE', label: 'Volume Retention Post Price Increase', metadata: { unit: '%', direction: 'higher_better', computation: 'auto' } },
-    { code: 'GROSS_MARGIN_PER_SKU', label: 'Gross Margin per SKU', metadata: { unit: '%', direction: 'higher_better', computation: 'auto' } },
+    // ═══ SALES KPIs (existing, extended with functional_roles) ═══
+    { code: 'PCT_HOSP_ACCREDITED', label: '% Hospitals Accredited', metadata: { unit: '%', direction: 'higher_better', computation: 'auto', source_model: 'Hospital', functional_roles: ['SALES'], description: 'Percentage of target hospitals successfully accredited' } },
+    { code: 'TIME_TO_ACCREDITATION', label: 'Time to Accreditation (days)', metadata: { unit: 'days', direction: 'lower_better', computation: 'manual', functional_roles: ['SALES'], description: 'Average number of days from initial contact to accreditation approval' } },
+    { code: 'REV_PER_ACCREDITED_HOSP', label: 'Revenue per Accredited Hospital', metadata: { unit: 'PHP', direction: 'higher_better', computation: 'auto', functional_roles: ['SALES'], description: 'Average monthly revenue generated per accredited hospital' } },
+    { code: 'SKUS_LISTED_PER_HOSP', label: 'SKUs Listed per Hospital', metadata: { unit: 'count', direction: 'higher_better', computation: 'auto', functional_roles: ['SALES'], description: 'Average number of product SKUs listed per hospital formulary' } },
+    { code: 'FORMULARY_APPROVAL_RATE', label: 'Formulary Approval Success Rate', metadata: { unit: '%', direction: 'higher_better', computation: 'manual', functional_roles: ['SALES'], description: 'Percentage of formulary listing applications approved' } },
+    { code: 'MONTHLY_REORDER_FREQ', label: 'Monthly Reorder Frequency', metadata: { unit: 'count', direction: 'higher_better', computation: 'auto', functional_roles: ['SALES'], description: 'Average number of reorders per hospital per month' } },
+    { code: 'LOST_SALES_INCIDENTS', label: 'Lost Sales Incidents', metadata: { unit: 'count', direction: 'lower_better', computation: 'auto', functional_roles: ['SALES'], description: 'Number of stock-out events that resulted in lost sales' } },
+    { code: 'INVENTORY_TURNOVER', label: 'Inventory Turnover', metadata: { unit: 'ratio', direction: 'higher_better', computation: 'auto', functional_roles: ['SALES'], description: 'Rate at which inventory is sold and replaced over a period' } },
+    { code: 'EXPIRY_RETURNS', label: 'Expiry Returns', metadata: { unit: 'count', direction: 'lower_better', computation: 'auto', functional_roles: ['SALES'], description: 'Number of products returned due to expiry' } },
+    { code: 'MD_ENGAGEMENT_COVERAGE', label: 'MD Engagement Coverage', metadata: { unit: '%', direction: 'higher_better', computation: 'auto', functional_roles: ['SALES'], description: 'Percentage of target medical doctors actively engaged' } },
+    { code: 'HOSP_REORDER_CYCLE_TIME', label: 'Hospital Reorder Cycle Time', metadata: { unit: 'days', direction: 'lower_better', computation: 'manual', functional_roles: ['SALES'], description: 'Average days between hospital reorders' } },
+    { code: 'VOLUME_RETENTION_POST_INCREASE', label: 'Volume Retention Post Price Increase', metadata: { unit: '%', direction: 'higher_better', computation: 'auto', functional_roles: ['SALES'], description: 'Percentage of sales volume retained after a price increase' } },
+    { code: 'GROSS_MARGIN_PER_SKU', label: 'Gross Margin per SKU', metadata: { unit: '%', direction: 'higher_better', computation: 'auto', functional_roles: ['SALES'], description: 'Average gross margin percentage per product SKU' } },
+
+    // ═══ PURCHASING KPIs (Phase 32) ═══
+    { code: 'PO_PROCESSING_TIME', label: 'PO Processing Time (days)', metadata: { unit: 'days', direction: 'lower_better', computation: 'manual', functional_roles: ['PURCHASING'], description: 'Process all purchase orders within 3 business days of receipt' } },
+    { code: 'VENDOR_PAYMENT_COMPLIANCE', label: 'Vendor Payment Compliance %', metadata: { unit: '%', direction: 'higher_better', computation: 'manual', functional_roles: ['PURCHASING'], description: 'Percentage of vendor payments made on or before due date' } },
+    { code: 'COST_SAVINGS_PCT', label: 'Cost Savings vs Budget %', metadata: { unit: '%', direction: 'higher_better', computation: 'manual', functional_roles: ['PURCHASING'], description: 'Percentage of cost savings achieved versus allocated budget' } },
+
+    // ═══ ACCOUNTING KPIs (Phase 32) ═══
+    { code: 'CLOSE_TIMELINESS', label: 'Month-End Close Timeliness (days)', metadata: { unit: 'days', direction: 'lower_better', computation: 'manual', functional_roles: ['ACCOUNTING'], description: 'Complete month-end close within 5 business days after period end' } },
+    { code: 'JOURNAL_ACCURACY', label: 'Journal Entry Accuracy %', metadata: { unit: '%', direction: 'higher_better', computation: 'manual', functional_roles: ['ACCOUNTING'], description: 'Percentage of journal entries posted without corrections needed' } },
+    { code: 'RECONCILIATION_RATE', label: 'Bank Reconciliation Completion %', metadata: { unit: '%', direction: 'higher_better', computation: 'manual', functional_roles: ['ACCOUNTING'], description: 'Percentage of bank accounts fully reconciled by month-end' } },
+
+    // ═══ COLLECTIONS KPIs (Phase 32) ═══
+    { code: 'COLLECTION_EFFICIENCY', label: 'Collection Efficiency %', metadata: { unit: '%', direction: 'higher_better', computation: 'auto', functional_roles: ['COLLECTIONS'], description: 'Percentage of outstanding receivables collected within terms' } },
+    { code: 'AGING_REDUCTION', label: 'AR Aging Reduction %', metadata: { unit: '%', direction: 'higher_better', computation: 'manual', functional_roles: ['COLLECTIONS'], description: 'Percentage reduction in accounts receivable aging over 90 days' } },
+
+    // ═══ INVENTORY KPIs (Phase 32) ═══
+    { code: 'STOCKOUT_RATE', label: 'Stockout Rate %', metadata: { unit: '%', direction: 'lower_better', computation: 'auto', functional_roles: ['INVENTORY'], description: 'Percentage of SKUs with zero available stock during the period' } },
+    { code: 'CYCLE_COUNT_ACCURACY', label: 'Cycle Count Accuracy %', metadata: { unit: '%', direction: 'higher_better', computation: 'manual', functional_roles: ['INVENTORY'], description: 'Percentage of cycle count items matching system quantity' } },
+
+    // ═══ UNIVERSAL KPIs (apply to ALL functions) ═══
+    { code: 'ATTENDANCE_RATE', label: 'Attendance Rate %', metadata: { unit: '%', direction: 'higher_better', computation: 'manual', functional_roles: ['ALL'], description: 'Percentage of scheduled work days attended' } },
+    { code: 'TASK_COMPLETION', label: 'Task Completion Rate %', metadata: { unit: '%', direction: 'higher_better', computation: 'manual', functional_roles: ['ALL'], description: 'Percentage of assigned tasks completed on or before deadline' } },
   ],
   INCENTIVE_TIER: [
     { code: 'TIER_1', label: 'Platinum', metadata: { attainment_min: 100, budget_per_bdm: 150000, reward_description: '', sort_order: 1, bg_color: '#fef3c7', text_color: '#92400e' } },
@@ -174,6 +197,58 @@ const SEED_DEFAULTS = {
     { code: 'FINANCE', label: 'Finance', metadata: { description: 'Finance/accounting manager' } },
     { code: 'PRESIDENT', label: 'President', metadata: { description: 'Company president — full cross-entity access' } },
     { code: 'CEO', label: 'CEO', metadata: { description: 'Chief Executive — view-only on ERP' } },
+  ],
+  // Phase 31 — Functional Role Assignment
+  FUNCTIONAL_ROLE: [
+    { code: 'PURCHASING', label: 'Purchasing' },
+    { code: 'ACCOUNTING', label: 'Accounting' },
+    { code: 'COLLECTIONS', label: 'Collections' },
+    { code: 'INVENTORY', label: 'Inventory Management' },
+    { code: 'SALES', label: 'Sales' },
+    { code: 'ADMIN', label: 'Administration' },
+    { code: 'AUDIT', label: 'Audit' },
+    { code: 'PAYROLL', label: 'Payroll' },
+    { code: 'LOGISTICS', label: 'Logistics & Distribution' },
+  ],
+  // Phase 32 — KPI Self-Rating & Performance Review
+  RATING_SCALE: [
+    { code: '1', label: '1 — Needs Improvement', metadata: { sort_order: 1 } },
+    { code: '2', label: '2 — Below Expectations', metadata: { sort_order: 2 } },
+    { code: '3', label: '3 — Meets Expectations', metadata: { sort_order: 3 } },
+    { code: '4', label: '4 — Exceeds Expectations', metadata: { sort_order: 4 } },
+    { code: '5', label: '5 — Outstanding', metadata: { sort_order: 5 } },
+  ],
+  COMPETENCY: [
+    { code: 'COMMUNICATION', label: 'Communication' },
+    { code: 'TEAMWORK', label: 'Teamwork & Collaboration' },
+    { code: 'LEADERSHIP', label: 'Leadership' },
+    { code: 'PROBLEM_SOLVING', label: 'Problem Solving' },
+    { code: 'TIME_MANAGEMENT', label: 'Time Management' },
+    { code: 'CUSTOMER_FOCUS', label: 'Customer Focus' },
+    { code: 'INITIATIVE', label: 'Initiative & Proactiveness' },
+    { code: 'ADAPTABILITY', label: 'Adaptability' },
+  ],
+  REVIEW_PERIOD_TYPE: [
+    { code: 'MONTHLY', label: 'Monthly' },
+    { code: 'QUARTERLY', label: 'Quarterly' },
+    { code: 'SEMI_ANNUAL', label: 'Semi-Annual' },
+    { code: 'ANNUAL', label: 'Annual' },
+  ],
+  // Phase 30 — Credit Note lookups (was hardcoded in CreditNotes.jsx)
+  RETURN_REASON: [
+    { code: 'DAMAGED', label: 'Damaged' },
+    { code: 'EXPIRED', label: 'Expired' },
+    { code: 'WRONG_ITEM', label: 'Wrong Item' },
+    { code: 'EXCESS_STOCK', label: 'Excess Stock' },
+    { code: 'QUALITY_ISSUE', label: 'Quality Issue' },
+    { code: 'RECALL', label: 'Recall' },
+    { code: 'OTHER', label: 'Other' },
+  ],
+  RETURN_CONDITION: [
+    { code: 'RESALEABLE', label: 'Resaleable' },
+    { code: 'DAMAGED', label: 'Damaged' },
+    { code: 'EXPIRED', label: 'Expired' },
+    { code: 'QUARANTINE', label: 'Quarantine' },
   ],
 };
 

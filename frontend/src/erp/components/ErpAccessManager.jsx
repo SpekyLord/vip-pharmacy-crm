@@ -78,6 +78,7 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
       setTemplateId(ua.template_id || '');
       setLoaded(true);
     } catch { setLoaded(true); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   useEffect(() => { if (userId) load(); }, [userId, load]);

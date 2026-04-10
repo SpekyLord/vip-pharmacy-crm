@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useBanking from '../hooks/useBanking';
 import { showError } from '../utils/errorToast';
 
@@ -50,7 +49,6 @@ const pageStyles = `
 `;
 
 export default function BankReconciliation() {
-  const { user } = useAuth();
   const api = useBanking();
 
   const [bankAccounts, setBankAccounts] = useState([]);
@@ -78,6 +76,7 @@ export default function BankReconciliation() {
         if (accts.length > 0 && !selectedBank) setSelectedBank(accts[0]._id);
       } catch (err) { showError(err, 'Could not load bank accounts'); }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load statements when bank/period changes
@@ -91,6 +90,7 @@ export default function BankReconciliation() {
       setReconSummary(null);
     } catch (err) { showError(err, 'Could not load bank statements'); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBank, period]);
 
   useEffect(() => { loadStatements(); }, [loadStatements]);
@@ -166,17 +166,6 @@ export default function BankReconciliation() {
       setReconSummary(null);
     } catch (err) {
       showMsg(err.response?.data?.message || 'Finalize failed', 'err');
-    }
-  };
-
-  const handleManualMatch = async (entryIndex, jeId) => {
-    if (!activeStatement) return;
-    try {
-      await api.manualMatchEntry(activeStatement._id, { entryIndex, jeId });
-      showMsg('Entry matched');
-      await openStatement(activeStatement);
-    } catch (err) {
-      showMsg(err.response?.data?.message || 'Match failed', 'err');
     }
   };
 
