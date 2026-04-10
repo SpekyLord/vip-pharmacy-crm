@@ -88,10 +88,10 @@ export default function SupplierInvoices() {
   const productOptions = useMemo(() => {
     return stockProducts.map(sp => ({
       product_id: sp.product_id,
-      label: `${sp.product?.brand_name || 'Unknown'}${sp.product?.dosage_strength ? ' ' + sp.product.dosage_strength : ''} — ${sp.total_qty} ${sp.product?.unit_code || 'PC'}`,
+      label: `${sp.product?.brand_name || 'Unknown'}${sp.product?.dosage_strength ? ' ' + sp.product.dosage_strength : ''} — ${sp.total_qty} ${sp.product?.unit_code || ''}`,
       brand_name: sp.product?.brand_name,
       dosage_strength: sp.product?.dosage_strength,
-      unit_code: sp.product?.unit_code || 'PC',
+      unit_code: sp.product?.unit_code || '',
       purchase_price: sp.product?.purchase_price || 0,
       item_key: sp.product?.item_key || '',
       total_qty: sp.total_qty

@@ -92,6 +92,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 31 | Functional Role Assignment (Cross-Entity Deployment) | ✅ |
 | 32 | Universal KPI Self-Rating & Performance Review | ✅ |
 | 33 | Bulk Role Migration + Login Fix | ✅ |
+| 34 | GRN ↔ PO Cross-Reference & Unified Receipt Tracking | ✅ |
 
 ---
 
@@ -650,6 +651,44 @@ backend/erp/
 ├── routes/controlCenterRoutes.js
 └── routes/lookupGenericRoutes.js
 ```
+
+---
+
+## GRN ↔ PO Cross-Reference & Unified Receipt Tracking (Phase 34)
+
+GRN is now the **single source of truth** for goods receipt. The old `receivePO()` endpoint is deprecated.
+
+### Key Changes
+- **GrnEntry model** gains `po_id`, `po_number`, `vendor_id` (all optional — standalone GRNs still work)
+- **GRN line items** gain `po_line_index` — identifies which PO line each GRN line fulfills
+- **`createGrn()`** validates PO status, product match, and qty does not exceed remaining receivable
+- **`approveGrn()`** atomically updates `PO.qty_received` and PO status (PARTIALLY_RECEIVED/RECEIVED) inside the same MongoDB session
+- **`receivePO()`** is deprecated — returns 400 with redirect hint to GRN workflow
+- **`getPOById()`** returns `linked_grns` alongside `linked_invoices`
+- **3-way match** auto-discovers PO from GRN when invoice has `grn_id` but no `po_id`
+- **GRNI report** auto-fixed — reads same `PO.qty_received` that GRN approval now updates
+- **GRN receipt template** shows PO reference and vendor name
+
+### Document Flow
+```
+PO (APPROVED) → GRN (PENDING → APPROVED) → PO auto-updates qty_received + status
+                                           → InventoryLedger created (FEFO)
+                                           → SupplierInvoice 3-way match (PO ↔ GRN ↔ Invoice)
+```
+
+### Frontend Flow
+- PO "Receive" button navigates to `/erp/grn?po_id={id}` (no more inline receive modal)
+- GRN page has optional PO selector dropdown; auto-populates lines from PO remaining receivable qty
+- GRN list shows PO ref and vendor columns
+- PO detail modal shows linked GRNs section
+
+### Key Files
+- `backend/erp/models/GrnEntry.js` — po_id, po_number, vendor_id, po_line_index
+- `backend/erp/controllers/inventoryController.js` — createGrn validation, approveGrn PO sync, getGrnForPO
+- `backend/erp/controllers/purchasingController.js` — receivePO deprecated, getPOById linked_grns
+- `backend/erp/services/threeWayMatch.js` — PO auto-discovery from GRN
+- `frontend/src/erp/pages/GrnEntry.jsx` — PO selector, auto-populate
+- `frontend/src/erp/pages/PurchaseOrders.jsx` — Receive redirects to GRN
 
 ---
 

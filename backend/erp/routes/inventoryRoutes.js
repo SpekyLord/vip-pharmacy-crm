@@ -21,6 +21,7 @@ router.post('/physical-count', protect, c.recordPhysicalCount);
 router.post('/grn', protect, c.createGrn);
 router.post('/grn/:id/approve', protect, roleCheck('admin', 'finance'), c.approveGrn);
 router.get('/grn', protect, c.getGrnList);
+router.get('/grn/for-po/:poId', protect, c.getGrnForPO);
 router.get('/alerts', protect, c.getAlerts);
 
 // Phase 25 — Expiry management dashboard + batch traceability

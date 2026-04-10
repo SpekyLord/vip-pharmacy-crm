@@ -329,31 +329,33 @@ const WORKFLOW_GUIDES = {
   'grn-entry': {
     title: 'Goods Receipt Note (GRN)',
     steps: [
-      'Select supplier and warehouse to receive into',
-      'Scan or enter batch numbers and expiry dates',
-      'Match against Purchase Order if applicable',
-      'Validate and Post — stock is added to inventory',
+      'Optionally link a Purchase Order — line items and warehouse auto-populate with remaining receivable qty',
+      'Select warehouse to receive into (auto-filled from PO when linked)',
+      'Scan or enter batch numbers and expiry dates for each line',
+      'Submit for approval — once approved, stock is added and linked PO auto-updates to PARTIALLY_RECEIVED or RECEIVED',
     ],
     next: [
       { label: 'My Stock', path: '/erp/my-stock' },
       { label: 'Purchase Orders', path: '/erp/purchase-orders' },
+      { label: 'Supplier Invoices', path: '/erp/supplier-invoices' },
     ],
-    tip: 'OCR can auto-read batch/expiry from photos of delivery receipts.',
+    tip: 'Click "Receive" on a PO to jump here with lines pre-filled. OCR can auto-read batch/expiry from undertaking photos.',
   },
   'purchase-orders': {
     title: 'Purchase Orders',
     steps: [
       'Select vendor and add line items (product, qty, unit, price)',
       'Submit for approval (DRAFT → APPROVED)',
-      'Receive goods via GRN — PO auto-updates to PARTIALLY_RECEIVED',
-      'Match with Supplier Invoice for 3-way match',
-      'Click PO # to view full details, line items, and linked invoices',
+      'Click "Receive" to create a GRN linked to this PO — GRN approval auto-updates qty received and PO status',
+      'Match with Supplier Invoice for 3-way match (PO ↔ GRN ↔ Invoice)',
+      'Click PO # to view full details, line items, linked GRNs and invoices',
+      'Click "Print / PDF" in the detail view to generate a shareable document — screenshot or save as PDF for messenger/email',
     ],
     next: [
       { label: 'GRN', path: '/erp/grn' },
       { label: 'Supplier Invoices', path: '/erp/supplier-invoices' },
     ],
-    tip: 'Filter by warehouse, vendor, status, or date range to track POs. Link POs to GRNs for accurate inventory costing.',
+    tip: 'Filter by warehouse, vendor, status, or date range. Use Print / PDF to share POs via screenshot or browser Save as PDF.',
   },
   'supplier-invoices': {
     title: 'Supplier Invoices',

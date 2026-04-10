@@ -19,9 +19,9 @@ export default function useErpApi() {
       let res;
       switch (method) {
         case 'get':    res = await api.get(url, config); break;
-        case 'post':   res = await api.post(url, data, config); break;
-        case 'put':    res = await api.put(url, data, config); break;
-        case 'patch':  res = await api.patch(url, data, config); break;
+        case 'post':   res = await api.post(url, data ?? undefined, config); break;
+        case 'put':    res = await api.put(url, data ?? undefined, config); break;
+        case 'patch':  res = await api.patch(url, data ?? undefined, config); break;
         case 'delete': res = await api.delete(url, config); break;
         default:       res = await api.request({ method, url, data, ...config });
       }

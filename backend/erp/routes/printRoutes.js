@@ -16,4 +16,7 @@ router.get('/petty-cash/:id', printCtrl.getPettyCashFormHtml);
 router.get('/grn/:id', printCtrl.getGrnHtml);
 router.get('/credit-note/:id', printCtrl.getCreditNoteHtml);
 
+// Purchase Order printable document
+router.get('/purchase-order/:id', printCtrl.getPurchaseOrderHtml);
+
 module.exports = router;

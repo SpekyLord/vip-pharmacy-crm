@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
 import useGrn from '../hooks/useGrn';
+import usePurchasing from '../hooks/usePurchasing';
 import useProducts from '../hooks/useProducts';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import WarehousePicker from '../components/WarehousePicker';
@@ -287,7 +289,9 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
 export default function GrnEntry() {
   const { user } = useAuth();
   const grn = useGrn();
+  const purchasing = usePurchasing();
   const { products } = useProducts();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [warehouseId, setWarehouseId] = useState('');
   const [lineItems, setLineItems] = useState([emptyLine()]);
@@ -297,6 +301,11 @@ export default function GrnEntry() {
   const [grnList, setGrnList] = useState([]);
   const [listFilter, setListFilter] = useState('');
   const [scanOpen, setScanOpen] = useState(false);
+
+  // PO cross-reference state
+  const [linkedPO, setLinkedPO] = useState(null);       // full PO prefill data
+  const [poLoading, setPOLoading] = useState(false);
+  const [receivablePOs, setReceivablePOs] = useState([]); // dropdown options
   const [_scanMeta, setScanMeta] = useState({}); // eslint-disable-line no-unused-vars
 
   const productOptions = useMemo(() => (products || []).filter(p => p.is_active !== false), [products]);
@@ -309,6 +318,53 @@ export default function GrnEntry() {
   }, [grnList]);
 
   useEffect(() => { loadList(); }, [listFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load receivable POs for the dropdown
+  useEffect(() => {
+    purchasing.listPOs({ status: 'APPROVED,PARTIALLY_RECEIVED', limit: 200 })
+      .then(res => setReceivablePOs(res?.data || []))
+      .catch(() => setReceivablePOs([]));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-load PO from URL query param (?po_id=...)
+  useEffect(() => {
+    const poId = searchParams.get('po_id');
+    if (poId) handleSelectPO(poId);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSelectPO = async (poId) => {
+    if (!poId) { clearPO(); return; }
+    setPOLoading(true);
+    try {
+      const res = await grn.getGrnForPO(poId);
+      if (res?.data) {
+        const d = res.data;
+        setLinkedPO(d);
+        if (d.warehouse_id?._id) setWarehouseId(d.warehouse_id._id);
+        // Pre-fill line items from PO remaining receivable lines
+        if (d.prefill_lines?.length) {
+          setLineItems(d.prefill_lines.map(pl => ({
+            product_id: pl.product_id || '',
+            batch_lot_no: '',
+            expiry_date: '',
+            qty: String(pl.qty_remaining),
+            po_line_index: pl.po_line_index,
+            _po_qty_remaining: pl.qty_remaining
+          })));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load PO for GRN:', err);
+      setLinkedPO(null);
+    }
+    setPOLoading(false);
+  };
+
+  const clearPO = () => {
+    setLinkedPO(null);
+    setLineItems([emptyLine()]);
+    setSearchParams({});
+  };
 
   const loadList = async () => {
     try {
@@ -338,17 +394,25 @@ export default function GrnEntry() {
       await grn.createGrn({
         grn_date: grnDate,
         warehouse_id: warehouseId || undefined,
+        po_id: linkedPO?.po_id || undefined,
         line_items: validLines.map(li => ({
           product_id: li.product_id,
           batch_lot_no: li.batch_lot_no,
           expiry_date: li.expiry_date || undefined,
-          qty: parseFloat(li.qty)
+          qty: parseFloat(li.qty),
+          po_line_index: li.po_line_index != null ? li.po_line_index : undefined
         })),
         notes: notes || undefined
       });
       setLineItems([emptyLine()]);
       setNotes('');
+      setLinkedPO(null);
+      setSearchParams({});
       await loadList();
+      // Refresh receivable POs (qty may have changed)
+      purchasing.listPOs({ status: 'APPROVED,PARTIALLY_RECEIVED', limit: 200 })
+        .then(res => setReceivablePOs(res?.data || []))
+        .catch(() => {});
     } catch (err) { console.error('GRN save error:', err); }
     finally { setSaving(false); }
   };
@@ -409,6 +473,32 @@ export default function GrnEntry() {
           {/* GRN Entry Form */}
           <div className="grn-form">
             <h2>New GRN</h2>
+
+            {/* PO Selector — link GRN to a Purchase Order (optional) */}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 14, flexWrap: 'wrap' }}>
+              <div className="form-group" style={{ flex: 2, minWidth: 220 }}>
+                <label>Link to Purchase Order (optional)</label>
+                <SelectField value={linkedPO?.po_id || ''} onChange={e => handleSelectPO(e.target.value)} disabled={poLoading}>
+                  <option value="">— No PO (standalone GRN) —</option>
+                  {receivablePOs.map(po => (
+                    <option key={po._id} value={po._id}>
+                      {po.po_number || po._id.slice(-6)} — {po.vendor_id?.vendor_name || 'Unknown Vendor'} ({po.status?.replace(/_/g, ' ')})
+                    </option>
+                  ))}
+                </SelectField>
+              </div>
+              {linkedPO && (
+                <>
+                  <div style={{ fontSize: 12, color: 'var(--erp-muted)', padding: '0 0 10px' }}>
+                    <strong>Vendor:</strong> {linkedPO.vendor_id?.vendor_name || '—'} &nbsp;|&nbsp;
+                    <strong>PO#:</strong> {linkedPO.po_number || '—'}
+                  </div>
+                  <button className="btn btn-outline btn-sm" onClick={clearPO} style={{ marginBottom: 6 }}>Clear PO</button>
+                </>
+              )}
+              {poLoading && <span style={{ fontSize: 12, color: 'var(--erp-muted)', padding: '0 0 10px' }}>Loading PO...</span>}
+            </div>
+
             <div className="grn-form-grid">
               <div className="form-group">
                 <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterGrn />
@@ -453,7 +543,10 @@ export default function GrnEntry() {
                     </td>
                     <td><input value={li.batch_lot_no} onChange={e => updateLine(idx, 'batch_lot_no', e.target.value)} placeholder="Batch #" /></td>
                     <td><input type="date" value={li.expiry_date} onChange={e => updateLine(idx, 'expiry_date', e.target.value)} /></td>
-                    <td><input type="number" min="1" value={li.qty} onChange={e => updateLine(idx, 'qty', e.target.value)} placeholder="Qty" /></td>
+                    <td>
+                      <input type="number" min="1" max={li._po_qty_remaining || undefined} value={li.qty} onChange={e => updateLine(idx, 'qty', e.target.value)} placeholder="Qty" />
+                      {li._po_qty_remaining != null && <div style={{ fontSize: 10, color: '#92400e', marginTop: 2 }}>max: {li._po_qty_remaining}</div>}
+                    </td>
                     <td style={{ textAlign: 'center' }}><button className="btn-remove-line" onClick={() => removeLine(idx)} title="Remove line">×</button></td>
                   </tr>
                 ))}
@@ -513,12 +606,14 @@ export default function GrnEntry() {
             </div>
               <table className="grn-table">
                 <thead>
-                  <tr><th>Date</th><th>Items</th><th>BDM</th><th>Status</th><th>Reviewed By</th><th>Actions</th></tr>
+                  <tr><th>Date</th><th>PO Ref</th><th>Vendor</th><th>Items</th><th>BDM</th><th>Status</th><th>Reviewed By</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                   {grnList.map(g => (
                     <tr key={g._id}>
                       <td>{new Date(g.grn_date).toLocaleDateString('en-PH')}</td>
+                      <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{g.po_number || '—'}</td>
+                      <td>{g.vendor_id?.vendor_name || '—'}</td>
                       <td>{g.line_items?.length || 0} item(s)</td>
                       <td>{g.bdm_id?.name || '—'}</td>
                       <td>
@@ -540,7 +635,7 @@ export default function GrnEntry() {
                       </td>
                     </tr>
                   ))}
-                  {!grnList.length && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No GRNs found</td></tr>}
+                  {!grnList.length && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No GRNs found</td></tr>}
                 </tbody>
               </table>
 
@@ -558,6 +653,18 @@ export default function GrnEntry() {
                     </div>
 
                     <div className="grn-card-grid">
+                      {g.po_number && (
+                        <div className="grn-card-item">
+                          <span className="grn-card-label">PO Ref</span>
+                          <span className="grn-card-value" style={{ fontFamily: 'monospace' }}>{g.po_number}</span>
+                        </div>
+                      )}
+                      {g.vendor_id?.vendor_name && (
+                        <div className="grn-card-item">
+                          <span className="grn-card-label">Vendor</span>
+                          <span className="grn-card-value">{g.vendor_id.vendor_name}</span>
+                        </div>
+                      )}
                       <div className="grn-card-item">
                         <span className="grn-card-label">BDM</span>
                         <span className="grn-card-value">{g.bdm_id?.name || '—'}</span>
