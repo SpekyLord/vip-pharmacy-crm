@@ -4,71 +4,60 @@ import useErpApi from './useErpApi';
 /**
  * Hook for functional role assignment operations.
  * Wraps /api/erp/role-assignments endpoints.
- *
- * IMPORTANT: useCallback deps use individual api methods (api.get, api.post, api.put)
- * instead of the whole `api` object, because the object reference changes when
- * loading/error state changes — using `api` would cause infinite re-render loops.
  */
 export default function useFunctionalRoles() {
-  const api = useErpApi();
+  const { get, post, put, loading, error } = useErpApi();
   const [assignments, setAssignments] = useState([]);
 
   // ─── List (entity-scoped) ─────────────
   const fetchAssignments = useCallback(async (params = {}) => {
     const qs = new URLSearchParams(params).toString();
-    const res = await api.get(`/role-assignments${qs ? `?${qs}` : ''}`);
+    const res = await get(`/role-assignments${qs ? `?${qs}` : ''}`);
     setAssignments(res.data);
     return res.data;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api.get]);
+  }, [get]);
 
   // ─── By Person (cross-entity) ────────
   const fetchByPerson = useCallback(async (personId, params = {}) => {
     const qs = new URLSearchParams(params).toString();
-    const res = await api.get(`/role-assignments/by-person/${personId}${qs ? `?${qs}` : ''}`);
+    const res = await get(`/role-assignments/by-person/${personId}${qs ? `?${qs}` : ''}`);
     return res.data;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api.get]);
+  }, [get]);
 
   // ─── Single ──────────────────────────
   const fetchAssignment = useCallback(async (id) => {
-    const res = await api.get(`/role-assignments/${id}`);
+    const res = await get(`/role-assignments/${id}`);
     return res.data;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api.get]);
+  }, [get]);
 
   // ─── Create ──────────────────────────
   const createAssignment = useCallback(async (data) => {
-    const res = await api.post('/role-assignments', data);
+    const res = await post('/role-assignments', data);
     return res.data;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api.post]);
+  }, [post]);
 
   // ─── Bulk Create ─────────────────────
   const bulkCreate = useCallback(async (data) => {
-    const res = await api.post('/role-assignments/bulk', data);
+    const res = await post('/role-assignments/bulk', data);
     return res.data;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api.post]);
+  }, [post]);
 
   // ─── Update ──────────────────────────
   const updateAssignment = useCallback(async (id, data) => {
-    const res = await api.put(`/role-assignments/${id}`, data);
+    const res = await put(`/role-assignments/${id}`, data);
     return res.data;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api.put]);
+  }, [put]);
 
   // ─── Deactivate ──────────────────────
   const deactivateAssignment = useCallback(async (id) => {
-    const res = await api.post(`/role-assignments/${id}/deactivate`, {});
+    const res = await post(`/role-assignments/${id}/deactivate`, {});
     return res.data;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api.post]);
+  }, [post]);
 
   return {
     assignments,
-    loading: api.loading,
-    error: api.error,
+    loading,
+    error,
     fetchAssignments,
     fetchByPerson,
     fetchAssignment,
