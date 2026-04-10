@@ -563,36 +563,32 @@ const navbarStyles = `
 
   @media (max-width: 480px) {
     .navbar {
-      padding: 0 10px;
-      min-height: 52px;
+      padding: 0 12px;
+      min-height: 56px;
       gap: 8px;
+      grid-template-columns: auto 1fr auto;
     }
 
     .navbar-hamburger {
       display: flex;
       order: 0;
+      width: 44px;
+      height: 44px;
     }
 
     .navbar-brand {
-      order: 1;
-    }
-
-    .navbar-platform-switch {
-      order: 2;
-    }
-
-    .navbar-brand h1 {
       display: none;
     }
 
-    .navbar-logo {
-      height: 56px;
+    .navbar-platform-switch {
+      display: none;
     }
 
     .navbar-center {
       flex: 1;
       justify-content: center;
       min-width: 0;
+      order: 1;
     }
 
     .navbar-erp-tabs {
@@ -603,18 +599,10 @@ const navbarStyles = `
       display: none;
     }
 
-    .navbar-platform-switch {
-      display: inline-flex;
-    }
-
-    .navbar-platform-switch--mobile {
-      display: none;
-    }
-
-    .navbar-platform-link {
-      min-height: 30px;
-      padding: 0 10px;
-      font-size: 11px;
+    .navbar-entity-select {
+      max-width: 160px;
+      padding: 6px 26px 6px 10px;
+      font-size: 13px;
     }
 
     .navbar-profile {
@@ -633,10 +621,19 @@ const navbarStyles = `
 
     .navbar-avatar-mobile {
       display: flex;
+      width: 32px;
+      height: 32px;
+      font-size: 12px;
+    }
+
+    .navbar-theme-btn {
+      width: 34px;
+      height: 34px;
     }
 
     .navbar-menu {
-      gap: 4px;
+      gap: 6px;
+      order: 2;
     }
   }
 `;

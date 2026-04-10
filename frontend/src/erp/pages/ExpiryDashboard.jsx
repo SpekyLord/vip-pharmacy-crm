@@ -76,7 +76,26 @@ export default function ExpiryDashboard() {
             })}
           </div>
 
-          {/* Active bucket detail table */}
+          {/* Active bucket detail */}
+          <style>{`
+            .expiry-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+            .expiry-table th { padding: 8px 12px; background: #f8fafc; }
+            .expiry-table td { padding: 8px 12px; }
+            .expiry-table tr + tr { border-top: 1px solid #f1f5f9; }
+            .expiry-cards { display: none; }
+            @media (max-width: 640px) {
+              .expiry-table { display: none; }
+              .expiry-cards { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+              .expiry-card {
+                padding: 12px; border-radius: 10px; background: #fff;
+                border: 1px solid #e5e7eb; display: grid;
+                grid-template-columns: 1fr auto; gap: 6px 12px;
+              }
+              .expiry-card-product { grid-column: 1 / -1; }
+              .expiry-card-label { font-size: 11px; color: #6b7280; }
+              .expiry-card-value { font-size: 13px; font-weight: 600; }
+            }
+          `}</style>
           <div style={{ background: bucketConf.bg, borderRadius: 12, border: `1px solid ${bucketConf.color}30`, overflow: 'hidden' }}>
             <div style={{ padding: '12px 16px', fontWeight: 700, color: bucketConf.color, borderBottom: `1px solid ${bucketConf.color}30` }}>
               {bucketConf.icon} {bucketConf.label} — {activeItems.length} batch(es)
@@ -84,40 +103,79 @@ export default function ExpiryDashboard() {
             {activeItems.length === 0 ? (
               <div style={{ padding: 24, textAlign: 'center', color: '#6b7280', fontSize: 14 }}>No batches in this category</div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: '#f8fafc' }}>
-                    <th style={{ padding: '8px 12px', textAlign: 'left' }}>Product</th>
-                    <th style={{ padding: '8px 12px' }}>Batch/Lot</th>
-                    <th style={{ padding: '8px 12px' }}>Expiry</th>
-                    <th style={{ padding: '8px 12px' }}>Days Left</th>
-                    <th style={{ padding: '8px 12px' }}>Qty</th>
-                    <th style={{ padding: '8px 12px' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeItems.map((item, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px 12px' }}>
-                        <div style={{ fontWeight: 600 }}>{item.product?.brand_name || 'N/A'}</div>
-                        <div style={{ fontSize: 11, color: '#6b7280' }}>{item.product?.generic_name || ''} {item.product?.dosage_strength || ''}</div>
-                      </td>
-                      <td style={{ padding: '8px 12px', textAlign: 'center' }}>{item.batch_lot_no}</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'center' }}>{item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : '—'}</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, color: bucketConf.color }}>
-                        {item.days_remaining <= 0 ? 'EXPIRED' : `${item.days_remaining}d`}
-                      </td>
-                      <td style={{ padding: '8px 12px', textAlign: 'center' }}>{item.available_qty}</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                        <Link to={`/erp/batch-trace?product=${item.product_id}&batch=${encodeURIComponent(item.batch_lot_no)}`}
-                          style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, border: '1px solid #2563eb', color: '#2563eb', textDecoration: 'none' }}>
-                          Trace
-                        </Link>
-                      </td>
+              <>
+                {/* Desktop table */}
+                <table className="expiry-table">
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left' }}>Product</th>
+                      <th>Batch/Lot</th>
+                      <th>Expiry</th>
+                      <th>Days Left</th>
+                      <th>Qty</th>
+                      <th>Action</th>
                     </tr>
+                  </thead>
+                  <tbody>
+                    {activeItems.map((item, i) => (
+                      <tr key={i}>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{item.product?.brand_name || 'N/A'}</div>
+                          <div style={{ fontSize: 11, color: '#6b7280' }}>{item.product?.generic_name || ''} {item.product?.dosage_strength || ''}</div>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>{item.batch_lot_no}</td>
+                        <td style={{ textAlign: 'center' }}>{item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : '—'}</td>
+                        <td style={{ textAlign: 'center', fontWeight: 700, color: bucketConf.color }}>
+                          {item.days_remaining <= 0 ? 'EXPIRED' : `${item.days_remaining}d`}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>{item.available_qty}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <Link to={`/erp/batch-trace?product=${item.product_id}&batch=${encodeURIComponent(item.batch_lot_no)}`}
+                            style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, border: '1px solid #2563eb', color: '#2563eb', textDecoration: 'none' }}>
+                            Trace
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Mobile cards */}
+                <div className="expiry-cards">
+                  {activeItems.map((item, i) => (
+                    <div key={i} className="expiry-card">
+                      <div className="expiry-card-product">
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{item.product?.brand_name || 'N/A'}</div>
+                        <div style={{ fontSize: 11, color: '#6b7280' }}>{item.product?.generic_name || ''} {item.product?.dosage_strength || ''}</div>
+                      </div>
+                      <div>
+                        <div className="expiry-card-label">Batch/Lot</div>
+                        <div className="expiry-card-value">{item.batch_lot_no}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div className="expiry-card-label">Expiry</div>
+                        <div className="expiry-card-value">{item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : '—'}</div>
+                      </div>
+                      <div>
+                        <div className="expiry-card-label">Days Left</div>
+                        <div className="expiry-card-value" style={{ color: bucketConf.color }}>
+                          {item.days_remaining <= 0 ? 'EXPIRED' : `${item.days_remaining}d`}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div className="expiry-card-label">Qty</div>
+                        <div className="expiry-card-value">{item.available_qty}</div>
+                      </div>
+                      <div style={{ gridColumn: '1 / -1', marginTop: 4 }}>
+                        <Link to={`/erp/batch-trace?product=${item.product_id}&batch=${encodeURIComponent(item.batch_lot_no)}`}
+                          style={{ fontSize: 12, padding: '5px 12px', borderRadius: 6, border: '1px solid #2563eb', color: '#2563eb', textDecoration: 'none', display: 'inline-block' }}>
+                          Trace Batch
+                        </Link>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </>
             )}
           </div>
         </main>

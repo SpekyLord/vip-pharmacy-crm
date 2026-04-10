@@ -15,8 +15,14 @@ const agentRunSchema = new mongoose.Schema({
   run_date: { type: Date, default: Date.now, index: true },
   status: {
     type: String,
-    enum: ['success', 'error', 'partial'],
+    enum: ['running', 'success', 'error', 'partial'],
     default: 'success'
+  },
+  trigger_source: {
+    type: String,
+    enum: ['manual', 'scheduled'],
+    default: 'scheduled',
+    index: true,
   },
   summary: {
     bdms_processed: { type: Number, default: 0 },
@@ -35,5 +41,6 @@ const agentRunSchema = new mongoose.Schema({
 
 agentRunSchema.index({ agent_key: 1, run_date: -1 });
 agentRunSchema.index({ status: 1, run_date: -1 });
+agentRunSchema.index({ agent_key: 1, trigger_source: 1, run_date: -1 });
 
 module.exports = mongoose.model('AgentRun', agentRunSchema);

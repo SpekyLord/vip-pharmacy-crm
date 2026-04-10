@@ -4,7 +4,7 @@ import useErpApi from './useErpApi';
 let cachedEntities = null;
 
 export default function useEntities() {
-  const api = useErpApi();
+  const { get, loading, error } = useErpApi();
   const [entities, setEntities] = useState(cachedEntities || []);
 
   const fetchEntities = useCallback(async (force = false) => {
@@ -12,12 +12,12 @@ export default function useEntities() {
       setEntities(cachedEntities);
       return cachedEntities;
     }
-    const res = await api.get('/transfers/entities');
+    const res = await get('/transfers/entities');
     const data = res?.data || [];
     cachedEntities = data;
     setEntities(data);
     return data;
-  }, [api]);
+  }, [get]);
 
   useEffect(() => {
     if (!cachedEntities) fetchEntities();
@@ -27,5 +27,5 @@ export default function useEntities() {
     return entities.find(e => e._id === id) || null;
   }, [entities]);
 
-  return { entities, loading: api.loading, error: api.error, refresh: () => fetchEntities(true), getEntityById };
+  return { entities, loading, error, refresh: () => fetchEntities(true), getEntityById };
 }
