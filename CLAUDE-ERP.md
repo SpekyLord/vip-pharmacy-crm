@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 5.8
-> **Status**: Phases 0-33 Complete. Bulk Role Migration + Login Fix (April 10, 2026).
+> **Version**: 6.0
+> **Status**: Phases 0-35 + Phase A + Phase B + Phase C Complete. Backend enum cleanup — 78 Mongoose schema enums removed, validated at app layer via Lookup table (April 10, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -93,6 +93,45 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 32 | Universal KPI Self-Rating & Performance Review | ✅ |
 | 33 | Bulk Role Migration + Login Fix | ✅ |
 | 34 | GRN ↔ PO Cross-Reference & Unified Receipt Tracking | ✅ |
+| 35 | PO Enhancements — Warehouse Address, Activity Log, Sharing | ✅ |
+| A | Frontend Lookup Migration — Zero Hardcoded Fallback Arrays | ✅ |
+| B | Frontend Dropdown Lookup Integration | ✅ |
+| C | Backend Schema Enum Cleanup — App-Layer Validation | ✅ |
+
+---
+
+## Phase C — Backend Enum Cleanup (Rule #3 Compliance)
+
+Removed 78 Mongoose `enum:` constraints from ~35 models. Business values now validated at the app layer via the Lookup table instead of hardcoded schema enums.
+
+### What Changed
+- **Models modified**: 35 (PaymentMode, CompProfile, PeopleMaster, Customer, Hospital, ProductMaster, SalesLine, ExpenseEntry, CreditCard, CreditNote, SmerEntry, OfficeSupply, OfficeSupplyTransaction, Collateral, BankAccount, JournalEntry, OwnerEquityEntry, PrfCalf, Warehouse, VendorMaster, Payslip, InsurancePolicy, BudgetAllocation, GovernmentRates, CarLogbookEntry, Collection, InventoryLedger, PettyCashTransaction, PettyCashFund, PettyCashRemittance, CycleReport, IncomeReport, ConsignmentTracker, Visit, ClientVisit, MessageInbox)
+- **New utility**: `backend/erp/utils/validateLookup.js` — `assertLookup()` and `assertLookups()` for app-layer validation
+- **New seed categories**: 25 new lookup categories added to SEED_DEFAULTS (CYCLE, WAREHOUSE_TYPE, OVERRIDE_REASON, PETTY_CASH_TXN_TYPE, etc.)
+- **Controller fixes**: governmentRatesController and officeSupplyController now reference SEED_DEFAULTS instead of hardcoded arrays
+
+### What Was Kept
+- Document lifecycle statuses (DRAFT/VALID/ERROR/POSTED) — workflow integrity
+- Access levels (NONE/VIEW/FULL) — structural permission system
+- Accounting fundamentals (ASSET/LIABILITY/EQUITY/REVENUE/EXPENSE, DEBIT/CREDIT)
+- Agent keys and execution states — system-level
+- Approval workflow states — structural
+
+### Validation Pattern
+```javascript
+const { assertLookup, assertLookups } = require('../utils/validateLookup');
+
+// Single field validation
+await assertLookup(entityId, 'VAT_TYPE', body.vat_type, 'vat_type');
+
+// Multi-field validation (batched)
+await assertLookups(entityId, {
+  VAT_TYPE:  { value: body.vat_type,  field: 'vat_type' },
+  SALE_TYPE: { value: body.sale_type, field: 'sale_type' },
+});
+```
+
+Each model field has a `// Lookup: CATEGORY_NAME` comment indicating which lookup category governs it.
 
 ---
 
@@ -543,6 +582,8 @@ All reopen functions call `journalEngine.reverseJournal()` (SAP Storno pattern: 
 8. **Period lock**: `periodLockCheck(moduleKey)` middleware prevents posting to locked periods. Applied to all transactional routes: Sales, Collections, Expenses, Purchasing, Income, and Journals. Module keys in PeriodLock model: SALES, COLLECTION, EXPENSE, JOURNAL, PAYROLL, PURCHASING, INVENTORY, BANKING, PETTY_CASH, IC_TRANSFER, INCOME.
 9. **Product dropdown format**: All dropdowns must show `brand_name dosage — qty unit_code` (dosage required, never omit).
 10. **IC_TRANSFER** source_module — added to JournalEntry enum for inter-company transfer JEs.
+11. **People dropdowns must filter `status=ACTIVE`** — all people selector dropdowns (Managed By, Reports To, Assign To, Custodian, etc.) must pass `status: 'ACTIVE'` to `getPeopleList()` or rely on `getAsUsers()` which enforces `is_active: true, status: 'ACTIVE'`. Never show SUSPENDED or SEPARATED people in assignment/selection dropdowns.
+12. **Position and Department are lookup-driven** — stored as lookup codes from POSITION / DEPARTMENT categories. PersonDetail.jsx renders them as `<select>` dropdowns via `useLookupBatch`. To add new positions, use Control Center > Lookup Tables.
 
 ---
 
@@ -576,7 +617,7 @@ VIP runs three business lines under one entity, tracked by cost centers:
 | Dual P&L deprecation | pnlCalc vs pnlService coexist without reconciliation | Consistency risk |
 | Commission controller | No dedicated controller — wired inline in collectionController | Works, not clean |
 | VAT 0.12 in pre-save hooks | SalesLine, ExpenseEntry, Collection etc. hardcode 12% in schema hooks | Cannot change per entity; low risk until rate changes |
-| Frontend hardcoded dropdowns | ~20 static arrays on non-people pages (expense categories, collateral types, activity types) serve as fallbacks | Phase 24 added Lookup model + LookupManager UI + useLookups hook. **Phase 30 completed PersonDetail.jsx** — all 12 dropdowns now lookup-driven (0 hardcoded arrays remain). Migration of remaining non-people pages is follow-up |
+| ~~Frontend hardcoded dropdowns~~ | ~~Static arrays on non-people pages served as fallbacks~~ | **RESOLVED Phase B (Apr 2026)**: All 17 frontend files migrated — `_FALLBACK` arrays removed, replaced with `useLookupBatch()`/`useLookupOptions()` calls. 9 new seed categories added (ACCOUNT_TYPE, PO_STATUS, GOV_RATE_TYPE, GOV_RATE_BRACKET_TYPE, GOV_RATE_FLAT_TYPE, KPI_DIRECTION, KPI_UNIT, KPI_COMPUTATION). Zero hardcoded business value arrays remain in frontend. |
 | ~~Role-People alignment warnings~~ | ~~No toast/warning when User.role doesn't match PeopleMaster.person_type via ROLE_MAPPING~~ | **RESOLVED Phase 30**: alignment check toast in PersonDetail.jsx — fires on load when linked user role mismatches ROLE_MAPPING |
 | Hospital entity_id optional | Hospitals intentionally global (shared across entities) | By design, but undocumented in schema |
 
@@ -624,7 +665,7 @@ Single page at `/erp/control-center` for president/admin/finance. Consolidates a
 5. **Tax & Compliance** — Government Rates
 6. **Operations** — Warehouses, Transfer Prices, Fixed Assets
 7. **Governance Controls** — Period Locks, Recurring Journals, Data Archive
-8. **System Settings** — ERP Settings (~30 fields) + Lookup Tables (16 categories)
+8. **System Settings** — ERP Settings (~30 fields) + Lookup Tables (55 categories)
 
 ### New Models
 - `Lookup` (`backend/erp/models/Lookup.js`) — generic entity-scoped lookup table (category + code + label + sort_order). Replaces hardcoded frontend arrays with database-driven lookups. Unique index: `{ entity_id, category, code }`.
@@ -639,7 +680,7 @@ frontend/src/erp/pages/
 ├── FoundationHealth.jsx     # Governance health dashboard
 ├── EntityManager.jsx        # Entity CRUD UI
 ├── ErpSettingsPanel.jsx     # Settings form (~30 fields)
-├── LookupManager.jsx        # Lookup table manager (16 categories)
+├── LookupManager.jsx        # Lookup table manager (55 categories)
 └── [14 existing pages]      # Each now exports *Content for embedding
 
 backend/erp/
@@ -732,3 +773,69 @@ When creating or modifying any ERP page, you MUST also update the corresponding 
   - Agent enum consistency across AgentRun, AgentConfig, scheduler, dashboard, settings
 
 Run both after modifying ERP pages, agents, or models. Exit code 1 = issues found.
+
+---
+
+## PO Enhancements — Warehouse Address, Activity Log & Multi-Channel Sharing (Phase 35)
+
+### Warehouse Address & Delivery Contact
+- **Warehouse model** gains `contact_person` and `contact_phone` fields (lookup-driven, admin-managed per warehouse)
+- PO detail modal and print template now show full warehouse address (`location.address, city, region`) and delivery contact
+- All PO populate calls expanded to include `location contact_person contact_phone`
+
+### PO Activity Log
+- **PurchaseOrder model** gains `activity_log` array of sub-documents:
+  - `message` (String, required) — status update text
+  - `courier_waybill` (String, optional) — courier tracking/waybill number
+  - `status_snapshot` (String) — auto-captured PO status at time of entry
+  - `created_by` (User ref), `created_at` (Date, immutable)
+- **Works at any PO status** — not restricted to DRAFT like updatePO
+- Endpoint: `POST /purchasing/orders/:id/activity` (no sub-module gate — any purchasing user)
+- Detail modal shows activity timeline (newest first) with add form
+- Print template renders activity log as a table
+
+### Multi-Channel PO Sharing
+- **Share Link**: `POST /purchasing/orders/:id/share` generates a `share_token` (crypto.randomBytes). Public route `GET /api/erp/po/share/:token` renders the PO HTML without auth — sharable via Messenger, Viber, SMS, any chat app
+- **Email PO**: `POST /purchasing/orders/:id/email` sends PO HTML to a recipient via Resend (existing email config). No additional cost.
+- **Copy Link**: Frontend button copies the share URL to clipboard
+- `share_token` field on PurchaseOrder: `{ type: String, unique: true, sparse: true }`
+
+### Key Files
+- `backend/erp/models/Warehouse.js` — contact_person, contact_phone
+- `backend/erp/models/PurchaseOrder.js` — poActivitySchema, activity_log, share_token
+- `backend/erp/controllers/purchasingController.js` — addPOActivity, generateShareLink, emailPO
+- `backend/erp/routes/purchasingRoutes.js` — 3 new POST routes
+- `backend/erp/routes/index.js` — public share route before auth middleware
+- `backend/erp/controllers/printController.js` — getSharedPOHtml
+- `backend/erp/templates/purchaseOrderPrint.js` — address, contact, activity log table
+- `frontend/src/erp/hooks/usePurchasing.js` — addPOActivity, generateShareLink, emailPO
+- `frontend/src/erp/pages/PurchaseOrders.jsx` — address display, activity log UI, share/email buttons
+- `frontend/src/erp/components/WorkflowGuide.jsx` — updated purchase-orders guide
+
+---
+
+## ERP Access Templates — Lookup-Driven (Phase A)
+
+Eliminates hardcoded module lists and sub-permission keys from frontend and backend. Both are now served from the Lookup system (database-driven, admin-manageable).
+
+### What Changed
+- **Module list**: Previously hardcoded as `MODULES` arrays in `AccessTemplateManager.jsx` and `ErpAccessManager.jsx`. Now fetched from `GET /erp-access/module-keys` which reads `ERP_MODULE` lookup category.
+- **Sub-permission keys**: Previously hardcoded as `SUB_PERMISSION_KEYS` object in `erpAccessController.js`. Now fetched from `ERP_SUB_PERMISSION` lookup category, grouped by `metadata.module`.
+- Both auto-seed on first access (consistent with existing lookup pattern).
+
+### New Lookup Categories
+| Category | Purpose |
+|----------|---------|
+| `ERP_MODULE` | 11 ERP modules (sales, inventory, collections, etc.) with `metadata.key` (schema field name) and `metadata.short_label` (compact display) |
+| `ERP_SUB_PERMISSION` | Sub-permission keys grouped by `metadata.module` + `metadata.key`. Admin can add/remove sub-permissions per module without code changes |
+
+### New Endpoint
+- `GET /erp-access/module-keys` — returns `[{ key, label, short_label }]` from ERP_MODULE lookups
+
+### Key Files
+- `backend/erp/controllers/lookupGenericController.js` — ERP_MODULE + ERP_SUB_PERMISSION in SEED_DEFAULTS
+- `backend/erp/controllers/erpAccessController.js` — getSubPermissionKeys + getModuleKeys now lookup-driven
+- `backend/erp/routes/erpAccessRoutes.js` — new `/module-keys` route
+- `frontend/src/erp/hooks/useErpAccess.js` — getModuleKeys method added
+- `frontend/src/erp/pages/AccessTemplateManager.jsx` — fetches modules dynamically (no hardcoded MODULES)
+- `frontend/src/erp/components/ErpAccessManager.jsx` — fetches modules dynamically (no hardcoded MODULES)

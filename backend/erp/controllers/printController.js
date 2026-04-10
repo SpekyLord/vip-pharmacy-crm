@@ -130,10 +130,12 @@ const getPurchaseOrderHtml = catchAsync(async (req, res) => {
   const { renderPurchaseOrderHtml } = require('../templates/purchaseOrderPrint');
 
   const po = await PurchaseOrder.findOne({ _id: req.params.id, ...req.tenantFilter })
+    .populate('entity_id', 'entity_name')
     .populate('vendor_id', 'vendor_name vendor_code')
-    .populate('warehouse_id', 'warehouse_name warehouse_code')
+    .populate('warehouse_id', 'warehouse_name warehouse_code location contact_person contact_phone')
     .populate('approved_by', 'firstName lastName')
     .populate('created_by', 'firstName lastName')
+    .populate('activity_log.created_by', 'firstName lastName')
     .lean();
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
 
@@ -143,7 +145,7 @@ const getPurchaseOrderHtml = catchAsync(async (req, res) => {
       const ProductMaster = require('../models/ProductMaster');
       const productIds = po.line_items.map(li => li.product_id).filter(Boolean);
       lineProducts = await ProductMaster.find({ _id: { $in: productIds } })
-        .select('product_name brand_name dosage_strength').lean();
+        .select('product_name brand_name dosage_strength unit_code purchase_uom').lean();
     } catch { /* non-critical */ }
   }
 
@@ -152,4 +154,34 @@ const getPurchaseOrderHtml = catchAsync(async (req, res) => {
   res.send(html);
 });
 
-module.exports = { getReceiptHtml, getPettyCashFormHtml, getGrnHtml, getCreditNoteHtml, getPurchaseOrderHtml };
+// Shared PO (public, no auth — accessed via share_token)
+const getSharedPOHtml = catchAsync(async (req, res) => {
+  const PurchaseOrder = require('../models/PurchaseOrder');
+  const { renderPurchaseOrderHtml } = require('../templates/purchaseOrderPrint');
+
+  const po = await PurchaseOrder.findOne({ share_token: req.params.token })
+    .populate('entity_id', 'entity_name')
+    .populate('vendor_id', 'vendor_name vendor_code')
+    .populate('warehouse_id', 'warehouse_name warehouse_code location contact_person contact_phone')
+    .populate('approved_by', 'firstName lastName')
+    .populate('created_by', 'firstName lastName')
+    .populate('activity_log.created_by', 'firstName lastName')
+    .lean();
+  if (!po) return res.status(404).send('<h1>Purchase order not found or link has expired.</h1>');
+
+  let lineProducts = [];
+  if (po.line_items?.length) {
+    try {
+      const ProductMaster = require('../models/ProductMaster');
+      const productIds = po.line_items.map(li => li.product_id).filter(Boolean);
+      lineProducts = await ProductMaster.find({ _id: { $in: productIds } })
+        .select('product_name brand_name dosage_strength unit_code purchase_uom').lean();
+    } catch { /* non-critical */ }
+  }
+
+  const html = renderPurchaseOrderHtml(po, lineProducts);
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+});
+
+module.exports = { getReceiptHtml, getPettyCashFormHtml, getGrnHtml, getCreditNoteHtml, getPurchaseOrderHtml, getSharedPOHtml };

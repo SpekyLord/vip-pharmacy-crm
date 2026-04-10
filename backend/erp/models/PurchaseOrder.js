@@ -21,6 +21,14 @@ const poLineItemSchema = new mongoose.Schema({
   conversion_factor: { type: Number, default: 1, min: 1 }   // 1 uom = N selling_uom
 }, { _id: false });
 
+const poActivitySchema = new mongoose.Schema({
+  message:         { type: String, trim: true, required: [true, 'Message is required'] },
+  courier_waybill: { type: String, trim: true },
+  status_snapshot: { type: String, trim: true },
+  created_by:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  created_at:      { type: Date, default: Date.now, immutable: true }
+}, { _id: true });
+
 const purchaseOrderSchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -44,6 +52,8 @@ const purchaseOrderSchema = new mongoose.Schema({
   approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   approved_at: { type: Date },
   notes: { type: String, trim: true },
+  activity_log: { type: [poActivitySchema], default: [] },
+  share_token: { type: String, unique: true, sparse: true },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   created_at: { type: Date, default: Date.now, immutable: true }
 }, {

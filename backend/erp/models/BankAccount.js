@@ -5,11 +5,11 @@ const bankAccountSchema = new mongoose.Schema({
   bank_code: { type: String, required: true, trim: true },
   bank_name: { type: String, required: true, trim: true },
   account_no: { type: String, trim: true },
-  account_type: { type: String, enum: ['SAVINGS', 'CHECKING', 'CURRENT'], default: 'SAVINGS' },
+  account_type: { type: String, default: 'SAVINGS' }, // Lookup: BANK_ACCOUNT_TYPE
   coa_code: { type: String, trim: true },
   opening_balance: { type: Number, default: 0 },
   current_balance: { type: Number, default: 0 },
-  statement_import_format: { type: String, enum: ['CSV', 'OFX', 'MT940'], default: 'CSV' },
+  statement_import_format: { type: String, default: 'CSV' }, // Lookup: STATEMENT_IMPORT_FORMAT
   // Multiple users can be assigned to deposit/use this account
   assigned_users: [{
     type: mongoose.Schema.Types.ObjectId,

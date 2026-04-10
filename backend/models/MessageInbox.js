@@ -59,24 +59,16 @@ const messageInboxSchema = new mongoose.Schema(
     category: {
       type: String,
       required: [true, "Category is required"],
-      enum: {
-        values: ["announcement", "payroll", "leave", "policy", "system", "compliance_alert", "other", "ai_coaching", "ai_schedule", "ai_alert"],
-        message: "Invalid message category",
-      },
       default: "announcement",
       index: true,
-    },
+    }, // Lookup: MESSAGE_CATEGORY
 
     // Importance
     priority: {
       type: String,
-      enum: {
-        values: ["normal", "important", "high"], // ✅ align with controller/DB
-        message: "Invalid priority",
-      },
       default: "normal",
       index: true,
-    },
+    }, // Lookup: MESSAGE_PRIORITY
 
     
 

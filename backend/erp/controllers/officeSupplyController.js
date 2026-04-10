@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
 const OfficeSupply = require('../models/OfficeSupply');
 const OfficeSupplyTransaction = require('../models/OfficeSupplyTransaction');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { SEED_DEFAULTS } = require('./lookupGenericController');
 const XLSX = require('xlsx');
 const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
@@ -129,7 +130,7 @@ const updateSupply = catchAsync(async (req, res) => {
 const recordTransaction = catchAsync(async (req, res) => {
   const { txn_type, qty } = req.body;
 
-  const validTypes = ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'];
+  const validTypes = SEED_DEFAULTS.OFFICE_SUPPLY_TXN_TYPE;
   if (!validTypes.includes(txn_type)) {
     return res.status(400).json({ success: false, message: `txn_type must be one of: ${validTypes.join(', ')}` });
   }

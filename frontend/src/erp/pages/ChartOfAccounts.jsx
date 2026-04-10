@@ -7,6 +7,7 @@ import useAccounting from '../hooks/useAccounting';
 import useErpApi from '../hooks/useErpApi';
 
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
 import { showError, showSuccess } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -42,13 +43,13 @@ const pageStyles = `
   @media(max-width: 375px) { .coa-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .form-group input, .form-group select { font-size: 16px; } }
 `;
 
-const ACCOUNT_TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];
-
 export function ChartOfAccountsContent() {
   const { user } = useAuth();
   const api = useAccounting();
   const erpApi = useErpApi();
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const { options: acctTypeOpts } = useLookupOptions('ACCOUNT_TYPE');
+  const ACCOUNT_TYPES = acctTypeOpts.map(o => o.code);
 
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);

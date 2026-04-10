@@ -19,9 +19,8 @@ const collateralSchema = new mongoose.Schema({
   collateral_name: { type: String, required: true, trim: true },
   collateral_type: {
     type: String,
-    enum: ['BROCHURE', 'SAMPLE', 'BANNER', 'GIVEAWAY', 'POSTER', 'OTHER'],
     default: 'OTHER'
-  },
+  }, // Lookup: COLLATERAL_TYPE
   item_code: { type: String, trim: true, uppercase: true },
   qty_on_hand: { type: Number, default: 0 },
   unit: { type: String, default: 'PCS', trim: true },

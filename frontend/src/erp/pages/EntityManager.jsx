@@ -64,7 +64,7 @@ export function EntityManagerContent() {
     try {
       const [entRes, pplRes] = await Promise.all([
         api.get('/erp/entities'),
-        api.get('/erp/people?limit=200').catch(() => ({ data: { data: [] } })),
+        api.get('/erp/people?limit=200&status=ACTIVE').catch(() => ({ data: { data: [] } })),
       ]);
       setEntities(entRes.data?.data || []);
       // Get all people from PeopleMaster for managed_by dropdown

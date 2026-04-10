@@ -130,45 +130,6 @@ function ScanORModal({ open, onClose, onApply }) {
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
-const EXPENSE_TYPES_FALLBACK = ['ORE', 'ACCESS'];
-// Static fallback — overridden at runtime by COA API when available
-const COA_OPTIONS_FALLBACK = [
-  // COGS
-  { code: '5000', label: '5000 — Cost of Goods Sold' },
-  { code: '5400', label: '5400 — Food Cost' },
-  { code: '5500', label: '5500 — Beverage Cost' },
-  // OpEx — Sales Force
-  { code: '6100', label: '6100 — Per Diem Expense' },
-  { code: '6150', label: '6150 — Transport Expense' },
-  { code: '6155', label: '6155 — Travel & Accommodation' },
-  { code: '6200', label: '6200 — Fuel & Gas' },
-  { code: '6250', label: '6250 — Vehicle Maintenance' },
-  { code: '6260', label: '6260 — Repairs & Maintenance' },
-  // OpEx — Marketing
-  { code: '6300', label: '6300 — Marketing Expense' },
-  { code: '6310', label: '6310 — Marketing — HCP/Doctor' },
-  { code: '6320', label: '6320 — Marketing — Hospital' },
-  { code: '6330', label: '6330 — Marketing — Retail' },
-  { code: '6350', label: '6350 — ACCESS Expense' },
-  // OpEx — Admin
-  { code: '6400', label: '6400 — Office Supplies' },
-  { code: '6450', label: '6450 — Rent Expense' },
-  { code: '6460', label: '6460 — Utilities & Communication' },
-  { code: '6500', label: '6500 — Courier & Delivery' },
-  { code: '6600', label: '6600 — Parking & Tolls' },
-  { code: '6800', label: '6800 — Professional Fees' },
-  { code: '6810', label: '6810 — Regulatory & Licensing' },
-  { code: '6820', label: '6820 — IT Hardware & Software' },
-  // OpEx — F&B
-  { code: '6830', label: '6830 — F&B Supplies & Packaging' },
-  { code: '6840', label: '6840 — Kitchen Equipment & Maintenance' },
-  // OpEx — Rental/Property
-  { code: '6870', label: '6870 — Property Maintenance' },
-  { code: '6880', label: '6880 — Property Insurance' },
-  { code: '6890', label: '6890 — Property Tax & Fees' },
-  // Catch-all
-  { code: '6900', label: '6900 — Miscellaneous' },
-];
 const pageStyles = `
 .erp-expenses-page .admin-main {
   padding: 24px;
@@ -415,7 +376,7 @@ export default function Expenses() {
   const EXPENSE_CATEGORIES = expCatOpts.map(o => o.label);
   const { options: birFlagOpts } = useLookupOptions('BIR_FLAG');
   const { options: expTypeOpts } = useLookupOptions('EXPENSE_TYPE');
-  const EXPENSE_TYPES = expTypeOpts.length > 0 ? expTypeOpts.map(o => o.code) : EXPENSE_TYPES_FALLBACK;
+  const EXPENSE_TYPES = expTypeOpts.map(o => o.code);
   const BIR_FLAGS = birFlagOpts.map(o => o.code);
   const [paymentModes, setPaymentModes] = useState([]);
 
@@ -450,7 +411,7 @@ export default function Expenses() {
   const [people, setPeople] = useState([]);
   const [myCards, setMyCards] = useState([]);
   const [myBankAccounts, setMyBankAccounts] = useState([]);
-  const [coaOptions, setCoaOptions] = useState(COA_OPTIONS_FALLBACK);
+  const [coaOptions, setCoaOptions] = useState([]);
   const batchFileRef = useRef(null);
 
   // Load people, cards, bank accounts, COA for batch dropdowns
@@ -460,7 +421,7 @@ export default function Expenses() {
 
   useEffect(() => {
     if (!canBatchUpload) return;
-    getPeopleList({ limit: 0, exclude_status: 'SEPARATED' }).then(res => setPeople(res?.data || [])).catch(err => console.error('[Expenses] People load failed:', err.message));
+    getPeopleList({ limit: 0, status: 'ACTIVE' }).then(res => setPeople(res?.data || [])).catch(err => console.error('[Expenses] People load failed:', err.message));
     getMyCards().then(res => setMyCards(res?.data || [])).catch(err => console.error('[Expenses] Cards load failed:', err.message));
     getMyBankAccounts().then(res => setMyBankAccounts(res?.data || [])).catch(err => console.error('[Expenses] Bank accounts load failed:', err.message));
     listAccounts({ is_active: true }).then(res => {

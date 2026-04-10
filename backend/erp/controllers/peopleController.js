@@ -327,7 +327,7 @@ const syncFromCrm = catchAsync(async (req, res) => {
  */
 const getAsUsers = catchAsync(async (req, res) => {
   // President/CEO sees all entities; others see their own entity
-  const filter = { is_active: true };
+  const filter = { is_active: true, status: 'ACTIVE' };
   if (!req.isPresident) filter.entity_id = req.entityId;
   if (req.query.entity_id) filter.entity_id = req.query.entity_id; // optional override
   if (req.query.role) filter.department = req.query.role; // optional filter

@@ -17,9 +17,8 @@ const pettyCashTransactionSchema = new mongoose.Schema({
   fund_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PettyCashFund', required: true },
   txn_type: {
     type: String,
-    enum: ['DEPOSIT', 'DISBURSEMENT', 'REMITTANCE', 'REPLENISHMENT', 'ADJUSTMENT'],
     required: true
-  },
+  }, // Lookup: PETTY_CASH_TXN_TYPE
   txn_number: { type: String, trim: true },
   txn_date: { type: Date, required: true },
   amount: { type: Number, required: true, min: 0 },

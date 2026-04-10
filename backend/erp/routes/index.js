@@ -5,6 +5,9 @@ const { erpAccessCheck } = require('../middleware/erpAccessCheck');
 
 const router = express.Router();
 
+// ═══ Public routes (no auth required) ═══
+router.get('/po/share/:token', require('../controllers/printController').getSharedPOHtml);
+
 // ═══ Phase 1 — OCR (no tenant filter needed for OCR test) ═══
 router.use('/ocr', require('./ocrRoutes'));
 

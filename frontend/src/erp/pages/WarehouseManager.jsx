@@ -74,7 +74,8 @@ const pageStyles = `
 
 const emptyForm = () => ({
   warehouse_code: '', warehouse_name: '', warehouse_type: 'TERRITORY',
-  location: { city: '', region: '' }, manager_id: '', draws_from: '', stock_type: 'PHARMA',
+  location: { address: '', city: '', region: '' }, manager_id: '', draws_from: '', stock_type: 'PHARMA',
+  contact_person: '', contact_phone: '',
   is_default_receiving: false, can_receive_grn: false, can_transfer_out: true,
 });
 
@@ -120,7 +121,9 @@ export function WarehouseManagerContent() {
       warehouse_code: wh.warehouse_code,
       warehouse_name: wh.warehouse_name,
       warehouse_type: wh.warehouse_type,
-      location: wh.location || { city: '', region: '' },
+      location: wh.location || { address: '', city: '', region: '' },
+      contact_person: wh.contact_person || '',
+      contact_phone: wh.contact_phone || '',
       manager_id: wh.manager_id?._id || wh.manager_id || '',
       draws_from: wh.draws_from?._id || wh.draws_from || '',
       stock_type: wh.stock_type || 'PHARMA',
@@ -244,14 +247,28 @@ export function WarehouseManagerContent() {
                   <label>Warehouse Name</label>
                   <input value={form.warehouse_name} onChange={e => setForm(f => ({ ...f, warehouse_name: e.target.value }))} placeholder="Iloilo Main Warehouse" />
                 </div>
+                <div className="wm-field">
+                  <label>Address</label>
+                  <input value={form.location?.address || ''} onChange={e => setForm(f => ({ ...f, location: { ...f.location, address: e.target.value } }))} placeholder="Street address, building, floor" />
+                </div>
                 <div className="wm-field-row">
                   <div className="wm-field">
-                    <label>City</label>
+                    <label>Municipality / City</label>
                     <input value={form.location?.city || ''} onChange={e => setForm(f => ({ ...f, location: { ...f.location, city: e.target.value } }))} />
                   </div>
                   <div className="wm-field">
-                    <label>Region</label>
+                    <label>Province / Region</label>
                     <input value={form.location?.region || ''} onChange={e => setForm(f => ({ ...f, location: { ...f.location, region: e.target.value } }))} />
+                  </div>
+                </div>
+                <div className="wm-field-row">
+                  <div className="wm-field">
+                    <label>Contact Person</label>
+                    <input value={form.contact_person || ''} onChange={e => setForm(f => ({ ...f, contact_person: e.target.value }))} placeholder="Delivery contact name" />
+                  </div>
+                  <div className="wm-field">
+                    <label>Contact Phone</label>
+                    <input value={form.contact_phone || ''} onChange={e => setForm(f => ({ ...f, contact_phone: e.target.value }))} placeholder="09XX XXX XXXX" />
                   </div>
                 </div>
                 <div className="wm-field-row">

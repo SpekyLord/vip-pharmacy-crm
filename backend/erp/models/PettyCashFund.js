@@ -24,18 +24,16 @@ const pettyCashFundSchema = new mongoose.Schema({
   // DEPOSIT_ONLY = deposits only (collection point, no expenses paid out)
   fund_mode: {
     type: String,
-    enum: ['REVOLVING', 'EXPENSE_ONLY', 'DEPOSIT_ONLY'],
     default: 'REVOLVING'
-  },
+  }, // Lookup: PETTY_CASH_FUND_TYPE
   coa_code: { type: String, trim: true, default: '1000' },  // Cash on Hand (default for petty cash)
   authorized_amount: { type: Number, default: 10000 },
   current_balance: { type: Number, default: 0 },
   balance_ceiling: { type: Number, default: 5000 },
   status: {
     type: String,
-    enum: ['ACTIVE', 'SUSPENDED', 'CLOSED'],
     default: 'ACTIVE'
-  },
+  }, // Lookup: PETTY_CASH_FUND_STATUS
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   created_at: { type: Date, default: Date.now, immutable: true }
 }, { timestamps: true, collection: 'erp_petty_cash_funds' });

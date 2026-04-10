@@ -33,9 +33,8 @@ const vendorMasterSchema = new mongoose.Schema({
   payment_terms_days: { type: Number, default: 0 },
   vat_status: {
     type: String,
-    enum: ['VATABLE', 'EXEMPT', 'ZERO'],
     default: 'VATABLE'
-  },
+  }, // Lookup: VAT_TYPE
   bank_account: {
     bank: { type: String },
     account_no: { type: String },

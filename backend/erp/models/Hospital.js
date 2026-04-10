@@ -32,17 +32,15 @@ const hospitalSchema = new mongoose.Schema({
   payment_terms: { type: Number, default: 30 },
   vat_status: {
     type: String,
-    enum: ['VATABLE', 'EXEMPT', 'ZERO'],
     default: 'VATABLE'
-  },
+  }, // Lookup: VAT_TYPE
   cwt_rate: { type: Number, default: 0.01 },
   atc_code: { type: String, default: 'WC158' },
   credit_limit: { type: Number, default: null },
   credit_limit_action: {
     type: String,
-    enum: ['WARN', 'BLOCK'],
     default: 'WARN'
-  },
+  }, // Lookup: CREDIT_LIMIT_ACTION
   is_top_withholding_agent: { type: Boolean, default: false },
 
   // HEAT fields (Hospital Engagement Assessment Tool)
@@ -71,9 +69,8 @@ const hospitalSchema = new mongoose.Schema({
   // Status
   status: {
     type: String,
-    enum: ['ACTIVE', 'INACTIVE'],
     default: 'ACTIVE'
-  }
+  } // Lookup: ENTITY_STATUS (ACTIVE/INACTIVE)
 }, {
   timestamps: true,
   collection: 'erp_hospitals'

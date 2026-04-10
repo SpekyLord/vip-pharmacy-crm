@@ -6,7 +6,8 @@ export default function useErpAccess() {
   // ═══ Self-service ═══
   const getMyAccess = () => api.get('/erp-access/my');
 
-  // ═══ Sub-Permission Keys (Phase 16) ═══
+  // ═══ Module & Sub-Permission Keys (Phase A — lookup-driven) ═══
+  const getModuleKeys = () => api.get('/erp-access/module-keys');
   const getSubPermissionKeys = () => api.get('/erp-access/sub-permission-keys');
 
   // ═══ Templates ═══
@@ -24,6 +25,7 @@ export default function useErpAccess() {
   return {
     ...api,
     getMyAccess,
+    getModuleKeys,
     getSubPermissionKeys,
     getTemplates,
     createTemplate,

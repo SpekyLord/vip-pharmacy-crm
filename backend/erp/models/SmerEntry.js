@@ -16,12 +16,12 @@ const dailyEntrySchema = new mongoose.Schema({
   day: { type: Number, required: true, min: 1, max: 31 },
   day_of_week: { type: String, enum: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] },
   entry_date: { type: Date, required: true },
-  activity_type: { type: String, enum: ['Office', 'Field', 'Other'], trim: true },
+  activity_type: { type: String, trim: true }, // Lookup: ACTIVITY_TYPE
   hospital_covered: { type: String, trim: true },  // auto-filled: comma-joined hospital names
   hospital_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' },  // legacy single — kept for backward compat
   hospital_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' }],  // multi-hospital picker (Field days)
   md_count: { type: Number, default: 0, min: 0 },          // CRM actual count — always preserved for audit
-  perdiem_tier: { type: String, enum: ['FULL', 'HALF', 'ZERO'], default: 'ZERO' },  // effective tier (CRM-computed or override)
+  perdiem_tier: { type: String, default: 'ZERO' },  // Lookup: PERDIEM_TIER — effective tier (CRM-computed or override)
   perdiem_amount: { type: Number, default: 0 },             // effective amount (CRM-computed or override)
   transpo_p2p: { type: Number, default: 0 },
   transpo_special: { type: Number, default: 0 },
@@ -34,7 +34,7 @@ const dailyEntrySchema = new mongoose.Schema({
   // CRM md_count stays as-is for audit trail
   // Example: Jake had 2 MDs (ZERO) but was in a meeting with President → override to FULL
   perdiem_override: { type: Boolean, default: false },
-  override_tier: { type: String, enum: ['FULL', 'HALF'] },  // only FULL or HALF (no point overriding to ZERO)
+  override_tier: { type: String },  // Lookup: PERDIEM_TIER — only FULL or HALF (no point overriding to ZERO)
   override_reason: { type: String, trim: true },             // "Meeting with President", "Training day", etc.
   overridden_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   overridden_at: { type: Date }
@@ -46,7 +46,7 @@ const smerEntrySchema = new mongoose.Schema({
 
   // Period
   period: { type: String, required: true, trim: true },       // "2026-04"
-  cycle: { type: String, enum: ['C1', 'C2', 'MONTHLY'], required: true },
+  cycle: { type: String, required: true }, // Lookup: CYCLE
 
   // Per diem rate (snapshot from CompProfile or Settings at creation)
   perdiem_rate: { type: Number, required: true },

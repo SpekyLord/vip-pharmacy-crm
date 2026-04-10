@@ -8,6 +8,7 @@ import useProducts from '../hooks/useProducts';
 import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
 import WarehousePicker from '../components/WarehousePicker';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -68,14 +69,14 @@ const styles = `
   @media(max-width: 375px) { .po-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .po-main input, .po-main select { font-size: 16px; } }
 `;
 
-const STATUSES = ['', 'DRAFT', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'];
-
 const EMPTY_LINE = { product_id: '', item_key: '', qty_ordered: 1, unit_price: 0, unit_code: '', purchase_uom: '', selling_uom: '', conversion_factor: 1 };
 
 export default function PurchaseOrders() {
   const api = usePurchasing();
   const inventory = useInventory();
   const navigate = useNavigate();
+  const { options: statusOpts } = useLookupOptions('PO_STATUS');
+  const STATUSES = ['', ...statusOpts.map(o => o.code)];
 
   // Warehouse state
   const [warehouseId, setWarehouseId] = useState('');
@@ -96,6 +97,18 @@ export default function PurchaseOrders() {
   const [msg, setMsg] = useState({ text: '', type: '' });
   const [showDetail, setShowDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  // Activity log state
+  const [activityMsg, setActivityMsg] = useState('');
+  const [activityWaybill, setActivityWaybill] = useState('');
+  const [activitySaving, setActivitySaving] = useState(false);
+
+  // Share & email state
+  const [shareUrl, setShareUrl] = useState('');
+  const [shareCopied, setShareCopied] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailTo, setEmailTo] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
 
   // Build product options from ProductMaster (PO = ordering new products, not selecting from stock)
   // Enrich with stock qty when warehouse is selected
@@ -273,6 +286,10 @@ export default function PurchaseOrders() {
 
   const openDetail = async (po) => {
     setDetailLoading(true);
+    setShareUrl('');
+    setShareCopied(false);
+    setActivityMsg('');
+    setActivityWaybill('');
     try {
       const res = await api.getPO(po._id);
       setShowDetail(res?.data || po);
@@ -280,6 +297,44 @@ export default function PurchaseOrders() {
       setShowDetail(po); // fallback to list data
     }
     setDetailLoading(false);
+  };
+
+  const handleAddActivity = async () => {
+    if (!activityMsg.trim() || !showDetail) return;
+    setActivitySaving(true);
+    try {
+      const res = await api.addPOActivity(showDetail._id, { message: activityMsg, courier_waybill: activityWaybill || undefined });
+      setShowDetail(prev => ({ ...prev, activity_log: res?.data || prev.activity_log }));
+      setActivityMsg('');
+      setActivityWaybill('');
+    } catch (e) { showMsg(e.response?.data?.message || 'Failed to add note', 'err'); }
+    setActivitySaving(false);
+  };
+
+  const handleShareLink = async () => {
+    if (!showDetail) return;
+    try {
+      const res = await api.generateShareLink(showDetail._id);
+      const url = res?.data?.share_url || '';
+      setShareUrl(url);
+      if (url) {
+        await navigator.clipboard.writeText(url);
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 3000);
+      }
+    } catch (e) { showMsg(e.response?.data?.message || 'Failed to generate share link', 'err'); }
+  };
+
+  const handleEmailPO = async () => {
+    if (!emailTo || !showDetail) return;
+    setEmailSending(true);
+    try {
+      await api.emailPO(showDetail._id, { to_email: emailTo });
+      showMsg(`PO emailed to ${emailTo}`);
+      setShowEmailModal(false);
+      setEmailTo('');
+    } catch (e) { showMsg(e.response?.data?.message || 'Failed to send email', 'err'); }
+    setEmailSending(false);
   };
 
   const fmt = (n) => (n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -467,8 +522,10 @@ export default function PurchaseOrders() {
                           <h3 style={{ margin: 0, fontSize: 18 }}>PO {showDetail.po_number || '—'}</h3>
                           <span className={`po-badge po-badge-${showDetail.status}`} style={{ marginTop: 4, display: 'inline-block' }}>{showDetail.status?.replace(/_/g, ' ')}</span>
                         </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <button className="btn btn-sm" style={{ background: '#2563eb', color: 'white' }} onClick={() => window.open(`/api/erp/print/purchase-order/${showDetail._id}`, '_blank')}>Print / PDF</button>
+                          <button className="btn btn-sm" style={{ background: '#7c3aed', color: 'white' }} onClick={handleShareLink}>{shareCopied ? 'Copied!' : 'Share Link'}</button>
+                          <button className="btn btn-sm" style={{ background: '#0891b2', color: 'white' }} onClick={() => setShowEmailModal(true)}>Email PO</button>
                           <button className="btn btn-sm" style={{ background: '#e2e8f0' }} onClick={() => setShowDetail(null)}>Close</button>
                         </div>
                       </div>
@@ -476,6 +533,12 @@ export default function PurchaseOrders() {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 20px', fontSize: 13, marginBottom: 16, background: '#f8fafc', padding: 12, borderRadius: 8 }}>
                         <div><strong>Vendor:</strong> {showDetail.vendor_id?.vendor_name || '—'} {showDetail.vendor_id?.vendor_code ? `(${showDetail.vendor_id.vendor_code})` : ''}</div>
                         <div><strong>Warehouse:</strong> {showDetail.warehouse_id?.warehouse_code || '—'} {showDetail.warehouse_id?.warehouse_name ? `— ${showDetail.warehouse_id.warehouse_name}` : ''}</div>
+                        {(showDetail.warehouse_id?.location?.address || showDetail.warehouse_id?.location?.city || showDetail.warehouse_id?.location?.region) && (
+                          <div style={{ gridColumn: '1 / -1' }}><strong>Delivery Address:</strong> {[showDetail.warehouse_id?.location?.address, showDetail.warehouse_id?.location?.city, showDetail.warehouse_id?.location?.region].filter(Boolean).join(', ')}</div>
+                        )}
+                        {(showDetail.warehouse_id?.contact_person || showDetail.warehouse_id?.contact_phone) && (
+                          <div style={{ gridColumn: '1 / -1' }}><strong>Contact:</strong> {showDetail.warehouse_id?.contact_person || ''}{showDetail.warehouse_id?.contact_person && showDetail.warehouse_id?.contact_phone ? ' — ' : ''}{showDetail.warehouse_id?.contact_phone || ''}</div>
+                        )}
                         <div><strong>PO Date:</strong> {fmtDate(showDetail.po_date)}</div>
                         <div><strong>Expected Delivery:</strong> {fmtDate(showDetail.expected_delivery_date)}</div>
                         <div><strong>Created By:</strong> {showDetail.created_by?.firstName ? `${showDetail.created_by.firstName} ${showDetail.created_by.lastName || ''}`.trim() : '—'}</div>
@@ -561,8 +624,66 @@ export default function PurchaseOrders() {
                       {showDetail.linked_grns && showDetail.linked_grns.length === 0 && (
                         <div style={{ marginTop: 16, fontSize: 12, color: '#64748b', fontStyle: 'italic' }}>No GRNs linked to this PO yet.</div>
                       )}
+
+                      {/* Share URL display */}
+                      {shareUrl && (
+                        <div style={{ marginTop: 12, padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, fontSize: 12 }}>
+                          <strong>Share Link:</strong>{' '}
+                          <span style={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: 11 }}>{shareUrl}</span>
+                          <button className="btn btn-sm" style={{ marginLeft: 8, background: '#e2e8f0', fontSize: 11 }} onClick={() => { navigator.clipboard.writeText(shareUrl); setShareCopied(true); setTimeout(() => setShareCopied(false), 2000); }}>{shareCopied ? 'Copied!' : 'Copy'}</button>
+                        </div>
+                      )}
+
+                      {/* Activity Log */}
+                      <div style={{ marginTop: 20 }}>
+                        <h4 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 8px' }}>Activity Log</h4>
+                        {(showDetail.activity_log && showDetail.activity_log.length > 0) ? (
+                          <div style={{ maxHeight: 220, overflowY: 'auto', marginBottom: 12 }}>
+                            {[...showDetail.activity_log].reverse().map((a, i) => (
+                              <div key={a._id || i} style={{ padding: '8px 10px', marginBottom: 6, background: '#f8fafc', borderRadius: 8, fontSize: 12, borderLeft: '3px solid #94a3b8' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                                  <span style={{ fontWeight: 600 }}>{a.created_by?.firstName ? `${a.created_by.firstName} ${a.created_by.lastName || ''}`.trim() : '—'}</span>
+                                  <span style={{ color: '#64748b', fontSize: 11 }}>{fmtDate(a.created_at)} <span className={`po-badge po-badge-${a.status_snapshot}`} style={{ fontSize: 10, padding: '1px 6px' }}>{a.status_snapshot}</span></span>
+                                </div>
+                                <div>{a.message}</div>
+                                {a.courier_waybill && <div style={{ marginTop: 3, fontWeight: 600, color: '#7c3aed', fontSize: 11 }}>Waybill: {a.courier_waybill}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: '#64748b', fontStyle: 'italic', marginBottom: 10 }}>No activity notes yet.</div>
+                        )}
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                          <div style={{ flex: 1, minWidth: 180 }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 2 }}>Note *</label>
+                            <textarea rows={2} value={activityMsg} onChange={e => setActivityMsg(e.target.value)} placeholder="Status update, delivery info..." style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--erp-border, #e2e8f0)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }} />
+                          </div>
+                          <div style={{ width: 160 }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 2 }}>Courier Waybill</label>
+                            <input value={activityWaybill} onChange={e => setActivityWaybill(e.target.value)} placeholder="Tracking #" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--erp-border, #e2e8f0)', fontSize: 12, boxSizing: 'border-box' }} />
+                          </div>
+                          <button className="btn btn-primary btn-sm" onClick={handleAddActivity} disabled={activitySaving || !activityMsg.trim()} style={{ height: 34 }}>{activitySaving ? 'Saving...' : 'Add Note'}</button>
+                        </div>
+                      </div>
                     </>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* Email PO Modal */}
+            {showEmailModal && (
+              <div className="po-modal" onClick={() => setShowEmailModal(false)}>
+                <div className="po-modal-body" onClick={e => e.stopPropagation()} style={{ width: 420 }}>
+                  <h3 style={{ marginBottom: 12 }}>Email Purchase Order</h3>
+                  <div className="form-group">
+                    <label>Recipient Email *</label>
+                    <input type="email" value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="vendor@example.com" />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                    <button className="btn" style={{ background: '#e2e8f0' }} onClick={() => setShowEmailModal(false)}>Cancel</button>
+                    <button className="btn btn-primary" onClick={handleEmailPO} disabled={emailSending || !emailTo}>{emailSending ? 'Sending...' : 'Send'}</button>
+                  </div>
                 </div>
               </div>
             )}

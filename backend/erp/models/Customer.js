@@ -36,31 +36,27 @@ const customerSchema = new mongoose.Schema({
   // Optional classification for filtering/reporting
   customer_type: {
     type: String,
-    enum: ['PERSON', 'PHARMACY', 'DIAGNOSTIC_CENTER', 'INDUSTRIAL', 'OTHER'],
     default: null
-  },
+  }, // Lookup: CUSTOMER_TYPE
 
   // Default sale document type — pre-fills SalesEntry form to avoid errors
   default_sale_type: {
     type: String,
-    enum: ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'],
     default: 'CASH_RECEIPT'
-  },
+  }, // Lookup: SALE_TYPE
 
   // Financial fields
   tin: { type: String, trim: true },
   vat_status: {
     type: String,
-    enum: ['VATABLE', 'EXEMPT', 'ZERO'],
     default: 'VATABLE'
-  },
+  }, // Lookup: VAT_TYPE
   payment_terms: { type: Number, default: 30 },
   credit_limit: { type: Number, default: null },
   credit_limit_action: {
     type: String,
-    enum: ['WARN', 'BLOCK'],
     default: 'WARN'
-  },
+  }, // Lookup: CREDIT_LIMIT_ACTION
 
   // Contact
   address: { type: String, trim: true },
@@ -74,9 +70,8 @@ const customerSchema = new mongoose.Schema({
   // Status
   status: {
     type: String,
-    enum: ['ACTIVE', 'INACTIVE'],
     default: 'ACTIVE'
-  }
+  } // Lookup: ENTITY_STATUS (ACTIVE/INACTIVE)
 }, {
   timestamps: true,
   collection: 'erp_customers'

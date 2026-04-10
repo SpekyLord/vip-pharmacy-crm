@@ -7,14 +7,6 @@
  */
 import { useLookupOptions } from '../../erp/hooks/useLookups';
 
-// Fallback used only while lookup loads on first render
-const FALLBACK = [
-  { value: 'TXT_PROMATS', label: 'TXT/PROMATS' },
-  { value: 'MES_VIBER_GIF', label: 'MES/VIBER GIF' },
-  { value: 'PICTURE', label: 'PICTURE' },
-  { value: 'SIGNED_CALL', label: 'SIGNED CALL' },
-  { value: 'VOICE_CALL', label: 'VOICE CALL' },
-];
 
 const selectorStyles = `
   .engagement-selector {
@@ -77,7 +69,7 @@ const selectorStyles = `
 
 const EngagementTypeSelector = ({ selected = [], onChange }) => {
   const { options: lookupOpts } = useLookupOptions('ENGAGEMENT_TYPE');
-  const engTypes = lookupOpts.length > 0 ? lookupOpts : FALLBACK;
+  const engTypes = lookupOpts;
 
   const handleToggle = (value) => {
     const newSelected = selected.includes(value)

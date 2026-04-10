@@ -28,9 +28,8 @@ const incomeReportSchema = new mongoose.Schema({
   },
   cycle: {
     type: String,
-    enum: ['C1', 'C2', 'MONTHLY'],
     required: [true, 'Cycle is required']
-  },
+  }, // Lookup: CYCLE
 
   // ── Earnings ──
   earnings: {

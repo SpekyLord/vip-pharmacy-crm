@@ -1,58 +1,66 @@
 const AccessTemplate = require('../models/AccessTemplate');
+const Lookup = require('../models/Lookup');
 const User = require('../../models/User');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { SEED_DEFAULTS } = require('./lookupGenericController');
 
-// ═══ Sub-Permission Keys Definition (Phase 16) ═══
-// Served from backend so frontend never hardcodes these — add new keys here to auto-populate UI.
-const SUB_PERMISSION_KEYS = {
-  sales: [
-    { key: 'reopen', label: 'Re-open Posted Sales' },
-  ],
-  collections: [
-    { key: 'reopen', label: 'Re-open Posted Collections' },
-  ],
-  expenses: [
-    { key: 'batch_upload', label: 'Batch OR Upload (OCR)' },
-    { key: 'reopen', label: 'Re-open Posted Expenses' },
-  ],
-  purchasing: [
-    { key: 'po_create', label: 'Create/Edit Purchase Orders' },
-    { key: 'po_approve', label: 'Approve Purchase Orders' },
-    { key: 'vendor_manage', label: 'Manage Vendors' },
-    { key: 'supplier_invoice', label: 'Supplier Invoices' },
-    { key: 'ap_payment', label: 'AP Payments' },
-  ],
-  accounting: [
-    { key: 'journal_entry', label: 'Journal Entries & COA' },
-    { key: 'check_writing', label: 'Check Writing / Payments' },
-    { key: 'month_end', label: 'Month-End Close' },
-    { key: 'vat_filing', label: 'VAT/CWT Compliance' },
-    { key: 'fixed_assets', label: 'Fixed Assets & Depreciation' },
-    { key: 'loans', label: 'Loan Management' },
-    { key: 'owner_equity', label: 'Owner Equity' },
-    { key: 'petty_cash', label: 'Petty Cash' },
-    { key: 'office_supplies', label: 'Office Supplies' },
-  ],
-  banking: [
-    { key: 'bank_accounts', label: 'Bank Accounts' },
-    { key: 'bank_recon', label: 'Bank Reconciliation' },
-    { key: 'statement_import', label: 'Statement Import' },
-    { key: 'credit_card', label: 'Credit Card Ledger' },
-    { key: 'cashflow', label: 'Cashflow Statement' },
-    { key: 'payments', label: 'Payment Processing' },
-  ],
-  sales_goals: [
-    { key: 'plan_manage', label: 'Create/Edit Plans & Targets' },
-    { key: 'kpi_compute', label: 'Trigger KPI Computation' },
-    { key: 'action_manage_all', label: 'Create Actions for Any BDM' },
-    { key: 'incentive_manage', label: 'Manage Incentive Programs' },
-    { key: 'manual_kpi_all', label: 'Enter Manual KPIs for Any BDM' },
-  ],
-};
+// ═══ Helper: fetch lookup items with auto-seed if empty ═══
+async function fetchLookupCategory(category, entityId, userId) {
+  const filter = { category, is_active: true };
+  if (entityId) filter.entity_id = entityId;
+  let items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
 
-const getSubPermissionKeys = (req, res) => {
-  res.json({ success: true, data: SUB_PERMISSION_KEYS });
-};
+  // Auto-seed on first access if empty and defaults exist
+  if (items.length === 0 && entityId && SEED_DEFAULTS[category]) {
+    const defaults = SEED_DEFAULTS[category];
+    const ops = defaults.map((item, i) => {
+      const isObj = typeof item === 'object';
+      const label = isObj ? item.label : item;
+      const code = isObj ? item.code.toUpperCase() : label.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+      return {
+        updateOne: {
+          filter: { entity_id: entityId, category, code },
+          update: { $setOnInsert: { label, sort_order: i * 10, is_active: true, metadata: isObj ? (item.metadata || {}) : {}, created_by: userId } },
+          upsert: true
+        }
+      };
+    });
+    await Lookup.bulkWrite(ops);
+    items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+  }
+  return items;
+}
+
+// ═══ Sub-Permission Keys — lookup-driven (Phase A) ═══
+// Fetches ERP_SUB_PERMISSION from Lookup, groups by metadata.module
+const getSubPermissionKeys = catchAsync(async (req, res) => {
+  const items = await fetchLookupCategory('ERP_SUB_PERMISSION', req.entityId, req.user?._id);
+
+  // Group by module → [{ key, label }]
+  const grouped = {};
+  for (const item of items) {
+    const mod = item.metadata?.module;
+    if (!mod) continue;
+    if (!grouped[mod]) grouped[mod] = [];
+    grouped[mod].push({ key: item.metadata.key || item.code.toLowerCase(), label: item.label });
+  }
+
+  res.json({ success: true, data: grouped });
+});
+
+// ═══ Module Keys — lookup-driven (Phase A) ═══
+// Returns ERP_MODULE items so frontend doesn't hardcode the module list
+const getModuleKeys = catchAsync(async (req, res) => {
+  const items = await fetchLookupCategory('ERP_MODULE', req.entityId, req.user?._id);
+
+  const modules = items.map(item => ({
+    key: item.metadata?.key || item.code.toLowerCase(),
+    label: item.label,
+    short_label: item.metadata?.short_label || item.label,
+  }));
+
+  res.json({ success: true, data: modules });
+});
 
 // ═══ Template CRUD ═══
 
@@ -207,17 +215,24 @@ const getMyAccess = catchAsync(async (req, res) => {
   const { role, erp_access } = req.user;
 
   // Role overrides for display purposes
+  // Build module map dynamically from ERP_MODULE lookups so new modules are auto-included
+  const buildOverrideModules = async (level) => {
+    const modItems = await fetchLookupCategory('ERP_MODULE', req.entityId, req.user?._id);
+    const mods = {};
+    for (const item of modItems) {
+      const key = item.metadata?.key || item.code.toLowerCase();
+      mods[key] = level;
+    }
+    return mods;
+  };
+
   if (role === 'president') {
     return res.json({
       success: true,
       data: {
         enabled: true,
         role_override: 'president',
-        modules: {
-          sales: 'FULL', inventory: 'FULL', collections: 'FULL', expenses: 'FULL',
-          reports: 'FULL', people: 'FULL', payroll: 'FULL', accounting: 'FULL',
-          purchasing: 'FULL', banking: 'FULL',
-        },
+        modules: await buildOverrideModules('FULL'),
         sub_permissions: {},
         can_approve: true,
       },
@@ -229,11 +244,7 @@ const getMyAccess = catchAsync(async (req, res) => {
       data: {
         enabled: true,
         role_override: 'ceo',
-        modules: {
-          sales: 'VIEW', inventory: 'VIEW', collections: 'VIEW', expenses: 'VIEW',
-          reports: 'VIEW', people: 'VIEW', payroll: 'VIEW', accounting: 'VIEW',
-          purchasing: 'VIEW', banking: 'VIEW',
-        },
+        modules: await buildOverrideModules('VIEW'),
         sub_permissions: {},
         can_approve: false,
       },
@@ -245,11 +256,7 @@ const getMyAccess = catchAsync(async (req, res) => {
       data: {
         enabled: true,
         role_override: 'admin',
-        modules: {
-          sales: 'FULL', inventory: 'FULL', collections: 'FULL', expenses: 'FULL',
-          reports: 'FULL', people: 'FULL', payroll: 'FULL', accounting: 'FULL',
-          purchasing: 'FULL', banking: 'FULL',
-        },
+        modules: await buildOverrideModules('FULL'),
         sub_permissions: {},
         can_approve: true,
       },
@@ -269,4 +276,5 @@ module.exports = {
   applyTemplateToUser,
   getMyAccess,
   getSubPermissionKeys,
+  getModuleKeys,
 };

@@ -1,6 +1,7 @@
 const GovernmentRates = require('../models/GovernmentRates');
 const { catchAsync } = require('../../middleware/errorHandler');
 const XLSX = require('xlsx');
+const { SEED_DEFAULTS } = require('./lookupGenericController');
 const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
 /**
@@ -76,7 +77,7 @@ const exportRates = catchAsync(async (req, res) => {
   const rates = await GovernmentRates.find().sort({ rate_type: 1, effective_date: -1 }).lean();
   const wb = XLSX.utils.book_new();
 
-  const RATE_TYPES = ['SSS', 'PHILHEALTH', 'PAGIBIG', 'WITHHOLDING_TAX', 'EC', 'DE_MINIMIS'];
+  const RATE_TYPES = SEED_DEFAULTS.GOV_RATE_TYPE.map(r => typeof r === 'object' ? r.code : r);
 
   for (const rt of RATE_TYPES) {
     const ratesForType = rates.filter(r => r.rate_type === rt);

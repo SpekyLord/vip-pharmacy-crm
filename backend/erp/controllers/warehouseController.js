@@ -110,6 +110,7 @@ const getWarehouse = catchAsync(async (req, res) => {
 const createWarehouse = catchAsync(async (req, res) => {
   const {
     warehouse_code, warehouse_name, warehouse_type, location,
+    contact_person, contact_phone,
     manager_id, assigned_users, territory_id, draws_from,
     is_default_receiving, can_receive_grn, can_transfer_out, stock_type,
   } = req.body;
@@ -128,6 +129,8 @@ const createWarehouse = catchAsync(async (req, res) => {
     warehouse_name,
     warehouse_type: warehouse_type || 'TERRITORY',
     location,
+    contact_person,
+    contact_phone,
     manager_id,
     assigned_users: assigned_users || [],
     territory_id,
@@ -153,6 +156,7 @@ const updateWarehouse = catchAsync(async (req, res) => {
 
   const allowed = [
     'warehouse_name', 'warehouse_type', 'location',
+    'contact_person', 'contact_phone',
     'manager_id', 'assigned_users', 'territory_id', 'draws_from',
     'is_default_receiving', 'can_receive_grn', 'can_transfer_out',
     'stock_type', 'is_active',

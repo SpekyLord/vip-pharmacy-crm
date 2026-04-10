@@ -76,14 +76,12 @@ const journalEntrySchema = new mongoose.Schema({
   },
   bir_flag: {
     type: String,
-    enum: ['BOTH', 'INTERNAL', 'BIR'],
     default: 'BOTH'
-  },
+  }, // Lookup: BIR_FLAG
   vat_flag: {
     type: String,
-    enum: ['VATABLE', 'EXEMPT', 'ZERO', 'N/A'],
     default: 'N/A'
-  },
+  }, // Lookup: VAT_TYPE (with N/A option)
   total_debit: {
     type: Number,
     default: 0

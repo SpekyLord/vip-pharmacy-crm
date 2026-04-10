@@ -5,20 +5,6 @@ import useErpAccess from '../hooks/useErpAccess';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
-const MODULES = [
-  { key: 'sales', label: 'Sales' },
-  { key: 'inventory', label: 'Inv' },
-  { key: 'collections', label: 'Coll' },
-  { key: 'expenses', label: 'Exp' },
-  { key: 'reports', label: 'Rep' },
-  { key: 'people', label: 'People' },
-  { key: 'payroll', label: 'Payroll' },
-  { key: 'accounting', label: 'Acctg' },
-  { key: 'purchasing', label: 'Purch' },
-  { key: 'banking', label: 'Bank' },
-  { key: 'sales_goals', label: 'Goals' },
-];
-
 const LEVEL_COLORS = {
   FULL: { bg: '#dcfce7', text: '#166534' },
   VIEW: { bg: '#dbeafe', text: '#1e40af' },
@@ -66,6 +52,7 @@ const pageStyles = `
 
 export function AccessTemplateManagerContent() {
   const api = useErpAccess();
+  const [modules, setModules] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [subPermKeys, setSubPermKeys] = useState({});
   const [editing, setEditing] = useState(null);
@@ -73,12 +60,15 @@ export function AccessTemplateManagerContent() {
 
   const load = useCallback(async () => {
     try {
-      const [tplRes, spkRes] = await Promise.all([
+      const [tplRes, spkRes, modRes] = await Promise.all([
         api.getTemplates(),
         api.getSubPermissionKeys(),
+        api.getModuleKeys(),
       ]);
       setTemplates(tplRes?.data || []);
       setSubPermKeys(spkRes?.data || {});
+      const mods = (modRes?.data || []).map(m => ({ key: m.key, label: m.short_label || m.label }));
+      if (mods.length) setModules(mods);
     } catch (err) { console.error('[AccessTemplateManager] load error:', err.message); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -174,7 +164,7 @@ export function AccessTemplateManagerContent() {
             <thead>
               <tr>
                 <th>Template</th>
-                {MODULES.map(m => <th key={m.key}>{m.label}</th>)}
+                {modules.map(m => <th key={m.key}>{m.label}</th>)}
                 <th>Approve</th>
                 <th>Actions</th>
               </tr>
@@ -186,7 +176,7 @@ export function AccessTemplateManagerContent() {
                     {tpl.template_name}
                     {tpl.is_system && <span className="atm-sys">SYSTEM</span>}
                   </td>
-                  {MODULES.map(m => {
+                  {modules.map(m => {
                     const lv = tpl.modules?.[m.key] || 'NONE';
                     const c = LEVEL_COLORS[lv];
                     const spc = subPermCount(tpl, m.key);
@@ -211,7 +201,7 @@ export function AccessTemplateManagerContent() {
                 </tr>
               ))}
               {!templates.length && (
-                <tr><td colSpan={MODULES.length + 3} style={{ textAlign: 'center', color: '#64748b', padding: 20 }}>No templates found</td></tr>
+                <tr><td colSpan={modules.length + 3} style={{ textAlign: 'center', color: '#64748b', padding: 20 }}>No templates found</td></tr>
               )}
             </tbody>
           </table>
@@ -235,7 +225,7 @@ export function AccessTemplateManagerContent() {
                   <div className="atm-grid-head">NONE</div>
                   <div className="atm-grid-head">VIEW</div>
                   <div className="atm-grid-head">FULL</div>
-                  {MODULES.map(m => (
+                  {modules.map(m => (
                     <React.Fragment key={m.key}>
                       <div style={{ fontSize: 13 }}>{m.label}</div>
                       {['NONE', 'VIEW', 'FULL'].map(lv => (
@@ -250,7 +240,7 @@ export function AccessTemplateManagerContent() {
                 </div>
 
                 {/* Sub-Permissions for modules that have them and are VIEW or FULL */}
-                {MODULES.filter(m => subPermKeys[m.key] && (form.modules[m.key] === 'VIEW' || form.modules[m.key] === 'FULL')).map(m => {
+                {modules.filter(m => subPermKeys[m.key] && (form.modules[m.key] === 'VIEW' || form.modules[m.key] === 'FULL')).map(m => {
                   const keys = subPermKeys[m.key];
                   const modSubs = form.sub_permissions[m.key] || {};
                   const allEnabled = keys.every(k => modSubs[k.key]);

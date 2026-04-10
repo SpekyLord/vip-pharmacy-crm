@@ -19,6 +19,9 @@ export default function usePurchasing() {
   const approvePO = (id) => api.post(`/purchasing/orders/${id}/approve`);
   const cancelPO = (id) => api.post(`/purchasing/orders/${id}/cancel`);
   const receivePO = (id, data) => api.post(`/purchasing/orders/${id}/receive`, data);
+  const addPOActivity = (id, data) => api.post(`/purchasing/orders/${id}/activity`, data);
+  const generateShareLink = (id) => api.post(`/purchasing/orders/${id}/share`);
+  const emailPO = (id, data) => api.post(`/purchasing/orders/${id}/email`, data);
 
   // ═══ Supplier Invoices ═══
   const listInvoices = (params) => api.get('/purchasing/invoices', { params });
@@ -48,7 +51,7 @@ export default function usePurchasing() {
     // Vendors
     listVendors, getVendor, searchVendors, createVendor, updateVendor, deactivateVendor,
     // PO
-    listPOs, getPO, createPO, updatePO, approvePO, cancelPO, receivePO,
+    listPOs, getPO, createPO, updatePO, approvePO, cancelPO, receivePO, addPOActivity, generateShareLink, emailPO,
     exportPOs: (params) => api.get('/purchasing/orders/export', { params, responseType: 'blob' }),
     // Invoices
     listInvoices, getInvoice, createInvoice, updateInvoice, validateInvoice, postInvoice, payInvoice,

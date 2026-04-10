@@ -7,7 +7,7 @@
  *
  * Exports RoleAssignmentManagerContent for ControlCenter embedding.
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -64,12 +64,7 @@ function RoleAssignmentManagerContent() {
   const [bulkEntityIds, setBulkEntityIds] = useState([]);
   const [bulkRoles, setBulkRoles] = useState([]);
 
-  // Role options with fallback
-  const ROLE_OPTIONS = useMemo(() => {
-    if (roleOptions.length > 0) return roleOptions;
-    return ['PURCHASING', 'ACCOUNTING', 'COLLECTIONS', 'INVENTORY', 'SALES', 'ADMIN', 'AUDIT', 'PAYROLL', 'LOGISTICS']
-      .map(c => ({ code: c, label: c.charAt(0) + c.slice(1).toLowerCase().replace(/_/g, ' ') }));
-  }, [roleOptions]);
+  const ROLE_OPTIONS = roleOptions;
 
   // ─── Load data ───────────────────────
   useEffect(() => { refreshEntities(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -95,7 +90,7 @@ function RoleAssignmentManagerContent() {
   const handlePersonSearch = useCallback(async () => {
     if (!personSearch.trim()) return;
     try {
-      const res = await getPeopleList({ search: personSearch, limit: 20, exclude_status: 'SEPARATED' });
+      const res = await getPeopleList({ search: personSearch, limit: 20, status: 'ACTIVE' });
       setPeople(res?.data || []);
     } catch (e) { showError(e); }
   }, [personSearch, getPeopleList]);
@@ -213,7 +208,7 @@ function RoleAssignmentManagerContent() {
   const searchModalPeople = async () => {
     if (!modalPeopleSearch.trim()) return;
     try {
-      const res = await getPeopleList({ search: modalPeopleSearch, limit: 15, exclude_status: 'SEPARATED' });
+      const res = await getPeopleList({ search: modalPeopleSearch, limit: 15, status: 'ACTIVE' });
       setModalPeople(res?.data || []);
     } catch (e) { showError(e); }
   };

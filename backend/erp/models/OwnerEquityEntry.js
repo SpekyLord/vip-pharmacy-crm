@@ -15,9 +15,8 @@ const ownerEquityEntrySchema = new mongoose.Schema({
   },
   entry_type: {
     type: String,
-    enum: ['INFUSION', 'DRAWING'],
     required: true
-  },
+  }, // Lookup: OWNER_EQUITY_TYPE
   amount: {
     type: Number,
     required: true,
@@ -33,9 +32,8 @@ const ownerEquityEntrySchema = new mongoose.Schema({
   },
   bir_flag: {
     type: String,
-    enum: ['BOTH', 'INTERNAL', 'BIR'],
     default: 'BOTH'
-  },
+  }, // Lookup: BIR_FLAG
   description: {
     type: String,
     trim: true

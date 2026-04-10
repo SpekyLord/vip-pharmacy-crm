@@ -14,28 +14,20 @@ import { useAuth } from '../../hooks/useAuth';
 import { useSearchParams } from 'react-router-dom';
 import { ROLE_SETS } from '../../constants/roles';
 import useErpApi from '../hooks/useErpApi';
-import { useLookupOptions } from '../hooks/useLookups';
+import { useLookupBatch } from '../hooks/useLookups';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 import toast from 'react-hot-toast';
-
-const DIRECTION_OPTIONS = [
-  { value: 'higher_better', label: 'Higher is better' },
-  { value: 'lower_better', label: 'Lower is better' },
-];
-
-const UNIT_OPTIONS = ['%', 'count', 'days', 'PHP', 'ratio', 'score'];
-
-const COMPUTATION_OPTIONS = [
-  { value: 'manual', label: 'Self-reported (manual)' },
-  { value: 'auto', label: 'Auto-computed from ERP data' },
-];
 
 function KpiLibraryContent() {
   const { user } = useAuth();
   const api = useErpApi();
   const [searchParams] = useSearchParams();
-  const { options: roleOptions } = useLookupOptions('FUNCTIONAL_ROLE');
+  const { data: lookups } = useLookupBatch(['FUNCTIONAL_ROLE', 'KPI_DIRECTION', 'KPI_UNIT', 'KPI_COMPUTATION']);
+  const roleOptions = lookups.FUNCTIONAL_ROLE || [];
+  const DIRECTION_OPTIONS = (lookups.KPI_DIRECTION || []).map(o => ({ value: o.code, label: o.label }));
+  const UNIT_OPTIONS = (lookups.KPI_UNIT || []).map(o => o.code);
+  const COMPUTATION_OPTIONS = (lookups.KPI_COMPUTATION || []).map(o => ({ value: o.code, label: o.label }));
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   const [kpis, setKpis] = useState([]);
@@ -46,19 +38,7 @@ function KpiLibraryContent() {
   const [search, setSearch] = useState('');
 
   const FUNC_ROLES = useMemo(() => {
-    if (roleOptions.length > 0) return [{ code: 'ALL', label: 'All Functions (Universal)' }, ...roleOptions];
-    return [
-      { code: 'ALL', label: 'All Functions (Universal)' },
-      { code: 'PURCHASING', label: 'Purchasing' },
-      { code: 'ACCOUNTING', label: 'Accounting' },
-      { code: 'COLLECTIONS', label: 'Collections' },
-      { code: 'INVENTORY', label: 'Inventory Management' },
-      { code: 'SALES', label: 'Sales' },
-      { code: 'ADMIN', label: 'Administration' },
-      { code: 'AUDIT', label: 'Audit' },
-      { code: 'PAYROLL', label: 'Payroll' },
-      { code: 'LOGISTICS', label: 'Logistics & Distribution' },
-    ];
+    return [{ code: 'ALL', label: 'All Functions (Universal)' }, ...roleOptions];
   }, [roleOptions]);
 
   const defaultForm = {
