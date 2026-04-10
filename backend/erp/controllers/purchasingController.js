@@ -19,6 +19,7 @@ const { recordApPayment, getPaymentHistory } = require('../services/apPaymentSer
 const { createVatEntry } = require('../services/vatService');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const XLSX = require('xlsx');
+const crypto = require('crypto');
 const { notifyDocumentPosted } = require('../services/erpNotificationService');
 const { checkApprovalRequired } = require('../services/approvalService');
 
@@ -29,6 +30,14 @@ const { checkApprovalRequired } = require('../services/approvalService');
 const ProductMaster = require('../models/ProductMaster');
 
 const createPO = catchAsync(async (req, res) => {
+  // Clean empty-string ObjectId fields (frontend sends '' for unselected dropdowns)
+  if (!req.body.warehouse_id) req.body.warehouse_id = undefined;
+  if (req.body.line_items) {
+    for (const li of req.body.line_items) {
+      if (!li.product_id) li.product_id = undefined;
+    }
+  }
+
   // Resolve territory code from the selected warehouse, not the user's territory
   let warehouseCode;
   if (req.body.warehouse_id) {
@@ -109,7 +118,7 @@ const getPOs = catchAsync(async (req, res) => {
   const [data, total] = await Promise.all([
     PurchaseOrder.find(filter)
       .populate('vendor_id', 'vendor_name vendor_code')
-      .populate('warehouse_id', 'warehouse_code warehouse_name')
+      .populate('warehouse_id', 'warehouse_code warehouse_name location contact_person contact_phone')
       .sort({ created_at: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -123,9 +132,10 @@ const getPOs = catchAsync(async (req, res) => {
 const getPOById = catchAsync(async (req, res) => {
   const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId })
     .populate('vendor_id', 'vendor_name vendor_code tin address payment_terms_days vat_status')
-    .populate('warehouse_id', 'warehouse_code warehouse_name')
+    .populate('warehouse_id', 'warehouse_code warehouse_name location contact_person contact_phone')
     .populate('approved_by', 'firstName lastName')
     .populate('created_by', 'firstName lastName')
+    .populate('activity_log.created_by', 'firstName lastName')
     .lean();
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
 
@@ -218,6 +228,88 @@ const receivePO = catchAsync(async (req, res) => {
     message: 'Direct PO receipt is deprecated. Please use the GRN workflow to receive goods against this PO.',
     redirect: `/erp/grn?po_id=${req.params.id}`
   });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PO ACTIVITY LOG, SHARING & EMAIL
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const addPOActivity = catchAsync(async (req, res) => {
+  const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId });
+  if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
+
+  const { message, courier_waybill } = req.body;
+  if (!message || !message.trim()) {
+    return res.status(400).json({ success: false, message: 'Message is required' });
+  }
+
+  po.activity_log.push({
+    message: message.trim(),
+    courier_waybill: courier_waybill?.trim() || undefined,
+    status_snapshot: po.status,
+    created_by: req.user._id
+  });
+  await po.save();
+
+  // Return populated activity log
+  const updated = await PurchaseOrder.findById(po._id)
+    .select('activity_log')
+    .populate('activity_log.created_by', 'firstName lastName')
+    .lean();
+
+  res.status(201).json({ success: true, data: updated.activity_log });
+});
+
+const generateShareLink = catchAsync(async (req, res) => {
+  const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId });
+  if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
+
+  if (!po.share_token) {
+    po.share_token = crypto.randomBytes(24).toString('hex');
+    await po.save();
+  }
+
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const shareUrl = `${baseUrl}/api/erp/po/share/${po.share_token}`;
+
+  res.json({ success: true, data: { share_token: po.share_token, share_url: shareUrl } });
+});
+
+const emailPO = catchAsync(async (req, res) => {
+  const { sendEmail, isConfigured } = require('../../config/ses');
+  if (!isConfigured()) {
+    return res.status(400).json({ success: false, message: 'Email is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL in environment variables.' });
+  }
+
+  const { to_email, subject } = req.body;
+  if (!to_email) return res.status(400).json({ success: false, message: 'Recipient email is required' });
+
+  const { renderPurchaseOrderHtml } = require('../templates/purchaseOrderPrint');
+  const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId })
+    .populate('entity_id', 'entity_name')
+    .populate('vendor_id', 'vendor_name vendor_code')
+    .populate('warehouse_id', 'warehouse_name warehouse_code location contact_person contact_phone')
+    .populate('approved_by', 'firstName lastName')
+    .populate('created_by', 'firstName lastName')
+    .populate('activity_log.created_by', 'firstName lastName')
+    .lean();
+  if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
+
+  let lineProducts = [];
+  if (po.line_items?.length) {
+    try {
+      const productIds = po.line_items.map(li => li.product_id).filter(Boolean);
+      lineProducts = await ProductMaster.find({ _id: { $in: productIds } })
+        .select('product_name brand_name dosage_strength unit_code purchase_uom').lean();
+    } catch { /* non-critical */ }
+  }
+
+  const html = renderPurchaseOrderHtml(po, lineProducts);
+  const emailSubject = subject || `Purchase Order ${po.po_number || po._id}`;
+
+  await sendEmail({ to: to_email, subject: emailSubject, html, text: `Purchase Order ${po.po_number || ''}` });
+
+  res.json({ success: true, message: `PO emailed to ${to_email}` });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -474,6 +566,7 @@ const exportPOs = catchAsync(async (req, res) => {
 module.exports = {
   // PO
   createPO, updatePO, getPOs, getPOById, approvePO, cancelPO, receivePO, exportPOs,
+  addPOActivity, generateShareLink, emailPO,
   // Supplier Invoices
   createInvoice, updateInvoice, getInvoices, getInvoiceById, validateInvoice, postInvoice,
   // AP

@@ -43,6 +43,10 @@ const warehouseSchema = new mongoose.Schema({
     region: { type: String, trim: true },
   },
 
+  // Delivery contact (for couriers and PO documents)
+  contact_person: { type: String, trim: true },
+  contact_phone:  { type: String, trim: true },
+
   // Access control
   manager_id: {
     type: mongoose.Schema.Types.ObjectId,

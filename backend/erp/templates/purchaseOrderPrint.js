@@ -9,10 +9,15 @@ function renderPurchaseOrderHtml(po, lineProducts = []) {
 
   const fmtNum = (n) => (n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  const entityName = po.entity_id?.entity_name || '';
+
   const vendorName = po.vendor_id?.vendor_name || '';
   const vendorCode = po.vendor_id?.vendor_code || '';
   const warehouseName = po.warehouse_id?.warehouse_name || '';
   const warehouseCode = po.warehouse_id?.warehouse_code || '';
+  const warehouseAddress = [po.warehouse_id?.location?.address, po.warehouse_id?.location?.city, po.warehouse_id?.location?.region].filter(Boolean).join(', ');
+  const contactPerson = po.warehouse_id?.contact_person || '';
+  const contactPhone = po.warehouse_id?.contact_phone || '';
 
   const createdByName = po.created_by
     ? `${po.created_by.firstName || ''} ${po.created_by.lastName || ''}`.trim()
@@ -27,7 +32,7 @@ function renderPurchaseOrderHtml(po, lineProducts = []) {
     const productName = prod
       ? `${prod.brand_name || prod.product_name || ''}${prod.dosage_strength ? ' ' + prod.dosage_strength : ''}`.trim()
       : item.item_key || 'Item';
-    const unitCode = item.uom || '';
+    const unitCode = item.uom || prod?.purchase_uom || prod?.unit_code || '';
     const lineTotal = (item.qty_ordered || 0) * (item.unit_price || 0);
 
     return `
@@ -71,6 +76,7 @@ function renderPurchaseOrderHtml(po, lineProducts = []) {
 </head>
 <body>
   <div class="header">
+    ${entityName ? `<div style="font-size:16px;font-weight:700;margin-bottom:2px;">${entityName}</div>` : ''}
     <h1>PURCHASE ORDER</h1>
     <div class="po-num">${po.po_number || '—'}</div>
     <span class="status">${po.status}</span>
@@ -79,6 +85,8 @@ function renderPurchaseOrderHtml(po, lineProducts = []) {
   <div class="meta">
     <div class="meta-item"><strong>Vendor:</strong> ${vendorName}${vendorCode ? ' (' + vendorCode + ')' : ''}</div>
     <div class="meta-item"><strong>Warehouse:</strong> ${warehouseName}${warehouseCode ? ' (' + warehouseCode + ')' : ''}</div>
+    ${warehouseAddress ? `<div class="meta-item" style="grid-column:1/-1;"><strong>Delivery Address:</strong> ${warehouseAddress}</div>` : ''}
+    ${contactPerson || contactPhone ? `<div class="meta-item" style="grid-column:1/-1;"><strong>Contact:</strong> ${contactPerson}${contactPerson && contactPhone ? ' — ' : ''}${contactPhone}</div>` : ''}
     <div class="meta-item"><strong>PO Date:</strong> ${fmtDate(po.po_date)}</div>
     <div class="meta-item"><strong>Expected Delivery:</strong> ${fmtDate(po.expected_delivery_date)}</div>
     <div class="meta-item"><strong>Created By:</strong> ${createdByName || '—'}</div>
@@ -106,6 +114,30 @@ function renderPurchaseOrderHtml(po, lineProducts = []) {
   </div>
 
   ${po.notes ? `<div class="notes"><strong>Notes:</strong> ${po.notes}</div>` : ''}
+
+  ${(po.activity_log && po.activity_log.length > 0) ? `
+  <div style="margin:12px 0;">
+    <strong style="font-size:13px;">Activity Log</strong>
+    <table style="width:100%;margin-top:6px;font-size:11px;border-collapse:collapse;">
+      <thead><tr>
+        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #333;font-size:10px;">Date</th>
+        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #333;font-size:10px;">By</th>
+        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #333;font-size:10px;">Status</th>
+        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #333;font-size:10px;">Note</th>
+        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #333;font-size:10px;">Waybill</th>
+      </tr></thead>
+      <tbody>${po.activity_log.map(a => {
+        const byName = ((a.created_by?.firstName || '') + ' ' + (a.created_by?.lastName || '')).trim();
+        return `<tr>
+        <td style="padding:3px 6px;border-bottom:1px solid #eee;">${fmtDate(a.created_at)}</td>
+        <td style="padding:3px 6px;border-bottom:1px solid #eee;">${byName}</td>
+        <td style="padding:3px 6px;border-bottom:1px solid #eee;">${a.status_snapshot || ''}</td>
+        <td style="padding:3px 6px;border-bottom:1px solid #eee;">${a.message || ''}</td>
+        <td style="padding:3px 6px;border-bottom:1px solid #eee;font-weight:600;">${a.courier_waybill || ''}</td>
+      </tr>`;
+      }).join('')}</tbody>
+    </table>
+  </div>` : ''}
 
   <div class="footer">
     <div class="sig-block">

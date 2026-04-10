@@ -348,14 +348,16 @@ const WORKFLOW_GUIDES = {
       'Submit for approval (DRAFT → APPROVED)',
       'Click "Receive" to create a GRN linked to this PO — GRN approval auto-updates qty received and PO status',
       'Match with Supplier Invoice for 3-way match (PO ↔ GRN ↔ Invoice)',
-      'Click PO # to view full details, line items, linked GRNs and invoices',
-      'Click "Print / PDF" in the detail view to generate a shareable document — screenshot or save as PDF for messenger/email',
+      'Click PO # to view full details including warehouse address, delivery contact, linked GRNs and invoices',
+      'Use the Activity Log to add status updates, courier waybill numbers, and delivery notes — works at any PO status',
+      'Share POs via "Share Link" (copy link for Messenger/Viber/SMS), "Email PO" (send to vendor), or "Print / PDF"',
     ],
     next: [
       { label: 'GRN', path: '/erp/grn' },
       { label: 'Supplier Invoices', path: '/erp/supplier-invoices' },
+      { label: 'Warehouse Manager', path: '/erp/warehouse-manager' },
     ],
-    tip: 'Filter by warehouse, vendor, status, or date range. Use Print / PDF to share POs via screenshot or browser Save as PDF.',
+    tip: 'The Activity Log tracks all PO updates with timestamps. Use "Share Link" to generate a public URL you can paste into any messaging app — no login required for recipients.',
   },
   'supplier-invoices': {
     title: 'Supplier Invoices',
@@ -658,6 +660,20 @@ const WORKFLOW_GUIDES = {
       { label: 'Payroll', path: '/erp/payroll' },
     ],
     tip: 'Separating an employee cascades: marks SEPARATED, revokes all role assignments, and disables system login. Reactivation restores ACTIVE status only — re-enable login and role assignments manually. Career path: CONTRACTOR → PS_ELIGIBLE → TRANSITIONING → SUBSIDIARY → SHAREHOLDER.',
+  },
+  'role-assignment-manager': {
+    title: 'Role Assignment Manager',
+    steps: [
+      'Switch between "By Entity" view (see all assignments for an entity) and "By Person" view (search a person, see all their assignments)',
+      'Create a new assignment: select person, entity, functional role, and optional approval limit',
+      'Edit or deactivate existing assignments — deactivated assignments revoke that role for the person',
+      'Use this to control who can access which ERP modules (Sales, Purchasing, Inventory, Finance, etc.) per entity',
+    ],
+    next: [
+      { label: 'People List', path: '/erp/people' },
+      { label: 'Control Center', path: '/erp/control-center' },
+    ],
+    tip: 'Role assignments are entity-scoped — a person can have different roles in different entities. Approval limits control the maximum amount a person can approve without escalation.',
   },
   'org-chart': {
     title: 'Organization Chart',

@@ -35,5 +35,8 @@ router.put('/orders/:id', erpSubAccessCheck('purchasing', 'po_create'), c.update
 router.post('/orders/:id/approve', erpSubAccessCheck('purchasing', 'po_approve'), c.approvePO);
 router.post('/orders/:id/cancel', erpSubAccessCheck('purchasing', 'po_approve'), c.cancelPO);
 router.post('/orders/:id/receive', erpSubAccessCheck('purchasing', 'po_create'), c.receivePO);
+router.post('/orders/:id/activity', c.addPOActivity);
+router.post('/orders/:id/share', c.generateShareLink);
+router.post('/orders/:id/email', c.emailPO);
 
 module.exports = router;

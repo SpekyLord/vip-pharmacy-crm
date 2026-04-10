@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 5.8
-> **Status**: Phases 0-33 Complete. Bulk Role Migration + Login Fix (April 10, 2026).
+> **Version**: 5.9
+> **Status**: Phases 0-35 Complete. PO Enhancements — warehouse address, activity log, multi-channel sharing (April 10, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -732,3 +732,41 @@ When creating or modifying any ERP page, you MUST also update the corresponding 
   - Agent enum consistency across AgentRun, AgentConfig, scheduler, dashboard, settings
 
 Run both after modifying ERP pages, agents, or models. Exit code 1 = issues found.
+
+---
+
+## PO Enhancements — Warehouse Address, Activity Log & Multi-Channel Sharing (Phase 35)
+
+### Warehouse Address & Delivery Contact
+- **Warehouse model** gains `contact_person` and `contact_phone` fields (lookup-driven, admin-managed per warehouse)
+- PO detail modal and print template now show full warehouse address (`location.address, city, region`) and delivery contact
+- All PO populate calls expanded to include `location contact_person contact_phone`
+
+### PO Activity Log
+- **PurchaseOrder model** gains `activity_log` array of sub-documents:
+  - `message` (String, required) — status update text
+  - `courier_waybill` (String, optional) — courier tracking/waybill number
+  - `status_snapshot` (String) — auto-captured PO status at time of entry
+  - `created_by` (User ref), `created_at` (Date, immutable)
+- **Works at any PO status** — not restricted to DRAFT like updatePO
+- Endpoint: `POST /purchasing/orders/:id/activity` (no sub-module gate — any purchasing user)
+- Detail modal shows activity timeline (newest first) with add form
+- Print template renders activity log as a table
+
+### Multi-Channel PO Sharing
+- **Share Link**: `POST /purchasing/orders/:id/share` generates a `share_token` (crypto.randomBytes). Public route `GET /api/erp/po/share/:token` renders the PO HTML without auth — sharable via Messenger, Viber, SMS, any chat app
+- **Email PO**: `POST /purchasing/orders/:id/email` sends PO HTML to a recipient via Resend (existing email config). No additional cost.
+- **Copy Link**: Frontend button copies the share URL to clipboard
+- `share_token` field on PurchaseOrder: `{ type: String, unique: true, sparse: true }`
+
+### Key Files
+- `backend/erp/models/Warehouse.js` — contact_person, contact_phone
+- `backend/erp/models/PurchaseOrder.js` — poActivitySchema, activity_log, share_token
+- `backend/erp/controllers/purchasingController.js` — addPOActivity, generateShareLink, emailPO
+- `backend/erp/routes/purchasingRoutes.js` — 3 new POST routes
+- `backend/erp/routes/index.js` — public share route before auth middleware
+- `backend/erp/controllers/printController.js` — getSharedPOHtml
+- `backend/erp/templates/purchaseOrderPrint.js` — address, contact, activity log table
+- `frontend/src/erp/hooks/usePurchasing.js` — addPOActivity, generateShareLink, emailPO
+- `frontend/src/erp/pages/PurchaseOrders.jsx` — address display, activity log UI, share/email buttons
+- `frontend/src/erp/components/WorkflowGuide.jsx` — updated purchase-orders guide
