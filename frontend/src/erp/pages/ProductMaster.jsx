@@ -5,7 +5,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
+import useWorkingEntity from '../../hooks/useWorkingEntity';
 import useErpApi from '../hooks/useErpApi';
+import { broadcastProductsChanged } from '../hooks/useProducts';
 import useWarehouses from '../hooks/useWarehouses';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -230,10 +232,14 @@ function ProductModal({ open, onClose, onSave, editItem, vatOptions }) {
 export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const api = useErpApi();
   const { getWarehouses } = useWarehouses();
+  const { entities, workingEntityId, loaded: entityLoaded, isMultiEntity } = useWorkingEntity();
   const { options: vatOpts } = useLookupOptions('VAT_TYPE');
   const { options: stockTypeOpts } = useLookupOptions('STOCK_TYPE');
   const VAT_OPTIONS = vatOpts.length > 0 ? vatOpts.map(o => o.code) : VAT_OPTIONS_FALLBACK;
   const STOCK_TYPES = stockTypeOpts.length > 0 ? stockTypeOpts.map(o => o.code) : STOCK_TYPES_FALLBACK;
+  const entityReady = entityLoaded && (!isMultiEntity || !!workingEntityId);
+  const currentEntity = entities.find((entity) => entity._id === workingEntityId) || null;
+  const currentEntityLabel = currentEntity?.short_name || currentEntity?.entity_name || '';
   const [products, setProducts] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -261,8 +267,20 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const [refreshResult, setRefreshResult] = useState(null);
 
   useEffect(() => {
+    if (!entityReady) {
+      setWarehouses([]);
+      return;
+    }
+
     getWarehouses({ limit: 0 }).then(res => setWarehouses(res?.data || [])).catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entityReady, workingEntityId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setSelectedProducts([]);
+    setTagWarehouseId('');
+    setTagModal(false);
+    setPage(1);
+  }, [workingEntityId]);
 
   const toggleSelect = (id) => setSelectedProducts(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const toggleSelectAll = () => {
@@ -271,10 +289,11 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   };
 
   const handleTagToWarehouse = async () => {
-    if (!tagWarehouseId || !selectedProducts.length) return;
+    if (!entityReady || !tagWarehouseId || !selectedProducts.length) return;
     try {
       const res = await api.post('/products/tag-warehouse', { product_ids: selectedProducts, warehouse_id: tagWarehouseId });
       showSuccess(res?.message || 'Tagged successfully');
+      broadcastProductsChanged(workingEntityId);
       setTagModal(false);
       setSelectedProducts([]);
       setTagWarehouseId('');
@@ -282,6 +301,13 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   };
 
   const loadProducts = useCallback(async () => {
+    if (!entityReady) {
+      setProducts([]);
+      setTotal(0);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const params = { page, limit };
@@ -293,9 +319,29 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
       setTotal(res?.pagination?.total || 0);
     } catch (err) { console.error('[ProductMaster] Load error:', err.message); setProducts([]); }
     finally { setLoading(false); }
-  }, [page, search, statusFilter, stockTypeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entityReady, page, search, statusFilter, stockTypeFilter, workingEntityId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadProducts(); }, [loadProducts]);
+  useEffect(() => {
+    if (!entityReady) return;
+    loadProducts();
+  }, [entityReady, loadProducts]);
+
+  useEffect(() => {
+    if (!entityReady) return undefined;
+
+    const revalidate = () => {
+      if (document.visibilityState === 'hidden') return;
+      loadProducts();
+    };
+
+    window.addEventListener('focus', revalidate);
+    document.addEventListener('visibilitychange', revalidate);
+
+    return () => {
+      window.removeEventListener('focus', revalidate);
+      document.removeEventListener('visibilitychange', revalidate);
+    };
+  }, [entityReady, loadProducts]);
 
   // Debounce search
   const [searchInput, setSearchInput] = useState('');
@@ -305,9 +351,11 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   }, [searchInput]);
 
   const handleSave = async (body, id) => {
+    if (!entityReady) return;
     if (fixedStockType && !id) body.stock_type = fixedStockType;
     if (id) await api.put(`/products/${id}`, body);
     else await api.post('/products', body);
+    broadcastProductsChanged(workingEntityId);
     loadProducts();
   };
 
@@ -315,6 +363,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
     if (!window.confirm(`Deactivate "${name}"? This will hide it from dropdowns.`)) return;
     try {
       await api.patch(`/products/${id}/deactivate`);
+      broadcastProductsChanged(workingEntityId);
       loadProducts();
     } catch (err) {
       showError(err, 'Could not deactivate product');
@@ -326,6 +375,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
     try {
       await api.del(`/products/${id}`);
       showSuccess(`"${name}" deleted`);
+      broadcastProductsChanged(workingEntityId);
       loadProducts();
     } catch (err) {
       showError(err, 'Could not delete product');
@@ -333,6 +383,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   };
 
   const handleExportPrices = async () => {
+    if (!entityReady) return;
     try {
       const blob = await api.get('/products/export-prices', { responseType: 'blob' });
       const url = window.URL.createObjectURL(blob instanceof Blob ? blob : new Blob([blob]));
@@ -346,7 +397,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
 
   const handleImportPrices = async (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !entityReady) return;
     setImporting(true);
     try {
       const formData = new FormData();
@@ -359,6 +410,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
       const errs = res?.data?.errors || [];
       if (errs.length) showError(null, `${msg} Errors: ${errs.map(e => `Row ${e.row}: ${e.message}`).join('; ')}`);
       else showSuccess(msg);
+      broadcastProductsChanged(workingEntityId);
       loadProducts();
     } catch (err) { showError(err, 'Could not import prices'); }
     finally { setImporting(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
@@ -366,7 +418,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
 
   const handleRefreshProducts = async (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !entityReady) return;
     if (!window.confirm('This will refresh ALL products from the uploaded file.\n\n- Matching products will be updated\n- New products will be created\n- Duplicates will be deactivated\n- Products not in the file will be deactivated\n\nContinue?')) {
       if (refreshFileRef.current) refreshFileRef.current.value = '';
       return;
@@ -379,6 +431,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
         headers: { 'Content-Type': undefined }
       });
       setRefreshResult(res?.data || {});
+      broadcastProductsChanged(workingEntityId);
       loadProducts();
     } catch (err) { showError(err, 'Could not refresh products'); }
     finally { setRefreshing(false); if (refreshFileRef.current) refreshFileRef.current.value = ''; }
@@ -395,23 +448,26 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
             <div>
               <h1>{fixedStockType === 'FNB' ? 'F&B Product Master' : 'Product Master'}</h1>
               <p>{fixedStockType === 'FNB' ? 'Food & Beverage catalog — pricing, VAT' : 'ERP product catalog — pricing, VAT, reorder rules'}</p>
+              {isMultiEntity && currentEntityLabel && (
+                <p style={{ marginTop: 6 }}>Working entity: <strong>{currentEntityLabel}</strong></p>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn btn-secondary" onClick={handleExportPrices}>Export Prices</button>
-              <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+              <button className="btn btn-secondary" onClick={handleExportPrices} disabled={!entityReady}>Export Prices</button>
+              <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={importing || !entityReady}>
                 {importing ? 'Importing...' : 'Import Prices'}
               </button>
               <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportPrices} style={{ display: 'none' }} />
-              <button className="btn btn-secondary" onClick={() => refreshFileRef.current?.click()} disabled={refreshing} style={{ background: '#f59e0b', color: '#fff', border: 'none' }}>
+              <button className="btn btn-secondary" onClick={() => refreshFileRef.current?.click()} disabled={refreshing || !entityReady} style={{ background: '#f59e0b', color: '#fff', border: 'none' }}>
                 {refreshing ? 'Refreshing...' : 'Refresh Master'}
               </button>
               <input ref={refreshFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleRefreshProducts} style={{ display: 'none' }} />
               {selectedProducts.length > 0 && (
-                <button className="btn btn-secondary" onClick={() => setTagModal(true)}>
+                <button className="btn btn-secondary" onClick={() => setTagModal(true)} disabled={!entityReady}>
                   Tag {selectedProducts.length} to Warehouse
                 </button>
               )}
-              <button className="btn btn-primary" onClick={() => { setEditItem(null); setShowModal(true); }}>
+              <button className="btn btn-primary" onClick={() => { setEditItem(null); setShowModal(true); }} disabled={!entityReady}>
                 + New Product
               </button>
             </div>
@@ -436,7 +492,9 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
           </div>
 
           <div className="pm-panel" style={{ overflowX: 'auto' }}>
-            {loading ? (
+            {!entityReady ? (
+              <div className="pm-empty">Loading working entity...</div>
+            ) : loading ? (
               <div className="pm-empty">Loading products...</div>
             ) : products.length === 0 ? (
               <div className="pm-empty">No products found.</div>
