@@ -3,19 +3,6 @@ import useErpAccess from '../hooks/useErpAccess';
 
 import SelectField from '../../components/common/Select';
 
-const MODULES = [
-  { key: 'sales', label: 'Sales' },
-  { key: 'inventory', label: 'Inventory' },
-  { key: 'collections', label: 'Collections' },
-  { key: 'expenses', label: 'Expenses' },
-  { key: 'reports', label: 'Reports' },
-  { key: 'people', label: 'People' },
-  { key: 'payroll', label: 'Payroll' },
-  { key: 'accounting', label: 'Accounting' },
-  { key: 'purchasing', label: 'Purchasing' },
-  { key: 'banking', label: 'Banking' },
-];
-
 const LEVELS = ['NONE', 'VIEW', 'FULL'];
 
 const styles = `
@@ -52,6 +39,7 @@ const styles = `
 export default function ErpAccessManager({ userId, readOnly = false }) {
   const access = useErpAccess();
   const [enabled, setEnabled] = useState(false);
+  const [moduleKeys, setModuleKeys] = useState([]);
   const [modules, setModules] = useState({});
   const [subPermissions, setSubPermissions] = useState({});
   const [subPermKeys, setSubPermKeys] = useState({});
@@ -63,13 +51,16 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
 
   const load = useCallback(async () => {
     try {
-      const [tplRes, userRes, spkRes] = await Promise.all([
+      const [tplRes, userRes, spkRes, modRes] = await Promise.all([
         access.getTemplates(),
         access.getUserAccess(userId),
         access.getSubPermissionKeys(),
+        access.getModuleKeys(),
       ]);
       setTemplates(tplRes?.data || []);
       setSubPermKeys(spkRes?.data || {});
+      const mods = (modRes?.data || []).map(m => ({ key: m.key, label: m.label }));
+      if (mods.length) setModuleKeys(mods);
       const ua = userRes?.data?.erp_access || {};
       setEnabled(!!ua.enabled);
       setModules(ua.modules || {});
@@ -171,7 +162,7 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
             )}
           </div>
 
-          {MODULES.map(m => {
+          {moduleKeys.map(m => {
             const level = modules[m.key] || 'NONE';
             const hasSubKeys = !!subPermKeys[m.key];
             const showSubs = hasSubKeys && (level === 'VIEW' || level === 'FULL');

@@ -9,9 +9,8 @@ const officeSupplyTransactionSchema = new mongoose.Schema({
   supply_id: { type: mongoose.Schema.Types.ObjectId, ref: 'OfficeSupply', required: true },
   txn_type: {
     type: String,
-    enum: ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'],
     required: true
-  },
+  }, // Lookup: OFFICE_SUPPLY_TXN_TYPE
   txn_date: { type: Date, required: true, default: Date.now },
   qty: { type: Number, required: true },
   unit_cost: { type: Number, default: 0 },

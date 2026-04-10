@@ -9,7 +9,6 @@ import { useLookupOptions } from '../hooks/useLookups';
 import { showError, showSuccess } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
-const STATUS_LIST_FALLBACK = ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'];
 
 const TYPE_COLORS = {
   BDM: { bg: '#dbeafe', text: '#1e40af' },
@@ -70,7 +69,7 @@ export function PeopleListContent() {
   const api = usePeople();
   const { options: personTypeOpts } = useLookupOptions('PERSON_TYPE');
   const { options: statusOpts } = useLookupOptions('PEOPLE_STATUS');
-  const STATUS_LIST = statusOpts.length > 0 ? statusOpts.map(s => s.code) : STATUS_LIST_FALLBACK;
+  const STATUS_LIST = statusOpts.map(s => s.code);
   const PERSON_TYPES = personTypeOpts.map(o => o.code);
   const { options: empTypeOpts } = useLookupOptions('EMPLOYMENT_TYPE');
   const EMP_TYPES = empTypeOpts.map(o => o.code);

@@ -63,6 +63,7 @@ const LOOKUP_CATEGORIES = [
   'PERSON_TYPE', 'EMPLOYMENT_TYPE', 'VEHICLE_TYPE', 'BDM_STAGE', 'ROLE_MAPPING', 'SYSTEM_ROLE',
   'CIVIL_STATUS', 'PERSON_STATUS', 'SALARY_TYPE', 'TAX_STATUS', 'INCENTIVE_TYPE',
   'INSURANCE_TYPE', 'INSURANCE_FREQUENCY', 'INSURANCE_STATUS',
+  'POSITION', 'DEPARTMENT',
 ];
 
 const fmt = (n) => n != null ? `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
@@ -117,6 +118,8 @@ export default function PersonDetail() {
   const INS_TYPES = codes('INSURANCE_TYPE');
   const INS_FREQ = codes('INSURANCE_FREQUENCY');
   const INS_STATUS = codes('INSURANCE_STATUS');
+  const POSITIONS = codes('POSITION');
+  const DEPARTMENTS = codes('DEPARTMENT');
 
   const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const isPresident = user?.role === ROLES.PRESIDENT;
@@ -205,7 +208,7 @@ export default function PersonDetail() {
     }).catch(() => {});
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    pplApi.getPeopleList({ limit: 200, exclude_status: 'SEPARATED' }).then(r => setAllPeople(r?.data || [])).catch(() => {});
+    pplApi.getPeopleList({ limit: 200, status: 'ACTIVE' }).then(r => setAllPeople(r?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Warn if any lookup categories loaded empty (seeding may be needed)
@@ -502,8 +505,8 @@ export default function PersonDetail() {
               <F lbl="Phone" name="phone" val={person.phone} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Person Type" name="person_type" val={person.person_type?.replace(/_/g, ' ')} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_TYPES} />
               <F lbl="Status" name="status" val={person.status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_STATUSES} />
-              <F lbl="Position" name="position" val={person.position} editing={editPerson} form={personForm} onChange={handlePersonChange} />
-              <F lbl="Department" name="department" val={person.department} editing={editPerson} form={personForm} onChange={handlePersonChange} />
+              <F lbl="Position" name="position" val={person.position} editing={editPerson} form={personForm} onChange={handlePersonChange} options={POSITIONS} />
+              <F lbl="Department" name="department" val={person.department} editing={editPerson} form={personForm} onChange={handlePersonChange} options={DEPARTMENTS} />
               {/* Reports To — custom dropdown (needs object options, not strings) */}
               <div className="pd-field">
                 <div className="lbl">Reports To</div>

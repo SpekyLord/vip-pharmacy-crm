@@ -18,6 +18,7 @@ import { ROLE_SETS } from '../../constants/roles';
 import useKpiSelfRating from '../hooks/useKpiSelfRating';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { useLookupBatch } from '../hooks/useLookups';
 import toast from 'react-hot-toast';
 
 const STATUS_COLORS = {
@@ -28,21 +29,6 @@ const STATUS_COLORS = {
   RETURNED:  { bg: '#fee2e2', text: '#991b1b' },
 };
 
-const PERIOD_TYPES = [
-  { value: 'MONTHLY', label: 'Monthly' },
-  { value: 'QUARTERLY', label: 'Quarterly' },
-  { value: 'SEMI_ANNUAL', label: 'Semi-Annual' },
-  { value: 'ANNUAL', label: 'Annual' },
-];
-
-const SCORE_OPTIONS = [
-  { value: '', label: '—' },
-  { value: 1, label: '1 — Needs Improvement' },
-  { value: 2, label: '2 — Below Expectations' },
-  { value: 3, label: '3 — Meets Expectations' },
-  { value: 4, label: '4 — Exceeds Expectations' },
-  { value: 5, label: '5 — Outstanding' },
-];
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 
@@ -52,11 +38,11 @@ function StatusBadge({ status }) {
   return <span style={{ padding: '2px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: c.bg, color: c.text }}>{status}</span>;
 }
 
-function ScoreSelect({ value, onChange, disabled }) {
+function ScoreSelect({ value, onChange, disabled, scoreOptions }) {
   return (
     <select value={value ?? ''} onChange={e => onChange(e.target.value ? Number(e.target.value) : null)} disabled={disabled}
       style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 12, minWidth: 160, background: disabled ? '#f9fafb' : '#fff' }}>
-      {SCORE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      {scoreOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );
 }
@@ -72,6 +58,11 @@ function KpiSelfRatingContent() {
   } = useKpiSelfRating();
 
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
+
+  // Lookup-driven options (database-driven)
+  const { data: lookups } = useLookupBatch(['REVIEW_PERIOD_TYPE', 'RATING_SCALE']);
+  const PERIOD_TYPES = (lookups.REVIEW_PERIOD_TYPE || []).map(o => ({ value: o.code, label: o.label }));
+  const SCORE_OPTIONS = [{ value: '', label: '—' }, ...(lookups.RATING_SCALE || []).map(o => ({ value: Number(o.code), label: o.label }))];
 
   // ─── Tabs: self | review | history ────
   const [tab, setTab] = useState(searchParams.get('tab') || 'self');
@@ -363,7 +354,7 @@ function KpiSelfRatingContent() {
                           ) : (kpi.actual_value ?? '—')}
                         </td>
                         <td style={{ textAlign: 'center', padding: '8px 12px' }}>
-                          <ScoreSelect value={kpi.self_score} onChange={v => updateKpiField(i, 'self_score', v)} disabled={!canEditDraft} />
+                          <ScoreSelect scoreOptions={SCORE_OPTIONS} value={kpi.self_score} onChange={v => updateKpiField(i, 'self_score', v)} disabled={!canEditDraft} />
                         </td>
                         <td style={{ padding: '8px 12px' }}>
                           {canEditDraft ? (
@@ -414,7 +405,7 @@ function KpiSelfRatingContent() {
                       <tr key={comp.competency_code} style={{ borderTop: '1px solid #f0f0f0' }}>
                         <td style={{ padding: '8px 12px', fontWeight: 500 }}>{comp.competency_label}</td>
                         <td style={{ textAlign: 'center', padding: '8px 12px' }}>
-                          <ScoreSelect value={comp.self_score} onChange={v => updateCompField(i, 'self_score', v)} disabled={!canEditDraft} />
+                          <ScoreSelect scoreOptions={SCORE_OPTIONS} value={comp.self_score} onChange={v => updateCompField(i, 'self_score', v)} disabled={!canEditDraft} />
                         </td>
                         <td style={{ padding: '8px 12px' }}>
                           {canEditDraft ? (
@@ -444,7 +435,7 @@ function KpiSelfRatingContent() {
             <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 12, alignItems: 'start' }}>
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Overall Score</label>
-                <ScoreSelect value={draft.overall_self_score} onChange={v => setDraft(p => ({ ...p, overall_self_score: v }))} disabled={!canEditDraft} />
+                <ScoreSelect scoreOptions={SCORE_OPTIONS} value={draft.overall_self_score} onChange={v => setDraft(p => ({ ...p, overall_self_score: v }))} disabled={!canEditDraft} />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Summary Comment</label>
@@ -561,7 +552,7 @@ function KpiSelfRatingContent() {
                       <td style={{ padding: '8px 12px', background: '#fffbeb', fontSize: 12, color: '#6b7280' }}>{kpi.self_comment || '—'}</td>
                       <td style={{ textAlign: 'center', padding: '8px 12px', background: '#f0f7ff' }}>
                         {reviewTarget.status === 'SUBMITTED' ? (
-                          <ScoreSelect value={kpi.manager_score} onChange={v => updateReviewKpi(i, 'manager_score', v)} />
+                          <ScoreSelect scoreOptions={SCORE_OPTIONS} value={kpi.manager_score} onChange={v => updateReviewKpi(i, 'manager_score', v)} />
                         ) : (kpi.manager_score ? `${kpi.manager_score}/5` : '—')}
                       </td>
                       <td style={{ padding: '8px 12px', background: '#f0f7ff' }}>
@@ -601,7 +592,7 @@ function KpiSelfRatingContent() {
                       <td style={{ padding: '8px 12px', background: '#fffbeb', fontSize: 12, color: '#6b7280' }}>{comp.self_comment || '—'}</td>
                       <td style={{ textAlign: 'center', padding: '8px 12px', background: '#f0f7ff' }}>
                         {reviewTarget.status === 'SUBMITTED' ? (
-                          <ScoreSelect value={comp.manager_score} onChange={v => updateReviewComp(i, 'manager_score', v)} />
+                          <ScoreSelect scoreOptions={SCORE_OPTIONS} value={comp.manager_score} onChange={v => updateReviewComp(i, 'manager_score', v)} />
                         ) : (comp.manager_score ? `${comp.manager_score}/5` : '—')}
                       </td>
                       <td style={{ padding: '8px 12px', background: '#f0f7ff' }}>
@@ -630,7 +621,7 @@ function KpiSelfRatingContent() {
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#1e40af', marginBottom: 4 }}>Manager Assessment</div>
                 {reviewTarget.status === 'SUBMITTED' ? (
                   <>
-                    <ScoreSelect value={reviewTarget.overall_manager_score}
+                    <ScoreSelect scoreOptions={SCORE_OPTIONS} value={reviewTarget.overall_manager_score}
                       onChange={v => setReviewTarget(p => ({ ...p, overall_manager_score: v }))} />
                     <textarea value={reviewTarget.overall_manager_comment || ''}
                       onChange={e => setReviewTarget(p => ({ ...p, overall_manager_comment: e.target.value }))}

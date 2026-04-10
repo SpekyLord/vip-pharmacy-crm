@@ -642,7 +642,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Org Chart', path: '/erp/org-chart' },
       { label: 'Add Person', path: '/erp/people' },
     ],
-    tip: 'The Active tab shows current employees (ACTIVE, ON_LEAVE, SUSPENDED). The Archive tab shows separated employees. Use "Sync from CRM" to import existing CRM users. Reactivating a person sets them to ACTIVE but does not restore login or role assignments — those must be re-enabled manually.',
+    tip: 'The Active tab shows current employees (ACTIVE, ON_LEAVE, SUSPENDED). The Archive tab shows separated employees. Use "Sync from CRM" to import existing CRM users. Reactivating a person sets them to ACTIVE but does not restore login or role assignments — those must be re-enabled manually. Note: all people selection dropdowns across the ERP (Managed By, Reports To, Assign To, etc.) only show ACTIVE people.',
   },
   'person-detail': {
     title: 'Person Profile',
@@ -652,14 +652,14 @@ const WORKFLOW_GUIDES = {
       'Manage system login access and ERP module permissions',
       'Use "Separate Employee" to deactivate — this revokes role assignments and disables login',
       'Use "Reactivate" on separated employees to restore active status (login and roles must be re-enabled manually)',
-      'Person types, employment types, and BDM stages are managed via Lookup Tables (Control Center → System Settings)',
+      'Person types, positions, departments, employment types, and BDM stages are managed via Lookup Tables (Control Center → System Settings)',
     ],
     next: [
       { label: 'People List', path: '/erp/people' },
       { label: 'Org Chart', path: '/erp/org-chart' },
       { label: 'Payroll', path: '/erp/payroll' },
     ],
-    tip: 'Separating an employee cascades: marks SEPARATED, revokes all role assignments, and disables system login. Reactivation restores ACTIVE status only — re-enable login and role assignments manually. Career path: CONTRACTOR → PS_ELIGIBLE → TRANSITIONING → SUBSIDIARY → SHAREHOLDER.',
+    tip: 'Separating an employee cascades: marks SEPARATED, revokes all role assignments, and disables system login. Reactivation restores ACTIVE status only — re-enable login and role assignments manually. Career path: CONTRACTOR → PS_ELIGIBLE → TRANSITIONING → SUBSIDIARY → SHAREHOLDER. Position and Department are lookup-driven — to add new options, go to Control Center → Lookup Tables.',
   },
   'role-assignment-manager': {
     title: 'Role Assignment Manager',
@@ -1089,7 +1089,7 @@ const WORKFLOW_GUIDES = {
       { label: 'People', path: '/erp/people' },
       { label: 'Control Center', path: '/erp/control-center?section=access-templates' },
     ],
-    tip: 'Templates simplify access management. Create one per role (BDM, Finance, Admin) and assign to new users.',
+    tip: 'Modules and sub-permissions are lookup-driven — manage them in Lookup Tables (ERP_MODULE, ERP_SUB_PERMISSION). Templates simplify access. Create one per role and assign to new users.',
   },
 
   // ═══ Settlement & IC ═══

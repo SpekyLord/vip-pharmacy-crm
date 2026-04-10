@@ -29,7 +29,7 @@ const carLogbookEntrySchema = new mongoose.Schema({
 
   // Period
   period: { type: String, required: true, trim: true },       // "2026-04"
-  cycle: { type: String, enum: ['C1', 'C2', 'MONTHLY'], required: true },
+  cycle: { type: String, required: true }, // Lookup: CYCLE
   entry_date: { type: Date, required: true },
 
   // Odometer readings

@@ -23,14 +23,12 @@ const returnLineSchema = new mongoose.Schema({
   line_total: { type: Number },
   return_reason: {
     type: String,
-    enum: ['DAMAGED', 'EXPIRED', 'WRONG_ITEM', 'EXCESS_STOCK', 'QUALITY_ISSUE', 'RECALL', 'OTHER'],
     required: true
-  },
+  }, // Lookup: RETURN_REASON
   return_condition: {
     type: String,
-    enum: ['RESALEABLE', 'DAMAGED', 'EXPIRED', 'QUARANTINE'],
     default: 'RESALEABLE'
-  },
+  }, // Lookup: RETURN_CONDITION
   notes: { type: String, trim: true }
 }, { _id: true });
 

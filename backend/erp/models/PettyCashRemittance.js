@@ -16,9 +16,8 @@ const pettyCashRemittanceSchema = new mongoose.Schema({
   fund_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PettyCashFund', required: true },
   doc_type: {
     type: String,
-    enum: ['REMITTANCE', 'REPLENISHMENT'],
     required: true
-  },
+  }, // Lookup: REMITTANCE_TYPE
   doc_number: { type: String, trim: true },
   doc_date: { type: Date, required: true },
   amount: { type: Number, required: true, min: 0 },

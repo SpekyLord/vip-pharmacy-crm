@@ -4,23 +4,11 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
 import useApprovals from '../hooks/useApprovals';
-import useLookups from '../hooks/useLookups';
+import { useLookupBatch } from '../hooks/useLookups';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 import toast from 'react-hot-toast';
 
-// Fallbacks — overridden by lookup data from DB when available
-const MODULE_FALLBACK = [
-  'SALES', 'COLLECTIONS', 'EXPENSES', 'PURCHASING',
-  'PAYROLL', 'INVENTORY', 'JOURNAL', 'BANKING',
-  'PETTY_CASH', 'IC_TRANSFER', 'INCOME',
-];
-
-const APPROVER_TYPE_FALLBACK = [
-  { value: 'ROLE', label: 'By Role' },
-  { value: 'USER', label: 'Specific Users' },
-  { value: 'REPORTS_TO', label: 'Direct Manager' },
-];
 
 export default function ApprovalManager() {
   const { user } = useAuth();
@@ -40,14 +28,14 @@ export default function ApprovalManager() {
   const [decisionModal, setDecisionModal] = useState(null); // { requestId, action }
   const [reason, setReason] = useState('');
 
-  // Lookup-driven options (database-first, fallback to hardcoded)
-  const { options: moduleOpts } = useLookups('APPROVAL_MODULE');
-  const { options: approverTypeOpts } = useLookups('APPROVER_TYPE');
-  const { options: approverRoleOpts } = useLookups('APPROVER_ROLE');
+  // Lookup-driven options (database-driven via useLookupBatch)
+  const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE']);
 
-  const MODULE_OPTIONS = moduleOpts.length > 0 ? moduleOpts.map(o => o.code || o.value) : MODULE_FALLBACK;
-  const APPROVER_TYPES = approverTypeOpts.length > 0 ? approverTypeOpts.map(o => ({ value: o.code || o.value, label: o.label })) : APPROVER_TYPE_FALLBACK;
-  const APPROVER_ROLES = approverRoleOpts.length > 0 ? approverRoleOpts.map(o => (o.code || o.value).toLowerCase()) : [...ROLE_SETS.MANAGEMENT];
+  const MODULE_OPTIONS = (lookups.APPROVAL_MODULE || []).map(o => o.code || o.value);
+  const APPROVER_TYPES = (lookups.APPROVER_TYPE || []).map(o => ({ value: o.code || o.value, label: o.label }));
+  const APPROVER_ROLES = (lookups.APPROVER_ROLE || []).length > 0
+    ? (lookups.APPROVER_ROLE || []).map(o => (o.code || o.value).toLowerCase())
+    : [...ROLE_SETS.MANAGEMENT];
 
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 

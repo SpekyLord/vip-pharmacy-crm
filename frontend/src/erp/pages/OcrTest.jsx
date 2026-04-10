@@ -10,16 +10,6 @@ import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
 
-const DOC_TYPES_FALLBACK = [
-  { value: 'CSI', label: 'Charge Sales Invoice (CSI)' },
-  { value: 'CR', label: 'Collection Receipt (CR)' },
-  { value: 'CWT_2307', label: 'BIR 2307 (Withholding Tax)' },
-  { value: 'GAS_RECEIPT', label: 'Gas Station Receipt' },
-  { value: 'ODOMETER', label: 'Odometer' },
-  { value: 'OR', label: 'Expense Receipt / OR' },
-  { value: 'UNDERTAKING', label: 'Undertaking of Receipt (GRN)' },
-  { value: 'DR', label: 'Delivery Receipt (DR)' },
-];
 
 const CONFIDENCE_COLORS = {
   HIGH: '#1a1a1a',
@@ -246,7 +236,7 @@ function LineItems({ items, onItemChange, fieldSuggestions }) {
 /* ─── Main component ─── */
 const OcrTest = () => {
   const { options: docTypeOpts } = useLookupOptions('DOC_TYPE');
-  const DOC_TYPES = docTypeOpts.length > 0 ? docTypeOpts : DOC_TYPES_FALLBACK;
+  const DOC_TYPES = docTypeOpts;
   const [docType, setDocType] = useState('CSI');
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);

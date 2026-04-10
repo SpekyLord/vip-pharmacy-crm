@@ -79,7 +79,7 @@ const clientVisitSchema = new mongoose.Schema(
         {
           url: { type: String, required: true },
           capturedAt: { type: Date, required: true },
-          source: { type: String, enum: ['camera', 'gallery', 'clipboard'], default: 'camera' },
+          source: { type: String, default: 'camera' }, // Lookup: PHOTO_SOURCE
           hash: { type: String }, // MD5 hash for duplicate detection
         },
       ],
@@ -93,25 +93,23 @@ const clientVisitSchema = new mongoose.Schema(
 
     // Photo audit flags (for admin review)
     photoFlags: {
-      type: [String],
-      enum: ['date_mismatch', 'duplicate_photo'],
+      type: [String], // Lookup: PHOTO_FLAG
       default: [],
     },
     photoFlagDetails: [
       {
-        flag: { type: String, enum: ['date_mismatch', 'duplicate_photo'] },
+        flag: { type: String }, // Lookup: PHOTO_FLAG
         photoIndex: { type: Number },
         detail: { type: String },
         matchedVisitId: { type: mongoose.Schema.Types.ObjectId },
-        matchedVisitType: { type: String, enum: ['vip', 'regular'] },
+        matchedVisitType: { type: String }, // vip | regular
       },
     ],
     // Engagement types (maps to Excel CPT day sheet columns G-K)
     engagementTypes: {
       type: [String],
-      enum: ['TXT_PROMATS', 'MES_VIBER_GIF', 'PICTURE', 'SIGNED_CALL', 'VOICE_CALL'],
       default: [],
-    },
+    }, // Lookup: ENGAGEMENT_TYPE
     purpose: {
       type: String,
       maxlength: [500, 'Purpose cannot exceed 500 characters'],

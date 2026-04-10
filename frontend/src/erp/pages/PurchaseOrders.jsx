@@ -8,6 +8,7 @@ import useProducts from '../hooks/useProducts';
 import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
+import { useLookupOptions } from '../hooks/useLookups';
 import WarehousePicker from '../components/WarehousePicker';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -68,14 +69,14 @@ const styles = `
   @media(max-width: 375px) { .po-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .po-main input, .po-main select { font-size: 16px; } }
 `;
 
-const STATUSES = ['', 'DRAFT', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'];
-
 const EMPTY_LINE = { product_id: '', item_key: '', qty_ordered: 1, unit_price: 0, unit_code: '', purchase_uom: '', selling_uom: '', conversion_factor: 1 };
 
 export default function PurchaseOrders() {
   const api = usePurchasing();
   const inventory = useInventory();
   const navigate = useNavigate();
+  const { options: statusOpts } = useLookupOptions('PO_STATUS');
+  const STATUSES = ['', ...statusOpts.map(o => o.code)];
 
   // Warehouse state
   const [warehouseId, setWarehouseId] = useState('');

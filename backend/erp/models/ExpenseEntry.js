@@ -9,7 +9,7 @@ const mongoose = require('mongoose');
 
 const expenseLineSchema = new mongoose.Schema({
   expense_date: { type: Date, required: true },
-  expense_type: { type: String, enum: ['ORE', 'ACCESS'], required: true },
+  expense_type: { type: String, required: true }, // Lookup: EXPENSE_TYPE
   expense_category: { type: String, trim: true },  // courier, parking, toll, hotel, food, office, etc.
   coa_code: { type: String, trim: true },           // for future journal posting (Phase 11)
   establishment: { type: String, trim: true },
@@ -31,7 +31,7 @@ const expenseLineSchema = new mongoose.Schema({
   cost_center_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CostCenter' },
   notes: { type: String, trim: true },
   // Batch upload fields
-  bir_flag: { type: String, enum: ['BOTH', 'INTERNAL', 'BIR'], default: 'BOTH' },
+  bir_flag: { type: String, default: 'BOTH' }, // Lookup: BIR_FLAG
   is_assorted: { type: Boolean, default: false }
 }, { _id: true });
 
@@ -45,7 +45,7 @@ const expenseEntrySchema = new mongoose.Schema({
 
   // Period
   period: { type: String, required: true, trim: true },       // "2026-04"
-  cycle: { type: String, enum: ['C1', 'C2', 'MONTHLY'], required: true },
+  cycle: { type: String, required: true }, // Lookup: CYCLE
 
   // Expense lines
   lines: [expenseLineSchema],
@@ -58,7 +58,7 @@ const expenseEntrySchema = new mongoose.Schema({
   line_count: { type: Number, default: 0 },
 
   // BIR classification (set upfront by president for batch uploads)
-  bir_flag: { type: String, enum: ['BOTH', 'INTERNAL', 'BIR'], default: 'BOTH' },
+  bir_flag: { type: String, default: 'BOTH' }, // Lookup: BIR_FLAG
 
   // Lifecycle
   status: {

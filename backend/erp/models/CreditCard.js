@@ -38,14 +38,12 @@ const creditCardSchema = new mongoose.Schema({
   },
   card_type: {
     type: String,
-    enum: ['CREDIT_CARD', 'FLEET_CARD', 'DEBIT_CARD'],
     required: true
-  },
+  }, // Lookup: CARD_TYPE
   card_brand: {
     type: String,
-    enum: ['VISA', 'MASTERCARD', 'JCB', 'AMEX', 'FLEET'],
     default: 'MASTERCARD'
-  },
+  }, // Lookup: CARD_BRAND
   last_four: {
     type: String,
     trim: true

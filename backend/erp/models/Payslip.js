@@ -14,8 +14,7 @@ const payslipSchema = new mongoose.Schema(
     },
     person_type: {
       type: String,
-      enum: ['BDM', 'ECOMMERCE_BDM', 'EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'],
-    },
+    }, // Lookup: PERSON_TYPE
     period: {
       type: String,
       required: [true, 'Period is required'],
@@ -23,9 +22,8 @@ const payslipSchema = new mongoose.Schema(
     },
     cycle: {
       type: String,
-      enum: ['C1', 'C2', 'MONTHLY'],
       default: 'MONTHLY',
-    },
+    }, // Lookup: CYCLE
 
     // ═══ Earnings ═══
     earnings: {

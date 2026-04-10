@@ -11,7 +11,7 @@ import useErpApi from '../hooks/useErpApi';
 import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
 import useCustomers from '../hooks/useCustomers';
-import { useLookupOptions } from '../hooks/useLookups';
+import { useLookupBatch } from '../hooks/useLookups';
 import SelectField from '../../components/common/Select';
 import WarehousePicker from '../components/WarehousePicker';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -24,22 +24,6 @@ const STATUS_COLORS = {
   POSTED: { bg: '#dbeafe', text: '#1e40af', label: 'Posted' }
 };
 
-const RETURN_REASONS_FALLBACK = [
-  { value: 'DAMAGED', label: 'Damaged' },
-  { value: 'EXPIRED', label: 'Expired' },
-  { value: 'WRONG_ITEM', label: 'Wrong Item' },
-  { value: 'EXCESS_STOCK', label: 'Excess Stock' },
-  { value: 'QUALITY_ISSUE', label: 'Quality Issue' },
-  { value: 'RECALL', label: 'Recall' },
-  { value: 'OTHER', label: 'Other' }
-];
-
-const RETURN_CONDITIONS_FALLBACK = [
-  { value: 'RESALEABLE', label: 'Resaleable' },
-  { value: 'DAMAGED', label: 'Damaged' },
-  { value: 'EXPIRED', label: 'Expired' },
-  { value: 'QUARANTINE', label: 'Quarantine' }
-];
 
 const emptyLine = () => ({
   product_id: '', item_key: '', batch_lot_no: '', expiry_date: '',
@@ -51,10 +35,9 @@ export default function CreditNotes() {
   const { getMyStock } = useInventory();
   const { hospitals } = useHospitals();
   const { customers } = useCustomers();
-  const { options: reasonOpts } = useLookupOptions('RETURN_REASON');
-  const { options: conditionOpts } = useLookupOptions('RETURN_CONDITION');
-  const RETURN_REASONS = reasonOpts.length > 0 ? reasonOpts.map(o => ({ value: o.code, label: o.label })) : RETURN_REASONS_FALLBACK;
-  const RETURN_CONDITIONS = conditionOpts.length > 0 ? conditionOpts.map(o => ({ value: o.code, label: o.label })) : RETURN_CONDITIONS_FALLBACK;
+  const { data: lookups } = useLookupBatch(['RETURN_REASON', 'RETURN_CONDITION']);
+  const RETURN_REASONS = (lookups.RETURN_REASON || []).map(o => ({ value: o.code, label: o.label }));
+  const RETURN_CONDITIONS = (lookups.RETURN_CONDITION || []).map(o => ({ value: o.code, label: o.label }));
 
   const [docs, setDocs] = useState([]);
   const [showForm, setShowForm] = useState(false);

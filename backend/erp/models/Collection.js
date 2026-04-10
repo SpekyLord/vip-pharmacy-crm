@@ -20,7 +20,7 @@ const settledCsiSchema = new mongoose.Schema({
   csi_date: Date,
   invoice_amount: { type: Number, default: 0 },
   net_of_vat: { type: Number, default: 0 },
-  source: { type: String, enum: ['SALES_LINE', 'OPENING_AR'] },
+  source: { type: String }, // Lookup: SALE_SOURCE
   commission_rate: { type: Number, default: 0 },
   commission_amount: { type: Number, default: 0 },
   partner_tags: [partnerTagSchema]

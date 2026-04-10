@@ -8,7 +8,7 @@ const cycleReportSchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   period: { type: String, required: true, trim: true },
-  cycle: { type: String, enum: ['C1', 'C2', 'MONTHLY'], default: 'MONTHLY' },
+  cycle: { type: String, default: 'MONTHLY' }, // Lookup: CYCLE
 
   // Snapshot data
   sales_total: { type: Number, default: 0 },

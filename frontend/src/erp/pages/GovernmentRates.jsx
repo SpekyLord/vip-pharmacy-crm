@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
 import useErpApi from '../hooks/useErpApi';
+import { useLookupBatch } from '../hooks/useLookups';
 import { showError, showSuccess } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -57,24 +58,18 @@ const pageStyles = `
   }
 `;
 
-const RATE_TABS = [
-  { key: 'SSS', label: 'SSS' },
-  { key: 'PHILHEALTH', label: 'PhilHealth' },
-  { key: 'PAGIBIG', label: 'PagIBIG' },
-  { key: 'WITHHOLDING_TAX', label: 'Withholding Tax' },
-  { key: 'EC', label: 'EC' },
-  { key: 'DE_MINIMIS', label: 'De Minimis' },
-];
-
-const BRACKET_TYPES = ['SSS', 'WITHHOLDING_TAX', 'EC'];
-const FLAT_TYPES = ['PHILHEALTH', 'PAGIBIG'];
-
 const fmt = (v) => v != null && v !== '' ? Number(v).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
 
 export function GovernmentRatesContent() {
   const { user } = useAuth();
   const api = useErpApi();
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
+
+  // Lookup-driven rate types (database-driven)
+  const { data: lookups } = useLookupBatch(['GOV_RATE_TYPE', 'GOV_RATE_BRACKET_TYPE', 'GOV_RATE_FLAT_TYPE']);
+  const RATE_TABS = (lookups.GOV_RATE_TYPE || []).map(o => ({ key: o.code, label: o.label }));
+  const BRACKET_TYPES = (lookups.GOV_RATE_BRACKET_TYPE || []).map(o => o.code);
+  const FLAT_TYPES = (lookups.GOV_RATE_FLAT_TYPE || []).map(o => o.code);
 
   const [rates, setRates] = useState([]);
   const [loading, setLoading] = useState(false);

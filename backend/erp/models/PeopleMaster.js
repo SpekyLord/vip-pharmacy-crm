@@ -80,9 +80,8 @@ const peopleMasterSchema = new mongoose.Schema(
     // ═══ Civil Status ═══
     civil_status: {
       type: String,
-      enum: ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'],
       default: 'SINGLE',
-    },
+    }, // Lookup: CIVIL_STATUS
 
     // ═══ Government IDs (sensitive) ═══
     government_ids: {
@@ -110,9 +109,8 @@ const peopleMasterSchema = new mongoose.Schema(
     is_active: { type: Boolean, default: true },
     status: {
       type: String,
-      enum: ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'],
       default: 'ACTIVE',
-    },
+    }, // Lookup: PEOPLE_STATUS
 
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },

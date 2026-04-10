@@ -33,10 +33,9 @@ const warehouseSchema = new mongoose.Schema({
   },
   warehouse_type: {
     type: String,
-    enum: ['MAIN', 'TERRITORY', 'VIRTUAL'],
     required: true,
     default: 'TERRITORY',
-  },
+  }, // Lookup: WAREHOUSE_TYPE
   location: {
     address: { type: String, trim: true },
     city: { type: String, trim: true },
@@ -75,9 +74,8 @@ const warehouseSchema = new mongoose.Schema({
   // Stock type — determines which inventory model to use
   stock_type: {
     type: String,
-    enum: ['PHARMA', 'FNB', 'OFFICE'],
     default: 'PHARMA',
-  },
+  }, // Lookup: STOCK_TYPE
 
   is_active: { type: Boolean, default: true },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

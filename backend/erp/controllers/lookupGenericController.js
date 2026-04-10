@@ -63,6 +63,27 @@ const SEED_DEFAULTS = {
   OFFICE_SUPPLY_TXN_TYPE: ['PURCHASE', 'ISSUE', 'RETURN', 'ADJUSTMENT'],
   PAYMENT_MODE_TYPE: ['CASH', 'CHECK', 'BANK_TRANSFER', 'GCASH', 'CARD', 'OTHER'],
   PEOPLE_STATUS: ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'],
+  ACCOUNT_TYPE: ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'],
+  PO_STATUS: ['DRAFT', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'],
+  GOV_RATE_TYPE: [
+    { code: 'SSS', label: 'SSS' },
+    { code: 'PHILHEALTH', label: 'PhilHealth' },
+    { code: 'PAGIBIG', label: 'PagIBIG' },
+    { code: 'WITHHOLDING_TAX', label: 'Withholding Tax' },
+    { code: 'EC', label: 'EC' },
+    { code: 'DE_MINIMIS', label: 'De Minimis' },
+  ],
+  GOV_RATE_BRACKET_TYPE: ['SSS', 'WITHHOLDING_TAX', 'EC'],
+  GOV_RATE_FLAT_TYPE: ['PHILHEALTH', 'PAGIBIG'],
+  KPI_DIRECTION: [
+    { code: 'higher_better', label: 'Higher is better' },
+    { code: 'lower_better', label: 'Lower is better' },
+  ],
+  KPI_UNIT: ['%', 'count', 'days', 'PHP', 'ratio', 'score'],
+  KPI_COMPUTATION: [
+    { code: 'manual', label: 'Self-reported (manual)' },
+    { code: 'auto', label: 'Auto-computed from ERP data' },
+  ],
   UNIT_CODE: [
     'PC', 'BOX', 'VIAL', 'BOTTLE', 'TUBE', 'SACHET', 'STRIP',
     'TABLET', 'CAPSULE', 'AMPULE', 'PACK', 'ROLL', 'SET',
@@ -169,7 +190,7 @@ const SEED_DEFAULTS = {
   ],
   // Phase 30 — PersonDetail dropdowns (migrated from hardcoded arrays)
   CIVIL_STATUS: ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'],
-  PERSON_STATUS: ['ACTIVE', 'ON_LEAVE', 'SEPARATED'],
+  PERSON_STATUS: ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'],
   SALARY_TYPE: ['FIXED_SALARY', 'COMMISSION_BASED', 'HYBRID'],
   TAX_STATUS: ['S', 'S1', 'S2', 'ME', 'ME1', 'ME2', 'ME3', 'ME4'],
   INCENTIVE_TYPE: ['CASH', 'IN_KIND', 'COMMISSION', 'NONE'],
@@ -235,6 +256,58 @@ const SEED_DEFAULTS = {
     { code: 'SEMI_ANNUAL', label: 'Semi-Annual' },
     { code: 'ANNUAL', label: 'Annual' },
   ],
+  // Phase A — ERP Access Templates (was hardcoded MODULES arrays in AccessTemplateManager + ErpAccessManager)
+  ERP_MODULE: [
+    { code: 'SALES', label: 'Sales', metadata: { key: 'sales', short_label: 'Sales', sort_order: 1 } },
+    { code: 'INVENTORY', label: 'Inventory', metadata: { key: 'inventory', short_label: 'Inv', sort_order: 2 } },
+    { code: 'COLLECTIONS', label: 'Collections', metadata: { key: 'collections', short_label: 'Coll', sort_order: 3 } },
+    { code: 'EXPENSES', label: 'Expenses', metadata: { key: 'expenses', short_label: 'Exp', sort_order: 4 } },
+    { code: 'REPORTS', label: 'Reports', metadata: { key: 'reports', short_label: 'Rep', sort_order: 5 } },
+    { code: 'PEOPLE', label: 'People', metadata: { key: 'people', short_label: 'People', sort_order: 6 } },
+    { code: 'PAYROLL', label: 'Payroll', metadata: { key: 'payroll', short_label: 'Payroll', sort_order: 7 } },
+    { code: 'ACCOUNTING', label: 'Accounting', metadata: { key: 'accounting', short_label: 'Acctg', sort_order: 8 } },
+    { code: 'PURCHASING', label: 'Purchasing', metadata: { key: 'purchasing', short_label: 'Purch', sort_order: 9 } },
+    { code: 'BANKING', label: 'Banking', metadata: { key: 'banking', short_label: 'Bank', sort_order: 10 } },
+    { code: 'SALES_GOALS', label: 'Sales Goals', metadata: { key: 'sales_goals', short_label: 'Goals', sort_order: 11 } },
+  ],
+  ERP_SUB_PERMISSION: [
+    // Sales
+    { code: 'SALES__REOPEN', label: 'Re-open Posted Sales', metadata: { module: 'sales', key: 'reopen', sort_order: 1 } },
+    // Collections
+    { code: 'COLLECTIONS__REOPEN', label: 'Re-open Posted Collections', metadata: { module: 'collections', key: 'reopen', sort_order: 1 } },
+    // Expenses
+    { code: 'EXPENSES__BATCH_UPLOAD', label: 'Batch OR Upload (OCR)', metadata: { module: 'expenses', key: 'batch_upload', sort_order: 1 } },
+    { code: 'EXPENSES__REOPEN', label: 'Re-open Posted Expenses', metadata: { module: 'expenses', key: 'reopen', sort_order: 2 } },
+    // Purchasing
+    { code: 'PURCHASING__PO_CREATE', label: 'Create/Edit Purchase Orders', metadata: { module: 'purchasing', key: 'po_create', sort_order: 1 } },
+    { code: 'PURCHASING__PO_APPROVE', label: 'Approve Purchase Orders', metadata: { module: 'purchasing', key: 'po_approve', sort_order: 2 } },
+    { code: 'PURCHASING__VENDOR_MANAGE', label: 'Manage Vendors', metadata: { module: 'purchasing', key: 'vendor_manage', sort_order: 3 } },
+    { code: 'PURCHASING__SUPPLIER_INVOICE', label: 'Supplier Invoices', metadata: { module: 'purchasing', key: 'supplier_invoice', sort_order: 4 } },
+    { code: 'PURCHASING__AP_PAYMENT', label: 'AP Payments', metadata: { module: 'purchasing', key: 'ap_payment', sort_order: 5 } },
+    // Accounting
+    { code: 'ACCOUNTING__JOURNAL_ENTRY', label: 'Journal Entries & COA', metadata: { module: 'accounting', key: 'journal_entry', sort_order: 1 } },
+    { code: 'ACCOUNTING__CHECK_WRITING', label: 'Check Writing / Payments', metadata: { module: 'accounting', key: 'check_writing', sort_order: 2 } },
+    { code: 'ACCOUNTING__MONTH_END', label: 'Month-End Close', metadata: { module: 'accounting', key: 'month_end', sort_order: 3 } },
+    { code: 'ACCOUNTING__VAT_FILING', label: 'VAT/CWT Compliance', metadata: { module: 'accounting', key: 'vat_filing', sort_order: 4 } },
+    { code: 'ACCOUNTING__FIXED_ASSETS', label: 'Fixed Assets & Depreciation', metadata: { module: 'accounting', key: 'fixed_assets', sort_order: 5 } },
+    { code: 'ACCOUNTING__LOANS', label: 'Loan Management', metadata: { module: 'accounting', key: 'loans', sort_order: 6 } },
+    { code: 'ACCOUNTING__OWNER_EQUITY', label: 'Owner Equity', metadata: { module: 'accounting', key: 'owner_equity', sort_order: 7 } },
+    { code: 'ACCOUNTING__PETTY_CASH', label: 'Petty Cash', metadata: { module: 'accounting', key: 'petty_cash', sort_order: 8 } },
+    { code: 'ACCOUNTING__OFFICE_SUPPLIES', label: 'Office Supplies', metadata: { module: 'accounting', key: 'office_supplies', sort_order: 9 } },
+    // Banking
+    { code: 'BANKING__BANK_ACCOUNTS', label: 'Bank Accounts', metadata: { module: 'banking', key: 'bank_accounts', sort_order: 1 } },
+    { code: 'BANKING__BANK_RECON', label: 'Bank Reconciliation', metadata: { module: 'banking', key: 'bank_recon', sort_order: 2 } },
+    { code: 'BANKING__STATEMENT_IMPORT', label: 'Statement Import', metadata: { module: 'banking', key: 'statement_import', sort_order: 3 } },
+    { code: 'BANKING__CREDIT_CARD', label: 'Credit Card Ledger', metadata: { module: 'banking', key: 'credit_card', sort_order: 4 } },
+    { code: 'BANKING__CASHFLOW', label: 'Cashflow Statement', metadata: { module: 'banking', key: 'cashflow', sort_order: 5 } },
+    { code: 'BANKING__PAYMENTS', label: 'Payment Processing', metadata: { module: 'banking', key: 'payments', sort_order: 6 } },
+    // Sales Goals
+    { code: 'SALES_GOALS__PLAN_MANAGE', label: 'Create/Edit Plans & Targets', metadata: { module: 'sales_goals', key: 'plan_manage', sort_order: 1 } },
+    { code: 'SALES_GOALS__KPI_COMPUTE', label: 'Trigger KPI Computation', metadata: { module: 'sales_goals', key: 'kpi_compute', sort_order: 2 } },
+    { code: 'SALES_GOALS__ACTION_MANAGE_ALL', label: 'Create Actions for Any BDM', metadata: { module: 'sales_goals', key: 'action_manage_all', sort_order: 3 } },
+    { code: 'SALES_GOALS__INCENTIVE_MANAGE', label: 'Manage Incentive Programs', metadata: { module: 'sales_goals', key: 'incentive_manage', sort_order: 4 } },
+    { code: 'SALES_GOALS__MANUAL_KPI_ALL', label: 'Enter Manual KPIs for Any BDM', metadata: { module: 'sales_goals', key: 'manual_kpi_all', sort_order: 5 } },
+  ],
   // Phase 30 — Credit Note lookups (was hardcoded in CreditNotes.jsx)
   RETURN_REASON: [
     { code: 'DAMAGED', label: 'Damaged' },
@@ -251,6 +324,32 @@ const SEED_DEFAULTS = {
     { code: 'EXPIRED', label: 'Expired' },
     { code: 'QUARANTINE', label: 'Quarantine' },
   ],
+  // Phase C — New lookup categories (was hardcoded as Mongoose enum constraints)
+  CYCLE: ['C1', 'C2', 'MONTHLY'],
+  BANK_ACCOUNT_TYPE: ['SAVINGS', 'CHECKING', 'CURRENT'],
+  STATEMENT_IMPORT_FORMAT: ['CSV', 'OFX', 'MT940'],
+  WAREHOUSE_TYPE: ['MAIN', 'TERRITORY', 'VIRTUAL'],
+  OVERRIDE_REASON: ['HOSPITAL_POLICY', 'QA_REPLACEMENT', 'DAMAGED_BATCH', 'BATCH_RECALL'],
+  PETTY_CASH_TXN_TYPE: ['DEPOSIT', 'DISBURSEMENT', 'REMITTANCE', 'REPLENISHMENT', 'ADJUSTMENT'],
+  PETTY_CASH_FUND_TYPE: ['REVOLVING', 'EXPENSE_ONLY', 'DEPOSIT_ONLY'],
+  PETTY_CASH_FUND_STATUS: ['ACTIVE', 'SUSPENDED', 'CLOSED'],
+  REMITTANCE_TYPE: ['REMITTANCE', 'REPLENISHMENT'],
+  PRF_DOC_TYPE: ['PRF', 'CALF'],
+  PRF_TYPE: ['PARTNER_REBATE', 'PERSONAL_REIMBURSEMENT'],
+  PAYEE_TYPE: ['MD', 'NON_MD', 'EMPLOYEE'],
+  OWNER_EQUITY_TYPE: ['INFUSION', 'DRAWING'],
+  CREDIT_LIMIT_ACTION: ['WARN', 'BLOCK'],
+  PERDIEM_TIER: ['FULL', 'HALF', 'ZERO'],
+  BUDGET_ALLOCATION_TYPE: ['BDM', 'DEPARTMENT', 'EMPLOYEE'],
+  CONSIGNMENT_AGING_STATUS: ['OPEN', 'OVERDUE', 'COLLECTED', 'FORCE_CSI'],
+  CONSIGNMENT_STATUS: ['ACTIVE', 'FULLY_CONSUMED', 'RETURNED', 'EXPIRED'],
+  SALE_SOURCE: ['SALES_LINE', 'OPENING_AR'],
+  ENTITY_STATUS: ['ACTIVE', 'INACTIVE'],
+  VISIT_TYPE: ['regular', 'follow-up', 'emergency'],
+  PHOTO_SOURCE: ['camera', 'gallery', 'clipboard'],
+  PHOTO_FLAG: ['date_mismatch', 'duplicate_photo'],
+  MESSAGE_CATEGORY: ['announcement', 'payroll', 'leave', 'policy', 'system', 'compliance_alert', 'other', 'ai_coaching', 'ai_schedule', 'ai_alert'],
+  MESSAGE_PRIORITY: ['normal', 'important', 'high'],
 };
 
 // List all distinct categories for current entity

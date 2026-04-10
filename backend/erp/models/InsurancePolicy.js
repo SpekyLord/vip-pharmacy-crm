@@ -20,9 +20,8 @@ const insurancePolicySchema = new mongoose.Schema({
 
   policy_type: {
     type: String,
-    required: true,
-    enum: ['LIFE', 'KEYMAN', 'INCOME_LOSS', 'ACCIDENT', 'VEHICLE_COMPREHENSIVE', 'VEHICLE_CTPL']
-  },
+    required: true
+  }, // Lookup: INSURANCE_TYPE
 
   // Policy details
   provider: { type: String, required: true, trim: true },   // Sun Life, AXA, Malayan, etc.
@@ -31,9 +30,8 @@ const insurancePolicySchema = new mongoose.Schema({
   premium_amount: { type: Number, default: 0 },
   premium_frequency: {
     type: String,
-    enum: ['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL'],
     default: 'ANNUAL'
-  },
+  }, // Lookup: INSURANCE_FREQUENCY
 
   // Dates
   effective_date: { type: Date },
@@ -49,9 +47,8 @@ const insurancePolicySchema = new mongoose.Schema({
   // Status
   status: {
     type: String,
-    enum: ['ACTIVE', 'EXPIRED', 'CANCELLED', 'PENDING_RENEWAL'],
     default: 'ACTIVE'
-  },
+  }, // Lookup: INSURANCE_STATUS
 
   notes: { type: String, trim: true },
 

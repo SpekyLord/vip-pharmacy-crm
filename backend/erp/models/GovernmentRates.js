@@ -18,9 +18,8 @@ const benefitLimitSchema = new mongoose.Schema({
 const governmentRatesSchema = new mongoose.Schema({
   rate_type: {
     type: String,
-    enum: ['SSS', 'PHILHEALTH', 'PAGIBIG', 'WITHHOLDING_TAX', 'EC', 'DE_MINIMIS'],
     required: true
-  },
+  }, // Lookup: GOV_RATE_TYPE
   effective_date: {
     type: Date,
     required: true

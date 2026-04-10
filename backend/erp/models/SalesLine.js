@@ -17,9 +17,8 @@ const lineItemSchema = new mongoose.Schema({
   net_of_vat: { type: Number },
   fifo_override: { type: Boolean, default: false },
   override_reason: {
-    type: String,
-    enum: [null, '', 'HOSPITAL_POLICY', 'QA_REPLACEMENT', 'DAMAGED_BATCH', 'BATCH_RECALL']
-  }
+    type: String
+  } // Lookup: OVERRIDE_REASON
 }, { _id: true });
 
 const salesLineSchema = new mongoose.Schema({
@@ -40,15 +39,13 @@ const salesLineSchema = new mongoose.Schema({
   },
   source: {
     type: String,
-    enum: ['SALES_LINE', 'OPENING_AR'],
     default: 'SALES_LINE'
-  },
+  }, // Lookup: SALE_SOURCE
   // Phase 18: sale_type determines document flow and validation rules
   sale_type: {
     type: String,
-    enum: ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'],
     default: 'CSI'
-  },
+  }, // Lookup: SALE_TYPE
   hospital_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Hospital'

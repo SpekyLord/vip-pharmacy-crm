@@ -10,7 +10,6 @@ import { useLookupOptions } from '../hooks/useLookups';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
-const MODE_TYPES_FALLBACK = ['CASH', 'CHECK', 'BANK_TRANSFER', 'GCASH', 'CARD', 'OTHER'];
 
 const pageStyles = `
   .pmode-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -46,7 +45,7 @@ export function PaymentModesContent() {
   const api = useErpApi();
   const { listAccounts } = useAccounting();
   const { options: modeTypeOpts } = useLookupOptions('PAYMENT_MODE_TYPE');
-  const MODE_TYPES = modeTypeOpts.length > 0 ? modeTypeOpts.map(o => o.code) : MODE_TYPES_FALLBACK;
+  const MODE_TYPES = modeTypeOpts.map(o => o.code);
   const [modes, setModes] = useState([]);
   const [coaAccounts, setCoaAccounts] = useState([]);
   const [loading, setLoading] = useState(false);

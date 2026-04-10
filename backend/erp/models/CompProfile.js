@@ -20,9 +20,8 @@ const compProfileSchema = new mongoose.Schema(
     // ═══ Salary Type ═══
     salary_type: {
       type: String,
-      enum: ['FIXED_SALARY', 'COMMISSION_BASED', 'HYBRID'],
       required: [true, 'Salary type is required'],
-    },
+    }, // Lookup: SALARY_TYPE
 
     // ═══ Fixed Salary Components ═══
     basic_salary: { type: Number, default: 0 },
@@ -36,9 +35,8 @@ const compProfileSchema = new mongoose.Schema(
     // ═══ Incentive Components ═══
     incentive_type: {
       type: String,
-      enum: ['CASH', 'IN_KIND', 'COMMISSION', 'NONE'],
       default: 'NONE',
-    },
+    }, // Lookup: INCENTIVE_TYPE
     incentive_rate: { type: Number, default: 0 },
     incentive_description: { type: String, default: '' },
     incentive_cap: { type: Number, default: 0 },
@@ -56,9 +54,8 @@ const compProfileSchema = new mongoose.Schema(
     logbook_eligible: { type: Boolean, default: false },
     vehicle_type: {
       type: String,
-      enum: ['CAR', 'MOTORCYCLE', 'COMPANY_CAR', 'NONE'],
       default: 'NONE',
-    },
+    }, // Lookup: VEHICLE_TYPE
     ore_eligible: { type: Boolean, default: false },
     access_eligible: { type: Boolean, default: false },
     calf_override: { type: Boolean, default: false },    // Bypass CALF requirement
@@ -71,9 +68,8 @@ const compProfileSchema = new mongoose.Schema(
     // ═══ Tax Status ═══
     tax_status: {
       type: String,
-      enum: ['S', 'S1', 'S2', 'ME', 'ME1', 'ME2', 'ME3', 'ME4'],
       default: 'S',
-    },
+    }, // Lookup: TAX_STATUS
 
     // ═══ Lifecycle ═══
     status: {

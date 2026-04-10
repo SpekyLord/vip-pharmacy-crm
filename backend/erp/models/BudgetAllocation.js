@@ -13,9 +13,8 @@ const budgetAllocationSchema = new mongoose.Schema({
   },
   target_type: {
     type: String,
-    enum: ['BDM', 'DEPARTMENT', 'EMPLOYEE'],
     required: true
-  },
+  }, // Lookup: BUDGET_ALLOCATION_TYPE
   target_id: {
     type: mongoose.Schema.Types.ObjectId,
     required: true

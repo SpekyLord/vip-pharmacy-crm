@@ -9,13 +9,11 @@ import useWorkingEntity from '../../hooks/useWorkingEntity';
 import useErpApi from '../hooks/useErpApi';
 import { broadcastProductsChanged } from '../hooks/useProducts';
 import useWarehouses from '../hooks/useWarehouses';
-import { useLookupOptions } from '../hooks/useLookups';
+import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
 
-const VAT_OPTIONS_FALLBACK = ['VATABLE', 'EXEMPT', 'ZERO'];
 const STATUS_FILTER = ['ALL', 'ACTIVE', 'INACTIVE'];
-const STOCK_TYPES_FALLBACK = ['PHARMA', 'FNB', 'OFFICE'];
 
 const pageStyles = `
   .pm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -261,11 +259,10 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const api = useErpApi();
   const { getWarehouses } = useWarehouses();
   const { entities, workingEntityId, loaded: entityLoaded, isMultiEntity } = useWorkingEntity();
-  const { options: vatOpts } = useLookupOptions('VAT_TYPE');
-  const { options: stockTypeOpts } = useLookupOptions('STOCK_TYPE');
-  const { options: unitCodeOpts } = useLookupOptions('UNIT_CODE');
-  const VAT_OPTIONS = vatOpts.length > 0 ? vatOpts.map(o => o.code) : VAT_OPTIONS_FALLBACK;
-  const STOCK_TYPES = stockTypeOpts.length > 0 ? stockTypeOpts.map(o => o.code) : STOCK_TYPES_FALLBACK;
+  const { data: lookups } = useLookupBatch(['VAT_TYPE', 'STOCK_TYPE', 'UNIT_CODE']);
+  const VAT_OPTIONS = (lookups.VAT_TYPE || []).map(o => o.code);
+  const STOCK_TYPES = (lookups.STOCK_TYPE || []).map(o => o.code);
+  const unitCodeOpts = lookups.UNIT_CODE || [];
   const entityReady = entityLoaded && (!isMultiEntity || !!workingEntityId);
   const currentEntity = entities.find((entity) => entity._id === workingEntityId) || null;
   const currentEntityLabel = currentEntity?.short_name || currentEntity?.entity_name || '';

@@ -53,9 +53,8 @@ const productMasterSchema = new mongoose.Schema({
   },
   vat_status: {
     type: String,
-    enum: ['VATABLE', 'EXEMPT', 'ZERO'],
     default: 'VATABLE'
-  },
+  }, // Lookup: VAT_TYPE
 
   // SAP-level reorder fields (null = not configured)
   reorder_min_qty: { type: Number, default: null, min: 0 },
@@ -66,9 +65,8 @@ const productMasterSchema = new mongoose.Schema({
   // Classification
   stock_type: {
     type: String,
-    enum: ['PHARMA', 'FNB', 'OFFICE'],
     default: 'PHARMA'
-  },
+  }, // Lookup: STOCK_TYPE
   category: { type: String, trim: true },
   is_active: { type: Boolean, default: true },
 

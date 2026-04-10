@@ -10,9 +10,8 @@ const officeSupplySchema = new mongoose.Schema({
   item_code: { type: String, trim: true, uppercase: true },
   category: {
     type: String,
-    enum: ['PAPER', 'INK_TONER', 'CLEANING', 'STATIONERY', 'ELECTRONICS', 'OTHER'],
     default: 'OTHER'
-  },
+  }, // Lookup: OFFICE_SUPPLY_CATEGORY
   unit: { type: String, default: 'PCS', trim: true },
   qty_on_hand: { type: Number, default: 0 },
   reorder_level: { type: Number, default: 0 },

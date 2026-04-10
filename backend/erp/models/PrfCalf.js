@@ -37,24 +37,24 @@ const prfCalfSchema = new mongoose.Schema({
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 
   // Document type
-  doc_type: { type: String, enum: ['PRF', 'CALF'], required: true },
+  doc_type: { type: String, required: true }, // Lookup: PRF_DOC_TYPE
 
   // Period
   period: { type: String, required: true, trim: true },       // "2026-04"
-  cycle: { type: String, enum: ['C1', 'C2', 'MONTHLY'], required: true },
+  cycle: { type: String, required: true }, // Lookup: CYCLE
 
   // ═══════════════════════════════════════════
   // PRF fields — payment instruction for Finance
   // ═══════════════════════════════════════════
   prf_number: { type: String, trim: true },
-  prf_type: { type: String, enum: ['PARTNER_REBATE', 'PERSONAL_REIMBURSEMENT'], default: 'PARTNER_REBATE' },
+  prf_type: { type: String, default: 'PARTNER_REBATE' }, // Lookup: PRF_TYPE
   // PARTNER_REBATE: pay partner (MD/Non-MD) their rebate — requires partner bank details
   // PERSONAL_REIMBURSEMENT: reimburse BDM/employee who paid with own money — requires OR photo, payee = self
   purpose: { type: String, trim: true },                       // e.g., "Partner rebate — CSI #004719" or "Personal reimbursement — hotel, parking"
 
   // Payee identification (partner for PARTNER_REBATE, employee for PERSONAL_REIMBURSEMENT)
   payee_name: { type: String, trim: true },                    // partner name or employee name
-  payee_type: { type: String, enum: ['MD', 'NON_MD', 'EMPLOYEE'] },
+  payee_type: { type: String }, // Lookup: PAYEE_TYPE
   partner_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' },  // CRM Doctor ref
 
   // Partner bank account — Finance needs this to send payment
@@ -93,7 +93,7 @@ const prfCalfSchema = new mongoose.Schema({
   photo_urls: [String],
 
   // BIR flag
-  bir_flag: { type: String, enum: ['BOTH', 'INTERNAL', 'BIR'], default: 'INTERNAL' },
+  bir_flag: { type: String, default: 'INTERNAL' }, // Lookup: BIR_FLAG
 
   notes: { type: String, trim: true },
 

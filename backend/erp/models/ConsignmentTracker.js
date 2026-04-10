@@ -44,18 +44,16 @@ const consignmentTrackerSchema = new mongoose.Schema({
   days_outstanding: { type: Number },
   aging_status: {
     type: String,
-    enum: ['OPEN', 'OVERDUE', 'COLLECTED', 'FORCE_CSI'],
     default: 'OPEN'
-  },
+  }, // Lookup: CONSIGNMENT_AGING_STATUS
   max_days_alert: { type: Number, default: 60 },
   max_days_force_csi: { type: Number, default: 90 },
 
   dr_photo_url: { type: String },
   status: {
     type: String,
-    enum: ['ACTIVE', 'FULLY_CONSUMED', 'RETURNED', 'EXPIRED'],
     default: 'ACTIVE'
-  },
+  }, // Lookup: CONSIGNMENT_STATUS
   created_at: {
     type: Date,
     immutable: true,
