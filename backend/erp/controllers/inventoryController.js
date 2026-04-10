@@ -541,7 +541,9 @@ const approveGrn = catchAsync(async (req, res) => {
       }], { session });
 
       // Create InventoryLedger entries for each line item
+      // Inventory is always in selling units; use qty_selling_units when conversion applies
       for (const item of grn.line_items) {
+        const qtyInSellingUnits = item.qty_selling_units || (item.qty * (item.conversion_factor || 1));
         await InventoryLedger.create([{
           entity_id: grn.entity_id,
           bdm_id: grn.bdm_id,
@@ -550,7 +552,7 @@ const approveGrn = catchAsync(async (req, res) => {
           batch_lot_no: item.batch_lot_no,
           expiry_date: item.expiry_date,
           transaction_type: 'GRN',
-          qty_in: item.qty,
+          qty_in: qtyInSellingUnits,
           qty_out: 0,
           event_id: event[0]._id,
           recorded_by: req.user._id

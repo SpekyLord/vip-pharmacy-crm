@@ -14,7 +14,11 @@ const poLineItemSchema = new mongoose.Schema({
   unit_price: { type: Number, required: [true, 'Unit price is required'], min: 0 },
   line_total: { type: Number, default: 0 },
   qty_received: { type: Number, default: 0 },
-  qty_invoiced: { type: Number, default: 0 }
+  qty_invoiced: { type: Number, default: 0 },
+  // UOM snapshot from ProductMaster at PO creation time
+  uom: { type: String, trim: true },                       // purchase UOM (e.g., CASE)
+  selling_uom: { type: String, trim: true },                // selling UOM (e.g., BOX)
+  conversion_factor: { type: Number, default: 1, min: 1 }   // 1 uom = N selling_uom
 }, { _id: false });
 
 const purchaseOrderSchema = new mongoose.Schema({

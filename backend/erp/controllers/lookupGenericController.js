@@ -67,6 +67,7 @@ const SEED_DEFAULTS = {
     'PC', 'BOX', 'VIAL', 'BOTTLE', 'TUBE', 'SACHET', 'STRIP',
     'TABLET', 'CAPSULE', 'AMPULE', 'PACK', 'ROLL', 'SET',
     'BAG', 'CAN', 'PAIR', 'PFS', 'JAR', 'YARD',
+    'CASE', 'DRUM', 'CARTON', 'REAM', 'DOZEN',
   ],
   // Phase 28 — Sales Goals & KPI
   GOAL_CONFIG: [

@@ -50,6 +50,7 @@ export default function WarehousePicker({
   showLabel = true,
   compact = false,
   disabled = false,
+  allowAll = false,
 }) {
   const whApi = useWarehouses();
   const [warehouses, setWarehouses] = useState([]);
@@ -68,8 +69,8 @@ export default function WarehousePicker({
 
       setWarehouses(list);
 
-      // Auto-select if no value set
-      if (!value && list.length > 0) {
+      // Auto-select if no value set (skip when allowAll — user can view all)
+      if (!value && list.length > 0 && !allowAll) {
         // Prefer primary warehouse (user is manager)
         const primary = list.find(w => w.is_primary);
         onChange(primary ? primary._id : list[0]._id);
@@ -84,16 +85,16 @@ export default function WarehousePicker({
 
   useEffect(() => { load(); }, [load]);
 
-  // If value doesn't match any warehouse (e.g., entity changed), reset
+  // If value doesn't match any warehouse (e.g., entity changed), reset (skip when allowAll)
   useEffect(() => {
-    if (loaded && value && warehouses.length > 0 && !warehouses.find(w => w._id === value)) {
+    if (loaded && value && warehouses.length > 0 && !allowAll && !warehouses.find(w => w._id === value)) {
       const primary = warehouses.find(w => w.is_primary);
       onChange(primary ? primary._id : warehouses[0]._id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, value, warehouses]);
 
-  const canSwitch = warehouses.length > 1 && !disabled;
+  const canSwitch = (warehouses.length > 1 || allowAll) && !disabled;
   const selected = warehouses.find(w => w._id === value);
 
   if (!loaded) return null;
@@ -108,7 +109,8 @@ export default function WarehousePicker({
         onChange={e => onChange(e.target.value)}
         disabled={!canSwitch}
       >
-        {!value && <option value="">-- Select Warehouse --</option>}
+        {allowAll && <option value="">All Warehouses</option>}
+        {!allowAll && !value && <option value="">-- Select Warehouse --</option>}
         {warehouses.map(w => (
           <option key={w._id} value={w._id}>
             {w.warehouse_code} — {w.warehouse_name}

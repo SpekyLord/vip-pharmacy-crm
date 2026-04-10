@@ -314,6 +314,7 @@ const WORKFLOW_GUIDES = {
     steps: [
       'Search/filter products by name, status, or stock type (Pharma, F&B, Office)',
       'Click "+ New Product" to add — set prices, VAT status, and unit',
+      'Set Purchase UOM + Selling UOM + Conversion Factor when supplier unit differs from selling unit (e.g., 1 CASE = 10 BOX)',
       'Use Export/Import Prices buttons for bulk price updates via Excel',
       'Use "Refresh Master" to sync from the cleaned Item Master CSV — deduplicates, updates, and deactivates stale products',
       'Tag products to warehouses for inventory tracking',
@@ -323,7 +324,7 @@ const WORKFLOW_GUIDES = {
       { label: 'GRN', path: '/erp/grn' },
       { label: 'Transfer Prices', path: '/erp/control-center?section=transfer-prices' },
     ],
-    tip: 'Run "Refresh Master" from the cleaned CSV before importing stock on hand — ensures no duplicates and correct dosage formats.',
+    tip: 'Set Purchase UOM when your supplier sells in a different unit (CASE, CARTON) than what you track in inventory (BOX, PC). The conversion factor auto-converts received quantities.',
   },
   'grn-entry': {
     title: 'Goods Receipt Note (GRN)',
@@ -342,30 +343,31 @@ const WORKFLOW_GUIDES = {
   'purchase-orders': {
     title: 'Purchase Orders',
     steps: [
-      'Select vendor and add line items (product, qty, price)',
+      'Select vendor and add line items (product, qty, unit, price)',
       'Submit for approval (DRAFT → APPROVED)',
       'Receive goods via GRN — PO auto-updates to PARTIALLY_RECEIVED',
       'Match with Supplier Invoice for 3-way match',
+      'Click PO # to view full details, line items, and linked invoices',
     ],
     next: [
       { label: 'GRN', path: '/erp/grn' },
       { label: 'Supplier Invoices', path: '/erp/supplier-invoices' },
     ],
-    tip: 'Link POs to GRNs for accurate inventory costing.',
+    tip: 'Filter by warehouse, vendor, status, or date range to track POs. Link POs to GRNs for accurate inventory costing.',
   },
   'supplier-invoices': {
     title: 'Supplier Invoices',
     steps: [
-      'Enter supplier invoice details and line items',
-      'Match against PO and GRN (3-way match)',
-      'Validate — check totals, VAT, CWT',
+      'Select warehouse and vendor — PO dropdown auto-filters to matching POs',
+      'Link a PO to auto-fill vendor, warehouse, and line items with remaining uninvoiced qty',
+      'Validate — 3-way match against PO and GRN',
       'Post — creates Accounts Payable journal entry',
     ],
     next: [
       { label: 'Accounts Payable', path: '/erp/accounts-payable' },
       { label: 'Purchase Orders', path: '/erp/purchase-orders' },
     ],
-    tip: 'Unmatched invoices are flagged for review before posting.',
+    tip: 'Select warehouse + vendor first to narrow down the PO dropdown. Unmatched invoices are flagged for review before posting.',
   },
 
   // ═══ Operations & Agent Management ═══

@@ -6,7 +6,12 @@ const grnLineItemSchema = new mongoose.Schema({
   item_key: { type: String },
   batch_lot_no: { type: String, required: [true, 'Batch/Lot number is required'] },
   expiry_date: { type: Date, required: [true, 'Expiry date is required'] },
-  qty: { type: Number, required: [true, 'Quantity is required'], min: 1 }
+  qty: { type: Number, required: [true, 'Quantity is required'], min: 1 },
+  // UOM conversion: qty is in purchase units; qty_selling_units is computed
+  purchase_uom: { type: String, trim: true },
+  selling_uom: { type: String, trim: true },
+  conversion_factor: { type: Number, default: 1, min: 1 },
+  qty_selling_units: { type: Number }   // computed: qty * conversion_factor
 }, { _id: false });
 
 const grnEntrySchema = new mongoose.Schema({
@@ -45,12 +50,14 @@ const grnEntrySchema = new mongoose.Schema({
   collection: 'erp_grn_entries'
 });
 
-// Normalize batch numbers on save
+// Normalize batch numbers and compute selling-unit quantities on save
 grnEntrySchema.pre('save', function (next) {
   for (const item of this.line_items) {
     if (item.batch_lot_no) {
       item.batch_lot_no = cleanBatchNo(item.batch_lot_no);
     }
+    // Compute qty in selling units: qty (purchase) * conversion_factor
+    item.qty_selling_units = (item.qty || 0) * (item.conversion_factor || 1);
   }
   next();
 });

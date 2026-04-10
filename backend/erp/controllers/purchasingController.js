@@ -8,6 +8,7 @@
 const PurchaseOrder = require('../models/PurchaseOrder');
 const SupplierInvoice = require('../models/SupplierInvoice');
 const VendorMaster = require('../models/VendorMaster');
+const Warehouse = require('../models/Warehouse');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { generateDocNumber } = require('../services/docNumbering');
 const { matchInvoice } = require('../services/threeWayMatch');
@@ -25,9 +26,40 @@ const { checkApprovalRequired } = require('../services/approvalService');
    PURCHASE ORDERS
    ═══════════════════════════════════════════════════════════════════════ */
 
+const ProductMaster = require('../models/ProductMaster');
+
 const createPO = catchAsync(async (req, res) => {
+  // Resolve territory code from the selected warehouse, not the user's territory
+  let warehouseCode;
+  if (req.body.warehouse_id) {
+    const wh = await Warehouse.findById(req.body.warehouse_id).select('warehouse_code').lean();
+    warehouseCode = wh?.warehouse_code || null;
+  }
+
+  // Enrich line items with UOM snapshot from ProductMaster
+  if (req.body.line_items && req.body.line_items.length > 0) {
+    const productIds = req.body.line_items.filter(l => l.product_id).map(l => l.product_id);
+    if (productIds.length > 0) {
+      const products = await ProductMaster.find({ _id: { $in: productIds } })
+        .select('purchase_uom selling_uom conversion_factor unit_code')
+        .lean();
+      const productMap = new Map(products.map(p => [p._id.toString(), p]));
+      for (const line of req.body.line_items) {
+        if (line.product_id) {
+          const prod = productMap.get(line.product_id.toString());
+          if (prod) {
+            line.uom = line.uom || prod.purchase_uom || prod.unit_code || 'PC';
+            line.selling_uom = line.selling_uom || prod.selling_uom || prod.unit_code || 'PC';
+            line.conversion_factor = line.conversion_factor || prod.conversion_factor || 1;
+          }
+        }
+      }
+    }
+  }
+
   const poNumber = await generateDocNumber({
     prefix: 'PO',
+    territoryCode: warehouseCode,
     bdmId: req.bdmId || req.user._id,
     date: req.body.po_date || new Date()
   });
@@ -92,8 +124,17 @@ const getPOById = catchAsync(async (req, res) => {
   const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId })
     .populate('vendor_id', 'vendor_name vendor_code tin address payment_terms_days vat_status')
     .populate('warehouse_id', 'warehouse_code warehouse_name')
+    .populate('approved_by', 'firstName lastName')
+    .populate('created_by', 'firstName lastName')
     .lean();
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
+
+  // Cross-document references: linked supplier invoices
+  const linked_invoices = await SupplierInvoice.find({ po_id: po._id, entity_id: req.entityId })
+    .select('invoice_ref invoice_date status total_amount match_status payment_status')
+    .lean();
+  po.linked_invoices = linked_invoices;
+
   res.json({ success: true, data: po });
 });
 
