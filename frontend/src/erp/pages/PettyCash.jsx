@@ -544,7 +544,7 @@ export default function PettyCash() {
 
   // Load people for custodian dropdown
   useEffect(() => {
-    getPeopleList({ limit: 0 }).then(res => setPeople(res?.data || [])).catch(() => {});
+    getPeopleList({ limit: 0, exclude_status: 'SEPARATED' }).then(res => setPeople(res?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreateFund = async (body) => {

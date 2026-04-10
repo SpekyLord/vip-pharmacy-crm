@@ -76,6 +76,7 @@ export function PeopleListContent() {
   const EMP_TYPES = empTypeOpts.map(o => o.code);
   const [people, setPeople] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 0 });
+  const [tab, setTab] = useState('active'); // 'active' | 'archive'
   const [filters, setFilters] = useState({ search: '', person_type: '', status: '' });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -84,6 +85,8 @@ export function PeopleListContent() {
   const [legacyCounts, setLegacyCounts] = useState({});
   const [migrating, setMigrating] = useState(false);
 
+  const ACTIVE_STATUSES = STATUS_LIST.filter(s => s !== 'SEPARATED');
+
   const load = useCallback(async (page = 1, bust = false) => {
     setLoading(true);
     try {
@@ -91,13 +94,20 @@ export function PeopleListContent() {
       if (filters.search) params.search = filters.search;
       if (filters.person_type) params.person_type = filters.person_type;
       if (filters.status) params.status = filters.status;
+      // Tab-based filtering: use status as the authoritative field
+      // (handles legacy data where status=SEPARATED but is_active wasn't toggled)
+      if (tab === 'active') {
+        params.exclude_status = 'SEPARATED';
+      } else {
+        if (!filters.status) params.status = 'SEPARATED';
+      }
       if (bust) params._t = Date.now(); // bypass 304 cache after mutations
       const res = await api.getPeopleList(params);
       setPeople(res?.data || []);
       setPagination(res?.pagination || { page: 1, limit: 50, total: 0, pages: 0 });
     } catch (err) { console.error('[PeopleList] load error:', err.message); } finally { setLoading(false); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [filters, tab]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -162,6 +172,18 @@ export function PeopleListContent() {
         </div>
       )}
 
+      {/* Active / Archive Tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 14 }}>
+        {[{ key: 'active', label: 'Active' }, { key: 'archive', label: 'Archive (Separated)' }].map(t => (
+          <button key={t.key} onClick={() => { setTab(t.key); setFilters(f => ({ ...f, status: '' })); }}
+            style={{
+              padding: '7px 18px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              border: '1px solid', background: tab === t.key ? 'var(--erp-accent, #1e5eff)' : '#fff',
+              color: tab === t.key ? '#fff' : '#374151', borderColor: tab === t.key ? 'transparent' : '#d1d5db',
+            }}>{t.label}</button>
+        ))}
+      </div>
+
       <div className="ppl-header">
         <h2>People Master</h2>
         <button
@@ -185,10 +207,12 @@ export function PeopleListContent() {
           <option value="">All Types</option>
           {PERSON_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
         </SelectField>
-        <SelectField value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
-          <option value="">All Status</option>
-          {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
-        </SelectField>
+        {tab === 'active' && (
+          <SelectField value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
+            <option value="">All Status</option>
+            {ACTIVE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+          </SelectField>
+        )}
       </div>
 
       {loading ? (
@@ -207,6 +231,8 @@ export function PeopleListContent() {
                 <th>Department</th>
                 <th>Reports To</th>
                 <th>Status</th>
+                {tab === 'archive' && <th>Separated</th>}
+                {tab === 'archive' && <th style={{ width: 90 }}>Action</th>}
               </tr>
             </thead>
             <tbody>
@@ -226,6 +252,28 @@ export function PeopleListContent() {
                     <td>{p.department || '—'}</td>
                     <td style={{ fontSize: 12, color: '#64748b' }}>{p.reports_to?.full_name || '—'}</td>
                     <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{p.status}</span></td>
+                    {tab === 'archive' && (
+                      <td style={{ fontSize: 12, color: '#64748b' }}>
+                        {p.date_separated ? new Date(p.date_separated).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                      </td>
+                    )}
+                    {tab === 'archive' && (
+                      <td>
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!window.confirm(`Reactivate ${p.full_name}? Their status will be set to ACTIVE.\nYou will need to manually re-enable login and role assignments if needed.`)) return;
+                            try {
+                              await api.reactivatePerson(p._id);
+                              showSuccess(`${p.full_name} reactivated`);
+                              load(pagination.page, true);
+                            } catch (err) { showError(err, 'Could not reactivate'); }
+                          }}
+                          style={{ padding: '4px 10px', borderRadius: 5, border: '1px solid #bbf7d0', background: '#dcfce7', color: '#166534', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                          Reactivate
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}

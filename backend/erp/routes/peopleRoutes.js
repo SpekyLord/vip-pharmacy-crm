@@ -7,6 +7,8 @@ const {
   createPerson,
   updatePerson,
   deactivatePerson,
+  separatePerson,
+  reactivatePerson,
   getCompProfile,
   createCompProfile,
   updateCompProfile,
@@ -41,6 +43,8 @@ router.post('/:id/disable-login', roleCheck('admin', 'president'), disableLogin)
 router.post('/:id/enable-login', roleCheck('admin', 'president'), enableLogin);
 router.post('/:id/unlink-login', roleCheck('admin', 'president'), unlinkLogin);
 router.post('/:id/change-role', roleCheck('admin', 'president'), changeSystemRole);
+router.post('/:id/separate', roleCheck('admin', 'finance', 'president'), separatePerson);
+router.post('/:id/reactivate', roleCheck('admin', 'president'), reactivatePerson);
 router.delete('/:id', roleCheck('admin', 'finance', 'president'), deactivatePerson);
 
 // ═══ Compensation Profiles ═══

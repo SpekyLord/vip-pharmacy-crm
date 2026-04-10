@@ -95,7 +95,7 @@ function RoleAssignmentManagerContent() {
   const handlePersonSearch = useCallback(async () => {
     if (!personSearch.trim()) return;
     try {
-      const res = await getPeopleList({ search: personSearch, limit: 20 });
+      const res = await getPeopleList({ search: personSearch, limit: 20, exclude_status: 'SEPARATED' });
       setPeople(res?.data || []);
     } catch (e) { showError(e); }
   }, [personSearch, getPeopleList]);
@@ -213,7 +213,7 @@ function RoleAssignmentManagerContent() {
   const searchModalPeople = async () => {
     if (!modalPeopleSearch.trim()) return;
     try {
-      const res = await getPeopleList({ search: modalPeopleSearch, limit: 15 });
+      const res = await getPeopleList({ search: modalPeopleSearch, limit: 15, exclude_status: 'SEPARATED' });
       setModalPeople(res?.data || []);
     } catch (e) { showError(e); }
   };

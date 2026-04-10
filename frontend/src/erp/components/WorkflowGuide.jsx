@@ -626,16 +626,17 @@ const WORKFLOW_GUIDES = {
   'people-list': {
     title: 'People Directory',
     steps: [
-      'View all employee and partner records in the system',
+      'Use the Active / Archive tabs to switch between current and separated employees',
       'Use search and filters to find people by name, type, or status',
       'Click any row to view full person details and profile',
+      'In the Archive tab, click "Reactivate" to restore a separated employee to active status',
       'If a legacy role banner appears (e.g. medrep, employee), click "Migrate" to bulk-convert users to the current "contractor" role',
     ],
     next: [
       { label: 'Org Chart', path: '/erp/org-chart' },
       { label: 'Add Person', path: '/erp/people' },
     ],
-    tip: 'Use "Sync from CRM" to import existing CRM users into the People Master. Legacy roles (medrep, employee) can be bulk-migrated to "contractor" from the banner above the table.',
+    tip: 'The Active tab shows current employees (ACTIVE, ON_LEAVE, SUSPENDED). The Archive tab shows separated employees. Use "Sync from CRM" to import existing CRM users. Reactivating a person sets them to ACTIVE but does not restore login or role assignments — those must be re-enabled manually.',
   },
   'person-detail': {
     title: 'Person Profile',
@@ -643,6 +644,8 @@ const WORKFLOW_GUIDES = {
       'View and review person information, compensation, and insurance',
       'Edit details (admin/finance/president only) and save changes',
       'Manage system login access and ERP module permissions',
+      'Use "Separate Employee" to deactivate — this revokes role assignments and disables login',
+      'Use "Reactivate" on separated employees to restore active status (login and roles must be re-enabled manually)',
       'Person types, employment types, and BDM stages are managed via Lookup Tables (Control Center → System Settings)',
     ],
     next: [
@@ -650,7 +653,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Org Chart', path: '/erp/org-chart' },
       { label: 'Payroll', path: '/erp/payroll' },
     ],
-    tip: 'Changes to compensation profile affect future payroll computations. Career path: CONTRACTOR → PS_ELIGIBLE → TRANSITIONING → SUBSIDIARY → SHAREHOLDER.',
+    tip: 'Separating an employee cascades: marks SEPARATED, revokes all role assignments, and disables system login. Reactivation restores ACTIVE status only — re-enable login and role assignments manually. Career path: CONTRACTOR → PS_ELIGIBLE → TRANSITIONING → SUBSIDIARY → SHAREHOLDER.',
   },
   'org-chart': {
     title: 'Organization Chart',
