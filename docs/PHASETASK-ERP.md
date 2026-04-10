@@ -4000,3 +4000,39 @@ Universal, lookup-driven KPI self-rating system where ALL members — regardless
 ### 32.9 — Documentation ✅
 - [x] PHASETASK-ERP.md updated with Phase 32 task breakdown
 - [x] CLAUDE-ERP.md updated with Phase 32 architecture, routes, lookup categories, integration points
+
+---
+
+## Phase 33 — Bulk Role Migration + Login Fix ✅ (April 10, 2026)
+
+Fixes login-blocking bug for medrep users and adds admin-facing bulk role migration via Control Center.
+
+### 33.1 — Login Bug Fix ✅
+- [x] Added `ROLES.MEDREP` back to `ALL_ROLES` in `backend/constants/roles.js` — Mongoose enum now accepts legacy medrep role on `user.save()` during login
+- [x] Root cause: login calls `user.save()` to persist refreshToken + lastLogin, which triggers Mongoose enum validation — fails if role not in `ALL_ROLES`
+
+### 33.2 — Bulk Role Migration Endpoint ✅
+- [x] Added `bulkChangeSystemRole` in `backend/erp/controllers/peopleController.js` — accepts `{ from_role, to_role }`, validates against `ALL_ROLES`, bulk-updates all matching users
+- [x] Added `getLegacyRoleCounts` in `backend/erp/controllers/peopleController.js` — returns counts of users with legacy roles (medrep, employee)
+- [x] Added routes in `backend/erp/routes/peopleRoutes.js`:
+  - `GET /people/legacy-role-counts` (admin/president)
+  - `POST /people/bulk-change-role` (admin/president)
+
+### 33.3 — Frontend Hook ✅
+- [x] Added `getLegacyRoleCounts()` and `bulkChangeRole(from_role, to_role)` to `frontend/src/erp/hooks/usePeople.js`
+
+### 33.4 — PeopleList Migration Banner ✅
+- [x] Added legacy role detection on mount in `frontend/src/erp/pages/PeopleList.jsx`
+- [x] Yellow banner with user counts per legacy role + one-click "Migrate → contractor" buttons
+- [x] Confirmation dialog before migration, success toast, banner auto-hides after migration
+
+### 33.5 — Frontend Cleanup ✅
+- [x] Removed `case 'medrep':` redirect from `frontend/src/pages/LoginPage.jsx`
+- [x] Replaced `medrep: 'MedRep'` with `contractor: 'Contractor'` in `frontend/src/pages/HomePage.jsx` role label map
+
+### 33.6 — Workflow Guide Update ✅
+- [x] Updated `people-list` banner in `frontend/src/erp/components/WorkflowGuide.jsx` — added step 4 for legacy role migration and updated tip text
+
+### 33.7 — Documentation ✅
+- [x] PHASETASK-ERP.md updated with Phase 33 task breakdown
+- [x] CLAUDE-ERP.md updated with Phase 33 architecture, routes, and key files

@@ -580,6 +580,36 @@ const changeSystemRole = catchAsync(async (req, res) => {
   });
 });
 
+// ═══ Bulk Change System Role (migrate legacy roles from Control Center) ═══
+
+const bulkChangeSystemRole = catchAsync(async (req, res) => {
+  const { from_role, to_role } = req.body;
+  if (!from_role || !to_role) return res.status(400).json({ success: false, message: 'Both from_role and to_role are required' });
+  if (!ALL_ROLES.includes(from_role)) return res.status(400).json({ success: false, message: `Invalid from_role "${from_role}". Must be one of: ${ALL_ROLES.join(', ')}` });
+  if (!ALL_ROLES.includes(to_role)) return res.status(400).json({ success: false, message: `Invalid to_role "${to_role}". Must be one of: ${ALL_ROLES.join(', ')}` });
+  if (from_role === to_role) return res.status(400).json({ success: false, message: 'from_role and to_role must be different' });
+
+  const result = await User.updateMany({ role: from_role }, { $set: { role: to_role } });
+
+  res.json({
+    success: true,
+    message: `Migrated ${result.modifiedCount} user(s) from "${from_role}" to "${to_role}"`,
+    data: { from_role, to_role, migrated_count: result.modifiedCount },
+  });
+});
+
+// ═══ Get legacy role counts (for migration banner) ═══
+
+const getLegacyRoleCounts = catchAsync(async (req, res) => {
+  const legacyRoles = ['medrep', 'employee'];
+  const counts = {};
+  for (const role of legacyRoles) {
+    const count = await User.countDocuments({ role });
+    if (count > 0) counts[role] = count;
+  }
+  res.json({ success: true, data: counts });
+});
+
 module.exports = {
   getPeopleList,
   getPersonById,
@@ -598,4 +628,6 @@ module.exports = {
   enableLogin,
   unlinkLogin,
   changeSystemRole,
+  bulkChangeSystemRole,
+  getLegacyRoleCounts,
 };

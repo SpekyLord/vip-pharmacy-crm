@@ -81,6 +81,8 @@ export function PeopleListContent() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [legacyCounts, setLegacyCounts] = useState({});
+  const [migrating, setMigrating] = useState(false);
 
   const load = useCallback(async (page = 1, bust = false) => {
     setLoading(true);
@@ -97,6 +99,22 @@ export function PeopleListContent() {
   }, [filters]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Check for legacy roles on mount
+  useEffect(() => {
+    api.getLegacyRoleCounts().then(res => setLegacyCounts(res?.data || {})).catch(() => {});
+  }, []);
+
+  const handleBulkMigrate = async (fromRole, toRole) => {
+    if (!window.confirm(`Migrate ALL "${fromRole}" users to "${toRole}"? This cannot be undone.`)) return;
+    setMigrating(true);
+    try {
+      const res = await api.bulkChangeRole(fromRole, toRole);
+      showSuccess(res?.message || `Migrated ${res?.data?.migrated_count || 0} user(s)`);
+      setLegacyCounts(prev => { const next = { ...prev }; delete next[fromRole]; return next; });
+      load(1, true);
+    } catch (err) { showError(err, 'Could not migrate roles'); } finally { setMigrating(false); }
+  };
 
   const handleCreate = async () => {
     try {
@@ -115,6 +133,33 @@ export function PeopleListContent() {
     <>
       <style>{pageStyles}</style>
       <WorkflowGuide pageKey="people-list" />
+
+      {/* Legacy Role Migration Banner */}
+      {Object.keys(legacyCounts).length > 0 && (
+        <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 10, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div>
+            <span style={{ fontWeight: 700, fontSize: 13, color: '#92400e' }}>Legacy Roles Detected</span>
+            <span style={{ fontSize: 12, color: '#78350f', marginLeft: 8 }}>
+              {Object.entries(legacyCounts).map(([role, count]) => `${count} ${role} user(s)`).join(', ')}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {legacyCounts.medrep > 0 && (
+              <button disabled={migrating} onClick={() => handleBulkMigrate('medrep', 'contractor')}
+                style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 600, fontSize: 12, cursor: migrating ? 'not-allowed' : 'pointer', opacity: migrating ? 0.6 : 1 }}>
+                {migrating ? 'Migrating...' : `Migrate medrep → contractor`}
+              </button>
+            )}
+            {legacyCounts.employee > 0 && (
+              <button disabled={migrating} onClick={() => handleBulkMigrate('employee', 'contractor')}
+                style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 600, fontSize: 12, cursor: migrating ? 'not-allowed' : 'pointer', opacity: migrating ? 0.6 : 1 }}>
+                {migrating ? 'Migrating...' : `Migrate employee → contractor`}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="ppl-header">
         <h2>People Master</h2>
         <button

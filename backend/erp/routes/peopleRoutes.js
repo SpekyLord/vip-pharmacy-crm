@@ -19,7 +19,13 @@ const {
   enableLogin,
   unlinkLogin,
   changeSystemRole,
+  bulkChangeSystemRole,
+  getLegacyRoleCounts,
 } = require('../controllers/peopleController');
+
+// ═══ Bulk Role Migration (admin-only) ═══
+router.get('/legacy-role-counts', roleCheck('admin', 'president'), getLegacyRoleCounts);
+router.post('/bulk-change-role', roleCheck('admin', 'president'), bulkChangeSystemRole);
 
 // ═══ People CRUD ═══
 router.get('/as-users', getAsUsers);  // lightweight CRM-compatible user list (entity-scoped)

@@ -629,12 +629,13 @@ const WORKFLOW_GUIDES = {
       'View all employee and partner records in the system',
       'Use search and filters to find people by name, type, or status',
       'Click any row to view full person details and profile',
+      'If a legacy role banner appears (e.g. medrep, employee), click "Migrate" to bulk-convert users to the current "contractor" role',
     ],
     next: [
       { label: 'Org Chart', path: '/erp/org-chart' },
       { label: 'Add Person', path: '/erp/people' },
     ],
-    tip: 'Use "Sync from CRM" to import existing CRM users into the People Master.',
+    tip: 'Use "Sync from CRM" to import existing CRM users into the People Master. Legacy roles (medrep, employee) can be bulk-migrated to "contractor" from the banner above the table.',
   },
   'person-detail': {
     title: 'Person Profile',

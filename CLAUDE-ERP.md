@@ -2,7 +2,7 @@
 
 > **Last Updated**: April 2026
 > **Version**: 5.8
-> **Status**: Phases 0-32 Complete. Universal KPI Self-Rating & Performance Review System (April 9, 2026).
+> **Status**: Phases 0-33 Complete. Bulk Role Migration + Login Fix (April 10, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -91,6 +91,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | 30 | Role Centralization + PeopleMaster Lookup-Driven Validation | ✅ |
 | 31 | Functional Role Assignment (Cross-Entity Deployment) | ✅ |
 | 32 | Universal KPI Self-Rating & Performance Review | ✅ |
+| 33 | Bulk Role Migration + Login Fix | ✅ |
 
 ---
 
@@ -386,6 +387,42 @@ frontend/src/erp/pages/KpiLibrary.jsx              # Admin SMART goal form (SAP 
 - **ControlCenter.jsx**: embedded under People & Access → KPI Library + KPI Self-Rating
 - **App.jsx**: standalone routes at `/erp/kpi-library` (MANAGEMENT) and `/erp/self-rating` (ERP_ALL)
 - **WorkflowGuide**: banners for both kpiLibrary and kpiSelfRating pages
+
+---
+
+## Bulk Role Migration + Login Fix (Phase 33)
+
+Fixes a login-blocking bug where users with legacy `medrep` role could not log in (Mongoose enum validation rejected it on `user.save()` during login). Adds admin-facing bulk role migration via Control Center.
+
+### Root Cause
+`ALL_ROLES` in `backend/constants/roles.js` excluded `'medrep'`. Login calls `user.save()` to persist refreshToken — Mongoose enum validation rejects the save, returning 500.
+
+### Fix
+- Added `ROLES.MEDREP` back to `ALL_ROLES` for backward compatibility
+- Added bulk migration endpoint so admins can convert legacy roles via Control Center
+
+### New Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/erp/people/legacy-role-counts` | Returns counts of users with legacy roles (medrep, employee) |
+| POST | `/api/erp/people/bulk-change-role` | Bulk-migrates all users from one role to another (admin/president only) |
+
+### PeopleList Migration Banner
+A yellow banner auto-appears in People Master when legacy roles (medrep, employee) are detected in the database. Shows user counts per legacy role with one-click "Migrate → contractor" buttons. Banner disappears once no legacy roles remain.
+
+### Key Files
+```
+backend/constants/roles.js                    # MEDREP added back to ALL_ROLES
+backend/erp/controllers/peopleController.js   # bulkChangeSystemRole + getLegacyRoleCounts
+backend/erp/routes/peopleRoutes.js            # Two new routes (before /:id params)
+frontend/src/erp/hooks/usePeople.js           # getLegacyRoleCounts + bulkChangeRole
+frontend/src/erp/pages/PeopleList.jsx         # Migration banner UI
+frontend/src/erp/components/WorkflowGuide.jsx # Updated people-list banner
+```
+
+### Frontend Cleanup
+- `LoginPage.jsx` — removed dead `case 'medrep':` redirect
+- `HomePage.jsx` — replaced `medrep: 'MedRep'` with `contractor: 'Contractor'` in role label map
 
 ---
 
