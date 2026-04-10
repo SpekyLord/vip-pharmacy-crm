@@ -117,7 +117,7 @@ export default function BudgetAllocations() {
 
   const loadPeople = useCallback(async () => {
     try {
-      const res = await ppl.getPeopleList({ is_active: true });
+      const res = await ppl.getPeopleList({ exclude_status: 'SEPARATED' });
       setPeople(res?.data || []);
     } catch (err) { console.error('[BudgetAllocations] load error:', err.message); }
     // eslint-disable-next-line react-hooks/exhaustive-deps

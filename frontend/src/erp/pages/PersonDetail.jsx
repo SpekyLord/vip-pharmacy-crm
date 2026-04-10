@@ -205,7 +205,7 @@ export default function PersonDetail() {
     }).catch(() => {});
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    pplApi.getPeopleList({ limit: 200 }).then(r => setAllPeople(r?.data || [])).catch(() => {});
+    pplApi.getPeopleList({ limit: 200, exclude_status: 'SEPARATED' }).then(r => setAllPeople(r?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Warn if any lookup categories loaded empty (seeding may be needed)
@@ -467,8 +467,33 @@ export default function PersonDetail() {
           <div className="pd-card">
             <div className="pd-card-hdr">
               <h3>{person.full_name}</h3>
-              {canEdit && !editPerson && <button className="pd-btn" onClick={() => setEditPerson(true)}>Edit</button>}
-              {editPerson && <div style={{ display: 'flex', gap: 6 }}><button className="pd-btn pd-btn-p" onClick={savePerson}>Save</button><button className="pd-btn" onClick={() => setEditPerson(false)}>Cancel</button></div>}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                {canEdit && !editPerson && <button className="pd-btn" onClick={() => setEditPerson(true)}>Edit</button>}
+                {editPerson && <><button className="pd-btn pd-btn-p" onClick={savePerson}>Save</button><button className="pd-btn" onClick={() => setEditPerson(false)}>Cancel</button></>}
+                {canEdit && !editPerson && !(person.status === 'SEPARATED' && person.is_active === false) && (
+                  <button className="pd-btn" style={{ fontSize: 11, color: '#dc2626', border: '1px solid #fecaca', background: '#fef2f2' }}
+                    onClick={async () => {
+                      if (!window.confirm('Separate this employee? This will:\n- Mark status as SEPARATED\n- Deactivate all functional role assignments\n- Disable their system login\n\nContinue?')) return;
+                      try {
+                        const res = await pplApi.separatePerson(id);
+                        const d = res?.data || {};
+                        showSuccess(`${person.full_name} separated — ${d.roles_revoked || 0} role(s) revoked${d.login_disabled ? ', login disabled' : ''}`);
+                        load();
+                      } catch (err) { showError(err, 'Could not separate person'); }
+                    }}>Separate Employee</button>
+                )}
+                {canEdit && !editPerson && person.status === 'SEPARATED' && person.is_active === false && (
+                  <button className="pd-btn" style={{ fontSize: 11, color: '#166534', border: '1px solid #bbf7d0', background: '#dcfce7' }}
+                    onClick={async () => {
+                      if (!window.confirm('Reactivate this person? Their status will be set to ACTIVE.\nYou will need to manually re-enable login and role assignments if needed.')) return;
+                      try {
+                        await pplApi.reactivatePerson(id);
+                        showSuccess(`${person.full_name} reactivated`);
+                        load();
+                      } catch (err) { showError(err, 'Could not reactivate'); }
+                    }}>Reactivate</button>
+                )}
+              </div>
             </div>
             <div className="pd-grid">
               <F lbl="First Name" name="first_name" val={person.first_name} editing={editPerson} form={personForm} onChange={handlePersonChange} />

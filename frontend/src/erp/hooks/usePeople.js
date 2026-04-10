@@ -17,6 +17,8 @@ export default function usePeople() {
   const bulkChangeRole = (from_role, to_role) => api.post('/people/bulk-change-role', { from_role, to_role });
   const updatePerson = (id, data) => api.put(`/people/${id}`, data);
   const deactivatePerson = (id) => api.del(`/people/${id}`);
+  const separatePerson = (id) => api.post(`/people/${id}/separate`);
+  const reactivatePerson = (id) => api.post(`/people/${id}/reactivate`);
 
   // Compensation profiles
   const getCompProfile = (personId) => api.get(`/people/${personId}/comp`);
@@ -38,6 +40,8 @@ export default function usePeople() {
     bulkChangeRole,
     updatePerson,
     deactivatePerson,
+    separatePerson,
+    reactivatePerson,
     getCompProfile,
     createCompProfile,
     updateCompProfile,

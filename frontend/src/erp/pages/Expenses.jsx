@@ -460,7 +460,7 @@ export default function Expenses() {
 
   useEffect(() => {
     if (!canBatchUpload) return;
-    getPeopleList({ limit: 0 }).then(res => setPeople(res?.data || [])).catch(err => console.error('[Expenses] People load failed:', err.message));
+    getPeopleList({ limit: 0, exclude_status: 'SEPARATED' }).then(res => setPeople(res?.data || [])).catch(err => console.error('[Expenses] People load failed:', err.message));
     getMyCards().then(res => setMyCards(res?.data || [])).catch(err => console.error('[Expenses] Cards load failed:', err.message));
     getMyBankAccounts().then(res => setMyBankAccounts(res?.data || [])).catch(err => console.error('[Expenses] Bank accounts load failed:', err.message));
     listAccounts({ is_active: true }).then(res => {

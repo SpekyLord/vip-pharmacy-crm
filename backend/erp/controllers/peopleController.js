@@ -1,6 +1,7 @@
 const { ROLES, ALL_ROLES } = require('../../constants/roles');
 const PeopleMaster = require('../models/PeopleMaster');
 const CompProfile = require('../models/CompProfile');
+const FunctionalRoleAssignment = require('../models/FunctionalRoleAssignment');
 const User = require('../../models/User');
 const { catchAsync } = require('../../middleware/errorHandler');
 
@@ -13,6 +14,7 @@ const getPeopleList = catchAsync(async (req, res) => {
 
   if (req.query.person_type) filter.person_type = req.query.person_type;
   if (req.query.status) filter.status = req.query.status;
+  if (req.query.exclude_status) filter.status = { $ne: req.query.exclude_status };
   if (req.query.department) filter.department = req.query.department;
   if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
   if (req.query.search) filter.full_name = { $regex: req.query.search, $options: 'i' };
@@ -89,13 +91,14 @@ const updatePerson = catchAsync(async (req, res) => {
     'civil_status', 'government_ids', 'bank_account', 'is_active', 'status', 'user_id',
   ];
 
-  // Date fields that need empty-string → null conversion
+  // Fields that need empty-string → null conversion (ObjectId refs and dates)
   const dateFields = new Set(['date_hired', 'date_regularized', 'date_separated', 'date_of_birth', 'live_date']);
+  const refFields = new Set(['reports_to', 'territory_id', 'user_id']);
 
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
-      // Empty strings on date fields → null (Mongoose CastError prevention)
-      person[key] = (dateFields.has(key) && req.body[key] === '') ? null : req.body[key];
+      // Empty strings on date/ref fields → null (Mongoose CastError prevention)
+      person[key] = ((dateFields.has(key) || refFields.has(key)) && req.body[key] === '') ? null : req.body[key];
       if (key === 'government_ids' || key === 'bank_account') person.markModified(key);
     }
   }
@@ -123,6 +126,66 @@ const deactivatePerson = catchAsync(async (req, res) => {
   await person.save();
 
   res.json({ success: true, message: 'Person deactivated', data: person });
+});
+
+// ─── Separate with cascading effects ───
+const separatePerson = catchAsync(async (req, res) => {
+  const entityScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope });
+  if (!person) {
+    return res.status(404).json({ success: false, message: 'Person not found' });
+  }
+  if (person.status === 'SEPARATED' && person.is_active === false) {
+    return res.status(400).json({ success: false, message: 'Person is already separated' });
+  }
+
+  // 1. Mark person as separated
+  person.is_active = false;
+  person.status = 'SEPARATED';
+  person.date_separated = new Date();
+  await person.save();
+
+  // 2. Deactivate all functional role assignments
+  const roleResult = await FunctionalRoleAssignment.updateMany(
+    { person_id: person._id, is_active: true },
+    { $set: { is_active: false, status: 'REVOKED', updated_by: req.user._id } }
+  );
+
+  // 3. Disable CRM login if linked
+  let loginDisabled = false;
+  if (person.user_id) {
+    await User.findByIdAndUpdate(person.user_id, { isActive: false, refreshToken: null });
+    loginDisabled = true;
+  }
+
+  res.json({
+    success: true,
+    message: 'Person separated successfully',
+    data: {
+      person,
+      roles_revoked: roleResult.modifiedCount,
+      login_disabled: loginDisabled,
+    },
+  });
+});
+
+// ─── Reactivate a separated person ───
+const reactivatePerson = catchAsync(async (req, res) => {
+  const entityScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope });
+  if (!person) {
+    return res.status(404).json({ success: false, message: 'Person not found' });
+  }
+  if (person.status !== 'SEPARATED') {
+    return res.status(400).json({ success: false, message: 'Person is not separated' });
+  }
+
+  person.is_active = true;
+  person.status = 'ACTIVE';
+  person.date_separated = null;
+  await person.save();
+
+  res.json({ success: true, message: 'Person reactivated', data: person });
 });
 
 // ═══ Compensation Profile ═══
@@ -616,6 +679,8 @@ module.exports = {
   createPerson,
   updatePerson,
   deactivatePerson,
+  separatePerson,
+  reactivatePerson,
   getCompProfile,
   createCompProfile,
   updateCompProfile,
