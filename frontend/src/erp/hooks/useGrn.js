@@ -7,6 +7,7 @@ export default function useGrn() {
   const createGrn = (data) => api.post('/inventory/grn', data);
   const approveGrn = (id, action, rejectionReason) =>
     api.post(`/inventory/grn/${id}/approve`, { action, rejection_reason: rejectionReason });
+  const getGrnForPO = (poId) => api.get(`/inventory/grn/for-po/${poId}`);
 
-  return { ...api, getGrnList, createGrn, approveGrn };
+  return { ...api, getGrnList, createGrn, approveGrn, getGrnForPO };
 }

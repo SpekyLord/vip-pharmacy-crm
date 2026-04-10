@@ -72,8 +72,15 @@ const getGrnHtml = catchAsync(async (req, res) => {
   const GrnEntry = require('../models/GrnEntry');
   const { renderGrnReceipt } = require('../templates/grnReceipt');
 
-  const grn = await GrnEntry.findOne({ _id: req.params.id, ...req.tenantFilter }).lean();
+  const grn = await GrnEntry.findOne({ _id: req.params.id, ...req.tenantFilter })
+    .populate('vendor_id', 'vendor_name')
+    .lean();
   if (!grn) return res.status(404).json({ success: false, message: 'GRN not found' });
+
+  // Denormalize vendor_name for the template
+  if (grn.vendor_id?.vendor_name && !grn.vendor_name) {
+    grn.vendor_name = grn.vendor_id.vendor_name;
+  }
 
   let lineProducts = [];
   if (grn.line_items?.length) {
@@ -117,4 +124,32 @@ const getCreditNoteHtml = catchAsync(async (req, res) => {
   res.send(html);
 });
 
-module.exports = { getReceiptHtml, getPettyCashFormHtml, getGrnHtml, getCreditNoteHtml };
+// Purchase Order printable HTML
+const getPurchaseOrderHtml = catchAsync(async (req, res) => {
+  const PurchaseOrder = require('../models/PurchaseOrder');
+  const { renderPurchaseOrderHtml } = require('../templates/purchaseOrderPrint');
+
+  const po = await PurchaseOrder.findOne({ _id: req.params.id, ...req.tenantFilter })
+    .populate('vendor_id', 'vendor_name vendor_code')
+    .populate('warehouse_id', 'warehouse_name warehouse_code')
+    .populate('approved_by', 'firstName lastName')
+    .populate('created_by', 'firstName lastName')
+    .lean();
+  if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
+
+  let lineProducts = [];
+  if (po.line_items?.length) {
+    try {
+      const ProductMaster = require('../models/ProductMaster');
+      const productIds = po.line_items.map(li => li.product_id).filter(Boolean);
+      lineProducts = await ProductMaster.find({ _id: { $in: productIds } })
+        .select('product_name brand_name dosage_strength').lean();
+    } catch { /* non-critical */ }
+  }
+
+  const html = renderPurchaseOrderHtml(po, lineProducts);
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+});
+
+module.exports = { getReceiptHtml, getPettyCashFormHtml, getGrnHtml, getCreditNoteHtml, getPurchaseOrderHtml };

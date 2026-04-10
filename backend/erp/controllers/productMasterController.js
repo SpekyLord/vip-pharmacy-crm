@@ -19,8 +19,9 @@ const getAll = catchAsync(async (req, res) => {
   }
 
   // BDMs only see products that have inventory in their assigned warehouse
+  // Skip this filter when catalog=true (e.g. PO creation needs the full product list)
   const bdmRoles = [ROLES.CONTRACTOR];
-  if (bdmRoles.includes(req.user?.role)) {
+  if (bdmRoles.includes(req.user?.role) && req.query.catalog !== 'true') {
     const myWarehouses = await Warehouse.find({
       $or: [{ manager_id: req.user._id }, { assigned_users: req.user._id }]
     }).select('_id').lean();

@@ -6,6 +6,7 @@ import useWorkingEntity from '../../hooks/useWorkingEntity';
  * Fetch ProductMaster for dropdowns.
  * Cache is entity-aware and revalidates on mount/focus so product changes from
  * another device do not remain stale for the whole browser session.
+ * Passes catalog=true to bypass BDM warehouse filter (needed for PO creation, etc.)
  */
 const PRODUCTS_CHANGED_EVENT = 'erp:products-changed';
 const productCache = {};
@@ -49,7 +50,7 @@ export default function useProducts() {
       return productCache[cacheKey].data;
     }
 
-    const res = await get('/products', { params: { limit: 0 } });
+    const res = await get('/products', { params: { limit: 0, catalog: 'true' } });
     const data = res?.data || [];
     productCache[cacheKey] = { data, ts: Date.now() };
     setProducts(data);

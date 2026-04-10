@@ -19,9 +19,12 @@ async function matchInvoice(invoiceId, tolerancePct = 0.02) {
   const invoice = await SupplierInvoice.findById(invoiceId);
   if (!invoice) throw new Error('Supplier invoice not found');
 
-  // Load PO and GRN if linked
-  const po = invoice.po_id ? await PurchaseOrder.findById(invoice.po_id).lean() : null;
+  // Load PO and GRN if linked; auto-discover PO from GRN when invoice has grn_id but no po_id
+  let po = invoice.po_id ? await PurchaseOrder.findById(invoice.po_id).lean() : null;
   const grn = invoice.grn_id ? await GrnEntry.findById(invoice.grn_id).lean() : null;
+  if (!po && grn?.po_id) {
+    po = await PurchaseOrder.findById(grn.po_id).lean();
+  }
 
   // Build lookup maps — support duplicate product_id by summing qty and averaging price
   const poLineMap = new Map();

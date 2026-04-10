@@ -8,6 +8,7 @@
 const PurchaseOrder = require('../models/PurchaseOrder');
 const SupplierInvoice = require('../models/SupplierInvoice');
 const VendorMaster = require('../models/VendorMaster');
+const Warehouse = require('../models/Warehouse');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { generateDocNumber } = require('../services/docNumbering');
 const { matchInvoice } = require('../services/threeWayMatch');
@@ -25,9 +26,40 @@ const { checkApprovalRequired } = require('../services/approvalService');
    PURCHASE ORDERS
    ═══════════════════════════════════════════════════════════════════════ */
 
+const ProductMaster = require('../models/ProductMaster');
+
 const createPO = catchAsync(async (req, res) => {
+  // Resolve territory code from the selected warehouse, not the user's territory
+  let warehouseCode;
+  if (req.body.warehouse_id) {
+    const wh = await Warehouse.findById(req.body.warehouse_id).select('warehouse_code').lean();
+    warehouseCode = wh?.warehouse_code || null;
+  }
+
+  // Enrich line items with UOM snapshot from ProductMaster
+  if (req.body.line_items && req.body.line_items.length > 0) {
+    const productIds = req.body.line_items.filter(l => l.product_id).map(l => l.product_id);
+    if (productIds.length > 0) {
+      const products = await ProductMaster.find({ _id: { $in: productIds } })
+        .select('purchase_uom selling_uom conversion_factor unit_code')
+        .lean();
+      const productMap = new Map(products.map(p => [p._id.toString(), p]));
+      for (const line of req.body.line_items) {
+        if (line.product_id) {
+          const prod = productMap.get(line.product_id.toString());
+          if (prod) {
+            line.uom = line.uom || prod.purchase_uom || prod.unit_code || '';
+            line.selling_uom = line.selling_uom || prod.selling_uom || prod.unit_code || '';
+            line.conversion_factor = line.conversion_factor || prod.conversion_factor || 1;
+          }
+        }
+      }
+    }
+  }
+
   const poNumber = await generateDocNumber({
     prefix: 'PO',
+    territoryCode: warehouseCode,
     bdmId: req.bdmId || req.user._id,
     date: req.body.po_date || new Date()
   });
@@ -92,13 +124,32 @@ const getPOById = catchAsync(async (req, res) => {
   const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId })
     .populate('vendor_id', 'vendor_name vendor_code tin address payment_terms_days vat_status')
     .populate('warehouse_id', 'warehouse_code warehouse_name')
+    .populate('approved_by', 'firstName lastName')
+    .populate('created_by', 'firstName lastName')
     .lean();
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
+
+  // Cross-document references: linked supplier invoices and GRNs
+  const GrnEntry = require('../models/GrnEntry');
+  const [linked_invoices, linked_grns] = await Promise.all([
+    SupplierInvoice.find({ po_id: po._id, entity_id: req.entityId })
+      .select('invoice_ref invoice_date status total_amount match_status payment_status')
+      .lean(),
+    GrnEntry.find({ po_id: po._id, entity_id: req.entityId })
+      .select('grn_date status line_items reviewed_at reviewed_by')
+      .populate('reviewed_by', 'name')
+      .lean()
+  ]);
+  po.linked_invoices = linked_invoices;
+  po.linked_grns = linked_grns;
+
   res.json({ success: true, data: po });
 });
 
 const approvePO = catchAsync(async (req, res) => {
-  const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId });
+  const poQuery = { _id: req.params.id };
+  if (!req.isPresident) poQuery.entity_id = req.entityId;
+  const po = await PurchaseOrder.findOne(poQuery);
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
   if (po.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'Only DRAFT POs can be approved' });
 
@@ -142,7 +193,9 @@ const approvePO = catchAsync(async (req, res) => {
 });
 
 const cancelPO = catchAsync(async (req, res) => {
-  const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId });
+  const poQuery = { _id: req.params.id };
+  if (!req.isPresident) poQuery.entity_id = req.entityId;
+  const po = await PurchaseOrder.findOne(poQuery);
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
   if (!['DRAFT', 'APPROVED'].includes(po.status)) {
     return res.status(400).json({ success: false, message: 'Only DRAFT or APPROVED POs can be cancelled' });
@@ -153,44 +206,18 @@ const cancelPO = catchAsync(async (req, res) => {
   res.json({ success: true, data: po });
 });
 
+/**
+ * POST /purchasing/orders/:id/receive — DEPRECATED
+ * Receipt tracking is now unified through the GRN workflow.
+ * GRN approval atomically updates PO qty_received and status.
+ * This endpoint returns a redirect hint to the GRN page.
+ */
 const receivePO = catchAsync(async (req, res) => {
-  const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId });
-  if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
-  if (!['APPROVED', 'PARTIALLY_RECEIVED'].includes(po.status)) {
-    return res.status(400).json({ success: false, message: 'PO must be APPROVED or PARTIALLY_RECEIVED to receive goods' });
-  }
-
-  // req.body.receipts: [{ product_id, qty_received }]
-  const receipts = req.body.receipts || [];
-  if (!receipts.length) return res.status(400).json({ success: false, message: 'No receipt data provided' });
-
-  // Validate receipt quantities
-  for (const receipt of receipts) {
-    if (!receipt.qty_received || receipt.qty_received < 0) {
-      return res.status(400).json({ success: false, message: 'Receipt quantity must be a positive number' });
-    }
-  }
-
-  let allReceived = true;
-  for (const receipt of receipts) {
-    const line = po.line_items.find(l =>
-      (l.product_id && l.product_id.toString() === receipt.product_id) ||
-      (l.item_key && l.item_key === receipt.item_key)
-    );
-    if (line) {
-      line.qty_received = Math.min(line.qty_ordered, Math.max(0, (line.qty_received || 0) + receipt.qty_received));
-      if (line.qty_received < line.qty_ordered) allReceived = false;
-    }
-  }
-
-  // Check if any lines still have outstanding qty
-  if (allReceived) {
-    allReceived = po.line_items.every(l => l.qty_received >= l.qty_ordered);
-  }
-
-  po.status = allReceived ? 'RECEIVED' : 'PARTIALLY_RECEIVED';
-  await po.save();
-  res.json({ success: true, data: po });
+  return res.status(400).json({
+    success: false,
+    message: 'Direct PO receipt is deprecated. Please use the GRN workflow to receive goods against this PO.',
+    redirect: `/erp/grn?po_id=${req.params.id}`
+  });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════

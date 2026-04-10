@@ -26,6 +26,9 @@ function renderGrnReceipt(grn, lineProducts = []) {
 
   const totalQty = (grn.line_items || []).reduce((sum, li) => sum + (li.qty || 0), 0);
 
+  const vendorName = grn.vendor_name || '';
+  const poRef = grn.po_number || '';
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -55,6 +58,8 @@ function renderGrnReceipt(grn, lineProducts = []) {
   <div class="meta">
     <div class="meta-item"><strong>Date:</strong> ${dateStr}</div>
     <div class="meta-item"><strong>Status:</strong> ${grn.status}</div>
+    ${poRef ? `<div class="meta-item"><strong>PO Ref:</strong> ${poRef}</div>` : ''}
+    ${vendorName ? `<div class="meta-item"><strong>Supplier:</strong> ${vendorName}</div>` : ''}
     ${grn.notes ? `<div class="meta-item"><strong>Notes:</strong> ${grn.notes}</div>` : ''}
   </div>
   <table>

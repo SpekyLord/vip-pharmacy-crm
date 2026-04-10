@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
@@ -53,34 +54,48 @@ const styles = `
   .po-empty { text-align: center; color: #64748b; padding: 40px; }
   .po-actions { display: flex; gap: 4px; }
   .po-pag { display: flex; justify-content: center; gap: 8px; margin-top: 14px; align-items: center; font-size: 13px; }
+  .si-badge-DRAFT { background: #e2e8f0; color: #475569; }
+  .si-badge-VALIDATED { background: #dbeafe; color: #1e40af; }
+  .si-badge-POSTED { background: #dcfce7; color: #166534; }
+  .si-badge-UNMATCHED { background: #e2e8f0; color: #475569; }
+  .si-badge-PARTIAL_MATCH { background: #fef3c7; color: #92400e; }
+  .si-badge-FULL_MATCH { background: #dcfce7; color: #166534; }
+  .si-badge-DISCREPANCY { background: #fee2e2; color: #dc2626; }
+  .si-badge-UNPAID { background: #fee2e2; color: #dc2626; }
+  .si-badge-PARTIAL { background: #fef3c7; color: #92400e; }
+  .si-badge-PAID { background: #dcfce7; color: #166534; }
   @media(max-width: 768px) { .po-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .form-row { grid-template-columns: 1fr; } .po-modal-body { width: 95vw; } }
   @media(max-width: 375px) { .po-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .po-main input, .po-main select { font-size: 16px; } }
 `;
 
 const STATUSES = ['', 'DRAFT', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'];
 
-const EMPTY_LINE = { product_id: '', item_key: '', qty_ordered: 1, unit_price: 0 };
+const EMPTY_LINE = { product_id: '', item_key: '', qty_ordered: 1, unit_price: 0, unit_code: '', purchase_uom: '', selling_uom: '', conversion_factor: 1 };
 
 export default function PurchaseOrders() {
   const api = usePurchasing();
   const inventory = useInventory();
+  const navigate = useNavigate();
 
   // Warehouse state
   const [warehouseId, setWarehouseId] = useState('');
   const [stockProducts, setStockProducts] = useState([]);
-  const { products: allProducts } = useProducts();
+  const { products: allProducts, error: productsError, loading: productsLoading, refresh: refreshProducts } = useProducts();
 
   const [pos, setPOs] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0 });
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
+  const [vendorFilter, setVendorFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ vendor_id: '', warehouse_id: '', po_date: '', expected_delivery_date: '', notes: '', line_items: [{ ...EMPTY_LINE }] });
   const [msg, setMsg] = useState({ text: '', type: '' });
-  const [showReceive, setShowReceive] = useState(null);
-  const [receiveQtys, setReceiveQtys] = useState([]);
+  const [showDetail, setShowDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   // Build product options from ProductMaster (PO = ordering new products, not selecting from stock)
   // Enrich with stock qty when warehouse is selected
@@ -101,7 +116,10 @@ export default function PurchaseOrders() {
           label: `${p.brand_name || 'Unknown'}${p.dosage_strength ? ' ' + p.dosage_strength : ''}${stockLabel}`,
           brand_name: p.brand_name,
           dosage_strength: p.dosage_strength,
-          unit_code: p.unit_code || 'PC',
+          unit_code: p.unit_code || p.sold_per || '',
+          purchase_uom: p.purchase_uom || p.unit_code || p.sold_per || '',
+          selling_uom: p.selling_uom || p.unit_code || p.sold_per || '',
+          conversion_factor: p.conversion_factor || 1,
           purchase_price: p.purchase_price || 0,
           item_key: p.item_key || '',
           total_qty: stockQty || 0
@@ -134,12 +152,15 @@ export default function PurchaseOrders() {
       const params = { page, limit: 20 };
       if (statusFilter) params.status = statusFilter;
       if (warehouseId) params.warehouse_id = warehouseId;
+      if (vendorFilter) params.vendor_id = vendorFilter;
+      if (dateFrom) params.from = dateFrom;
+      if (dateTo) params.to = dateTo;
       const res = await api.listPOs(params);
       setPOs(res?.data || []);
       setPagination(res?.pagination || { page, limit: 20, total: 0 });
     } catch (err) { showError(err, 'Could not load purchase orders'); }
     setLoading(false);
-  }, [statusFilter, warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [statusFilter, warehouseId, vendorFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadVendors = useCallback(async () => {
     try {
@@ -170,7 +191,10 @@ export default function PurchaseOrders() {
       po_date: po.po_date ? new Date(po.po_date).toISOString().slice(0, 10) : '',
       expected_delivery_date: po.expected_delivery_date ? new Date(po.expected_delivery_date).toISOString().slice(0, 10) : '',
       notes: po.notes || '',
-      line_items: (po.line_items || []).map(l => ({ product_id: l.product_id || '', item_key: l.item_key || '', qty_ordered: l.qty_ordered || 1, unit_price: l.unit_price || 0 }))
+      line_items: (po.line_items || []).map(l => {
+        const prod = productOptions.find(p => p.product_id?.toString() === (l.product_id?.toString?.() || l.product_id));
+        return { product_id: l.product_id || '', item_key: l.item_key || '', qty_ordered: l.qty_ordered || 1, unit_price: l.unit_price || 0, unit_code: prod?.unit_code || '' };
+      })
     });
     setShowModal(true);
   };
@@ -190,7 +214,16 @@ export default function PurchaseOrders() {
     const label = `${p.brand_name}${p.dosage_strength ? ` ${p.dosage_strength}` : ''} — ${p.total_qty} ${p.unit_code}`.trim();
     setForm(f => {
       const items = [...f.line_items];
-      items[i] = { ...items[i], product_id: productId, item_key: p.item_key || label, unit_price: p.purchase_price || 0 };
+      items[i] = {
+        ...items[i],
+        product_id: productId,
+        item_key: p.item_key || label,
+        unit_price: p.purchase_price || 0,
+        unit_code: p.purchase_uom || p.unit_code || '',
+        purchase_uom: p.purchase_uom || p.unit_code || '',
+        selling_uom: p.selling_uom || p.unit_code || '',
+        conversion_factor: p.conversion_factor || 1
+      };
       return { ...f, line_items: items };
     });
   };
@@ -215,7 +248,14 @@ export default function PurchaseOrders() {
 
   const handleAction = async (id, action) => {
     try {
-      if (action === 'approve') { await api.approvePO(id); showMsg('PO approved'); }
+      if (action === 'approve') {
+        const result = await api.approvePO(id);
+        if (result?.approval_pending) {
+          showMsg('PO sent for approval — pending authorization', 'info');
+        } else {
+          showMsg('PO approved');
+        }
+      }
       else if (action === 'cancel') {
         if (!window.confirm('Cancel this PO?')) return;
         await api.cancelPO(id); showMsg('PO cancelled');
@@ -226,22 +266,20 @@ export default function PurchaseOrders() {
     }
   };
 
+  // Receive now redirects to GRN page with PO pre-selected
   const openReceive = (po) => {
-    setShowReceive(po);
-    setReceiveQtys(po.line_items.map(l => ({ product_id: l.product_id, qty_received: 0 })));
+    navigate(`/erp/grn?po_id=${po._id}`);
   };
 
-  const handleReceive = async () => {
+  const openDetail = async (po) => {
+    setDetailLoading(true);
     try {
-      const receipts = receiveQtys.filter(r => r.qty_received > 0);
-      if (!receipts.length) return showMsg('Enter quantities to receive', 'err');
-      await api.receivePO(showReceive._id, { receipts });
-      showMsg('Receipt recorded');
-      setShowReceive(null);
-      loadPOs(pagination.page);
-    } catch (e) {
-      showMsg(e.response?.data?.message || 'Receive failed', 'err');
+      const res = await api.getPO(po._id);
+      setShowDetail(res?.data || po);
+    } catch {
+      setShowDetail(po); // fallback to list data
     }
+    setDetailLoading(false);
   };
 
   const fmt = (n) => (n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -265,11 +303,17 @@ export default function PurchaseOrders() {
             </div>
 
             <div className="po-filters">
-              <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
+              <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact allowAll />
               <SelectField value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                 <option value="">All Statuses</option>
                 {STATUSES.filter(Boolean).map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
               </SelectField>
+              <SelectField value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
+                <option value="">All Vendors</option>
+                {vendors.map(v => <option key={v._id} value={v._id}>{v.vendor_name}</option>)}
+              </SelectField>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="From date" style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--erp-border, #e2e8f0)', fontSize: 12 }} />
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} title="To date" style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--erp-border, #e2e8f0)', fontSize: 12 }} />
             </div>
 
             {msg.text && <div className={`po-msg po-msg-${msg.type}`}>{msg.text}</div>}
@@ -294,7 +338,7 @@ export default function PurchaseOrders() {
                   <tbody>
                     {pos.map(po => (
                       <tr key={po._id}>
-                        <td style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 12 }}>{po.po_number || '—'}</td>
+                        <td style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 12 }}><span style={{ cursor: 'pointer', color: 'var(--erp-accent, #1e5eff)', textDecoration: 'underline' }} onClick={() => openDetail(po)}>{po.po_number || '—'}</span></td>
                         <td>{fmtDate(po.po_date)}</td>
                         <td>{po.warehouse_id?.warehouse_code || '—'}</td>
                         <td>{po.vendor_id?.vendor_name || '—'}</td>
@@ -360,9 +404,20 @@ export default function PurchaseOrders() {
                     <h4 style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>Line Items</h4>
                     <button className="btn btn-sm btn-primary" onClick={addLine}>+ Add Line</button>
                   </div>
+                  {productsError && (
+                    <div style={{ background: '#fff3cd', color: '#856404', padding: '8px 12px', borderRadius: 6, fontSize: 12, marginBottom: 8 }}>
+                      Failed to load products: {productsError}.{' '}
+                      <button onClick={refreshProducts} style={{ background: 'none', border: 'none', color: '#0d6efd', cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}>Retry</button>
+                    </div>
+                  )}
+                  {!productsError && !productsLoading && productOptions.length === 0 && (
+                    <div style={{ background: '#f8d7da', color: '#842029', padding: '8px 12px', borderRadius: 6, fontSize: 12, marginBottom: 8 }}>
+                      No products available. Check that products exist in the Product Master for this entity.
+                    </div>
+                  )}
                   <table className="line-items-table">
                     <thead>
-                      <tr><th>Product</th><th style={{ width: 80 }}>Qty</th><th style={{ width: 100 }}>Unit Price</th><th style={{ width: 100 }}>Total</th><th style={{ width: 40 }}></th></tr>
+                      <tr><th>Product</th><th style={{ width: 60 }}>Unit</th><th style={{ width: 80 }}>Qty</th><th style={{ width: 100 }}>Unit Price</th><th style={{ width: 100 }}>Total</th><th style={{ width: 40 }}></th></tr>
                     </thead>
                     <tbody>
                       {form.line_items.map((line, i) => (
@@ -373,6 +428,10 @@ export default function PurchaseOrders() {
                               {productOptions.map(p => <option key={p.product_id} value={p.product_id}>{p.label}</option>)}
                             </SelectField>
                             {!line.product_id && <input value={line.item_key} onChange={e => setLineField(i, 'item_key', e.target.value)} placeholder="Or type custom item..." style={{ marginTop: 4 }} />}
+                          </td>
+                          <td style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: 'var(--erp-muted, #64748b)' }}>
+                            {line.unit_code || '—'}
+                            {line.conversion_factor > 1 && <div style={{ fontSize: 10, fontWeight: 400, color: '#92400e' }}>1 {line.purchase_uom} = {line.conversion_factor} {line.selling_uom}</div>}
                           </td>
                           <td><input type="number" min="1" value={line.qty_ordered} onChange={e => setLineField(i, 'qty_ordered', Number(e.target.value))} /></td>
                           <td><input type="number" min="0" step="0.01" value={line.unit_price} onChange={e => setLineField(i, 'unit_price', Number(e.target.value))} /></td>
@@ -397,38 +456,113 @@ export default function PurchaseOrders() {
               </div>
             )}
 
-            {/* Receive Modal */}
-            {showReceive && (
-              <div className="po-modal" onClick={() => setShowReceive(null)}>
-                <div className="po-modal-body" onClick={e => e.stopPropagation()}>
-                  <h3>Receive Goods — {showReceive.po_number}</h3>
-                  <table className="line-items-table">
-                    <thead>
-                      <tr><th>Item</th><th>Ordered</th><th>Already Rcvd</th><th>Receive Now</th></tr>
-                    </thead>
-                    <tbody>
-                      {showReceive.line_items.map((line, i) => (
-                        <tr key={i}>
-                          <td>{line.item_key || line.product_id}</td>
-                          <td>{line.qty_ordered}</td>
-                          <td>{line.qty_received || 0}</td>
-                          <td>
-                            <input type="number" min="0" max={line.qty_ordered - (line.qty_received || 0)}
-                              value={receiveQtys[i]?.qty_received || 0}
-                              onChange={e => {
-                                const val = Math.min(Number(e.target.value), line.qty_ordered - (line.qty_received || 0));
-                                setReceiveQtys(q => { const copy = [...q]; copy[i] = { ...copy[i], qty_received: val }; return copy; });
-                              }}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-                    <button className="btn" style={{ background: '#e2e8f0' }} onClick={() => setShowReceive(null)}>Cancel</button>
-                    <button className="btn btn-success" onClick={handleReceive}>Confirm Receipt</button>
-                  </div>
+            {/* PO Detail Modal */}
+            {showDetail && (
+              <div className="po-modal" onClick={() => setShowDetail(null)}>
+                <div className="po-modal-body" onClick={e => e.stopPropagation()} style={{ width: 800 }}>
+                  {detailLoading ? <p>Loading...</p> : (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: 18 }}>PO {showDetail.po_number || '—'}</h3>
+                          <span className={`po-badge po-badge-${showDetail.status}`} style={{ marginTop: 4, display: 'inline-block' }}>{showDetail.status?.replace(/_/g, ' ')}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn btn-sm" style={{ background: '#2563eb', color: 'white' }} onClick={() => window.open(`/api/erp/print/purchase-order/${showDetail._id}`, '_blank')}>Print / PDF</button>
+                          <button className="btn btn-sm" style={{ background: '#e2e8f0' }} onClick={() => setShowDetail(null)}>Close</button>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 20px', fontSize: 13, marginBottom: 16, background: '#f8fafc', padding: 12, borderRadius: 8 }}>
+                        <div><strong>Vendor:</strong> {showDetail.vendor_id?.vendor_name || '—'} {showDetail.vendor_id?.vendor_code ? `(${showDetail.vendor_id.vendor_code})` : ''}</div>
+                        <div><strong>Warehouse:</strong> {showDetail.warehouse_id?.warehouse_code || '—'} {showDetail.warehouse_id?.warehouse_name ? `— ${showDetail.warehouse_id.warehouse_name}` : ''}</div>
+                        <div><strong>PO Date:</strong> {fmtDate(showDetail.po_date)}</div>
+                        <div><strong>Expected Delivery:</strong> {fmtDate(showDetail.expected_delivery_date)}</div>
+                        <div><strong>Created By:</strong> {showDetail.created_by?.firstName ? `${showDetail.created_by.firstName} ${showDetail.created_by.lastName || ''}`.trim() : '—'}</div>
+                        <div><strong>Approved By:</strong> {showDetail.approved_by?.firstName ? `${showDetail.approved_by.firstName} ${showDetail.approved_by.lastName || ''}`.trim() : '—'} {showDetail.approved_at ? `on ${fmtDate(showDetail.approved_at)}` : ''}</div>
+                        {showDetail.notes && <div style={{ gridColumn: '1 / -1' }}><strong>Notes:</strong> {showDetail.notes}</div>}
+                      </div>
+
+                      <h4 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>Line Items</h4>
+                      <table className="line-items-table">
+                        <thead>
+                          <tr><th>Product</th><th>Unit</th><th style={{ width: 70 }}>Ordered</th><th style={{ width: 70 }}>Received</th><th style={{ width: 70 }}>Invoiced</th><th style={{ width: 90 }}>Unit Price</th><th style={{ width: 90 }}>Total</th></tr>
+                        </thead>
+                        <tbody>
+                          {(showDetail.line_items || []).map((line, i) => (
+                            <tr key={i}>
+                              <td>{line.item_key || line.product_id}</td>
+                              <td style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#64748b' }}>{productOptions.find(p => p.product_id?.toString() === line.product_id?.toString())?.unit_code || '—'}</td>
+                              <td style={{ textAlign: 'center' }}>{line.qty_ordered}</td>
+                              <td style={{ textAlign: 'center' }}>{line.qty_received || 0}</td>
+                              <td style={{ textAlign: 'center' }}>{line.qty_invoiced || 0}</td>
+                              <td style={{ textAlign: 'right' }}>{fmt(line.unit_price)}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(line.line_total || (line.qty_ordered || 0) * (line.unit_price || 0))}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+
+                      <div className="po-totals" style={{ marginTop: 10 }}>
+                        <div className="po-totals-row"><span>Total Amount:</span><strong>{fmt(showDetail.total_amount)}</strong></div>
+                        <div className="po-totals-row"><span>Net of VAT:</span><span>{fmt(showDetail.net_amount)}</span></div>
+                        <div className="po-totals-row"><span>VAT:</span><span>{fmt(showDetail.vat_amount)}</span></div>
+                      </div>
+
+                      {/* Cross-Document References */}
+                      {showDetail.linked_invoices && showDetail.linked_invoices.length > 0 && (
+                        <div style={{ marginTop: 16 }}>
+                          <h4 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>Linked Supplier Invoices</h4>
+                          <table className="line-items-table">
+                            <thead>
+                              <tr><th>Invoice Ref</th><th>Date</th><th>Status</th><th>Match</th><th>Payment</th><th style={{ width: 100 }}>Amount</th></tr>
+                            </thead>
+                            <tbody>
+                              {showDetail.linked_invoices.map((inv, i) => (
+                                <tr key={i}>
+                                  <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{inv.invoice_ref || '—'}</td>
+                                  <td>{fmtDate(inv.invoice_date)}</td>
+                                  <td><span className={`si-badge si-badge-${inv.status}`} style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600 }}>{inv.status}</span></td>
+                                  <td><span className={`si-badge si-badge-${inv.match_status}`} style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600 }}>{inv.match_status?.replace(/_/g, ' ') || 'UNMATCHED'}</span></td>
+                                  <td><span className={`si-badge si-badge-${inv.payment_status}`} style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600 }}>{inv.payment_status || 'UNPAID'}</span></td>
+                                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(inv.total_amount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      {showDetail.linked_invoices && showDetail.linked_invoices.length === 0 && (
+                        <div style={{ marginTop: 16, fontSize: 12, color: '#64748b', fontStyle: 'italic' }}>No supplier invoices linked to this PO yet.</div>
+                      )}
+
+                      {/* Linked GRNs */}
+                      {showDetail.linked_grns && showDetail.linked_grns.length > 0 && (
+                        <div style={{ marginTop: 16 }}>
+                          <h4 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>Linked GRNs</h4>
+                          <table className="line-items-table">
+                            <thead>
+                              <tr><th>GRN Date</th><th>Status</th><th>Items</th><th>Total Qty</th><th>Reviewed By</th></tr>
+                            </thead>
+                            <tbody>
+                              {showDetail.linked_grns.map((g, i) => (
+                                <tr key={i}>
+                                  <td>{fmtDate(g.grn_date)}</td>
+                                  <td><span className={`po-badge po-badge-${g.status === 'APPROVED' ? 'RECEIVED' : g.status === 'REJECTED' ? 'CANCELLED' : 'DRAFT'}`}>{g.status}</span></td>
+                                  <td>{g.line_items?.length || 0}</td>
+                                  <td>{(g.line_items || []).reduce((s, li) => s + (li.qty || 0), 0)}</td>
+                                  <td>{g.reviewed_by?.name || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      {showDetail.linked_grns && showDetail.linked_grns.length === 0 && (
+                        <div style={{ marginTop: 16, fontSize: 12, color: '#64748b', fontStyle: 'italic' }}>No GRNs linked to this PO yet.</div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             )}

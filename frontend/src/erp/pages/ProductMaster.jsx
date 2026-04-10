@@ -70,9 +70,10 @@ const peso = (val) => `₱${Number(val || 0).toLocaleString('en-PH', { minimumFr
 
 // ---------- Product Modal ----------
  
-function ProductModal({ open, onClose, onSave, editItem, vatOptions }) {
+function ProductModal({ open, onClose, onSave, editItem, vatOptions, unitCodes = [] }) {
   const [form, setForm] = useState({
     brand_name: '', generic_name: '', dosage_strength: '', sold_per: '',
+    purchase_uom: '', selling_uom: '', conversion_factor: 1,
     purchase_price: '', selling_price: '', vat_status: 'VATABLE',
     category: '', description: '', key_benefits: '', image_url: '',
     reorder_min_qty: '', reorder_qty: '', safety_stock_qty: '', lead_time_days: ''
@@ -86,6 +87,9 @@ function ProductModal({ open, onClose, onSave, editItem, vatOptions }) {
         generic_name: editItem.generic_name || '',
         dosage_strength: editItem.dosage_strength || '',
         sold_per: editItem.sold_per || '',
+        purchase_uom: editItem.purchase_uom || '',
+        selling_uom: editItem.selling_uom || '',
+        conversion_factor: editItem.conversion_factor ?? 1,
         purchase_price: editItem.purchase_price ?? '',
         selling_price: editItem.selling_price ?? '',
         vat_status: editItem.vat_status || 'VATABLE',
@@ -101,6 +105,7 @@ function ProductModal({ open, onClose, onSave, editItem, vatOptions }) {
     } else {
       setForm({
         brand_name: '', generic_name: '', dosage_strength: '', sold_per: '',
+        purchase_uom: '', selling_uom: '', conversion_factor: 1,
         purchase_price: '', selling_price: '', vat_status: 'VATABLE',
         category: '', description: '', key_benefits: '', image_url: '',
         reorder_min_qty: '', reorder_qty: '', safety_stock_qty: '', lead_time_days: ''
@@ -157,6 +162,29 @@ function ProductModal({ open, onClose, onSave, editItem, vatOptions }) {
             <div className="form-group">
               <label>Sold Per (unit)</label>
               <input name="sold_per" value={form.sold_per} onChange={set} placeholder="e.g. BOX, BOTTLE, VIAL" />
+            </div>
+          </div>
+          <div className="form-row" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+            <div className="form-group">
+              <label>Purchase UOM</label>
+              <select name="purchase_uom" value={form.purchase_uom} onChange={set}>
+                <option value="">Same as Sold Per</option>
+                {unitCodes.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Selling UOM</label>
+              <select name="selling_uom" value={form.selling_uom} onChange={set}>
+                <option value="">Same as Sold Per</option>
+                {unitCodes.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Conversion Factor</label>
+              <input name="conversion_factor" type="number" min="1" step="1" value={form.conversion_factor} onChange={set} />
+              {form.purchase_uom && form.selling_uom && form.conversion_factor > 1 && (
+                <div style={{ fontSize: 11, color: '#92400e', marginTop: 2 }}>1 {form.purchase_uom} = {form.conversion_factor} {form.selling_uom}</div>
+              )}
             </div>
           </div>
           <div className="form-row">
@@ -235,6 +263,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const { entities, workingEntityId, loaded: entityLoaded, isMultiEntity } = useWorkingEntity();
   const { options: vatOpts } = useLookupOptions('VAT_TYPE');
   const { options: stockTypeOpts } = useLookupOptions('STOCK_TYPE');
+  const { options: unitCodeOpts } = useLookupOptions('UNIT_CODE');
   const VAT_OPTIONS = vatOpts.length > 0 ? vatOpts.map(o => o.code) : VAT_OPTIONS_FALLBACK;
   const STOCK_TYPES = stockTypeOpts.length > 0 ? stockTypeOpts.map(o => o.code) : STOCK_TYPES_FALLBACK;
   const entityReady = entityLoaded && (!isMultiEntity || !!workingEntityId);
@@ -571,6 +600,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
             onSave={handleSave}
             editItem={editItem}
             vatOptions={VAT_OPTIONS}
+            unitCodes={unitCodeOpts.map(o => o.code || o)}
           />
 
           {/* Tag to Warehouse Modal */}

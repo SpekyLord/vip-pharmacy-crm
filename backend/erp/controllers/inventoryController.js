@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
 const InventoryLedger = require('../models/InventoryLedger');
 const ProductMaster = require('../models/ProductMaster');
 const GrnEntry = require('../models/GrnEntry');
+const PurchaseOrder = require('../models/PurchaseOrder');
 const TransactionEvent = require('../models/TransactionEvent');
 const Settings = require('../models/Settings');
 const ErpAuditLog = require('../models/ErpAuditLog');
@@ -434,7 +435,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
  * POST /grn — BDM creates a Goods Received Note (PENDING)
  */
 const createGrn = catchAsync(async (req, res) => {
-  const { grn_date, line_items, waybill_photo_url, undertaking_photo_url, ocr_data, notes, warehouse_id } = req.body;
+  const { grn_date, line_items, waybill_photo_url, undertaking_photo_url, ocr_data, notes, warehouse_id, po_id } = req.body;
 
   if (!line_items?.length) {
     return res.status(400).json({ success: false, message: 'At least one line item is required' });
@@ -452,10 +453,47 @@ const createGrn = catchAsync(async (req, res) => {
     if (!li.item_key) li.item_key = productMap.get(li.product_id.toString()).item_key;
   }
 
+  // PO cross-reference validation (optional — skip for standalone GRNs)
+  let po_number;
+  let vendor_id;
+  if (po_id) {
+    const po = await PurchaseOrder.findOne({ _id: po_id, entity_id: req.entityId }).lean();
+    if (!po) {
+      return res.status(404).json({ success: false, message: 'Purchase order not found' });
+    }
+    if (!['APPROVED', 'PARTIALLY_RECEIVED'].includes(po.status)) {
+      return res.status(400).json({ success: false, message: `PO status is ${po.status} — only APPROVED or PARTIALLY_RECEIVED POs can receive goods` });
+    }
+    po_number = po.po_number;
+    vendor_id = po.vendor_id;
+
+    // Validate each GRN line against corresponding PO line
+    for (let i = 0; i < line_items.length; i++) {
+      const li = line_items[i];
+      if (li.po_line_index == null) continue; // standalone line, no PO match
+      if (li.po_line_index < 0 || li.po_line_index >= po.line_items.length) {
+        return res.status(400).json({ success: false, message: `Line ${i + 1}: po_line_index ${li.po_line_index} is out of bounds (PO has ${po.line_items.length} lines)` });
+      }
+      const poLine = po.line_items[li.po_line_index];
+      // Validate product matches
+      if (poLine.product_id && li.product_id && poLine.product_id.toString() !== li.product_id.toString()) {
+        return res.status(400).json({ success: false, message: `Line ${i + 1}: product does not match PO line ${li.po_line_index + 1}` });
+      }
+      // Validate qty does not exceed remaining receivable
+      const remaining = (poLine.qty_ordered || 0) - (poLine.qty_received || 0);
+      if (li.qty > remaining) {
+        return res.status(400).json({ success: false, message: `Line ${i + 1}: qty (${li.qty}) exceeds PO remaining receivable qty (${remaining})` });
+      }
+    }
+  }
+
   const grn = await GrnEntry.create({
     entity_id: req.entityId,
     bdm_id: req.bdmId,
     warehouse_id: warehouse_id || undefined,
+    po_id: po_id || undefined,
+    po_number: po_number || undefined,
+    vendor_id: vendor_id || undefined,
     grn_date,
     line_items,
     waybill_photo_url,
@@ -541,7 +579,9 @@ const approveGrn = catchAsync(async (req, res) => {
       }], { session });
 
       // Create InventoryLedger entries for each line item
+      // Inventory is always in selling units; use qty_selling_units when conversion applies
       for (const item of grn.line_items) {
+        const qtyInSellingUnits = item.qty_selling_units || (item.qty * (item.conversion_factor || 1));
         await InventoryLedger.create([{
           entity_id: grn.entity_id,
           bdm_id: grn.bdm_id,
@@ -550,11 +590,38 @@ const approveGrn = catchAsync(async (req, res) => {
           batch_lot_no: item.batch_lot_no,
           expiry_date: item.expiry_date,
           transaction_type: 'GRN',
-          qty_in: item.qty,
+          qty_in: qtyInSellingUnits,
           qty_out: 0,
           event_id: event[0]._id,
           recorded_by: req.user._id
         }], { session });
+      }
+
+      // Update PO qty_received and status atomically (if GRN is linked to a PO)
+      if (grn.po_id) {
+        const po = await PurchaseOrder.findById(grn.po_id).session(session);
+        if (po) {
+          for (const item of grn.line_items) {
+            if (item.po_line_index != null && po.line_items[item.po_line_index]) {
+              po.line_items[item.po_line_index].qty_received =
+                (po.line_items[item.po_line_index].qty_received || 0) + item.qty;
+            } else {
+              // Fallback: match by product_id
+              const poLine = po.line_items.find(l =>
+                l.product_id && item.product_id &&
+                l.product_id.toString() === item.product_id.toString()
+              );
+              if (poLine) {
+                poLine.qty_received = (poLine.qty_received || 0) + item.qty;
+              }
+            }
+          }
+          const allReceived = po.line_items.every(l => (l.qty_received || 0) >= l.qty_ordered);
+          const anyReceived = po.line_items.some(l => (l.qty_received || 0) > 0);
+          if (allReceived) po.status = 'RECEIVED';
+          else if (anyReceived) po.status = 'PARTIALLY_RECEIVED';
+          await po.save({ session });
+        }
       }
 
       // Update GRN status
@@ -590,6 +657,7 @@ const approveGrn = catchAsync(async (req, res) => {
 const getGrnList = catchAsync(async (req, res) => {
   const filter = { ...req.tenantFilter };
   if (req.query.status) filter.status = req.query.status;
+  if (req.query.po_id) filter.po_id = req.query.po_id;
 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
@@ -599,6 +667,7 @@ const getGrnList = catchAsync(async (req, res) => {
     GrnEntry.find(filter)
       .populate('bdm_id', 'name email')
       .populate('reviewed_by', 'name')
+      .populate('vendor_id', 'vendor_name vendor_code')
       .sort({ created_at: -1 })
       .skip(skip)
       .limit(limit)
@@ -610,6 +679,48 @@ const getGrnList = catchAsync(async (req, res) => {
     success: true,
     data: grns,
     pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+  });
+});
+
+/**
+ * GET /grn/for-po/:poId — Returns PO data pre-formatted for GRN creation
+ * Used by frontend to auto-populate GRN form when receiving against a PO.
+ */
+const getGrnForPO = catchAsync(async (req, res) => {
+  const po = await PurchaseOrder.findOne({ _id: req.params.poId, entity_id: req.entityId })
+    .populate('vendor_id', 'vendor_name vendor_code')
+    .populate('warehouse_id', 'warehouse_code warehouse_name')
+    .lean();
+  if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
+  if (!['APPROVED', 'PARTIALLY_RECEIVED'].includes(po.status)) {
+    return res.status(400).json({ success: false, message: `PO status is ${po.status} — only APPROVED or PARTIALLY_RECEIVED POs can receive goods` });
+  }
+
+  // Build prefill lines: one per PO line with remaining receivable qty
+  const prefillLines = po.line_items.map((line, idx) => ({
+    po_line_index: idx,
+    product_id: line.product_id,
+    item_key: line.item_key,
+    qty_ordered: line.qty_ordered,
+    qty_received: line.qty_received || 0,
+    qty_remaining: (line.qty_ordered || 0) - (line.qty_received || 0),
+    unit_price: line.unit_price,
+    uom: line.uom,
+    selling_uom: line.selling_uom,
+    conversion_factor: line.conversion_factor || 1
+  })).filter(l => l.qty_remaining > 0);
+
+  res.json({
+    success: true,
+    data: {
+      po_id: po._id,
+      po_number: po.po_number,
+      vendor_id: po.vendor_id,
+      warehouse_id: po.warehouse_id,
+      po_date: po.po_date,
+      expected_delivery_date: po.expected_delivery_date,
+      prefill_lines: prefillLines
+    }
   });
 });
 
@@ -918,6 +1029,7 @@ module.exports = {
   createGrn,
   approveGrn,
   getGrnList,
+  getGrnForPO,
   getAlerts,
   getExpiryDashboard,
   getBatchTrace,

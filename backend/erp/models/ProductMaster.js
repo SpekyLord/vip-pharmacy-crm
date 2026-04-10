@@ -36,6 +36,12 @@ const productMasterSchema = new mongoose.Schema({
     trim: true,
   },
 
+  // UOM Conversion: 1 purchase_uom = conversion_factor × selling_uom
+  // e.g., 1 CASE = 10 BOX
+  purchase_uom: { type: String, trim: true },   // unit supplier sells in (e.g., CASE)
+  selling_uom: { type: String, trim: true },     // unit we sell/track inventory in (e.g., BOX)
+  conversion_factor: { type: Number, default: 1, min: 1 },  // multiplier from purchase to selling units
+
   // Pricing
   purchase_price: {
     type: Number,
@@ -79,7 +85,7 @@ const productMasterSchema = new mongoose.Schema({
   collection: 'erp_product_master'
 });
 
-// Auto-generate item_key, brand_name_clean, unit_code
+// Auto-generate item_key, brand_name_clean, unit_code, UOM defaults
 productMasterSchema.pre('save', function (next) {
   if (!this.item_key && this.brand_name && this.dosage_strength) {
     this.item_key = `${this.brand_name}|${this.dosage_strength}`;
@@ -89,6 +95,13 @@ productMasterSchema.pre('save', function (next) {
   }
   if (this.sold_per && !this.unit_code) {
     this.unit_code = normalizeUnit(this.sold_per);
+  }
+  // Default selling_uom to unit_code, purchase_uom to selling_uom
+  if (!this.selling_uom && this.unit_code) {
+    this.selling_uom = this.unit_code;
+  }
+  if (!this.purchase_uom && this.selling_uom) {
+    this.purchase_uom = this.selling_uom;
   }
   next();
 });

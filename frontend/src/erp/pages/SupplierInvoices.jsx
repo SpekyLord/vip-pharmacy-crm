@@ -88,10 +88,10 @@ export default function SupplierInvoices() {
   const productOptions = useMemo(() => {
     return stockProducts.map(sp => ({
       product_id: sp.product_id,
-      label: `${sp.product?.brand_name || 'Unknown'}${sp.product?.dosage_strength ? ' ' + sp.product.dosage_strength : ''} — ${sp.total_qty} ${sp.product?.unit_code || 'PC'}`,
+      label: `${sp.product?.brand_name || 'Unknown'}${sp.product?.dosage_strength ? ' ' + sp.product.dosage_strength : ''} — ${sp.total_qty} ${sp.product?.unit_code || ''}`,
       brand_name: sp.product?.brand_name,
       dosage_strength: sp.product?.dosage_strength,
-      unit_code: sp.product?.unit_code || 'PC',
+      unit_code: sp.product?.unit_code || '',
       purchase_price: sp.product?.purchase_price || 0,
       item_key: sp.product?.item_key || '',
       total_qty: sp.total_qty
@@ -153,8 +153,25 @@ export default function SupplierInvoices() {
     } catch (err) { showError(err, 'Could not load lookups'); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-fetch POs filtered by warehouse + vendor when invoice form changes
+  const loadPOsForInvoice = useCallback(async (whId, vendorId) => {
+    try {
+      const params = { status: 'APPROVED,PARTIALLY_RECEIVED,RECEIVED', limit: 100 };
+      if (whId) params.warehouse_id = whId;
+      if (vendorId) params.vendor_id = vendorId;
+      const poRes = await api.listPOs(params);
+      setPOs(poRes?.data || []);
+    } catch (err) { console.error('[SupplierInvoices] PO filter error:', err.message); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
   useEffect(() => { loadLookups(); }, [loadLookups]);
+
+  // When invoice modal is open, re-filter POs by selected warehouse + vendor
+  useEffect(() => {
+    if (!showModal) return;
+    loadPOsForInvoice(form.warehouse_id, form.vendor_id);
+  }, [showModal, form.warehouse_id, form.vendor_id, loadPOsForInvoice]);
   useEffect(() => {
     lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
