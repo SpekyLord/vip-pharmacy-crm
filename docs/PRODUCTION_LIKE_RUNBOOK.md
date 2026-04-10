@@ -36,7 +36,7 @@ Last updated: 2026-04-04
 - `git checkout <last-known-good-tag>`
 - `cd backend && npm ci`
 - `cd ../frontend && npm ci && npm run build`
-- `cd .. && pm2 reload ecosystem.config.js --update-env`
+- `cd .. && pm2 startOrRestart ecosystem.config.js --update-env`
 2. Validate:
 - `curl -f https://<domain>/api/health/live`
 - `curl -f https://<domain>/api/health/ready`
