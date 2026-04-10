@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -96,6 +96,7 @@ export function PeopleListContent() {
       setPeople(res?.data || []);
       setPagination(res?.pagination || { page: 1, limit: 50, total: 0, pages: 0 });
     } catch (err) { console.error('[PeopleList] load error:', err.message); } finally { setLoading(false); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
   useEffect(() => { load(); }, [load]);
@@ -103,6 +104,7 @@ export function PeopleListContent() {
   // Check for legacy roles on mount
   useEffect(() => {
     api.getLegacyRoleCounts().then(res => setLegacyCounts(res?.data || {})).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleBulkMigrate = async (fromRole, toRole) => {

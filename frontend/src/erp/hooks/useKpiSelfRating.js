@@ -20,6 +20,7 @@ export default function useKpiSelfRating() {
     const res = await api.get(`/self-ratings/my${qs ? `?${qs}` : ''}`);
     setRatings(res.data);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.get]);
 
   // ─── Get/Create Current Draft ───────────
@@ -28,12 +29,14 @@ export default function useKpiSelfRating() {
     const res = await api.get(`/self-ratings/my/current${qs ? `?${qs}` : ''}`);
     setCurrentDraft(res.data);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.get]);
 
   // ─── Single Rating ─────────────────────
   const fetchRating = useCallback(async (id) => {
     const res = await api.get(`/self-ratings/${id}`);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.get]);
 
   // ─── Ratings for Review (manager/admin) ─
@@ -41,6 +44,7 @@ export default function useKpiSelfRating() {
     const qs = new URLSearchParams(params).toString();
     const res = await api.get(`/self-ratings/review${qs ? `?${qs}` : ''}`);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.get]);
 
   // ─── Ratings by Person (admin) ─────────
@@ -48,6 +52,7 @@ export default function useKpiSelfRating() {
     const qs = new URLSearchParams(params).toString();
     const res = await api.get(`/self-ratings/by-person/${personId}${qs ? `?${qs}` : ''}`);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.get]);
 
   // ─── Save Draft ────────────────────────
@@ -55,30 +60,35 @@ export default function useKpiSelfRating() {
     const res = await api.post('/self-ratings', data);
     setCurrentDraft(res.data);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.post]);
 
   // ─── Submit ────────────────────────────
   const submitRating = useCallback(async (id) => {
     const res = await api.post(`/self-ratings/${id}/submit`, {});
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.post]);
 
   // ─── Review (manager) ─────────────────
   const reviewRating = useCallback(async (id, data) => {
     const res = await api.put(`/self-ratings/${id}/review`, data);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.put]);
 
   // ─── Approve (admin) ──────────────────
   const approveRating = useCallback(async (id) => {
     const res = await api.post(`/self-ratings/${id}/approve`, {});
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.post]);
 
   // ─── Return for Revision ──────────────
   const returnRating = useCallback(async (id, reason) => {
     const res = await api.post(`/self-ratings/${id}/return`, { return_reason: reason });
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.post]);
 
   return {

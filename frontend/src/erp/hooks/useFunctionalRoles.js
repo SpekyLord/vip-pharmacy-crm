@@ -19,6 +19,7 @@ export default function useFunctionalRoles() {
     const res = await api.get(`/role-assignments${qs ? `?${qs}` : ''}`);
     setAssignments(res.data);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.get]);
 
   // ─── By Person (cross-entity) ────────
@@ -26,36 +27,42 @@ export default function useFunctionalRoles() {
     const qs = new URLSearchParams(params).toString();
     const res = await api.get(`/role-assignments/by-person/${personId}${qs ? `?${qs}` : ''}`);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.get]);
 
   // ─── Single ──────────────────────────
   const fetchAssignment = useCallback(async (id) => {
     const res = await api.get(`/role-assignments/${id}`);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.get]);
 
   // ─── Create ──────────────────────────
   const createAssignment = useCallback(async (data) => {
     const res = await api.post('/role-assignments', data);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.post]);
 
   // ─── Bulk Create ─────────────────────
   const bulkCreate = useCallback(async (data) => {
     const res = await api.post('/role-assignments/bulk', data);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.post]);
 
   // ─── Update ──────────────────────────
   const updateAssignment = useCallback(async (id, data) => {
     const res = await api.put(`/role-assignments/${id}`, data);
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.put]);
 
   // ─── Deactivate ──────────────────────
   const deactivateAssignment = useCallback(async (id) => {
     const res = await api.post(`/role-assignments/${id}/deactivate`, {});
     return res.data;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.post]);
 
   return {
