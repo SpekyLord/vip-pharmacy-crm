@@ -1,39 +1,102 @@
 import { useState, useEffect, useCallback } from 'react';
 import useErpApi from './useErpApi';
+import useWorkingEntity from '../../hooks/useWorkingEntity';
 
 /**
- * Fetch ProductMaster for dropdowns. Caches products for the session.
+ * Fetch ProductMaster for dropdowns.
+ * Cache is entity-aware and revalidates on mount/focus so product changes from
+ * another device do not remain stale for the whole browser session.
  * Passes catalog=true to bypass BDM warehouse filter (needed for PO creation, etc.)
  */
-let cachedProducts = null;
+const PRODUCTS_CHANGED_EVENT = 'erp:products-changed';
+const productCache = {};
+
+const getCacheKey = (entityId) => entityId || 'default';
+
+export function invalidateProductCache(entityId) {
+  if (entityId) {
+    delete productCache[getCacheKey(entityId)];
+    return;
+  }
+
+  Object.keys(productCache).forEach((key) => delete productCache[key]);
+}
+
+export function broadcastProductsChanged(entityId) {
+  invalidateProductCache(entityId);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PRODUCTS_CHANGED_EVENT, {
+      detail: { entityId: entityId || null },
+    }));
+  }
+}
 
 export default function useProducts() {
+  const { workingEntityId, loaded: entityLoaded, isMultiEntity } = useWorkingEntity();
   const { get, loading, error } = useErpApi();
-  const [products, setProducts] = useState(cachedProducts || []);
-  const [fetchError, setFetchError] = useState(null);
+  const entityReady = entityLoaded && (!isMultiEntity || !!workingEntityId);
+  const cacheKey = getCacheKey(workingEntityId);
+  const [products, setProducts] = useState(productCache[cacheKey]?.data || []);
 
   const fetchProducts = useCallback(async (force = false) => {
-    if (cachedProducts && !force) {
-      setProducts(cachedProducts);
-      return cachedProducts;
-    }
-    try {
-      setFetchError(null);
-      const res = await get('/products', { params: { limit: 0, catalog: 'true' } });
-      const data = res?.data || [];
-      cachedProducts = data;
-      setProducts(data);
-      return data;
-    } catch (err) {
-      console.error('[useProducts] Failed to load products:', err?.response?.status, err?.message);
-      setFetchError(err?.response?.data?.message || err?.message || 'Failed to load products');
+    if (!entityReady) {
+      setProducts([]);
       return [];
     }
-  }, [get]);
+
+    if (productCache[cacheKey] && !force) {
+      setProducts(productCache[cacheKey].data);
+      return productCache[cacheKey].data;
+    }
+
+    const res = await get('/products', { params: { limit: 0, catalog: 'true' } });
+    const data = res?.data || [];
+    productCache[cacheKey] = { data, ts: Date.now() };
+    setProducts(data);
+    return data;
+  }, [cacheKey, entityReady, get]);
 
   useEffect(() => {
-    if (!cachedProducts) fetchProducts();
-  }, [fetchProducts]);
+    if (!entityReady) {
+      setProducts([]);
+      return;
+    }
 
-  return { products, loading, error: error || fetchError, refresh: () => fetchProducts(true) };
+    setProducts(productCache[cacheKey]?.data || []);
+    fetchProducts(true).catch(() => {});
+  }, [cacheKey, entityReady, fetchProducts]);
+
+  useEffect(() => {
+    if (!entityReady) return undefined;
+
+    const revalidate = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      fetchProducts(true).catch(() => {});
+    };
+
+    const handleProductsChanged = (event) => {
+      const changedEntityId = event.detail?.entityId || null;
+      if (!changedEntityId || changedEntityId === workingEntityId) {
+        revalidate();
+      }
+    };
+
+    window.addEventListener('focus', revalidate);
+    document.addEventListener('visibilitychange', revalidate);
+    window.addEventListener(PRODUCTS_CHANGED_EVENT, handleProductsChanged);
+
+    return () => {
+      window.removeEventListener('focus', revalidate);
+      document.removeEventListener('visibilitychange', revalidate);
+      window.removeEventListener(PRODUCTS_CHANGED_EVENT, handleProductsChanged);
+    };
+  }, [entityReady, fetchProducts, workingEntityId]);
+
+  return {
+    products,
+    loading: entityReady ? loading : false,
+    error,
+    refresh: () => fetchProducts(true),
+  };
 }
