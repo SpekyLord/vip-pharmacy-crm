@@ -36,7 +36,6 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePushNotifications from '../../hooks/usePushNotifications';
-import useAuth from '../../hooks/useAuth';
 import notificationPreferenceService from '../../services/notificationPreferenceService';
 
 /* =============================================================================
@@ -644,7 +643,6 @@ const styles = `
 
 const NotificationPreferences = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const {
     permission,
     isSubscribed,

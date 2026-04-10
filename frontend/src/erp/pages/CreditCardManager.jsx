@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useAccounting from '../hooks/useAccounting';
 import usePeople from '../hooks/usePeople';
 
@@ -64,7 +63,6 @@ const EMPTY_FORM = {
 };
 
 export function CreditCardManagerContent() {
-  const { user } = useAuth();
   const api = useAccounting();
   const { options: cardTypeOpts } = useLookupOptions('CARD_TYPE');
   const CARD_TYPES = cardTypeOpts.map(o => o.code);

@@ -31,7 +31,7 @@ const pickerStyles = `
   .cpk-clear:hover { color: var(--erp-text); }
 `;
 
-export default function CustomerPicker({ value, onChange, saleType, disabled = false }) {
+export default function CustomerPicker({ value, onChange, disabled = false }) {
   const [query, setQuery] = useState('');
   const [displayText, setDisplayText] = useState('');
   const [results, setResults] = useState([]);

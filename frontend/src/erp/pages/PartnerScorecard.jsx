@@ -131,7 +131,7 @@ export default function PartnerScorecard({ personId, onClose }) {
         <div className="sc-body">
           {loading && <div className="sc-empty">Loading scorecard...</div>}
           {!loading && !sc && (
-            <div className="sc-empty">No scorecard data. Click "Recompute Scores" to generate.</div>
+            <div className="sc-empty">No scorecard data. Click &quot;Recompute Scores&quot; to generate.</div>
           )}
 
           {!loading && sc && tab === 'performance' && (

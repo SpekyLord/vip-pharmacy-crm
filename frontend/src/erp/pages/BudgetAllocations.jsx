@@ -8,7 +8,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 import usePeople from '../hooks/usePeople';
 
@@ -88,7 +87,6 @@ function fmt(n) { return '\u20B1' + (n || 0).toLocaleString(undefined, { minimum
 function getCurrentPeriod() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 
 export default function BudgetAllocations() {
-  const { user } = useAuth();
   const rpt = useReports();
   const ppl = usePeople();
   const [allocations, setAllocations] = useState([]);
@@ -114,6 +112,7 @@ export default function BudgetAllocations() {
       setAllocations(res?.data || []);
     } catch (err) { console.error('[BudgetAllocations] load error:', err.message); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
   const loadPeople = useCallback(async () => {
@@ -121,8 +120,10 @@ export default function BudgetAllocations() {
       const res = await ppl.getPeopleList({ is_active: true });
       setPeople(res?.data || []);
     } catch (err) { console.error('[BudgetAllocations] load error:', err.message); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadAllocations(); loadPeople(); }, []);
 
   const handlePersonChange = (personId) => {

@@ -46,7 +46,7 @@ const SCORE_OPTIONS = [
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 
-/* eslint-disable react/prop-types */
+ 
 function StatusBadge({ status }) {
   const c = STATUS_COLORS[status] || STATUS_COLORS.DRAFT;
   return <span style={{ padding: '2px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: c.bg, color: c.text }}>{status}</span>;
@@ -60,7 +60,7 @@ function ScoreSelect({ value, onChange, disabled }) {
     </select>
   );
 }
-/* eslint-enable react/prop-types */
+ 
 
 function KpiSelfRatingContent() {
   const { user } = useAuth();

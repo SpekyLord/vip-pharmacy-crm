@@ -5,7 +5,6 @@
  * of each governance layer so president/admin/finance know what needs attention.
  */
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../hooks/useAuth';
 import useWorkingEntity from '../../hooks/useWorkingEntity';
 import api from '../../services/api';
 
@@ -31,7 +30,6 @@ const pageStyles = `
 `;
 
 export function FoundationHealthContent() {
-  const { user } = useAuth();
   const { workingEntityId, loaded: entityLoaded } = useWorkingEntity();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);

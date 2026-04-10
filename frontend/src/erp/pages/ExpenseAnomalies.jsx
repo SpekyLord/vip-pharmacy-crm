@@ -6,7 +6,6 @@ import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -41,7 +40,6 @@ function fmt(n) { return '\u20B1' + (n || 0).toLocaleString(undefined, { minimum
 function getCurrentPeriod() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 
 export default function ExpenseAnomalies() {
-  const { user } = useAuth();
   const rpt = useReports();
   const [tab, setTab] = useState('anomalies');
   const [period, setPeriod] = useState(getCurrentPeriod());
@@ -61,6 +59,7 @@ export default function ExpenseAnomalies() {
       }
     } catch (err) { console.error('[ExpenseAnomalies] load error:', err.message); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period, tab]);
 
   return (
@@ -103,7 +102,7 @@ export default function ExpenseAnomalies() {
                   <tr><th>Person</th><th>Component</th><th style={{ textAlign: 'right' }}>Prior</th><th style={{ textAlign: 'right' }}>Current</th><th style={{ textAlign: 'right' }}>Change %</th><th>Flag</th></tr>
                 </thead>
                 <tbody>
-                  {(anomalyData.anomalies || []).map((r, i) => (
+                  {(anomalyData.anomalies || []).map((r) => (
                     <tr key={r.person_id + '-' + r.component}>
                       <td style={{ fontWeight: 600 }}>{r.person_name}</td>
                       <td>{r.component}</td>
@@ -128,7 +127,7 @@ export default function ExpenseAnomalies() {
                   <tr><th>Person</th><th>Component</th><th style={{ textAlign: 'right' }}>Budgeted</th><th style={{ textAlign: 'right' }}>Actual</th><th style={{ textAlign: 'right' }}>Variance</th><th style={{ textAlign: 'right' }}>Var %</th><th>Flag</th></tr>
                 </thead>
                 <tbody>
-                  {(budgetData.overruns || []).map((r, i) => (
+                  {(budgetData.overruns || []).map((r) => (
                     <tr key={r.person_id + '-' + r.component}>
                       <td style={{ fontWeight: 600 }}>{r.person_name}</td>
                       <td>{r.component}</td>

@@ -67,7 +67,7 @@ const pageStyles = `
 const peso = (val) => `₱${Number(val || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
 // ---------- Product Modal ----------
-/* eslint-disable react/prop-types */
+ 
 function ProductModal({ open, onClose, onSave, editItem, vatOptions }) {
   const [form, setForm] = useState({
     brand_name: '', generic_name: '', dosage_strength: '', sold_per: '',
@@ -223,10 +223,10 @@ function ProductModal({ open, onClose, onSave, editItem, vatOptions }) {
     </div>
   );
 }
-/* eslint-enable react/prop-types */
+ 
 
 // ---------- Main Page ----------
-/* eslint-disable react/prop-types */
+ 
 export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const api = useErpApi();
   const { getWarehouses } = useWarehouses();
@@ -583,7 +583,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
     </>
   );
 }
-/* eslint-enable react/prop-types */
+ 
 
 export default function ProductMasterPage() {
   return (

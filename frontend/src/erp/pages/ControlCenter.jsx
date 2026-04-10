@@ -156,7 +156,7 @@ const CATEGORY_CONFIG = [
 ];
 
 // Error boundary for lazy-loaded section failures
-/* eslint-disable react/prop-types */
+ 
 class SectionErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
@@ -175,7 +175,7 @@ class SectionErrorBoundary extends Component {
     return this.props.children;
   }
 }
-/* eslint-enable react/prop-types */
+ 
 
 // ── Dependency guide: what to configure when you change each section ──
 const DEPENDENCY_GUIDE = {
@@ -382,7 +382,7 @@ const DEPENDENCY_GUIDE = {
   },
 };
 
-/* eslint-disable react/prop-types */
+ 
 function DependencyBanner({ section, onNavigate }) {
   const guide = DEPENDENCY_GUIDE[section];
   if (!guide) return null;
@@ -401,7 +401,7 @@ function DependencyBanner({ section, onNavigate }) {
     </div>
   );
 }
-/* eslint-enable react/prop-types */
+ 
 
 const pageStyles = `
   .ctlc-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }

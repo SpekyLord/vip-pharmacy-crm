@@ -28,7 +28,7 @@ const hasErpModuleAccess = (user, module) => {
   return level !== 'NONE';
 };
 
-/* eslint-disable react/prop-types */
+ 
 const ProtectedRoute = ({ children, allowedRoles = [], requiredErpModule = null }) => {
   const { user, loading, isAuthenticated } = useAuth();
   const location = useLocation();
@@ -72,6 +72,6 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredErpModule = null 
 
   return children;
 };
-/* eslint-enable react/prop-types */
+ 
 
 export default ProtectedRoute;

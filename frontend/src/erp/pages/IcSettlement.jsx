@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useIcSettlements from '../hooks/useIcSettlements';
 import useErpApi from '../hooks/useErpApi';
 import { processDocument } from '../services/ocrService';
@@ -44,7 +43,6 @@ const pageStyles = `
 `;
 
 export default function IcSettlement() {
-  const { user } = useAuth();
   const ic = useIcSettlements();
   const lookupApi = useErpApi();
   const navigate = useNavigate();

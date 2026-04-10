@@ -197,7 +197,7 @@ const buildWorksheetData = (doctors, config) => {
     '',
     'Month/Year:',
     monthYear,
-    ...dayNumbers.map((d, i) => `Day${d}`),
+    ...dayNumbers.map((d) => `Day${d}`),
     '',
     '',
     '',
@@ -313,7 +313,7 @@ const buildWorksheetData = (doctors, config) => {
 /**
  * Apply styling to the Excel worksheet
  */
-const applyStyles = (ws, dataLength) => {
+const applyStyles = (ws) => {
   // Set column widths
   const colWidths = [
     { wch: 5 }, // NO.

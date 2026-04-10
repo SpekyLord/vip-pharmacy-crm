@@ -70,7 +70,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString() : '—';
 const toInput = (d) => d ? new Date(d).toISOString().split('T')[0] : '';
 
 // ── Field component: view/edit toggle ──
-/* eslint-disable react/prop-types */
+ 
 function F({ lbl, val, name, type = 'text', editing, form, onChange, options, className }) {
   if (!editing) return <div className={`pd-field ${className || ''}`}><div className="lbl">{lbl}</div><div className="val">{val ?? '—'}</div></div>;
   if (options) return (
@@ -86,7 +86,7 @@ function F({ lbl, val, name, type = 'text', editing, form, onChange, options, cl
       <input type={type} name={name} value={form[name] ?? ''} onChange={onChange} /></div>
   );
 }
-/* eslint-enable react/prop-types */
+ 
 
 export default function PersonDetail() {
   const { id } = useParams();
