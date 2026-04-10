@@ -152,45 +152,98 @@ export default function BatchTrace() {
               </div>
 
               {/* Timeline */}
+              <style>{`
+                .bt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                .bt-table th { padding: 8px 12px; background: #f8fafc; }
+                .bt-table td { padding: 8px 12px; }
+                .bt-table tr + tr { border-top: 1px solid #f1f5f9; }
+                .bt-cards { display: none; }
+                @media (max-width: 640px) {
+                  .bt-table { display: none; }
+                  .bt-cards { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+                  .bt-card {
+                    padding: 12px; border-radius: 10px; background: #fff;
+                    border: 1px solid #e5e7eb;
+                  }
+                  .bt-card-row { display: flex; justify-content: space-between; gap: 8px; }
+                  .bt-card-label { font-size: 10px; text-transform: uppercase; color: #6b7280; font-weight: 700; }
+                  .bt-card-value { font-size: 13px; font-weight: 600; }
+                  .bt-card-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 8px; }
+                }
+              `}</style>
               <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #dbe4f0', overflow: 'hidden' }}>
                 <div style={{ padding: '10px 16px', fontWeight: 700, borderBottom: '1px solid #dbe4f0', fontSize: 14 }}>
                   Transaction Timeline ({traceData.timeline?.length || 0} entries)
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <table className="bt-table">
                   <thead>
-                    <tr style={{ background: '#f8fafc' }}>
-                      <th style={{ padding: '8px 12px', textAlign: 'left' }}>Date</th>
-                      <th style={{ padding: '8px 12px' }}>Type</th>
-                      <th style={{ padding: '8px 12px' }}>In</th>
-                      <th style={{ padding: '8px 12px' }}>Out</th>
-                      <th style={{ padding: '8px 12px' }}>Balance</th>
-                      <th style={{ padding: '8px 12px' }}>Warehouse</th>
-                      <th style={{ padding: '8px 12px' }}>By</th>
+                    <tr>
+                      <th style={{ textAlign: 'left' }}>Date</th>
+                      <th>Type</th>
+                      <th>In</th>
+                      <th>Out</th>
+                      <th>Balance</th>
+                      <th>Warehouse</th>
+                      <th>By</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(traceData.timeline || []).map((entry, i) => {
                       const conf = TXN_COLORS[entry.type] || TXN_COLORS.ADJUSTMENT;
                       return (
-                        <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 12px' }}>{entry.date ? new Date(entry.date).toLocaleString() : '—'}</td>
-                          <td style={{ padding: '8px 12px' }}>
+                        <tr key={i}>
+                          <td>{entry.date ? new Date(entry.date).toLocaleString() : '—'}</td>
+                          <td>
                             <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: conf.bg, color: conf.text }}>{conf.label}</span>
                           </td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', color: entry.qty_in > 0 ? '#166534' : '#ccc', fontWeight: entry.qty_in > 0 ? 700 : 400 }}>
+                          <td style={{ textAlign: 'center', color: entry.qty_in > 0 ? '#166534' : '#ccc', fontWeight: entry.qty_in > 0 ? 700 : 400 }}>
                             {entry.qty_in > 0 ? `+${entry.qty_in}` : '—'}
                           </td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', color: entry.qty_out > 0 ? '#991b1b' : '#ccc', fontWeight: entry.qty_out > 0 ? 700 : 400 }}>
+                          <td style={{ textAlign: 'center', color: entry.qty_out > 0 ? '#991b1b' : '#ccc', fontWeight: entry.qty_out > 0 ? 700 : 400 }}>
                             {entry.qty_out > 0 ? `-${entry.qty_out}` : '—'}
                           </td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700 }}>{entry.running_balance ?? '—'}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', fontSize: 12 }}>{entry.warehouse || '—'}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center', fontSize: 12 }}>{entry.recorded_by}</td>
+                          <td style={{ textAlign: 'center', fontWeight: 700 }}>{entry.running_balance ?? '—'}</td>
+                          <td style={{ textAlign: 'center', fontSize: 12 }}>{entry.warehouse || '—'}</td>
+                          <td style={{ textAlign: 'center', fontSize: 12 }}>{entry.recorded_by}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+                <div className="bt-cards">
+                  {(traceData.timeline || []).map((entry, i) => {
+                    const conf = TXN_COLORS[entry.type] || TXN_COLORS.ADJUSTMENT;
+                    return (
+                      <div key={i} className="bt-card">
+                        <div className="bt-card-row">
+                          <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: conf.bg, color: conf.text }}>{conf.label}</span>
+                          <span style={{ fontSize: 12, color: '#6b7280' }}>{entry.date ? new Date(entry.date).toLocaleDateString() : '—'}</span>
+                        </div>
+                        <div className="bt-card-grid">
+                          <div>
+                            <div className="bt-card-label">In</div>
+                            <div className="bt-card-value" style={{ color: entry.qty_in > 0 ? '#166534' : '#ccc' }}>
+                              {entry.qty_in > 0 ? `+${entry.qty_in}` : '—'}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="bt-card-label">Out</div>
+                            <div className="bt-card-value" style={{ color: entry.qty_out > 0 ? '#991b1b' : '#ccc' }}>
+                              {entry.qty_out > 0 ? `-${entry.qty_out}` : '—'}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="bt-card-label">Balance</div>
+                            <div className="bt-card-value">{entry.running_balance ?? '—'}</div>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>
+                          {entry.warehouse || '—'} {entry.recorded_by ? `· ${entry.recorded_by}` : ''}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}

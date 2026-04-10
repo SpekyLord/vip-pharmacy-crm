@@ -101,7 +101,7 @@ return messages
     if (!s) return true;
 
     const title = (m.title ?? '').toLowerCase();
-    const body = (m.message ?? '').toLowerCase();
+    const body = (m.body ?? m.message ?? '').toLowerCase();
 
     const fromTxt = (m.from ?? m.senderName ?? "").toLowerCase();
     return title.includes(s) || body.includes(s) || fromTxt.includes(s);
@@ -146,6 +146,14 @@ return messages
         return { label: 'Policy', chip: 'chip chip-orange', icon: '📄' };
       case 'system':
         return { label: 'System', chip: 'chip chip-red', icon: '⚠️' };
+      case 'compliance_alert':
+        return { label: 'Compliance', chip: 'chip chip-red', icon: '🛡️' };
+      case 'ai_coaching':
+        return { label: 'AI Coaching', chip: 'chip chip-ai', icon: '🤖' };
+      case 'ai_schedule':
+        return { label: 'AI Schedule', chip: 'chip chip-ai', icon: '📅' };
+      case 'ai_alert':
+        return { label: 'AI Alert', chip: 'chip chip-ai-alert', icon: '⚡' };
       default:
         return { label: 'Notice', chip: 'chip', icon: '🔔' };
     }
@@ -289,6 +297,10 @@ const toggleMessage = async (msgOrId) => {
                   <option value="leave">Leave</option>
                   <option value="policy">Policy</option>
                   <option value="system">System</option>
+                  <option value="compliance_alert">Compliance</option>
+                  <option value="ai_coaching">AI Coaching</option>
+                  <option value="ai_schedule">AI Schedule</option>
+                  <option value="ai_alert">AI Alert</option>
                 </SelectField>
               </div>
 
@@ -651,6 +663,8 @@ const toggleMessage = async (msgOrId) => {
         .chip-green { background: #dcfce7; color: #166534; }
         .chip-orange { background: #ffedd5; color: #9a3412; }
         .chip-red { background: #fee2e2; color: #991b1b; }
+        .chip-ai { background: #ede9fe; color: #6d28d9; }
+        .chip-ai-alert { background: #fef3c7; color: #92400e; }
 
         /* --- Pagination --- */
         .pagination {

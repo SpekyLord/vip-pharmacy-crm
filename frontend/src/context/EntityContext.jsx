@@ -1,11 +1,10 @@
-import { createContext, useState, useEffect, useCallback, useContext } from 'react';
-import { AuthContext } from './AuthContext';
+import { useState, useEffect, useCallback, useContext } from 'react';
+import { AuthContext } from './AuthContextObject';
 import api from '../services/api';
 import { setWorkingEntityHeader } from '../services/api';
+import { EntityContext } from './EntityContextObject';
 
 const STORAGE_KEY = 'vip_working_entity_id';
-
-export const EntityContext = createContext(null);
 
 export const EntityProvider = ({ children }) => {
   const { user } = useContext(AuthContext);

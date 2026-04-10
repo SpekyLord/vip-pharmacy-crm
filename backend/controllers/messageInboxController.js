@@ -17,59 +17,11 @@
  * - "Document" = one message row (JSON-like object)
  */
 
-const mongoose = require('mongoose');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { ROLES, isAdminLike } = require('../constants/roles');
+const MessageInbox = require('../models/MessageInbox');
 
-/* ------------------------------------------------------------------ */
-/* Model getter (kept inside controller for "direct collection" access) */
-/* ------------------------------------------------------------------ */
-let MessageModel;
-
-const getMessageModel = () => {
-  // Use the default connection (vip-pharmacy-crm-dev) — useDb('vip-pharmacy-crm') was causing
-  // "user is not allowed to do action [find] on [vip-pharmacy-crm.messages]" because the Atlas
-  // user only has access to the default database in the connection string.
-  // Guard: return existing compiled model if already registered (prevents OverwriteModelError)
-  if (mongoose.models.MessageInbox) {
-    MessageModel = mongoose.models.MessageInbox;
-    return MessageModel;
-  }
-  if (!MessageModel) {
-    const messageSchema = new mongoose.Schema(
-    {
-        senderName: { type: String, required: true, trim: true, default: "Admin" },
-        senderUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-
-        title: { type: String, required: true, trim: true },
-        body: { type: String, required: true, trim: true },
-
-        category: {
-          type: String,
-          required: true,
-          enum: ["announcement", "payroll", "leave", "policy", "system", "compliance_alert", "other"],
-        },
-        priority: { type: String, enum: ["normal", "important", "high"], default: "normal" },
-
-
-        recipientRole: { type: String, required: true, trim: true },
-        recipientUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-
-        readBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-
-        isArchived: { type: Boolean, default: false },
-        senderRole: { type: String, trim: true, default: "admin" },
-    },
-    { timestamps: true }
-    );
-
-
-    // IMPORTANT: third argument forces collection name = "messages"
-    MessageModel = mongoose.model('MessageInbox', messageSchema, 'messages');
-  }
-
-  return MessageModel;
-};
+const getMessageModel = () => MessageInbox;
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
@@ -136,7 +88,9 @@ const getInboxMessages = catchAsync(async (req, res) => {
  };
 
   if (category && category !== 'all') {
-    filter.category = category;
+    // Support comma-separated categories: ?category=ai_coaching,ai_schedule,ai_alert
+    const cats = category.split(',').map(c => c.trim()).filter(Boolean);
+    filter.category = cats.length > 1 ? { $in: cats } : cats[0];
   }
 
   // Read/unread filtering (per-user)
@@ -343,14 +297,6 @@ const markMessageUnread = catchAsync(async (req, res) => {
 
     if (!allowed) return res.status(403).json({ success:false, message:"You are not allowed to access this message." });
 
-
-  if (!allowed) {
-    return res.status(403).json({
-      success: false,
-      message: 'You are not allowed to access this message.',
-    });
-  }
-
     await Message.updateOne(
     { _id: msg._id },
     { $pull: { readBy: req.user._id } }
@@ -394,7 +340,8 @@ const getSentMessages = catchAsync(async (req, res) => {
   };
 
   if (category && category !== "all") {
-    filter.category = category;
+    const cats = category.split(',').map(c => c.trim()).filter(Boolean);
+    filter.category = cats.length > 1 ? { $in: cats } : cats[0];
   }
 
   if (search) {

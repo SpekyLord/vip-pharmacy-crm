@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLES } from '../../constants/roles';
 import useCollections from '../hooks/useCollections';
 import useHospitals from '../hooks/useHospitals';
 import useSettings from '../hooks/useSettings';
@@ -59,7 +60,6 @@ const pageStyles = `
 `;
 
 export default function CollectionSession() {
-  // eslint-disable-next-line no-unused-vars
   const { user } = useAuth();
   const collections = useCollections();
   const { hospitals } = useHospitals();
@@ -106,6 +106,14 @@ export default function CollectionSession() {
   const commRates = useMemo(() => settings?.COMMISSION_RATES || [0, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05], [settings]);
   const rebateRates = useMemo(() => settings?.PARTNER_REBATE_RATES || [1, 2, 3, 5, 20, 25], [settings]);
   const vatRate = useMemo(() => settings?.VAT_RATE || 0.12, [settings]);
+  const canAccessAccounting = useMemo(() => {
+    if (!user) return false;
+    if (user.role === ROLES.PRESIDENT || user.role === ROLES.CEO) return true;
+    if (user.role === ROLES.ADMIN && (!user.erp_access || !user.erp_access.enabled)) return true;
+    if (!user.erp_access || !user.erp_access.enabled) return false;
+    const level = user.erp_access.modules?.accounting || 'NONE';
+    return level !== 'NONE';
+  }, [user]);
 
   // Derive net_of_vat from invoice_amount when the original value is missing
   const getNetOfVat = useCallback((entry, csi) => {
@@ -170,11 +178,38 @@ export default function CollectionSession() {
 
   // Load bank accounts + petty cash funds for "Deposited At" dropdown
   useEffect(() => {
+    let isActive = true;
+
     getMyBankAccounts().then(r => setBankAccountsList(r?.data || [])).catch(err => console.error('[CollectionSession]', err.message));
+
+    if (!canAccessAccounting) {
+      setPettyCashFunds([]);
+      return () => {
+        isActive = false;
+      };
+    }
+
     import('../../services/api').then(({ default: api }) => {
-      api.get('/erp/petty-cash/funds').then(res => setPettyCashFunds(res.data?.data || [])).catch(err => console.error('[CollectionSession]', err.message));
+      if (!isActive) return;
+
+      api.get('/erp/petty-cash/funds')
+        .then((res) => {
+          if (isActive) setPettyCashFunds(res.data?.data || []);
+        })
+        .catch((err) => {
+          if (!isActive) return;
+          if (err.response?.status === 403) {
+            setPettyCashFunds([]);
+            return;
+          }
+          console.error('[CollectionSession]', err.message);
+        });
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    return () => {
+      isActive = false;
+    };
+  }, [canAccessAccounting, getMyBankAccounts]);
 
   // Load customers list
   useEffect(() => {

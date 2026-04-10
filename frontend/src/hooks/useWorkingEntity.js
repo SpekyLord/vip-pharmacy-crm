@@ -1,5 +1,5 @@
 import { useContext } from 'react';
-import { EntityContext } from '../context/EntityContext';
+import { EntityContext } from '../context/EntityContextObject';
 
 export default function useWorkingEntity() {
   const context = useContext(EntityContext);

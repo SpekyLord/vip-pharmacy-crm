@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useContext } from 'react';
 import api from '../../services/api';
-import { EntityContext } from '../../context/EntityContext';
+import { EntityContext } from '../../context/EntityContextObject';
 
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const cache = {}; // { [entityId:category]: { data, ts } }

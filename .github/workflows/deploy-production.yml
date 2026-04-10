@@ -37,12 +37,42 @@ jobs:
           PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
           PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_ANTHROPIC_API_KEY: ${{ secrets.PROD_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
         run: |
           set -euo pipefail
           PORT="${PROD_SSH_PORT:-22}"
-          ssh -T -o BatchMode=yes -p "$PORT" "$PROD_SSH_USER@$PROD_SSH_HOST" <<'EOF'
+          ANTHROPIC_B64=""
+          if [ -n "${PROD_ANTHROPIC_API_KEY:-}" ]; then
+            ANTHROPIC_B64="$(printf '%s' "$PROD_ANTHROPIC_API_KEY" | base64 | tr -d '\n')"
+          fi
+          ssh -T -o BatchMode=yes -p "$PORT" "$PROD_SSH_USER@$PROD_SSH_HOST" "ANTHROPIC_B64='$ANTHROPIC_B64' bash -s" <<'EOF'
             set -euo pipefail
             cd /var/www/vip-pharmacy-crm
+            update_env() {
+              key="$1"
+              value="$2"
+              file="$3"
+              [ -n "$value" ] || return 0
+              node - "$file" "$key" "$value" <<'NODE'
+const fs = require('fs');
+const [file, key, value] = process.argv.slice(2);
+let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+const nextLine = `${key}=${value}`;
+const matcher = new RegExp(`^${key}=.*$`, 'm');
+if (matcher.test(text)) {
+  text = text.replace(matcher, nextLine);
+} else {
+  if (text && !text.endsWith('\n')) text += '\n';
+  text += `${nextLine}\n`;
+}
+fs.writeFileSync(file, text);
+NODE
+            }
+            if [ -n "${ANTHROPIC_B64:-}" ]; then
+              ANTHROPIC_API_KEY="$(printf '%s' "$ANTHROPIC_B64" | base64 -d)"
+              update_env "ANTHROPIC_API_KEY" "$ANTHROPIC_API_KEY" "/var/www/vip-pharmacy-crm/backend/.env"
+              unset ANTHROPIC_API_KEY
+            fi
             git fetch origin
             git checkout main
             git pull --ff-only origin main

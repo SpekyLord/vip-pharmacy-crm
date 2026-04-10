@@ -9,6 +9,30 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 let client = null;
 
+function normalizeClaudeError(err) {
+  const rawMessage = [
+    err?.message,
+    err?.error?.message,
+    err?.response?.data?.message,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  if (
+    err?.status === 401 ||
+    /invalid x-api-key/i.test(rawMessage) ||
+    /invalid authentication credentials/i.test(rawMessage) ||
+    /authentication_error/i.test(rawMessage)
+  ) {
+    const authError = new Error('Anthropic authentication failed. Update ANTHROPIC_API_KEY in the backend environment.');
+    authError.status = 401;
+    authError.code = 'ANTHROPIC_AUTH';
+    return authError;
+  }
+
+  return err;
+}
+
 function getClient() {
   if (!client) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -66,10 +90,10 @@ async function askClaude({ system, prompt, maxTokens = 1024, model = 'claude-hai
 
       return { text, usage, cost };
     } catch (err) {
-      lastError = err;
+      lastError = normalizeClaudeError(err);
 
       // Rate limit — wait and retry
-      if (err.status === 429 && attempt < retries) {
+      if (lastError.status === 429 && attempt < retries) {
         const wait = Math.min(2000 * (attempt + 1), 10000);
         console.warn(`[ClaudeClient] Rate limited, retrying in ${wait}ms (attempt ${attempt + 1}/${retries})`);
         await new Promise(r => setTimeout(r, wait));
@@ -77,7 +101,7 @@ async function askClaude({ system, prompt, maxTokens = 1024, model = 'claude-hai
       }
 
       // Overloaded — wait longer
-      if (err.status === 529 && attempt < retries) {
+      if (lastError.status === 529 && attempt < retries) {
         const wait = 5000 * (attempt + 1);
         console.warn(`[ClaudeClient] API overloaded, retrying in ${wait}ms`);
         await new Promise(r => setTimeout(r, wait));
@@ -85,7 +109,7 @@ async function askClaude({ system, prompt, maxTokens = 1024, model = 'claude-hai
       }
 
       // Non-retryable
-      if (err.status && err.status < 500 && err.status !== 429) break;
+      if (lastError.status && lastError.status < 500 && lastError.status !== 429) break;
 
       // Server error — retry
       if (attempt < retries) {
@@ -129,4 +153,4 @@ function getCostSummary() {
   return { totalCost: parseFloat(totalCost.toFixed(6)), byAgent, totalCalls: costLog.length };
 }
 
-module.exports = { askClaude, estimateCost, getCostSummary };
+module.exports = { askClaude, estimateCost, getCostSummary, normalizeClaudeError };
