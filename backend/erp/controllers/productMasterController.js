@@ -270,12 +270,13 @@ const exportPrices = catchAsync(async (req, res) => {
  */
 const importPrices = catchAsync(async (req, res) => {
   const XLSX = require('xlsx');
+  const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No file uploaded. Send as multipart/form-data with field name "file".' });
   }
 
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws);
 
@@ -339,6 +340,7 @@ const importPrices = catchAsync(async (req, res) => {
  */
 const refreshProducts = catchAsync(async (req, res) => {
   const XLSX = require('xlsx');
+  const { safeXlsxRead } = require('../../utils/safeXlsxRead');
   const { cleanName } = require('../utils/nameClean');
   const { normalizeUnit } = require('../utils/normalize');
 
@@ -351,7 +353,7 @@ const refreshProducts = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Entity context required' });
   }
 
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer', raw: true });
+  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer', raw: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
 

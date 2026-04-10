@@ -102,6 +102,7 @@ const AdminSentMessageBox = ({
     // ✅ mimic inbox: switching message closes reply box
     setMessageOpen(false);
     setMessageDraft("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [message?._id, isEditing]);
 
   return (

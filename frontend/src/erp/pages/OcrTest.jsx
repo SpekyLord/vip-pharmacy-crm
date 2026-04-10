@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -313,7 +313,7 @@ const OcrTest = () => {
   }
 
   function handleConfirm() {
-    // eslint-disable-next-line no-console
+     
     console.log('Confirmed OCR data:', result);
     setToast('Data confirmed successfully');
     setTimeout(() => setToast(null), 3000);

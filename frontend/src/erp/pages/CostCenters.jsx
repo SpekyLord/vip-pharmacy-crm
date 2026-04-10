@@ -5,7 +5,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 import { showError, showSuccess } from '../utils/errorToast';
 
@@ -69,7 +68,6 @@ function TreeView({ nodes, onToggle, onEdit }) {
 }
 
 export function CostCentersContent() {
-  const { user } = useAuth();
   const rpt = useReports();
   const [tree, setTree] = useState([]);
   const [flatList, setFlatList] = useState([]);
@@ -87,8 +85,10 @@ export function CostCentersContent() {
       console.error('[CostCenters] load failed:', err?.response?.data?.message || err.message);
     }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, []);
 
   const handleCreate = async () => {

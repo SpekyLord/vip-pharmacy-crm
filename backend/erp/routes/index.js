@@ -82,6 +82,8 @@ router.use('/erp-access', require('./erpAccessRoutes'));
 // as-users is a lightweight lookup needed by tagging UIs — no module check
 router.get('/people/as-users', require('../controllers/peopleController').getAsUsers);
 router.use('/people', erpAccessCheck('people'), require('./peopleRoutes'));
+router.use('/role-assignments', erpAccessCheck('people'), require('./functionalRoleRoutes'));
+router.use('/self-ratings', erpAccessCheck('people'), require('./kpiSelfRatingRoutes'));
 router.use('/payroll', erpAccessCheck('payroll'), require('./payrollRoutes'));
 
 // ═══ Phase 11 — Accounting Engine ═══

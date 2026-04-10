@@ -6,7 +6,6 @@ import { useState, useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 import WarehousePicker from '../components/WarehousePicker';
 
@@ -44,7 +43,6 @@ const pageStyles = `
 const BADGE_CLASS = { OPEN: 'badge-open', OVERDUE: 'badge-overdue', FORCE_CSI: 'badge-force', COLLECTED: 'badge-collected' };
 
 export default function ConsignmentAging() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const rpt = useReports();
   const [warehouseId, setWarehouseId] = useState('');
@@ -64,6 +62,7 @@ export default function ConsignmentAging() {
       setData(res?.data || null);
     } catch (err) { console.error('[ConsignmentAging] load error:', err.message); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, warehouseId]);
 
   useEffect(() => { load(); }, [load]);

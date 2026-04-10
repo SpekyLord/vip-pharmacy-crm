@@ -27,6 +27,7 @@ const {
   getDoctorProducts,
   updateTargetProducts,
   getSpecializations,
+  getDoctorsByBdm,
 } = require('../controllers/doctorController');
 
 const { protect } = require('../middleware/auth');
@@ -39,6 +40,7 @@ router.use(protect);
 // Public routes (accessible by all authenticated users with region filtering)
 router.get('/specializations', getSpecializations);
 router.get('/count-by-user/:userId', adminOnly, countDoctorsByUser);
+router.get('/by-bdm/:bdmId', getDoctorsByBdm);
 router.get('/', getAllDoctors);
 router.get('/:id', getDoctorById);
 router.get('/:id/visits', getDoctorVisits);

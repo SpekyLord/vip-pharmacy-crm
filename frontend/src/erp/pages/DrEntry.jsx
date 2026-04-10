@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useConsignment from '../hooks/useConsignment';
 import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
@@ -239,7 +238,6 @@ function ScanDRModal({ open, onClose, onApply, hospitals, stockProducts }) {
 }
 
 export default function DrEntry() {
-  const { user } = useAuth();
   const consignment = useConsignment();
   const inventory = useInventory();
   const { hospitals } = useHospitals();
@@ -322,7 +320,6 @@ export default function DrEntry() {
     }
 
     setSaving(true);
-    let submitted = 0;
     try {
       for (const [, dr] of groups) {
         await consignment.createDR({
@@ -333,7 +330,6 @@ export default function DrEntry() {
           warehouse_id: warehouseId || undefined,
           line_items: dr.line_items
         });
-        submitted++;
       }
       setRows([emptyRow()]);
       await loadDRs();

@@ -26,7 +26,6 @@ import {
   Users,
   ChevronDown,
   ChevronRight,
-  Search,
   RefreshCw,
   X,
 } from 'lucide-react';

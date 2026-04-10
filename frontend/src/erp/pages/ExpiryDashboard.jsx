@@ -21,7 +21,7 @@ const BUCKET_CONFIG = {
 export default function ExpiryDashboard() {
   const api = useErpApi();
   const [data, setData] = useState({ expired: [], critical: [], warning: [], caution: [] });
-  const [summary, setSummary] = useState({});
+  const [, setSummary] = useState({});
   const [warehouseId, setWarehouseId] = useState('');
   const [activeBucket, setActiveBucket] = useState('expired');
 

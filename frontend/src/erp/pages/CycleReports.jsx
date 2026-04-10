@@ -7,7 +7,6 @@ import { Link } from 'react-router-dom';
 import { showError } from '../utils/errorToast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -76,7 +75,6 @@ const STATUS_COLORS = {
 };
 
 export default function CycleReports() {
-  const { user } = useAuth();
   const rpt = useReports();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -92,8 +90,10 @@ export default function CycleReports() {
       setReports(res?.data || []);
     } catch (err) { console.error('[CycleReports] load error:', err.message); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, []);
 
   const handleAction = async (id, action, extraData = {}) => {

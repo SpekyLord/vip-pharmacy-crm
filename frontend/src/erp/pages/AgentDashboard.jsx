@@ -92,14 +92,14 @@ const AGENT_CONFIG = {
 const CAT_LABELS = { ai_coaching: 'Coaching', ai_schedule: 'Schedule', ai_alert: 'Alert' };
 const CAT_CSS = { ai_coaching: 'coaching', ai_schedule: 'schedule', ai_alert: 'alert' };
 
-/* eslint-disable react/prop-types */
+ 
 function StatusBadge({ status }) {
   const cfg = { success: { icon: CheckCircle, css: 'success' }, error: { icon: XCircle, css: 'error' }, partial: { icon: AlertTriangle, css: 'partial' } };
   const c = cfg[status] || cfg.success;
   const Icon = c.icon;
   return <span className={`agd-badge agd-badge-${c.css}`}><Icon />{status}</span>;
 }
-/* eslint-enable react/prop-types */
+ 
 
 function fmtDate(d) { return d ? new Date(d).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'; }
 

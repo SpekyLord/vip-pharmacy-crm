@@ -183,7 +183,7 @@ function fieldVal(f) {
 }
 
 // --- Scan Undertaking Modal ---
-/* eslint-disable react/prop-types */
+ 
 function ScanUndertakingModal({ open, onClose, onApply, products }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
@@ -282,7 +282,7 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
     </div>
   );
 }
-/* eslint-enable react/prop-types */
+ 
 
 export default function GrnEntry() {
   const { user } = useAuth();

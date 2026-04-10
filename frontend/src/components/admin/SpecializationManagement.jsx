@@ -573,7 +573,7 @@ const SpecializationManagement = () => {
       ) : filtered.length === 0 ? (
         <div className="sm-empty">
           <p>{search ? 'No specializations match your search.' : 'No specializations yet.'}</p>
-          {!search && <p>Click "Import from VIP Clients" to seed from existing data, or add one manually.</p>}
+          {!search && <p>Click &quot;Import from VIP Clients&quot; to seed from existing data, or add one manually.</p>}
         </div>
       ) : (
         <table className="sm-table">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
@@ -270,11 +270,6 @@ export default function SupplierInvoices() {
 
   const fmt = (n) => (n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
-
-  // Filtered POs for the Link-to-PO dropdown (match vendor if selected)
-  const filteredPOs = useMemo(() => {
-    return pos.filter(p => !form.vendor_id || (p.vendor_id?._id || p.vendor_id) === form.vendor_id);
-  }, [pos, form.vendor_id]);
 
   return (
     <>

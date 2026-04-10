@@ -7,6 +7,7 @@
 const ChartOfAccounts = require('../models/ChartOfAccounts');
 const { catchAsync } = require('../../middleware/errorHandler');
 const XLSX = require('xlsx');
+const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
 // ═══ List Accounts ═══
 const listAccounts = catchAsync(async (req, res) => {
@@ -123,7 +124,7 @@ const importAccounts = catchAsync(async (req, res) => {
 
   // If file uploaded (Excel), parse it
   if (req.file) {
-    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws);
     accounts = rows.map(r => ({

@@ -16,17 +16,6 @@ import AdminSentMessageBox from "../../components/employee/AdminSentMessageBox";
 
 import SelectField from '../../components/common/Select';
 
-const toggleSentOpen = (id) => {
-  setExpandedId(prev => (prev === id ? null : id));
-  // ✅ do NOT auto-kill editing here
-};
-
-const openSentMessageLikeReply = (id) => {
-  setExpandedId(id);   // ✅ open dropdown
-  setEditingId(id);    // ✅ show edit box immediately (reply-style)
-};
-
-
 const EmployeeInbox = () => {
   const navigate = useNavigate();
 
@@ -137,7 +126,6 @@ const [editingId, setEditingId] = useState(null);
   };
 
   // Base lists per tab
-  const currentUserId = localStorage.getItem("userId");
 
     const inboxBase = useMemo(() => {
     // ✅ /messages already filtered by backend audience; no need for extra filter

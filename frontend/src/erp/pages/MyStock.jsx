@@ -7,7 +7,6 @@ import useEntities from '../hooks/useEntities';
 import EntityBadge from '../components/EntityBadge';
 import WarehousePicker from '../components/WarehousePicker';
 
-import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -283,7 +282,7 @@ export default function MyStock() {
   const [pcModalOpen, setPcModalOpen] = useState(false);
   const [pcSubmitting, setPcSubmitting] = useState(false);
   const [alertData, setAlertData] = useState({ expiry_alerts: [], reorder_alerts: [] });
-  const [alertSummary, setAlertSummary] = useState({});
+  const [, setAlertSummary] = useState({});
 
   // Load stock when warehouse changes
   useEffect(() => {
@@ -357,7 +356,7 @@ export default function MyStock() {
       setStockData(enriched);
       setPcModalOpen(true);
     } catch (err) { console.error('[MyStock] load error:', err.message); } finally { setLoading(false); }
-  }, [stockData, inventory]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stockData, inventory]);
 
   const handlePhysicalCountSubmit = useCallback(async (counts) => {
     setPcSubmitting(true);

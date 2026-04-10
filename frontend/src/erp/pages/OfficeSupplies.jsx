@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import SelectField from '../../components/common/Select';
 import useOfficeSupplies from '../hooks/useOfficeSupplies';
 import { useLookupOptions } from '../hooks/useLookups';
@@ -139,7 +139,7 @@ function ItemModal({ open, onClose, onSave, editItem, categories }) {
 }
 
 // ---------- Transaction Modal ----------
-function TxnModal({ open, onClose, onSave, supplies }) {
+function TxnModal({ open, onClose, onSave, supplies, TXN_TYPES }) {
   const [form, setForm] = useState({ supply: '', txn_type: 'PURCHASE', qty: 1, unit_cost: 0, issued_to: '', notes: '' });
   const [saving, setSaving] = useState(false);
 
@@ -453,7 +453,7 @@ export default function OfficeSupplies() {
       )}
 
       <ItemModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} categories={CATEGORIES} />
-      <TxnModal open={showTxnModal} onClose={() => setShowTxnModal(false)} onSave={handleRecordTxn} supplies={supplies} />
+      <TxnModal open={showTxnModal} onClose={() => setShowTxnModal(false)} onSave={handleRecordTxn} supplies={supplies} TXN_TYPES={TXN_TYPES} />
     </div>
     </>
   );

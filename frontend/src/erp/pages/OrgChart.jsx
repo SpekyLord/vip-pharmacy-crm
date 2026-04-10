@@ -4,7 +4,6 @@
  * Click a partner → PartnerScorecard slide-out panel.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
@@ -150,7 +149,6 @@ function OrgNode({ node, search, scoreMap, collapsed, toggleCollapse, onSelectPe
 }
 
 export function OrgChartContent() {
-  const navigate = useNavigate();
   const { get: erpGet, post: erpPost } = useErpApi();
   const [tree, setTree] = useState([]);
   const [totalPeople, setTotalPeople] = useState(0);
@@ -258,7 +256,7 @@ export function OrgChartContent() {
       {!loading && tree.length === 0 && (
         <div className="org-empty">
           <p style={{ fontSize: 18 }}>No people found</p>
-          <p>Add people and set their "Reports To" to build the org chart.</p>
+          <p>Add people and set their &quot;Reports To&quot; to build the org chart.</p>
         </div>
       )}
       {!loading && tree.length > 0 && (

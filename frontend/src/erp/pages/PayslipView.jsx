@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -39,6 +39,7 @@ export default function PayslipView() {
       const res = await api.getPayslip(id);
       setPs(res?.data || null);
     } catch (err) { console.error('[PayslipView] load error:', err.message); } finally { setLoading(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => { load(); }, [load]);

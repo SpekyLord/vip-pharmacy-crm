@@ -8,6 +8,7 @@ const bankReconService = require('../services/bankReconService');
 const creditCardService = require('../services/creditCardService');
 const { catchAsync } = require('../../middleware/errorHandler');
 const XLSX = require('xlsx');
+const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
 // ════════════════════════════════════════════════════════════════════
 //  BANK ACCOUNTS
@@ -195,7 +196,7 @@ const exportBankAccounts = catchAsync(async (req, res) => {
 // ═══ Import Bank Accounts (Excel) — upsert by bank_code ═══
 const importBankAccounts = catchAsync(async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
   let created = 0, updated = 0, errors = [];
   for (const r of rows) {

@@ -389,7 +389,7 @@ const ScheduleCalendar = ({ entries = [], currentWeek, currentDay, onLogVisit, l
       <div className="schedule-grid">
         {/* Header row */}
         <div className="schedule-grid-header" />
-        {DAY_NAMES.map((day, i) => (
+        {DAY_NAMES.map((day) => (
           <div key={day} className="schedule-grid-header">
             {day}
           </div>

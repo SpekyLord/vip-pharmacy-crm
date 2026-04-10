@@ -2,6 +2,7 @@ const Hospital = require('../models/Hospital');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { ROLES } = require('../../constants/roles');
 const XLSX = require('xlsx');
+const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
 const getAll = catchAsync(async (req, res) => {
   // Hospitals are globally shared (Phase 4A.3) — no entity_id filter
@@ -144,7 +145,7 @@ const exportHospitals = catchAsync(async (req, res) => {
 const importHospitals = catchAsync(async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
 
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws);
 

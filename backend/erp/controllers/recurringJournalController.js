@@ -2,6 +2,7 @@ const RecurringJournalTemplate = require('../models/RecurringJournalTemplate');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { runDueTemplates, runSingleTemplate, computeNextRunDate } = require('../services/recurringJournalService');
 const XLSX = require('xlsx');
+const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 const multer = require('multer');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -128,7 +129,7 @@ const exportTemplates = catchAsync(async (req, res) => {
 const importTemplates = catchAsync(async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
 
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
   const tplSheet = wb.Sheets['Templates'] || wb.Sheets[wb.SheetNames[0]];
   const lineSheet = wb.Sheets['Template Lines'] || wb.Sheets[wb.SheetNames[1]];
 

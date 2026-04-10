@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useBanking from '../hooks/useBanking';
 import usePeople from '../hooks/usePeople';
 
@@ -43,7 +42,6 @@ const EMPTY_FORM = {
 };
 
 export function BankAccountsContent() {
-  const { user } = useAuth();
   const api = useBanking();
   const people = usePeople();
 
@@ -79,6 +77,7 @@ export function BankAccountsContent() {
       setUsers(usersRes?.data || []);
     } catch (err) { console.error('[BankAccounts] load error:', err.message); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { load(); }, [load]);

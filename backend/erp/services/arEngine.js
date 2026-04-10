@@ -61,7 +61,7 @@ async function getOpenCsis(entityId, bdmId, hospitalId, customerId) {
     { $unwind: { path: '$hospital', preserveNullAndEmptyArrays: true } },
     {
       $project: {
-        _id: 1, doc_ref: 1, csi_date: 1, hospital_id: 1,
+        _id: 1, doc_ref: 1, csi_date: 1, hospital_id: 1, bdm_id: 1, warehouse_id: 1,
         invoice_total: 1, total_net_of_vat: 1, source: 1,
         amount_collected: 1, balance_due: 1, days_outstanding: 1,
         hospital_name: '$hospital.hospital_name',

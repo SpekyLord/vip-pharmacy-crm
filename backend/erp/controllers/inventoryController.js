@@ -880,6 +880,7 @@ const getBatchTrace = catchAsync(async (req, res) => {
  */
 const seedStockOnHand = catchAsync(async (req, res) => {
   const XLSX = require('xlsx');
+  const { safeXlsxRead } = require('../../utils/safeXlsxRead');
   const { seedStockFromRows } = require('../services/stockSeedService');
 
   if (!req.file) {
@@ -887,7 +888,7 @@ const seedStockOnHand = catchAsync(async (req, res) => {
   }
 
   // Parse file (supports CSV and XLSX) — raw:false keeps values as strings
-  const wb = XLSX.read(req.file.buffer, { type: 'buffer', raw: true });
+  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer', raw: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
 

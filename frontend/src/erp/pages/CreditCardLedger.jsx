@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useBanking from '../hooks/useBanking';
 import { showError } from '../utils/errorToast';
 
@@ -51,7 +50,6 @@ const pageStyles = `
 `;
 
 export default function CreditCardLedger() {
-  const { user } = useAuth();
   const api = useBanking();
 
   const [cards, setCards] = useState([]);
@@ -77,6 +75,7 @@ export default function CreditCardLedger() {
       setCards(res?.data || []);
     } catch (err) { showError(err, 'Could not load credit card balances'); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { loadCards(); }, [loadCards]);
@@ -89,6 +88,7 @@ export default function CreditCardLedger() {
         setBankAccounts(res?.data || []);
       } catch (err) { console.error('[CreditCardLedger] load bank accounts:', err.message); }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load ledger when card/period changes
@@ -98,6 +98,7 @@ export default function CreditCardLedger() {
       const res = await api.getCardLedger(selectedCard._id, { period });
       setLedger(res?.data || []);
     } catch (err) { showError(err, 'Could not load card ledger'); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCard, period]);
 
   useEffect(() => { loadLedger(); }, [loadLedger]);

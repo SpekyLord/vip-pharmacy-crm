@@ -155,6 +155,13 @@ const AgentDashboard = lazyRetry(() => import('./erp/pages/AgentDashboard'));
 // Phase 28 — Approval Workflow
 const ApprovalManager = lazyRetry(() => import('./erp/pages/ApprovalManager'));
 
+// Phase 31 — Functional Role Assignments
+const RoleAssignmentManager = lazyRetry(() => import('./erp/pages/RoleAssignmentManager'));
+
+// Phase 32 — KPI Self-Rating & Performance Review
+const KpiLibrary = lazyRetry(() => import('./erp/pages/KpiLibrary'));
+const KpiSelfRating = lazyRetry(() => import('./erp/pages/KpiSelfRating'));
+
 // Phase 25 — Returns, Expiry, Batch Trace, Orphaned Page Routes
 const CreditNotes = lazyRetry(() => import('./erp/pages/CreditNotes'));
 const ExpiryDashboard = lazyRetry(() => import('./erp/pages/ExpiryDashboard'));
@@ -698,6 +705,11 @@ function App() {
           <Route path="/erp/control-center" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><ControlCenter /></ProtectedRoute>} />
           <Route path="/erp/agent-dashboard" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentDashboard /></ProtectedRoute>} />
           <Route path="/erp/approvals" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><ApprovalManager /></ProtectedRoute>} />
+          <Route path="/erp/role-assignments" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><RoleAssignmentManager /></ProtectedRoute>} />
+
+          {/* Phase 32 — KPI Self-Rating & Performance Review */}
+          <Route path="/erp/kpi-library" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><KpiLibrary /></ProtectedRoute>} />
+          <Route path="/erp/self-rating" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><KpiSelfRating /></ProtectedRoute>} />
 
           {/* Phase 25 — Returns, Expiry, Batch Trace */}
           <Route path="/erp/credit-notes" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales"><CreditNotes /></ProtectedRoute>} />

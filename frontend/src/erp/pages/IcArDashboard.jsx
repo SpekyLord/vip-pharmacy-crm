@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useIcSettlements from '../hooks/useIcSettlements';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -49,7 +48,6 @@ const pageStyles = `
 `;
 
 export default function IcArDashboard() {
-  const { user } = useAuth();
   const ic = useIcSettlements();
 
   const [summary, setSummary] = useState(null);

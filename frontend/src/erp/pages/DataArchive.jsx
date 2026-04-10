@@ -7,7 +7,6 @@ import { showError } from '../utils/errorToast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { useAuth } from '../../hooks/useAuth';
 import useReports from '../hooks/useReports';
 
 const pageStyles = `
@@ -41,7 +40,6 @@ const pageStyles = `
 function fmtDate(d) { return d ? new Date(d).toLocaleString() : '-'; }
 
 export function DataArchiveContent() {
-  const { user } = useAuth();
   const rpt = useReports();
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -55,8 +53,10 @@ export function DataArchiveContent() {
     setLoading(true);
     try { const res = await rpt.getArchiveBatches(); setBatches(res?.data || []); } catch (err) { console.error('[DataArchive] load error:', err.message); }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, []);
 
   const handleArchive = async () => {

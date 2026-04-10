@@ -19,7 +19,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Bell,
   BellOff,
-  Check,
   CheckCheck,
   X,
   Settings,
@@ -27,11 +26,9 @@ import {
   CheckCircle,
   Info,
   Calendar,
-  MapPin,
   Shield,
   MessageSquare,
 } from 'lucide-react';
-import usePushNotifications from '../../hooks/usePushNotifications';
 
 /* =============================================================================
    MOCK DATA
@@ -520,8 +517,6 @@ const formatRelativeTime = (date) => {
 
 const NotificationCenter = () => {
   const navigate = useNavigate();
-  const { playNotificationSound } = usePushNotifications();
-  
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
   const dropdownRef = useRef(null);

@@ -20,10 +20,8 @@
  *   compact      — optional: compact mode for inline use
  *   disabled     — optional: force disabled
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import useWarehouses from '../hooks/useWarehouses';
-
-const TYPE_ICONS = { MAIN: '\u{1F3ED}', TERRITORY: '\u{1F4E6}', VIRTUAL: '\u{2601}' };
 
 const styles = `
   .whp-wrap { margin-bottom: 10px; }
@@ -81,6 +79,7 @@ export default function WarehousePicker({
     } catch {
       setLoaded(true);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entityId, filterType, filterGrn]);
 
   useEffect(() => { load(); }, [load]);
@@ -91,6 +90,7 @@ export default function WarehousePicker({
       const primary = warehouses.find(w => w.is_primary);
       onChange(primary ? primary._id : warehouses[0]._id);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, value, warehouses]);
 
   const canSwitch = warehouses.length > 1 && !disabled;

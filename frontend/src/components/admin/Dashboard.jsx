@@ -829,7 +829,7 @@ const Dashboard = ({ user, stats = {} }) => {
               <div className="db-stat-icon" style={{ background: '#e0f2fe', color: '#0284c7' }}><Clock size={18} /></div>
               <div>
                 <div className="db-stat-value">{visitsToday}</div>
-                <div className="db-stat-label">Today's Visits</div>
+                <div className="db-stat-label">Today&apos;s Visits</div>
                 <div className="db-stat-sub">
                   <span className="dot-vip">{vipVisitsToday} VIP</span>
                   <span className="dot-reg">{regularVisitsToday} Reg</span>

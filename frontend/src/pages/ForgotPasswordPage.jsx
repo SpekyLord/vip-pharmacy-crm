@@ -488,7 +488,7 @@ const ForgotPasswordPage = () => {
             <div className="auth-success-icon">&#10003;</div>
             <h3 style={{ margin: '0 0 8px', fontSize: 18 }} className="auth-title">Check Your Email</h3>
             <p style={{ margin: '0 0 24px', fontSize: 14, lineHeight: 1.6 }} className="auth-text">
-              If an account with <strong>{email}</strong> exists, we've sent a password reset link. Check your inbox.
+              If an account with <strong>{email}</strong> exists, we&apos;ve sent a password reset link. Check your inbox.
             </p>
             <Link to="/login" className="auth-link">
               Back to Login
@@ -497,7 +497,7 @@ const ForgotPasswordPage = () => {
         ) : (
           <form onSubmit={handleSubmit} className="login-form">
             <p style={{ margin: '0 0 20px', fontSize: 14, lineHeight: 1.6 }} className="auth-text">
-              Enter your email address and we'll send you a link to reset your password.
+              Enter your email address and we&apos;ll send you a link to reset your password.
             </p>
 
             <div className="form-group">
