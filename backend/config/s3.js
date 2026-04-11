@@ -204,12 +204,53 @@ const signVisitPhotos = async (visit) => {
   return visitObj;
 };
 
+/**
+ * Upload a communication screenshot
+ * @param {Buffer} buffer - Image buffer
+ * @param {string} originalName - Original filename
+ * @param {string} contentType - MIME type
+ * @returns {Promise<{url: string, key: string}>}
+ */
+const uploadCommScreenshot = async (buffer, originalName, contentType) => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const folder = `communications/${year}/${month}`;
+  const key = generateS3Key(originalName, folder);
+  const url = await uploadToS3(buffer, key, contentType);
+  return { url, key };
+};
+
+/**
+ * Sign all photo URLs in a communication log object
+ * @param {Object} log - CommunicationLog document (or plain object)
+ * @returns {Promise<Object>} Log with signed photo URLs
+ */
+const signCommPhotos = async (log) => {
+  if (!log || !log.photos || log.photos.length === 0) {
+    return log;
+  }
+
+  const logObj = log.toObject ? log.toObject() : { ...log };
+
+  logObj.photos = await Promise.all(
+    logObj.photos.map(async (photo) => {
+      const key = extractKeyFromUrl(photo.url);
+      const signedUrl = await getSignedDownloadUrl(key, 3600);
+      return { ...photo, url: signedUrl };
+    })
+  );
+
+  return logObj;
+};
+
 module.exports = {
   s3Client,
   bucketName,
   generateS3Key,
   uploadToS3,
   uploadVisitPhoto,
+  uploadCommScreenshot,
   uploadProductImage,
   uploadAvatar,
   deleteFromS3,
@@ -218,4 +259,5 @@ module.exports = {
   extractKeyFromUrl,
   isConfigured,
   signVisitPhotos,
+  signCommPhotos,
 };

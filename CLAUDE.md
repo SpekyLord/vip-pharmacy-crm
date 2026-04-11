@@ -241,7 +241,9 @@ vip-pharmacy-crm/
 │   │   ├── productController.js       # Product CRUD (reads from website DB)
 │   │   ├── productAssignmentController.js  # Product-to-VIP Client assignments
 │   │   ├── regionController.js        # Region hierarchy
-│   │   └── messageInboxController.js  # Admin→BDM messaging
+│   │   ├── messageInboxController.js  # Admin→BDM messaging
+│   │   ├── communicationLogController.js  # Communication log CRUD + API messaging
+│   │   └── messageTemplateController.js   # Template CRUD + send-from-template
 │   ├── middleware/
 │   │   ├── auth.js            # JWT protect, optionalAuth, verifyRefreshToken
 │   │   ├── roleCheck.js       # adminOnly, medRepOnly, employeeOnly, etc.
@@ -256,7 +258,9 @@ vip-pharmacy-crm/
 │   │   ├── Region.js          # Hierarchical regions
 │   │   ├── WebsiteProduct.js  # Read-only website products (separate DB)
 │   │   ├── MessageInbox.js    # Admin→BDM messages with categories/priority
-│   │   └── AuditLog.js        # Security audit logging (90-day TTL)
+│   │   ├── AuditLog.js        # Security audit logging (90-day TTL)
+│   │   ├── CommunicationLog.js    # Multi-channel BDM-client interaction log
+│   │   └── MessageTemplate.js     # Admin-created reusable message templates
 │   ├── routes/
 │   │   ├── authRoutes.js      # /api/auth
 │   │   ├── userRoutes.js      # /api/users
@@ -266,14 +270,18 @@ vip-pharmacy-crm/
 │   │   ├── productAssignmentRoutes.js  # /api/assignments
 │   │   ├── regionRoutes.js    # /api/regions
 │   │   ├── messageInbox.js    # /api/messages
-│   │   └── sentRoutes.js      # /api/sent (admin sent messages)
+│   │   ├── sentRoutes.js      # /api/sent (admin sent messages)
+│   │   ├── communicationLogRoutes.js  # /api/communication-logs
+│   │   ├── messageTemplateRoutes.js   # /api/message-templates
+│   │   └── webhookRoutes.js           # /api/webhooks (WhatsApp/Messenger/Viber + auto-reply)
 │   ├── utils/
 │   │   ├── generateToken.js       # JWT access + refresh tokens
 │   │   ├── validateWeeklyVisit.js # Visit limit enforcement
 │   │   ├── controllerHelpers.js   # Shared controller utilities
 │   │   ├── auditLogger.js        # Security event logging
 │   │   ├── calculateProgress.js   # Progress calculation helpers
-│   │   └── pagination.js         # Pagination utilities
+│   │   ├── pagination.js         # Pagination utilities
+│   │   └── autoReply.js          # Chatbot auto-reply (business hours check)
 │   ├── scripts/
 │   │   ├── seedData.js        # Seed data for testing (npm run seed)
 │   │   └── fixVisitWeeks.js   # Migration script for visit week data
@@ -299,7 +307,10 @@ vip-pharmacy-crm/
 │   │   │   │   ├── CameraCapture.jsx     # GPS watchPosition, 5-min timeout
 │   │   │   │   ├── ProductRecommendations.jsx # Assigned products display
 │   │   │   │   ├── MessageBox.jsx        # BDM inbox UI
-│   │   │   │   └── AdminSentMessageBox.jsx # View admin sent messages
+│   │   │   │   ├── AdminSentMessageBox.jsx # View admin sent messages
+│   │   │   │   ├── CommLogForm.jsx          # Screenshot upload form for interactions
+│   │   │   │   ├── CommLogList.jsx          # Communication log list with filters
+│   │   │   │   └── MessageComposer.jsx      # Send messages via API (Phase 2)
 │   │   │   ├── admin/
 │   │   │   │   ├── Dashboard.jsx         # Admin stats display
 │   │   │   │   ├── DoctorManagement.jsx  # VIP Client CRUD, cascading regions
@@ -330,7 +341,8 @@ vip-pharmacy-crm/
 │   │   │   │   ├── EmployeeDashboard.jsx  # Stats, VIP Client list, visit status
 │   │   │   │   ├── MyVisits.jsx           # Visit history, AbortController, debounced search
 │   │   │   │   ├── NewVisitPage.jsx       # Visit logging, canVisit check
-│   │   │   │   └── EMP_InboxPage.jsx      # BDM inbox
+│   │   │   │   ├── EMP_InboxPage.jsx      # BDM inbox
+│   │   │   │   └── CommLogPage.jsx         # BDM communication log (screenshots + messaging)
 │   │   │   ├── admin/
 │   │   │   │   ├── AdminDashboard.jsx     # System-wide stats
 │   │   │   │   ├── DoctorsPage.jsx        # VIP Client management (CRUD, filters)
@@ -341,7 +353,9 @@ vip-pharmacy-crm/
 │   │   │   │   ├── ActivityMonitor.jsx    # Real data (audit logs + visits)
 │   │   │   │   ├── PendingApprovalsPage.jsx # Scaffolded (mock data)
 │   │   │   │   ├── GPSVerificationPage.jsx  # Real data (visit GPS review)
-│   │   │   │   └── SentPage.jsx           # Admin sent messages history
+│   │   │   │   ├── SentPage.jsx           # Admin sent messages history
+│   │   │   │   ├── CommLogsPage.jsx        # Admin communication logs overview
+│   │   │   │   └── MessageTemplatesPage.jsx # Admin message template CRUD
 │   │   │   ├── medrep/
 │   │   │   │   └── MedRepDashboard.jsx    # Product assignment CRUD
 │   │   │   └── common/
@@ -355,7 +369,9 @@ vip-pharmacy-crm/
 │   │   │   ├── regionService.js       # Region API calls
 │   │   │   ├── assignmentService.js   # Product assignment API calls
 │   │   │   ├── userService.js         # User CRUD API calls
-│   │   │   └── messageInboxService.js # Inbox messaging API calls
+│   │   │   ├── messageInboxService.js # Inbox messaging API calls
+│   │   │   ├── communicationLogService.js  # Communication log API calls
+│   │   │   └── messageTemplateService.js  # Message template CRUD + send
 │   │   └── utils/
 │   │       ├── exportCallPlan.js      # VIP Client export (Call Plan Template format)
 │   │       ├── exportEmployeeReport.js # BDM Visit Report export
@@ -453,6 +469,9 @@ CORS_ORIGINS=https://app.vipcrm.com
 | `/admin/gps-verification` | GPSVerificationPage | admin |
 | `/medrep` | MedRepDashboard | medrep, admin |
 | `/notifications/preferences` | NotificationPreferences | all roles |
+| `/bdm/comm-log` | CommLogPage | contractor, admin |
+| `/admin/comm-logs` | CommLogsPage | admin |
+| `/admin/message-templates` | MessageTemplatesPage | admin |
 
 ---
 
@@ -469,6 +488,9 @@ CORS_ORIGINS=https://app.vipcrm.com
 | `regionRoutes.js` | regionController | `/api/regions` |
 | `messageInbox.js` | messageInboxController | `/api/messages` |
 | `sentRoutes.js` | (admin sent messages) | `/api/sent` |
+| `communicationLogRoutes.js` | communicationLogController | `/api/communication-logs` |
+| `messageTemplateRoutes.js` | messageTemplateController | `/api/message-templates` |
+| `webhookRoutes.js` | (webhook handlers + auto-reply) | `/api/webhooks` |
 
 ---
 

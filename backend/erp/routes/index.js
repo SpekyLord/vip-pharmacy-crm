@@ -76,6 +76,9 @@ router.use('/dashboard', erpAccessCheck('reports'), require('./dashboardRoutes')
 // ═══ Phase 14 — New Reports & Analytics ═══
 router.use('/reports', erpAccessCheck('reports'), require('./erpReportRoutes'));
 
+// ═══ Gap 9 — Rx Correlation (Visit vs Sales + Rebates + Programs) ═══
+router.use('/rx-correlation', erpAccessCheck('reports'), require('./rxCorrelationRoutes'));
+
 // ═══ Phase 9 — Integration & Document Flow ═══
 router.use('/documents', erpAccessCheck('reports'), require('./documentRoutes'));
 router.use('/crm-bridge', require('./crmBridgeRoutes'));

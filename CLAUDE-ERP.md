@@ -97,6 +97,82 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | A | Frontend Lookup Migration — Zero Hardcoded Fallback Arrays | ✅ |
 | B | Frontend Dropdown Lookup Integration | ✅ |
 | C | Backend Schema Enum Cleanup — App-Layer Validation | ✅ |
+| D | Multi-Channel Engagement — Communication Log + Messaging APIs | ✅ |
+| Gap 9 | Rx Correlation — Visit vs Sales + Rebates + Programs | ✅ |
+
+---
+
+## Phase D — Multi-Channel Engagement
+
+Added communication logging and messaging API integrations for BDM-to-client interactions outside of visits.
+
+### New Lookup Categories
+- **COMM_CHANNEL**: Viber, Messenger, WhatsApp, Email, Google Chat (lookup-driven, admin can add more)
+- **COMM_DIRECTION**: Outbound, Inbound
+- Extended **ENGAGEMENT_TYPE**: Added WhatsApp Call/Msg, Viber Call/Msg, Email Follow-up, SMS Follow-up
+
+### New Models & Routes
+- **CommunicationLog** (`backend/models/CommunicationLog.js`): Unified log for screenshot uploads + API messages. Supports both Doctor (VIP) and Client (Regular) references.
+- **communicationLogRoutes** (`/api/communication-logs`): CRUD + screenshot upload + API send
+- **webhookRoutes** (`/api/webhooks`): WhatsApp, Messenger, Viber delivery receipts + inbound messages
+
+### Doctor/Client Model Extensions
+- Added: `whatsappNumber`, `viberId`, `messengerId`, `preferredChannel` to both Doctor and Client models
+
+### Frontend
+- **CommLogPage** (`/bdm/comm-log`): Screenshot upload + Send Message tabs
+- **CommLogsPage** (`/admin/comm-logs`): Admin overview with BDM/channel filters
+- **MessageComposer**: Send messages via API directly from CRM
+- **CommLogForm/CommLogList**: Screenshot upload form + filtered log list
+
+---
+
+## Gap 9 — Rx Correlation (Visit vs Sales + Rebates + Programs)
+
+CRM-ERP analytics bridge correlating BDM visit activity with sell-through data to measure ROI of field visits. Two pathways: PS products (MD partner → sales → rebates) and Non-PS products (hospital stakeholder engagement → sales).
+
+### Doctor Model Extensions
+- `clientType` (String, default 'MD') — Lookup: `VIP_CLIENT_TYPE` (MD, PHARMACIST, PURCHASER, ADMINISTRATOR, KEY_DECISION_MAKER, OTHER)
+- `hospitals[]` — Array of `{ hospital_id, is_primary }` for multi-hospital affiliations
+
+### New Lookup Categories
+- **VIP_CLIENT_TYPE**: MD, PHARMACIST, PURCHASER, ADMINISTRATOR, KEY_DECISION_MAKER, OTHER
+
+### New Models
+- **ProductMapping** (`backend/erp/models/ProductMapping.js`): Maps CrmProduct ↔ ProductMaster with entity scoping, match_method (MANUAL/AUTO_EXACT/AUTO_FUZZY), confidence level. Collection: `erp_product_mappings`
+
+### New Settings
+- `RX_CORRELATION_MIN_VISITS` (default 5), `RX_CORRELATION_MIN_SALES` (default 1000), `RX_CORRELATION_DEFAULT_MONTHS` (default 6)
+
+### Key Files
+```
+backend/erp/services/rxCorrelationService.js     # Core analytics engine (13 functions)
+backend/erp/controllers/rxCorrelationController.js  # 12 endpoints
+backend/erp/routes/rxCorrelationRoutes.js         # Mounted at /api/erp/rx-correlation
+backend/erp/models/ProductMapping.js              # CRM↔ERP product mapping
+backend/scripts/migrateClientType.js              # Migration: set clientType='MD' on existing records
+frontend/src/erp/pages/RxCorrelation.jsx          # 7-tab dashboard page
+```
+
+### Routes (all under `/api/erp/rx-correlation`, gated by `erpAccessCheck('reports')`)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/summary/:period` | Territory correlation summary with filters |
+| GET | `/partner-detail/:period` | Per-MD partner rebate correlation |
+| GET | `/hospital-stakeholders/:period` | Hospital stakeholder engagement vs sales |
+| GET | `/territory/:territoryId/:period` | Territory per-product drill-down |
+| GET | `/time-series` | Monthly visit/sales/rebate trend |
+| GET | `/program-effectiveness/:period` | Program ROI comparison |
+| GET | `/support-effectiveness/:period` | Support type ROI comparison |
+| GET | `/product-mappings` | List CRM↔ERP mappings |
+| POST | `/product-mappings` | Create manual mapping |
+| DELETE | `/product-mappings/:id` | Deactivate mapping |
+| POST | `/product-mappings/auto-map` | Auto-map by name matching |
+| GET | `/unmapped-products` | CRM products without mapping |
+
+### CRM-Bridge Extensions
+- `GET /api/erp/crm-bridge/hospitals` — Role-based hospital list for CRM dropdowns
+- `GET /api/erp/crm-bridge/hospital-heat?hospital_id=xxx` — Full HEAT data for hospital
 
 ---
 

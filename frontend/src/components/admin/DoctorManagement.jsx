@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Edit2, Trash2, ArrowUpCircle, AlertTriangle, X, ChevronDown } from 'lucide-react';
+import { Plus, Edit2, Trash2, ArrowUpCircle, AlertTriangle, X, ChevronDown, Building2 } from 'lucide-react';
 import doctorService from '../../services/doctorService';
 import userService from '../../services/userService';
 import specializationService from '../../services/specializationService';
@@ -17,6 +17,7 @@ import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import useLookupData from '../../hooks/useLookupData';
 import { useLookupOptions } from '../../erp/hooks/useLookups';
 import SelectField from '../common/Select';
+import api from '../../services/api';
 
 const doctorManagementStyles = `
   .doctor-management {
@@ -282,14 +283,14 @@ const doctorManagementStyles = `
     padding-left: 10px;
     padding-right: 10px;
   }
-  .data-table th:nth-child(7),
-  .data-table td:nth-child(7) { width: 90px; }
   .data-table th:nth-child(8),
-  .data-table td:nth-child(8) { width: 96px; }
+  .data-table td:nth-child(8) { width: 90px; }
   .data-table th:nth-child(9),
-  .data-table td:nth-child(9) { width: 120px; }
+  .data-table td:nth-child(9) { width: 96px; }
+  .data-table th:nth-child(10),
+  .data-table td:nth-child(10) { width: 120px; }
 
-  .data-table th:nth-child(9) {
+  .data-table th:nth-child(10) {
     text-align: center;
   }
 
@@ -398,6 +399,66 @@ const doctorManagementStyles = `
     background: #f0fdf4;
     color: #16a34a;
   }
+
+  .dm-client-type-col {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 12px;
+    display: inline-block;
+  }
+
+  .dm-client-type-col.ct-md { background: #dbeafe; color: #1d4ed8; }
+  .dm-client-type-col.ct-other { background: #f3e8ff; color: #7c3aed; }
+
+  /* Hospital Picker */
+  .dm-hospital-picker { margin-top: 4px; }
+
+  .dm-hospital-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+
+  .dm-hospital-item .dm-h-name { flex: 1; color: #374151; font-weight: 500; }
+
+  .dm-hospital-item .dm-h-primary {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #6b7280;
+    cursor: pointer;
+  }
+
+  .dm-hospital-item .dm-h-remove {
+    background: none;
+    border: none;
+    color: #9ca3af;
+    cursor: pointer;
+    padding: 2px;
+    line-height: 1;
+    font-size: 16px;
+  }
+
+  .dm-hospital-item .dm-h-remove:hover { color: #dc2626; }
+
+  body.dark-mode .dm-hospital-item {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  body.dark-mode .dm-hospital-item .dm-h-name { color: #e2e8f0; }
+  body.dark-mode .dm-hospital-item .dm-h-primary { color: #94a3b8; }
+
+  body.dark-mode .dm-client-type-col.ct-md { background: #1e3a5f; color: #60a5fa; }
+  body.dark-mode .dm-client-type-col.ct-other { background: #2e1065; color: #a78bfa; }
 
   /* Action Buttons */
   .actions-cell {
@@ -1262,6 +1323,15 @@ const DoctorManagement = ({
 }) => {
   const { programs: lookupPrograms, supportTypes: lookupSupportTypes } = useLookupData();
   const { options: ENGAGEMENT_LEVELS } = useLookupOptions('ENGAGEMENT_LEVEL');
+  const { options: CLIENT_TYPE_OPTIONS } = useLookupOptions('VIP_CLIENT_TYPE');
+
+  // Hospital list from CRM-Bridge
+  const [hospitals, setHospitals] = useState([]);
+  useEffect(() => {
+    api.get('/erp/crm-bridge/hospitals')
+      .then((res) => setHospitals(res.data?.data || []))
+      .catch(() => setHospitals([]));
+  }, []);
 
   // Merge lookup data with unique values from loaded doctors as fallback
   const PROGRAMS = useMemo(() => {
@@ -1352,6 +1422,8 @@ const DoctorManagement = ({
       anniversary: '',
       otherDetails: '',
       assignedTo: '',
+      clientType: '',
+      hospitals: [],
     });
     setShowModal(true);
   };
@@ -1378,6 +1450,11 @@ const DoctorManagement = ({
       anniversary: doctor.anniversary ? doctor.anniversary.split('T')[0] : '',
       otherDetails: doctor.otherDetails || '',
       assignedTo: doctor.assignedTo?._id || doctor.assignedTo || '',
+      clientType: doctor.clientType || '',
+      hospitals: (doctor.hospitals || []).map(h => ({
+        hospital_id: h.hospital_id?._id || h.hospital_id,
+        is_primary: h.is_primary || false,
+      })),
     });
 
     setShowModal(true);
@@ -1490,6 +1567,14 @@ const DoctorManagement = ({
     if (formData.otherDetails && formData.otherDetails.trim()) {
       doctorData.otherDetails = formData.otherDetails.trim();
     }
+    if (formData.clientType) {
+      doctorData.clientType = formData.clientType;
+    }
+    if (formData.hospitals && formData.hospitals.length > 0) {
+      doctorData.hospitals = formData.hospitals;
+    } else {
+      doctorData.hospitals = [];
+    }
 
     // Assign BDM (or explicitly unassign)
     if (formData.assignedTo) {
@@ -1564,6 +1649,14 @@ const DoctorManagement = ({
           {filters.clientType !== 'regular' && (
             <>
               <FilterDropdown
+                value={filters.vipClientType || ''}
+                onChange={(val) => handleFilterChange('vipClientType', val)}
+                options={[
+                  { value: '', label: 'All Client Types' },
+                  ...CLIENT_TYPE_OPTIONS.map(o => ({ value: o.code, label: o.label })),
+                ]}
+              />
+              <FilterDropdown
                 value={filters.visitFrequency || ''}
                 onChange={(val) => handleFilterChange('visitFrequency', val)}
                 options={[
@@ -1611,6 +1704,7 @@ const DoctorManagement = ({
                     <th>#</th>
                     <th>Name</th>
                     <th>Type</th>
+                    <th>Client Type</th>
                     <th>Specialization</th>
                     <th>Hospital / Address</th>
                     <th>Assigned BDM</th>
@@ -1634,6 +1728,13 @@ const DoctorManagement = ({
                         <span className={`client-type-badge ${doctor._clientType === 'regular' ? 'regular' : 'vip'}`}>
                           {doctor._clientType === 'regular' ? 'Regular' : 'VIP'}
                         </span>
+                      </td>
+                      <td>
+                        {doctor.clientType ? (
+                          <span className={`dm-client-type-col ${CLIENT_TYPE_OPTIONS.length && CLIENT_TYPE_OPTIONS[0].code === doctor.clientType ? 'ct-md' : 'ct-other'}`}>
+                            {CLIENT_TYPE_OPTIONS.find(o => o.code === doctor.clientType)?.label || doctor.clientType}
+                          </span>
+                        ) : '—'}
                       </td>
                       <td>{doctor.specialization || '—'}</td>
                       <td>{doctor.clinicOfficeAddress || doctor.hospital || '—'}</td>
@@ -1839,6 +1940,23 @@ const DoctorManagement = ({
                   </SelectField>
                 </div>
                 <div className="form-group">
+                  <label htmlFor="clientType">Client Type</label>
+                  <SelectField
+                    id="clientType"
+                    name="clientType"
+                    value={formData.clientType}
+                    onChange={handleFormChange}
+                  >
+                    <option value="">— Select —</option>
+                    {CLIENT_TYPE_OPTIONS.map((o) => (
+                      <option key={o.code} value={o.code}>{o.label}</option>
+                    ))}
+                  </SelectField>
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
                   <label htmlFor="outletIndicator">Outlet Indicator</label>
                   <input
                     type="text"
@@ -1848,6 +1966,67 @@ const DoctorManagement = ({
                     onChange={handleFormChange}
                   />
                 </div>
+              </div>
+
+              {/* Hospital Affiliations */}
+              <div className="form-group full-width">
+                <label><Building2 size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Hospital Affiliations</label>
+                <SelectField
+                  value=""
+                  onChange={(e) => {
+                    const hId = e.target.value;
+                    if (!hId || formData.hospitals?.some(h => h.hospital_id === hId)) return;
+                    setFormData(prev => ({
+                      ...prev,
+                      hospitals: [...(prev.hospitals || []), { hospital_id: hId, is_primary: (prev.hospitals || []).length === 0 }],
+                    }));
+                  }}
+                >
+                  <option value="">— Add hospital —</option>
+                  {hospitals
+                    .filter(h => !formData.hospitals?.some(sel => sel.hospital_id === h._id))
+                    .map(h => (
+                      <option key={h._id} value={h._id}>{h.hospital_name}</option>
+                    ))}
+                </SelectField>
+                {formData.hospitals?.length > 0 && (
+                  <div className="dm-hospital-picker">
+                    {formData.hospitals.map((sel) => {
+                      const hInfo = hospitals.find(h => h._id === sel.hospital_id);
+                      return (
+                        <div key={sel.hospital_id} className="dm-hospital-item">
+                          <span className="dm-h-name">{hInfo?.hospital_name || sel.hospital_id}</span>
+                          <label className="dm-h-primary">
+                            <input
+                              type="checkbox"
+                              checked={sel.is_primary}
+                              onChange={(e) => {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  hospitals: prev.hospitals.map(h =>
+                                    h.hospital_id === sel.hospital_id ? { ...h, is_primary: e.target.checked } : h
+                                  ),
+                                }));
+                              }}
+                              style={{ width: 14, height: 14, flexShrink: 0 }}
+                            />
+                            Primary
+                          </label>
+                          <button
+                            type="button"
+                            className="dm-h-remove"
+                            onClick={() => {
+                              setFormData(prev => ({
+                                ...prev,
+                                hospitals: prev.hospitals.filter(h => h.hospital_id !== sel.hospital_id),
+                              }));
+                            }}
+                          >&times;</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="form-group full-width">

@@ -56,6 +56,7 @@ import {
   Search,
   Target,
   Trophy,
+  MessageSquare,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -898,6 +899,8 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
               { path: '/admin/reports', label: 'Reports', icon: FileText },
               { path: '/admin/photo-audit', label: 'Photo Audit', icon: Camera },
+              { path: '/admin/comm-logs', label: 'Comm Logs', icon: MessageSquare },
+              { path: '/admin/message-templates', label: 'Msg Templates', icon: MessageSquare },
               { path: '/admin/settings', label: 'Programs', icon: Settings },
             ],
           },
@@ -928,6 +931,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/bdm/products', label: 'Products', icon: Package },
               { path: '/bdm/inbox', label: 'Mail', icon: Inbox, badge: unreadCount || null },
               { path: '/bdm/visits', label: 'My Visits', icon: ClipboardCheck },
+              { path: '/bdm/comm-log', label: 'Comm Log', icon: MessageSquare },
             ],
           },
         ],

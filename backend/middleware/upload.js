@@ -13,7 +13,7 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 const sharp = require('sharp');
-const { uploadVisitPhoto, uploadProductImage, uploadAvatar } = require('../config/s3');
+const { uploadVisitPhoto, uploadCommScreenshot, uploadProductImage, uploadAvatar } = require('../config/s3');
 
 /**
  * Compress an image buffer using sharp.
@@ -309,12 +309,62 @@ const parseFormDataJson = (fields) => (req, res, next) => {
   next();
 };
 
+/**
+ * Middleware to upload communication screenshots to S3
+ * Use after uploadMultiple('photos')
+ * Same as processVisitPhotos but uses communications/ S3 folder
+ * and does not perform photo flag detection
+ */
+const processCommScreenshots = async (req, res, next) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one screenshot is required as proof of interaction.',
+      });
+    }
+
+    const uploadedPhotos = [];
+    const now = new Date();
+
+    for (const file of req.files) {
+      const { buffer: compressed, mimetype: compressedMime } = await compressImage(file.buffer, file.mimetype);
+      const hash = crypto.createHash('md5').update(compressed).digest('hex');
+
+      const result = await uploadCommScreenshot(
+        compressed,
+        file.originalname.replace(/\.\w+$/, '.jpg'),
+        compressedMime
+      );
+
+      uploadedPhotos.push({
+        url: result.url,
+        key: result.key,
+        capturedAt: now,
+        originalName: file.originalname,
+        size: compressed.length,
+        mimetype: compressedMime,
+        hash,
+      });
+    }
+
+    req.uploadedPhotos = uploadedPhotos;
+    next();
+  } catch (error) {
+    console.error('S3 comm screenshot upload error:', error);
+    error.statusCode = 500;
+    error.message = 'Failed to upload screenshots. Please try again.';
+    next(error);
+  }
+};
+
 module.exports = {
   upload,
   uploadSingle,
   uploadMultiple,
   handleUploadError,
   processVisitPhotos,
+  processCommScreenshots,
   processProductImage,
   processProductImageOptional,
   processAvatar,

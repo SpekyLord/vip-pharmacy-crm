@@ -166,6 +166,11 @@ export default function ErpReports() {
               <p>Net cash ranking, MoM trends, sales & collections trackers by BDM.</p>
             </Link>
             )}
+            <Link to="/erp/rx-correlation" className="report-card">
+              <div className="icon">📊</div>
+              <h3>Visit vs Sales Correlation</h3>
+              <p>Correlate BDM visit activity with product sell-through, partner rebates, and program effectiveness by territory.</p>
+            </Link>
             <Link to="/erp/consignment-aging" className="report-card">
               <div className="icon">📦</div>
               <h3>Consignment Aging</h3>

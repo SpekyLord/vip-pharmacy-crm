@@ -63,16 +63,16 @@ const PAGE_GUIDES = {
   'doctors-page': {
     title: 'VIP Client Management',
     steps: [
-      'Search and filter VIP Clients by region, specialization, or status',
+      'Search and filter VIP Clients by region, specialization, client type, or status',
       'Click a VIP Client to view or edit their full profile',
-      'Use the Add button to create new VIP Client records',
+      'Use the Add button to create new VIP Client records — set Client Type (MD, Pharmacist, etc.) and link Hospital affiliations',
       'Export VIP Clients to Excel using the Call Plan Template format',
     ],
     next: [
       { label: 'BDM Management', path: '/admin/employees' },
       { label: 'Reports', path: '/admin/reports' },
     ],
-    tip: 'VIP Clients with visitFrequency=2 alternate weeks (W1+W3 or W2+W4). Frequency=4 means one visit per week.',
+    tip: 'Client Type distinguishes MDs from other stakeholders (pharmacist, purchaser, administrator). Hospital affiliations link VIP Clients to HEAT data.',
   },
   'employees-page': {
     title: 'BDM Management',
@@ -182,13 +182,14 @@ const PAGE_GUIDES = {
     steps: [
       'Review the VIP Client\'s complete profile and visit history',
       'Check assigned products and engagement level',
-      'View scheduled visits and compliance status',
+      'View Hospital Context (HEAT data) — purchaser, pharmacist, decision maker, and engagement level for linked hospitals',
       'Log a visit directly from this page',
     ],
     next: [
       { label: 'Log Visit', path: '/bdm/visit/new' },
       { label: 'Dashboard', path: '/bdm' },
     ],
+    tip: 'Hospital HEAT data appears automatically when a VIP Client has hospital affiliations set by admin.',
   },
   'inbox': {
     title: 'Message Inbox',
@@ -243,6 +244,56 @@ const PAGE_GUIDES = {
       { label: 'Activity Monitor', path: '/admin/activity' },
     ],
     tip: 'Use the Refresh button to pull the latest data. Select a BDM in the Performance tab to see their DCR.',
+  },
+  'communication-log': {
+    title: 'Communication Log',
+    steps: [
+      'Tap "Log Interaction" to record a Viber, Messenger, WhatsApp, Email, or Google Chat conversation',
+      'Select the VIP Client or Regular Client you contacted',
+      'Choose the channel used and attach 1-10 screenshots as proof',
+      'Use the "Send Message" tab to message clients directly from here',
+      'View your interaction history filtered by channel or date',
+    ],
+    next: [
+      { label: 'Log Visit', path: '/bdm/visit/new' },
+      { label: 'My Visits', path: '/bdm/visits' },
+      { label: 'Dashboard', path: '/bdm' },
+    ],
+    tip: 'Screenshots serve as proof of engagement. Once messaging APIs are connected, sent messages are logged automatically.',
+  },
+  'admin-communication-logs': {
+    title: 'Communication Logs Overview',
+    steps: [
+      'View all BDM interactions with VIP and Regular Clients across channels',
+      'Filter by BDM, channel (Viber/Messenger/Email/Google Chat), or date range',
+      'Review screenshots and message content for each interaction',
+      'API-sent messages show delivery status (sent/delivered/read)',
+    ],
+    next: [
+      { label: 'Reports', path: '/admin/reports' },
+      { label: 'Statistics', path: '/admin/statistics' },
+      { label: 'Msg Templates', path: '/admin/message-templates' },
+    ],
+  },
+  'message-templates': {
+    title: 'Message Templates',
+    steps: [
+      'Create reusable message templates for BDMs to send in one click',
+      'Use {{variables}} like {{firstName}}, {{lastName}}, {{fullName}} for personalization',
+      'Set channel restrictions (WhatsApp, Viber, Messenger, Email) or leave empty for all',
+      'Assign categories (from Control Center lookups) to organize templates',
+      'Toggle templates active/inactive — BDMs only see active templates',
+    ],
+    tips: [
+      'BDMs see the Template tab in their Communication Log > Send Message panel',
+      'Template categories are lookup-driven (MSG_TEMPLATE_CATEGORY) — add new ones from Control Center',
+      'Auto-reply messages for after-hours are configured in ERP Settings, not here',
+    ],
+    next: [
+      { label: 'Comm Logs', path: '/admin/comm-logs' },
+      { label: 'VIP Clients', path: '/admin/doctors' },
+      { label: 'BDMs', path: '/admin/employees' },
+    ],
   },
 };
 

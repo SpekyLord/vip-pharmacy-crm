@@ -39,6 +39,20 @@ export default function useReports() {
   const exportCostCenters = () => api.get('/cost-centers/export', { responseType: 'blob' });
   const importCostCenters = (formData) => api.post('/cost-centers/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
+  // ═══ Gap 9 — Rx Correlation ═══
+  const getRxCorrelationSummary = (period, params) => api.get(`/rx-correlation/summary/${period}`, { params });
+  const getRxPartnerDetail = (period, params) => api.get(`/rx-correlation/partner-detail/${period}`, { params });
+  const getRxHospitalStakeholders = (period, params) => api.get(`/rx-correlation/hospital-stakeholders/${period}`, { params });
+  const getRxTerritoryDetail = (territoryId, period) => api.get(`/rx-correlation/territory/${territoryId}/${period}`);
+  const getRxTimeSeries = (params) => api.get('/rx-correlation/time-series', { params });
+  const getRxProgramEffectiveness = (period) => api.get(`/rx-correlation/program-effectiveness/${period}`);
+  const getRxSupportEffectiveness = (period) => api.get(`/rx-correlation/support-effectiveness/${period}`);
+  const getRxProductMappings = () => api.get('/rx-correlation/product-mappings');
+  const createRxProductMapping = (data) => api.post('/rx-correlation/product-mappings', data);
+  const deleteRxProductMapping = (id) => api.delete(`/rx-correlation/product-mappings/${id}`);
+  const autoMapRxProducts = () => api.post('/rx-correlation/product-mappings/auto-map');
+  const getUnmappedRxProducts = () => api.get('/rx-correlation/unmapped-products');
+
   // ═══ Budget Allocations ═══
   const getBudgetAllocations = (params) => api.get('/budget-allocations', { params });
   const createBudgetAllocation = (data) => api.post('/budget-allocations', data);
@@ -65,6 +79,11 @@ export default function useReports() {
     getCostCenters, createCostCenter, updateCostCenter, getCostCenterTree, exportCostCenters, importCostCenters,
     // Phase 15.8
     triggerArchive, getArchiveBatches, getArchiveBatchDetail, restoreBatch,
+    // Gap 9 — Rx Correlation
+    getRxCorrelationSummary, getRxPartnerDetail, getRxHospitalStakeholders,
+    getRxTerritoryDetail, getRxTimeSeries, getRxProgramEffectiveness,
+    getRxSupportEffectiveness, getRxProductMappings, createRxProductMapping,
+    deleteRxProductMapping, autoMapRxProducts, getUnmappedRxProducts,
     // Budget Allocations
     getBudgetAllocations, createBudgetAllocation, updateBudgetAllocation, approveBudgetAllocation
   };

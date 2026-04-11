@@ -10,7 +10,7 @@
  * - Actions: Log Visit, Edit, Back
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -22,6 +22,7 @@ import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
 import productService from '../../services/productService';
 import PageGuide from '../../components/common/PageGuide';
+import api from '../../services/api';
 
 const ENGAGEMENT_LABELS = {
   1: 'Visited 4x',
@@ -587,6 +588,100 @@ const pageStyles = `
       min-height: 44px;
     }
   }
+
+  /* Hospital HEAT section */
+  .ddp-heat-card {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .ddp-heat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .ddp-heat-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #0c4a6e;
+  }
+
+  .ddp-heat-eng {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .ddp-heat-eng.h-low { background: #fef2f2; color: #dc2626; }
+  .ddp-heat-eng.h-mid { background: #fefce8; color: #a16207; }
+  .ddp-heat-eng.h-high { background: #f0fdf4; color: #16a34a; }
+
+  .ddp-heat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .ddp-heat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ddp-heat-item.full-width {
+    grid-column: 1 / -1;
+  }
+
+  .ddp-heat-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #0369a1;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .ddp-heat-value {
+    font-size: 13px;
+    color: #1e3a5f;
+  }
+
+  .ddp-heat-loading {
+    text-align: center;
+    padding: 16px;
+    color: #6b7280;
+    font-size: 13px;
+    font-style: italic;
+  }
+
+  .ddp-heat-primary {
+    font-size: 10px;
+    font-weight: 700;
+    background: #0284c7;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 6px;
+    margin-left: 8px;
+  }
+
+  body.dark-mode .ddp-heat-card {
+    background: #0c1e3a;
+    border-color: #1e3a5f;
+  }
+
+  body.dark-mode .ddp-heat-name { color: #7dd3fc; }
+  body.dark-mode .ddp-heat-label { color: #7dd3fc; }
+  body.dark-mode .ddp-heat-value { color: #e2e8f0; }
+
+  @media (max-width: 480px) {
+    .ddp-heat-grid { grid-template-columns: 1fr; }
+  }
 `;
 
 const DoctorDetailPage = () => {
@@ -601,6 +696,8 @@ const DoctorDetailPage = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [detailProduct, setDetailProduct] = useState(null);
   const [loadingProductId, setLoadingProductId] = useState(null);
+  const [heatData, setHeatData] = useState([]);
+  const [heatLoading, setHeatLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -642,6 +739,37 @@ const DoctorDetailPage = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Stable key for hospital list to avoid infinite re-fetch
+  const hospitalKey = useMemo(
+    () => (doctor?.hospitals || []).map(h => `${h.hospital_id?._id || h.hospital_id}:${h.is_primary}`).join(','),
+    [doctor?.hospitals]
+  );
+
+  // Fetch HEAT data for linked hospitals
+  useEffect(() => {
+    if (!doctor?.hospitals?.length) {
+      setHeatData([]);
+      return;
+    }
+    let mounted = true;
+    setHeatLoading(true);
+    Promise.allSettled(
+      doctor.hospitals.map(h => {
+        const hId = h.hospital_id?._id || h.hospital_id;
+        return api.get(`/erp/crm-bridge/hospital-heat?hospital_id=${hId}`)
+          .then(res => ({ ...res.data?.data, _is_primary: h.is_primary, _hospital_id: hId }));
+      })
+    ).then(results => {
+      if (!mounted) return;
+      const data = results
+        .filter(r => r.status === 'fulfilled')
+        .map(r => r.value);
+      setHeatData(data);
+      setHeatLoading(false);
+    });
+    return () => { mounted = false; };
+  }, [hospitalKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogVisit = () => {
     if (visitEligibility?.canVisit !== true) {
@@ -865,6 +993,75 @@ const DoctorDetailPage = () => {
                 <p className="ddp-empty-text">No support types assigned</p>
               )}
             </div>
+
+            {/* Hospital Context (HEAT) */}
+            {(doctor.hospitals?.length > 0 || heatLoading) && (
+              <div className="ddp-section ddp-section-full">
+                <h2>Hospital Context</h2>
+                {heatLoading ? (
+                  <p className="ddp-heat-loading">Loading hospital data...</p>
+                ) : heatData.length > 0 ? (
+                  heatData.map((h) => {
+                    const engClass = h.engagement_level <= 2 ? 'h-low' : h.engagement_level <= 3 ? 'h-mid' : 'h-high';
+                    return (
+                      <div key={h._hospital_id} className="ddp-heat-card">
+                        <div className="ddp-heat-header">
+                          <span className="ddp-heat-name">
+                            {h.hospital_name}
+                            {h._is_primary && <span className="ddp-heat-primary">PRIMARY</span>}
+                          </span>
+                          {h.engagement_level && (
+                            <span className={`ddp-heat-eng ${engClass}`}>
+                              Engagement: {h.engagement_level}/5
+                            </span>
+                          )}
+                        </div>
+                        <div className="ddp-heat-grid">
+                          {h.purchaser_name && (
+                            <div className="ddp-heat-item">
+                              <span className="ddp-heat-label">Purchaser</span>
+                              <span className="ddp-heat-value">{h.purchaser_name}{h.purchaser_phone ? ` (${h.purchaser_phone})` : ''}</span>
+                            </div>
+                          )}
+                          {h.chief_pharmacist_name && (
+                            <div className="ddp-heat-item">
+                              <span className="ddp-heat-label">Chief Pharmacist</span>
+                              <span className="ddp-heat-value">{h.chief_pharmacist_name}{h.chief_pharmacist_phone ? ` (${h.chief_pharmacist_phone})` : ''}</span>
+                            </div>
+                          )}
+                          {h.key_decision_maker && (
+                            <div className="ddp-heat-item">
+                              <span className="ddp-heat-label">Key Decision Maker</span>
+                              <span className="ddp-heat-value">{h.key_decision_maker}</span>
+                            </div>
+                          )}
+                          {h.hospital_type && (
+                            <div className="ddp-heat-item">
+                              <span className="ddp-heat-label">Type</span>
+                              <span className="ddp-heat-value">{h.hospital_type}{h.bed_capacity ? ` (${h.bed_capacity} beds)` : ''}</span>
+                            </div>
+                          )}
+                          {h.major_events && (
+                            <div className="ddp-heat-item full-width">
+                              <span className="ddp-heat-label">Major Events</span>
+                              <span className="ddp-heat-value">{h.major_events}</span>
+                            </div>
+                          )}
+                          {h.programs_to_level_5 && (
+                            <div className="ddp-heat-item full-width">
+                              <span className="ddp-heat-label">Programs to Level 5</span>
+                              <span className="ddp-heat-value">{h.programs_to_level_5}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="ddp-empty-text">No hospital HEAT data available</p>
+                )}
+              </div>
+            )}
 
             {/* Target Products */}
             <div className="ddp-section">

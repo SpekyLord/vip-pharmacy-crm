@@ -315,6 +315,9 @@ const createApp = () => {
   app.use('/api/audit-logs', userLimiter, require('./routes/auditLogRoutes'));
   app.use('/api/notification-preferences', userLimiter, require('./routes/notificationPreferenceRoutes'));
   app.use('/api/reports', userLimiter, require('./routes/reportRoutes'));
+  app.use('/api/communication-logs', userLimiter, require('./routes/communicationLogRoutes'));
+  app.use('/api/message-templates', userLimiter, require('./routes/messageTemplateRoutes'));
+  app.use('/api/webhooks', require('./routes/webhookRoutes'));
   app.use('/api/sent', userLimiter, require('./routes/sentRoutes'));
   app.use('/api/erp', userLimiter, require('./erp/routes'));
 

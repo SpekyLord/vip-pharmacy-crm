@@ -50,6 +50,11 @@ const settingsSchema = new mongoose.Schema({
   // GPS Verification
   GPS_VERIFICATION_THRESHOLD_M: { type: Number, default: 400 },
 
+  // Rx Correlation (Gap 9)
+  RX_CORRELATION_MIN_VISITS: { type: Number, default: 5 },
+  RX_CORRELATION_MIN_SALES: { type: Number, default: 1000 },
+  RX_CORRELATION_DEFAULT_MONTHS: { type: Number, default: 6 },
+
   // Notification — which roles receive ERP document notifications
   NOTIFICATION_RECIPIENT_ROLES: {
     type: [String],
@@ -119,6 +124,18 @@ const settingsSchema = new mongoose.Schema({
     efficiency: { type: Number, default: 15 },
     engagement: { type: Number, default: 15 },
   },
+
+  // Auto-Reply / Chatbot (Multi-Channel Engagement)
+  AUTOREPLY_ENABLED: { type: Boolean, default: false },
+  AUTOREPLY_BUSINESS_HOURS_START: { type: String, default: '08:00' },  // HH:mm (24h, PHT)
+  AUTOREPLY_BUSINESS_HOURS_END: { type: String, default: '17:00' },
+  AUTOREPLY_WORK_DAYS: { type: [Number], default: [1, 2, 3, 4, 5] },   // 0=Sun..6=Sat
+  AUTOREPLY_MESSAGE: {
+    type: String,
+    default: 'Thank you for your message. Our representative is currently unavailable but will get back to you during business hours (Mon-Fri, 8AM-5PM PHT). For urgent matters, please contact our main office.',
+    maxlength: [2000, 'Auto-reply message cannot exceed 2000 characters'],
+  },
+  AUTOREPLY_COOLDOWN_MINUTES: { type: Number, default: 60 },  // Don't re-send within N minutes
 
   // Updated by
   updated_by: {
