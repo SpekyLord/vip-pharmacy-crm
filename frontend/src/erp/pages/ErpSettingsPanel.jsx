@@ -89,6 +89,7 @@ export function ErpSettingsPanelContent() {
       CONSIGNMENT_AGING_DEFAULT: s.CONSIGNMENT_AGING_DEFAULT ?? 90,
       ENFORCE_AUTHORITY_MATRIX: s.ENFORCE_AUTHORITY_MATRIX ?? false,
       EXPENSE_ANOMALY_THRESHOLD: s.EXPENSE_ANOMALY_THRESHOLD ?? 0.30,
+      GPS_VERIFICATION_THRESHOLD_M: s.GPS_VERIFICATION_THRESHOLD_M ?? 400,
       COA_MAP: coaMap
     };
   };
@@ -229,6 +230,7 @@ export function ErpSettingsPanelContent() {
               <div className="esp-hint">Require approval workflows for transactions</div>
             </div>
             {numField('EXPENSE_ANOMALY_THRESHOLD', 'Anomaly Threshold', 'e.g. 0.30 = 30% deviation')}
+            {numField('GPS_VERIFICATION_THRESHOLD_M', 'GPS Threshold (meters)', 'Distance for verified vs suspicious visits')}
           </div>
         </div>
 

@@ -47,6 +47,9 @@ const settingsSchema = new mongoose.Schema({
   ENFORCE_AUTHORITY_MATRIX: { type: Boolean, default: false },
   EXPENSE_ANOMALY_THRESHOLD: { type: Number, default: 0.30 },
 
+  // GPS Verification
+  GPS_VERIFICATION_THRESHOLD_M: { type: Number, default: 400 },
+
   // Notification — which roles receive ERP document notifications
   NOTIFICATION_RECIPIENT_ROLES: {
     type: [String],

@@ -90,20 +90,17 @@ const update = catchAsync(async (req, res) => {
 
 const deactivate = async (req, res) => {
   try {
-    console.log('[deactivate] START — id:', req.params.id, 'isPresident:', req.isPresident, 'entityId:', req.entityId);
     const mongoose = require('mongoose');
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ success: false, message: 'Invalid product ID: ' + req.params.id });
     }
     const filter = { _id: req.params.id };
     if (!req.isPresident) filter.entity_id = req.entityId;
-    console.log('[deactivate] filter:', JSON.stringify(filter));
     const product = await ProductMaster.findOneAndUpdate(
       filter,
       { $set: { is_active: false } },
       { new: true }
     );
-    console.log('[deactivate] result:', product ? product.brand_name : 'NOT FOUND');
     if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
     res.json({ success: true, message: 'Product deactivated', data: product });
   } catch (err) {
@@ -204,8 +201,12 @@ const tagToWarehouse = catchAsync(async (req, res) => {
 
 // ═══ Get warehouses that a product is tagged to ═══
 const getProductWarehouses = catchAsync(async (req, res) => {
+  const mongoose = require('mongoose');
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ success: false, message: 'Invalid product ID' });
+  }
   const entries = await InventoryLedger.aggregate([
-    { $match: { product_id: require('mongoose').Types.ObjectId.createFromHexString(req.params.id) } },
+    { $match: { product_id: mongoose.Types.ObjectId.createFromHexString(req.params.id) } },
     { $group: { _id: '$warehouse_id' } }
   ]);
   const whIds = entries.map(e => e._id).filter(Boolean);

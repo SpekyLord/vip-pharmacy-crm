@@ -17,7 +17,10 @@
       "Bash(grep -n \"const.*FALLBACK\\\\|const.*OPTIONS\\\\|enum:\\\\s*\\\\[\" frontend/src/erp/pages/*.jsx)",
       "Bash(find \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend\" -name \"*.js\" -type f -exec grep -l \"assertLookup\" {} \\\\;)",
       "Bash(grep -c \"// Lookup:\" backend/erp/models/*.js backend/models/Visit.js backend/models/ClientVisit.js backend/models/MessageInbox.js)",
-      "Bash(grep -v \":0$\")"
+      "Bash(grep -v \":0$\")",
+      "Bash(npm audit:*)",
+      "Bash(grep -c \"import\\\\|from\" \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/frontend/src/services\"/*.js)",
+      "Bash(grep -r \"findOne.*\\\\$\\\\|find.*\\\\$\\\\|query.*\\\\$\\\\|aggregate.*\\\\$\" \"/c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend/controllers/\")"
     ]
   }
 }

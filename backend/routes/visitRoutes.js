@@ -35,6 +35,7 @@ const {
   getPhotoAuditIssues,
   findVisitsByPhotoHash,
   getAdminTodayStats,
+  getProductPresentationStats,
 } = require('../controllers/visitController');
 
 const { protect } = require('../middleware/auth');
@@ -54,6 +55,7 @@ router.get('/gps-review', adminOnly, getGPSReview);
 router.get('/photo-audit', adminOnly, getPhotoAuditIssues);
 router.get('/photo-audit/find-by-hash', adminOnly, findVisitsByPhotoHash);
 router.get('/admin/today-stats', adminOnly, getAdminTodayStats);
+router.get('/product-presentation-stats', adminOnly, getProductPresentationStats);
 router.get('/employee-report/:userId', adminOnly, getEmployeeReport);
 router.get('/can-visit/:doctorId', checkCanVisit);
 router.post('/can-visit-batch', checkCanVisitBatch);

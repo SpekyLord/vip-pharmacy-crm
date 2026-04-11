@@ -201,6 +201,49 @@ const PAGE_GUIDES = {
       { label: 'Dashboard', path: '/bdm' },
     ],
   },
+  'gps-verification': {
+    title: 'GPS Verification',
+    steps: [
+      'Review BDM visit locations against clinic GPS coordinates',
+      'Visits within the configured threshold are marked VERIFIED (green)',
+      'Visits beyond the threshold are flagged SUSPICIOUS (red) for further review',
+      'Click a visit to see both locations on the map with distance line',
+    ],
+    next: [
+      { label: 'Reports', path: '/admin/reports' },
+      { label: 'Activity Monitor', path: '/admin/activity' },
+    ],
+    tip: 'Distance is calculated using GPS from the BDM\'s photo and the clinic\'s registered coordinates. The threshold can be adjusted in ERP Settings.',
+  },
+  'activity-monitor': {
+    title: 'Activity Monitor',
+    steps: [
+      'View real-time system activity: visits logged, logins, and auth events',
+      'Use filters to narrow by activity type or date range',
+      'Click any activity for detailed information (photos, GPS, device info)',
+      'Stats refresh automatically every 60 seconds',
+    ],
+    next: [
+      { label: 'GPS Verification', path: '/admin/gps-verification' },
+      { label: 'Reports', path: '/admin/reports' },
+    ],
+    tip: 'The feed shows today\'s activity by default. Use date filters to review historical data.',
+  },
+  'statistics-page': {
+    title: 'Statistics & Analytics',
+    steps: [
+      'Overview tab shows system-wide compliance rate and per-BDM call rate chart with team average line',
+      'BDM Performance tab lets you drill into any BDM\'s DCR summary by cycle',
+      'Programs tab shows program and support type coverage across VIP Clients',
+      'Products tab shows which products are being presented most and by which BDMs',
+      'Daily Heatmap tab shows visit intensity across all BDMs and working days in one grid',
+    ],
+    next: [
+      { label: 'Reports', path: '/admin/reports' },
+      { label: 'Activity Monitor', path: '/admin/activity' },
+    ],
+    tip: 'Use the Refresh button to pull the latest data. Select a BDM in the Performance tab to see their DCR.',
+  },
 };
 
 export default function PageGuide({ pageKey }) {

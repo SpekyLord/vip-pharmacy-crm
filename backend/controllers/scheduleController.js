@@ -870,6 +870,103 @@ const getCPTGridSummary = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get cross-BDM daily visit heatmap for a cycle
+ * @route   GET /api/schedules/cross-bdm-heatmap
+ * @access  Private (Admin only)
+ */
+const getCrossBdmHeatmap = catchAsync(async (req, res) => {
+  const User = require('../models/User');
+
+  const now = new Date();
+  const requestedCycle = req.query.cycleNumber != null
+    ? parseInt(req.query.cycleNumber)
+    : getCycleNumber(now);
+
+  const cycleStart = getCycleStartDate(requestedCycle);
+  const cycleEnd = getCycleEndDate(requestedCycle);
+
+  // 20 working days: W1D1 through W4D5
+  const days = [];
+  for (let w = 1; w <= 4; w++) {
+    for (let d = 1; d <= 5; d++) {
+      days.push(`W${w}D${d}`);
+    }
+  }
+
+  // Fetch all active BDMs
+  const employees = await User.find({ role: ROLES.CONTRACTOR, isActive: true })
+    .select('_id name firstName lastName')
+    .lean();
+
+  // Fetch all completed visits in this cycle (single query)
+  const visits = await Visit.find({
+    status: 'completed',
+    visitDate: { $gte: cycleStart, $lte: cycleEnd },
+  }).select('user weekOfMonth dayOfWeek').lean();
+
+  // Fetch schedule entries for targets (single query)
+  const scheduleEntries = await Schedule.find({ cycleNumber: requestedCycle })
+    .select('user scheduledWeek scheduledDay')
+    .lean();
+
+  // Build visit count map: { bdmId → { "W1D1": count, ... } }
+  const visitMap = new Map();
+  visits.forEach((v) => {
+    const uid = v.user.toString();
+    if (!visitMap.has(uid)) visitMap.set(uid, {});
+    const day = v.weekOfMonth >= 1 && v.weekOfMonth <= 4 && v.dayOfWeek >= 1 && v.dayOfWeek <= 5
+      ? `W${v.weekOfMonth}D${v.dayOfWeek}`
+      : null;
+    if (day) {
+      visitMap.get(uid)[day] = (visitMap.get(uid)[day] || 0) + 1;
+    }
+  });
+
+  // Build target map: { bdmId → { "W1D1": count, ... } }
+  const targetMap = new Map();
+  scheduleEntries.forEach((s) => {
+    const uid = s.user.toString();
+    if (!targetMap.has(uid)) targetMap.set(uid, {});
+    const day = `W${s.scheduledWeek}D${s.scheduledDay}`;
+    targetMap.get(uid)[day] = (targetMap.get(uid)[day] || 0) + 1;
+  });
+
+  // Build per-BDM rows
+  const bdms = employees.map((emp) => {
+    const uid = emp._id.toString();
+    const daily = visitMap.get(uid) || {};
+    const dailyTarget = targetMap.get(uid) || {};
+    const total = Object.values(daily).reduce((sum, c) => sum + c, 0);
+
+    return {
+      userId: emp._id,
+      name: emp.name || `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+      daily,
+      dailyTarget,
+      total,
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  // Compute team averages per day
+  const teamAvg = {};
+  const bdmCount = bdms.length || 1;
+  days.forEach((day) => {
+    const sum = bdms.reduce((acc, b) => acc + (b.daily[day] || 0), 0);
+    teamAvg[day] = Math.round((sum / bdmCount) * 10) / 10;
+  });
+
+  res.json({
+    success: true,
+    data: {
+      days,
+      bdms,
+      teamAvg,
+      cycleNumber: requestedCycle,
+    },
+  });
+});
+
 module.exports = {
   getCycle,
   getToday,
@@ -880,4 +977,5 @@ module.exports = {
   adminClearCycle,
   getCPTGrid,
   getCPTGridSummary,
+  getCrossBdmHeatmap,
 };

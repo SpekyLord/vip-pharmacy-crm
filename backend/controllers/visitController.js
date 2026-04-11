@@ -15,7 +15,7 @@ const CrmProduct = require('../models/CrmProduct');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, getMonthYear, getScheduleMatchForVisit } = require('../utils/validateWeeklyVisit');
-const { MANILA_OFFSET_MS, getWeekOfMonth, getCycleStartDate, getCycleEndDate } = require('../utils/scheduleCycleUtils');
+const { MANILA_OFFSET_MS, getWeekOfMonth, getCycleNumber, getCycleStartDate, getCycleEndDate } = require('../utils/scheduleCycleUtils');
 const { normalizeEngagementTypesQuery } = require('../utils/engagementTypes');
 const { signVisitPhotos } = require('../config/s3');
 const { ROLES, isAdminLike } = require('../constants/roles');
@@ -1082,6 +1082,11 @@ const getGPSReview = catchAsync(async (req, res) => {
   const parsedLimit = parseInt(limit);
   const skip = (page - 1) * parsedLimit;
 
+  // Get threshold from Settings (lookup-driven, not hardcoded)
+  const Settings = require('../erp/models/Settings');
+  const settings = await Settings.getSettings();
+  const thresholdM = settings.GPS_VERIFICATION_THRESHOLD_M || 400;
+
   // Find completed visits that have GPS data
   const query = {
     status: 'completed',
@@ -1116,7 +1121,7 @@ const getGPSReview = catchAsync(async (req, res) => {
       (docCoords[0] !== 0 || docCoords[1] !== 0)
     ) {
       distance = Math.round(calculateHaversine(empLat, empLng, docCoords[1], docCoords[0]));
-      verification = distance <= 400 ? 'verified' : 'suspicious';
+      verification = distance <= thresholdM ? 'verified' : 'suspicious';
     }
 
     if (verification === 'verified') stats.verified++;
@@ -1154,6 +1159,7 @@ const getGPSReview = catchAsync(async (req, res) => {
     success: true,
     data: filteredVisits,
     stats,
+    thresholdM,
     pagination: {
       page: parseInt(page),
       limit: parsedLimit,
@@ -1383,6 +1389,108 @@ const getAdminTodayStats = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get product presentation statistics for the current cycle
+ * @route   GET /api/visits/product-presentation-stats
+ * @access  Private (Admin only)
+ */
+const getProductPresentationStats = catchAsync(async (req, res) => {
+  const User = require('../models/User');
+
+  // Determine cycle range
+  let cycleNumber = req.query.cycleNumber != null
+    ? Number(req.query.cycleNumber)
+    : getCycleNumber(new Date());
+  const cycleStart = getCycleStartDate(cycleNumber);
+  const cycleEnd = getCycleEndDate(cycleNumber);
+
+  // Aggregate productsDiscussed across completed visits in cycle
+  const pipeline = [
+    {
+      $match: {
+        status: 'completed',
+        visitDate: { $gte: cycleStart, $lte: cycleEnd },
+        'productsDiscussed.0': { $exists: true },
+      },
+    },
+    { $unwind: '$productsDiscussed' },
+    { $match: { 'productsDiscussed.presented': true } },
+    {
+      $group: {
+        _id: {
+          product: '$productsDiscussed.product',
+          user: '$user',
+        },
+        count: { $sum: 1 },
+        uniqueDoctors: { $addToSet: '$doctor' },
+      },
+    },
+    {
+      $group: {
+        _id: '$_id.product',
+        totalPresentations: { $sum: '$count' },
+        allDoctors: { $push: '$uniqueDoctors' },
+        byBdm: {
+          $push: {
+            userId: '$_id.user',
+            count: '$count',
+          },
+        },
+      },
+    },
+    { $sort: { totalPresentations: -1 } },
+  ];
+
+  const results = await Visit.aggregate(pipeline);
+
+  // Collect IDs for enrichment
+  const productIds = results.map((r) => r._id).filter(Boolean);
+  const userIds = [...new Set(results.flatMap((r) => r.byBdm.map((b) => b.userId.toString())))];
+
+  // Enrich product names (CrmProduct is in same DB — safe to query)
+  const [products, users] = await Promise.all([
+    productIds.length > 0
+      ? CrmProduct.find({ _id: { $in: productIds } }).select('name genericName category dosage').lean()
+      : [],
+    userIds.length > 0
+      ? User.find({ _id: { $in: userIds } }).select('name').lean()
+      : [],
+  ]);
+
+  const productMap = new Map(products.map((p) => [p._id.toString(), p]));
+  const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+
+  // Build response
+  const data = results.map((r) => {
+    const product = productMap.get(r._id?.toString()) || {};
+    // Flatten nested doctor arrays and deduplicate
+    const allDoctorIds = new Set(r.allDoctors.flat().map((d) => d.toString()));
+
+    return {
+      productId: r._id,
+      productName: product.name || 'Unknown Product',
+      genericName: product.genericName || '',
+      category: product.category || '',
+      dosage: product.dosage || '',
+      totalPresentations: r.totalPresentations,
+      uniqueVipClients: allDoctorIds.size,
+      byBdm: r.byBdm
+        .map((b) => ({
+          userId: b.userId,
+          name: userMap.get(b.userId.toString())?.name || 'Unknown BDM',
+          count: b.count,
+        }))
+        .sort((a, b) => b.count - a.count),
+    };
+  });
+
+  res.json({
+    success: true,
+    data,
+    cycleNumber,
+  });
+});
+
 module.exports = {
   createVisit,
   getAllVisits,
@@ -1402,4 +1510,5 @@ module.exports = {
   getPhotoAuditIssues,
   findVisitsByPhotoHash,
   getAdminTodayStats,
+  getProductPresentationStats,
 };
