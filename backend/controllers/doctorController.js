@@ -82,6 +82,16 @@ const getAllDoctors = catchAsync(async (req, res) => {
       ? req.query.programsToImplement : [req.query.programsToImplement] };
   }
 
+  // Filter by client type (Gap 9)
+  if (req.query.clientType) {
+    filter.clientType = req.query.clientType;
+  }
+
+  // Filter by hospital affiliation (Gap 9)
+  if (req.query.hospital_id) {
+    filter['hospitals.hospital_id'] = req.query.hospital_id;
+  }
+
   // Search by firstName, lastName, or clinicOfficeAddress
   if (req.query.search) {
     const safeSearch = sanitizeSearchString(req.query.search);
@@ -187,6 +197,8 @@ const createDoctor = catchAsync(async (req, res) => {
     otherDetails,
     targetProducts,
     isVipAssociated,
+    clientType,
+    hospitals,
   } = req.body;
 
   const doctor = await Doctor.create({
@@ -212,6 +224,8 @@ const createDoctor = catchAsync(async (req, res) => {
     otherDetails,
     targetProducts,
     isVipAssociated,
+    clientType,
+    hospitals,
   });
 
   if (doctor.assignedTo) {
@@ -270,6 +284,8 @@ const updateDoctor = catchAsync(async (req, res) => {
     'otherDetails',
     'targetProducts',
     'isVipAssociated',
+    'clientType',
+    'hospitals',
   ];
   const employeeAllowedFields = adminAllowedFields.filter(
     (f) => !['assignedTo', 'isActive', 'isVipAssociated'].includes(f)

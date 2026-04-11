@@ -1,21 +1,5 @@
 const mongoose = require('mongoose');
 
-const MODULE_ACCESS_ENUM = ['NONE', 'VIEW', 'FULL'];
-
-const modulesSchema = new mongoose.Schema({
-  sales:       { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  inventory:   { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  collections: { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  expenses:    { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  reports:     { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  people:      { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  payroll:     { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  accounting:  { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  purchasing:   { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  banking:      { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-  sales_goals:  { type: String, enum: MODULE_ACCESS_ENUM, default: 'NONE' },
-}, { _id: false });
-
 const accessTemplateSchema = new mongoose.Schema(
   {
     entity_id: {
@@ -33,9 +17,19 @@ const accessTemplateSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    // Module access levels — lookup-driven (Phase A)
+    // Keys are ERP_MODULE codes (lowercase), values are NONE | VIEW | FULL
+    // Stored as Mixed so new modules added via Lookup are accepted without schema change
     modules: {
-      type: modulesSchema,
-      default: () => ({}),
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+      validate: {
+        validator: function (v) {
+          if (!v || typeof v !== 'object') return true;
+          return Object.values(v).every(val => ['NONE', 'VIEW', 'FULL'].includes(val));
+        },
+        message: 'Module access levels must be NONE, VIEW, or FULL',
+      },
     },
     can_approve: {
       type: Boolean,

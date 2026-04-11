@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
+import PageGuide from '../../components/common/PageGuide';
 import LiveActivityFeed from '../../components/admin/LiveActivityFeed';
 import ActivityDetailModal from '../../components/admin/ActivityDetailModal';
 import auditLogService from '../../services/auditLogService';
@@ -389,6 +390,7 @@ const ActivityMonitor = () => {
       <div className="activity-monitor-content">
         <Sidebar />
         <main className="activity-monitor-main">
+          <PageGuide pageKey="activity-monitor" />
           {/* Page Header */}
           <div className="page-header">
             <h1>

@@ -25,6 +25,7 @@ import {
   RefreshCw,
   UserCheck,
   ChevronLeft,
+  Package,
 } from 'lucide-react';
 import {
   BarChart,
@@ -37,15 +38,19 @@ import {
   PieChart,
   Pie,
   Cell,
+  ReferenceLine,
 } from 'recharts';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import PageGuide from '../../components/common/PageGuide';
 import DCRSummaryTable from '../../components/employee/DCRSummaryTable';
+import { useLookupOptions } from '../../erp/hooks/useLookups';
 import scheduleService from '../../services/scheduleService';
 import userService from '../../services/userService';
 import programService from '../../services/programService';
 import supportTypeService from '../../services/supportTypeService';
+import visitService from '../../services/visitService';
 
 import SelectField from '../../components/common/Select';
 
@@ -1564,6 +1569,12 @@ const StatisticsPage = () => {
   const [programStats, setProgramStats] = useState([]);
   const [supportTypeStats, setSupportTypeStats] = useState([]);
 
+  // Products tab
+  const [productStats, setProductStats] = useState([]);
+
+  // Heatmap tab
+  const [heatmapData, setHeatmapData] = useState(null);
+
   // BDM Performance tab
   const [bdmEmployees, setBdmEmployees] = useState([]);
   const [selectedBdmId, setSelectedBdmId] = useState('');
@@ -1626,13 +1637,17 @@ const StatisticsPage = () => {
         perBdmCallRates,
       });
 
-      // Fetch program & support type stats
-      const [progStatsRes, supportStatsRes] = await Promise.all([
+      // Fetch program, support type, product, and heatmap stats in parallel
+      const [progStatsRes, supportStatsRes, productStatsRes, heatmapRes] = await Promise.all([
         programService.getStats().catch(() => ({ data: [] })),
         supportTypeService.getStats().catch(() => ({ data: [] })),
+        visitService.getProductPresentationStats().catch(() => ({ data: [] })),
+        scheduleService.getCrossBdmHeatmap().catch(() => ({ data: null })),
       ]);
       setProgramStats(progStatsRes.data || []);
       setSupportTypeStats(supportStatsRes.data || []);
+      setProductStats(productStatsRes.data || []);
+      setHeatmapData(heatmapRes.data || null);
 
     } catch {
       setError('Failed to load statistics data. Please try again.');
@@ -1730,6 +1745,9 @@ const StatisticsPage = () => {
             </button>
           </div>
 
+          {/* Helper Banner */}
+          <PageGuide pageKey="statistics-page" />
+
           {/* Error Banner */}
           {error && (
             <div className="error-banner">
@@ -1763,6 +1781,21 @@ const StatisticsPage = () => {
                 Programs
                 {programStats.length > 0 && <span className="tab-badge" style={{ background: '#8b5cf6' }}>{programStats.length}</span>}
               </button>
+              <button
+                className={`tab-btn ${activeTab === 'products' ? 'active' : ''}`}
+                onClick={() => setActiveTab('products')}
+              >
+                <Package size={18} />
+                Products
+                {productStats.length > 0 && <span className="tab-badge" style={{ background: '#3b82f6' }}>{productStats.length}</span>}
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'heatmap' ? 'active' : ''}`}
+                onClick={() => setActiveTab('heatmap')}
+              >
+                <Calendar size={18} />
+                Daily Heatmap
+              </button>
             </div>
 
             <div className="tabs-content">
@@ -1791,6 +1824,14 @@ const StatisticsPage = () => {
                   supportTypeStats={supportTypeStats}
                 />
               )}
+
+              {activeTab === 'products' && (
+                <ProductPresentationTab productStats={productStats} />
+              )}
+
+              {activeTab === 'heatmap' && (
+                <DailyHeatmapTab data={heatmapData} />
+              )}
             </div>
           </div>
         </main>
@@ -1805,6 +1846,14 @@ const StatisticsPage = () => {
    ============================================================================= */
 
 const OverviewTab = ({ stats }) => {
+  // Team average call rate for reference line
+  const avgCallRate = useMemo(() => {
+    const rates = stats.perBdmCallRates || [];
+    if (rates.length === 0) return 0;
+    const sum = rates.reduce((acc, b) => acc + (b.callRate || 0), 0);
+    return Math.round((sum / rates.length) * 10) / 10;
+  }, [stats.perBdmCallRates]);
+
   // Prepare pie chart data: on-track vs behind BDMs
   const statusPieData = [
     { name: 'On Track', value: stats.onTrackEmployees },
@@ -1911,6 +1960,12 @@ const OverviewTab = ({ stats }) => {
                     cursor={{ fill: 'rgba(148, 163, 184, 0.16)' }}
                     formatter={(value) => [`${value}%`, 'Call Rate']}
                   />
+                  <ReferenceLine
+                    y={avgCallRate}
+                    stroke={CHART_COLORS.danger}
+                    strokeDasharray="5 5"
+                    label={{ value: `Avg ${avgCallRate}%`, position: 'right', fill: CHART_COLORS.danger, fontSize: 12 }}
+                  />
                   <Bar
                     dataKey="callRate"
                     fill={CHART_COLORS.primary}
@@ -2015,7 +2070,16 @@ const OverviewTab = ({ stats }) => {
    Admin view of any BDM's DCR Summary with metrics and engagement breakdown.
    ============================================================================= */
 
-const ENG_TYPE_LABELS = {
+// Fallback colors per engagement code (metadata may override via lookup)
+const ENG_TYPE_COLORS = {
+  TXT_PROMATS: '#3b82f6',
+  MES_VIBER_GIF: '#8b5cf6',
+  PICTURE: '#f59e0b',
+  SIGNED_CALL: '#22c55e',
+  VOICE_CALL: '#ef4444',
+};
+
+const ENG_TYPE_FALLBACK = {
   TXT_PROMATS: { label: 'TXT / Promats', color: '#3b82f6' },
   MES_VIBER_GIF: { label: 'MES / GIF', color: '#8b5cf6' },
   PICTURE: { label: 'Picture', color: '#f59e0b' },
@@ -2035,6 +2099,20 @@ const BDMPerformanceTab = ({
   doctors,
   loading,
 }) => {
+  // Fetch engagement type labels from lookup (database-driven)
+  const { options: engagementLookups } = useLookupOptions('ENGAGEMENT_TYPE');
+  const engTypeLabels = useMemo(() => {
+    if (engagementLookups.length === 0) return ENG_TYPE_FALLBACK;
+    const map = {};
+    engagementLookups.forEach((opt) => {
+      map[opt.code] = {
+        label: opt.label,
+        color: opt.metadata?.color || ENG_TYPE_COLORS[opt.code] || '#6b7280',
+      };
+    });
+    return map;
+  }, [engagementLookups]);
+
   const metrics = useMemo(() => {
     const totalTarget = dcrTotal.targetEngagements || 0;
     const totalEngagements = dcrTotal.totalEngagements || 0;
@@ -2239,7 +2317,7 @@ const BDMPerformanceTab = ({
                   Engagement Types
                 </div>
               </div>
-              {Object.entries(ENG_TYPE_LABELS).map(([key, { label, color }]) => {
+              {Object.entries(engTypeLabels).map(([key, { label, color }]) => {
                 const count = metrics.engTypeTotals[key] || 0;
                 const pct = metrics.maxEngType > 0 ? (count / metrics.maxEngType) * 100 : 0;
                 return (
@@ -2440,6 +2518,433 @@ const ProgramMonitoringTab = ({ programStats, supportTypeStats }) => {
           ))}
         </div>
       )}
+    </div>
+  );
+};
+
+/* =============================================================================
+   COMPONENT: ProductPresentationTab
+   Shows product presentation stats aggregated from Visit.productsDiscussed.
+   ============================================================================= */
+
+const productTabStyles = `
+  .product-chart-wrapper {
+    margin-bottom: 24px;
+  }
+  .product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .product-card {
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--line-200, #e5e7eb);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  body.dark-mode .product-card {
+    background: #1e293b;
+    border-color: #334155;
+  }
+  .product-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .product-card-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink-900, #111827);
+  }
+  body.dark-mode .product-card-name {
+    color: #f1f5f9;
+  }
+  .product-card-generic {
+    font-size: 12px;
+    color: var(--ink-500, #6b7280);
+    margin-top: 2px;
+  }
+  .product-card-count {
+    font-size: 22px;
+    font-weight: 800;
+    color: #3b82f6;
+    padding: 2px 10px;
+    background: #dbeafe;
+    border-radius: 8px;
+    white-space: nowrap;
+  }
+  body.dark-mode .product-card-count {
+    background: #1e3a5f;
+  }
+  .product-card-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--ink-500, #6b7280);
+  }
+  body.dark-mode .product-card-meta {
+    color: #94a3b8;
+  }
+  .product-bdm-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .product-bdm-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: var(--page-bg, #f9fafb);
+  }
+  body.dark-mode .product-bdm-row {
+    background: #0f172a;
+  }
+  .product-bdm-name {
+    color: var(--ink-700, #374151);
+  }
+  body.dark-mode .product-bdm-name {
+    color: #cbd5e1;
+  }
+  .product-bdm-count {
+    font-weight: 600;
+    color: #3b82f6;
+  }
+  .product-empty {
+    text-align: center;
+    padding: 32px;
+    color: var(--ink-500, #6b7280);
+    font-size: 14px;
+  }
+  @media (max-width: 480px) {
+    .product-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+`;
+
+const ProductPresentationTab = ({ productStats }) => {
+  if (!productStats || productStats.length === 0) {
+    return (
+      <div>
+        <style>{productTabStyles}</style>
+        <p className="product-empty">No product presentations recorded this cycle.</p>
+      </div>
+    );
+  }
+
+  // Data for chart (top 10 products by presentation count)
+  const chartData = productStats.slice(0, 10).map((p) => ({
+    name: p.productName.length > 18 ? p.productName.slice(0, 18) + '...' : p.productName,
+    presentations: p.totalPresentations,
+  }));
+
+  return (
+    <div>
+      <style>{productTabStyles}</style>
+
+      {/* Bar chart of top products */}
+      <div className="chart-card product-chart-wrapper">
+        <div className="chart-card-header">
+          <div className="chart-card-title">
+            <Package size={18} />
+            Top Products by Presentations (Current Cycle)
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 36)}>
+          <BarChart data={chartData} layout="vertical" barGap={4}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--line-200)" horizontal={false} />
+            <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: 'var(--ink-500)' }} />
+            <YAxis
+              type="category"
+              dataKey="name"
+              axisLine={false}
+              tickLine={false}
+              width={140}
+              tick={{ fill: 'var(--ink-500)', fontSize: 13 }}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: 'var(--card-bg)',
+                border: '1px solid var(--line-200)',
+                borderRadius: '8px',
+                color: 'var(--ink-900)',
+                boxShadow: 'var(--shadow-soft)',
+              }}
+              formatter={(value) => [value, 'Presentations']}
+            />
+            <Bar dataKey="presentations" fill={CHART_COLORS.secondary} radius={[0, 4, 4, 0]} maxBarSize={28} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Product cards grid */}
+      <div className="product-grid">
+        {productStats.map((p) => (
+          <div key={p.productId} className="product-card">
+            <div className="product-card-header">
+              <div>
+                <div className="product-card-name">{p.productName}{p.dosage ? ` ${p.dosage}` : ''}</div>
+                {p.genericName && <div className="product-card-generic">{p.genericName}</div>}
+              </div>
+              <div className="product-card-count">{p.totalPresentations}</div>
+            </div>
+            <div className="product-card-meta">
+              <span>Category: {p.category || '—'}</span>
+              <span>VIP Clients: {p.uniqueVipClients}</span>
+            </div>
+            {p.byBdm && p.byBdm.length > 0 && (
+              <div className="product-bdm-list">
+                {p.byBdm.map((b) => (
+                  <div key={b.userId} className="product-bdm-row">
+                    <span className="product-bdm-name">{b.name}</span>
+                    <span className="product-bdm-count">{b.count}x</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+
+/* =============================================================================
+   COMPONENT: DailyHeatmapTab
+   Cross-BDM daily visit heatmap showing visit intensity for W1D1-W4D5.
+   ============================================================================= */
+
+const heatmapTabStyles = `
+  .heatmap-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .heatmap-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    min-width: 700px;
+  }
+  .heatmap-table th,
+  .heatmap-table td {
+    text-align: center;
+    padding: 6px 4px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--line-200, #e5e7eb);
+  }
+  body.dark-mode .heatmap-table th,
+  body.dark-mode .heatmap-table td {
+    border-bottom-color: #334155;
+  }
+  .heatmap-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--card-bg, #fff);
+    font-weight: 700;
+    font-size: 11px;
+    color: var(--ink-500, #6b7280);
+    z-index: 2;
+    padding: 8px 4px;
+  }
+  body.dark-mode .heatmap-table thead th {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+  .heatmap-bdm-name {
+    position: sticky;
+    left: 0;
+    background: var(--card-bg, #fff);
+    text-align: left !important;
+    font-weight: 600;
+    color: var(--ink-900, #111827);
+    white-space: nowrap;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    z-index: 1;
+    min-width: 120px;
+  }
+  body.dark-mode .heatmap-bdm-name {
+    background: #1e293b;
+    color: #f1f5f9;
+  }
+  .heatmap-cell {
+    min-width: 36px;
+    border-radius: 4px;
+    font-weight: 600;
+    transition: background 0.2s;
+  }
+  .heatmap-week-sep {
+    border-left: 2px solid var(--ink-300, #d1d5db) !important;
+  }
+  body.dark-mode .heatmap-week-sep {
+    border-left-color: #475569 !important;
+  }
+  .heat-0 { background: #f3f4f6; color: #9ca3af; }
+  .heat-1 { background: #dcfce7; color: #166534; }
+  .heat-2 { background: #bbf7d0; color: #166534; }
+  .heat-3 { background: #86efac; color: #14532d; }
+  .heat-4 { background: #4ade80; color: #fff; }
+  .heat-5 { background: #22c55e; color: #fff; }
+  body.dark-mode .heat-0 { background: #1e293b; color: #64748b; }
+  body.dark-mode .heat-1 { background: #14532d; color: #86efac; }
+  body.dark-mode .heat-2 { background: #166534; color: #bbf7d0; }
+  body.dark-mode .heat-3 { background: #15803d; color: #dcfce7; }
+  body.dark-mode .heat-4 { background: #16a34a; color: #fff; }
+  body.dark-mode .heat-5 { background: #22c55e; color: #fff; }
+  .heatmap-total {
+    font-weight: 700;
+    color: var(--ink-900, #111827);
+  }
+  body.dark-mode .heatmap-total {
+    color: #f1f5f9;
+  }
+  .heatmap-avg-row td {
+    font-weight: 700;
+    color: #3b82f6;
+    border-top: 2px solid var(--line-200, #e5e7eb);
+  }
+  body.dark-mode .heatmap-avg-row td {
+    color: #60a5fa;
+    border-top-color: #475569;
+  }
+  .heatmap-below-target {
+    box-shadow: inset 0 0 0 2px #ef4444;
+    border-radius: 4px;
+  }
+  .heatmap-empty {
+    text-align: center;
+    padding: 32px;
+    color: var(--ink-500, #6b7280);
+    font-size: 14px;
+  }
+  .heatmap-legend {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--ink-500, #6b7280);
+  }
+  .heatmap-legend-swatch {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+  }
+  @media (max-width: 600px) {
+    .heatmap-bdm-name {
+      min-width: 90px;
+      font-size: 12px;
+    }
+    .heatmap-cell {
+      min-width: 28px;
+      font-size: 11px;
+    }
+  }
+`;
+
+const DailyHeatmapTab = ({ data }) => {
+  if (!data || !data.bdms || data.bdms.length === 0) {
+    return (
+      <div>
+        <style>{heatmapTabStyles}</style>
+        <p className="heatmap-empty">No heatmap data available for this cycle.</p>
+      </div>
+    );
+  }
+
+  const { days, bdms, teamAvg } = data;
+
+  const heatClass = (count) => {
+    if (count <= 0) return 'heat-0';
+    if (count <= 1) return 'heat-1';
+    if (count <= 2) return 'heat-2';
+    if (count <= 3) return 'heat-3';
+    if (count <= 4) return 'heat-4';
+    return 'heat-5';
+  };
+
+  const isWeekStart = (dayLabel) => {
+    return dayLabel.endsWith('D1') && dayLabel !== 'W1D1';
+  };
+
+  return (
+    <div>
+      <style>{heatmapTabStyles}</style>
+
+      {/* Color legend */}
+      <div className="heatmap-legend">
+        <span>Less</span>
+        <span className="heatmap-legend-swatch heat-0" />
+        <span className="heatmap-legend-swatch heat-1" />
+        <span className="heatmap-legend-swatch heat-2" />
+        <span className="heatmap-legend-swatch heat-3" />
+        <span className="heatmap-legend-swatch heat-4" />
+        <span className="heatmap-legend-swatch heat-5" />
+        <span>More</span>
+        <span style={{ marginLeft: 16 }}>
+          <span className="heatmap-below-target" style={{ display: 'inline-block', width: 16, height: 16, borderRadius: 3 }} />
+          {' '}Below target
+        </span>
+      </div>
+
+      <div className="heatmap-wrapper">
+        <table className="heatmap-table">
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', paddingLeft: 12 }}>BDM</th>
+              {days.map((day) => (
+                <th key={day} className={isWeekStart(day) ? 'heatmap-week-sep' : ''}>
+                  {day}
+                </th>
+              ))}
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bdms.map((bdm) => (
+              <tr key={bdm.userId}>
+                <td className="heatmap-bdm-name">{bdm.name}</td>
+                {days.map((day) => {
+                  const count = bdm.daily[day] || 0;
+                  const target = bdm.dailyTarget[day] || 0;
+                  const belowTarget = target > 0 && count < target;
+                  return (
+                    <td
+                      key={day}
+                      className={`heatmap-cell ${heatClass(count)} ${isWeekStart(day) ? 'heatmap-week-sep' : ''} ${belowTarget ? 'heatmap-below-target' : ''}`}
+                      title={`${day}: ${count} visit${count !== 1 ? 's' : ''}${target > 0 ? ` (target: ${target})` : ''}`}
+                    >
+                      {count > 0 ? count : ''}
+                    </td>
+                  );
+                })}
+                <td className="heatmap-total">{bdm.total}</td>
+              </tr>
+            ))}
+            {/* Team average row */}
+            <tr className="heatmap-avg-row">
+              <td className="heatmap-bdm-name" style={{ color: '#3b82f6' }}>Team Avg</td>
+              {days.map((day) => (
+                <td key={day} className={isWeekStart(day) ? 'heatmap-week-sep' : ''}>
+                  {teamAvg[day] || 0}
+                </td>
+              ))}
+              <td>
+                {Math.round(bdms.reduce((sum, b) => sum + b.total, 0) / (bdms.length || 1) * 10) / 10}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

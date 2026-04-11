@@ -63,6 +63,13 @@ const scheduleService = {
     return response.data;
   },
 
+  getCrossBdmHeatmap: async (cycleNumber) => {
+    const params = {};
+    if (cycleNumber != null) params.cycleNumber = cycleNumber;
+    const response = await api.get('/schedules/cross-bdm-heatmap', { params });
+    return response.data;
+  },
+
 };
 
 export default scheduleService;

@@ -138,6 +138,12 @@ const visitService = {
     const response = await api.get('/visits/photo-audit/find-by-hash', { params: { hash } });
     return response.data;
   },
+
+  // Get product presentation statistics for a cycle (Admin only)
+  getProductPresentationStats: async (params = {}) => {
+    const response = await api.get('/visits/product-presentation-stats', { params });
+    return response.data;
+  },
 };
 
 export default visitService;

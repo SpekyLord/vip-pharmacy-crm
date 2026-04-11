@@ -89,6 +89,25 @@ const clientSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Multi-channel contact info
+    whatsappNumber: {
+      type: String,
+      trim: true,
+    },
+    viberId: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Viber ID cannot exceed 100 characters'],
+    },
+    messengerId: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Messenger ID cannot exceed 100 characters'],
+    },
+    preferredChannel: {
+      type: String,
+      trim: true,
+    },
     birthday: {
       type: Date,
     },

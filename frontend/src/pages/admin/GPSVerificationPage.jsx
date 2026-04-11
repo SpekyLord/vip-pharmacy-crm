@@ -4,9 +4,9 @@
  * GPS Location Verification for admin review (Task D.2)
  * Shows real visit GPS data with distance calculations.
  *
- * Threshold: 400 meters
- * - Within 400m = VERIFIED
- * - Beyond 400m = SUSPICIOUS
+ * Threshold: Configurable via ERP Settings (GPS_VERIFICATION_THRESHOLD_M, default 400m)
+ * - Within threshold = VERIFIED
+ * - Beyond threshold = SUSPICIOUS
  *
  * Route: /admin/gps-verification
  */
@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
+import PageGuide from '../../components/common/PageGuide';
 import VisitLocationMap from '../../components/admin/VisitLocationMap';
 import visitService from '../../services/visitService';
 
@@ -456,6 +457,7 @@ const GPSVerificationPage = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [stats, setStats] = useState({ verified: 0, suspicious: 0, noData: 0 });
+  const [thresholdM, setThresholdM] = useState(400);
 
   /* ---------------------------------------------------------------------------
      Fetch GPS Review Data
@@ -471,6 +473,9 @@ const GPSVerificationPage = () => {
       setVisits(res.data || []);
       if (res.stats) {
         setStats(res.stats);
+      }
+      if (res.thresholdM) {
+        setThresholdM(res.thresholdM);
       }
     } catch (err) {
       console.error('Failed to fetch GPS review data:', err);
@@ -506,7 +511,7 @@ const GPSVerificationPage = () => {
       clinicCoords: visit.clinicLocation,
       employeeCoords: visit.employeeLocation,
       accuracy: visit.accuracy || 10,
-      allowedRadius: 400,
+      allowedRadius: thresholdM,
       height: '400px',
     };
   };
@@ -532,16 +537,18 @@ const GPSVerificationPage = () => {
             <h1>GPS Verification</h1>
           </div>
 
+          <PageGuide pageKey="gps-verification" />
+
           {/* Info Banner */}
           <div className="info-banner">
             <div className="info-banner-icon">
               <Info size={20} />
             </div>
             <div className="info-banner-content">
-              <div className="info-banner-title">Verification Threshold: 400 meters</div>
+              <div className="info-banner-title">Verification Threshold: {thresholdM} meters</div>
               <div className="info-banner-text">
-                Visits with BDM photo taken within 400m of the clinic are marked as VERIFIED.
-                Beyond 400m is flagged as SUSPICIOUS.
+                Visits with BDM photo taken within {thresholdM}m of the clinic are marked as VERIFIED.
+                Beyond {thresholdM}m is flagged as SUSPICIOUS.
               </div>
             </div>
           </div>

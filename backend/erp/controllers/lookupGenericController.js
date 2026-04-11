@@ -39,6 +39,31 @@ const SEED_DEFAULTS = {
     { code: 'PICTURE', label: 'PICTURE' },
     { code: 'SIGNED_CALL', label: 'SIGNED CALL' },
     { code: 'VOICE_CALL', label: 'VOICE CALL' },
+    { code: 'WHATSAPP_CALL', label: 'WhatsApp Call' },
+    { code: 'WHATSAPP_MSG', label: 'WhatsApp Message' },
+    { code: 'VIBER_CALL', label: 'Viber Call' },
+    { code: 'VIBER_MSG', label: 'Viber Message' },
+    { code: 'EMAIL_FOLLOWUP', label: 'Email Follow-up' },
+    { code: 'SMS_FOLLOWUP', label: 'SMS Follow-up' },
+  ],
+  COMM_CHANNEL: [
+    { code: 'VIBER', label: 'Viber' },
+    { code: 'MESSENGER', label: 'Messenger' },
+    { code: 'WHATSAPP', label: 'WhatsApp' },
+    { code: 'EMAIL', label: 'Email' },
+    { code: 'GOOGLE_CHAT', label: 'Google Chat' },
+  ],
+  COMM_DIRECTION: [
+    { code: 'OUTBOUND', label: 'Outbound (BDM to Client)' },
+    { code: 'INBOUND', label: 'Inbound (Client to BDM)' },
+  ],
+  MSG_TEMPLATE_CATEGORY: [
+    { code: 'follow_up', label: 'Follow-up' },
+    { code: 'appointment', label: 'Appointment' },
+    { code: 'product_info', label: 'Product Information' },
+    { code: 'greeting', label: 'Greeting' },
+    { code: 'reminder', label: 'Reminder' },
+    { code: 'thank_you', label: 'Thank You' },
   ],
   ENGAGEMENT_LEVEL: [
     { code: '1', label: '1 - Visited 4 times' },
@@ -89,6 +114,15 @@ const SEED_DEFAULTS = {
     'TABLET', 'CAPSULE', 'AMPULE', 'PACK', 'ROLL', 'SET',
     'BAG', 'CAN', 'PAIR', 'PFS', 'JAR', 'YARD',
     'CASE', 'DRUM', 'CARTON', 'REAM', 'DOZEN',
+  ],
+  // Gap 9 — VIP Client type (Doctor model clientType field)
+  VIP_CLIENT_TYPE: [
+    { code: 'MD', label: 'Medical Doctor' },
+    { code: 'PHARMACIST', label: 'Pharmacist' },
+    { code: 'PURCHASER', label: 'Purchaser' },
+    { code: 'ADMINISTRATOR', label: 'Administrator' },
+    { code: 'KEY_DECISION_MAKER', label: 'Key Decision Maker' },
+    { code: 'OTHER', label: 'Other' },
   ],
   // Phase 28 — Sales Goals & KPI
   GOAL_CONFIG: [

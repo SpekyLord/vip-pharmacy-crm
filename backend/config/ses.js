@@ -40,11 +40,7 @@ const sendEmail = async ({ to, subject, html, text }) => {
       console.warn('Email not configured; skipping outbound send.');
     }
 
-    console.log('=== EMAIL SANDBOX MODE (email not sent) ===');
-    console.log(`To: ${to}`);
-    console.log(`Subject: ${subject}`);
-    console.log(`Text: ${text?.substring(0, 200)}...`);
-    console.log('===========================================');
+    console.warn('[Email] Sandbox mode — email not sent (to: %s, subject: %s)', to, subject);
     return { messageId: null };
   }
 

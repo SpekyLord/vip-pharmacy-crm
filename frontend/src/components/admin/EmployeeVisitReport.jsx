@@ -9,7 +9,7 @@
  */
 
 import { useMemo } from 'react';
-import PropTypes from 'prop-types';
+
 
 const reportStyles = `
   .report-container {
@@ -597,52 +597,5 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
   );
 };
 
-EmployeeVisitReport.propTypes = {
-  reportData: PropTypes.shape({
-    employee: PropTypes.shape({
-      _id: PropTypes.string,
-      name: PropTypes.string,
-      email: PropTypes.string,
-    }),
-    areaAssigned: PropTypes.string,
-    doctors: PropTypes.arrayOf(
-      PropTypes.shape({
-        _id: PropTypes.string,
-        name: PropTypes.string,
-        specialization: PropTypes.string,
-        hospital: PropTypes.string,
-        visitFrequency: PropTypes.number,
-        visitGrid: PropTypes.arrayOf(PropTypes.number),
-        visitCount: PropTypes.number,
-        assignedProducts: PropTypes.arrayOf(
-          PropTypes.shape({
-            name: PropTypes.string,
-            priority: PropTypes.number,
-          })
-        ),
-      })
-    ),
-    regularClients: PropTypes.arrayOf(
-      PropTypes.shape({
-        _id: PropTypes.string,
-        firstName: PropTypes.string,
-        lastName: PropTypes.string,
-        specialization: PropTypes.string,
-        clinicOfficeAddress: PropTypes.string,
-        visitCount: PropTypes.number,
-        visits: PropTypes.array,
-      })
-    ),
-    summary: PropTypes.shape({
-      totalDoctors: PropTypes.number,
-      count2x: PropTypes.number,
-      count4x: PropTypes.number,
-      totalVisits: PropTypes.number,
-      totalRegularClientVisits: PropTypes.number,
-      dailyVIPCounts: PropTypes.arrayOf(PropTypes.number),
-    }),
-  }),
-  monthYear: PropTypes.string,
-};
 
 export default EmployeeVisitReport;

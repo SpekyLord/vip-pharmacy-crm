@@ -29,6 +29,7 @@ const {
   adminClearCycle,
   getCPTGrid,
   getCPTGridSummary,
+  getCrossBdmHeatmap,
 } = require('../controllers/scheduleController');
 
 // All routes require authentication
@@ -41,6 +42,7 @@ router.get('/cpt-grid', adminOrEmployee, getCPTGrid);
 
 // Admin-only routes
 router.get('/cpt-grid-summary', adminOnly, getCPTGridSummary);
+router.get('/cross-bdm-heatmap', adminOnly, getCrossBdmHeatmap);
 router.post('/generate', adminOnly, generateSchedule);
 router.post('/reconcile', adminOnly, reconcile);
 router.get('/admin/cycle', adminOnly, adminGetCycle);

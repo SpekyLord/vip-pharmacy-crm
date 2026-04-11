@@ -146,18 +146,10 @@ const userSchema = new mongoose.Schema(
     erp_access: {
       enabled: { type: Boolean, default: false },
       template_id: { type: mongoose.Schema.Types.ObjectId, ref: 'AccessTemplate' },
-      modules: {
-        sales:       { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
-        inventory:   { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
-        collections: { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
-        expenses:    { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
-        reports:     { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
-        people:      { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
-        payroll:     { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
-        accounting:  { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
-        purchasing:  { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
-        banking:     { type: String, enum: ['NONE', 'VIEW', 'FULL'], default: 'NONE' },
-      },
+      // Module access levels — lookup-driven (Phase A)
+      // Keys are ERP_MODULE codes (lowercase), values are NONE | VIEW | FULL
+      // Mixed type so new modules added via Lookup are accepted without schema change
+      modules: { type: mongoose.Schema.Types.Mixed, default: {} },
       can_approve: { type: Boolean, default: false },
       // ═══ Sub-Module Permissions (Phase 16) ═══
       // Dynamic map: { [module]: { [subKey]: Boolean } }

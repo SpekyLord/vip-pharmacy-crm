@@ -718,6 +718,23 @@ const WORKFLOW_GUIDES = {
     tip: 'Top 3 performers are highlighted green; bottom 3 are highlighted red.',
   },
 
+  // ═══ Gap 9 — Rx Correlation ═══
+  'rx-correlation': {
+    title: 'Visit vs Sales Correlation (Rx Proxy)',
+    steps: [
+      'Map CRM products to ERP products in the Product Mapping tab (one-time setup)',
+      'View Territory Summary to compare visit activity against sales and rebates',
+      'Switch between PS and Non-PS pathways to see both engagement chains',
+      'Check MD Partner Detail to see individual partner visit-to-sales-to-rebate ROI',
+      'Use Program/Support tabs to measure which programs drive the most sales per visit',
+    ],
+    next: [
+      { label: 'Performance Ranking', path: '/erp/performance-ranking' },
+      { label: 'Reports', path: '/erp/reports' },
+    ],
+    tip: 'PS products correlate MD visits with sales and partner rebates. Non-PS products correlate hospital stakeholder engagement with product inclusion and sales.',
+  },
+
   // ═══ Expense & Fuel Reports ═══
   'expense-anomalies': {
     title: 'Expense Anomalies',

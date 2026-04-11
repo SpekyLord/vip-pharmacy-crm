@@ -110,8 +110,9 @@ const updateTemplate = catchAsync(async (req, res) => {
   if (description !== undefined) template.description = description;
   if (modules) {
     for (const [key, val] of Object.entries(modules)) {
-      if (template.modules[key] !== undefined) template.modules[key] = val;
+      if (['NONE', 'VIEW', 'FULL'].includes(val)) template.modules[key] = val;
     }
+    template.markModified('modules');
   }
   if (can_approve !== undefined) template.can_approve = can_approve;
   if (sub_permissions !== undefined) {

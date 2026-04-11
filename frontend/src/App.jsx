@@ -41,6 +41,7 @@ const EmployeeInbox = lazyRetry(() => import('./pages/employee/EMP_InboxPage'));
 const CallPlanPage = lazyRetry(() => import('./pages/employee/CallPlanPage'));
 const DoctorDetailPage = lazyRetry(() => import('./pages/employee/DoctorDetailPage'));
 const ProductSpecPage = lazyRetry(() => import('./pages/employee/ProductSpecPage'));
+const CommLogPage = lazyRetry(() => import('./pages/employee/CommLogPage'));
 
 // Admin pages
 const AdminDashboard = lazyRetry(() => import('./pages/admin/AdminDashboard'));
@@ -55,6 +56,8 @@ const PendingApprovalsPage = lazyRetry(() => import('./pages/admin/PendingApprov
 const GPSVerificationPage = lazyRetry(() => import('./pages/admin/GPSVerificationPage'));
 const PhotoAuditPage = lazyRetry(() => import('./pages/admin/PhotoAuditPage'));
 const SettingsPage = lazyRetry(() => import('./pages/admin/SettingsPage'));
+const CommLogsPage = lazyRetry(() => import('./pages/admin/CommLogsPage'));
+const MessageTemplatesPage = lazyRetry(() => import('./pages/admin/MessageTemplatesPage'));
 
 // ERP pages
 const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
@@ -125,6 +128,8 @@ const AccountsPayable = lazyRetry(() => import('./erp/pages/AccountsPayable'));
 
 // Phase 14 — New Reports & Analytics
 const PerformanceRanking = lazyRetry(() => import('./erp/pages/PerformanceRanking'));
+// Gap 9 — Rx Correlation
+const RxCorrelation = lazyRetry(() => import('./erp/pages/RxCorrelation'));
 const ConsignmentAging = lazyRetry(() => import('./erp/pages/ConsignmentAging'));
 const ExpenseAnomalies = lazyRetry(() => import('./erp/pages/ExpenseAnomalies'));
 const FuelEfficiency = lazyRetry(() => import('./erp/pages/FuelEfficiency'));
@@ -270,6 +275,14 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/bdm/comm-log"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN}>
+                <CommLogPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Admin Routes */}
           <Route
@@ -365,6 +378,22 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
                 <SettingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/comm-logs"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
+                <CommLogsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/message-templates"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
+                <MessageTemplatesPage />
               </ProtectedRoute>
             }
           />
@@ -684,6 +713,8 @@ function App() {
           <Route path="/erp/fuel-efficiency" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="reports"><FuelEfficiency /></ProtectedRoute>} />
           <Route path="/erp/cycle-status" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="reports"><CycleStatusDashboard /></ProtectedRoute>} />
           <Route path="/erp/budget-allocations" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="reports"><BudgetAllocations /></ProtectedRoute>} />
+          {/* Gap 9 — Rx Correlation */}
+          <Route path="/erp/rx-correlation" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="reports"><RxCorrelation /></ProtectedRoute>} />
 
           {/* Phase 15 — SAP-Equivalent Improvements */}
           <Route path="/erp/csi-booklets" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales"><CsiBooklets /></ProtectedRoute>} />

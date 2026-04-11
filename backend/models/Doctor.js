@@ -119,6 +119,25 @@ const doctorSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Multi-channel contact info
+    whatsappNumber: {
+      type: String,
+      trim: true,
+    },
+    viberId: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Viber ID cannot exceed 100 characters'],
+    },
+    messengerId: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Messenger ID cannot exceed 100 characters'],
+    },
+    preferredChannel: {
+      type: String,
+      trim: true,
+    },
     birthday: {
       type: Date,
     },
@@ -151,6 +170,19 @@ const doctorSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Lookup: VIP_CLIENT_TYPE — no hardcoded enum (Phase C compliance)
+    // Distinguishes MDs from other stakeholders (pharmacist, purchaser, administrator, etc.)
+    clientType: {
+      type: String,
+      trim: true,
+      default: 'MD',
+    },
+    // Hospital affiliations — VIP Clients can be at multiple hospitals
+    // MDs bring patients to different hospitals; stakeholders may serve multiple facilities
+    hospitals: [{
+      hospital_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' },
+      is_primary: { type: Boolean, default: false },
+    }],
   },
   {
     timestamps: true,
@@ -170,6 +202,8 @@ doctorSchema.index({ assignedTo: 1, isActive: 1 });
 doctorSchema.index({ lastName: 1, firstName: 1 }); // For alphabetical sorting
 doctorSchema.index({ supportDuringCoverage: 1 });
 doctorSchema.index({ programsToImplement: 1 });
+doctorSchema.index({ clientType: 1 });
+doctorSchema.index({ 'hospitals.hospital_id': 1 });
 
 // Virtual: Full name (combines firstName and lastName)
 doctorSchema.virtual('fullName').get(function () {
