@@ -28,6 +28,8 @@ const {
   updateTargetProducts,
   getSpecializations,
   getDoctorsByBdm,
+  previewNameCleanup,
+  applyNameCleanup,
 } = require('../controllers/doctorController');
 
 const { protect } = require('../middleware/auth');
@@ -36,6 +38,10 @@ const { createDoctorValidation, updateDoctorValidation } = require('../middlewar
 
 // All routes require authentication
 router.use(protect);
+
+// Name cleanup tool (admin only) — must be before /:id routes
+router.get('/name-cleanup/preview', adminOnly, previewNameCleanup);
+router.put('/name-cleanup/apply', adminOnly, applyNameCleanup);
 
 // Public routes (accessible by all authenticated users with region filtering)
 router.get('/specializations', getSpecializations);

@@ -19,6 +19,7 @@ const Specialization = require('../models/Specialization');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { ROLES, isAdminLike } = require('../constants/roles');
+const { loadNameRules, generatePreview, findPotentialDuplicates } = require('../utils/nameCleanup');
 
 /**
  * Build access filter based on user role
@@ -707,6 +708,62 @@ const getDoctorsByBdm = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: [...assigned, ...visited] });
 });
 
+/**
+ * GET /api/doctors/name-cleanup/preview
+ * Scan all active VIP Clients and return proposed name changes + duplicates.
+ * Admin only.
+ */
+const previewNameCleanup = catchAsync(async (req, res) => {
+  const doctors = await Doctor.find({ isActive: true })
+    .select('firstName lastName')
+    .lean();
+
+  const rules = await loadNameRules(null);
+  const changes = generatePreview(doctors, rules);
+  const duplicates = findPotentialDuplicates(doctors);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      changes,
+      duplicates,
+      totalScanned: doctors.length,
+    },
+  });
+});
+
+/**
+ * PUT /api/doctors/name-cleanup/apply
+ * Apply admin-approved name changes in bulk.
+ * Body: { approved: [{ _id, firstName, lastName }] }
+ * Admin only.
+ */
+const applyNameCleanup = catchAsync(async (req, res) => {
+  const { approved } = req.body;
+
+  if (!Array.isArray(approved) || approved.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'approved array is required and must not be empty',
+    });
+  }
+
+  const ops = approved.map((item) => ({
+    updateOne: {
+      filter: { _id: item._id },
+      update: { $set: { firstName: item.firstName, lastName: item.lastName } },
+    },
+  }));
+
+  const result = await Doctor.bulkWrite(ops, { ordered: false });
+
+  res.status(200).json({
+    success: true,
+    message: `${result.modifiedCount} VIP Client names updated`,
+    data: { modifiedCount: result.modifiedCount },
+  });
+});
+
 module.exports = {
   getAllDoctors,
   getDoctorById,
@@ -722,4 +779,6 @@ module.exports = {
   updateTargetProducts,
   getSpecializations,
   getDoctorsByBdm,
+  previewNameCleanup,
+  applyNameCleanup,
 };

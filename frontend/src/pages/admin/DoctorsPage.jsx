@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { Stethoscope, RefreshCw } from 'lucide-react';
+import { Stethoscope, RefreshCw, Sparkles, CheckSquare, Square, AlertTriangle, X } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import DoctorManagement from '../../components/admin/DoctorManagement';
@@ -260,6 +260,227 @@ const doctorsPageStyles = `
     background: #450a0a;
     color: #fca5a5;
   }
+
+  /* ===== NAME CLEANER MODAL ===== */
+  .nc-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+  }
+  .nc-modal {
+    background: white;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 800px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+  }
+  .nc-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e5e7eb;
+    flex-shrink: 0;
+  }
+  .nc-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #111827;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+  }
+  .nc-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 4px;
+    border-radius: 6px;
+  }
+  .nc-close:hover { background: #f3f4f6; color: #374151; }
+  .nc-summary {
+    display: flex;
+    gap: 16px;
+    padding: 12px 20px;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 13px;
+    color: #6b7280;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .nc-summary strong { color: #111827; }
+  .nc-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 0 20px;
+    flex-shrink: 0;
+  }
+  .nc-tab {
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #6b7280;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .nc-tab:hover { color: #374151; }
+  .nc-tab.active { color: #f59e0b; border-bottom-color: #f59e0b; }
+  .nc-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+  }
+  .nc-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-bottom: 1px solid #f3f4f6;
+    flex-shrink: 0;
+  }
+  .nc-toolbar button {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    background: white;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .nc-toolbar button:hover { background: #f9fafb; color: #374151; }
+  .nc-toolbar .nc-count { font-size: 12px; color: #9ca3af; margin-left: auto; }
+  .nc-table {
+    width: 100%;
+    font-size: 13px;
+    border-collapse: collapse;
+  }
+  .nc-table th {
+    text-align: left;
+    padding: 8px 12px;
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: #f9fafb;
+    position: sticky;
+    top: 0;
+  }
+  .nc-table td {
+    padding: 8px 12px;
+    border-top: 1px solid #f3f4f6;
+    vertical-align: middle;
+  }
+  .nc-table tr:hover td { background: #fffbeb; }
+  .nc-table .nc-check {
+    width: 32px;
+    text-align: center;
+    cursor: pointer;
+  }
+  .nc-old { color: #dc2626; text-decoration: line-through; font-size: 12px; }
+  .nc-new { color: #059669; font-weight: 600; }
+  .nc-arrow { color: #d1d5db; margin: 0 4px; }
+  .nc-dup-group {
+    margin: 12px 20px;
+    padding: 12px 16px;
+    background: #fefce8;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+  }
+  .nc-dup-group h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #92400e;
+    margin: 0 0 6px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .nc-dup-group ul {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 13px;
+    color: #78350f;
+  }
+  .nc-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #9ca3af;
+    font-size: 14px;
+  }
+  .nc-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 20px;
+    border-top: 1px solid #e5e7eb;
+    flex-shrink: 0;
+  }
+  .nc-footer button {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .nc-cancel {
+    background: white;
+    border: 1px solid #e5e7eb;
+    color: #6b7280;
+  }
+  .nc-cancel:hover { background: #f9fafb; }
+  .nc-apply {
+    background: #f59e0b;
+    border: 1px solid #f59e0b;
+    color: white;
+  }
+  .nc-apply:hover { background: #d97706; }
+  .nc-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Name cleaner dark mode */
+  body.dark-mode .nc-modal { background: #0f172a; }
+  body.dark-mode .nc-header { border-color: #1e293b; }
+  body.dark-mode .nc-header h2 { color: #f1f5f9; }
+  body.dark-mode .nc-close { color: #94a3b8; }
+  body.dark-mode .nc-close:hover { background: #1e293b; color: #e2e8f0; }
+  body.dark-mode .nc-summary { background: #1e293b; border-color: #334155; color: #94a3b8; }
+  body.dark-mode .nc-summary strong { color: #f1f5f9; }
+  body.dark-mode .nc-tabs { border-color: #1e293b; }
+  body.dark-mode .nc-tab { color: #94a3b8; }
+  body.dark-mode .nc-tab:hover { color: #e2e8f0; }
+  body.dark-mode .nc-tab.active { color: #f59e0b; border-bottom-color: #f59e0b; }
+  body.dark-mode .nc-toolbar { border-color: #1e293b; }
+  body.dark-mode .nc-toolbar button { background: #0f172a; border-color: #1e293b; color: #94a3b8; }
+  body.dark-mode .nc-toolbar button:hover { background: #1e293b; color: #e2e8f0; }
+  body.dark-mode .nc-table th { background: #1e293b; color: #94a3b8; }
+  body.dark-mode .nc-table td { border-color: #1e293b; }
+  body.dark-mode .nc-table tr:hover td { background: #1a1a2e; }
+  body.dark-mode .nc-old { color: #f87171; }
+  body.dark-mode .nc-new { color: #34d399; }
+  body.dark-mode .nc-dup-group { background: #1a1a2e; border-color: #854d0e; }
+  body.dark-mode .nc-dup-group h4 { color: #fbbf24; }
+  body.dark-mode .nc-dup-group ul { color: #fcd34d; }
+  body.dark-mode .nc-footer { border-color: #1e293b; }
+  body.dark-mode .nc-cancel { background: #0f172a; border-color: #1e293b; color: #94a3b8; }
+  body.dark-mode .nc-cancel:hover { background: #1e293b; }
 `;
 
 const DoctorsPage = () => {
@@ -301,6 +522,75 @@ const DoctorsPage = () => {
     pages: 0,
   });
 
+  // Name cleaner state
+  const [ncOpen, setNcOpen] = useState(false);
+  const [ncLoading, setNcLoading] = useState(false);
+  const [ncApplying, setNcApplying] = useState(false);
+  const [ncChanges, setNcChanges] = useState([]);
+  const [ncDuplicates, setNcDuplicates] = useState([]);
+  const [ncSelected, setNcSelected] = useState(new Set());
+  const [ncTotalScanned, setNcTotalScanned] = useState(0);
+  const [ncTab, setNcTab] = useState('changes');
+
+  const handleOpenNameCleaner = useCallback(async () => {
+    setNcOpen(true);
+    setNcLoading(true);
+    setNcTab('changes');
+    try {
+      const result = await doctorService.previewNameCleanup();
+      const changes = result.data?.changes || [];
+      const duplicates = result.data?.duplicates || [];
+      setNcChanges(changes);
+      setNcDuplicates(duplicates);
+      setNcTotalScanned(result.data?.totalScanned || 0);
+      setNcSelected(new Set(changes.map((c) => c._id)));
+    } catch (err) {
+      toast.error('Failed to scan names: ' + (err.response?.data?.message || err.message));
+      setNcOpen(false);
+    }
+    setNcLoading(false);
+  }, []);
+
+  // refreshAfterCleanup is set to true when names are applied — triggers fetchDoctors via useEffect
+  const [refreshAfterCleanup, setRefreshAfterCleanup] = useState(0);
+
+  const handleApplyNameCleanup = useCallback(async () => {
+    if (ncSelected.size === 0) return;
+    const approved = ncChanges
+      .filter((c) => ncSelected.has(c._id))
+      .map((c) => ({ _id: c._id, firstName: c.cleanedFirstName, lastName: c.cleanedLastName }));
+
+    if (!window.confirm(`Apply name changes to ${approved.length} VIP Client record${approved.length !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+
+    setNcApplying(true);
+    try {
+      const result = await doctorService.applyNameCleanup(approved);
+      toast.success(result.message || `${result.data?.modifiedCount || 0} names updated`);
+      setNcOpen(false);
+      setRefreshAfterCleanup((k) => k + 1);
+    } catch (err) {
+      toast.error('Failed to apply: ' + (err.response?.data?.message || err.message));
+    }
+    setNcApplying(false);
+  }, [ncSelected, ncChanges]);
+
+  const ncToggle = useCallback((id) => {
+    setNcSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const ncSelectAll = useCallback(() => {
+    setNcSelected(new Set(ncChanges.map((c) => c._id)));
+  }, [ncChanges]);
+
+  const ncDeselectAll = useCallback(() => {
+    setNcSelected(new Set());
+  }, []);
+
   const fetchDoctors = useCallback(async () => {
     try {
       setLoading(true);
@@ -337,6 +627,11 @@ const DoctorsPage = () => {
   useEffect(() => {
     fetchDoctors();
   }, [fetchDoctors]);
+
+  // Re-fetch after name cleanup is applied
+  useEffect(() => {
+    if (refreshAfterCleanup > 0) fetchDoctors();
+  }, [refreshAfterCleanup]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchRegularClients = useCallback(async () => {
     try {
@@ -513,6 +808,10 @@ const DoctorsPage = () => {
               <h1>VIP Client Management</h1>
             </div>
             <div className="page-header-actions">
+              <button className="header-action-btn" onClick={handleOpenNameCleaner}>
+                <Sparkles size={16} />
+                Clean Names
+              </button>
               <button className="header-action-btn" onClick={handleRefresh}>
                 <RefreshCw size={16} />
                 Refresh
@@ -542,6 +841,109 @@ const DoctorsPage = () => {
           />
         </main>
       </div>
+
+      {/* Name Cleaner Modal */}
+      {ncOpen && (
+        <div className="nc-overlay" onClick={() => !ncLoading && !ncApplying && setNcOpen(false)}>
+          <div className="nc-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="nc-header">
+              <h2><Sparkles size={18} /> Name Cleaner</h2>
+              <button className="nc-close" onClick={() => setNcOpen(false)} disabled={ncApplying}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="nc-summary">
+              <span><strong>{ncTotalScanned}</strong> scanned</span>
+              <span><strong>{ncChanges.length}</strong> need cleanup</span>
+              <span><strong>{ncDuplicates.length}</strong> potential duplicates</span>
+            </div>
+
+            <div className="nc-tabs">
+              <button className={`nc-tab ${ncTab === 'changes' ? 'active' : ''}`} onClick={() => setNcTab('changes')}>
+                Changes ({ncChanges.length})
+              </button>
+              <button className={`nc-tab ${ncTab === 'duplicates' ? 'active' : ''}`} onClick={() => setNcTab('duplicates')}>
+                Duplicates ({ncDuplicates.length})
+              </button>
+            </div>
+
+            {ncLoading ? (
+              <div className="nc-empty">Scanning VIP Client names...</div>
+            ) : ncTab === 'changes' ? (
+              <>
+                {ncChanges.length > 0 && (
+                  <div className="nc-toolbar">
+                    <button onClick={ncSelectAll}>Select All</button>
+                    <button onClick={ncDeselectAll}>Deselect All</button>
+                    <span className="nc-count">{ncSelected.size} of {ncChanges.length} selected</span>
+                  </div>
+                )}
+                <div className="nc-body">
+                  {ncChanges.length === 0 ? (
+                    <div className="nc-empty">All VIP Client names are already properly formatted.</div>
+                  ) : (
+                    <table className="nc-table">
+                      <thead>
+                        <tr>
+                          <th className="nc-check"></th>
+                          <th>First Name</th>
+                          <th>Last Name</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ncChanges.map((c) => (
+                          <tr key={c._id}>
+                            <td className="nc-check" onClick={() => ncToggle(c._id)}>
+                              {ncSelected.has(c._id) ? <CheckSquare size={16} color="#f59e0b" /> : <Square size={16} />}
+                            </td>
+                            <td>
+                              {c.originalFirstName !== c.cleanedFirstName ? (
+                                <><span className="nc-old">{c.originalFirstName}</span><span className="nc-arrow">&rarr;</span><span className="nc-new">{c.cleanedFirstName}</span></>
+                              ) : c.originalFirstName}
+                            </td>
+                            <td>
+                              {c.originalLastName !== c.cleanedLastName ? (
+                                <><span className="nc-old">{c.originalLastName}</span><span className="nc-arrow">&rarr;</span><span className="nc-new">{c.cleanedLastName}</span></>
+                              ) : c.originalLastName}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="nc-body">
+                {ncDuplicates.length === 0 ? (
+                  <div className="nc-empty">No potential duplicates found.</div>
+                ) : (
+                  ncDuplicates.map((group, idx) => (
+                    <div key={idx} className="nc-dup-group">
+                      <h4><AlertTriangle size={14} /> Potential Duplicate Group</h4>
+                      <ul>
+                        {group.map((d) => (
+                          <li key={d._id}>{d.firstName} {d.lastName}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            <div className="nc-footer">
+              <button className="nc-cancel" onClick={() => setNcOpen(false)} disabled={ncApplying}>Cancel</button>
+              {ncTab === 'changes' && ncChanges.length > 0 && (
+                <button className="nc-apply" onClick={handleApplyNameCleanup} disabled={ncSelected.size === 0 || ncApplying}>
+                  {ncApplying ? 'Applying...' : `Apply ${ncSelected.size} Change${ncSelected.size !== 1 ? 's' : ''}`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -67,12 +67,13 @@ const PAGE_GUIDES = {
       'Click a VIP Client to view or edit their full profile',
       'Use the Add button to create new VIP Client records — set Client Type (MD, Pharmacist, etc.) and link Hospital affiliations',
       'Export VIP Clients to Excel using the Call Plan Template format',
+      'Use Clean Names to fix ALL CAPS or inconsistent name formatting — preview changes before applying',
     ],
     next: [
       { label: 'BDM Management', path: '/admin/employees' },
       { label: 'Reports', path: '/admin/reports' },
     ],
-    tip: 'Client Type distinguishes MDs from other stakeholders (pharmacist, purchaser, administrator). Hospital affiliations link VIP Clients to HEAT data.',
+    tip: 'Client Type distinguishes MDs from other stakeholders (pharmacist, purchaser, administrator). Names are auto-cleaned on new entries and Excel imports. Use Clean Names for existing records.',
   },
   'employees-page': {
     title: 'BDM Management',

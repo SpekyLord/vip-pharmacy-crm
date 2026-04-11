@@ -82,6 +82,18 @@ const doctorService = {
     const response = await api.get('/doctors/specializations');
     return response.data;
   },
+
+  // Name cleanup: preview proposed changes
+  previewNameCleanup: async () => {
+    const response = await api.get('/doctors/name-cleanup/preview');
+    return response.data;
+  },
+
+  // Name cleanup: apply approved changes
+  applyNameCleanup: async (approved) => {
+    const response = await api.put('/doctors/name-cleanup/apply', { approved });
+    return response.data;
+  },
 };
 
 export default doctorService;
