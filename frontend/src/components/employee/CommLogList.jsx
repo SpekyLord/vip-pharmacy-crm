@@ -101,7 +101,7 @@ const CommLogList = ({ mode = 'my', doctorId, clientId, refreshKey = 0, adminFil
       console.error('Failed to fetch comm logs:', err);
     }
     setLoading(false);
-  }, [mode, doctorId, clientId, pagination.page, channelFilter, startDate, endDate, adminFilters, refreshKey]);
+  }, [mode, doctorId, clientId, pagination.page, pagination.limit, channelFilter, startDate, endDate, adminFilters, refreshKey]);
 
   useEffect(() => {
     fetchLogs();
