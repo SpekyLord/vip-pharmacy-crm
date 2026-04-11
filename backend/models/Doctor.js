@@ -237,6 +237,24 @@ doctorSchema.methods.isAvailableOnDay = function (dayOfWeek) {
   return this.clinicSchedule?.[day] !== false;
 };
 
+// Pre-save hook: auto-clean firstName/lastName to proper case (lookup-driven)
+doctorSchema.pre('save', async function (next) {
+  if (!this.isModified('firstName') && !this.isModified('lastName')) return next();
+  try {
+    const { loadNameRules, cleanName } = require('../utils/nameCleanup');
+    const rules = await loadNameRules(null);
+    if (this.isModified('firstName') && this.firstName) {
+      this.firstName = cleanName(this.firstName, rules);
+    }
+    if (this.isModified('lastName') && this.lastName) {
+      this.lastName = cleanName(this.lastName, rules);
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Pre-delete hook to cascade delete related ProductAssignments
 doctorSchema.pre('deleteOne', { document: true, query: false }, async function (next) {
   try {

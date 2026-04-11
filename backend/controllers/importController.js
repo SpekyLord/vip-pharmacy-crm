@@ -19,6 +19,7 @@ const { parseCPTWorkbook, detectDuplicates } = require('../utils/excelParser');
 const { catchAsync, ApiError } = require('../middleware/errorHandler');
 const { getCycleStartDate } = require('../utils/scheduleCycleUtils');
 const { ROLES } = require('../constants/roles');
+const { loadNameRules, cleanName } = require('../utils/nameCleanup');
 
 /**
  * POST /api/imports/upload
@@ -162,10 +163,10 @@ const getById = catchAsync(async (req, res) => {
  * Build doctor fields object from parsed data.
  * Shared helper for the approve flow.
  */
-const buildDoctorFields = (parsed, bdmId, productMap, activePrograms, activeSupports) => {
+const buildDoctorFields = (parsed, bdmId, productMap, activePrograms, activeSupports, nameRules) => {
   const doctorFields = {
-    firstName: parsed.firstName,
-    lastName: parsed.lastName,
+    firstName: nameRules ? cleanName(parsed.firstName, nameRules) : parsed.firstName,
+    lastName: nameRules ? cleanName(parsed.lastName, nameRules) : parsed.lastName,
     specialization: parsed.specialization || undefined,
     clinicOfficeAddress: parsed.clinicAddress || undefined,
     outletIndicator: parsed.outletIndicator || undefined,
@@ -280,10 +281,11 @@ const approve = catchAsync(async (req, res) => {
     }
   }
 
-  // Pre-fetch active programs and support types for matching
-  const [activePrograms, activeSupports] = await Promise.all([
+  // Pre-fetch active programs, support types, and name cleanup rules
+  const [activePrograms, activeSupports, nameRules] = await Promise.all([
     Program.find({ isActive: true }).distinct('name'),
     SupportType.find({ isActive: true }).distinct('name'),
+    loadNameRules(null),
   ]);
 
   let doctorsCreated = 0;
@@ -296,7 +298,7 @@ const approve = catchAsync(async (req, res) => {
   const updateOps = [];
 
   for (const parsed of batch.parsedDoctors) {
-    const fields = buildDoctorFields(parsed, bdmId, productMap, activePrograms, activeSupports);
+    const fields = buildDoctorFields(parsed, bdmId, productMap, activePrograms, activeSupports, nameRules);
 
     if (parsed.isExisting && parsed.existingDoctorId) {
       // Queue update

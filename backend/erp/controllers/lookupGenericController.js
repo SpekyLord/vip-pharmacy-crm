@@ -384,6 +384,30 @@ const SEED_DEFAULTS = {
   PHOTO_FLAG: ['date_mismatch', 'duplicate_photo'],
   MESSAGE_CATEGORY: ['announcement', 'payroll', 'leave', 'policy', 'system', 'compliance_alert', 'other', 'ai_coaching', 'ai_schedule', 'ai_alert'],
   MESSAGE_PRIORITY: ['normal', 'important', 'high'],
+  // Name cleanup rules — used by backend/utils/nameCleanup.js
+  NAME_PARTICLE: [
+    { code: 'DE', label: 'de', metadata: { position: 'any' } },
+    { code: 'DEL', label: 'del', metadata: { position: 'any' } },
+    { code: 'DELA', label: 'dela', metadata: { position: 'any' } },
+    { code: 'DELOS', label: 'delos', metadata: { position: 'any' } },
+    { code: 'NG', label: 'ng', metadata: { position: 'any' } },
+    { code: 'LA', label: 'la', metadata: { after: 'DE' } },
+    { code: 'LOS', label: 'los', metadata: { after: 'DE' } },
+    { code: 'LAS', label: 'las', metadata: { after: 'DE' } },
+  ],
+  NAME_SUFFIX: [
+    { code: 'JR', label: 'Jr.', metadata: {} },
+    { code: 'SR', label: 'Sr.', metadata: {} },
+    { code: 'II', label: 'II', metadata: {} },
+    { code: 'III', label: 'III', metadata: {} },
+    { code: 'IV', label: 'IV', metadata: {} },
+    { code: 'V', label: 'V', metadata: {} },
+  ],
+  NAME_PREFIX: [
+    { code: 'MC', label: 'Mc', metadata: { min_length: 3 } },
+    { code: 'MAC', label: 'Mac', metadata: { min_length: 4 } },
+    { code: 'O_APOSTROPHE', label: "O'", metadata: { min_length: 3 } },
+  ],
 };
 
 // List all distinct categories for current entity
