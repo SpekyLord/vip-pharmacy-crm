@@ -36,6 +36,19 @@ const createSmer = catchAsync(async (req, res) => {
   const settings = await Settings.getSettings();
   const perdiemRate = req.body.perdiem_rate || settings.PERDIEM_RATE_DEFAULT || 800;
 
+  // Auto-resolve travel advance from CompProfile → Settings fallback (0 or missing = use default)
+  let travelAdvance = req.body.travel_advance;
+  if (!travelAdvance || travelAdvance === 0) {
+    const PeopleMaster = require('../models/PeopleMaster');
+    const CompProfile = require('../models/CompProfile');
+    travelAdvance = settings.REVOLVING_FUND_AMOUNT || 8000;
+    const person = await PeopleMaster.findOne({ user_id: req.bdmId, entity_id: req.entityId }).select('_id').lean();
+    if (person) {
+      const comp = await CompProfile.findOne({ person_id: person._id, entity_id: req.entityId, status: 'ACTIVE' }).sort({ effective_date: -1 }).lean();
+      if (comp?.revolving_fund_amount > 0) travelAdvance = comp.revolving_fund_amount;
+    }
+  }
+
   // Auto-compute per diem for each daily entry (skip overridden entries)
   let dailyEntries = (req.body.daily_entries || []).map(entry => {
     if (entry.perdiem_override && entry.override_tier) {
@@ -57,6 +70,7 @@ const createSmer = catchAsync(async (req, res) => {
 
   const smer = await SmerEntry.create({
     ...req.body,
+    travel_advance: travelAdvance,
     daily_entries: dailyEntries,
     perdiem_rate: perdiemRate,
     entity_id: req.entityId,
@@ -1933,6 +1947,44 @@ const saveBatchExpenses = catchAsync(async (req, res) => {
   });
 });
 
+// ═══════════════════════════════════════════
+// REVOLVING FUND — Resolve per-BDM amount
+// ═══════════════════════════════════════════
+
+/**
+ * Resolve revolving fund amount for the current BDM.
+ * CompProfile.revolving_fund_amount (per-person) → Settings.REVOLVING_FUND_AMOUNT (global fallback).
+ * 0 in CompProfile means "use global default".
+ */
+const getRevolvingFundAmount = catchAsync(async (req, res) => {
+  const settings = await Settings.getSettings();
+  const PeopleMaster = require('../models/PeopleMaster');
+  const CompProfile = require('../models/CompProfile');
+
+  let amount = settings.REVOLVING_FUND_AMOUNT || 8000;
+  let source = 'SETTINGS';
+
+  const person = await PeopleMaster.findOne({
+    user_id: req.bdmId,
+    entity_id: req.entityId
+  }).select('_id').lean();
+
+  if (person) {
+    const comp = await CompProfile.findOne({
+      person_id: person._id,
+      entity_id: req.entityId,
+      status: 'ACTIVE'
+    }).sort({ effective_date: -1 }).lean();
+
+    if (comp?.revolving_fund_amount > 0) {
+      amount = comp.revolving_fund_amount;
+      source = 'COMP_PROFILE';
+    }
+  }
+
+  res.json({ success: true, data: { amount, source } });
+});
+
 module.exports = {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
@@ -1950,5 +2002,7 @@ module.exports = {
   // Batch Upload
   batchUploadExpenses, saveBatchExpenses,
   // Summary
-  getExpenseSummary
+  getExpenseSummary,
+  // Revolving Fund
+  getRevolvingFundAmount
 };

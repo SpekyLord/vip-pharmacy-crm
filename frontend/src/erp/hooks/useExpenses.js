@@ -55,6 +55,9 @@ export default function useExpenses() {
   const getPendingPartnerRebates = () => api.get('/expenses/prf-calf/pending-rebates');
   const getPendingCalfLines = () => api.get('/expenses/prf-calf/pending-calf');
 
+  // ═══ Revolving Fund ═══
+  const getRevolvingFundAmount = () => api.get('/expenses/revolving-fund-amount');
+
   return {
     ...api,
     getExpenseSummary,
@@ -72,6 +75,8 @@ export default function useExpenses() {
     getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf,
     validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines,
     // Batch Upload
-    batchUploadExpenses, saveBatchExpenses
+    batchUploadExpenses, saveBatchExpenses,
+    // Revolving Fund
+    getRevolvingFundAmount
   };
 }

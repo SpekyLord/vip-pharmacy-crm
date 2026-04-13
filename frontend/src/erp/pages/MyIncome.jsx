@@ -140,6 +140,10 @@ export default function MyIncome() {
   const [newDedAmount, setNewDedAmount] = useState('');
   const [newDedDesc, setNewDedDesc] = useState('');
 
+  // ── Projection state ──
+  const [projection, setProjection] = useState(null);
+  const [projLoading, setProjLoading] = useState(false);
+
   // ── Schedule state ──
   const [schedules, setSchedules] = useState([]);
   const [selectedSched, setSelectedSched] = useState(null);
@@ -168,10 +172,33 @@ export default function MyIncome() {
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Load projection ──
+  const loadProjection = useCallback(async () => {
+    if (cycle === 'ALL') { setProjection(null); return; }
+    setProjLoading(true);
+    try {
+      const res = await inc.getIncomeProjection({ period, cycle });
+      setProjection(res?.data || null);
+    } catch { setProjection(null); }
+    setProjLoading(false);
+  }, [period, cycle]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
-    if (activeTab === 'payslips') loadReports();
+    if (activeTab === 'payslips') { loadReports(); loadProjection(); }
     else loadSchedules();
-  }, [activeTab, loadReports, loadSchedules]);
+  }, [activeTab, loadReports, loadSchedules, loadProjection]);
+
+  // ── Projection handlers ──
+  const handleRequestGeneration = async () => {
+    if (cycle === 'ALL') { showError(null, 'Select a specific cycle (C1, C2, or Monthly)'); return; }
+    setLoading(true);
+    try {
+      await inc.requestIncomeGeneration({ period, cycle });
+      await loadReports();
+      await loadProjection();
+    } catch (err) { showError(err, 'Could not generate payslip'); }
+    setLoading(false);
+  };
 
   // ── Payslip handlers ──
   const handleSelectPayslip = async (report) => {
@@ -311,6 +338,107 @@ export default function MyIncome() {
           {/* ═══════════════════ PAYSLIPS TAB ═══════════════════ */}
           {activeTab === 'payslips' && !loading && (
             <>
+              {/* ── Income Projection Card ── */}
+              {projection && cycle !== 'ALL' && (() => {
+                const p = projection.projection || {};
+                const d = projection.deductions || {};
+                const t = projection.totals || {};
+                const rf = projection.revolving_fund || {};
+                const cs = projection.calf_summary || {};
+                const smer = p.smer || {};
+                const comm = p.core_commission || {};
+                const calfR = p.calf_reimbursement || {};
+                const ps = p.profit_sharing || {};
+                const bon = p.bonus || {};
+                const dCalf = d.calf_excess || {};
+                const dGas = d.personal_gas || {};
+                const dSched = d.schedule_installments || {};
+                const dMan = d.manual_lines || {};
+                return (
+                <div className="payslip-card" style={{ borderColor: '#93c5fd', background: 'linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%)' }}>
+                  <h3 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Income Projection ({period}, {cycle})</span>
+                    {projection.has_official_report && <span className={`badge ${STATUS_BADGES[projection.official_status] || ''}`}>{projection.official_status}</span>}
+                  </h3>
+
+                  <div className="payslip-grid">
+                    {/* Earnings */}
+                    <div>
+                      <table className="payslip-table">
+                        <thead><tr><th colSpan={2}>Earnings</th></tr></thead>
+                        <tbody>
+                          <tr><td>SMER Reimbursable</td><td>{fmt(smer.amount)}{(smer.ore_included || 0) > 0 && <span style={{ fontSize: 10, color: '#6b7280' }}> (incl. ORE {fmt(smer.ore_included)})</span>}</td></tr>
+                          <tr><td>Commission (confirmed)</td><td>{fmt(comm.posted)} <span style={{ fontSize: 10, color: '#6b7280' }}>{comm.posted_count || 0} CRs</span></td></tr>
+                          {(comm.pending || 0) > 0 && <tr><td>Commission (pending)</td><td style={{ color: '#b45309' }}>{fmt(comm.pending)} <span style={{ fontSize: 10 }}>{comm.pending_count || 0} CRs</span></td></tr>}
+                          {(calfR.amount || 0) > 0 && <tr><td>CALF Reimbursement</td><td>{fmt(calfR.amount)}</td></tr>}
+                          {(ps.amount || 0) > 0 && <tr><td>Profit Sharing</td><td>{fmt(ps.amount)}</td></tr>}
+                          {(bon.amount || 0) > 0 && <tr><td>Bonus</td><td>{fmt(bon.amount)}</td></tr>}
+                          <tr className="total-row"><td>Projected Earnings</td><td>{fmt(t.projected_earnings)}</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Deductions + Revolving Fund */}
+                    <div>
+                      <table className="payslip-table">
+                        <thead><tr><th colSpan={2}>Deductions</th></tr></thead>
+                        <tbody>
+                          {(dCalf.amount || 0) > 0 && <tr><td>CALF Excess Return</td><td>{fmt(dCalf.amount)}</td></tr>}
+                          {(dGas.amount || 0) > 0 && <tr><td>Personal Gas</td><td>{fmt(dGas.amount)}</td></tr>}
+                          {(dSched.amount || 0) > 0 && <tr><td>Schedule ({dSched.count || 0})</td><td>{fmt(dSched.amount)}</td></tr>}
+                          {(dMan.count || 0) > 0 && <tr><td>Manual ({dMan.count})</td><td>{fmt(dMan.amount)}</td></tr>}
+                          <tr className="total-row"><td>Total Deductions</td><td>{fmt(t.total_deductions)}</td></tr>
+                        </tbody>
+                      </table>
+
+                      {(rf.travel_advance || 0) > 0 && (
+                        <table className="payslip-table" style={{ marginTop: 8 }}>
+                          <thead><tr><th colSpan={2}>Revolving Fund</th></tr></thead>
+                          <tbody>
+                            <tr><td>Travel Advance</td><td>{fmt(rf.travel_advance)}</td></tr>
+                            <tr><td>Reimbursable</td><td>{fmt(rf.total_reimbursable)}</td></tr>
+                            <tr style={{ fontWeight: 600 }}><td>Balance on Hand</td><td style={{ color: (rf.balance_on_hand || 0) >= 0 ? '#16a34a' : '#dc2626' }}>{fmt(rf.balance_on_hand)}</td></tr>
+                          </tbody>
+                        </table>
+                      )}
+
+                      {(cs.total_advance || 0) > 0 && (
+                        <table className="payslip-table" style={{ marginTop: 8 }}>
+                          <thead><tr><th colSpan={2}>CALF Summary</th></tr></thead>
+                          <tbody>
+                            <tr><td>Advance</td><td>{fmt(cs.total_advance)}</td></tr>
+                            <tr><td>Liquidated</td><td>{fmt(cs.total_liquidated)}</td></tr>
+                            <tr style={{ fontWeight: 600 }}><td>Balance</td><td style={{ color: (cs.balance || 0) >= 0 ? '#b45309' : '#16a34a' }}>{fmt(cs.balance)} {(cs.balance || 0) > 0 ? '(deducted)' : (cs.balance || 0) < 0 ? '(reimbursed)' : ''}</td></tr>
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="net-pay" style={{ marginTop: 12 }}>
+                    <div className="label">Projected Net Pay</div>
+                    {fmt(t.projected_net)}
+                  </div>
+
+                  <div className="workflow-actions" style={{ marginTop: 12 }}>
+                    {(!projection.has_official_report || ['GENERATED', 'RETURNED', 'REVIEWED'].includes(projection.official_status)) && (
+                      <button className="btn btn-primary" onClick={handleRequestGeneration} disabled={loading}>
+                        {projection.has_official_report ? 'Regenerate Payslip' : 'Request Payslip Generation'}
+                      </button>
+                    )}
+                    {projection.has_official_report && ['BDM_CONFIRMED', 'CREDITED'].includes(projection.official_status) && (
+                      <span style={{ fontSize: 12, color: 'var(--erp-muted)', alignSelf: 'center' }}>Payslip is locked ({projection.official_status})</span>
+                    )}
+                  </div>
+                </div>
+                );
+              })()}
+              {cycle === 'ALL' && !projLoading && (
+                <div style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 12, fontSize: 13, background: '#f8fafc', borderRadius: 8, marginBottom: 16 }}>
+                  Select a specific cycle (C1, C2, or Monthly) to see your income projection.
+                </div>
+              )}
+
               {/* List */}
               {payslipView === 'list' && (
                 <div>

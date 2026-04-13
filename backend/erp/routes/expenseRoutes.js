@@ -27,13 +27,18 @@ const {
   // Batch Upload
   batchUploadExpenses, saveBatchExpenses,
   // Summary
-  getExpenseSummary
+  getExpenseSummary,
+  // Revolving Fund
+  getRevolvingFundAmount
 } = require('../controllers/expenseController');
 
 const router = express.Router();
 
 // ═══ Summary ═══
 router.get('/summary', getExpenseSummary);
+
+// ═══ Revolving Fund ═══
+router.get('/revolving-fund-amount', getRevolvingFundAmount);
 
 // ═══ SMER ═══
 router.post('/smer', createSmer);
