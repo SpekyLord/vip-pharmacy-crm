@@ -298,10 +298,10 @@ export default function ApprovalManager() {
                           {d.grn_date && <div><strong>GRN Date:</strong> {new Date(d.grn_date).toLocaleDateString()}</div>}
                           {d.notes && <div style={{ color: 'var(--erp-muted)', marginBottom: 6 }}>{d.notes}</div>}
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
-                            <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Item</th><th style={{ padding: '4px 8px' }}>Batch</th><th style={{ padding: '4px 8px' }}>Expiry</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th></tr></thead>
+                            <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Item</th><th style={{ padding: '4px 8px' }}>Batch</th><th style={{ padding: '4px 8px' }}>Expiry</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Stock</th></tr></thead>
                             <tbody>
                               {(d.line_items || []).map((li, i) => (
-                                <tr key={i}><td style={{ padding: '3px 8px' }}>{li.item_key}</td><td style={{ padding: '3px 8px' }}>{li.batch_lot_no}</td><td style={{ padding: '3px 8px' }}>{li.expiry_date ? new Date(li.expiry_date).toLocaleDateString() : '-'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.qty}</td></tr>
+                                <tr key={i}><td style={{ padding: '3px 8px' }}>{li.product_name || li.item_key || '—'}</td><td style={{ padding: '3px 8px' }}>{li.batch_lot_no}</td><td style={{ padding: '3px 8px' }}>{li.expiry_date ? new Date(li.expiry_date).toLocaleDateString() : '-'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.qty}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.available_stock != null ? li.available_stock : '—'}</td></tr>
                               ))}
                             </tbody>
                           </table>
@@ -360,10 +360,10 @@ export default function ApprovalManager() {
                           </div>
                           {(d.line_items || []).length > 0 && (
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
-                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Product</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Unit Price</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Line Total</th></tr></thead>
+                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Product</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Stock</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Unit Price</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Line Total</th></tr></thead>
                               <tbody>
                                 {(d.line_items || []).map((li, i) => (
-                                  <tr key={i}><td style={{ padding: '3px 8px' }}>{li.product_id || '—'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.qty}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.unit_price)}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.line_total)}</td></tr>
+                                  <tr key={i}><td style={{ padding: '3px 8px' }}>{li.product_name || li.item_key || '—'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.qty}</td><td style={{ padding: '3px 8px', textAlign: 'right', color: li.available_stock != null && li.available_stock < li.qty ? 'var(--erp-danger, #d32f2f)' : undefined }}>{li.available_stock != null ? li.available_stock : '—'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.unit_price)}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.line_total)}</td></tr>
                                 ))}
                               </tbody>
                             </table>
