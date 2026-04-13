@@ -17,6 +17,7 @@ const IncomeReport = require('../models/IncomeReport');
 const GrnEntry = require('../models/GrnEntry');
 const ApprovalRule = require('../models/ApprovalRule');
 const Lookup = require('../models/Lookup');
+const InventoryLedger = require('../models/InventoryLedger');
 
 // Lazy-load optional models (may not exist in all deployments)
 function getModel(name) {
@@ -161,8 +162,10 @@ const MODULE_QUERIES = [
         approve_data: { type: 'grn', id: item._id },
         details: {
           grn_date: item.grn_date,
+          _warehouse_id: item.warehouse_id,
+          _bdm_id: item.bdm_id?._id || item.bdm_id,
           line_items: (item.line_items || []).map(li => ({
-            item_key: li.item_key, batch_lot_no: li.batch_lot_no,
+            product_id: li.product_id, item_key: li.item_key, batch_lot_no: li.batch_lot_no,
             expiry_date: li.expiry_date, qty: li.qty
           })),
           notes: item.notes
@@ -181,7 +184,7 @@ const MODULE_QUERIES = [
         entity_id: entityId,
         status: { $in: ['COMPUTED', 'REVIEWED'] }
       })
-        .populate('person_id', 'name email')
+        .populate('person_id', 'full_name email')
         .sort({ updatedAt: -1 })
         .lean();
       return items.map(item => ({
@@ -190,9 +193,9 @@ const MODULE_QUERIES = [
         doc_type: 'PAYSLIP',
         doc_id: item._id,
         doc_ref: `${item.period}-${item.cycle || 'MONTHLY'}`,
-        description: `${item.person_id?.name || 'Employee'} — ${item.period} — Net: ₱${(item.net_pay || 0).toLocaleString()}`,
+        description: `${item.person_id?.full_name || 'Employee'} — ${item.period} — Net: ₱${(item.net_pay || 0).toLocaleString()}`,
         amount: item.net_pay || 0,
-        submitted_by: item.person_id?.name || 'Unknown',
+        submitted_by: item.person_id?.full_name || 'Unknown',
         submitted_at: item.updatedAt,
         status: item.status === 'COMPUTED' ? 'PENDING_REVIEW' : 'PENDING_APPROVAL',
         current_action: item.status === 'COMPUTED' ? 'Review' : 'Approve',
@@ -222,7 +225,7 @@ const MODULE_QUERIES = [
         entity_id: entityId,
         status: { $in: ['SUBMITTED', 'REVIEWED'] }
       })
-        .populate('person_id', 'name email')
+        .populate('person_id', 'full_name email')
         .sort({ updatedAt: -1 })
         .lean();
       return items.map(item => ({
@@ -231,9 +234,9 @@ const MODULE_QUERIES = [
         doc_type: 'KPI_RATING',
         doc_id: item._id,
         doc_ref: `${item.period || ''} ${item.period_type || ''}`.trim(),
-        description: `${item.person_id?.name || 'Member'} — ${item.period_type || ''} self-rating`,
+        description: `${item.person_id?.full_name || 'Member'} — ${item.period_type || ''} self-rating`,
         amount: 0,
-        submitted_by: item.person_id?.name || 'Unknown',
+        submitted_by: item.person_id?.full_name || 'Unknown',
         submitted_at: item.submitted_at || item.updatedAt,
         status: item.status === 'SUBMITTED' ? 'PENDING_REVIEW' : 'PENDING_APPROVAL',
         current_action: item.status === 'SUBMITTED' ? 'Review' : 'Approve',
@@ -266,8 +269,8 @@ const MODULE_QUERIES = [
       if (!SalesLine) return [];
       const items = await SalesLine.find({ entity_id: entityId, status: 'VALID' })
         .populate('bdm_id', 'name email')
-        .populate('hospital_id', 'name')
-        .populate('customer_id', 'name')
+        .populate('hospital_id', 'hospital_name')
+        .populate('customer_id', 'customer_name')
         .sort({ createdAt: -1 })
         .lean();
       return items.map(item => ({
@@ -276,7 +279,7 @@ const MODULE_QUERIES = [
         doc_type: item.sale_type || 'CSI',
         doc_id: item._id,
         doc_ref: item.doc_ref || item.invoice_number || `INV-${String(item._id).slice(-6)}`,
-        description: `${item.bdm_id?.name || 'BDM'} — ${item.sale_type || 'CSI'} ${item.doc_ref || ''} — ${(item.hospital_id?.name || item.customer_id?.name || 'Customer')}`,
+        description: `${item.bdm_id?.name || 'BDM'} — ${item.sale_type || 'CSI'} ${item.doc_ref || ''} — ${(item.hospital_id?.hospital_name || item.customer_id?.customer_name || 'Customer')}`,
         amount: item.invoice_total || 0,
         submitted_by: item.bdm_id?.name || 'Unknown',
         submitted_at: item.createdAt,
@@ -288,12 +291,14 @@ const MODULE_QUERIES = [
           sale_type: item.sale_type,
           csi_date: item.csi_date,
           invoice_number: item.invoice_number,
-          hospital: item.hospital_id?.name,
-          customer: item.customer_id?.name,
+          hospital: item.hospital_id?.hospital_name,
+          customer: item.customer_id?.customer_name,
           payment_mode: item.payment_mode,
           invoice_total: item.invoice_total,
           total_vat: item.total_vat,
           total_net_of_vat: item.total_net_of_vat,
+          _warehouse_id: item.warehouse_id,
+          _bdm_id: item.bdm_id?._id || item.bdm_id,
           line_items: (item.line_items || []).map(li => ({
             product_id: li.product_id, qty: li.qty, unit_price: li.unit_price,
             line_total: li.line_total, vat_amount: li.vat_amount
@@ -311,8 +316,8 @@ const MODULE_QUERIES = [
       if (!Collection) return [];
       const items = await Collection.find({ entity_id: entityId, status: 'VALID' })
         .populate('bdm_id', 'name email')
-        .populate('hospital_id', 'name')
-        .populate('customer_id', 'name')
+        .populate('hospital_id', 'hospital_name')
+        .populate('customer_id', 'customer_name')
         .sort({ createdAt: -1 })
         .lean();
       return items.map(item => ({
@@ -321,7 +326,7 @@ const MODULE_QUERIES = [
         doc_type: 'CR',
         doc_id: item._id,
         doc_ref: item.cr_no || `CR-${String(item._id).slice(-6)}`,
-        description: `${item.bdm_id?.name || 'BDM'} — CR ${item.cr_no || ''} — ${(item.hospital_id?.name || item.customer_id?.name || 'Customer')}`,
+        description: `${item.bdm_id?.name || 'BDM'} — CR ${item.cr_no || ''} — ${(item.hospital_id?.hospital_name || item.customer_id?.customer_name || 'Customer')}`,
         amount: item.cr_amount || 0,
         submitted_by: item.bdm_id?.name || 'Unknown',
         submitted_at: item.createdAt,
@@ -332,8 +337,8 @@ const MODULE_QUERIES = [
         details: {
           cr_date: item.cr_date,
           cr_amount: item.cr_amount,
-          hospital: item.hospital_id?.name,
-          customer: item.customer_id?.name,
+          hospital: item.hospital_id?.hospital_name,
+          customer: item.customer_id?.customer_name,
           payment_mode: item.payment_mode,
           check_no: item.check_no,
           total_csi_amount: item.total_csi_amount,
@@ -650,6 +655,118 @@ async function getUniversalPending(entityId, userId, userRole, entityIds) {
     seen.add(item.id);
     return true;
   }).sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+
+  // ── Enrich line_items: product names + available stock ──
+  // 1. Collect all product_id values and warehouse/bdm context from items with line_items
+  const productIdSet = new Set();
+  const stockQueries = []; // { warehouseId, bdmId, productId } tuples for stock lookup
+  for (const item of allItems) {
+    const details = item.details || {};
+    const whId = details._warehouse_id;
+    const bdmId = details._bdm_id;
+    for (const li of (details.line_items || [])) {
+      if (li.product_id && mongoose.Types.ObjectId.isValid(li.product_id)) {
+        const pid = li.product_id.toString();
+        productIdSet.add(pid);
+        if (whId || bdmId) {
+          stockQueries.push({ warehouseId: whId?.toString(), bdmId: bdmId?.toString(), productId: pid });
+        }
+      }
+    }
+  }
+
+  // 2. Bulk-fetch product names
+  const productMap = new Map();
+  if (productIdSet.size > 0) {
+    const ProductMaster = getModel('ProductMaster');
+    if (ProductMaster) {
+      const productIds = [...productIdSet].map(id => new mongoose.Types.ObjectId(id));
+      const products = await ProductMaster.find({ _id: { $in: productIds } })
+        .select('brand_name dosage_strength item_key')
+        .lean();
+      for (const p of products) productMap.set(p._id.toString(), p);
+    }
+  }
+
+  // 3. Bulk-fetch available stock per warehouse (or bdm) + product
+  // Build unique warehouse/bdm keys and aggregate all at once
+  const stockMap = new Map(); // "warehouseId|productId" or "bdm:bdmId|productId" → available_qty
+  if (stockQueries.length > 0) {
+    // De-duplicate queries
+    const uniqueKeys = new Set();
+    const matchConditions = [];
+    for (const sq of stockQueries) {
+      const key = sq.warehouseId
+        ? `wh:${sq.warehouseId}|${sq.productId}`
+        : `bdm:${sq.bdmId}|${sq.productId}`;
+      if (!uniqueKeys.has(key)) {
+        uniqueKeys.add(key);
+        const m = { product_id: new mongoose.Types.ObjectId(sq.productId) };
+        if (sq.warehouseId) m.warehouse_id = new mongoose.Types.ObjectId(sq.warehouseId);
+        else if (sq.bdmId) m.bdm_id = new mongoose.Types.ObjectId(sq.bdmId);
+        matchConditions.push(m);
+      }
+    }
+    try {
+      // Run two separate aggregations: one for warehouse-based, one for bdm-based
+      // This avoids cross-grouping (warehouse entries also have bdm_id, which would split groups)
+      const whConditions = matchConditions.filter(m => m.warehouse_id);
+      const bdmConditions = matchConditions.filter(m => m.bdm_id && !m.warehouse_id);
+
+      const [whResults, bdmResults] = await Promise.all([
+        whConditions.length > 0
+          ? InventoryLedger.aggregate([
+              { $match: { $or: whConditions } },
+              { $group: { _id: { warehouse_id: '$warehouse_id', product_id: '$product_id' }, total_in: { $sum: '$qty_in' }, total_out: { $sum: '$qty_out' } } },
+              { $addFields: { available: { $subtract: ['$total_in', '$total_out'] } } }
+            ])
+          : [],
+        bdmConditions.length > 0
+          ? InventoryLedger.aggregate([
+              { $match: { $or: bdmConditions } },
+              { $group: { _id: { bdm_id: '$bdm_id', product_id: '$product_id' }, total_in: { $sum: '$qty_in' }, total_out: { $sum: '$qty_out' } } },
+              { $addFields: { available: { $subtract: ['$total_in', '$total_out'] } } }
+            ])
+          : []
+      ]);
+
+      for (const s of whResults) {
+        stockMap.set(`wh:${s._id.warehouse_id}|${s._id.product_id}`, s.available);
+      }
+      for (const s of bdmResults) {
+        stockMap.set(`bdm:${s._id.bdm_id}|${s._id.product_id}`, s.available);
+      }
+    } catch (err) {
+      console.error('Approval stock enrichment failed:', err.message);
+    }
+  }
+
+  // 4. Apply enrichments to line items
+  for (const item of allItems) {
+    const details = item.details || {};
+    const whId = details._warehouse_id?.toString();
+    const bdmId = details._bdm_id?.toString();
+    for (const li of (details.line_items || [])) {
+      if (li.product_id) {
+        const pid = li.product_id.toString();
+        // Product name
+        const prod = productMap.get(pid);
+        if (prod) {
+          li.product_name = `${prod.brand_name} ${prod.dosage_strength || ''}`.trim();
+        } else {
+          li.product_name = li.item_key || String(li.product_id);
+        }
+        // Available stock
+        const stockKey = whId ? `wh:${whId}|${pid}` : bdmId ? `bdm:${bdmId}|${pid}` : null;
+        if (stockKey) {
+          li.available_stock = stockMap.get(stockKey) || 0;
+        }
+      }
+    }
+    // Clean up internal fields (don't send to frontend)
+    delete details._warehouse_id;
+    delete details._bdm_id;
+  }
 
   return allItems;
 }
