@@ -745,6 +745,16 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     sections.push({ title: 'Expenses', collapsible: true, defaultOpen: true, items: expItems });
   }
 
+  // ── My Income (contractors only — BDMs view their own payslips) ─────────
+  if (role === ROLES.CONTRACTOR && (hasModule('reports') || hasModule('people'))) {
+    sections.push({
+      title: 'My Income',
+      collapsible: true,
+      defaultOpen: true,
+      items: [{ path: '/erp/my-income', label: 'My Income', icon: DollarSign }],
+    });
+  }
+
   // ── Reports ───────────────────────────────────────────────────────────────
   if (hasModule('reports')) {
     const repItems = [{ path: '/erp/reports', label: 'Reports', icon: BarChart3 }];

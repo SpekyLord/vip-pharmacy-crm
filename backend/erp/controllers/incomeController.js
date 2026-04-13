@@ -3,6 +3,9 @@
  *
  * All endpoints use catchAsync, req.tenantFilter, req.entityId, req.bdmId
  * following the same patterns as expenseController.js
+ *
+ * Deduction lines: BDM enters via addDeductionLine / removeDeductionLine
+ * Finance verifies via verifyDeductionLine (verify / correct / reject)
  */
 const mongoose = require('mongoose');
 const IncomeReport = require('../models/IncomeReport');
@@ -14,6 +17,7 @@ const {
   generatePnlReport, validateYearEndClose, executeYearEndClose, getFiscalYearStatus
 } = require('../services/pnlCalc');
 const { evaluateEligibility } = require('../services/profitShareEngine');
+const { syncInstallmentStatus } = require('../services/deductionScheduleService');
 
 // ═══════════════════════════════════════════
 // INCOME REPORT ENDPOINTS
@@ -54,7 +58,9 @@ const getIncomeById = catchAsync(async (req, res) => {
   const report = await IncomeReport.findOne({ _id: req.params.id, ...req.tenantFilter })
     .populate('bdm_id', 'name email')
     .populate('reviewed_by', 'name')
-    .populate('credited_by', 'name');
+    .populate('credited_by', 'name')
+    .populate('deduction_lines.entered_by', 'name')
+    .populate('deduction_lines.verified_by', 'name');
   if (!report) return res.status(404).json({ success: false, message: 'Income report not found' });
   res.json({ success: true, data: report });
 });
@@ -86,6 +92,253 @@ const updateIncomeManual = catchAsync(async (req, res) => {
   res.json({ success: true, data: report });
 });
 
+// ═══════════════════════════════════════════
+// BDM DEDUCTION LINE ENDPOINTS
+// ═══════════════════════════════════════════
+
+/**
+ * BDM adds a deduction line to their own income report.
+ * Only when status is GENERATED (report exists, BDM can enter deductions before Finance reviews).
+ */
+const addDeductionLine = catchAsync(async (req, res) => {
+  const { deduction_type, deduction_label, amount, description } = req.body;
+
+  if (!deduction_type || !deduction_label || amount === undefined) {
+    return res.status(400).json({
+      success: false,
+      message: 'deduction_type, deduction_label, and amount are required'
+    });
+  }
+  if (deduction_type === 'CASH_ADVANCE') {
+    return res.status(400).json({ success: false, message: 'CASH_ADVANCE is auto-computed from CALF — cannot be entered manually' });
+  }
+  if (typeof amount !== 'number' || amount < 0) {
+    return res.status(400).json({ success: false, message: 'amount must be a non-negative number' });
+  }
+
+  const report = await IncomeReport.findOne({
+    _id: req.params.id,
+    entity_id: req.entityId,
+    bdm_id: req.bdmId,
+    status: 'GENERATED'
+  });
+
+  if (!report) {
+    return res.status(404).json({
+      success: false,
+      message: 'Income report not found, not yours, or not in GENERATED status'
+    });
+  }
+
+  report.deduction_lines.push({
+    deduction_type,
+    deduction_label,
+    amount: Math.round(amount * 100) / 100,
+    description: description || '',
+    entered_by: req.user._id,
+    entered_at: new Date(),
+    status: 'PENDING',
+    auto_source: null
+  });
+
+  await report.save();
+
+  // Re-fetch with populates
+  const updated = await IncomeReport.findById(report._id)
+    .populate('bdm_id', 'name email')
+    .populate('deduction_lines.entered_by', 'name')
+    .populate('deduction_lines.verified_by', 'name');
+
+  res.status(201).json({ success: true, data: updated });
+});
+
+/**
+ * BDM removes a PENDING deduction line they entered.
+ * Only their own lines, only PENDING status, only when report is GENERATED.
+ */
+const removeDeductionLine = catchAsync(async (req, res) => {
+  const { lineId } = req.params;
+
+  const report = await IncomeReport.findOne({
+    _id: req.params.id,
+    entity_id: req.entityId,
+    bdm_id: req.bdmId,
+    status: 'GENERATED'
+  });
+
+  if (!report) {
+    return res.status(404).json({
+      success: false,
+      message: 'Income report not found, not yours, or not in GENERATED status'
+    });
+  }
+
+  const line = report.deduction_lines.id(lineId);
+  if (!line) {
+    return res.status(404).json({ success: false, message: 'Deduction line not found' });
+  }
+  if (line.auto_source) {
+    return res.status(400).json({ success: false, message: 'Cannot remove auto-generated deduction lines' });
+  }
+  if (line.status !== 'PENDING') {
+    return res.status(400).json({ success: false, message: 'Can only remove PENDING deduction lines' });
+  }
+  if (line.entered_by?.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ success: false, message: 'Can only remove your own deduction lines' });
+  }
+
+  report.deduction_lines.pull(lineId);
+  await report.save();
+
+  const updated = await IncomeReport.findById(report._id)
+    .populate('bdm_id', 'name email')
+    .populate('deduction_lines.entered_by', 'name')
+    .populate('deduction_lines.verified_by', 'name');
+
+  res.json({ success: true, data: updated });
+});
+
+// ═══════════════════════════════════════════
+// FINANCE DEDUCTION VERIFICATION ENDPOINTS
+// ═══════════════════════════════════════════
+
+/**
+ * Finance verifies, corrects, or rejects a deduction line.
+ * Actions: verify (accept as-is), correct (change amount + note), reject (with reason)
+ */
+const verifyDeductionLine = catchAsync(async (req, res) => {
+  const { lineId } = req.params;
+  const { action, amount, finance_note } = req.body;
+
+  if (!['verify', 'correct', 'reject'].includes(action)) {
+    return res.status(400).json({ success: false, message: 'action must be verify, correct, or reject' });
+  }
+
+  const report = await IncomeReport.findOne({
+    _id: req.params.id,
+    entity_id: req.entityId,
+    status: { $in: ['GENERATED', 'REVIEWED'] }
+  });
+
+  if (!report) {
+    return res.status(404).json({
+      success: false,
+      message: 'Income report not found or not in editable status'
+    });
+  }
+
+  const line = report.deduction_lines.id(lineId);
+  if (!line) {
+    return res.status(404).json({ success: false, message: 'Deduction line not found' });
+  }
+
+  switch (action) {
+    case 'verify':
+      line.status = 'VERIFIED';
+      line.verified_by = req.user._id;
+      line.verified_at = new Date();
+      if (finance_note) line.finance_note = finance_note;
+      break;
+    case 'correct':
+      if (amount === undefined || typeof amount !== 'number' || amount < 0) {
+        return res.status(400).json({ success: false, message: 'Corrected amount is required and must be non-negative' });
+      }
+      line.original_amount = line.amount;
+      line.amount = Math.round(amount * 100) / 100;
+      line.status = 'CORRECTED';
+      line.verified_by = req.user._id;
+      line.verified_at = new Date();
+      line.finance_note = finance_note || '';
+      break;
+    case 'reject':
+      line.status = 'REJECTED';
+      line.verified_by = req.user._id;
+      line.verified_at = new Date();
+      line.finance_note = finance_note || 'Rejected by Finance';
+      break;
+  }
+
+  await report.save();
+
+  // Sync schedule installment status if this is a schedule-sourced line
+  if (line.auto_source === 'SCHEDULE' && line.schedule_ref?.schedule_id) {
+    try {
+      const newInstStatus = action === 'reject' ? 'CANCELLED' : 'VERIFIED';
+      await syncInstallmentStatus(
+        line.schedule_ref.schedule_id,
+        line.schedule_ref.installment_id,
+        newInstStatus,
+        report._id,
+        line._id
+      );
+    } catch (syncErr) {
+      console.error('Schedule sync error (non-blocking):', syncErr.message);
+    }
+  }
+
+  const updated = await IncomeReport.findById(report._id)
+    .populate('bdm_id', 'name email')
+    .populate('deduction_lines.entered_by', 'name')
+    .populate('deduction_lines.verified_by', 'name');
+
+  res.json({ success: true, data: updated });
+});
+
+/**
+ * Finance adds a deduction line that BDM missed.
+ * Finance can add at GENERATED or REVIEWED status.
+ */
+const financeAddDeductionLine = catchAsync(async (req, res) => {
+  const { deduction_type, deduction_label, amount, description, finance_note } = req.body;
+
+  if (!deduction_type || !deduction_label || amount === undefined) {
+    return res.status(400).json({
+      success: false,
+      message: 'deduction_type, deduction_label, and amount are required'
+    });
+  }
+
+  const report = await IncomeReport.findOne({
+    _id: req.params.id,
+    entity_id: req.entityId,
+    status: { $in: ['GENERATED', 'REVIEWED'] }
+  });
+
+  if (!report) {
+    return res.status(404).json({
+      success: false,
+      message: 'Income report not found or not in editable status'
+    });
+  }
+
+  report.deduction_lines.push({
+    deduction_type,
+    deduction_label,
+    amount: Math.round(amount * 100) / 100,
+    description: description || '',
+    entered_by: req.user._id,
+    entered_at: new Date(),
+    status: 'VERIFIED',
+    finance_note: finance_note || 'Added by Finance',
+    verified_by: req.user._id,
+    verified_at: new Date(),
+    auto_source: null
+  });
+
+  await report.save();
+
+  const updated = await IncomeReport.findById(report._id)
+    .populate('bdm_id', 'name email')
+    .populate('deduction_lines.entered_by', 'name')
+    .populate('deduction_lines.verified_by', 'name');
+
+  res.status(201).json({ success: true, data: updated });
+});
+
+// ═══════════════════════════════════════════
+// WORKFLOW ENDPOINTS
+// ═══════════════════════════════════════════
+
 const reviewIncome = catchAsync(async (req, res) => {
   const report = await transitionIncomeStatus(req.params.id, 'review', req.user._id);
   res.json({ success: true, data: report });
@@ -113,6 +366,28 @@ const confirmIncome = catchAsync(async (req, res) => {
 
 const creditIncome = catchAsync(async (req, res) => {
   const report = await transitionIncomeStatus(req.params.id, 'credit', req.user._id);
+
+  // Sync all SCHEDULE deduction lines' installments to POSTED
+  const fullReport = await IncomeReport.findById(req.params.id);
+  if (fullReport) {
+    const scheduleLines = (fullReport.deduction_lines || []).filter(
+      l => l.auto_source === 'SCHEDULE' && l.schedule_ref?.schedule_id
+    );
+    for (const line of scheduleLines) {
+      try {
+        await syncInstallmentStatus(
+          line.schedule_ref.schedule_id,
+          line.schedule_ref.installment_id,
+          'POSTED',
+          fullReport._id,
+          line._id
+        );
+      } catch (syncErr) {
+        console.error('Schedule credit sync error (non-blocking):', syncErr.message);
+      }
+    }
+  }
+
   res.json({ success: true, data: report });
 });
 
@@ -419,6 +694,10 @@ module.exports = {
   // Income
   generateIncome, getIncomeList, getIncomeById, updateIncomeManual,
   reviewIncome, returnIncome, confirmIncome, creditIncome,
+  // BDM Deduction Lines
+  addDeductionLine, removeDeductionLine,
+  // Finance Deduction Verification
+  verifyDeductionLine, financeAddDeductionLine,
   // PNL
   generatePnl, getPnlList, getPnlById, updatePnlManual, postPnl,
   // Profit Sharing

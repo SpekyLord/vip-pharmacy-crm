@@ -70,6 +70,9 @@ router.use('/expenses', erpAccessCheck('expenses'), require('./expenseRoutes'));
 // so it must be mounted at '/'. erpAccessCheck runs as passthrough for non-matching routes.
 router.use('/', erpAccessCheck('reports'), require('./incomeRoutes'));
 
+// ═══ Phase E.2 — Deduction Schedules (Recurring + Non-Recurring) ═══
+router.use('/deduction-schedules', erpAccessCheck('reports'), require('./deductionScheduleRoutes'));
+
 // ═══ Phase 8 — Dashboard & Reports ═══
 router.use('/dashboard', erpAccessCheck('reports'), require('./dashboardRoutes'));
 

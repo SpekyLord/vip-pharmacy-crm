@@ -3,12 +3,42 @@
  *
  * PRD §10: BDM Income Computation (per cycle)
  * Earnings: SMER + CORE Commission + Bonus + Profit Sharing + Reimbursements
- * Deductions: Cash Advance + Credit Card + Credit Payment + Purchased Goods + Other + Over Payment
+ * Deductions: Lookup-driven deduction_lines[] (BDM enters, Finance verifies)
  * Net Pay = Total Earnings − Total Deductions
  *
  * Workflow: GENERATED → REVIEWED → RETURNED → BDM_CONFIRMED → CREDITED
+ *
+ * Deduction lines workflow:
+ *   BDM adds lines (status: PENDING) → Finance verifies/corrects/rejects each line
+ *   CASH_ADVANCE lines auto-pulled from CALF balance
  */
 const mongoose = require('mongoose');
+
+// ── Deduction Line Sub-Schema (lookup-driven) ──
+const deductionLineSchema = new mongoose.Schema({
+  deduction_type: { type: String, required: true },   // Lookup: INCOME_DEDUCTION_TYPE
+  deduction_label: { type: String, required: true },   // Snapshot of label at entry time
+  amount: { type: Number, required: true, min: 0 },
+  description: { type: String, default: '' },          // BDM explains: "Personal grocery at SM, April 5"
+  entered_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  entered_at: { type: Date, default: Date.now },
+  // Finance verification
+  status: {
+    type: String,
+    default: 'PENDING',
+    enum: ['PENDING', 'VERIFIED', 'CORRECTED', 'REJECTED']
+  },
+  verified_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  verified_at: { type: Date },
+  original_amount: { type: Number },                   // Preserved when Finance corrects
+  finance_note: { type: String, default: '' },         // Finance explains correction/rejection
+  auto_source: { type: String, default: null },         // 'CALF' or 'SCHEDULE'
+  // Link to DeductionSchedule (for auto_source='SCHEDULE')
+  schedule_ref: {
+    schedule_id: { type: mongoose.Schema.Types.ObjectId, ref: 'DeductionSchedule' },
+    installment_id: { type: mongoose.Schema.Types.ObjectId }
+  }
+}, { _id: true });
 
 const incomeReportSchema = new mongoose.Schema({
   entity_id: {
@@ -41,7 +71,10 @@ const incomeReportSchema = new mongoose.Schema({
   },
   total_earnings: { type: Number, default: 0 },
 
-  // ── Deductions ──
+  // ── Deduction Lines (lookup-driven, BDM enters, Finance verifies) ──
+  deduction_lines: [deductionLineSchema],
+
+  // ── Legacy flat deductions (preserved for backward compatibility) ──
   deductions: {
     cash_advance: { type: Number, default: 0 },       // CALF pending balance
     credit_card_payment: { type: Number, default: 0 },
@@ -95,11 +128,20 @@ incomeReportSchema.pre('save', function (next) {
      (e.profit_sharing || 0) + (e.reimbursements || 0)) * 100
   ) / 100;
 
-  const d = this.deductions || {};
-  this.total_deductions = Math.round(
-    ((d.cash_advance || 0) + (d.credit_card_payment || 0) + (d.credit_payment || 0) +
-     (d.purchased_goods || 0) + (d.other_deductions || 0) + (d.over_payment || 0)) * 100
-  ) / 100;
+  // Deductions: prefer deduction_lines if any exist, otherwise fall back to legacy flat fields
+  if (this.deduction_lines && this.deduction_lines.length > 0) {
+    // Only sum non-REJECTED lines
+    const activeLines = this.deduction_lines.filter(l => l.status !== 'REJECTED');
+    this.total_deductions = Math.round(
+      activeLines.reduce((sum, l) => sum + (l.amount || 0), 0) * 100
+    ) / 100;
+  } else {
+    const d = this.deductions || {};
+    this.total_deductions = Math.round(
+      ((d.cash_advance || 0) + (d.credit_card_payment || 0) + (d.credit_payment || 0) +
+       (d.purchased_goods || 0) + (d.other_deductions || 0) + (d.over_payment || 0)) * 100
+    ) / 100;
+  }
 
   this.net_pay = Math.round((this.total_earnings - this.total_deductions) * 100) / 100;
   next();

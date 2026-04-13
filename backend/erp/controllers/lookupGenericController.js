@@ -408,6 +408,19 @@ const SEED_DEFAULTS = {
     { code: 'MAC', label: 'Mac', metadata: { min_length: 4 } },
     { code: 'O_APOSTROPHE', label: "O'", metadata: { min_length: 3 } },
   ],
+  // Phase E — BDM Income Deduction Types (lookup-driven, admin-scalable)
+  INCOME_DEDUCTION_TYPE: [
+    { code: 'CASH_ADVANCE', label: 'Cash Advance', metadata: { auto_source: 'CALF', sort: 1 } },
+    { code: 'CC_PERSONAL', label: 'Credit Card (Personal Use)', metadata: { sort: 2 } },
+    { code: 'CREDIT_PAYMENT', label: 'Credit Payment', metadata: { sort: 3 } },
+    { code: 'PURCHASED_GOODS', label: 'Purchased Goods', metadata: { sort: 4 } },
+    { code: 'LOAN_REPAYMENT', label: 'Loan Repayment', metadata: { sort: 5 } },
+    { code: 'UNIFORM', label: 'Uniform Deduction', metadata: { sort: 6 } },
+    { code: 'OVERPAYMENT', label: 'Over Payment', metadata: { sort: 7 } },
+    { code: 'OTHER', label: 'Other Deduction', metadata: { sort: 8 } },
+  ],
+  DEDUCTION_LINE_STATUS: ['PENDING', 'VERIFIED', 'CORRECTED', 'REJECTED'],
+  DEDUCTION_SCHEDULE_STATUS: ['PENDING_APPROVAL', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'],
 };
 
 // List all distinct categories for current entity
