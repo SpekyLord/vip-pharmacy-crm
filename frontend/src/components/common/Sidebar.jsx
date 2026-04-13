@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import messageService from '../../services/messageInboxService';
+import api from '../../services/api';
 import {
   LayoutDashboard,
   Users,
@@ -745,6 +746,16 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
     sections.push({ title: 'Expenses', collapsible: true, defaultOpen: true, items: expItems });
   }
 
+  // ── My Income (contractors only — BDMs view their own payslips) ─────────
+  if (role === ROLES.CONTRACTOR && (hasModule('reports') || hasModule('people'))) {
+    sections.push({
+      title: 'My Income',
+      collapsible: true,
+      defaultOpen: true,
+      items: [{ path: '/erp/my-income', label: 'My Income', icon: DollarSign }],
+    });
+  }
+
   // ── Reports ───────────────────────────────────────────────────────────────
   if (hasModule('reports')) {
     const repItems = [{ path: '/erp/reports', label: 'Reports', icon: BarChart3 }];
@@ -844,7 +855,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
   // ── Administration (admin-like only) — inserted at top, right after ERP Home ──
   if (ROLE_SETS.MANAGEMENT.includes(role)) {
     const adminItems = [];
-    adminItems.push({ path: '/erp/approvals', label: 'Approvals', icon: ClipboardCheck });
+    adminItems.push({ path: '/erp/approvals', label: 'Approvals', icon: ClipboardCheck, badge: approvalCount || null });
     adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
     adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
     if (isAdmin) {
@@ -945,7 +956,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
   }
 };
 
-const getErpMenuConfig = (role, erpAccess = null) => {
+const getErpMenuConfig = (role, erpAccess = null, approvalCount = 0) => {
   const erpSections = getErpSection(role, erpAccess, { includeHomeOnly: true });
   const sections = erpSections || [{ title: null, collapsible: false, items: [{ path: '/erp', label: 'ERP Home', icon: Briefcase }] }];
   const isAdminLike = isAdminLikeRole(role);
@@ -963,9 +974,9 @@ const getErpMenuConfig = (role, erpAccess = null) => {
   };
 };
 
-const getMenuConfig = (role, unreadCount = 0, erpAccess = null, pathname = '') => {
+const getMenuConfig = (role, unreadCount = 0, erpAccess = null, pathname = '', approvalCount = 0) => {
   if (pathname.startsWith('/erp')) {
-    return getErpMenuConfig(role, erpAccess);
+    return getErpMenuConfig(role, erpAccess, approvalCount);
   }
 
   const crmRole = isAdminLikeRole(role) ? ROLES.ADMIN : ROLES.CONTRACTOR;
@@ -987,6 +998,7 @@ const Sidebar = () => {
   });
 
   const [unreadCount, setUnreadCount] = useState(0);
+  const [approvalCount, setApprovalCount] = useState(0);
   const navRef = useRef(null);
 
   // Fetch unread message count for employee role
@@ -1006,12 +1018,27 @@ const Sidebar = () => {
 
   useEffect(() => {
     fetchUnreadCount();
-    // Refresh when inbox marks messages as read
     window.addEventListener('inbox:updated', fetchUnreadCount);
     return () => window.removeEventListener('inbox:updated', fetchUnreadCount);
   }, [fetchUnreadCount]);
 
-  const menuConfig = getMenuConfig(user?.role, unreadCount, user?.erp_access, location.pathname);
+  // Fetch pending approval count for management roles
+  const fetchApprovalCount = useCallback(async () => {
+    if (!ROLE_SETS.MANAGEMENT.includes(user?.role)) return;
+    try {
+      const res = await api.get('/api/erp/approvals/universal-pending');
+      setApprovalCount(res.data?.count || (res.data?.data || []).length || 0);
+    } catch { /* silently fail */ }
+  }, [user]);
+
+  useEffect(() => {
+    fetchApprovalCount();
+    const interval = setInterval(fetchApprovalCount, 60000);
+    window.addEventListener('approval:updated', fetchApprovalCount);
+    return () => { clearInterval(interval); window.removeEventListener('approval:updated', fetchApprovalCount); };
+  }, [fetchApprovalCount]);
+
+  const menuConfig = getMenuConfig(user?.role, unreadCount, user?.erp_access, location.pathname, approvalCount);
   const isAdminLike = isAdminLikeRole(user?.role);
   const crmHome = isAdminLike ? '/admin' : '/bdm';
   const isErpRoute = location.pathname.startsWith('/erp');

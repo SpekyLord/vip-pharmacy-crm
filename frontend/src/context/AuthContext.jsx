@@ -12,6 +12,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import authService from '../services/authService';
+import { classifyError } from '../utils/classifyError';
 import { AuthContext } from './AuthContextObject';
 
 const authBootstrapState = {
@@ -51,6 +52,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [errorType, setErrorType] = useState(null);
 
   // Handle forced logout from API interceptor
   const handleForcedLogout = useCallback(() => {
@@ -101,6 +103,7 @@ export const AuthProvider = ({ children }) => {
   const login = useCallback(async (email, password) => {
     setLoading(true);
     setError(null);
+    setErrorType(null);
     try {
       const response = await authService.login(email, password);
       // Backend sets httpOnly cookies automatically
@@ -115,9 +118,10 @@ export const AuthProvider = ({ children }) => {
       setUser(userData);
       return response;
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Login failed';
-      console.error('[AuthContext] login error:', msg, err);
-      setError(msg);
+      const { type, message } = classifyError(err, 'Login failed');
+      console.error('[AuthContext] login error:', type, message, err);
+      setError(message);
+      setErrorType(type);
       throw err;
     } finally {
       setLoading(false);
@@ -154,6 +158,7 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     error,
+    errorType,
     isAuthenticated: !!user,
     login,
     logout,

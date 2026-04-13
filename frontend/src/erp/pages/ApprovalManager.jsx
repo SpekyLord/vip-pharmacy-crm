@@ -17,9 +17,10 @@ export default function ApprovalManager() {
     fetchRules, createRule, updateRule, deleteRule,
     fetchRequests, fetchMyPending: _fetchMyPending, approve, reject, cancel: _cancel, // eslint-disable-line no-unused-vars
     checkStatus,
+    universalItems, universalCount, fetchUniversalPending, universalApprove,
   } = useApprovals();
 
-  const [tab, setTab] = useState('requests'); // 'requests' | 'rules'
+  const [tab, setTab] = useState('all-pending'); // 'all-pending' | 'requests' | 'rules'
   const [statusFilter, setStatusFilter] = useState('PENDING');
   const [moduleFilter, setModuleFilter] = useState('');
   const [showRuleForm, setShowRuleForm] = useState(false);
@@ -43,8 +44,12 @@ export default function ApprovalManager() {
     checkStatus().then(d => setApprovalEnabled(d.enabled)).catch(() => {});
   }, [checkStatus]);
 
+  const [hubModuleFilter, setHubModuleFilter] = useState('');
+
   useEffect(() => {
-    if (tab === 'requests') {
+    if (tab === 'all-pending') {
+      fetchUniversalPending().catch(e => showError(e));
+    } else if (tab === 'requests') {
       const params = {};
       if (statusFilter) params.status = statusFilter;
       if (moduleFilter) params.module = moduleFilter;
@@ -52,7 +57,7 @@ export default function ApprovalManager() {
     } else {
       fetchRules().catch(e => showError(e));
     }
-  }, [tab, statusFilter, moduleFilter, fetchRequests, fetchRules]);
+  }, [tab, statusFilter, moduleFilter, fetchRequests, fetchRules, fetchUniversalPending]);
 
   const handleDecision = useCallback(async () => {
     if (!decisionModal) return;
@@ -101,6 +106,33 @@ export default function ApprovalManager() {
     }
   }, [deleteRule, fetchRules]);
 
+  const handleUniversalAction = useCallback(async (item, action) => {
+    if (action === 'reject') {
+      const r = prompt('Reason for rejection:');
+      if (!r) return;
+      try {
+        await universalApprove({ ...item.approve_data, action: 'reject', reason: r });
+        toast.success('Rejected');
+        fetchUniversalPending().catch(() => {});
+      } catch (e) { showError(e); }
+      return;
+    }
+    try {
+      await universalApprove({ ...item.approve_data, action: item.approve_data.action || 'approve' });
+      toast.success(`${item.current_action} successful`);
+      fetchUniversalPending().catch(() => {});
+    } catch (e) { showError(e); }
+  }, [universalApprove, fetchUniversalPending]);
+
+  const MODULE_COLORS = {
+    INCOME: '#2563eb', DEDUCTION_SCHEDULE: '#7c3aed', PURCHASING: '#16a34a',
+    INVENTORY: '#d97706', PAYROLL: '#0891b2', KPI: '#4f46e5', APPROVAL_REQUEST: '#6b7280'
+  };
+
+  const filteredHubItems = hubModuleFilter
+    ? universalItems.filter(i => i.module === hubModuleFilter)
+    : universalItems;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--erp-bg, #f4f7fb)' }}>
       <Navbar />
@@ -120,6 +152,12 @@ export default function ApprovalManager() {
             </h2>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
+                onClick={() => setTab('all-pending')}
+                style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, background: tab === 'all-pending' ? 'var(--erp-accent, #2563eb)' : 'transparent', color: tab === 'all-pending' ? '#fff' : 'var(--erp-text)', borderWidth: 1, borderStyle: 'solid', borderColor: tab === 'all-pending' ? 'transparent' : 'var(--erp-border)' }}
+              >
+                All Pending {universalCount > 0 ? `(${universalCount})` : ''}
+              </button>
+              <button
                 onClick={() => setTab('requests')}
                 style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, background: tab === 'requests' ? 'var(--erp-accent, #2563eb)' : 'transparent', color: tab === 'requests' ? '#fff' : 'var(--erp-text)', borderWidth: 1, borderStyle: 'solid', borderColor: tab === 'requests' ? 'transparent' : 'var(--erp-border)' }}
               >
@@ -135,6 +173,69 @@ export default function ApprovalManager() {
               )}
             </div>
           </div>
+
+          {/* ─── All Pending Tab (Universal Hub) ─── */}
+          {tab === 'all-pending' && (
+            <div style={{ background: 'var(--erp-panel)', borderRadius: 12, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--erp-muted)' }}>Filter:</span>
+                <button onClick={() => setHubModuleFilter('')}
+                  style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--erp-border)', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: !hubModuleFilter ? '#2563eb' : 'transparent', color: !hubModuleFilter ? '#fff' : 'var(--erp-text)' }}>
+                  All
+                </button>
+                {[...new Set(universalItems.map(i => i.module))].map(mod => (
+                  <button key={mod} onClick={() => setHubModuleFilter(mod)}
+                    style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--erp-border)', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: hubModuleFilter === mod ? (MODULE_COLORS[mod] || '#6b7280') : 'transparent', color: hubModuleFilter === mod ? '#fff' : 'var(--erp-text)' }}>
+                    {mod.replace(/_/g, ' ')}
+                  </button>
+                ))}
+              </div>
+
+              {loading && <div style={{ textAlign: 'center', padding: 32, color: 'var(--erp-muted)' }}>Loading...</div>}
+
+              {!loading && filteredHubItems.length === 0 && (
+                <div style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>
+                  Nothing needs your attention right now.
+                </div>
+              )}
+
+              {!loading && filteredHubItems.map(item => (
+                <div key={item.id} style={{ background: 'var(--erp-bg)', border: '1px solid var(--erp-border)', borderRadius: 12, padding: 14, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: MODULE_COLORS[item.module] || '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {item.module.replace(/_/g, ' ')}
+                        </span>
+                        <span style={{ fontSize: 12, color: 'var(--erp-muted)' }}>{item.doc_ref}</span>
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--erp-text)', marginBottom: 2 }}>{item.description}</div>
+                      <div style={{ fontSize: 12, color: 'var(--erp-muted)' }}>
+                        {item.submitted_by} · {new Date(item.submitted_at).toLocaleDateString()}
+                        {item.amount > 0 && <span style={{ marginLeft: 8, fontWeight: 600 }}>₱{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                      <button
+                        onClick={() => handleUniversalAction(item, 'approve')}
+                        disabled={loading}
+                        style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: item.action_key === 'CREDIT' ? '#047857' : '#16a34a', color: '#fff' }}
+                      >
+                        {item.current_action}
+                      </button>
+                      <button
+                        onClick={() => handleUniversalAction(item, 'reject')}
+                        disabled={loading}
+                        style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: '#dc2626', color: '#fff' }}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* ─── Requests Tab ─── */}
           {tab === 'requests' && (

@@ -18,11 +18,11 @@ function parseUndertaking(ocrResult) {
   const lines = splitLines(fullText);
   const validationFlags = [];
 
-  const productBlocks = extractProductBlocks(lines, words);
+  const productBlocks = extractProductBlocks(lines);
 
   // Attach qty from nearby lines
   const lineItems = productBlocks.map((block) => {
-    const brandVal = block.brand_name.value;
+    const brandVal = block.brand_name;
     let qty = null;
 
     if (brandVal) {

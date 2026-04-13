@@ -3,6 +3,9 @@
  *
  * All routes require authentication via protect middleware (applied at router level in index.js)
  * Finance/Admin operations are role-gated via roleCheck.
+ *
+ * BDM deduction line endpoints gated to 'contractor' role only.
+ * Finance deduction verification endpoints gated to admin/finance/president.
  */
 const express = require('express');
 const { roleCheck } = require('../../middleware/roleCheck');
@@ -11,6 +14,10 @@ const {
   // Income
   generateIncome, getIncomeList, getIncomeById, updateIncomeManual,
   reviewIncome, returnIncome, confirmIncome, creditIncome,
+  // BDM Deduction Lines
+  addDeductionLine, removeDeductionLine,
+  // Finance Deduction Verification
+  verifyDeductionLine, financeAddDeductionLine,
   // PNL
   generatePnl, getPnlList, getPnlById, updatePnlManual, postPnl,
   // Profit Sharing
@@ -32,6 +39,14 @@ router.post('/income/:id/review', roleCheck('admin', 'finance', 'president'), re
 router.post('/income/:id/return', roleCheck('admin', 'finance', 'president'), returnIncome);
 router.post('/income/:id/confirm', periodLockCheck('INCOME'), confirmIncome);  // BDM self-confirm
 router.post('/income/:id/credit', roleCheck('admin', 'finance', 'president'), periodLockCheck('INCOME'), creditIncome);
+
+// ═══ BDM Deduction Lines (contractor only — not employees) ═══
+router.post('/income/:id/deductions', roleCheck('contractor'), addDeductionLine);
+router.delete('/income/:id/deductions/:lineId', roleCheck('contractor'), removeDeductionLine);
+
+// ═══ Finance Deduction Verification ═══
+router.post('/income/:id/deductions/:lineId/verify', roleCheck('admin', 'finance', 'president'), verifyDeductionLine);
+router.post('/income/:id/deductions/finance-add', roleCheck('admin', 'finance', 'president'), financeAddDeductionLine);
 
 // ═══ PNL Reports ═══
 router.post('/pnl/generate', roleCheck('admin', 'finance', 'president'), generatePnl);

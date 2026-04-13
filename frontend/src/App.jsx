@@ -83,6 +83,7 @@ const TransferReceipt = lazyRetry(() => import('./erp/pages/TransferReceipt'));
 const TransferPriceManager = lazyRetry(() => import('./erp/pages/TransferPriceManager'));
 const WarehouseManager = lazyRetry(() => import('./erp/pages/WarehouseManager'));
 const Income = lazyRetry(() => import('./erp/pages/Income'));
+const MyIncome = lazyRetry(() => import('./erp/pages/MyIncome'));
 const Pnl = lazyRetry(() => import('./erp/pages/Pnl'));
 const ProfitSharing = lazyRetry(() => import('./erp/pages/ProfitSharing'));
 const MonthlyArchivePage = lazyRetry(() => import('./erp/pages/MonthlyArchive'));
@@ -573,6 +574,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
                 <TransferPriceManager />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/my-income"
+            element={
+              <ProtectedRoute allowedRoles={[ROLES.CONTRACTOR]} requiredErpModule="reports">
+                <MyIncome />
               </ProtectedRoute>
             }
           />

@@ -13,6 +13,14 @@ export default function useIncome() {
   const confirmIncome = (id) => api.post(`/income/${id}/confirm`);
   const creditIncome = (id) => api.post(`/income/${id}/credit`);
 
+  // ═══ BDM Deduction Lines (contractor only) ═══
+  const addDeductionLine = (id, data) => api.post(`/income/${id}/deductions`, data);
+  const removeDeductionLine = (id, lineId) => api.delete(`/income/${id}/deductions/${lineId}`);
+
+  // ═══ Finance Deduction Verification ═══
+  const verifyDeductionLine = (id, lineId, data) => api.post(`/income/${id}/deductions/${lineId}/verify`, data);
+  const financeAddDeductionLine = (id, data) => api.post(`/income/${id}/deductions/finance-add`, data);
+
   // ═══ PNL Reports ═══
   const generatePnl = (data) => api.post('/pnl/generate', data);
   const getPnlList = (params) => api.get('/pnl', { params });
@@ -39,6 +47,8 @@ export default function useIncome() {
     ...api,
     generateIncome, getIncomeList, getIncomeById, updateIncomeManual,
     reviewIncome, returnIncome, confirmIncome, creditIncome,
+    addDeductionLine, removeDeductionLine,
+    verifyDeductionLine, financeAddDeductionLine,
     generatePnl, getPnlList, getPnlById, updatePnlManual, postPnl,
     getProfitShareStatus, getProfitShareDetail,
     closePeriod, reopenPeriod, getPeriodStatus, getArchiveList,

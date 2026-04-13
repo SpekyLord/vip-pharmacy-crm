@@ -423,7 +423,7 @@ function parseGasReceipt(ocrResult) {
       const expected = liters * pricePerLiter;
       const diff = Math.abs(expected - totalAmount);
       if (diff > totalAmount * 0.05) {
-        validationFlags.push(`Amount mismatch: ${liters} × ${pricePerLiter} = ${expected.toFixed(2)}, but total shows ${totalAmount}`);
+        validationFlags.push({ type: 'AMOUNT_MISMATCH', message: `Amount mismatch: ${liters} × ${pricePerLiter} = ${expected.toFixed(2)}, but total shows ${totalAmount}` });
       }
     }
   }
@@ -436,10 +436,10 @@ function parseGasReceipt(ocrResult) {
 
   // --- Sanity checks ---
   if (totalAmount != null && (totalAmount < 10 || totalAmount > 100000)) {
-    validationFlags.push(`Total amount ${totalAmount} seems unusual for a gas receipt — please verify`);
+    validationFlags.push({ type: 'UNUSUAL_TOTAL', message: `Total amount ${totalAmount} seems unusual for a gas receipt — please verify` });
   }
   if (liters != null && (liters < 0.5 || liters > 500)) {
-    validationFlags.push(`Liters ${liters} seems unusual — please verify`);
+    validationFlags.push({ type: 'UNUSUAL_LITERS', message: `Liters ${liters} seems unusual — please verify` });
   }
 
   return {
