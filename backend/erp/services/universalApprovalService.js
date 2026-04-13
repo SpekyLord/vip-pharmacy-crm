@@ -74,7 +74,19 @@ const MODULE_QUERIES = [
         status: 'PENDING_APPROVAL',
         current_action: 'Approve',
         action_key: 'APPROVE',
-        approve_data: { type: 'deduction_schedule', id: item._id }
+        approve_data: { type: 'deduction_schedule', id: item._id },
+        details: {
+          deduction_type: item.deduction_type,
+          deduction_label: item.deduction_label,
+          total_amount: item.total_amount,
+          term_months: item.term_months,
+          installment_amount: item.installment_amount,
+          start_period: item.start_period,
+          description: item.description,
+          installments: (item.installments || []).map(i => ({
+            period: i.period, installment_no: i.installment_no, amount: i.amount, status: i.status
+          }))
+        }
       }));
     },
     allowed_roles: ['admin', 'finance', 'president']
@@ -107,6 +119,18 @@ const MODULE_QUERIES = [
           type: 'income_report',
           id: item._id,
           action: item.status === 'GENERATED' ? 'review' : 'credit'
+        },
+        details: {
+          period: item.period,
+          cycle: item.cycle,
+          earnings: item.earnings,
+          total_earnings: item.total_earnings,
+          deduction_lines: (item.deduction_lines || []).map(l => ({
+            deduction_label: l.deduction_label, amount: l.amount, status: l.status,
+            auto_source: l.auto_source, description: l.description
+          })),
+          total_deductions: item.total_deductions,
+          net_pay: item.net_pay
         }
       }));
     },
@@ -133,7 +157,15 @@ const MODULE_QUERIES = [
         status: 'PENDING_APPROVAL',
         current_action: 'Approve',
         action_key: 'APPROVE',
-        approve_data: { type: 'grn', id: item._id }
+        approve_data: { type: 'grn', id: item._id },
+        details: {
+          grn_date: item.grn_date,
+          line_items: (item.line_items || []).map(li => ({
+            item_key: li.item_key, batch_lot_no: li.batch_lot_no,
+            expiry_date: li.expiry_date, qty: li.qty
+          })),
+          notes: item.notes
+        }
       }));
     },
     allowed_roles: ['admin', 'finance']
@@ -168,6 +200,12 @@ const MODULE_QUERIES = [
           type: 'payslip',
           id: item._id,
           action: item.status === 'COMPUTED' ? 'review' : 'approve'
+        },
+        details: {
+          period: item.period, cycle: item.cycle,
+          earnings: item.earnings, deductions: item.deductions,
+          total_earnings: item.total_earnings, total_deductions: item.total_deductions,
+          net_pay: item.net_pay
         }
       }));
     },
@@ -203,6 +241,16 @@ const MODULE_QUERIES = [
           type: 'kpi_rating',
           id: item._id,
           action: item.status === 'SUBMITTED' ? 'review' : 'approve'
+        },
+        details: {
+          period: item.period, period_type: item.period_type,
+          kpi_ratings: (item.kpi_ratings || []).map(k => ({
+            kpi_code: k.kpi_code, kpi_name: k.kpi_name,
+            self_score: k.self_score, self_comment: k.self_comment,
+            manager_score: k.manager_score
+          })),
+          overall_self_score: item.overall_self_score,
+          overall_manager_score: item.overall_manager_score
         }
       }));
     },

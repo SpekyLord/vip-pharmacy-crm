@@ -45,6 +45,7 @@ export default function ApprovalManager() {
   }, [checkStatus]);
 
   const [hubModuleFilter, setHubModuleFilter] = useState('');
+  const [expandedItem, setExpandedItem] = useState(null); // item.id to expand
 
   useEffect(() => {
     if (tab === 'all-pending') {
@@ -199,7 +200,11 @@ export default function ApprovalManager() {
                 </div>
               )}
 
-              {!loading && filteredHubItems.map(item => (
+              {!loading && filteredHubItems.map(item => {
+                const isExpanded = expandedItem === item.id;
+                const d = item.details || {};
+                const fmt = (n) => '₱' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                return (
                 <div key={item.id} style={{ background: 'var(--erp-bg)', border: '1px solid var(--erp-border)', borderRadius: 12, padding: 14, marginBottom: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                     <div style={{ flex: 1 }}>
@@ -212,28 +217,140 @@ export default function ApprovalManager() {
                       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--erp-text)', marginBottom: 2 }}>{item.description}</div>
                       <div style={{ fontSize: 12, color: 'var(--erp-muted)' }}>
                         {item.submitted_by} · {new Date(item.submitted_at).toLocaleDateString()}
-                        {item.amount > 0 && <span style={{ marginLeft: 8, fontWeight: 600 }}>₱{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>}
+                        {item.amount > 0 && <span style={{ marginLeft: 8, fontWeight: 600 }}>{fmt(item.amount)}</span>}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                      <button
-                        onClick={() => handleUniversalAction(item, 'approve')}
-                        disabled={loading}
-                        style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: item.action_key === 'CREDIT' ? '#047857' : '#16a34a', color: '#fff' }}
-                      >
+                      <button onClick={() => setExpandedItem(isExpanded ? null : item.id)}
+                        style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--erp-border)', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: 'var(--erp-panel)', color: 'var(--erp-text)' }}>
+                        {isExpanded ? 'Hide' : 'Details'}
+                      </button>
+                      <button onClick={() => handleUniversalAction(item, 'approve')} disabled={loading}
+                        style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: item.action_key === 'CREDIT' ? '#047857' : '#16a34a', color: '#fff' }}>
                         {item.current_action}
                       </button>
-                      <button
-                        onClick={() => handleUniversalAction(item, 'reject')}
-                        disabled={loading}
-                        style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: '#dc2626', color: '#fff' }}
-                      >
+                      <button onClick={() => handleUniversalAction(item, 'reject')} disabled={loading}
+                        style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: '#dc2626', color: '#fff' }}>
                         Reject
                       </button>
                     </div>
                   </div>
+
+                  {/* ── Expandable Detail Panel ── */}
+                  {isExpanded && d && (
+                    <div style={{ marginTop: 12, padding: 12, background: 'var(--erp-panel)', border: '1px solid var(--erp-border)', borderRadius: 8, fontSize: 13 }}>
+
+                      {/* Income Report Details */}
+                      {item.module === 'INCOME' && (
+                        <div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div>
+                              <div style={{ fontWeight: 700, marginBottom: 6, color: '#16a34a' }}>Earnings</div>
+                              {d.earnings?.smer > 0 && <div>SMER: {fmt(d.earnings.smer)}</div>}
+                              {d.earnings?.core_commission > 0 && <div>Commission: {fmt(d.earnings.core_commission)}</div>}
+                              {d.earnings?.calf_reimbursement > 0 && <div>CALF Reimburse: {fmt(d.earnings.calf_reimbursement)}</div>}
+                              {d.earnings?.bonus > 0 && <div>Bonus: {fmt(d.earnings.bonus)}</div>}
+                              {d.earnings?.profit_sharing > 0 && <div>Profit Sharing: {fmt(d.earnings.profit_sharing)}</div>}
+                              <div style={{ fontWeight: 700, marginTop: 4 }}>Total: {fmt(d.total_earnings)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 700, marginBottom: 6, color: '#dc2626' }}>Deductions ({(d.deduction_lines || []).length} lines)</div>
+                              {(d.deduction_lines || []).map((l, i) => (
+                                <div key={i} style={l.status === 'REJECTED' ? { textDecoration: 'line-through', opacity: 0.5 } : {}}>
+                                  {l.deduction_label}: {fmt(l.amount)} <span style={{ fontSize: 10, color: 'var(--erp-muted)' }}>({l.status}{l.auto_source ? ` · ${l.auto_source}` : ''})</span>
+                                </div>
+                              ))}
+                              <div style={{ fontWeight: 700, marginTop: 4 }}>Total: {fmt(d.total_deductions)}</div>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 16, marginTop: 8, color: (d.net_pay || 0) >= 0 ? '#16a34a' : '#dc2626' }}>
+                            Net Pay: {fmt(d.net_pay)}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Deduction Schedule Details */}
+                      {item.module === 'DEDUCTION_SCHEDULE' && (
+                        <div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>Type:</strong> {d.deduction_label} · <strong>Total:</strong> {fmt(d.total_amount)} · <strong>Term:</strong> {d.term_months === 1 ? 'One-time' : `${d.term_months} months @ ${fmt(d.installment_amount)}/mo`} · <strong>Start:</strong> {d.start_period}
+                          </div>
+                          {d.description && <div style={{ color: 'var(--erp-muted)', marginBottom: 8 }}>{d.description}</div>}
+                          {d.term_months > 1 && (
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>#</th><th style={{ padding: '4px 8px', textAlign: 'left' }}>Period</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Amount</th></tr></thead>
+                              <tbody>
+                                {(d.installments || []).slice(0, 6).map(inst => (
+                                  <tr key={inst.installment_no}><td style={{ padding: '3px 8px' }}>{inst.installment_no}</td><td style={{ padding: '3px 8px' }}>{inst.period}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(inst.amount)}</td></tr>
+                                ))}
+                                {(d.installments || []).length > 6 && <tr><td colSpan={3} style={{ padding: '3px 8px', color: 'var(--erp-muted)', textAlign: 'center' }}>...and {d.installments.length - 6} more</td></tr>}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      )}
+
+                      {/* GRN Details */}
+                      {item.module === 'INVENTORY' && (
+                        <div>
+                          {d.grn_date && <div><strong>GRN Date:</strong> {new Date(d.grn_date).toLocaleDateString()}</div>}
+                          {d.notes && <div style={{ color: 'var(--erp-muted)', marginBottom: 6 }}>{d.notes}</div>}
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
+                            <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Item</th><th style={{ padding: '4px 8px' }}>Batch</th><th style={{ padding: '4px 8px' }}>Expiry</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th></tr></thead>
+                            <tbody>
+                              {(d.line_items || []).map((li, i) => (
+                                <tr key={i}><td style={{ padding: '3px 8px' }}>{li.item_key}</td><td style={{ padding: '3px 8px' }}>{li.batch_lot_no}</td><td style={{ padding: '3px 8px' }}>{li.expiry_date ? new Date(li.expiry_date).toLocaleDateString() : '-'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.qty}</td></tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* Payslip Details */}
+                      {item.module === 'PAYROLL' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                          <div>
+                            <div style={{ fontWeight: 700, marginBottom: 4 }}>Earnings</div>
+                            {Object.entries(d.earnings || {}).filter(([, v]) => v > 0).map(([k, v]) => (
+                              <div key={k}>{k.replace(/_/g, ' ')}: {fmt(v)}</div>
+                            ))}
+                            <div style={{ fontWeight: 700, marginTop: 4 }}>Total: {fmt(d.total_earnings)}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, marginBottom: 4 }}>Deductions</div>
+                            {Object.entries(d.deductions || {}).filter(([, v]) => v > 0).map(([k, v]) => (
+                              <div key={k}>{k.replace(/_/g, ' ')}: {fmt(v)}</div>
+                            ))}
+                            <div style={{ fontWeight: 700, marginTop: 4 }}>Total: {fmt(d.total_deductions)}</div>
+                          </div>
+                          <div style={{ gridColumn: '1 / -1', textAlign: 'center', fontWeight: 700, fontSize: 15 }}>Net: {fmt(d.net_pay)}</div>
+                        </div>
+                      )}
+
+                      {/* KPI Rating Details */}
+                      {item.module === 'KPI' && (
+                        <div>
+                          <div style={{ marginBottom: 6 }}><strong>Period:</strong> {d.period} {d.period_type}</div>
+                          {(d.kpi_ratings || []).map((k, i) => (
+                            <div key={i} style={{ padding: '4px 0', borderBottom: '1px solid var(--erp-border)' }}>
+                              <strong>{k.kpi_name || k.kpi_code}</strong>: Self {k.self_score || '-'}/5
+                              {k.manager_score != null && <span> · Manager {k.manager_score}/5</span>}
+                              {k.self_comment && <div style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{k.self_comment}</div>}
+                            </div>
+                          ))}
+                          {d.overall_self_score && <div style={{ fontWeight: 700, marginTop: 6 }}>Overall Self: {d.overall_self_score}/5</div>}
+                        </div>
+                      )}
+
+                      {/* Approval Request Details (Phase 29) */}
+                      {item.module === 'APPROVAL_REQUEST' && (
+                        <div style={{ color: 'var(--erp-muted)' }}>Authority matrix approval request. View full document in the originating module.</div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

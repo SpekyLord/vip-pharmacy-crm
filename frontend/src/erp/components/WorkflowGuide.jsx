@@ -289,16 +289,17 @@ const WORKFLOW_GUIDES = {
   'income': {
     title: 'Income Reports — Finance View',
     steps: [
-      '1. Payslips tab: Generate payslips → review BDM-entered deduction lines (verify ✓, correct ✎, reject ✕) → mark Reviewed → BDM confirms → Credit.',
-      '2. Schedules tab: Review and approve BDM deduction schedules (one-time + installment plans).',
-      '3. Approved schedule installments auto-inject into payslips when generated.',
-      '4. Verify/reject schedule-sourced lines on payslips — status syncs back to the schedule.',
+      '1. BDMs can now request payslip generation themselves (My Income → Request Payslip). You will see it in GENERATED status for review.',
+      '2. Payslips tab: Generate or regenerate payslips → review BDM-entered deduction lines (verify ✓, correct ✎, reject ✕) → mark Reviewed → BDM confirms → Credit.',
+      '3. Schedules tab: Review and approve BDM deduction schedules (one-time + installment plans).',
+      '4. Approved schedule installments auto-inject into payslips when generated.',
+      '5. Auto-deductions: CALF settlement (excess returned or shortfall reimbursed) and Personal Gas usage are computed automatically on each generation.',
     ],
     next: [
       { label: 'View P&L', path: '/erp/pnl' },
       { label: 'Profit Sharing', path: '/erp/profit-sharing' },
     ],
-    tip: 'Only contractors (BDMs) can create deduction schedules. Employees use the Payroll module. When you credit a payslip, schedule installments auto-mark as POSTED.',
+    tip: 'BDMs can regenerate payslips repeatedly until confirmed. CALF is bidirectional: excess = deduction, shortfall = reimbursement. Personal gas auto-deducts from Car Logbook data.',
   },
   'pnl': {
     title: 'Profit & Loss Statement',
