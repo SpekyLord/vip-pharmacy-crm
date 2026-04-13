@@ -210,6 +210,7 @@ const SEED_DEFAULTS = {
     { code: 'PRESIDENT', label: 'President' },
   ],
   APPROVAL_MODULE: [
+    // Authority Matrix modules (Phase 29)
     { code: 'SALES', label: 'Sales' },
     { code: 'COLLECTIONS', label: 'Collections' },
     { code: 'EXPENSES', label: 'Expenses' },
@@ -221,6 +222,14 @@ const SEED_DEFAULTS = {
     { code: 'PETTY_CASH', label: 'Petty Cash' },
     { code: 'IC_TRANSFER', label: 'Inter-Company Transfers' },
     { code: 'INCOME', label: 'Income' },
+    // Universal Approval Hub modules (Phase F.1)
+    { code: 'DEDUCTION_SCHEDULE', label: 'Deduction Schedules' },
+    { code: 'KPI', label: 'KPI Ratings' },
+    { code: 'COLLECTION', label: 'Collection (Posting)' },
+    { code: 'SMER', label: 'SMER' },
+    { code: 'CAR_LOGBOOK', label: 'Car Logbook' },
+    { code: 'PRF_CALF', label: 'PRF / CALF' },
+    { code: 'APPROVAL_REQUEST', label: 'Authority Matrix Approvals' },
   ],
   // Phase 30 — PersonDetail dropdowns (migrated from hardcoded arrays)
   CIVIL_STATUS: ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'],
@@ -428,6 +437,23 @@ const SEED_DEFAULTS = {
     { code: 'APPROVE', label: 'Approve', metadata: { color: '#16a34a' } },
     { code: 'CREDIT', label: 'Credit', metadata: { color: '#047857' } },
     { code: 'REJECT', label: 'Reject', metadata: { color: '#dc2626' } },
+  ],
+  // Phase F.1 — Universal Approval Hub default roles (replaces hardcoded allowed_roles in universalApprovalService)
+  // Admin can change who sees which posting/approval modules in the Approval Hub before ApprovalRules are configured.
+  // metadata.roles = null means open (anyone can see). metadata.roles = [...] restricts by role.
+  MODULE_DEFAULT_ROLES: [
+    { code: 'APPROVAL_REQUEST', label: 'Authority Matrix', metadata: { roles: null, description: 'Open to all — visibility governed by ApprovalRule resolution' } },
+    { code: 'DEDUCTION_SCHEDULE', label: 'Deduction Schedules', metadata: { roles: ['admin', 'finance', 'president'], description: 'Approve recurring/one-time BDM deductions' } },
+    { code: 'INCOME', label: 'Income Reports', metadata: { roles: ['admin', 'finance', 'president'], description: 'Review and credit BDM income/payslips' } },
+    { code: 'INVENTORY', label: 'GRN (Goods Receipt)', metadata: { roles: ['admin', 'finance'], description: 'Approve goods receipt notes' } },
+    { code: 'PAYROLL', label: 'Payslips', metadata: { roles: ['admin', 'finance', 'president'], description: 'Review and approve employee payslips' } },
+    { code: 'KPI', label: 'KPI Ratings', metadata: { roles: ['admin', 'president'], description: 'Review and approve KPI self-ratings' } },
+    { code: 'SALES', label: 'Sales / CSI', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated sales invoices' } },
+    { code: 'COLLECTION', label: 'Collections / CR', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated collection receipts' } },
+    { code: 'SMER', label: 'SMER', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated travel/expense reimbursements' } },
+    { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated car logbook entries' } },
+    { code: 'EXPENSES', label: 'Expenses (ORE/ACCESS)', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated expense entries' } },
+    { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated PRF/CALF documents' } },
   ],
 };
 

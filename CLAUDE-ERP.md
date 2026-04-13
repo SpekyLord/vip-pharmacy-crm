@@ -2,7 +2,7 @@
 
 > **Last Updated**: April 2026
 > **Version**: 6.0
-> **Status**: Phases 0-35 + Phase A-F + Gap 9 Complete. Phase F: Universal Approval Hub — cross-entity, delegatable, inline approve from one page (April 13, 2026).
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1 Complete. Phase F.1: Lookup-driven module default roles for Universal Approval Hub — Rule #3 compliance (April 13, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -101,6 +101,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | E | BDM Income Deductions — Lookup-Driven, Self-Service + Finance Verification | ✅ |
 | E.2 | Deduction Schedules — Recurring (Installment) + Non-Recurring (One-Time) | ✅ |
 | F | Universal Approval Hub — Cross-Entity, Delegatable, Inline Approve | ✅ |
+| F.1 | Lookup-Driven Module Default Roles — Rule #3 Compliance for Approval Hub | ✅ |
 | Gap 9 | Rx Correlation — Visit vs Sales + Rebates + Programs | ✅ |
 | G1 | BDM Income Projection + Revolving Fund + CALF Bidirectional + Personal Gas | ✅ |
 
@@ -366,6 +367,68 @@ frontend/src/erp/components/WorkflowGuide.jsx        # Updated approval-manager 
 | Category | Purpose |
 |----------|---------|
 | `UNIVERSAL_APPROVAL_ACTION` | REVIEW, APPROVE, CREDIT, REJECT, POST with color metadata |
+
+---
+
+## Phase F.1 — Lookup-Driven Module Default Roles (Rule #3 Compliance)
+
+Replaces hardcoded `allowed_roles` arrays in `universalApprovalService.js` with a database-driven `MODULE_DEFAULT_ROLES` Lookup category. Admin can now configure who sees which posting/approval modules in the Approval Hub — no code changes required.
+
+### Problem Solved
+11 of 12 modules in the Universal Approval Hub had hardcoded `allowed_roles` arrays (e.g., `['admin', 'finance', 'president']`). This violated Rule #3 (no hardcoded business values) and would break for future subscription customers with different role structures.
+
+### Architecture — 3-Layer Authorization
+```
+Layer 1: ApprovalRules (delegation)  → Admin creates rules per module → overrides everything
+Layer 2: MODULE_DEFAULT_ROLES (lookup) → Fallback when no ApprovalRules exist → admin-configurable
+Layer 3: President/CEO              → Always sees all modules across all entities
+```
+
+**Authorization Flow** in `isAuthorizedForModule()`:
+1. President/CEO? → `true` (always)
+2. ApprovalRules exist for module? → Check if user matches any rule (ROLE/USER/REPORTS_TO)
+3. No rules? → Query `MODULE_DEFAULT_ROLES` Lookup for the module code
+4. Lookup entry found with `metadata.roles` array? → Check if userRole is in the array
+5. No entry or `metadata.roles` is null? → `true` (open access, e.g., APPROVAL_REQUEST)
+
+### New Lookup Category
+| Category | Purpose |
+|----------|---------|
+| `MODULE_DEFAULT_ROLES` | Per-module default role arrays for Approval Hub visibility. `metadata.roles` = `['admin', 'finance', 'president']` or `null` (open). Auto-seeded on first access. |
+
+### Default Seed Values (12 modules)
+| Code | Label | Default Roles |
+|------|-------|---------------|
+| APPROVAL_REQUEST | Authority Matrix | null (open) |
+| DEDUCTION_SCHEDULE | Deduction Schedules | admin, finance, president |
+| INCOME | Income Reports | admin, finance, president |
+| INVENTORY | GRN (Goods Receipt) | admin, finance |
+| PAYROLL | Payslips | admin, finance, president |
+| KPI | KPI Ratings | admin, president |
+| SALES | Sales / CSI | admin, finance, president |
+| COLLECTION | Collections / CR | admin, finance, president |
+| SMER | SMER | admin, finance, president |
+| CAR_LOGBOOK | Car Logbook | admin, finance, president |
+| EXPENSES | Expenses (ORE/ACCESS) | admin, finance, president |
+| PRF_CALF | PRF / CALF | admin, finance, president |
+
+### ApprovalRule Enum Expansion
+Added 7 new module values to `ApprovalRule.module` enum so Approval Rules can be created for ALL Universal Hub modules:
+`DEDUCTION_SCHEDULE`, `KPI`, `COLLECTION`, `SMER`, `CAR_LOGBOOK`, `PRF_CALF`, `APPROVAL_REQUEST`
+
+### Key Changes
+| File | Change |
+|------|--------|
+| `backend/erp/controllers/lookupGenericController.js` | Added `MODULE_DEFAULT_ROLES` to SEED_DEFAULTS (12 entries) + expanded `APPROVAL_MODULE` seed |
+| `backend/erp/services/universalApprovalService.js` | Removed hardcoded `allowed_roles` from all MODULE_QUERIES entries. Added Lookup import. Refactored `isAuthorizedForModule()` to accept `defaultRolesMap`. `getUniversalPending()` fetches MODULE_DEFAULT_ROLES in one query and passes to auth check. |
+| `backend/erp/models/ApprovalRule.js` | Expanded `module` enum to include all Universal Hub modules (7 new values) |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | Updated approval-manager banner: added step 7 (default roles), updated tip (3-layer system), added Lookup Tables link |
+
+### Subscription Model Readiness
+- Future subscribers with custom roles (e.g., `accountant` instead of `finance`) can change MODULE_DEFAULT_ROLES via Control Center
+- ApprovalRules provide per-module delegation without code changes
+- Entity-scoped: each entity has its own MODULE_DEFAULT_ROLES entries
+- Auto-seeded on first access via standard Lookup auto-seed pattern
 
 ---
 

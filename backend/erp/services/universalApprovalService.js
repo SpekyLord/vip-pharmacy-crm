@@ -16,6 +16,7 @@ const DeductionSchedule = require('../models/DeductionSchedule');
 const IncomeReport = require('../models/IncomeReport');
 const GrnEntry = require('../models/GrnEntry');
 const ApprovalRule = require('../models/ApprovalRule');
+const Lookup = require('../models/Lookup');
 
 // Lazy-load optional models (may not exist in all deployments)
 function getModel(name) {
@@ -51,7 +52,7 @@ const MODULE_QUERIES = [
         approve_data: { type: 'approval_request', id: item._id }
       }));
     },
-    allowed_roles: null // uses ApprovalRule resolution
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES (null = open, governed by ApprovalRule)
   },
   {
     module: 'DEDUCTION_SCHEDULE',
@@ -89,7 +90,7 @@ const MODULE_QUERIES = [
         }
       }));
     },
-    allowed_roles: ['admin', 'finance', 'president']
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
   {
     module: 'INCOME',
@@ -134,7 +135,7 @@ const MODULE_QUERIES = [
         }
       }));
     },
-    allowed_roles: ['admin', 'finance', 'president']
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
   {
     module: 'INVENTORY',
@@ -168,7 +169,7 @@ const MODULE_QUERIES = [
         }
       }));
     },
-    allowed_roles: ['admin', 'finance']
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
   {
     module: 'PAYROLL',
@@ -209,7 +210,7 @@ const MODULE_QUERIES = [
         }
       }));
     },
-    allowed_roles: ['admin', 'finance', 'president']
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
   {
     module: 'KPI',
@@ -254,7 +255,7 @@ const MODULE_QUERIES = [
         }
       }));
     },
-    allowed_roles: ['admin', 'president']
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
   // ── Phase F expansion: document-posting modules (VALID → POSTED) ──
   {
@@ -300,7 +301,7 @@ const MODULE_QUERIES = [
         }
       }));
     },
-    allowed_roles: ['admin', 'finance', 'president']
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
   {
     module: 'COLLECTION',
@@ -346,7 +347,7 @@ const MODULE_QUERIES = [
         }
       }));
     },
-    allowed_roles: ['admin', 'finance', 'president']
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
   {
     module: 'SMER',
@@ -386,7 +387,7 @@ const MODULE_QUERIES = [
         }
       }));
     },
-    allowed_roles: ['admin', 'finance', 'president']
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
   {
     module: 'CAR_LOGBOOK',
@@ -429,7 +430,7 @@ const MODULE_QUERIES = [
         }
       }));
     },
-    allowed_roles: ['admin', 'finance', 'president']
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
   {
     module: 'EXPENSES',
@@ -471,7 +472,7 @@ const MODULE_QUERIES = [
         }
       }));
     },
-    allowed_roles: ['admin', 'finance', 'president']
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
   {
     module: 'PRF_CALF',
@@ -517,17 +518,23 @@ const MODULE_QUERIES = [
         };
       });
     },
-    allowed_roles: ['admin', 'finance', 'president']
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   }
 ];
 
 /**
  * Check if a user is authorized for a module.
- * 1. If ApprovalRules exist for this module → check if user matches any rule
- * 2. If no rules → fall back to module's allowed_roles
- * 3. President always authorized
+ * 1. President/CEO → always authorized
+ * 2. If ApprovalRules exist for this module → check if user matches any rule
+ * 3. If no rules → fall back to lookup-driven MODULE_DEFAULT_ROLES (Rule #3 compliant)
+ *
+ * @param {ObjectId} entityId
+ * @param {ObjectId} userId
+ * @param {string}   userRole
+ * @param {object}   moduleEntry - entry from MODULE_QUERIES
+ * @param {Map}      defaultRolesMap - pre-fetched MODULE_DEFAULT_ROLES lookup entries keyed by code
  */
-async function isAuthorizedForModule(entityId, userId, userRole, moduleEntry) {
+async function isAuthorizedForModule(entityId, userId, userRole, moduleEntry, defaultRolesMap) {
   // President always sees everything
   if ([ROLES.PRESIDENT, ROLES.CEO].includes(userRole)) return true;
 
@@ -551,9 +558,10 @@ async function isAuthorizedForModule(entityId, userId, userRole, moduleEntry) {
     return false;
   }
 
-  // No rules defined → use module's default allowed_roles
-  if (!moduleEntry.allowed_roles) return true; // null = open (e.g., authority matrix items)
-  return moduleEntry.allowed_roles.includes(userRole);
+  // No ApprovalRules → fall back to lookup-driven MODULE_DEFAULT_ROLES
+  const defaultEntry = defaultRolesMap.get(moduleEntry.module);
+  if (!defaultEntry || !defaultEntry.metadata?.roles) return true; // null/missing = open
+  return defaultEntry.metadata.roles.includes(userRole);
 }
 
 /**
@@ -583,10 +591,41 @@ async function getUniversalPending(entityId, userId, userRole, entityIds) {
     entitiesToQuery = [entityId];
   }
 
+  // Fetch lookup-driven default roles in one query (Rule #3: no hardcoded business values)
+  // Auto-seeds on first access if empty — mirrors getByCategory() pattern in lookupGenericController
+  let defaultRoles = await Lookup.find({
+    entity_id: entityId,
+    category: 'MODULE_DEFAULT_ROLES',
+    is_active: true
+  }).lean();
+
+  if (defaultRoles.length === 0 && entityId) {
+    // Auto-seed from SEED_DEFAULTS (same pattern as lookupGenericController.getByCategory)
+    try {
+      const { SEED_DEFAULTS } = require('../controllers/lookupGenericController');
+      const seeds = SEED_DEFAULTS.MODULE_DEFAULT_ROLES;
+      if (seeds && seeds.length > 0) {
+        const ops = seeds.map((item, i) => ({
+          updateOne: {
+            filter: { entity_id: entityId, category: 'MODULE_DEFAULT_ROLES', code: item.code.toUpperCase() },
+            update: { $setOnInsert: { label: item.label, sort_order: i * 10, is_active: true, metadata: item.metadata || {} } },
+            upsert: true
+          }
+        }));
+        await Lookup.bulkWrite(ops);
+        defaultRoles = await Lookup.find({ entity_id: entityId, category: 'MODULE_DEFAULT_ROLES', is_active: true }).lean();
+      }
+    } catch (seedErr) {
+      console.error('MODULE_DEFAULT_ROLES auto-seed failed:', seedErr.message);
+    }
+  }
+
+  const defaultRolesMap = new Map(defaultRoles.map(r => [r.code, r]));
+
   // Filter to modules this user is authorized for
   const authorizedModules = [];
   for (const mod of MODULE_QUERIES) {
-    const auth = await isAuthorizedForModule(entityId, userId, userRole, mod);
+    const auth = await isAuthorizedForModule(entityId, userId, userRole, mod, defaultRolesMap);
     if (auth) authorizedModules.push(mod);
   }
 
