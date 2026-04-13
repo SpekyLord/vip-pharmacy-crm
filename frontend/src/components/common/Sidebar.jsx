@@ -956,7 +956,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
   }
 };
 
-const getErpMenuConfig = (role, erpAccess = null) => {
+const getErpMenuConfig = (role, erpAccess = null, approvalCount = 0) => {
   const erpSections = getErpSection(role, erpAccess, { includeHomeOnly: true });
   const sections = erpSections || [{ title: null, collapsible: false, items: [{ path: '/erp', label: 'ERP Home', icon: Briefcase }] }];
   const isAdminLike = isAdminLikeRole(role);
@@ -976,7 +976,7 @@ const getErpMenuConfig = (role, erpAccess = null) => {
 
 const getMenuConfig = (role, unreadCount = 0, erpAccess = null, pathname = '', approvalCount = 0) => {
   if (pathname.startsWith('/erp')) {
-    return getErpMenuConfig(role, erpAccess);
+    return getErpMenuConfig(role, erpAccess, approvalCount);
   }
 
   const crmRole = isAdminLikeRole(role) ? ROLES.ADMIN : ROLES.CONTRACTOR;
