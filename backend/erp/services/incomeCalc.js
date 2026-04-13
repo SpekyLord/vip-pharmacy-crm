@@ -327,9 +327,10 @@ async function projectIncome(entityId, bdmId, period, cycle) {
     bdm_id: new mongoose.Types.ObjectId(bdmId)
   };
 
-  // 1. SMER — any status (DRAFT/VALID/POSTED)
+  // 1. SMER — any active status (exclude DELETION_REQUESTED)
   const smer = await SmerEntry.findOne({
-    ...filter, period, cycle
+    ...filter, period, cycle,
+    status: { $in: ['DRAFT', 'VALID', 'ERROR', 'POSTED'] }
   }).sort({ updatedAt: -1 }).lean();
 
   // 2. Commission from Collections — split by status

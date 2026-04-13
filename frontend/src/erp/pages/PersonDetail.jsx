@@ -587,7 +587,7 @@ export default function PersonDetail() {
                   <F lbl="Vehicle Type" name="vehicle_type" val={comp?.vehicle_type} editing={editComp} form={compForm} onChange={handleCompChange} options={VEHICLE_TYPES} />
                   <F lbl="Km/Liter" name="km_per_liter" type="number" val={comp?.km_per_liter} editing={editComp} form={compForm} onChange={handleCompChange} />
                   <F lbl="Fuel Overcon. Threshold" name="fuel_overconsumption_threshold" type="number" val={comp?.fuel_overconsumption_threshold} editing={editComp} form={compForm} onChange={handleCompChange} />
-                  <F lbl="Revolving Fund (PHP)" name="revolving_fund_amount" type="number" val={comp?.revolving_fund_amount} editing={editComp} form={compForm} onChange={handleCompChange} helper="0 = use global default from Settings" />
+                  <F lbl="Revolving Fund (PHP) — 0=default" name="revolving_fund_amount" type="number" val={comp?.revolving_fund_amount} editing={editComp} form={compForm} onChange={handleCompChange} />
                   <F lbl="Commission Rate (%)" name="commission_rate" type="number" val={comp?.commission_rate} editing={editComp} form={compForm} onChange={handleCompChange} />
                   <F lbl="Full Threshold" name="perdiem_engagement_threshold_full" type="number" val={comp?.perdiem_engagement_threshold_full} editing={editComp} form={compForm} onChange={handleCompChange} />
                   <F lbl="Half Threshold" name="perdiem_engagement_threshold_half" type="number" val={comp?.perdiem_engagement_threshold_half} editing={editComp} form={compForm} onChange={handleCompChange} />

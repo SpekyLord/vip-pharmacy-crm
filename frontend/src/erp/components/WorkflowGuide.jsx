@@ -289,16 +289,17 @@ const WORKFLOW_GUIDES = {
   'income': {
     title: 'Income Reports — Finance View',
     steps: [
-      '1. Payslips tab: Generate payslips → review BDM-entered deduction lines (verify ✓, correct ✎, reject ✕) → mark Reviewed → BDM confirms → Credit.',
-      '2. Schedules tab: Review and approve BDM deduction schedules (one-time + installment plans).',
-      '3. Approved schedule installments auto-inject into payslips when generated.',
-      '4. Verify/reject schedule-sourced lines on payslips — status syncs back to the schedule.',
+      '1. BDMs can now request payslip generation themselves (My Income → Request Payslip). You will see it in GENERATED status for review.',
+      '2. Payslips tab: Generate or regenerate payslips → review BDM-entered deduction lines (verify ✓, correct ✎, reject ✕) → mark Reviewed → BDM confirms → Credit.',
+      '3. Schedules tab: Review and approve BDM deduction schedules (one-time + installment plans).',
+      '4. Approved schedule installments auto-inject into payslips when generated.',
+      '5. Auto-deductions: CALF settlement (excess returned or shortfall reimbursed) and Personal Gas usage are computed automatically on each generation.',
     ],
     next: [
       { label: 'View P&L', path: '/erp/pnl' },
       { label: 'Profit Sharing', path: '/erp/profit-sharing' },
     ],
-    tip: 'Only contractors (BDMs) can create deduction schedules. Employees use the Payroll module. When you credit a payslip, schedule installments auto-mark as POSTED.',
+    tip: 'BDMs can regenerate payslips repeatedly until confirmed. CALF is bidirectional: excess = deduction, shortfall = reimbursement. Personal gas auto-deducts from Car Logbook data.',
   },
   'pnl': {
     title: 'Profit & Loss Statement',
@@ -438,17 +439,21 @@ const WORKFLOW_GUIDES = {
   'approval-manager': {
     title: 'Universal Approval Hub',
     steps: [
-      '1. All Pending tab: see EVERY transaction across the ERP that needs your attention — approve or reject inline.',
-      '2. Module filter: narrow by Income, Schedules, POs, GRN, Payroll, KPI, etc.',
-      '3. Requests tab: Phase 29 authority matrix approvals (POs and other rule-triggered items).',
-      '4. Rules tab (Admin): create approval rules to delegate — assign specific people or roles to approve specific modules.',
-      '5. Sidebar badge shows how many items need your attention.',
+      '1. All Pending tab: see EVERY transaction across the ERP that needs your attention — approve, post, or reject inline.',
+      '2. Module filter: narrow by Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Income, Deductions, GRN, Payroll, KPI, etc.',
+      '3. Posting modules (Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF): documents in VALID status appear here — click Post to transition to POSTED.',
+      '4. Approval modules (Income, Deductions, GRN, Payroll, KPI): multi-step review/approve workflows.',
+      '5. Requests tab: Phase 29 authority matrix approvals (rule-triggered items).',
+      '6. Rules tab (Admin): create approval rules to delegate — assign specific people or roles to approve specific modules.',
+      '7. Sidebar badge shows how many items need your attention.',
     ],
     next: [
       { label: 'Control Center', path: '/erp/control-center?section=approval-rules' },
       { label: 'Income', path: '/erp/income' },
+      { label: 'Sales', path: '/erp/sales' },
+      { label: 'SMER', path: '/erp/smer' },
     ],
-    tip: 'President can delegate approval authority via Rules tab — assign a person (USER) or role (ROLE) per module. Delegated users will see only their assigned modules in All Pending.',
+    tip: 'President can delegate approval authority via Rules tab — assign a person (USER) or role (ROLE) per module. Documents must be in VALID status before they can be posted here.',
   },
   'batch-trace': {
     title: 'Batch Trace',

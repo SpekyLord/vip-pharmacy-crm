@@ -74,7 +74,19 @@ const MODULE_QUERIES = [
         status: 'PENDING_APPROVAL',
         current_action: 'Approve',
         action_key: 'APPROVE',
-        approve_data: { type: 'deduction_schedule', id: item._id }
+        approve_data: { type: 'deduction_schedule', id: item._id },
+        details: {
+          deduction_type: item.deduction_type,
+          deduction_label: item.deduction_label,
+          total_amount: item.total_amount,
+          term_months: item.term_months,
+          installment_amount: item.installment_amount,
+          start_period: item.start_period,
+          description: item.description,
+          installments: (item.installments || []).map(i => ({
+            period: i.period, installment_no: i.installment_no, amount: i.amount, status: i.status
+          }))
+        }
       }));
     },
     allowed_roles: ['admin', 'finance', 'president']
@@ -107,6 +119,18 @@ const MODULE_QUERIES = [
           type: 'income_report',
           id: item._id,
           action: item.status === 'GENERATED' ? 'review' : 'credit'
+        },
+        details: {
+          period: item.period,
+          cycle: item.cycle,
+          earnings: item.earnings,
+          total_earnings: item.total_earnings,
+          deduction_lines: (item.deduction_lines || []).map(l => ({
+            deduction_label: l.deduction_label, amount: l.amount, status: l.status,
+            auto_source: l.auto_source, description: l.description
+          })),
+          total_deductions: item.total_deductions,
+          net_pay: item.net_pay
         }
       }));
     },
@@ -133,7 +157,15 @@ const MODULE_QUERIES = [
         status: 'PENDING_APPROVAL',
         current_action: 'Approve',
         action_key: 'APPROVE',
-        approve_data: { type: 'grn', id: item._id }
+        approve_data: { type: 'grn', id: item._id },
+        details: {
+          grn_date: item.grn_date,
+          line_items: (item.line_items || []).map(li => ({
+            item_key: li.item_key, batch_lot_no: li.batch_lot_no,
+            expiry_date: li.expiry_date, qty: li.qty
+          })),
+          notes: item.notes
+        }
       }));
     },
     allowed_roles: ['admin', 'finance']
@@ -168,6 +200,12 @@ const MODULE_QUERIES = [
           type: 'payslip',
           id: item._id,
           action: item.status === 'COMPUTED' ? 'review' : 'approve'
+        },
+        details: {
+          period: item.period, cycle: item.cycle,
+          earnings: item.earnings, deductions: item.deductions,
+          total_earnings: item.total_earnings, total_deductions: item.total_deductions,
+          net_pay: item.net_pay
         }
       }));
     },
@@ -203,10 +241,283 @@ const MODULE_QUERIES = [
           type: 'kpi_rating',
           id: item._id,
           action: item.status === 'SUBMITTED' ? 'review' : 'approve'
+        },
+        details: {
+          period: item.period, period_type: item.period_type,
+          kpi_ratings: (item.kpi_ratings || []).map(k => ({
+            kpi_code: k.kpi_code, kpi_name: k.kpi_name,
+            self_score: k.self_score, self_comment: k.self_comment,
+            manager_score: k.manager_score
+          })),
+          overall_self_score: item.overall_self_score,
+          overall_manager_score: item.overall_manager_score
         }
       }));
     },
     allowed_roles: ['admin', 'president']
+  },
+  // ── Phase F expansion: document-posting modules (VALID → POSTED) ──
+  {
+    module: 'SALES',
+    label: 'Sales / CSI',
+    query: async (entityId) => {
+      const SalesLine = getModel('SalesLine');
+      if (!SalesLine) return [];
+      const items = await SalesLine.find({ entity_id: entityId, status: 'VALID' })
+        .populate('bdm_id', 'name email')
+        .populate('hospital_id', 'name')
+        .populate('customer_id', 'name')
+        .sort({ createdAt: -1 })
+        .lean();
+      return items.map(item => ({
+        id: `SALES:${item._id}`,
+        module: 'SALES',
+        doc_type: item.sale_type || 'CSI',
+        doc_id: item._id,
+        doc_ref: item.doc_ref || item.invoice_number || `INV-${String(item._id).slice(-6)}`,
+        description: `${item.bdm_id?.name || 'BDM'} — ${item.sale_type || 'CSI'} ${item.doc_ref || ''} — ${(item.hospital_id?.name || item.customer_id?.name || 'Customer')}`,
+        amount: item.invoice_total || 0,
+        submitted_by: item.bdm_id?.name || 'Unknown',
+        submitted_at: item.createdAt,
+        status: 'PENDING_POST',
+        current_action: 'Post',
+        action_key: 'POST',
+        approve_data: { type: 'sales_line', id: item._id, action: 'post' },
+        details: {
+          sale_type: item.sale_type,
+          csi_date: item.csi_date,
+          invoice_number: item.invoice_number,
+          hospital: item.hospital_id?.name,
+          customer: item.customer_id?.name,
+          payment_mode: item.payment_mode,
+          invoice_total: item.invoice_total,
+          total_vat: item.total_vat,
+          total_net_of_vat: item.total_net_of_vat,
+          line_items: (item.line_items || []).map(li => ({
+            product_id: li.product_id, qty: li.qty, unit_price: li.unit_price,
+            line_total: li.line_total, vat_amount: li.vat_amount
+          }))
+        }
+      }));
+    },
+    allowed_roles: ['admin', 'finance', 'president']
+  },
+  {
+    module: 'COLLECTION',
+    label: 'Collections / CR',
+    query: async (entityId) => {
+      const Collection = getModel('Collection');
+      if (!Collection) return [];
+      const items = await Collection.find({ entity_id: entityId, status: 'VALID' })
+        .populate('bdm_id', 'name email')
+        .populate('hospital_id', 'name')
+        .populate('customer_id', 'name')
+        .sort({ createdAt: -1 })
+        .lean();
+      return items.map(item => ({
+        id: `COLLECTION:${item._id}`,
+        module: 'COLLECTION',
+        doc_type: 'CR',
+        doc_id: item._id,
+        doc_ref: item.cr_no || `CR-${String(item._id).slice(-6)}`,
+        description: `${item.bdm_id?.name || 'BDM'} — CR ${item.cr_no || ''} — ${(item.hospital_id?.name || item.customer_id?.name || 'Customer')}`,
+        amount: item.cr_amount || 0,
+        submitted_by: item.bdm_id?.name || 'Unknown',
+        submitted_at: item.createdAt,
+        status: 'PENDING_POST',
+        current_action: 'Post',
+        action_key: 'POST',
+        approve_data: { type: 'collection', id: item._id, action: 'post' },
+        details: {
+          cr_date: item.cr_date,
+          cr_amount: item.cr_amount,
+          hospital: item.hospital_id?.name,
+          customer: item.customer_id?.name,
+          payment_mode: item.payment_mode,
+          check_no: item.check_no,
+          total_csi_amount: item.total_csi_amount,
+          total_commission: item.total_commission,
+          total_partner_rebates: item.total_partner_rebates,
+          cwt_amount: item.cwt_amount,
+          settled_csis: (item.settled_csis || []).map(c => ({
+            doc_ref: c.doc_ref, invoice_amount: c.invoice_amount,
+            commission_amount: c.commission_amount
+          }))
+        }
+      }));
+    },
+    allowed_roles: ['admin', 'finance', 'president']
+  },
+  {
+    module: 'SMER',
+    label: 'SMER',
+    query: async (entityId) => {
+      const SmerEntry = getModel('SmerEntry');
+      if (!SmerEntry) return [];
+      const items = await SmerEntry.find({ entity_id: entityId, status: 'VALID' })
+        .populate('bdm_id', 'name email')
+        .sort({ createdAt: -1 })
+        .lean();
+      return items.map(item => ({
+        id: `SMER:${item._id}`,
+        module: 'SMER',
+        doc_type: 'SMER',
+        doc_id: item._id,
+        doc_ref: `${item.period}-${item.cycle || ''}`.trim(),
+        description: `${item.bdm_id?.name || 'BDM'} — ${item.period} ${item.cycle || ''} — Reimb: ₱${(item.total_reimbursable || 0).toLocaleString()}`,
+        amount: item.total_reimbursable || 0,
+        submitted_by: item.bdm_id?.name || 'Unknown',
+        submitted_at: item.createdAt,
+        status: 'PENDING_POST',
+        current_action: 'Post',
+        action_key: 'POST',
+        approve_data: { type: 'smer_entry', id: item._id, action: 'post' },
+        details: {
+          period: item.period,
+          cycle: item.cycle,
+          working_days: item.working_days,
+          total_perdiem: item.total_perdiem,
+          total_transpo: item.total_transpo,
+          total_ore: item.total_ore,
+          total_reimbursable: item.total_reimbursable,
+          travel_advance: item.travel_advance,
+          balance_on_hand: item.balance_on_hand,
+          daily_entries_count: (item.daily_entries || []).length
+        }
+      }));
+    },
+    allowed_roles: ['admin', 'finance', 'president']
+  },
+  {
+    module: 'CAR_LOGBOOK',
+    label: 'Car Logbook',
+    query: async (entityId) => {
+      const CarLogbookEntry = getModel('CarLogbookEntry');
+      if (!CarLogbookEntry) return [];
+      const items = await CarLogbookEntry.find({ entity_id: entityId, status: 'VALID' })
+        .populate('bdm_id', 'name email')
+        .sort({ createdAt: -1 })
+        .lean();
+      return items.map(item => ({
+        id: `CAR_LOGBOOK:${item._id}`,
+        module: 'CAR_LOGBOOK',
+        doc_type: 'CAR_LOGBOOK',
+        doc_id: item._id,
+        doc_ref: `${item.period}-${item.cycle || ''}`.trim(),
+        description: `${item.bdm_id?.name || 'BDM'} — ${item.period} ${item.cycle || ''} — ${item.total_km || 0} km`,
+        amount: item.total_fuel_amount || 0,
+        submitted_by: item.bdm_id?.name || 'Unknown',
+        submitted_at: item.createdAt,
+        status: 'PENDING_POST',
+        current_action: 'Post',
+        action_key: 'POST',
+        approve_data: { type: 'car_logbook', id: item._id, action: 'post' },
+        details: {
+          period: item.period,
+          cycle: item.cycle,
+          entry_date: item.entry_date,
+          total_km: item.total_km,
+          official_km: item.official_km,
+          personal_km: item.personal_km,
+          total_fuel_amount: item.total_fuel_amount,
+          official_gas_amount: item.official_gas_amount,
+          personal_gas_amount: item.personal_gas_amount,
+          actual_liters: item.actual_liters,
+          km_per_liter: item.km_per_liter,
+          overconsumption_flag: item.overconsumption_flag,
+          fuel_entries_count: (item.fuel_entries || []).length
+        }
+      }));
+    },
+    allowed_roles: ['admin', 'finance', 'president']
+  },
+  {
+    module: 'EXPENSES',
+    label: 'Expenses (ORE/ACCESS)',
+    query: async (entityId) => {
+      const ExpenseEntry = getModel('ExpenseEntry');
+      if (!ExpenseEntry) return [];
+      const items = await ExpenseEntry.find({ entity_id: entityId, status: 'VALID' })
+        .populate('bdm_id', 'name email')
+        .sort({ createdAt: -1 })
+        .lean();
+      return items.map(item => ({
+        id: `EXPENSES:${item._id}`,
+        module: 'EXPENSES',
+        doc_type: 'EXPENSE',
+        doc_id: item._id,
+        doc_ref: `${item.period}-${item.cycle || ''}`.trim(),
+        description: `${item.bdm_id?.name || 'BDM'} — ${item.period} ${item.cycle || ''} — ORE: ₱${(item.total_ore || 0).toLocaleString()} / ACCESS: ₱${(item.total_access || 0).toLocaleString()}`,
+        amount: item.total_amount || 0,
+        submitted_by: item.bdm_id?.name || 'Unknown',
+        submitted_at: item.createdAt,
+        status: 'PENDING_POST',
+        current_action: 'Post',
+        action_key: 'POST',
+        approve_data: { type: 'expense_entry', id: item._id, action: 'post' },
+        details: {
+          period: item.period,
+          cycle: item.cycle,
+          total_ore: item.total_ore,
+          total_access: item.total_access,
+          total_amount: item.total_amount,
+          total_vat: item.total_vat,
+          line_count: item.line_count || (item.lines || []).length,
+          lines: (item.lines || []).slice(0, 10).map(l => ({
+            expense_type: l.expense_type, expense_category: l.expense_category,
+            amount: l.amount, or_number: l.or_number, payment_mode: l.payment_mode,
+            calf_required: l.calf_required
+          }))
+        }
+      }));
+    },
+    allowed_roles: ['admin', 'finance', 'president']
+  },
+  {
+    module: 'PRF_CALF',
+    label: 'PRF / CALF',
+    query: async (entityId) => {
+      const PrfCalf = getModel('PrfCalf');
+      if (!PrfCalf) return [];
+      const items = await PrfCalf.find({ entity_id: entityId, status: 'VALID' })
+        .populate('bdm_id', 'name email')
+        .sort({ createdAt: -1 })
+        .lean();
+      return items.map(item => {
+        const isPrf = item.doc_type === 'PRF';
+        return {
+          id: `PRF_CALF:${item._id}`,
+          module: 'PRF_CALF',
+          doc_type: item.doc_type || 'PRF',
+          doc_id: item._id,
+          doc_ref: (isPrf ? item.prf_number : item.calf_number) || `${item.doc_type}-${String(item._id).slice(-6)}`,
+          description: `${item.bdm_id?.name || 'BDM'} — ${item.doc_type} — ${isPrf ? item.payee_name || 'Payee' : 'Cash Advance'} — ₱${(item.amount || (isPrf ? item.rebate_amount : item.advance_amount) || 0).toLocaleString()}`,
+          amount: item.amount || (isPrf ? item.rebate_amount : item.advance_amount) || 0,
+          submitted_by: item.bdm_id?.name || 'Unknown',
+          submitted_at: item.createdAt,
+          status: 'PENDING_POST',
+          current_action: 'Post',
+          action_key: 'POST',
+          approve_data: { type: 'prf_calf', id: item._id, action: 'post' },
+          details: {
+            doc_type: item.doc_type,
+            period: item.period,
+            cycle: item.cycle,
+            prf_type: item.prf_type,
+            payee_name: item.payee_name,
+            payee_type: item.payee_type,
+            purpose: item.purpose,
+            payment_mode: item.payment_mode,
+            rebate_amount: item.rebate_amount,
+            advance_amount: item.advance_amount,
+            liquidation_amount: item.liquidation_amount,
+            balance: item.balance,
+            bir_flag: item.bir_flag
+          }
+        };
+      });
+    },
+    allowed_roles: ['admin', 'finance', 'president']
   }
 ];
 
