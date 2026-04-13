@@ -435,18 +435,19 @@ const WORKFLOW_GUIDES = {
     tip: 'Free agents always run on schedule. AI agents require ANTHROPIC_API_KEY.',
   },
   'approval-manager': {
-    title: 'Approval Workflow Manager',
+    title: 'Universal Approval Hub',
     steps: [
-      'View pending approval requests assigned to you',
-      'Approve or reject with a reason (rejections require a reason)',
-      'Admin: create approval rules per module, doc type, and amount threshold',
-      'Rules support multi-level approval chains (Level 1 → Level 2 → etc.)',
+      '1. All Pending tab: see EVERY transaction across the ERP that needs your attention — approve or reject inline.',
+      '2. Module filter: narrow by Income, Schedules, POs, GRN, Payroll, KPI, etc.',
+      '3. Requests tab: Phase 29 authority matrix approvals (POs and other rule-triggered items).',
+      '4. Rules tab (Admin): create approval rules to delegate — assign specific people or roles to approve specific modules.',
+      '5. Sidebar badge shows how many items need your attention.',
     ],
     next: [
       { label: 'Control Center', path: '/erp/control-center?section=approval-rules' },
-      { label: 'Settings', path: '/erp/control-center?section=settings' },
+      { label: 'Income', path: '/erp/income' },
     ],
-    tip: 'Enable ENFORCE_AUTHORITY_MATRIX in Settings to activate approval workflows.',
+    tip: 'President can delegate approval authority via Rules tab — assign a person (USER) or role (ROLE) per module. Delegated users will see only their assigned modules in All Pending.',
   },
   'batch-trace': {
     title: 'Batch Trace',

@@ -2,7 +2,7 @@
 
 > **Last Updated**: April 2026
 > **Version**: 6.0
-> **Status**: Phases 0-35 + Phase A-E.2 + Gap 9 Complete. Phase E.2: Deduction Schedules — recurring installments + one-time deductions, BDM self-service + Finance verification (April 13, 2026).
+> **Status**: Phases 0-35 + Phase A-F + Gap 9 Complete. Phase F: Universal Approval Hub — cross-entity, delegatable, inline approve from one page (April 13, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -100,6 +100,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | D | Multi-Channel Engagement — Communication Log + Messaging APIs | ✅ |
 | E | BDM Income Deductions — Lookup-Driven, Self-Service + Finance Verification | ✅ |
 | E.2 | Deduction Schedules — Recurring (Installment) + Non-Recurring (One-Time) | ✅ |
+| F | Universal Approval Hub — Cross-Entity, Delegatable, Inline Approve | ✅ |
 | Gap 9 | Rx Correlation — Visit vs Sales + Rebates + Programs | ✅ |
 
 ---
@@ -246,6 +247,52 @@ frontend/src/App.jsx                        # /erp/my-income route (contractor o
   auto_source: String           // 'CALF' for auto-pulled lines (null for manual)
 }
 ```
+
+---
+
+## Phase F — Universal Approval Hub
+
+One page (`/erp/approvals`) where president or any authorized person sees ALL pending transactions across all modules and approves inline. Cross-entity for president. Delegatable via ApprovalRule.
+
+### Architecture
+- **universalApprovalService.js**: Queries 6 modules in parallel (ApprovalRequest, DeductionSchedule, IncomeReport, GrnEntry, Payslip, KpiSelfRating), normalizes results
+- **MODULE_QUERIES registry**: Scalable — add a new module by adding a query function, no switch/if chains
+- **Authorization**: Checks ApprovalRules first (delegation), falls back to role-based, president always sees all
+- **Cross-entity**: President queries ALL entities. Multi-entity users query their assigned entities. Single-entity users query their own.
+- **Sidebar badge**: Pending count refreshes every 60s, emits `approval:updated` event
+
+### Delegation (via existing ApprovalRule)
+President assigns approval authority in Control Center → Approvals → Rules tab:
+- `approver_type: 'USER'` + specific person IDs → that person sees the module in their hub
+- `approver_type: 'ROLE'` + role names → anyone with that role sees it
+- `approver_type: 'REPORTS_TO'` → the submitter's manager
+
+### Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/erp/approvals/universal-pending` | All pending items across all modules |
+| POST | `/api/erp/approvals/universal-approve` | Approve/reject any item (routes to module logic) |
+
+### Universal Item Shape
+```javascript
+{ id, module, doc_type, doc_id, doc_ref, description, amount, submitted_by, submitted_at, status, current_action, action_key, approve_data }
+```
+
+### Key Files
+```
+backend/erp/services/universalApprovalService.js     # Aggregation + authorization
+backend/erp/controllers/universalApprovalController.js # 2 endpoints
+backend/erp/routes/approvalRoutes.js                 # Routes added
+frontend/src/erp/hooks/useApprovals.js               # fetchUniversalPending + universalApprove
+frontend/src/erp/pages/ApprovalManager.jsx           # "All Pending" tab with inline approve
+frontend/src/components/common/Sidebar.jsx           # Badge count (60s refresh)
+frontend/src/erp/components/WorkflowGuide.jsx        # Updated approval-manager banner
+```
+
+### New Lookup Categories
+| Category | Purpose |
+|----------|---------|
+| `UNIVERSAL_APPROVAL_ACTION` | REVIEW, APPROVE, CREDIT, REJECT with color metadata |
 
 ---
 

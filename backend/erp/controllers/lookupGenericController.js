@@ -421,6 +421,13 @@ const SEED_DEFAULTS = {
   ],
   DEDUCTION_LINE_STATUS: ['PENDING', 'VERIFIED', 'CORRECTED', 'REJECTED'],
   DEDUCTION_SCHEDULE_STATUS: ['PENDING_APPROVAL', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'],
+  // Phase F — Universal Approval Hub action labels (lookup-driven)
+  UNIVERSAL_APPROVAL_ACTION: [
+    { code: 'REVIEW', label: 'Review', metadata: { color: '#2563eb' } },
+    { code: 'APPROVE', label: 'Approve', metadata: { color: '#16a34a' } },
+    { code: 'CREDIT', label: 'Credit', metadata: { color: '#047857' } },
+    { code: 'REJECT', label: 'Reject', metadata: { color: '#dc2626' } },
+  ],
 };
 
 // List all distinct categories for current entity
