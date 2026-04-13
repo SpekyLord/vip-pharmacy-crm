@@ -49,7 +49,7 @@ export function extractExifDateTime(file) {
  * @param {File}   photo    – Image file from input or camera capture.
  * @param {string} docType  – One of: CSI, CR, CWT_2307, GAS_RECEIPT, ODOMETER, OR, UNDERTAKING, DR
  * @param {string} [exifDateTime] – EXIF timestamp extracted from photo (optional)
- * @returns {Promise<object>} { s3_url, doc_type, extracted, validation_flags, raw_ocr_text }
+ * @returns {Promise<object>} { s3_url, doc_type, extracted, layout_family, review_required, review_reasons, validation_flags, raw_ocr_text }
  */
 export async function processDocument(photo, docType, exifDateTime) {
   const formData = new FormData();

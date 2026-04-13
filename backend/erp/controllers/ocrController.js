@@ -34,7 +34,11 @@ const processDocument = catchAsync(async (req, res) => {
   const exifDateTime = String(req.body.exifDateTime || '').trim() || null;
 
   // Route through document-type parser for structured extraction
-  const processed = await processOcr(docType, ocrResult, { exifDateTime });
+  const processed = await processOcr(docType, ocrResult, {
+    exifDateTime,
+    imageBuffer: req.file.buffer,
+    entityId: req.user?.entity_id || null,
+  });
 
   // Phase 9.1b: Create DocumentAttachment record for permanent audit trail
   let attachmentId = null;
@@ -66,6 +70,10 @@ const processDocument = catchAsync(async (req, res) => {
       attachment_id: attachmentId,
       doc_type: processed.doc_type,
       extracted: processed.extracted,
+      layout_family: processed.layout_family,
+      review_required: processed.review_required,
+      review_reasons: processed.review_reasons,
+      preprocessing: processed.preprocessing,
       classification: processed.classification,
       validation_flags: processed.validation_flags,
       raw_ocr_text: processed.raw_ocr_text,

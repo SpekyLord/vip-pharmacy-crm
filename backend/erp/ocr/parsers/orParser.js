@@ -277,7 +277,7 @@ function parseOR(ocrResult) {
     const sum = lineItems.reduce((acc, item) => acc + (item.amount || 0), 0);
     if (sum > 0) {
       amount = parseFloat(sum.toFixed(2));
-      validationFlags.push('Total computed from line items — please verify');
+      validationFlags.push({ type: 'TOTAL_FROM_LINE_ITEMS', message: 'Total computed from line items — please verify' });
     }
   }
 
@@ -386,7 +386,7 @@ function parseOR(ocrResult) {
       vatAmount = parseFloat((amount * 0.12 / (1 + 0.12)).toFixed(2));
       vatComputed = true;
     }
-    validationFlags.push(`VAT auto-computed (${vatAmount}) from ${vatableSales ? 'VATable Sales' : 'total (assumed VAT-inclusive)'} — please verify`);
+    validationFlags.push({ type: 'VAT_COMPUTED', message: `VAT auto-computed (${vatAmount}) from ${vatableSales ? 'VATable Sales' : 'total (assumed VAT-inclusive)'} — please verify` });
   }
 
   // --- Cross-validate VAT if both OCR-read and we can check ---
@@ -395,13 +395,13 @@ function parseOR(ocrResult) {
     const expectedVat = parseFloat((amount * 0.12 / (1 + 0.12)).toFixed(2));
     const vatDiff = Math.abs(vatAmount - expectedVat);
     if (vatDiff > expectedVat * 0.10 && vatDiff > 2) {
-      validationFlags.push(`VAT (${vatAmount}) differs from expected 12/112 of ${amount} = ${expectedVat} — verify if VAT-exempt items exist`);
+      validationFlags.push({ type: 'VAT_MISMATCH', message: `VAT (${vatAmount}) differs from expected 12/112 of ${amount} = ${expectedVat} — verify if VAT-exempt items exist` });
     }
   }
 
   // --- Sanity check ---
   if (amount != null && vatAmount != null && vatAmount >= amount) {
-    validationFlags.push(`VAT (${vatAmount}) >= Total (${amount}) — please verify`);
+    validationFlags.push({ type: 'VAT_EXCEEDS_TOTAL', message: `VAT (${vatAmount}) >= Total (${amount}) — please verify` });
   }
 
   // Cross-validate line items vs total
@@ -410,7 +410,7 @@ function parseOR(ocrResult) {
     if (itemsSum > 0) {
       const diff = Math.abs(itemsSum - amount);
       if (diff > amount * 0.15 && diff > 5) {
-        validationFlags.push(`Line items sum (${itemsSum.toFixed(2)}) differs from total (${amount}) — check if VAT-inclusive`);
+        validationFlags.push({ type: 'LINE_ITEMS_MISMATCH', message: `Line items sum (${itemsSum.toFixed(2)}) differs from total (${amount}) — check if VAT-inclusive` });
       }
     }
   }
