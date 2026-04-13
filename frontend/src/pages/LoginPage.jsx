@@ -576,8 +576,62 @@ const loginPageStyles = `
   }
 `;
 
+const troubleshootBannerStyles = `
+  body.dark-mode .login-troubleshoot {
+    background: rgba(30, 41, 59, 0.85) !important;
+    border-color: rgba(245, 158, 11, 0.3) !important;
+    color: rgba(203, 213, 225, 0.9) !important;
+  }
+`;
+
+const LOGIN_HELP = {
+  network: {
+    icon: '\u{1F4F6}',
+    tip: 'Check your internet connection. Make sure you are connected to WiFi or mobile data, then try again.',
+  },
+  timeout: {
+    icon: '\u23F3',
+    tip: 'The server is responding slowly. Wait a moment and try again. If this persists, contact your administrator.',
+  },
+  auth: {
+    icon: '\u{1F512}',
+    tip: 'Double-check your email and password. If your account is locked, wait 15 minutes or contact your administrator.',
+  },
+  server: {
+    icon: '\u{1F6E0}\uFE0F',
+    tip: 'The server encountered an error. This is not your fault \u2014 please try again in a few minutes.',
+  },
+};
+
+const LoginTroubleshootBanner = ({ errorType }) => {
+  const help = LOGIN_HELP[errorType];
+  if (!help) return null;
+
+  return (
+    <>
+      <style>{troubleshootBannerStyles}</style>
+      <div className="login-troubleshoot" style={{
+        background: 'rgba(254, 243, 199, 0.85)',
+        border: '1px solid rgba(245, 158, 11, 0.3)',
+        borderRadius: 10,
+        padding: '10px 14px',
+        marginTop: 8,
+        fontSize: 12,
+        lineHeight: 1.5,
+        color: '#92400e',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8,
+      }}>
+        <span style={{ fontSize: 16, flexShrink: 0 }}>{help.icon}</span>
+        <span>{help.tip}</span>
+      </div>
+    </>
+  );
+};
+
 const LoginPage = () => {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, errorType } = useAuth();
   const navigate = useNavigate();
   const [isDarkMode, setIsDarkMode] = useState(() => {
     // Check for saved theme in local storage or default to system preference
@@ -647,6 +701,7 @@ const LoginPage = () => {
           <div className="login-subtitle">Sign in to continue to VIP</div>
         </div>
         <LoginForm />
+        <LoginTroubleshootBanner errorType={errorType} />
       </div>
     </div>
   );

@@ -269,17 +269,35 @@ const WORKFLOW_GUIDES = {
     ],
   },
   // 'reports' key removed — use 'erp-reports' pageKey instead (stale duplicate cleaned up)
-  'income': {
-    title: 'Revenue Summary',
+  'myIncome': {
+    title: 'My Income — How It Works',
     steps: [
-      'View revenue breakdown by product, customer, and period',
-      'Compare MTD vs. target',
-      'Identify top-performing products and customers',
+      '1. Payslips tab: Finance generates your payslip for each cycle. You can add one-off deductions while status is GENERATED.',
+      '2. Schedules tab: Use "One-Time Deduction" for single items (e.g., purchased goods, uniform).',
+      '3. Schedules tab: Use "Installment Plan" for recurring deductions (e.g., CC installment ₱990/month × 10 months).',
+      '4. Finance approves your schedules — approved installments auto-appear on future payslips.',
+      '5. When your payslip is REVIEWED, review final numbers and click "Confirm".',
+      '6. Finance credits (pays) your confirmed payslip.',
+    ],
+    next: [
+      { label: 'Expenses', path: '/erp/expenses' },
+      { label: 'SMER', path: '/erp/smer' },
+    ],
+    tip: 'Cash Advance deductions auto-pull from CALF. Schedule installments auto-inject when payslips are generated. You can create schedules even before a payslip exists.',
+  },
+  'income': {
+    title: 'Income Reports — Finance View',
+    steps: [
+      '1. Payslips tab: Generate payslips → review BDM-entered deduction lines (verify ✓, correct ✎, reject ✕) → mark Reviewed → BDM confirms → Credit.',
+      '2. Schedules tab: Review and approve BDM deduction schedules (one-time + installment plans).',
+      '3. Approved schedule installments auto-inject into payslips when generated.',
+      '4. Verify/reject schedule-sourced lines on payslips — status syncs back to the schedule.',
     ],
     next: [
       { label: 'View P&L', path: '/erp/pnl' },
       { label: 'Profit Sharing', path: '/erp/profit-sharing' },
     ],
+    tip: 'Only contractors (BDMs) can create deduction schedules. Employees use the Payroll module. When you credit a payslip, schedule installments auto-mark as POSTED.',
   },
   'pnl': {
     title: 'Profit & Loss Statement',
@@ -417,18 +435,19 @@ const WORKFLOW_GUIDES = {
     tip: 'Free agents always run on schedule. AI agents require ANTHROPIC_API_KEY.',
   },
   'approval-manager': {
-    title: 'Approval Workflow Manager',
+    title: 'Universal Approval Hub',
     steps: [
-      'View pending approval requests assigned to you',
-      'Approve or reject with a reason (rejections require a reason)',
-      'Admin: create approval rules per module, doc type, and amount threshold',
-      'Rules support multi-level approval chains (Level 1 → Level 2 → etc.)',
+      '1. All Pending tab: see EVERY transaction across the ERP that needs your attention — approve or reject inline.',
+      '2. Module filter: narrow by Income, Schedules, POs, GRN, Payroll, KPI, etc.',
+      '3. Requests tab: Phase 29 authority matrix approvals (POs and other rule-triggered items).',
+      '4. Rules tab (Admin): create approval rules to delegate — assign specific people or roles to approve specific modules.',
+      '5. Sidebar badge shows how many items need your attention.',
     ],
     next: [
       { label: 'Control Center', path: '/erp/control-center?section=approval-rules' },
-      { label: 'Settings', path: '/erp/control-center?section=settings' },
+      { label: 'Income', path: '/erp/income' },
     ],
-    tip: 'Enable ENFORCE_AUTHORITY_MATRIX in Settings to activate approval workflows.',
+    tip: 'President can delegate approval authority via Rules tab — assign a person (USER) or role (ROLE) per module. Delegated users will see only their assigned modules in All Pending.',
   },
   'batch-trace': {
     title: 'Batch Trace',

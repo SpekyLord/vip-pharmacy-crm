@@ -12,10 +12,12 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
 import useIncome from '../hooks/useIncome';
+import useDeductionSchedule from '../hooks/useDeductionSchedule';
 
 import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { useLookupOptions } from '../hooks/useLookups';
 
 const pageStyles = `
   .income-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -68,7 +70,36 @@ const pageStyles = `
   .return-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
   .return-modal-content { background: var(--erp-panel); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; }
   .return-modal textarea { width: 100%; padding: 8px; border: 1px solid var(--erp-border); border-radius: 8px; min-height: 80px; font-size: 13px; margin: 12px 0; }
-  @media(max-width: 768px) { .income-main { padding: 12px; } .payslip-grid { grid-template-columns: 1fr; } .list-table-wrap { display: none; } .list-mobile-list { display: grid; } }
+  .badge-pending { background: #fef3c7; color: #92400e; }
+  .badge-verified { background: #d1fae5; color: #065f46; }
+  .badge-corrected { background: #dbeafe; color: #1d4ed8; }
+  .badge-rejected { background: #fee2e2; color: #991b1b; text-decoration: line-through; }
+  .line-actions { display: flex; gap: 4px; }
+  .line-actions button { padding: 2px 8px; font-size: 11px; border: 1px solid var(--erp-border); border-radius: 4px; cursor: pointer; background: var(--erp-panel); }
+  .line-actions button:hover { background: var(--erp-accent-soft); }
+  .correction-note { font-size: 11px; color: #b45309; font-style: italic; display: block; margin-top: 2px; }
+  .original-amount { font-size: 11px; color: var(--erp-muted); text-decoration: line-through; margin-right: 6px; }
+  .deduction-desc { font-size: 11px; color: var(--erp-muted); display: block; margin-top: 2px; }
+  .finance-add-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--erp-border); }
+  .finance-add-form .field { display: flex; flex-direction: column; gap: 4px; }
+  .finance-add-form label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--erp-muted); }
+  .finance-add-form input, .finance-add-form select { padding: 4px 8px; border: 1px solid var(--erp-border); border-radius: 4px; font-size: 12px; }
+  .correct-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .correct-modal-content { background: var(--erp-panel); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; }
+  .correct-modal input, .correct-modal textarea { width: 100%; padding: 8px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 13px; margin: 8px 0; }
+  .tab-bar { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid var(--erp-border); }
+  .tab-btn { padding: 10px 20px; border: none; background: none; font-size: 14px; font-weight: 600; color: var(--erp-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+  .tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+  .sched-card { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  .sched-card h4 { margin: 0 0 8px; font-size: 14px; }
+  .badge-active { background: #d1fae5; color: #065f46; } .badge-completed { background: #a7f3d0; color: #047857; }
+  .badge-cancelled { background: #fee2e2; color: #991b1b; } .badge-pending_approval { background: #fef3c7; color: #92400e; }
+  .sched-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .inst-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+  .inst-table th { text-align: left; padding: 6px 8px; background: var(--erp-accent-soft); font-weight: 600; }
+  .inst-table td { padding: 6px 8px; border-top: 1px solid var(--erp-border); }
+  .badge-injected { background: #e0e7ff; color: #3730a3; } .badge-posted { background: #a7f3d0; color: #047857; }
+  @media(max-width: 768px) { .income-main { padding: 12px; } .payslip-grid { grid-template-columns: 1fr; } .list-table-wrap { display: none; } .list-mobile-list { display: grid; } .finance-add-form { flex-direction: column; } }
   @media(max-width: 480px) { .list-mobile-grid { grid-template-columns: 1fr; } .workflow-actions { flex-direction: column; } }
 `;
 
@@ -87,7 +118,9 @@ function getCurrentPeriod() {
 export default function Income() {
   const { user } = useAuth();
   const inc = useIncome();
+  const schedApi = useDeductionSchedule();
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const { options: deductionTypes } = useLookupOptions('INCOME_DEDUCTION_TYPE');
 
   const [view, setView] = useState('list'); // list | detail
   const [period, setPeriod] = useState(getCurrentPeriod());
@@ -99,6 +132,17 @@ export default function Income() {
   const [showReturn, setShowReturn] = useState(false);
   const [returnReason, setReturnReason] = useState('');
   const [manualEdits, setManualEdits] = useState({});
+  // Finance deduction line states
+  const [showCorrect, setShowCorrect] = useState(null); // { lineId, amount, note }
+  const [correctAmount, setCorrectAmount] = useState('');
+  const [correctNote, setCorrectNote] = useState('');
+  const [finAddType, setFinAddType] = useState('');
+  const [finAddAmount, setFinAddAmount] = useState('');
+  const [finAddDesc, setFinAddDesc] = useState('');
+  // Finance schedule management
+  const [incomeTab, setIncomeTab] = useState('payslips'); // payslips | schedules
+  const [allSchedules, setAllSchedules] = useState([]);
+  const [selectedSched, setSelectedSched] = useState(null);
 
   const loadReports = useCallback(async () => {
     setLoading(true);
@@ -112,7 +156,42 @@ export default function Income() {
     setLoading(false);
   }, [period, cycle, bdmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadReports(); }, [loadReports]);
+  useEffect(() => { if (incomeTab === 'payslips') loadReports(); }, [loadReports, incomeTab]);
+
+  const loadSchedules = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await schedApi.getScheduleList();
+      setAllSchedules(res?.data || []);
+    } catch (err) { showError(err, 'Could not load schedules'); }
+    setLoading(false);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { if (incomeTab === 'schedules') loadSchedules(); }, [incomeTab, loadSchedules]);
+
+  const handleApproveSchedule = async (id) => {
+    setLoading(true);
+    try { await schedApi.approveSchedule(id); loadSchedules(); }
+    catch (err) { showError(err, 'Could not approve'); }
+    setLoading(false);
+  };
+
+  const handleRejectSchedule = async (id) => {
+    const reason = prompt('Rejection reason:');
+    if (!reason) return;
+    setLoading(true);
+    try { await schedApi.rejectSchedule(id, reason); loadSchedules(); }
+    catch (err) { showError(err, 'Could not reject'); }
+    setLoading(false);
+  };
+
+  const handleCancelSchedule = async (id) => {
+    if (!confirm('Cancel this schedule? Remaining installments will be cancelled.')) return;
+    setLoading(true);
+    try { await schedApi.cancelSchedule(id, 'Cancelled by Finance'); loadSchedules(); }
+    catch (err) { showError(err, 'Could not cancel'); }
+    setLoading(false);
+  };
 
   const handleGenerate = async () => {
     if (!bdmId && !isAdmin) return;
@@ -166,6 +245,63 @@ export default function Income() {
     setLoading(false);
   };
 
+  // Finance deduction line handlers
+  const handleVerifyLine = async (lineId) => {
+    if (!selected) return;
+    setLoading(true);
+    try {
+      const res = await inc.verifyDeductionLine(selected._id, lineId, { action: 'verify' });
+      if (res?.data) setSelected(res.data);
+    } catch (err) { showError(err, 'Could not verify deduction'); }
+    setLoading(false);
+  };
+
+  const handleRejectLine = async (lineId) => {
+    if (!selected) return;
+    setLoading(true);
+    try {
+      const res = await inc.verifyDeductionLine(selected._id, lineId, { action: 'reject', finance_note: 'Rejected by Finance' });
+      if (res?.data) setSelected(res.data);
+    } catch (err) { showError(err, 'Could not reject deduction'); }
+    setLoading(false);
+  };
+
+  const handleCorrectLine = async () => {
+    if (!selected || !showCorrect) return;
+    setLoading(true);
+    try {
+      const res = await inc.verifyDeductionLine(selected._id, showCorrect.lineId, {
+        action: 'correct', amount: parseFloat(correctAmount), finance_note: correctNote
+      });
+      if (res?.data) setSelected(res.data);
+      setShowCorrect(null);
+      setCorrectAmount('');
+      setCorrectNote('');
+    } catch (err) { showError(err, 'Could not correct deduction'); }
+    setLoading(false);
+  };
+
+  const handleFinanceAddLine = async () => {
+    if (!selected || !finAddType || !finAddAmount) return;
+    const dedOption = deductionTypes.find(d => d.code === finAddType);
+    if (!dedOption) return;
+    setLoading(true);
+    try {
+      const res = await inc.financeAddDeductionLine(selected._id, {
+        deduction_type: finAddType,
+        deduction_label: dedOption.label,
+        amount: parseFloat(finAddAmount),
+        description: finAddDesc,
+        finance_note: 'Added by Finance'
+      });
+      if (res?.data) setSelected(res.data);
+      setFinAddType('');
+      setFinAddAmount('');
+      setFinAddDesc('');
+    } catch (err) { showError(err, 'Could not add deduction'); }
+    setLoading(false);
+  };
+
   const canEdit = selected && ['GENERATED', 'REVIEWED'].includes(selected.status) && isAdmin;
   const bdmName = (r) => r.bdm_id ? `${r.bdm_id.firstName || ''} ${r.bdm_id.lastName || ''}`.trim() : 'N/A';
 
@@ -207,10 +343,100 @@ export default function Income() {
             </div>
           </div>
 
+          {/* ═══ TAB BAR (Finance) ═══ */}
+          {isAdmin && (
+            <div className="tab-bar">
+              <button className={`tab-btn ${incomeTab === 'payslips' ? 'active' : ''}`}
+                onClick={() => { setIncomeTab('payslips'); setView('list'); setSelected(null); }}>Payslips</button>
+              <button className={`tab-btn ${incomeTab === 'schedules' ? 'active' : ''}`}
+                onClick={() => { setIncomeTab('schedules'); setSelectedSched(null); }}>Deduction Schedules</button>
+            </div>
+          )}
+
           {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>Loading...</div>}
 
+          {/* ═══ SCHEDULES TAB (Finance) ═══ */}
+          {incomeTab === 'schedules' && isAdmin && !loading && (
+            <>
+              {!selectedSched && allSchedules.map(s => {
+                const bdmName = s.bdm_id ? `${s.bdm_id.name || s.bdm_id.email || 'BDM'}` : 'N/A';
+                return (
+                  <div className="sched-card" key={s._id}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <h4>{s.deduction_label} — {bdmName}</h4>
+                        <div style={{ fontSize: 12, color: 'var(--erp-muted)' }}>
+                          {s.schedule_code} · {s.term_months === 1 ? 'One-time' : `${s.term_months} months`} · {fmt(s.total_amount)} · Start: {s.start_period}
+                        </div>
+                      </div>
+                      <span className={`badge ${s.status === 'PENDING_APPROVAL' ? 'badge-pending_approval' : s.status === 'ACTIVE' ? 'badge-active' : s.status === 'COMPLETED' ? 'badge-completed' : s.status === 'CANCELLED' ? 'badge-cancelled' : 'badge-rejected'}`}>{s.status.replace('_', ' ')}</span>
+                    </div>
+                    <div className="sched-actions">
+                      {s.status === 'PENDING_APPROVAL' && (
+                        <>
+                          <button className="btn btn-success btn-sm" onClick={() => handleApproveSchedule(s._id)}>Approve</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => handleRejectSchedule(s._id)}>Reject</button>
+                        </>
+                      )}
+                      {s.status === 'ACTIVE' && (
+                        <button className="btn btn-outline btn-sm" onClick={() => handleCancelSchedule(s._id)}>Cancel</button>
+                      )}
+                      <button className="btn btn-outline btn-sm" onClick={async () => {
+                        try {
+                          const res = await schedApi.getScheduleById(s._id);
+                          if (res?.data) setSelectedSched(res.data);
+                        } catch (err) { showError(err, 'Could not load'); }
+                      }}>View Detail</button>
+                    </div>
+                  </div>
+                );
+              })}
+              {!selectedSched && allSchedules.length === 0 && (
+                <div style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 40 }}>No deduction schedules found.</div>
+              )}
+              {selectedSched && (
+                <div className="sched-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <h4>{selectedSched.deduction_label} — {selectedSched.schedule_code}</h4>
+                    <button className="btn btn-outline btn-sm" onClick={() => setSelectedSched(null)}>← Back</button>
+                  </div>
+                  {selectedSched.status === 'ACTIVE' && (
+                    <div className="sched-actions">
+                      <button className="btn btn-outline btn-sm" onClick={() => handleCancelSchedule(selectedSched._id)}>Cancel Schedule</button>
+                      <button className="btn btn-primary btn-sm" onClick={async () => {
+                        const payoffPeriod = prompt('Early payoff period (YYYY-MM):');
+                        if (!payoffPeriod || !/^\d{4}-\d{2}$/.test(payoffPeriod)) return;
+                        setLoading(true);
+                        try {
+                          const res = await schedApi.earlyPayoff(selectedSched._id, { payoff_period: payoffPeriod });
+                          if (res?.data) setSelectedSched(res.data);
+                          loadSchedules();
+                        } catch (err) { showError(err, 'Early payoff failed'); }
+                        setLoading(false);
+                      }}>Early Payoff</button>
+                    </div>
+                  )}
+                  <table className="inst-table">
+                    <thead><tr><th>#</th><th>Period</th><th>Amount</th><th>Status</th><th>Note</th></tr></thead>
+                    <tbody>
+                      {(selectedSched.installments || []).map(inst => (
+                        <tr key={inst._id} style={inst.status === 'CANCELLED' ? { opacity: 0.5 } : {}}>
+                          <td>{inst.installment_no}</td>
+                          <td>{inst.period}</td>
+                          <td>{fmt(inst.amount)}</td>
+                          <td><span className={`badge ${inst.status === 'POSTED' ? 'badge-posted' : inst.status === 'VERIFIED' ? 'badge-verified' : inst.status === 'INJECTED' ? 'badge-injected' : inst.status === 'CANCELLED' ? 'badge-cancelled' : 'badge-pending'}`}>{inst.status}</span></td>
+                          <td style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{inst.note || ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+
           {/* ═══ LIST VIEW ═══ */}
-          {view === 'list' && !loading && (
+          {incomeTab === 'payslips' && view === 'list' && !loading && (
             <>
               <div className="list-table-wrap">
                 <table className="list-table">
@@ -273,7 +499,7 @@ export default function Income() {
           )}
 
           {/* ═══ DETAIL VIEW ═══ */}
-          {view === 'detail' && selected && !loading && (
+          {incomeTab === 'payslips' && view === 'detail' && selected && !loading && (
             <>
               <div className="payslip-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -311,32 +537,84 @@ export default function Income() {
                     </table>
                   </div>
 
-                  {/* Deductions */}
+                  {/* Deductions (line-item based) */}
                   <div>
                     <table className="payslip-table">
-                      <thead><tr><th colSpan={2}>Deductions</th></tr></thead>
+                      <thead><tr><th>Deductions</th><th>Amount</th>{canEdit && <th>Actions</th>}</tr></thead>
                       <tbody>
-                        {[
+                        {(selected.deduction_lines || []).length === 0 && !selected.deductions?.cash_advance && (
+                          <tr><td colSpan={canEdit ? 3 : 2} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No deductions</td></tr>
+                        )}
+                        {(selected.deduction_lines || []).map(line => (
+                          <tr key={line._id} style={line.status === 'REJECTED' ? { opacity: 0.5 } : {}}>
+                            <td>
+                              {line.deduction_label}
+                              <span className={`badge ${line.status === 'PENDING' ? 'badge-pending' : line.status === 'VERIFIED' ? 'badge-verified' : line.status === 'CORRECTED' ? 'badge-corrected' : 'badge-rejected'}`} style={{ marginLeft: 6 }}>{line.status}</span>
+                              {line.auto_source && <span style={{ fontSize: 10, color: 'var(--erp-muted)', marginLeft: 4 }}>(auto)</span>}
+                              {line.description && <span className="deduction-desc">{line.description}</span>}
+                              {line.entered_by && <span className="deduction-desc">By: {line.entered_by.name || 'Unknown'}</span>}
+                              {line.finance_note && <span className="correction-note">Finance: {line.finance_note}</span>}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              {line.original_amount != null && <span className="original-amount">{fmt(line.original_amount)}</span>}
+                              {fmt(line.amount)}
+                            </td>
+                            {canEdit && (
+                              <td>
+                                {line.status === 'PENDING' && (
+                                  <div className="line-actions">
+                                    <button onClick={() => handleVerifyLine(line._id)} title="Accept">✓</button>
+                                    <button onClick={() => { setShowCorrect({ lineId: line._id }); setCorrectAmount(String(line.amount)); setCorrectNote(''); }} title="Correct">✎</button>
+                                    <button onClick={() => handleRejectLine(line._id)} title="Reject">✕</button>
+                                  </div>
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                        {/* Legacy flat deductions fallback (only if no deduction_lines) */}
+                        {(selected.deduction_lines || []).length === 0 && [
                           ['Cash Advance', 'cash_advance'],
                           ['Credit Card Payment', 'credit_card_payment'],
                           ['Credit Payment', 'credit_payment'],
                           ['Purchased Goods', 'purchased_goods'],
                           ['Other Deductions', 'other_deductions'],
                           ['Over Payment', 'over_payment']
-                        ].map(([label, field]) => (
+                        ].filter(([, f]) => (selected.deductions?.[f] || 0) > 0).map(([label, field]) => (
                           <tr key={field}>
-                            <td>{label}</td>
-                            <td>
-                              {canEdit && field !== 'cash_advance' ? (
-                                <input type="number" defaultValue={selected.deductions?.[field] || 0}
-                                  onChange={e => setManualEdits(p => ({ ...p, deductions: { ...p.deductions, [field]: parseFloat(e.target.value) || 0 } }))} />
-                              ) : fmt(selected.deductions?.[field])}
-                            </td>
+                            <td>{label} <span style={{ fontSize: 10, color: 'var(--erp-muted)' }}>(legacy)</span></td>
+                            <td style={{ textAlign: 'right' }}>{fmt(selected.deductions?.[field])}</td>
+                            {canEdit && <td />}
                           </tr>
                         ))}
-                        <tr className="total-row"><td>Total Deductions</td><td>{fmt(selected.total_deductions)}</td></tr>
+                        <tr className="total-row"><td>Total Deductions</td><td style={{ textAlign: 'right' }}>{fmt(selected.total_deductions)}</td>{canEdit && <td />}</tr>
                       </tbody>
                     </table>
+
+                    {/* Finance: Add missing deduction */}
+                    {canEdit && (
+                      <div className="finance-add-form">
+                        <div className="field">
+                          <label>Add Deduction</label>
+                          <select value={finAddType} onChange={e => setFinAddType(e.target.value)} style={{ minWidth: 150 }}>
+                            <option value="">Type...</option>
+                            {deductionTypes.map(d => (
+                              <option key={d.code} value={d.code}>{d.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="field">
+                          <label>Amount</label>
+                          <input type="number" min="0" step="0.01" value={finAddAmount} onChange={e => setFinAddAmount(e.target.value)} style={{ width: 100 }} />
+                        </div>
+                        <div className="field" style={{ flex: 1 }}>
+                          <label>Note</label>
+                          <input type="text" value={finAddDesc} onChange={e => setFinAddDesc(e.target.value)} placeholder="Reason..." />
+                        </div>
+                        <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: 12 }} onClick={handleFinanceAddLine}
+                          disabled={!finAddType || !finAddAmount || parseFloat(finAddAmount) <= 0}>+ Add</button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -367,6 +645,22 @@ export default function Income() {
                 )}
               </div>
             </>
+          )}
+
+          {/* Correction Modal */}
+          {showCorrect && (
+            <div className="correct-modal" onClick={() => setShowCorrect(null)}>
+              <div className="correct-modal-content" onClick={e => e.stopPropagation()}>
+                <h3 style={{ margin: '0 0 8px' }}>Correct Deduction Amount</h3>
+                <p style={{ fontSize: 13, color: 'var(--erp-muted)' }}>Enter the corrected amount and reason.</p>
+                <input type="number" min="0" step="0.01" value={correctAmount} onChange={e => setCorrectAmount(e.target.value)} placeholder="Corrected amount" />
+                <textarea value={correctNote} onChange={e => setCorrectNote(e.target.value)} placeholder="Reason for correction..." style={{ minHeight: 60 }} />
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button className="btn btn-outline" onClick={() => setShowCorrect(null)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={handleCorrectLine} disabled={!correctAmount || parseFloat(correctAmount) < 0}>Save Correction</button>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Return Modal */}

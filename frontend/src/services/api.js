@@ -100,8 +100,13 @@ api.interceptors.response.use(
         originalRequest.method = savedMethod;
         return api.request(originalRequest);
       } catch (refreshError) {
-        // Refresh failed - dispatch logout event for AuthContext to handle
-        window.dispatchEvent(new CustomEvent('auth:logout'));
+        // Only force logout if the server explicitly rejected the refresh token.
+        // Network errors (offline, timeout, CORS) should NOT kick the user out —
+        // they may just have a momentary connectivity blip.
+        const refreshStatus = refreshError?.response?.status;
+        if (refreshStatus === 401 || refreshStatus === 403) {
+          window.dispatchEvent(new CustomEvent('auth:logout'));
+        }
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

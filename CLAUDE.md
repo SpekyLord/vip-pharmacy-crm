@@ -376,6 +376,7 @@ vip-pharmacy-crm/
 │   │       ├── exportCallPlan.js      # VIP Client export (Call Plan Template format)
 │   │       ├── exportEmployeeReport.js # BDM Visit Report export
 │   │       ├── validators.js          # Client-side validation
+│   │       ├── classifyError.js       # Error classification (network/auth/timeout/server)
 │   │       └── formatters.js          # Data formatting helpers
 │   └── vite.config.js
 ├── docs/
@@ -416,6 +417,7 @@ Before implementing a feature, verify:
 6. **Cross-database products**: NEVER use Mongoose `populate()` for products. Use `getWebsiteProductModel()` manual fetching.
 7. **httpOnly cookies**: Tokens are in cookies, NOT in localStorage or response body. Frontend uses `withCredentials: true`.
 8. **Code vs business terms**: Code uses Doctor/employee, business uses VIP Client/BDM
+8b. **CORS custom headers**: Any custom header injected by `api.js` request interceptor (e.g., `X-Entity-Id`) must be listed in `server.js` `buildCorsOptions().allowedHeaders` — otherwise CORS preflight fails silently as "Network Error"
 9. **Scaffolded pages**: Statistics uses real APIs (5 tabs: overview, BDM performance, programs, products, daily heatmap). Approvals has UI but uses mock data. Activity Monitor and GPS Verification are fully wired to real data.
 10. **Excel CPT import**: The CPT Excel has 23 sheets with specific structure (1 master + 20 day sheets + summary + readme). Day flags in CPT cols E-X map to day sheets W1D1-W4D5. Duplicate detection is by `lastName + firstName` (case-insensitive). See `docs/EXCEL_SCHEMA_DOCUMENTATION.md` for exact column mappings and import/export logic.
 
@@ -628,6 +630,7 @@ App.jsx
 - [x] `utils/exportCallPlan.js` - VIP Client export (Call Plan Template format)
 - [x] `utils/exportEmployeeReport.js` - BDM Visit Report export
 - [x] `utils/validators.js` - Client-side validation
+- [x] `utils/classifyError.js` - Error classification (network/auth/timeout/server) — mirrors ERP errorToast.js pattern
 - [x] `utils/formatters.js` - Data formatting helpers
 
 #### Components - Auth

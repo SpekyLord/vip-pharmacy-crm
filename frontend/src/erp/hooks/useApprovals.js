@@ -69,10 +69,28 @@ export default function useApprovals() {
     return res.data;
   }, [get]);
 
+  // ─── Universal Approval Hub (Phase F) ────
+  const [universalItems, setUniversalItems] = useState([]);
+  const [universalCount, setUniversalCount] = useState(0);
+
+  const fetchUniversalPending = useCallback(async () => {
+    const res = await get('/approvals/universal-pending');
+    setUniversalItems(res.data || []);
+    setUniversalCount(res.count || (res.data || []).length);
+    return res;
+  }, [get]);
+
+  const universalApprove = useCallback(async (data) => {
+    const res = await post('/approvals/universal-approve', data);
+    return res;
+  }, [post]);
+
   return {
     rules,
     requests,
     pendingCount,
+    universalItems,
+    universalCount,
     loading,
     error,
     // Rules
@@ -88,5 +106,8 @@ export default function useApprovals() {
     cancel,
     // Status
     checkStatus,
+    // Universal Hub
+    fetchUniversalPending,
+    universalApprove,
   };
 }

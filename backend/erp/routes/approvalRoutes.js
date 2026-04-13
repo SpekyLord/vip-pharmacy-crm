@@ -23,6 +23,14 @@ const {
   cancelRequest,
   getApprovalStatus,
 } = require('../controllers/approvalController');
+const {
+  getUniversalPendingEndpoint,
+  universalApprove,
+} = require('../controllers/universalApprovalController');
+
+// ═══ Universal Approval Hub (Phase F) ═══
+router.get('/universal-pending', getUniversalPendingEndpoint);
+router.post('/universal-approve', universalApprove);
 
 // Status check (is authority matrix enabled?)
 router.get('/status', getApprovalStatus);

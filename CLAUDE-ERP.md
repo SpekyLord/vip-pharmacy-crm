@@ -2,7 +2,7 @@
 
 > **Last Updated**: April 2026
 > **Version**: 6.0
-> **Status**: Phases 0-35 + Phase A + Phase B + Phase C Complete. Backend enum cleanup — 78 Mongoose schema enums removed, validated at app layer via Lookup table (April 10, 2026).
+> **Status**: Phases 0-35 + Phase A-F + Gap 9 Complete. Phase F: Universal Approval Hub — cross-entity, delegatable, inline approve from one page (April 13, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -98,6 +98,9 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | B | Frontend Dropdown Lookup Integration | ✅ |
 | C | Backend Schema Enum Cleanup — App-Layer Validation | ✅ |
 | D | Multi-Channel Engagement — Communication Log + Messaging APIs | ✅ |
+| E | BDM Income Deductions — Lookup-Driven, Self-Service + Finance Verification | ✅ |
+| E.2 | Deduction Schedules — Recurring (Installment) + Non-Recurring (One-Time) | ✅ |
+| F | Universal Approval Hub — Cross-Entity, Delegatable, Inline Approve | ✅ |
 | Gap 9 | Rx Correlation — Visit vs Sales + Rebates + Programs | ✅ |
 
 ---
@@ -173,6 +176,179 @@ frontend/src/erp/pages/RxCorrelation.jsx          # 7-tab dashboard page
 ### CRM-Bridge Extensions
 - `GET /api/erp/crm-bridge/hospitals` — Role-based hospital list for CRM dropdowns
 - `GET /api/erp/crm-bridge/hospital-heat?hospital_id=xxx` — Full HEAT data for hospital
+
+---
+
+## Phase E — BDM Income Deductions (Lookup-Driven, Self-Service + Finance Verification)
+
+Replaces hardcoded flat deduction fields on IncomeReport with a lookup-driven `deduction_lines[]` array. Contractors (BDMs) enter their own deductions from a dropdown, Finance verifies/corrects/rejects each line.
+
+**Contractor-only feature**: employees use the Payroll module (Phase 10), not this.
+
+### Architecture
+- **Deduction types** stored in Lookup table: category `INCOME_DEDUCTION_TYPE` (admin adds/removes types via Control Center)
+- **deduction_lines[]** sub-document array on IncomeReport model with per-line status: PENDING → VERIFIED / CORRECTED / REJECTED
+- **CASH_ADVANCE** lines auto-pulled from CALF balance on generate (auto_source: 'CALF', status: 'VERIFIED')
+- **Legacy flat deductions** preserved for backward compatibility — pre-save totals from deduction_lines when lines exist, falls back to flat fields when empty
+
+### Workflow
+```
+Finance generates payslip (GENERATED)
+  → BDM opens My Income, adds deduction lines (dropdown + amount + description)
+    → Finance reviews each line: verify ✓ | correct ✎ (preserves original_amount) | reject ✕
+      → Finance can also add missing lines (auto-verified)
+        → Finance marks REVIEWED
+          → BDM confirms
+            → Finance credits (paid)
+```
+
+### New Lookup Categories
+| Category | Purpose |
+|----------|---------|
+| `INCOME_DEDUCTION_TYPE` | Deduction types: CASH_ADVANCE, CC_PERSONAL, CREDIT_PAYMENT, PURCHASED_GOODS, LOAN_REPAYMENT, UNIFORM, OVERPAYMENT, OTHER (admin-scalable) |
+| `DEDUCTION_LINE_STATUS` | PENDING, VERIFIED, CORRECTED, REJECTED |
+
+### New/Modified Endpoints
+| Method | Path | Role Gate | Description |
+|--------|------|-----------|-------------|
+| POST | `/income/:id/deductions` | contractor | BDM adds deduction line |
+| DELETE | `/income/:id/deductions/:lineId` | contractor | BDM removes PENDING line |
+| POST | `/income/:id/deductions/:lineId/verify` | admin/finance/president | Verify/correct/reject line |
+| POST | `/income/:id/deductions/finance-add` | admin/finance/president | Finance adds missing deduction |
+
+### Key Files
+```
+backend/erp/models/IncomeReport.js          # deduction_lines[] sub-schema added
+backend/erp/services/incomeCalc.js          # Auto-creates CASH_ADVANCE line from CALF, preserves BDM lines
+backend/erp/controllers/incomeController.js # 4 new endpoints: addDeductionLine, removeDeductionLine, verifyDeductionLine, financeAddDeductionLine
+backend/erp/routes/incomeRoutes.js          # 4 new routes with contractor/management role gates
+frontend/src/erp/hooks/useIncome.js         # 4 new hook methods
+frontend/src/erp/pages/MyIncome.jsx         # NEW: Contractor self-service page (/erp/my-income)
+frontend/src/erp/pages/Income.jsx           # Updated: Finance view with line verification UI
+frontend/src/erp/components/WorkflowGuide.jsx # myIncome + income banners
+frontend/src/components/common/Sidebar.jsx  # My Income section for contractors
+frontend/src/App.jsx                        # /erp/my-income route (contractor only, requiredErpModule: reports)
+```
+
+### DeductionLine Sub-Schema
+```javascript
+{
+  deduction_type: String,       // Lookup: INCOME_DEDUCTION_TYPE
+  deduction_label: String,      // Snapshot of label at entry time
+  amount: Number,               // Current amount (may be corrected by Finance)
+  description: String,          // BDM explains the deduction
+  entered_by: ObjectId,         // Who entered it
+  entered_at: Date,
+  status: String,               // PENDING → VERIFIED / CORRECTED / REJECTED
+  verified_by: ObjectId,        // Finance who reviewed
+  verified_at: Date,
+  original_amount: Number,      // Preserved when Finance corrects (audit trail)
+  finance_note: String,         // Finance explains correction/rejection
+  auto_source: String           // 'CALF' for auto-pulled lines (null for manual)
+}
+```
+
+---
+
+## Phase F — Universal Approval Hub
+
+One page (`/erp/approvals`) where president or any authorized person sees ALL pending transactions across all modules and approves inline. Cross-entity for president. Delegatable via ApprovalRule.
+
+### Architecture
+- **universalApprovalService.js**: Queries 6 modules in parallel (ApprovalRequest, DeductionSchedule, IncomeReport, GrnEntry, Payslip, KpiSelfRating), normalizes results
+- **MODULE_QUERIES registry**: Scalable — add a new module by adding a query function, no switch/if chains
+- **Authorization**: Checks ApprovalRules first (delegation), falls back to role-based, president always sees all
+- **Cross-entity**: President queries ALL entities. Multi-entity users query their assigned entities. Single-entity users query their own.
+- **Sidebar badge**: Pending count refreshes every 60s, emits `approval:updated` event
+
+### Delegation (via existing ApprovalRule)
+President assigns approval authority in Control Center → Approvals → Rules tab:
+- `approver_type: 'USER'` + specific person IDs → that person sees the module in their hub
+- `approver_type: 'ROLE'` + role names → anyone with that role sees it
+- `approver_type: 'REPORTS_TO'` → the submitter's manager
+
+### Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/erp/approvals/universal-pending` | All pending items across all modules |
+| POST | `/api/erp/approvals/universal-approve` | Approve/reject any item (routes to module logic) |
+
+### Universal Item Shape
+```javascript
+{ id, module, doc_type, doc_id, doc_ref, description, amount, submitted_by, submitted_at, status, current_action, action_key, approve_data }
+```
+
+### Key Files
+```
+backend/erp/services/universalApprovalService.js     # Aggregation + authorization
+backend/erp/controllers/universalApprovalController.js # 2 endpoints
+backend/erp/routes/approvalRoutes.js                 # Routes added
+frontend/src/erp/hooks/useApprovals.js               # fetchUniversalPending + universalApprove
+frontend/src/erp/pages/ApprovalManager.jsx           # "All Pending" tab with inline approve
+frontend/src/components/common/Sidebar.jsx           # Badge count (60s refresh)
+frontend/src/erp/components/WorkflowGuide.jsx        # Updated approval-manager banner
+```
+
+### New Lookup Categories
+| Category | Purpose |
+|----------|---------|
+| `UNIVERSAL_APPROVAL_ACTION` | REVIEW, APPROVE, CREDIT, REJECT with color metadata |
+
+---
+
+## Phase E.2 — Deduction Schedules (Recurring + Non-Recurring)
+
+Standalone `DeductionSchedule` model for both recurring (CC installment ₱990/month × 10) and non-recurring (one-time ₱1,500 next month) deductions. BDMs create schedules even before payslips exist. Installments auto-inject into payslips when generated.
+
+### Architecture
+- **DeductionSchedule** model with `installments[]` sub-array (follows LoanMaster.amortization_schedule pattern)
+- `term_months = 1` → one-time deduction; `term_months > 1` → installment plan
+- Installments pre-generated on create via pre-save hook with period arithmetic
+- Auto-injection: `incomeCalc.js` queries ACTIVE schedules, injects matching installments as deduction_lines with `auto_source: 'SCHEDULE'`
+- Bidirectional sync: verify/credit on payslip → updates installment status on schedule
+
+### Workflow
+```
+BDM creates schedule (PENDING_APPROVAL)
+  → Finance approves (ACTIVE) — installments[] all PENDING
+    → Payslip generated → matching installment auto-injected (INJECTED)
+      → Finance verifies deduction line → installment syncs to VERIFIED
+        → Payslip credited → installment syncs to POSTED
+          → All installments POSTED → schedule auto-completes (COMPLETED)
+```
+
+### New Lookup Categories
+| Category | Purpose |
+|----------|---------|
+| `DEDUCTION_SCHEDULE_STATUS` | PENDING_APPROVAL, ACTIVE, COMPLETED, CANCELLED, REJECTED |
+
+### Endpoints (all under `/api/erp/deduction-schedules`)
+| Method | Path | Role | Description |
+|--------|------|------|-------------|
+| POST | `/` | contractor | BDM creates schedule |
+| GET | `/my` | contractor | BDM lists own schedules |
+| GET | `/:id` | any (own or admin) | Get schedule detail |
+| GET | `/` | management | List all schedules |
+| POST | `/:id/approve` | management | Approve schedule |
+| POST | `/:id/reject` | management | Reject schedule |
+| POST | `/:id/cancel` | management | Cancel + cancel PENDING installments |
+| POST | `/:id/early-payoff` | management | Lump-sum remaining balance |
+| PUT | `/:id/installments/:instId` | management | Adjust installment amount |
+| POST | `/finance-create` | management | Create on behalf of BDM (auto-ACTIVE) |
+
+### Key Files
+```
+backend/erp/models/DeductionSchedule.js           # Model with installments[] + pre-save hook
+backend/erp/services/deductionScheduleService.js   # 7 service functions
+backend/erp/controllers/deductionScheduleController.js  # 10 endpoints
+backend/erp/routes/deductionScheduleRoutes.js      # Routes with role gates
+backend/erp/routes/index.js                        # Mounted at /deduction-schedules
+backend/erp/services/incomeCalc.js                 # Auto-injection logic (step 4b)
+backend/erp/controllers/incomeController.js        # Sync on verify + credit
+frontend/src/erp/hooks/useDeductionSchedule.js     # 10 hook methods
+frontend/src/erp/pages/MyIncome.jsx                # BDM: Payslips + Schedules tabs
+frontend/src/erp/pages/Income.jsx                  # Finance: Payslips + Schedules tabs
+```
 
 ---
 
