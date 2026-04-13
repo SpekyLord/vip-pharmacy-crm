@@ -10,7 +10,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
 import useIncome from '../hooks/useIncome';
 import useDeductionSchedule from '../hooks/useDeductionSchedule';
 import { useLookupOptions } from '../hooks/useLookups';
@@ -124,7 +123,6 @@ function incrementPeriod(period, n) {
 }
 
 export default function MyIncome() {
-  const { user } = useAuth();
   const inc = useIncome();
   const sched = useDeductionSchedule();
   const { options: deductionTypes } = useLookupOptions('INCOME_DEDUCTION_TYPE');
