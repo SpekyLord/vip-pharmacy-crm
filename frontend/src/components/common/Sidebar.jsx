@@ -667,7 +667,7 @@ const sidebarStyles = `
  */
 import { ROLES, ROLE_SETS, isAdminLike as isAdminLikeRole, isPresidentLike } from '../../constants/roles';
 
-const getErpSection = (role, erpAccess, { includeHomeOnly = false } = {}) => {
+const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount = 0 } = {}) => {
   const hasModule = (mod) => {
     if (isPresidentLike(role)) return true;
     if (role === ROLES.ADMIN && (!erpAccess || !erpAccess.enabled)) return true;
@@ -957,7 +957,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
 };
 
 const getErpMenuConfig = (role, erpAccess = null, approvalCount = 0) => {
-  const erpSections = getErpSection(role, erpAccess, { includeHomeOnly: true });
+  const erpSections = getErpSection(role, erpAccess, { includeHomeOnly: true, approvalCount });
   const sections = erpSections || [{ title: null, collapsible: false, items: [{ path: '/erp', label: 'ERP Home', icon: Briefcase }] }];
   const isAdminLike = isAdminLikeRole(role);
 

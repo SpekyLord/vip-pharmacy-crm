@@ -4,6 +4,8 @@ export default function useIncome() {
   const api = useErpApi();
 
   // ═══ Income Reports ═══
+  const getIncomeProjection = (params) => api.get('/income/projection', { params });
+  const requestIncomeGeneration = (data) => api.post('/income/request-generation', data);
   const generateIncome = (data) => api.post('/income/generate', data);
   const getIncomeList = (params) => api.get('/income', { params });
   const getIncomeById = (id) => api.get(`/income/${id}`);
@@ -45,6 +47,7 @@ export default function useIncome() {
 
   return {
     ...api,
+    getIncomeProjection, requestIncomeGeneration,
     generateIncome, getIncomeList, getIncomeById, updateIncomeManual,
     reviewIncome, returnIncome, confirmIncome, creditIncome,
     addDeductionLine, removeDeductionLine,

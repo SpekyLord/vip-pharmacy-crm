@@ -196,7 +196,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Record Expenses', path: '/erp/expenses' },
       { label: 'View Reports', path: '/erp/reports' },
     ],
-    tip: 'Full per diem requires minimum MDs per day (check ERP Settings). Half-day threshold is lower.',
+    tip: 'Full per diem requires minimum MDs per day (check ERP Settings). Half-day threshold is lower. Travel advance auto-populates from your CompProfile revolving fund amount (or global default). Use Override to manually adjust.',
   },
   'car-logbook': {
     title: 'Car Logbook',
@@ -272,18 +272,19 @@ const WORKFLOW_GUIDES = {
   'myIncome': {
     title: 'My Income — How It Works',
     steps: [
-      '1. Payslips tab: Finance generates your payslip for each cycle. You can add one-off deductions while status is GENERATED.',
-      '2. Schedules tab: Use "One-Time Deduction" for single items (e.g., purchased goods, uniform).',
-      '3. Schedules tab: Use "Installment Plan" for recurring deductions (e.g., CC installment ₱990/month × 10 months).',
-      '4. Finance approves your schedules — approved installments auto-appear on future payslips.',
-      '5. When your payslip is REVIEWED, review final numbers and click "Confirm".',
-      '6. Finance credits (pays) your confirmed payslip.',
+      '1. Income Projection shows real-time earnings from SMER, Collections, and Profit Sharing — always available, updates as you post documents.',
+      '2. Click "Request Payslip Generation" to create your official income report. You can regenerate anytime new data comes in (e.g., new collection posted).',
+      '3. Add one-off deduction lines (CC personal, purchased goods, etc.) — Finance verifies each line.',
+      '4. Deduction Schedules: create installment plans — approved installments auto-inject into future payslips.',
+      '5. When Finance marks your payslip REVIEWED, review final numbers and click "Confirm". Once confirmed, payslip is locked.',
+      '6. Finance credits your confirmed payslip. Travel advance auto-resolves from your CompProfile revolving fund amount.',
     ],
     next: [
       { label: 'Expenses', path: '/erp/expenses' },
       { label: 'SMER', path: '/erp/smer' },
+      { label: 'Collections', path: '/erp/collections' },
     ],
-    tip: 'Cash Advance deductions auto-pull from CALF. Schedule installments auto-inject when payslips are generated. You can create schedules even before a payslip exists.',
+    tip: 'You can regenerate your payslip as many times as needed before confirming. Each regeneration recalculates SMER, commission, CALF settlement (excess deducted, shortfall reimbursed), and personal gas — your manual deduction lines are preserved.',
   },
   'income': {
     title: 'Income Reports — Finance View',

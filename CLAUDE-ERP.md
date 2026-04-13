@@ -102,6 +102,61 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | E.2 | Deduction Schedules — Recurring (Installment) + Non-Recurring (One-Time) | ✅ |
 | F | Universal Approval Hub — Cross-Entity, Delegatable, Inline Approve | ✅ |
 | Gap 9 | Rx Correlation — Visit vs Sales + Rebates + Programs | ✅ |
+| G1 | BDM Income Projection + Revolving Fund + CALF Bidirectional + Personal Gas | ✅ |
+
+---
+
+## Phase G1 — BDM Income Projection + Revolving Fund + CALF Settlement Fix
+
+### Architecture
+- **projectIncome()** in `incomeCalc.js`: Read-only aggregation of all income sources with confidence levels (CONFIRMED/PROJECTED/NONE)
+- **CompProfile.revolving_fund_amount**: Per-BDM override → Settings.REVOLVING_FUND_AMOUNT fallback (0 = use global)
+- **CALF bidirectional**: Positive balance = deduction, negative balance = reimbursement in earnings
+- **Personal gas**: Auto-deduction from CarLogbook `personal_gas_amount` via `auto_source: 'PERSONAL_GAS'`
+
+### Income Projection (read-only, always available)
+- Endpoint: `GET /income/projection?period=YYYY-MM&cycle=C1`
+- Aggregates: SMER (any status), Collections (by status), PNL, CALF, CarLogbook, DeductionSchedule
+- Confidence levels: CONFIRMED (POSTED), PROJECTED (DRAFT/VALID), PARTIAL, NONE
+- Does NOT create/modify documents
+
+### BDM Self-Service Generation (repeatable)
+- Endpoint: `POST /income/request-generation` (contractor role)
+- Allowed when: no report, GENERATED, RETURNED, REVIEWED
+- Blocked when: BDM_CONFIRMED, CREDITED (locked)
+- Uses existing `generateIncomeReport` upsert pattern (auto-fields recalculated, manual lines preserved)
+
+### Revolving Fund (lookup-driven travel advance)
+- CompProfile field: `revolving_fund_amount` (0 = use global Settings.REVOLVING_FUND_AMOUNT)
+- SMER auto-populates: `GET /expenses/revolving-fund-amount` → read-only with override toggle
+- Follows `perdiem_rate` pattern (per-person with global fallback)
+
+### CALF Settlement Fix (bidirectional)
+- Positive balance (advance > liquidation): auto-deduction line `CASH_ADVANCE` with `auto_source: 'CALF'`
+- Negative balance (liquidation > advance): `calf_reimbursement` in earnings (company pays BDM back)
+- IncomeReport.earnings.calf_reimbursement: new field for shortfall reimbursement
+
+### Personal Gas Auto-Deduction
+- `CarLogbookEntry.personal_gas_amount` aggregated per period+cycle (POSTED/VALID)
+- Auto-deduction line with `auto_source: 'PERSONAL_GAS'`, `deduction_type: 'PERSONAL_GAS'`
+- Added to INCOME_DEDUCTION_TYPE lookup seed
+
+### New/Modified Endpoints
+| Method | Route | Purpose |
+|--------|-------|---------|
+| GET | `/income/projection` | Read-only income projection with confidence levels |
+| POST | `/income/request-generation` | BDM self-service payslip generation (contractor, repeatable) |
+| GET | `/expenses/revolving-fund-amount` | Resolve per-BDM revolving fund amount |
+
+### Key Files
+- `backend/erp/models/CompProfile.js` — `revolving_fund_amount` field
+- `backend/erp/models/IncomeReport.js` — `calf_reimbursement` in earnings, updated pre-save
+- `backend/erp/services/incomeCalc.js` — `projectIncome()`, CALF bidirectional, personal gas
+- `backend/erp/controllers/incomeController.js` — `getIncomeProjection`, `requestIncomeGeneration`
+- `backend/erp/controllers/expenseController.js` — `getRevolvingFundAmount`, SMER auto-populate
+- `frontend/src/erp/pages/MyIncome.jsx` — projection section + request generation
+- `frontend/src/erp/pages/Smer.jsx` — travel advance auto-populate with override toggle
+- `frontend/src/erp/pages/PersonDetail.jsx` — `revolving_fund_amount` in CompProfile editor
 
 ---
 
@@ -837,6 +892,11 @@ All reopen functions call `journalEngine.reverseJournal()` (SAP Storno pattern: 
 11. **People dropdowns must filter `status=ACTIVE`** — all people selector dropdowns (Managed By, Reports To, Assign To, Custodian, etc.) must pass `status: 'ACTIVE'` to `getPeopleList()` or rely on `getAsUsers()` which enforces `is_active: true, status: 'ACTIVE'`. Never show SUSPENDED or SEPARATED people in assignment/selection dropdowns.
 12. **Position and Department are lookup-driven** — stored as lookup codes from POSITION / DEPARTMENT categories. PersonDetail.jsx renders them as `<select>` dropdowns via `useLookupBatch`. To add new positions, use Control Center > Lookup Tables.
 13. **ERP Access modules use Mixed schema** — `AccessTemplate.modules` and `User.erp_access.modules` are `mongoose.Schema.Types.Mixed` (not fixed fields). This allows new modules added via ERP_MODULE lookup to work without schema changes. The controller validates values are `NONE | VIEW | FULL`. Always call `markModified('modules')` or `markModified('erp_access')` after mutation.
+14. **Income projection** is read-only — never creates documents. Use `request-generation` to create the actual IncomeReport.
+15. **CALF is bidirectional** in income: positive balance = deduction, negative balance = earnings reimbursement. Not just one-way.
+16. **Revolving fund** follows per-person override pattern: `CompProfile.revolving_fund_amount` → `Settings.REVOLVING_FUND_AMOUNT` fallback. 0 = use global.
+17. **Personal gas auto-deduction** rebuilds fresh on each income generation (like CALF auto-lines). Comes from CarLogbook `personal_gas_amount`, not manual entry.
+18. **ORE is paid from revolving fund** — ORE amounts in SMER daily `ore_amount` are already included in `total_reimbursable`. No separate ORE earnings line. `ExpenseEntry` (ORE type) tracks receipts/ORs.
 
 ---
 

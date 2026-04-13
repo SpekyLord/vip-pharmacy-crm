@@ -12,7 +12,8 @@ const { roleCheck } = require('../../middleware/roleCheck');
 const periodLockCheck = require('../middleware/periodLockCheck');
 const {
   // Income
-  generateIncome, getIncomeList, getIncomeById, updateIncomeManual,
+  generateIncome, getIncomeProjection, requestIncomeGeneration,
+  getIncomeList, getIncomeById, updateIncomeManual,
   reviewIncome, returnIncome, confirmIncome, creditIncome,
   // BDM Deduction Lines
   addDeductionLine, removeDeductionLine,
@@ -31,6 +32,8 @@ const {
 const router = express.Router();
 
 // ═══ Income Reports ═══
+router.get('/income/projection', getIncomeProjection);  // Read-only projection (BDMs see own, admin sees any)
+router.post('/income/request-generation', roleCheck('contractor'), requestIncomeGeneration);  // BDM self-service (repeatable)
 router.post('/income/generate', roleCheck('admin', 'finance', 'president'), generateIncome);
 router.get('/income', getIncomeList);
 router.get('/income/:id', getIncomeById);

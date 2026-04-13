@@ -46,6 +46,7 @@ const compProfileSchema = new mongoose.Schema(
     perdiem_days: { type: Number, default: 22 },
     km_per_liter: { type: Number, default: 0 },
     fuel_overconsumption_threshold: { type: Number, default: 1.30 },
+    revolving_fund_amount: { type: Number, default: 0 },  // 0 = use Settings.REVOLVING_FUND_AMOUNT
 
     // ═══ Expense Eligibility Flags ═══
     smer_eligible: { type: Boolean, default: false },

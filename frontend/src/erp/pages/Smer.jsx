@@ -130,7 +130,7 @@ function displayDate(isoDate) {
 
 export default function Smer() {
   const { user } = useAuth();
-  const { getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer, validateSmer, submitSmer, reopenSmer, getSmerCrmMdCounts, loading } = useExpenses();
+  const { getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer, validateSmer, submitSmer, reopenSmer, getSmerCrmMdCounts, getRevolvingFundAmount, loading } = useExpenses();
   const { settings } = useSettings();
   const { options: activityTypeOpts } = useLookupOptions('ACTIVITY_TYPE');
   const ACTIVITY_TYPES = activityTypeOpts.map(o => o.code);
@@ -147,6 +147,8 @@ export default function Smer() {
   // Form state
   const [dailyEntries, setDailyEntries] = useState([]);
   const [travelAdvance, setTravelAdvance] = useState(0);
+  const [travelAdvanceSource, setTravelAdvanceSource] = useState('');  // 'COMP_PROFILE' | 'SETTINGS' | 'MANUAL'
+  const [travelAdvanceOverride, setTravelAdvanceOverride] = useState(false);
   const [perdiemRate, setPerdiemRate] = useState(800);
 
   // Hospital picker state
@@ -224,10 +226,19 @@ export default function Smer() {
     return { tier: 'ZERO', amount: 0 };
   };
 
-  const handleNewSmer = () => {
+  const handleNewSmer = async () => {
     setEditingSmer(null);
     setDailyEntries(generateDays());
-    setTravelAdvance(0);
+    setTravelAdvanceOverride(false);
+    try {
+      const res = await getRevolvingFundAmount();
+      const { amount, source } = res?.data || {};
+      setTravelAdvance(amount || 0);
+      setTravelAdvanceSource(source || 'SETTINGS');
+    } catch {
+      setTravelAdvance(0);
+      setTravelAdvanceSource('');
+    }
     setShowForm(true);
   };
 
@@ -238,6 +249,8 @@ export default function Smer() {
       setEditingSmer(data);
       setDailyEntries(data.daily_entries || []);
       setTravelAdvance(data.travel_advance || 0);
+      setTravelAdvanceSource('');
+      setTravelAdvanceOverride(false);
       setPerdiemRate(data.perdiem_rate || 800);
       setShowForm(true);
     } catch (err) { console.error('[SMER]', err.message); showError(err, 'Could not load SMER'); }
@@ -570,7 +583,18 @@ export default function Smer() {
               {/* Per Diem Rate + Travel Advance + CRM Pull */}
               <div style={{ display: 'flex', gap: 16, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ fontSize: 13 }}>Rate: <input type="number" value={perdiemRate} onChange={e => setPerdiemRate(Number(e.target.value))} style={{ width: 70, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
-                <label style={{ fontSize: 13 }}>Advance: <input type="number" value={travelAdvance} onChange={e => setTravelAdvance(Number(e.target.value))} style={{ width: 90, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} /></label>
+                <span style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  Advance:{' '}
+                  {travelAdvanceOverride ? (
+                    <input type="number" value={travelAdvance} onChange={e => setTravelAdvance(Number(e.target.value))} style={{ width: 90, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)' }} />
+                  ) : (
+                    <span style={{ fontWeight: 600 }}>{'\u20B1'}{travelAdvance.toLocaleString()}</span>
+                  )}
+                  <button type="button" onClick={() => { const next = !travelAdvanceOverride; setTravelAdvanceOverride(next); if (next) setTravelAdvanceSource('MANUAL'); }} style={{ padding: '2px 8px', fontSize: 11, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: travelAdvanceOverride ? '#fef3c7' : 'transparent', cursor: 'pointer', color: 'var(--erp-muted)' }}>
+                    {travelAdvanceOverride ? 'Lock' : 'Override'}
+                  </button>
+                  {travelAdvanceSource && !travelAdvanceOverride && <span style={{ fontSize: 10, color: '#6b7280', marginLeft: 2 }}>{travelAdvanceSource === 'COMP_PROFILE' ? 'CompProfile' : 'Default'}</span>}
+                </span>
                 {isCrmLinked && (
                   <button onClick={handlePullFromCrm} disabled={loading} style={{ padding: '4px 14px', borderRadius: 6, background: '#16a34a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Pull from CRM</button>
                 )}

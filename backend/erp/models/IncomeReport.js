@@ -67,7 +67,8 @@ const incomeReportSchema = new mongoose.Schema({
     core_commission: { type: Number, default: 0 },    // total_commission from Collections
     bonus: { type: Number, default: 0 },              // manual entry by Finance
     profit_sharing: { type: Number, default: 0 },     // from profitShareEngine (0 if not qualified)
-    reimbursements: { type: Number, default: 0 }      // manual (other reimbursements)
+    reimbursements: { type: Number, default: 0 },     // manual (other reimbursements)
+    calf_reimbursement: { type: Number, default: 0 }  // negative CALF balance → company reimburses BDM
   },
   total_earnings: { type: Number, default: 0 },
 
@@ -124,8 +125,8 @@ const incomeReportSchema = new mongoose.Schema({
 incomeReportSchema.pre('save', function (next) {
   const e = this.earnings || {};
   this.total_earnings = Math.round(
-    ((e.smer || 0) + (e.core_commission || 0) + (e.bonus || 0) +
-     (e.profit_sharing || 0) + (e.reimbursements || 0)) * 100
+    ((e.smer || 0) + (e.core_commission || 0) + (e.calf_reimbursement || 0) +
+     (e.bonus || 0) + (e.profit_sharing || 0) + (e.reimbursements || 0)) * 100
   ) / 100;
 
   // Deductions: prefer deduction_lines if any exist, otherwise fall back to legacy flat fields
