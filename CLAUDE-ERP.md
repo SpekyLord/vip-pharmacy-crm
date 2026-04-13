@@ -307,10 +307,12 @@ frontend/src/App.jsx                        # /erp/my-income route (contractor o
 
 ## Phase F — Universal Approval Hub
 
-One page (`/erp/approvals`) where president or any authorized person sees ALL pending transactions across all modules and approves inline. Cross-entity for president. Delegatable via ApprovalRule.
+One page (`/erp/approvals`) where president or any authorized person sees ALL pending transactions across all modules and approves/posts inline. Cross-entity for president. Delegatable via ApprovalRule.
 
 ### Architecture
-- **universalApprovalService.js**: Queries 6 modules in parallel (ApprovalRequest, DeductionSchedule, IncomeReport, GrnEntry, Payslip, KpiSelfRating), normalizes results
+- **universalApprovalService.js**: Queries 12 modules in parallel, normalizes results
+  - **Approval modules** (6): ApprovalRequest, DeductionSchedule, IncomeReport, GrnEntry, Payslip, KpiSelfRating — action is Approve/Review/Credit
+  - **Posting modules** (6): SalesLine, Collection, SmerEntry, CarLogbookEntry, ExpenseEntry, PrfCalf — action is **Post** (VALID → POSTED)
 - **MODULE_QUERIES registry**: Scalable — add a new module by adding a query function, no switch/if chains
 - **Authorization**: Checks ApprovalRules first (delegation), falls back to role-based, president always sees all
 - **Cross-entity**: President queries ALL entities. Multi-entity users query their assigned entities. Single-entity users query their own.
@@ -344,10 +346,26 @@ frontend/src/components/common/Sidebar.jsx           # Badge count (60s refresh)
 frontend/src/erp/components/WorkflowGuide.jsx        # Updated approval-manager banner
 ```
 
+### Covered Modules (12 total)
+| # | Module Key | Model | Pending Status | Action | Action Key |
+|---|-----------|-------|---------------|--------|------------|
+| 1 | APPROVAL_REQUEST | ApprovalRequest | PENDING | Approve | APPROVE |
+| 2 | DEDUCTION_SCHEDULE | DeductionSchedule | PENDING_APPROVAL | Approve | APPROVE |
+| 3 | INCOME | IncomeReport | GENERATED / BDM_CONFIRMED | Review / Credit | REVIEW / CREDIT |
+| 4 | INVENTORY | GrnEntry | PENDING | Approve | APPROVE |
+| 5 | PAYROLL | Payslip | COMPUTED / REVIEWED | Review / Approve | REVIEW / APPROVE |
+| 6 | KPI | KpiSelfRating | SUBMITTED / REVIEWED | Review / Approve | REVIEW / APPROVE |
+| 7 | SALES | SalesLine | VALID | Post | POST |
+| 8 | COLLECTION | Collection | VALID | Post | POST |
+| 9 | SMER | SmerEntry | VALID | Post | POST |
+| 10 | CAR_LOGBOOK | CarLogbookEntry | VALID | Post | POST |
+| 11 | EXPENSES | ExpenseEntry | VALID | Post | POST |
+| 12 | PRF_CALF | PrfCalf | VALID | Post | POST |
+
 ### New Lookup Categories
 | Category | Purpose |
 |----------|---------|
-| `UNIVERSAL_APPROVAL_ACTION` | REVIEW, APPROVE, CREDIT, REJECT with color metadata |
+| `UNIVERSAL_APPROVAL_ACTION` | REVIEW, APPROVE, CREDIT, REJECT, POST with color metadata |
 
 ---
 

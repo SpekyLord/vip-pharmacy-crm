@@ -439,17 +439,21 @@ const WORKFLOW_GUIDES = {
   'approval-manager': {
     title: 'Universal Approval Hub',
     steps: [
-      '1. All Pending tab: see EVERY transaction across the ERP that needs your attention — approve or reject inline.',
-      '2. Module filter: narrow by Income, Schedules, POs, GRN, Payroll, KPI, etc.',
-      '3. Requests tab: Phase 29 authority matrix approvals (POs and other rule-triggered items).',
-      '4. Rules tab (Admin): create approval rules to delegate — assign specific people or roles to approve specific modules.',
-      '5. Sidebar badge shows how many items need your attention.',
+      '1. All Pending tab: see EVERY transaction across the ERP that needs your attention — approve, post, or reject inline.',
+      '2. Module filter: narrow by Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Income, Deductions, GRN, Payroll, KPI, etc.',
+      '3. Posting modules (Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF): documents in VALID status appear here — click Post to transition to POSTED.',
+      '4. Approval modules (Income, Deductions, GRN, Payroll, KPI): multi-step review/approve workflows.',
+      '5. Requests tab: Phase 29 authority matrix approvals (rule-triggered items).',
+      '6. Rules tab (Admin): create approval rules to delegate — assign specific people or roles to approve specific modules.',
+      '7. Sidebar badge shows how many items need your attention.',
     ],
     next: [
       { label: 'Control Center', path: '/erp/control-center?section=approval-rules' },
       { label: 'Income', path: '/erp/income' },
+      { label: 'Sales', path: '/erp/sales' },
+      { label: 'SMER', path: '/erp/smer' },
     ],
-    tip: 'President can delegate approval authority via Rules tab — assign a person (USER) or role (ROLE) per module. Delegated users will see only their assigned modules in All Pending.',
+    tip: 'President can delegate approval authority via Rules tab — assign a person (USER) or role (ROLE) per module. Documents must be in VALID status before they can be posted here.',
   },
   'batch-trace': {
     title: 'Batch Trace',
