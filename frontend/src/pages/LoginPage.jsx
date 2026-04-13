@@ -256,7 +256,7 @@ const loginPageStyles = `
   width: 100%;
   max-width: 560px;
   max-height: calc(100dvh - 32px);
-  overflow: hidden;
+  overflow-y: auto;
 
   /* Pale orange / cream glass card (reference palette) */
   background:
@@ -496,6 +496,10 @@ const loginPageStyles = `
   .login-form .form-error {
     margin: 10px 0 12px;
     font-size: 13px;
+    color: #dc2626;
+  }
+
+  body.dark-mode .login-form .form-error {
     color: rgba(254, 202, 202, 0.95);
   }
 
