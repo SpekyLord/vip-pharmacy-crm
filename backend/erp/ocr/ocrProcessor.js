@@ -59,15 +59,26 @@ async function processOcr(docType, ocrResult, options = {}) {
     };
   }
 
-  const parsed = parser(ocrResult, options);
+  const parsed = await parser(ocrResult, options);
 
-  // Separate validation_flags from extracted fields
-  const { validation_flags = [], ...extracted } = parsed;
+  // Separate parser metadata from extracted fields
+  const {
+    validation_flags = [],
+    layout_family = null,
+    review_required = false,
+    review_reasons = [],
+    preprocessing = null,
+    ...extracted
+  } = parsed;
 
   const result = {
     doc_type: normalised,
     extracted,
     classification: null,
+    layout_family,
+    review_required,
+    review_reasons,
+    preprocessing,
     validation_flags,
     raw_ocr_text: ocrResult.fullText || '',
   };
@@ -111,7 +122,7 @@ async function processOcr(docType, ocrResult, options = {}) {
 
   // Resolve hospital/customer name → master record
   if (CUSTOMER_DOC_TYPES.has(normalised)) {
-    const hospitalText = extracted.hospital || extracted.charged_to || extracted.received_from;
+    const hospitalText = extracted.hospital?.value || extracted.charged_to?.value || extracted.received_from?.value;
     if (hospitalText) {
       try {
         const match = await resolveCustomer(hospitalText, entityId);
@@ -123,6 +134,13 @@ async function processOcr(docType, ocrResult, options = {}) {
             confidence: match.confidence,
             match_method: match.match_method
           };
+
+          if (match.confidence === 'LOW') {
+            result.review_required = true;
+            if (!result.review_reasons.includes('LOW_CONFIDENCE_HOSPITAL')) {
+              result.review_reasons.push('LOW_CONFIDENCE_HOSPITAL');
+            }
+          }
         }
       } catch (err) {
         result.validation_flags.push({
@@ -130,14 +148,23 @@ async function processOcr(docType, ocrResult, options = {}) {
           message: `Customer resolution failed: ${err.message}`
         });
       }
+
+      if (!result.resolved.customer) {
+        result.review_required = true;
+        if (!result.review_reasons.includes('LOW_CONFIDENCE_HOSPITAL')) {
+          result.review_reasons.push('LOW_CONFIDENCE_HOSPITAL');
+        }
+      }
     }
   }
 
   // Resolve product names → master records
-  if (PRODUCT_DOC_TYPES.has(normalised) && extracted.products?.length) {
+  const productList = extracted.products || extracted.line_items;
+  if (PRODUCT_DOC_TYPES.has(normalised) && productList?.length) {
     result.resolved.products = [];
-    for (const prod of extracted.products) {
-      const prodText = prod.product_name || prod.description;
+    for (const prod of productList) {
+      const prodText = prod.product_name?.value || prod.brand_name?.value || prod.description?.value
+                    || prod.product_name || prod.brand_name || prod.description;
       if (!prodText) continue;
       try {
         const match = await resolveProduct(prodText, entityId);
@@ -158,7 +185,11 @@ async function processOcr(docType, ocrResult, options = {}) {
 
   // Resolve vendor/establishment → master record
   if (VENDOR_DOC_TYPES.has(normalised)) {
-    const vendorText = extracted.establishment || extracted.vendor || extracted.station;
+    const vendorText = extracted.establishment?.value || extracted.vendor?.value
+                    || extracted.station?.value || extracted.station_name?.value
+                    || extracted.supplier_name?.value
+                    || extracted.establishment || extracted.vendor || extracted.station
+                    || extracted.station_name || extracted.supplier_name;
     if (vendorText) {
       try {
         const match = await resolveVendor(vendorText, entityId);
@@ -173,6 +204,8 @@ async function processOcr(docType, ocrResult, options = {}) {
       } catch { /* non-critical */ }
     }
   }
+
+  result.review_reasons = [...new Set(result.review_reasons)];
 
   return result;
 }

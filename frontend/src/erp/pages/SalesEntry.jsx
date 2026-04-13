@@ -262,6 +262,26 @@ function fieldVal(f) {
   return String(f);
 }
 
+function fieldConfidence(f) {
+  return (f && typeof f === 'object' && 'confidence' in f) ? f.confidence : '';
+}
+
+function formatReviewReason(reason) {
+  const labels = {
+    LOW_CONFIDENCE_INVOICE_NO: 'Invoice number needs review',
+    LOW_CONFIDENCE_DATE: 'Invoice date needs review',
+    LOW_CONFIDENCE_HOSPITAL: 'Hospital/customer needs review',
+    MISSING_PRODUCT: 'A line item is missing a product',
+    MISSING_LINE_ITEM_QTY: 'A line item is missing quantity',
+    UNPARSED_ITEM_BLOCK: 'The CSI table could not be parsed cleanly',
+    LINE_ITEM_ARITHMETIC_MISMATCH: 'A line item amount does not match qty × price',
+    TOTAL_MISMATCH: 'Line item totals do not match the invoice total',
+    LAYOUT_UNKNOWN: 'Layout is unknown and needs manual review',
+    UNMATCHED_PRODUCT: 'At least one product did not match master data',
+  };
+  return labels[reason] || reason;
+}
+
 // --- ScanCSIModal inline component ---
 function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
   const [step, setStep] = useState('capture'); // capture | scanning | results | error
@@ -271,6 +291,7 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
   const [matchedHospital, setMatchedHospital] = useState(null);
   const [matchedItems, setMatchedItems] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
 
@@ -283,6 +304,7 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
     setMatchedHospital(null);
     setMatchedItems([]);
     setErrorMsg('');
+    setReviewConfirmed(false);
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -293,6 +315,7 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
     setPreview(URL.createObjectURL(file));
     setStep('scanning');
     setErrorMsg('');
+    setReviewConfirmed(false);
 
     try {
       const exif = await extractExifDateTime(file);
@@ -365,6 +388,13 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
 
   if (!open) return null;
 
+  const reviewReasons = [
+    ...(ocrData?.review_reasons || []),
+    ...(matchedItems.some(mi => !mi.product_match) ? ['UNMATCHED_PRODUCT'] : [])
+  ].filter((reason, idx, arr) => arr.indexOf(reason) === idx);
+  const requiresReviewAck = Boolean(ocrData?.review_required || reviewReasons.length > 0);
+  const canApply = !requiresReviewAck || reviewConfirmed;
+
   return (
     <div className="scan-modal-overlay" onClick={handleClose}>
       <div className="scan-modal" onClick={e => e.stopPropagation()}>
@@ -423,16 +453,44 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
           <>
             {preview && <img src={preview} alt="CSI preview" className="scan-preview" />}
             <div className="scan-results">
+              {ocrData.layout_family && (
+                <div className="result-group">
+                  <label>Detected Layout</label>
+                  <div className="result-value">
+                    {ocrData.layout_family}
+                    {requiresReviewAck ? (
+                      <span className="match-badge match-medium" style={{ marginLeft: 8 }}>Review Required</span>
+                    ) : (
+                      <span className="match-badge match-high" style={{ marginLeft: 8 }}>Ready</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Header fields */}
-              <div className="result-group">
+              <div className="result-group" style={reviewReasons.includes('LOW_CONFIDENCE_INVOICE_NO') ? { border: '1px solid #d97706', borderRadius: 8, padding: 10, background: '#fff7ed' } : undefined}>
                 <label>CSI # (Invoice No.)</label>
-                <div className="result-value">{fieldVal(ocrData.extracted?.invoice_no) || '—'}</div>
+                <div className="result-value">
+                  {fieldVal(ocrData.extracted?.invoice_no) || '—'}
+                  {fieldConfidence(ocrData.extracted?.invoice_no) && (
+                    <span className={`match-badge match-${fieldConfidence(ocrData.extracted?.invoice_no).toLowerCase()}`} style={{ marginLeft: 8 }}>
+                      {fieldConfidence(ocrData.extracted?.invoice_no)}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="result-group">
+              <div className="result-group" style={reviewReasons.includes('LOW_CONFIDENCE_DATE') ? { border: '1px solid #d97706', borderRadius: 8, padding: 10, background: '#fff7ed' } : undefined}>
                 <label>Date</label>
-                <div className="result-value">{fieldVal(ocrData.extracted?.date) || '—'}</div>
+                <div className="result-value">
+                  {fieldVal(ocrData.extracted?.date) || '—'}
+                  {fieldConfidence(ocrData.extracted?.date) && (
+                    <span className={`match-badge match-${fieldConfidence(ocrData.extracted?.date).toLowerCase()}`} style={{ marginLeft: 8 }}>
+                      {fieldConfidence(ocrData.extracted?.date)}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="result-group">
+              <div className="result-group" style={reviewReasons.includes('LOW_CONFIDENCE_HOSPITAL') ? { border: '1px solid #d97706', borderRadius: 8, padding: 10, background: '#fff7ed' } : undefined}>
                 <label>Hospital</label>
                 <div className="result-value">
                   {fieldVal(ocrData.extracted?.hospital) || '—'}
@@ -487,6 +545,14 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
                 </div>
               )}
 
+              {reviewReasons.length > 0 && (
+                <div className="scan-error" style={{ marginTop: 12, background: '#fff7ed', color: '#9a3412', border: '1px solid #fdba74' }}>
+                  {reviewReasons.map((reason) => (
+                    <div key={reason}>{formatReviewReason(reason)}</div>
+                  ))}
+                </div>
+              )}
+
               {/* Validation flags */}
               {ocrData.validation_flags?.length > 0 && (
                 <div className="scan-error" style={{ marginTop: 12 }}>
@@ -496,9 +562,21 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
                 </div>
               )}
 
+              {requiresReviewAck && (
+                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 12, fontSize: 13, color: 'var(--erp-text)' }}>
+                  <input
+                    type="checkbox"
+                    checked={reviewConfirmed}
+                    onChange={(e) => setReviewConfirmed(e.target.checked)}
+                    style={{ marginTop: 2 }}
+                  />
+                  <span>I reviewed the flagged CSI fields and still want to apply this scan.</span>
+                </label>
+              )}
+
               {/* Action buttons */}
               <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                <button className="btn btn-success" onClick={handleApply} style={{ flex: 1 }}>
+                <button className="btn btn-success" onClick={handleApply} style={{ flex: 1 }} disabled={!canApply}>
                   Apply to Sales Entry
                 </button>
                 <button className="btn btn-outline" onClick={reset}>Scan Another</button>
