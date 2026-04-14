@@ -1,4 +1,5 @@
 const { catchAsync, ApiError } = require('../../middleware/errorHandler');
+const { compressImage } = require('../../middleware/upload');
 const { detectText } = require('../ocr/visionClient');
 const { processOcr, SUPPORTED_DOC_TYPES } = require('../ocr/ocrProcessor');
 const { uploadErpDocument } = require('../services/documentUpload');
@@ -18,14 +19,19 @@ const processDocument = catchAsync(async (req, res) => {
   const period = String(req.body.period || '').trim() || undefined;
   const cycle = String(req.body.cycle || '').trim() || undefined;
 
+  // Compress before S3 upload (saves storage), but OCR uses original buffer for best quality
+  const { buffer: compressedBuffer, mimetype: compressedMime } = await compressImage(
+    req.file.buffer, req.file.mimetype, { maxDim: 1920, quality: 80 }
+  );
+
   const uploadResult = await uploadErpDocument(
-    req.file.buffer,
+    compressedBuffer,
     req.file.originalname,
     req.user?.name,
     period,
     cycle,
     docType,
-    req.file.mimetype
+    compressedMime
   );
 
   const ocrResult = await detectText(req.file.buffer, { feature });

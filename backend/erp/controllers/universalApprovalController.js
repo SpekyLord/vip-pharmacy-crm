@@ -1,11 +1,13 @@
 /**
  * Universal Approval Controller — Approval Hub endpoints
  *
- * GET /universal-pending — all pending items across all modules
+ * GET  /universal-pending — all pending items across all modules
  * POST /universal-approve — approve/reject any item from the hub (routes to module's own logic)
+ * PATCH /universal-edit   — quick-edit whitelisted fields before approving (Phase G3)
  */
 const { catchAsync } = require('../../middleware/errorHandler');
 const { getUniversalPending } = require('../services/universalApprovalService');
+const Lookup = require('../models/Lookup');
 
 // Module-specific approval handlers (lazy-loaded to avoid circular deps)
 const approvalHandlers = {
@@ -223,7 +225,144 @@ const universalApprove = catchAsync(async (req, res) => {
   res.json({ success: true, data: result, message: `${action} successful` });
 });
 
+// ═══ Phase G3: Universal Quick-Edit (typo fixes before approving) ═══
+
+// Model map — lazy-loaded to avoid circular deps (mirrors approvalHandlers pattern)
+const MODEL_MAP = {
+  deduction_schedule: () => require('../models/DeductionSchedule'),
+  income_report:      () => require('../models/IncomeReport'),
+  sales_line:         () => require('../models/SalesLine'),
+  collection:         () => require('../models/Collection'),
+  smer_entry:         () => require('../models/SmerEntry'),
+  car_logbook:        () => require('../models/CarLogbookEntry'),
+  expense_entry:      () => require('../models/ExpenseEntry'),
+  prf_calf:           () => require('../models/PrfCalf'),
+  grn:                () => require('../models/GrnEntry'),
+};
+
+// Statuses that appear in the Approval Hub — only these are editable
+const EDITABLE_STATUSES = {
+  deduction_schedule: ['PENDING_APPROVAL'],
+  income_report:      ['GENERATED', 'REVIEWED'],
+  sales_line:         ['VALID'],
+  collection:         ['VALID'],
+  smer_entry:         ['VALID'],
+  car_logbook:        ['VALID'],
+  expense_entry:      ['VALID'],
+  prf_calf:           ['VALID'],
+  grn:                ['PENDING'],
+};
+
+/**
+ * PATCH /api/erp/approvals/universal-edit
+ * Body: { type, id, updates, edit_reason? }
+ *
+ * Quick-edit whitelisted fields on a pending document (lookup-driven).
+ * Editable fields come from APPROVAL_EDITABLE_FIELDS lookup (entity-scoped).
+ */
+const universalEdit = catchAsync(async (req, res) => {
+  const { type, id, updates, edit_reason } = req.body;
+
+  if (!type || !id || !updates || typeof updates !== 'object') {
+    return res.status(400).json({ success: false, message: 'type, id, and updates object are required' });
+  }
+
+  // 1. Check model exists for this type
+  const getModel = MODEL_MAP[type];
+  if (!getModel) {
+    return res.status(400).json({ success: false, message: `Type "${type}" does not support quick-edit` });
+  }
+
+  // 2. Fetch lookup-driven editable fields for this entity + type
+  const lookupCode = type.toUpperCase();
+  const lookupEntry = await Lookup.findOne({
+    entity_id: req.entityId,
+    category: 'APPROVAL_EDITABLE_FIELDS',
+    code: lookupCode,
+    is_active: true
+  }).lean();
+
+  // Auto-seed if not found (first access)
+  let allowedFields = lookupEntry?.metadata?.fields;
+  if (!allowedFields) {
+    const { SEED_DEFAULTS } = require('./lookupGenericController');
+    const seeds = SEED_DEFAULTS.APPROVAL_EDITABLE_FIELDS || [];
+    const seedEntry = seeds.find(s => s.code === lookupCode);
+    if (seedEntry) {
+      await Lookup.updateOne(
+        { entity_id: req.entityId, category: 'APPROVAL_EDITABLE_FIELDS', code: lookupCode },
+        { $setOnInsert: { label: seedEntry.label, sort_order: 0, is_active: true, metadata: seedEntry.metadata || {} } },
+        { upsert: true }
+      );
+      allowedFields = seedEntry.metadata?.fields;
+    }
+  }
+
+  if (!allowedFields || allowedFields.length === 0) {
+    return res.status(400).json({ success: false, message: `No editable fields configured for type "${type}"` });
+  }
+
+  // 3. Filter updates to only whitelisted fields
+  const safeUpdates = {};
+  const changes = [];
+  for (const [field, newValue] of Object.entries(updates)) {
+    if (allowedFields.includes(field)) {
+      safeUpdates[field] = newValue;
+    }
+  }
+
+  if (Object.keys(safeUpdates).length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: `None of the provided fields are editable. Allowed: ${allowedFields.join(', ')}`
+    });
+  }
+
+  // 4. Load the document
+  const Model = getModel();
+  const doc = await Model.findById(id);
+  if (!doc) {
+    return res.status(404).json({ success: false, message: 'Document not found' });
+  }
+
+  // 5. Verify document is in an editable (pending) status
+  const allowedStatuses = EDITABLE_STATUSES[type] || [];
+  if (!allowedStatuses.includes(doc.status)) {
+    return res.status(400).json({
+      success: false,
+      message: `Document status "${doc.status}" is not editable. Must be: ${allowedStatuses.join(', ')}`
+    });
+  }
+
+  // 6. Apply updates and build change log
+  for (const [field, newValue] of Object.entries(safeUpdates)) {
+    const oldValue = doc[field];
+    if (String(oldValue ?? '') !== String(newValue ?? '')) {
+      changes.push({ field, old_value: oldValue, new_value: newValue });
+      doc[field] = newValue;
+    }
+  }
+
+  if (changes.length === 0) {
+    return res.json({ success: true, data: doc, message: 'No changes detected' });
+  }
+
+  // 7. Push audit entry
+  if (!doc.edit_history) doc.edit_history = [];
+  doc.edit_history.push({
+    edited_by: req.user._id,
+    edited_at: new Date(),
+    changes,
+    edit_reason: edit_reason || 'Quick edit from Approval Hub'
+  });
+
+  await doc.save();
+
+  res.json({ success: true, data: doc, message: `Updated ${changes.length} field(s)` });
+});
+
 module.exports = {
   getUniversalPendingEndpoint,
-  universalApprove
+  universalApprove,
+  universalEdit
 };

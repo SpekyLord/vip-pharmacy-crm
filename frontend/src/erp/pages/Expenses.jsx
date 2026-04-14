@@ -11,6 +11,7 @@ import useErpApi from '../hooks/useErpApi';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
+import { compressImageFile } from '../utils/compressImage';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
@@ -450,7 +451,9 @@ export default function Expenses() {
     setBatchProgress(`Processing 0 of ${batchFiles.length}...`);
 
     const formData = new FormData();
-    batchFiles.forEach(f => formData.append('photos', f));
+    // Compress each photo before upload — phone cameras produce 5-12MB files
+    const compressed = await Promise.all(batchFiles.map(f => compressImageFile(f)));
+    compressed.forEach(f => formData.append('photos', f));
     formData.append('bir_flag', batchBirFlag);
     formData.append('period', period);
     formData.append('cycle', cycle);

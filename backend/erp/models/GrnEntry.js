@@ -52,7 +52,8 @@ const grnEntrySchema = new mongoose.Schema({
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  created_at: { type: Date, default: Date.now, immutable: true }
+  created_at: { type: Date, default: Date.now, immutable: true },
+  edit_history: [{ type: mongoose.Schema.Types.Mixed }]
 }, {
   timestamps: false,
   collection: 'erp_grn_entries'

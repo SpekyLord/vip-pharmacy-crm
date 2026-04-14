@@ -26,11 +26,13 @@ const {
 const {
   getUniversalPendingEndpoint,
   universalApprove,
+  universalEdit,
 } = require('../controllers/universalApprovalController');
 
-// ═══ Universal Approval Hub (Phase F) ═══
+// ═══ Universal Approval Hub (Phase F + G3) ═══
 router.get('/universal-pending', getUniversalPendingEndpoint);
 router.post('/universal-approve', universalApprove);
+router.patch('/universal-edit', universalEdit);
 
 // Status check (is authority matrix enabled?)
 router.get('/status', getApprovalStatus);

@@ -60,14 +60,8 @@ const getDashboardProducts = catchAsync(async (req, res) => {
  * BDMs see only their tagged hospitals (same filter as hospitalController)
  */
 const getDashboardHospitals = catchAsync(async (req, res) => {
-  const filter = {};
-  // BDM sees only their tagged hospitals; admin/president/finance see all
-  const bdmRoles = [ROLES.CONTRACTOR];
-  if (bdmRoles.includes(req.user?.role)) {
-    filter.tagged_bdms = {
-      $elemMatch: { bdm_id: req.user._id, is_active: { $ne: false } }
-    };
-  }
+  const { buildHospitalAccessFilter } = require('../utils/hospitalAccess');
+  const filter = await buildHospitalAccessFilter(req.user);
 
   const hospitals = await Hospital.find(filter)
     .select('hospital_name hospital_type bed_capacity engagement_level key_decision_maker address bdm_tags')

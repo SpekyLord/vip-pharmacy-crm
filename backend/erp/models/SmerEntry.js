@@ -80,7 +80,8 @@ const smerEntrySchema = new mongoose.Schema({
 
   // Audit
   created_at: { type: Date, default: Date.now, immutable: true },
-  created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  edit_history: [{ type: mongoose.Schema.Types.Mixed }]
 }, {
   timestamps: false,
   collection: 'erp_smer_entries'

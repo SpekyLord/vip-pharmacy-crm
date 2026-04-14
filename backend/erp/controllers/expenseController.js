@@ -27,6 +27,7 @@ const { detectText } = require('../ocr/visionClient');
 const { processOcr } = require('../ocr/ocrProcessor');
 const { classifyExpense } = require('../services/expenseClassifier');
 const { uploadErpDocument } = require('../services/documentUpload');
+const { compressImage } = require('../../middleware/upload');
 
 // ═══════════════════════════════════════════
 // SMER ENDPOINTS
@@ -1782,13 +1783,16 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
   for (let i = 0; i < req.files.length; i++) {
     const file = req.files[i];
     try {
-      // 1. Upload to S3
+      // 1. Compress before S3 upload (saves storage), OCR uses original for best quality
+      const { buffer: compressedBuffer, mimetype: compressedMime } = await compressImage(
+        file.buffer, file.mimetype, { maxDim: 1920, quality: 80 }
+      );
       const uploadResult = await uploadErpDocument(
-        file.buffer, file.originalname,
-        req.user?.name, period, cycle, 'OR', file.mimetype
+        compressedBuffer, file.originalname,
+        req.user?.name, period, cycle, 'OR', compressedMime
       );
 
-      // 2. OCR
+      // 2. OCR (uses original buffer for best quality)
       const ocrResult = await detectText(file.buffer);
       const processed = await processOcr('OR', ocrResult, {});
 

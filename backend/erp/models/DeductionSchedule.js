@@ -101,7 +101,8 @@ const deductionScheduleSchema = new mongoose.Schema({
 
   // ── Audit ──
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  created_at: { type: Date, default: Date.now, immutable: true }
+  created_at: { type: Date, default: Date.now, immutable: true },
+  edit_history: [{ type: mongoose.Schema.Types.Mixed }]
 }, {
   timestamps: true,
   collection: 'erp_deduction_schedules'

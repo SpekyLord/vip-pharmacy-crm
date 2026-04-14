@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 6.0
-> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1 Complete. Phase F.1: Lookup-driven module default roles for Universal Approval Hub — Rule #3 compliance (April 13, 2026).
+> **Version**: 6.2
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1 + G2 + G3 Complete. G3: Approval Hub inline quick-edit for typo fixes before approving (April 14, 2026).
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -104,6 +104,109 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | F.1 | Lookup-Driven Module Default Roles — Rule #3 Compliance for Approval Hub | ✅ |
 | Gap 9 | Rx Correlation — Visit vs Sales + Rebates + Programs | ✅ |
 | G1 | BDM Income Projection + Revolving Fund + CALF Bidirectional + Personal Gas | ✅ |
+| G2 | Photo Upload Compression + Approval Hub Populate Fixes | ✅ |
+| G3 | Approval Hub Inline Quick-Edit (Typo Fix Before Approve) | ✅ |
+
+---
+
+## Phase G3 — Approval Hub Inline Quick-Edit
+
+### Problem
+When an approver spots a typo (wrong description, misspelled name, wrong check number) in a pending document, they had to reject → wait for submitter to fix → re-approve. For minor corrections, this round-trip is needlessly slow.
+
+### Solution
+Approvers can now click "Edit" on any item in the Approval Hub to fix whitelisted text/number fields directly, then approve immediately. Editable fields are **lookup-driven** via `APPROVAL_EDITABLE_FIELDS` — subscribers can add/remove fields without code changes.
+
+### Architecture
+- **Lookup-driven**: `APPROVAL_EDITABLE_FIELDS` category in Lookup table. Each entry's `code` = module type key (e.g., `DEDUCTION_SCHEDULE`), `metadata.fields` = array of editable field names.
+- **Backend whitelist**: `PATCH /universal-edit` accepts `{ type, id, updates }`, filters updates to only lookup-whitelisted fields, validates document is in a pending/valid state.
+- **Audit trail**: Every edit pushes to `edit_history[]` array on the document: `{ edited_by, edited_at, changes: [{ field, old_value, new_value }], edit_reason }`.
+- **Auto-seed**: First access auto-seeds lookup entries from `SEED_DEFAULTS` (same pattern as `MODULE_DEFAULT_ROLES`).
+
+### Editable Fields Per Module (Default Seeds)
+| Module Type Key | Fields |
+|----------------|--------|
+| `DEDUCTION_SCHEDULE` | description, deduction_label, total_amount |
+| `INCOME_REPORT` | notes |
+| `SALES_LINE` | invoice_number, service_description |
+| `COLLECTION` | check_no, notes |
+| `SMER_ENTRY` | notes |
+| `CAR_LOGBOOK` | notes |
+| `EXPENSE_ENTRY` | notes |
+| `PRF_CALF` | purpose, check_no, notes |
+| `GRN` | notes |
+
+### Editable Document Statuses
+| Type Key | Allowed Statuses |
+|----------|-----------------|
+| deduction_schedule | PENDING_APPROVAL |
+| income_report | GENERATED, REVIEWED |
+| sales_line, collection, smer_entry, car_logbook, expense_entry, prf_calf | VALID |
+| grn | PENDING |
+
+### New Endpoint
+| Method | Path | Description |
+|--------|------|-------------|
+| PATCH | `/api/erp/approvals/universal-edit` | Quick-edit whitelisted fields on pending document |
+
+### Key Files
+```
+backend/erp/controllers/lookupGenericController.js  # APPROVAL_EDITABLE_FIELDS seed
+backend/erp/controllers/universalApprovalController.js  # universalEdit handler + MODEL_MAP + EDITABLE_STATUSES
+backend/erp/routes/approvalRoutes.js                # PATCH /universal-edit route
+backend/erp/models/*.js (9 models)                  # edit_history field added
+frontend/src/erp/hooks/useApprovals.js              # universalEdit method
+frontend/src/erp/pages/ApprovalManager.jsx          # Edit button, inline form, editableFieldsMap
+frontend/src/erp/components/WorkflowGuide.jsx       # Updated banner step 5
+```
+
+---
+
+## Phase G2 — Photo Upload Compression + Approval Hub Populate Fixes
+
+### Problem
+BDMs on phones couldn't upload OR receipt photos in Expenses and CALF/PRF pages. Phone cameras produce 5-12MB files that exceeded the 5MB backend limit and were slow over mobile data. Additionally, the Universal Approval Hub showed "Unknown" for payslip names and raw ObjectIds for hospitals/customers due to wrong populate field names.
+
+### Photo Upload — Dual Compression Strategy
+**Client-side** (frontend, before upload):
+- New utility: `frontend/src/erp/utils/compressImage.js` — `compressImageFile(file, { maxDimension: 1600, quality: 0.7 })`
+- Canvas API, OCR-safe settings (1600px / 70% JPEG preserves receipt text)
+- Skips files already < 1MB, graceful fallback on error
+- Integrated into `ocrService.processDocument()` — fixes BOTH Expenses and CALF since both use this entry point
+- Integrated into batch upload flow (`Expenses.jsx` `handleBatchProcess()`)
+
+**Server-side** (backend, before S3 upload):
+- `compressImage()` from `middleware/upload.js` (sharp-based, 1920px / 80% JPEG)
+- Applied in `ocrController.js` and `expenseController.js` batch upload
+- OCR runs on original buffer (best quality), compression only for S3 storage
+
+### Backend Fixes
+- `MAX_FILE_SIZE`: 5MB → 15MB (safety net for uncompressed photos)
+- Removed global multer `files: 10` limit — was overriding batch route's `maxCount: 20`
+- Exported `compressImage` from `middleware/upload.js`
+
+### Upload Timeouts
+- `ocrService.processDocument()`: 30s → 120s (mobile uploads)
+- `useExpenses.batchUploadExpenses()`: 30s → 180s (up to 20 files)
+
+### Approval Hub Populate Fixes
+| Module | Field | Before (wrong) | After (correct) |
+|--------|-------|-----------------|------------------|
+| PAYROLL, KPI | `person_id` | `name` | `full_name` (PeopleMaster) |
+| SALES, COLLECTION | `hospital_id` | `name` | `hospital_name` (Hospital) |
+| SALES, COLLECTION | `customer_id` | `name` | `customer_name` (Customer) |
+
+### Key Files
+```
+frontend/src/erp/utils/compressImage.js         # NEW: Client-side image compression utility
+frontend/src/erp/services/ocrService.js          # Compress + timeout for single uploads
+frontend/src/erp/pages/Expenses.jsx              # Compress batch files before upload
+frontend/src/erp/hooks/useExpenses.js            # 180s timeout for batch uploads
+backend/middleware/upload.js                     # 15MB limit, no global files cap, export compressImage
+backend/erp/controllers/ocrController.js         # Server-side compress before S3
+backend/erp/controllers/expenseController.js     # Server-side compress in batch upload
+backend/erp/services/universalApprovalService.js # Populate field fixes (full_name, hospital_name, customer_name)
+```
 
 ---
 
@@ -1013,7 +1116,26 @@ VIP runs three business lines under one entity, tracked by cost centers:
 | VAT 0.12 in pre-save hooks | SalesLine, ExpenseEntry, Collection etc. hardcode 12% in schema hooks | Cannot change per entity; low risk until rate changes |
 | ~~Frontend hardcoded dropdowns~~ | ~~Static arrays on non-people pages served as fallbacks~~ | **RESOLVED Phase B (Apr 2026)**: All 17 frontend files migrated — `_FALLBACK` arrays removed, replaced with `useLookupBatch()`/`useLookupOptions()` calls. 9 new seed categories added (ACCOUNT_TYPE, PO_STATUS, GOV_RATE_TYPE, GOV_RATE_BRACKET_TYPE, GOV_RATE_FLAT_TYPE, KPI_DIRECTION, KPI_UNIT, KPI_COMPUTATION). Zero hardcoded business value arrays remain in frontend. |
 | ~~Role-People alignment warnings~~ | ~~No toast/warning when User.role doesn't match PeopleMaster.person_type via ROLE_MAPPING~~ | **RESOLVED Phase 30**: alignment check toast in PersonDetail.jsx — fires on load when linked user role mismatches ROLE_MAPPING |
-| Hospital entity_id optional | Hospitals intentionally global (shared across entities) | By design, but undocumented in schema |
+| Hospital entity_id optional | Hospitals intentionally global (shared across entities) — `warehouse_ids` controls BDM access | By design. BDM access is warehouse-driven (not per-BDM tagged_bdms). See "Hospital-Warehouse Access Pattern" below. |
+
+---
+
+## Hospital-Warehouse Access Pattern
+
+Hospitals are globally shared (no entity_id filter). BDM access is **warehouse-driven** — scalable and lookup-friendly:
+
+1. **Hospital.warehouse_ids** — array of Warehouse ObjectIds. Primary access mechanism.
+2. **Hospital.tagged_bdms** — legacy per-BDM tagging. Kept as fallback for edge cases.
+3. **hospitalController.getAll()** — for BDMs, finds their warehouse(s) via `Warehouse.find({ $or: [{ manager_id }, { assigned_users }] })`, then filters hospitals by `warehouse_ids $in myWhIds` OR legacy `tagged_bdms`.
+4. **Admin/President/Finance** — see all hospitals (no filter).
+
+**Adding a new hospital**: Admin creates hospital → assigns warehouse(s) via Hospital List UI → all BDMs in those warehouses automatically see it.
+
+**Adding a new BDM**: Assign to warehouse (manager_id or assigned_users) → BDM inherits all hospitals in that warehouse.
+
+**Excel import/export**: "Warehouse Codes" column (semicolon-separated, e.g., `GSC;ILO-MAIN`). Resolved to ObjectIds on import.
+
+**Files**: `Hospital.js` (model), `hospitalController.js` (filter logic + import/export), `HospitalList.jsx` (Assign modal + warehouse multi-select in create/edit form).
 
 ---
 

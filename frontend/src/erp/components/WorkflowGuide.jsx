@@ -400,14 +400,14 @@ const WORKFLOW_GUIDES = {
     steps: [
       'Add hospitals with type, beds, and engagement level',
       'Set financial terms (payment days, VAT, CWT, credit limit)',
-      'Tag BDMs to hospitals for visibility control',
-      'Export/Import via Excel for bulk updates',
+      'Assign hospitals to warehouses — BDMs automatically see hospitals in their warehouse',
+      'Export/Import via Excel for bulk updates (include Warehouse Codes column)',
     ],
     next: [
       { label: 'New Sale', path: '/erp/sales/entry' },
       { label: 'Collections', path: '/erp/collections' },
     ],
-    tip: 'Credit limits can WARN or BLOCK sales — set the action per hospital.',
+    tip: 'Assign warehouses instead of tagging individual BDMs — scales automatically when BDMs change. Use BDM overrides only for edge cases.',
   },
   'transfer-price-manager': {
     title: 'Transfer Price Manager',
@@ -439,14 +439,15 @@ const WORKFLOW_GUIDES = {
   'approval-manager': {
     title: 'Universal Approval Hub',
     steps: [
-      '1. All Pending tab: see EVERY transaction across the ERP that needs your attention — approve, post, or reject inline.',
-      '2. Module filter: narrow by Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Income, Deductions, GRN, Payroll, KPI, etc.',
-      '3. Posting modules (Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF): documents in VALID status appear here — click Post to transition to POSTED.',
-      '4. Approval modules (Income, Deductions, GRN, Payroll, KPI): multi-step review/approve workflows.',
-      '5. Requests tab: Phase 29 authority matrix approvals (rule-triggered items).',
-      '6. Rules tab (Admin): create Approval Rules to delegate — assign specific people or roles to approve specific modules. Rules override default roles.',
-      '7. Default Roles: each module has configurable default roles (Control Center → Lookup Tables → MODULE_DEFAULT_ROLES). These determine who sees the module when no Approval Rules are set.',
-      '8. Sidebar badge shows how many items need your attention.',
+      'All Pending tab: see EVERY transaction across the ERP that needs your attention — approve, post, or reject inline.',
+      'Module filter: narrow by Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Income, Deductions, GRN, Payroll, KPI, etc.',
+      'Posting modules (Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF): documents in VALID status appear here — click Post to transition to POSTED.',
+      'Approval modules (Income, Deductions, GRN, Payroll, KPI): multi-step review/approve workflows.',
+      'Quick Edit: click Edit on any item to fix typos (description, notes, check#, amount) before approving — no need to reject and wait for resubmission. Editable fields are configured per module in Control Center → Lookup Tables → APPROVAL_EDITABLE_FIELDS.',
+      'Requests tab: authority matrix approvals (rule-triggered items).',
+      'Rules tab (Admin): create Approval Rules to delegate — assign specific people or roles to approve specific modules. Rules override default roles.',
+      'Default Roles: each module has configurable default roles (Control Center → Lookup Tables → MODULE_DEFAULT_ROLES). These determine who sees the module when no Approval Rules are set.',
+      'Sidebar badge shows how many items need your attention.',
     ],
     next: [
       { label: 'Control Center', path: '/erp/control-center?section=approval-rules' },
