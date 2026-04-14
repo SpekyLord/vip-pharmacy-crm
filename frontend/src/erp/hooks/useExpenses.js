@@ -40,7 +40,7 @@ export default function useExpenses() {
   const reopenExpenses = (ids) => api.post('/expenses/ore-access/reopen', { expense_ids: ids });
 
   // ═══ Batch Upload (President/Admin) ═══
-  const batchUploadExpenses = (formData) => api.post('/expenses/ore-access/batch-upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+  const batchUploadExpenses = (formData) => api.post('/expenses/ore-access/batch-upload', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 });
   const saveBatchExpenses = (data) => api.post('/expenses/ore-access/batch-save', data);
 
   // ═══ PRF / CALF ═══

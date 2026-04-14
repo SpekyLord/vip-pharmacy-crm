@@ -93,12 +93,9 @@ const getStockCheck = catchAsync(async (req, res) => {
 const getHospitals = catchAsync(async (req, res) => {
   const filter = { status: 'ACTIVE' };
 
-  // BDMs see only tagged hospitals (same logic as hospitalController.getAll)
-  if (req.user?.role === ROLES.CONTRACTOR) {
-    filter.tagged_bdms = {
-      $elemMatch: { bdm_id: req.user._id, is_active: { $ne: false } }
-    };
-  }
+  // BDMs see only hospitals assigned to their warehouse(s) + legacy tagged_bdms fallback
+  const { buildHospitalAccessFilter } = require('../utils/hospitalAccess');
+  Object.assign(filter, await buildHospitalAccessFilter(req.user));
 
   const hospitals = await Hospital.find(filter)
     .select('hospital_name engagement_level')

@@ -1,6 +1,8 @@
 const Hospital = require('../models/Hospital');
+const Warehouse = require('../models/Warehouse');
 const { catchAsync } = require('../../middleware/errorHandler');
-const { ROLES } = require('../../constants/roles');
+const { ROLES, isAdminLike } = require('../../constants/roles');
+const { buildHospitalAccessFilter } = require('../utils/hospitalAccess');
 const XLSX = require('xlsx');
 const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
@@ -12,13 +14,12 @@ const getAll = catchAsync(async (req, res) => {
     filter.hospital_name = { $regex: req.query.q, $options: 'i' };
   }
 
-  // BDM sees only their tagged hospitals; admin/president/finance/ceo see all
-  const bdmRoles = [ROLES.CONTRACTOR];
-  if (bdmRoles.includes(req.user?.role) || req.query.my === 'true') {
-    filter.tagged_bdms = {
-      $elemMatch: { bdm_id: req.user._id, is_active: { $ne: false } }
-    };
-  }
+  // BDM sees only hospitals assigned to their warehouse(s); admin/president/finance/ceo see all
+  // Scalable: warehouse_ids is the primary mechanism; tagged_bdms is legacy fallback
+  // ?my=true forces BDM filter even for admin-like roles
+  const forceMyFilter = req.query.my === 'true';
+  const effectiveUser = forceMyFilter ? { ...req.user, role: 'contractor' } : req.user;
+  Object.assign(filter, await buildHospitalAccessFilter(effectiveUser));
 
   const page = parseInt(req.query.page) || 1;
   const rawLimit = req.query.limit;
@@ -103,8 +104,13 @@ const exportHospitals = catchAsync(async (req, res) => {
     .select('-__v -tagged_bdms -hospital_name_clean -createdAt -updatedAt')
     .lean();
 
+  // Build warehouse lookup for codes
+  const allWarehouses = await Warehouse.find({ is_active: true }).select('_id warehouse_code').lean();
+  const whMap = new Map(allWarehouses.map(w => [w._id.toString(), w.warehouse_code]));
+
   const rows = hospitals.map(h => ({
     'Hospital Name': h.hospital_name,
+    'Warehouse Codes': (h.warehouse_ids || []).map(id => whMap.get(id.toString()) || '?').join('; '),
     'Aliases': (h.hospital_aliases || []).join('; '),
     'TIN': h.tin || '',
     'Payment Terms': h.payment_terms ?? 30,
@@ -132,7 +138,7 @@ const exportHospitals = catchAsync(async (req, res) => {
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 35 }, { wch: 30 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 18 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 20 }, { wch: 10 }, { wch: 25 }, { wch: 25 }, { wch: 30 }, { wch: 18 }, { wch: 8 }];
+  ws['!cols'] = [{ wch: 35 }, { wch: 20 }, { wch: 30 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 18 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 20 }, { wch: 10 }, { wch: 25 }, { wch: 25 }, { wch: 30 }, { wch: 18 }, { wch: 8 }];
   XLSX.utils.book_append_sheet(wb, ws, 'Hospitals');
 
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -148,6 +154,10 @@ const importHospitals = catchAsync(async (req, res) => {
   const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws);
+
+  // Build warehouse code→id map for import
+  const allWarehouses = await Warehouse.find({ is_active: true }).select('_id warehouse_code').lean();
+  const whCodeToId = new Map(allWarehouses.map(w => [w.warehouse_code.toUpperCase(), w._id]));
 
   let created = 0, updated = 0, errors = [];
 
@@ -190,6 +200,19 @@ const importHospitals = catchAsync(async (req, res) => {
     // Handle programs
     const programs = String(r['Programs to Level 5'] || '').trim();
     if (programs) data.programs_to_level_5 = programs;
+
+    // Handle warehouse codes (semicolon-separated, e.g. "GSC;ILO-MAIN")
+    const whStr = String(r['Warehouse Codes'] || r.warehouse_codes || '').trim();
+    if (whStr) {
+      const codes = whStr.split(';').map(c => c.trim().toUpperCase()).filter(Boolean);
+      const resolvedIds = [];
+      for (const code of codes) {
+        const id = whCodeToId.get(code);
+        if (id) resolvedIds.push(id);
+        else errors.push({ hospital_name, error: `Unknown warehouse code: ${code}` });
+      }
+      if (resolvedIds.length > 0) data.warehouse_ids = resolvedIds;
+    }
 
     try {
       const { cleanName } = require('../utils/nameClean');

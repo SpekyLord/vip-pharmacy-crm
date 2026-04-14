@@ -63,7 +63,13 @@ const hospitalSchema = new mongoose.Schema({
   address: { type: String, trim: true },
   contact_person: { type: String, trim: true },
 
-  // BDM tagging
+  // Warehouse-driven access (scalable — BDMs inherit access through their warehouse)
+  warehouse_ids: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Warehouse'
+  }],
+
+  // Legacy per-BDM tagging (kept for backward compat — warehouse_ids takes precedence)
   tagged_bdms: [taggedBdmSchema],
 
   // Status
@@ -97,6 +103,7 @@ hospitalSchema.pre('findOneAndUpdate', function (next) {
 // Indexes — hospital_name_clean is globally unique (Phase 4A.3)
 hospitalSchema.index({ status: 1 });
 hospitalSchema.index({ hospital_name_clean: 1 }, { unique: true });
+hospitalSchema.index({ warehouse_ids: 1 });
 hospitalSchema.index({ 'tagged_bdms.bdm_id': 1 });
 hospitalSchema.index({ hospital_name: 'text', hospital_aliases: 'text' });
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -17,7 +17,7 @@ export default function ApprovalManager() {
     fetchRules, createRule, updateRule, deleteRule,
     fetchRequests, fetchMyPending: _fetchMyPending, approve, reject, cancel: _cancel, // eslint-disable-line no-unused-vars
     checkStatus,
-    universalItems, universalCount, fetchUniversalPending, universalApprove,
+    universalItems, universalCount, fetchUniversalPending, universalApprove, universalEdit,
   } = useApprovals();
 
   const [tab, setTab] = useState('all-pending'); // 'all-pending' | 'requests' | 'rules'
@@ -30,7 +30,7 @@ export default function ApprovalManager() {
   const [reason, setReason] = useState('');
 
   // Lookup-driven options (database-driven via useLookupBatch)
-  const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE']);
+  const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE', 'APPROVAL_EDITABLE_FIELDS']);
 
   const MODULE_OPTIONS = (lookups.APPROVAL_MODULE || []).map(o => o.code || o.value);
   const APPROVER_TYPES = (lookups.APPROVER_TYPE || []).map(o => ({ value: o.code || o.value, label: o.label }));
@@ -46,6 +46,20 @@ export default function ApprovalManager() {
 
   const [hubModuleFilter, setHubModuleFilter] = useState('');
   const [expandedItem, setExpandedItem] = useState(null); // item.id to expand
+
+  // Phase G3: Quick-edit state
+  const [editingItem, setEditingItem] = useState(null);   // item.id being edited
+  const [editForm, setEditForm] = useState({});            // { field: value }
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Lookup-driven editable fields map: { type_key: [field1, field2, ...] }
+  const editableFieldsMap = useMemo(() => {
+    const map = {};
+    (lookups.APPROVAL_EDITABLE_FIELDS || []).forEach(entry => {
+      map[(entry.code || '').toLowerCase()] = entry.metadata?.fields || [];
+    });
+    return map;
+  }, [lookups.APPROVAL_EDITABLE_FIELDS]);
 
   useEffect(() => {
     if (tab === 'all-pending') {
@@ -124,6 +138,30 @@ export default function ApprovalManager() {
       fetchUniversalPending().catch(() => {});
     } catch (e) { showError(e); }
   }, [universalApprove, fetchUniversalPending]);
+
+  // Phase G3: Save quick-edit
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingItem) return;
+    const item = (hubModuleFilter ? universalItems.filter(i => i.module === hubModuleFilter) : universalItems)
+      .find(i => i.id === editingItem);
+    if (!item) return;
+    setEditSaving(true);
+    try {
+      await universalEdit({
+        type: item.approve_data.type,
+        id: item.approve_data.id,
+        updates: editForm
+      });
+      toast.success('Saved — you can now approve');
+      setEditingItem(null);
+      setEditForm({});
+      fetchUniversalPending().catch(() => {});
+    } catch (e) {
+      showError(e);
+    } finally {
+      setEditSaving(false);
+    }
+  }, [editingItem, editForm, universalEdit, fetchUniversalPending, universalItems, hubModuleFilter]);
 
   const MODULE_COLORS = {
     INCOME: '#2563eb', DEDUCTION_SCHEDULE: '#7c3aed', PURCHASING: '#16a34a',
@@ -227,6 +265,23 @@ export default function ApprovalManager() {
                         style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--erp-border)', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: 'var(--erp-panel)', color: 'var(--erp-text)' }}>
                         {isExpanded ? 'Hide' : 'Details'}
                       </button>
+                      {(editableFieldsMap[item.approve_data?.type] || []).length > 0 && (
+                        <button onClick={() => {
+                          if (editingItem === item.id) {
+                            setEditingItem(null); setEditForm({});
+                          } else {
+                            const fields = editableFieldsMap[item.approve_data.type];
+                            const initial = {};
+                            fields.forEach(f => { initial[f] = item.details?.[f] ?? ''; });
+                            setEditingItem(item.id);
+                            setEditForm(initial);
+                            if (expandedItem !== item.id) setExpandedItem(item.id);
+                          }
+                        }}
+                          style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--erp-border)', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: editingItem === item.id ? '#dbeafe' : 'var(--erp-panel)', color: editingItem === item.id ? '#1d4ed8' : 'var(--erp-text)' }}>
+                          {editingItem === item.id ? 'Cancel Edit' : 'Edit'}
+                        </button>
+                      )}
                       <button onClick={() => handleUniversalAction(item, 'approve')} disabled={loading}
                         style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: item.action_key === 'CREDIT' ? '#047857' : '#16a34a', color: '#fff' }}>
                         {item.current_action}
@@ -482,6 +537,52 @@ export default function ApprovalManager() {
                           )}
                           {d.purpose && <div style={{ color: 'var(--erp-muted)' }}><strong>Purpose:</strong> {d.purpose}</div>}
                           {d.bir_flag && <div style={{ fontSize: 11, color: 'var(--erp-muted)', marginTop: 4 }}>BIR: {d.bir_flag}</div>}
+                        </div>
+                      )}
+
+                      {/* ── Phase G3: Inline Quick-Edit Form ── */}
+                      {editingItem === item.id && (editableFieldsMap[item.approve_data?.type] || []).length > 0 && (
+                        <div style={{ marginTop: 12, borderTop: '2px dashed var(--erp-border)', paddingTop: 12 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#2563eb' }} />
+                            Quick Edit — fix typos before approving
+                          </div>
+                          {(editableFieldsMap[item.approve_data?.type] || []).map(field => (
+                            <div key={field} style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <label style={{ width: 150, fontSize: 12, fontWeight: 600, color: 'var(--erp-text)', textTransform: 'capitalize', flexShrink: 0 }}>
+                                {field.replace(/_/g, ' ')}
+                              </label>
+                              {field === 'total_amount' ? (
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={editForm[field] ?? ''}
+                                  onChange={e => setEditForm(f => ({ ...f, [field]: e.target.value }))}
+                                  style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #93c5fd', fontSize: 13, background: '#eff6ff', outline: 'none' }}
+                                />
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={editForm[field] ?? ''}
+                                  onChange={e => setEditForm(f => ({ ...f, [field]: e.target.value }))}
+                                  style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #93c5fd', fontSize: 13, background: '#eff6ff', outline: 'none' }}
+                                />
+                              )}
+                            </div>
+                          ))}
+                          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+                            <button
+                              onClick={() => { setEditingItem(null); setEditForm({}); }}
+                              style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid var(--erp-border)', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: 'var(--erp-panel)', color: 'var(--erp-text)' }}>
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleSaveEdit}
+                              disabled={editSaving}
+                              style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: editSaving ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 700, background: '#2563eb', color: '#fff', opacity: editSaving ? 0.6 : 1 }}>
+                              {editSaving ? 'Saving...' : 'Save Changes'}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

@@ -455,6 +455,20 @@ const SEED_DEFAULTS = {
     { code: 'EXPENSES', label: 'Expenses (ORE/ACCESS)', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated expense entries' } },
     { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated PRF/CALF documents' } },
   ],
+
+  // Phase G3 — Editable fields per module in the Universal Approval Hub (quick-edit for typo fixes)
+  // Admin can configure which fields are editable per module. metadata.fields = array of field names on the document model.
+  APPROVAL_EDITABLE_FIELDS: [
+    { code: 'DEDUCTION_SCHEDULE', label: 'Deduction Schedule', metadata: { fields: ['description', 'deduction_label', 'total_amount'] } },
+    { code: 'INCOME_REPORT', label: 'Income Report', metadata: { fields: ['notes'] } },
+    { code: 'SALES_LINE', label: 'Sales / CSI', metadata: { fields: ['invoice_number', 'service_description'] } },
+    { code: 'COLLECTION', label: 'Collection / CR', metadata: { fields: ['check_no', 'notes'] } },
+    { code: 'SMER_ENTRY', label: 'SMER', metadata: { fields: ['notes'] } },
+    { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { fields: ['notes'] } },
+    { code: 'EXPENSE_ENTRY', label: 'Expenses (ORE/ACCESS)', metadata: { fields: ['notes'] } },
+    { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { fields: ['purpose', 'check_no', 'notes'] } },
+    { code: 'GRN', label: 'GRN', metadata: { fields: ['notes'] } },
+  ],
 };
 
 // List all distinct categories for current entity

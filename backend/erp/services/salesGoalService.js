@@ -107,10 +107,11 @@ function monthRange(period) {
 async function getAutoKpiValue(kpiCode, entityId, bdmId, startDate, endDate) {
   switch (kpiCode) {
     case 'PCT_HOSP_ACCREDITED': {
+      const { buildHospitalAccessFilter } = require('../utils/hospitalAccess');
+      const accessFilter = await buildHospitalAccessFilter({ _id: bdmId, role: 'contractor' });
       const tagged = await Hospital.find({
-        'tagged_bdms.bdm_id': bdmId,
-        'tagged_bdms.is_active': true,
         status: 'ACTIVE',
+        ...accessFilter,
       }).select('engagement_level').lean();
       if (tagged.length === 0) return 0;
       const config = await getGoalConfig(entityId);
@@ -120,12 +121,13 @@ async function getAutoKpiValue(kpiCode, entityId, bdmId, startDate, endDate) {
     }
 
     case 'REV_PER_ACCREDITED_HOSP': {
+      const { buildHospitalAccessFilter: buildFilter } = require('../utils/hospitalAccess');
+      const hospAccessFilter = await buildFilter({ _id: bdmId, role: 'contractor' });
       const config = await getGoalConfig(entityId);
       const threshold = config.ACCREDITATION_LEVEL;
       const accreditedHosps = await Hospital.find({
-        'tagged_bdms.bdm_id': bdmId,
-        'tagged_bdms.is_active': true,
         status: 'ACTIVE',
+        ...hospAccessFilter,
         engagement_level: { $gte: threshold },
       }).select('_id').lean();
       if (accreditedHosps.length === 0) return 0;

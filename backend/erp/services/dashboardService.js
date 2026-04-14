@@ -45,10 +45,12 @@ async function computeEngagements(bdmId, start, end) {
       status: 'completed'
     }).catch(() => 0);
 
-    // Count tagged hospitals for this BDM (target)
+    // Count accessible hospitals for this BDM (warehouse-driven + legacy tagged_bdms)
+    const { buildHospitalAccessFilter } = require('../utils/hospitalAccess');
+    const accessFilter = await buildHospitalAccessFilter({ _id: bdmObjectId, role: 'contractor' });
     const hospitalCount = await Hospital.countDocuments({
-      'tagged_bdms.bdm_id': bdmObjectId,
-      'tagged_bdms.is_active': true
+      status: 'ACTIVE',
+      ...accessFilter
     }).catch(() => 0);
 
     const target = hospitalCount || 0;

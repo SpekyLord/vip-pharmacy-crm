@@ -1,5 +1,6 @@
 import EXIF from 'exif-js';
 import api from '../../services/api';
+import { compressImageFile } from '../utils/compressImage';
 
 /**
  * Extract EXIF date/time from a photo file.
@@ -52,8 +53,12 @@ export function extractExifDateTime(file) {
  * @returns {Promise<object>} { s3_url, doc_type, extracted, layout_family, review_required, review_reasons, validation_flags, raw_ocr_text }
  */
 export async function processDocument(photo, docType, exifDateTime) {
+  // Compress before upload — phone cameras produce 5-12MB files that exceed
+  // the backend limit and are slow over mobile data. OCR-safe: 1600px / 70%.
+  const compressed = await compressImageFile(photo);
+
   const formData = new FormData();
-  formData.append('photo', photo);
+  formData.append('photo', compressed);
   formData.append('docType', docType);
   if (exifDateTime) {
     formData.append('exifDateTime', exifDateTime);
@@ -61,6 +66,7 @@ export async function processDocument(photo, docType, exifDateTime) {
 
   const response = await api.post('/erp/ocr/process', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000, // 2 min for mobile uploads (default 30s too short)
   });
 
   return response.data.data;

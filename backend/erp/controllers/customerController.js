@@ -4,7 +4,7 @@
  */
 const Customer = require('../models/Customer');
 const { catchAsync } = require('../../middleware/errorHandler');
-const { ROLES } = require('../../constants/roles');
+const { ROLES, isAdminLike } = require('../../constants/roles');
 const XLSX = require('xlsx');
 const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
@@ -17,8 +17,7 @@ const getAll = catchAsync(async (req, res) => {
   }
 
   // BDM sees only their tagged customers; admin/president/finance/ceo see all
-  const bdmRoles = [ROLES.CONTRACTOR];
-  if (bdmRoles.includes(req.user?.role) || req.query.my === 'true') {
+  if (!isAdminLike(req.user?.role) || req.query.my === 'true') {
     filter.tagged_bdms = {
       $elemMatch: { bdm_id: req.user._id, is_active: { $ne: false } }
     };
