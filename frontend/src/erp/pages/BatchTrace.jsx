@@ -10,6 +10,7 @@ import Sidebar from '../../components/common/Sidebar';
 import useErpApi from '../hooks/useErpApi';
 import useInventory from '../hooks/useInventory';
 import WorkflowGuide from '../components/WorkflowGuide';
+import WarehousePicker from '../components/WarehousePicker';
 import SelectField from '../../components/common/Select';
 import { showError } from '../utils/errorToast';
 
@@ -30,49 +31,89 @@ export default function BatchTrace() {
   const { getMyStock } = useInventory();
   const [searchParams] = useSearchParams();
 
+  const [warehouseId, setWarehouseId] = useState('');
   const [productOptions, setProductOptions] = useState([]);
+  const [batchOptions, setBatchOptions] = useState([]);
+  const [stockData, setStockData] = useState([]);          // cache full getMyStock response
   const [selectedProduct, setSelectedProduct] = useState(searchParams.get('product') || '');
-  const [batchInput, setBatchInput] = useState(searchParams.get('batch') || '');
+  const [selectedBatch, setSelectedBatch] = useState(searchParams.get('batch') || '');
   const [traceData, setTraceData] = useState(null);
   const [searching, setSearching] = useState(false);
 
-  // Load product list for dropdown
+  // Load product list when warehouse is selected (auto-selected by WarehousePicker)
   useEffect(() => {
+    if (!warehouseId) return;
     (async () => {
       try {
-        const res = await getMyStock();
+        const res = await getMyStock(null, null, warehouseId);
+        const items = res?.data || [];
+        setStockData(items);
         const seen = new Set();
         const opts = [];
-        for (const p of (res?.data || [])) {
-          if (!seen.has(p.product_id)) {
-            seen.add(p.product_id);
-            opts.push({ value: p.product_id, label: `${p.brand_name || ''} ${p.dosage_strength || ''}`.trim() });
+        for (const p of items) {
+          const pid = p.product_id?.toString() || p.product?._id?.toString();
+          if (pid && !seen.has(pid)) {
+            seen.add(pid);
+            const brand = p.product?.brand_name || p.brand_name || '';
+            const dosage = p.product?.dosage_strength || p.dosage_strength || '';
+            opts.push({ value: pid, label: `${brand} ${dosage}`.trim() || pid });
           }
         }
         setProductOptions(opts);
+        // Reset product selection if current product not in new warehouse stock
+        setSelectedProduct(prev => {
+          if (prev && !opts.find(o => o.value === prev)) return '';
+          return prev;
+        });
+        setBatchOptions([]);
+        setSelectedBatch('');
       } catch { /* */ }
     })();
-  }, [getMyStock]);
+  }, [warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-search if params provided
+  // Derive batch options from cached stock data when product changes (no extra API call)
+  // Uses getMyStock batches which INCLUDE expired batches — important for traceability
   useEffect(() => {
-    if (selectedProduct && batchInput) handleSearch();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!selectedProduct) {
+      setBatchOptions([]);
+      return;
+    }
+    setSelectedBatch('');
+    setTraceData(null);
+    const match = stockData.find(p => {
+      const pid = p.product_id?.toString() || p.product?._id?.toString();
+      return pid === selectedProduct;
+    });
+    const batches = (match?.batches || []).map(b => ({
+      value: b.batch_lot_no,
+      label: `${b.batch_lot_no} — Exp: ${b.expiry_date ? new Date(b.expiry_date).toLocaleDateString() : 'N/A'} — Qty: ${b.available_qty}${b.expired ? ' (EXPIRED)' : b.near_expiry ? ' (Near Expiry)' : ''}`,
+      expired: b.expired,
+      near_expiry: b.near_expiry
+    }));
+    setBatchOptions(batches);
+    // If only one batch, auto-select it
+    if (batches.length === 1) setSelectedBatch(batches[0].value);
+  }, [selectedProduct, stockData]);
+
+  // Auto-trace when both product and batch are selected
+  useEffect(() => {
+    if (selectedProduct && selectedBatch) handleSearch();
+  }, [selectedBatch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSearch = useCallback(async () => {
-    if (!selectedProduct || !batchInput.trim()) {
-      showError(null, 'Select a product and enter a batch/lot number');
+    if (!selectedProduct || !selectedBatch.trim()) {
+      showError(null, 'Select a product and a batch/lot number');
       return;
     }
     setSearching(true);
     try {
-      const res = await api.get(`/inventory/batch-trace/${selectedProduct}/${encodeURIComponent(batchInput.trim())}`);
+      const res = await api.get(`/inventory/batch-trace/${selectedProduct}/${encodeURIComponent(selectedBatch.trim())}`);
       setTraceData(res?.data || null);
     } catch (err) {
       setTraceData(null);
       showError(err, 'Batch not found or no records');
     } finally { setSearching(false); }
-  }, [api, selectedProduct, batchInput]);
+  }, [api, selectedProduct, selectedBatch]);
 
   return (
     <div className="admin-page erp-page">
@@ -89,23 +130,38 @@ export default function BatchTrace() {
             </div>
           </div>
 
-          {/* Search */}
-          <div style={{ padding: 16, borderRadius: 10, background: '#fff', border: '1px solid #dbe4f0', marginBottom: 20, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <label style={{ fontSize: 13, flex: 1, minWidth: 200 }}>Product:
-              <SelectField value={selectedProduct} onChange={e => setSelectedProduct(e.target.value)} style={{ width: '100%', marginTop: 4 }}>
-                <option value="">Select product...</option>
-                {productOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-              </SelectField>
-            </label>
-            <label style={{ fontSize: 13, flex: 1, minWidth: 150 }}>Batch/Lot No:
-              <input value={batchInput} onChange={e => setBatchInput(e.target.value)} placeholder="e.g. BN2026-001"
-                onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                style={{ width: '100%', marginTop: 4, padding: '6px 10px', borderRadius: 4, border: '1px solid #dbe4f0' }} />
-            </label>
-            <button onClick={handleSearch} disabled={searching}
-              style={{ padding: '8px 20px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, height: 36 }}>
-              {searching ? 'Searching...' : 'Trace'}
-            </button>
+          {/* Warehouse + Search */}
+          <div style={{ padding: 16, borderRadius: 10, background: '#fff', border: '1px solid #dbe4f0', marginBottom: 20 }}>
+            <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 10 }}>
+              <label style={{ fontSize: 13, flex: 1, minWidth: 200 }}>Product:
+                <SelectField value={selectedProduct} onChange={e => setSelectedProduct(e.target.value)} style={{ width: '100%', marginTop: 4 }}>
+                  <option value="">Select product...</option>
+                  {productOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </SelectField>
+              </label>
+              <label style={{ fontSize: 13, flex: 1.5, minWidth: 250 }}>Batch/Lot No:
+                {batchOptions.length > 0 ? (
+                  <SelectField value={selectedBatch} onChange={e => setSelectedBatch(e.target.value)} style={{ width: '100%', marginTop: 4 }}>
+                    <option value="">Select batch...</option>
+                    {batchOptions.map(b => (
+                      <option key={b.value} value={b.value} style={b.expired ? { color: '#991b1b' } : b.near_expiry ? { color: '#92400e' } : {}}>
+                        {b.label}
+                      </option>
+                    ))}
+                  </SelectField>
+                ) : (
+                  <input value={selectedBatch} onChange={e => setSelectedBatch(e.target.value)}
+                    placeholder={selectedProduct ? 'No batches in stock — type batch number manually' : 'Select a product first'}
+                    onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                    style={{ width: '100%', marginTop: 4, padding: '6px 10px', borderRadius: 4, border: '1px solid #dbe4f0' }} />
+                )}
+              </label>
+              <button onClick={handleSearch} disabled={searching || !selectedProduct || !selectedBatch}
+                style={{ padding: '8px 20px', borderRadius: 6, background: (!selectedProduct || !selectedBatch) ? '#94a3b8' : '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, height: 36 }}>
+                {searching ? 'Tracing...' : 'Trace'}
+              </button>
+            </div>
           </div>
 
           {/* Results */}
