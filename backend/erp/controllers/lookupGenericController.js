@@ -368,7 +368,11 @@ const SEED_DEFAULTS = {
     { code: 'QUARANTINE', label: 'Quarantine' },
   ],
   // Phase C — New lookup categories (was hardcoded as Mongoose enum constraints)
-  CYCLE: ['C1', 'C2', 'MONTHLY'],
+  CYCLE: [
+    { code: 'C1', label: 'Cycle 1' },
+    { code: 'C2', label: 'Cycle 2' },
+    { code: 'MONTHLY', label: 'Monthly' },
+  ],
   BANK_ACCOUNT_TYPE: ['SAVINGS', 'CHECKING', 'CURRENT'],
   STATEMENT_IMPORT_FORMAT: ['CSV', 'OFX', 'MT940'],
   WAREHOUSE_TYPE: ['MAIN', 'TERRITORY', 'VIRTUAL'],

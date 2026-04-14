@@ -12,7 +12,7 @@ const { generateDocNumber } = require('./docNumbering');
  * Create a new deduction schedule with pre-generated installments.
  */
 async function createSchedule(entityId, bdmId, data, userId, isFinance = false) {
-  const { deduction_type, deduction_label, description, total_amount, term_months, start_period } = data;
+  const { deduction_type, deduction_label, description, total_amount, term_months, start_period, target_cycle } = data;
 
   if (!deduction_type || !deduction_label || !total_amount || !term_months || !start_period) {
     throw new Error('deduction_type, deduction_label, total_amount, term_months, and start_period are required');
@@ -36,6 +36,7 @@ async function createSchedule(entityId, bdmId, data, userId, isFinance = false) 
     total_amount,
     term_months,
     start_period,
+    target_cycle: target_cycle || 'C2',
     status: isFinance ? 'ACTIVE' : 'PENDING_APPROVAL',
     approved_by: isFinance ? userId : undefined,
     approved_at: isFinance ? new Date() : undefined,

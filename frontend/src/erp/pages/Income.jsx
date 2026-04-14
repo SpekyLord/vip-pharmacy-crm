@@ -121,6 +121,8 @@ export default function Income() {
   const schedApi = useDeductionSchedule();
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const { options: deductionTypes } = useLookupOptions('INCOME_DEDUCTION_TYPE');
+  const { options: cycleOptions } = useLookupOptions('CYCLE');
+  const cycleLabel = (code) => cycleOptions.find(c => c.code === code)?.label || code;
 
   const [view, setView] = useState('list'); // list | detail
   const [period, setPeriod] = useState(getCurrentPeriod());
@@ -319,9 +321,9 @@ export default function Income() {
               <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />
               <SelectField value={cycle} onChange={e => setCycle(e.target.value)}>
                 <option value="ALL">All Cycles</option>
-                <option value="C1">C1</option>
-                <option value="C2">C2</option>
-                <option value="MONTHLY">Monthly</option>
+                {cycleOptions.map(c => (
+                  <option key={c.code} value={c.code}>{c.label}</option>
+                ))}
               </SelectField>
               {isAdmin && (
                 <input type="text" placeholder="BDM ID (optional)" value={bdmId}
@@ -366,7 +368,7 @@ export default function Income() {
                       <div>
                         <h4>{s.deduction_label} — {bdmName}</h4>
                         <div style={{ fontSize: 12, color: 'var(--erp-muted)' }}>
-                          {s.schedule_code} · {s.term_months === 1 ? 'One-time' : `${s.term_months} months`} · {fmt(s.total_amount)} · Start: {s.start_period}
+                          {s.schedule_code} · {s.term_months === 1 ? 'One-time' : `${s.term_months} months`} · {fmt(s.total_amount)} · Start: {s.start_period} · {cycleLabel(s.target_cycle || 'C2')}
                         </div>
                       </div>
                       <span className={`badge ${s.status === 'PENDING_APPROVAL' ? 'badge-pending_approval' : s.status === 'ACTIVE' ? 'badge-active' : s.status === 'COMPLETED' ? 'badge-completed' : s.status === 'CANCELLED' ? 'badge-cancelled' : 'badge-rejected'}`}>{s.status.replace('_', ' ')}</span>
@@ -459,7 +461,7 @@ export default function Income() {
                       <tr key={r._id} onClick={() => handleSelect(r)}>
                         <td>{bdmName(r)}</td>
                         <td>{r.period}</td>
-                        <td>{r.cycle}</td>
+                        <td>{cycleLabel(r.cycle)}</td>
                         <td style={{ textAlign: 'right' }}>{fmt(r.total_earnings)}</td>
                         <td style={{ textAlign: 'right' }}>{fmt(r.total_deductions)}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(r.net_pay)}</td>
@@ -479,7 +481,7 @@ export default function Income() {
                     <div className="list-mobile-top">
                       <div>
                         <div className="list-mobile-title">{bdmName(r)}</div>
-                        <div className="list-mobile-sub">{r.period} · {r.cycle}</div>
+                        <div className="list-mobile-sub">{r.period} · {cycleLabel(r.cycle)}</div>
                       </div>
                       <span className={`badge ${STATUS_BADGES[r.status] || ''}`}>{r.status}</span>
                     </div>
@@ -503,7 +505,7 @@ export default function Income() {
             <>
               <div className="payslip-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <h3>Payslip — {bdmName(selected)} | {selected.period} {selected.cycle}</h3>
+                  <h3>Payslip — {bdmName(selected)} | {selected.period} {cycleLabel(selected.cycle)}</h3>
                   <span className={`badge ${STATUS_BADGES[selected.status] || ''}`}>{selected.status}</span>
                 </div>
 

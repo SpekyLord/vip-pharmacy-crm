@@ -79,8 +79,8 @@ const pageStyles = `
   .inst-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
   .inst-table th { text-align: left; padding: 6px 8px; background: var(--erp-accent-soft); font-weight: 600; }
   .inst-table td { padding: 6px 8px; border-top: 1px solid var(--erp-border); }
-  .create-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-  .create-modal-content { background: var(--erp-panel); border-radius: 12px; padding: 24px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+  .create-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .create-modal-content { background: var(--erp-panel, #fff); border-radius: 12px; padding: 24px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
   .create-modal h3 { margin: 0 0 16px; font-size: 16px; }
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .form-field { display: flex; flex-direction: column; gap: 4px; }
@@ -126,6 +126,7 @@ export default function MyIncome() {
   const inc = useIncome();
   const sched = useDeductionSchedule();
   const { options: deductionTypes } = useLookupOptions('INCOME_DEDUCTION_TYPE');
+  const { options: cycleOptions } = useLookupOptions('CYCLE');
 
   const [activeTab, setActiveTab] = useState('payslips');
   const [period, setPeriod] = useState(getCurrentPeriod());
@@ -148,7 +149,7 @@ export default function MyIncome() {
   const [schedules, setSchedules] = useState([]);
   const [selectedSched, setSelectedSched] = useState(null);
   const [showCreate, setShowCreate] = useState(null); // 'one-time' | 'installment' | null
-  const [schedForm, setSchedForm] = useState({ type: '', amount: '', term: '1', start: getCurrentPeriod(), desc: '' });
+  const [schedForm, setSchedForm] = useState({ type: '', amount: '', term: '1', start: getCurrentPeriod(), target_cycle: 'C2', desc: '' });
 
   // ── Load payslips ──
   const loadReports = useCallback(async () => {
@@ -259,10 +260,11 @@ export default function MyIncome() {
         total_amount: parseFloat(schedForm.amount),
         term_months: parseInt(schedForm.term) || 1,
         start_period: schedForm.start,
+        target_cycle: schedForm.target_cycle,
         description: schedForm.desc
       });
       setShowCreate(null);
-      setSchedForm({ type: '', amount: '', term: '1', start: getCurrentPeriod(), desc: '' });
+      setSchedForm({ type: '', amount: '', term: '1', start: getCurrentPeriod(), target_cycle: 'C2', desc: '' });
       loadSchedules();
     } catch (err) { showError(err, 'Could not create schedule'); }
     setLoading(false);
@@ -280,6 +282,9 @@ export default function MyIncome() {
   const canAddDeductions = selected?.status === 'GENERATED';
   const canConfirm = selected?.status === 'REVIEWED';
   const lines = selected?.deduction_lines || [];
+
+  // Resolve cycle code → label
+  const cycleLabel = (code) => cycleOptions.find(c => c.code === code)?.label || code;
 
   // Schedule form computed preview
   const previewInstAmount = schedForm.amount && schedForm.term
@@ -306,9 +311,9 @@ export default function MyIncome() {
                   <input type="month" value={period} onChange={e => setPeriod(e.target.value)} />
                   <SelectField value={cycle} onChange={e => setCycle(e.target.value)}>
                     <option value="ALL">All Cycles</option>
-                    <option value="C1">C1</option>
-                    <option value="C2">C2</option>
-                    <option value="MONTHLY">Monthly</option>
+                    {cycleOptions.map(c => (
+                      <option key={c.code} value={c.code}>{c.label}</option>
+                    ))}
                   </SelectField>
                 </>
               )}
@@ -357,7 +362,7 @@ export default function MyIncome() {
                 return (
                 <div className="payslip-card" style={{ borderColor: '#93c5fd', background: 'linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%)' }}>
                   <h3 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Income Projection ({period}, {cycle})</span>
+                    <span>Income Projection ({period}, {cycleLabel(cycle)})</span>
                     {projection.has_official_report && <span className={`badge ${STATUS_BADGES[projection.official_status] || ''}`}>{projection.official_status}</span>}
                   </h3>
 
@@ -451,7 +456,7 @@ export default function MyIncome() {
                     <div className="list-card" key={r._id} onClick={() => handleSelectPayslip(r)} role="button" tabIndex={0}>
                       <div className="list-top">
                         <div>
-                          <div className="list-title">{r.period} — {r.cycle}</div>
+                          <div className="list-title">{r.period} — {cycleLabel(r.cycle)}</div>
                           <div className="list-sub">{r.deduction_lines?.length || 0} deduction line(s)</div>
                         </div>
                         <span className={`badge ${STATUS_BADGES[r.status] || ''}`}>{r.status}</span>
@@ -471,7 +476,7 @@ export default function MyIncome() {
                 <>
                   <div className="payslip-card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <h3>Payslip — {selected.period} {selected.cycle}</h3>
+                      <h3>Payslip — {selected.period} {cycleLabel(selected.cycle)}</h3>
                       <span className={`badge ${STATUS_BADGES[selected.status] || ''}`}>{selected.status}</span>
                     </div>
                     {selected.return_reason && selected.status === 'RETURNED' && (
@@ -595,7 +600,7 @@ export default function MyIncome() {
                           <div>
                             <h4>{s.deduction_label}</h4>
                             <div style={{ fontSize: 12, color: 'var(--erp-muted)' }}>
-                              {s.schedule_code} · {s.term_months === 1 ? 'One-time' : `${s.term_months} months`} · Start: {s.start_period}
+                              {s.schedule_code} · {s.term_months === 1 ? 'One-time' : `${s.term_months} months`} · Start: {s.start_period} · {cycleLabel(s.target_cycle || 'C2')}
                             </div>
                             {s.description && <div style={{ fontSize: 12, color: 'var(--erp-muted)', marginTop: 2 }}>{s.description}</div>}
                           </div>
@@ -683,6 +688,14 @@ export default function MyIncome() {
                     <label>{showCreate === 'one-time' ? 'Deduct In Period' : 'Start Period'}</label>
                     <input type="month" value={schedForm.start}
                       onChange={e => setSchedForm(f => ({ ...f, start: e.target.value }))} />
+                  </div>
+                  <div className="form-field">
+                    <label>Deduct In Cycle</label>
+                    <select value={schedForm.target_cycle} onChange={e => setSchedForm(f => ({ ...f, target_cycle: e.target.value }))}>
+                      {cycleOptions.map(c => (
+                        <option key={c.code} value={c.code}>{c.label}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="form-field full">
                     <label>Description</label>

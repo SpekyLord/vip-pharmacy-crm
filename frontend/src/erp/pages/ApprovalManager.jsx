@@ -30,7 +30,7 @@ export default function ApprovalManager() {
   const [reason, setReason] = useState('');
 
   // Lookup-driven options (database-driven via useLookupBatch)
-  const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE', 'APPROVAL_EDITABLE_FIELDS']);
+  const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE', 'APPROVAL_EDITABLE_FIELDS', 'CYCLE']);
 
   const MODULE_OPTIONS = (lookups.APPROVAL_MODULE || []).map(o => o.code || o.value);
   const APPROVER_TYPES = (lookups.APPROVER_TYPE || []).map(o => ({ value: o.code || o.value, label: o.label }));
@@ -38,6 +38,7 @@ export default function ApprovalManager() {
     ? (lookups.APPROVER_ROLE || []).map(o => (o.code || o.value).toLowerCase())
     : [...ROLE_SETS.MANAGEMENT];
 
+  const cycleLabel = (code) => (lookups.CYCLE || []).find(c => c.code === code)?.label || code;
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   useEffect(() => {
@@ -330,7 +331,7 @@ export default function ApprovalManager() {
                       {item.module === 'DEDUCTION_SCHEDULE' && (
                         <div>
                           <div style={{ marginBottom: 8 }}>
-                            <strong>Type:</strong> {d.deduction_label} · <strong>Total:</strong> {fmt(d.total_amount)} · <strong>Term:</strong> {d.term_months === 1 ? 'One-time' : `${d.term_months} months @ ${fmt(d.installment_amount)}/mo`} · <strong>Start:</strong> {d.start_period}
+                            <strong>Type:</strong> {d.deduction_label} · <strong>Total:</strong> {fmt(d.total_amount)} · <strong>Term:</strong> {d.term_months === 1 ? 'One-time' : `${d.term_months} months @ ${fmt(d.installment_amount)}/mo`} · <strong>Start:</strong> {d.start_period} · <strong>Cycle:</strong> {cycleLabel(d.target_cycle || 'C2')}
                           </div>
                           {d.description && <div style={{ color: 'var(--erp-muted)', marginBottom: 8 }}>{d.description}</div>}
                           {d.term_months > 1 && (

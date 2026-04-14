@@ -1026,7 +1026,7 @@ const Sidebar = () => {
   const fetchApprovalCount = useCallback(async () => {
     if (!ROLE_SETS.MANAGEMENT.includes(user?.role)) return;
     try {
-      const res = await api.get('/api/erp/approvals/universal-pending');
+      const res = await api.get('/erp/approvals/universal-pending');
       setApprovalCount(res.data?.count || (res.data?.data || []).length || 0);
     } catch { /* silently fail */ }
   }, [user]);
