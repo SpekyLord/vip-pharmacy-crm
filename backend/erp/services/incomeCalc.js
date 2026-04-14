@@ -124,11 +124,15 @@ async function generateIncomeReport(entityId, bdmId, period, cycle, userId) {
   ]);
   const personalGasDeduction = Math.round((gasAgg[0]?.total_personal_gas || 0) * 100) / 100;
 
-  // 4c. Recurring deduction schedule installments
+  // 4c. Recurring deduction schedule installments (filter by target_cycle)
   const activeSchedules = await DeductionSchedule.find({
     entity_id: new mongoose.Types.ObjectId(entityId),
     bdm_id: new mongoose.Types.ObjectId(bdmId),
     status: 'ACTIVE',
+    $or: [
+      { target_cycle: cycle },
+      { target_cycle: { $exists: false } } // legacy schedules without target_cycle
+    ],
     installments: { $elemMatch: { period, status: 'PENDING' } }
   }).lean();
 

@@ -69,7 +69,7 @@ const MODULE_QUERIES = [
         doc_type: item.term_months === 1 ? 'ONE_TIME' : 'INSTALLMENT',
         doc_id: item._id,
         doc_ref: item.schedule_code,
-        description: `${item.bdm_id?.name || 'BDM'} — ${item.deduction_label} ${item.term_months > 1 ? `₱${item.installment_amount}/mo × ${item.term_months}` : ''}`,
+        description: `${item.bdm_id?.name || 'BDM'} — ${item.deduction_label} ${item.term_months > 1 ? `₱${item.installment_amount}/mo × ${item.term_months}` : ''} · ${item.target_cycle || 'C2'}`,
         amount: item.total_amount,
         submitted_by: item.bdm_id?.name || 'Unknown',
         submitted_at: item.created_at,
@@ -84,6 +84,7 @@ const MODULE_QUERIES = [
           term_months: item.term_months,
           installment_amount: item.installment_amount,
           start_period: item.start_period,
+          target_cycle: item.target_cycle || 'C2',
           description: item.description,
           installments: (item.installments || []).map(i => ({
             period: i.period, installment_no: i.installment_no, amount: i.amount, status: i.status
