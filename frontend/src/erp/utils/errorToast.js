@@ -12,6 +12,12 @@ import toast from 'react-hot-toast';
  *   catch (err) { showError(err, 'Could not save expense'); }
  */
 export function showError(err, fallback = 'Operation failed') {
+  // If no error object provided, just show the fallback message
+  if (!err) {
+    toast.error(fallback, { duration: 4000 });
+    return;
+  }
+
   const status = err?.response?.status;
   const serverMsg = err?.response?.data?.message;
   const serverErrors = err?.response?.data?.errors;

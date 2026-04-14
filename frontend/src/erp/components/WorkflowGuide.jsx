@@ -460,16 +460,16 @@ const WORKFLOW_GUIDES = {
   'batch-trace': {
     title: 'Batch Trace',
     steps: [
-      'Search for a product by name or item key',
-      'View all batches with lot numbers, expiry dates, and current quantities',
-      'Trace each batch movement: GRN receipt, sales consumption, transfers, adjustments',
-      'Identify near-expiry or expired batches for action',
+      'Select your warehouse — product list loads from warehouse stock',
+      'Pick a product from the dropdown, then enter the batch/lot number',
+      'Click Trace to view the full lifecycle: GRN receipt → sales → transfers → adjustments',
+      'Review the summary card for total in/out/balance and transaction breakdown',
     ],
     next: [
       { label: 'My Stock', path: '/erp/inventory' },
       { label: 'Expiry Dashboard', path: '/erp/expiry-dashboard' },
     ],
-    tip: 'Batch trace follows FIFO — oldest expiry batches are consumed first.',
+    tip: 'Batch trace follows FIFO — oldest expiry batches are consumed first. Switch warehouses to trace batches across locations.',
   },
   'credit-notes': {
     title: 'Credit Notes',
