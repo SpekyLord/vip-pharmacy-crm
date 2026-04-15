@@ -92,8 +92,8 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
       if (!updated[modKey]) updated[modKey] = {};
       if (updated[modKey][subKey]) {
         // Toggling off: delete key instead of setting false
-        const { [subKey]: _unused, ...rest } = updated[modKey];
-        if (Object.keys(rest).length === 0) { delete updated[modKey]; } else { updated[modKey] = rest; }
+        delete updated[modKey][subKey];
+        if (Object.keys(updated[modKey]).length === 0) { delete updated[modKey]; }
       } else {
         updated[modKey] = { ...updated[modKey], [subKey]: true };
       }
