@@ -726,7 +726,7 @@ function App() {
           <Route path="/erp/rx-correlation" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="reports"><RxCorrelation /></ProtectedRoute>} />
 
           {/* Phase 15 — SAP-Equivalent Improvements */}
-          <Route path="/erp/csi-booklets" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales"><CsiBooklets /></ProtectedRoute>} />
+          <Route path="/erp/csi-booklets" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="inventory"><CsiBooklets /></ProtectedRoute>} />
           <Route path="/erp/cycle-reports" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="reports"><CycleReports /></ProtectedRoute>} />
           <Route path="/erp/cost-centers" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="accounting"><CostCenters /></ProtectedRoute>} />
           <Route path="/erp/data-archive" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="accounting"><DataArchive /></ProtectedRoute>} />
@@ -738,7 +738,7 @@ function App() {
 
           {/* Phase 19 — Petty Cash, Office Supplies & Collaterals */}
           <Route path="/erp/petty-cash" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="accounting"><PettyCash /></ProtectedRoute>} />
-          <Route path="/erp/office-supplies" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="accounting"><OfficeSupplies /></ProtectedRoute>} />
+          <Route path="/erp/office-supplies" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="inventory"><OfficeSupplies /></ProtectedRoute>} />
           <Route path="/erp/collaterals" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="inventory"><Collaterals /></ProtectedRoute>} />
 
           {/* Phase 24 — ERP Control Center + Agent Intelligence */}

@@ -114,7 +114,7 @@ router.use('/warehouse', erpAccessCheck('inventory'), require('./warehouseRoutes
 
 // ═══ Phase 19 — Petty Cash, Office Supplies & Collaterals ═══
 router.use('/petty-cash', erpAccessCheck('accounting'), require('./pettyCashRoutes'));
-router.use('/office-supplies', erpAccessCheck('accounting'), require('./officeSupplyRoutes'));
+router.use('/office-supplies', erpAccessCheck('inventory'), require('./officeSupplyRoutes'));
 router.use('/collaterals', erpAccessCheck('inventory'), require('./collateralRoutes'));
 
 // ═══ Phase 21 — Insurance Register ═══
@@ -125,7 +125,7 @@ router.use('/period-locks', erpAccessCheck('accounting'), require('./periodLockR
 router.use('/recurring-journals', erpAccessCheck('accounting'), require('./recurringJournalRoutes'));
 
 // ═══ Phase 15 — SAP-Equivalent Improvements ═══
-router.use('/csi-booklets', erpAccessCheck('sales'), require('./csiBookletRoutes'));
+router.use('/csi-booklets', erpAccessCheck('inventory'), require('./csiBookletRoutes'));
 router.use('/cycle-reports', erpAccessCheck('reports'), require('./cycleReportRoutes'));
 router.use('/cost-centers', erpAccessCheck('accounting'), require('./costCenterRoutes'));
 router.use('/archive', erpAccessCheck('accounting'), require('./archiveRoutes'));
