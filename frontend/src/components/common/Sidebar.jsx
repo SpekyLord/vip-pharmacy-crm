@@ -675,6 +675,18 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     return erpAccess.modules?.[mod] && erpAccess.modules[mod] !== 'NONE';
   };
 
+  // Sub-permission check — mirrors useErpSubAccess logic
+  const hasSub = (mod, subKey) => {
+    if (isPresidentLike(role)) return true;
+    if (role === ROLES.ADMIN && (!erpAccess || !erpAccess.enabled)) return true;
+    const moduleLevel = erpAccess?.modules?.[mod];
+    if (!moduleLevel || moduleLevel === 'NONE') return false;
+    const moduleSubs = erpAccess?.sub_permissions?.[mod];
+    const truthyCount = moduleSubs ? Object.values(moduleSubs).filter(Boolean).length : 0;
+    if (!moduleSubs || truthyCount === 0) return moduleLevel === 'FULL';
+    return !!moduleSubs[subKey];
+  };
+
   const isAdmin = isAdminLikeRole(role);
   const sections = [];
 
@@ -707,13 +719,14 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
   // ── Inventory ─────────────────────────────────────────────────────────────
   if (hasModule('inventory')) {
     const invItems = [
-      { path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen },
       { path: '/erp/grn', label: 'GRN Entry', icon: FileInput },
       { path: '/erp/my-stock', label: 'Inventory', icon: Package },
-      { path: '/erp/office-supplies', label: 'Office Supplies', icon: Package },
       { path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight },
     ];
-    if (isAdmin) invItems.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
+    // Sub-permission gated (access-template driven, not shown to all BDMs)
+    if (hasSub('inventory', 'csi_booklets')) invItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
+    if (hasSub('inventory', 'office_supplies')) invItems.push({ path: '/erp/office-supplies', label: 'Office Supplies', icon: Package });
+    if (hasSub('inventory', 'collaterals')) invItems.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
     if (isAdmin) invItems.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
     invItems.push({ path: '/erp/expiry-dashboard', label: 'Expiry Mgmt', icon: AlertTriangle });
     invItems.push({ path: '/erp/batch-trace', label: 'Batch Trace', icon: Search });

@@ -1606,6 +1606,42 @@ frontend/src/erp/components/WorkflowGuide.jsx     # 'petty-cash' pageKey
 
 ---
 
+## Sub-Permission Gated Inventory Features (CSI Booklets, Office Supplies, Collaterals)
+
+CSI Booklets, Office Supplies, and Collaterals are **not** shown to all BDMs by default. They are gated by `sub_permissions` in the access template system, following the same pattern as petty cash custodian access.
+
+### Access Control Chain
+1. **Module-level**: `erpAccessCheck('inventory')` in `routes/index.js` — must have at least VIEW on inventory module
+2. **Sub-permission**: `erpSubAccessCheck('inventory', '<key>')` on all routes per feature
+3. **Sidebar**: `hasSub('inventory', '<key>')` — items only render when sub-permission is granted
+4. **App.jsx**: `requiredErpModule="inventory"` on all three routes
+
+### Lookup Seeds (ERP_SUB_PERMISSION)
+| Code | Module | Key | Label |
+|------|--------|-----|-------|
+| `INVENTORY__CSI_BOOKLETS` | inventory | csi_booklets | CSI Booklets |
+| `INVENTORY__OFFICE_SUPPLIES` | inventory | office_supplies | Office Supplies |
+| `INVENTORY__COLLATERALS` | inventory | collaterals | Collaterals |
+
+### How to Grant Access
+In **Access Templates** (Control Center > Access), set inventory module to VIEW or FULL, then toggle the `csi_booklets`, `office_supplies`, and/or `collaterals` sub-permissions. Apply the template to the user.
+
+### Key Files
+- `backend/erp/controllers/lookupGenericController.js` — INVENTORY__* seed entries in ERP_SUB_PERMISSION
+- `backend/erp/routes/csiBookletRoutes.js` — all routes gated by `erpSubAccessCheck('inventory', 'csi_booklets')`
+- `backend/erp/routes/officeSupplyRoutes.js` — all routes gated by `erpSubAccessCheck('inventory', 'office_supplies')`
+- `backend/erp/routes/collateralRoutes.js` — all routes gated by `erpSubAccessCheck('inventory', 'collaterals')`
+- `backend/erp/routes/index.js` — all three mounted under `erpAccessCheck('inventory')`
+- `frontend/src/components/common/Sidebar.jsx` — `hasSub()` helper gates sidebar visibility
+- `frontend/src/App.jsx` — `requiredErpModule="inventory"` on all three routes
+
+### President / Admin Bypass
+- President always passes (both module and sub-permission checks)
+- Admin with FULL inventory access and no sub_permissions entries = all granted (backward compat)
+- Admin with granular sub_permissions = only granted subs are visible
+
+---
+
 ## Low-Priority Hardening — Phase H1 (April 2026)
 
 Seven validation and error-handling improvements across CALF, COA, Expenses, and Batch Upload.

@@ -277,7 +277,8 @@ export default function Collaterals() {
       setItems(res.data || res || []);
     } catch (err) { showError(err, 'Could not load collaterals'); setItems([]); }
     finally { setLoading(false); }
-  }, [col, typeFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter]);
 
   useEffect(() => { loadItems(); }, [loadItems]);
 

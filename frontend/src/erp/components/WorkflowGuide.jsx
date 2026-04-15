@@ -247,8 +247,9 @@ const WORKFLOW_GUIDES = {
     next: [
       { label: 'View Inventory', path: '/erp/my-stock' },
       { label: 'View Reports', path: '/erp/reports' },
+      { label: 'Access Templates', path: '/erp/control-center?section=access' },
     ],
-    tip: 'Keep collateral records up to date. Unaccounted materials may be flagged in audits.',
+    tip: 'Access is template-driven — only users with the inventory.collaterals sub-permission can see this page. Keep collateral records up to date — unaccounted materials may be flagged in audits.',
   },
   'transfers': {
     title: 'Stock Transfers',
@@ -642,7 +643,9 @@ const WORKFLOW_GUIDES = {
     next: [
       { label: 'Petty Cash', path: '/erp/petty-cash' },
       { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+      { label: 'Access Templates', path: '/erp/control-center?section=access' },
     ],
+    tip: 'Access is template-driven — only users with the inventory.office_supplies sub-permission can see this page. Manage in Access Templates.',
   },
   'petty-cash': {
     title: 'Petty Cash',
@@ -850,8 +853,9 @@ const WORKFLOW_GUIDES = {
     next: [
       { label: 'Create Sale', path: '/erp/sales/entry' },
       { label: 'View Sales', path: '/erp/sales' },
+      { label: 'Access Templates', path: '/erp/control-center?section=access' },
     ],
-    tip: 'Exhausted booklets cannot issue new CSI numbers. Create a new booklet before running out.',
+    tip: 'Access is template-driven — only users with the inventory.csi_booklets sub-permission can see this page. Manage in Access Templates. Exhausted booklets cannot issue new CSI numbers.',
   },
   'cycle-reports': {
     title: 'Cycle Reports',
