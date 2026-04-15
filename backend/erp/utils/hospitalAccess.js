@@ -2,7 +2,7 @@
  * Hospital Access Utility — Warehouse-Driven
  *
  * Shared filter logic for hospital queries across controllers.
- * BDMs see hospitals via warehouse_ids (primary) + tagged_bdms (legacy fallback).
+ * BDMs see hospitals via warehouse_ids (linked to their assigned warehouses).
  * Admin-like roles see all hospitals.
  *
  * Usage:
@@ -29,19 +29,12 @@ async function buildHospitalAccessFilter(user) {
   const myWhIds = myWarehouses.map(w => w._id);
 
   if (myWhIds.length > 0) {
-    // Primary: warehouse_ids match. Fallback: legacy tagged_bdms
-    return {
-      $or: [
-        { warehouse_ids: { $in: myWhIds } },
-        { tagged_bdms: { $elemMatch: { bdm_id: user._id, is_active: { $ne: false } } } }
-      ]
-    };
+    // Warehouse-driven: show only hospitals linked to BDM's warehouse(s)
+    return { warehouse_ids: { $in: myWhIds } };
   }
 
-  // No warehouse assignment — fall back to tagged_bdms only
-  return {
-    tagged_bdms: { $elemMatch: { bdm_id: user._id, is_active: { $ne: false } } }
-  };
+  // No warehouse assignment — BDM sees nothing until assigned to a warehouse
+  return { _id: null };
 }
 
 /**
