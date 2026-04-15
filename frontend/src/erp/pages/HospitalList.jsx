@@ -38,7 +38,7 @@ export function HospitalListContent() {
   const whApi = useWarehouses();
   useEffect(() => {
     getAsUsers().then(res => setBdmList(res?.data || [])).catch(err => console.error('[HospitalList]', err.message));
-    whApi.getMyWarehouses().then(res => setWarehouseList(res?.data || [])).catch(err => console.error('[HospitalList]', err.message));
+    whApi.getWarehouses({ all: true }).then(res => setWarehouseList(res?.data || [])).catch(err => console.error('[HospitalList]', err.message));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = hospitals.filter(h =>
