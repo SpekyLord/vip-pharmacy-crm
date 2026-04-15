@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 6.2
-> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1 + G2 + G3 Complete. G3: Approval Hub inline quick-edit for typo fixes before approving (April 14, 2026).
+> **Version**: 6.4
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G4 + H1 Complete (Apr 15, 2026). H1: Low-priority hardening — CALF line validation, COA 4-digit format, normal_balance enforcement, docNumber failure handling, 6900 Misc blocking, CarLogbook CALF indicators, batch upload error surfacing.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -106,6 +106,84 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | G1 | BDM Income Projection + Revolving Fund + CALF Bidirectional + Personal Gas | ✅ |
 | G2 | Photo Upload Compression + Approval Hub Populate Fixes | ✅ |
 | G3 | Approval Hub Inline Quick-Edit (Typo Fix Before Approve) | ✅ |
+| G4 | Subsidiary Product Catalog Access (Lookup-Driven) | ✅ |
+| H1 | Low-Priority Hardening (#13-#19) — CALF, COA, Expense, Batch Upload | ✅ |
+
+---
+
+## Phase G4 — Subsidiary Product Catalog Access
+
+### Problem
+Subsidiary entities (e.g., eBDM Iloilo1, Shared Services) were given access to the Purchasing module but could not add products when creating Purchase Orders. The `ProductMaster.getAll()` query filtered strictly by `entity_id`, so subsidiaries with no products of their own saw an empty catalog.
+
+### Solution
+Lookup-driven parent product inheritance. When a subsidiary user accesses products (PO creation, GRN, Product Master), the system checks `PRODUCT_CATALOG_ACCESS` in the Lookup table. If the `INHERIT_PARENT` entry is active, the query includes both the subsidiary's own products AND the parent entity's products.
+
+### Architecture
+- **Lookup-driven**: `PRODUCT_CATALOG_ACCESS` category in Lookup table. Per-entity control — admin can enable/disable per subsidiary in Control Center → Lookup Tables.
+- **Auto-seed**: On first access by a subsidiary, the lookup entry is auto-created with `is_active: true` (inherit by default). Admin can deactivate to revoke. Uses atomic `updateOne/upsert` with `$setOnInsert` (no race condition).
+- **Entity resolution**: `resolveProductEntityIds()` helper in `productMasterController.js` checks Entity model for `entity_type: 'SUBSIDIARY'` + `parent_entity_id`, then queries Lookup for access.
+- **Catalog mode**: All product-browsing pages pass `catalog=true` (PO, GRN, Transfer Orders, Product Master). Stock/inventory views remain entity-scoped.
+- **Product Master UI**: Inherited parent products show a "Parent" badge and "Managed by parent" in the actions column (read-only). Subsidiary can still add their own products with "+ New Product".
+- **Sub-permission access**: Product CRUD gated by `erpSubAccessCheck('purchasing', 'product_manage')` — replaces hardcoded `roleCheck`. Add/edit for purchasing users; deactivate/delete stays admin/finance/president only.
+- **Cross-module routes**: Batch Trace and GRN routes accept `requiredErpModule: ["inventory", "purchasing"]` — purchasing users can access without needing inventory module. `ProtectedRoute` now supports array of modules (OR logic).
+- **Subscription-ready**: Future subscribers configure per-entity product visibility and sub-permissions without code changes.
+
+### New Lookup Category
+| Category | Purpose |
+|----------|---------|
+| `PRODUCT_CATALOG_ACCESS` | Per-subsidiary product catalog inheritance. `code: INHERIT_PARENT`, `metadata.access_mode: ACTIVE_ONLY`. Auto-seeded, admin-configurable. |
+
+### New Sub-Permission
+| Code | Label | Module | Key |
+|------|-------|--------|-----|
+| `PURCHASING__PRODUCT_MANAGE` | Add/Edit Products | purchasing | product_manage |
+
+### Purchasing Sidebar (for users with `purchasing` module)
+| Path | Label | Notes |
+|------|-------|-------|
+| `/erp/accounts-payable` | Accounts Payable | |
+| `/erp/batch-trace` | Batch Trace | Also accessible via inventory module |
+| `/erp/grn` | GRN Entry | Also accessible via inventory module |
+| `/erp/products` | Product Master | Add/edit via `product_manage`; deactivate/delete admin only |
+| `/erp/purchase-orders` | Purchase Orders | |
+| `/erp/supplier-invoices` | Supplier Invoices | |
+| `/erp/vendors` | Vendors | |
+
+### Affected Pages (5 consumers of `useProducts(catalog=true)`)
+| Page | Effect |
+|------|--------|
+| PurchaseOrders | Product dropdown shows parent products |
+| GrnEntry | Product dropdown shows parent products |
+| TransferOrders | Product dropdown shows parent products |
+| ProductMaster | Shows parent products with "Parent" badge (read-only); own products fully editable |
+| OcrTest | OCR product matching includes parent products |
+
+### Key Files
+```
+backend/erp/controllers/productMasterController.js   # resolveProductEntityIds() + updated getAll()
+backend/erp/controllers/lookupGenericController.js    # PRODUCT_CATALOG_ACCESS + PURCHASING__PRODUCT_MANAGE in SEED_DEFAULTS
+backend/erp/routes/productMasterRoutes.js             # erpSubAccessCheck for add/edit; roleCheck for deactivate/delete
+backend/erp/models/Entity.js                          # entity_type + parent_entity_id (existing)
+frontend/src/erp/pages/ProductMaster.jsx              # catalog=true + "Parent" badge + role-based action visibility
+frontend/src/components/auth/ProtectedRoute.jsx       # requiredErpModule now supports array (OR logic)
+frontend/src/components/common/Sidebar.jsx            # Product Master + Batch Trace + GRN in Purchasing section
+frontend/src/App.jsx                                  # GRN + batch-trace routes accept ["inventory", "purchasing"]
+frontend/src/erp/components/WorkflowGuide.jsx         # Updated banners: PO, GRN, transfers, product-master
+```
+
+### Flow
+```
+Subsidiary BDM opens PO / GRN / Product Master → useProducts(catalog=true)
+  → GET /erp/products?limit=0&catalog=true
+    → productMasterController.getAll()
+      → resolveProductEntityIds(entityId)
+        → Entity.findById() → entity_type === 'SUBSIDIARY'?
+          → Lookup.updateOne(upsert) → auto-seed INHERIT_PARENT if missing
+            → Lookup.findOne(PRODUCT_CATALOG_ACCESS, INHERIT_PARENT, is_active: true)
+              → YES: filter.entity_id = { $in: [subsidiaryId, parentId] }
+              → NO (admin disabled): filter.entity_id = subsidiaryId only
+```
 
 ---
 
@@ -1012,7 +1090,7 @@ All reopen functions call `journalEngine.reverseJournal()` (SAP Storno pattern: 
 | AP (SI Post) | 1200 Inventory + 1210 VAT | 2000 AP Trade |
 | AP Payment | 2000 AP Trade | Cash/Bank |
 | Depreciation | 7000 Depreciation | 1350 Accum. Depr. |
-| Interest | 7050 Interest | 2300 Loans Payable |
+| Interest | 7050 Interest Expense | 2250 Interest Payable |
 | IC Transfer (sender) | 1150 IC Receivable | 1200 Inventory |
 | IC Transfer (receiver) | 1200 Inventory | 2050 IC Payable |
 | Commission | 5100 BDM Commission | 1110 AR BDM |
@@ -1029,6 +1107,24 @@ All reopen functions call `journalEngine.reverseJournal()` (SAP Storno pattern: 
 2. `funding_account_id` or `bank_account_id` → BankAccount.coa_code
 3. `payment_mode` → PaymentMode.coa_code
 4. Fallback: 1000 (Cash on Hand)
+
+### Settings.COA_MAP — Configurable Account Codes (39 keys)
+
+All auto-journal COA codes are admin-configurable in `Settings.COA_MAP` (ERP Settings → COA Mapping). The `autoJournal.js` service reads these via `getCoaMap()` (cached 60s). If a key is missing, falls back to `'9999'`.
+
+**Asset (1xxx):** AR_TRADE (1100), AR_BDM (1110), IC_RECEIVABLE (1150), CASH_ON_HAND (1000), PETTY_CASH (1015), INVENTORY (1200), INPUT_VAT (1210), CWT_RECEIVABLE (1220), ACCUM_DEPRECIATION (1350)
+
+**Liability (2xxx):** AP_TRADE (2000), IC_PAYABLE (2050), OUTPUT_VAT (2100), SSS_PAYABLE (2200), PHILHEALTH_PAYABLE (2210), PAGIBIG_PAYABLE (2220), WHT_PAYABLE (2230), INTEREST_PAYABLE (2250), LOANS_PAYABLE (2300)
+
+**Equity (3xxx):** OWNER_CAPITAL (3000), OWNER_DRAWINGS (3100)
+
+**Revenue (4xxx):** SALES_REVENUE (4000), SERVICE_REVENUE (4100), INTEREST_INCOME (4200)
+
+**Expense (5xxx-7xxx):** COGS (5000), BDM_COMMISSION (5100), PARTNER_REBATE (5200), SALARIES_WAGES (6000), ALLOWANCES (6050), BONUS_13TH (6060), PER_DIEM (6100), TRANSPORT (6150), SPECIAL_TRANSPORT (6160), OTHER_REIMBURSABLE (6170), FUEL_GAS (6200), INVENTORY_WRITEOFF (6850), INVENTORY_ADJ_GAIN (6860), MISC_EXPENSE (6900), DEPRECIATION (7000), INTEREST_EXPENSE (7050), BANK_CHARGES (7100)
+
+### Settings.ASSORTED_THRESHOLD — Batch Upload Classification
+
+`ASSORTED_THRESHOLD` (default: 3) controls batch upload "Assorted Items" classification. Receipts with N+ OCR-detected line items → establishment = "Assorted Items". Admin-configurable in Settings → Authority & Compliance section.
 
 ---
 
@@ -1076,6 +1172,8 @@ All reopen functions call `journalEngine.reverseJournal()` (SAP Storno pattern: 
 11. **People dropdowns must filter `status=ACTIVE`** — all people selector dropdowns (Managed By, Reports To, Assign To, Custodian, etc.) must pass `status: 'ACTIVE'` to `getPeopleList()` or rely on `getAsUsers()` which enforces `is_active: true, status: 'ACTIVE'`. Never show SUSPENDED or SEPARATED people in assignment/selection dropdowns.
 12. **Position and Department are lookup-driven** — stored as lookup codes from POSITION / DEPARTMENT categories. PersonDetail.jsx renders them as `<select>` dropdowns via `useLookupBatch`. To add new positions, use Control Center > Lookup Tables.
 13. **ERP Access modules use Mixed schema** — `AccessTemplate.modules` and `User.erp_access.modules` are `mongoose.Schema.Types.Mixed` (not fixed fields). This allows new modules added via ERP_MODULE lookup to work without schema changes. The controller validates values are `NONE | VIEW | FULL`. Always call `markModified('modules')` or `markModified('erp_access')` after mutation.
+14. **COA_MAP has 39 configurable keys** — all journal COA codes are in `Settings.COA_MAP`, including payroll (SALARIES_WAGES, ALLOWANCES, BONUS_13TH, SSS/PH/PAGIBIG/WHT_PAYABLE) and INTEREST_PAYABLE. `autoJournal.js` reads via `getCoaMap()` (60s cache). Frontend mirrors these in `ErpSettingsPanel.jsx` COA_LABELS. When adding a new COA key: update Settings.js schema + autoJournal.js COA_NAMES + ErpSettingsPanel.jsx COA_LABELS (3-file sync).
+15. **ASSORTED_THRESHOLD is Settings-driven** — batch upload "Assorted Items" classification reads `Settings.ASSORTED_THRESHOLD` (default 3) at runtime, not a hardcoded constant. Admin can change in Control Center → Authority & Compliance.
 14. **Income projection** is read-only — never creates documents. Use `request-generation` to create the actual IncomeReport.
 15. **CALF is bidirectional** in income: positive balance = deduction, negative balance = earnings reimbursement. Not just one-way.
 16. **Revolving fund** follows per-person override pattern: `CompProfile.revolving_fund_amount` → `Settings.REVOLVING_FUND_AMOUNT` fallback. 0 = use global.
@@ -1083,6 +1181,15 @@ All reopen functions call `journalEngine.reverseJournal()` (SAP Storno pattern: 
 18. **ORE is paid from revolving fund** — ORE amounts in SMER daily `ore_amount` are already included in `total_reimbursable`. No separate ORE earnings line. `ExpenseEntry` (ORE type) tracks receipts/ORs.
 19. **Inventory pages must use WarehousePicker** — All pages that call `getMyStock()` must pass a `warehouseId` parameter (e.g., `getMyStock(null, null, warehouseId)`). Without it, the FIFO engine's `buildStockMatch` has no scope and returns empty for non-admin users. Pattern: add `<WarehousePicker filterType="PHARMA" />` and load stock on warehouse change. See SalesEntry.jsx, BatchTrace.jsx as reference.
 20. **getMyStock response nesting** — `getMyStock` returns `{ data: [{ product_id, product: { brand_name, dosage_strength, ... }, batches, total_qty }] }`. Product details are nested under `product` sub-object, NOT at the top level. Access as `item.product.brand_name`, not `item.brand_name`.
+21. **Petty Cash models use `custodian_id`, NOT `bdm_id`** — The tenant filter for BDM/contractor users injects `{ entity_id, bdm_id }`, but PettyCashFund/Transaction/Remittance models have no `bdm_id` field. The controller uses `pcFilter()` helper to remap `bdm_id → custodian_id` for fund queries and strip it for transaction/document queries. Never use raw `req.tenantFilter` in petty cash controllers — always wrap with `pcFilter(req.tenantFilter, 'fund'|'transaction'|'document')`.
+22. **Petty Cash dropdowns are lookup-driven** — Fund modes from `PETTY_CASH_FUND_TYPE`, fund statuses from `PETTY_CASH_FUND_STATUS`, transaction types from `PETTY_CASH_TXN_TYPE`. All configurable in Control Center > Lookup Tables. Frontend uses `useLookupBatch()`.
+23. **COA_MAP cache is cleared on Settings update** — `settingsController.updateSettings` calls both `Settings.clearVatCache()` AND `clearCoaCache()` from `autoJournal.js`. No stale window; journals immediately use new codes after admin changes Settings.
+24. **COA codes are validated on save** — `Settings.updateSettings` validates all COA_MAP codes against ChartOfAccounts before saving. VendorMaster, BankAccount, CreditCard, and PaymentMode controllers validate `coa_code` via `validateCoaCode()` utility. Invalid codes are rejected with 400.
+25. **Reopen reversal is fail-safe** — All `reopen*` functions (SMER, CarLogbook, Expense, PRF/CALF) skip the document if JE reversal fails. The document stays POSTED (ledger balanced) and the failure is reported in the response `failed[]` array. Never mark DRAFT if reversal threw.
+26. **CALF→Expense auto-submit uses transactions** — `submitPrfCalf` auto-submits linked expenses/carlogbooks inside a MongoDB session. If event creation or journal posting fails, the transaction rolls back — source stays in its previous status, no orphaned events or JEs.
+27. **ACCESS expense fallback is AP_TRADE** — `resolveFundingCoa()` for ACCESS (company-funded) lines passes `COA_MAP.AP_TRADE` as fallback, not CASH_ON_HAND. This ensures the credit account is Accounts Payable when no funding source is resolved.
+28. **`recorded_on_behalf_of` stores the BDM** — In `saveBatchExpenses`, `recorded_on_behalf_of` = the BDM on whose behalf the record was made (matches field name semantics). The admin/uploader is captured in `created_by`. When set, it signals a delegated action.
+29. **Period lock on CALF update** — `PUT /prf-calf/:id` now has `periodLockCheck('EXPENSE')`. Submit and reopen already had it; update was missing.
 
 ---
 
@@ -1357,3 +1464,105 @@ Eliminates hardcoded module lists and sub-permission keys from frontend and back
 - `frontend/src/erp/hooks/useErpAccess.js` — getModuleKeys method added
 - `frontend/src/erp/pages/AccessTemplateManager.jsx` — fetches modules dynamically (no hardcoded MODULES)
 - `frontend/src/erp/components/ErpAccessManager.jsx` — fetches modules dynamically (no hardcoded MODULES)
+
+---
+
+## Petty Cash Module (Phase 19 + G4 Hardening)
+
+### Architecture
+Petty Cash funds are entity-scoped revolving cash pools managed by custodians (BDMs). Each fund has a ceiling; when balance exceeds it, custodian generates a Remittance. When low, owner generates a Replenishment. All posted transactions create journal entries.
+
+### Custodian Assignment
+- Custodians are assigned per-fund via the Fund Form Modal (Create + Edit)
+- Custodian dropdown uses `SelectField` (searchable react-select), populated from `usePeople({ limit: 0, status: 'ACTIVE' })`
+- `PettyCashFund.custodian_id` references User model (required field)
+- BDMs only see funds where they are custodian (enforced by `pcFilter()` in controller)
+
+### pcFilter() — Tenant Filter Adaptation
+PettyCash models use `custodian_id`, not `bdm_id`. The default `req.tenantFilter` for BDMs includes `{ bdm_id }` which doesn't exist on PC models. `pcFilter()` helper remaps:
+- **Fund queries**: `bdm_id` → `custodian_id` (BDMs see only their funds)
+- **Transaction/Document queries**: strips `bdm_id` (entity-level filtering + controller custodian checks)
+
+```javascript
+function pcFilter(tenantFilter, modelType = 'fund') {
+  const filter = { ...tenantFilter };
+  if (filter.bdm_id) {
+    if (modelType === 'fund') filter.custodian_id = filter.bdm_id;
+    delete filter.bdm_id;
+  }
+  return filter;
+}
+```
+
+### Lookup-Driven Dropdowns
+| Lookup Category | Used For | Values |
+|----------------|----------|--------|
+| `PETTY_CASH_FUND_TYPE` | Fund mode dropdown | REVOLVING, EXPENSE_ONLY, DEPOSIT_ONLY |
+| `PETTY_CASH_FUND_STATUS` | Fund status dropdown | ACTIVE, SUSPENDED, CLOSED |
+| `PETTY_CASH_TXN_TYPE` | Transaction type | DEPOSIT, DISBURSEMENT, REMITTANCE, REPLENISHMENT, ADJUSTMENT |
+
+### Fund Form Fields
+| Field | Source | Notes |
+|-------|--------|-------|
+| Fund Name | free text | Required |
+| Fund Code | free text | Required, unique per entity |
+| Custodian | People API (ACTIVE) | Searchable SelectField |
+| Warehouse | Warehouses API | Optional, links fund to territory |
+| Authorized Amount | number | Max amount fund can hold |
+| Ceiling Amount | number | Threshold triggering remittance |
+| COA Code | free text | Default 1000 (Cash on Hand) |
+| Fund Mode | Lookup (PETTY_CASH_FUND_TYPE) | Controls allowed transaction types |
+| Status | Lookup (PETTY_CASH_FUND_STATUS) | Only shown on edit |
+
+### Key Files
+```
+backend/erp/models/PettyCashFund.js              # Fund schema (custodian_id, warehouse_id, fund_mode, status)
+backend/erp/models/PettyCashTransaction.js        # Deposit/Disbursement with running_balance
+backend/erp/models/PettyCashRemittance.js         # Remittance/Replenishment documents
+backend/erp/controllers/pettyCashController.js    # pcFilter(), CRUD, ceiling, remit/replenish, JE posting
+backend/erp/routes/pettyCashRoutes.js             # Fund CRUD, Transactions, Documents, Ceiling
+frontend/src/erp/pages/PettyCash.jsx              # 3-tab page (Funds, Transactions, Documents)
+frontend/src/erp/hooks/usePettyCash.js            # API wrapper
+frontend/src/erp/components/WorkflowGuide.jsx     # 'petty-cash' pageKey
+```
+
+### Authorization
+| Action | Allowed Roles |
+|--------|---------------|
+| View funds/transactions | All (filtered by custodian for BDMs) |
+| Create/Edit fund | admin, finance, president |
+| Delete fund | president only (zero balance, no transactions) |
+| Create transaction | Custodian + admin/finance/president |
+| Post transaction | admin, finance, president |
+| Sign/Process documents | admin, finance, president |
+
+---
+
+## Low-Priority Hardening — Phase H1 (April 2026)
+
+Seven validation and error-handling improvements across CALF, COA, Expenses, and Batch Upload.
+
+### Changes Summary
+
+| # | Issue | Module | Fix |
+|---|-------|--------|-----|
+| 13 | linked_expense_line_ids not validated | CALF | Validates all line IDs belong to linked expense/logbook in createPrfCalf + validatePrfCalf |
+| 14 | No account_code format validation | COA | Mongoose schema + controller enforce `/^\d{4}$/` (exactly 4 digits) |
+| 15 | No normal_balance enforcement | JournalEntry | Pre-save hook blocks posting DR to CREDIT-normal accounts and vice versa (reversals exempt) |
+| 16 | generateDocNumber failure saves null | PrfCalf | Pre-save hook now throws explicit error instead of saving with null doc number |
+| 17 | coa_code=6900 only warns | Expenses | Changed to BLOCKED error in validateExpenses + hard gate in submitExpenses |
+| 18 | Missing per-fuel CALF indicators | CarLogbook UI | Shows count badge "CALF (N)" with tooltip, per-entry status in mobile card view |
+| 19 | DocumentAttachment errors swallowed | Batch Upload | Errors surfaced in response errors array with type ATTACHMENT_FAILED + summary count |
+
+### Files Modified
+
+**Backend:**
+- `backend/erp/models/PrfCalf.js` — #16: pre-save uses next() with error on docNumber failure
+- `backend/erp/models/ChartOfAccounts.js` — #14: account_code validator `/^\d{4}$/`
+- `backend/erp/models/JournalEntry.js` — #15: normal_balance + is_active enforcement on POSTED
+- `backend/erp/controllers/coaController.js` — #14: controller-level 4-digit check
+- `backend/erp/controllers/expenseController.js` — #13: line ID validation, #17: 6900 blocking, #19: attachment error surfacing
+
+**Frontend:**
+- `frontend/src/erp/pages/CarLogbook.jsx` — #18: per-fuel-entry CALF badges (table + mobile card)
+- `frontend/src/erp/components/WorkflowGuide.jsx` — Updated banners for expenses, car-logbook, prf-calf, chart-of-accounts

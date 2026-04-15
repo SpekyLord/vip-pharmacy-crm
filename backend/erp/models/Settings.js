@@ -94,8 +94,20 @@ const settingsSchema = new mongoose.Schema({
     MISC_EXPENSE:        { type: String, default: '6900' },
     DEPRECIATION:        { type: String, default: '7000' },
     INTEREST_EXPENSE:    { type: String, default: '7050' },
+    INTEREST_PAYABLE:    { type: String, default: '2250' },
     BANK_CHARGES:        { type: String, default: '7100' },
+    // Payroll COA keys — used by journalFromPayroll
+    SALARIES_WAGES:      { type: String, default: '6000' },
+    ALLOWANCES:          { type: String, default: '6050' },
+    BONUS_13TH:          { type: String, default: '6060' },
+    SSS_PAYABLE:         { type: String, default: '2200' },
+    PHILHEALTH_PAYABLE:  { type: String, default: '2210' },
+    PAGIBIG_PAYABLE:     { type: String, default: '2220' },
+    WHT_PAYABLE:         { type: String, default: '2230' },
   },
+
+  // Batch Upload
+  ASSORTED_THRESHOLD: { type: Number, default: 3 },  // receipts with N+ line items → "Assorted Items"
 
   // Partner Graduation Criteria
   GRADUATION_CRITERIA: {

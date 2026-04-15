@@ -9,6 +9,7 @@ const creditCardService = require('../services/creditCardService');
 const { catchAsync } = require('../../middleware/errorHandler');
 const XLSX = require('xlsx');
 const { safeXlsxRead } = require('../../utils/safeXlsxRead');
+const { validateCoaCode } = require('../utils/validateCoaCode');
 
 // ════════════════════════════════════════════════════════════════════
 //  BANK ACCOUNTS
@@ -23,6 +24,11 @@ const listBankAccounts = catchAsync(async (req, res) => {
 });
 
 const createBankAccount = catchAsync(async (req, res) => {
+  // Validate COA code
+  if (req.body.coa_code) {
+    const coaCheck = await validateCoaCode(req.body.coa_code, req.entityId);
+    if (!coaCheck.valid) return res.status(400).json({ success: false, message: coaCheck.message });
+  }
   const account = await BankAccount.create({
     entity_id: req.entityId,
     bank_code: req.body.bank_code,
@@ -41,6 +47,12 @@ const createBankAccount = catchAsync(async (req, res) => {
 const updateBankAccount = catchAsync(async (req, res) => {
   const account = await BankAccount.findOne({ _id: req.params.id, entity_id: req.entityId });
   if (!account) return res.status(404).json({ success: false, message: 'Bank account not found' });
+
+  // Validate COA code if being updated
+  if (req.body.coa_code) {
+    const coaCheck = await validateCoaCode(req.body.coa_code, req.entityId);
+    if (!coaCheck.valid) return res.status(400).json({ success: false, message: coaCheck.message });
+  }
 
   const allowed = ['bank_name', 'account_no', 'account_type', 'coa_code', 'opening_balance', 'statement_import_format', 'is_active', 'assigned_users'];
   for (const field of allowed) {
@@ -203,6 +215,11 @@ const importBankAccounts = catchAsync(async (req, res) => {
     const bank_code = String(r['Bank Code'] || r.bank_code || '').trim();
     if (!bank_code) { errors.push({ bank_code: '(empty)', error: 'Bank code required' }); continue; }
     try {
+      const coaCode = String(r['COA Code'] || r.coa_code || '').trim() || undefined;
+      if (coaCode) {
+        const coaCheck = await validateCoaCode(coaCode, req.entityId);
+        if (!coaCheck.valid) { errors.push({ bank_code, error: coaCheck.message }); continue; }
+      }
       const result = await BankAccount.findOneAndUpdate(
         { entity_id: req.entityId, bank_code },
         {
@@ -210,7 +227,7 @@ const importBankAccounts = catchAsync(async (req, res) => {
           bank_name: String(r['Bank Name'] || r.bank_name || '').trim(),
           account_no: String(r['Account No'] || r.account_no || '').trim(),
           account_type: String(r['Account Type'] || r.account_type || 'SAVINGS').trim().toUpperCase(),
-          coa_code: String(r['COA Code'] || r.coa_code || '').trim() || undefined,
+          coa_code: coaCode,
           opening_balance: r['Opening Balance'] != null ? Number(r['Opening Balance']) : 0,
           statement_import_format: String(r['Import Format'] || r.statement_import_format || 'CSV').trim().toUpperCase(),
           is_active: String(r['Active'] || 'YES').toUpperCase() !== 'NO'

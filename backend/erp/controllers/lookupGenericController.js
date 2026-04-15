@@ -327,6 +327,7 @@ const SEED_DEFAULTS = {
     { code: 'PURCHASING__VENDOR_MANAGE', label: 'Manage Vendors', metadata: { module: 'purchasing', key: 'vendor_manage', sort_order: 3 } },
     { code: 'PURCHASING__SUPPLIER_INVOICE', label: 'Supplier Invoices', metadata: { module: 'purchasing', key: 'supplier_invoice', sort_order: 4 } },
     { code: 'PURCHASING__AP_PAYMENT', label: 'AP Payments', metadata: { module: 'purchasing', key: 'ap_payment', sort_order: 5 } },
+    { code: 'PURCHASING__PRODUCT_MANAGE', label: 'Add/Edit Products', metadata: { module: 'purchasing', key: 'product_manage', sort_order: 6 } },
     // Accounting
     { code: 'ACCOUNTING__JOURNAL_ENTRY', label: 'Journal Entries & COA', metadata: { module: 'accounting', key: 'journal_entry', sort_order: 1 } },
     { code: 'ACCOUNTING__CHECK_WRITING', label: 'Check Writing / Payments', metadata: { module: 'accounting', key: 'check_writing', sort_order: 2 } },
@@ -378,8 +379,16 @@ const SEED_DEFAULTS = {
   WAREHOUSE_TYPE: ['MAIN', 'TERRITORY', 'VIRTUAL'],
   OVERRIDE_REASON: ['HOSPITAL_POLICY', 'QA_REPLACEMENT', 'DAMAGED_BATCH', 'BATCH_RECALL'],
   PETTY_CASH_TXN_TYPE: ['DEPOSIT', 'DISBURSEMENT', 'REMITTANCE', 'REPLENISHMENT', 'ADJUSTMENT'],
-  PETTY_CASH_FUND_TYPE: ['REVOLVING', 'EXPENSE_ONLY', 'DEPOSIT_ONLY'],
-  PETTY_CASH_FUND_STATUS: ['ACTIVE', 'SUSPENDED', 'CLOSED'],
+  PETTY_CASH_FUND_TYPE: [
+    { code: 'REVOLVING', label: 'Revolving (deposits + disbursements)' },
+    { code: 'EXPENSE_ONLY', label: 'Expense Only (disbursements)' },
+    { code: 'DEPOSIT_ONLY', label: 'Deposit Only (collections)' },
+  ],
+  PETTY_CASH_FUND_STATUS: [
+    { code: 'ACTIVE', label: 'Active' },
+    { code: 'SUSPENDED', label: 'Suspended' },
+    { code: 'CLOSED', label: 'Closed' },
+  ],
   REMITTANCE_TYPE: ['REMITTANCE', 'REPLENISHMENT'],
   PRF_DOC_TYPE: ['PRF', 'CALF'],
   PRF_TYPE: ['PARTNER_REBATE', 'PERSONAL_REIMBURSEMENT'],
@@ -472,6 +481,15 @@ const SEED_DEFAULTS = {
     { code: 'EXPENSE_ENTRY', label: 'Expenses (ORE/ACCESS)', metadata: { fields: ['notes'] } },
     { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { fields: ['purpose', 'check_no', 'notes'] } },
     { code: 'GRN', label: 'GRN', metadata: { fields: ['notes'] } },
+  ],
+
+  // Product Catalog Access — controls which subsidiary entities can browse parent entity products
+  // When a subsidiary user opens PO creation (catalog=true), the system checks this lookup to decide
+  // whether to include parent entity products alongside the subsidiary's own products.
+  // metadata.parent_entity_id = the parent whose products are shared. metadata.access_mode = FULL (all products) or ACTIVE_ONLY (only is_active:true).
+  // Admin/President configures per subsidiary via Control Center → Lookup Tables.
+  PRODUCT_CATALOG_ACCESS: [
+    { code: 'INHERIT_PARENT', label: 'Inherit Parent Entity Products', metadata: { access_mode: 'ACTIVE_ONLY', description: 'Subsidiary can browse parent entity products for PO creation and catalog views' } },
   ],
 };
 

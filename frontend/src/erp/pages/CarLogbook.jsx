@@ -349,7 +349,14 @@ export default function CarLogbook() {
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#fff', background: STATUS_COLORS[e.status] || '#6b7280' }}>{e.status}</span>
                         {e.overconsumption_flag && <span style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#dc2626', background: '#fef2f2', border: '1px solid #fca5a5' }}>OVER</span>}
-                        {(e.fuel_entries || []).some(f => f.calf_required && !f.calf_id) && <span style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#92400e', background: '#fef3c7', fontWeight: 600 }}>CALF</span>}
+                        {(() => {
+                          const pendingCalf = (e.fuel_entries || []).filter(f => f.calf_required && !f.calf_id);
+                          const linkedCalf = (e.fuel_entries || []).filter(f => f.calf_required && f.calf_id);
+                          return (<>
+                            {pendingCalf.length > 0 && <span title={`${pendingCalf.length} fuel entry(s) need CALF: ${pendingCalf.map(f => f.station_name || f.payment_mode).join(', ')}`} style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#92400e', background: '#fef3c7', fontWeight: 600, cursor: 'help' }}>CALF ({pendingCalf.length})</span>}
+                            {linkedCalf.length > 0 && !pendingCalf.length && <span style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#166534', background: '#dcfce7', fontWeight: 600 }}>CALF OK</span>}
+                          </>);
+                        })()}
                       </td>
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         {['DRAFT', 'ERROR'].includes(e.status) && (
@@ -376,13 +383,30 @@ export default function CarLogbook() {
                       <div style={{ fontWeight: 700, fontSize: 15 }}>{e.entry_date ? new Date(e.entry_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '—'}</div>
                       <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, color: '#fff', background: STATUS_COLORS[e.status] || '#6b7280' }}>{e.status}</span>
                       {e.overconsumption_flag && <span style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#dc2626', background: '#fef2f2', border: '1px solid #fca5a5' }}>OVER</span>}
-                      {(e.fuel_entries || []).some(f => f.calf_required && !f.calf_id) && <span style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#92400e', background: '#fef3c7', fontWeight: 600 }}>CALF</span>}
+                      {(() => {
+                        const pendingCalf = (e.fuel_entries || []).filter(f => f.calf_required && !f.calf_id);
+                        const linkedCalf = (e.fuel_entries || []).filter(f => f.calf_required && f.calf_id);
+                        return (<>
+                          {pendingCalf.length > 0 && <span style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#92400e', background: '#fef3c7', fontWeight: 600 }}>CALF ({pendingCalf.length})</span>}
+                          {linkedCalf.length > 0 && !pendingCalf.length && <span style={{ marginLeft: 4, padding: '2px 6px', borderRadius: 4, fontSize: 10, color: '#166534', background: '#dcfce7', fontWeight: 600 }}>CALF OK</span>}
+                        </>);
+                      })()}
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: 18, fontWeight: 700, color: '#2563eb' }}>₱{(e.total_fuel_amount || 0).toLocaleString()}</div>
                       <div style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{(e.actual_liters || 0).toFixed(1)} L</div>
                     </div>
                   </div>
+                  {/* #18 Hardening: Per-fuel-entry CALF status in card view */}
+                  {(e.fuel_entries || []).some(f => f.calf_required) && (
+                    <div style={{ padding: '4px 8px', marginBottom: 4, fontSize: 11, color: '#64748b' }}>
+                      {(e.fuel_entries || []).filter(f => f.calf_required).map((f, fi) => (
+                        <span key={fi} style={{ display: 'inline-block', marginRight: 8, padding: '1px 6px', borderRadius: 4, background: f.calf_id ? '#dcfce7' : '#fef3c7', color: f.calf_id ? '#166534' : '#92400e', fontWeight: 600, fontSize: 10 }}>
+                          {f.station_name || f.payment_mode} — {f.calf_id ? 'CALF linked' : 'CALF pending'}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="cl-card-grid">
                     <div><span className="cl-card-label">Start</span><br/><span className="cl-card-value">{(e.starting_km || 0).toLocaleString()}</span></div>
                     <div><span className="cl-card-label">End</span><br/><span className="cl-card-value">{(e.ending_km || 0).toLocaleString()}</span></div>

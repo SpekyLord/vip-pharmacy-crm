@@ -14,6 +14,33 @@ const { journalFromPettyCash } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');
 
 // ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Build petty-cash-specific filter from tenantFilter.
+ * PettyCash models use `custodian_id` (not `bdm_id`), so the default
+ * tenantFilter for BDM users ({ entity_id, bdm_id }) would match nothing.
+ *
+ * @param {Object} tenantFilter - req.tenantFilter from middleware
+ * @param {'fund'|'transaction'|'document'} modelType - which PC model
+ * @returns {Object} MongoDB filter safe for the target collection
+ */
+function pcFilter(tenantFilter, modelType = 'fund') {
+  const filter = { ...tenantFilter };
+  if (filter.bdm_id) {
+    if (modelType === 'fund') {
+      // BDMs see funds where they are custodian
+      filter.custodian_id = filter.bdm_id;
+    }
+    // For transactions & documents, entity_id alone is sufficient;
+    // controller-level custodian checks handle authorization.
+    delete filter.bdm_id;
+  }
+  return filter;
+}
+
+// ═══════════════════════════════════════════════════════════
 // FUNDS
 // ═══════════════════════════════════════════════════════════
 
@@ -21,8 +48,9 @@ const { createAndPostJournal } = require('../services/journalEngine');
  * GET /funds — list all petty cash funds for entity
  */
 const getFunds = catchAsync(async (req, res) => {
-  const funds = await PettyCashFund.find({ ...req.tenantFilter })
+  const funds = await PettyCashFund.find(pcFilter(req.tenantFilter, 'fund'))
     .populate('custodian_id', 'name email')
+    .populate('warehouse_id', 'warehouse_code warehouse_name')
     .sort({ created_at: -1 })
     .lean();
 
@@ -35,8 +63,8 @@ const getFunds = catchAsync(async (req, res) => {
 const getFundById = catchAsync(async (req, res) => {
   const fund = await PettyCashFund.findOne({
     _id: req.params.id,
-    ...req.tenantFilter
-  }).populate('custodian_id', 'name email').lean();
+    ...pcFilter(req.tenantFilter, 'fund')
+  }).populate('custodian_id', 'name email').populate('warehouse_id', 'warehouse_code warehouse_name').lean();
 
   if (!fund) {
     return res.status(404).json({ success: false, message: 'Fund not found' });
@@ -67,7 +95,7 @@ const createFund = catchAsync(async (req, res) => {
 const updateFund = catchAsync(async (req, res) => {
   const fund = await PettyCashFund.findOne({
     _id: req.params.id,
-    ...req.tenantFilter
+    ...pcFilter(req.tenantFilter, 'fund')
   });
 
   if (!fund) {
@@ -93,7 +121,7 @@ const updateFund = catchAsync(async (req, res) => {
 const getTransactions = catchAsync(async (req, res) => {
   const { fund_id, txn_type, date_from, date_to, page = 1, limit = 50 } = req.query;
 
-  const filter = { ...req.tenantFilter };
+  const filter = pcFilter(req.tenantFilter, 'transaction');
   if (fund_id) filter.fund_id = fund_id;
   if (txn_type) filter.txn_type = txn_type;
   if (date_from || date_to) {
@@ -140,7 +168,7 @@ const createTransaction = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'fund_id and positive amount are required' });
   }
 
-  const fund = await PettyCashFund.findOne({ _id: fund_id, ...req.tenantFilter });
+  const fund = await PettyCashFund.findOne({ _id: fund_id, ...pcFilter(req.tenantFilter, 'fund') });
   if (!fund) return res.status(404).json({ success: false, message: 'Fund not found' });
 
   // BDMs can only transact on funds they're custodian of
@@ -182,7 +210,7 @@ const createTransaction = catchAsync(async (req, res) => {
 const postTransaction = catchAsync(async (req, res) => {
   // Period lock check before entering transaction
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
-  const txnPrecheck = await PettyCashTransaction.findOne({ _id: req.params.id, ...req.tenantFilter }).lean();
+  const txnPrecheck = await PettyCashTransaction.findOne({ _id: req.params.id, ...pcFilter(req.tenantFilter, 'transaction') }).lean();
   if (txnPrecheck) {
     const pcPeriod = dateToPeriod(txnPrecheck.txn_date || new Date());
     await checkPeriodOpen(req.entityId, pcPeriod);
@@ -194,7 +222,7 @@ const postTransaction = catchAsync(async (req, res) => {
     await session.withTransaction(async () => {
       const txn = await PettyCashTransaction.findOne({
         _id: req.params.id,
-        ...req.tenantFilter
+        ...pcFilter(req.tenantFilter, 'transaction')
       }).session(session);
 
       if (!txn) throw Object.assign(new Error('Transaction not found'), { statusCode: 404 });
@@ -278,7 +306,7 @@ const postTransaction = catchAsync(async (req, res) => {
 const checkCeiling = catchAsync(async (req, res) => {
   const fund = await PettyCashFund.findOne({
     _id: req.params.fundId,
-    ...req.tenantFilter
+    ...pcFilter(req.tenantFilter, 'fund')
   }).lean();
 
   if (!fund) {
@@ -308,7 +336,7 @@ const generateRemittance = catchAsync(async (req, res) => {
 
   const fund = await PettyCashFund.findOne({
     _id: fund_id,
-    ...req.tenantFilter
+    ...pcFilter(req.tenantFilter, 'fund')
   });
 
   if (!fund) {
@@ -329,7 +357,7 @@ const generateRemittance = catchAsync(async (req, res) => {
   // Find recent unremitted transactions
   const unremittedTxns = await PettyCashTransaction.find({
     fund_id,
-    ...req.tenantFilter,
+    ...pcFilter(req.tenantFilter, 'transaction'),
     txn_type: { $in: ['DEPOSIT', 'DISBURSEMENT'] },
     remittance_id: { $exists: false },
     status: { $in: ['DRAFT', 'POSTED'] }
@@ -372,7 +400,7 @@ const generateReplenishment = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'fund_id and positive amount are required' });
   }
 
-  const fund = await PettyCashFund.findOne({ _id: fund_id, ...req.tenantFilter });
+  const fund = await PettyCashFund.findOne({ _id: fund_id, ...pcFilter(req.tenantFilter, 'fund') });
   if (!fund) return res.status(404).json({ success: false, message: 'Fund not found' });
 
   // Fund mode enforcement
@@ -405,7 +433,7 @@ const generateReplenishment = catchAsync(async (req, res) => {
 const getDocuments = catchAsync(async (req, res) => {
   const { fund_id, doc_type, status, page = 1, limit = 50 } = req.query;
 
-  const filter = { ...req.tenantFilter };
+  const filter = pcFilter(req.tenantFilter, 'document');
   if (fund_id) filter.fund_id = fund_id;
   if (doc_type) filter.doc_type = doc_type;
   if (status) filter.status = status;
@@ -445,7 +473,7 @@ const signDocument = catchAsync(async (req, res) => {
 
   const doc = await PettyCashRemittance.findOne({
     _id: req.params.id,
-    ...req.tenantFilter
+    ...pcFilter(req.tenantFilter, 'document')
   });
 
   if (!doc) {
@@ -472,7 +500,7 @@ const signDocument = catchAsync(async (req, res) => {
 const processDocument = catchAsync(async (req, res) => {
   const doc = await PettyCashRemittance.findOne({
     _id: req.params.id,
-    ...req.tenantFilter
+    ...pcFilter(req.tenantFilter, 'document')
   }).populate('fund_id');
 
   if (!doc) {
@@ -553,7 +581,7 @@ const processDocument = catchAsync(async (req, res) => {
  * DELETE /funds/:id — president only, fund must have zero balance
  */
 const deleteFund = catchAsync(async (req, res) => {
-  const fund = await PettyCashFund.findOne({ _id: req.params.id, ...req.tenantFilter });
+  const fund = await PettyCashFund.findOne({ _id: req.params.id, ...pcFilter(req.tenantFilter, 'fund') });
   if (!fund) return res.status(404).json({ success: false, message: 'Fund not found' });
 
   if (fund.current_balance !== 0) {

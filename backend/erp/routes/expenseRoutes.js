@@ -88,7 +88,7 @@ router.post('/prf-calf/validate', validatePrfCalf);
 router.post('/prf-calf/submit', periodLockCheck('EXPENSE'), submitPrfCalf);
 router.post('/prf-calf/reopen', periodLockCheck('EXPENSE'), roleCheck('admin', 'finance', 'president'), reopenPrfCalf);
 router.get('/prf-calf/:id', getPrfCalfById);
-router.put('/prf-calf/:id', updatePrfCalf);
+router.put('/prf-calf/:id', periodLockCheck('EXPENSE'), updatePrfCalf);
 router.delete('/prf-calf/:id', deleteDraftPrfCalf);  // DRAFT only
 
 module.exports = router;

@@ -3,6 +3,8 @@ import SelectField from '../../components/common/Select';
 import { useAuth } from '../../hooks/useAuth';
 import usePettyCash from '../hooks/usePettyCash';
 import usePeople from '../hooks/usePeople';
+import useWarehouses from '../hooks/useWarehouses';
+import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
@@ -57,10 +59,11 @@ const styles = {
 };
 
 // ---------- Fund Form Modal (Create + Edit) ----------
- 
-function FundFormModal({ open, onClose, onSave, editData, people }) {
+
+function FundFormModal({ open, onClose, onSave, editData, people, warehouses, fundModes, fundStatuses }) {
   const isEdit = !!editData;
-  const [form, setForm] = useState({ fund_name: '', fund_code: '', custodian_id: '', balance_ceiling: CEILING, authorized_amount: 10000, coa_code: '1000', fund_mode: 'REVOLVING' });
+  const BLANK = { fund_name: '', fund_code: '', custodian_id: '', warehouse_id: '', balance_ceiling: CEILING, authorized_amount: 10000, coa_code: '1000', fund_mode: 'REVOLVING', status: 'ACTIVE' };
+  const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
 
   // Populate form when editing
@@ -70,15 +73,17 @@ function FundFormModal({ open, onClose, onSave, editData, people }) {
         fund_name: editData.fund_name || '',
         fund_code: editData.fund_code || '',
         custodian_id: editData.custodian_id?._id || editData.custodian_id || '',
+        warehouse_id: editData.warehouse_id?._id || editData.warehouse_id || '',
         balance_ceiling: editData.balance_ceiling || CEILING,
         authorized_amount: editData.authorized_amount || 10000,
         coa_code: editData.coa_code || '1000',
         fund_mode: editData.fund_mode || 'REVOLVING',
+        status: editData.status || 'ACTIVE',
       });
     } else {
-      setForm({ fund_name: '', fund_code: '', custodian_id: '', balance_ceiling: CEILING, authorized_amount: 10000, coa_code: '1000', fund_mode: 'REVOLVING' });
+      setForm(BLANK);
     }
-  }, [editData, open]);
+  }, [editData, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
 
@@ -111,15 +116,26 @@ function FundFormModal({ open, onClose, onSave, editData, people }) {
             <input style={styles.formInput} name="fund_code" value={form.fund_code} onChange={handleChange} required />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Custodian</label>
-            <select style={styles.formInput} name="custodian_id" value={form.custodian_id} onChange={handleChange} required>
-              <option value="">— Select custodian —</option>
+            <label style={styles.label}>Custodian (BDM)</label>
+            <SelectField name="custodian_id" value={form.custodian_id} onChange={handleChange} placeholder="-- Select custodian --">
+              <option value="">-- Select custodian --</option>
               {(people || []).map(p => (
                 <option key={p.user_id?._id || p._id} value={p.user_id?._id || p._id}>
                   {p.full_name || p.user_id?.name || p.name || '(unnamed)'}
                 </option>
               ))}
-            </select>
+            </SelectField>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Warehouse</label>
+            <SelectField name="warehouse_id" value={form.warehouse_id} onChange={handleChange} placeholder="-- Select warehouse --" isClearable>
+              <option value="">-- Select warehouse --</option>
+              {(warehouses || []).map(w => (
+                <option key={w._id} value={w._id}>
+                  {w.warehouse_code} — {w.warehouse_name}
+                </option>
+              ))}
+            </SelectField>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div style={styles.formGroup}>
@@ -138,13 +154,23 @@ function FundFormModal({ open, onClose, onSave, editData, people }) {
             </div>
             <div style={styles.formGroup}>
               <label style={styles.label}>Fund Mode</label>
-              <select style={styles.formInput} name="fund_mode" value={form.fund_mode} onChange={handleChange}>
-                <option value="REVOLVING">Revolving (deposits + disbursements)</option>
-                <option value="EXPENSE_ONLY">Expense Only (disbursements)</option>
-                <option value="DEPOSIT_ONLY">Deposit Only (collections)</option>
-              </select>
+              <SelectField name="fund_mode" value={form.fund_mode} onChange={handleChange}>
+                {(fundModes || []).map(o => (
+                  <option key={o.code} value={o.code}>{o.label}</option>
+                ))}
+              </SelectField>
             </div>
           </div>
+          {isEdit && (
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Status</label>
+              <SelectField name="status" value={form.status} onChange={handleChange}>
+                {(fundStatuses || []).map(o => (
+                  <option key={o.code} value={o.code}>{o.label}</option>
+                ))}
+              </SelectField>
+            </div>
+          )}
           <div style={styles.formActions}>
             <button type="button" style={styles.btnSecondary} onClick={onClose}>Cancel</button>
             <button type="submit" style={styles.btnPrimary} disabled={saving}>{saving ? 'Saving...' : isEdit ? 'Update Fund' : 'Create Fund'}</button>
@@ -221,7 +247,7 @@ function CreateTxnModal({ open, onClose, onSave, funds }) {
 
 // ---------- Fund Overview Tab ----------
  
-function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund, onGenerateRemittance, canManage, isPresident, people }) {
+function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund, onGenerateRemittance, canManage, isPresident, people, warehouses, fundModes, fundStatuses }) {
   const [showForm, setShowForm] = useState(false);
   const [editingFund, setEditingFund] = useState(null);
 
@@ -265,10 +291,22 @@ function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund
                   <span>Custodian</span>
                   <span style={{ fontWeight: 500 }}>{fund.custodian_id?.name || '-'}</span>
                 </div>
+                {fund.warehouse_id && (
+                  <div style={styles.cardRow}>
+                    <span>Warehouse</span>
+                    <span style={{ fontWeight: 500, fontSize: '12px' }}>{fund.warehouse_id?.warehouse_code || fund.warehouse_id?.warehouse_name || '-'}</span>
+                  </div>
+                )}
                 <div style={styles.cardRow}>
                   <span>Mode</span>
                   <span style={{ fontWeight: 500, fontSize: '12px' }}>{fund.fund_mode || 'REVOLVING'}</span>
                 </div>
+                {fund.status && fund.status !== 'ACTIVE' && (
+                  <div style={styles.cardRow}>
+                    <span>Status</span>
+                    <span style={styles.badge(fund.status === 'SUSPENDED' ? 'amber' : 'red')}>{fund.status}</span>
+                  </div>
+                )}
                 <div style={styles.cardRow}>
                   <span>Balance</span>
                   <span style={{ fontWeight: 600, fontSize: '16px' }}>{styles.peso(balance)}</span>
@@ -294,7 +332,7 @@ function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund
           })}
         </div>
       )}
-      <FundFormModal open={showForm} onClose={() => setShowForm(false)} onSave={handleSave} editData={editingFund} people={people} />
+      <FundFormModal open={showForm} onClose={() => setShowForm(false)} onSave={handleSave} editData={editingFund} people={people} warehouses={warehouses} fundModes={fundModes} fundStatuses={fundStatuses} />
     </div>
   );
 }
@@ -353,7 +391,6 @@ function TransactionsTab({ funds, pc }) {
 
   return (
     <div>
-      <WorkflowGuide pageKey="petty-cash" />
       <div style={styles.filterRow}>
         <SelectField style={styles.select} value={fundFilter} onChange={e => setFundFilter(e.target.value)}>
           <option value="">All Funds</option>
@@ -525,11 +562,17 @@ export default function PettyCash() {
   const { user } = useAuth();
   const pc = usePettyCash();
   const { getPeopleList } = usePeople();
+  const { getWarehouses } = useWarehouses();
+  const { data: lookups } = useLookupBatch(['PETTY_CASH_FUND_TYPE', 'PETTY_CASH_FUND_STATUS']);
   const canManage = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const [activeTab, setActiveTab] = useState('funds');
   const [funds, setFunds] = useState([]);
   const [people, setPeople] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const fundModes = lookups.PETTY_CASH_FUND_TYPE || [];
+  const fundStatuses = lookups.PETTY_CASH_FUND_STATUS || [];
 
   const loadFunds = useCallback(async () => {
     setLoading(true);
@@ -542,18 +585,21 @@ export default function PettyCash() {
 
   useEffect(() => { loadFunds(); }, [loadFunds]);
 
-  // Load people for custodian dropdown
+  // Load people for custodian dropdown + warehouses for fund assignment
   useEffect(() => {
     getPeopleList({ limit: 0, status: 'ACTIVE' }).then(res => setPeople(res?.data || [])).catch(() => {});
+    getWarehouses({ limit: 0 }).then(res => setWarehouses(res?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreateFund = async (body) => {
     await pc.createFund(body);
+    showSuccess('Fund created successfully.');
     loadFunds();
   };
 
   const handleUpdateFund = async (fundId, body) => {
     await pc.updateFund(fundId, body);
+    showSuccess('Fund updated successfully.');
     loadFunds();
   };
 
@@ -561,6 +607,7 @@ export default function PettyCash() {
     if (!confirm('Delete this fund? This cannot be undone.')) return;
     try {
       await pc.deleteFund(fundId);
+      showSuccess('Fund deleted.');
       loadFunds();
     } catch (err) { showError(err, 'Could not delete fund'); }
   };
@@ -577,6 +624,7 @@ export default function PettyCash() {
 
   return (
     <div style={styles.container}>
+      <WorkflowGuide pageKey="petty-cash" />
       <div style={styles.header}>
         <h1 style={styles.title}>Petty Cash Management</h1>
       </div>
@@ -588,7 +636,7 @@ export default function PettyCash() {
       </div>
 
       {activeTab === 'funds' && (
-        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} canManage={canManage} isPresident={user?.role === ROLES.PRESIDENT} people={people} />
+        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} canManage={canManage} isPresident={user?.role === ROLES.PRESIDENT} people={people} warehouses={warehouses} fundModes={fundModes} fundStatuses={fundStatuses} />
       )}
       {activeTab === 'transactions' && (
         <TransactionsTab funds={funds} pc={pc} />

@@ -2,13 +2,71 @@ const ProductMaster = require('../models/ProductMaster');
 const Warehouse = require('../models/Warehouse');
 const InventoryLedger = require('../models/InventoryLedger');
 const ErpAuditLog = require('../models/ErpAuditLog');
+const Entity = require('../models/Entity');
+const Lookup = require('../models/Lookup');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { ROLES } = require('../../constants/roles');
 
+/**
+ * Resolve entity IDs to query for products.
+ * For SUBSIDIARY entities with PRODUCT_CATALOG_ACCESS lookup enabled,
+ * also include the parent entity's products (lookup-driven, subscription-ready).
+ */
+async function resolveProductEntityIds(entityId) {
+  if (!entityId) return [];
+
+  const entity = await Entity.findById(entityId).select('entity_type parent_entity_id').lean();
+  if (!entity) return [entityId];
+
+  // Parent entities only see their own products
+  if (entity.entity_type !== 'SUBSIDIARY' || !entity.parent_entity_id) return [entityId];
+
+  // Auto-seed lookup on first access (atomic upsert — no race condition).
+  // Uses $setOnInsert so existing admin-configured entries are never overwritten.
+  await Lookup.updateOne(
+    { entity_id: entityId, category: 'PRODUCT_CATALOG_ACCESS', code: 'INHERIT_PARENT' },
+    { $setOnInsert: {
+      label: 'Inherit Parent Entity Products',
+      is_active: true,
+      sort_order: 0,
+      metadata: { access_mode: 'ACTIVE_ONLY', description: 'Subsidiary can browse parent entity products for PO creation and catalog views' },
+    }},
+    { upsert: true }
+  );
+
+  // Now check if the entry is active (admin may have disabled it)
+  const accessEntry = await Lookup.findOne({
+    entity_id: entityId,
+    category: 'PRODUCT_CATALOG_ACCESS',
+    code: 'INHERIT_PARENT',
+    is_active: true,
+  }).lean();
+
+  if (accessEntry) {
+    return [entityId, entity.parent_entity_id];
+  }
+
+  // Entry exists but is_active: false — admin explicitly disabled inheritance
+  return [entityId];
+}
+
 const getAll = catchAsync(async (req, res) => {
   const filter = {};
-  if (req.tenantFilter?.entity_id) filter.entity_id = req.tenantFilter.entity_id;
-  if (req.query.entity_id) filter.entity_id = req.query.entity_id;
+  const isCatalog = req.query.catalog === 'true';
+
+  // Entity scoping — for catalog mode, resolve parent entity inheritance
+  const baseEntityId = req.query.entity_id || req.tenantFilter?.entity_id;
+  if (baseEntityId && isCatalog) {
+    const entityIds = await resolveProductEntityIds(baseEntityId);
+    if (entityIds.length > 1) {
+      filter.entity_id = { $in: entityIds };
+    } else {
+      filter.entity_id = baseEntityId;
+    }
+  } else if (baseEntityId) {
+    filter.entity_id = baseEntityId;
+  }
+
   if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
   if (req.query.stock_type) filter.stock_type = req.query.stock_type;
   if (req.query.q) {
@@ -21,7 +79,7 @@ const getAll = catchAsync(async (req, res) => {
   // BDMs only see products that have inventory in their assigned warehouse
   // Skip this filter when catalog=true (e.g. PO creation needs the full product list)
   const bdmRoles = [ROLES.CONTRACTOR];
-  if (bdmRoles.includes(req.user?.role) && req.query.catalog !== 'true') {
+  if (bdmRoles.includes(req.user?.role) && !isCatalog) {
     const myWarehouses = await Warehouse.find({
       $or: [{ manager_id: req.user._id }, { assigned_users: req.user._id }]
     }).select('_id').lean();

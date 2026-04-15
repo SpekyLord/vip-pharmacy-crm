@@ -120,19 +120,34 @@ const prfCalfSchema = new mongoose.Schema({
 });
 
 // Pre-save: auto-number + compute CALF balance
-prfCalfSchema.pre('save', async function () {
+prfCalfSchema.pre('save', async function (next) {
   // Auto-generate document number on creation
+  // #16 Hardening: throw on generateDocNumber failure instead of saving with null number
   if (this.isNew) {
     const { generateDocNumber } = require('../services/docNumbering');
     if (this.doc_type === 'CALF' && !this.calf_number) {
-      this.calf_number = await generateDocNumber({
-        prefix: 'CALF', bdmId: this.bdm_id, date: this.created_at || new Date()
-      });
+      try {
+        this.calf_number = await generateDocNumber({
+          prefix: 'CALF', bdmId: this.bdm_id, date: this.created_at || new Date()
+        });
+      } catch (err) {
+        return next(new Error(`Failed to generate CALF number: ${err.message}. Check Territory setup for this BDM.`));
+      }
+      if (!this.calf_number) {
+        return next(new Error('CALF number generation returned empty. Check DocSequence and Territory configuration.'));
+      }
     }
     if (this.doc_type === 'PRF' && !this.prf_number) {
-      this.prf_number = await generateDocNumber({
-        prefix: 'PRF', bdmId: this.bdm_id, date: this.created_at || new Date()
-      });
+      try {
+        this.prf_number = await generateDocNumber({
+          prefix: 'PRF', bdmId: this.bdm_id, date: this.created_at || new Date()
+        });
+      } catch (err) {
+        return next(new Error(`Failed to generate PRF number: ${err.message}. Check Territory setup for this BDM.`));
+      }
+      if (!this.prf_number) {
+        return next(new Error('PRF number generation returned empty. Check DocSequence and Territory configuration.'));
+      }
     }
   }
 
@@ -140,6 +155,7 @@ prfCalfSchema.pre('save', async function () {
   if (this.doc_type === 'CALF') {
     this.balance = Math.round(((this.advance_amount || 0) - (this.liquidation_amount || 0)) * 100) / 100;
   }
+  next();
 });
 
 // Indexes

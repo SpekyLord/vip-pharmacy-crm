@@ -39,6 +39,11 @@ const createAccount = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'account_code, account_name, account_type, and normal_balance are required' });
   }
 
+  // #14 Hardening: Enforce 4-digit account_code format
+  if (!/^\d{4}$/.test(account_code)) {
+    return res.status(400).json({ success: false, message: `account_code "${account_code}" must be exactly 4 digits (e.g., 1000, 6900)` });
+  }
+
   const account = await ChartOfAccounts.create({
     entity_id: req.entityId,
     account_code,
