@@ -24,7 +24,11 @@ const chartOfAccountsSchema = new mongoose.Schema({
   account_code: {
     type: String,
     required: true,
-    trim: true
+    trim: true,
+    validate: {
+      validator: (v) => /^\d{4}$/.test(v),
+      message: props => `account_code "${props.value}" must be exactly 4 digits (e.g., 1000, 6900)`
+    }
   },
   account_name: {
     type: String,

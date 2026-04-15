@@ -1,5 +1,6 @@
 const VendorMaster = require('../models/VendorMaster');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { validateCoaCode } = require('../utils/validateCoaCode');
 
 const getAll = catchAsync(async (req, res) => {
   // President sees all; others scoped by entity
@@ -52,12 +53,22 @@ const create = catchAsync(async (req, res) => {
   req.body.created_by = req.user._id;
   // Strip empty vendor_code to avoid unique index collision
   if (!req.body.vendor_code || !req.body.vendor_code.trim()) delete req.body.vendor_code;
+  // Validate COA code if provided
+  if (req.body.coa_code) {
+    const coaCheck = await validateCoaCode(req.body.coa_code, req.entityId);
+    if (!coaCheck.valid) return res.status(400).json({ success: false, message: coaCheck.message });
+  }
   const vendor = await VendorMaster.create(req.body);
   res.status(201).json({ success: true, data: vendor });
 });
 
 const update = catchAsync(async (req, res) => {
   req.body.updated_by = req.user._id;
+  // Validate COA code if being updated
+  if (req.body.coa_code) {
+    const coaCheck = await validateCoaCode(req.body.coa_code, req.entityId);
+    if (!coaCheck.valid) return res.status(400).json({ success: false, message: coaCheck.message });
+  }
   const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
   const vendor = await VendorMaster.findOneAndUpdate(
     { _id: req.params.id, ...entityScope },

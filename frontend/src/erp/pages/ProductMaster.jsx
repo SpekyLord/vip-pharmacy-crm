@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useWorkingEntity from '../../hooks/useWorkingEntity';
+import { useAuth } from '../../hooks/useAuth';
 import useErpApi from '../hooks/useErpApi';
 import { broadcastProductsChanged } from '../hooks/useProducts';
 import useWarehouses from '../hooks/useWarehouses';
@@ -38,6 +39,7 @@ const pageStyles = `
   .badge-vat { background: #dbeafe; color: #1e40af; }
   .badge-exempt { background: #fef3c7; color: #92400e; }
   .badge-zero { background: #f3f4f6; color: #374151; }
+  .badge-inherited { background: #e0e7ff; color: #3730a3; }
   .btn { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; }
   .btn-primary { background: #2563eb; color: #fff; padding: 8px 16px; font-size: 13px; }
   .btn-secondary { background: #fff; color: #374151; border: 1px solid #d1d5db; }
@@ -255,8 +257,12 @@ function ProductModal({ open, onClose, onSave, editItem, vatOptions, unitCodes =
 
 // ---------- Main Page ----------
  
+const MGMT_ROLES = ['admin', 'finance', 'president', 'ceo'];
+
 export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const api = useErpApi();
+  const { user } = useAuth();
+  const canDeactivateDelete = MGMT_ROLES.includes(user?.role);
   const { getWarehouses } = useWarehouses();
   const { entities, workingEntityId, loaded: entityLoaded, isMultiEntity } = useWorkingEntity();
   const { data: lookups } = useLookupBatch(['VAT_TYPE', 'STOCK_TYPE', 'UNIT_CODE']);
@@ -336,7 +342,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
 
     setLoading(true);
     try {
-      const params = { page, limit };
+      const params = { page, limit, catalog: 'true' };
       if (search) params.q = search;
       if (statusFilter !== 'ALL') params.is_active = statusFilter === 'ACTIVE' ? 'true' : 'false';
       if (stockTypeFilter) params.stock_type = stockTypeFilter;
@@ -541,11 +547,16 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map(p => (
-                    <tr key={p._id}>
-                      <td><input type="checkbox" checked={selectedProducts.includes(p._id)} onChange={() => toggleSelect(p._id)} style={{ width: 'auto' }} /></td>
+                  {products.map(p => {
+                    const isInherited = workingEntityId && p.entity_id && p.entity_id.toString() !== workingEntityId.toString();
+                    return (
+                    <tr key={p._id} style={isInherited ? { opacity: 0.85 } : undefined}>
+                      <td><input type="checkbox" checked={selectedProducts.includes(p._id)} onChange={() => toggleSelect(p._id)} style={{ width: 'auto' }} disabled={isInherited} /></td>
                       <td>
-                        <div className="pm-brand">{p.brand_name}</div>
+                        <div className="pm-brand">
+                          {p.brand_name}
+                          {isInherited && <span className="badge badge-inherited" style={{ marginLeft: 6, fontSize: 10 }}>Parent</span>}
+                        </div>
                         <div className="pm-generic">{p.generic_name}</div>
                         {p.dosage_strength && <div className="pm-dosage">{p.dosage_strength}</div>}
                       </td>
@@ -568,16 +579,23 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
                         {p.reorder_qty != null ? ` / Qty: ${p.reorder_qty}` : ''}
                       </td>
                       <td>
+                        {isInherited ? (
+                          <span style={{ fontSize: 11, color: '#6b7280' }}>Managed by parent</span>
+                        ) : (
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button className="btn btn-secondary" onClick={() => { setEditItem(p); setShowModal(true); }}>Edit</button>
-                          {p.is_active && (
+                          {canDeactivateDelete && p.is_active && (
                             <button className="btn btn-danger" onClick={() => handleDeactivate(p._id, p.brand_name)}>Deactivate</button>
                           )}
-                          <button className="btn btn-outline" onClick={() => handleDelete(p._id, p.brand_name)} style={{ color: '#991b1b', borderColor: '#fca5a5', fontSize: 11 }}>Delete</button>
+                          {canDeactivateDelete && (
+                            <button className="btn btn-outline" onClick={() => handleDelete(p._id, p.brand_name)} style={{ color: '#991b1b', borderColor: '#fca5a5', fontSize: 11 }}>Delete</button>
+                          )}
                         </div>
+                        )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             )}

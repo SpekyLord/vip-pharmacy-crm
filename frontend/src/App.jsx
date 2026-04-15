@@ -436,7 +436,7 @@ function App() {
           <Route
             path="/erp/grn"
             element={
-              <ProtectedRoute allowedRoles={ROLE_SETS.ERP_FINANCE} requiredErpModule="inventory">
+              <ProtectedRoute allowedRoles={ROLE_SETS.ERP_FINANCE} requiredErpModule={["inventory", "purchasing"]}>
                 <GrnEntry />
               </ProtectedRoute>
             }
@@ -754,7 +754,7 @@ function App() {
           {/* Phase 25 — Returns, Expiry, Batch Trace */}
           <Route path="/erp/credit-notes" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales"><CreditNotes /></ProtectedRoute>} />
           <Route path="/erp/expiry-dashboard" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="inventory"><ExpiryDashboard /></ProtectedRoute>} />
-          <Route path="/erp/batch-trace" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="inventory"><BatchTrace /></ProtectedRoute>} />
+          <Route path="/erp/batch-trace" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule={["inventory", "purchasing"]}><BatchTrace /></ProtectedRoute>} />
 
           {/* Phase 28 — Sales Goals & KPI */}
           <Route path="/erp/sales-goals" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><SalesGoalDashboard /></ProtectedRoute>} />

@@ -139,16 +139,39 @@ journalEntrySchema.pre('save', async function (next) {
       return next(new Error(`Journal entry is unbalanced: DR ${this.total_debit.toFixed(2)} ≠ CR ${this.total_credit.toFixed(2)} (diff ${diff.toFixed(2)})`));
     }
 
-    // Validate all account_codes exist in ChartOfAccounts
+    // Validate all account_codes exist in ChartOfAccounts + check normal_balance + is_active
     const ChartOfAccounts = mongoose.model('ChartOfAccounts');
     const codes = [...new Set(this.lines.map(l => l.account_code))];
     const existing = await ChartOfAccounts.find(
       { entity_id: this.entity_id, account_code: { $in: codes } }
-    ).select('account_code').lean();
-    const existingCodes = new Set(existing.map(c => c.account_code));
-    const invalid = codes.filter(c => !existingCodes.has(c));
+    ).select('account_code normal_balance is_active').lean();
+    const coaMap = new Map(existing.map(c => [c.account_code, c]));
+    const invalid = codes.filter(c => !coaMap.has(c));
     if (invalid.length) {
       return next(new Error(`Invalid COA codes: ${invalid.join(', ')}. Verify Settings → COA mapping.`));
+    }
+
+    // #14 Hardening: Reject inactive COA accounts
+    const inactive = codes.filter(c => coaMap.has(c) && !coaMap.get(c).is_active);
+    if (inactive.length) {
+      return next(new Error(`Inactive COA accounts cannot be posted to: ${inactive.join(', ')}. Reactivate in Settings → COA or use a different account.`));
+    }
+
+    // #15 Hardening: Enforce normal_balance direction — block lines that put the
+    // full amount on the wrong side (e.g., debiting a CREDIT-only account).
+    // A line with BOTH debit>0 and credit>0 is already invalid (each line should be one-sided).
+    const balanceErrors = [];
+    for (const line of this.lines) {
+      const coa = coaMap.get(line.account_code);
+      if (!coa) continue;
+      if (coa.normal_balance === 'DEBIT' && line.credit > 0 && line.debit === 0) {
+        balanceErrors.push(`${line.account_code} (${line.account_name}): credited ${line.credit.toFixed(2)} but normal balance is DEBIT`);
+      } else if (coa.normal_balance === 'CREDIT' && line.debit > 0 && line.credit === 0) {
+        balanceErrors.push(`${line.account_code} (${line.account_name}): debited ${line.debit.toFixed(2)} but normal balance is CREDIT`);
+      }
+    }
+    if (balanceErrors.length && !this.is_reversal) {
+      return next(new Error(`Normal balance violation: ${balanceErrors.join('; ')}. Use a contra account or verify the journal entry direction.`));
     }
   }
   next();

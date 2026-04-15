@@ -253,13 +253,20 @@ const reopenSmer = catchAsync(async (req, res) => {
   const smers = await SmerEntry.find({ _id: { $in: smer_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!smers.length) return res.status(400).json({ success: false, message: 'No POSTED SMERs to reopen' });
 
+  const reopened = [];
+  const failed = [];
+
   for (const smer of smers) {
     // Reverse journal entries
     if (smer.event_id) {
       try {
         const jes = await JournalEntry.find({ source_event_id: smer.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: SMER reopen', req.user._id); }
-      } catch (jeErr) { console.error('JE reversal failed for SMER reopen:', smer._id, jeErr.message); }
+      } catch (jeErr) {
+        console.error('JE reversal failed for SMER reopen:', smer._id, jeErr.message);
+        failed.push({ _id: smer._id, error: `Journal reversal failed: ${jeErr.message}` });
+        continue; // Do NOT mark as DRAFT — ledger would be unbalanced
+      }
     }
 
     smer.status = 'DRAFT';
@@ -277,9 +284,13 @@ const reopenSmer = catchAsync(async (req, res) => {
       changed_by: req.user._id,
       note: `Reopened (count: ${smer.reopen_count})`
     });
+    reopened.push(smer._id);
   }
 
-  res.json({ success: true, message: `Reopened ${smers.length} SMER(s)` });
+  if (failed.length && !reopened.length) {
+    return res.status(500).json({ success: false, message: 'All SMER reopens failed due to journal reversal errors', failed });
+  }
+  res.json({ success: true, message: `Reopened ${reopened.length} SMER(s)${failed.length ? `, ${failed.length} failed` : ''}`, reopened, failed });
 });
 
 /**
@@ -596,13 +607,20 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
   const entries = await CarLogbookEntry.find({ _id: { $in: logbook_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No POSTED logbooks to reopen' });
 
+  const reopened = [];
+  const failed = [];
+
   for (const entry of entries) {
-    // Reverse journal entries
+    // Reverse journal entries — if reversal fails, skip (keep POSTED, ledger stays balanced)
     if (entry.event_id) {
       try {
         const jes = await JournalEntry.find({ source_event_id: entry.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: CarLogbook reopen', req.user._id); }
-      } catch (jeErr) { console.error('JE reversal failed for logbook reopen:', entry._id, jeErr.message); }
+      } catch (jeErr) {
+        console.error('JE reversal failed for logbook reopen:', entry._id, jeErr.message);
+        failed.push({ _id: entry._id, error: `Journal reversal failed: ${jeErr.message}` });
+        continue;
+      }
     }
 
     entry.status = 'DRAFT';
@@ -620,9 +638,13 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
       changed_by: req.user._id,
       note: `Reopened (count: ${entry.reopen_count})`
     });
+    reopened.push(entry._id);
   }
 
-  res.json({ success: true, message: `Reopened ${entries.length} logbook(s)` });
+  if (failed.length && !reopened.length) {
+    return res.status(500).json({ success: false, message: 'All logbook reopens failed due to journal reversal errors', failed });
+  }
+  res.json({ success: true, message: `Reopened ${reopened.length} logbook(s)${failed.length ? `, ${failed.length} failed` : ''}`, reopened, failed });
 });
 
 // ═══════════════════════════════════════════
@@ -798,9 +820,9 @@ const validateExpenses = catchAsync(async (req, res) => {
         errors.push(`WARNING: Line ${i + 1}: OR# ${line.or_number} provided without receipt photo — attach photo for audit trail`);
       }
 
-      // COA mapping warning: lines falling through to 6900 Miscellaneous should be flagged
+      // #17 Hardening: BLOCK posting with coa_code=6900 (Misc) — must map to correct account
       if (!line.coa_code || line.coa_code === '6900') {
-        errors.push(`Line ${i + 1}: COA code missing or defaulted to Miscellaneous (6900). Map "${line.establishment || 'unknown'}" to correct account.`);
+        errors.push(`BLOCKED — Line ${i + 1}: COA code missing or defaulted to Miscellaneous (6900). Map "${line.establishment || 'unknown'}" to correct account before posting.`);
       }
 
       // CALF gate: ACCESS with non-cash requires CALF to be linked AND POSTED
@@ -834,6 +856,20 @@ const submitExpenses = catchAsync(async (req, res) => {
   // Period lock check
   const { checkPeriodOpen } = require('../utils/periodLock');
   for (const entry of entries) { await checkPeriodOpen(entry.entity_id, entry.period); }
+
+  // #17 Hardening: hard gate — reject any VALID entry that still has 6900 COA (shouldn't happen, belt-and-suspenders)
+  for (const entry of entries) {
+    const miscLines = (entry.lines || []).filter(l => !l.coa_code || l.coa_code === '6900');
+    if (miscLines.length) {
+      entry.status = 'ERROR';
+      entry.validation_errors = [`BLOCKED — ${miscLines.length} line(s) still mapped to Miscellaneous (6900). Assign correct COA codes.`];
+      await entry.save();
+      return res.status(400).json({
+        success: false,
+        message: `Cannot post: ${miscLines.length} expense line(s) still mapped to Miscellaneous (6900). Map to correct COA accounts first.`
+      });
+    }
+  }
 
   // Pre-submit gate: verify all linked CALFs are POSTED
   for (const entry of entries) {
@@ -901,7 +937,7 @@ const submitExpenses = catchAsync(async (req, res) => {
         lines.push({ account_code: drCode, account_name: drName, debit: amt, credit: 0, description: line.establishment || desc });
         if (line.expense_type === 'ACCESS') {
           creditAccess += amt;
-          if (!accessCoa) accessCoa = await resolveFundingCoa(line);
+          if (!accessCoa) accessCoa = await resolveFundingCoa(line, expCoaMap.AP_TRADE || '2000');
         } else {
           creditOre += amt;
         }
@@ -943,13 +979,20 @@ const reopenExpenses = catchAsync(async (req, res) => {
   const entries = await ExpenseEntry.find({ _id: { $in: expense_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No POSTED expenses to reopen' });
 
+  const reopened = [];
+  const failed = [];
+
   for (const entry of entries) {
-    // Reverse journal entries
+    // Reverse journal entries — if reversal fails, skip this entry (keep POSTED, ledger stays balanced)
     if (entry.event_id) {
       try {
         const jes = await JournalEntry.find({ source_event_id: entry.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: Expense reopen', req.user._id); }
-      } catch (jeErr) { console.error('JE reversal failed for expense reopen:', entry._id, jeErr.message); }
+      } catch (jeErr) {
+        console.error('JE reversal failed for expense reopen:', entry._id, jeErr.message);
+        failed.push({ _id: entry._id, error: `Journal reversal failed: ${jeErr.message}` });
+        continue; // Do NOT mark as DRAFT — ledger would be unbalanced
+      }
     }
 
     entry.status = 'DRAFT';
@@ -967,9 +1010,13 @@ const reopenExpenses = catchAsync(async (req, res) => {
       changed_by: req.user._id,
       note: `Reopened (count: ${entry.reopen_count})`
     });
+    reopened.push(entry._id);
   }
 
-  res.json({ success: true, message: `Reopened ${entries.length} expense(s)` });
+  if (failed.length && !reopened.length) {
+    return res.status(500).json({ success: false, message: 'All expense reopens failed due to journal reversal errors', failed });
+  }
+  res.json({ success: true, message: `Reopened ${reopened.length} expense(s)${failed.length ? `, ${failed.length} failed` : ''}`, reopened, failed });
 });
 
 // ═══════════════════════════════════════════
@@ -988,6 +1035,33 @@ const createPrfCalf = catchAsync(async (req, res) => {
       success: false,
       message: 'CALF must be linked to an expense entry. Use "Create CALF" from pending company-funded items.'
     });
+  }
+
+  // #13 Hardening: Validate linked_expense_line_ids actually belong to the linked expense/logbook
+  if (req.body.doc_type === 'CALF' && req.body.linked_expense_id && req.body.linked_expense_line_ids?.length) {
+    const expense = await ExpenseEntry.findById(req.body.linked_expense_id).lean();
+    if (expense) {
+      const validLineIds = new Set(expense.lines.map(l => l._id.toString()));
+      const invalid = req.body.linked_expense_line_ids.filter(lid => !validLineIds.has(lid.toString()));
+      if (invalid.length) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid linked_expense_line_ids: ${invalid.length} line(s) do not belong to the linked expense entry.`
+        });
+      }
+    } else {
+      const logbook = await CarLogbookEntry.findById(req.body.linked_expense_id).lean();
+      if (logbook) {
+        const validFuelIds = new Set((logbook.fuel_entries || []).map(f => f._id.toString()));
+        const invalid = req.body.linked_expense_line_ids.filter(lid => !validFuelIds.has(lid.toString()));
+        if (invalid.length) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid linked_expense_line_ids: ${invalid.length} fuel entry(s) do not belong to the linked logbook.`
+          });
+        }
+      }
+    }
   }
 
   const doc = await PrfCalf.create({
@@ -1194,6 +1268,25 @@ const validatePrfCalf = catchAsync(async (req, res) => {
       // CALF: advance amount and linked expense required
       if (!doc.advance_amount || doc.advance_amount <= 0) errors.push('Advance amount is required');
       if (!doc.linked_expense_id) errors.push('CALF must be linked to an expense entry');
+
+      // #13 Hardening: Validate linked_expense_line_ids belong to the linked expense/logbook
+      if (doc.linked_expense_id && doc.linked_expense_line_ids?.length) {
+        const srcExpense = await ExpenseEntry.findById(doc.linked_expense_id).lean();
+        if (srcExpense) {
+          const validIds = new Set(srcExpense.lines.map(l => l._id.toString()));
+          const orphaned = doc.linked_expense_line_ids.filter(lid => !validIds.has(lid.toString()));
+          if (orphaned.length) errors.push(`${orphaned.length} linked line(s) do not belong to the linked expense entry`);
+        } else {
+          const srcLogbook = await CarLogbookEntry.findById(doc.linked_expense_id).lean();
+          if (srcLogbook) {
+            const validIds = new Set((srcLogbook.fuel_entries || []).map(f => f._id.toString()));
+            const orphaned = doc.linked_expense_line_ids.filter(lid => !validIds.has(lid.toString()));
+            if (orphaned.length) errors.push(`${orphaned.length} linked fuel entry(s) do not belong to the linked logbook`);
+          } else {
+            errors.push('Linked expense/logbook entry not found');
+          }
+        }
+      }
     }
 
     doc.validation_errors = errors;
@@ -1302,6 +1395,8 @@ const submitPrfCalf = catchAsync(async (req, res) => {
   }
 
   // ── Auto-validate+submit linked expenses/carlogbooks when CALF is posted ──
+  // Uses MongoDB transaction so source + event are atomic; if anything fails,
+  // both the source status and the TransactionEvent roll back together.
   const autoResults = [];
   for (const doc of docs) {
     if (doc.doc_type !== 'CALF' || !doc.linked_expense_id) continue;
@@ -1338,73 +1433,82 @@ const submitPrfCalf = catchAsync(async (req, res) => {
         continue;
       }
 
-      // Submit (create event + journal)
-      source.status = 'POSTED';
-      source.posted_at = new Date();
-      source.posted_by = req.user._id;
-      source.validation_errors = [];
-
-      const event = await TransactionEvent.create({
-        entity_id: source.entity_id,
-        bdm_id: source.bdm_id,
-        event_type: sourceType === 'EXPENSE' ? 'EXPENSE' : 'CAR_LOGBOOK',
-        event_date: new Date(),
-        document_ref: sourceType === 'EXPENSE'
-          ? `EXP-${source.period}-${source.cycle}`
-          : `LOGBOOK-${source.period}-${source.entry_date?.toISOString().split('T')[0] || ''}`,
-        status: 'ACTIVE',
-        created_by: req.user._id
-      });
-      source.event_id = event._id;
-      await source.save();
-
-      // Auto-journal (non-blocking)
+      // Submit inside a transaction — atomic: if JE creation fails, source stays un-posted
+      const autoSession = await mongoose.startSession();
       try {
-        const reopenCoaMap = await getCoaMap();
-        if (sourceType === 'EXPENSE') {
-          const lines = [];
-          let totalOre = 0, totalAccess = 0;
-          const desc = `EXP-${source.period}-${source.cycle}`;
-          for (const line of source.lines) {
-            lines.push({ account_code: line.coa_code || reopenCoaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
-            if (line.expense_type === 'ORE') totalOre += line.amount || 0;
-            else totalAccess += line.amount || 0;
-          }
-          if (totalOre > 0) lines.push({ account_code: reopenCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
-          if (totalAccess > 0) {
-            const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source);
-            lines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
-          }
-          if (lines.length >= 2) {
-            await createAndPostJournal(source.entity_id, {
-              je_date: source.posted_at, period: source.period,
-              description: `Expenses: ${desc}`, source_module: 'EXPENSE',
-              source_event_id: source.event_id, source_doc_ref: desc, lines,
-              bir_flag: source.bir_flag || 'BOTH', vat_flag: 'N/A',
-              bdm_id: source.bdm_id, created_by: req.user._id
-            });
-          }
-        } else {
-          // CarLogbook journal — DR 6200, CR funding
-          const fuelTotal = source.official_gas_amount || source.total_fuel_amount || 0;
-          if (fuelTotal > 0) {
-            const funding = await resolveFundingCoa(source.fuel_entries?.[0] || source);
-            await createAndPostJournal(source.entity_id, {
-              je_date: source.posted_at, period: source.period,
-              description: `Car Logbook: ${source.period}`, source_module: 'EXPENSE',
-              source_event_id: source.event_id, source_doc_ref: `LOGBOOK-${source.period}`,
-              lines: [
-                { account_code: calfCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
-                { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}` }
-              ],
-              bir_flag: 'BOTH', vat_flag: 'N/A',
-              bdm_id: source.bdm_id, created_by: req.user._id
-            });
-          }
-        }
-      } catch (jeErr) { console.error('Auto-journal failed for auto-submitted source:', source._id, jeErr.message); }
+        await autoSession.withTransaction(async () => {
+          source.status = 'POSTED';
+          source.posted_at = new Date();
+          source.posted_by = req.user._id;
+          source.validation_errors = [];
 
-      autoResults.push({ source_id: source._id, type: sourceType, status: 'POSTED' });
+          const event = await TransactionEvent.create([{
+            entity_id: source.entity_id,
+            bdm_id: source.bdm_id,
+            event_type: sourceType === 'EXPENSE' ? 'EXPENSE' : 'CAR_LOGBOOK',
+            event_date: new Date(),
+            document_ref: sourceType === 'EXPENSE'
+              ? `EXP-${source.period}-${source.cycle}`
+              : `LOGBOOK-${source.period}-${source.entry_date?.toISOString().split('T')[0] || ''}`,
+            status: 'ACTIVE',
+            created_by: req.user._id
+          }], { session: autoSession });
+          source.event_id = event[0]._id;
+          await source.save({ session: autoSession });
+
+          // Auto-journal inside the same transaction — ensures POSTED ↔ JE consistency
+          const autoCoaMap = await getCoaMap();
+          if (sourceType === 'EXPENSE') {
+            const lines = [];
+            let totalOre = 0, totalAccess = 0;
+            const desc = `EXP-${source.period}-${source.cycle}`;
+            for (const line of source.lines) {
+              lines.push({ account_code: line.coa_code || autoCoaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
+              if (line.expense_type === 'ORE') totalOre += line.amount || 0;
+              else totalAccess += line.amount || 0;
+            }
+            if (totalOre > 0) lines.push({ account_code: autoCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
+            if (totalAccess > 0) {
+              const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source, autoCoaMap.AP_TRADE);
+              lines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
+            }
+            if (lines.length >= 2) {
+              await createAndPostJournal(source.entity_id, {
+                je_date: source.posted_at, period: source.period,
+                description: `Expenses: ${desc}`, source_module: 'EXPENSE',
+                source_event_id: source.event_id, source_doc_ref: desc, lines,
+                bir_flag: source.bir_flag || 'BOTH', vat_flag: 'N/A',
+                bdm_id: source.bdm_id, created_by: req.user._id
+              }, { session: autoSession });
+            }
+          } else {
+            // CarLogbook journal — DR 6200, CR funding
+            const fuelTotal = source.official_gas_amount || source.total_fuel_amount || 0;
+            if (fuelTotal > 0) {
+              const funding = await resolveFundingCoa(source.fuel_entries?.[0] || source);
+              await createAndPostJournal(source.entity_id, {
+                je_date: source.posted_at, period: source.period,
+                description: `Car Logbook: ${source.period}`, source_module: 'EXPENSE',
+                source_event_id: source.event_id, source_doc_ref: `LOGBOOK-${source.period}`,
+                lines: [
+                  { account_code: calfCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
+                  { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}` }
+                ],
+                bir_flag: 'BOTH', vat_flag: 'N/A',
+                bdm_id: source.bdm_id, created_by: req.user._id
+              }, { session: autoSession });
+            }
+          }
+        });
+
+        autoResults.push({ source_id: source._id, type: sourceType, status: 'POSTED' });
+      } catch (txErr) {
+        // Transaction rolled back — source stays in its previous status, no orphaned events/JEs
+        console.error('Auto-submit linked source transaction failed:', doc.linked_expense_id, txErr.message);
+        autoResults.push({ source_id: doc.linked_expense_id, type: sourceType, status: 'FAILED', error: txErr.message });
+      } finally {
+        autoSession.endSession();
+      }
     } catch (err) {
       console.error('Auto-submit linked source failed:', doc.linked_expense_id, err.message);
       autoResults.push({ source_id: doc.linked_expense_id, type: 'UNKNOWN', status: 'FAILED', error: err.message });
@@ -1419,13 +1523,20 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
   const docs = await PrfCalf.find({ _id: { $in: prf_calf_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!docs.length) return res.status(400).json({ success: false, message: 'No POSTED PRF/CALFs to reopen' });
 
+  const reopenedDocs = [];
+  const failedDocs = [];
+
   for (const doc of docs) {
-    // Reverse journal entries
+    // Reverse journal entries — if reversal fails, skip (keep POSTED, ledger stays balanced)
     if (doc.event_id) {
       try {
         const jes = await JournalEntry.find({ source_event_id: doc.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, `Auto-reversal: ${doc.doc_type} reopen`, req.user._id); }
-      } catch (jeErr) { console.error('JE reversal failed for PRF/CALF reopen:', doc._id, jeErr.message); }
+      } catch (jeErr) {
+        console.error('JE reversal failed for PRF/CALF reopen:', doc._id, jeErr.message);
+        failedDocs.push({ _id: doc._id, error: `Journal reversal failed: ${jeErr.message}` });
+        continue; // Do NOT mark as DRAFT — ledger would be unbalanced
+      }
     }
 
     doc.status = 'DRAFT';
@@ -1433,6 +1544,7 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
     doc.posted_at = undefined;
     doc.posted_by = undefined;
     await doc.save();
+    reopenedDocs.push(doc);
 
     await ErpAuditLog.logChange({
       entity_id: doc.entity_id,
@@ -1450,7 +1562,7 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
         let source = await ExpenseEntry.findById(doc.linked_expense_id);
         if (!source) source = await CarLogbookEntry.findById(doc.linked_expense_id);
         if (source && source.status === 'POSTED') {
-          // Reverse source JEs
+          // Reverse source JEs — if this fails, source stays POSTED (acceptable: CALF already reopened)
           if (source.event_id) {
             const jes = await JournalEntry.find({ source_event_id: source.event_id, status: 'POSTED', is_reversal: { $ne: true } });
             for (const je of jes) { await reverseJournal(je._id, `Auto-reversal: linked CALF reopen`, req.user._id); }
@@ -1466,11 +1578,14 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
   }
 
   // Return linked expense IDs for frontend navigation
-  const linkedSources = docs
+  const linkedSources = reopenedDocs
     .filter(d => d.doc_type === 'CALF' && d.linked_expense_id)
     .map(d => ({ calf_id: d._id, linked_expense_id: d.linked_expense_id }));
 
-  res.json({ success: true, message: `Reopened ${docs.length} PRF/CALF(s)`, linked_sources: linkedSources });
+  if (failedDocs.length && !reopenedDocs.length) {
+    return res.status(500).json({ success: false, message: 'All PRF/CALF reopens failed due to journal reversal errors', failed: failedDocs });
+  }
+  res.json({ success: true, message: `Reopened ${reopenedDocs.length} PRF/CALF(s)${failedDocs.length ? `, ${failedDocs.length} failed` : ''}`, linked_sources: linkedSources, failed: failedDocs.length ? failedDocs : undefined });
 });
 
 // ═══════════════════════════════════════════
@@ -1765,8 +1880,6 @@ const getPendingCalfLines = catchAsync(async (req, res) => {
 // BATCH UPLOAD (President / Admin only)
 // ═══════════════════════════════════════════
 
-const ASSORTED_THRESHOLD = 3; // receipts with 3+ line items → "Assorted Items"
-
 /**
  * Process multiple OR images via OCR + classify each → return preview lines (NOT saved).
  * Expects multipart: photos[] (up to 20), bir_flag, assigned_to, period, cycle
@@ -1775,6 +1888,10 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ success: false, message: 'At least one photo is required.' });
   }
+
+  // Read ASSORTED_THRESHOLD from Settings (admin-configurable, default 3)
+  const settings = await Settings.getSettings();
+  const ASSORTED_THRESHOLD = settings.ASSORTED_THRESHOLD ?? 3;
 
   const { bir_flag = 'BOTH', assigned_to, period, cycle, category_override, payment_mode: batchPaymentMode, funding_card_id, funding_account_id, cost_center_id } = req.body;
   const lines = [];
@@ -1800,7 +1917,9 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
       const classification = processed.classification || await classifyExpense(processed.extracted || {});
 
       // 4. Create DocumentAttachment
+      // #19 Hardening: surface attachment creation errors instead of swallowing silently
       let attachmentId = null;
+      let attachmentWarning = null;
       try {
         const att = await DocumentAttachment.create({
           entity_id: req.entityId,
@@ -1815,6 +1934,8 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
         attachmentId = att._id;
       } catch (err) {
         console.error('DocumentAttachment creation failed:', err.message);
+        attachmentWarning = `Attachment record failed for "${file.originalname}": ${err.message}. S3 file uploaded but not tracked — re-upload or create attachment manually.`;
+        errors.push({ index: i, filename: file.originalname, error: attachmentWarning, type: 'ATTACHMENT_FAILED' });
       }
 
       const ext = processed.extracted || {};
@@ -1853,7 +1974,8 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
         is_assorted: isAssorted,
         _classification: classification,
         _ocr_confidence: processed.confidence || null,
-        _original_filename: file.originalname
+        _original_filename: file.originalname,
+        _attachment_warning: attachmentWarning || null
       });
     } catch (err) {
       console.error(`Batch OCR failed for image ${i}:`, err.message);
@@ -1872,7 +1994,8 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
       summary: {
         total_images: req.files.length,
         processed: lines.length,
-        failed: errors.length,
+        failed: errors.filter(e => e.type !== 'ATTACHMENT_FAILED').length,
+        attachment_failures: errors.filter(e => e.type === 'ATTACHMENT_FAILED').length,
         assorted_count: assortedCount,
         total_amount: Math.round(totalAmount * 100) / 100
       }
@@ -1922,7 +2045,7 @@ const saveBatchExpenses = catchAsync(async (req, res) => {
   const entry = await ExpenseEntry.create({
     entity_id: req.entityId,
     bdm_id: bdmId,
-    recorded_on_behalf_of: isOnBehalf ? req.user._id : undefined,
+    recorded_on_behalf_of: isOnBehalf ? bdmId : undefined,
     period,
     cycle,
     lines: cleanLines,

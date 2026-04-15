@@ -839,6 +839,9 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
   if (hasModule('purchasing')) {
     const purItems = [
       { path: '/erp/accounts-payable', label: 'Accounts Payable', icon: Wallet },
+      { path: '/erp/batch-trace', label: 'Batch Trace', icon: Search },
+      { path: '/erp/grn', label: 'GRN Entry', icon: FileInput },
+      { path: '/erp/products', label: 'Product Master', icon: ShoppingCart },
       { path: '/erp/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
       { path: '/erp/supplier-invoices', label: 'Supplier Invoices', icon: FileInput },
       { path: '/erp/vendors', label: 'Vendors', icon: Truck },

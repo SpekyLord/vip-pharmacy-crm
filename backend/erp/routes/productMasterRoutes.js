@@ -2,21 +2,29 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { roleCheck } = require('../../middleware/roleCheck');
+const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const c = require('../controllers/productMasterController');
 
 const xlsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-router.post('/tag-warehouse', roleCheck('admin', 'finance', 'president'), c.tagToWarehouse);
-router.get('/export-prices', roleCheck('admin', 'finance', 'president'), c.exportPrices);
-router.put('/import-prices', roleCheck('admin', 'finance', 'president'), xlsUpload.single('file'), c.importPrices);
-router.put('/refresh', roleCheck('admin', 'finance', 'president'), xlsUpload.single('file'), c.refreshProducts);
+// Read — open to all authenticated ERP users
 router.get('/', c.getAll);
 router.get('/:id', c.getById);
 router.get('/:id/warehouses', c.getProductWarehouses);
-router.post('/', roleCheck('admin', 'finance', 'president'), c.create);
-router.put('/:id', roleCheck('admin', 'finance', 'president'), c.update);
+
+// Add & Edit — purchasing users with product_manage sub-permission
+router.post('/', erpSubAccessCheck('purchasing', 'product_manage'), c.create);
+router.put('/:id', erpSubAccessCheck('purchasing', 'product_manage'), c.update);
+router.post('/tag-warehouse', erpSubAccessCheck('purchasing', 'product_manage'), c.tagToWarehouse);
+router.patch('/:id/reorder-qty', erpSubAccessCheck('purchasing', 'product_manage'), c.updateReorderQty);
+
+// Bulk operations — purchasing users with product_manage
+router.get('/export-prices', erpSubAccessCheck('purchasing', 'product_manage'), c.exportPrices);
+router.put('/import-prices', erpSubAccessCheck('purchasing', 'product_manage'), xlsUpload.single('file'), c.importPrices);
+router.put('/refresh', erpSubAccessCheck('purchasing', 'product_manage'), xlsUpload.single('file'), c.refreshProducts);
+
+// Deactivate & Delete — president/admin/finance only (approval-level actions)
 router.patch('/:id/deactivate', roleCheck('admin', 'finance', 'president'), c.deactivate);
 router.delete('/:id', roleCheck('admin', 'finance', 'president'), c.deleteProduct);
-router.patch('/:id/reorder-qty', roleCheck('admin', 'finance', 'president'), c.updateReorderQty);
 
 module.exports = router;
