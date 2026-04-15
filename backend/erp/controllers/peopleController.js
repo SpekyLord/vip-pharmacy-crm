@@ -232,7 +232,7 @@ const updateCompProfile = catchAsync(async (req, res) => {
     'salary_type', 'effective_date', 'basic_salary', 'rice_allowance', 'clothing_allowance',
     'medical_allowance', 'laundry_allowance', 'transport_allowance', 'incentive_type',
     'incentive_rate', 'incentive_description', 'incentive_cap', 'perdiem_rate', 'perdiem_days',
-    'km_per_liter', 'fuel_overconsumption_threshold', 'smer_eligible',
+    'km_per_liter', 'fuel_overconsumption_threshold', 'revolving_fund_amount', 'smer_eligible',
     'perdiem_engagement_threshold_full', 'perdiem_engagement_threshold_half',
     'logbook_eligible', 'vehicle_type', 'ore_eligible', 'access_eligible', 'crm_linked',
     'profit_share_eligible', 'commission_rate',
