@@ -29,8 +29,13 @@ async function buildHospitalAccessFilter(user) {
   const myWhIds = myWarehouses.map(w => w._id);
 
   if (myWhIds.length > 0) {
-    // Warehouse-driven: show only hospitals linked to BDM's warehouse(s)
-    return { warehouse_ids: { $in: myWhIds } };
+    // Primary: warehouse_ids match. Fallback: legacy tagged_bdms
+    return {
+      $or: [
+        { warehouse_ids: { $in: myWhIds } },
+        { tagged_bdms: { $elemMatch: { bdm_id: user._id, is_active: { $ne: false } } } }
+      ]
+    };
   }
 
   // No warehouse assignment — fall back to tagged_bdms only
