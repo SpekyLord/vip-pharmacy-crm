@@ -504,6 +504,14 @@ export default function PersonDetail() {
               <F lbl="Email" name="email" val={person.email} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Phone" name="phone" val={person.phone} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Person Type" name="person_type" val={person.person_type?.replace(/_/g, ' ')} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_TYPES} />
+              <div className="pd-field">
+                <div className="lbl">System Role</div>
+                <div className="val" style={{ fontWeight: 600, color: person.user_id?.role ? 'var(--erp-accent, #1e5eff)' : '#9ca3af' }}>
+                  {person.user_id?.role
+                    ? (systemRoleOpts.find(r => r.code.toLowerCase() === person.user_id.role)?.label || person.user_id.role)
+                    : 'No Login'}
+                </div>
+              </div>
               <F lbl="Status" name="status" val={person.status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_STATUSES} />
               <F lbl="Position" name="position" val={person.position} editing={editPerson} form={personForm} onChange={handlePersonChange} options={POSITIONS} />
               <F lbl="Department" name="department" val={person.department} editing={editPerson} form={personForm} onChange={handlePersonChange} options={DEPARTMENTS} />

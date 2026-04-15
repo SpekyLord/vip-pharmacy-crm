@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 6.4
-> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G4 + H1 Complete (Apr 15, 2026). H1: Low-priority hardening — CALF line validation, COA 4-digit format, normal_balance enforcement, docNumber failure handling, 6900 Misc blocking, CarLogbook CALF indicators, batch upload error surfacing.
+> **Version**: 6.6
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G4 + H1-H2 Complete (Apr 15, 2026). H2: OCR hardening — lookup-driven expense classification, entity-scoped vendor matching, resolved data in response, comma-replace bug fix, WorkflowGuide banner. Fix: Added missing "Contractor Income" sidebar link under People & HR for admin-like roles; Approval Hub reject now uses proper modal instead of browser prompt().
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -108,6 +108,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | G3 | Approval Hub Inline Quick-Edit (Typo Fix Before Approve) | ✅ |
 | G4 | Subsidiary Product Catalog Access (Lookup-Driven) | ✅ |
 | H1 | Low-Priority Hardening (#13-#19) — CALF, COA, Expense, Batch Upload | ✅ |
+| H2 | OCR Hardening — Lookup-Driven Classification, Entity Scoping, Bugs | ✅ |
 
 ---
 
@@ -125,7 +126,9 @@ Lookup-driven parent product inheritance. When a subsidiary user accesses produc
 - **Entity resolution**: `resolveProductEntityIds()` helper in `productMasterController.js` checks Entity model for `entity_type: 'SUBSIDIARY'` + `parent_entity_id`, then queries Lookup for access.
 - **Catalog mode**: All product-browsing pages pass `catalog=true` (PO, GRN, Transfer Orders, Product Master). Stock/inventory views remain entity-scoped.
 - **Product Master UI**: Inherited parent products show a "Parent" badge and "Managed by parent" in the actions column (read-only). Subsidiary can still add their own products with "+ New Product".
-- **Sub-permission access**: Product CRUD gated by `erpSubAccessCheck('purchasing', 'product_manage')` — replaces hardcoded `roleCheck`. Add/edit for purchasing users; deactivate/delete stays admin/finance/president only.
+- **Sub-permission access**: Product CRUD gated by `erpSubAccessCheck('purchasing', 'product_manage')` — replaces hardcoded `roleCheck`. Add/edit for purchasing users; deactivate/delete stays admin/finance/president only. Frontend mirrors this: `hasProductManage()` checks `erp_access.sub_permissions.purchasing.product_manage` and gates Add/Edit/Import/Export/Refresh buttons accordingly (VIEW-only users see product list but no write controls).
+- **Field whitelisting**: Controller `create`/`update` use `pickFields(req.body, EDITABLE_FIELDS)` — prevents injection of `entity_id`, `is_active`, `added_by`, or other protected fields via raw request body.
+- **Schema validation**: `dosage_strength` is `required: true` — all products must have brand_name + dosage_strength. `item_key` is auto-generated as `"BrandName|DosageStrength"` (unique per entity). Pre-save AND pre-findOneAndUpdate hooks keep `item_key`, `brand_name_clean`, and `unit_code` in sync on both creates and edits.
 - **Cross-module routes**: Batch Trace and GRN routes accept `requiredErpModule: ["inventory", "purchasing"]` — purchasing users can access without needing inventory module. `ProtectedRoute` now supports array of modules (OR logic).
 - **Subscription-ready**: Future subscribers configure per-entity product visibility and sub-permissions without code changes.
 
@@ -463,8 +466,8 @@ frontend/src/erp/hooks/useIncome.js         # 4 new hook methods
 frontend/src/erp/pages/MyIncome.jsx         # NEW: Contractor self-service page (/erp/my-income)
 frontend/src/erp/pages/Income.jsx           # Updated: Finance view with line verification UI
 frontend/src/erp/components/WorkflowGuide.jsx # myIncome + income banners
-frontend/src/components/common/Sidebar.jsx  # My Income section for contractors
-frontend/src/App.jsx                        # /erp/my-income route (contractor only, requiredErpModule: reports)
+frontend/src/components/common/Sidebar.jsx  # My Income section for contractors + Contractor Income link under People & HR (module-driven: hasModule('people') && !contractor)
+frontend/src/App.jsx                        # /erp/my-income route (contractor only, requiredErpModule: reports), /erp/income route (ERP_FINANCE, requiredErpModule: people)
 ```
 
 ### DeductionLine Sub-Schema
@@ -523,7 +526,7 @@ backend/erp/services/universalApprovalService.js     # Aggregation + authorizati
 backend/erp/controllers/universalApprovalController.js # 2 endpoints
 backend/erp/routes/approvalRoutes.js                 # Routes added
 frontend/src/erp/hooks/useApprovals.js               # fetchUniversalPending + universalApprove
-frontend/src/erp/pages/ApprovalManager.jsx           # "All Pending" tab with inline approve
+frontend/src/erp/pages/ApprovalManager.jsx           # "All Pending" tab with inline approve + reject modal (replaced browser prompt())
 frontend/src/components/common/Sidebar.jsx           # Badge count (60s refresh)
 frontend/src/erp/components/WorkflowGuide.jsx        # Updated approval-manager banner
 ```
@@ -642,29 +645,48 @@ BDM creates schedule (PENDING_APPROVAL)
 ### Endpoints (all under `/api/erp/deduction-schedules`)
 | Method | Path | Role | Description |
 |--------|------|------|-------------|
-| POST | `/` | contractor | BDM creates schedule |
-| GET | `/my` | contractor | BDM lists own schedules |
+| POST | `/` | contractor | BDM creates schedule (period-lock enforced) |
+| GET | `/my` | contractor | BDM lists own schedules (supports `status` filter) |
+| POST | `/:id/withdraw` | contractor | BDM withdraws PENDING_APPROVAL schedule |
+| PUT | `/:id` | contractor | BDM edits PENDING_APPROVAL schedule (period-lock enforced) |
 | GET | `/:id` | any (own or admin) | Get schedule detail |
-| GET | `/` | management | List all schedules |
+| GET | `/` | management | List all schedules (supports `status`, `bdm_id` filters) |
 | POST | `/:id/approve` | management | Approve schedule |
-| POST | `/:id/reject` | management | Reject schedule |
+| POST | `/:id/reject` | management | Reject schedule (with reason) |
 | POST | `/:id/cancel` | management | Cancel + cancel PENDING installments |
 | POST | `/:id/early-payoff` | management | Lump-sum remaining balance |
 | PUT | `/:id/installments/:instId` | management | Adjust installment amount |
-| POST | `/finance-create` | management | Create on behalf of BDM (auto-ACTIVE) |
+| POST | `/finance-create` | management | Create on behalf of BDM (auto-ACTIVE, period-lock enforced) |
+
+### BDM Self-Service Features
+- **Withdraw**: BDM can cancel a PENDING_APPROVAL schedule before Finance acts. Ownership-enforced.
+- **Edit before approval**: BDM can modify type, amount, term, period, description while PENDING_APPROVAL. Installments regenerated. Edit history tracked.
+- **Resubmit rejected**: Frontend pre-fills create form from rejected schedule data. Creates a new schedule (rejected one stays as history).
+
+### Finance UX Features
+- **Create for BDM**: Finance can create schedules directly for BDMs (auto-ACTIVE, bypasses approval)
+- **Installment adjustment**: Finance can adjust individual PENDING/INJECTED installment amounts with notes
+- **Filters**: Status + BDM dropdown filters on schedules tab
+- **Bulk approve**: Checkbox selection + "Approve Selected" for multiple PENDING_APPROVAL schedules
+- **Proper modals**: Rejection reason and early payoff period use modal dialogs (not prompt())
+- **Audit trail**: Detail view shows created_by, created_at, approved_by, approved_at, reject_reason
+
+### Period-Lock Enforcement
+- `periodLockCheck('DEDUCTION')` middleware on create, edit, and finance-create routes
+- Uses `start_period` field (added to periodLockCheck.js field fallback alongside `period`)
 
 ### Key Files
 ```
 backend/erp/models/DeductionSchedule.js           # Model with installments[] + pre-save hook
-backend/erp/services/deductionScheduleService.js   # 7 service functions
-backend/erp/controllers/deductionScheduleController.js  # 10 endpoints
-backend/erp/routes/deductionScheduleRoutes.js      # Routes with role gates
+backend/erp/services/deductionScheduleService.js   # 9 service functions (+ withdraw, editPending)
+backend/erp/controllers/deductionScheduleController.js  # 12 endpoints
+backend/erp/routes/deductionScheduleRoutes.js      # Routes with role gates + periodLockCheck
 backend/erp/routes/index.js                        # Mounted at /deduction-schedules
 backend/erp/services/incomeCalc.js                 # Auto-injection logic (step 4b)
 backend/erp/controllers/incomeController.js        # Sync on verify + credit
-frontend/src/erp/hooks/useDeductionSchedule.js     # 10 hook methods
-frontend/src/erp/pages/MyIncome.jsx                # BDM: Payslips + Schedules tabs
-frontend/src/erp/pages/Income.jsx                  # Finance: Payslips + Schedules tabs
+frontend/src/erp/hooks/useDeductionSchedule.js     # 12 hook methods
+frontend/src/erp/pages/MyIncome.jsx                # BDM: Payslips + Schedules tabs (self-service)
+frontend/src/erp/pages/Income.jsx                  # Finance: Payslips + Schedules tabs (full management)
 ```
 
 ---
@@ -838,20 +860,61 @@ frontend/src/erp/pages/ApprovalManager.jsx  # Approval management page
 | DELETE | `/api/erp/approvals/rules/:id` | Delete rule (admin only) |
 
 ### Controller Integration
-Currently wired into:
-- **PO Approval** (`purchasingController.approvePO`): Calls `checkApprovalRequired()` before approving. Returns 202 if pending.
+All submit/post controllers are wired via `gateApproval()` helper (added to `approvalService.js`):
 
-To add to other controllers, follow the same pattern:
 ```javascript
-const approvalCheck = await checkApprovalRequired({
+const { gateApproval } = require('../services/approvalService');
+const gated = await gateApproval({
   entityId: req.entityId, module: 'MODULE', docType: 'TYPE',
   docId: doc._id, docRef: doc.ref, amount: doc.total,
+  description: 'Human-readable description for approver',
   requesterId: req.user._id, requesterName: req.user.name,
-});
-if (approvalCheck.required) {
-  return res.status(202).json({ success: true, message: approvalCheck.message, approval_pending: true });
-}
+}, res);
+if (gated) return; // 202 already sent
 ```
+
+**Wired modules (18 functions across 13 controllers):**
+
+| Module | Controller | Function | Doc Type |
+|--------|-----------|----------|----------|
+| PURCHASING | purchasingController | approvePO | PO |
+| PURCHASING | purchasingController | postInvoice | SUPPLIER_INVOICE |
+| SALES | salesController | submitSales | CSI |
+| SALES | creditNoteController | submitCreditNotes | CREDIT_NOTE |
+| COLLECTIONS | collectionController | submitCollections | CR |
+| EXPENSES | expenseController | submitSmer | SMER |
+| EXPENSES | expenseController | submitExpenses | EXPENSE_ENTRY |
+| EXPENSES | expenseController | submitCarLogbook | CAR_LOGBOOK |
+| EXPENSES | expenseController | submitPrfCalf | PRF_CALF |
+| PAYROLL | payrollController | postPayroll | PAYSLIP |
+| JOURNAL | accountingController | postJournalEndpoint | JOURNAL_ENTRY |
+| JOURNAL | accountingController | batchPostJournals | JOURNAL_ENTRY |
+| JOURNAL | accountingController | postDepreciationEndpoint | DEPRECIATION |
+| JOURNAL | accountingController | postInterestEndpoint | INTEREST |
+| PETTY_CASH | pettyCashController | postTransaction | DISBURSEMENT/DEPOSIT |
+| IC_TRANSFER | interCompanyController | approveTransfer | IC_TRANSFER |
+| IC_TRANSFER | icSettlementController | postSettlement | IC_SETTLEMENT |
+| INVENTORY | inventoryController | approveGrn | GRN |
+| BANKING | bankingController | finalizeRecon | BANK_RECON |
+| INCOME | incomeController | postPnl | PNL_REPORT |
+
+### Financial vs Operational Categorization
+
+Modules are categorized via `APPROVAL_CATEGORY` lookup for future delegation:
+
+| Category | Modules | Default Approver |
+|----------|---------|-----------------|
+| **FINANCIAL** | Expenses, Purchasing, Payroll, Journal, Banking, Petty Cash, IC Transfer, Income, PRF/CALF, Per Diem Override, Deductions | President / Finance |
+| **OPERATIONAL** | Sales, Collections, Inventory, KPI, SMER, Car Logbook | Can be delegated to Admin / Finance |
+
+Each `APPROVAL_MODULE` lookup entry has `metadata.category` set to FINANCIAL or OPERATIONAL. This is subscription-ready — new entities configure their own rules via Control Center.
+
+### Frontend 202 Handling
+All module pages handle `approval_pending` in API responses:
+- Success path: check `res?.approval_pending`, show info toast, refresh list
+- Error path: check `err?.response?.data?.approval_pending`, show info toast
+- Helper: `showApprovalPending()` in `frontend/src/erp/utils/errorToast.js`
+- Helper: `isApprovalPending()` for checking both success and error paths
 
 ---
 
@@ -1178,7 +1241,8 @@ All auto-journal COA codes are admin-configurable in `Settings.COA_MAP` (ERP Set
 15. **CALF is bidirectional** in income: positive balance = deduction, negative balance = earnings reimbursement. Not just one-way.
 16. **Revolving fund** follows per-person override pattern: `CompProfile.revolving_fund_amount` → `Settings.REVOLVING_FUND_AMOUNT` fallback. 0 = use global.
 16b. **Per diem thresholds** follow the same per-person override pattern: `CompProfile.perdiem_engagement_threshold_full/half` → `Settings.PERDIEM_MD_FULL/HALF` fallback. `null/undefined` = use global; **0 IS a valid override**. Threshold logic: Full=0 + Half=0 → always FULL for all activities (Office/Field/Other). Full=8 + Half=3 → MD count from CRM drives the tier (<3 = ZERO). Resolution: `perdiemCalc.resolvePerdiemThresholds(settings, compProfile)`. Frontend: `GET /expenses/perdiem-config` returns resolved thresholds + source. SMER page shows "(per-person)" badge when CompProfile overrides are active.
-16c. **Per diem overrides require approval** — All roles (including BDMs) can request overrides via the "+" button in SMER. `POST /expenses/smer/:id/override-perdiem` routes through the Universal Approval system (`PERDIEM_OVERRIDE` module). If approval rules exist: (1) daily entry gets `override_status: 'PENDING'` + `approval_request_id` saved immediately, (2) request appears in Approval Hub, (3) on approve → `universalApprovalController.perdiem_override` handler auto-applies the override to the SMER entry (no manual apply step needed), (4) on reject → `override_status: 'REJECTED'`, BDM can retry. Schema fields: `dailyEntrySchema` has `override_status`, `approval_request_id`, `requested_override_tier`. `ApprovalRequest` has `metadata: Mixed` for structured data (`entry_id`, `override_tier`, `override_reason`). Removing overrides (reverting to CRM-computed) does NOT require approval. If no PERDIEM_OVERRIDE approval rules are configured, overrides apply directly (backward-compatible). `POST /expenses/smer/:id/apply-override` endpoint remains as manual fallback. Key files: `expenseController.js`, `universalApprovalController.js`, `universalApprovalService.js`, `SmerEntry.js`, `ApprovalRequest.js`, `Smer.jsx`.
+16d. **"NO_WORK" activity type** — Lookup-driven via `ACTIVITY_TYPE` (OFFICE/FIELD/OTHER/NO_WORK). Lookup codes are uppercase (seed: `'No Work'` → code `'NO_WORK'`). When `activity_type === 'NO_WORK'`: (1) md_count forced to 0, (2) perdiem_tier = ZERO, perdiem_amount = 0, (3) overrides blocked (400 error from backend), (4) hospital fields cleared, (5) does NOT count as a working day in `SmerEntry` pre-save. Backend enforcement: `enforceNoWorkRules()` helper in `expenseController.js` applied in both `createSmer` and `updateSmer`. Validation: `validateSmer` rejects NO_WORK entries with md_count > 0 or perdiem > 0. Frontend: md_count input disabled + dimmed, override button hidden, CRM pull skips NO_WORK entries, per diem recomputes on activity_type change (not just md_count). Activity types are lookup-driven — admin can manage via Control Center > Lookup Tables. **IMPORTANT**: Always compare against the uppercase code `'NO_WORK'`, not the label `'No Work'`.
+16c. **Per diem overrides ALWAYS require approval for BDMs** — BDMs/contractors request overrides via the "+" button in SMER. `POST /expenses/smer/:id/override-perdiem` **always creates an ApprovalRequest** for non-management roles (bypasses the global authority matrix setting). Management roles (president/admin/finance) can self-approve overrides directly. Flow: (1) BDM requests → `ApprovalRequest` created with `module: 'PERDIEM_OVERRIDE'`, daily entry gets `override_status: 'PENDING'`, (2) request appears in Approval Hub under PERDIEM_OVERRIDE filter tab, (3) on approve → `universalApprovalController.perdiem_override` handler auto-applies the override, (4) on reject → `override_status: 'REJECTED'`, BDM can retry. Removing overrides (reverting to CRM-computed) does NOT require approval. `POST /expenses/smer/:id/apply-override` endpoint remains as manual fallback. Key files: `expenseController.js`, `universalApprovalController.js`, `universalApprovalService.js`, `SmerEntry.js`, `ApprovalRequest.js`, `Smer.jsx`.
 17. **Personal gas auto-deduction** rebuilds fresh on each income generation (like CALF auto-lines). Comes from CarLogbook `personal_gas_amount`, not manual entry.
 18. **ORE is paid from revolving fund** — ORE amounts in SMER daily `ore_amount` are already included in `total_reimbursable`. No separate ORE earnings line. `ExpenseEntry` (ORE type) tracks receipts/ORs.
 19. **Inventory pages must use WarehousePicker** — All pages that call `getMyStock()` must pass a `warehouseId` parameter (e.g., `getMyStock(null, null, warehouseId)`). Without it, the FIFO engine's `buildStockMatch` has no scope and returns empty for non-admin users. Pattern: add `<WarehousePicker filterType="PHARMA" />` and load stock on warehouse change. See SalesEntry.jsx, BatchTrace.jsx as reference.
@@ -1193,6 +1257,7 @@ All auto-journal COA codes are admin-configurable in `Settings.COA_MAP` (ERP Set
 28. **`recorded_on_behalf_of` stores the BDM** — In `saveBatchExpenses`, `recorded_on_behalf_of` = the BDM on whose behalf the record was made (matches field name semantics). The admin/uploader is captured in `created_by`. When set, it signals a delegated action.
 29. **Period lock on CALF update** — `PUT /prf-calf/:id` now has `periodLockCheck('EXPENSE')`. Submit and reopen already had it; update was missing.
 30. **Approval Manager access is lookup-driven** — The `/erp/approvals` page uses `requiredErpModule="approvals"` (not hardcoded `ROLE_SETS.MANAGEMENT`). Assign the `approvals` module (VIEW or FULL) in Access Templates to grant users access. Sub-permission `rule_manage` controls who can create/edit/delete approval rules. Backend routes use `erpAccessCheck('approvals')` for hub operations and `erpSubAccessCheck('approvals', 'rule_manage')` for rule CRUD. Sidebar shows the Approvals link based on `hasModule('approvals')`. President always has full access (role override).
+31. **PeopleList enhanced directory** — Shows 12 columns: Name, Email/Phone, Type, **Role** (system role from linked User, lookup-driven labels via SYSTEM_ROLE), **Login** (active/disabled/none), Position, Department, Employment Type, BDM Code, BDM Stage, Territory, Status. Role filter dropdown (lookup-driven) with "No Login" option. Columns hide responsively: tablet hides Employment/BDM Code/Stage/Territory, mobile hides Role/Login/Position/Department too. Backend populates `user_id` with `isActive` and `territory_id` with `territory_name territory_code`.
 
 ---
 
@@ -1569,3 +1634,63 @@ Seven validation and error-handling improvements across CALF, COA, Expenses, and
 **Frontend:**
 - `frontend/src/erp/pages/CarLogbook.jsx` — #18: per-fuel-entry CALF badges (table + mobile card)
 - `frontend/src/erp/components/WorkflowGuide.jsx` — Updated banners for expenses, car-logbook, prf-calf, chart-of-accounts
+
+---
+
+## OCR Hardening — Phase H2 (April 2026)
+
+OCR system audit and governance compliance: lookup-driven classification, entity scoping, bug fixes, and banner compliance.
+
+### Problem
+The OCR expense classification system (Step 3: KEYWORD) used hardcoded `KEYWORD_RULES` in `expenseClassifier.js` — 20 rules mapping keywords to COA codes. This violated the "No Hardcoded Business Values" governance principle. Additionally, vendor matching in Steps 1-2 had no `entity_id` filter (cross-entity data leak), the OR parser had a comma-replacement bug for amounts >= 1M, and Layer 3 resolved data (hospital/product/vendor matches) was computed but never returned to the frontend.
+
+### Solution — Lookup-Driven Expense Classification
+- **New Lookup category**: `OCR_EXPENSE_RULES` — each entry maps keywords to a COA code and expense category via `metadata.keywords` and `metadata.coa_code`
+- **Runtime loading**: `getKeywordRules(entityId)` loads from Lookup table (entity-scoped), cached for 5 minutes
+- **Hardcoded fallback**: If Lookup is empty (first boot, no seeds), falls back to `HARDCODED_RULES` (identical to previous behavior)
+- **Auto-seed**: Lookup entries are auto-seeded per entity on first access via `SEED_DEFAULTS` in lookupGenericController
+- **Subscription-ready**: New subscribers can add/remove/modify OCR keyword rules and COA mappings in Control Center → Lookup Tables without code changes
+- **Cache invalidation**: `invalidateRulesCache()` exported for use when admin updates lookups
+
+### Bug Fixes
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | `resolved` data (Layer 3) not returned to frontend | Added `resolved: processed.resolved` to ocrController response |
+| 2 | OR parser `.replace(',', '')` only removes first comma | Changed to `.replace(/,/g, '')` — fixes amounts like "1,000,000" (8 locations) |
+| 3 | Expense classifier no entity_id filter (cross-entity vendor leak) | Added `vendorFilter` with `entity_id` scoping to all VendorMaster queries |
+| 4 | Empty catch blocks in ocrProcessor suppress diagnostics | Added `console.warn` for product and vendor resolution failures |
+| 5 | OcrTest page used wrong WorkflowGuide pageKey ("expenses") | Changed to "ocr-test" with dedicated OCR-specific guide |
+| 6 | `classifyExpense` and `classify` endpoint not passing entityId | Added `options.entityId` parameter threading from controller through processor |
+
+### New Lookup Category
+| Category | Purpose |
+|----------|---------|
+| `OCR_EXPENSE_RULES` | Per-entity keyword→COA mapping for OCR expense classification. 20 seeded rules covering courier, fuel, parking, travel, meals, office, utilities, transport, regulatory, IT, repairs, rent, professional fees, F&B, property. Admin-configurable in Control Center. |
+
+### Architecture
+```
+OCR Pipeline (3-layer):
+  Layer 1: Parser (regex + spatial) → extracted fields
+  Layer 2: Expense Classification (entity-scoped)
+    Step 1: EXACT_VENDOR  → VendorMaster { entity_id, vendor_name }
+    Step 2: ALIAS_MATCH   → VendorMaster { entity_id, vendor_aliases }
+    Step 3: KEYWORD        → Lookup { OCR_EXPENSE_RULES, entity_id } → fallback HARDCODED_RULES
+    Step 4: FALLBACK       → 6900 Miscellaneous (LOW confidence)
+    Step 2b: Claude AI     → Haiku fallback when Step 1-4 return LOW
+  Layer 3: Master Data Resolution (entity-scoped)
+    → resolveCustomer() → Customer/Hospital
+    → resolveProduct() → ProductMaster
+    → resolveVendor() → VendorMaster
+```
+
+### Key Files
+```
+backend/erp/services/expenseClassifier.js          # Lookup-driven getKeywordRules() + entity-scoped vendorFilter
+backend/erp/controllers/lookupGenericController.js  # OCR_EXPENSE_RULES in SEED_DEFAULTS
+backend/erp/controllers/ocrController.js            # Added resolved to response
+backend/erp/controllers/classificationController.js # Pass entityId to classifyExpense + getCategories
+backend/erp/ocr/ocrProcessor.js                     # entityId hoisted, passed to classifyExpense + warn logging
+backend/erp/ocr/parsers/orParser.js                 # Comma-replace fix (8 locations)
+frontend/src/erp/pages/OcrTest.jsx                  # Correct pageKey "ocr-test"
+frontend/src/erp/components/WorkflowGuide.jsx       # New "ocr-test" guide entry
+```

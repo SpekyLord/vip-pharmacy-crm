@@ -386,6 +386,22 @@ const submitSales = catchAsync(async (req, res) => {
     });
   }
 
+  // Authority matrix gate — single gate for batch
+  const { gateApproval } = require('../services/approvalService');
+  const salesTotalAmount = validRows.reduce((sum, r) => sum + (r.invoice_total || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'SALES',
+    docType: 'CSI',
+    docId: validRows[0]._id,
+    docRef: validRows.map(r => r.doc_ref || r.invoice_number).filter(Boolean).join(', '),
+    amount: salesTotalAmount,
+    description: `Submit ${validRows.length} sales entr${validRows.length === 1 ? 'y' : 'ies'} (total ₱${salesTotalAmount.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   // Period lock check — prevent posting to closed/locked months
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
   for (const row of validRows) {

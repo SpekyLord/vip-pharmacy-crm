@@ -10,9 +10,9 @@ const productMasterSchema = new mongoose.Schema({
   },
   item_key: {
     type: String,
-    required: [true, 'Item key is required'],
     trim: true
-    // Format: "BrandName|DosageStrength" — unique per entity (see compound index)
+    // Auto-generated: "BrandName|DosageStrength" — unique per entity (see compound index)
+    // Not marked required — generated in pre('validate') hook before validation runs
   },
   generic_name: {
     type: String,
@@ -24,7 +24,11 @@ const productMasterSchema = new mongoose.Schema({
     required: [true, 'Brand name is required'],
     trim: true
   },
-  dosage_strength: { type: String, trim: true },
+  dosage_strength: {
+    type: String,
+    required: [true, 'Dosage/strength is required'],
+    trim: true
+  },
   sold_per: { type: String, trim: true },
 
   // Data quality fields
@@ -43,14 +47,8 @@ const productMasterSchema = new mongoose.Schema({
   conversion_factor: { type: Number, default: 1, min: 1 },  // multiplier from purchase to selling units
 
   // Pricing
-  purchase_price: {
-    type: Number,
-    required: [true, 'Purchase price is required']
-  },
-  selling_price: {
-    type: Number,
-    required: [true, 'Selling price is required']
-  },
+  purchase_price: { type: Number, default: 0 },
+  selling_price: { type: Number, default: 0 },
   vat_status: {
     type: String,
     default: 'VATABLE'
@@ -83,10 +81,19 @@ const productMasterSchema = new mongoose.Schema({
   collection: 'erp_product_master'
 });
 
+// Build item_key from brand_name + dosage_strength (both required)
+function buildItemKey(brandName, dosageStrength) {
+  if (!brandName || !dosageStrength) return null;
+  return `${brandName}|${dosageStrength}`;
+}
+
 // Auto-generate item_key, brand_name_clean, unit_code, UOM defaults
-productMasterSchema.pre('save', function (next) {
-  if (!this.item_key && this.brand_name && this.dosage_strength) {
-    this.item_key = `${this.brand_name}|${this.dosage_strength}`;
+// Uses pre('validate') so item_key is set BEFORE Mongoose required-field validation runs
+productMasterSchema.pre('validate', function (next) {
+  // Generate item_key if missing or if brand_name/dosage changed
+  if (!this.item_key || this.isModified('brand_name') || this.isModified('dosage_strength')) {
+    const key = buildItemKey(this.brand_name, this.dosage_strength);
+    if (key) this.item_key = key;
   }
   if (this.isModified('brand_name') && this.brand_name) {
     this.brand_name_clean = cleanName(this.brand_name);
@@ -100,6 +107,34 @@ productMasterSchema.pre('save', function (next) {
   }
   if (!this.purchase_uom && this.selling_uom) {
     this.purchase_uom = this.selling_uom;
+  }
+  next();
+});
+
+// Mirror normalization for findOneAndUpdate (pre-save doesn't run on updates)
+productMasterSchema.pre('findOneAndUpdate', function (next) {
+  const upd = this.getUpdate() || {};
+  const $set = upd.$set || {};
+
+  // Regenerate item_key when brand_name or dosage_strength is in the $set
+  // Frontend always sends both fields, but be defensive for partial updates
+  if ($set.brand_name !== undefined || $set.dosage_strength !== undefined) {
+    const key = buildItemKey(
+      $set.brand_name,   // will be present — frontend sends full form
+      $set.dosage_strength
+    );
+    if (key) {
+      if (!upd.$set) this.setUpdate({ ...upd, $set: {} });
+      this.getUpdate().$set.item_key = key;
+    }
+  }
+  if ($set.brand_name) {
+    if (!upd.$set) this.setUpdate({ ...upd, $set: {} });
+    this.getUpdate().$set.brand_name_clean = cleanName($set.brand_name);
+  }
+  if ($set.sold_per && !$set.unit_code) {
+    if (!upd.$set) this.setUpdate({ ...upd, $set: {} });
+    this.getUpdate().$set.unit_code = normalizeUnit($set.sold_per);
   }
   next();
 });

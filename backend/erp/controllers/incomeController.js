@@ -498,6 +498,21 @@ const postPnl = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: `Cannot post from status ${report.status}` });
   }
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'INCOME',
+    docType: 'PNL_REPORT',
+    docId: report._id,
+    docRef: `PNL ${report.period || ''}`.trim(),
+    amount: report.net_income || 0,
+    description: `PNL report for ${report.period || 'unknown period'}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   report.status = 'POSTED';
   report.posted_at = new Date();
   report.posted_by = req.user._id;

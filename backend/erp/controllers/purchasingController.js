@@ -429,6 +429,21 @@ const postInvoice = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invoice must be VALIDATED before posting. Use force=true to bypass.' });
   }
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'PURCHASING',
+    docType: 'SUPPLIER_INVOICE',
+    docId: invoice._id,
+    docRef: invoice.invoice_ref,
+    amount: invoice.total_amount,
+    description: `Supplier invoice ${invoice.invoice_ref}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   // Period lock check
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
   const invPeriod = dateToPeriod(invoice.invoice_date || new Date());

@@ -11,6 +11,7 @@ import useErpApi from '../hooks/useErpApi';
 import { broadcastProductsChanged } from '../hooks/useProducts';
 import useWarehouses from '../hooks/useWarehouses';
 import { useLookupBatch } from '../hooks/useLookups';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
 
@@ -156,8 +157,8 @@ function ProductModal({ open, onClose, onSave, editItem, vatOptions, unitCodes =
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label>Dosage / Strength</label>
-              <input name="dosage_strength" value={form.dosage_strength} onChange={set} />
+              <label>Dosage / Strength *</label>
+              <input name="dosage_strength" value={form.dosage_strength} onChange={set} required />
             </div>
             <div className="form-group">
               <label>Sold Per (unit)</label>
@@ -189,12 +190,12 @@ function ProductModal({ open, onClose, onSave, editItem, vatOptions, unitCodes =
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label>Purchase Price *</label>
-              <input name="purchase_price" type="number" step="0.01" min="0" value={form.purchase_price} onChange={set} required />
+              <label>Purchase Price</label>
+              <input name="purchase_price" type="number" step="0.01" min="0" value={form.purchase_price} onChange={set} />
             </div>
             <div className="form-group">
-              <label>Selling Price *</label>
-              <input name="selling_price" type="number" step="0.01" min="0" value={form.selling_price} onChange={set} required />
+              <label>Selling Price</label>
+              <input name="selling_price" type="number" step="0.01" min="0" value={form.selling_price} onChange={set} />
             </div>
           </div>
           <div className="form-row">
@@ -256,13 +257,15 @@ function ProductModal({ open, onClose, onSave, editItem, vatOptions, unitCodes =
  
 
 // ---------- Main Page ----------
- 
-const MGMT_ROLES = ['admin', 'finance', 'president', 'ceo'];
+
+const DEACTIVATE_ROLES = ['admin', 'finance', 'president'];
 
 export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const api = useErpApi();
   const { user } = useAuth();
-  const canDeactivateDelete = MGMT_ROLES.includes(user?.role);
+  const { hasSubPermission } = useErpSubAccess();
+  const canAddEdit = hasSubPermission('purchasing', 'product_manage');
+  const canDeactivateDelete = DEACTIVATE_ROLES.includes(user?.role);
   const { getWarehouses } = useWarehouses();
   const { entities, workingEntityId, loaded: entityLoaded, isMultiEntity } = useWorkingEntity();
   const { data: lookups } = useLookupBatch(['VAT_TYPE', 'STOCK_TYPE', 'UNIT_CODE']);
@@ -485,23 +488,29 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
               )}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn btn-secondary" onClick={handleExportPrices} disabled={!entityReady}>Export Prices</button>
-              <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={importing || !entityReady}>
-                {importing ? 'Importing...' : 'Import Prices'}
-              </button>
-              <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportPrices} style={{ display: 'none' }} />
-              <button className="btn btn-secondary" onClick={() => refreshFileRef.current?.click()} disabled={refreshing || !entityReady} style={{ background: '#f59e0b', color: '#fff', border: 'none' }}>
-                {refreshing ? 'Refreshing...' : 'Refresh Master'}
-              </button>
-              <input ref={refreshFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleRefreshProducts} style={{ display: 'none' }} />
-              {selectedProducts.length > 0 && (
+              {canAddEdit && (
+                <>
+                  <button className="btn btn-secondary" onClick={handleExportPrices} disabled={!entityReady}>Export Prices</button>
+                  <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={importing || !entityReady}>
+                    {importing ? 'Importing...' : 'Import Prices'}
+                  </button>
+                  <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportPrices} style={{ display: 'none' }} />
+                  <button className="btn btn-secondary" onClick={() => refreshFileRef.current?.click()} disabled={refreshing || !entityReady} style={{ background: '#f59e0b', color: '#fff', border: 'none' }}>
+                    {refreshing ? 'Refreshing...' : 'Refresh Master'}
+                  </button>
+                  <input ref={refreshFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleRefreshProducts} style={{ display: 'none' }} />
+                </>
+              )}
+              {canAddEdit && selectedProducts.length > 0 && (
                 <button className="btn btn-secondary" onClick={() => setTagModal(true)} disabled={!entityReady}>
                   Tag {selectedProducts.length} to Warehouse
                 </button>
               )}
-              <button className="btn btn-primary" onClick={() => { setEditItem(null); setShowModal(true); }} disabled={!entityReady}>
-                + New Product
-              </button>
+              {canAddEdit && (
+                <button className="btn btn-primary" onClick={() => { setEditItem(null); setShowModal(true); }} disabled={!entityReady}>
+                  + New Product
+                </button>
+              )}
             </div>
           </div>
 
@@ -583,7 +592,7 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
                           <span style={{ fontSize: 11, color: '#6b7280' }}>Managed by parent</span>
                         ) : (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="btn btn-secondary" onClick={() => { setEditItem(p); setShowModal(true); }}>Edit</button>
+                          {canAddEdit && <button className="btn btn-secondary" onClick={() => { setEditItem(p); setShowModal(true); }}>Edit</button>}
                           {canDeactivateDelete && p.is_active && (
                             <button className="btn btn-danger" onClick={() => handleDeactivate(p._id, p.brand_name)}>Deactivate</button>
                           )}

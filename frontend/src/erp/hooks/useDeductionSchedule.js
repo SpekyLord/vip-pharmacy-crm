@@ -19,10 +19,15 @@ export default function useDeductionSchedule() {
   const adjustInstallment = (id, instId, data) => api.put(`/deduction-schedules/${id}/installments/${instId}`, data);
   const financeCreateSchedule = (data) => api.post('/deduction-schedules/finance-create', data);
 
+  // ═══ BDM Self-Service ═══
+  const withdrawSchedule = (id) => api.post(`/deduction-schedules/${id}/withdraw`);
+  const editSchedule = (id, data) => api.put(`/deduction-schedules/${id}`, data);
+
   return {
     ...api,
     createSchedule, getMySchedules, getScheduleById,
     getScheduleList, approveSchedule, rejectSchedule,
-    cancelSchedule, earlyPayoff, adjustInstallment, financeCreateSchedule
+    cancelSchedule, earlyPayoff, adjustInstallment, financeCreateSchedule,
+    withdrawSchedule, editSchedule
   };
 }

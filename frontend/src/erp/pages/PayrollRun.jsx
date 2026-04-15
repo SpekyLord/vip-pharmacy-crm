@@ -7,7 +7,7 @@ import usePayroll from '../hooks/usePayroll';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   COMPUTED: { bg: '#dbeafe', text: '#1e40af' },
@@ -93,10 +93,12 @@ export default function PayrollRun() {
   const handlePostAll = async () => {
     try {
       const res = await api.postPayroll({ period, cycle });
-      setMsg({ type: 'ok', text: res?.message || 'Posted' });
+      if (res?.approval_pending) { showApprovalPending(res.message); }
+      else { setMsg({ type: 'ok', text: res?.message || 'Posted' }); }
       loadStaging();
     } catch (e) {
-      setMsg({ type: 'err', text: e.response?.data?.message || 'Failed to post' });
+      if (e?.response?.data?.approval_pending) { showApprovalPending(e.response.data.message); loadStaging(); }
+      else { setMsg({ type: 'err', text: e.response?.data?.message || 'Failed to post' }); }
     }
   };
 

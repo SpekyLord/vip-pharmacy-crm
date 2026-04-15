@@ -71,6 +71,8 @@ async function processOcr(docType, ocrResult, options = {}) {
     ...extracted
   } = parsed;
 
+  const entityId = options.entityId || null;
+
   const result = {
     doc_type: normalised,
     extracted,
@@ -86,7 +88,7 @@ async function processOcr(docType, ocrResult, options = {}) {
   // Layer 2: Expense classification for OR and GAS_RECEIPT doc types
   if (EXPENSE_DOC_TYPES.has(normalised)) {
     try {
-      result.classification = await classifyExpense(extracted);
+      result.classification = await classifyExpense(extracted, { entityId });
 
       // Layer 2b: Claude AI fallback when regex classifier returns LOW confidence
       if (result.classification?.confidence === 'LOW' && process.env.ANTHROPIC_API_KEY) {
@@ -117,7 +119,6 @@ async function processOcr(docType, ocrResult, options = {}) {
   }
 
   // Layer 3: Master data resolution (Phase 18 — Customer/Hospital + Product + Vendor)
-  const entityId = options.entityId || null;
   result.resolved = {};
 
   // Resolve hospital/customer name → master record
@@ -179,7 +180,9 @@ async function processOcr(docType, ocrResult, options = {}) {
         } else {
           result.resolved.products.push({ ocr_text: prodText, id: null, confidence: 'NONE' });
         }
-      } catch { /* non-critical */ }
+      } catch (err) {
+        console.warn(`[OCR] Product resolve failed for "${prodText}":`, err.message);
+      }
     }
   }
 
@@ -201,7 +204,9 @@ async function processOcr(docType, ocrResult, options = {}) {
             match_method: match.match_method
           };
         }
-      } catch { /* non-critical */ }
+      } catch (err) {
+        console.warn(`[OCR] Vendor resolve failed for "${vendorText}":`, err.message);
+      }
     }
   }
 

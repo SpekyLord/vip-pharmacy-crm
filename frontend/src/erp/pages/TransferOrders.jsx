@@ -11,7 +11,7 @@ import { ROLES } from '../../constants/roles';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
@@ -268,18 +268,20 @@ export default function TransferOrders() {
 
   const handleAction = async (id, action) => {
     try {
-      if (action === 'approve') await approveTransfer(id);
-      else if (action === 'ship') await shipTransfer(id);
-      else if (action === 'receive') await receiveTransfer(id);
-      else if (action === 'post') await postTransfer(id);
+      let res;
+      if (action === 'approve') res = await approveTransfer(id);
+      else if (action === 'ship') res = await shipTransfer(id);
+      else if (action === 'receive') res = await receiveTransfer(id);
+      else if (action === 'post') res = await postTransfer(id);
       else if (action === 'cancel') {
         const reason = prompt('Cancellation reason:');
         if (reason === null) return;
-        await cancelTransfer(id, reason);
+        res = await cancelTransfer(id, reason);
       }
+      if (res?.approval_pending) { showApprovalPending(res.message); }
     } catch (err) {
-      showError(err, `Could not ${action} transfer`);
-      return; // Don't refresh on error
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); }
+      else { showError(err, `Could not ${action} transfer`); return; }
     }
     // Always refresh list after action (success or handled error)
     try { await fetchTransfers(pagination.page); } catch (err) { console.error('[TransferOrders] refresh after action:', err.message); }

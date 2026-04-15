@@ -558,6 +558,22 @@ const approveGrn = catchAsync(async (req, res) => {
     return res.json({ success: true, message: 'GRN rejected', data: grn });
   }
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const grnTotal = (grn.line_items || []).reduce((sum, li) => sum + ((li.qty || 0) * (li.unit_cost || 0)), 0);
+  const gated = await gateApproval({
+    entityId: grn.entity_id,
+    module: 'INVENTORY',
+    docType: 'GRN',
+    docId: grn._id,
+    docRef: grn.grn_ref || grn._id.toString(),
+    amount: grnTotal,
+    description: `GRN ${grn.grn_ref || ''} — ${grn.supplier_name || ''}`.trim(),
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   // Period lock check
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
   const grnPeriod = dateToPeriod(grn.grn_date || new Date());

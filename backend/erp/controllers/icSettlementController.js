@@ -84,6 +84,21 @@ const postSettlement = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: `Cannot post settlement in ${settlement.status} status` });
   }
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const gated = await gateApproval({
+    entityId: settlement.creditor_entity_id,
+    module: 'IC_TRANSFER',
+    docType: 'IC_SETTLEMENT',
+    docId: settlement._id,
+    docRef: settlement.cr_no || settlement._id.toString(),
+    amount: settlement.cr_amount || 0,
+    description: `IC settlement ${settlement.cr_no || ''}`.trim(),
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   // Validate: must have settled_transfers and cr_no
   if (!settlement.settled_transfers?.length) {
     return res.status(400).json({ success: false, message: 'No transfers settled' });

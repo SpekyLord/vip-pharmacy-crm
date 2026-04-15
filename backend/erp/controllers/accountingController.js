@@ -43,6 +43,25 @@ const getJournalById = catchAsync(async (req, res) => {
 });
 
 const postJournalEndpoint = catchAsync(async (req, res) => {
+  // Authority matrix gate — fetch JE first to get amount
+  const jePre = await JournalEntry.findOne({ _id: req.params.id, entity_id: req.entityId }).lean();
+  if (jePre) {
+    const { gateApproval } = require('../services/approvalService');
+    const totalDebit = (jePre.lines || []).reduce((sum, l) => sum + (l.debit || 0), 0);
+    const gated = await gateApproval({
+      entityId: req.entityId,
+      module: 'JOURNAL',
+      docType: 'JOURNAL_ENTRY',
+      docId: jePre._id,
+      docRef: jePre.je_number || jePre._id.toString(),
+      amount: totalDebit,
+      description: `Journal entry ${jePre.je_number || ''} — ${jePre.narration || ''}`.trim(),
+      requesterId: req.user._id,
+      requesterName: req.user.name || req.user.email,
+    }, res);
+    if (gated) return;
+  }
+
   const je = await postJournal(req.params.id, req.user._id, req.entityId);
   res.json({ success: true, data: je });
 });
@@ -61,9 +80,27 @@ const batchPostJournals = catchAsync(async (req, res) => {
 
   // Period lock check for all JEs before starting transaction
   const { checkPeriodOpen } = require('../utils/periodLock');
-  const jesToPost = await JournalEntry.find({ _id: { $in: je_ids }, entity_id: req.entityId, status: 'DRAFT' }).select('period').lean();
+  const jesToPost = await JournalEntry.find({ _id: { $in: je_ids }, entity_id: req.entityId, status: 'DRAFT' }).select('period lines je_number').lean();
   for (const je of jesToPost) {
     if (je.period) await checkPeriodOpen(req.entityId, je.period);
+  }
+
+  // Authority matrix gate — single gate for the batch
+  if (jesToPost.length) {
+    const { gateApproval } = require('../services/approvalService');
+    const totalDebit = jesToPost.reduce((sum, je) => sum + (je.lines || []).reduce((s, l) => s + (l.debit || 0), 0), 0);
+    const gated = await gateApproval({
+      entityId: req.entityId,
+      module: 'JOURNAL',
+      docType: 'JOURNAL_ENTRY',
+      docId: jesToPost[0]._id,
+      docRef: jesToPost.map(je => je.je_number).filter(Boolean).join(', '),
+      amount: totalDebit,
+      description: `Batch post ${jesToPost.length} journal entries`,
+      requesterId: req.user._id,
+      requesterName: req.user.name || req.user.email,
+    }, res);
+    if (gated) return;
   }
 
   const session = await mongoose.startSession();
@@ -217,6 +254,24 @@ const approveDepreciationEndpoint = catchAsync(async (req, res) => {
 
 const postDepreciationEndpoint = catchAsync(async (req, res) => {
   const { period } = req.body;
+
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const staging = await getDepreciationStaging(req.entityId, period);
+  const totalAmount = (staging || []).reduce((sum, s) => sum + (s.amount || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'JOURNAL',
+    docType: 'DEPRECIATION',
+    docId: req.entityId, // use entity as doc since it's a period batch
+    docRef: `DEPR-${period}`,
+    amount: totalAmount,
+    description: `Depreciation posting for ${period}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   const result = await postDepreciation(req.entityId, period, req.user._id);
   res.json({ success: true, data: result });
 });
@@ -257,6 +312,24 @@ const approveInterestEndpoint = catchAsync(async (req, res) => {
 
 const postInterestEndpoint = catchAsync(async (req, res) => {
   const { period } = req.body;
+
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const staging = await getInterestStaging(req.entityId, period);
+  const totalAmount = (staging || []).reduce((sum, s) => sum + (s.interest_amount || s.amount || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'JOURNAL',
+    docType: 'INTEREST',
+    docId: req.entityId,
+    docRef: `INT-${period}`,
+    amount: totalAmount,
+    description: `Interest posting for ${period}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   const result = await postInterest(req.entityId, period, req.user._id);
   res.json({ success: true, data: result });
 });

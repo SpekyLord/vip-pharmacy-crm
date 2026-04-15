@@ -12,6 +12,7 @@ import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   PENDING: { bg: '#fef3c7', text: '#92400e', label: 'Pending' },
@@ -419,9 +420,13 @@ export default function GrnEntry() {
 
   const handleApprove = async (id, action, reason) => {
     try {
-      await grn.approveGrn(id, action, reason);
+      const res = await grn.approveGrn(id, action, reason);
+      if (res?.approval_pending) { showApprovalPending(res.message); }
       await loadList();
-    } catch (err) { console.error('GRN approve error:', err); }
+    } catch (err) {
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); await loadList(); }
+      else console.error('GRN approve error:', err);
+    }
   };
 
   const handleScanApply = (lines, meta) => {

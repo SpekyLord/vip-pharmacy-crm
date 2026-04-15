@@ -102,7 +102,7 @@ smerEntrySchema.pre('save', function (next) {
     totalTranspo += entry.transpo_p2p || 0;
     totalSpecial += entry.transpo_special || 0;
     totalOre += entry.ore_amount || 0;
-    if (entry.md_count > 0 || entry.activity_type || entry.hospital_covered || entry.perdiem_override) workingDays++;
+    if ((entry.md_count > 0 || entry.activity_type || entry.hospital_covered || entry.perdiem_override) && entry.activity_type !== 'NO_WORK') workingDays++;
   }
 
   this.total_perdiem = Math.round(totalPerdiem * 100) / 100;

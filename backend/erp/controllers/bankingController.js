@@ -134,6 +134,21 @@ const getReconSummary = catchAsync(async (req, res) => {
 });
 
 const finalizeRecon = catchAsync(async (req, res) => {
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'BANKING',
+    docType: 'BANK_RECON',
+    docId: req.params.id,
+    docRef: `RECON-${req.params.id}`,
+    amount: 0, // reconciliation doesn't have a single amount
+    description: 'Bank reconciliation finalization',
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   const result = await bankReconService.finalizeRecon(req.params.id, req.user._id);
   res.json({ success: true, data: result });
 });

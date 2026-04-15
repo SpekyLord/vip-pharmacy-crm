@@ -81,6 +81,7 @@ const processDocument = catchAsync(async (req, res) => {
       review_reasons: processed.review_reasons,
       preprocessing: processed.preprocessing,
       classification: processed.classification,
+      resolved: processed.resolved || {},
       validation_flags: processed.validation_flags,
       raw_ocr_text: processed.raw_ocr_text,
     },

@@ -109,6 +109,24 @@ const postPayroll = catchAsync(async (req, res) => {
 
   const approved = await Payslip.find(filter);
 
+  // Authority matrix gate
+  if (approved.length) {
+    const { gateApproval } = require('../services/approvalService');
+    const payrollTotal = approved.reduce((sum, ps) => sum + (ps.net_pay || 0), 0);
+    const gated = await gateApproval({
+      entityId: req.entityId,
+      module: 'PAYROLL',
+      docType: 'PAYSLIP',
+      docId: approved[0]._id,
+      docRef: `Payroll ${period || ''} ${cycle}`.trim(),
+      amount: payrollTotal,
+      description: `Post ${approved.length} payslip${approved.length === 1 ? '' : 's'} (total ₱${payrollTotal.toLocaleString()})`,
+      requesterId: req.user._id,
+      requesterName: req.user.name || req.user.email,
+    }, res);
+    if (gated) return;
+  }
+
   // Period lock check — prevent posting payroll to closed periods
   if (period) {
     const { checkPeriodOpen } = require('../utils/periodLock');

@@ -257,6 +257,22 @@ const submitCollections = catchAsync(async (req, res) => {
 
   const settings = await Settings.getSettings();
 
+  // Authority matrix gate — single gate for batch
+  const { gateApproval } = require('../services/approvalService');
+  const crTotalAmount = validRows.reduce((sum, r) => sum + (r.cr_amount || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'COLLECTIONS',
+    docType: 'CR',
+    docId: validRows[0]._id,
+    docRef: validRows.map(r => r.cr_no).filter(Boolean).join(', '),
+    amount: crTotalAmount,
+    description: `Submit ${validRows.length} collection${validRows.length === 1 ? '' : 's'} (total ₱${crTotalAmount.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   // Period lock check
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
   for (const row of validRows) {

@@ -15,7 +15,7 @@ import { useLookupBatch } from '../hooks/useLookups';
 import SelectField from '../../components/common/Select';
 import WarehousePicker from '../components/WarehousePicker';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },
@@ -139,9 +139,14 @@ export default function CreditNotes() {
 
   const handleSubmit = async () => {
     setActionLoading('submit');
-    try { await api.post('/credit-notes/submit'); await loadDocs(); }
-    catch (err) { showError(err, 'Submit failed'); }
-    finally { setActionLoading(''); }
+    try {
+      const res = await api.post('/credit-notes/submit');
+      if (res?.approval_pending) { showApprovalPending(res.message); }
+      await loadDocs();
+    } catch (err) {
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); await loadDocs(); }
+      else showError(err, 'Submit failed');
+    } finally { setActionLoading(''); }
   };
 
   const handleEdit = async (doc) => {

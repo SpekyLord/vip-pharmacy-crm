@@ -89,7 +89,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Collect Payment', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L.',
+    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L. When Authority Matrix is enabled, posting may require approval — check the Approval Hub for pending items.',
   },
   'my-stock': {
     title: 'Inventory Overview',
@@ -188,7 +188,8 @@ const WORKFLOW_GUIDES = {
     title: 'SMER (Sales/Marketing Expense Report)',
     steps: [
       'Select the period/cycle and your name',
-      'Fill in each day\'s activity type (Office/Field/Other)',
+      'Fill in each day\'s activity type (Office/Field/Other/NO_WORK)',
+      'Select "NO_WORK" for days the BDM did not work — per diem is automatically zero, MD count is disabled',
       'Enter expense amounts per category (Mobile, Internet, Meals, etc.)',
       'System auto-computes Per Diem based on MD count and your per-person thresholds',
       'Validate and Post to generate expense journal entries',
@@ -199,7 +200,7 @@ const WORKFLOW_GUIDES = {
       { label: 'View Reports', path: '/erp/reports' },
       { label: 'People (CompProfile)', path: '/erp/people' },
     ],
-    tip: 'Per diem thresholds are per-person (CompProfile). Full=0 + Half=0 means always FULL per diem for all activities. Full=8 + Half=3 means MD count from CRM drives the tier. Use the "+" button beside per diem to request an override — BDMs submit requests that go to the Approval Hub for admin/president approval. Once approved, the override applies automatically. Rejected requests can be retried. Travel advance auto-populates from CompProfile revolving fund (or global default).',
+    tip: 'Per diem thresholds are per-person (CompProfile). Full=0 + Half=0 means always FULL per diem for all activities. Full=8 + Half=3 means MD count from CRM drives the tier. Use the "+" button beside per diem to request an override — BDMs submit requests that go to the Approval Hub for admin/president approval. Once approved, the override applies automatically. Rejected requests can be retried. Travel advance auto-populates from CompProfile revolving fund (or global default). "NO_WORK" days do NOT count as working days and cannot have overrides.',
   },
   'car-logbook': {
     title: 'Car Logbook',
@@ -283,7 +284,7 @@ const WORKFLOW_GUIDES = {
       '1. Income Projection shows real-time earnings from SMER, Collections, and Profit Sharing — always available, updates as you post documents.',
       '2. Click "Request Payslip Generation" to create your official income report. You can regenerate anytime new data comes in (e.g., new collection posted).',
       '3. Add one-off deduction lines (CC personal, purchased goods, etc.) — Finance verifies each line.',
-      '4. Deduction Schedules: create installment plans — approved installments auto-inject into future payslips.',
+      '4. Deduction Schedules: create installment plans — approved installments auto-inject into future payslips. You can edit or withdraw pending schedules, and resubmit rejected ones with changes.',
       '5. When Finance marks your payslip REVIEWED, review final numbers and click "Confirm". Once confirmed, payslip is locked.',
       '6. Finance credits your confirmed payslip. Travel advance auto-resolves from your CompProfile revolving fund amount.',
     ],
@@ -299,8 +300,8 @@ const WORKFLOW_GUIDES = {
     steps: [
       '1. BDMs can now request payslip generation themselves (My Income → Request Payslip). You will see it in GENERATED status for review.',
       '2. Payslips tab: Generate or regenerate payslips → review BDM-entered deduction lines (verify ✓, correct ✎, reject ✕) → mark Reviewed → BDM confirms → Credit.',
-      '3. Schedules tab: Review and approve BDM deduction schedules (one-time + installment plans).',
-      '4. Approved schedule installments auto-inject into payslips when generated.',
+      '3. Schedules tab: Review and approve BDM deduction schedules. Filter by status/BDM, create schedules for BDMs, adjust installment amounts, or apply early payoff.',
+      '4. Approved schedule installments auto-inject into payslips when generated. Use bulk approve to process multiple pending schedules at once.',
       '5. Auto-deductions: CALF settlement (excess returned or shortfall reimbursed) and Personal Gas usage are computed automatically on each generation.',
     ],
     next: [
@@ -370,6 +371,24 @@ const WORKFLOW_GUIDES = {
       { label: 'Supplier Invoices', path: '/erp/supplier-invoices' },
     ],
     tip: 'Click "Receive" on a PO to jump here with lines pre-filled. OCR can auto-read batch/expiry from undertaking photos. Product catalog for subsidiaries is lookup-driven.',
+  },
+  'ocr-test': {
+    title: 'Document Scanner (OCR)',
+    steps: [
+      'Select the document type (CSI, CR, OR, Gas Receipt, Odometer, DR, BIR 2307, Undertaking)',
+      'Capture a photo or upload from gallery — ensure the document is well-lit and flat',
+      'Review extracted fields — fields are color-coded by confidence: green (HIGH), yellow (MEDIUM), red (LOW)',
+      'Edit any incorrect fields before confirming — the system learns vendor defaults when you override classifications',
+      'For expense receipts (OR/Gas), the system auto-classifies the expense category and COA code using vendor matching and keyword rules',
+      'Resolved master data (hospital, product, vendor) appears below extracted fields — verify the match is correct',
+    ],
+    next: [
+      { label: 'Expenses', path: '/erp/expenses' },
+      { label: 'Sales Entry', path: '/erp/sales-entry' },
+      { label: 'Car Logbook', path: '/erp/car-logbook' },
+      { label: 'GRN Entry', path: '/erp/grn' },
+    ],
+    tip: 'OCR classification rules are lookup-driven — admin can add keywords and COA mappings in Control Center → Lookup Tables → OCR_EXPENSE_RULES. Phone camera photos are auto-compressed for faster upload.',
   },
   'purchase-orders': {
     title: 'Purchase Orders',
@@ -467,7 +486,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Income', path: '/erp/income' },
       { label: 'Sales', path: '/erp/sales' },
     ],
-    tip: 'Module visibility uses a 3-layer system: (1) Approval Rules override everything — delegate to specific people or roles. (2) No rules? Default roles from MODULE_DEFAULT_ROLES lookup apply. (3) President always sees all modules across all entities. Change defaults in Control Center → Lookup Tables.',
+    tip: 'Module visibility uses a 3-layer system: (1) Approval Rules override everything — delegate to specific people or roles. (2) No rules? Default roles from MODULE_DEFAULT_ROLES lookup apply. (3) President always sees all modules across all entities. Modules are categorized as Financial (expenses, purchasing, payroll, journal, banking, petty cash, IC transfers, income, PRF/CALF) or Operational (sales, collections, inventory, SMER, car logbook, KPI). Financial modules require president/finance approval; operational modules can be delegated. Categories are configurable in Control Center → Lookup Tables → APPROVAL_CATEGORY.',
   },
   'batch-trace': {
     title: 'Batch Trace',
@@ -674,8 +693,10 @@ const WORKFLOW_GUIDES = {
     title: 'People Directory',
     steps: [
       'Use the Active / Archive tabs to switch between current and separated employees',
-      'Use search and filters to find people by name, type, or status',
-      'Click any row to view full person details and profile',
+      'Use search and filters to find people by name, type, role, or status',
+      'The table shows system role, login status, employment type, BDM code, stage, and territory at a glance',
+      'Use the Role filter to quickly find all admins, contractors, or people with no login',
+      'Click any row to view full person details and change role or access',
       'In the Archive tab, click "Reactivate" to restore a separated employee to active status',
       'If a legacy role banner appears (e.g. medrep, employee), click "Migrate" to bulk-convert users to the current "contractor" role',
     ],
