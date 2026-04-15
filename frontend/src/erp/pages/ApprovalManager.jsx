@@ -39,7 +39,11 @@ export default function ApprovalManager() {
     : [...ROLE_SETS.MANAGEMENT];
 
   const cycleLabel = (code) => (lookups.CYCLE || []).find(c => c.code === code)?.label || code;
-  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  // Rules tab: lookup-driven via sub-permission (president always, others via erp_access)
+  const canManageRules = user?.role === 'president'
+    || (user?.erp_access?.modules?.approvals === 'FULL' && (!user?.erp_access?.sub_permissions?.approvals || user?.erp_access?.sub_permissions?.approvals?.rule_manage))
+    || (user?.role === 'admin' && (!user?.erp_access || !user?.erp_access?.enabled));  // backward compat
+  const isAdmin = canManageRules;
 
   useEffect(() => {
     checkStatus().then(d => setApprovalEnabled(d.enabled)).catch(() => {});

@@ -525,6 +525,52 @@ const MODULE_QUERIES = [
       });
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
+  },
+
+  // ═══ PER DIEM OVERRIDE APPROVAL ═══
+  {
+    module: 'PERDIEM_OVERRIDE',
+    label: 'Per Diem Override',
+    query: async (entityId) => {
+      const ApprovalRequest = require('../models/ApprovalRequest');
+      const pendingOverrides = await ApprovalRequest.find({
+        entity_id: entityId,
+        module: 'PERDIEM_OVERRIDE',
+        status: 'PENDING',
+      })
+        .populate('requested_by', 'name email')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      return pendingOverrides.map(req => ({
+        id: req._id.toString(),
+        module: 'PERDIEM_OVERRIDE',
+        doc_type: req.doc_type || 'SMER_DAILY_ENTRY',
+        doc_id: req.doc_id?.toString(),
+        doc_ref: req.doc_ref,
+        description: req.description,
+        amount: req.amount,
+        submitted_by: req.requested_by?.name || 'Unknown',
+        submitted_at: req.requested_at,
+        status: req.status,
+        current_action: 'approve',
+        action_key: 'perdiem_override',
+        approve_data: {
+          type: 'perdiem_override',
+          id: req._id.toString(),
+        },
+        details: {
+          module: 'PERDIEM_OVERRIDE',
+          doc_type: req.doc_type,
+          doc_ref: req.doc_ref,
+          description: req.description,
+          amount: req.amount,
+          requested_by: req.requested_by?.name,
+          requested_at: req.requested_at,
+        }
+      }));
+    },
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   }
 ];
 
@@ -605,8 +651,8 @@ async function getUniversalPending(entityId, userId, userRole, entityIds) {
     is_active: true
   }).lean();
 
-  if (defaultRoles.length === 0 && entityId) {
-    // Auto-seed from SEED_DEFAULTS (same pattern as lookupGenericController.getByCategory)
+  if (entityId) {
+    // Auto-seed: merge missing defaults ($setOnInsert never overwrites existing entries)
     try {
       const { SEED_DEFAULTS } = require('../controllers/lookupGenericController');
       const seeds = SEED_DEFAULTS.MODULE_DEFAULT_ROLES;
@@ -619,7 +665,9 @@ async function getUniversalPending(entityId, userId, userRole, entityIds) {
           }
         }));
         await Lookup.bulkWrite(ops);
-        defaultRoles = await Lookup.find({ entity_id: entityId, category: 'MODULE_DEFAULT_ROLES', is_active: true }).lean();
+        if (defaultRoles.length === 0 || seeds.length > defaultRoles.length) {
+          defaultRoles = await Lookup.find({ entity_id: entityId, category: 'MODULE_DEFAULT_ROLES', is_active: true }).lean();
+        }
       }
     } catch (seedErr) {
       console.error('MODULE_DEFAULT_ROLES auto-seed failed:', seedErr.message);

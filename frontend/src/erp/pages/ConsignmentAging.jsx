@@ -7,6 +7,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useReports from '../hooks/useReports';
+import useHospitals from '../hooks/useHospitals';
 import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
@@ -45,6 +46,7 @@ const BADGE_CLASS = { OPEN: 'badge-open', OVERDUE: 'badge-overdue', FORCE_CSI: '
 export default function ConsignmentAging() {
   const navigate = useNavigate();
   const rpt = useReports();
+  const { hospitals } = useHospitals();
   const [warehouseId, setWarehouseId] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -87,6 +89,12 @@ export default function ConsignmentAging() {
           </div>
 
           <div className="controls">
+            <SelectField value={filters.hospital_id} onChange={e => setFilters(f => ({ ...f, hospital_id: e.target.value }))}>
+              <option value="">All Hospitals</option>
+              {hospitals.map(h => (
+                <option key={h._id} value={h._id}>{h.hospital_name}</option>
+              ))}
+            </SelectField>
             <SelectField value={filters.aging_status} onChange={e => setFilters(f => ({ ...f, aging_status: e.target.value }))}>
               <option value="">All Status</option>
               <option value="OPEN">Open</option>

@@ -190,15 +190,16 @@ const WORKFLOW_GUIDES = {
       'Select the period/cycle and your name',
       'Fill in each day\'s activity type (Office/Field/Other)',
       'Enter expense amounts per category (Mobile, Internet, Meals, etc.)',
-      'System auto-computes Per Diem based on MD count',
+      'System auto-computes Per Diem based on MD count and your per-person thresholds',
       'Validate and Post to generate expense journal entries',
     ],
     next: [
       { label: 'Record Car Logbook', path: '/erp/car-logbook' },
       { label: 'Record Expenses', path: '/erp/expenses' },
       { label: 'View Reports', path: '/erp/reports' },
+      { label: 'People (CompProfile)', path: '/erp/people' },
     ],
-    tip: 'Full per diem requires minimum MDs per day (check ERP Settings). Half-day threshold is lower. Travel advance auto-populates from your CompProfile revolving fund amount (or global default). Use Override to manually adjust.',
+    tip: 'Per diem thresholds are per-person (CompProfile). Full=0 + Half=0 means always FULL per diem for all activities. Full=8 + Half=3 means MD count from CRM drives the tier. Use the "+" button beside per diem to request an override — BDMs submit requests that go to the Approval Hub for admin/president approval. Once approved, the override applies automatically. Rejected requests can be retried. Travel advance auto-populates from CompProfile revolving fund (or global default).',
   },
   'car-logbook': {
     title: 'Car Logbook',

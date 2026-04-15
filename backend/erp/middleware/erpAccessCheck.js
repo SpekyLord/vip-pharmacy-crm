@@ -139,8 +139,10 @@ const erpSubAccessCheck = (module, subKey) => {
 
     // If no sub_permissions defined for this module:
     // FULL → all subs granted; VIEW → deny (VIEW = read-only, no write sub-functions)
+    // Count only truthy entries — stale false values don't count as "defined"
     const moduleSubs = erp_access.sub_permissions?.[module];
-    if (!moduleSubs || Object.keys(moduleSubs).length === 0) {
+    const truthyCount = moduleSubs ? Object.values(moduleSubs).filter(Boolean).length : 0;
+    if (!moduleSubs || truthyCount === 0) {
       if (userLevel === 'FULL') return next();
       return res.status(403).json({
         success: false,

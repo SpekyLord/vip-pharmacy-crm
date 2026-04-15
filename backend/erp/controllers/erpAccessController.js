@@ -4,14 +4,17 @@ const User = require('../../models/User');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { SEED_DEFAULTS } = require('./lookupGenericController');
 
-// ═══ Helper: fetch lookup items with auto-seed if empty ═══
+// ═══ Helper: fetch lookup items with auto-seed / merge ═══
+// Always upserts seed defaults so newly added entries (e.g. PRODUCT_MANAGE)
+// appear automatically. $setOnInsert ensures existing user-customized entries
+// are never overwritten.
 async function fetchLookupCategory(category, entityId, userId) {
   const filter = { category, is_active: true };
   if (entityId) filter.entity_id = entityId;
   let items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
 
-  // Auto-seed on first access if empty and defaults exist
-  if (items.length === 0 && entityId && SEED_DEFAULTS[category]) {
+  // Merge seed defaults — inserts missing entries, skips existing ones
+  if (entityId && SEED_DEFAULTS[category]) {
     const defaults = SEED_DEFAULTS[category];
     const ops = defaults.map((item, i) => {
       const isObj = typeof item === 'object';
@@ -25,8 +28,11 @@ async function fetchLookupCategory(category, entityId, userId) {
         }
       };
     });
-    await Lookup.bulkWrite(ops);
-    items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+    const result = await Lookup.bulkWrite(ops);
+    // Re-query only if new entries were actually inserted
+    if (result.upsertedCount > 0) {
+      items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+    }
   }
   return items;
 }
@@ -116,7 +122,18 @@ const updateTemplate = catchAsync(async (req, res) => {
   }
   if (can_approve !== undefined) template.can_approve = can_approve;
   if (sub_permissions !== undefined) {
-    template.sub_permissions = sub_permissions;
+    // Clean falsy values before saving to template
+    const cleaned = {};
+    for (const [mod, subs] of Object.entries(sub_permissions)) {
+      if (subs && typeof subs === 'object') {
+        const truthy = {};
+        for (const [key, val] of Object.entries(subs)) {
+          if (val) truthy[key] = true;
+        }
+        if (Object.keys(truthy).length > 0) cleaned[mod] = truthy;
+      }
+    }
+    template.sub_permissions = cleaned;
     template.markModified('sub_permissions');
   }
   if (is_active !== undefined) template.is_active = is_active;
@@ -169,7 +186,18 @@ const setUserAccess = catchAsync(async (req, res) => {
     }
   }
   if (sub_permissions !== undefined) {
-    user.erp_access.sub_permissions = sub_permissions;
+    // Clean falsy values — prevents false entries from breaking FULL bypass
+    const cleaned = {};
+    for (const [mod, subs] of Object.entries(sub_permissions)) {
+      if (subs && typeof subs === 'object') {
+        const truthy = {};
+        for (const [key, val] of Object.entries(subs)) {
+          if (val) truthy[key] = true;
+        }
+        if (Object.keys(truthy).length > 0) cleaned[mod] = truthy;
+      }
+    }
+    user.erp_access.sub_permissions = cleaned;
   }
   user.erp_access.updated_by = req.user._id;
   user.erp_access.updated_at = new Date();

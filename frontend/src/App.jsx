@@ -744,7 +744,7 @@ function App() {
           {/* Phase 24 — ERP Control Center + Agent Intelligence */}
           <Route path="/erp/control-center" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><ControlCenter /></ProtectedRoute>} />
           <Route path="/erp/agent-dashboard" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentDashboard /></ProtectedRoute>} />
-          <Route path="/erp/approvals" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><ApprovalManager /></ProtectedRoute>} />
+          <Route path="/erp/approvals" element={<ProtectedRoute requiredErpModule="approvals"><ApprovalManager /></ProtectedRoute>} />
           <Route path="/erp/role-assignments" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><RoleAssignmentManager /></ProtectedRoute>} />
 
           {/* Phase 32 — KPI Self-Rating & Performance Review */}

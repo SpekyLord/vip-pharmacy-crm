@@ -6,8 +6,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
 import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
-import api from '../../services/api';
-
+import useHospitals from '../hooks/useHospitals';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -130,7 +129,7 @@ function displayDate(isoDate) {
 
 export default function Smer() {
   const { user } = useAuth();
-  const { getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer, validateSmer, submitSmer, reopenSmer, getSmerCrmMdCounts, getRevolvingFundAmount, loading } = useExpenses();
+  const { getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer, validateSmer, submitSmer, reopenSmer, getSmerCrmMdCounts, getRevolvingFundAmount, getPerdiemConfig, overridePerdiemDay, loading } = useExpenses();
   const { settings } = useSettings();
   const { options: activityTypeOpts } = useLookupOptions('ACTIVITY_TYPE');
   const ACTIVITY_TYPES = activityTypeOpts.map(o => o.code);
@@ -150,19 +149,14 @@ export default function Smer() {
   const [travelAdvanceSource, setTravelAdvanceSource] = useState('');  // 'COMP_PROFILE' | 'SETTINGS' | 'MANUAL'
   const [travelAdvanceOverride, setTravelAdvanceOverride] = useState(false);
   const [perdiemRate, setPerdiemRate] = useState(800);
+  // Per diem thresholds: resolved from CompProfile (per-person) → Settings (global fallback)
+  const [perdiemThresholds, setPerdiemThresholds] = useState({ full: 8, half: 3, source: '' });
 
   // Hospital picker state
-  const [hospitals, setHospitals] = useState([]);
+  const { hospitals } = useHospitals();
   const [hospitalSearch, setHospitalSearch] = useState('');
   const [activeHospitalPicker, setActiveHospitalPicker] = useState(null); // index of entry with open picker
   const hospitalPickerRef = useRef(null);
-
-  // Load hospitals for multi-picker
-  useEffect(() => {
-    api.get('/erp/hospitals', { params: { limit: 500 } })
-      .then(res => setHospitals(res.data?.data || []))
-      .catch(() => {});
-  }, []);
 
   // Close hospital picker on outside click
   useEffect(() => {
@@ -185,8 +179,14 @@ export default function Smer() {
   useEffect(() => { loadSmers(); }, [loadSmers]);
 
   useEffect(() => {
-    if (settings) setPerdiemRate(settings.PERDIEM_RATE_DEFAULT || 800);
-  }, [settings]);
+    if (settings) {
+      setPerdiemRate(settings.PERDIEM_RATE_DEFAULT || 800);
+      // Set global fallback thresholds; per-person overrides load when SMER is opened
+      if (!perdiemThresholds.source) {
+        setPerdiemThresholds(prev => ({ ...prev, full: settings.PERDIEM_MD_FULL ?? 8, half: settings.PERDIEM_MD_HALF ?? 3 }));
+      }
+    }
+  }, [settings, perdiemThresholds.source]);
 
   // Generate empty daily entries for the period
   const generateDays = () => {
@@ -219,8 +219,9 @@ export default function Smer() {
   };
 
   const computePerdiem = (count) => {
-    const fullThreshold = settings?.PERDIEM_MD_FULL || 8;
-    const halfThreshold = settings?.PERDIEM_MD_HALF || 3;
+    // Uses resolved thresholds (CompProfile per-person → Settings global fallback)
+    const fullThreshold = perdiemThresholds.full;
+    const halfThreshold = perdiemThresholds.half;
     if (count >= fullThreshold) return { tier: 'FULL', amount: perdiemRate };
     if (count >= halfThreshold) return { tier: 'HALF', amount: Math.round(perdiemRate * 0.5 * 100) / 100 };
     return { tier: 'ZERO', amount: 0 };
@@ -230,11 +231,17 @@ export default function Smer() {
     setEditingSmer(null);
     setDailyEntries(generateDays());
     setTravelAdvanceOverride(false);
+    // Fetch revolving fund + per diem config in parallel
     try {
-      const res = await getRevolvingFundAmount();
-      const { amount, source } = res?.data || {};
+      const [rfRes, pdRes] = await Promise.all([
+        getRevolvingFundAmount(),
+        getPerdiemConfig()
+      ]);
+      const { amount, source } = rfRes?.data || {};
       setTravelAdvance(amount || 0);
       setTravelAdvanceSource(source || 'SETTINGS');
+      const pd = pdRes?.data || {};
+      setPerdiemThresholds({ full: pd.fullThreshold ?? 8, half: pd.halfThreshold ?? 3, source: pd.source || '' });
     } catch {
       setTravelAdvance(0);
       setTravelAdvanceSource('');
@@ -244,7 +251,10 @@ export default function Smer() {
 
   const handleEditSmer = async (smer) => {
     try {
-      const res = await getSmerById(smer._id);
+      const [res, pdRes] = await Promise.all([
+        getSmerById(smer._id),
+        getPerdiemConfig()
+      ]);
       const data = res?.data;
       setEditingSmer(data);
       setDailyEntries(data.daily_entries || []);
@@ -252,6 +262,8 @@ export default function Smer() {
       setTravelAdvanceSource('');
       setTravelAdvanceOverride(false);
       setPerdiemRate(data.perdiem_rate || 800);
+      const pd = pdRes?.data || {};
+      setPerdiemThresholds({ full: pd.fullThreshold ?? 8, half: pd.halfThreshold ?? 3, source: pd.source || '' });
       setShowForm(true);
     } catch (err) { console.error('[SMER]', err.message); showError(err, 'Could not load SMER'); }
   };
@@ -334,28 +346,108 @@ export default function Smer() {
   const handleReopen = async (id) => { try { await reopenSmer([id]); loadSmers(); } catch (err) { showError(err, 'Could not reopen SMER'); } };
   const handleDelete = async (id) => { try { await deleteDraftSmer(id); loadSmers(); } catch (err) { showError(err, 'Could not delete SMER'); } };
 
-  const canOverride = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const isManagement = ROLE_SETS.MANAGEMENT.includes(user?.role);
+
+  // Override Request Modal state
+  const [overrideModal, setOverrideModal] = useState(null); // { index, entry }
+  const [overrideForm, setOverrideForm] = useState({ tier: 'FULL', reason: '' });
+  const [overrideSubmitting, setOverrideSubmitting] = useState(false);
 
   const handleOverride = (index) => {
     const entry = dailyEntries[index];
-    const reason = prompt(`Override reason for Day ${entry.day} (Current: ${entry.md_count} engagements):\ne.g. "Meeting with President", "Training day"`);
-    if (!reason) return;
-    const tier = prompt('Override tier: FULL or HALF?', 'FULL')?.toUpperCase();
-    if (!tier || !['FULL', 'HALF'].includes(tier)) return;
-    setDailyEntries(prev => {
-      const updated = [...prev];
-      const { amount } = computePerdiem(tier === 'FULL' ? 999 : 3);
-      updated[index] = { ...updated[index], perdiem_override: true, override_tier: tier, override_reason: reason, perdiem_tier: tier, perdiem_amount: amount };
-      return updated;
-    });
+    if (!editingSmer?._id) {
+      showError(null, 'Save the SMER first before requesting an override.');
+      return;
+    }
+    setOverrideForm({ tier: 'FULL', reason: '' });
+    setOverrideModal({ index, entry });
   };
 
-  const handleRemoveOverride = (index) => {
+  const handleOverrideSubmit = async () => {
+    if (!overrideModal) return;
+    const { index, entry } = overrideModal;
+    const { tier, reason } = overrideForm;
+    if (!reason.trim()) { showError(null, 'Please enter a reason for the override.'); return; }
+
+    setOverrideSubmitting(true);
+    try {
+      const res = await overridePerdiemDay(editingSmer._id, {
+        entry_id: entry._id,
+        override_tier: tier,
+        override_reason: reason.trim(),
+      });
+      if (res?.approval_pending) {
+        // Approval required — update local entry with pending state
+        const smerData = res?.data;
+        if (smerData?.daily_entries) {
+          setDailyEntries(smerData.daily_entries);
+        } else {
+          setDailyEntries(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], override_status: 'PENDING', requested_override_tier: tier, override_reason: reason.trim() };
+            return updated;
+          });
+        }
+        setOverrideModal(null);
+      } else {
+        // No approval rules — override applied directly
+        const smerData = res?.data;
+        if (smerData?.daily_entries) {
+          setDailyEntries(smerData.daily_entries);
+        } else {
+          const { amount } = computePerdiem(tier === 'FULL' ? 999 : 3);
+          setDailyEntries(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], perdiem_override: true, override_tier: tier, override_reason: reason, perdiem_tier: tier, perdiem_amount: amount };
+            return updated;
+          });
+        }
+        setOverrideModal(null);
+      }
+    } catch (err) {
+      if (err?.response?.status === 202 || err?.response?.data?.approval_pending) {
+        const smerData = err?.response?.data?.data;
+        if (smerData?.daily_entries) {
+          setDailyEntries(smerData.daily_entries);
+        } else {
+          setDailyEntries(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], override_status: 'PENDING', requested_override_tier: tier, override_reason: reason.trim() };
+            return updated;
+          });
+        }
+        setOverrideModal(null);
+      } else {
+        showError(err, 'Could not request override');
+      }
+    } finally {
+      setOverrideSubmitting(false);
+    }
+  };
+
+  const handleRemoveOverride = async (index) => {
+    const entry = dailyEntries[index];
+    if (editingSmer?._id && entry._id) {
+      try {
+        const res = await overridePerdiemDay(editingSmer._id, {
+          entry_id: entry._id,
+          remove_override: true,
+        });
+        if (res?.data?.daily_entries) {
+          setDailyEntries(res.data.daily_entries);
+          return;
+        }
+      } catch (err) {
+        showError(err, 'Could not remove override');
+        return;
+      }
+    }
+    // Fallback: local state update for unsaved SMERs
     setDailyEntries(prev => {
       const updated = [...prev];
-      const entry = updated[index];
-      const { tier, amount } = computePerdiem(entry.md_count || 0);
-      updated[index] = { ...entry, perdiem_override: false, override_tier: undefined, override_reason: undefined, perdiem_tier: tier, perdiem_amount: amount };
+      const e = updated[index];
+      const { tier, amount } = computePerdiem(e.md_count || 0);
+      updated[index] = { ...e, perdiem_override: false, override_tier: undefined, override_reason: undefined, perdiem_tier: tier, perdiem_amount: amount };
       return updated;
     });
   };
@@ -598,7 +690,10 @@ export default function Smer() {
                 {isCrmLinked && (
                   <button onClick={handlePullFromCrm} disabled={loading} style={{ padding: '4px 14px', borderRadius: 6, background: '#16a34a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Pull from CRM</button>
                 )}
-                <span style={{ fontSize: 11, color: 'var(--erp-muted, #5f7188)' }}>Full ≥ {settings?.PERDIEM_MD_FULL || 8} | Half ≥ {settings?.PERDIEM_MD_HALF || 3}</span>
+                <span style={{ fontSize: 11, color: 'var(--erp-muted, #5f7188)' }}>
+                  Full ≥ {perdiemThresholds.full} | Half ≥ {perdiemThresholds.half}
+                  {perdiemThresholds.source === 'COMP_PROFILE' && <span style={{ marginLeft: 4, color: '#2563eb', fontWeight: 600 }}>(per-person)</span>}
+                </span>
               </div>
               {isCrmLinked && (
                 <div style={{ padding: '6px 12px', marginBottom: 12, borderRadius: 6, background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: 12, color: '#166534' }}>
@@ -618,7 +713,7 @@ export default function Smer() {
                       <th style={{ padding: 6, textAlign: 'center', width: 55 }}>MDs/<br/>Eng.</th>
                       <th style={{ padding: 6, textAlign: 'center', width: 50 }}>Tier</th>
                       <th style={{ padding: 6, textAlign: 'right', width: 70 }}>Per Diem</th>
-                      {canOverride && <th style={{ padding: 6, textAlign: 'center', width: 65 }}>Ovrd</th>}
+                      <th style={{ padding: 6, textAlign: 'center', width: 65 }}>Ovrd</th>
                       <th style={{ padding: 6, textAlign: 'right', width: 70 }}>P2P</th>
                       <th style={{ padding: 6, textAlign: 'right', width: 70 }}>Special</th>
                       <th style={{ padding: 6, textAlign: 'right', width: 70 }}>ORE</th>
@@ -626,7 +721,7 @@ export default function Smer() {
                   </thead>
                   <tbody>
                     {dailyEntries.map((entry, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)', background: entry.perdiem_override ? '#faf5ff' : undefined }}>
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)', background: entry.perdiem_override ? '#faf5ff' : entry.override_status === 'PENDING' ? '#fffbeb' : entry.override_status === 'REJECTED' ? '#fef2f2' : undefined }}>
                         <td style={{ padding: 3, textAlign: 'center', fontSize: 11 }}>{displayDate(entry.entry_date).slice(0, 5)}</td>
                         <td style={{ padding: 3, textAlign: 'center', fontSize: 10, color: 'var(--erp-muted, #5f7188)' }}>{entry.day_of_week}</td>
                         <td style={{ padding: 3 }}>
@@ -647,17 +742,25 @@ export default function Smer() {
                             {entry.perdiem_tier}
                           </span>
                           {entry.perdiem_override && <span title={entry.override_reason} style={{ marginLeft: 1, cursor: 'help', fontSize: 9, color: '#7c3aed' }}>★</span>}
+                          {entry.override_status === 'PENDING' && <div style={{ fontSize: 8, fontWeight: 600, color: '#92400e' }}>REQ: {entry.requested_override_tier}</div>}
+                          {entry.override_status === 'REJECTED' && <div style={{ fontSize: 8, fontWeight: 600, color: '#991b1b' }}>REJECTED</div>}
                         </td>
                         <td style={{ padding: 3, textAlign: 'right', fontWeight: 500, fontSize: 12 }}>₱{(entry.perdiem_amount || 0).toLocaleString()}</td>
-                        {canOverride && (
-                          <td style={{ padding: 3, textAlign: 'center' }}>
-                            {entry.perdiem_override ? (
+                        <td style={{ padding: 3, textAlign: 'center' }}>
+                          {entry.perdiem_override ? (
+                            isManagement ? (
                               <button onClick={() => handleRemoveOverride(idx)} title={entry.override_reason} style={{ padding: '1px 5px', fontSize: 9, borderRadius: 4, border: '1px solid #7c3aed', color: '#7c3aed', background: '#f5f3ff', cursor: 'pointer' }}>Undo</button>
                             ) : (
-                              <button onClick={() => handleOverride(idx)} style={{ padding: '1px 5px', fontSize: 9, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', color: 'var(--erp-muted)', background: '#fff', cursor: 'pointer' }}>+</button>
-                            )}
-                          </td>
-                        )}
+                              <span title={entry.override_reason} style={{ fontSize: 9, color: '#7c3aed' }}>&#9733;</span>
+                            )
+                          ) : entry.override_status === 'PENDING' ? (
+                            <span title={`Requested: ${entry.requested_override_tier}`} style={{ padding: '1px 4px', fontSize: 8, borderRadius: 4, fontWeight: 600, color: '#92400e', background: '#fef3c7' }}>Pending</span>
+                          ) : entry.override_status === 'REJECTED' ? (
+                            <button onClick={() => handleOverride(idx)} title="Previous request was rejected — retry" style={{ padding: '1px 5px', fontSize: 9, borderRadius: 4, border: '1px solid #ef4444', color: '#ef4444', background: '#fef2f2', cursor: 'pointer' }}>Retry</button>
+                          ) : (
+                            <button onClick={() => handleOverride(idx)} style={{ padding: '1px 5px', fontSize: 9, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', color: 'var(--erp-muted)', background: '#fff', cursor: 'pointer' }}>+</button>
+                          )}
+                        </td>
                         <td style={{ padding: 3 }}>
                           <input type="number" min={0} value={entry.transpo_p2p || 0} onChange={e => handleEntryChange(idx, 'transpo_p2p', Number(e.target.value))} style={{ width: 60, padding: '2px 3px', textAlign: 'right', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
                         </td>
@@ -672,7 +775,7 @@ export default function Smer() {
                   </tbody>
                   <tfoot>
                     <tr style={{ background: 'var(--erp-bg-alt, #f1f5f9)', fontWeight: 600, fontSize: 12 }}>
-                      <td colSpan={canOverride ? 7 : 6} style={{ padding: 6, textAlign: 'right' }}>Totals:</td>
+                      <td colSpan={7} style={{ padding: 6, textAlign: 'right' }}>Totals:</td>
                       <td style={{ padding: 6, textAlign: 'right' }}>₱{totals.perdiem.toLocaleString()}</td>
                       <td style={{ padding: 6, textAlign: 'right' }}>₱{totals.transpo.toLocaleString()}</td>
                       <td style={{ padding: 6, textAlign: 'right' }}>₱{totals.special.toLocaleString()}</td>
@@ -685,16 +788,20 @@ export default function Smer() {
               {/* Daily Entries — Mobile Card Layout */}
               <div className="smer-mobile-cards" style={{ marginBottom: 16 }}>
                 {dailyEntries.map((entry, idx) => (
-                  <div key={idx} className="smer-card" style={entry.perdiem_override ? { borderColor: '#c4b5fd', background: '#faf5ff' } : undefined}>
+                  <div key={idx} className="smer-card" style={entry.perdiem_override ? { borderColor: '#c4b5fd', background: '#faf5ff' } : entry.override_status === 'PENDING' ? { borderColor: '#fbbf24', background: '#fffbeb' } : entry.override_status === 'REJECTED' ? { borderColor: '#fca5a5', background: '#fef2f2' } : undefined}>
                     <div className="smer-card-header">
                       <div>
                         <span style={{ fontWeight: 600, fontSize: 15 }}>{entry.day_of_week}</span>
                         <span style={{ marginLeft: 8, color: 'var(--erp-muted, #5f7188)', fontSize: 13 }}>{displayDate(entry.entry_date)}</span>
                       </div>
-                      <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, color: entry.perdiem_tier === 'FULL' ? '#16a34a' : entry.perdiem_tier === 'HALF' ? '#d97706' : '#9ca3af', background: entry.perdiem_tier === 'FULL' ? '#dcfce7' : entry.perdiem_tier === 'HALF' ? '#fef3c7' : '#f3f4f6' }}>
-                        {entry.perdiem_tier} — ₱{(entry.perdiem_amount || 0).toLocaleString()}
-                        {entry.perdiem_override && <span style={{ marginLeft: 4, color: '#7c3aed' }}>★</span>}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, color: entry.perdiem_tier === 'FULL' ? '#16a34a' : entry.perdiem_tier === 'HALF' ? '#d97706' : '#9ca3af', background: entry.perdiem_tier === 'FULL' ? '#dcfce7' : entry.perdiem_tier === 'HALF' ? '#fef3c7' : '#f3f4f6' }}>
+                          {entry.perdiem_tier} — ₱{(entry.perdiem_amount || 0).toLocaleString()}
+                          {entry.perdiem_override && <span style={{ marginLeft: 4, color: '#7c3aed' }}>★</span>}
+                        </span>
+                        {entry.override_status === 'PENDING' && <span style={{ padding: '1px 5px', borderRadius: 4, fontSize: 9, fontWeight: 600, color: '#92400e', background: '#fef3c7' }}>PENDING</span>}
+                        {entry.override_status === 'REJECTED' && <span style={{ padding: '1px 5px', borderRadius: 4, fontSize: 9, fontWeight: 600, color: '#991b1b', background: '#fee2e2' }}>REJECTED</span>}
+                      </div>
                     </div>
                     <div className="smer-card-fields">
                       <div className="smer-card-field">
@@ -728,20 +835,28 @@ export default function Smer() {
                         <label>ORE Amount</label>
                         <input type="number" min={0} value={entry.ore_amount || 0} onChange={e => handleEntryChange(idx, 'ore_amount', Number(e.target.value))} />
                       </div>
-                      {canOverride && (
-                        <div className="smer-card-field">
-                          <label>Override</label>
-                          {entry.perdiem_override ? (
+                      <div className="smer-card-field">
+                        <label>Override</label>
+                        {entry.perdiem_override ? (
+                          isManagement ? (
                             <button onClick={() => handleRemoveOverride(idx)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #7c3aed', color: '#7c3aed', background: '#f5f3ff', cursor: 'pointer', fontSize: 12, width: '100%' }}>
                               Undo ({entry.override_reason?.slice(0, 20)})
                             </button>
                           ) : (
-                            <button onClick={() => handleOverride(idx)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', color: 'var(--erp-muted)', background: '#fff', cursor: 'pointer', fontSize: 12, width: '100%' }}>
-                              + Override
-                            </button>
-                          )}
-                        </div>
-                      )}
+                            <span style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>★ Overridden</span>
+                          )
+                        ) : entry.override_status === 'PENDING' ? (
+                          <span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#92400e', background: '#fef3c7', display: 'block', textAlign: 'center' }}>Pending approval...</span>
+                        ) : entry.override_status === 'REJECTED' ? (
+                          <button onClick={() => handleOverride(idx)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #ef4444', color: '#ef4444', background: '#fef2f2', cursor: 'pointer', fontSize: 12, width: '100%' }}>
+                            Retry Override
+                          </button>
+                        ) : (
+                          <button onClick={() => handleOverride(idx)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', color: 'var(--erp-muted)', background: '#fff', cursor: 'pointer', fontSize: 12, width: '100%' }}>
+                            + Override
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -768,6 +883,53 @@ export default function Smer() {
           )}
         </main>
       </div>
+
+      {/* Override Request Modal */}
+      {overrideModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }} onClick={() => !overrideSubmitting && setOverrideModal(null)}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: '90%', maxWidth: 400, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>Override Per Diem — Day {overrideModal.entry?.day}</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--erp-muted, #5f7188)' }}>
+              Current: {overrideModal.entry?.md_count || 0} engagements = {overrideModal.entry?.perdiem_tier} (₱{(overrideModal.entry?.perdiem_amount || 0).toLocaleString()})
+            </p>
+
+            {/* Info banner for non-management */}
+            {!isManagement && (
+              <div style={{ padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', fontSize: 12 }}>
+                This override requires approval from your admin/president. You will be notified once a decision is made.
+              </div>
+            )}
+
+            {/* Tier selector */}
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--erp-muted, #5f7188)' }}>Override Tier</label>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              {['FULL', 'HALF'].map(t => (
+                <button key={t} type="button" onClick={() => setOverrideForm(f => ({ ...f, tier: t }))}
+                  style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: `2px solid ${overrideForm.tier === t ? (t === 'FULL' ? '#16a34a' : '#d97706') : '#e5e7eb'}`, background: overrideForm.tier === t ? (t === 'FULL' ? '#dcfce7' : '#fef3c7') : '#fff', color: overrideForm.tier === t ? (t === 'FULL' ? '#166534' : '#92400e') : '#6b7280', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                  {t} — ₱{(t === 'FULL' ? perdiemRate : Math.round(perdiemRate * 0.5)).toLocaleString()}
+                </button>
+              ))}
+            </div>
+
+            {/* Reason */}
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--erp-muted, #5f7188)' }}>Reason (required)</label>
+            <textarea rows={3} placeholder='e.g. "Meeting with President", "Training day"' value={overrideForm.reason} onChange={e => setOverrideForm(f => ({ ...f, reason: e.target.value }))}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setOverrideModal(null)} disabled={overrideSubmitting}
+                style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', color: 'var(--erp-muted)', cursor: 'pointer', fontSize: 13 }}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleOverrideSubmit} disabled={overrideSubmitting || !overrideForm.reason.trim()}
+                style={{ padding: '8px 20px', borderRadius: 6, border: 'none', background: isManagement ? '#7c3aed' : '#2563eb', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13, opacity: overrideSubmitting || !overrideForm.reason.trim() ? 0.5 : 1 }}>
+                {overrideSubmitting ? 'Submitting...' : isManagement ? 'Apply Override' : 'Request Override'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

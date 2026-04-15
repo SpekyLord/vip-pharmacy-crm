@@ -14,7 +14,7 @@ const ErpAuditLog = require('../models/ErpAuditLog');
 const DocumentAttachment = require('../models/DocumentAttachment');
 const Settings = require('../models/Settings');
 const { catchAsync } = require('../../middleware/errorHandler');
-const { computePerdiemAmount } = require('../services/perdiemCalc');
+const { computePerdiemAmount, resolvePerdiemThresholds } = require('../services/perdiemCalc');
 // fuelTracker computations handled by CarLogbookEntry pre-save hook
 const { generateExpenseSummary } = require('../services/expenseSummary');
 const { getDailyMdCounts, getDailyVisitDetails } = require('../services/smerCrmBridge');
@@ -30,6 +30,23 @@ const { uploadErpDocument } = require('../services/documentUpload');
 const { compressImage } = require('../../middleware/upload');
 
 // ═══════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════
+
+/**
+ * Load active CompProfile for a BDM user.
+ * Used by SMER endpoints to resolve per-person per diem thresholds.
+ * Returns lean CompProfile or null.
+ */
+async function loadBdmCompProfile(bdmUserId, entityId) {
+  const PeopleMaster = require('../models/PeopleMaster');
+  const CompProfile = require('../models/CompProfile');
+  const person = await PeopleMaster.findOne({ user_id: bdmUserId, entity_id: entityId }).select('_id').lean();
+  if (!person) return null;
+  return CompProfile.findOne({ person_id: person._id, entity_id: entityId, status: 'ACTIVE' }).sort({ effective_date: -1 }).lean();
+}
+
+// ═══════════════════════════════════════════
 // SMER ENDPOINTS
 // ═══════════════════════════════════════════
 
@@ -37,27 +54,25 @@ const createSmer = catchAsync(async (req, res) => {
   const settings = await Settings.getSettings();
   const perdiemRate = req.body.perdiem_rate || settings.PERDIEM_RATE_DEFAULT || 800;
 
+  // Load CompProfile once — used for both revolving fund and per diem thresholds
+  const compProfile = await loadBdmCompProfile(req.bdmId, req.entityId);
+
   // Auto-resolve travel advance from CompProfile → Settings fallback (0 or missing = use default)
   let travelAdvance = req.body.travel_advance;
   if (!travelAdvance || travelAdvance === 0) {
-    const PeopleMaster = require('../models/PeopleMaster');
-    const CompProfile = require('../models/CompProfile');
     travelAdvance = settings.REVOLVING_FUND_AMOUNT || 8000;
-    const person = await PeopleMaster.findOne({ user_id: req.bdmId, entity_id: req.entityId }).select('_id').lean();
-    if (person) {
-      const comp = await CompProfile.findOne({ person_id: person._id, entity_id: req.entityId, status: 'ACTIVE' }).sort({ effective_date: -1 }).lean();
-      if (comp?.revolving_fund_amount > 0) travelAdvance = comp.revolving_fund_amount;
-    }
+    if (compProfile?.revolving_fund_amount > 0) travelAdvance = compProfile.revolving_fund_amount;
   }
 
   // Auto-compute per diem for each daily entry (skip overridden entries)
+  // Per diem thresholds: CompProfile per-person → Settings global fallback
   let dailyEntries = (req.body.daily_entries || []).map(entry => {
     if (entry.perdiem_override && entry.override_tier) {
       // Override set — use override_tier for amount, preserve CRM md_count
-      const { amount } = computePerdiemAmount(entry.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings);
+      const { amount } = computePerdiemAmount(entry.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile);
       return { ...entry, perdiem_tier: entry.override_tier, perdiem_amount: amount };
     }
-    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, perdiemRate, settings);
+    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, perdiemRate, settings, compProfile);
     return { ...entry, perdiem_tier: tier, perdiem_amount: amount };
   });
 
@@ -88,8 +103,10 @@ const updateSmer = catchAsync(async (req, res) => {
 
   const settings = await Settings.getSettings();
   const perdiemRate = req.body.perdiem_rate || smer.perdiem_rate;
+  const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
 
   // Re-compute per diem if daily entries changed (skip overridden entries)
+  // Per diem thresholds: CompProfile per-person → Settings global fallback
   if (req.body.daily_entries) {
     req.body.daily_entries = req.body.daily_entries.map(entry => {
       // Strip empty strings from enum fields
@@ -98,10 +115,10 @@ const updateSmer = catchAsync(async (req, res) => {
       if (!cleaned.override_tier) delete cleaned.override_tier;
 
       if (cleaned.perdiem_override && cleaned.override_tier) {
-        const { amount } = computePerdiemAmount(cleaned.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings);
+        const { amount } = computePerdiemAmount(cleaned.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile);
         return { ...cleaned, perdiem_tier: cleaned.override_tier, perdiem_amount: amount };
       }
-      const { tier, amount } = computePerdiemAmount(cleaned.md_count || 0, perdiemRate, settings);
+      const { tier, amount } = computePerdiemAmount(cleaned.md_count || 0, perdiemRate, settings, compProfile);
       return { ...cleaned, perdiem_tier: tier, perdiem_amount: amount };
     });
   }
@@ -295,8 +312,10 @@ const reopenSmer = catchAsync(async (req, res) => {
 
 /**
  * POST /expenses/smer/:id/override-perdiem
- * Finance/Manager/President overrides per diem tier for a specific day.
- * CRM md_count stays as-is for audit. Override tier drives perdiem_amount.
+ * Request per diem tier override for a specific day.
+ * Routes through Universal Approval system — override is NOT applied until approved.
+ * Remove override (revert to CRM-computed) does NOT require approval.
+ *
  * Body: { entry_id, override_tier: 'FULL'|'HALF', override_reason: 'Meeting with President' }
  * To remove override: { entry_id, remove_override: true }
  */
@@ -314,17 +333,19 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
   const entry = smer.daily_entries.id(entry_id);
   if (!entry) return res.status(404).json({ success: false, message: 'Daily entry not found' });
 
-  const settings = await Settings.getSettings();
-  const perdiemRate = smer.perdiem_rate;
-
   if (remove_override) {
-    // Remove override — revert to CRM-computed tier
-    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, perdiemRate, settings);
+    // Remove override — revert to CRM-computed tier (no approval needed)
+    const settings = await Settings.getSettings();
+    const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
+    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, smer.perdiem_rate, settings, compProfile);
     entry.perdiem_override = false;
     entry.override_tier = undefined;
     entry.override_reason = undefined;
     entry.overridden_by = undefined;
     entry.overridden_at = undefined;
+    entry.override_status = undefined;
+    entry.approval_request_id = undefined;
+    entry.requested_override_tier = undefined;
     entry.perdiem_tier = tier;
     entry.perdiem_amount = amount;
 
@@ -335,37 +356,145 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
       old_value: true, new_value: false,
       changed_by: req.user._id, note: `Override removed for day ${entry.day}`
     });
-  } else {
-    // Apply override
-    if (!override_tier || !['FULL', 'HALF'].includes(override_tier)) {
-      return res.status(400).json({ success: false, message: 'override_tier must be FULL or HALF' });
-    }
-    if (!override_reason) {
-      return res.status(400).json({ success: false, message: 'override_reason is required' });
-    }
+    await smer.save();
+    return res.json({ success: true, data: smer });
+  }
 
-    const { amount } = computePerdiemAmount(override_tier === 'FULL' ? 999 : 3, perdiemRate, settings);
-    const oldTier = entry.perdiem_tier;
+  // Validate override request
+  if (!override_tier || !['FULL', 'HALF'].includes(override_tier)) {
+    return res.status(400).json({ success: false, message: 'override_tier must be FULL or HALF' });
+  }
+  if (!override_reason) {
+    return res.status(400).json({ success: false, message: 'override_reason is required' });
+  }
 
-    entry.perdiem_override = true;
-    entry.override_tier = override_tier;
+  // Route through approval system
+  const { checkApprovalRequired } = require('../services/approvalService');
+  const docRef = `${smer.period}-${smer.cycle}-Day${entry.day}`;
+  const settings = await Settings.getSettings();
+  const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
+  const { amount: overrideAmount } = computePerdiemAmount(override_tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile);
+
+  const approval = await checkApprovalRequired({
+    entityId: smer.entity_id,
+    module: 'PERDIEM_OVERRIDE',
+    docType: 'SMER_DAILY_ENTRY',
+    docId: smer._id,
+    docRef,
+    amount: overrideAmount,
+    description: `Per diem override Day ${entry.day}: ${entry.perdiem_tier} → ${override_tier} (${override_reason}). Entry ID: ${entry_id}`,
+    metadata: { entry_id, override_tier, override_reason },
+    requesterId: req.user._id,
+    requesterName: req.user.name,
+  });
+
+  if (approval.required) {
+    // Save pending state on the daily entry so frontend can show status
+    entry.override_status = 'PENDING';
+    entry.requested_override_tier = override_tier;
     entry.override_reason = override_reason;
-    entry.overridden_by = req.user._id;
-    entry.overridden_at = new Date();
-    entry.perdiem_tier = override_tier;
-    entry.perdiem_amount = amount;
+    entry.approval_request_id = approval.requests[0]._id;
+    await smer.save();
 
-    await ErpAuditLog.logChange({
-      entity_id: smer.entity_id, bdm_id: smer.bdm_id,
-      log_type: 'ITEM_CHANGE', target_ref: smer._id.toString(), target_model: 'SmerEntry',
-      field_changed: `daily_entries.${entry.day}.perdiem_tier`,
-      old_value: `${oldTier} (md_count: ${entry.md_count})`, new_value: `${override_tier} (override: ${override_reason})`,
-      changed_by: req.user._id, note: `Per diem override day ${entry.day}: ${oldTier} → ${override_tier} — ${override_reason}`
+    return res.status(202).json({
+      success: false,
+      approval_pending: true,
+      message: 'Per diem override requires approval. Request submitted.',
+      request: approval.requests[0],
+      data: smer,
     });
   }
 
-  await smer.save();  // pre-save recomputes totals
+  // No approval rules configured — apply override directly (backward-compatible)
+  const oldTier = entry.perdiem_tier;
+  entry.perdiem_override = true;
+  entry.override_tier = override_tier;
+  entry.override_reason = override_reason;
+  entry.overridden_by = req.user._id;
+  entry.overridden_at = new Date();
+  entry.perdiem_tier = override_tier;
+  entry.perdiem_amount = overrideAmount;
+
+  await ErpAuditLog.logChange({
+    entity_id: smer.entity_id, bdm_id: smer.bdm_id,
+    log_type: 'ITEM_CHANGE', target_ref: smer._id.toString(), target_model: 'SmerEntry',
+    field_changed: `daily_entries.${entry.day}.perdiem_tier`,
+    old_value: `${oldTier} (md_count: ${entry.md_count})`, new_value: `${override_tier} (override: ${override_reason})`,
+    changed_by: req.user._id, note: `Per diem override day ${entry.day}: ${oldTier} → ${override_tier} — ${override_reason}`
+  });
+
+  await smer.save();
   res.json({ success: true, data: smer });
+});
+
+/**
+ * POST /expenses/smer/:id/apply-override
+ * Apply a per diem override AFTER it has been approved in the Universal Approval Hub.
+ * Called by the frontend when the approval request status is APPROVED.
+ * Body: { entry_id, approval_request_id }
+ */
+const applyPerdiemOverride = catchAsync(async (req, res) => {
+  const { entry_id, approval_request_id } = req.body;
+  if (!entry_id || !approval_request_id) {
+    return res.status(400).json({ success: false, message: 'entry_id and approval_request_id are required' });
+  }
+
+  // Verify approval is APPROVED
+  const ApprovalRequest = require('../models/ApprovalRequest');
+  const approvalReq = await ApprovalRequest.findOne({
+    _id: approval_request_id,
+    module: 'PERDIEM_OVERRIDE',
+    status: 'APPROVED',
+  }).lean();
+  if (!approvalReq) {
+    return res.status(403).json({ success: false, message: 'No approved override request found. Approval must be granted first.' });
+  }
+
+  const smer = await SmerEntry.findOne({
+    _id: req.params.id,
+    ...req.tenantFilter,
+    status: { $in: ['DRAFT', 'ERROR'] }
+  });
+  if (!smer) return res.status(404).json({ success: false, message: 'SMER not found or not editable' });
+
+  const entry = smer.daily_entries.id(entry_id);
+  if (!entry) return res.status(404).json({ success: false, message: 'Daily entry not found' });
+
+  // Parse override details from the approval description
+  // Description format: "Per diem override Day N: OLD → NEW (reason). Entry ID: xxx"
+  const descMatch = approvalReq.description?.match(/→ (FULL|HALF) \((.+?)\)\./);
+  const override_tier = descMatch?.[1];
+  const override_reason = descMatch?.[2] || 'Approved override';
+
+  if (!override_tier) {
+    return res.status(400).json({ success: false, message: 'Could not parse override tier from approval request' });
+  }
+
+  const settings = await Settings.getSettings();
+  const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
+  const { amount } = computePerdiemAmount(override_tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile);
+  const oldTier = entry.perdiem_tier;
+
+  entry.perdiem_override = true;
+  entry.override_tier = override_tier;
+  entry.override_reason = `${override_reason} (Approval #${approval_request_id})`;
+  entry.overridden_by = approvalReq.decided_by || req.user._id;
+  entry.overridden_at = new Date();
+  entry.perdiem_tier = override_tier;
+  entry.perdiem_amount = amount;
+
+  await ErpAuditLog.logChange({
+    entity_id: smer.entity_id, bdm_id: smer.bdm_id,
+    log_type: 'ITEM_CHANGE', target_ref: smer._id.toString(), target_model: 'SmerEntry',
+    field_changed: `daily_entries.${entry.day}.perdiem_tier`,
+    old_value: `${oldTier} (md_count: ${entry.md_count})`,
+    new_value: `${override_tier} (approved override: ${override_reason})`,
+    changed_by: req.user._id,
+    note: `Per diem override day ${entry.day}: ${oldTier} → ${override_tier} — approved via request #${approval_request_id}`
+  });
+
+  await smer.save();
+  res.json({ success: true, data: smer, message: 'Approved override applied successfully' });
 });
 
 // ═══════════════════════════════════════════
@@ -1630,6 +1759,7 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
 
   const settings = await Settings.getSettings();
   const perdiemRate = settings.PERDIEM_RATE_DEFAULT || 800;
+  const compProfile = await loadBdmCompProfile(bdmUserId, req.entityId);
 
   // Build daily entries with CRM data
   const DAYS_OF_WEEK = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -1642,7 +1772,7 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
 
     const dateKey = date.toISOString().split('T')[0];
     const crmData = dailyCounts[dateKey] || { md_count: 0, unique_doctors: 0 };
-    const { tier, amount } = computePerdiemAmount(crmData.md_count, perdiemRate, settings);
+    const { tier, amount } = computePerdiemAmount(crmData.md_count, perdiemRate, settings, compProfile);
 
     entries.push({
       day,
@@ -2112,11 +2242,37 @@ const getRevolvingFundAmount = catchAsync(async (req, res) => {
   res.json({ success: true, data: { amount, source } });
 });
 
+// ═══════════════════════════════════════════
+// PER DIEM CONFIG — Resolve per-BDM thresholds
+// ═══════════════════════════════════════════
+
+/**
+ * GET /expenses/perdiem-config
+ * Resolve per diem thresholds for the current BDM.
+ * CompProfile per-person thresholds → Settings global fallback.
+ * null/undefined in CompProfile = use global. 0 IS a valid override.
+ * Returns: { fullThreshold, halfThreshold, source: 'COMP_PROFILE'|'SETTINGS' }
+ */
+const getPerdiemConfig = catchAsync(async (req, res) => {
+  const settings = await Settings.getSettings();
+  const compProfile = await loadBdmCompProfile(req.bdmId, req.entityId);
+  const resolved = resolvePerdiemThresholds(settings, compProfile);
+
+  res.json({
+    success: true,
+    data: {
+      fullThreshold: resolved.fullThreshold,
+      halfThreshold: resolved.halfThreshold,
+      source: resolved.source
+    }
+  });
+});
+
 module.exports = {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
   validateSmer, submitSmer, reopenSmer,
-  overridePerdiemDay, getSmerCrmMdCounts, getSmerCrmVisitDetail,
+  overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
   validateCarLogbook, submitCarLogbook, reopenCarLogbook,
@@ -2131,5 +2287,7 @@ module.exports = {
   // Summary
   getExpenseSummary,
   // Revolving Fund
-  getRevolvingFundAmount
+  getRevolvingFundAmount,
+  // Per Diem Config
+  getPerdiemConfig
 };

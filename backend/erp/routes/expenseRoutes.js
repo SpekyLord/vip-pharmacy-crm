@@ -14,7 +14,7 @@ const {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
   validateSmer, submitSmer, reopenSmer,
-  overridePerdiemDay, getSmerCrmMdCounts, getSmerCrmVisitDetail,
+  overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
   validateCarLogbook, submitCarLogbook, reopenCarLogbook,
@@ -29,7 +29,9 @@ const {
   // Summary
   getExpenseSummary,
   // Revolving Fund
-  getRevolvingFundAmount
+  getRevolvingFundAmount,
+  // Per Diem Config
+  getPerdiemConfig
 } = require('../controllers/expenseController');
 
 const router = express.Router();
@@ -39,6 +41,9 @@ router.get('/summary', getExpenseSummary);
 
 // ═══ Revolving Fund ═══
 router.get('/revolving-fund-amount', getRevolvingFundAmount);
+
+// ═══ Per Diem Config ═══
+router.get('/perdiem-config', getPerdiemConfig);
 
 // ═══ SMER ═══
 router.post('/smer', createSmer);
@@ -51,7 +56,8 @@ router.post('/smer/reopen', periodLockCheck('EXPENSE'), reopenSmer);
 router.get('/smer/:id', getSmerById);
 router.put('/smer/:id', updateSmer);
 router.delete('/smer/:id', deleteDraftSmer);  // DRAFT only — backend enforces status check
-router.post('/smer/:id/override-perdiem', roleCheck('admin', 'finance', 'president'), overridePerdiemDay);
+router.post('/smer/:id/override-perdiem', overridePerdiemDay);
+router.post('/smer/:id/apply-override', applyPerdiemOverride);
 
 // ═══ Car Logbook ═══
 router.post('/car-logbook', createCarLogbook);

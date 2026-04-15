@@ -33,6 +33,7 @@ const approvalRuleSchema = new mongoose.Schema({
       // Universal Approval Hub (Phase F / F.1) — posting & approval modules
       'DEDUCTION_SCHEDULE', 'KPI', 'COLLECTION', 'SMER',
       'CAR_LOGBOOK', 'PRF_CALF', 'APPROVAL_REQUEST',
+      'PERDIEM_OVERRIDE',
     ],
     index: true,
   },
