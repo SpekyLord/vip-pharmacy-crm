@@ -186,7 +186,7 @@ export default function Smer() {
         setPerdiemThresholds(prev => ({ ...prev, full: settings.PERDIEM_MD_FULL ?? 8, half: settings.PERDIEM_MD_HALF ?? 3 }));
       }
     }
-  }, [settings]);
+  }, [settings, perdiemThresholds.source]);
 
   // Generate empty daily entries for the period
   const generateDays = () => {
