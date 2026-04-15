@@ -82,7 +82,16 @@ const approvalHandlers = {
     throw new Error(`Unknown action: ${action}`);
   },
 
-  income_report: async (id, action, userId) => {
+  income_report: async (id, action, userId, reason) => {
+    if (action === 'reject') {
+      const IncomeReport = require('../models/IncomeReport');
+      const doc = await IncomeReport.findById(id);
+      if (!doc) throw new Error('Income report not found');
+      doc.status = 'RETURNED';
+      doc.return_reason = reason;
+      await doc.save();
+      return doc;
+    }
     const { transitionIncomeStatus } = require('../services/incomeCalc');
     // action maps: review → GENERATED→REVIEWED, credit → BDM_CONFIRMED→CREDITED
     return transitionIncomeStatus(id, action, userId);
@@ -108,7 +117,7 @@ const approvalHandlers = {
     return grn;
   },
 
-  payslip: async (id, action, userId) => {
+  payslip: async (id, action, userId, reason) => {
     const Payslip = require('../models/Payslip');
     const payslip = await Payslip.findById(id);
     if (!payslip) throw new Error('Payslip not found');
@@ -123,12 +132,17 @@ const approvalHandlers = {
       payslip.status = 'APPROVED';
       payslip.approved_by = userId;
       payslip.approved_at = new Date();
+    } else if (action === 'reject') {
+      payslip.status = 'REJECTED';
+      payslip.rejection_reason = reason;
+      payslip.reviewed_by = userId;
+      payslip.reviewed_at = new Date();
     }
     await payslip.save();
     return payslip;
   },
 
-  kpi_rating: async (id, action, userId) => {
+  kpi_rating: async (id, action, userId, reason) => {
     const KpiSelfRating = require('../models/KpiSelfRating');
     const rating = await KpiSelfRating.findById(id);
     if (!rating) throw new Error('KPI rating not found');
@@ -142,6 +156,11 @@ const approvalHandlers = {
       rating.status = 'APPROVED';
       rating.approved_by = userId;
       rating.approved_at = new Date();
+    } else if (action === 'reject') {
+      rating.status = 'REJECTED';
+      rating.rejection_reason = reason;
+      rating.reviewed_by = userId;
+      rating.reviewed_at = new Date();
     }
     await rating.save();
     return rating;
@@ -149,7 +168,7 @@ const approvalHandlers = {
 
   // ── Phase F expansion: document-posting handlers (VALID → POSTED) ──
 
-  sales_line: async (id, action, userId) => {
+  sales_line: async (id, action, userId, reason) => {
     const SalesLine = require('../models/SalesLine');
     const doc = await SalesLine.findById(id);
     if (!doc) throw new Error('Sales line not found');
@@ -160,13 +179,14 @@ const approvalHandlers = {
       doc.posted_at = new Date();
     } else if (action === 'reject') {
       doc.status = 'ERROR';
-      doc.validation_errors = [{ message: 'Rejected from Approval Hub' }];
+      doc.rejection_reason = reason;
+      doc.validation_errors = [{ message: reason }];
     }
     await doc.save();
     return doc;
   },
 
-  collection: async (id, action, userId) => {
+  collection: async (id, action, userId, reason) => {
     const Collection = require('../models/Collection');
     const doc = await Collection.findById(id);
     if (!doc) throw new Error('Collection not found');
@@ -177,13 +197,14 @@ const approvalHandlers = {
       doc.posted_at = new Date();
     } else if (action === 'reject') {
       doc.status = 'ERROR';
-      doc.validation_errors = [{ message: 'Rejected from Approval Hub' }];
+      doc.rejection_reason = reason;
+      doc.validation_errors = [{ message: reason }];
     }
     await doc.save();
     return doc;
   },
 
-  smer_entry: async (id, action, userId) => {
+  smer_entry: async (id, action, userId, reason) => {
     const SmerEntry = require('../models/SmerEntry');
     const doc = await SmerEntry.findById(id);
     if (!doc) throw new Error('SMER entry not found');
@@ -194,13 +215,14 @@ const approvalHandlers = {
       doc.posted_at = new Date();
     } else if (action === 'reject') {
       doc.status = 'ERROR';
-      doc.validation_errors = [{ message: 'Rejected from Approval Hub' }];
+      doc.rejection_reason = reason;
+      doc.validation_errors = [{ message: reason }];
     }
     await doc.save();
     return doc;
   },
 
-  car_logbook: async (id, action, userId) => {
+  car_logbook: async (id, action, userId, reason) => {
     const CarLogbookEntry = require('../models/CarLogbookEntry');
     const doc = await CarLogbookEntry.findById(id);
     if (!doc) throw new Error('Car logbook entry not found');
@@ -211,13 +233,14 @@ const approvalHandlers = {
       doc.posted_at = new Date();
     } else if (action === 'reject') {
       doc.status = 'ERROR';
-      doc.validation_errors = [{ message: 'Rejected from Approval Hub' }];
+      doc.rejection_reason = reason;
+      doc.validation_errors = [{ message: reason }];
     }
     await doc.save();
     return doc;
   },
 
-  expense_entry: async (id, action, userId) => {
+  expense_entry: async (id, action, userId, reason) => {
     const ExpenseEntry = require('../models/ExpenseEntry');
     const doc = await ExpenseEntry.findById(id);
     if (!doc) throw new Error('Expense entry not found');
@@ -228,13 +251,14 @@ const approvalHandlers = {
       doc.posted_at = new Date();
     } else if (action === 'reject') {
       doc.status = 'ERROR';
-      doc.validation_errors = [{ message: 'Rejected from Approval Hub' }];
+      doc.rejection_reason = reason;
+      doc.validation_errors = [{ message: reason }];
     }
     await doc.save();
     return doc;
   },
 
-  prf_calf: async (id, action, userId) => {
+  prf_calf: async (id, action, userId, reason) => {
     const PrfCalf = require('../models/PrfCalf');
     const doc = await PrfCalf.findById(id);
     if (!doc) throw new Error('PRF/CALF not found');
@@ -245,7 +269,8 @@ const approvalHandlers = {
       doc.posted_at = new Date();
     } else if (action === 'reject') {
       doc.status = 'ERROR';
-      doc.validation_errors = [{ message: 'Rejected from Approval Hub' }];
+      doc.rejection_reason = reason;
+      doc.validation_errors = [{ message: reason }];
     }
     await doc.save();
     return doc;
@@ -273,6 +298,10 @@ const universalApprove = catchAsync(async (req, res) => {
 
   if (!type || !id || !action) {
     return res.status(400).json({ success: false, message: 'type, id, and action are required' });
+  }
+
+  if (action === 'reject' && !reason?.trim()) {
+    return res.status(400).json({ success: false, message: 'Reason is required for rejection' });
   }
 
   const handler = approvalHandlers[type];

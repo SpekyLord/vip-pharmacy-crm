@@ -52,6 +52,7 @@ export default function useHospitals() {
       setHospitals(deduped);
     }).catch(err => {
       console.error('[useHospitals] fetch failed:', err?.response?.status, err?.response?.data?.message || err.message);
+      fetchedRef.current = false; // allow retry on next mount after auth recovery
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
