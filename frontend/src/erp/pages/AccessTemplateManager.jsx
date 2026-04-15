@@ -127,7 +127,12 @@ export function AccessTemplateManagerContent() {
     setForm(f => {
       const sp = { ...f.sub_permissions };
       if (!sp[modKey]) sp[modKey] = {};
-      sp[modKey] = { ...sp[modKey], [subKey]: !sp[modKey][subKey] };
+      if (sp[modKey][subKey]) {
+        const { [subKey]: _, ...rest } = sp[modKey];
+        if (Object.keys(rest).length === 0) { delete sp[modKey]; } else { sp[modKey] = rest; }
+      } else {
+        sp[modKey] = { ...sp[modKey], [subKey]: true };
+      }
       return { ...f, sub_permissions: sp };
     });
   };
@@ -137,8 +142,12 @@ export function AccessTemplateManagerContent() {
     if (!keys) return;
     setForm(f => {
       const sp = { ...f.sub_permissions };
-      sp[modKey] = {};
-      keys.forEach(k => { sp[modKey][k.key] = value; });
+      if (value) {
+        sp[modKey] = {};
+        keys.forEach(k => { sp[modKey][k.key] = true; });
+      } else {
+        delete sp[modKey];
+      }
       return { ...f, sub_permissions: sp };
     });
   };

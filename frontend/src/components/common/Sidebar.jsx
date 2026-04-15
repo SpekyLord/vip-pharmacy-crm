@@ -855,19 +855,26 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     });
   }
 
-  // ── Administration (admin-like only) — inserted at top, right after ERP Home ──
-  if (ROLE_SETS.MANAGEMENT.includes(role)) {
+  // ── Administration — inserted at top, right after ERP Home ──
+  {
     const adminItems = [];
-    adminItems.push({ path: '/erp/approvals', label: 'Approvals', icon: ClipboardCheck, badge: approvalCount || null });
-    adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
-    adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
-    if (isAdmin) {
-      adminItems.push({ path: '/erp/customers', label: 'Customers', icon: Users });
-      adminItems.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
-      adminItems.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
+    // Approvals: lookup-driven via ERP_MODULE 'approvals' (not hardcoded to MANAGEMENT)
+    if (hasModule('approvals')) {
+      adminItems.push({ path: '/erp/approvals', label: 'Approvals', icon: ClipboardCheck, badge: approvalCount || null });
     }
-    adminItems.sort((a, b) => a.label.localeCompare(b.label));
-    sections.splice(1, 0, { title: 'Administration', collapsible: true, defaultOpen: false, items: adminItems });
+    if (ROLE_SETS.MANAGEMENT.includes(role)) {
+      adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
+      adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
+      if (isAdmin) {
+        adminItems.push({ path: '/erp/customers', label: 'Customers', icon: Users });
+        adminItems.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
+        adminItems.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
+      }
+    }
+    if (adminItems.length > 0) {
+      adminItems.sort((a, b) => a.label.localeCompare(b.label));
+      sections.splice(1, 0, { title: 'Administration', collapsible: true, defaultOpen: false, items: adminItems });
+    }
   }
 
   // For CRM sidebars, hide ERP section when only ERP Home+Hospitals available.
@@ -1025,9 +1032,12 @@ const Sidebar = () => {
     return () => window.removeEventListener('inbox:updated', fetchUnreadCount);
   }, [fetchUnreadCount]);
 
-  // Fetch pending approval count for management roles
+  // Fetch pending approval count for users with approvals module access
   const fetchApprovalCount = useCallback(async () => {
-    if (!ROLE_SETS.MANAGEMENT.includes(user?.role)) return;
+    const hasApprovalAccess = isPresidentLike(user?.role)
+      || (user?.role === ROLES.ADMIN && (!user?.erp_access || !user?.erp_access?.enabled))
+      || (user?.erp_access?.modules?.approvals && user?.erp_access?.modules?.approvals !== 'NONE');
+    if (!hasApprovalAccess) return;
     try {
       const res = await api.get('/erp/approvals/universal-pending');
       setApprovalCount(res.data?.count || (res.data?.data || []).length || 0);

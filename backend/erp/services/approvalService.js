@@ -175,6 +175,7 @@ const checkApprovalRequired = async (opts) => {
     doc_ref: opts.docRef,
     amount: opts.amount,
     description: opts.description,
+    metadata: opts.metadata,  // module-specific structured data (e.g., entry_id, override_tier for PERDIEM_OVERRIDE)
     level: firstRule.level,
     requested_by: opts.requesterId,
     status: 'PENDING',

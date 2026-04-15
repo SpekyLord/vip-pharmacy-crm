@@ -90,7 +90,13 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
     setSubPermissions(prev => {
       const updated = { ...prev };
       if (!updated[modKey]) updated[modKey] = {};
-      updated[modKey] = { ...updated[modKey], [subKey]: !updated[modKey][subKey] };
+      if (updated[modKey][subKey]) {
+        // Toggling off: delete key instead of setting false
+        const { [subKey]: _, ...rest } = updated[modKey];
+        if (Object.keys(rest).length === 0) { delete updated[modKey]; } else { updated[modKey] = rest; }
+      } else {
+        updated[modKey] = { ...updated[modKey], [subKey]: true };
+      }
       return updated;
     });
   };
@@ -100,8 +106,13 @@ export default function ErpAccessManager({ userId, readOnly = false }) {
     if (!keys) return;
     setSubPermissions(prev => {
       const updated = { ...prev };
-      updated[modKey] = {};
-      keys.forEach(k => { updated[modKey][k.key] = value; });
+      if (value) {
+        updated[modKey] = {};
+        keys.forEach(k => { updated[modKey][k.key] = true; });
+      } else {
+        // Deselect all: remove module entry entirely
+        delete updated[modKey];
+      }
       return updated;
     });
   };

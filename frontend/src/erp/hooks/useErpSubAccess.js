@@ -29,8 +29,10 @@ export default function useErpSubAccess() {
     if (!moduleLevel || moduleLevel === 'NONE') return false;
 
     // FULL with no sub_permissions for this module → all granted
+    // Count only truthy entries — stale false values don't count
     const moduleSubs = user.erp_access?.sub_permissions?.[module];
-    if (!moduleSubs || Object.keys(moduleSubs).length === 0) {
+    const truthyCount = moduleSubs ? Object.values(moduleSubs).filter(Boolean).length : 0;
+    if (!moduleSubs || truthyCount === 0) {
       return moduleLevel === 'FULL';
     }
 
@@ -41,7 +43,7 @@ export default function useErpSubAccess() {
   // Check if any sub-permission keys exist for a module (i.e., granular control is active)
   const hasGranularAccess = (module) => {
     const moduleSubs = user?.erp_access?.sub_permissions?.[module];
-    return moduleSubs && Object.keys(moduleSubs).length > 0;
+    return moduleSubs && Object.values(moduleSubs).filter(Boolean).length > 0;
   };
 
   return { hasSubPermission, hasGranularAccess };

@@ -37,7 +37,12 @@ const dailyEntrySchema = new mongoose.Schema({
   override_tier: { type: String },  // Lookup: PERDIEM_TIER — only FULL or HALF (no point overriding to ZERO)
   override_reason: { type: String, trim: true },             // "Meeting with President", "Training day", etc.
   overridden_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  overridden_at: { type: Date }
+  overridden_at: { type: Date },
+
+  // Approval tracking — links override request to Universal Approval system
+  override_status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'] },  // null = no request
+  approval_request_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ApprovalRequest' },
+  requested_override_tier: { type: String },  // stores what tier was requested while PENDING
 }, { _id: true });
 
 const smerEntrySchema = new mongoose.Schema({

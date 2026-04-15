@@ -230,6 +230,7 @@ const SEED_DEFAULTS = {
     { code: 'CAR_LOGBOOK', label: 'Car Logbook' },
     { code: 'PRF_CALF', label: 'PRF / CALF' },
     { code: 'APPROVAL_REQUEST', label: 'Authority Matrix Approvals' },
+    { code: 'PERDIEM_OVERRIDE', label: 'Per Diem Override' },
   ],
   // Phase 30 — PersonDetail dropdowns (migrated from hardcoded arrays)
   CIVIL_STATUS: ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'],
@@ -312,6 +313,7 @@ const SEED_DEFAULTS = {
     { code: 'PURCHASING', label: 'Purchasing', metadata: { key: 'purchasing', short_label: 'Purch', sort_order: 9 } },
     { code: 'BANKING', label: 'Banking', metadata: { key: 'banking', short_label: 'Bank', sort_order: 10 } },
     { code: 'SALES_GOALS', label: 'Sales Goals', metadata: { key: 'sales_goals', short_label: 'Goals', sort_order: 11 } },
+    { code: 'APPROVALS', label: 'Approvals', metadata: { key: 'approvals', short_label: 'Appr', sort_order: 12 } },
   ],
   ERP_SUB_PERMISSION: [
     // Sales
@@ -351,6 +353,8 @@ const SEED_DEFAULTS = {
     { code: 'SALES_GOALS__ACTION_MANAGE_ALL', label: 'Create Actions for Any BDM', metadata: { module: 'sales_goals', key: 'action_manage_all', sort_order: 3 } },
     { code: 'SALES_GOALS__INCENTIVE_MANAGE', label: 'Manage Incentive Programs', metadata: { module: 'sales_goals', key: 'incentive_manage', sort_order: 4 } },
     { code: 'SALES_GOALS__MANUAL_KPI_ALL', label: 'Enter Manual KPIs for Any BDM', metadata: { module: 'sales_goals', key: 'manual_kpi_all', sort_order: 5 } },
+    // Approvals
+    { code: 'APPROVALS__RULE_MANAGE', label: 'Create/Edit Approval Rules', metadata: { module: 'approvals', key: 'rule_manage', sort_order: 1 } },
   ],
   // Phase 30 — Credit Note lookups (was hardcoded in CreditNotes.jsx)
   RETURN_REASON: [
@@ -467,6 +471,7 @@ const SEED_DEFAULTS = {
     { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated car logbook entries' } },
     { code: 'EXPENSES', label: 'Expenses (ORE/ACCESS)', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated expense entries' } },
     { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated PRF/CALF documents' } },
+    { code: 'PERDIEM_OVERRIDE', label: 'Per Diem Override', metadata: { roles: ['admin', 'finance', 'president'], description: 'Approve BDM per diem override requests' } },
   ],
 
   // Phase G3 — Editable fields per module in the Universal Approval Hub (quick-edit for typo fixes)
@@ -526,11 +531,15 @@ exports.getByCategory = catchAsync(async (req, res) => {
   if (req.query.active_only === 'true') filter.is_active = true;
   let items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
 
-  // Auto-seed on first access if empty and defaults exist
-  if (items.length === 0 && req.entityId && SEED_DEFAULTS[filter.category]) {
+  // Auto-seed: merge missing defaults (uses $setOnInsert so existing entries are never overwritten)
+  if (req.entityId && SEED_DEFAULTS[filter.category]) {
     const ops = buildSeedOps(SEED_DEFAULTS[filter.category], filter.category, req.entityId, req.user?._id);
-    await Lookup.bulkWrite(ops);
-    items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+    if (ops.length > 0) {
+      await Lookup.bulkWrite(ops);
+      if (items.length === 0 || ops.length > items.length) {
+        items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+      }
+    }
   }
 
   res.json({ success: true, data: items });
@@ -550,11 +559,15 @@ exports.getBatch = catchAsync(async (req, res) => {
     if (req.query.active_only === 'true') filter.is_active = true;
     let items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
 
-    // Auto-seed if empty
-    if (items.length === 0 && req.entityId && SEED_DEFAULTS[category]) {
+    // Auto-seed: merge missing defaults
+    if (req.entityId && SEED_DEFAULTS[category]) {
       const ops = buildSeedOps(SEED_DEFAULTS[category], category, req.entityId, req.user?._id);
-      await Lookup.bulkWrite(ops);
-      items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+      if (ops.length > 0) {
+        await Lookup.bulkWrite(ops);
+        if (items.length === 0 || ops.length > items.length) {
+          items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+        }
+      }
     }
     result[category] = items;
   }
