@@ -103,17 +103,9 @@ const runWeeklyCompliance = async () => {
           specialty: d.specialty,
         }));
 
-      // Get region name for admin summary
-      let regionName = 'Unassigned';
-      if (assignedDoctors.length > 0) {
-        // Use first doctor's region as representative
-        const doctorWithRegion = await Doctor.findById(assignedDoctors[0]._id)
-          .populate('region', 'name')
-          .lean();
-        if (doctorWithRegion?.region?.name) {
-          regionName = doctorWithRegion.region.name;
-        }
-      }
+      // Get area label for admin summary (Region model removed — use first doctor's area if available)
+      const areaLabel = assignedDoctors[0]?.area || assignedDoctors[0]?.city || 'Unassigned';
+      const regionName = areaLabel;
 
       // Collect stats for admin summary
       bdmStats.push({
