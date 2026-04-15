@@ -27,8 +27,9 @@ const getPeopleList = catchAsync(async (req, res) => {
       .sort({ full_name: 1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .populate('user_id', 'name email role')
+      .populate('user_id', 'name email role isActive')
       .populate('reports_to', 'full_name position')
+      .populate('territory_id', 'territory_name territory_code')
       .lean(),
     PeopleMaster.countDocuments(filter),
   ]);

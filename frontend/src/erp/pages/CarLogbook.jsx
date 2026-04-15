@@ -266,7 +266,17 @@ export default function CarLogbook() {
   const showMsg = (msg, isError = false) => { setActionMsg({ msg, isError }); setTimeout(() => setActionMsg(null), 5000); };
 
   const handleValidate = async () => { try { const r = await validateCarLogbook(); showMsg(r?.message || 'Validated'); loadEntries(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); } };
-  const handleSubmit = async () => { try { const r = await submitCarLogbook(); showMsg(r?.message || 'Submitted'); loadEntries(); } catch (e) { showMsg(e.response?.data?.message || 'Submit failed — are there VALID entries?', true); } };
+  const handleSubmit = async () => {
+    try {
+      const r = await submitCarLogbook();
+      if (r?.approval_pending) { showMsg(r.message || 'Approval required — request sent to approver.'); }
+      else { showMsg(r?.message || 'Submitted'); }
+      loadEntries();
+    } catch (e) {
+      if (e?.response?.data?.approval_pending) { showMsg(e.response.data.message || 'Approval required'); loadEntries(); }
+      else { showMsg(e.response?.data?.message || 'Submit failed — are there VALID entries?', true); }
+    }
+  };
   const handleReopen = async (id) => { try { await reopenCarLogbook([id]); showMsg('Reopened'); loadEntries(); } catch (e) { showMsg(e.response?.data?.message || 'Reopen failed', true); } };
   const handleDelete = async (id) => { try { await deleteDraftCarLogbook(id); showMsg('Deleted'); loadEntries(); } catch (e) { showMsg(e.response?.data?.message || 'Delete failed — only DRAFT entries can be deleted', true); } };
 

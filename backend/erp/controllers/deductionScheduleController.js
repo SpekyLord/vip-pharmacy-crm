@@ -12,7 +12,9 @@ const {
   rejectSchedule: rejectScheduleSvc,
   cancelSchedule: cancelScheduleSvc,
   earlyPayoff: earlyPayoffSvc,
-  adjustInstallment: adjustInstallmentSvc
+  adjustInstallment: adjustInstallmentSvc,
+  withdrawSchedule: withdrawScheduleSvc,
+  editPendingSchedule: editPendingScheduleSvc
 } = require('../services/deductionScheduleService');
 
 // ═══ BDM Endpoints ═══
@@ -118,6 +120,18 @@ const financeCreateSchedule = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, data: schedule });
 });
 
+// ═══ BDM Self-Service ═══
+
+const withdrawSchedule = catchAsync(async (req, res) => {
+  const schedule = await withdrawScheduleSvc(req.params.id, req.bdmId, req.entityId);
+  res.json({ success: true, data: schedule, message: 'Schedule withdrawn' });
+});
+
+const editPendingSchedule = catchAsync(async (req, res) => {
+  const schedule = await editPendingScheduleSvc(req.params.id, req.bdmId, req.entityId, req.body);
+  res.json({ success: true, data: schedule, message: 'Schedule updated' });
+});
+
 module.exports = {
   createSchedule,
   getMySchedules,
@@ -128,5 +142,7 @@ module.exports = {
   cancelSchedule,
   earlyPayoff,
   adjustInstallment,
-  financeCreateSchedule
+  financeCreateSchedule,
+  withdrawSchedule,
+  editPendingSchedule
 };

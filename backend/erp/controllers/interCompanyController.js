@@ -179,6 +179,22 @@ const approveTransfer = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: `Cannot approve transfer in ${transfer.status} status` });
   }
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const totalAmount = (transfer.line_items || []).reduce((sum, li) => sum + ((li.qty || 0) * (li.unit_cost || 0)), 0);
+  const gated = await gateApproval({
+    entityId: transfer.source_entity_id,
+    module: 'IC_TRANSFER',
+    docType: 'IC_TRANSFER',
+    docId: transfer._id,
+    docRef: transfer.transfer_ref,
+    amount: transfer.total_amount || totalAmount,
+    description: `IC transfer ${transfer.transfer_ref}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   transfer.status = 'APPROVED';
   transfer.approved_by = req.user._id;
   transfer.approved_at = new Date();

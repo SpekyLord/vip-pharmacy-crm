@@ -4,7 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
 import useAccounting from '../hooks/useAccounting';
-import { showError } from '../utils/errorToast';
+import { showError, showApprovalPending } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -112,7 +112,14 @@ export default function JournalEntries() {
   };
 
   const handlePost = async (id) => {
-    try { await api.postJournal(id); loadJournals(); if (selected?._id === id) viewDetail(id); } catch (err) { showError(err, 'Could not post journal'); }
+    try {
+      const res = await api.postJournal(id);
+      if (res?.approval_pending) { showApprovalPending(res.message); }
+      loadJournals(); if (selected?._id === id) viewDetail(id);
+    } catch (err) {
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); loadJournals(); }
+      else showError(err, 'Could not post journal');
+    }
   };
 
   const draftIds = journals.filter(j => j.status === 'DRAFT').map(j => j._id);
@@ -128,11 +135,12 @@ export default function JournalEntries() {
     setBatchPosting(true);
     try {
       const res = await api.batchPostJournals([...selectedIds]);
-      setBatchResults(res?.data?.results || []);
-      setSelectedIds(new Set());
+      if (res?.approval_pending) { showApprovalPending(res.message); }
+      else { setBatchResults(res?.data?.results || []); setSelectedIds(new Set()); }
       loadJournals();
     } catch (err) {
-      setBatchResults(err?.response?.data?.data?.results || [{ success: false, reason: err?.message || 'Error' }]);
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); loadJournals(); }
+      else { setBatchResults(err?.response?.data?.data?.results || [{ success: false, reason: err?.message || 'Error' }]); }
     }
     setBatchPosting(false);
   };

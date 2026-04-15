@@ -6,7 +6,7 @@ import usePeople from '../hooks/usePeople';
 import useWarehouses from '../hooks/useWarehouses';
 import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError, showSuccess } from '../utils/errorToast';
+import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
 
 const CEILING = 5000;
@@ -367,8 +367,14 @@ function TransactionsTab({ funds, pc }) {
 
   const handlePost = async (id) => {
     if (!window.confirm('Post this transaction? This cannot be undone.')) return;
-    try { await pc.postTransaction(id); loadTransactions(); }
-    catch (err) { showError(err, 'Could not post petty cash transaction'); }
+    try {
+      const res = await pc.postTransaction(id);
+      if (res?.approval_pending) { showApprovalPending(res.message); }
+      loadTransactions();
+    } catch (err) {
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); loadTransactions(); }
+      else showError(err, 'Could not post petty cash transaction');
+    }
   };
 
   const handleCreate = async (body) => {

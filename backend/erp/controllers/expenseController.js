@@ -46,6 +46,26 @@ async function loadBdmCompProfile(bdmUserId, entityId) {
   return CompProfile.findOne({ person_id: person._id, entity_id: entityId, status: 'ACTIVE' }).sort({ effective_date: -1 }).lean();
 }
 
+/**
+ * Enforce "No Work" activity rules on a daily entry.
+ * When activity_type is 'NO_WORK': md_count=0, perdiem=ZERO/0, no override, no hospital.
+ */
+function enforceNoWorkRules(entry) {
+  if (entry.activity_type !== 'NO_WORK') return entry;
+  return {
+    ...entry,
+    md_count: 0,
+    perdiem_tier: 'ZERO',
+    perdiem_amount: 0,
+    perdiem_override: false,
+    override_tier: undefined,
+    override_reason: undefined,
+    hospital_id: undefined,
+    hospital_ids: [],
+    hospital_covered: undefined,
+  };
+}
+
 // ═══════════════════════════════════════════
 // SMER ENDPOINTS
 // ═══════════════════════════════════════════
@@ -67,6 +87,8 @@ const createSmer = catchAsync(async (req, res) => {
   // Auto-compute per diem for each daily entry (skip overridden entries)
   // Per diem thresholds: CompProfile per-person → Settings global fallback
   let dailyEntries = (req.body.daily_entries || []).map(entry => {
+    // "No Work" — force zero everything, skip per diem computation
+    if (entry.activity_type === 'NO_WORK') return enforceNoWorkRules(entry);
     if (entry.perdiem_override && entry.override_tier) {
       // Override set — use override_tier for amount, preserve CRM md_count
       const { amount } = computePerdiemAmount(entry.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile);
@@ -113,6 +135,9 @@ const updateSmer = catchAsync(async (req, res) => {
       const cleaned = { ...entry };
       if (!cleaned.activity_type) delete cleaned.activity_type;
       if (!cleaned.override_tier) delete cleaned.override_tier;
+
+      // "No Work" — force zero everything
+      if (cleaned.activity_type === 'NO_WORK') return enforceNoWorkRules(cleaned);
 
       if (cleaned.perdiem_override && cleaned.override_tier) {
         const { amount } = computePerdiemAmount(cleaned.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile);
@@ -174,6 +199,12 @@ const validateSmer = catchAsync(async (req, res) => {
 
     for (const entry of smer.daily_entries) {
       if (!entry.entry_date) errors.push(`Day ${entry.day}: date is required`);
+      // "No Work" validation — catch data corruption or direct DB edits
+      if (entry.activity_type === 'NO_WORK') {
+        if (entry.md_count > 0) errors.push(`Day ${entry.day}: "No Work" day cannot have engagements`);
+        if (entry.perdiem_amount > 0) errors.push(`Day ${entry.day}: "No Work" day cannot have per diem`);
+        if (entry.perdiem_override) errors.push(`Day ${entry.day}: "No Work" day cannot have per diem override`);
+      }
       if (entry.md_count > 0 && !entry.activity_type && !entry.hospital_covered && !entry.perdiem_override) {
         errors.push(`Day ${entry.day}: activity type required when engagements > 0`);
       }
@@ -193,6 +224,22 @@ const validateSmer = catchAsync(async (req, res) => {
 const submitSmer = catchAsync(async (req, res) => {
   const smers = await SmerEntry.find({ ...req.tenantFilter, status: 'VALID' });
   if (!smers.length) return res.status(400).json({ success: false, message: 'No VALID SMERs to submit' });
+
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const smerTotalAmount = smers.reduce((sum, s) => sum + (s.total_reimbursable || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'EXPENSES',
+    docType: 'SMER',
+    docId: smers[0]._id,
+    docRef: smers.map(s => `SMER-${s.period}-${s.cycle}`).join(', '),
+    amount: smerTotalAmount,
+    description: `Submit ${smers.length} SMER(s) (total ₱${smerTotalAmount.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
 
   // Period lock check
   const { checkPeriodOpen } = require('../utils/periodLock');
@@ -333,6 +380,11 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
   const entry = smer.daily_entries.id(entry_id);
   if (!entry) return res.status(404).json({ success: false, message: 'Daily entry not found' });
 
+  // Block overrides on "No Work" entries
+  if (entry.activity_type === 'NO_WORK') {
+    return res.status(400).json({ success: false, message: '"No Work" days cannot have per diem overrides' });
+  }
+
   if (remove_override) {
     // Remove override — revert to CRM-computed tier (no approval needed)
     const settings = await Settings.getSettings();
@@ -369,43 +421,49 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
   }
 
   // Route through approval system
-  const { checkApprovalRequired } = require('../services/approvalService');
+  // Per diem overrides ALWAYS require approval (bypasses authority matrix setting)
+  // — except for management roles who can self-approve
+  const ApprovalRequest = require('../models/ApprovalRequest');
   const docRef = `${smer.period}-${smer.cycle}-Day${entry.day}`;
   const settings = await Settings.getSettings();
   const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
   const { amount: overrideAmount } = computePerdiemAmount(override_tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile);
 
-  const approval = await checkApprovalRequired({
-    entityId: smer.entity_id,
-    module: 'PERDIEM_OVERRIDE',
-    docType: 'SMER_DAILY_ENTRY',
-    docId: smer._id,
-    docRef,
-    amount: overrideAmount,
-    description: `Per diem override Day ${entry.day}: ${entry.perdiem_tier} → ${override_tier} (${override_reason}). Entry ID: ${entry_id}`,
-    metadata: { entry_id, override_tier, override_reason },
-    requesterId: req.user._id,
-    requesterName: req.user.name,
-  });
+  const isManagement = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN, ROLES.FINANCE].includes(req.user.role);
 
-  if (approval.required) {
+  if (!isManagement) {
+    // BDMs/contractors: always create approval request — president must approve
+    const approvalReq = await ApprovalRequest.create({
+      entity_id: smer.entity_id,
+      module: 'PERDIEM_OVERRIDE',
+      doc_type: 'SMER_DAILY_ENTRY',
+      doc_id: smer._id,
+      doc_ref: docRef,
+      amount: overrideAmount,
+      description: `Per diem override Day ${entry.day}: ${entry.perdiem_tier} → ${override_tier} (${override_reason}). Entry ID: ${entry_id}`,
+      metadata: { entry_id, override_tier, override_reason },
+      requested_by: req.user._id,
+      requested_at: new Date(),
+      status: 'PENDING',
+    });
+
     // Save pending state on the daily entry so frontend can show status
     entry.override_status = 'PENDING';
     entry.requested_override_tier = override_tier;
     entry.override_reason = override_reason;
-    entry.approval_request_id = approval.requests[0]._id;
+    entry.approval_request_id = approvalReq._id;
     await smer.save();
 
     return res.status(202).json({
       success: false,
       approval_pending: true,
       message: 'Per diem override requires approval. Request submitted.',
-      request: approval.requests[0],
+      request: approvalReq,
       data: smer,
     });
   }
 
-  // No approval rules configured — apply override directly (backward-compatible)
+  // Management: apply override directly (self-approve)
   const oldTier = entry.perdiem_tier;
   entry.perdiem_override = true;
   entry.override_tier = override_tier;
@@ -633,6 +691,22 @@ const submitCarLogbook = catchAsync(async (req, res) => {
   const entries = await CarLogbookEntry.find({ ...req.tenantFilter, status: 'VALID' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No VALID logbook entries to submit' });
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const logbookTotal = entries.reduce((sum, e) => sum + (e.total_fuel_amount || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'EXPENSES',
+    docType: 'CAR_LOGBOOK',
+    docId: entries[0]._id,
+    docRef: entries.map(e => `LOGBOOK-${e.period}`).join(', '),
+    amount: logbookTotal,
+    description: `Submit ${entries.length} car logbook entr${entries.length === 1 ? 'y' : 'ies'} (total ₱${logbookTotal.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   // Period lock check
   const { checkPeriodOpen } = require('../utils/periodLock');
   for (const entry of entries) { await checkPeriodOpen(entry.entity_id, entry.period); }
@@ -844,6 +918,31 @@ async function autoCalfForSource(sourceDoc, sourceType) {
 // EXPENSE ENTRY (ORE/ACCESS) ENDPOINTS
 // ═══════════════════════════════════════════
 
+// Auto-classify expense lines that have no coa_code or are still '6900' (Misc)
+async function autoClassifyLines(lines, entityId) {
+  if (!lines || !lines.length) return;
+  for (const line of lines) {
+    if (!line.coa_code || line.coa_code === '6900') {
+      if (line.establishment) {
+        try {
+          const result = await classifyExpense(
+            { supplier_name: { value: line.establishment } },
+            { entityId }
+          );
+          if (result.coa_code && result.coa_code !== '6900') {
+            line.coa_code = result.coa_code;
+            if (!line.expense_category) line.expense_category = result.expense_category;
+            if (result.vendor_id) line.vendor_id = result.vendor_id;
+          }
+        } catch (err) {
+          // Non-blocking — leave coa_code as-is for manual correction
+          console.warn(`[autoClassify] Line "${line.establishment}" failed:`, err.message);
+        }
+      }
+    }
+  }
+}
+
 const createExpense = catchAsync(async (req, res) => {
   // Block future expense dates at save time (not just validation)
   const now = new Date();
@@ -856,6 +955,9 @@ const createExpense = catchAsync(async (req, res) => {
       });
     }
   }
+
+  // Auto-classify lines without coa_code before saving
+  await autoClassifyLines(req.body.lines, req.entityId);
 
   const entry = await ExpenseEntry.create({
     ...req.body,
@@ -884,6 +986,9 @@ const updateExpense = catchAsync(async (req, res) => {
       });
     }
   }
+
+  // Auto-classify lines without coa_code before saving
+  await autoClassifyLines(req.body.lines, req.entityId);
 
   Object.assign(entry, req.body);
   await entry.save();
@@ -981,6 +1086,22 @@ const validateExpenses = catchAsync(async (req, res) => {
 const submitExpenses = catchAsync(async (req, res) => {
   const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: 'VALID' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No VALID expenses to submit' });
+
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const expTotalAmount = entries.reduce((sum, e) => sum + (e.total_amount || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'EXPENSES',
+    docType: 'EXPENSE_ENTRY',
+    docId: entries[0]._id,
+    docRef: entries.map(e => `EXP-${e.period}-${e.cycle}`).join(', '),
+    amount: expTotalAmount,
+    description: `Submit ${entries.length} expense entr${entries.length === 1 ? 'y' : 'ies'} (total ₱${expTotalAmount.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
 
   // Period lock check
   const { checkPeriodOpen } = require('../utils/periodLock');
@@ -1433,6 +1554,22 @@ const validatePrfCalf = catchAsync(async (req, res) => {
 const submitPrfCalf = catchAsync(async (req, res) => {
   const docs = await PrfCalf.find({ ...req.tenantFilter, status: 'VALID' });
   if (!docs.length) return res.status(400).json({ success: false, message: 'No VALID PRF/CALFs to submit' });
+
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const prfCalfTotal = docs.reduce((sum, d) => sum + (d.amount || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'EXPENSES',
+    docType: 'PRF_CALF',
+    docId: docs[0]._id,
+    docRef: docs.map(d => d.prf_number || d.calf_number || d.doc_type).join(', '),
+    amount: prfCalfTotal,
+    description: `Submit ${docs.length} PRF/CALF doc${docs.length === 1 ? '' : 's'} (total ₱${prfCalfTotal.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
 
   // Period lock check
   const { checkPeriodOpen } = require('../utils/periodLock');

@@ -177,6 +177,97 @@ async function syncInstallmentStatus(scheduleId, installmentId, newStatus, incom
   await schedule.save();
 }
 
+/**
+ * BDM withdraws a PENDING_APPROVAL schedule (self-service cancel before Finance acts)
+ */
+async function withdrawSchedule(scheduleId, bdmId, entityId) {
+  const schedule = await DeductionSchedule.findOne({ _id: scheduleId, entity_id: entityId });
+  if (!schedule) throw new Error('Schedule not found');
+  if (schedule.bdm_id.toString() !== bdmId.toString()) {
+    throw new Error('You can only withdraw your own schedules');
+  }
+  if (schedule.status !== 'PENDING_APPROVAL') {
+    throw new Error(`Cannot withdraw schedule in ${schedule.status} status`);
+  }
+
+  for (const inst of schedule.installments) {
+    if (inst.status === 'PENDING') {
+      inst.status = 'CANCELLED';
+      inst.note = 'Withdrawn by BDM';
+    }
+  }
+
+  schedule.status = 'CANCELLED';
+  schedule.edit_history.push({
+    action: 'WITHDRAWN',
+    by: bdmId,
+    at: new Date()
+  });
+  await schedule.save();
+  return schedule;
+}
+
+/**
+ * BDM edits a PENDING_APPROVAL schedule (modify before Finance reviews)
+ */
+async function editPendingSchedule(scheduleId, bdmId, entityId, updates) {
+  const schedule = await DeductionSchedule.findOne({ _id: scheduleId, entity_id: entityId });
+  if (!schedule) throw new Error('Schedule not found');
+  if (schedule.bdm_id.toString() !== bdmId.toString()) {
+    throw new Error('You can only edit your own schedules');
+  }
+  if (schedule.status !== 'PENDING_APPROVAL') {
+    throw new Error(`Cannot edit schedule in ${schedule.status} status`);
+  }
+
+  const { deduction_type, deduction_label, description, total_amount, term_months, start_period, target_cycle } = updates;
+
+  // Snapshot old values for audit trail
+  schedule.edit_history.push({
+    action: 'EDITED',
+    by: bdmId,
+    at: new Date(),
+    previous: {
+      deduction_type: schedule.deduction_type,
+      deduction_label: schedule.deduction_label,
+      description: schedule.description,
+      total_amount: schedule.total_amount,
+      term_months: schedule.term_months,
+      start_period: schedule.start_period,
+      target_cycle: schedule.target_cycle
+    }
+  });
+
+  // Apply updates
+  if (deduction_type) schedule.deduction_type = deduction_type;
+  if (deduction_label) schedule.deduction_label = deduction_label;
+  if (description !== undefined) schedule.description = description;
+  if (total_amount && total_amount > 0) schedule.total_amount = total_amount;
+  if (term_months && term_months >= 1) schedule.term_months = term_months;
+  if (start_period) schedule.start_period = start_period;
+  if (target_cycle) schedule.target_cycle = target_cycle;
+
+  // Regenerate installments (pre-save hook only runs on isNew)
+  const { incrementPeriod } = require('../models/DeductionSchedule');
+  const baseAmount = Math.floor(schedule.total_amount / schedule.term_months * 100) / 100;
+  const lastAmount = Math.round((schedule.total_amount - baseAmount * (schedule.term_months - 1)) * 100) / 100;
+
+  schedule.installment_amount = baseAmount;
+  schedule.installments = [];
+  for (let i = 0; i < schedule.term_months; i++) {
+    schedule.installments.push({
+      period: incrementPeriod(schedule.start_period, i),
+      installment_no: i + 1,
+      amount: i === schedule.term_months - 1 ? lastAmount : baseAmount,
+      status: 'PENDING'
+    });
+  }
+  schedule.remaining_balance = schedule.total_amount;
+
+  await schedule.save();
+  return schedule;
+}
+
 module.exports = {
   createSchedule,
   approveSchedule,
@@ -184,5 +275,7 @@ module.exports = {
   cancelSchedule,
   earlyPayoff,
   adjustInstallment,
-  syncInstallmentStatus
+  syncInstallmentStatus,
+  withdrawSchedule,
+  editPendingSchedule
 };

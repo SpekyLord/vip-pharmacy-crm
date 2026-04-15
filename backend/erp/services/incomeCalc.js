@@ -164,7 +164,8 @@ async function generateIncomeReport(entityId, bdmId, period, cycle, userId) {
   }).select('_id').lean();
 
   const expenseIds = await ExpenseEntry.find({
-    ...filter, period, cycle
+    ...filter, period, cycle,
+    status: { $in: ['POSTED', 'VALID'] }
   }).select('_id').lean();
 
   // Build auto-deduction lines (rebuilt fresh each generation)

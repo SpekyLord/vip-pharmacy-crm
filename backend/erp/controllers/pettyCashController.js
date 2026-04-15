@@ -214,6 +214,21 @@ const postTransaction = catchAsync(async (req, res) => {
   if (txnPrecheck) {
     const pcPeriod = dateToPeriod(txnPrecheck.txn_date || new Date());
     await checkPeriodOpen(req.entityId, pcPeriod);
+
+    // Authority matrix gate
+    const { gateApproval } = require('../services/approvalService');
+    const gated = await gateApproval({
+      entityId: req.entityId,
+      module: 'PETTY_CASH',
+      docType: txnPrecheck.txn_type || 'DISBURSEMENT',
+      docId: txnPrecheck._id,
+      docRef: txnPrecheck.reference || txnPrecheck._id.toString(),
+      amount: txnPrecheck.amount || 0,
+      description: `Petty cash ${(txnPrecheck.txn_type || 'transaction').toLowerCase()} — ${txnPrecheck.description || ''}`.trim(),
+      requesterId: req.user._id,
+      requesterName: req.user.name || req.user.email,
+    }, res);
+    if (gated) return;
   }
 
   const session = await mongoose.startSession();

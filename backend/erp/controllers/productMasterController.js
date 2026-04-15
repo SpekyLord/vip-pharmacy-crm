@@ -127,19 +127,38 @@ const getById = catchAsync(async (req, res) => {
   res.json({ success: true, data: product });
 });
 
+// Fields that product_manage users can set on create / update
+const EDITABLE_FIELDS = [
+  'brand_name', 'generic_name', 'dosage_strength', 'sold_per',
+  'purchase_uom', 'selling_uom', 'conversion_factor',
+  'purchase_price', 'selling_price', 'vat_status',
+  'stock_type', 'category', 'description', 'key_benefits', 'image_url',
+  'reorder_min_qty', 'reorder_qty', 'safety_stock_qty', 'lead_time_days',
+];
+
+function pickFields(body, fields) {
+  const out = {};
+  for (const f of fields) {
+    if (body[f] !== undefined) out[f] = body[f];
+  }
+  return out;
+}
+
 const create = catchAsync(async (req, res) => {
-  req.body.entity_id = req.entityId;
-  req.body.added_by = req.user._id;
-  const product = await ProductMaster.create(req.body);
+  const data = pickFields(req.body, EDITABLE_FIELDS);
+  data.entity_id = req.entityId;
+  data.added_by = req.user._id;
+  const product = await ProductMaster.create(data);
   res.status(201).json({ success: true, data: product });
 });
 
 const update = catchAsync(async (req, res) => {
   const filter = { _id: req.params.id };
   if (!req.isPresident) filter.entity_id = req.entityId;
+  const data = pickFields(req.body, EDITABLE_FIELDS);
   const product = await ProductMaster.findOneAndUpdate(
     filter,
-    { $set: req.body },
+    { $set: data },
     { new: true, runValidators: true }
   );
   if (!product) return res.status(404).json({ success: false, message: 'Product not found' });

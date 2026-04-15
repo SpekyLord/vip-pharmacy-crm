@@ -150,6 +150,8 @@ export default function MyIncome() {
   const [selectedSched, setSelectedSched] = useState(null);
   const [showCreate, setShowCreate] = useState(null); // 'one-time' | 'installment' | null
   const [schedForm, setSchedForm] = useState({ type: '', amount: '', term: '1', start: getCurrentPeriod(), target_cycle: 'C2', desc: '' });
+  const [editingScheduleId, setEditingScheduleId] = useState(null); // non-null = editing mode
+  const [schedStatusFilter, setSchedStatusFilter] = useState('');
 
   // ── Load payslips ──
   const loadReports = useCallback(async () => {
@@ -167,11 +169,13 @@ export default function MyIncome() {
   const loadSchedules = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await sched.getMySchedules();
+      const params = {};
+      if (schedStatusFilter) params.status = schedStatusFilter;
+      const res = await sched.getMySchedules(params);
       setSchedules(res?.data || []);
     } catch (err) { showError(err, 'Could not load schedules'); }
     setLoading(false);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [schedStatusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load projection ──
   const loadProjection = useCallback(async () => {
@@ -248,13 +252,64 @@ export default function MyIncome() {
     setLoading(false);
   };
 
-  // ── Schedule handlers ──
-  const handleCreateSchedule = async () => {
+  const handleSelectSchedule = async (s) => {
+    setLoading(true);
+    try {
+      const res = await sched.getScheduleById(s._id);
+      if (res?.data) setSelectedSched(res.data);
+    } catch (err) { showError(err, 'Could not load schedule'); }
+    setLoading(false);
+  };
+
+  // ── BDM Self-Service handlers ──
+  const handleWithdrawSchedule = async () => {
+    if (!selectedSched || !window.confirm('Withdraw this schedule? This cannot be undone.')) return;
+    setLoading(true);
+    try {
+      await sched.withdrawSchedule(selectedSched._id);
+      setSelectedSched(null);
+      loadSchedules();
+    } catch (err) { showError(err, 'Could not withdraw schedule'); }
+    setLoading(false);
+  };
+
+  const handleEditSchedule = () => {
+    if (!selectedSched) return;
+    const s = selectedSched;
+    setEditingScheduleId(s._id);
+    setSchedForm({
+      type: s.deduction_type,
+      amount: String(s.total_amount),
+      term: String(s.term_months),
+      start: s.start_period,
+      target_cycle: s.target_cycle || 'C2',
+      desc: s.description || ''
+    });
+    setShowCreate(s.term_months === 1 ? 'one-time' : 'installment');
+  };
+
+  const handleResubmitSchedule = () => {
+    if (!selectedSched) return;
+    const s = selectedSched;
+    setEditingScheduleId(null); // new schedule, not edit
+    setSchedForm({
+      type: s.deduction_type,
+      amount: String(s.total_amount),
+      term: String(s.term_months),
+      start: s.start_period,
+      target_cycle: s.target_cycle || 'C2',
+      desc: s.description || ''
+    });
+    setShowCreate(s.term_months === 1 ? 'one-time' : 'installment');
+    setSelectedSched(null);
+  };
+
+  const handleSaveSchedule = async () => {
     const dedOption = deductionTypes.find(d => d.code === schedForm.type);
     if (!dedOption || !schedForm.amount || !schedForm.start) return;
     setLoading(true);
     try {
-      await sched.createSchedule({
+      const payload = {
         deduction_type: schedForm.type,
         deduction_label: dedOption.label,
         total_amount: parseFloat(schedForm.amount),
@@ -262,20 +317,18 @@ export default function MyIncome() {
         start_period: schedForm.start,
         target_cycle: schedForm.target_cycle,
         description: schedForm.desc
-      });
+      };
+      if (editingScheduleId) {
+        await sched.editSchedule(editingScheduleId, payload);
+      } else {
+        await sched.createSchedule(payload);
+      }
       setShowCreate(null);
+      setEditingScheduleId(null);
       setSchedForm({ type: '', amount: '', term: '1', start: getCurrentPeriod(), target_cycle: 'C2', desc: '' });
+      setSelectedSched(null);
       loadSchedules();
-    } catch (err) { showError(err, 'Could not create schedule'); }
-    setLoading(false);
-  };
-
-  const handleSelectSchedule = async (s) => {
-    setLoading(true);
-    try {
-      const res = await sched.getScheduleById(s._id);
-      if (res?.data) setSelectedSched(res.data);
-    } catch (err) { showError(err, 'Could not load schedule'); }
+    } catch (err) { showError(err, editingScheduleId ? 'Could not update schedule' : 'Could not create schedule'); }
     setLoading(false);
   };
 
@@ -575,7 +628,36 @@ export default function MyIncome() {
             <>
               {!selectedSched && (
                 <>
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                  {/* Summary Stats */}
+                  {schedules.length > 0 && !schedStatusFilter && (
+                    <div className="list-grid" style={{ marginBottom: 16 }}>
+                      <div className="list-item">
+                        <div className="list-label">Active</div>
+                        <div className="list-value">{schedules.filter(s => s.status === 'ACTIVE').length}</div>
+                      </div>
+                      <div className="list-item">
+                        <div className="list-label">Total Remaining</div>
+                        <div className="list-value">{fmt(schedules.filter(s => s.status === 'ACTIVE').reduce((sum, s) => sum + (s.remaining_balance || 0), 0))}</div>
+                      </div>
+                      <div className="list-item">
+                        <div className="list-label">Pending Approval</div>
+                        <div className="list-value">{schedules.filter(s => s.status === 'PENDING_APPROVAL').length}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Filter + Create */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <select value={schedStatusFilter} onChange={e => setSchedStatusFilter(e.target.value)}
+                      style={{ padding: '8px 12px', border: '1px solid var(--erp-border)', borderRadius: 8, fontSize: 13, background: 'var(--erp-panel)' }}>
+                      <option value="">All Statuses</option>
+                      <option value="PENDING_APPROVAL">Pending Approval</option>
+                      <option value="ACTIVE">Active</option>
+                      <option value="COMPLETED">Completed</option>
+                      <option value="CANCELLED">Cancelled</option>
+                      <option value="REJECTED">Rejected</option>
+                    </select>
+                    <div style={{ flex: 1 }} />
                     <button className="btn btn-primary" onClick={() => { setShowCreate('one-time'); setSchedForm(f => ({ ...f, term: '1' })); }}>
                       + One-Time Deduction
                     </button>
@@ -631,11 +713,29 @@ export default function MyIncome() {
                   {selectedSched.reject_reason && (
                     <div className="return-banner"><strong>Rejected:</strong> {selectedSched.reject_reason}</div>
                   )}
+                  {/* Audit Trail */}
+                  <div style={{ fontSize: 12, color: 'var(--erp-muted)', marginBottom: 12 }}>
+                    Created {selectedSched.created_at ? new Date(selectedSched.created_at).toLocaleDateString() : 'N/A'}
+                    {selectedSched.approved_by && <> · Approved by {selectedSched.approved_by.name} on {selectedSched.approved_at ? new Date(selectedSched.approved_at).toLocaleDateString() : 'N/A'}</>}
+                  </div>
                   <div className="list-grid" style={{ marginBottom: 12 }}>
                     <div className="list-item"><div className="list-label">Total</div><div className="list-value">{fmt(selectedSched.total_amount)}</div></div>
                     <div className="list-item"><div className="list-label">Per Installment</div><div className="list-value">{fmt(selectedSched.installment_amount)}</div></div>
                     <div className="list-item"><div className="list-label">Remaining</div><div className="list-value">{fmt(selectedSched.remaining_balance)}</div></div>
                   </div>
+
+                  {/* BDM Self-Service Actions */}
+                  {selectedSched.status === 'PENDING_APPROVAL' && (
+                    <div className="workflow-actions" style={{ marginBottom: 12 }}>
+                      <button className="btn btn-primary btn-sm" onClick={handleEditSchedule} disabled={loading}>Edit</button>
+                      <button className="btn btn-danger btn-sm" onClick={handleWithdrawSchedule} disabled={loading}>Withdraw</button>
+                    </div>
+                  )}
+                  {selectedSched.status === 'REJECTED' && (
+                    <div className="workflow-actions" style={{ marginBottom: 12 }}>
+                      <button className="btn btn-primary btn-sm" onClick={handleResubmitSchedule} disabled={loading}>Resubmit with Changes</button>
+                    </div>
+                  )}
 
                   <table className="inst-table">
                     <thead>
@@ -659,9 +759,9 @@ export default function MyIncome() {
 
           {/* ═══ CREATE SCHEDULE MODAL ═══ */}
           {showCreate && (
-            <div className="create-modal" onClick={() => setShowCreate(null)}>
+            <div className="create-modal" onClick={() => { setShowCreate(null); setEditingScheduleId(null); }}>
               <div className="create-modal-content" onClick={e => e.stopPropagation()}>
-                <h3>{showCreate === 'one-time' ? 'One-Time Deduction' : 'Installment Plan'}</h3>
+                <h3>{editingScheduleId ? 'Edit Schedule' : showCreate === 'one-time' ? 'One-Time Deduction' : 'Installment Plan'}</h3>
                 <div className="form-grid">
                   <div className="form-field full">
                     <label>Deduction Type</label>
@@ -712,11 +812,11 @@ export default function MyIncome() {
                 )}
 
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-                  <button className="btn btn-outline" onClick={() => setShowCreate(null)}>Cancel</button>
-                  <button className="btn btn-primary" onClick={handleCreateSchedule}
+                  <button className="btn btn-outline" onClick={() => { setShowCreate(null); setEditingScheduleId(null); }}>Cancel</button>
+                  <button className="btn btn-primary" onClick={handleSaveSchedule}
                     disabled={loading || !schedForm.type || !schedForm.amount || parseFloat(schedForm.amount) <= 0 || !schedForm.start
                       || (showCreate === 'installment' && (!schedForm.term || parseInt(schedForm.term) < 2))}>
-                    {showCreate === 'one-time' ? 'Create Deduction' : 'Create Installment Plan'}
+                    {editingScheduleId ? 'Save Changes' : showCreate === 'one-time' ? 'Create Deduction' : 'Create Installment Plan'}
                   </button>
                 </div>
               </div>

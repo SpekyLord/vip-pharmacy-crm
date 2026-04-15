@@ -11,7 +11,7 @@ import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -192,7 +192,16 @@ export default function PrfCalf() {
   };
 
   const handleValidate = async () => { try { await validatePrfCalf(); loadDocs(); } catch (err) { showError(err, 'Could not validate PRF/CALF'); } };
-  const handleSubmit = async () => { try { await submitPrfCalf(); loadDocs(); } catch (err) { showError(err, 'Could not submit PRF/CALF'); } };
+  const handleSubmit = async () => {
+    try {
+      const res = await submitPrfCalf();
+      if (res?.approval_pending) { showApprovalPending(res.message); }
+      loadDocs();
+    } catch (err) {
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); loadDocs(); }
+      else showError(err, 'Could not submit PRF/CALF');
+    }
+  };
   const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch (err) { showError(err, 'Could not reopen PRF/CALF'); } };
   const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch (err) { showError(err, 'Could not delete PRF/CALF'); } };
 

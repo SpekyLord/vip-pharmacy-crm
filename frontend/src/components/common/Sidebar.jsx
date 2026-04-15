@@ -787,6 +787,9 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     if (hasModule('payroll')) {
       hrItems.push({ path: '/erp/payroll', label: 'Payroll', icon: DollarSign });
     }
+    if (hasModule('people') && role !== ROLES.CONTRACTOR) {
+      hrItems.push({ path: '/erp/income', label: 'Contractor Income', icon: DollarSign });
+    }
     hrItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'People & HR', collapsible: true, defaultOpen: isAdmin, items: hrItems });
   }

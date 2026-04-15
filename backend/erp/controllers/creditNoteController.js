@@ -177,6 +177,22 @@ const submitCreditNotes = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No VALID credit notes to submit. Run validation first.' });
   }
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const cnTotal = validRows.reduce((sum, cn) => sum + (cn.credit_total || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'SALES',
+    docType: 'CREDIT_NOTE',
+    docId: validRows[0]._id,
+    docRef: validRows.map(cn => cn.cn_number).filter(Boolean).join(', '),
+    amount: cnTotal,
+    description: `Submit ${validRows.length} credit note${validRows.length === 1 ? '' : 's'} (total ₱${cnTotal.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   const session = await mongoose.startSession();
   session.startTransaction();
 

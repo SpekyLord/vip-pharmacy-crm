@@ -345,7 +345,7 @@ const OcrTest = () => {
       <div className="admin-content">
         <Sidebar />
         <main className="admin-main ocr-main">
-          <WorkflowGuide pageKey="expenses" />
+          <WorkflowGuide pageKey="ocr-test" />
 
           {/* Header */}
           <section className="ocr-panel">

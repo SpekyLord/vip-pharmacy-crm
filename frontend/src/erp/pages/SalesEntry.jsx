@@ -12,7 +12,7 @@ import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },
@@ -870,12 +870,20 @@ export default function SalesEntry() {
     setActionLoading('submit');
     try {
       const res = await sales.submitSales();
-      if (res?.posted_count) {
+      if (res?.approval_pending) {
+        showApprovalPending(res.message);
+        await loadSales();
+      } else if (res?.posted_count) {
         setValidationErrors([]);
         await loadSales();
       }
     } catch (err) {
-      console.error('Submit error:', err);
+      if (err?.response?.data?.approval_pending) {
+        showApprovalPending(err.response.data.message);
+        await loadSales();
+      } else {
+        showError(err, 'Submit failed');
+      }
     } finally {
       setActionLoading('');
     }

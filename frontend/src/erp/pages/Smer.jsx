@@ -10,7 +10,7 @@ import useHospitals from '../hooks/useHospitals';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -272,9 +272,23 @@ export default function Smer() {
     setDailyEntries(prev => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
-      // Auto-compute per diem when engagement count changes — but NOT if overridden
-      if (field === 'md_count' && !updated[index].perdiem_override) {
-        const { tier, amount } = computePerdiem(Number(value) || 0);
+
+      // When "No Work" is selected, force zero everything
+      if (field === 'activity_type' && value === 'NO_WORK') {
+        updated[index].md_count = 0;
+        updated[index].perdiem_tier = 'ZERO';
+        updated[index].perdiem_amount = 0;
+        updated[index].perdiem_override = false;
+        updated[index].override_tier = undefined;
+        updated[index].override_reason = undefined;
+        updated[index].hospital_ids = [];
+        updated[index].hospital_id = undefined;
+        updated[index].hospital_covered = '';
+      }
+
+      // Auto-compute per diem when engagement count OR activity type changes — but NOT if overridden or No Work
+      if ((field === 'md_count' || (field === 'activity_type' && value && value !== 'NO_WORK')) && !updated[index].perdiem_override && updated[index].activity_type !== 'NO_WORK') {
+        const { tier, amount } = computePerdiem(updated[index].md_count || 0);
         updated[index].perdiem_tier = tier;
         updated[index].perdiem_amount = amount;
       }
@@ -287,9 +301,10 @@ export default function Smer() {
 
   const handleSave = async () => {
     if (savingRef.current || loading) return; // prevent double-submit on slow mobile
-    // Frontend validation: activity_type required when md_count > 0
+    // Frontend validation
     const issues = [];
     dailyEntries.forEach(e => {
+      if (e.activity_type === 'NO_WORK' && e.md_count > 0) issues.push(`${e.day_of_week} ${e.entry_date?.split('T')[0] || ''}: "No Work" day cannot have engagements`);
       if (e.md_count > 0 && !e.activity_type) issues.push(`${e.day_of_week} ${e.entry_date?.split('T')[0] || ''}: Activity type required when MDs > 0`);
     });
     if (issues.length) { showError(null, issues.join('. ')); return; }
@@ -326,6 +341,8 @@ export default function Smer() {
 
       setDailyEntries(prev => {
         return prev.map(entry => {
+          // Skip "No Work" entries — CRM data should not overwrite them
+          if (entry.activity_type === 'NO_WORK') return entry;
           const crm = crmMap[entry.entry_date];
           if (!crm) return entry;
           const updated = { ...entry, md_count: crm.md_count };
@@ -342,7 +359,16 @@ export default function Smer() {
   };
 
   const handleValidate = async () => { try { await validateSmer(); loadSmers(); } catch (err) { showError(err, 'Could not validate SMER'); } };
-  const handleSubmit = async () => { try { await submitSmer(); loadSmers(); } catch (err) { showError(err, 'Could not submit SMER'); } };
+  const handleSubmit = async () => {
+    try {
+      const res = await submitSmer();
+      if (res?.approval_pending) { showApprovalPending(res.message); }
+      loadSmers();
+    } catch (err) {
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); loadSmers(); }
+      else showError(err, 'Could not submit SMER');
+    }
+  };
   const handleReopen = async (id) => { try { await reopenSmer([id]); loadSmers(); } catch (err) { showError(err, 'Could not reopen SMER'); } };
   const handleDelete = async (id) => { try { await deleteDraftSmer(id); loadSmers(); } catch (err) { showError(err, 'Could not delete SMER'); } };
 
@@ -735,11 +761,11 @@ export default function Smer() {
                           <HospitalChips entryIdx={idx} />
                         </td>
                         <td style={{ padding: 3, textAlign: 'center' }}>
-                          <input type="number" min={0} value={entry.md_count} onChange={e => handleEntryChange(idx, 'md_count', Number(e.target.value))} style={{ width: 45, padding: '2px 3px', textAlign: 'center', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
+                          <input type="number" min={0} value={entry.md_count} onChange={e => handleEntryChange(idx, 'md_count', Number(e.target.value))} disabled={entry.activity_type === 'NO_WORK'} style={{ width: 45, padding: '2px 3px', textAlign: 'center', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12, opacity: entry.activity_type === 'NO_WORK' ? 0.4 : 1 }} />
                         </td>
                         <td style={{ padding: 3, textAlign: 'center' }}>
                           <span style={{ padding: '1px 5px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: entry.perdiem_tier === 'FULL' ? '#16a34a' : entry.perdiem_tier === 'HALF' ? '#d97706' : '#9ca3af', background: entry.perdiem_tier === 'FULL' ? '#dcfce7' : entry.perdiem_tier === 'HALF' ? '#fef3c7' : '#f3f4f6' }}>
-                            {entry.perdiem_tier}
+                            {entry.activity_type === 'NO_WORK' ? '—' : entry.perdiem_tier}
                           </span>
                           {entry.perdiem_override && <span title={entry.override_reason} style={{ marginLeft: 1, cursor: 'help', fontSize: 9, color: '#7c3aed' }}>★</span>}
                           {entry.override_status === 'PENDING' && <div style={{ fontSize: 8, fontWeight: 600, color: '#92400e' }}>REQ: {entry.requested_override_tier}</div>}
@@ -747,7 +773,9 @@ export default function Smer() {
                         </td>
                         <td style={{ padding: 3, textAlign: 'right', fontWeight: 500, fontSize: 12 }}>₱{(entry.perdiem_amount || 0).toLocaleString()}</td>
                         <td style={{ padding: 3, textAlign: 'center' }}>
-                          {entry.perdiem_override ? (
+                          {entry.activity_type === 'NO_WORK' ? (
+                            <span style={{ fontSize: 9, color: '#9ca3af' }}>—</span>
+                          ) : entry.perdiem_override ? (
                             isManagement ? (
                               <button onClick={() => handleRemoveOverride(idx)} title={entry.override_reason} style={{ padding: '1px 5px', fontSize: 9, borderRadius: 4, border: '1px solid #7c3aed', color: '#7c3aed', background: '#f5f3ff', cursor: 'pointer' }}>Undo</button>
                             ) : (
@@ -813,7 +841,7 @@ export default function Smer() {
                       </div>
                       <div className="smer-card-field">
                         <label>MDs / Eng.</label>
-                        <input type="number" min={0} value={entry.md_count} onChange={e => handleEntryChange(idx, 'md_count', Number(e.target.value))} />
+                        <input type="number" min={0} value={entry.md_count} onChange={e => handleEntryChange(idx, 'md_count', Number(e.target.value))} disabled={entry.activity_type === 'NO_WORK'} style={entry.activity_type === 'NO_WORK' ? { opacity: 0.4 } : undefined} />
                       </div>
                       <div className="smer-card-field full-width">
                         <label>Hospitals</label>
@@ -835,6 +863,7 @@ export default function Smer() {
                         <label>ORE Amount</label>
                         <input type="number" min={0} value={entry.ore_amount || 0} onChange={e => handleEntryChange(idx, 'ore_amount', Number(e.target.value))} />
                       </div>
+                      {entry.activity_type !== 'NO_WORK' && (
                       <div className="smer-card-field">
                         <label>Override</label>
                         {entry.perdiem_override ? (
@@ -857,6 +886,7 @@ export default function Smer() {
                           </button>
                         )}
                       </div>
+                      )}
                     </div>
                   </div>
                 ))}

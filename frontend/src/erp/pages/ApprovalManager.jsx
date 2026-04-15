@@ -28,6 +28,8 @@ export default function ApprovalManager() {
   const [approvalEnabled, setApprovalEnabled] = useState(false);
   const [decisionModal, setDecisionModal] = useState(null); // { requestId, action }
   const [reason, setReason] = useState('');
+  const [rejectModal, setRejectModal] = useState(null); // { item } for universal hub reject
+  const [rejectReason, setRejectReason] = useState('');
 
   // Lookup-driven options (database-driven via useLookupBatch)
   const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE', 'APPROVAL_EDITABLE_FIELDS', 'CYCLE']);
@@ -128,13 +130,9 @@ export default function ApprovalManager() {
 
   const handleUniversalAction = useCallback(async (item, action) => {
     if (action === 'reject') {
-      const r = prompt('Reason for rejection:');
-      if (!r) return;
-      try {
-        await universalApprove({ ...item.approve_data, action: 'reject', reason: r });
-        toast.success('Rejected');
-        fetchUniversalPending().catch(() => {});
-      } catch (e) { showError(e); }
+      // Open reject modal instead of browser prompt()
+      setRejectModal({ item });
+      setRejectReason('');
       return;
     }
     try {
@@ -143,6 +141,18 @@ export default function ApprovalManager() {
       fetchUniversalPending().catch(() => {});
     } catch (e) { showError(e); }
   }, [universalApprove, fetchUniversalPending]);
+
+  const handleRejectConfirm = useCallback(async () => {
+    if (!rejectModal) return;
+    if (!rejectReason.trim()) return toast.error('Reason is required for rejection');
+    try {
+      await universalApprove({ ...rejectModal.item.approve_data, action: 'reject', reason: rejectReason });
+      toast.success('Rejected');
+      setRejectModal(null);
+      setRejectReason('');
+      fetchUniversalPending().catch(() => {});
+    } catch (e) { showError(e); }
+  }, [rejectModal, rejectReason, universalApprove, fetchUniversalPending]);
 
   // Phase G3: Save quick-edit
   const handleSaveEdit = useCallback(async () => {
@@ -745,6 +755,34 @@ export default function ApprovalManager() {
                   <button onClick={handleDecision}
                     style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, background: decisionModal.action === 'approve' ? '#059669' : '#dc2626', color: '#fff' }}>
                     {decisionModal.action === 'approve' ? 'Approve' : 'Reject'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ─── Universal Hub Reject Modal ─── */}
+          {rejectModal && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+              <div style={{ background: 'var(--erp-panel, #fff)', borderRadius: 12, padding: 24, width: 400, maxWidth: '95vw' }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: 16, color: '#dc2626' }}>Reject — {rejectModal.item?.description || rejectModal.item?.doc_ref}</h3>
+                <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--erp-muted)' }}>
+                  {rejectModal.item?.module?.replace(/_/g, ' ')} · {rejectModal.item?.submitted_by}
+                </p>
+                <textarea
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  placeholder="Reason for rejection (required)"
+                  rows={3}
+                  autoFocus
+                  style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--erp-border)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }}
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                  <button onClick={() => { setRejectModal(null); setRejectReason(''); }}
+                    style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--erp-border)', cursor: 'pointer', fontSize: 13, fontWeight: 600, background: 'transparent' }}>Cancel</button>
+                  <button onClick={handleRejectConfirm} disabled={loading}
+                    style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, background: '#dc2626', color: '#fff' }}>
+                    Reject
                   </button>
                 </div>
               </div>

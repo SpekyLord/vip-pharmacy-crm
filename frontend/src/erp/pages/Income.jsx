@@ -13,6 +13,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
 import useIncome from '../hooks/useIncome';
 import useDeductionSchedule from '../hooks/useDeductionSchedule';
+import usePeople from '../hooks/usePeople';
 
 import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
@@ -50,6 +51,7 @@ const pageStyles = `
   .btn-warning { background: #d97706; color: white; }
   .btn-danger { background: #dc2626; color: white; }
   .btn-outline { background: transparent; border: 1px solid var(--erp-border); color: var(--erp-text); }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .workflow-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
   .list-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; overflow: hidden; }
@@ -119,6 +121,7 @@ export default function Income() {
   const { user } = useAuth();
   const inc = useIncome();
   const schedApi = useDeductionSchedule();
+  const { getPeopleList } = usePeople();
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const { options: deductionTypes } = useLookupOptions('INCOME_DEDUCTION_TYPE');
   const { options: cycleOptions } = useLookupOptions('CYCLE');
@@ -128,6 +131,7 @@ export default function Income() {
   const [period, setPeriod] = useState(getCurrentPeriod());
   const [cycle, setCycle] = useState('MONTHLY');
   const [bdmId, setBdmId] = useState('');
+  const [people, setPeople] = useState([]);
   const [reports, setReports] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -145,6 +149,35 @@ export default function Income() {
   const [incomeTab, setIncomeTab] = useState('payslips'); // payslips | schedules
   const [allSchedules, setAllSchedules] = useState([]);
   const [selectedSched, setSelectedSched] = useState(null);
+  // Schedule filters
+  const [schedStatusFilter, setSchedStatusFilter] = useState('');
+  const [schedBdmFilter, setSchedBdmFilter] = useState('');
+  // Schedule modals
+  const [showRejectSchedModal, setShowRejectSchedModal] = useState(null); // schedule _id
+  const [rejectSchedReason, setRejectSchedReason] = useState('');
+  const [showPayoffModal, setShowPayoffModal] = useState(null); // schedule _id
+  const [payoffPeriod, setPayoffPeriod] = useState('');
+  const [showFinCreateModal, setShowFinCreateModal] = useState(false);
+  const [finSchedForm, setFinSchedForm] = useState({ bdm_id: '', type: '', amount: '', term: '1', start: getCurrentPeriod(), target_cycle: 'C2', desc: '' });
+  // Installment adjustment
+  const [showAdjustModal, setShowAdjustModal] = useState(null); // { instId }
+  const [adjustAmount, setAdjustAmount] = useState('');
+  const [adjustNote, setAdjustNote] = useState('');
+  // Bulk approve
+  const [bulkSelected, setBulkSelected] = useState(new Set());
+
+  // Load contractor list for dropdown (admin/finance/president only)
+  useEffect(() => {
+    if (isAdmin) {
+      getPeopleList({ limit: 0, status: 'ACTIVE' })
+        .then(res => {
+          // Filter to people with linked user accounts (contractors who can receive income)
+          const all = (res?.data || []).filter(p => p.user_id);
+          setPeople(all);
+        })
+        .catch(err => console.error('[Income] People load failed:', err.message));
+    }
+  }, [isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadReports = useCallback(async () => {
     setLoading(true);
@@ -163,11 +196,14 @@ export default function Income() {
   const loadSchedules = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await schedApi.getScheduleList();
+      const params = {};
+      if (schedStatusFilter) params.status = schedStatusFilter;
+      if (schedBdmFilter) params.bdm_id = schedBdmFilter;
+      const res = await schedApi.getScheduleList(params);
       setAllSchedules(res?.data || []);
     } catch (err) { showError(err, 'Could not load schedules'); }
     setLoading(false);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [schedStatusFilter, schedBdmFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (incomeTab === 'schedules') loadSchedules(); }, [incomeTab, loadSchedules]);
 
@@ -178,12 +214,15 @@ export default function Income() {
     setLoading(false);
   };
 
-  const handleRejectSchedule = async (id) => {
-    const reason = prompt('Rejection reason:');
-    if (!reason) return;
+  const handleRejectSchedule = async () => {
+    if (!showRejectSchedModal || !rejectSchedReason.trim()) return;
     setLoading(true);
-    try { await schedApi.rejectSchedule(id, reason); loadSchedules(); }
-    catch (err) { showError(err, 'Could not reject'); }
+    try {
+      await schedApi.rejectSchedule(showRejectSchedModal, rejectSchedReason);
+      setShowRejectSchedModal(null);
+      setRejectSchedReason('');
+      loadSchedules();
+    } catch (err) { showError(err, 'Could not reject'); }
     setLoading(false);
   };
 
@@ -193,6 +232,78 @@ export default function Income() {
     try { await schedApi.cancelSchedule(id, 'Cancelled by Finance'); loadSchedules(); }
     catch (err) { showError(err, 'Could not cancel'); }
     setLoading(false);
+  };
+
+  const handleEarlyPayoff = async () => {
+    if (!showPayoffModal || !payoffPeriod || !/^\d{4}-\d{2}$/.test(payoffPeriod)) return;
+    setLoading(true);
+    try {
+      const res = await schedApi.earlyPayoff(showPayoffModal, { payoff_period: payoffPeriod });
+      if (res?.data) setSelectedSched(res.data);
+      setShowPayoffModal(null);
+      setPayoffPeriod('');
+      loadSchedules();
+    } catch (err) { showError(err, 'Early payoff failed'); }
+    setLoading(false);
+  };
+
+  const handleFinCreateSchedule = async () => {
+    const dedOption = deductionTypes.find(d => d.code === finSchedForm.type);
+    if (!dedOption || !finSchedForm.amount || !finSchedForm.start || !finSchedForm.bdm_id) return;
+    setLoading(true);
+    try {
+      await schedApi.financeCreateSchedule({
+        bdm_id: finSchedForm.bdm_id,
+        deduction_type: finSchedForm.type,
+        deduction_label: dedOption.label,
+        total_amount: parseFloat(finSchedForm.amount),
+        term_months: parseInt(finSchedForm.term) || 1,
+        start_period: finSchedForm.start,
+        target_cycle: finSchedForm.target_cycle,
+        description: finSchedForm.desc
+      });
+      setShowFinCreateModal(false);
+      setFinSchedForm({ bdm_id: '', type: '', amount: '', term: '1', start: getCurrentPeriod(), target_cycle: 'C2', desc: '' });
+      loadSchedules();
+    } catch (err) { showError(err, 'Could not create schedule'); }
+    setLoading(false);
+  };
+
+  const handleAdjustInstallment = async () => {
+    if (!selectedSched || !showAdjustModal || !adjustAmount) return;
+    setLoading(true);
+    try {
+      const res = await schedApi.adjustInstallment(selectedSched._id, showAdjustModal.instId, {
+        amount: parseFloat(adjustAmount),
+        note: adjustNote
+      });
+      if (res?.data) setSelectedSched(res.data);
+      setShowAdjustModal(null);
+      setAdjustAmount('');
+      setAdjustNote('');
+    } catch (err) { showError(err, 'Could not adjust installment'); }
+    setLoading(false);
+  };
+
+  const handleBulkApprove = async () => {
+    if (bulkSelected.size === 0) return;
+    setLoading(true);
+    try {
+      for (const id of bulkSelected) {
+        await schedApi.approveSchedule(id);
+      }
+      setBulkSelected(new Set());
+      loadSchedules();
+    } catch (err) { showError(err, 'Bulk approve failed'); }
+    setLoading(false);
+  };
+
+  const toggleBulkSelect = (id) => {
+    setBulkSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
   const handleGenerate = async () => {
@@ -305,7 +416,7 @@ export default function Income() {
   };
 
   const canEdit = selected && ['GENERATED', 'REVIEWED'].includes(selected.status) && isAdmin;
-  const bdmName = (r) => r.bdm_id ? `${r.bdm_id.firstName || ''} ${r.bdm_id.lastName || ''}`.trim() : 'N/A';
+  const bdmName = (r) => r.bdm_id ? (r.bdm_id.name || r.bdm_id.email || 'N/A') : 'N/A';
 
   return (
     <div className="income-page">
@@ -326,10 +437,16 @@ export default function Income() {
                 ))}
               </SelectField>
               {isAdmin && (
-                <input type="text" placeholder="BDM ID (optional)" value={bdmId}
-                  onChange={e => setBdmId(e.target.value)} style={{ width: 160 }} />
+                <SelectField value={bdmId} onChange={e => setBdmId(e.target.value)} style={{ minWidth: 200 }}>
+                  <option value="">All Contractors</option>
+                  {people.map(p => (
+                    <option key={p._id} value={p.user_id?._id || p.user_id}>
+                      {p.full_name}
+                    </option>
+                  ))}
+                </SelectField>
               )}
-              {isAdmin && (
+              {isAdmin && bdmId && (
                 <button className="btn btn-primary" onClick={handleGenerate} disabled={loading}>
                   Generate Payslip
                 </button>
@@ -360,39 +477,78 @@ export default function Income() {
           {/* ═══ SCHEDULES TAB (Finance) ═══ */}
           {incomeTab === 'schedules' && isAdmin && !loading && (
             <>
-              {!selectedSched && allSchedules.map(s => {
-                const bdmName = s.bdm_id ? `${s.bdm_id.name || s.bdm_id.email || 'BDM'}` : 'N/A';
-                return (
-                  <div className="sched-card" key={s._id}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
-                        <h4>{s.deduction_label} — {bdmName}</h4>
-                        <div style={{ fontSize: 12, color: 'var(--erp-muted)' }}>
-                          {s.schedule_code} · {s.term_months === 1 ? 'One-time' : `${s.term_months} months`} · {fmt(s.total_amount)} · Start: {s.start_period} · {cycleLabel(s.target_cycle || 'C2')}
+              {!selectedSched && (
+                <>
+                  {/* Filters + Create */}
+                  <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <select value={schedStatusFilter} onChange={e => setSchedStatusFilter(e.target.value)}
+                      style={{ padding: '8px 12px', border: '1px solid var(--erp-border)', borderRadius: 8, fontSize: 13, background: 'var(--erp-panel)' }}>
+                      <option value="">All Statuses</option>
+                      <option value="PENDING_APPROVAL">Pending Approval</option>
+                      <option value="ACTIVE">Active</option>
+                      <option value="COMPLETED">Completed</option>
+                      <option value="CANCELLED">Cancelled</option>
+                      <option value="REJECTED">Rejected</option>
+                    </select>
+                    <select value={schedBdmFilter} onChange={e => setSchedBdmFilter(e.target.value)}
+                      style={{ padding: '8px 12px', border: '1px solid var(--erp-border)', borderRadius: 8, fontSize: 13, background: 'var(--erp-panel)' }}>
+                      <option value="">All BDMs</option>
+                      {people.map(p => (
+                        <option key={p.user_id?._id || p._id} value={p.user_id?._id || p._id}>{p.first_name} {p.last_name}</option>
+                      ))}
+                    </select>
+                    <div style={{ flex: 1 }} />
+                    <button className="btn btn-primary" onClick={() => setShowFinCreateModal(true)}>+ Create Deduction</button>
+                    {bulkSelected.size > 0 && (
+                      <button className="btn btn-success" onClick={handleBulkApprove} disabled={loading}>
+                        Approve Selected ({bulkSelected.size})
+                      </button>
+                    )}
+                  </div>
+
+                  {allSchedules.map(s => {
+                    const sBdmName = s.bdm_id ? `${s.bdm_id.name || s.bdm_id.email || 'BDM'}` : 'N/A';
+                    return (
+                      <div className="sched-card" key={s._id}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                            {s.status === 'PENDING_APPROVAL' && (
+                              <input type="checkbox" checked={bulkSelected.has(s._id)}
+                                onChange={() => toggleBulkSelect(s._id)}
+                                onClick={e => e.stopPropagation()}
+                                style={{ marginTop: 4 }} />
+                            )}
+                            <div>
+                              <h4 style={{ margin: 0 }}>{s.deduction_label} — {sBdmName}</h4>
+                              <div style={{ fontSize: 12, color: 'var(--erp-muted)' }}>
+                                {s.schedule_code} · {s.term_months === 1 ? 'One-time' : `${s.term_months} months`} · {fmt(s.total_amount)} · Start: {s.start_period} · {cycleLabel(s.target_cycle || 'C2')}
+                              </div>
+                            </div>
+                          </div>
+                          <span className={`badge ${s.status === 'PENDING_APPROVAL' ? 'badge-pending_approval' : s.status === 'ACTIVE' ? 'badge-active' : s.status === 'COMPLETED' ? 'badge-completed' : s.status === 'CANCELLED' ? 'badge-cancelled' : 'badge-rejected'}`}>{s.status.replace('_', ' ')}</span>
+                        </div>
+                        <div className="sched-actions">
+                          {s.status === 'PENDING_APPROVAL' && (
+                            <>
+                              <button className="btn btn-success btn-sm" onClick={() => handleApproveSchedule(s._id)}>Approve</button>
+                              <button className="btn btn-danger btn-sm" onClick={() => { setShowRejectSchedModal(s._id); setRejectSchedReason(''); }}>Reject</button>
+                            </>
+                          )}
+                          {s.status === 'ACTIVE' && (
+                            <button className="btn btn-outline btn-sm" onClick={() => handleCancelSchedule(s._id)}>Cancel</button>
+                          )}
+                          <button className="btn btn-outline btn-sm" onClick={async () => {
+                            try {
+                              const res = await schedApi.getScheduleById(s._id);
+                              if (res?.data) setSelectedSched(res.data);
+                            } catch (err) { showError(err, 'Could not load'); }
+                          }}>View Detail</button>
                         </div>
                       </div>
-                      <span className={`badge ${s.status === 'PENDING_APPROVAL' ? 'badge-pending_approval' : s.status === 'ACTIVE' ? 'badge-active' : s.status === 'COMPLETED' ? 'badge-completed' : s.status === 'CANCELLED' ? 'badge-cancelled' : 'badge-rejected'}`}>{s.status.replace('_', ' ')}</span>
-                    </div>
-                    <div className="sched-actions">
-                      {s.status === 'PENDING_APPROVAL' && (
-                        <>
-                          <button className="btn btn-success btn-sm" onClick={() => handleApproveSchedule(s._id)}>Approve</button>
-                          <button className="btn btn-danger btn-sm" onClick={() => handleRejectSchedule(s._id)}>Reject</button>
-                        </>
-                      )}
-                      {s.status === 'ACTIVE' && (
-                        <button className="btn btn-outline btn-sm" onClick={() => handleCancelSchedule(s._id)}>Cancel</button>
-                      )}
-                      <button className="btn btn-outline btn-sm" onClick={async () => {
-                        try {
-                          const res = await schedApi.getScheduleById(s._id);
-                          if (res?.data) setSelectedSched(res.data);
-                        } catch (err) { showError(err, 'Could not load'); }
-                      }}>View Detail</button>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </>
+              )}
               {!selectedSched && allSchedules.length === 0 && (
                 <div style={{ textAlign: 'center', color: 'var(--erp-muted)', padding: 40 }}>No deduction schedules found.</div>
               )}
@@ -402,24 +558,27 @@ export default function Income() {
                     <h4>{selectedSched.deduction_label} — {selectedSched.schedule_code}</h4>
                     <button className="btn btn-outline btn-sm" onClick={() => setSelectedSched(null)}>← Back</button>
                   </div>
+                  <div style={{ fontSize: 13, color: 'var(--erp-muted)', marginBottom: 8 }}>
+                    BDM: {selectedSched.bdm_id?.name || 'N/A'} · Status: <span className={`badge ${selectedSched.status === 'PENDING_APPROVAL' ? 'badge-pending_approval' : selectedSched.status === 'ACTIVE' ? 'badge-active' : selectedSched.status === 'COMPLETED' ? 'badge-completed' : selectedSched.status === 'CANCELLED' ? 'badge-cancelled' : 'badge-rejected'}`}>{selectedSched.status.replace('_', ' ')}</span>
+                  </div>
+                  {selectedSched.reject_reason && (
+                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 13 }}>
+                      <strong>Rejected:</strong> {selectedSched.reject_reason}
+                    </div>
+                  )}
+                  {/* Audit Trail */}
+                  <div style={{ fontSize: 12, color: 'var(--erp-muted)', marginBottom: 12 }}>
+                    Created by {selectedSched.created_by?.name || 'N/A'} on {selectedSched.created_at ? new Date(selectedSched.created_at).toLocaleDateString() : 'N/A'}
+                    {selectedSched.approved_by && <> · Approved by {selectedSched.approved_by.name} on {selectedSched.approved_at ? new Date(selectedSched.approved_at).toLocaleDateString() : 'N/A'}</>}
+                  </div>
                   {selectedSched.status === 'ACTIVE' && (
                     <div className="sched-actions">
                       <button className="btn btn-outline btn-sm" onClick={() => handleCancelSchedule(selectedSched._id)}>Cancel Schedule</button>
-                      <button className="btn btn-primary btn-sm" onClick={async () => {
-                        const payoffPeriod = prompt('Early payoff period (YYYY-MM):');
-                        if (!payoffPeriod || !/^\d{4}-\d{2}$/.test(payoffPeriod)) return;
-                        setLoading(true);
-                        try {
-                          const res = await schedApi.earlyPayoff(selectedSched._id, { payoff_period: payoffPeriod });
-                          if (res?.data) setSelectedSched(res.data);
-                          loadSchedules();
-                        } catch (err) { showError(err, 'Early payoff failed'); }
-                        setLoading(false);
-                      }}>Early Payoff</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => { setShowPayoffModal(selectedSched._id); setPayoffPeriod(''); }}>Early Payoff</button>
                     </div>
                   )}
                   <table className="inst-table">
-                    <thead><tr><th>#</th><th>Period</th><th>Amount</th><th>Status</th><th>Note</th></tr></thead>
+                    <thead><tr><th>#</th><th>Period</th><th>Amount</th><th>Status</th><th>Note</th><th></th></tr></thead>
                     <tbody>
                       {(selectedSched.installments || []).map(inst => (
                         <tr key={inst._id} style={inst.status === 'CANCELLED' ? { opacity: 0.5 } : {}}>
@@ -428,6 +587,14 @@ export default function Income() {
                           <td>{fmt(inst.amount)}</td>
                           <td><span className={`badge ${inst.status === 'POSTED' ? 'badge-posted' : inst.status === 'VERIFIED' ? 'badge-verified' : inst.status === 'INJECTED' ? 'badge-injected' : inst.status === 'CANCELLED' ? 'badge-cancelled' : 'badge-pending'}`}>{inst.status}</span></td>
                           <td style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{inst.note || ''}</td>
+                          <td>
+                            {['PENDING', 'INJECTED'].includes(inst.status) && (
+                              <button className="btn btn-outline btn-sm" style={{ padding: '2px 8px', fontSize: 11 }}
+                                onClick={() => { setShowAdjustModal({ instId: inst._id }); setAdjustAmount(String(inst.amount)); setAdjustNote(''); }}>
+                                Adjust
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -675,6 +842,125 @@ export default function Income() {
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button className="btn btn-outline" onClick={() => setShowReturn(false)}>Cancel</button>
                   <button className="btn btn-warning" onClick={() => handleWorkflow('return')} disabled={!returnReason.trim()}>Return</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Reject Schedule Modal */}
+          {showRejectSchedModal && (
+            <div className="return-modal" onClick={() => setShowRejectSchedModal(null)}>
+              <div className="return-modal-content" onClick={e => e.stopPropagation()}>
+                <h3 style={{ margin: '0 0 8px' }}>Reject Schedule</h3>
+                <p style={{ fontSize: 13, color: 'var(--erp-muted)' }}>Provide a reason for rejection.</p>
+                <textarea value={rejectSchedReason} onChange={e => setRejectSchedReason(e.target.value)} placeholder="Rejection reason..." />
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button className="btn btn-outline" onClick={() => setShowRejectSchedModal(null)}>Cancel</button>
+                  <button className="btn btn-danger" onClick={handleRejectSchedule} disabled={!rejectSchedReason.trim()}>Reject</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Early Payoff Modal */}
+          {showPayoffModal && (
+            <div className="return-modal" onClick={() => setShowPayoffModal(null)}>
+              <div className="return-modal-content" onClick={e => e.stopPropagation()}>
+                <h3 style={{ margin: '0 0 8px' }}>Early Payoff</h3>
+                <p style={{ fontSize: 13, color: 'var(--erp-muted)' }}>Consolidate all remaining installments into a single lump-sum deduction.</p>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Payoff Period (YYYY-MM)</label>
+                <input type="month" value={payoffPeriod} onChange={e => setPayoffPeriod(e.target.value)}
+                  style={{ width: '100%', padding: 8, border: '1px solid var(--erp-border)', borderRadius: 8, fontSize: 13, margin: '8px 0' }} />
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button className="btn btn-outline" onClick={() => setShowPayoffModal(null)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={handleEarlyPayoff} disabled={!payoffPeriod}>Apply Early Payoff</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Installment Adjustment Modal */}
+          {showAdjustModal && (
+            <div className="correct-modal" onClick={() => setShowAdjustModal(null)}>
+              <div className="correct-modal-content" onClick={e => e.stopPropagation()}>
+                <h3 style={{ margin: '0 0 8px' }}>Adjust Installment</h3>
+                <p style={{ fontSize: 13, color: 'var(--erp-muted)' }}>Change the deduction amount for this installment.</p>
+                <input type="number" min="0" step="0.01" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)} placeholder="New amount" />
+                <textarea value={adjustNote} onChange={e => setAdjustNote(e.target.value)} placeholder="Reason for adjustment..." style={{ minHeight: 60 }} />
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button className="btn btn-outline" onClick={() => setShowAdjustModal(null)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={handleAdjustInstallment} disabled={!adjustAmount || parseFloat(adjustAmount) < 0}>Save</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Finance Create Schedule Modal */}
+          {showFinCreateModal && (
+            <div className="return-modal" onClick={() => setShowFinCreateModal(false)}>
+              <div className="return-modal-content" onClick={e => e.stopPropagation()} style={{ width: 500 }}>
+                <h3 style={{ margin: '0 0 16px' }}>Create Deduction Schedule</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--erp-muted)' }}>BDM</label>
+                    <select value={finSchedForm.bdm_id} onChange={e => setFinSchedForm(f => ({ ...f, bdm_id: e.target.value }))}
+                      style={{ width: '100%', padding: 8, border: '1px solid var(--erp-border)', borderRadius: 6, fontSize: 13, marginTop: 4 }}>
+                      <option value="">Select BDM...</option>
+                      {people.map(p => (
+                        <option key={p.user_id?._id || p._id} value={p.user_id?._id || p._id}>{p.first_name} {p.last_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--erp-muted)' }}>Deduction Type</label>
+                    <select value={finSchedForm.type} onChange={e => setFinSchedForm(f => ({ ...f, type: e.target.value }))}
+                      style={{ width: '100%', padding: 8, border: '1px solid var(--erp-border)', borderRadius: 6, fontSize: 13, marginTop: 4 }}>
+                      <option value="">Select type...</option>
+                      {deductionTypes.map(d => (
+                        <option key={d.code} value={d.code}>{d.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--erp-muted)' }}>Total Amount</label>
+                    <input type="number" min="0.01" step="0.01" value={finSchedForm.amount}
+                      onChange={e => setFinSchedForm(f => ({ ...f, amount: e.target.value }))}
+                      style={{ width: '100%', padding: 8, border: '1px solid var(--erp-border)', borderRadius: 6, fontSize: 13, marginTop: 4 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--erp-muted)' }}>Term (months)</label>
+                    <input type="number" min="1" step="1" value={finSchedForm.term}
+                      onChange={e => setFinSchedForm(f => ({ ...f, term: e.target.value }))}
+                      style={{ width: '100%', padding: 8, border: '1px solid var(--erp-border)', borderRadius: 6, fontSize: 13, marginTop: 4 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--erp-muted)' }}>Start Period</label>
+                    <input type="month" value={finSchedForm.start}
+                      onChange={e => setFinSchedForm(f => ({ ...f, start: e.target.value }))}
+                      style={{ width: '100%', padding: 8, border: '1px solid var(--erp-border)', borderRadius: 6, fontSize: 13, marginTop: 4 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--erp-muted)' }}>Target Cycle</label>
+                    <select value={finSchedForm.target_cycle} onChange={e => setFinSchedForm(f => ({ ...f, target_cycle: e.target.value }))}
+                      style={{ width: '100%', padding: 8, border: '1px solid var(--erp-border)', borderRadius: 6, fontSize: 13, marginTop: 4 }}>
+                      {cycleOptions.map(c => (
+                        <option key={c.code} value={c.code}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--erp-muted)' }}>Description</label>
+                    <textarea value={finSchedForm.desc} onChange={e => setFinSchedForm(f => ({ ...f, desc: e.target.value }))}
+                      placeholder="Optional description..."
+                      style={{ width: '100%', padding: 8, border: '1px solid var(--erp-border)', borderRadius: 6, fontSize: 13, marginTop: 4, minHeight: 50 }} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+                  <button className="btn btn-outline" onClick={() => setShowFinCreateModal(false)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={handleFinCreateSchedule}
+                    disabled={loading || !finSchedForm.bdm_id || !finSchedForm.type || !finSchedForm.amount || parseFloat(finSchedForm.amount) <= 0 || !finSchedForm.start}>
+                    Create (Active)
+                  </button>
                 </div>
               </div>
             </div>

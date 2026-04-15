@@ -224,7 +224,7 @@ function parseOR(ocrResult) {
         if (desc) item.description = desc.replace(/[^\w\s]/g, '').trim();
 
         if (amountMatch) {
-          item.amount = parseFloat(amountMatch[1].replace(',', '') + '.' + amountMatch[2]);
+          item.amount = parseFloat(amountMatch[1].replace(/,/g, '') + '.' + amountMatch[2]);
         }
 
         if (Object.keys(item).length > 0) lineItems.push(item);
@@ -237,7 +237,7 @@ function parseOR(ocrResult) {
   for (const line of lines) {
     const m = line.match(/(?:AMOUNT\s*DUE|TOTAL\s*AMOUNT\s*DUE|TOTAL\s*DUE)\s*[:\s]*[₱P]?\s*([\d,]+)[.\-](\d{2})/i);
     if (m) {
-      amount = parseFloat(m[1].replace(',', '') + '.' + m[2]);
+      amount = parseFloat(m[1].replace(/,/g, '') + '.' + m[2]);
       break;
     }
   }
@@ -249,11 +249,11 @@ function parseOR(ocrResult) {
         // Amount might be on same line or next line
         const sameLine = lines[i].match(/([\d,]+)[.\-](\d{2})/);
         if (sameLine) {
-          amount = parseFloat(sameLine[1].replace(',', '') + '.' + sameLine[2]);
+          amount = parseFloat(sameLine[1].replace(/,/g, '') + '.' + sameLine[2]);
         } else if (i + 1 < lines.length) {
           const nextLine = lines[i + 1].match(/([\d,]+)[.\-](\d{2})/);
           if (nextLine) {
-            amount = parseFloat(nextLine[1].replace(',', '') + '.' + nextLine[2]);
+            amount = parseFloat(nextLine[1].replace(/,/g, '') + '.' + nextLine[2]);
           }
         }
         break;
@@ -319,11 +319,11 @@ function parseOR(ocrResult) {
   for (const line of lines) {
     if (/VATable\s*Sales/i.test(line)) {
       const m = line.match(/VATable\s*Sales\s*[:\s]*([\d,]+\.\d{2})/i);
-      if (m) vatableSales = parseFloat(m[1].replace(',', ''));
+      if (m) vatableSales = parseFloat(m[1].replace(/,/g, ''));
     }
     if (/VAT\s*Amount/i.test(line) && !/VAT-Exempt/i.test(line)) {
       const m = line.match(/VAT\s*Amount\s*[:\s]*([\d,]+\.\d{2})/i);
-      if (m) vatAmount = parseFloat(m[1].replace(',', ''));
+      if (m) vatAmount = parseFloat(m[1].replace(/,/g, ''));
     }
   }
 
@@ -335,13 +335,13 @@ function parseOR(ocrResult) {
         // Check same line for amount
         const sameLine = lines[i].match(/([\d,]+\.\d{2})/);
         if (sameLine && /VAT\s*Incl/i.test(lines[i])) {
-          if (vatableSales == null) vatableSales = parseFloat(sameLine[1].replace(',', ''));
+          if (vatableSales == null) vatableSales = parseFloat(sameLine[1].replace(/,/g, ''));
         }
         // Check subsequent lines for amounts
         for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
           const numMatch = lines[j].match(/([\d,]+\.\d{2})/);
           if (numMatch) {
-            const val = parseFloat(numMatch[1].replace(',', ''));
+            const val = parseFloat(numMatch[1].replace(/,/g, ''));
             if (val > 1 && val < 1000000) {
               if (/VAT\s*Incl/i.test(lines[j])) {
                 // This is the VATable Sales / Total Sales (VAT Inclusive) line

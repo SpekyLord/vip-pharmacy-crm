@@ -11,7 +11,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
 import useIncome from '../hooks/useIncome';
-import { showError } from '../utils/errorToast';
+import { showError, showApprovalPending } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
@@ -138,9 +138,13 @@ export default function Pnl() {
     setLoading(true);
     try {
       const res = await inc.postPnl(selected._id);
-      if (res?.data) setSelected(res.data);
+      if (res?.approval_pending) { showApprovalPending(res.message); }
+      else if (res?.data) setSelected(res.data);
       loadReports();
-    } catch (err) { showError(err, 'Could not post P&L'); }
+    } catch (err) {
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); loadReports(); }
+      else showError(err, 'Could not post P&L');
+    }
     setLoading(false);
   };
 

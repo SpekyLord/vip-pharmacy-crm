@@ -11,7 +11,7 @@ import useHospitals from '../hooks/useHospitals';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError, showSuccess } from '../utils/errorToast';
+import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
@@ -110,7 +110,14 @@ export default function Collections() {
       ? 'Submit this collection?'
       : 'Submit all validated collections?';
     if (!window.confirm(msg)) return;
-    try { await coll.submitCollections(collectionId ? [collectionId] : undefined); loadData(pagination.page); } catch (err) { showError(err, 'Could not submit collections'); }
+    try {
+      const res = await coll.submitCollections(collectionId ? [collectionId] : undefined);
+      if (res?.approval_pending) { showApprovalPending(res.message); }
+      loadData(pagination.page);
+    } catch (err) {
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); loadData(pagination.page); }
+      else showError(err, 'Could not submit collections');
+    }
   };
   const handleReopen = async (id) => {
     if (!window.confirm('Re-open this collection?')) return;
