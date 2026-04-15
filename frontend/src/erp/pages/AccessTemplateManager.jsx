@@ -128,7 +128,7 @@ export function AccessTemplateManagerContent() {
       const sp = { ...f.sub_permissions };
       if (!sp[modKey]) sp[modKey] = {};
       if (sp[modKey][subKey]) {
-        const { [subKey]: _, ...rest } = sp[modKey];
+        const { [subKey]: _unused, ...rest } = sp[modKey];
         if (Object.keys(rest).length === 0) { delete sp[modKey]; } else { sp[modKey] = rest; }
       } else {
         sp[modKey] = { ...sp[modKey], [subKey]: true };

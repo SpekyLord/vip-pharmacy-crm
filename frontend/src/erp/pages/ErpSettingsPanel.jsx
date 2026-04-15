@@ -151,7 +151,7 @@ export function ErpSettingsPanelContent() {
         <div className="esp-section">
           <h3>Per Diem (Global Defaults)</h3>
           <p style={{ fontSize: 12, color: 'var(--erp-muted, #5f7188)', margin: '0 0 8px' }}>
-            These are global fallback values. Per-person overrides can be set in each BDM's CompProfile (People page → Full Threshold / Half Threshold). Setting Half Threshold to 0 means always at least half per diem.
+            These are global fallback values. Per-person overrides can be set in each BDM&apos;s CompProfile (People page &rarr; Full Threshold / Half Threshold). Setting Half Threshold to 0 means always at least half per diem.
           </p>
           <div className="esp-grid">
             {numField('PERDIEM_RATE_DEFAULT', 'Daily Rate (PHP)', 'Default per diem rate (overridable per BDM in CompProfile)')}

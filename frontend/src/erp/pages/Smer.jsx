@@ -7,8 +7,6 @@ import { ROLES, ROLE_SETS } from '../../constants/roles';
 import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
 import useHospitals from '../hooks/useHospitals';
-import api from '../../services/api';
-
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
