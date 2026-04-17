@@ -1041,9 +1041,18 @@ const Sidebar = () => {
     try {
       const res = await messageService.getAll({ limit: 100 });
       const messages = res.data || res.messages || [];
-      const count = messages.filter(
-        (m) => !m.readBy?.includes(user._id) && !m.read
-      ).length;
+      const count = messages.filter((m) => {
+        // Match the robust readBy check from EMP_InboxPage
+        const isReadByMe = Array.isArray(m.readBy) && user._id
+          ? m.readBy.some((entry) => {
+              const readById = typeof entry === 'object'
+                ? (entry.userId ?? entry._id ?? entry.id)
+                : entry;
+              return readById && String(readById) === String(user._id);
+            })
+          : false;
+        return !isReadByMe && !m.read;
+      }).length;
       setUnreadCount(count);
     } catch {
       // silently fail — badge just won't show

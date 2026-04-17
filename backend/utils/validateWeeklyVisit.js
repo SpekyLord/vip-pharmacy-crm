@@ -19,7 +19,7 @@ const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
 const User = require('../models/User');
 const { CYCLE_ANCHOR, MANILA_OFFSET_MS, getWeekOfMonth, getDayOfWeek, isWorkDay: isWorkDayUtil, getCycleNumber } = require('./scheduleCycleUtils');
-const { ROLES } = require('../constants/roles');
+const { ROLES, isAdminLike } = require('../constants/roles');
 
 /**
  * Get ISO week number for a date
@@ -125,8 +125,8 @@ const isWorkDay = isWorkDayUtil;
  * @returns {boolean}
  */
 const canAccessDoctor = (user, doctor) => {
-  // Admin can access all doctors
-  if (user.role === ROLES.ADMIN) {
+  // Admin-like roles (admin, finance, president, ceo) can access all doctors
+  if (isAdminLike(user.role)) {
     return true;
   }
 
