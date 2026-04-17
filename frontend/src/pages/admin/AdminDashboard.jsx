@@ -2,7 +2,7 @@
  * AdminDashboard Page
  */
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import Navbar from '../../components/common/Navbar';
@@ -18,6 +18,7 @@ import api from '../../services/api';
 import PageGuide from '../../components/common/PageGuide';
 
 const CYCLE_ANCHOR = new Date(2026, 0, 5);
+const ADMIN_GUIDE_STORAGE_KEY = 'pg_dismiss_admin-dashboard';
 
 const getCycleWeek = (date) => {
   const diffDays = Math.floor((date.getTime() - CYCLE_ANCHOR.getTime()) / 86400000);
@@ -25,46 +26,221 @@ const getCycleWeek = (date) => {
   return Math.floor(dayInCycle / 7) + 1; // 1-4
 };
 
+const getAgentStatusClass = (status) => {
+  const normalizedStatus = String(status || '').toLowerCase();
+  if (normalizedStatus === 'success') return 'success';
+  if (normalizedStatus === 'error' || normalizedStatus === 'failed') return 'error';
+  return 'pending';
+};
+
 const pageStyles = `
   :root {
     --page-bg: #f1f5f9;
+    --page-surface: #ffffff;
+    --page-border: #dbe4f0;
+    --page-text: #0f172a;
+    --page-muted: #64748b;
   }
 
   body.dark-mode {
     --page-bg: #0f172a;
+    --page-surface: #111827;
+    --page-border: #334155;
+    --page-text: #e2e8f0;
+    --page-muted: #94a3b8;
   }
 
   .admin-page {
     min-height: 100vh;
-    height: 100vh;
-    height: 100dvh;
     background: var(--page-bg);
     transition: background-color 0.3s;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
   }
 
   .admin-content {
     display: flex;
     flex: 1;
     min-height: 0;
-    overflow: hidden;
   }
 
   .admin-main {
     flex: 1;
-    padding: 0;
     min-width: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     display: flex;
     flex-direction: column;
+    padding-bottom: 32px;
   }
 
-  .admin-main .db-shell {
+  .admin-top-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(320px, 1fr);
+    gap: 16px;
+    margin: 16px 24px 0;
+    align-items: start;
+  }
+
+  .admin-top-grid--single {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-top-grid--agents-only .admin-agent-summary {
+    display: none;
+  }
+
+  .admin-top-grid--agents-only .admin-agent-card {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+
+  .admin-dashboard-stage {
     flex: 1;
     min-height: 0;
+    display: flex;
+  }
+
+  .admin-dashboard-stage > .db-shell {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .admin-guide-card .pg {
+    margin-bottom: 0;
+    min-height: 100%;
+  }
+
+  .admin-guide-card .pg-next {
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+
+  .admin-agent-card {
+    background: var(--page-surface);
+    border: 1px solid var(--page-border);
+    border-radius: 16px;
+    padding: 18px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 100%;
+  }
+
+  body.dark-mode .admin-agent-card {
+    box-shadow: none;
+  }
+
+  .admin-agent-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .admin-agent-kicker {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #2563eb;
+  }
+
+  .admin-agent-title {
+    margin: 6px 0 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--page-text);
+  }
+
+  .admin-agent-summary {
+    margin: 8px 0 0;
+    max-width: 24rem;
+    color: var(--page-muted);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .admin-agent-count {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  body.dark-mode .admin-agent-count {
+    background: #1e3a8a;
+    color: #bfdbfe;
+  }
+
+  .admin-agent-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .admin-agent-run {
+    border: 1px solid var(--page-border);
+    border-radius: 14px;
+    padding: 14px;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.82));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 108px;
+  }
+
+  body.dark-mode .admin-agent-run {
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.45));
+  }
+
+  .admin-agent-run-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .admin-agent-name {
+    color: var(--page-text);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .admin-agent-time {
+    color: var(--page-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .admin-agent-status {
+    flex-shrink: 0;
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .admin-agent-status.success {
+    background: #dcfce7;
+    color: #15803d;
+  }
+
+  .admin-agent-status.error {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+
+  .admin-agent-status.pending {
+    background: #dbeafe;
+    color: #1d4ed8;
   }
 
   .error-banner {
@@ -74,8 +250,8 @@ const pageStyles = `
     background: #fef2f2;
     color: #dc2626;
     padding: 12px 16px;
-    border-radius: 8px;
-    margin: 16px 24px;
+    border-radius: 12px;
+    margin: 16px 24px 0;
     border: 1px solid #fecaca;
     font-size: 13px;
   }
@@ -84,6 +260,110 @@ const pageStyles = `
     background: #7f1d1d;
     color: #fca5a5;
     border-color: #991b1b;
+  }
+
+  @media (min-width: 1181px) {
+    .admin-page {
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .admin-content {
+      overflow: hidden;
+    }
+
+    .admin-main {
+      overflow: hidden;
+      padding-bottom: 16px;
+    }
+
+    .admin-top-grid {
+      gap: 12px;
+      margin: 10px 20px 0;
+      flex-shrink: 0;
+    }
+
+    .admin-guide-card .pg {
+      padding: 10px 14px;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .admin-guide-card .pg-title {
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .admin-guide-card .pg-steps {
+      gap: 2px;
+    }
+
+    .admin-guide-card .pg-step {
+      gap: 5px;
+    }
+
+    .admin-guide-card .pg-next {
+      margin-top: 6px;
+      padding-top: 6px;
+    }
+
+    .admin-guide-card .pg-link {
+      padding: 4px 10px;
+    }
+
+    .admin-agent-card {
+      padding: 14px 16px;
+      gap: 10px;
+    }
+
+    .admin-agent-title {
+      font-size: 16px;
+    }
+
+    .admin-agent-summary {
+      margin-top: 6px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .admin-agent-list {
+      gap: 10px;
+    }
+
+    .admin-agent-run {
+      min-height: 84px;
+      padding: 10px 12px;
+      gap: 6px;
+    }
+  }
+
+  @media (max-width: 1100px) {
+    .admin-top-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .admin-main {
+      padding-bottom: 24px;
+    }
+
+    .admin-top-grid {
+      margin: 12px 16px 0;
+      gap: 12px;
+    }
+
+    .admin-agent-card {
+      padding: 16px;
+    }
+
+    .admin-agent-head {
+      flex-direction: column;
+    }
+
+    .error-banner {
+      margin: 12px 16px 0;
+    }
   }
 `;
 
@@ -100,10 +380,8 @@ const AdminDashboard = () => {
     visitsThisWeek: 0,
     vipVisitsThisWeek: 0,
     regularVisitsThisWeek: 0,
-    // Target vs Actual
     targetVisits: 0,
     actualVisits: 0,
-    // Today
     visitsToday: 0,
     vipVisitsToday: 0,
     regularVisitsToday: 0,
@@ -111,13 +389,29 @@ const AdminDashboard = () => {
   const [agentRuns, setAgentRuns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
+  const [showGuide, setShowGuide] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.sessionStorage.getItem(ADMIN_GUIDE_STORAGE_KEY) !== '1';
+  });
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleViewAllActivity = () => navigate('/admin/activity');
-  const handleActivityClick = (activity) => { setSelectedActivity(activity); setIsModalOpen(true); };
-  const handleCloseModal = () => { setIsModalOpen(false); setSelectedActivity(null); };
+  const handleActivityClick = (activity) => {
+    setSelectedActivity(activity);
+    setIsModalOpen(true);
+  };
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedActivity(null);
+  };
+
+  const hasTopPanels = showGuide || agentRuns.length > 0;
+  const topGridClassName = [
+    'admin-top-grid',
+    showGuide && agentRuns.length > 0 ? '' : 'admin-top-grid--single',
+    !showGuide && agentRuns.length > 0 ? 'admin-top-grid--agents-only' : '',
+  ].filter(Boolean).join(' ');
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -125,8 +419,9 @@ const AdminDashboard = () => {
         setLoading(true);
         setError(null);
 
-        // Fetch AI agent runs (non-blocking)
-        api.get('/erp/agents/runs?limit=3').then(res => setAgentRuns(res.data?.data || [])).catch(() => {});
+        api.get('/erp/agents/runs?limit=3')
+          .then((res) => setAgentRuns(res.data?.data || []))
+          .catch(() => {});
 
         const [doctorsRes, usersRes, cptSummaryRes, todayStatsRes, cycleRes] = await Promise.all([
           doctorService.getAll({ limit: 0 }),
@@ -165,12 +460,10 @@ const AdminDashboard = () => {
           vipWeeklyVisits = visitWeekStatsRes.data?.summary?.totalVisits || 0;
           regularWeeklyVisits = clientWeekStatsRes.data?.summary?.totalVisits || 0;
         } else {
-          // Fallback if cycle context is unavailable.
-          vipWeeklyVisits = visitCycleStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0;
-          regularWeeklyVisits = clientCycleStatsRes.data?.weeklyBreakdown?.reduce((sum, w) => sum + w.visitCount, 0) || 0;
+          vipWeeklyVisits = visitCycleStatsRes.data?.weeklyBreakdown?.reduce((sum, week) => sum + week.visitCount, 0) || 0;
+          regularWeeklyVisits = clientCycleStatsRes.data?.weeklyBreakdown?.reduce((sum, week) => sum + week.visitCount, 0) || 0;
         }
 
-        // Aggregate target vs actual from CPT summary
         const cptData = cptSummaryRes.data || [];
         let targetVisits = 0;
         let actualVisits = 0;
@@ -202,6 +495,7 @@ const AdminDashboard = () => {
         setLoading(false);
       }
     };
+
     fetchDashboardData();
   }, []);
 
@@ -214,30 +508,56 @@ const AdminDashboard = () => {
       <div className="admin-content">
         <Sidebar />
         <main className="admin-main">
-          <PageGuide pageKey="admin-dashboard" />
           {error && <div className="error-banner">{error}</div>}
-          {agentRuns.length > 0 && (
-            <div style={{ background: 'var(--erp-panel, #fff)', border: '1px solid var(--erp-border, #e5e7eb)', borderRadius: 12, padding: 16, margin: '16px 24px 0' }}>
-              <h3 style={{ fontSize: 13, fontWeight: 700, margin: '0 0 10px', color: 'var(--erp-text, #1f2937)', display: 'flex', alignItems: 'center', gap: 6 }}>🤖 AI Agents</h3>
-              {agentRuns.map((r, i) => (
-                <div key={r._id || i} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--erp-border, #e5e7eb)' : 'none', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: 600, color: 'var(--erp-text, #1f2937)' }}>{r.agent_label || 'Agent'}</div>
-                    <div style={{ color: 'var(--erp-muted, #6b7280)', fontSize: 11 }}>{r.run_date ? new Date(r.run_date).toLocaleString() : '--'}</div>
-                  </div>
-                  <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: r.status === 'success' ? '#dcfce7' : r.status === 'error' ? '#fef2f2' : '#e8efff', color: r.status === 'success' ? '#16a34a' : r.status === 'error' ? '#dc2626' : '#2563eb' }}>
-                    {r.status || 'unknown'}
-                  </span>
+          {hasTopPanels && (
+            <div className={topGridClassName}>
+              {showGuide && (
+                <div className="admin-guide-card">
+                  <PageGuide pageKey="admin-dashboard" onVisibilityChange={setShowGuide} />
                 </div>
-              ))}
+              )}
+              {agentRuns.length > 0 && (
+                <section className="admin-agent-card" aria-label="AI agent activity">
+                  <div className="admin-agent-head">
+                    <div>
+                      <div className="admin-agent-kicker">AI Operations</div>
+                      <h3 className="admin-agent-title">Agent Run Snapshot</h3>
+                      <p className="admin-agent-summary">
+                        Recent automation jobs stay visible here without pushing the dashboard cards into a cramped stack.
+                      </p>
+                    </div>
+                    <div className="admin-agent-count">{agentRuns.length} recent runs</div>
+                  </div>
+                  <div className="admin-agent-list">
+                    {agentRuns.map((run, index) => {
+                      const statusClass = getAgentStatusClass(run.status);
+                      return (
+                        <article key={run._id || index} className="admin-agent-run">
+                          <div className="admin-agent-run-top">
+                            <div className="admin-agent-name">{run.agent_label || 'Agent'}</div>
+                            <span className={`admin-agent-status ${statusClass}`}>
+                              {run.status || 'unknown'}
+                            </span>
+                          </div>
+                          <div className="admin-agent-time">
+                            {run.run_date ? new Date(run.run_date).toLocaleString() : '--'}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
             </div>
           )}
-          <Dashboard
-            user={user}
-            stats={stats}
-            onViewAllActivity={handleViewAllActivity}
-            onActivityClick={handleActivityClick}
-          />
+          <div className="admin-dashboard-stage">
+            <Dashboard
+              user={user}
+              stats={stats}
+              onViewAllActivity={handleViewAllActivity}
+              onActivityClick={handleActivityClick}
+            />
+          </div>
         </main>
       </div>
       <ActivityDetailModal
