@@ -68,7 +68,9 @@
       "Bash(grep -E \"\\\\.\\(jsx|js\\)$\")",
       "Bash(npx -y acorn --ecma2020 --module --allow-import-export-everywhere frontend/src/erp/utils/ocrMatching.js)",
       "Bash(npx -y acorn --ecma2022 --module --allow-import-export-everywhere frontend/src/erp/pages/SalesEntry.jsx)",
-      "Bash(npx -y acorn --ecma2022 --module --allow-import-export-everywhere frontend/src/erp/pages/CollectionSession.jsx)"
+      "Bash(npx -y acorn --ecma2022 --module --allow-import-export-everywhere frontend/src/erp/pages/CollectionSession.jsx)",
+      "Bash(grep -n '$unwind\\\\|$match\\\\|$group\\\\|$lookup' '/c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend/erp/controllers/collectionController.js')",
+      "Bash(npx jest *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp",
