@@ -379,8 +379,8 @@ const CSI_LAYOUTS = {
 const CSI_LAYOUT_CONFIG = {
   [CSI_LAYOUTS.MG_HANDWRITTEN]: {
     headerRight: { left: 0.58, top: 0.08, width: 0.37, height: 0.20 },
-    invoiceValue: { left: 0.73, top: 0.145, width: 0.17, height: 0.075 },
-    dateValue: { left: 0.66, top: 0.18, width: 0.26, height: 0.07 },
+    invoiceValue: { left: 0.72, top: 0.14, width: 0.18, height: 0.06 },
+    dateValue: { left: 0.66, top: 0.175, width: 0.25, height: 0.05 },
     headerLeft: { left: 0.02, top: 0.16, width: 0.62, height: 0.18 },
   },
   [CSI_LAYOUTS.VIP_WHITE]: {
