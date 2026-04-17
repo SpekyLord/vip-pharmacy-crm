@@ -1363,6 +1363,9 @@ const DoctorManagement = ({
     addressStreet: '',
     phone: '',
     email: '',
+    messengerId: '',
+    viberId: '',
+    whatsappNumber: '',
     visitFrequency: 4,
     notes: '',
     assignedTo: '',
@@ -1410,6 +1413,9 @@ const DoctorManagement = ({
       clinicOfficeAddress: '',
       phone: '',
       email: '',
+      messengerId: '',
+      viberId: '',
+      whatsappNumber: '',
       visitFrequency: 4,
       notes: '',
       outletIndicator: '',
@@ -1438,6 +1444,9 @@ const DoctorManagement = ({
       clinicOfficeAddress: doctor.clinicOfficeAddress || '',
       phone: doctor.phone || '',
       email: doctor.email || '',
+      messengerId: doctor.messengerId || '',
+      viberId: doctor.viberId || '',
+      whatsappNumber: doctor.whatsappNumber || '',
       visitFrequency: doctor.visitFrequency || 4,
       notes: doctor.notes || '',
       outletIndicator: doctor.outletIndicator || '',
@@ -1537,6 +1546,9 @@ const DoctorManagement = ({
     if (formData.email && formData.email.trim()) {
       doctorData.email = formData.email.trim();
     }
+    doctorData.messengerId = (formData.messengerId || '').trim();
+    doctorData.viberId = (formData.viberId || '').trim();
+    doctorData.whatsappNumber = (formData.whatsappNumber || '').trim();
     if (formData.notes && formData.notes.trim()) {
       doctorData.notes = formData.notes.trim();
     }
@@ -2062,6 +2074,42 @@ const DoctorManagement = ({
                     onChange={handleFormChange}
                   />
                 </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="whatsappNumber">WhatsApp Number</label>
+                  <input
+                    type="tel"
+                    id="whatsappNumber"
+                    name="whatsappNumber"
+                    value={formData.whatsappNumber}
+                    onChange={handleFormChange}
+                    placeholder="e.g. 639171234567"
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="viberId">Viber ID</label>
+                  <input
+                    type="text"
+                    id="viberId"
+                    name="viberId"
+                    value={formData.viberId}
+                    onChange={handleFormChange}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group full-width">
+                <label htmlFor="messengerId">Messenger PSID</label>
+                <input
+                  type="text"
+                  id="messengerId"
+                  name="messengerId"
+                  value={formData.messengerId}
+                  onChange={handleFormChange}
+                  placeholder="Page-scoped ID from Messenger webhook"
+                />
               </div>
 
               <div className="form-group full-width">
