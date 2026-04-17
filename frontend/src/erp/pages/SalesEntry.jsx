@@ -608,10 +608,15 @@ export default function SalesEntry() {
   const [customerList, setCustomerList] = useState([]);
 
   // Phase 18: Service Invoice state (no line items — just description + total)
-  const [serviceForm, setServiceForm] = useState({ customer_type: 'hospital', customer_ref: '', csi_date: new Date().toISOString().split('T')[0], service_description: '', invoice_total: '', payment_mode: 'CASH' });
+  const [serviceForm, setServiceForm] = useState({ customer_type: 'hospital', customer_ref: '', csi_date: new Date().toISOString().split('T')[0], service_description: '', invoice_total: '', payment_mode: 'CASH', petty_cash_fund_id: '' });
+
+  // Petty cash fund selector for CASH_RECEIPT / SERVICE_INVOICE with CASH payment
+  const [pettyCashFunds, setPettyCashFunds] = useState([]);
+  const [cashReceiptFundId, setCashReceiptFundId] = useState(''); // global fund for CASH_RECEIPT rows
 
   useEffect(() => {
     lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
+    lookupApi.get('/petty-cash/funds').then(r => setPettyCashFunds((r?.data || []).filter(f => f.status === 'ACTIVE' && (f.fund_mode || 'REVOLVING') !== 'EXPENSE_ONLY'))).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prefill from navigation (e.g. "Issue CSI" from Consignment Aging)
@@ -794,7 +799,8 @@ export default function SalesEntry() {
           csi_date: row.csi_date,
           doc_ref: row.doc_ref || undefined,
           warehouse_id: warehouseId || undefined,
-          payment_mode: row.payment_mode || undefined,
+          payment_mode: saleType === 'CASH_RECEIPT' ? 'CASH' : (row.payment_mode || undefined),
+          petty_cash_fund_id: saleType === 'CASH_RECEIPT' && cashReceiptFundId ? cashReceiptFundId : undefined,
           line_items: validItems.map(li => ({
             product_id: li.product_id,
             item_key: li.item_key,
@@ -1007,10 +1013,19 @@ export default function SalesEntry() {
                 </div>
                 <div>
                   <label>Payment Mode</label>
-                  <SelectField value={serviceForm.payment_mode} onChange={e => setServiceForm(f => ({ ...f, payment_mode: e.target.value }))}>
+                  <SelectField value={serviceForm.payment_mode} onChange={e => setServiceForm(f => ({ ...f, payment_mode: e.target.value, petty_cash_fund_id: e.target.value !== 'CASH' ? '' : f.petty_cash_fund_id }))}>
                     {paymentModes.filter(pm => pm.is_active !== false).map(pm => <option key={pm.mode_code} value={pm.mode_code}>{pm.mode_label}</option>)}
                   </SelectField>
                 </div>
+                {serviceForm.payment_mode === 'CASH' && pettyCashFunds.length > 0 && (
+                  <div>
+                    <label>Deposit To (Petty Cash)</label>
+                    <SelectField value={serviceForm.petty_cash_fund_id} onChange={e => setServiceForm(f => ({ ...f, petty_cash_fund_id: e.target.value }))}>
+                      <option value="">No fund (AR only)</option>
+                      {pettyCashFunds.map(f => <option key={f._id} value={f._id}>{f.fund_code} — {f.fund_name}</option>)}
+                    </SelectField>
+                  </div>
+                )}
               </div>
               <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
                 <button className="btn btn-primary" disabled={!!actionLoading} onClick={async () => {
@@ -1024,10 +1039,11 @@ export default function SalesEntry() {
                       service_description: serviceForm.service_description,
                       invoice_total: parseFloat(serviceForm.invoice_total) || 0,
                       payment_mode: serviceForm.payment_mode,
+                      petty_cash_fund_id: serviceForm.payment_mode === 'CASH' && serviceForm.petty_cash_fund_id ? serviceForm.petty_cash_fund_id : undefined,
                       line_items: []
                     };
                     await sales.createSale(payload);
-                    setServiceForm({ customer_type: 'hospital', customer_ref: '', csi_date: new Date().toISOString().split('T')[0], service_description: '', invoice_total: '', payment_mode: 'CASH' });
+                    setServiceForm({ customer_type: 'hospital', customer_ref: '', csi_date: new Date().toISOString().split('T')[0], service_description: '', invoice_total: '', payment_mode: 'CASH', petty_cash_fund_id: '' });
                     await loadSales();
                   } catch (err) { console.error('Service save error:', err); }
                   finally { setActionLoading(''); }
@@ -1104,6 +1120,17 @@ export default function SalesEntry() {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Petty cash fund selector for CASH_RECEIPT */}
+          {saleType === 'CASH_RECEIPT' && pettyCashFunds.length > 0 && (
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>Deposit To:</label>
+              <SelectField value={cashReceiptFundId} onChange={e => setCashReceiptFundId(e.target.value)} style={{ minWidth: 200 }}>
+                <option value="">No fund (AR only)</option>
+                {pettyCashFunds.map(f => <option key={f._id} value={f._id}>{f.fund_code} — {f.fund_name}</option>)}
+              </SelectField>
             </div>
           )}
 

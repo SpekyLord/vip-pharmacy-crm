@@ -817,6 +817,16 @@ Recipients are resolved dynamically from the database — no hardcoded recipient
 
 ## Approval Workflow (Phase 29 — Authority Matrix)
 
+### Governing Principle
+**"Any person can CREATE transactions, but all transactions must route through proper authority for POSTING."**
+
+This is enforced via:
+- `gateApproval()` on every submit/post controller (20 functions across 13 controllers)
+- 3-layer authorization: ApprovalRules → MODULE_DEFAULT_ROLES (lookup) → President override
+- APPROVAL_CATEGORY lookup: FINANCIAL vs OPERATIONAL classification
+- Frontend 202 handling with `showApprovalPending()` utility
+- Period locks prevent posting to closed months
+
 Multi-level, database-driven approval workflow. Controlled by `Settings.ENFORCE_AUTHORITY_MATRIX` (default: `false`).
 
 ### Architecture
@@ -873,7 +883,7 @@ const gated = await gateApproval({
 if (gated) return; // 202 already sent
 ```
 
-**Wired modules (18 functions across 13 controllers):**
+**Wired modules (20 functions across 13 controllers):**
 
 | Module | Controller | Function | Doc Type |
 |--------|-----------|----------|----------|
@@ -915,6 +925,12 @@ All module pages handle `approval_pending` in API responses:
 - Error path: check `err?.response?.data?.approval_pending`, show info toast
 - Helper: `showApprovalPending()` in `frontend/src/erp/utils/errorToast.js`
 - Helper: `isApprovalPending()` for checking both success and error paths
+
+### WorkflowGuide Coverage
+- **87/96 ERP pages** have WorkflowGuide banners (90.6%)
+- **9 admin/system pages** intentionally excluded (ControlCenter uses DependencyBanner; LookupManager, EntityManager, AgentSettings, ErpSettingsPanel, FoundationHealth, TerritoryManager, PartnerScorecard are config-only pages)
+- **6 Phase 28 pages** use camelCase pageKeys (salesGoalDashboard, salesGoalSetup, salesGoalBdmView, kpiLibrary, kpiSelfRating, incentiveTracker)
+- Every new ERP page MUST add a WorkflowGuide entry — see "Workflow Guide & Dependency Guide Governance" section
 
 ---
 
@@ -1278,7 +1294,7 @@ All auto-journal COA codes are admin-configurable in `Settings.COA_MAP` (ERP Set
 22b. **Petty Cash PCV toggle** — Disbursements either have an Official Receipt (OR#) or a Petty Cash Voucher (PCV). `is_pcv: true` means no OR; `pcv_remarks` (required) describes the purchase. Backend validates PCV remarks are non-empty when `is_pcv` is true. Frontend shows OR# field or PCV remarks textarea based on checkbox toggle.
 22c. **Petty Cash lifecycle** — Transactions: DRAFT → POSTED or VOIDED (void is DRAFT-only, requires reason). Documents (remittance/replenishment): PENDING → PROCESSED (no signing gate — Process click is sufficient). Fund status SUSPENDED/CLOSED blocks all new transactions, remittances, and replenishments.
 22d. **Petty Cash sub-permission gated** — Routes use `erpSubAccessCheck('accounting', 'petty_cash')` instead of `roleCheck`. Admin/finance/president with FULL accounting access pass automatically. Contractors need explicit `accounting.petty_cash` sub-permission in their access template to post, void, process, generate, or manage funds. Frontend mirrors this: `canManage` checks both `ROLE_SETS.MANAGEMENT` and `user.erp_access.sub_permissions.accounting.petty_cash`.
-22e. **Collection→Petty Cash auto-deposit** — When a collection with `petty_cash_fund_id` is posted in `submitCollections`, a POSTED `PettyCashTransaction` (type=DEPOSIT) is auto-created and the fund balance incremented. On reopen, the deposit is VOIDED and balance decremented. The `linked_collection_id` field on PettyCashTransaction traces the source.
+22e. **Collection→Petty Cash auto-deposit** — Full details in "Petty Cash Module > Collection → Petty Cash Auto-Deposit" section. Summary: on submit, a POSTED deposit is created inside the same MongoDB transaction (atomic). On reopen, the deposit is VOIDED and balance decremented (also atomic). Validation checks fund exists, is ACTIVE, entity matches, and fund_mode allows deposits. No separate petty cash approval gate — Collection approval covers it.
 23. **COA_MAP cache is cleared on Settings update** — `settingsController.updateSettings` calls both `Settings.clearVatCache()` AND `clearCoaCache()` from `autoJournal.js`. No stale window; journals immediately use new codes after admin changes Settings.
 24. **OPENING_AR skips inventory + COGS** — CSI entries with `csi_date < user.live_date` are auto-tagged `source: 'OPENING_AR'`. Validation skips stock check, submission skips FIFO/consignment, and COGS JE is not created. Only AR/Revenue JE posts. Source re-routes on edit if `csi_date` changes. `SALE_SOURCE` lookup is admin-configurable. Frontend shows amber "Opening AR" badge. Reopen is safe (no inventory entries to reverse).
 25. **Sales approval handler uses `postSaleRow`** — The `sales_line` handler in `universalApprovalController.js` calls `salesController.postSaleRow()` (shared helper) for full posting with TransactionEvent, inventory, and journals. This ensures approval-flow posts behave identically to direct `submitSales` posts — including OPENING_AR skip logic. Other module handlers (collection, smer, etc.) are still simplified stubs.
@@ -1635,6 +1651,60 @@ frontend/src/erp/pages/PettyCash.jsx              # 3-tab page (Funds, Transacti
 frontend/src/erp/hooks/usePettyCash.js            # API wrapper
 frontend/src/erp/components/WorkflowGuide.jsx     # 'petty-cash' pageKey
 ```
+
+### Collection → Petty Cash Auto-Deposit
+
+When a Collection with `petty_cash_fund_id` is posted, a POSTED `PettyCashTransaction` (type=DEPOSIT) is auto-created and the fund balance incremented — all inside a single MongoDB transaction for atomicity. On reopen, the deposit is VOIDED and balance decremented (also inside the transaction).
+
+**Full Flow:**
+1. **CollectionSession.jsx** — user selects "Deposit To" (Petty Cash Fund or Bank Account). Only ACTIVE funds with REVOLVING or DEPOSIT_ONLY mode shown.
+2. **validateCollections** — checks fund exists, is ACTIVE, entity matches, fund_mode allows deposits (not EXPENSE_ONLY), mutual exclusion with bank_account_id.
+3. **submitCollections** — inside `session.withTransaction()`: posts collection + creates POSTED PettyCashTransaction + increments fund balance. If fund validation fails, entire batch aborts (no partial post).
+4. **reopenCollections** — inside `session.withTransaction()`: reverts collection to DRAFT + voids the linked PettyCashTransaction + decrements fund balance. If fund was deleted, logs LEDGER_ERROR audit entry.
+
+**Design Decisions:**
+- **No separate petty cash approval gate** �� the Collection's own `gateApproval(module: 'COLLECTIONS')` covers authorization. The deposit is a downstream side-effect, not an independent action.
+- **Defense-in-depth** — validation catches bad fund refs at DRAFT→VALID; submit re-checks fund status/mode at VALID→POSTED to guard against race conditions.
+- **Mutual exclusion** — `bank_account_id` and `petty_cash_fund_id` cannot coexist (pre-save hook + validation).
+
+**Traceability Fields:**
+- `Collection.petty_cash_fund_id` → which fund receives the deposit
+- `PettyCashTransaction.linked_collection_id` → which collection created the deposit
+- `PettyCashTransaction.source_description` → "Collection CR-XXXX"
+
+**Key Files:**
+- `collectionController.js` — validateCollections (fund checks), submitCollections (atomic deposit), reopenCollections (atomic reversal)
+- `CollectionSession.jsx` — fund selector dropdown (filtered by status + mode)
+- `Collections.jsx` — destination column showing PC fund or bank
+- `PettyCash.jsx` — "CR# xxx" badge on auto-deposit transactions
+
+### Sales → Petty Cash Direct Deposit (CASH_RECEIPT / SERVICE_INVOICE)
+
+For **CASH payment** sales (CASH_RECEIPT and SERVICE_INVOICE), cash can be deposited directly into a petty cash fund at sale-posting time — bypassing the Collection/AR cycle entirely.
+
+**Flow:**
+1. **SalesEntry.jsx** — user selects sale type (CASH_RECEIPT or SERVICE_INVOICE). For CASH payment, a "Deposit To" dropdown shows ACTIVE petty cash funds (REVOLVING/DEPOSIT_ONLY only).
+2. **validateSales** — checks fund exists, is ACTIVE, entity matches, fund_mode allows deposits, payment_mode is CASH, and sale_type is not CSI.
+3. **postSaleRow** — inside `session.withTransaction()`: posts sale + creates POSTED PettyCashTransaction (DEPOSIT) + increments fund balance. All atomic.
+4. **reopenSales** — inside `session.withTransaction()`: reverts sale to DRAFT + voids linked deposit + decrements fund balance.
+
+**Journal Entry Difference:**
+- **Without fund (AR path):** DR AR_TRADE / CR SALES_REVENUE (or SERVICE_REVENUE)
+- **With fund (direct cash):** DR PETTY_CASH / CR SALES_REVENUE (or SERVICE_REVENUE) — cash goes to petty cash, no AR created
+
+**Design Decisions:**
+- **CASH payment only** — CHECK, BANK_TRANSFER, etc. always create AR (collected via Collections module)
+- **CSI cannot route to petty cash** — CSI is always credit sale with AR; validation blocks it
+- **No separate approval gate** — the Sales module's own `gateApproval(module: 'SALES')` covers authorization
+- `SalesLine.petty_cash_fund_id` stores the fund reference
+- `PettyCashTransaction.linked_sales_line_id` traces back to the source sale
+
+**Key Files:**
+- `SalesLine.js` — `petty_cash_fund_id` field
+- `salesController.js` — validateSales (fund checks), postSaleRow (atomic deposit), reopenSales (atomic reversal)
+- `autoJournal.js` — `journalFromSale` and `journalFromServiceRevenue` use DR PETTY_CASH when fund is set
+- `SalesEntry.jsx` — fund selector for CASH_RECEIPT (global) and SERVICE_INVOICE (per-form)
+- `PettyCashTransaction.js` — `linked_sales_line_id` field for traceability
 
 ### Authorization
 | Action | Allowed Roles |

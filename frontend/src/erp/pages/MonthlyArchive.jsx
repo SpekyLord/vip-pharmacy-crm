@@ -119,7 +119,7 @@ export default function MonthlyArchive() {
               Back to Reports
             </Link>
           </div>
-          <WorkflowGuide pageKey="month-end-close" />
+          <WorkflowGuide pageKey="monthly-archive" />
 
           {/* Period Control Panel */}
           {isAdmin && (

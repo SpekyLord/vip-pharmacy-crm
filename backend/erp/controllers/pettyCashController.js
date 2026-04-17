@@ -134,6 +134,8 @@ const getTransactions = catchAsync(async (req, res) => {
   const [transactions, total] = await Promise.all([
     PettyCashTransaction.find(filter)
       .populate('fund_id', 'fund_name')
+      .populate('linked_collection_id', 'cr_no cr_amount')
+      .populate('linked_sales_line_id', 'invoice_number sale_type invoice_total')
       .sort({ txn_date: -1, created_at: -1 })
       .skip(skip)
       .limit(Number(limit))

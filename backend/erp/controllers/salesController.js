@@ -18,6 +18,8 @@ const { createAndPostJournal, reverseJournal } = require('../services/journalEng
 const JournalEntry = require('../models/JournalEntry');
 const ProductMaster = require('../models/ProductMaster');
 const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
+const PettyCashFund = require('../models/PettyCashFund');
+const PettyCashTransaction = require('../models/PettyCashTransaction');
 
 // ═══════════════════════════════════════════════════════════
 // SHARED: Post a single SalesLine row (used by submitSales + approval handler)
@@ -71,6 +73,34 @@ const postSaleRow = async (row, userId, opts = {}) => {
         row.posted_by = userId;
         row.event_id = event._id;
         await row.save({ session });
+
+        // Direct petty cash deposit for SERVICE_INVOICE with CASH payment + fund routing
+        if (row.petty_cash_fund_id && saleType === 'SERVICE_INVOICE' && row.payment_mode === 'CASH') {
+          const fund = await PettyCashFund.findById(row.petty_cash_fund_id).session(session);
+          if (!fund) throw new Error(`Petty cash fund not found for ${row.invoice_number || row._id}`);
+          if (['SUSPENDED', 'CLOSED'].includes(fund.status)) throw new Error(`Fund ${fund.fund_code} is ${fund.status}`);
+          if ((fund.fund_mode || 'REVOLVING') === 'EXPENSE_ONLY') throw new Error(`Fund ${fund.fund_code} is EXPENSE_ONLY`);
+          const depositAmount = row.invoice_total || 0;
+          if (depositAmount > 0) {
+            await PettyCashTransaction.create([{
+              entity_id: row.entity_id,
+              fund_id: fund._id,
+              txn_type: 'DEPOSIT',
+              txn_date: row.csi_date || new Date(),
+              amount: depositAmount,
+              source_description: `${saleType} ${row.invoice_number || row.doc_ref || ''}`.trim(),
+              linked_sales_line_id: row._id,
+              status: 'POSTED',
+              posted_at: new Date(),
+              posted_by: userId,
+              created_by: userId,
+              running_balance: Math.round((fund.current_balance + depositAmount) * 100) / 100
+            }], { session });
+            await PettyCashFund.findByIdAndUpdate(fund._id, {
+              $inc: { current_balance: depositAmount }
+            }, { session });
+          }
+        }
         return;
       }
 
@@ -132,6 +162,34 @@ const postSaleRow = async (row, userId, opts = {}) => {
       row.posted_by = userId;
       row.event_id = event._id;
       await row.save({ session });
+
+      // Direct petty cash deposit for CASH_RECEIPT with CASH payment + fund routing
+      if (row.petty_cash_fund_id && saleType === 'CASH_RECEIPT' && row.payment_mode === 'CASH') {
+        const fund = await PettyCashFund.findById(row.petty_cash_fund_id).session(session);
+        if (!fund) throw new Error(`Petty cash fund not found for ${row.invoice_number || row._id}`);
+        if (['SUSPENDED', 'CLOSED'].includes(fund.status)) throw new Error(`Fund ${fund.fund_code} is ${fund.status}`);
+        if ((fund.fund_mode || 'REVOLVING') === 'EXPENSE_ONLY') throw new Error(`Fund ${fund.fund_code} is EXPENSE_ONLY`);
+        const depositAmount = row.invoice_total || 0;
+        if (depositAmount > 0) {
+          await PettyCashTransaction.create([{
+            entity_id: row.entity_id,
+            fund_id: fund._id,
+            txn_type: 'DEPOSIT',
+            txn_date: row.csi_date || new Date(),
+            amount: depositAmount,
+            source_description: `${saleType} ${row.invoice_number || row.doc_ref || ''}`.trim(),
+            linked_sales_line_id: row._id,
+            status: 'POSTED',
+            posted_at: new Date(),
+            posted_by: userId,
+            created_by: userId,
+            running_balance: Math.round((fund.current_balance + depositAmount) * 100) / 100
+          }], { session });
+          await PettyCashFund.findByIdAndUpdate(fund._id, {
+            $inc: { current_balance: depositAmount }
+          }, { session });
+        }
+      }
     });
 
     // 5. Link DocumentAttachments (non-blocking)
@@ -415,6 +473,30 @@ const validateSales = catchAsync(async (req, res) => {
     } else if (saleType === 'SERVICE_INVOICE') {
       if (!row.service_description) rowErrors.push('Service description is required');
       if (!row.invoice_total || row.invoice_total <= 0) rowErrors.push('Invoice total must be greater than 0');
+    }
+
+    // Petty cash fund validation (CASH_RECEIPT / SERVICE_INVOICE with CASH payment only)
+    if (row.petty_cash_fund_id) {
+      if (row.payment_mode !== 'CASH') {
+        rowErrors.push('Petty cash fund routing is only allowed for CASH payment mode');
+      } else if (saleType === 'CSI') {
+        rowErrors.push('CSI sales cannot route to petty cash — use Collections');
+      } else {
+        const pcFund = await PettyCashFund.findById(row.petty_cash_fund_id).lean();
+        if (!pcFund) {
+          rowErrors.push('Petty cash fund not found');
+        } else {
+          if (pcFund.entity_id?.toString() !== row.entity_id?.toString()) {
+            rowErrors.push('Petty cash fund belongs to a different entity');
+          }
+          if (pcFund.status !== 'ACTIVE') {
+            rowErrors.push(`Petty cash fund is ${pcFund.status} — deposits blocked`);
+          }
+          if ((pcFund.fund_mode || 'REVOLVING') === 'EXPENSE_ONLY') {
+            rowErrors.push('Petty cash fund is EXPENSE_ONLY — deposits not allowed');
+          }
+        }
+      }
     }
 
     // No future dates
@@ -818,6 +900,34 @@ const reopenSales = catchAsync(async (req, res) => {
             );
             consignment.qty_consumed = Math.max(0, consignment.qty_consumed - item.qty);
             await consignment.save({ session });
+          }
+        }
+
+        // Reverse petty cash deposit if sale was routed to a fund
+        if (row.petty_cash_fund_id) {
+          const pcTxn = await PettyCashTransaction.findOne({
+            linked_sales_line_id: row._id,
+            txn_type: 'DEPOSIT',
+            status: 'POSTED'
+          }).session(session);
+          if (pcTxn) {
+            pcTxn.status = 'VOIDED';
+            pcTxn.voided_at = new Date();
+            pcTxn.voided_by = req.user._id;
+            pcTxn.void_reason = `Auto-reversed: ${row.sale_type} ${row.invoice_number || row.doc_ref || ''} reopened`;
+            await pcTxn.save({ session });
+            const fundResult = await PettyCashFund.findByIdAndUpdate(pcTxn.fund_id, {
+              $inc: { current_balance: -pcTxn.amount }
+            }, { session });
+            if (!fundResult) {
+              await ErpAuditLog.logChange({
+                entity_id: row.entity_id, log_type: 'LEDGER_ERROR',
+                target_ref: pcTxn.fund_id?.toString(), target_model: 'PettyCashFund',
+                field_changed: 'current_balance', old_value: pcTxn.amount.toString(),
+                new_value: 'FUND_NOT_FOUND', changed_by: req.user._id,
+                note: `Fund deleted before reopen — balance decrement skipped for ${row.invoice_number || row.doc_ref}`
+              });
+            }
           }
         }
 

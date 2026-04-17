@@ -61,20 +61,22 @@ const WORKFLOW_GUIDES = {
     tip: 'Complete all DRAFT documents before end of day. Unfinished drafts will not appear in reports.',
   },
   'sales-entry': {
-    title: 'Creating a Sale (CSI)',
+    title: 'Creating a Sale (CSI / Cash Receipt / Service Invoice)',
     steps: [
+      'Select sale type: CSI (credit), Cash Receipt (cash), or Service Invoice (services)',
       'Select the hospital/customer and set the invoice date',
-      'Add line items — select product, quantity, and price',
-      'System auto-selects FIFO batch for inventory deduction',
+      'CSI/Cash Receipt: add line items — product, quantity, price. Service Invoice: enter description + total.',
+      'For Cash Receipt or Service Invoice with CASH payment: optionally select a Petty Cash Fund to deposit cash directly',
       'Save as DRAFT, then Validate to check for errors',
-      'Post to finalize — this creates AR and COGS journal entries',
+      'Post to finalize — CSI creates AR; Cash Receipt/Service Invoice with fund creates direct petty cash deposit instead of AR',
     ],
     next: [
       { label: 'View All Sales', path: '/erp/sales' },
       { label: 'Check Inventory', path: '/erp/my-stock' },
       { label: 'Collect Payment', path: '/erp/collections' },
+      { label: 'Petty Cash', path: '/erp/petty-cash' },
     ],
-    tip: 'Posted sales generate Accounts Receivable. Collect payment via Collections to clear the AR. If the invoice date is before your ERP live date, the entry is tagged "Opening AR" — stock is NOT deducted and no COGS journal is created (AR only).',
+    tip: 'CSI sales always create AR (collect via Collections). Cash Receipt and Service Invoice with CASH payment can route directly to a Petty Cash Fund — bypassing AR and auto-creating a deposit on posting. Only ACTIVE funds with REVOLVING or DEPOSIT_ONLY mode are available.',
   },
   'sales-list': {
     title: 'Sales Management',
@@ -129,14 +131,16 @@ const WORKFLOW_GUIDES = {
       'Click "New Collection" to record a payment received',
       'Select the CSI invoices being paid (partial or full)',
       'Enter payment details (mode, amount, check number if applicable)',
-      'Validate and Post — this clears the customer\'s AR balance',
+      'For CASH payments, choose destination: Bank Account or Petty Cash Fund — auto-deposit happens on posting',
+      'Validate and Post — this clears the customer\'s AR balance and creates deposit/journal entries',
     ],
     next: [
       { label: 'New Collection', path: '/erp/collections/session' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
       { label: 'Generate SOA', path: '/erp/collections/soa' },
+      { label: 'Petty Cash', path: '/erp/petty-cash' },
     ],
-    tip: 'Overdue accounts (>30 days) are flagged. Generate an SOA to send to the customer as a reminder.',
+    tip: 'Overdue accounts (>30 days) are flagged. Cash payments routed to a Petty Cash Fund auto-create a POSTED deposit on submission and auto-void on reopen. Only ACTIVE funds that accept deposits (REVOLVING or DEPOSIT_ONLY mode) are available.',
   },
   'collection-session': {
     title: 'Recording a Collection',
@@ -144,14 +148,15 @@ const WORKFLOW_GUIDES = {
       'Select the customer/hospital',
       'Choose which invoices (CSIs) are being paid',
       'Enter the payment mode (Cash, Check, Bank Transfer, GCash)',
+      'Choose payment destination — Petty Cash Fund (ACTIVE, deposit-enabled) or Bank Account',
       'Enter amount received — can be partial or full payment',
-      'Validate and Post to clear the AR and create bank deposit journal',
+      'Validate and Post to clear the AR and create deposit journal',
     ],
     next: [
       { label: 'View All Collections', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'CWT (Creditable Withholding Tax) is auto-computed if applicable. Check the CWT amount before posting.',
+    tip: 'CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY).',
   },
   'ar-aging': {
     title: 'Accounts Receivable Aging',
@@ -590,6 +595,21 @@ const WORKFLOW_GUIDES = {
     ],
     tip: 'Always run Trial Balance before closing to catch imbalances.',
   },
+  'monthly-archive': {
+    title: 'Monthly Archive & Period Control',
+    steps: [
+      'Select a period to view its close status and snapshot history',
+      'Use "Close Period" to finalize — this locks all modules for that month',
+      'Use "Re-open Period" if corrections are needed (requires president/admin)',
+      'Archived snapshots are read-only and preserved for audit trail',
+    ],
+    next: [
+      { label: 'Month-End Close', path: '/erp/month-end-close' },
+      { label: 'Period Locks', path: '/erp/control-center?section=period-locks' },
+      { label: 'Trial Balance', path: '/erp/trial-balance' },
+    ],
+    tip: 'Run Month-End Close before archiving to ensure all postings are finalized.',
+  },
   'bank-reconciliation': {
     title: 'Bank Reconciliation',
     steps: [
@@ -652,7 +672,7 @@ const WORKFLOW_GUIDES = {
     title: 'Petty Cash',
     steps: [
       'Create a fund: assign a custodian (BDM), warehouse, mode, ceiling, and COA code',
-      'Custodian logs deposits (from collections) and disbursements (small expenses)',
+      'Deposits can be auto-created from posted Collections (routed to this fund) or logged manually by the custodian',
       'For disbursements: attach Official Receipt (OR#), or toggle "Petty Cash Voucher" if no OR and describe the purchase',
       'Admin/Finance posts DRAFT transactions — balance updates and journal entry auto-creates',
       'DRAFT transactions can be voided if entered incorrectly',

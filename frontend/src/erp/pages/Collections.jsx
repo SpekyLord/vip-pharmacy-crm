@@ -162,7 +162,7 @@ export default function Collections() {
           </div>
 
           <table className="coll-table">
-            <thead><tr><th>CR #</th><th>Hospital / Customer</th><th>Date</th><th>Amount</th><th>CWT</th><th>Comm</th><th>Rebates</th><th>Invoices</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>CR #</th><th>Hospital / Customer</th><th>Date</th><th>Amount</th><th>CWT</th><th>Comm</th><th>Rebates</th><th>Invoices</th><th>Destination</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {data.map(c => {
                 const sc = STATUS_COLORS[c.status] || {};
@@ -176,6 +176,7 @@ export default function Collections() {
                     <td style={{ color: '#16a34a' }}>{c.total_commission ? `P${c.total_commission.toFixed(2)}` : '—'}</td>
                     <td style={{ color: '#7c3aed' }}>{c.total_partner_rebates ? `P${c.total_partner_rebates.toFixed(2)}` : '—'}</td>
                     <td>{c.settled_csis?.length || 0}</td>
+                    <td style={{ fontSize: 11 }}>{c.petty_cash_fund_id ? <span className="badge" style={{ background: '#fef3c7', color: '#92400e' }}>PC: {c.petty_cash_fund_id.fund_code}</span> : c.bank_account_id ? <span className="badge" style={{ background: '#dbeafe', color: '#1e40af' }}>{c.bank_account_id.bank_name}</span> : '—'}</td>
                     <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span></td>
                     <td onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {(c.status === 'DRAFT' || c.status === 'ERROR') && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
@@ -186,7 +187,7 @@ export default function Collections() {
                   </tr>
                 );
               })}
-              {!data.length && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>{loading ? 'Loading...' : 'No collections found'}</td></tr>}
+              {!data.length && <tr><td colSpan={11} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>{loading ? 'Loading...' : 'No collections found'}</td></tr>}
             </tbody>
           </table>
           <div className="coll-card-list">
@@ -248,6 +249,7 @@ export default function Collections() {
                 <p><strong>Amount:</strong> P{(selected.cr_amount || 0).toFixed(2)}</p>
                 <p><strong>CWT:</strong> {selected.cwt_na ? 'N/A' : `P${(selected.cwt_amount || 0).toFixed(2)}`}</p>
                 <p><strong>Payment:</strong> {selected.payment_mode}{selected.check_no ? ` — #${selected.check_no}` : ''}</p>
+                <p><strong>Destination:</strong> {selected.petty_cash_fund_id ? `Petty Cash: ${selected.petty_cash_fund_id.fund_code} — ${selected.petty_cash_fund_id.fund_name}` : selected.bank_account_id ? `Bank: ${selected.bank_account_id.bank_name}` : '—'}</p>
                 <p><strong>Status:</strong> <span className="badge" style={STATUS_COLORS[selected.status] || {}}>{selected.status}</span></p>
                 <p><strong>Commission:</strong> P{(selected.total_commission || 0).toFixed(2)}</p>
                 <p><strong>Partner Rebates:</strong> P{(selected.total_partner_rebates || 0).toFixed(2)}</p>

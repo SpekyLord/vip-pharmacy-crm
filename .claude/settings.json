@@ -40,7 +40,8 @@
       "Read(//c/Users/LENOVO/**)"
     ],
     "additionalDirectories": [
-      "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp"
+      "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp",
+      "C:\\Users\\LENOVO\\.claude"
     ]
   }
 }
