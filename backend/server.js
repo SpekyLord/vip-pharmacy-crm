@@ -267,6 +267,9 @@ const createApp = () => {
   app.use(cookieParser());
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  // Webhooks must be mounted before mongoSanitize — Meta/Viber use dot-notation
+  // query keys (hub.verify_token) that mongoSanitize strips
+  app.use('/api/webhooks', require('./routes/webhookRoutes'));
   app.use(mongoSanitize());
 
   app.use((req, res, next) => {
@@ -317,7 +320,6 @@ const createApp = () => {
   app.use('/api/reports', userLimiter, require('./routes/reportRoutes'));
   app.use('/api/communication-logs', userLimiter, require('./routes/communicationLogRoutes'));
   app.use('/api/message-templates', userLimiter, require('./routes/messageTemplateRoutes'));
-  app.use('/api/webhooks', require('./routes/webhookRoutes'));
   app.use('/api/sent', userLimiter, require('./routes/sentRoutes'));
   app.use('/api/erp', userLimiter, require('./erp/routes'));
 
