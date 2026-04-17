@@ -271,7 +271,7 @@ export default function ApprovalManager() {
                       </div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--erp-text)', marginBottom: 2 }}>{item.description}</div>
                       <div style={{ fontSize: 12, color: 'var(--erp-muted)' }}>
-                        {item.submitted_by} · {new Date(item.submitted_at).toLocaleDateString()}
+                        {item.submitted_by} · {item.submitted_at && !isNaN(new Date(item.submitted_at)) ? new Date(item.submitted_at).toLocaleDateString() : '—'}
                         {item.amount > 0 && <span style={{ marginLeft: 8, fontWeight: 600 }}>{fmt(item.amount)}</span>}
                       </div>
                     </div>

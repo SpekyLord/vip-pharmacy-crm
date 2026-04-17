@@ -3,7 +3,6 @@ const Payslip = require('../models/Payslip');
 const { catchAsync } = require('../../middleware/errorHandler');
 const {
   generateEmployeePayslip,
-  generateBdmPayslip,
   generateSalesRepPayslip,
   computeThirteenthMonth: compute13th,
   transitionPayslipStatus,
@@ -12,9 +11,8 @@ const { journalFromPayroll, resolveFundingCoa } = require('../services/autoJourn
 const { createAndPostJournal } = require('../services/journalEngine');
 const { notifyPayrollPosted } = require('../services/erpNotificationService');
 
+// BDMs use Income Reports, not payroll — excluded from GENERATOR_MAP
 const GENERATOR_MAP = {
-  BDM: generateBdmPayslip,
-  ECOMMERCE_BDM: generateBdmPayslip,
   EMPLOYEE: generateEmployeePayslip,
   SALES_REP: generateSalesRepPayslip,
   CONSULTANT: generateEmployeePayslip,
@@ -29,7 +27,14 @@ const computePayroll = catchAsync(async (req, res) => {
   }
 
   const entityId = req.entityId;
-  const people = await PeopleMaster.find({ entity_id: entityId, is_active: true, status: 'ACTIVE' }).lean();
+  // Only include payroll-eligible person types — BDMs use Income Reports, not payroll
+  const PAYROLL_PERSON_TYPES = ['EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'];
+  const people = await PeopleMaster.find({
+    entity_id: entityId,
+    is_active: true,
+    status: 'ACTIVE',
+    person_type: { $in: PAYROLL_PERSON_TYPES }
+  }).lean();
 
   const results = [];
   const errors = [];
