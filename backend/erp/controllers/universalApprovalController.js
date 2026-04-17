@@ -247,15 +247,21 @@ const approvalHandlers = {
     const CarLogbookEntry = require('../models/CarLogbookEntry');
     const doc = await CarLogbookEntry.findById(id);
     if (!doc) throw new Error('Car logbook entry not found');
-    if (doc.status !== 'VALID') throw new Error('Car logbook not in VALID status');
+    // Post/reject ALL VALID entries for same BDM + period + cycle (not just this one)
+    // Car logbook has separate documents per day, but approval is per-batch
+    const batchFilter = { entity_id: doc.entity_id, bdm_id: doc.bdm_id, period: doc.period, cycle: doc.cycle, status: 'VALID' };
     if (action === 'post') {
+      const allValid = await CarLogbookEntry.find(batchFilter);
       const { postSingleCarLogbook } = require('./expenseController');
-      await postSingleCarLogbook(doc, userId);
+      for (const entry of allValid) {
+        await postSingleCarLogbook(entry, userId);
+      }
+      return allValid[0] || doc;
     } else if (action === 'reject') {
-      doc.status = 'ERROR';
-      doc.rejection_reason = reason;
-      doc.validation_errors = [reason];
-      await doc.save();
+      await CarLogbookEntry.updateMany(batchFilter, {
+        $set: { status: 'ERROR', rejection_reason: reason, validation_errors: [reason] }
+      });
+      return doc;
     }
     return doc;
   },

@@ -539,6 +539,13 @@ export default function ApprovalManager() {
                             <span>VAT: {fmt(d.total_vat)}</span>
                             <span>Total: {fmt(d.invoice_total)}</span>
                           </div>
+                          {/* CSI photo (OCR-scanned or uploaded) */}
+                          {d.csi_photo_url && (
+                            <div style={{ marginTop: 10 }}>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>CSI Document</div>
+                              <img src={d.csi_photo_url} alt="CSI" style={{ maxWidth: 220, maxHeight: 160, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(d.csi_photo_url)} />
+                            </div>
+                          )}
                         </div>
                       )}
 

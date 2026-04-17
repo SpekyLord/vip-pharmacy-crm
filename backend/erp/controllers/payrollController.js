@@ -9,6 +9,7 @@ const {
 } = require('../services/payslipCalc');
 const { journalFromPayroll, resolveFundingCoa } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');
+const ErpAuditLog = require('../models/ErpAuditLog');
 const { notifyPayrollPosted } = require('../services/erpNotificationService');
 
 // BDMs use Income Reports, not payroll — excluded from GENERATOR_MAP
@@ -159,6 +160,13 @@ const postPayroll = catchAsync(async (req, res) => {
         await createAndPostJournal(fullPs.entity_id, jeData);
       } catch (jeErr) {
         console.error('Auto-journal failed for payslip:', ps._id, jeErr.message);
+        ErpAuditLog.logChange({
+          entity_id: fullPs.entity_id, log_type: 'LEDGER_ERROR',
+          target_ref: ps._id?.toString(), target_model: 'JournalEntry',
+          field_changed: 'auto_journal', new_value: jeErr.message,
+          changed_by: req.user._id,
+          note: `Auto-journal failed for payslip ${fullPs.employee_name || ps._id}`
+        }).catch(() => {});
       }
     } catch (err) {
       errors.push({ payslip_id: ps._id, error: err.message });

@@ -127,6 +127,7 @@ Divides approval workload per module via sub-permissions, adds attachment/photo 
 
 ### Attachment/Photo Viewing
 Approvers can now see supporting documents directly in the Approval Hub without leaving the page:
+- **Sales/CSI**: OCR-scanned or uploaded CSI document photo (`csi_photo_url` on SalesLine model)
 - **GRN**: waybill photo, undertaking photo
 - **Collection**: deposit slip, CR photo, CWT certificate, CSI photos
 - **Car Logbook**: fuel receipt photos per day
@@ -1891,4 +1892,43 @@ backend/erp/ocr/ocrProcessor.js                     # entityId hoisted, passed t
 backend/erp/ocr/parsers/orParser.js                 # Comma-replace fix (8 locations)
 frontend/src/erp/pages/OcrTest.jsx                  # Correct pageKey "ocr-test"
 frontend/src/erp/components/WorkflowGuide.jsx       # New "ocr-test" guide entry
+```
+
+## OCR Scan-to-Fill Enhancements (April 2026)
+
+### Sales CSI Photo Persistence
+The SalesEntry OCR scan captured CSI photos and uploaded to S3, but the URL was dropped before reaching the database:
+- **Model**: Added `csi_photo_url` and `csi_attachment_id` to SalesLine schema
+- **Frontend**: `handleScanApply` now carries photo URL; `saveAll` includes it in payload
+- **Approval Hub**: SALES approval cards now display CSI document thumbnail (clickable → full-screen preview)
+- **Universal Approval Service**: SALES query returns `csi_photo_url` in details
+
+### Collection CR Scan Auto-Fill (`ScanCRModal`)
+CollectionSession already uploaded CR photos via OCR but discarded extracted data. Now scanning a CR auto-fills the entire form:
+- **"Scan CR to Auto-Fill" button** in page header opens ScanCRModal
+- **Hospital fuzzy matching**: OCR "Received from" text → `matchHospital()` against hospital master → auto-selects hospital
+- **CR details auto-fill**: CR#, date, amount, payment mode, check#, bank
+- **CSI deferred matching**: Extracted CSI numbers are stashed in `pendingCsiMatch` ref; after hospital change triggers open CSI loading, `matchCsis()` auto-selects matching invoices
+- **Step 4 CR photo upload**: Also triggers auto-fill when form is empty (no separate scan needed)
+- **OCR badges**: Green "OCR" badges on auto-filled field labels so user knows what came from scan
+- **Review flow**: Confidence badges (HIGH/MEDIUM/NONE) per field; review acknowledgment required for LOW confidence
+
+### CHECK Payment Bug Fix
+`checkNo`, `checkDate`, `bank` state variables had no setters (read-only). Fixed + added visible CHECK-specific input fields in Step 3.
+
+### Shared OCR Matching Utilities
+Extracted from SalesEntry into `frontend/src/erp/utils/ocrMatching.js`:
+- `normalizeStr`, `matchHospital`, `matchProduct`, `fieldVal`, `fieldConfidence` — shared between SalesEntry and CollectionSession
+- `matchCsis` — new: matches OCR-extracted CSI numbers against open invoices by `doc_ref`
+- `parseCrDate` — new: normalizes OCR date strings ("03-04 20", "March 31, 2026") to YYYY-MM-DD
+- `formatReviewReason` — generic review reason labels
+
+### Key Files
+```
+frontend/src/erp/utils/ocrMatching.js                # Shared OCR matching utilities
+frontend/src/erp/pages/CollectionSession.jsx          # ScanCRModal, auto-fill handler, deferred CSI matching
+frontend/src/erp/pages/SalesEntry.jsx                 # Refactored to import from ocrMatching.js
+frontend/src/erp/pages/ApprovalManager.jsx            # CSI photo display in SALES approval cards
+backend/erp/models/SalesLine.js                       # Added csi_photo_url, csi_attachment_id fields
+backend/erp/services/universalApprovalService.js      # SALES details include csi_photo_url
 ```

@@ -59,6 +59,7 @@ const carLogbookEntrySchema = new mongoose.Schema({
   personal_gas_amount: { type: Number, default: 0 },
   official_gas_amount: { type: Number, default: 0 },
 
+  destination: { type: String, trim: true },  // auto-pulled from SMER daily entry (hospital_covered + notes)
   notes: { type: String, trim: true },
 
   // Lifecycle

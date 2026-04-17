@@ -75,6 +75,10 @@ const salesLineSchema = new mongoose.Schema({
   // When set, sale bypasses AR and deposits directly to the fund
   petty_cash_fund_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PettyCashFund' },
 
+  // CSI photo (OCR-scanned or manually uploaded)
+  csi_photo_url: { type: String },
+  csi_attachment_id: { type: String },
+
   line_items: [lineItemSchema],
 
   invoice_total: { type: Number, default: 0 },
