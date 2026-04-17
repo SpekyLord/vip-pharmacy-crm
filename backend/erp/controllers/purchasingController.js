@@ -198,6 +198,22 @@ const approvePO = catchAsync(async (req, res) => {
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
   if (po.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'Only DRAFT POs can be approved' });
 
+  // Authority matrix gate
+  const poTotal = (po.line_items || []).reduce((sum, li) => sum + ((li.qty || 0) * (li.unit_price || 0)), 0);
+  const { gateApproval } = require('../services/approvalService');
+  const gated = await gateApproval({
+    entityId: po.entity_id || req.entityId,
+    module: 'PURCHASING',
+    docType: 'PO',
+    docId: po._id,
+    docRef: po.po_number || po._id.toString(),
+    amount: poTotal,
+    description: `PO Approval: ${po.po_number}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   po.status = 'APPROVED';
   po.approved_by = req.user._id;
   po.approved_at = new Date();

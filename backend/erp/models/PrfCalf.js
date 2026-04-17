@@ -108,6 +108,7 @@ const prfCalfSchema = new mongoose.Schema({
   posted_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   reopen_count: { type: Number, default: 0 },
   validation_errors: [String],
+  rejection_reason: { type: String },
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
   // Audit

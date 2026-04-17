@@ -555,9 +555,9 @@ export default function CollectionSession() {
                     else { setBankAccountId(val); setPettyCashFundId(''); }
                   }} style={{ width: '100%' }}>
                     <option value="">Select destination…</option>
-                    {pettyCashFunds.length > 0 && (
+                    {pettyCashFunds.filter(f => f.status === 'ACTIVE' && (f.fund_mode || 'REVOLVING') !== 'EXPENSE_ONLY').length > 0 && (
                       <optgroup label="Petty Cash Funds">
-                        {pettyCashFunds.map(f => <option key={f._id} value={f._id}>{f.fund_code} — {f.fund_name}</option>)}
+                        {pettyCashFunds.filter(f => f.status === 'ACTIVE' && (f.fund_mode || 'REVOLVING') !== 'EXPENSE_ONLY').map(f => <option key={f._id} value={f._id}>{f.fund_code} — {f.fund_name}</option>)}
                       </optgroup>
                     )}
                     <optgroup label="Bank Accounts">

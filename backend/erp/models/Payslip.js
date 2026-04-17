@@ -73,7 +73,7 @@ const payslipSchema = new mongoose.Schema(
     // ═══ Workflow ═══
     status: {
       type: String,
-      enum: ['DRAFT', 'COMPUTED', 'REVIEWED', 'APPROVED', 'POSTED'],
+      enum: ['DRAFT', 'COMPUTED', 'REVIEWED', 'APPROVED', 'REJECTED', 'POSTED'],
       default: 'DRAFT',
     },
     computed_at: { type: Date },
@@ -83,6 +83,7 @@ const payslipSchema = new mongoose.Schema(
     approved_at: { type: Date },
     posted_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     posted_at: { type: Date },
+    rejection_reason: { type: String },
 
     notes: { type: String, default: '' },
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

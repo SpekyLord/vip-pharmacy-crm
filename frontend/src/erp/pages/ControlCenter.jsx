@@ -179,6 +179,17 @@ class SectionErrorBoundary extends Component {
 
 // ── Dependency guide: what to configure when you change each section ──
 const DEPENDENCY_GUIDE = {
+  'foundation-health': {
+    title: 'Getting Started — Setup Order',
+    items: [
+      { action: 'Step 1: Entities', deps: 'Create your parent company and subsidiaries first — everything else is scoped to an entity', section: 'entities' },
+      { action: 'Step 2: Territories', deps: 'Define sales territories and regions for each entity', section: 'territories' },
+      { action: 'Step 3: People', deps: 'Add people, assign roles, set "Reports To", and create Comp Profiles', section: 'people' },
+      { action: 'Step 4: Financial Setup', deps: 'Configure Chart of Accounts, Bank Accounts, Credit Cards, and Payment Modes', section: 'coa' },
+      { action: 'Step 5: Master Data', deps: 'Add Vendors, Customers, Hospitals, Products, and Warehouses', section: 'vendors' },
+      { action: 'Step 6: ERP Settings', deps: 'Set COA Mapping, tax rates, per diem, fuel rates, and authority matrix', section: 'erp-settings' },
+    ]
+  },
   'entities': {
     title: 'Entity Dependencies',
     items: [
@@ -378,6 +389,14 @@ const DEPENDENCY_GUIDE = {
       { action: 'When you disable an agent', deps: 'It will stop running on its cron schedule — existing data is preserved', section: null },
       { action: 'When you change notification routing', deps: 'Only the selected roles (president/admin/finance) will receive agent alerts', section: null },
       { action: 'Use "Run Now"', deps: 'Triggers instant data gathering — results appear in the Agent Dashboard', section: null },
+    ]
+  },
+  'role-assignments': {
+    title: 'Role Assignment Dependencies',
+    items: [
+      { action: 'Before assigning roles', deps: 'Add people in People Master first — only active people appear in the assignment list', section: 'people' },
+      { action: 'When you assign a functional role', deps: 'KPIs linked to that function will appear in the person\'s self-rating form', section: 'kpi-library' },
+      { action: 'When you remove a role', deps: 'The person will no longer see KPIs for that function in future self-rating periods', section: null },
     ]
   },
 };

@@ -537,7 +537,7 @@ function TransactionsTab({ funds, pc, canManage, expenseCategories }) {
                   <td style={styles.td}>{txn.txn_date ? new Date(txn.txn_date).toLocaleDateString() : '-'}</td>
                   <td style={styles.td}>{txn.txn_number || '-'}</td>
                   <td style={styles.td}>{typeBadge(txn.txn_type)}</td>
-                  <td style={styles.td}>{txn.payee || txn.source_description || '-'}</td>
+                  <td style={styles.td}>{txn.linked_collection_id?.cr_no ? <><span style={styles.badge('blue')} title={txn.source_description}>CR# {txn.linked_collection_id.cr_no}</span>{' '}</> : txn.linked_sales_line_id?.invoice_number ? <><span style={styles.badge('green')} title={txn.source_description}>{txn.linked_sales_line_id.sale_type === 'SERVICE_INVOICE' ? 'SVC' : 'CR'}# {txn.linked_sales_line_id.invoice_number}</span>{' '}</> : (txn.payee || txn.source_description || '-')}</td>
                   <td style={styles.td}>{styles.peso(txn.amount)}</td>
                   <td style={styles.td}>
                     {txn.txn_type === 'DISBURSEMENT'

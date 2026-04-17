@@ -13,7 +13,8 @@ const Collection = require('../models/Collection');
  * Returns CSIs with balance_due > 0
  */
 async function getOpenCsis(entityId, bdmId, hospitalId, customerId) {
-  const match = { status: 'POSTED', deletion_event_id: { $exists: false } };
+  // Exclude sales routed to petty cash (CASH_RECEIPT/SERVICE_INVOICE with fund) — those bypass AR
+  const match = { status: 'POSTED', deletion_event_id: { $exists: false }, petty_cash_fund_id: null };
   if (entityId) match.entity_id = new mongoose.Types.ObjectId(entityId);
   if (bdmId) match.bdm_id = new mongoose.Types.ObjectId(bdmId);
   if (hospitalId) match.hospital_id = new mongoose.Types.ObjectId(hospitalId);
@@ -127,7 +128,8 @@ async function getArAging(entityId, bdmId, hospitalId) {
  * Collection rate = total collections / total sales × 100%
  */
 async function getCollectionRate(entityId, bdmId, dateFrom, dateTo) {
-  const salesMatch = { status: 'POSTED', deletion_event_id: { $exists: false } };
+  // Exclude petty-cash-routed sales from collection rate (already "collected" at sale time)
+  const salesMatch = { status: 'POSTED', deletion_event_id: { $exists: false }, petty_cash_fund_id: null };
   const collMatch = { status: 'POSTED', deletion_event_id: { $exists: false } };
 
   if (entityId) {

@@ -71,6 +71,9 @@ const salesLineSchema = new mongoose.Schema({
   payment_mode: { type: String }, // Validated against PaymentMode lookup
   // Phase 18: service description (SERVICE_INVOICE only — FNB, rental, consulting)
   service_description: { type: String, trim: true },
+  // Direct petty cash routing for CASH_RECEIPT/SERVICE_INVOICE with cash payment
+  // When set, sale bypasses AR and deposits directly to the fund
+  petty_cash_fund_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PettyCashFund' },
 
   line_items: [lineItemSchema],
 
@@ -90,6 +93,7 @@ const salesLineSchema = new mongoose.Schema({
   },
   reopen_count: { type: Number, default: 0 },
   validation_errors: [{ type: String }],
+  rejection_reason: { type: String },
   // Phase 15.5: Cost Center dimension
   cost_center_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CostCenter' },
 
@@ -177,5 +181,6 @@ salesLineSchema.index({ entity_id: 1, doc_ref: 1, hospital_id: 1 });
 salesLineSchema.index({ status: 1 });
 salesLineSchema.index({ entity_id: 1, sale_type: 1, status: 1 });
 salesLineSchema.index({ entity_id: 1, customer_id: 1, csi_date: -1 });
+salesLineSchema.index({ petty_cash_fund_id: 1 });
 
 module.exports = mongoose.model('SalesLine', salesLineSchema);

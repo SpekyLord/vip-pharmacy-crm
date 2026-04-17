@@ -27,6 +27,7 @@ const pettyCashTransactionSchema = new mongoose.Schema({
   // DEPOSIT fields
   source_description: { type: String, trim: true },
   linked_collection_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Collection' },
+  linked_sales_line_id: { type: mongoose.Schema.Types.ObjectId, ref: 'SalesLine' },
 
   // DISBURSEMENT fields
   payee: { type: String, trim: true },
@@ -92,5 +93,6 @@ pettyCashTransactionSchema.index({ fund_id: 1, txn_date: -1 });
 pettyCashTransactionSchema.index({ entity_id: 1, status: 1 });
 pettyCashTransactionSchema.index({ fund_id: 1, txn_type: 1, status: 1 });
 pettyCashTransactionSchema.index({ linked_collection_id: 1 });
+pettyCashTransactionSchema.index({ linked_sales_line_id: 1 });
 
 module.exports = mongoose.model('PettyCashTransaction', pettyCashTransactionSchema);
