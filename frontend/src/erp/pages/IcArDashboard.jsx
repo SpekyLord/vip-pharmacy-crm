@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useIcSettlements from '../hooks/useIcSettlements';
-import { showError } from '../utils/errorToast';
+import { showError, showApprovalPending } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
 const STATUS_COLORS = {
@@ -82,9 +82,13 @@ export default function IcArDashboard() {
   const handlePost = async (id) => {
     if (!window.confirm('Post this IC Settlement?')) return;
     try {
-      await ic.postSettlement(id);
+      const res = await ic.postSettlement(id);
+      if (res?.approval_pending) { showApprovalPending(res.message); }
       loadData();
-    } catch (err) { showError(err, 'Could not post settlement'); }
+    } catch (err) {
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); loadData(); }
+      else showError(err, 'Could not post settlement');
+    }
   };
 
   const totalSettled = settlements.filter(s => s.status === 'POSTED').reduce((sum, s) => sum + (s.cr_amount || 0), 0);

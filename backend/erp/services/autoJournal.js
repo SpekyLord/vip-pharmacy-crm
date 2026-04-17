@@ -62,7 +62,18 @@ const COA_NAMES = {
   INTEREST_EXPENSE: 'Interest Expense',
   INTEREST_PAYABLE: 'Interest Payable',
   BANK_CHARGES: 'Bank Charges',
+  // Payroll
+  SALARIES_WAGES: 'Salaries & Wages',
+  ALLOWANCES: 'Allowances',
+  BONUS_13TH: 'Bonus & 13th Month',
+  SSS_PAYABLE: 'SSS Payable',
+  PHILHEALTH_PAYABLE: 'PhilHealth Payable',
+  PAGIBIG_PAYABLE: 'Pag-IBIG Payable',
+  WHT_PAYABLE: 'Withholding Tax Payable',
 };
+
+/** Clear cached COA_MAP — call after Settings update */
+function clearCoaCache() { _coaCache = null; _coaCacheTime = 0; }
 
 function c(coa, key) { return coa[key] || '9999'; }
 function n(key) { return COA_NAMES[key] || key; }
@@ -273,23 +284,23 @@ async function journalFromPayroll(payslip, bankCoaCode, bankName, userId) {
   const commission = e.incentive || 0;
   const bonus = (e.bonus || 0) + (e.thirteenth_month || 0) + (e.holiday_pay || 0) + (e.night_diff || 0);
 
-  // Debit side — expense accounts from COA_MAP with fallback defaults
-  if (basic + overtime > 0) lines.push({ account_code: c(coa, 'SALARIES_WAGES') !== '9999' ? c(coa, 'SALARIES_WAGES') : '6000', account_name: 'Salaries & Wages', debit: basic + overtime, credit: 0, description: 'Basic salary + OT' });
-  if (allowance > 0) lines.push({ account_code: c(coa, 'ALLOWANCES') !== '9999' ? c(coa, 'ALLOWANCES') : '6050', account_name: 'Allowances', debit: allowance, credit: 0, description: 'Allowances / de minimis' });
+  // Debit side — expense accounts from COA_MAP (configurable via Settings)
+  if (basic + overtime > 0) lines.push({ account_code: c(coa, 'SALARIES_WAGES'), account_name: n('SALARIES_WAGES'), debit: basic + overtime, credit: 0, description: 'Basic salary + OT' });
+  if (allowance > 0) lines.push({ account_code: c(coa, 'ALLOWANCES'), account_name: n('ALLOWANCES'), debit: allowance, credit: 0, description: 'Allowances / de minimis' });
   if (commission > 0) lines.push({ account_code: c(coa, 'BDM_COMMISSION'), account_name: n('BDM_COMMISSION'), debit: commission, credit: 0, description: 'Incentive / Commission' });
-  if (bonus > 0) lines.push({ account_code: c(coa, 'BONUS_13TH') !== '9999' ? c(coa, 'BONUS_13TH') : '6060', account_name: 'Bonus & 13th Month', debit: bonus, credit: 0, description: 'Bonus / 13th month / holiday' });
+  if (bonus > 0) lines.push({ account_code: c(coa, 'BONUS_13TH'), account_name: n('BONUS_13TH'), debit: bonus, credit: 0, description: 'Bonus / 13th month / holiday' });
 
-  // Credit side — statutory deductions from COA_MAP with fallback defaults
+  // Credit side — statutory deductions from COA_MAP (configurable via Settings)
   const d = payslip.deductions || {};
   const sss = d.sss_employee || 0;
   const philhealth = d.philhealth_employee || 0;
   const pagibig = d.pagibig_employee || 0;
   const tax = d.withholding_tax || 0;
 
-  if (sss > 0) lines.push({ account_code: c(coa, 'SSS_PAYABLE') !== '9999' ? c(coa, 'SSS_PAYABLE') : '2200', account_name: 'SSS Payable', debit: 0, credit: sss, description: 'SSS EE share' });
-  if (philhealth > 0) lines.push({ account_code: c(coa, 'PHILHEALTH_PAYABLE') !== '9999' ? c(coa, 'PHILHEALTH_PAYABLE') : '2210', account_name: 'PhilHealth Payable', debit: 0, credit: philhealth, description: 'PhilHealth EE share' });
-  if (pagibig > 0) lines.push({ account_code: c(coa, 'PAGIBIG_PAYABLE') !== '9999' ? c(coa, 'PAGIBIG_PAYABLE') : '2220', account_name: 'Pag-IBIG Payable', debit: 0, credit: pagibig, description: 'Pag-IBIG EE share' });
-  if (tax > 0) lines.push({ account_code: c(coa, 'WHT_PAYABLE') !== '9999' ? c(coa, 'WHT_PAYABLE') : '2230', account_name: 'Withholding Tax Payable', debit: 0, credit: tax, description: 'WHT' });
+  if (sss > 0) lines.push({ account_code: c(coa, 'SSS_PAYABLE'), account_name: n('SSS_PAYABLE'), debit: 0, credit: sss, description: 'SSS EE share' });
+  if (philhealth > 0) lines.push({ account_code: c(coa, 'PHILHEALTH_PAYABLE'), account_name: n('PHILHEALTH_PAYABLE'), debit: 0, credit: philhealth, description: 'PhilHealth EE share' });
+  if (pagibig > 0) lines.push({ account_code: c(coa, 'PAGIBIG_PAYABLE'), account_name: n('PAGIBIG_PAYABLE'), debit: 0, credit: pagibig, description: 'Pag-IBIG EE share' });
+  if (tax > 0) lines.push({ account_code: c(coa, 'WHT_PAYABLE'), account_name: n('WHT_PAYABLE'), debit: 0, credit: tax, description: 'WHT' });
 
   const netPay = payslip.net_pay || 0;
   if (netPay > 0) {
@@ -648,6 +659,7 @@ async function journalFromInventoryAdjustment(data, amount, userId) {
 
 module.exports = {
   getCoaMap,
+  clearCoaCache,
   resolveFundingCoa,
   journalFromSale,
   journalFromCollection,

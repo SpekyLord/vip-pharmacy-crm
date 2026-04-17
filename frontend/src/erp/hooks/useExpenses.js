@@ -18,6 +18,7 @@ export default function useExpenses() {
   const getSmerCrmMdCounts = (period, cycle) => api.get('/expenses/smer/crm-md-counts', { params: { period, cycle } });
   const getSmerCrmVisitDetail = (date) => api.get(`/expenses/smer/crm-visits/${date}`);
   const overridePerdiemDay = (smerId, data) => api.post(`/expenses/smer/${smerId}/override-perdiem`, data);
+  const applyPerdiemOverride = (smerId, data) => api.post(`/expenses/smer/${smerId}/apply-override`, data);
 
   // ═══ Car Logbook ═══
   const getCarLogbookList = (params) => api.get('/expenses/car-logbook', { params });
@@ -40,7 +41,7 @@ export default function useExpenses() {
   const reopenExpenses = (ids) => api.post('/expenses/ore-access/reopen', { expense_ids: ids });
 
   // ═══ Batch Upload (President/Admin) ═══
-  const batchUploadExpenses = (formData) => api.post('/expenses/ore-access/batch-upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+  const batchUploadExpenses = (formData) => api.post('/expenses/ore-access/batch-upload', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 });
   const saveBatchExpenses = (data) => api.post('/expenses/ore-access/batch-save', data);
 
   // ═══ PRF / CALF ═══
@@ -55,13 +56,19 @@ export default function useExpenses() {
   const getPendingPartnerRebates = () => api.get('/expenses/prf-calf/pending-rebates');
   const getPendingCalfLines = () => api.get('/expenses/prf-calf/pending-calf');
 
+  // ═══ Revolving Fund ═══
+  const getRevolvingFundAmount = () => api.get('/expenses/revolving-fund-amount');
+
+  // ═══ Per Diem Config ═══
+  const getPerdiemConfig = () => api.get('/expenses/perdiem-config');
+
   return {
     ...api,
     getExpenseSummary,
     // SMER
     getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer,
     validateSmer, submitSmer, reopenSmer,
-    getSmerCrmMdCounts, getSmerCrmVisitDetail, overridePerdiemDay,
+    getSmerCrmMdCounts, getSmerCrmVisitDetail, overridePerdiemDay, applyPerdiemOverride,
     // Car Logbook
     getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
     validateCarLogbook, submitCarLogbook, reopenCarLogbook,
@@ -72,6 +79,10 @@ export default function useExpenses() {
     getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf,
     validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines,
     // Batch Upload
-    batchUploadExpenses, saveBatchExpenses
+    batchUploadExpenses, saveBatchExpenses,
+    // Revolving Fund
+    getRevolvingFundAmount,
+    // Per Diem Config
+    getPerdiemConfig
   };
 }

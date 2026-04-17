@@ -49,7 +49,11 @@ const COA_LABELS = {
   OTHER_REIMBURSABLE: 'Other Reimbursable', FUEL_GAS: 'Fuel & Gas',
   INVENTORY_WRITEOFF: 'Inventory Write-Off', INVENTORY_ADJ_GAIN: 'Inventory Adj Gain',
   MISC_EXPENSE: 'Misc Expense', DEPRECIATION: 'Depreciation', INTEREST_EXPENSE: 'Interest Expense',
-  BANK_CHARGES: 'Bank Charges'
+  INTEREST_PAYABLE: 'Interest Payable', BANK_CHARGES: 'Bank Charges',
+  // Payroll
+  SALARIES_WAGES: 'Salaries & Wages', ALLOWANCES: 'Allowances', BONUS_13TH: 'Bonus & 13th Month',
+  SSS_PAYABLE: 'SSS Payable', PHILHEALTH_PAYABLE: 'PhilHealth Payable',
+  PAGIBIG_PAYABLE: 'Pag-IBIG Payable', WHT_PAYABLE: 'WHT Payable',
 };
 
 export function ErpSettingsPanelContent() {
@@ -87,6 +91,7 @@ export function ErpSettingsPanelContent() {
       PARTNER_REBATE_RATES: Array.isArray(s.PARTNER_REBATE_RATES) ? [...s.PARTNER_REBATE_RATES] : [1, 2, 3, 5, 20, 25],
       MD_MAX_PRODUCT_TAGS: s.MD_MAX_PRODUCT_TAGS ?? 3,
       CONSIGNMENT_AGING_DEFAULT: s.CONSIGNMENT_AGING_DEFAULT ?? 90,
+      ASSORTED_THRESHOLD: s.ASSORTED_THRESHOLD ?? 3,
       ENFORCE_AUTHORITY_MATRIX: s.ENFORCE_AUTHORITY_MATRIX ?? false,
       EXPENSE_ANOMALY_THRESHOLD: s.EXPENSE_ANOMALY_THRESHOLD ?? 0.30,
       GPS_VERIFICATION_THRESHOLD_M: s.GPS_VERIFICATION_THRESHOLD_M ?? 400,
@@ -144,11 +149,14 @@ export function ErpSettingsPanelContent() {
         </div>
 
         <div className="esp-section">
-          <h3>Per Diem</h3>
+          <h3>Per Diem (Global Defaults)</h3>
+          <p style={{ fontSize: 12, color: 'var(--erp-muted, #5f7188)', margin: '0 0 8px' }}>
+            These are global fallback values. Per-person overrides can be set in each BDM&apos;s CompProfile (People page &rarr; Full Threshold / Half Threshold). Setting Half Threshold to 0 means always at least half per diem.
+          </p>
           <div className="esp-grid">
-            {numField('PERDIEM_RATE_DEFAULT', 'Daily Rate (PHP)', 'Default per diem rate')}
-            {numField('PERDIEM_MD_FULL', 'Full Day MDs', 'Min MDs for full per diem')}
-            {numField('PERDIEM_MD_HALF', 'Half Day MDs', 'Min MDs for half per diem')}
+            {numField('PERDIEM_RATE_DEFAULT', 'Daily Rate (PHP)', 'Default per diem rate (overridable per BDM in CompProfile)')}
+            {numField('PERDIEM_MD_FULL', 'Full Day MDs (default)', 'Min MDs for full per diem — per-person override in CompProfile')}
+            {numField('PERDIEM_MD_HALF', 'Half Day MDs (default)', 'Min MDs for half per diem — per-person override in CompProfile')}
           </div>
         </div>
 
@@ -231,6 +239,7 @@ export function ErpSettingsPanelContent() {
             </div>
             {numField('EXPENSE_ANOMALY_THRESHOLD', 'Anomaly Threshold', 'e.g. 0.30 = 30% deviation')}
             {numField('GPS_VERIFICATION_THRESHOLD_M', 'GPS Threshold (meters)', 'Distance for verified vs suspicious visits')}
+            {numField('ASSORTED_THRESHOLD', 'Assorted Threshold', 'Receipts with N+ line items → Assorted Items')}
           </div>
         </div>
 

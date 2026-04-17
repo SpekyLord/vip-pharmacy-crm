@@ -22,7 +22,7 @@ const SEED_DEFAULTS = {
   CARD_BRAND: ['VISA', 'MASTERCARD', 'JCB', 'AMEX', 'FLEET'],
   FUEL_TYPE: ['UNLEADED', 'DIESEL', 'PREMIUM', 'V-POWER', 'XCS', 'OTHER'],
   COLLATERAL_TYPE: ['BROCHURE', 'SAMPLE', 'MERCHANDISE', 'BANNER', 'FLYER', 'OTHER'],
-  ACTIVITY_TYPE: ['Office', 'Field', 'Other'],
+  ACTIVITY_TYPE: ['Office', 'Field', 'Other', 'No Work'],
   VEHICLE_TYPE: ['CAR', 'MOTORCYCLE', 'COMPANY_CAR', 'NONE'],
   BIR_FLAG: ['BOTH', 'INTERNAL', 'BIR'],
   OFFICE_SUPPLY_CATEGORY: ['PAPER', 'INK_TONER', 'CLEANING', 'STATIONERY', 'ELECTRONICS', 'OTHER'],
@@ -81,6 +81,29 @@ const SEED_DEFAULTS = {
     { code: 'OR', label: 'Expense Receipt / OR' },
     { code: 'UNDERTAKING', label: 'Undertaking of Receipt (GRN)' },
     { code: 'DR', label: 'Delivery Receipt (DR)' },
+  ],
+  // OCR Expense Classification Rules — lookup-driven keyword→COA mapping (Phase H2)
+  OCR_EXPENSE_RULES: [
+    { code: 'COURIER_SHIPPING', label: 'Courier & Delivery', metadata: { coa_code: '6500', keywords: ['AP CARGO', 'JRS', 'LBC', 'J&T', 'J AND T', '2GO', 'AIR21', 'NINJA VAN', 'GRAB EXPRESS', 'COURIER', 'SHIPPING', 'XEND', 'ENTREGO', 'FLASH EXPRESS', 'DHL', 'FEDEX', 'UPS', 'PHLPOST', 'LALAMOVE', 'ABEST'] } },
+    { code: 'FUEL', label: 'Fuel & Gas', metadata: { coa_code: '6200', keywords: ['SHELL', 'PETRON', 'CALTEX', 'PHOENIX', 'SEAOIL', 'GASOLINE', 'FUEL', 'DIESEL'] } },
+    { code: 'PARKING_TOLL', label: 'Parking & Tolls', metadata: { coa_code: '6600', keywords: ['PARKING', 'TOLL', 'NLEX', 'SLEX', 'TPLEX', 'SKYWAY', 'CAVITEX', 'EXPRESSWAY', 'EASYTRIP', 'EASY TRIP', 'AUTOSWEEP', 'AUTO SWEEP', 'RFID', 'TESY'] } },
+    { code: 'TRAVEL_ACCOMMODATION', label: 'Travel & Accommodation', metadata: { coa_code: '6155', keywords: ['HOTEL', 'INN', 'LODGE', 'PENSION', 'AIRBNB', 'ACCOMMODATION', 'RESORT'] } },
+    { code: 'ACCESS_MEALS', label: 'ACCESS Expense', metadata: { coa_code: '6350', keywords: ['RESTAURANT', 'FOOD', 'MEAL', 'CAFE', 'JOLLIBEE', 'MCDONALDS', 'DINE', 'EATERY'] } },
+    { code: 'OFFICE_SUPPLIES', label: 'Office Supplies', metadata: { coa_code: '6400', keywords: ['PRINTING', 'OFFICE', 'SUPPLIES', 'STATIONERY', 'NATIONAL BOOKSTORE'] } },
+    { code: 'UTILITIES_COMMUNICATION', label: 'Utilities & Communication', metadata: { coa_code: '6460', keywords: ['GLOBE', 'SMART', 'PLDT', 'CONVERGE', 'MERALCO', 'WATER', 'ELECTRIC', 'UTILITY'] } },
+    { code: 'TRANSPORTATION', label: 'Transport Expense', metadata: { coa_code: '6150', keywords: ['GRAB', 'TAXI', 'ANGKAS', 'FERRY', 'BOAT'] } },
+    { code: 'REGULATORY_LICENSING', label: 'Regulatory & Licensing', metadata: { coa_code: '6810', keywords: ['FDA', 'DOH', 'LGU', 'LICENSE', 'PERMIT', 'REGULATORY', 'REGISTRATION', 'RENEWAL'] } },
+    { code: 'IT_SOFTWARE', label: 'IT Hardware & Software', metadata: { coa_code: '6820', keywords: ['SOFTWARE', 'SUBSCRIPTION', 'DOMAIN', 'HOSTING', 'CLOUD', 'APP', 'COMPUTER', 'LAPTOP', 'PRINTER', 'HARDWARE'] } },
+    { code: 'REPAIRS_MAINTENANCE', label: 'Repairs & Maintenance', metadata: { coa_code: '6260', keywords: ['REPAIR', 'MAINTENANCE', 'AIRCON', 'PLUMBING', 'ELECTRICAL', 'FIX'] } },
+    { code: 'RENT', label: 'Rent Expense', metadata: { coa_code: '6450', keywords: ['RENT', 'LEASE', 'BALAI LAWAAN'] } },
+    { code: 'PROFESSIONAL_FEES', label: 'Professional Fees', metadata: { coa_code: '6800', keywords: ['AUDIT', 'TAX', 'LEGAL', 'ATTORNEY', 'LAWYER', 'CPA', 'ACCOUNTANT', 'PHARMACIST', 'NOTARY'] } },
+    { code: 'FOOD_COST', label: 'Food Cost', metadata: { coa_code: '5400', keywords: ['GROCERY', 'MARKET', 'INGREDIENT', 'MEAT', 'VEGETABLE', 'FISH', 'SEAFOOD', 'RICE', 'COOKING', 'FOOD SUPPLY'] } },
+    { code: 'BEVERAGE_COST', label: 'Beverage Cost', metadata: { coa_code: '5500', keywords: ['BEVERAGE', 'DRINK', 'JUICE', 'SODA', 'COFFEE BEAN', 'TEA', 'LIQUOR', 'WINE', 'BEER'] } },
+    { code: 'FNB_SUPPLIES', label: 'F&B Supplies & Packaging', metadata: { coa_code: '6830', keywords: ['TAKEOUT BOX', 'PACKAGING', 'CONTAINER', 'DISPOSABLE', 'NAPKIN', 'TISSUE', 'F&B SUPPLY'] } },
+    { code: 'KITCHEN_EQUIPMENT', label: 'Kitchen Equipment & Maintenance', metadata: { coa_code: '6840', keywords: ['KITCHEN', 'OVEN', 'STOVE', 'REFRIGERATOR', 'FREEZER', 'KITCHEN REPAIR'] } },
+    { code: 'PROPERTY_TAX', label: 'Property Tax & Fees', metadata: { coa_code: '6890', keywords: ['PROPERTY TAX', 'REAL PROPERTY', 'AMILYAR', 'REALTY TAX'] } },
+    { code: 'PROPERTY_INSURANCE', label: 'Property Insurance', metadata: { coa_code: '6880', keywords: ['INSURANCE', 'FIRE INSURANCE', 'PROPERTY INSURANCE', 'COMPREHENSIVE'] } },
+    { code: 'PROPERTY_MAINTENANCE', label: 'Property Maintenance', metadata: { coa_code: '6870', keywords: ['PROPERTY REPAIR', 'BUILDING MAINTENANCE', 'RENOVATION', 'PAINT', 'CONSTRUCTION'] } },
   ],
   SALE_TYPE: ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'],
   VAT_TYPE: ['VATABLE', 'EXEMPT', 'ZERO'],
@@ -209,18 +232,33 @@ const SEED_DEFAULTS = {
     { code: 'FINANCE', label: 'Finance' },
     { code: 'PRESIDENT', label: 'President' },
   ],
+  // Financial vs Operational segregation — president approves financial, can delegate operational later
+  APPROVAL_CATEGORY: [
+    { code: 'FINANCIAL', label: 'Financial', metadata: { description: 'Involves money movement — requires president/finance approval', modules: ['EXPENSES', 'PURCHASING', 'PAYROLL', 'JOURNAL', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER', 'INCOME', 'PRF_CALF', 'PERDIEM_OVERRIDE', 'DEDUCTION_SCHEDULE'] } },
+    { code: 'OPERATIONAL', label: 'Operational', metadata: { description: 'Document processing & verification — can be delegated to admin/finance', modules: ['SALES', 'COLLECTIONS', 'INVENTORY', 'KPI', 'SMER', 'CAR_LOGBOOK', 'COLLECTION'] } },
+  ],
   APPROVAL_MODULE: [
-    { code: 'SALES', label: 'Sales' },
-    { code: 'COLLECTIONS', label: 'Collections' },
-    { code: 'EXPENSES', label: 'Expenses' },
-    { code: 'PURCHASING', label: 'Purchasing' },
-    { code: 'PAYROLL', label: 'Payroll' },
-    { code: 'INVENTORY', label: 'Inventory' },
-    { code: 'JOURNAL', label: 'Journal Entries' },
-    { code: 'BANKING', label: 'Banking' },
-    { code: 'PETTY_CASH', label: 'Petty Cash' },
-    { code: 'IC_TRANSFER', label: 'Inter-Company Transfers' },
-    { code: 'INCOME', label: 'Income' },
+    // Authority Matrix modules (Phase 29) — with financial/operational category
+    { code: 'SALES', label: 'Sales', metadata: { category: 'OPERATIONAL' } },
+    { code: 'COLLECTIONS', label: 'Collections', metadata: { category: 'OPERATIONAL' } },
+    { code: 'EXPENSES', label: 'Expenses', metadata: { category: 'FINANCIAL' } },
+    { code: 'PURCHASING', label: 'Purchasing', metadata: { category: 'FINANCIAL' } },
+    { code: 'PAYROLL', label: 'Payroll', metadata: { category: 'FINANCIAL' } },
+    { code: 'INVENTORY', label: 'Inventory', metadata: { category: 'OPERATIONAL' } },
+    { code: 'JOURNAL', label: 'Journal Entries', metadata: { category: 'FINANCIAL' } },
+    { code: 'BANKING', label: 'Banking', metadata: { category: 'FINANCIAL' } },
+    { code: 'PETTY_CASH', label: 'Petty Cash', metadata: { category: 'FINANCIAL' } },
+    { code: 'IC_TRANSFER', label: 'Inter-Company Transfers', metadata: { category: 'FINANCIAL' } },
+    { code: 'INCOME', label: 'Income', metadata: { category: 'FINANCIAL' } },
+    // Universal Approval Hub modules (Phase F.1)
+    { code: 'DEDUCTION_SCHEDULE', label: 'Deduction Schedules', metadata: { category: 'FINANCIAL' } },
+    { code: 'KPI', label: 'KPI Ratings', metadata: { category: 'OPERATIONAL' } },
+    { code: 'COLLECTION', label: 'Collection (Posting)', metadata: { category: 'OPERATIONAL' } },
+    { code: 'SMER', label: 'SMER', metadata: { category: 'OPERATIONAL' } },
+    { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { category: 'OPERATIONAL' } },
+    { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { category: 'FINANCIAL' } },
+    { code: 'APPROVAL_REQUEST', label: 'Authority Matrix Approvals', metadata: { category: 'FINANCIAL' } },
+    { code: 'PERDIEM_OVERRIDE', label: 'Per Diem Override', metadata: { category: 'FINANCIAL' } },
   ],
   // Phase 30 — PersonDetail dropdowns (migrated from hardcoded arrays)
   CIVIL_STATUS: ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'],
@@ -303,10 +341,12 @@ const SEED_DEFAULTS = {
     { code: 'PURCHASING', label: 'Purchasing', metadata: { key: 'purchasing', short_label: 'Purch', sort_order: 9 } },
     { code: 'BANKING', label: 'Banking', metadata: { key: 'banking', short_label: 'Bank', sort_order: 10 } },
     { code: 'SALES_GOALS', label: 'Sales Goals', metadata: { key: 'sales_goals', short_label: 'Goals', sort_order: 11 } },
+    { code: 'APPROVALS', label: 'Approvals', metadata: { key: 'approvals', short_label: 'Appr', sort_order: 12 } },
   ],
   ERP_SUB_PERMISSION: [
     // Sales
     { code: 'SALES__REOPEN', label: 'Re-open Posted Sales', metadata: { module: 'sales', key: 'reopen', sort_order: 1 } },
+    { code: 'SALES__CREDIT_NOTES', label: 'Returns / Credit Notes', metadata: { module: 'sales', key: 'credit_notes', sort_order: 2 } },
     // Collections
     { code: 'COLLECTIONS__REOPEN', label: 'Re-open Posted Collections', metadata: { module: 'collections', key: 'reopen', sort_order: 1 } },
     // Expenses
@@ -318,6 +358,12 @@ const SEED_DEFAULTS = {
     { code: 'PURCHASING__VENDOR_MANAGE', label: 'Manage Vendors', metadata: { module: 'purchasing', key: 'vendor_manage', sort_order: 3 } },
     { code: 'PURCHASING__SUPPLIER_INVOICE', label: 'Supplier Invoices', metadata: { module: 'purchasing', key: 'supplier_invoice', sort_order: 4 } },
     { code: 'PURCHASING__AP_PAYMENT', label: 'AP Payments', metadata: { module: 'purchasing', key: 'ap_payment', sort_order: 5 } },
+    { code: 'PURCHASING__PRODUCT_MANAGE', label: 'Add/Edit Products', metadata: { module: 'purchasing', key: 'product_manage', sort_order: 6 } },
+    // Inventory
+    { code: 'INVENTORY__CSI_BOOKLETS', label: 'CSI Booklets', metadata: { module: 'inventory', key: 'csi_booklets', sort_order: 1 } },
+    { code: 'INVENTORY__OFFICE_SUPPLIES', label: 'Office Supplies', metadata: { module: 'inventory', key: 'office_supplies', sort_order: 2 } },
+    { code: 'INVENTORY__COLLATERALS', label: 'Collaterals', metadata: { module: 'inventory', key: 'collaterals', sort_order: 3 } },
+    { code: 'INVENTORY__TRANSFERS', label: 'Stock Transfers', metadata: { module: 'inventory', key: 'transfers', sort_order: 4 } },
     // Accounting
     { code: 'ACCOUNTING__JOURNAL_ENTRY', label: 'Journal Entries & COA', metadata: { module: 'accounting', key: 'journal_entry', sort_order: 1 } },
     { code: 'ACCOUNTING__CHECK_WRITING', label: 'Check Writing / Payments', metadata: { module: 'accounting', key: 'check_writing', sort_order: 2 } },
@@ -327,7 +373,7 @@ const SEED_DEFAULTS = {
     { code: 'ACCOUNTING__LOANS', label: 'Loan Management', metadata: { module: 'accounting', key: 'loans', sort_order: 6 } },
     { code: 'ACCOUNTING__OWNER_EQUITY', label: 'Owner Equity', metadata: { module: 'accounting', key: 'owner_equity', sort_order: 7 } },
     { code: 'ACCOUNTING__PETTY_CASH', label: 'Petty Cash', metadata: { module: 'accounting', key: 'petty_cash', sort_order: 8 } },
-    { code: 'ACCOUNTING__OFFICE_SUPPLIES', label: 'Office Supplies', metadata: { module: 'accounting', key: 'office_supplies', sort_order: 9 } },
+    // ACCOUNTING__OFFICE_SUPPLIES moved → INVENTORY__OFFICE_SUPPLIES (sub-permission gated)
     // Banking
     { code: 'BANKING__BANK_ACCOUNTS', label: 'Bank Accounts', metadata: { module: 'banking', key: 'bank_accounts', sort_order: 1 } },
     { code: 'BANKING__BANK_RECON', label: 'Bank Reconciliation', metadata: { module: 'banking', key: 'bank_recon', sort_order: 2 } },
@@ -341,6 +387,8 @@ const SEED_DEFAULTS = {
     { code: 'SALES_GOALS__ACTION_MANAGE_ALL', label: 'Create Actions for Any BDM', metadata: { module: 'sales_goals', key: 'action_manage_all', sort_order: 3 } },
     { code: 'SALES_GOALS__INCENTIVE_MANAGE', label: 'Manage Incentive Programs', metadata: { module: 'sales_goals', key: 'incentive_manage', sort_order: 4 } },
     { code: 'SALES_GOALS__MANUAL_KPI_ALL', label: 'Enter Manual KPIs for Any BDM', metadata: { module: 'sales_goals', key: 'manual_kpi_all', sort_order: 5 } },
+    // Approvals
+    { code: 'APPROVALS__RULE_MANAGE', label: 'Create/Edit Approval Rules', metadata: { module: 'approvals', key: 'rule_manage', sort_order: 1 } },
   ],
   // Phase 30 — Credit Note lookups (was hardcoded in CreditNotes.jsx)
   RETURN_REASON: [
@@ -359,14 +407,26 @@ const SEED_DEFAULTS = {
     { code: 'QUARANTINE', label: 'Quarantine' },
   ],
   // Phase C — New lookup categories (was hardcoded as Mongoose enum constraints)
-  CYCLE: ['C1', 'C2', 'MONTHLY'],
+  CYCLE: [
+    { code: 'C1', label: 'Cycle 1' },
+    { code: 'C2', label: 'Cycle 2' },
+    { code: 'MONTHLY', label: 'Monthly' },
+  ],
   BANK_ACCOUNT_TYPE: ['SAVINGS', 'CHECKING', 'CURRENT'],
   STATEMENT_IMPORT_FORMAT: ['CSV', 'OFX', 'MT940'],
   WAREHOUSE_TYPE: ['MAIN', 'TERRITORY', 'VIRTUAL'],
   OVERRIDE_REASON: ['HOSPITAL_POLICY', 'QA_REPLACEMENT', 'DAMAGED_BATCH', 'BATCH_RECALL'],
   PETTY_CASH_TXN_TYPE: ['DEPOSIT', 'DISBURSEMENT', 'REMITTANCE', 'REPLENISHMENT', 'ADJUSTMENT'],
-  PETTY_CASH_FUND_TYPE: ['REVOLVING', 'EXPENSE_ONLY', 'DEPOSIT_ONLY'],
-  PETTY_CASH_FUND_STATUS: ['ACTIVE', 'SUSPENDED', 'CLOSED'],
+  PETTY_CASH_FUND_TYPE: [
+    { code: 'REVOLVING', label: 'Revolving (deposits + disbursements)' },
+    { code: 'EXPENSE_ONLY', label: 'Expense Only (disbursements)' },
+    { code: 'DEPOSIT_ONLY', label: 'Deposit Only (collections)' },
+  ],
+  PETTY_CASH_FUND_STATUS: [
+    { code: 'ACTIVE', label: 'Active' },
+    { code: 'SUSPENDED', label: 'Suspended' },
+    { code: 'CLOSED', label: 'Closed' },
+  ],
   REMITTANCE_TYPE: ['REMITTANCE', 'REPLENISHMENT'],
   PRF_DOC_TYPE: ['PRF', 'CALF'],
   PRF_TYPE: ['PARTNER_REBATE', 'PERSONAL_REIMBURSEMENT'],
@@ -417,7 +477,8 @@ const SEED_DEFAULTS = {
     { code: 'LOAN_REPAYMENT', label: 'Loan Repayment', metadata: { sort: 5 } },
     { code: 'UNIFORM', label: 'Uniform Deduction', metadata: { sort: 6 } },
     { code: 'OVERPAYMENT', label: 'Over Payment', metadata: { sort: 7 } },
-    { code: 'OTHER', label: 'Other Deduction', metadata: { sort: 8 } },
+    { code: 'PERSONAL_GAS', label: 'Personal Gas Usage', metadata: { auto_source: 'PERSONAL_GAS', sort: 8 } },
+    { code: 'OTHER', label: 'Other Deduction', metadata: { sort: 9 } },
   ],
   DEDUCTION_LINE_STATUS: ['PENDING', 'VERIFIED', 'CORRECTED', 'REJECTED'],
   DEDUCTION_SCHEDULE_STATUS: ['PENDING_APPROVAL', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'],
@@ -427,6 +488,47 @@ const SEED_DEFAULTS = {
     { code: 'APPROVE', label: 'Approve', metadata: { color: '#16a34a' } },
     { code: 'CREDIT', label: 'Credit', metadata: { color: '#047857' } },
     { code: 'REJECT', label: 'Reject', metadata: { color: '#dc2626' } },
+  ],
+  // Phase F.1 — Universal Approval Hub default roles (replaces hardcoded allowed_roles in universalApprovalService)
+  // Admin can change who sees which posting/approval modules in the Approval Hub before ApprovalRules are configured.
+  // metadata.roles = null means open (anyone can see). metadata.roles = [...] restricts by role.
+  MODULE_DEFAULT_ROLES: [
+    { code: 'APPROVAL_REQUEST', label: 'Authority Matrix', metadata: { roles: null, description: 'Open to all — visibility governed by ApprovalRule resolution' } },
+    { code: 'DEDUCTION_SCHEDULE', label: 'Deduction Schedules', metadata: { roles: ['admin', 'finance', 'president'], description: 'Approve recurring/one-time BDM deductions' } },
+    { code: 'INCOME', label: 'Income Reports', metadata: { roles: ['admin', 'finance', 'president'], description: 'Review and credit BDM income/payslips' } },
+    { code: 'INVENTORY', label: 'GRN (Goods Receipt)', metadata: { roles: ['admin', 'finance'], description: 'Approve goods receipt notes' } },
+    { code: 'PAYROLL', label: 'Payslips', metadata: { roles: ['admin', 'finance', 'president'], description: 'Review and approve employee payslips' } },
+    { code: 'KPI', label: 'KPI Ratings', metadata: { roles: ['admin', 'president'], description: 'Review and approve KPI self-ratings' } },
+    { code: 'SALES', label: 'Sales / CSI', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated sales invoices' } },
+    { code: 'COLLECTION', label: 'Collections / CR', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated collection receipts' } },
+    { code: 'SMER', label: 'SMER', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated travel/expense reimbursements' } },
+    { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated car logbook entries' } },
+    { code: 'EXPENSES', label: 'Expenses (ORE/ACCESS)', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated expense entries' } },
+    { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated PRF/CALF documents' } },
+    { code: 'PERDIEM_OVERRIDE', label: 'Per Diem Override', metadata: { roles: ['admin', 'finance', 'president'], description: 'Approve BDM per diem override requests' } },
+  ],
+
+  // Phase G3 — Editable fields per module in the Universal Approval Hub (quick-edit for typo fixes)
+  // Admin can configure which fields are editable per module. metadata.fields = array of field names on the document model.
+  APPROVAL_EDITABLE_FIELDS: [
+    { code: 'DEDUCTION_SCHEDULE', label: 'Deduction Schedule', metadata: { fields: ['description', 'deduction_label', 'total_amount'] } },
+    { code: 'INCOME_REPORT', label: 'Income Report', metadata: { fields: ['notes'] } },
+    { code: 'SALES_LINE', label: 'Sales / CSI', metadata: { fields: ['invoice_number', 'service_description'] } },
+    { code: 'COLLECTION', label: 'Collection / CR', metadata: { fields: ['check_no', 'notes'] } },
+    { code: 'SMER_ENTRY', label: 'SMER', metadata: { fields: ['notes'] } },
+    { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { fields: ['notes'] } },
+    { code: 'EXPENSE_ENTRY', label: 'Expenses (ORE/ACCESS)', metadata: { fields: ['notes'] } },
+    { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { fields: ['purpose', 'check_no', 'notes'] } },
+    { code: 'GRN', label: 'GRN', metadata: { fields: ['notes'] } },
+  ],
+
+  // Product Catalog Access — controls which subsidiary entities can browse parent entity products
+  // When a subsidiary user opens PO creation (catalog=true), the system checks this lookup to decide
+  // whether to include parent entity products alongside the subsidiary's own products.
+  // metadata.parent_entity_id = the parent whose products are shared. metadata.access_mode = FULL (all products) or ACTIVE_ONLY (only is_active:true).
+  // Admin/President configures per subsidiary via Control Center → Lookup Tables.
+  PRODUCT_CATALOG_ACCESS: [
+    { code: 'INHERIT_PARENT', label: 'Inherit Parent Entity Products', metadata: { access_mode: 'ACTIVE_ONLY', description: 'Subsidiary can browse parent entity products for PO creation and catalog views' } },
   ],
 };
 
@@ -463,11 +565,15 @@ exports.getByCategory = catchAsync(async (req, res) => {
   if (req.query.active_only === 'true') filter.is_active = true;
   let items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
 
-  // Auto-seed on first access if empty and defaults exist
-  if (items.length === 0 && req.entityId && SEED_DEFAULTS[filter.category]) {
+  // Auto-seed: merge missing defaults (uses $setOnInsert so existing entries are never overwritten)
+  if (req.entityId && SEED_DEFAULTS[filter.category]) {
     const ops = buildSeedOps(SEED_DEFAULTS[filter.category], filter.category, req.entityId, req.user?._id);
-    await Lookup.bulkWrite(ops);
-    items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+    if (ops.length > 0) {
+      await Lookup.bulkWrite(ops);
+      if (items.length === 0 || ops.length > items.length) {
+        items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+      }
+    }
   }
 
   res.json({ success: true, data: items });
@@ -487,11 +593,15 @@ exports.getBatch = catchAsync(async (req, res) => {
     if (req.query.active_only === 'true') filter.is_active = true;
     let items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
 
-    // Auto-seed if empty
-    if (items.length === 0 && req.entityId && SEED_DEFAULTS[category]) {
+    // Auto-seed: merge missing defaults
+    if (req.entityId && SEED_DEFAULTS[category]) {
       const ops = buildSeedOps(SEED_DEFAULTS[category], category, req.entityId, req.user?._id);
-      await Lookup.bulkWrite(ops);
-      items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+      if (ops.length > 0) {
+        await Lookup.bulkWrite(ops);
+        if (items.length === 0 || ops.length > items.length) {
+          items = await Lookup.find(filter).sort({ sort_order: 1, label: 1 }).lean();
+        }
+      }
     }
     result[category] = items;
   }

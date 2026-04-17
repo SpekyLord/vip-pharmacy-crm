@@ -16,8 +16,9 @@ function periodLockCheck(moduleKey) {
       let year, month;
 
       // Try explicit period field first (YYYY-MM)
-      if (req.body.period) {
-        const parts = String(req.body.period).split('-');
+      const periodField = req.body.period || req.body.start_period;
+      if (periodField) {
+        const parts = String(periodField).split('-');
         year = parseInt(parts[0]);
         month = parseInt(parts[1]);
       }

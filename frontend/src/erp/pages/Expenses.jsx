@@ -11,6 +11,7 @@ import useErpApi from '../hooks/useErpApi';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
+import { compressImageFile } from '../utils/compressImage';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
@@ -450,7 +451,9 @@ export default function Expenses() {
     setBatchProgress(`Processing 0 of ${batchFiles.length}...`);
 
     const formData = new FormData();
-    batchFiles.forEach(f => formData.append('photos', f));
+    // Compress each photo before upload — phone cameras produce 5-12MB files
+    const compressed = await Promise.all(batchFiles.map(f => compressImageFile(f)));
+    compressed.forEach(f => formData.append('photos', f));
     formData.append('bir_flag', batchBirFlag);
     formData.append('period', period);
     formData.append('cycle', cycle);
@@ -521,6 +524,7 @@ export default function Expenses() {
       if (data.or_attachment_id) updateLine(scanTargetIdx, 'or_attachment_id', data.or_attachment_id);
       if (data.expense_date) updateLine(scanTargetIdx, 'expense_date', data.expense_date);
       if (data.classification?.category) updateLine(scanTargetIdx, 'expense_category', data.classification.category);
+      if (data.classification?.coa_code && data.classification.coa_code !== '6900') updateLine(scanTargetIdx, 'coa_code', data.classification.coa_code);
     }
   };
 
@@ -610,7 +614,17 @@ export default function Expenses() {
   const showMsg = (msg, isError = false) => { setActionMsg({ msg, isError }); setTimeout(() => setActionMsg(null), 5000); };
 
   const handleValidate = async () => { try { const r = await validateExpenses(); showMsg(r?.message || 'Validated'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); } };
-  const handleSubmit = async () => { try { const r = await submitExpenses(); showMsg(r?.message || 'Submitted'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Submit failed — are there VALID entries?', true); } };
+  const handleSubmit = async () => {
+    try {
+      const r = await submitExpenses();
+      if (r?.approval_pending) { showMsg(r.message || 'Approval required — request sent to approver.'); }
+      else { showMsg(r?.message || 'Submitted'); }
+      loadExpenses();
+    } catch (e) {
+      if (e?.response?.data?.approval_pending) { showMsg(e.response.data.message || 'Approval required'); loadExpenses(); }
+      else { showMsg(e.response?.data?.message || 'Submit failed — are there VALID entries?', true); }
+    }
+  };
   const handleReopen = async (id) => { try { await reopenExpenses([id]); showMsg('Reopened'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Reopen failed', true); } };
   const handleDelete = async (id) => { try { await deleteDraftExpense(id); showMsg('Deleted'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Delete failed', true); } };
 

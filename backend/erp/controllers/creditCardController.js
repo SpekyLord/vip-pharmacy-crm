@@ -4,6 +4,7 @@
 const CreditCard = require('../models/CreditCard');
 const { catchAsync } = require('../../middleware/errorHandler');
 const XLSX = require('xlsx');
+const { validateCoaCode } = require('../utils/validateCoaCode');
 
 const normalizeAssignments = (body = {}) => {
   const assignedUsers = Array.isArray(body.assigned_users)
@@ -70,6 +71,11 @@ const getMyCards = catchAsync(async (req, res) => {
 
 // ═══ Create card ═══
 const createCard = catchAsync(async (req, res) => {
+  // Validate COA code
+  if (req.body.coa_code) {
+    const coaCheck = await validateCoaCode(req.body.coa_code, req.entityId);
+    if (!coaCheck.valid) return res.status(400).json({ success: false, message: coaCheck.message });
+  }
   const assignment = normalizeAssignments(req.body);
   const card = await CreditCard.create({
     entity_id: req.entityId,
@@ -85,6 +91,12 @@ const createCard = catchAsync(async (req, res) => {
 const updateCard = catchAsync(async (req, res) => {
   const card = await CreditCard.findOne({ _id: req.params.id, entity_id: req.entityId });
   if (!card) return res.status(404).json({ success: false, message: 'Card not found' });
+
+  // Validate COA code if being updated
+  if (req.body.coa_code) {
+    const coaCheck = await validateCoaCode(req.body.coa_code, req.entityId);
+    if (!coaCheck.valid) return res.status(400).json({ success: false, message: coaCheck.message });
+  }
 
   const allowed = ['card_name', 'card_holder', 'bank', 'card_type', 'card_brand', 'last_four', 'coa_code', 'credit_limit', 'statement_cycle_day', 'is_active'];
   for (const field of allowed) {

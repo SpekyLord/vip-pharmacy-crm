@@ -12,7 +12,7 @@ const classify = catchAsync(async (req, res) => {
     supplier_name: { value: supplier_name },
     amount: { value: amount },
     vat_amount: { value: vat_amount }
-  });
+  }, { entityId: req.entityId });
   res.json({ success: true, data: result });
 });
 
@@ -62,7 +62,7 @@ const override = catchAsync(async (req, res) => {
  * Return available expense categories for dropdown
  */
 const categories = catchAsync(async (req, res) => {
-  res.json({ success: true, data: getCategories() });
+  res.json({ success: true, data: await getCategories(req.entityId) });
 });
 
 module.exports = { classify, override, categories };

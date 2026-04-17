@@ -6,7 +6,7 @@ import useErpApi from './useErpApi';
  * Wraps /api/erp/approvals endpoints.
  */
 export default function useApprovals() {
-  const { get, post, put, del, loading, error } = useErpApi();
+  const { get, post, put, patch, del, loading, error } = useErpApi();
   const [rules, setRules] = useState([]);
   const [requests, setRequests] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
@@ -85,6 +85,12 @@ export default function useApprovals() {
     return res;
   }, [post]);
 
+  // Phase G3: Quick-edit fields before approving
+  const universalEdit = useCallback(async (data) => {
+    const res = await patch('/approvals/universal-edit', data);
+    return res;
+  }, [patch]);
+
   return {
     rules,
     requests,
@@ -109,5 +115,6 @@ export default function useApprovals() {
     // Universal Hub
     fetchUniversalPending,
     universalApprove,
+    universalEdit,
   };
 }

@@ -180,12 +180,12 @@ export default function PersonDetail() {
           incentive_type: c.incentive_type || 'NONE', incentive_rate: c.incentive_rate || 0,
           incentive_description: c.incentive_description || '', incentive_cap: c.incentive_cap || 0,
           perdiem_rate: c.perdiem_rate || 0, perdiem_days: c.perdiem_days || 22,
-          km_per_liter: c.km_per_liter || 0, fuel_overconsumption_threshold: c.fuel_overconsumption_threshold || 1.3,
+          km_per_liter: c.km_per_liter || 0, fuel_overconsumption_threshold: c.fuel_overconsumption_threshold || 1.3, revolving_fund_amount: c.revolving_fund_amount || 0,
           smer_eligible: !!c.smer_eligible, logbook_eligible: !!c.logbook_eligible,
           ore_eligible: !!c.ore_eligible, access_eligible: !!c.access_eligible,
           calf_override: !!c.calf_override, crm_linked: !!c.crm_linked,
-          perdiem_engagement_threshold_full: c.perdiem_engagement_threshold_full || 8,
-          perdiem_engagement_threshold_half: c.perdiem_engagement_threshold_half || 3,
+          perdiem_engagement_threshold_full: c.perdiem_engagement_threshold_full ?? 8,
+          perdiem_engagement_threshold_half: c.perdiem_engagement_threshold_half ?? 3,
           vehicle_type: c.vehicle_type || 'NONE', tax_status: c.tax_status || 'S',
           profit_share_eligible: !!c.profit_share_eligible, commission_rate: c.commission_rate || 0,
           reason: '',
@@ -361,7 +361,7 @@ export default function PersonDetail() {
         ['Monthly Gross', comp.monthly_gross],
         ['Incentive Type', comp.incentive_type], ['Incentive Rate', comp.incentive_rate], ['Incentive Cap', comp.incentive_cap],
         ['Per Diem Rate', comp.perdiem_rate], ['Per Diem Days', comp.perdiem_days], ['Vehicle Type', comp.vehicle_type],
-        ['Km/Liter', comp.km_per_liter], ['Fuel Threshold', comp.fuel_overconsumption_threshold],
+        ['Km/Liter', comp.km_per_liter], ['Fuel Threshold', comp.fuel_overconsumption_threshold], ['Revolving Fund', comp.revolving_fund_amount || '(default)'],
         ['Commission Rate', comp.commission_rate], ['Profit Share Eligible', comp.profit_share_eligible ? 'Yes' : 'No'],
         ['SMER Eligible', comp.smer_eligible ? 'Yes' : 'No'], ['Logbook Eligible', comp.logbook_eligible ? 'Yes' : 'No'],
         ['ORE Eligible', comp.ore_eligible ? 'Yes' : 'No'], ['ACCESS Eligible', comp.access_eligible ? 'Yes' : 'No'],
@@ -504,6 +504,14 @@ export default function PersonDetail() {
               <F lbl="Email" name="email" val={person.email} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Phone" name="phone" val={person.phone} editing={editPerson} form={personForm} onChange={handlePersonChange} />
               <F lbl="Person Type" name="person_type" val={person.person_type?.replace(/_/g, ' ')} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_TYPES} />
+              <div className="pd-field">
+                <div className="lbl">System Role</div>
+                <div className="val" style={{ fontWeight: 600, color: person.user_id?.role ? 'var(--erp-accent, #1e5eff)' : '#9ca3af' }}>
+                  {person.user_id?.role
+                    ? (systemRoleOpts.find(r => r.code.toLowerCase() === person.user_id.role)?.label || person.user_id.role)
+                    : 'No Login'}
+                </div>
+              </div>
               <F lbl="Status" name="status" val={person.status} editing={editPerson} form={personForm} onChange={handlePersonChange} options={PERSON_STATUSES} />
               <F lbl="Position" name="position" val={person.position} editing={editPerson} form={personForm} onChange={handlePersonChange} options={POSITIONS} />
               <F lbl="Department" name="department" val={person.department} editing={editPerson} form={personForm} onChange={handlePersonChange} options={DEPARTMENTS} />
@@ -587,6 +595,7 @@ export default function PersonDetail() {
                   <F lbl="Vehicle Type" name="vehicle_type" val={comp?.vehicle_type} editing={editComp} form={compForm} onChange={handleCompChange} options={VEHICLE_TYPES} />
                   <F lbl="Km/Liter" name="km_per_liter" type="number" val={comp?.km_per_liter} editing={editComp} form={compForm} onChange={handleCompChange} />
                   <F lbl="Fuel Overcon. Threshold" name="fuel_overconsumption_threshold" type="number" val={comp?.fuel_overconsumption_threshold} editing={editComp} form={compForm} onChange={handleCompChange} />
+                  <F lbl="Revolving Fund (PHP) — 0=default" name="revolving_fund_amount" type="number" val={comp?.revolving_fund_amount} editing={editComp} form={compForm} onChange={handleCompChange} />
                   <F lbl="Commission Rate (%)" name="commission_rate" type="number" val={comp?.commission_rate} editing={editComp} form={compForm} onChange={handleCompChange} />
                   <F lbl="Full Threshold" name="perdiem_engagement_threshold_full" type="number" val={comp?.perdiem_engagement_threshold_full} editing={editComp} form={compForm} onChange={handleCompChange} />
                   <F lbl="Half Threshold" name="perdiem_engagement_threshold_half" type="number" val={comp?.perdiem_engagement_threshold_half} editing={editComp} form={compForm} onChange={handleCompChange} />

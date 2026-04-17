@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -9,6 +9,30 @@ import { useLookupOptions } from '../hooks/useLookups';
 import { showError, showSuccess } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
+
+const ROLE_COLORS = {
+  president: { bg: '#fce7f3', text: '#9d174d' },
+  admin: { bg: '#fee2e2', text: '#991b1b' },
+  finance: { bg: '#fef3c7', text: '#92400e' },
+  contractor: { bg: '#dbeafe', text: '#1e40af' },
+  ceo: { bg: '#f3e8ff', text: '#6b21a8' },
+};
+
+const EMP_COLORS = {
+  REGULAR: { bg: '#dcfce7', text: '#166534' },
+  PROBATIONARY: { bg: '#fef3c7', text: '#92400e' },
+  CONTRACTUAL: { bg: '#dbeafe', text: '#1e40af' },
+  CONSULTANT: { bg: '#f3e8ff', text: '#6b21a8' },
+  PARTNERSHIP: { bg: '#fce7f3', text: '#9d174d' },
+};
+
+const STAGE_COLORS = {
+  CONTRACTOR: { bg: '#e0e7ff', text: '#3730a3' },
+  PS_ELIGIBLE: { bg: '#fef3c7', text: '#92400e' },
+  TRANSITIONING: { bg: '#ffedd5', text: '#9a3412' },
+  SUBSIDIARY: { bg: '#dcfce7', text: '#166534' },
+  SHAREHOLDER: { bg: '#fce7f3', text: '#9d174d' },
+};
 
 const TYPE_COLORS = {
   BDM: { bg: '#dbeafe', text: '#1e40af' },
@@ -52,7 +76,8 @@ const pageStyles = `
   .ppl-pag { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
   .ppl-pag button { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--erp-border); background: var(--erp-panel); font-size: 12px; cursor: pointer; }
   .ppl-pag button.active { background: var(--erp-accent); color: #fff; border-color: var(--erp-accent); }
-  @media(max-width: 768px) { .ppl-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .ppl-table { font-size: 12px; } }
+  @media(max-width: 1024px) { .ppl-hide-tablet { display: none; } }
+  @media(max-width: 768px) { .ppl-main { padding: 12px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .ppl-table { font-size: 12px; } .ppl-hide-mobile { display: none; } }
   @media(max-width: 375px) { .ppl-main { padding: 8px; padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } .ppl-main input, .ppl-main select { font-size: 16px; } }
 `;
 
@@ -68,6 +93,12 @@ export function PeopleListContent() {
   const navigate = useNavigate();
   const api = usePeople();
   const { options: personTypeOpts } = useLookupOptions('PERSON_TYPE');
+  const { options: systemRoleOpts } = useLookupOptions('SYSTEM_ROLE');
+  const getRoleLabel = (code) => {
+    if (!code) return '—';
+    const opt = systemRoleOpts.find(r => r.code.toLowerCase() === code);
+    return opt ? opt.label : code.charAt(0).toUpperCase() + code.slice(1);
+  };
   const { options: statusOpts } = useLookupOptions('PEOPLE_STATUS');
   const STATUS_LIST = statusOpts.map(s => s.code);
   const PERSON_TYPES = personTypeOpts.map(o => o.code);
@@ -76,12 +107,19 @@ export function PeopleListContent() {
   const [people, setPeople] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 0 });
   const [tab, setTab] = useState('active'); // 'active' | 'archive'
-  const [filters, setFilters] = useState({ search: '', person_type: '', status: '' });
+  const [filters, setFilters] = useState({ search: '', person_type: '', status: '', role: '' });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [legacyCounts, setLegacyCounts] = useState({});
+
+  // Client-side role filter (backend filters handle type/status/search, role filter is client-side)
+  const filteredPeople = useMemo(() => {
+    if (!filters.role) return people;
+    if (filters.role === '__none__') return people.filter(p => !p.user_id);
+    return people.filter(p => p.user_id?.role === filters.role);
+  }, [people, filters.role]);
   const [migrating, setMigrating] = useState(false);
 
   const ACTIVE_STATUSES = STATUS_LIST.filter(s => s !== 'SEPARATED');
@@ -206,6 +244,11 @@ export function PeopleListContent() {
           <option value="">All Types</option>
           {PERSON_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
         </SelectField>
+        <SelectField value={filters.role} onChange={e => setFilters(f => ({ ...f, role: e.target.value }))}>
+          <option value="">All Roles</option>
+          {systemRoleOpts.map(r => <option key={r.code} value={r.code.toLowerCase()}>{r.label}</option>)}
+          <option value="__none__">No Login</option>
+        </SelectField>
         {tab === 'active' && (
           <SelectField value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
             <option value="">All Status</option>
@@ -226,16 +269,21 @@ export function PeopleListContent() {
                 <th>Name</th>
                 <th>Email / Phone</th>
                 <th>Type</th>
-                <th>Position</th>
-                <th>Department</th>
-                <th>Reports To</th>
+                <th className="ppl-hide-mobile">Role</th>
+                <th className="ppl-hide-mobile">Login</th>
+                <th className="ppl-hide-mobile">Position</th>
+                <th className="ppl-hide-mobile">Department</th>
+                <th className="ppl-hide-tablet">Employment</th>
+                <th className="ppl-hide-tablet">BDM Code</th>
+                <th className="ppl-hide-tablet">Stage</th>
+                <th className="ppl-hide-tablet">Territory</th>
                 <th>Status</th>
                 {tab === 'archive' && <th>Separated</th>}
                 {tab === 'archive' && <th style={{ width: 90 }}>Action</th>}
               </tr>
             </thead>
             <tbody>
-              {people.map(p => {
+              {filteredPeople.map(p => {
                 const tc = TYPE_COLORS[p.person_type] || { bg: '#f3f4f6', text: '#374151' };
                 const sc = STATUS_COLORS[p.status] || { bg: '#f3f4f6', text: '#6b7280' };
                 return (
@@ -247,9 +295,37 @@ export function PeopleListContent() {
                       {!p.email && !p.phone && '—'}
                     </td>
                     <td><span className="badge" style={{ background: tc.bg, color: tc.text }}>{p.person_type.replace(/_/g, ' ')}</span></td>
-                    <td>{p.position || '—'}</td>
-                    <td>{p.department || '—'}</td>
-                    <td style={{ fontSize: 12, color: '#64748b' }}>{p.reports_to?.full_name || '—'}</td>
+                    <td className="ppl-hide-mobile">
+                      {p.user_id?.role ? (() => {
+                        const rc = ROLE_COLORS[p.user_id.role] || { bg: '#f3f4f6', text: '#374151' };
+                        return <span className="badge" style={{ background: rc.bg, color: rc.text }}>{getRoleLabel(p.user_id.role)}</span>;
+                      })() : <span style={{ color: '#9ca3af' }}>—</span>}
+                    </td>
+                    <td className="ppl-hide-mobile" style={{ fontSize: 11 }}>
+                      {p.user_id ? (
+                        p.user_id.isActive === false
+                          ? <span style={{ color: '#dc2626', fontWeight: 600 }}>DISABLED</span>
+                          : <span style={{ color: '#16a34a' }}>Active</span>
+                      ) : <span style={{ color: '#9ca3af' }}>—</span>}
+                    </td>
+                    <td className="ppl-hide-mobile">{p.position || '—'}</td>
+                    <td className="ppl-hide-mobile">{p.department || '—'}</td>
+                    <td className="ppl-hide-tablet">
+                      {p.employment_type ? (() => {
+                        const ec = EMP_COLORS[p.employment_type] || { bg: '#f3f4f6', text: '#374151' };
+                        return <span className="badge" style={{ background: ec.bg, color: ec.text, fontSize: 10 }}>{p.employment_type}</span>;
+                      })() : '—'}
+                    </td>
+                    <td className="ppl-hide-tablet" style={{ fontSize: 12 }}>{p.bdm_code || '—'}</td>
+                    <td className="ppl-hide-tablet">
+                      {p.bdm_stage ? (() => {
+                        const sg = STAGE_COLORS[p.bdm_stage] || { bg: '#f3f4f6', text: '#374151' };
+                        return <span className="badge" style={{ background: sg.bg, color: sg.text, fontSize: 10 }}>{p.bdm_stage.replace(/_/g, ' ')}</span>;
+                      })() : <span style={{ color: '#9ca3af' }}>—</span>}
+                    </td>
+                    <td className="ppl-hide-tablet" style={{ fontSize: 11, color: '#64748b' }}>
+                      {p.territory_id?.territory_name || p.territory_id?.territory_code || '—'}
+                    </td>
                     <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{p.status}</span></td>
                     {tab === 'archive' && (
                       <td style={{ fontSize: 12, color: '#64748b' }}>

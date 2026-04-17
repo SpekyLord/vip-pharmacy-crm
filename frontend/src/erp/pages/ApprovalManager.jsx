@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -17,7 +17,7 @@ export default function ApprovalManager() {
     fetchRules, createRule, updateRule, deleteRule,
     fetchRequests, fetchMyPending: _fetchMyPending, approve, reject, cancel: _cancel, // eslint-disable-line no-unused-vars
     checkStatus,
-    universalItems, universalCount, fetchUniversalPending, universalApprove,
+    universalItems, universalCount, fetchUniversalPending, universalApprove, universalEdit,
   } = useApprovals();
 
   const [tab, setTab] = useState('all-pending'); // 'all-pending' | 'requests' | 'rules'
@@ -28,9 +28,11 @@ export default function ApprovalManager() {
   const [approvalEnabled, setApprovalEnabled] = useState(false);
   const [decisionModal, setDecisionModal] = useState(null); // { requestId, action }
   const [reason, setReason] = useState('');
+  const [rejectModal, setRejectModal] = useState(null); // { item } for universal hub reject
+  const [rejectReason, setRejectReason] = useState('');
 
   // Lookup-driven options (database-driven via useLookupBatch)
-  const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE']);
+  const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE', 'APPROVAL_EDITABLE_FIELDS', 'CYCLE']);
 
   const MODULE_OPTIONS = (lookups.APPROVAL_MODULE || []).map(o => o.code || o.value);
   const APPROVER_TYPES = (lookups.APPROVER_TYPE || []).map(o => ({ value: o.code || o.value, label: o.label }));
@@ -38,13 +40,33 @@ export default function ApprovalManager() {
     ? (lookups.APPROVER_ROLE || []).map(o => (o.code || o.value).toLowerCase())
     : [...ROLE_SETS.MANAGEMENT];
 
-  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const cycleLabel = (code) => (lookups.CYCLE || []).find(c => c.code === code)?.label || code;
+  // Rules tab: lookup-driven via sub-permission (president always, others via erp_access)
+  const canManageRules = user?.role === 'president'
+    || (user?.erp_access?.modules?.approvals === 'FULL' && (!user?.erp_access?.sub_permissions?.approvals || user?.erp_access?.sub_permissions?.approvals?.rule_manage))
+    || (user?.role === 'admin' && (!user?.erp_access || !user?.erp_access?.enabled));  // backward compat
+  const isAdmin = canManageRules;
 
   useEffect(() => {
     checkStatus().then(d => setApprovalEnabled(d.enabled)).catch(() => {});
   }, [checkStatus]);
 
   const [hubModuleFilter, setHubModuleFilter] = useState('');
+  const [expandedItem, setExpandedItem] = useState(null); // item.id to expand
+
+  // Phase G3: Quick-edit state
+  const [editingItem, setEditingItem] = useState(null);   // item.id being edited
+  const [editForm, setEditForm] = useState({});            // { field: value }
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Lookup-driven editable fields map: { type_key: [field1, field2, ...] }
+  const editableFieldsMap = useMemo(() => {
+    const map = {};
+    (lookups.APPROVAL_EDITABLE_FIELDS || []).forEach(entry => {
+      map[(entry.code || '').toLowerCase()] = entry.metadata?.fields || [];
+    });
+    return map;
+  }, [lookups.APPROVAL_EDITABLE_FIELDS]);
 
   useEffect(() => {
     if (tab === 'all-pending') {
@@ -108,13 +130,9 @@ export default function ApprovalManager() {
 
   const handleUniversalAction = useCallback(async (item, action) => {
     if (action === 'reject') {
-      const r = prompt('Reason for rejection:');
-      if (!r) return;
-      try {
-        await universalApprove({ ...item.approve_data, action: 'reject', reason: r });
-        toast.success('Rejected');
-        fetchUniversalPending().catch(() => {});
-      } catch (e) { showError(e); }
+      // Open reject modal instead of browser prompt()
+      setRejectModal({ item });
+      setRejectReason('');
       return;
     }
     try {
@@ -124,9 +142,47 @@ export default function ApprovalManager() {
     } catch (e) { showError(e); }
   }, [universalApprove, fetchUniversalPending]);
 
+  const handleRejectConfirm = useCallback(async () => {
+    if (!rejectModal) return;
+    if (!rejectReason.trim()) return toast.error('Reason is required for rejection');
+    try {
+      await universalApprove({ ...rejectModal.item.approve_data, action: 'reject', reason: rejectReason });
+      toast.success('Rejected');
+      setRejectModal(null);
+      setRejectReason('');
+      fetchUniversalPending().catch(() => {});
+    } catch (e) { showError(e); }
+  }, [rejectModal, rejectReason, universalApprove, fetchUniversalPending]);
+
+  // Phase G3: Save quick-edit
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingItem) return;
+    const item = (hubModuleFilter ? universalItems.filter(i => i.module === hubModuleFilter) : universalItems)
+      .find(i => i.id === editingItem);
+    if (!item) return;
+    setEditSaving(true);
+    try {
+      await universalEdit({
+        type: item.approve_data.type,
+        id: item.approve_data.id,
+        updates: editForm
+      });
+      toast.success('Saved — you can now approve');
+      setEditingItem(null);
+      setEditForm({});
+      fetchUniversalPending().catch(() => {});
+    } catch (e) {
+      showError(e);
+    } finally {
+      setEditSaving(false);
+    }
+  }, [editingItem, editForm, universalEdit, fetchUniversalPending, universalItems, hubModuleFilter]);
+
   const MODULE_COLORS = {
     INCOME: '#2563eb', DEDUCTION_SCHEDULE: '#7c3aed', PURCHASING: '#16a34a',
-    INVENTORY: '#d97706', PAYROLL: '#0891b2', KPI: '#4f46e5', APPROVAL_REQUEST: '#6b7280'
+    INVENTORY: '#d97706', PAYROLL: '#0891b2', KPI: '#4f46e5', APPROVAL_REQUEST: '#6b7280',
+    SALES: '#059669', COLLECTION: '#0d9488', SMER: '#ea580c', CAR_LOGBOOK: '#64748b',
+    EXPENSES: '#b45309', PRF_CALF: '#7c3aed'
   };
 
   const filteredHubItems = hubModuleFilter
@@ -199,7 +255,11 @@ export default function ApprovalManager() {
                 </div>
               )}
 
-              {!loading && filteredHubItems.map(item => (
+              {!loading && filteredHubItems.map(item => {
+                const isExpanded = expandedItem === item.id;
+                const d = item.details || {};
+                const fmt = (n) => '₱' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                return (
                 <div key={item.id} style={{ background: 'var(--erp-bg)', border: '1px solid var(--erp-border)', borderRadius: 12, padding: 14, marginBottom: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                     <div style={{ flex: 1 }}>
@@ -212,28 +272,339 @@ export default function ApprovalManager() {
                       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--erp-text)', marginBottom: 2 }}>{item.description}</div>
                       <div style={{ fontSize: 12, color: 'var(--erp-muted)' }}>
                         {item.submitted_by} · {new Date(item.submitted_at).toLocaleDateString()}
-                        {item.amount > 0 && <span style={{ marginLeft: 8, fontWeight: 600 }}>₱{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>}
+                        {item.amount > 0 && <span style={{ marginLeft: 8, fontWeight: 600 }}>{fmt(item.amount)}</span>}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                      <button
-                        onClick={() => handleUniversalAction(item, 'approve')}
-                        disabled={loading}
-                        style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: item.action_key === 'CREDIT' ? '#047857' : '#16a34a', color: '#fff' }}
-                      >
+                      <button onClick={() => setExpandedItem(isExpanded ? null : item.id)}
+                        style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--erp-border)', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: 'var(--erp-panel)', color: 'var(--erp-text)' }}>
+                        {isExpanded ? 'Hide' : 'Details'}
+                      </button>
+                      {(editableFieldsMap[item.approve_data?.type] || []).length > 0 && (
+                        <button onClick={() => {
+                          if (editingItem === item.id) {
+                            setEditingItem(null); setEditForm({});
+                          } else {
+                            const fields = editableFieldsMap[item.approve_data.type];
+                            const initial = {};
+                            fields.forEach(f => { initial[f] = item.details?.[f] ?? ''; });
+                            setEditingItem(item.id);
+                            setEditForm(initial);
+                            if (expandedItem !== item.id) setExpandedItem(item.id);
+                          }
+                        }}
+                          style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--erp-border)', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: editingItem === item.id ? '#dbeafe' : 'var(--erp-panel)', color: editingItem === item.id ? '#1d4ed8' : 'var(--erp-text)' }}>
+                          {editingItem === item.id ? 'Cancel Edit' : 'Edit'}
+                        </button>
+                      )}
+                      <button onClick={() => handleUniversalAction(item, 'approve')} disabled={loading}
+                        style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: item.action_key === 'CREDIT' ? '#047857' : '#16a34a', color: '#fff' }}>
                         {item.current_action}
                       </button>
-                      <button
-                        onClick={() => handleUniversalAction(item, 'reject')}
-                        disabled={loading}
-                        style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: '#dc2626', color: '#fff' }}
-                      >
+                      <button onClick={() => handleUniversalAction(item, 'reject')} disabled={loading}
+                        style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: '#dc2626', color: '#fff' }}>
                         Reject
                       </button>
                     </div>
                   </div>
+
+                  {/* ── Expandable Detail Panel ── */}
+                  {isExpanded && d && (
+                    <div style={{ marginTop: 12, padding: 12, background: 'var(--erp-panel)', border: '1px solid var(--erp-border)', borderRadius: 8, fontSize: 13 }}>
+
+                      {/* Income Report Details */}
+                      {item.module === 'INCOME' && (
+                        <div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div>
+                              <div style={{ fontWeight: 700, marginBottom: 6, color: '#16a34a' }}>Earnings</div>
+                              {d.earnings?.smer > 0 && <div>SMER: {fmt(d.earnings.smer)}</div>}
+                              {d.earnings?.core_commission > 0 && <div>Commission: {fmt(d.earnings.core_commission)}</div>}
+                              {d.earnings?.calf_reimbursement > 0 && <div>CALF Reimburse: {fmt(d.earnings.calf_reimbursement)}</div>}
+                              {d.earnings?.bonus > 0 && <div>Bonus: {fmt(d.earnings.bonus)}</div>}
+                              {d.earnings?.profit_sharing > 0 && <div>Profit Sharing: {fmt(d.earnings.profit_sharing)}</div>}
+                              <div style={{ fontWeight: 700, marginTop: 4 }}>Total: {fmt(d.total_earnings)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 700, marginBottom: 6, color: '#dc2626' }}>Deductions ({(d.deduction_lines || []).length} lines)</div>
+                              {(d.deduction_lines || []).map((l, i) => (
+                                <div key={i} style={l.status === 'REJECTED' ? { textDecoration: 'line-through', opacity: 0.5 } : {}}>
+                                  {l.deduction_label}: {fmt(l.amount)} <span style={{ fontSize: 10, color: 'var(--erp-muted)' }}>({l.status}{l.auto_source ? ` · ${l.auto_source}` : ''})</span>
+                                </div>
+                              ))}
+                              <div style={{ fontWeight: 700, marginTop: 4 }}>Total: {fmt(d.total_deductions)}</div>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 16, marginTop: 8, color: (d.net_pay || 0) >= 0 ? '#16a34a' : '#dc2626' }}>
+                            Net Pay: {fmt(d.net_pay)}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Deduction Schedule Details */}
+                      {item.module === 'DEDUCTION_SCHEDULE' && (
+                        <div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>Type:</strong> {d.deduction_label} · <strong>Total:</strong> {fmt(d.total_amount)} · <strong>Term:</strong> {d.term_months === 1 ? 'One-time' : `${d.term_months} months @ ${fmt(d.installment_amount)}/mo`} · <strong>Start:</strong> {d.start_period} · <strong>Cycle:</strong> {cycleLabel(d.target_cycle || 'C2')}
+                          </div>
+                          {d.description && <div style={{ color: 'var(--erp-muted)', marginBottom: 8 }}>{d.description}</div>}
+                          {d.term_months > 1 && (
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>#</th><th style={{ padding: '4px 8px', textAlign: 'left' }}>Period</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Amount</th></tr></thead>
+                              <tbody>
+                                {(d.installments || []).slice(0, 6).map(inst => (
+                                  <tr key={inst.installment_no}><td style={{ padding: '3px 8px' }}>{inst.installment_no}</td><td style={{ padding: '3px 8px' }}>{inst.period}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(inst.amount)}</td></tr>
+                                ))}
+                                {(d.installments || []).length > 6 && <tr><td colSpan={3} style={{ padding: '3px 8px', color: 'var(--erp-muted)', textAlign: 'center' }}>...and {d.installments.length - 6} more</td></tr>}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      )}
+
+                      {/* GRN Details */}
+                      {item.module === 'INVENTORY' && (
+                        <div>
+                          {d.grn_date && <div><strong>GRN Date:</strong> {new Date(d.grn_date).toLocaleDateString()}</div>}
+                          {d.notes && <div style={{ color: 'var(--erp-muted)', marginBottom: 6 }}>{d.notes}</div>}
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
+                            <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Item</th><th style={{ padding: '4px 8px' }}>Batch</th><th style={{ padding: '4px 8px' }}>Expiry</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Stock</th></tr></thead>
+                            <tbody>
+                              {(d.line_items || []).map((li, i) => (
+                                <tr key={i}><td style={{ padding: '3px 8px' }}>{li.product_name || li.item_key || '—'}</td><td style={{ padding: '3px 8px' }}>{li.batch_lot_no}</td><td style={{ padding: '3px 8px' }}>{li.expiry_date ? new Date(li.expiry_date).toLocaleDateString() : '-'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.qty}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.available_stock != null ? li.available_stock : '—'}</td></tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* Payslip Details */}
+                      {item.module === 'PAYROLL' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                          <div>
+                            <div style={{ fontWeight: 700, marginBottom: 4 }}>Earnings</div>
+                            {Object.entries(d.earnings || {}).filter(([, v]) => v > 0).map(([k, v]) => (
+                              <div key={k}>{k.replace(/_/g, ' ')}: {fmt(v)}</div>
+                            ))}
+                            <div style={{ fontWeight: 700, marginTop: 4 }}>Total: {fmt(d.total_earnings)}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, marginBottom: 4 }}>Deductions</div>
+                            {Object.entries(d.deductions || {}).filter(([, v]) => v > 0).map(([k, v]) => (
+                              <div key={k}>{k.replace(/_/g, ' ')}: {fmt(v)}</div>
+                            ))}
+                            <div style={{ fontWeight: 700, marginTop: 4 }}>Total: {fmt(d.total_deductions)}</div>
+                          </div>
+                          <div style={{ gridColumn: '1 / -1', textAlign: 'center', fontWeight: 700, fontSize: 15 }}>Net: {fmt(d.net_pay)}</div>
+                        </div>
+                      )}
+
+                      {/* KPI Rating Details */}
+                      {item.module === 'KPI' && (
+                        <div>
+                          <div style={{ marginBottom: 6 }}><strong>Period:</strong> {d.period} {d.period_type}</div>
+                          {(d.kpi_ratings || []).map((k, i) => (
+                            <div key={i} style={{ padding: '4px 0', borderBottom: '1px solid var(--erp-border)' }}>
+                              <strong>{k.kpi_name || k.kpi_code}</strong>: Self {k.self_score || '-'}/5
+                              {k.manager_score != null && <span> · Manager {k.manager_score}/5</span>}
+                              {k.self_comment && <div style={{ fontSize: 11, color: 'var(--erp-muted)' }}>{k.self_comment}</div>}
+                            </div>
+                          ))}
+                          {d.overall_self_score && <div style={{ fontWeight: 700, marginTop: 6 }}>Overall Self: {d.overall_self_score}/5</div>}
+                        </div>
+                      )}
+
+                      {/* Approval Request Details (Phase 29) */}
+                      {item.module === 'APPROVAL_REQUEST' && (
+                        <div style={{ color: 'var(--erp-muted)' }}>Authority matrix approval request. View full document in the originating module.</div>
+                      )}
+
+                      {/* Sales / CSI Details */}
+                      {item.module === 'SALES' && (
+                        <div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>Type:</strong> {d.sale_type || 'CSI'} · <strong>Date:</strong> {d.csi_date ? new Date(d.csi_date).toLocaleDateString() : '—'} · <strong>Invoice:</strong> {d.invoice_number || '—'}
+                          </div>
+                          <div style={{ marginBottom: 6 }}>
+                            <strong>Customer:</strong> {d.hospital || d.customer || '—'} · <strong>Payment:</strong> {d.payment_mode || '—'}
+                          </div>
+                          {(d.line_items || []).length > 0 && (
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
+                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Product</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Stock</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Unit Price</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Line Total</th></tr></thead>
+                              <tbody>
+                                {(d.line_items || []).map((li, i) => (
+                                  <tr key={i}><td style={{ padding: '3px 8px' }}>{li.product_name || li.item_key || '—'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.qty}</td><td style={{ padding: '3px 8px', textAlign: 'right', color: li.available_stock != null && li.available_stock < li.qty ? 'var(--erp-danger, #d32f2f)' : undefined }}>{li.available_stock != null ? li.available_stock : '—'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.unit_price)}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.line_total)}</td></tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                          <div style={{ display: 'flex', gap: 16, marginTop: 8, fontWeight: 700 }}>
+                            <span>Net of VAT: {fmt(d.total_net_of_vat)}</span>
+                            <span>VAT: {fmt(d.total_vat)}</span>
+                            <span>Total: {fmt(d.invoice_total)}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Collection / CR Details */}
+                      {item.module === 'COLLECTION' && (
+                        <div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>CR Date:</strong> {d.cr_date ? new Date(d.cr_date).toLocaleDateString() : '—'} · <strong>Customer:</strong> {d.hospital || d.customer || '—'} · <strong>Payment:</strong> {d.payment_mode || '—'} {d.check_no ? `#${d.check_no}` : ''}
+                          </div>
+                          {(d.settled_csis || []).length > 0 && (
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
+                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>CSI Ref</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Invoice Amt</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Commission</th></tr></thead>
+                              <tbody>
+                                {(d.settled_csis || []).map((c, i) => (
+                                  <tr key={i}><td style={{ padding: '3px 8px' }}>{c.doc_ref || '—'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(c.invoice_amount)}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(c.commission_amount)}</td></tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                          <div style={{ display: 'flex', gap: 16, marginTop: 8, fontWeight: 700, flexWrap: 'wrap' }}>
+                            <span>CR Amount: {fmt(d.cr_amount)}</span>
+                            <span>Commission: {fmt(d.total_commission)}</span>
+                            {d.total_partner_rebates > 0 && <span>Rebates: {fmt(d.total_partner_rebates)}</span>}
+                            {d.cwt_amount > 0 && <span>CWT: {fmt(d.cwt_amount)}</span>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SMER Details */}
+                      {item.module === 'SMER' && (
+                        <div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>Period:</strong> {d.period} {d.cycle || ''} · <strong>Working Days:</strong> {d.working_days || '—'} · <strong>Daily Entries:</strong> {d.daily_entries_count || 0}
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+                            <div><span style={{ color: 'var(--erp-muted)' }}>Per Diem:</span> <strong>{fmt(d.total_perdiem)}</strong></div>
+                            <div><span style={{ color: 'var(--erp-muted)' }}>Transport:</span> <strong>{fmt(d.total_transpo)}</strong></div>
+                            <div><span style={{ color: 'var(--erp-muted)' }}>ORE:</span> <strong>{fmt(d.total_ore)}</strong></div>
+                            <div><span style={{ color: 'var(--erp-muted)' }}>Reimbursable:</span> <strong style={{ color: '#059669' }}>{fmt(d.total_reimbursable)}</strong></div>
+                            {d.travel_advance > 0 && <div><span style={{ color: 'var(--erp-muted)' }}>Advance:</span> <strong>{fmt(d.travel_advance)}</strong></div>}
+                            {d.balance_on_hand != null && <div><span style={{ color: 'var(--erp-muted)' }}>Balance:</span> <strong style={{ color: (d.balance_on_hand || 0) >= 0 ? '#059669' : '#dc2626' }}>{fmt(d.balance_on_hand)}</strong></div>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Car Logbook Details */}
+                      {item.module === 'CAR_LOGBOOK' && (
+                        <div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>Period:</strong> {d.period} {d.cycle || ''} {d.entry_date ? `· Date: ${new Date(d.entry_date).toLocaleDateString()}` : ''}
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+                            <div><span style={{ color: 'var(--erp-muted)' }}>Total KM:</span> <strong>{d.total_km || 0}</strong></div>
+                            <div><span style={{ color: 'var(--erp-muted)' }}>Official:</span> <strong>{d.official_km || 0} km</strong></div>
+                            <div><span style={{ color: 'var(--erp-muted)' }}>Personal:</span> <strong>{d.personal_km || 0} km</strong></div>
+                            <div><span style={{ color: 'var(--erp-muted)' }}>Fuel Total:</span> <strong>{fmt(d.total_fuel_amount)}</strong></div>
+                            <div><span style={{ color: 'var(--erp-muted)' }}>Official Gas:</span> <strong>{fmt(d.official_gas_amount)}</strong></div>
+                            <div><span style={{ color: 'var(--erp-muted)' }}>Efficiency:</span> <strong>{d.km_per_liter || '—'} km/L</strong></div>
+                            {d.overconsumption_flag && <div><span style={{ padding: '2px 6px', borderRadius: 4, background: '#fee2e2', color: '#991b1b', fontSize: 11, fontWeight: 700 }}>OVERCONSUMPTION</span></div>}
+                          </div>
+                          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--erp-muted)' }}>{d.fuel_entries_count || 0} fuel entries · {d.actual_liters || 0}L total</div>
+                        </div>
+                      )}
+
+                      {/* Expenses (ORE/ACCESS) Details */}
+                      {item.module === 'EXPENSES' && (
+                        <div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>Period:</strong> {d.period} {d.cycle || ''} · <strong>Lines:</strong> {d.line_count || 0}
+                          </div>
+                          <div style={{ display: 'flex', gap: 16, marginBottom: 8, fontWeight: 700 }}>
+                            <span>ORE: {fmt(d.total_ore)}</span>
+                            <span>ACCESS: {fmt(d.total_access)}</span>
+                            <span>Total: {fmt(d.total_amount)}</span>
+                            {d.total_vat > 0 && <span>VAT: {fmt(d.total_vat)}</span>}
+                          </div>
+                          {(d.lines || []).length > 0 && (
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Type</th><th style={{ padding: '4px 8px', textAlign: 'left' }}>Category</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Amount</th><th style={{ padding: '4px 8px' }}>OR#</th><th style={{ padding: '4px 8px' }}>CALF?</th></tr></thead>
+                              <tbody>
+                                {(d.lines || []).map((l, i) => (
+                                  <tr key={i}><td style={{ padding: '3px 8px' }}>{l.expense_type}</td><td style={{ padding: '3px 8px' }}>{l.expense_category}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(l.amount)}</td><td style={{ padding: '3px 8px' }}>{l.or_number || '—'}</td><td style={{ padding: '3px 8px', textAlign: 'center' }}>{l.calf_required ? 'Yes' : '—'}</td></tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      )}
+
+                      {/* PRF/CALF Details */}
+                      {item.module === 'PRF_CALF' && (
+                        <div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>Type:</strong> {d.doc_type} {d.prf_type ? `(${d.prf_type})` : ''} · <strong>Period:</strong> {d.period} {d.cycle || ''}
+                          </div>
+                          {d.doc_type === 'PRF' && (
+                            <div style={{ marginBottom: 6 }}>
+                              <strong>Payee:</strong> {d.payee_name || '—'} ({d.payee_type || '—'}) · <strong>Rebate:</strong> {fmt(d.rebate_amount)} · <strong>Payment:</strong> {d.payment_mode || '—'}
+                            </div>
+                          )}
+                          {d.doc_type === 'CALF' && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 6 }}>
+                              <div><span style={{ color: 'var(--erp-muted)' }}>Advance:</span> <strong>{fmt(d.advance_amount)}</strong></div>
+                              <div><span style={{ color: 'var(--erp-muted)' }}>Liquidation:</span> <strong>{fmt(d.liquidation_amount)}</strong></div>
+                              <div><span style={{ color: 'var(--erp-muted)' }}>Balance:</span> <strong style={{ color: (d.balance || 0) >= 0 ? '#059669' : '#dc2626' }}>{fmt(d.balance)}</strong></div>
+                            </div>
+                          )}
+                          {d.purpose && <div style={{ color: 'var(--erp-muted)' }}><strong>Purpose:</strong> {d.purpose}</div>}
+                          {d.bir_flag && <div style={{ fontSize: 11, color: 'var(--erp-muted)', marginTop: 4 }}>BIR: {d.bir_flag}</div>}
+                        </div>
+                      )}
+
+                      {/* ── Phase G3: Inline Quick-Edit Form ── */}
+                      {editingItem === item.id && (editableFieldsMap[item.approve_data?.type] || []).length > 0 && (
+                        <div style={{ marginTop: 12, borderTop: '2px dashed var(--erp-border)', paddingTop: 12 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#2563eb' }} />
+                            Quick Edit — fix typos before approving
+                          </div>
+                          {(editableFieldsMap[item.approve_data?.type] || []).map(field => (
+                            <div key={field} style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <label style={{ width: 150, fontSize: 12, fontWeight: 600, color: 'var(--erp-text)', textTransform: 'capitalize', flexShrink: 0 }}>
+                                {field.replace(/_/g, ' ')}
+                              </label>
+                              {field === 'total_amount' ? (
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={editForm[field] ?? ''}
+                                  onChange={e => setEditForm(f => ({ ...f, [field]: e.target.value }))}
+                                  style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #93c5fd', fontSize: 13, background: '#eff6ff', outline: 'none' }}
+                                />
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={editForm[field] ?? ''}
+                                  onChange={e => setEditForm(f => ({ ...f, [field]: e.target.value }))}
+                                  style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #93c5fd', fontSize: 13, background: '#eff6ff', outline: 'none' }}
+                                />
+                              )}
+                            </div>
+                          ))}
+                          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+                            <button
+                              onClick={() => { setEditingItem(null); setEditForm({}); }}
+                              style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid var(--erp-border)', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: 'var(--erp-panel)', color: 'var(--erp-text)' }}>
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleSaveEdit}
+                              disabled={editSaving}
+                              style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: editSaving ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 700, background: '#2563eb', color: '#fff', opacity: editSaving ? 0.6 : 1 }}>
+                              {editSaving ? 'Saving...' : 'Save Changes'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -384,6 +755,34 @@ export default function ApprovalManager() {
                   <button onClick={handleDecision}
                     style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, background: decisionModal.action === 'approve' ? '#059669' : '#dc2626', color: '#fff' }}>
                     {decisionModal.action === 'approve' ? 'Approve' : 'Reject'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ─── Universal Hub Reject Modal ─── */}
+          {rejectModal && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+              <div style={{ background: 'var(--erp-panel, #fff)', borderRadius: 12, padding: 24, width: 400, maxWidth: '95vw' }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: 16, color: '#dc2626' }}>Reject — {rejectModal.item?.description || rejectModal.item?.doc_ref}</h3>
+                <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--erp-muted)' }}>
+                  {rejectModal.item?.module?.replace(/_/g, ' ')} · {rejectModal.item?.submitted_by}
+                </p>
+                <textarea
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  placeholder="Reason for rejection (required)"
+                  rows={3}
+                  autoFocus
+                  style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--erp-border)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }}
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                  <button onClick={() => { setRejectModal(null); setRejectReason(''); }}
+                    style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--erp-border)', cursor: 'pointer', fontSize: 13, fontWeight: 600, background: 'transparent' }}>Cancel</button>
+                  <button onClick={handleRejectConfirm} disabled={loading}
+                    style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, background: '#dc2626', color: '#fff' }}>
+                    Reject
                   </button>
                 </div>
               </div>

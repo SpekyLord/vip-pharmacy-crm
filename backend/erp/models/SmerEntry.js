@@ -37,7 +37,12 @@ const dailyEntrySchema = new mongoose.Schema({
   override_tier: { type: String },  // Lookup: PERDIEM_TIER — only FULL or HALF (no point overriding to ZERO)
   override_reason: { type: String, trim: true },             // "Meeting with President", "Training day", etc.
   overridden_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  overridden_at: { type: Date }
+  overridden_at: { type: Date },
+
+  // Approval tracking — links override request to Universal Approval system
+  override_status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'] },  // null = no request
+  approval_request_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ApprovalRequest' },
+  requested_override_tier: { type: String },  // stores what tier was requested while PENDING
 }, { _id: true });
 
 const smerEntrySchema = new mongoose.Schema({
@@ -80,7 +85,8 @@ const smerEntrySchema = new mongoose.Schema({
 
   // Audit
   created_at: { type: Date, default: Date.now, immutable: true },
-  created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  edit_history: [{ type: mongoose.Schema.Types.Mixed }]
 }, {
   timestamps: false,
   collection: 'erp_smer_entries'
@@ -96,7 +102,7 @@ smerEntrySchema.pre('save', function (next) {
     totalTranspo += entry.transpo_p2p || 0;
     totalSpecial += entry.transpo_special || 0;
     totalOre += entry.ore_amount || 0;
-    if (entry.md_count > 0 || entry.activity_type || entry.hospital_covered || entry.perdiem_override) workingDays++;
+    if ((entry.md_count > 0 || entry.activity_type || entry.hospital_covered || entry.perdiem_override) && entry.activity_type !== 'NO_WORK') workingDays++;
   }
 
   this.total_perdiem = Math.round(totalPerdiem * 100) / 100;

@@ -12,6 +12,12 @@ import toast from 'react-hot-toast';
  *   catch (err) { showError(err, 'Could not save expense'); }
  */
 export function showError(err, fallback = 'Operation failed') {
+  // If no error object provided, just show the fallback message
+  if (!err) {
+    toast.error(fallback, { duration: 4000 });
+    return;
+  }
+
   const status = err?.response?.status;
   const serverMsg = err?.response?.data?.message;
   const serverErrors = err?.response?.data?.errors;
@@ -72,6 +78,33 @@ export function showError(err, fallback = 'Operation failed') {
  */
 export function showSuccess(msg) {
   toast.success(msg, { duration: 3000 });
+}
+
+/**
+ * showApprovalPending — Blue info toast for authority matrix gate (HTTP 202).
+ * Call after any submit/post API returns approval_pending: true.
+ */
+export function showApprovalPending(msg) {
+  toast(msg || 'Approval required — request sent to approver.', {
+    duration: 5000,
+    icon: '\ud83d\udd12',
+    style: {
+      background: '#eff6ff',
+      color: '#1e40af',
+      border: '1px solid #3b82f6',
+    },
+  });
+}
+
+/**
+ * isApprovalPending — Check if an API response indicates authority matrix hold.
+ * Works for both success responses (res.data) and error catches.
+ */
+export function isApprovalPending(result, err) {
+  if (result?.approval_pending) return true;
+  if (err?.response?.status === 202) return true;
+  if (err?.response?.data?.approval_pending) return true;
+  return false;
 }
 
 /**

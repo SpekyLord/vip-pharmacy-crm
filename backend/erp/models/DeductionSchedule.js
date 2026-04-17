@@ -85,6 +85,11 @@ const deductionScheduleSchema = new mongoose.Schema({
     required: true,
     match: [/^\d{4}-\d{2}$/, 'Start period must be YYYY-MM format']
   },
+  target_cycle: {
+    type: String,
+    required: [true, 'Target cycle is required'],
+    default: 'C2'
+  }, // Lookup: CYCLE — which payroll cycle to inject installments into
   remaining_balance: { type: Number, default: 0 },
 
   // ── Workflow ──
@@ -101,7 +106,8 @@ const deductionScheduleSchema = new mongoose.Schema({
 
   // ── Audit ──
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  created_at: { type: Date, default: Date.now, immutable: true }
+  created_at: { type: Date, default: Date.now, immutable: true },
+  edit_history: [{ type: mongoose.Schema.Types.Mixed }]
 }, {
   timestamps: true,
   collection: 'erp_deduction_schedules'

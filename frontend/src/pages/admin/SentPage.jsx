@@ -15,6 +15,7 @@ import messageService from '../../services/messageInboxService';
 import AdminSentMessageBox from "../../components/employee/AdminSentMessageBox";
 
 import SelectField from '../../components/common/Select';
+import PageGuide from '../../components/common/PageGuide';
 
 const EmployeeInbox = () => {
   const navigate = useNavigate();
@@ -276,6 +277,7 @@ const [editingId, setEditingId] = useState(null);
         <Sidebar />
 
         <main className="main-content">
+          <PageGuide pageKey="sent-messages" />
           {/* Header */}
           <div className="page-header">
             <div className="header-left">

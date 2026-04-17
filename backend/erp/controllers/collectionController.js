@@ -24,6 +24,8 @@ const VatLedger = require('../models/VatLedger');
 const CwtLedger = require('../models/CwtLedger');
 const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
 const Settings = require('../models/Settings');
+const PettyCashFund = require('../models/PettyCashFund');
+const PettyCashTransaction = require('../models/PettyCashTransaction');
 
 // ═══ CRUD ═══
 
@@ -257,6 +259,22 @@ const submitCollections = catchAsync(async (req, res) => {
 
   const settings = await Settings.getSettings();
 
+  // Authority matrix gate — single gate for batch
+  const { gateApproval } = require('../services/approvalService');
+  const crTotalAmount = validRows.reduce((sum, r) => sum + (r.cr_amount || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'COLLECTIONS',
+    docType: 'CR',
+    docId: validRows[0]._id,
+    docRef: validRows.map(r => r.cr_no).filter(Boolean).join(', '),
+    amount: crTotalAmount,
+    description: `Submit ${validRows.length} collection${validRows.length === 1 ? '' : 's'} (total ₱${crTotalAmount.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   // Period lock check
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
   for (const row of validRows) {
@@ -433,6 +451,46 @@ const submitCollections = catchAsync(async (req, res) => {
       }
     }
 
+    // Petty cash auto-deposit: if collection is routed to a petty cash fund,
+    // create a POSTED deposit transaction and update the fund balance.
+    for (const row of validRows) {
+      if (!row.petty_cash_fund_id) continue;
+      try {
+        const fund = await PettyCashFund.findById(row.petty_cash_fund_id);
+        if (!fund) {
+          console.error(`[PettyCash] Fund ${row.petty_cash_fund_id} not found for CR ${row.cr_no}`);
+          continue;
+        }
+        const depositAmount = row.cr_amount || row.total_amount || 0;
+        if (depositAmount <= 0) continue;
+
+        // Create POSTED deposit transaction linked to this collection
+        await PettyCashTransaction.create({
+          entity_id: row.entity_id,
+          fund_id: fund._id,
+          txn_type: 'DEPOSIT',
+          txn_date: row.cr_date || new Date(),
+          amount: depositAmount,
+          source_description: `Collection ${row.cr_no || ''}`.trim(),
+          linked_collection_id: row._id,
+          status: 'POSTED',
+          posted_at: new Date(),
+          posted_by: req.user._id,
+          created_by: req.user._id,
+          running_balance: Math.round((fund.current_balance + depositAmount) * 100) / 100
+        });
+
+        // Update fund balance atomically
+        await PettyCashFund.findByIdAndUpdate(fund._id, {
+          $inc: { current_balance: depositAmount }
+        });
+      } catch (pcErr) {
+        console.error(`[PettyCash] Auto-deposit failed for CR ${row.cr_no}:`, pcErr.message);
+        if (!warnings) warnings = [];
+        warnings.push(`Petty cash deposit failed for ${row.cr_no}: ${pcErr.message}`);
+      }
+    }
+
     res.json({
       success: true,
       message: `${validRows.length} collection(s) posted`,
@@ -498,6 +556,28 @@ const reopenCollections = catchAsync(async (req, res) => {
         } catch (jeErr) {
           console.error('JE reversal failed for collection reopen:', item.cr_no, jeErr.message);
         }
+      }
+
+      // Reverse petty cash deposit if collection was routed to a fund
+      try {
+        const pcTxn = await PettyCashTransaction.findOne({
+          linked_collection_id: item._id,
+          txn_type: 'DEPOSIT',
+          status: 'POSTED'
+        });
+        if (pcTxn) {
+          pcTxn.status = 'VOIDED';
+          pcTxn.voided_at = new Date();
+          pcTxn.voided_by = req.user._id;
+          pcTxn.void_reason = `Auto-reversed: Collection ${item.cr_no} reopened`;
+          await pcTxn.save();
+          // Deduct from fund balance
+          await PettyCashFund.findByIdAndUpdate(pcTxn.fund_id, {
+            $inc: { current_balance: -pcTxn.amount }
+          });
+        }
+      } catch (pcErr) {
+        console.error(`[PettyCash] Deposit reversal failed for CR ${item.cr_no}:`, pcErr.message);
       }
 
       await ErpAuditLog.logChange({

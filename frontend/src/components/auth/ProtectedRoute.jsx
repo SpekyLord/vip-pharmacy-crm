@@ -66,8 +66,11 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredErpModule = null 
   }
 
   // ERP module access check (Phase 10)
-  if (requiredErpModule && !hasErpModuleAccess(user, requiredErpModule)) {
-    return <Navigate to="/erp" replace />;
+  // Supports string ("inventory") or array (["inventory", "purchasing"]) — user needs ANY of the listed modules
+  if (requiredErpModule) {
+    const modules = Array.isArray(requiredErpModule) ? requiredErpModule : [requiredErpModule];
+    const hasAccess = modules.some(mod => hasErpModuleAccess(user, mod));
+    if (!hasAccess) return <Navigate to="/erp" replace />;
   }
 
   return children;

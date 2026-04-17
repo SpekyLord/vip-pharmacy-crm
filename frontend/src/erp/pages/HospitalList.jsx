@@ -10,6 +10,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
 import useHospitals from '../hooks/useHospitals';
 import usePeople from '../hooks/usePeople';
+import useWarehouses from '../hooks/useWarehouses';
 import useErpApi from '../hooks/useErpApi';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
@@ -21,20 +22,23 @@ export function HospitalListContent() {
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [tagModal, setTagModal] = useState(null);
+  const [assignModal, setAssignModal] = useState(null);
+  const [showBdmOverrides, setShowBdmOverrides] = useState(false);
   const [bdmList, setBdmList] = useState([]);
+  const [warehouseList, setWarehouseList] = useState([]);
   const [form, setForm] = useState({
     hospital_name: '', tin: '', address: '', contact_person: '',
     hospital_type: '', bed_capacity: '', engagement_level: '',
     payment_terms: 30, vat_status: 'VATABLE', cwt_rate: 0.01,
-    credit_limit: '', credit_limit_action: 'WARN'
+    credit_limit: '', credit_limit_action: 'WARN',
+    warehouse_ids: []
   });
 
   const { getAsUsers } = usePeople();
+  const whApi = useWarehouses();
   useEffect(() => {
-    getAsUsers().then(res => {
-      setBdmList(res?.data || []);
-    }).catch(err => console.error('[HospitalList]', err.message));
+    getAsUsers().then(res => setBdmList(res?.data || [])).catch(err => console.error('[HospitalList]', err.message));
+    whApi.getWarehouses({ all: true }).then(res => setWarehouseList(res?.data || [])).catch(err => console.error('[HospitalList]', err.message));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = hospitals.filter(h =>
@@ -43,7 +47,7 @@ export function HospitalListContent() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ hospital_name: '', tin: '', address: '', contact_person: '', hospital_type: '', bed_capacity: '', engagement_level: '', payment_terms: 30, vat_status: 'VATABLE', cwt_rate: 0.01, credit_limit: '', credit_limit_action: 'WARN' });
+    setForm({ hospital_name: '', tin: '', address: '', contact_person: '', hospital_type: '', bed_capacity: '', engagement_level: '', payment_terms: 30, vat_status: 'VATABLE', cwt_rate: 0.01, credit_limit: '', credit_limit_action: 'WARN', warehouse_ids: [] });
     setModalOpen(true);
   };
 
@@ -55,7 +59,8 @@ export function HospitalListContent() {
       bed_capacity: h.bed_capacity || '', engagement_level: h.engagement_level || '',
       payment_terms: h.payment_terms ?? 30, vat_status: h.vat_status || 'VATABLE',
       cwt_rate: h.cwt_rate ?? 0.01, credit_limit: h.credit_limit || '',
-      credit_limit_action: h.credit_limit_action || 'WARN'
+      credit_limit_action: h.credit_limit_action || 'WARN',
+      warehouse_ids: (h.warehouse_ids || []).map(id => id?._id || id)
     });
     setModalOpen(true);
   };
@@ -75,6 +80,7 @@ export function HospitalListContent() {
       if (form.cwt_rate != null) data.cwt_rate = form.cwt_rate;
       if (form.credit_limit) data.credit_limit = parseFloat(form.credit_limit);
       if (form.credit_limit_action) data.credit_limit_action = form.credit_limit_action;
+      data.warehouse_ids = form.warehouse_ids || [];
 
       if (editing) {
         await erpApi.put(`/hospitals/${editing._id}`, data);
@@ -88,9 +94,26 @@ export function HospitalListContent() {
     }
   };
 
-  const handleTag = async (hospitalId, bdmId) => {
+  const handleWarehouseToggle = async (hospitalId, whId) => {
     try {
-      const h = tagModal || hospitals.find(h => h._id === hospitalId);
+      const h = assignModal;
+      const current = (h.warehouse_ids || []).map(id => id?._id || id);
+      const has = current.includes(whId);
+      const newIds = has ? current.filter(id => id !== whId) : [...current, whId];
+      const res = await erpApi.put(`/hospitals/${hospitalId}`, { warehouse_ids: newIds });
+      if (res.data?.data) {
+        setAssignModal(res.data.data);
+      } else {
+        setAssignModal(prev => prev ? { ...prev, warehouse_ids: newIds } : null);
+      }
+    } catch (err) {
+      showError(err, 'Could not update warehouse assignment');
+    }
+  };
+
+  const handleBdmTag = async (hospitalId, bdmId) => {
+    try {
+      const h = assignModal;
       const isTagged = h?.tagged_bdms?.some(t => (t.bdm_id?._id || t.bdm_id) === bdmId && t.is_active !== false);
       let newTags;
       if (isTagged) {
@@ -99,11 +122,10 @@ export function HospitalListContent() {
         newTags = [...(h.tagged_bdms || []), { bdm_id: bdmId, tagged_by: user._id, is_active: true }];
       }
       const res = await erpApi.put(`/hospitals/${hospitalId}`, { tagged_bdms: newTags });
-      // Update tagModal immediately so checkboxes reflect change
       if (res.data?.data) {
-        setTagModal(res.data.data);
+        setAssignModal(res.data.data);
       } else {
-        setTagModal(prev => prev ? { ...prev, tagged_bdms: newTags } : null);
+        setAssignModal(prev => prev ? { ...prev, tagged_bdms: newTags } : null);
       }
     } catch (err) {
       showError(err, 'Could not tag hospital');
@@ -220,7 +242,7 @@ export function HospitalListContent() {
                 <th style={styles.th}>Type</th>
                 <th style={styles.th}>Terms</th>
                 <th style={styles.th}>CWT</th>
-                <th style={styles.th}>Tagged BDMs</th>
+                <th style={styles.th}>Warehouses</th>
                 <th style={styles.th}>Actions</th>
               </tr>
             </thead>
@@ -234,11 +256,11 @@ export function HospitalListContent() {
                   <td style={styles.td}>{(h.cwt_rate * 100).toFixed(0)}%</td>
                   <td style={styles.td}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {(h.tagged_bdms || []).filter(t => t.is_active !== false).map((t, i) => {
-                        const bdm = bdmList.find(b => b._id === (t.bdm_id?._id || t.bdm_id));
-                        return <span key={i} style={{ ...styles.badge, background: '#e0e7ff', color: '#3730a3' }}>{bdm?.name || 'BDM'}</span>;
+                      {(h.warehouse_ids || []).map((wId, i) => {
+                        const wh = warehouseList.find(w => w._id === (wId?._id || wId));
+                        return <span key={i} style={{ ...styles.badge, background: '#dbeafe', color: '#1e40af' }}>{wh?.warehouse_code || '?'}</span>;
                       })}
-                      {(!h.tagged_bdms?.length) && <span style={{ color: '#9ca3af', fontSize: 12 }}>None</span>}
+                      {!(h.warehouse_ids || []).length && <span style={{ color: '#9ca3af', fontSize: 12 }}>None</span>}
                     </div>
                   </td>
                   <td style={styles.td}>
@@ -246,7 +268,7 @@ export function HospitalListContent() {
                       {ROLE_SETS.MANAGEMENT.includes(user?.role) && (
                         <>
                           <button style={{ ...styles.btn, ...styles.btnOutline }} onClick={() => openEdit(h)}>Edit</button>
-                          <button style={{ ...styles.btn, ...styles.btnSuccess }} onClick={() => setTagModal(h)}>Tag</button>
+                          <button style={{ ...styles.btn, ...styles.btnSuccess }} onClick={() => { setAssignModal(h); setShowBdmOverrides(false); }}>Assign</button>
                         </>
                       )}
                     </div>
@@ -275,23 +297,23 @@ export function HospitalListContent() {
                     <span className="hospital-card-value">{(h.cwt_rate * 100).toFixed(0)}%</span>
                   </div>
                   <div className="hospital-card-item">
-                    <span className="hospital-card-label">Tagged BDMs</span>
-                    <span className="hospital-card-value">{(h.tagged_bdms || []).filter(t => t.is_active !== false).length || 'None'}</span>
+                    <span className="hospital-card-label">Warehouses</span>
+                    <span className="hospital-card-value">{(h.warehouse_ids || []).length || 'None'}</span>
                   </div>
                 </div>
 
                 <div className="hospital-card-tags">
-                  {(h.tagged_bdms || []).filter(t => t.is_active !== false).map((t, i) => {
-                    const bdm = bdmList.find(b => b._id === (t.bdm_id?._id || t.bdm_id));
-                    return <span key={i} style={{ ...styles.badge, background: '#e0e7ff', color: '#3730a3' }}>{bdm?.name || 'BDM'}</span>;
+                  {(h.warehouse_ids || []).map((wId, i) => {
+                    const wh = warehouseList.find(w => w._id === (wId?._id || wId));
+                    return <span key={i} style={{ ...styles.badge, background: '#dbeafe', color: '#1e40af' }}>{wh?.warehouse_code || '?'}</span>;
                   })}
-                  {(!h.tagged_bdms?.length) && <span style={{ color: '#9ca3af', fontSize: 12 }}>None</span>}
+                  {!(h.warehouse_ids || []).length && <span style={{ color: '#9ca3af', fontSize: 12 }}>None</span>}
                 </div>
 
                 {ROLE_SETS.MANAGEMENT.includes(user?.role) && (
                   <div className="hospital-card-actions">
                     <button style={{ ...styles.btn, ...styles.btnOutline, flex: 1 }} onClick={() => openEdit(h)}>Edit</button>
-                    <button style={{ ...styles.btn, ...styles.btnSuccess, flex: 1 }} onClick={() => setTagModal(h)}>Tag</button>
+                    <button style={{ ...styles.btn, ...styles.btnSuccess, flex: 1 }} onClick={() => { setAssignModal(h); setShowBdmOverrides(false); }}>Assign</button>
                   </div>
                 )}
               </div>
@@ -330,6 +352,21 @@ export function HospitalListContent() {
                   <div style={styles.formGroup}><label style={styles.label}>Credit Limit</label><input type="number" style={styles.input} value={form.credit_limit} onChange={e => setForm(f => ({ ...f, credit_limit: e.target.value }))} placeholder="No limit" /></div>
                   <div style={styles.formGroup}><label style={styles.label}>Bed Capacity</label><input type="number" style={styles.input} value={form.bed_capacity} onChange={e => setForm(f => ({ ...f, bed_capacity: e.target.value }))} /></div>
                   <div style={styles.formGroup}><label style={styles.label}>Engagement Level (1-5)</label><input type="number" min="1" max="5" style={styles.input} value={form.engagement_level} onChange={e => setForm(f => ({ ...f, engagement_level: e.target.value }))} /></div>
+                  <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
+                    <label style={styles.label}>Warehouses (BDMs inherit access)</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                      {warehouseList.map(w => {
+                        const checked = (form.warehouse_ids || []).includes(w._id);
+                        return (
+                          <label key={w._id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: checked ? '#eff6ff' : '#f9fafb', borderRadius: 6, cursor: 'pointer', border: checked ? '1px solid #93c5fd' : '1px solid #e5e7eb', fontSize: 12 }}>
+                            <input type="checkbox" checked={checked} onChange={() => setForm(f => ({ ...f, warehouse_ids: checked ? f.warehouse_ids.filter(id => id !== w._id) : [...f.warehouse_ids, w._id] }))} style={{ width: 'auto' }} />
+                            <span style={{ fontWeight: 600 }}>{w.warehouse_code}</span>
+                            <span style={{ color: '#6b7280' }}>{w.warehouse_name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
                   <button style={{ ...styles.btn, ...styles.btnOutline }} onClick={() => setModalOpen(false)}>Cancel</button>
@@ -339,26 +376,50 @@ export function HospitalListContent() {
             </div>
           )}
 
-          {/* Tag BDM Modal */}
-          {tagModal && (
-            <div style={styles.modal} onClick={() => setTagModal(null)}>
+          {/* Assign Warehouses Modal */}
+          {assignModal && (
+            <div style={styles.modal} onClick={() => setAssignModal(null)}>
               <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-                <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>Tag BDMs — {tagModal.hospital_name}</h2>
-                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Select which BDMs can access this hospital</p>
+                <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>Assign Warehouses — {assignModal.hospital_name}</h2>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>BDMs automatically see hospitals assigned to their warehouse</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {bdmList.map(b => {
-                    const isTagged = (tagModal.tagged_bdms || []).some(t => (t.bdm_id?._id || t.bdm_id) === b._id && t.is_active !== false);
+                  {warehouseList.map(w => {
+                    const isAssigned = (assignModal.warehouse_ids || []).some(id => (id?._id || id) === w._id);
                     return (
-                      <label key={b._id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: isTagged ? '#f0fdf4' : '#f9fafb', borderRadius: 8, cursor: 'pointer', border: isTagged ? '1px solid #86efac' : '1px solid #e5e7eb' }}>
-                        <input type="checkbox" checked={isTagged} onChange={() => handleTag(tagModal._id, b._id)} style={{ width: 'auto' }} />
-                        <span style={{ fontWeight: 600 }}>{b.name}</span>
-                        <span style={{ fontSize: 12, color: '#6b7280' }}>{b.email}</span>
+                      <label key={w._id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: isAssigned ? '#eff6ff' : '#f9fafb', borderRadius: 8, cursor: 'pointer', border: isAssigned ? '1px solid #93c5fd' : '1px solid #e5e7eb' }}>
+                        <input type="checkbox" checked={isAssigned} onChange={() => handleWarehouseToggle(assignModal._id, w._id)} style={{ width: 'auto' }} />
+                        <span style={{ fontWeight: 700 }}>{w.warehouse_code}</span>
+                        <span style={{ fontSize: 12, color: '#6b7280' }}>{w.warehouse_name}</span>
                       </label>
                     );
                   })}
                 </div>
+
+                {/* Legacy BDM Overrides (collapsible) */}
+                <div style={{ marginTop: 20, borderTop: '1px solid #e5e7eb', paddingTop: 12 }}>
+                  <button style={{ ...styles.btn, ...styles.btnOutline, width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }} onClick={() => setShowBdmOverrides(!showBdmOverrides)}>
+                    <span>BDM Overrides (Legacy)</span>
+                    <span>{showBdmOverrides ? '—' : '+'}</span>
+                  </button>
+                  {showBdmOverrides && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                      <p style={{ fontSize: 11, color: '#9ca3af', margin: 0 }}>For edge cases only — use warehouse assignment above instead</p>
+                      {bdmList.map(b => {
+                        const isTagged = (assignModal.tagged_bdms || []).some(t => (t.bdm_id?._id || t.bdm_id) === b._id && t.is_active !== false);
+                        return (
+                          <label key={b._id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', background: isTagged ? '#f0fdf4' : '#f9fafb', borderRadius: 8, cursor: 'pointer', border: isTagged ? '1px solid #86efac' : '1px solid #e5e7eb', fontSize: 13 }}>
+                            <input type="checkbox" checked={isTagged} onChange={() => handleBdmTag(assignModal._id, b._id)} style={{ width: 'auto' }} />
+                            <span style={{ fontWeight: 600 }}>{b.name}</span>
+                            <span style={{ fontSize: 11, color: '#6b7280' }}>{b.email}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ marginTop: 16, textAlign: 'right' }}>
-                  <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => { setTagModal(null); refresh(); }}>Done</button>
+                  <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => { setAssignModal(null); refresh(); }}>Done</button>
                 </div>
               </div>
             </div>

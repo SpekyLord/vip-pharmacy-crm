@@ -16,6 +16,7 @@ import ScheduleCalendar from '../../components/employee/ScheduleCalendar';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorMessage from '../../components/common/ErrorMessage';
 import scheduleService from '../../services/scheduleService';
+import PageGuide from '../../components/common/PageGuide';
 
 const pageStyles = `
   .schedule-page .main-content h1 {
@@ -463,6 +464,7 @@ const SchedulePage = () => {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <PageGuide pageKey="schedule" />
           <h1>Schedule</h1>
 
           {error && <ErrorMessage message={error} onRetry={() => fetchData(currentCycleNumber)} />}

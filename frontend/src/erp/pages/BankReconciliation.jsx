@@ -159,12 +159,14 @@ export default function BankReconciliation() {
   const handleFinalize = async () => {
     if (!activeStatement) return;
     try {
-      await api.finalizeRecon(activeStatement._id);
+      const res = await api.finalizeRecon(activeStatement._id);
+      if (res?.approval_pending) { showMsg(res.message || 'Approval required — request sent to approver.'); loadStatements(); return; }
       showMsg('Reconciliation finalized');
       loadStatements();
       setActiveStatement(null);
       setReconSummary(null);
     } catch (err) {
+      if (err?.response?.data?.approval_pending) { showMsg(err.response.data.message || 'Approval required'); loadStatements(); return; }
       showMsg(err.response?.data?.message || 'Finalize failed', 'err');
     }
   };

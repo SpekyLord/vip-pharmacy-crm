@@ -2,40 +2,51 @@
  * Petty Cash Routes — Phase 19
  *
  * Fund management, transactions, ceiling checks, remittance/replenishment docs.
- * Module-level erpAccessCheck applied in index.js; sub-access gating here as needed.
+ * Module-level erpAccessCheck('accounting') applied in index.js.
+ * Sub-permission gated: requires accounting.petty_cash for write actions.
+ * Contractors with petty_cash sub-permission can post/void/process/generate.
  *
  * Authorization:
- *   Fund CRUD: president/admin/finance only (BDMs view only)
- *   Transactions: custodian + president/admin/finance
- *   Post/Sign/Process: president/admin/finance only
+ *   Fund CRUD: sub-permission gated (admin/finance/president + contractors w/ petty_cash)
+ *   Transactions create: custodian + privileged (checked in controller)
+ *   Post/Void/Process/Generate: sub-permission gated
+ *   Delete fund: president only
  */
 const express = require('express');
 const router = express.Router();
 const { roleCheck } = require('../../middleware/roleCheck');
+const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const c = require('../controllers/pettyCashController');
 
+// Sub-permission gate: accounting.petty_cash
+// Admin/finance/president with FULL accounting access pass automatically;
+// contractors need explicit petty_cash sub-permission in their access template.
+const pcGate = erpSubAccessCheck('accounting', 'petty_cash');
+
 // ═══ Funds ═══
-router.get('/funds', c.getFunds);                                                    // All: view funds
-router.get('/funds/:id', c.getFundById);                                              // All: view fund detail
-router.post('/funds', roleCheck('admin', 'finance', 'president'), c.createFund);      // Admin/Finance/President: create
-router.put('/funds/:id', roleCheck('admin', 'finance', 'president'), c.updateFund);   // Admin/Finance/President: edit
-router.delete('/funds/:id', roleCheck('president'), c.deleteFund);                    // President only: delete
+router.get('/funds', c.getFunds);                                      // All w/ accounting access: view funds
+router.get('/funds/:id', c.getFundById);                               // All w/ accounting access: view fund detail
+router.post('/funds', pcGate, c.createFund);                           // Sub-permission gated: create fund
+router.put('/funds/:id', pcGate, c.updateFund);                        // Sub-permission gated: edit fund
+router.delete('/funds/:id', roleCheck('president'), c.deleteFund);     // President only: delete fund
 
 // ═══ Transactions ═══
-router.get('/transactions', c.getTransactions);                                        // All: view transactions
-router.post('/transactions', c.createTransaction);                                     // Custodian + admin (checked in controller)
-router.post('/transactions/:id/post', roleCheck('admin', 'finance', 'president'), c.postTransaction);  // Admin/Finance/President: post
+router.get('/transactions', c.getTransactions);                        // All w/ accounting access: view
+router.post('/transactions', c.createTransaction);                     // Custodian + privileged (checked in controller)
+router.put('/transactions/:id', c.updateTransaction);                  // DRAFT only — custodian edits own, privileged edits any
+router.post('/transactions/:id/post', pcGate, c.postTransaction);      // Sub-permission gated: post
+router.post('/transactions/:id/void', pcGate, c.voidTransaction);      // Sub-permission gated: void DRAFT
 
 // ═══ Ceiling Check ═══
 router.get('/ceiling/:fundId', c.checkCeiling);
 
 // ═══ Remittance & Replenishment ═══
-router.post('/remittances/generate', c.generateRemittance);
-router.post('/replenishments/generate', c.generateReplenishment);
+router.post('/remittances/generate', pcGate, c.generateRemittance);    // Sub-permission gated
+router.post('/replenishments/generate', pcGate, c.generateReplenishment); // Sub-permission gated
 
 // ═══ Documents ═══
 router.get('/documents', c.getDocuments);
-router.post('/documents/:id/sign', roleCheck('admin', 'finance', 'president'), c.signDocument);
-router.post('/documents/:id/process', roleCheck('admin', 'finance', 'president'), c.processDocument);
+router.post('/documents/:id/sign', pcGate, c.signDocument);            // Sub-permission gated (cosmetic, not required)
+router.post('/documents/:id/process', pcGate, c.processDocument);      // Sub-permission gated: process
 
 module.exports = router;

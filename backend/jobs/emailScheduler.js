@@ -103,17 +103,8 @@ const runWeeklyCompliance = async () => {
           specialty: d.specialty,
         }));
 
-      // Get region name for admin summary
-      let regionName = 'Unassigned';
-      if (assignedDoctors.length > 0) {
-        // Use first doctor's region as representative
-        const doctorWithRegion = await Doctor.findById(assignedDoctors[0]._id)
-          .populate('region', 'name')
-          .lean();
-        if (doctorWithRegion?.region?.name) {
-          regionName = doctorWithRegion.region.name;
-        }
-      }
+      // Region model removed — BDM name is sufficient for admin summary identification
+      const regionName = bdm.name || 'Unassigned';
 
       // Collect stats for admin summary
       bdmStats.push({

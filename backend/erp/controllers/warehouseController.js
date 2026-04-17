@@ -14,9 +14,13 @@ const { catchAsync } = require('../../middleware/errorHandler');
 const getWarehouses = catchAsync(async (req, res) => {
   const filter = { is_active: true, entity_id: req.entityId };
 
-  // Only president can view another entity's warehouses
+  // Only president/admin can view another entity's warehouses
   if (req.query.entity_id && req.isPresident) {
     filter.entity_id = req.query.entity_id;
+  }
+  // all=true: cross-entity listing (admin/president only, for globally-shared resources like hospitals)
+  if (req.query.all === 'true' && (req.isPresident || req.isAdmin)) {
+    delete filter.entity_id;
   }
 
   const warehouses = await Warehouse.find(filter)

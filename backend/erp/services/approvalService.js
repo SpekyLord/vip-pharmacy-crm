@@ -175,6 +175,7 @@ const checkApprovalRequired = async (opts) => {
     doc_ref: opts.docRef,
     amount: opts.amount,
     description: opts.description,
+    metadata: opts.metadata,  // module-specific structured data (e.g., entry_id, override_tier for PERDIEM_OVERRIDE)
     level: firstRule.level,
     requested_by: opts.requesterId,
     status: 'PENDING',
@@ -362,11 +363,39 @@ const getPendingForApprover = async (userId, entityId) => {
     .lean();
 };
 
+/**
+ * Convenience gate for controllers — checks approval and sends 202 if needed.
+ * Returns true if the response was sent (caller should return early).
+ *
+ * Usage in any submit/post controller:
+ *   const gated = await gateApproval({ entityId, module, docType, docId, ... }, res);
+ *   if (gated) return;
+ *   // ... proceed with normal posting
+ *
+ * @param {Object} opts - same as checkApprovalRequired
+ * @param {import('express').Response} res
+ * @returns {Promise<boolean>} true if 202 was sent (caller must return)
+ */
+const gateApproval = async (opts, res) => {
+  const check = await checkApprovalRequired(opts);
+  if (check.required) {
+    res.status(202).json({
+      success: true,
+      message: check.message,
+      approval_pending: true,
+      requests: check.requests,
+    });
+    return true;
+  }
+  return false;
+};
+
 module.exports = {
   isApprovalEnabled,
   findMatchingRules,
   resolveApprovers,
   checkApprovalRequired,
+  gateApproval,
   processDecision,
   isFullyApproved,
   getPendingForApprover,

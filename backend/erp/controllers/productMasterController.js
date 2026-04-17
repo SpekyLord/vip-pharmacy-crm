@@ -2,13 +2,71 @@ const ProductMaster = require('../models/ProductMaster');
 const Warehouse = require('../models/Warehouse');
 const InventoryLedger = require('../models/InventoryLedger');
 const ErpAuditLog = require('../models/ErpAuditLog');
+const Entity = require('../models/Entity');
+const Lookup = require('../models/Lookup');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { ROLES } = require('../../constants/roles');
 
+/**
+ * Resolve entity IDs to query for products.
+ * For SUBSIDIARY entities with PRODUCT_CATALOG_ACCESS lookup enabled,
+ * also include the parent entity's products (lookup-driven, subscription-ready).
+ */
+async function resolveProductEntityIds(entityId) {
+  if (!entityId) return [];
+
+  const entity = await Entity.findById(entityId).select('entity_type parent_entity_id').lean();
+  if (!entity) return [entityId];
+
+  // Parent entities only see their own products
+  if (entity.entity_type !== 'SUBSIDIARY' || !entity.parent_entity_id) return [entityId];
+
+  // Auto-seed lookup on first access (atomic upsert — no race condition).
+  // Uses $setOnInsert so existing admin-configured entries are never overwritten.
+  await Lookup.updateOne(
+    { entity_id: entityId, category: 'PRODUCT_CATALOG_ACCESS', code: 'INHERIT_PARENT' },
+    { $setOnInsert: {
+      label: 'Inherit Parent Entity Products',
+      is_active: true,
+      sort_order: 0,
+      metadata: { access_mode: 'ACTIVE_ONLY', description: 'Subsidiary can browse parent entity products for PO creation and catalog views' },
+    }},
+    { upsert: true }
+  );
+
+  // Now check if the entry is active (admin may have disabled it)
+  const accessEntry = await Lookup.findOne({
+    entity_id: entityId,
+    category: 'PRODUCT_CATALOG_ACCESS',
+    code: 'INHERIT_PARENT',
+    is_active: true,
+  }).lean();
+
+  if (accessEntry) {
+    return [entityId, entity.parent_entity_id];
+  }
+
+  // Entry exists but is_active: false — admin explicitly disabled inheritance
+  return [entityId];
+}
+
 const getAll = catchAsync(async (req, res) => {
   const filter = {};
-  if (req.tenantFilter?.entity_id) filter.entity_id = req.tenantFilter.entity_id;
-  if (req.query.entity_id) filter.entity_id = req.query.entity_id;
+  const isCatalog = req.query.catalog === 'true';
+
+  // Entity scoping — for catalog mode, resolve parent entity inheritance
+  const baseEntityId = req.query.entity_id || req.tenantFilter?.entity_id;
+  if (baseEntityId && isCatalog) {
+    const entityIds = await resolveProductEntityIds(baseEntityId);
+    if (entityIds.length > 1) {
+      filter.entity_id = { $in: entityIds };
+    } else {
+      filter.entity_id = baseEntityId;
+    }
+  } else if (baseEntityId) {
+    filter.entity_id = baseEntityId;
+  }
+
   if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
   if (req.query.stock_type) filter.stock_type = req.query.stock_type;
   if (req.query.q) {
@@ -21,7 +79,7 @@ const getAll = catchAsync(async (req, res) => {
   // BDMs only see products that have inventory in their assigned warehouse
   // Skip this filter when catalog=true (e.g. PO creation needs the full product list)
   const bdmRoles = [ROLES.CONTRACTOR];
-  if (bdmRoles.includes(req.user?.role) && req.query.catalog !== 'true') {
+  if (bdmRoles.includes(req.user?.role) && !isCatalog) {
     const myWarehouses = await Warehouse.find({
       $or: [{ manager_id: req.user._id }, { assigned_users: req.user._id }]
     }).select('_id').lean();
@@ -69,19 +127,38 @@ const getById = catchAsync(async (req, res) => {
   res.json({ success: true, data: product });
 });
 
+// Fields that product_manage users can set on create / update
+const EDITABLE_FIELDS = [
+  'brand_name', 'generic_name', 'dosage_strength', 'sold_per',
+  'purchase_uom', 'selling_uom', 'conversion_factor',
+  'purchase_price', 'selling_price', 'vat_status',
+  'stock_type', 'category', 'description', 'key_benefits', 'image_url',
+  'reorder_min_qty', 'reorder_qty', 'safety_stock_qty', 'lead_time_days',
+];
+
+function pickFields(body, fields) {
+  const out = {};
+  for (const f of fields) {
+    if (body[f] !== undefined) out[f] = body[f];
+  }
+  return out;
+}
+
 const create = catchAsync(async (req, res) => {
-  req.body.entity_id = req.entityId;
-  req.body.added_by = req.user._id;
-  const product = await ProductMaster.create(req.body);
+  const data = pickFields(req.body, EDITABLE_FIELDS);
+  data.entity_id = req.entityId;
+  data.added_by = req.user._id;
+  const product = await ProductMaster.create(data);
   res.status(201).json({ success: true, data: product });
 });
 
 const update = catchAsync(async (req, res) => {
   const filter = { _id: req.params.id };
   if (!req.isPresident) filter.entity_id = req.entityId;
+  const data = pickFields(req.body, EDITABLE_FIELDS);
   const product = await ProductMaster.findOneAndUpdate(
     filter,
-    { $set: req.body },
+    { $set: data },
     { new: true, runValidators: true }
   );
   if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
@@ -271,16 +348,14 @@ const exportPrices = catchAsync(async (req, res) => {
  * Expects multipart/form-data with a file field named 'file'
  */
 const importPrices = catchAsync(async (req, res) => {
-  const XLSX = require('xlsx');
-  const { safeXlsxRead } = require('../../utils/safeXlsxRead');
+  const { safeExcelRead, sheetToJson } = require('../../utils/safeExcelRead');
 
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No file uploaded. Send as multipart/form-data with field name "file".' });
   }
 
-  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws);
+  const wb = await safeExcelRead(req.file.buffer);
+  const rows = sheetToJson(wb.worksheets[0]);
 
   if (!rows.length) {
     return res.status(400).json({ success: false, message: 'Spreadsheet is empty' });
@@ -341,8 +416,7 @@ const importPrices = catchAsync(async (req, res) => {
  *   DefaultPurchasePrice, DefaultSellingPrice, IsActive
  */
 const refreshProducts = catchAsync(async (req, res) => {
-  const XLSX = require('xlsx');
-  const { safeXlsxRead } = require('../../utils/safeXlsxRead');
+  const { safeExcelRead, sheetToJson } = require('../../utils/safeExcelRead');
   const { cleanName } = require('../utils/nameClean');
   const { normalizeUnit } = require('../utils/normalize');
 
@@ -355,9 +429,8 @@ const refreshProducts = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Entity context required' });
   }
 
-  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer', raw: true });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+  const wb = await safeExcelRead(req.file.buffer);
+  const rows = sheetToJson(wb.worksheets[0], { raw: false, defval: '' });
 
   if (!rows.length) {
     return res.status(400).json({ success: false, message: 'File is empty' });

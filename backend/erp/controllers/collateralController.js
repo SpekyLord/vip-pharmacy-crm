@@ -31,10 +31,16 @@ const getAll = catchAsync(async (req, res) => {
   const query = Collateral.find(filter).sort({ created_at: -1 });
   if (limit > 0) query.skip((page - 1) * limit).limit(limit);
 
-  const [items, total] = await Promise.all([
+  const [rawItems, total] = await Promise.all([
     query.lean(),
     Collateral.countDocuments(filter)
   ]);
+
+  // Backward compat: old docs may have collateral_name but no name
+  const items = rawItems.map(item => {
+    if (!item.name && item.collateral_name) item.name = item.collateral_name;
+    return item;
+  });
 
   res.json({
     success: true,
@@ -61,6 +67,9 @@ const getById = catchAsync(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Collateral not found' });
   }
 
+  // Backward compat: old docs may have collateral_name but no name
+  if (!item.name && item.collateral_name) item.name = item.collateral_name;
+
   res.json({ success: true, data: item });
 });
 
@@ -68,8 +77,13 @@ const getById = catchAsync(async (req, res) => {
  * POST / — create collateral item
  */
 const create = catchAsync(async (req, res) => {
+  const body = { ...req.body };
+  // Backward compat: accept collateral_name as alias for name
+  if (!body.name && body.collateral_name) body.name = body.collateral_name;
+  delete body.collateral_name;
+
   const data = {
-    ...req.body,
+    ...body,
     entity_id: req.entityId,
     created_by: req.user._id
   };
@@ -91,8 +105,13 @@ const update = catchAsync(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Collateral not found' });
   }
 
+  const body = { ...req.body };
+  // Backward compat: accept collateral_name as alias for name
+  if (!body.name && body.collateral_name) body.name = body.collateral_name;
+  delete body.collateral_name;
+
   const blocked = ['_id', 'entity_id', 'created_at', 'created_by', 'distribution_log'];
-  for (const [key, val] of Object.entries(req.body)) {
+  for (const [key, val] of Object.entries(body)) {
     if (!blocked.includes(key)) item[key] = val;
   }
 
@@ -108,7 +127,7 @@ const update = catchAsync(async (req, res) => {
  * POST /:id/distribute — record distribution, decrement qty_on_hand
  */
 const recordDistribution = catchAsync(async (req, res) => {
-  const { qty, distributed_to, notes } = req.body;
+  const { qty, recipient, distributed_to, notes } = req.body;
 
   if (!qty || qty <= 0) {
     return res.status(400).json({ success: false, message: 'Positive qty is required' });
@@ -134,7 +153,7 @@ const recordDistribution = catchAsync(async (req, res) => {
   item.distribution_log.push({
     date: new Date(),
     qty,
-    recipient: distributed_to,
+    recipient: recipient || distributed_to,
     hospital_id: req.body.hospital_id || undefined,
     customer_id: req.body.customer_id || undefined,
     notes,
@@ -179,9 +198,9 @@ const recordReturn = catchAsync(async (req, res) => {
 
 // ═══ Export Collaterals (Excel) ═══
 const exportCollaterals = catchAsync(async (req, res) => {
-  const items = await Collateral.find({ entity_id: req.entityId }).sort({ collateral_name: 1 }).lean();
+  const items = await Collateral.find({ entity_id: req.entityId }).sort({ name: 1 }).lean();
   const rows = items.map(c => ({
-    'Name': c.collateral_name || '',
+    'Name': c.name || c.collateral_name || '',
     'Type': c.collateral_type || '',
     'Item Code': c.item_code || '',
     'Qty On Hand': c.qty_on_hand || 0,
@@ -205,14 +224,14 @@ const importCollaterals = catchAsync(async (req, res) => {
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
   let created = 0, updated = 0, errors = [];
   for (const r of rows) {
-    const collateral_name = String(r['Name'] || r.collateral_name || '').trim();
+    const name = String(r['Name'] || r.name || r.collateral_name || '').trim();
     const collateral_type = String(r['Type'] || r.collateral_type || '').trim().toUpperCase();
-    if (!collateral_name) { errors.push({ name: '(empty)', error: 'Name required' }); continue; }
+    if (!name) { errors.push({ name: '(empty)', error: 'Name required' }); continue; }
     try {
       const result = await Collateral.findOneAndUpdate(
-        { entity_id: req.entityId, collateral_name, collateral_type },
+        { entity_id: req.entityId, name, collateral_type },
         {
-          entity_id: req.entityId, collateral_name, collateral_type,
+          entity_id: req.entityId, name, collateral_type,
           item_code: String(r['Item Code'] || r.item_code || '').trim() || undefined,
           qty_on_hand: r['Qty On Hand'] != null ? Number(r['Qty On Hand']) : 0,
           unit: String(r['Unit'] || r.unit || '').trim() || undefined,
@@ -222,7 +241,7 @@ const importCollaterals = catchAsync(async (req, res) => {
       );
       if (result.createdAt && result.updatedAt && result.createdAt.getTime() === result.updatedAt.getTime()) created++;
       else updated++;
-    } catch (err) { errors.push({ name: collateral_name, error: err.message }); }
+    } catch (err) { errors.push({ name, error: err.message }); }
   }
   res.json({ success: true, message: `Import complete: ${created} created, ${updated} updated, ${errors.length} errors`, data: { created, updated, errors } });
 });

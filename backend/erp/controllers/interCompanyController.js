@@ -179,6 +179,22 @@ const approveTransfer = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: `Cannot approve transfer in ${transfer.status} status` });
   }
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const totalAmount = (transfer.line_items || []).reduce((sum, li) => sum + ((li.qty || 0) * (li.unit_cost || 0)), 0);
+  const gated = await gateApproval({
+    entityId: transfer.source_entity_id,
+    module: 'IC_TRANSFER',
+    docType: 'IC_TRANSFER',
+    docId: transfer._id,
+    docRef: transfer.transfer_ref,
+    amount: transfer.total_amount || totalAmount,
+    description: `IC transfer ${transfer.transfer_ref}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   transfer.status = 'APPROVED';
   transfer.approved_by = req.user._id;
   transfer.approved_at = new Date();
@@ -525,8 +541,9 @@ const createReassignment = catchAsync(async (req, res) => {
 });
 
 /**
- * POST /reassign/:id/approve — Finance/Admin approves or rejects
- * On APPROVED: FIFO consume from source → TRANSFER_OUT + TRANSFER_IN ledger entries
+ * POST /reassign/:id/approve — Source contractor or admin approves
+ * On APPROVED: FIFO consume from source → TRANSFER_OUT only.
+ * Status becomes AWAITING_GRN — receiving contractor must enter GRN to complete.
  */
 const approveReassignment = catchAsync(async (req, res) => {
   const { action, rejection_reason } = req.body;
@@ -562,7 +579,7 @@ const approveReassignment = catchAsync(async (req, res) => {
     return res.json({ success: true, message: 'Reassignment rejected', data: reassignment });
   }
 
-  // APPROVED — atomic transaction
+  // APPROVED — atomic transaction: TRANSFER_OUT only (source deduction)
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
@@ -583,10 +600,9 @@ const approveReassignment = catchAsync(async (req, res) => {
 
       // Phase 17: warehouse context for FIFO and ledger entries
       const srcWhId = reassignment.source_warehouse_id;
-      const tgtWhId = reassignment.target_warehouse_id;
       const fifoOpts = srcWhId ? { warehouseId: srcWhId.toString() } : undefined;
 
-      // For each line item: consume from source, create in target
+      // TRANSFER_OUT only — receiving side handled via GRN workflow
       for (const item of reassignment.line_items) {
         // Validate stock available via FIFO
         await consumeSpecificBatch(
@@ -608,25 +624,10 @@ const approveReassignment = catchAsync(async (req, res) => {
           event_id: event._id,
           recorded_by: req.user._id
         }], { session });
-
-        // TRANSFER_IN to target
-        await InventoryLedger.create([{
-          entity_id: reassignment.entity_id,
-          bdm_id: reassignment.target_bdm_id,
-          warehouse_id: tgtWhId || undefined,
-          product_id: item.product_id,
-          batch_lot_no: item.batch_lot_no,
-          expiry_date: item.expiry_date,
-          transaction_type: 'TRANSFER_IN',
-          qty_in: item.qty,
-          qty_out: 0,
-          event_id: event._id,
-          recorded_by: req.user._id
-        }], { session });
       }
 
-      // Update reassignment status
-      reassignment.status = 'APPROVED';
+      // Status → AWAITING_GRN (receiving contractor must create GRN)
+      reassignment.status = 'AWAITING_GRN';
       reassignment.reviewed_by = req.user._id;
       reassignment.reviewed_at = new Date();
       reassignment.event_id = event._id;
@@ -640,12 +641,12 @@ const approveReassignment = catchAsync(async (req, res) => {
       target_model: 'StockReassignment',
       field_changed: 'status',
       old_value: 'PENDING',
-      new_value: 'APPROVED',
+      new_value: 'AWAITING_GRN',
       changed_by: req.user._id,
-      note: `Reassignment approved: ${reassignment.line_items.length} item(s) moved`
+      note: `Reassignment approved: ${reassignment.line_items.length} item(s) deducted from source — awaiting GRN from receiver`
     });
 
-    res.json({ success: true, message: 'Reassignment approved — stock moved', data: reassignment });
+    res.json({ success: true, message: 'Reassignment approved — awaiting GRN from receiving contractor', data: reassignment });
   } finally {
     await session.endSession();
   }

@@ -436,7 +436,7 @@ function App() {
           <Route
             path="/erp/grn"
             element={
-              <ProtectedRoute allowedRoles={ROLE_SETS.ERP_FINANCE} requiredErpModule="inventory">
+              <ProtectedRoute allowedRoles={ROLE_SETS.ERP_FINANCE} requiredErpModule={["inventory", "purchasing"]}>
                 <GrnEntry />
               </ProtectedRoute>
             }
@@ -726,7 +726,7 @@ function App() {
           <Route path="/erp/rx-correlation" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="reports"><RxCorrelation /></ProtectedRoute>} />
 
           {/* Phase 15 — SAP-Equivalent Improvements */}
-          <Route path="/erp/csi-booklets" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales"><CsiBooklets /></ProtectedRoute>} />
+          <Route path="/erp/csi-booklets" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="inventory"><CsiBooklets /></ProtectedRoute>} />
           <Route path="/erp/cycle-reports" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="reports"><CycleReports /></ProtectedRoute>} />
           <Route path="/erp/cost-centers" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="accounting"><CostCenters /></ProtectedRoute>} />
           <Route path="/erp/data-archive" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="accounting"><DataArchive /></ProtectedRoute>} />
@@ -738,13 +738,13 @@ function App() {
 
           {/* Phase 19 — Petty Cash, Office Supplies & Collaterals */}
           <Route path="/erp/petty-cash" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="accounting"><PettyCash /></ProtectedRoute>} />
-          <Route path="/erp/office-supplies" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="accounting"><OfficeSupplies /></ProtectedRoute>} />
+          <Route path="/erp/office-supplies" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="inventory"><OfficeSupplies /></ProtectedRoute>} />
           <Route path="/erp/collaterals" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="inventory"><Collaterals /></ProtectedRoute>} />
 
           {/* Phase 24 — ERP Control Center + Agent Intelligence */}
           <Route path="/erp/control-center" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><ControlCenter /></ProtectedRoute>} />
           <Route path="/erp/agent-dashboard" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentDashboard /></ProtectedRoute>} />
-          <Route path="/erp/approvals" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><ApprovalManager /></ProtectedRoute>} />
+          <Route path="/erp/approvals" element={<ProtectedRoute requiredErpModule="approvals"><ApprovalManager /></ProtectedRoute>} />
           <Route path="/erp/role-assignments" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><RoleAssignmentManager /></ProtectedRoute>} />
 
           {/* Phase 32 — KPI Self-Rating & Performance Review */}
@@ -754,7 +754,7 @@ function App() {
           {/* Phase 25 — Returns, Expiry, Batch Trace */}
           <Route path="/erp/credit-notes" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales"><CreditNotes /></ProtectedRoute>} />
           <Route path="/erp/expiry-dashboard" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="inventory"><ExpiryDashboard /></ProtectedRoute>} />
-          <Route path="/erp/batch-trace" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="inventory"><BatchTrace /></ProtectedRoute>} />
+          <Route path="/erp/batch-trace" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule={["inventory", "purchasing"]}><BatchTrace /></ProtectedRoute>} />
 
           {/* Phase 28 — Sales Goals & KPI */}
           <Route path="/erp/sales-goals" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><SalesGoalDashboard /></ProtectedRoute>} />

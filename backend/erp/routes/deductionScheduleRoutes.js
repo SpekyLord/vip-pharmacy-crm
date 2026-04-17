@@ -6,6 +6,7 @@
  */
 const express = require('express');
 const { roleCheck } = require('../../middleware/roleCheck');
+const periodLockCheck = require('../middleware/periodLockCheck');
 const {
   createSchedule,
   getMySchedules,
@@ -16,17 +17,21 @@ const {
   cancelSchedule,
   earlyPayoff,
   adjustInstallment,
-  financeCreateSchedule
+  financeCreateSchedule,
+  withdrawSchedule,
+  editPendingSchedule
 } = require('../controllers/deductionScheduleController');
 
 const router = express.Router();
 
 // ═══ BDM (contractor) ═══
-router.post('/', roleCheck('contractor'), createSchedule);
+router.post('/', roleCheck('contractor'), periodLockCheck('DEDUCTION'), createSchedule);
 router.get('/my', roleCheck('contractor'), getMySchedules);
+router.post('/:id/withdraw', roleCheck('contractor'), withdrawSchedule);
+router.put('/:id', roleCheck('contractor'), periodLockCheck('DEDUCTION'), editPendingSchedule);
 
 // ═══ Finance/Admin ═══
-router.post('/finance-create', roleCheck('admin', 'finance', 'president'), financeCreateSchedule);
+router.post('/finance-create', roleCheck('admin', 'finance', 'president'), periodLockCheck('DEDUCTION'), financeCreateSchedule);
 router.get('/', roleCheck('admin', 'finance', 'president'), getScheduleList);
 router.post('/:id/approve', roleCheck('admin', 'finance', 'president'), approveSchedule);
 router.post('/:id/reject', roleCheck('admin', 'finance', 'president'), rejectSchedule);

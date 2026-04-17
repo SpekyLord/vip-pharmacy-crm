@@ -21,13 +21,19 @@ const approvalRuleSchema = new mongoose.Schema({
   },
 
   // Which module this rule applies to
+  // Includes both authority-matrix modules and Universal Approval Hub modules (Phase F.1)
   module: {
     type: String,
     required: true,
     enum: [
+      // Authority Matrix (Phase 29)
       'SALES', 'COLLECTIONS', 'EXPENSES', 'PURCHASING',
       'PAYROLL', 'INVENTORY', 'JOURNAL', 'BANKING',
       'PETTY_CASH', 'IC_TRANSFER', 'INCOME',
+      // Universal Approval Hub (Phase F / F.1) — posting & approval modules
+      'DEDUCTION_SCHEDULE', 'KPI', 'COLLECTION', 'SMER',
+      'CAR_LOGBOOK', 'PRF_CALF', 'APPROVAL_REQUEST',
+      'PERDIEM_OVERRIDE',
     ],
     index: true,
   },

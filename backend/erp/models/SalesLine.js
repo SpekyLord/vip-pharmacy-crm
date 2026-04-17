@@ -106,7 +106,8 @@ const salesLineSchema = new mongoose.Schema({
   created_by: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  }
+  },
+  edit_history: [{ type: mongoose.Schema.Types.Mixed }]
 }, {
   timestamps: true,
   collection: 'erp_sales_lines'

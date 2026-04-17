@@ -10,8 +10,7 @@
  * Sheets 4-23: W1D1 through W4D5 (20 day sheets with engagement data)
  */
 
-const XLSX = require('xlsx');
-const { safeXlsxRead } = require('./safeXlsxRead');
+const { safeExcelRead, sheetToArrays, parseExcelDateCode } = require('./safeExcelRead');
 
 const MAX_WORKBOOK_SHEETS = parseInt(process.env.IMPORT_MAX_WORKBOOK_SHEETS || '30', 10);
 const MAX_WORKSHEET_ROWS = parseInt(process.env.IMPORT_MAX_WORKSHEET_ROWS || '2000', 10);
@@ -93,7 +92,7 @@ const parseExcelDate = (val) => {
 
   // If it's a number, it's an Excel serial date
   if (typeof val === 'number') {
-    const parsed = XLSX.SSF.parse_date_code(val);
+    const parsed = parseExcelDateCode(val);
     if (parsed) {
       const month = String(parsed.m).padStart(2, '0');
       const day = String(parsed.d).padStart(2, '0');
@@ -101,7 +100,7 @@ const parseExcelDate = (val) => {
     }
   }
 
-  // If it's a Date object
+  // If it's a Date object (ExcelJS returns Date objects directly)
   if (val instanceof Date) {
     return val.toISOString().split('T')[0];
   }
@@ -152,23 +151,18 @@ const parseEngagementLevel = (val) => {
  * @param {Buffer} buffer - Excel file buffer
  * @returns {{ doctors: Array, daySheets: Array, errors: Array }}
  */
-const parseCPTWorkbook = (buffer) => {
+const parseCPTWorkbook = async (buffer) => {
   const errors = [];
 
   let workbook;
   try {
-    workbook = safeXlsxRead(buffer, {
-      type: 'buffer',
-      cellDates: false,
-      dense: true,
-      WTF: false,
-    });
+    workbook = await safeExcelRead(buffer);
   } catch (err) {
     errors.push(`Failed to read Excel file: ${err.message}`);
     return { doctors: [], daySheets: [], errors };
   }
 
-  const sheetNames = workbook.SheetNames;
+  const sheetNames = workbook.worksheets.map(ws => ws.name);
   if (sheetNames.length > MAX_WORKBOOK_SHEETS) {
     errors.push(`Workbook has too many sheets (${sheetNames.length}). Maximum allowed is ${MAX_WORKBOOK_SHEETS}.`);
     return { doctors: [], daySheets: [], errors };
@@ -179,26 +173,25 @@ const parseCPTWorkbook = (buffer) => {
     return { doctors: [], daySheets: [], errors };
   }
 
-  for (const sheetName of sheetNames) {
-    const rowCount = getSheetRowCount(workbook.Sheets[sheetName]);
-    if (rowCount > MAX_WORKSHEET_ROWS) {
-      errors.push(`Sheet "${sheetName}" has too many rows (${rowCount}). Maximum allowed is ${MAX_WORKSHEET_ROWS}.`);
+  for (const ws of workbook.worksheets) {
+    if (ws.rowCount > MAX_WORKSHEET_ROWS) {
+      errors.push(`Sheet "${ws.name}" has too many rows (${ws.rowCount}). Maximum allowed is ${MAX_WORKSHEET_ROWS}.`);
       return { doctors: [], daySheets: [], errors };
     }
   }
 
-  // Parse master CPT sheet (sheet index 2 = third sheet)
-  const doctors = parseCPTMasterSheet(workbook, sheetNames[2], errors);
+  // Parse master CPT sheet (sheet index 2 = third worksheet)
+  const doctors = parseCPTMasterSheet(workbook.worksheets[2], errors);
 
   // Parse day sheets (sheets 4-23, indices 3-22)
   const daySheets = [];
   for (let i = 0; i < 20; i++) {
     const sheetIndex = i + 3;
-    if (sheetIndex < sheetNames.length) {
+    if (sheetIndex < workbook.worksheets.length) {
       const week = Math.floor(i / 5) + 1;
       const day = (i % 5) + 1;
       const label = `W${week} D${day}`;
-      const daySheet = parseDaySheet(workbook, sheetNames[sheetIndex], i, label, errors);
+      const daySheet = parseDaySheet(workbook.worksheets[sheetIndex], i, label, errors);
       daySheets.push(daySheet);
     }
   }
@@ -210,19 +203,14 @@ const parseCPTWorkbook = (buffer) => {
  * Parse the CPT master sheet (Sheet 3).
  * Reads rows 9 through END sentinel, extracting doctor data.
  */
-const parseCPTMasterSheet = (workbook, sheetName, errors) => {
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet) {
-    errors.push(`Master sheet "${sheetName}" not found`);
+const parseCPTMasterSheet = (worksheet, errors) => {
+  if (!worksheet) {
+    errors.push('Master sheet not found');
     return [];
   }
 
   // Convert to array of arrays for easier row/column access
-  const data = XLSX.utils.sheet_to_json(sheet, {
-    header: 1,
-    defval: undefined,
-    raw: true,
-  });
+  const data = sheetToArrays(worksheet);
   const doctors = [];
 
   for (let rowIdx = CPT_DATA_START_ROW; rowIdx < Math.min(data.length, CPT_END_ROW); rowIdx++) {
@@ -311,20 +299,19 @@ const parseCPTMasterSheet = (workbook, sheetName, errors) => {
  * Parse a single day sheet (W1D1 through W4D5).
  * Reads rows 11-40 for doctor engagement data.
  */
-const parseDaySheet = (workbook, sheetName, dayIndex, label, errors) => {
-  const sheet = workbook.Sheets[sheetName];
+const parseDaySheet = (worksheet, dayIndex, label, errors) => {
   const result = {
     dayIndex,
     label,
     entries: [],
   };
 
-  if (!sheet) {
+  if (!worksheet) {
     // Day sheet may not exist if workbook has fewer sheets
     return result;
   }
 
-  const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: undefined });
+  const data = sheetToArrays(worksheet);
 
   for (let rowIdx = DAY_DATA_START_ROW; rowIdx <= Math.min(DAY_DATA_END_ROW, data.length - 1); rowIdx++) {
     const row = data[rowIdx];
@@ -350,16 +337,6 @@ const parseDaySheet = (workbook, sheetName, dayIndex, label, errors) => {
   }
 
   return result;
-};
-
-const getSheetRowCount = (sheet) => {
-  if (!sheet || !sheet['!ref']) return 0;
-  try {
-    const range = XLSX.utils.decode_range(sheet['!ref']);
-    return range.e.r - range.s.r + 1;
-  } catch {
-    return 0;
-  }
 };
 
 /**

@@ -12,7 +12,7 @@ const IncomeReport = require('../models/IncomeReport');
 const PnlReport = require('../models/PnlReport');
 const MonthlyArchive = require('../models/MonthlyArchive');
 const { catchAsync } = require('../../middleware/errorHandler');
-const { generateIncomeReport, transitionIncomeStatus } = require('../services/incomeCalc');
+const { generateIncomeReport, projectIncome, transitionIncomeStatus } = require('../services/incomeCalc');
 const {
   generatePnlReport, validateYearEndClose, executeYearEndClose, getFiscalYearStatus
 } = require('../services/pnlCalc');
@@ -34,6 +34,46 @@ const generateIncome = catchAsync(async (req, res) => {
     return res.status(403).json({ success: false, message: 'Cannot generate income report for another BDM' });
   }
   const report = await generateIncomeReport(req.entityId, bdm_id, period, cycle, req.user._id);
+  res.status(201).json({ success: true, data: report });
+});
+
+const getIncomeProjection = catchAsync(async (req, res) => {
+  const { period, cycle } = req.query;
+  if (!period || !cycle) {
+    return res.status(400).json({ success: false, message: 'period and cycle are required' });
+  }
+  const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
+  const bdmId = (canViewOther && req.query.bdm_id) ? req.query.bdm_id : req.bdmId;
+  if (!bdmId) {
+    return res.status(400).json({ success: false, message: 'bdm_id is required' });
+  }
+  const projection = await projectIncome(req.entityId, bdmId, period, cycle);
+  res.json({ success: true, data: projection });
+});
+
+const requestIncomeGeneration = catchAsync(async (req, res) => {
+  const { period, cycle } = req.body;
+  if (!period || !cycle) {
+    return res.status(400).json({ success: false, message: 'period and cycle are required' });
+  }
+  if (!req.bdmId) {
+    return res.status(400).json({ success: false, message: 'No BDM profile linked to this user' });
+  }
+
+  // Check if report already exists and is past BDM-editable status
+  const existing = await IncomeReport.findOne({
+    entity_id: req.entityId, bdm_id: req.bdmId, period, cycle
+  }).lean();
+
+  if (existing && ['BDM_CONFIRMED', 'CREDITED'].includes(existing.status)) {
+    return res.status(400).json({
+      success: false,
+      message: `Cannot regenerate \u2014 payslip is ${existing.status}. Use Income Projection to see updated numbers.`
+    });
+  }
+
+  // BDM can generate/regenerate when: no report, GENERATED, RETURNED, or REVIEWED
+  const report = await generateIncomeReport(req.entityId, req.bdmId, period, cycle, req.user._id);
   res.status(201).json({ success: true, data: report });
 });
 
@@ -458,6 +498,21 @@ const postPnl = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: `Cannot post from status ${report.status}` });
   }
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'INCOME',
+    docType: 'PNL_REPORT',
+    docId: report._id,
+    docRef: `PNL ${report.period || ''}`.trim(),
+    amount: report.net_income || 0,
+    description: `PNL report for ${report.period || 'unknown period'}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   report.status = 'POSTED';
   report.posted_at = new Date();
   report.posted_by = req.user._id;
@@ -692,7 +747,8 @@ const getFiscalYearStatusEndpoint = catchAsync(async (req, res) => {
 
 module.exports = {
   // Income
-  generateIncome, getIncomeList, getIncomeById, updateIncomeManual,
+  generateIncome, getIncomeProjection, requestIncomeGeneration,
+  getIncomeList, getIncomeById, updateIncomeManual,
   reviewIncome, returnIncome, confirmIncome, creditIncome,
   // BDM Deduction Lines
   addDeductionLine, removeDeductionLine,

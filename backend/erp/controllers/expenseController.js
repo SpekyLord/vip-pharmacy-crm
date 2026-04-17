@@ -14,7 +14,7 @@ const ErpAuditLog = require('../models/ErpAuditLog');
 const DocumentAttachment = require('../models/DocumentAttachment');
 const Settings = require('../models/Settings');
 const { catchAsync } = require('../../middleware/errorHandler');
-const { computePerdiemAmount } = require('../services/perdiemCalc');
+const { computePerdiemAmount, resolvePerdiemThresholds } = require('../services/perdiemCalc');
 // fuelTracker computations handled by CarLogbookEntry pre-save hook
 const { generateExpenseSummary } = require('../services/expenseSummary');
 const { getDailyMdCounts, getDailyVisitDetails } = require('../services/smerCrmBridge');
@@ -27,6 +27,44 @@ const { detectText } = require('../ocr/visionClient');
 const { processOcr } = require('../ocr/ocrProcessor');
 const { classifyExpense } = require('../services/expenseClassifier');
 const { uploadErpDocument } = require('../services/documentUpload');
+const { compressImage } = require('../../middleware/upload');
+
+// ═══════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════
+
+/**
+ * Load active CompProfile for a BDM user.
+ * Used by SMER endpoints to resolve per-person per diem thresholds.
+ * Returns lean CompProfile or null.
+ */
+async function loadBdmCompProfile(bdmUserId, entityId) {
+  const PeopleMaster = require('../models/PeopleMaster');
+  const CompProfile = require('../models/CompProfile');
+  const person = await PeopleMaster.findOne({ user_id: bdmUserId, entity_id: entityId }).select('_id').lean();
+  if (!person) return null;
+  return CompProfile.findOne({ person_id: person._id, entity_id: entityId, status: 'ACTIVE' }).sort({ effective_date: -1 }).lean();
+}
+
+/**
+ * Enforce "No Work" activity rules on a daily entry.
+ * When activity_type is 'NO_WORK': md_count=0, perdiem=ZERO/0, no override, no hospital.
+ */
+function enforceNoWorkRules(entry) {
+  if (entry.activity_type !== 'NO_WORK') return entry;
+  return {
+    ...entry,
+    md_count: 0,
+    perdiem_tier: 'ZERO',
+    perdiem_amount: 0,
+    perdiem_override: false,
+    override_tier: undefined,
+    override_reason: undefined,
+    hospital_id: undefined,
+    hospital_ids: [],
+    hospital_covered: undefined,
+  };
+}
 
 // ═══════════════════════════════════════════
 // SMER ENDPOINTS
@@ -36,14 +74,27 @@ const createSmer = catchAsync(async (req, res) => {
   const settings = await Settings.getSettings();
   const perdiemRate = req.body.perdiem_rate || settings.PERDIEM_RATE_DEFAULT || 800;
 
+  // Load CompProfile once — used for both revolving fund and per diem thresholds
+  const compProfile = await loadBdmCompProfile(req.bdmId, req.entityId);
+
+  // Auto-resolve travel advance from CompProfile → Settings fallback (0 or missing = use default)
+  let travelAdvance = req.body.travel_advance;
+  if (!travelAdvance || travelAdvance === 0) {
+    travelAdvance = settings.REVOLVING_FUND_AMOUNT || 8000;
+    if (compProfile?.revolving_fund_amount > 0) travelAdvance = compProfile.revolving_fund_amount;
+  }
+
   // Auto-compute per diem for each daily entry (skip overridden entries)
+  // Per diem thresholds: CompProfile per-person → Settings global fallback
   let dailyEntries = (req.body.daily_entries || []).map(entry => {
+    // "No Work" — force zero everything, skip per diem computation
+    if (entry.activity_type === 'NO_WORK') return enforceNoWorkRules(entry);
     if (entry.perdiem_override && entry.override_tier) {
       // Override set — use override_tier for amount, preserve CRM md_count
-      const { amount } = computePerdiemAmount(entry.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings);
+      const { amount } = computePerdiemAmount(entry.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile);
       return { ...entry, perdiem_tier: entry.override_tier, perdiem_amount: amount };
     }
-    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, perdiemRate, settings);
+    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, perdiemRate, settings, compProfile);
     return { ...entry, perdiem_tier: tier, perdiem_amount: amount };
   });
 
@@ -57,6 +108,7 @@ const createSmer = catchAsync(async (req, res) => {
 
   const smer = await SmerEntry.create({
     ...req.body,
+    travel_advance: travelAdvance,
     daily_entries: dailyEntries,
     perdiem_rate: perdiemRate,
     entity_id: req.entityId,
@@ -73,8 +125,10 @@ const updateSmer = catchAsync(async (req, res) => {
 
   const settings = await Settings.getSettings();
   const perdiemRate = req.body.perdiem_rate || smer.perdiem_rate;
+  const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
 
   // Re-compute per diem if daily entries changed (skip overridden entries)
+  // Per diem thresholds: CompProfile per-person → Settings global fallback
   if (req.body.daily_entries) {
     req.body.daily_entries = req.body.daily_entries.map(entry => {
       // Strip empty strings from enum fields
@@ -82,11 +136,14 @@ const updateSmer = catchAsync(async (req, res) => {
       if (!cleaned.activity_type) delete cleaned.activity_type;
       if (!cleaned.override_tier) delete cleaned.override_tier;
 
+      // "No Work" — force zero everything
+      if (cleaned.activity_type === 'NO_WORK') return enforceNoWorkRules(cleaned);
+
       if (cleaned.perdiem_override && cleaned.override_tier) {
-        const { amount } = computePerdiemAmount(cleaned.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings);
+        const { amount } = computePerdiemAmount(cleaned.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile);
         return { ...cleaned, perdiem_tier: cleaned.override_tier, perdiem_amount: amount };
       }
-      const { tier, amount } = computePerdiemAmount(cleaned.md_count || 0, perdiemRate, settings);
+      const { tier, amount } = computePerdiemAmount(cleaned.md_count || 0, perdiemRate, settings, compProfile);
       return { ...cleaned, perdiem_tier: tier, perdiem_amount: amount };
     });
   }
@@ -142,6 +199,12 @@ const validateSmer = catchAsync(async (req, res) => {
 
     for (const entry of smer.daily_entries) {
       if (!entry.entry_date) errors.push(`Day ${entry.day}: date is required`);
+      // "No Work" validation — catch data corruption or direct DB edits
+      if (entry.activity_type === 'NO_WORK') {
+        if (entry.md_count > 0) errors.push(`Day ${entry.day}: "No Work" day cannot have engagements`);
+        if (entry.perdiem_amount > 0) errors.push(`Day ${entry.day}: "No Work" day cannot have per diem`);
+        if (entry.perdiem_override) errors.push(`Day ${entry.day}: "No Work" day cannot have per diem override`);
+      }
       if (entry.md_count > 0 && !entry.activity_type && !entry.hospital_covered && !entry.perdiem_override) {
         errors.push(`Day ${entry.day}: activity type required when engagements > 0`);
       }
@@ -161,6 +224,22 @@ const validateSmer = catchAsync(async (req, res) => {
 const submitSmer = catchAsync(async (req, res) => {
   const smers = await SmerEntry.find({ ...req.tenantFilter, status: 'VALID' });
   if (!smers.length) return res.status(400).json({ success: false, message: 'No VALID SMERs to submit' });
+
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const smerTotalAmount = smers.reduce((sum, s) => sum + (s.total_reimbursable || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'EXPENSES',
+    docType: 'SMER',
+    docId: smers[0]._id,
+    docRef: smers.map(s => `SMER-${s.period}-${s.cycle}`).join(', '),
+    amount: smerTotalAmount,
+    description: `Submit ${smers.length} SMER(s) (total ₱${smerTotalAmount.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
 
   // Period lock check
   const { checkPeriodOpen } = require('../utils/periodLock');
@@ -238,13 +317,20 @@ const reopenSmer = catchAsync(async (req, res) => {
   const smers = await SmerEntry.find({ _id: { $in: smer_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!smers.length) return res.status(400).json({ success: false, message: 'No POSTED SMERs to reopen' });
 
+  const reopened = [];
+  const failed = [];
+
   for (const smer of smers) {
     // Reverse journal entries
     if (smer.event_id) {
       try {
         const jes = await JournalEntry.find({ source_event_id: smer.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: SMER reopen', req.user._id); }
-      } catch (jeErr) { console.error('JE reversal failed for SMER reopen:', smer._id, jeErr.message); }
+      } catch (jeErr) {
+        console.error('JE reversal failed for SMER reopen:', smer._id, jeErr.message);
+        failed.push({ _id: smer._id, error: `Journal reversal failed: ${jeErr.message}` });
+        continue; // Do NOT mark as DRAFT — ledger would be unbalanced
+      }
     }
 
     smer.status = 'DRAFT';
@@ -262,15 +348,21 @@ const reopenSmer = catchAsync(async (req, res) => {
       changed_by: req.user._id,
       note: `Reopened (count: ${smer.reopen_count})`
     });
+    reopened.push(smer._id);
   }
 
-  res.json({ success: true, message: `Reopened ${smers.length} SMER(s)` });
+  if (failed.length && !reopened.length) {
+    return res.status(500).json({ success: false, message: 'All SMER reopens failed due to journal reversal errors', failed });
+  }
+  res.json({ success: true, message: `Reopened ${reopened.length} SMER(s)${failed.length ? `, ${failed.length} failed` : ''}`, reopened, failed });
 });
 
 /**
  * POST /expenses/smer/:id/override-perdiem
- * Finance/Manager/President overrides per diem tier for a specific day.
- * CRM md_count stays as-is for audit. Override tier drives perdiem_amount.
+ * Request per diem tier override for a specific day.
+ * Routes through Universal Approval system — override is NOT applied until approved.
+ * Remove override (revert to CRM-computed) does NOT require approval.
+ *
  * Body: { entry_id, override_tier: 'FULL'|'HALF', override_reason: 'Meeting with President' }
  * To remove override: { entry_id, remove_override: true }
  */
@@ -288,17 +380,24 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
   const entry = smer.daily_entries.id(entry_id);
   if (!entry) return res.status(404).json({ success: false, message: 'Daily entry not found' });
 
-  const settings = await Settings.getSettings();
-  const perdiemRate = smer.perdiem_rate;
+  // Block overrides on "No Work" entries
+  if (entry.activity_type === 'NO_WORK') {
+    return res.status(400).json({ success: false, message: '"No Work" days cannot have per diem overrides' });
+  }
 
   if (remove_override) {
-    // Remove override — revert to CRM-computed tier
-    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, perdiemRate, settings);
+    // Remove override — revert to CRM-computed tier (no approval needed)
+    const settings = await Settings.getSettings();
+    const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
+    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, smer.perdiem_rate, settings, compProfile);
     entry.perdiem_override = false;
     entry.override_tier = undefined;
     entry.override_reason = undefined;
     entry.overridden_by = undefined;
     entry.overridden_at = undefined;
+    entry.override_status = undefined;
+    entry.approval_request_id = undefined;
+    entry.requested_override_tier = undefined;
     entry.perdiem_tier = tier;
     entry.perdiem_amount = amount;
 
@@ -309,37 +408,151 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
       old_value: true, new_value: false,
       changed_by: req.user._id, note: `Override removed for day ${entry.day}`
     });
-  } else {
-    // Apply override
-    if (!override_tier || !['FULL', 'HALF'].includes(override_tier)) {
-      return res.status(400).json({ success: false, message: 'override_tier must be FULL or HALF' });
-    }
-    if (!override_reason) {
-      return res.status(400).json({ success: false, message: 'override_reason is required' });
-    }
+    await smer.save();
+    return res.json({ success: true, data: smer });
+  }
 
-    const { amount } = computePerdiemAmount(override_tier === 'FULL' ? 999 : 3, perdiemRate, settings);
-    const oldTier = entry.perdiem_tier;
+  // Validate override request
+  if (!override_tier || !['FULL', 'HALF'].includes(override_tier)) {
+    return res.status(400).json({ success: false, message: 'override_tier must be FULL or HALF' });
+  }
+  if (!override_reason) {
+    return res.status(400).json({ success: false, message: 'override_reason is required' });
+  }
 
-    entry.perdiem_override = true;
-    entry.override_tier = override_tier;
+  // Route through approval system
+  // Per diem overrides ALWAYS require approval (bypasses authority matrix setting)
+  // — except for management roles who can self-approve
+  const ApprovalRequest = require('../models/ApprovalRequest');
+  const docRef = `${smer.period}-${smer.cycle}-Day${entry.day}`;
+  const settings = await Settings.getSettings();
+  const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
+  const { amount: overrideAmount } = computePerdiemAmount(override_tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile);
+
+  const isManagement = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN, ROLES.FINANCE].includes(req.user.role);
+
+  if (!isManagement) {
+    // BDMs/contractors: always create approval request — president must approve
+    const approvalReq = await ApprovalRequest.create({
+      entity_id: smer.entity_id,
+      module: 'PERDIEM_OVERRIDE',
+      doc_type: 'SMER_DAILY_ENTRY',
+      doc_id: smer._id,
+      doc_ref: docRef,
+      amount: overrideAmount,
+      description: `Per diem override Day ${entry.day}: ${entry.perdiem_tier} → ${override_tier} (${override_reason}). Entry ID: ${entry_id}`,
+      metadata: { entry_id, override_tier, override_reason },
+      requested_by: req.user._id,
+      requested_at: new Date(),
+      status: 'PENDING',
+    });
+
+    // Save pending state on the daily entry so frontend can show status
+    entry.override_status = 'PENDING';
+    entry.requested_override_tier = override_tier;
     entry.override_reason = override_reason;
-    entry.overridden_by = req.user._id;
-    entry.overridden_at = new Date();
-    entry.perdiem_tier = override_tier;
-    entry.perdiem_amount = amount;
+    entry.approval_request_id = approvalReq._id;
+    await smer.save();
 
-    await ErpAuditLog.logChange({
-      entity_id: smer.entity_id, bdm_id: smer.bdm_id,
-      log_type: 'ITEM_CHANGE', target_ref: smer._id.toString(), target_model: 'SmerEntry',
-      field_changed: `daily_entries.${entry.day}.perdiem_tier`,
-      old_value: `${oldTier} (md_count: ${entry.md_count})`, new_value: `${override_tier} (override: ${override_reason})`,
-      changed_by: req.user._id, note: `Per diem override day ${entry.day}: ${oldTier} → ${override_tier} — ${override_reason}`
+    return res.status(202).json({
+      success: false,
+      approval_pending: true,
+      message: 'Per diem override requires approval. Request submitted.',
+      request: approvalReq,
+      data: smer,
     });
   }
 
-  await smer.save();  // pre-save recomputes totals
+  // Management: apply override directly (self-approve)
+  const oldTier = entry.perdiem_tier;
+  entry.perdiem_override = true;
+  entry.override_tier = override_tier;
+  entry.override_reason = override_reason;
+  entry.overridden_by = req.user._id;
+  entry.overridden_at = new Date();
+  entry.perdiem_tier = override_tier;
+  entry.perdiem_amount = overrideAmount;
+
+  await ErpAuditLog.logChange({
+    entity_id: smer.entity_id, bdm_id: smer.bdm_id,
+    log_type: 'ITEM_CHANGE', target_ref: smer._id.toString(), target_model: 'SmerEntry',
+    field_changed: `daily_entries.${entry.day}.perdiem_tier`,
+    old_value: `${oldTier} (md_count: ${entry.md_count})`, new_value: `${override_tier} (override: ${override_reason})`,
+    changed_by: req.user._id, note: `Per diem override day ${entry.day}: ${oldTier} → ${override_tier} — ${override_reason}`
+  });
+
+  await smer.save();
   res.json({ success: true, data: smer });
+});
+
+/**
+ * POST /expenses/smer/:id/apply-override
+ * Apply a per diem override AFTER it has been approved in the Universal Approval Hub.
+ * Called by the frontend when the approval request status is APPROVED.
+ * Body: { entry_id, approval_request_id }
+ */
+const applyPerdiemOverride = catchAsync(async (req, res) => {
+  const { entry_id, approval_request_id } = req.body;
+  if (!entry_id || !approval_request_id) {
+    return res.status(400).json({ success: false, message: 'entry_id and approval_request_id are required' });
+  }
+
+  // Verify approval is APPROVED
+  const ApprovalRequest = require('../models/ApprovalRequest');
+  const approvalReq = await ApprovalRequest.findOne({
+    _id: approval_request_id,
+    module: 'PERDIEM_OVERRIDE',
+    status: 'APPROVED',
+  }).lean();
+  if (!approvalReq) {
+    return res.status(403).json({ success: false, message: 'No approved override request found. Approval must be granted first.' });
+  }
+
+  const smer = await SmerEntry.findOne({
+    _id: req.params.id,
+    ...req.tenantFilter,
+    status: { $in: ['DRAFT', 'ERROR'] }
+  });
+  if (!smer) return res.status(404).json({ success: false, message: 'SMER not found or not editable' });
+
+  const entry = smer.daily_entries.id(entry_id);
+  if (!entry) return res.status(404).json({ success: false, message: 'Daily entry not found' });
+
+  // Parse override details from the approval description
+  // Description format: "Per diem override Day N: OLD → NEW (reason). Entry ID: xxx"
+  const descMatch = approvalReq.description?.match(/→ (FULL|HALF) \((.+?)\)\./);
+  const override_tier = descMatch?.[1];
+  const override_reason = descMatch?.[2] || 'Approved override';
+
+  if (!override_tier) {
+    return res.status(400).json({ success: false, message: 'Could not parse override tier from approval request' });
+  }
+
+  const settings = await Settings.getSettings();
+  const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
+  const { amount } = computePerdiemAmount(override_tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile);
+  const oldTier = entry.perdiem_tier;
+
+  entry.perdiem_override = true;
+  entry.override_tier = override_tier;
+  entry.override_reason = `${override_reason} (Approval #${approval_request_id})`;
+  entry.overridden_by = approvalReq.decided_by || req.user._id;
+  entry.overridden_at = new Date();
+  entry.perdiem_tier = override_tier;
+  entry.perdiem_amount = amount;
+
+  await ErpAuditLog.logChange({
+    entity_id: smer.entity_id, bdm_id: smer.bdm_id,
+    log_type: 'ITEM_CHANGE', target_ref: smer._id.toString(), target_model: 'SmerEntry',
+    field_changed: `daily_entries.${entry.day}.perdiem_tier`,
+    old_value: `${oldTier} (md_count: ${entry.md_count})`,
+    new_value: `${override_tier} (approved override: ${override_reason})`,
+    changed_by: req.user._id,
+    note: `Per diem override day ${entry.day}: ${oldTier} → ${override_tier} — approved via request #${approval_request_id}`
+  });
+
+  await smer.save();
+  res.json({ success: true, data: smer, message: 'Approved override applied successfully' });
 });
 
 // ═══════════════════════════════════════════
@@ -478,6 +691,22 @@ const submitCarLogbook = catchAsync(async (req, res) => {
   const entries = await CarLogbookEntry.find({ ...req.tenantFilter, status: 'VALID' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No VALID logbook entries to submit' });
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const logbookTotal = entries.reduce((sum, e) => sum + (e.total_fuel_amount || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'EXPENSES',
+    docType: 'CAR_LOGBOOK',
+    docId: entries[0]._id,
+    docRef: entries.map(e => `LOGBOOK-${e.period}`).join(', '),
+    amount: logbookTotal,
+    description: `Submit ${entries.length} car logbook entr${entries.length === 1 ? 'y' : 'ies'} (total ₱${logbookTotal.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   // Period lock check
   const { checkPeriodOpen } = require('../utils/periodLock');
   for (const entry of entries) { await checkPeriodOpen(entry.entity_id, entry.period); }
@@ -581,13 +810,20 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
   const entries = await CarLogbookEntry.find({ _id: { $in: logbook_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No POSTED logbooks to reopen' });
 
+  const reopened = [];
+  const failed = [];
+
   for (const entry of entries) {
-    // Reverse journal entries
+    // Reverse journal entries — if reversal fails, skip (keep POSTED, ledger stays balanced)
     if (entry.event_id) {
       try {
         const jes = await JournalEntry.find({ source_event_id: entry.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: CarLogbook reopen', req.user._id); }
-      } catch (jeErr) { console.error('JE reversal failed for logbook reopen:', entry._id, jeErr.message); }
+      } catch (jeErr) {
+        console.error('JE reversal failed for logbook reopen:', entry._id, jeErr.message);
+        failed.push({ _id: entry._id, error: `Journal reversal failed: ${jeErr.message}` });
+        continue;
+      }
     }
 
     entry.status = 'DRAFT';
@@ -605,9 +841,13 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
       changed_by: req.user._id,
       note: `Reopened (count: ${entry.reopen_count})`
     });
+    reopened.push(entry._id);
   }
 
-  res.json({ success: true, message: `Reopened ${entries.length} logbook(s)` });
+  if (failed.length && !reopened.length) {
+    return res.status(500).json({ success: false, message: 'All logbook reopens failed due to journal reversal errors', failed });
+  }
+  res.json({ success: true, message: `Reopened ${reopened.length} logbook(s)${failed.length ? `, ${failed.length} failed` : ''}`, reopened, failed });
 });
 
 // ═══════════════════════════════════════════
@@ -678,6 +918,31 @@ async function autoCalfForSource(sourceDoc, sourceType) {
 // EXPENSE ENTRY (ORE/ACCESS) ENDPOINTS
 // ═══════════════════════════════════════════
 
+// Auto-classify expense lines that have no coa_code or are still '6900' (Misc)
+async function autoClassifyLines(lines, entityId) {
+  if (!lines || !lines.length) return;
+  for (const line of lines) {
+    if (!line.coa_code || line.coa_code === '6900') {
+      if (line.establishment) {
+        try {
+          const result = await classifyExpense(
+            { supplier_name: { value: line.establishment } },
+            { entityId }
+          );
+          if (result.coa_code && result.coa_code !== '6900') {
+            line.coa_code = result.coa_code;
+            if (!line.expense_category) line.expense_category = result.expense_category;
+            if (result.vendor_id) line.vendor_id = result.vendor_id;
+          }
+        } catch (err) {
+          // Non-blocking — leave coa_code as-is for manual correction
+          console.warn(`[autoClassify] Line "${line.establishment}" failed:`, err.message);
+        }
+      }
+    }
+  }
+}
+
 const createExpense = catchAsync(async (req, res) => {
   // Block future expense dates at save time (not just validation)
   const now = new Date();
@@ -690,6 +955,9 @@ const createExpense = catchAsync(async (req, res) => {
       });
     }
   }
+
+  // Auto-classify lines without coa_code before saving
+  await autoClassifyLines(req.body.lines, req.entityId);
 
   const entry = await ExpenseEntry.create({
     ...req.body,
@@ -718,6 +986,9 @@ const updateExpense = catchAsync(async (req, res) => {
       });
     }
   }
+
+  // Auto-classify lines without coa_code before saving
+  await autoClassifyLines(req.body.lines, req.entityId);
 
   Object.assign(entry, req.body);
   await entry.save();
@@ -783,9 +1054,9 @@ const validateExpenses = catchAsync(async (req, res) => {
         errors.push(`WARNING: Line ${i + 1}: OR# ${line.or_number} provided without receipt photo — attach photo for audit trail`);
       }
 
-      // COA mapping warning: lines falling through to 6900 Miscellaneous should be flagged
+      // #17 Hardening: BLOCK posting with coa_code=6900 (Misc) — must map to correct account
       if (!line.coa_code || line.coa_code === '6900') {
-        errors.push(`Line ${i + 1}: COA code missing or defaulted to Miscellaneous (6900). Map "${line.establishment || 'unknown'}" to correct account.`);
+        errors.push(`BLOCKED — Line ${i + 1}: COA code missing or defaulted to Miscellaneous (6900). Map "${line.establishment || 'unknown'}" to correct account before posting.`);
       }
 
       // CALF gate: ACCESS with non-cash requires CALF to be linked AND POSTED
@@ -816,9 +1087,39 @@ const submitExpenses = catchAsync(async (req, res) => {
   const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: 'VALID' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No VALID expenses to submit' });
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const expTotalAmount = entries.reduce((sum, e) => sum + (e.total_amount || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'EXPENSES',
+    docType: 'EXPENSE_ENTRY',
+    docId: entries[0]._id,
+    docRef: entries.map(e => `EXP-${e.period}-${e.cycle}`).join(', '),
+    amount: expTotalAmount,
+    description: `Submit ${entries.length} expense entr${entries.length === 1 ? 'y' : 'ies'} (total ₱${expTotalAmount.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   // Period lock check
   const { checkPeriodOpen } = require('../utils/periodLock');
   for (const entry of entries) { await checkPeriodOpen(entry.entity_id, entry.period); }
+
+  // #17 Hardening: hard gate — reject any VALID entry that still has 6900 COA (shouldn't happen, belt-and-suspenders)
+  for (const entry of entries) {
+    const miscLines = (entry.lines || []).filter(l => !l.coa_code || l.coa_code === '6900');
+    if (miscLines.length) {
+      entry.status = 'ERROR';
+      entry.validation_errors = [`BLOCKED — ${miscLines.length} line(s) still mapped to Miscellaneous (6900). Assign correct COA codes.`];
+      await entry.save();
+      return res.status(400).json({
+        success: false,
+        message: `Cannot post: ${miscLines.length} expense line(s) still mapped to Miscellaneous (6900). Map to correct COA accounts first.`
+      });
+    }
+  }
 
   // Pre-submit gate: verify all linked CALFs are POSTED
   for (const entry of entries) {
@@ -886,7 +1187,7 @@ const submitExpenses = catchAsync(async (req, res) => {
         lines.push({ account_code: drCode, account_name: drName, debit: amt, credit: 0, description: line.establishment || desc });
         if (line.expense_type === 'ACCESS') {
           creditAccess += amt;
-          if (!accessCoa) accessCoa = await resolveFundingCoa(line);
+          if (!accessCoa) accessCoa = await resolveFundingCoa(line, expCoaMap.AP_TRADE || '2000');
         } else {
           creditOre += amt;
         }
@@ -928,13 +1229,20 @@ const reopenExpenses = catchAsync(async (req, res) => {
   const entries = await ExpenseEntry.find({ _id: { $in: expense_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No POSTED expenses to reopen' });
 
+  const reopened = [];
+  const failed = [];
+
   for (const entry of entries) {
-    // Reverse journal entries
+    // Reverse journal entries — if reversal fails, skip this entry (keep POSTED, ledger stays balanced)
     if (entry.event_id) {
       try {
         const jes = await JournalEntry.find({ source_event_id: entry.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: Expense reopen', req.user._id); }
-      } catch (jeErr) { console.error('JE reversal failed for expense reopen:', entry._id, jeErr.message); }
+      } catch (jeErr) {
+        console.error('JE reversal failed for expense reopen:', entry._id, jeErr.message);
+        failed.push({ _id: entry._id, error: `Journal reversal failed: ${jeErr.message}` });
+        continue; // Do NOT mark as DRAFT — ledger would be unbalanced
+      }
     }
 
     entry.status = 'DRAFT';
@@ -952,9 +1260,13 @@ const reopenExpenses = catchAsync(async (req, res) => {
       changed_by: req.user._id,
       note: `Reopened (count: ${entry.reopen_count})`
     });
+    reopened.push(entry._id);
   }
 
-  res.json({ success: true, message: `Reopened ${entries.length} expense(s)` });
+  if (failed.length && !reopened.length) {
+    return res.status(500).json({ success: false, message: 'All expense reopens failed due to journal reversal errors', failed });
+  }
+  res.json({ success: true, message: `Reopened ${reopened.length} expense(s)${failed.length ? `, ${failed.length} failed` : ''}`, reopened, failed });
 });
 
 // ═══════════════════════════════════════════
@@ -973,6 +1285,33 @@ const createPrfCalf = catchAsync(async (req, res) => {
       success: false,
       message: 'CALF must be linked to an expense entry. Use "Create CALF" from pending company-funded items.'
     });
+  }
+
+  // #13 Hardening: Validate linked_expense_line_ids actually belong to the linked expense/logbook
+  if (req.body.doc_type === 'CALF' && req.body.linked_expense_id && req.body.linked_expense_line_ids?.length) {
+    const expense = await ExpenseEntry.findById(req.body.linked_expense_id).lean();
+    if (expense) {
+      const validLineIds = new Set(expense.lines.map(l => l._id.toString()));
+      const invalid = req.body.linked_expense_line_ids.filter(lid => !validLineIds.has(lid.toString()));
+      if (invalid.length) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid linked_expense_line_ids: ${invalid.length} line(s) do not belong to the linked expense entry.`
+        });
+      }
+    } else {
+      const logbook = await CarLogbookEntry.findById(req.body.linked_expense_id).lean();
+      if (logbook) {
+        const validFuelIds = new Set((logbook.fuel_entries || []).map(f => f._id.toString()));
+        const invalid = req.body.linked_expense_line_ids.filter(lid => !validFuelIds.has(lid.toString()));
+        if (invalid.length) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid linked_expense_line_ids: ${invalid.length} fuel entry(s) do not belong to the linked logbook.`
+          });
+        }
+      }
+    }
   }
 
   const doc = await PrfCalf.create({
@@ -1179,6 +1518,25 @@ const validatePrfCalf = catchAsync(async (req, res) => {
       // CALF: advance amount and linked expense required
       if (!doc.advance_amount || doc.advance_amount <= 0) errors.push('Advance amount is required');
       if (!doc.linked_expense_id) errors.push('CALF must be linked to an expense entry');
+
+      // #13 Hardening: Validate linked_expense_line_ids belong to the linked expense/logbook
+      if (doc.linked_expense_id && doc.linked_expense_line_ids?.length) {
+        const srcExpense = await ExpenseEntry.findById(doc.linked_expense_id).lean();
+        if (srcExpense) {
+          const validIds = new Set(srcExpense.lines.map(l => l._id.toString()));
+          const orphaned = doc.linked_expense_line_ids.filter(lid => !validIds.has(lid.toString()));
+          if (orphaned.length) errors.push(`${orphaned.length} linked line(s) do not belong to the linked expense entry`);
+        } else {
+          const srcLogbook = await CarLogbookEntry.findById(doc.linked_expense_id).lean();
+          if (srcLogbook) {
+            const validIds = new Set((srcLogbook.fuel_entries || []).map(f => f._id.toString()));
+            const orphaned = doc.linked_expense_line_ids.filter(lid => !validIds.has(lid.toString()));
+            if (orphaned.length) errors.push(`${orphaned.length} linked fuel entry(s) do not belong to the linked logbook`);
+          } else {
+            errors.push('Linked expense/logbook entry not found');
+          }
+        }
+      }
     }
 
     doc.validation_errors = errors;
@@ -1196,6 +1554,22 @@ const validatePrfCalf = catchAsync(async (req, res) => {
 const submitPrfCalf = catchAsync(async (req, res) => {
   const docs = await PrfCalf.find({ ...req.tenantFilter, status: 'VALID' });
   if (!docs.length) return res.status(400).json({ success: false, message: 'No VALID PRF/CALFs to submit' });
+
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const prfCalfTotal = docs.reduce((sum, d) => sum + (d.amount || 0), 0);
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'EXPENSES',
+    docType: 'PRF_CALF',
+    docId: docs[0]._id,
+    docRef: docs.map(d => d.prf_number || d.calf_number || d.doc_type).join(', '),
+    amount: prfCalfTotal,
+    description: `Submit ${docs.length} PRF/CALF doc${docs.length === 1 ? '' : 's'} (total ₱${prfCalfTotal.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
 
   // Period lock check
   const { checkPeriodOpen } = require('../utils/periodLock');
@@ -1287,6 +1661,8 @@ const submitPrfCalf = catchAsync(async (req, res) => {
   }
 
   // ── Auto-validate+submit linked expenses/carlogbooks when CALF is posted ──
+  // Uses MongoDB transaction so source + event are atomic; if anything fails,
+  // both the source status and the TransactionEvent roll back together.
   const autoResults = [];
   for (const doc of docs) {
     if (doc.doc_type !== 'CALF' || !doc.linked_expense_id) continue;
@@ -1323,73 +1699,82 @@ const submitPrfCalf = catchAsync(async (req, res) => {
         continue;
       }
 
-      // Submit (create event + journal)
-      source.status = 'POSTED';
-      source.posted_at = new Date();
-      source.posted_by = req.user._id;
-      source.validation_errors = [];
-
-      const event = await TransactionEvent.create({
-        entity_id: source.entity_id,
-        bdm_id: source.bdm_id,
-        event_type: sourceType === 'EXPENSE' ? 'EXPENSE' : 'CAR_LOGBOOK',
-        event_date: new Date(),
-        document_ref: sourceType === 'EXPENSE'
-          ? `EXP-${source.period}-${source.cycle}`
-          : `LOGBOOK-${source.period}-${source.entry_date?.toISOString().split('T')[0] || ''}`,
-        status: 'ACTIVE',
-        created_by: req.user._id
-      });
-      source.event_id = event._id;
-      await source.save();
-
-      // Auto-journal (non-blocking)
+      // Submit inside a transaction — atomic: if JE creation fails, source stays un-posted
+      const autoSession = await mongoose.startSession();
       try {
-        const reopenCoaMap = await getCoaMap();
-        if (sourceType === 'EXPENSE') {
-          const lines = [];
-          let totalOre = 0, totalAccess = 0;
-          const desc = `EXP-${source.period}-${source.cycle}`;
-          for (const line of source.lines) {
-            lines.push({ account_code: line.coa_code || reopenCoaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
-            if (line.expense_type === 'ORE') totalOre += line.amount || 0;
-            else totalAccess += line.amount || 0;
-          }
-          if (totalOre > 0) lines.push({ account_code: reopenCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
-          if (totalAccess > 0) {
-            const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source);
-            lines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
-          }
-          if (lines.length >= 2) {
-            await createAndPostJournal(source.entity_id, {
-              je_date: source.posted_at, period: source.period,
-              description: `Expenses: ${desc}`, source_module: 'EXPENSE',
-              source_event_id: source.event_id, source_doc_ref: desc, lines,
-              bir_flag: source.bir_flag || 'BOTH', vat_flag: 'N/A',
-              bdm_id: source.bdm_id, created_by: req.user._id
-            });
-          }
-        } else {
-          // CarLogbook journal — DR 6200, CR funding
-          const fuelTotal = source.official_gas_amount || source.total_fuel_amount || 0;
-          if (fuelTotal > 0) {
-            const funding = await resolveFundingCoa(source.fuel_entries?.[0] || source);
-            await createAndPostJournal(source.entity_id, {
-              je_date: source.posted_at, period: source.period,
-              description: `Car Logbook: ${source.period}`, source_module: 'EXPENSE',
-              source_event_id: source.event_id, source_doc_ref: `LOGBOOK-${source.period}`,
-              lines: [
-                { account_code: calfCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
-                { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}` }
-              ],
-              bir_flag: 'BOTH', vat_flag: 'N/A',
-              bdm_id: source.bdm_id, created_by: req.user._id
-            });
-          }
-        }
-      } catch (jeErr) { console.error('Auto-journal failed for auto-submitted source:', source._id, jeErr.message); }
+        await autoSession.withTransaction(async () => {
+          source.status = 'POSTED';
+          source.posted_at = new Date();
+          source.posted_by = req.user._id;
+          source.validation_errors = [];
 
-      autoResults.push({ source_id: source._id, type: sourceType, status: 'POSTED' });
+          const event = await TransactionEvent.create([{
+            entity_id: source.entity_id,
+            bdm_id: source.bdm_id,
+            event_type: sourceType === 'EXPENSE' ? 'EXPENSE' : 'CAR_LOGBOOK',
+            event_date: new Date(),
+            document_ref: sourceType === 'EXPENSE'
+              ? `EXP-${source.period}-${source.cycle}`
+              : `LOGBOOK-${source.period}-${source.entry_date?.toISOString().split('T')[0] || ''}`,
+            status: 'ACTIVE',
+            created_by: req.user._id
+          }], { session: autoSession });
+          source.event_id = event[0]._id;
+          await source.save({ session: autoSession });
+
+          // Auto-journal inside the same transaction — ensures POSTED ↔ JE consistency
+          const autoCoaMap = await getCoaMap();
+          if (sourceType === 'EXPENSE') {
+            const lines = [];
+            let totalOre = 0, totalAccess = 0;
+            const desc = `EXP-${source.period}-${source.cycle}`;
+            for (const line of source.lines) {
+              lines.push({ account_code: line.coa_code || autoCoaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
+              if (line.expense_type === 'ORE') totalOre += line.amount || 0;
+              else totalAccess += line.amount || 0;
+            }
+            if (totalOre > 0) lines.push({ account_code: autoCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
+            if (totalAccess > 0) {
+              const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source, autoCoaMap.AP_TRADE);
+              lines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
+            }
+            if (lines.length >= 2) {
+              await createAndPostJournal(source.entity_id, {
+                je_date: source.posted_at, period: source.period,
+                description: `Expenses: ${desc}`, source_module: 'EXPENSE',
+                source_event_id: source.event_id, source_doc_ref: desc, lines,
+                bir_flag: source.bir_flag || 'BOTH', vat_flag: 'N/A',
+                bdm_id: source.bdm_id, created_by: req.user._id
+              }, { session: autoSession });
+            }
+          } else {
+            // CarLogbook journal — DR 6200, CR funding
+            const fuelTotal = source.official_gas_amount || source.total_fuel_amount || 0;
+            if (fuelTotal > 0) {
+              const funding = await resolveFundingCoa(source.fuel_entries?.[0] || source);
+              await createAndPostJournal(source.entity_id, {
+                je_date: source.posted_at, period: source.period,
+                description: `Car Logbook: ${source.period}`, source_module: 'EXPENSE',
+                source_event_id: source.event_id, source_doc_ref: `LOGBOOK-${source.period}`,
+                lines: [
+                  { account_code: calfCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
+                  { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}` }
+                ],
+                bir_flag: 'BOTH', vat_flag: 'N/A',
+                bdm_id: source.bdm_id, created_by: req.user._id
+              }, { session: autoSession });
+            }
+          }
+        });
+
+        autoResults.push({ source_id: source._id, type: sourceType, status: 'POSTED' });
+      } catch (txErr) {
+        // Transaction rolled back — source stays in its previous status, no orphaned events/JEs
+        console.error('Auto-submit linked source transaction failed:', doc.linked_expense_id, txErr.message);
+        autoResults.push({ source_id: doc.linked_expense_id, type: sourceType, status: 'FAILED', error: txErr.message });
+      } finally {
+        autoSession.endSession();
+      }
     } catch (err) {
       console.error('Auto-submit linked source failed:', doc.linked_expense_id, err.message);
       autoResults.push({ source_id: doc.linked_expense_id, type: 'UNKNOWN', status: 'FAILED', error: err.message });
@@ -1404,13 +1789,20 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
   const docs = await PrfCalf.find({ _id: { $in: prf_calf_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!docs.length) return res.status(400).json({ success: false, message: 'No POSTED PRF/CALFs to reopen' });
 
+  const reopenedDocs = [];
+  const failedDocs = [];
+
   for (const doc of docs) {
-    // Reverse journal entries
+    // Reverse journal entries — if reversal fails, skip (keep POSTED, ledger stays balanced)
     if (doc.event_id) {
       try {
         const jes = await JournalEntry.find({ source_event_id: doc.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, `Auto-reversal: ${doc.doc_type} reopen`, req.user._id); }
-      } catch (jeErr) { console.error('JE reversal failed for PRF/CALF reopen:', doc._id, jeErr.message); }
+      } catch (jeErr) {
+        console.error('JE reversal failed for PRF/CALF reopen:', doc._id, jeErr.message);
+        failedDocs.push({ _id: doc._id, error: `Journal reversal failed: ${jeErr.message}` });
+        continue; // Do NOT mark as DRAFT — ledger would be unbalanced
+      }
     }
 
     doc.status = 'DRAFT';
@@ -1418,6 +1810,7 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
     doc.posted_at = undefined;
     doc.posted_by = undefined;
     await doc.save();
+    reopenedDocs.push(doc);
 
     await ErpAuditLog.logChange({
       entity_id: doc.entity_id,
@@ -1435,7 +1828,7 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
         let source = await ExpenseEntry.findById(doc.linked_expense_id);
         if (!source) source = await CarLogbookEntry.findById(doc.linked_expense_id);
         if (source && source.status === 'POSTED') {
-          // Reverse source JEs
+          // Reverse source JEs — if this fails, source stays POSTED (acceptable: CALF already reopened)
           if (source.event_id) {
             const jes = await JournalEntry.find({ source_event_id: source.event_id, status: 'POSTED', is_reversal: { $ne: true } });
             for (const je of jes) { await reverseJournal(je._id, `Auto-reversal: linked CALF reopen`, req.user._id); }
@@ -1451,11 +1844,14 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
   }
 
   // Return linked expense IDs for frontend navigation
-  const linkedSources = docs
+  const linkedSources = reopenedDocs
     .filter(d => d.doc_type === 'CALF' && d.linked_expense_id)
     .map(d => ({ calf_id: d._id, linked_expense_id: d.linked_expense_id }));
 
-  res.json({ success: true, message: `Reopened ${docs.length} PRF/CALF(s)`, linked_sources: linkedSources });
+  if (failedDocs.length && !reopenedDocs.length) {
+    return res.status(500).json({ success: false, message: 'All PRF/CALF reopens failed due to journal reversal errors', failed: failedDocs });
+  }
+  res.json({ success: true, message: `Reopened ${reopenedDocs.length} PRF/CALF(s)${failedDocs.length ? `, ${failedDocs.length} failed` : ''}`, linked_sources: linkedSources, failed: failedDocs.length ? failedDocs : undefined });
 });
 
 // ═══════════════════════════════════════════
@@ -1500,6 +1896,7 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
 
   const settings = await Settings.getSettings();
   const perdiemRate = settings.PERDIEM_RATE_DEFAULT || 800;
+  const compProfile = await loadBdmCompProfile(bdmUserId, req.entityId);
 
   // Build daily entries with CRM data
   const DAYS_OF_WEEK = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -1512,7 +1909,7 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
 
     const dateKey = date.toISOString().split('T')[0];
     const crmData = dailyCounts[dateKey] || { md_count: 0, unique_doctors: 0 };
-    const { tier, amount } = computePerdiemAmount(crmData.md_count, perdiemRate, settings);
+    const { tier, amount } = computePerdiemAmount(crmData.md_count, perdiemRate, settings, compProfile);
 
     entries.push({
       day,
@@ -1750,8 +2147,6 @@ const getPendingCalfLines = catchAsync(async (req, res) => {
 // BATCH UPLOAD (President / Admin only)
 // ═══════════════════════════════════════════
 
-const ASSORTED_THRESHOLD = 3; // receipts with 3+ line items → "Assorted Items"
-
 /**
  * Process multiple OR images via OCR + classify each → return preview lines (NOT saved).
  * Expects multipart: photos[] (up to 20), bir_flag, assigned_to, period, cycle
@@ -1761,6 +2156,10 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'At least one photo is required.' });
   }
 
+  // Read ASSORTED_THRESHOLD from Settings (admin-configurable, default 3)
+  const settings = await Settings.getSettings();
+  const ASSORTED_THRESHOLD = settings.ASSORTED_THRESHOLD ?? 3;
+
   const { bir_flag = 'BOTH', assigned_to, period, cycle, category_override, payment_mode: batchPaymentMode, funding_card_id, funding_account_id, cost_center_id } = req.body;
   const lines = [];
   const errors = [];
@@ -1768,13 +2167,16 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
   for (let i = 0; i < req.files.length; i++) {
     const file = req.files[i];
     try {
-      // 1. Upload to S3
+      // 1. Compress before S3 upload (saves storage), OCR uses original for best quality
+      const { buffer: compressedBuffer, mimetype: compressedMime } = await compressImage(
+        file.buffer, file.mimetype, { maxDim: 1920, quality: 80 }
+      );
       const uploadResult = await uploadErpDocument(
-        file.buffer, file.originalname,
-        req.user?.name, period, cycle, 'OR', file.mimetype
+        compressedBuffer, file.originalname,
+        req.user?.name, period, cycle, 'OR', compressedMime
       );
 
-      // 2. OCR
+      // 2. OCR (uses original buffer for best quality)
       const ocrResult = await detectText(file.buffer);
       const processed = await processOcr('OR', ocrResult, {});
 
@@ -1782,7 +2184,9 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
       const classification = processed.classification || await classifyExpense(processed.extracted || {});
 
       // 4. Create DocumentAttachment
+      // #19 Hardening: surface attachment creation errors instead of swallowing silently
       let attachmentId = null;
+      let attachmentWarning = null;
       try {
         const att = await DocumentAttachment.create({
           entity_id: req.entityId,
@@ -1797,6 +2201,8 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
         attachmentId = att._id;
       } catch (err) {
         console.error('DocumentAttachment creation failed:', err.message);
+        attachmentWarning = `Attachment record failed for "${file.originalname}": ${err.message}. S3 file uploaded but not tracked — re-upload or create attachment manually.`;
+        errors.push({ index: i, filename: file.originalname, error: attachmentWarning, type: 'ATTACHMENT_FAILED' });
       }
 
       const ext = processed.extracted || {};
@@ -1835,7 +2241,8 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
         is_assorted: isAssorted,
         _classification: classification,
         _ocr_confidence: processed.confidence || null,
-        _original_filename: file.originalname
+        _original_filename: file.originalname,
+        _attachment_warning: attachmentWarning || null
       });
     } catch (err) {
       console.error(`Batch OCR failed for image ${i}:`, err.message);
@@ -1854,7 +2261,8 @@ const batchUploadExpenses = catchAsync(async (req, res) => {
       summary: {
         total_images: req.files.length,
         processed: lines.length,
-        failed: errors.length,
+        failed: errors.filter(e => e.type !== 'ATTACHMENT_FAILED').length,
+        attachment_failures: errors.filter(e => e.type === 'ATTACHMENT_FAILED').length,
         assorted_count: assortedCount,
         total_amount: Math.round(totalAmount * 100) / 100
       }
@@ -1904,7 +2312,7 @@ const saveBatchExpenses = catchAsync(async (req, res) => {
   const entry = await ExpenseEntry.create({
     entity_id: req.entityId,
     bdm_id: bdmId,
-    recorded_on_behalf_of: isOnBehalf ? req.user._id : undefined,
+    recorded_on_behalf_of: isOnBehalf ? bdmId : undefined,
     period,
     cycle,
     lines: cleanLines,
@@ -1933,11 +2341,75 @@ const saveBatchExpenses = catchAsync(async (req, res) => {
   });
 });
 
+// ═══════════════════════════════════════════
+// REVOLVING FUND — Resolve per-BDM amount
+// ═══════════════════════════════════════════
+
+/**
+ * Resolve revolving fund amount for the current BDM.
+ * CompProfile.revolving_fund_amount (per-person) → Settings.REVOLVING_FUND_AMOUNT (global fallback).
+ * 0 in CompProfile means "use global default".
+ */
+const getRevolvingFundAmount = catchAsync(async (req, res) => {
+  const settings = await Settings.getSettings();
+  const PeopleMaster = require('../models/PeopleMaster');
+  const CompProfile = require('../models/CompProfile');
+
+  let amount = settings.REVOLVING_FUND_AMOUNT || 8000;
+  let source = 'SETTINGS';
+
+  const person = await PeopleMaster.findOne({
+    user_id: req.bdmId,
+    entity_id: req.entityId
+  }).select('_id').lean();
+
+  if (person) {
+    const comp = await CompProfile.findOne({
+      person_id: person._id,
+      entity_id: req.entityId,
+      status: 'ACTIVE'
+    }).sort({ effective_date: -1 }).lean();
+
+    if (comp?.revolving_fund_amount > 0) {
+      amount = comp.revolving_fund_amount;
+      source = 'COMP_PROFILE';
+    }
+  }
+
+  res.json({ success: true, data: { amount, source } });
+});
+
+// ═══════════════════════════════════════════
+// PER DIEM CONFIG — Resolve per-BDM thresholds
+// ═══════════════════════════════════════════
+
+/**
+ * GET /expenses/perdiem-config
+ * Resolve per diem thresholds for the current BDM.
+ * CompProfile per-person thresholds → Settings global fallback.
+ * null/undefined in CompProfile = use global. 0 IS a valid override.
+ * Returns: { fullThreshold, halfThreshold, source: 'COMP_PROFILE'|'SETTINGS' }
+ */
+const getPerdiemConfig = catchAsync(async (req, res) => {
+  const settings = await Settings.getSettings();
+  const compProfile = await loadBdmCompProfile(req.bdmId, req.entityId);
+  const resolved = resolvePerdiemThresholds(settings, compProfile);
+
+  res.json({
+    success: true,
+    data: {
+      fullThreshold: resolved.fullThreshold,
+      halfThreshold: resolved.halfThreshold,
+      source: resolved.source
+    }
+  });
+});
+
 module.exports = {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
   validateSmer, submitSmer, reopenSmer,
-  overridePerdiemDay, getSmerCrmMdCounts, getSmerCrmVisitDetail,
+  overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
   validateCarLogbook, submitCarLogbook, reopenCarLogbook,
@@ -1950,5 +2422,9 @@ module.exports = {
   // Batch Upload
   batchUploadExpenses, saveBatchExpenses,
   // Summary
-  getExpenseSummary
+  getExpenseSummary,
+  // Revolving Fund
+  getRevolvingFundAmount,
+  // Per Diem Config
+  getPerdiemConfig
 };

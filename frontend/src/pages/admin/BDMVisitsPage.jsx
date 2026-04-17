@@ -13,6 +13,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import EngagementTypeSelector from '../../components/employee/EngagementTypeSelector';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
+import PageGuide from '../../components/common/PageGuide';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import VisitDetailModal from '../../components/common/VisitDetailModal';
 import visitService from '../../services/visitService';
@@ -261,6 +262,7 @@ const BDMVisitsPage = () => {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <PageGuide pageKey="bdm-visits" />
           {/* Page Header */}
           <div className="bvp-header">
             <div className="bvp-header-left">

@@ -47,6 +47,9 @@ const approvalRequestSchema = new mongoose.Schema({
   description: {
     type: String,
   },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,  // module-specific structured data (e.g., entry_id, override_tier for PERDIEM_OVERRIDE)
+  },
 
   // Approval level this request is for
   level: {

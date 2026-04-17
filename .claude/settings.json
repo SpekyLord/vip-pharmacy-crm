@@ -34,7 +34,10 @@
       "Read(//c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/**)",
       "Bash(ls \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm\\\\docs/\"*.csv)",
       "Bash(grep -v \"//\")",
-      "Bash(npx esbuild:*)"
+      "Bash(npx esbuild:*)",
+      "Bash(npm install *)",
+      "Read(//c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/**)",
+      "Read(//c/Users/LENOVO/**)"
     ],
     "additionalDirectories": [
       "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp"

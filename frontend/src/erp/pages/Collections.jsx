@@ -7,10 +7,11 @@ import DocumentFlowChain from '../components/DocumentFlowChain';
 import { useAuth } from '../../hooks/useAuth';
 import { isAdminLike } from '../../constants/roles';
 import useCollections from '../hooks/useCollections';
+import useHospitals from '../hooks/useHospitals';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError, showSuccess } from '../utils/errorToast';
+import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569' },
@@ -73,9 +74,10 @@ const pageStyles = `
 export default function Collections() {
   const { user } = useAuth();
   const coll = useCollections();
+  const { hospitals } = useHospitals();
   const [data, setData] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
-  const [filters, setFilters] = useState({ status: '' });
+  const [filters, setFilters] = useState({ status: '', hospital_id: '' });
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
   const isAdmin = isAdminLike(user?.role);
@@ -85,6 +87,7 @@ export default function Collections() {
     try {
       const params = { page, limit: 20 };
       if (filters.status) params.status = filters.status;
+      if (filters.hospital_id) params.hospital_id = filters.hospital_id;
       const res = await coll.getCollections(params);
       setData(res?.data || []);
       setPagination(res?.pagination || { page: 1, limit: 20, total: 0, pages: 0 });
@@ -107,7 +110,14 @@ export default function Collections() {
       ? 'Submit this collection?'
       : 'Submit all validated collections?';
     if (!window.confirm(msg)) return;
-    try { await coll.submitCollections(collectionId ? [collectionId] : undefined); loadData(pagination.page); } catch (err) { showError(err, 'Could not submit collections'); }
+    try {
+      const res = await coll.submitCollections(collectionId ? [collectionId] : undefined);
+      if (res?.approval_pending) { showApprovalPending(res.message); }
+      loadData(pagination.page);
+    } catch (err) {
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); loadData(pagination.page); }
+      else showError(err, 'Could not submit collections');
+    }
   };
   const handleReopen = async (id) => {
     if (!window.confirm('Re-open this collection?')) return;
@@ -139,6 +149,12 @@ export default function Collections() {
           </div>
 
           <div className="filter-bar">
+            <SelectField value={filters.hospital_id} onChange={e => setFilters({ ...filters, hospital_id: e.target.value })}>
+              <option value="">All Hospitals</option>
+              {hospitals.map(h => (
+                <option key={h._id} value={h._id}>{h.hospital_name_display || h.hospital_name}</option>
+              ))}
+            </SelectField>
             <SelectField value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
               <option value="">All Status</option>
               {['DRAFT', 'VALID', 'ERROR', 'POSTED'].map(s => <option key={s} value={s}>{s}</option>)}

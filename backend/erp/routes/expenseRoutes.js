@@ -14,7 +14,7 @@ const {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
   validateSmer, submitSmer, reopenSmer,
-  overridePerdiemDay, getSmerCrmMdCounts, getSmerCrmVisitDetail,
+  overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
   validateCarLogbook, submitCarLogbook, reopenCarLogbook,
@@ -27,13 +27,23 @@ const {
   // Batch Upload
   batchUploadExpenses, saveBatchExpenses,
   // Summary
-  getExpenseSummary
+  getExpenseSummary,
+  // Revolving Fund
+  getRevolvingFundAmount,
+  // Per Diem Config
+  getPerdiemConfig
 } = require('../controllers/expenseController');
 
 const router = express.Router();
 
 // ═══ Summary ═══
 router.get('/summary', getExpenseSummary);
+
+// ═══ Revolving Fund ═══
+router.get('/revolving-fund-amount', getRevolvingFundAmount);
+
+// ═══ Per Diem Config ═══
+router.get('/perdiem-config', getPerdiemConfig);
 
 // ═══ SMER ═══
 router.post('/smer', createSmer);
@@ -46,7 +56,8 @@ router.post('/smer/reopen', periodLockCheck('EXPENSE'), reopenSmer);
 router.get('/smer/:id', getSmerById);
 router.put('/smer/:id', updateSmer);
 router.delete('/smer/:id', deleteDraftSmer);  // DRAFT only — backend enforces status check
-router.post('/smer/:id/override-perdiem', roleCheck('admin', 'finance', 'president'), overridePerdiemDay);
+router.post('/smer/:id/override-perdiem', overridePerdiemDay);
+router.post('/smer/:id/apply-override', applyPerdiemOverride);
 
 // ═══ Car Logbook ═══
 router.post('/car-logbook', createCarLogbook);
@@ -83,7 +94,7 @@ router.post('/prf-calf/validate', validatePrfCalf);
 router.post('/prf-calf/submit', periodLockCheck('EXPENSE'), submitPrfCalf);
 router.post('/prf-calf/reopen', periodLockCheck('EXPENSE'), roleCheck('admin', 'finance', 'president'), reopenPrfCalf);
 router.get('/prf-calf/:id', getPrfCalfById);
-router.put('/prf-calf/:id', updatePrfCalf);
+router.put('/prf-calf/:id', periodLockCheck('EXPENSE'), updatePrfCalf);
 router.delete('/prf-calf/:id', deleteDraftPrfCalf);  // DRAFT only
 
 module.exports = router;

@@ -2,6 +2,7 @@ const BankAccount = require('../models/BankAccount');
 const PaymentMode = require('../models/PaymentMode');
 const ExpenseComponent = require('../models/ExpenseComponent');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { validateCoaCode } = require('../utils/validateCoaCode');
 
 // Generic CRUD factory for simple lookup collections
 const createCrud = (Model, name) => ({
@@ -21,11 +22,21 @@ const createCrud = (Model, name) => ({
   }),
 
   create: catchAsync(async (req, res) => {
+    // Validate COA code if model has coa_code field
+    if (Model.schema.paths.coa_code && req.body.coa_code && req.entityId) {
+      const coaCheck = await validateCoaCode(req.body.coa_code, req.entityId);
+      if (!coaCheck.valid) return res.status(400).json({ success: false, message: coaCheck.message });
+    }
     const item = await Model.create(req.body);
     res.status(201).json({ success: true, data: item });
   }),
 
   update: catchAsync(async (req, res) => {
+    // Validate COA code if model has coa_code field
+    if (Model.schema.paths.coa_code && req.body.coa_code && req.entityId) {
+      const coaCheck = await validateCoaCode(req.body.coa_code, req.entityId);
+      if (!coaCheck.valid) return res.status(400).json({ success: false, message: coaCheck.message });
+    }
     const item = await Model.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true, runValidators: true });
     if (!item) return res.status(404).json({ success: false, message: `${name} not found` });
     res.json({ success: true, data: item });

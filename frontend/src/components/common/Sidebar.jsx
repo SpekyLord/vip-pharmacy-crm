@@ -675,6 +675,18 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     return erpAccess.modules?.[mod] && erpAccess.modules[mod] !== 'NONE';
   };
 
+  // Sub-permission check — mirrors useErpSubAccess logic
+  const hasSub = (mod, subKey) => {
+    if (isPresidentLike(role)) return true;
+    if (role === ROLES.ADMIN && (!erpAccess || !erpAccess.enabled)) return true;
+    const moduleLevel = erpAccess?.modules?.[mod];
+    if (!moduleLevel || moduleLevel === 'NONE') return false;
+    const moduleSubs = erpAccess?.sub_permissions?.[mod];
+    const truthyCount = moduleSubs ? Object.values(moduleSubs).filter(Boolean).length : 0;
+    if (!moduleSubs || truthyCount === 0) return moduleLevel === 'FULL';
+    return !!moduleSubs[subKey];
+  };
+
   const isAdmin = isAdminLikeRole(role);
   const sections = [];
 
@@ -694,8 +706,8 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     if (salesHomePath !== '/erp/sales') {
       salesItems.push({ path: '/erp/sales', label: 'Sales Transactions', icon: FileText, isChild: true });
     }
-    salesItems.push({ path: '/erp/credit-notes', label: 'Returns / CN', icon: RotateCcw });
-    salesItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
+    // Sub-permission gated — also visible to contractors with purchasing.credit_notes
+    if (hasSub('sales', 'credit_notes') || hasSub('purchasing', 'credit_notes')) salesItems.push({ path: '/erp/credit-notes', label: 'Returns / CN', icon: RotateCcw });
     sections.push({
       title: 'Sales',
       collapsible: true,
@@ -707,13 +719,14 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
   // ── Inventory ─────────────────────────────────────────────────────────────
   if (hasModule('inventory')) {
     const invItems = [
-      { path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen },
       { path: '/erp/grn', label: 'GRN Entry', icon: FileInput },
       { path: '/erp/my-stock', label: 'Inventory', icon: Package },
-      { path: '/erp/office-supplies', label: 'Office Supplies', icon: Package },
-      { path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight },
     ];
-    if (isAdmin) invItems.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
+    // Sub-permission gated (access-template driven, not shown to contractors by default)
+    if (hasSub('inventory', 'transfers')) invItems.push({ path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight });
+    if (hasSub('inventory', 'csi_booklets')) invItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
+    if (hasSub('inventory', 'office_supplies')) invItems.push({ path: '/erp/office-supplies', label: 'Office Supplies', icon: Package });
+    if (hasSub('inventory', 'collaterals')) invItems.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
     if (isAdmin) invItems.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
     invItems.push({ path: '/erp/expiry-dashboard', label: 'Expiry Mgmt', icon: AlertTriangle });
     invItems.push({ path: '/erp/batch-trace', label: 'Batch Trace', icon: Search });
@@ -787,6 +800,9 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     if (hasModule('payroll')) {
       hrItems.push({ path: '/erp/payroll', label: 'Payroll', icon: DollarSign });
     }
+    if (hasModule('people') && role !== ROLES.CONTRACTOR) {
+      hrItems.push({ path: '/erp/income', label: 'Contractor Income', icon: DollarSign });
+    }
     hrItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'People & HR', collapsible: true, defaultOpen: isAdmin, items: hrItems });
   }
@@ -839,10 +855,21 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
   if (hasModule('purchasing')) {
     const purItems = [
       { path: '/erp/accounts-payable', label: 'Accounts Payable', icon: Wallet },
+      { path: '/erp/batch-trace', label: 'Batch Trace', icon: Search },
+      { path: '/erp/grn', label: 'GRN Entry', icon: FileInput },
+      { path: '/erp/products', label: 'Product Master', icon: ShoppingCart },
       { path: '/erp/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
       { path: '/erp/supplier-invoices', label: 'Supplier Invoices', icon: FileInput },
       { path: '/erp/vendors', label: 'Vendors', icon: Truck },
     ];
+    // Contractors with purchasing + inventory.transfers see IC/transfers here
+    if (hasSub('inventory', 'transfers')) {
+      purItems.push({ path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight });
+    }
+    // Contractors with purchasing.credit_notes see Returns / CN here (also in Sales if they have sales)
+    if (hasSub('purchasing', 'credit_notes') && !hasSub('sales', 'credit_notes')) {
+      purItems.push({ path: '/erp/credit-notes', label: 'Returns / CN', icon: RotateCcw });
+    }
     purItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({
       title: 'Purchasing',
@@ -852,19 +879,26 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     });
   }
 
-  // ── Administration (admin-like only) — inserted at top, right after ERP Home ──
-  if (ROLE_SETS.MANAGEMENT.includes(role)) {
+  // ── Administration — inserted at top, right after ERP Home ──
+  {
     const adminItems = [];
-    adminItems.push({ path: '/erp/approvals', label: 'Approvals', icon: ClipboardCheck, badge: approvalCount || null });
-    adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
-    adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
-    if (isAdmin) {
-      adminItems.push({ path: '/erp/customers', label: 'Customers', icon: Users });
-      adminItems.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
-      adminItems.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
+    // Approvals: lookup-driven via ERP_MODULE 'approvals' (not hardcoded to MANAGEMENT)
+    if (hasModule('approvals')) {
+      adminItems.push({ path: '/erp/approvals', label: 'Approvals', icon: ClipboardCheck, badge: approvalCount || null });
     }
-    adminItems.sort((a, b) => a.label.localeCompare(b.label));
-    sections.splice(1, 0, { title: 'Administration', collapsible: true, defaultOpen: false, items: adminItems });
+    if (ROLE_SETS.MANAGEMENT.includes(role)) {
+      adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
+      adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
+      if (isAdmin) {
+        adminItems.push({ path: '/erp/customers', label: 'Customers', icon: Users });
+        adminItems.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
+        adminItems.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
+      }
+    }
+    if (adminItems.length > 0) {
+      adminItems.sort((a, b) => a.label.localeCompare(b.label));
+      sections.splice(1, 0, { title: 'Administration', collapsible: true, defaultOpen: false, items: adminItems });
+    }
   }
 
   // For CRM sidebars, hide ERP section when only ERP Home+Hospitals available.
@@ -1022,11 +1056,14 @@ const Sidebar = () => {
     return () => window.removeEventListener('inbox:updated', fetchUnreadCount);
   }, [fetchUnreadCount]);
 
-  // Fetch pending approval count for management roles
+  // Fetch pending approval count for users with approvals module access
   const fetchApprovalCount = useCallback(async () => {
-    if (!ROLE_SETS.MANAGEMENT.includes(user?.role)) return;
+    const hasApprovalAccess = isPresidentLike(user?.role)
+      || (user?.role === ROLES.ADMIN && (!user?.erp_access || !user?.erp_access?.enabled))
+      || (user?.erp_access?.modules?.approvals && user?.erp_access?.modules?.approvals !== 'NONE');
+    if (!hasApprovalAccess) return;
     try {
-      const res = await api.get('/api/erp/approvals/universal-pending');
+      const res = await api.get('/erp/approvals/universal-pending');
       setApprovalCount(res.data?.count || (res.data?.data || []).length || 0);
     } catch { /* silently fail */ }
   }, [user]);

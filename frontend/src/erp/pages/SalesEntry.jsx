@@ -12,7 +12,7 @@ import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },
@@ -870,12 +870,20 @@ export default function SalesEntry() {
     setActionLoading('submit');
     try {
       const res = await sales.submitSales();
-      if (res?.posted_count) {
+      if (res?.approval_pending) {
+        showApprovalPending(res.message);
+        await loadSales();
+      } else if (res?.posted_count) {
         setValidationErrors([]);
         await loadSales();
       }
     } catch (err) {
-      console.error('Submit error:', err);
+      if (err?.response?.data?.approval_pending) {
+        showApprovalPending(err.response.data.message);
+        await loadSales();
+      } else {
+        showError(err, 'Submit failed');
+      }
     } finally {
       setActionLoading('');
     }
@@ -1054,6 +1062,9 @@ export default function SalesEntry() {
                             <span className="status-badge" style={{ background: STATUS_COLORS[r.status]?.bg, color: STATUS_COLORS[r.status]?.text }}>
                               {STATUS_COLORS[r.status]?.label}
                             </span>
+                            {r.source === 'OPENING_AR' && (
+                              <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
+                            )}
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -1231,6 +1242,9 @@ export default function SalesEntry() {
                       <span className="status-badge" style={{ background: STATUS_COLORS[row.status]?.bg, color: STATUS_COLORS[row.status]?.text }}>
                         {STATUS_COLORS[row.status]?.label || row.status}
                       </span>
+                      {row.source === 'OPENING_AR' && (
+                        <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
+                      )}
                     </td>
                     <td>
                       {row.status === 'DRAFT' && (
@@ -1253,6 +1267,9 @@ export default function SalesEntry() {
                   <span className="status-badge" style={{ background: STATUS_COLORS[row.status]?.bg, color: STATUS_COLORS[row.status]?.text }}>
                     {STATUS_COLORS[row.status]?.label}
                   </span>
+                  {row.source === 'OPENING_AR' && (
+                    <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4, fontSize: 10 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
+                  )}
                 </div>
                 <label>{saleType === 'CSI' ? 'Hospital' : 'Customer'}</label>
                 <SelectField value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {

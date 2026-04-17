@@ -260,11 +260,13 @@ export default function SupplierInvoices() {
 
   const handlePost = async (id) => {
     try {
-      await api.postInvoice(id);
-      showMsg('Invoice posted — JE created');
+      const res = await api.postInvoice(id);
+      if (res?.approval_pending) { showMsg(res.message || 'Approval required — request sent to approver.'); }
+      else { showMsg('Invoice posted — JE created'); }
       loadInvoices(pagination.page);
     } catch (e) {
-      showMsg(e.response?.data?.message || 'Post failed', 'err');
+      if (e?.response?.data?.approval_pending) { showMsg(e.response.data.message || 'Approval required'); loadInvoices(pagination.page); }
+      else { showMsg(e.response?.data?.message || 'Post failed', 'err'); }
     }
   };
 

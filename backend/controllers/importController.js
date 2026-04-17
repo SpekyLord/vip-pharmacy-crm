@@ -51,7 +51,7 @@ const upload = catchAsync(async (req, res) => {
   }
 
   // Parse the Excel file
-  const { doctors, daySheets, errors } = parseCPTWorkbook(req.file.buffer);
+  const { doctors, daySheets, errors } = await parseCPTWorkbook(req.file.buffer);
 
   if (doctors.length === 0 && errors.length > 0) {
     throw new ApiError(400, `Failed to parse CPT file: ${errors.join('; ')}`);

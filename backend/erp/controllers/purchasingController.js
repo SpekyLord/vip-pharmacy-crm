@@ -21,7 +21,7 @@ const ErpAuditLog = require('../models/ErpAuditLog');
 const XLSX = require('xlsx');
 const crypto = require('crypto');
 const { notifyDocumentPosted } = require('../services/erpNotificationService');
-const { checkApprovalRequired } = require('../services/approvalService');
+
 
 /* ═══════════════════════════════════════════════════════════════════════
    PURCHASE ORDERS
@@ -86,20 +86,55 @@ const createPO = catchAsync(async (req, res) => {
 });
 
 const updatePO = catchAsync(async (req, res) => {
-  const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId });
+  const po = await PurchaseOrder.findOne({ _id: req.params.id, ...req.tenantFilter });
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
-  if (po.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'Only DRAFT POs can be edited' });
 
-  const allowed = ['vendor_id', 'warehouse_id', 'po_date', 'expected_delivery_date', 'line_items', 'notes'];
+  const isNonDraft = po.status !== 'DRAFT';
+
+  // Non-DRAFT POs: only minor fields allowed, routed through approval
+  const MINOR_FIELDS = ['warehouse_id', 'expected_delivery_date', 'notes', 'line_items'];
+  const DRAFT_FIELDS = ['vendor_id', 'warehouse_id', 'po_date', 'expected_delivery_date', 'line_items', 'notes'];
+
+  if (isNonDraft) {
+    // Block fields that aren't minor-editable
+    const blocked = Object.keys(req.body).filter(k => !MINOR_FIELDS.includes(k));
+    if (blocked.length) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot change ${blocked.join(', ')} on a ${po.status} PO. Only warehouse, expected delivery, notes, and line item prices can be edited.`,
+      });
+    }
+
+    // For line_items on non-DRAFT: only allow unit_price changes, block qty/product changes
+    if (req.body.line_items) {
+      const origLines = po.line_items || [];
+      const newLines = req.body.line_items || [];
+      if (newLines.length !== origLines.length) {
+        return res.status(400).json({ success: false, message: 'Cannot add or remove line items on a ' + po.status + ' PO. Only unit prices can be changed.' });
+      }
+      for (let i = 0; i < newLines.length; i++) {
+        const orig = origLines[i];
+        const upd = newLines[i];
+        if ((upd.product_id && upd.product_id.toString() !== orig.product_id?.toString()) ||
+            (upd.qty_ordered !== undefined && upd.qty_ordered !== orig.qty_ordered)) {
+          return res.status(400).json({ success: false, message: 'Cannot change product or quantity on a ' + po.status + ' PO. Only unit prices can be changed.' });
+        }
+      }
+    }
+  }
+
+  // Apply allowed fields
+  const allowed = isNonDraft ? MINOR_FIELDS : DRAFT_FIELDS;
   for (const key of allowed) {
     if (req.body[key] !== undefined) po[key] = req.body[key];
   }
+
   await po.save();
   res.json({ success: true, data: po });
 });
 
 const getPOs = catchAsync(async (req, res) => {
-  const filter = { entity_id: req.entityId };
+  const filter = { ...req.tenantFilter };
   if (req.query.status) {
     const statuses = req.query.status.split(',').map(s => s.trim()).filter(Boolean);
     filter.status = statuses.length === 1 ? statuses[0] : { $in: statuses };
@@ -130,7 +165,7 @@ const getPOs = catchAsync(async (req, res) => {
 });
 
 const getPOById = catchAsync(async (req, res) => {
-  const po = await PurchaseOrder.findOne({ _id: req.params.id, entity_id: req.entityId })
+  const po = await PurchaseOrder.findOne({ _id: req.params.id, ...req.tenantFilter })
     .populate('vendor_id', 'vendor_name vendor_code tin address payment_terms_days vat_status')
     .populate('warehouse_id', 'warehouse_code warehouse_name location contact_person contact_phone')
     .populate('approved_by', 'firstName lastName')
@@ -162,28 +197,6 @@ const approvePO = catchAsync(async (req, res) => {
   const po = await PurchaseOrder.findOne(poQuery);
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
   if (po.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'Only DRAFT POs can be approved' });
-
-  // Authority matrix check — if enabled, verify approval chain before allowing
-  const approvalCheck = await checkApprovalRequired({
-    entityId: req.entityId,
-    module: 'PURCHASING',
-    docType: 'PO',
-    docId: po._id,
-    docRef: po.po_number,
-    amount: po.total_amount,
-    description: `PO for ${po.vendor_name || 'vendor'}`,
-    requesterId: req.user._id,
-    requesterName: req.user.name || req.user.email,
-  });
-
-  if (approvalCheck.required) {
-    return res.status(202).json({
-      success: true,
-      message: approvalCheck.message,
-      approval_pending: true,
-      requests: approvalCheck.requests,
-    });
-  }
 
   po.status = 'APPROVED';
   po.approved_by = req.user._id;
@@ -356,7 +369,7 @@ const updateInvoice = catchAsync(async (req, res) => {
 });
 
 const getInvoices = catchAsync(async (req, res) => {
-  const filter = { entity_id: req.entityId };
+  const filter = { ...req.tenantFilter };
   if (req.query.status) filter.status = req.query.status;
   if (req.query.vendor_id) filter.vendor_id = req.query.vendor_id;
   if (req.query.warehouse_id) filter.warehouse_id = req.query.warehouse_id;
@@ -428,6 +441,21 @@ const postInvoice = catchAsync(async (req, res) => {
   if (invoice.status === 'DRAFT' && !req.body.force) {
     return res.status(400).json({ success: false, message: 'Invoice must be VALIDATED before posting. Use force=true to bypass.' });
   }
+
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'PURCHASING',
+    docType: 'SUPPLIER_INVOICE',
+    docId: invoice._id,
+    docRef: invoice.invoice_ref,
+    amount: invoice.total_amount,
+    description: `Supplier invoice ${invoice.invoice_ref}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
 
   // Period lock check
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
@@ -519,7 +547,7 @@ const paymentHistory = catchAsync(async (req, res) => {
 
 // ═══ Export Purchase Orders (Excel) ═══
 const exportPOs = catchAsync(async (req, res) => {
-  const filter = { entity_id: req.entityId };
+  const filter = { ...req.tenantFilter };
   if (req.query.warehouse_id) filter.warehouse_id = req.query.warehouse_id;
   const pos = await PurchaseOrder.find(filter)
     .populate('vendor_id', 'vendor_name vendor_code')

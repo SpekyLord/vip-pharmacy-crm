@@ -435,7 +435,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
  * POST /grn — BDM creates a Goods Received Note (PENDING)
  */
 const createGrn = catchAsync(async (req, res) => {
-  const { grn_date, line_items, waybill_photo_url, undertaking_photo_url, ocr_data, notes, warehouse_id, po_id } = req.body;
+  const { grn_date, line_items, waybill_photo_url, undertaking_photo_url, ocr_data, notes, warehouse_id, po_id, reassignment_id } = req.body;
 
   if (!line_items?.length) {
     return res.status(400).json({ success: false, message: 'At least one line item is required' });
@@ -453,10 +453,33 @@ const createGrn = catchAsync(async (req, res) => {
     if (!li.item_key) li.item_key = productMap.get(li.product_id.toString()).item_key;
   }
 
-  // PO cross-reference validation (optional — skip for standalone GRNs)
+  // Determine source type
+  let source_type = 'STANDALONE';
   let po_number;
   let vendor_id;
+
+  // Internal transfer cross-reference (reassignment_id provided)
+  if (reassignment_id) {
+    const StockReassignment = require('../models/StockReassignment');
+    const reassignment = await StockReassignment.findOne({
+      _id: reassignment_id,
+      entity_id: req.entityId,
+      status: 'AWAITING_GRN'
+    }).lean();
+    if (!reassignment) {
+      return res.status(404).json({ success: false, message: 'Internal transfer not found or not awaiting GRN' });
+    }
+    // Receiving contractor must be the target BDM
+    if (reassignment.target_bdm_id.toString() !== req.bdmId?.toString()
+        && !req.isAdmin && !req.isPresident) {
+      return res.status(403).json({ success: false, message: 'Only the receiving contractor can create GRN for this transfer' });
+    }
+    source_type = 'INTERNAL_TRANSFER';
+  }
+
+  // PO cross-reference validation (optional — skip for standalone GRNs)
   if (po_id) {
+    source_type = 'PO';
     const po = await PurchaseOrder.findOne({ _id: po_id, entity_id: req.entityId }).lean();
     if (!po) {
       return res.status(404).json({ success: false, message: 'Purchase order not found' });
@@ -491,9 +514,11 @@ const createGrn = catchAsync(async (req, res) => {
     entity_id: req.entityId,
     bdm_id: req.bdmId,
     warehouse_id: warehouse_id || undefined,
+    source_type,
     po_id: po_id || undefined,
     po_number: po_number || undefined,
     vendor_id: vendor_id || undefined,
+    reassignment_id: reassignment_id || undefined,
     grn_date,
     line_items,
     waybill_photo_url,
@@ -512,7 +537,9 @@ const createGrn = catchAsync(async (req, res) => {
     field_changed: 'status',
     new_value: 'PENDING',
     changed_by: req.user._id,
-    note: `GRN created with ${line_items.length} item(s)`
+    note: source_type === 'INTERNAL_TRANSFER'
+      ? `Internal transfer GRN created with ${line_items.length} item(s)`
+      : `GRN created with ${line_items.length} item(s)`
   });
 
   res.status(201).json({ success: true, data: grn });
@@ -558,10 +585,31 @@ const approveGrn = catchAsync(async (req, res) => {
     return res.json({ success: true, message: 'GRN rejected', data: grn });
   }
 
+  // Authority matrix gate
+  const { gateApproval } = require('../services/approvalService');
+  const grnTotal = (grn.line_items || []).reduce((sum, li) => sum + ((li.qty || 0) * (li.unit_cost || 0)), 0);
+  const gated = await gateApproval({
+    entityId: grn.entity_id,
+    module: 'INVENTORY',
+    docType: 'GRN',
+    docId: grn._id,
+    docRef: grn.grn_ref || grn._id.toString(),
+    amount: grnTotal,
+    description: `GRN ${grn.grn_ref || ''} — ${grn.supplier_name || ''}`.trim(),
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   // Period lock check
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
   const grnPeriod = dateToPeriod(grn.grn_date || new Date());
   await checkPeriodOpen(grn.entity_id, grnPeriod);
+
+  // Determine if this GRN is for an internal transfer
+  const isInternalTransfer = grn.source_type === 'INTERNAL_TRANSFER' && grn.reassignment_id;
+  const ledgerTxnType = isInternalTransfer ? 'TRANSFER_IN' : 'GRN';
+  const eventType = isInternalTransfer ? 'STOCK_REASSIGNMENT_GRN' : 'GRN';
 
   // APPROVED — atomic transaction
   const session = await mongoose.startSession();
@@ -571,15 +619,15 @@ const approveGrn = catchAsync(async (req, res) => {
       const event = await TransactionEvent.create([{
         entity_id: grn.entity_id,
         bdm_id: grn.bdm_id,
-        event_type: 'GRN',
+        event_type: eventType,
         event_date: grn.grn_date,
         document_ref: grn._id.toString(),
-        payload: { line_items: grn.line_items },
+        payload: { line_items: grn.line_items, reassignment_id: grn.reassignment_id || undefined },
         created_by: req.user._id
       }], { session });
 
       // Create InventoryLedger entries for each line item
-      // Inventory is always in selling units; use qty_selling_units when conversion applies
+      // Internal transfers use TRANSFER_IN; supplier GRNs use GRN
       for (const item of grn.line_items) {
         const qtyInSellingUnits = item.qty_selling_units || (item.qty * (item.conversion_factor || 1));
         await InventoryLedger.create([{
@@ -589,7 +637,7 @@ const approveGrn = catchAsync(async (req, res) => {
           product_id: item.product_id,
           batch_lot_no: item.batch_lot_no,
           expiry_date: item.expiry_date,
-          transaction_type: 'GRN',
+          transaction_type: ledgerTxnType,
           qty_in: qtyInSellingUnits,
           qty_out: 0,
           event_id: event[0]._id,
@@ -624,6 +672,17 @@ const approveGrn = catchAsync(async (req, res) => {
         }
       }
 
+      // Complete linked reassignment (if internal transfer GRN)
+      if (isInternalTransfer) {
+        const StockReassignment = require('../models/StockReassignment');
+        const reassignment = await StockReassignment.findById(grn.reassignment_id).session(session);
+        if (reassignment && reassignment.status === 'AWAITING_GRN') {
+          reassignment.status = 'COMPLETED';
+          reassignment.grn_id = grn._id;
+          await reassignment.save({ session });
+        }
+      }
+
       // Update GRN status
       grn.status = 'APPROVED';
       grn.reviewed_by = req.user._id;
@@ -642,10 +701,18 @@ const approveGrn = catchAsync(async (req, res) => {
       old_value: 'PENDING',
       new_value: 'APPROVED',
       changed_by: req.user._id,
-      note: `GRN approved: ${grn.line_items.length} item(s) added to inventory`
+      note: isInternalTransfer
+        ? `Internal transfer GRN approved: ${grn.line_items.length} item(s) received via TRANSFER_IN`
+        : `GRN approved: ${grn.line_items.length} item(s) added to inventory`
     });
 
-    res.json({ success: true, message: 'GRN approved — stock updated', data: grn });
+    res.json({
+      success: true,
+      message: isInternalTransfer
+        ? 'GRN approved — internal transfer completed'
+        : 'GRN approved — stock updated',
+      data: grn
+    });
   } finally {
     await session.endSession();
   }
