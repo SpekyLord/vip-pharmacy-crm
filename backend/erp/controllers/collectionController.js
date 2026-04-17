@@ -711,10 +711,122 @@ const generateSoaEndpoint = catchAsync(async (req, res) => {
   res.send(buffer);
 });
 
+// ═══ Single-document posting helper (called from Approval Hub) ═══
+
+const postSingleCollection = async (doc, userId) => {
+  const settings = await Settings.getSettings();
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const [event] = await TransactionEvent.create([{
+        entity_id: doc.entity_id, bdm_id: doc.bdm_id, event_type: 'CR',
+        event_date: doc.cr_date, document_ref: doc.cr_no,
+        payload: {
+          hospital_id: doc.hospital_id, settled_csis: doc.settled_csis,
+          cr_amount: doc.cr_amount, cwt_amount: doc.cwt_amount,
+          total_commission: doc.total_commission, total_partner_rebates: doc.total_partner_rebates,
+          payment_mode: doc.payment_mode
+        },
+        created_by: userId
+      }], { session });
+
+      doc.status = 'POSTED';
+      doc.posted_at = new Date();
+      doc.posted_by = userId;
+      doc.event_id = event._id;
+      await doc.save({ session });
+
+      // Petty cash auto-deposit (inside transaction for atomicity)
+      if (doc.petty_cash_fund_id) {
+        const fund = await PettyCashFund.findById(doc.petty_cash_fund_id).session(session);
+        if (fund && !['SUSPENDED', 'CLOSED'].includes(fund.status) && (fund.fund_mode || 'REVOLVING') !== 'EXPENSE_ONLY') {
+          const depositAmount = doc.cr_amount || 0;
+          if (depositAmount > 0) {
+            await PettyCashTransaction.create([{
+              entity_id: doc.entity_id, fund_id: fund._id, txn_type: 'DEPOSIT',
+              txn_date: doc.cr_date || new Date(), amount: depositAmount,
+              source_description: `Collection ${doc.cr_no || ''}`.trim(),
+              linked_collection_id: doc._id, status: 'POSTED', posted_at: new Date(),
+              posted_by: userId, created_by: userId,
+              running_balance: Math.round((fund.current_balance + depositAmount) * 100) / 100
+            }], { session });
+            await PettyCashFund.findByIdAndUpdate(fund._id, { $inc: { current_balance: depositAmount } }, { session });
+          }
+        }
+      }
+    });
+  } finally { await session.endSession(); }
+
+  // Non-blocking: DocumentAttachments
+  await DocumentAttachment.updateMany(
+    { source_model: 'Collection', source_id: doc._id },
+    { $set: { event_id: doc.event_id } }
+  ).catch(() => {});
+
+  // Auto-journal (non-blocking)
+  try {
+    const funding = await resolveFundingCoa(doc);
+    const jeData = await journalFromCollection(doc, funding.coa_code, funding.coa_name, userId);
+    jeData.source_event_id = doc.event_id;
+    await createAndPostJournal(doc.entity_id, jeData);
+
+    // CWT journal
+    if (doc.cwt_amount > 0) {
+      const cwtHosp = doc.hospital_id ? await Hospital.findById(doc.hospital_id).select('hospital_name').lean() : null;
+      const cwtInput = { ...doc.toObject(), hospital_name: cwtHosp?.hospital_name || '' };
+      const cwtData = await journalFromCWT(cwtInput, userId);
+      cwtData.source_event_id = doc.event_id;
+      await createAndPostJournal(doc.entity_id, cwtData);
+    }
+
+    // Commission journals
+    for (const csi of (doc.settled_csis || [])) {
+      if (csi.commission_amount > 0) {
+        const commData = await journalFromCommission({
+          amount: csi.commission_amount, bdm_id: doc.bdm_id, date: doc.cr_date, bdm_name: '',
+          period: doc.period || require('../utils/periodLock').dateToPeriod(doc.cr_date),
+          event_id: doc.event_id, _id: doc._id
+        }, userId);
+        if (commData) { commData.source_event_id = doc.event_id; await createAndPostJournal(doc.entity_id, commData); }
+      }
+    }
+
+    // VAT Ledger
+    const crAmount = doc.cr_amount || 0;
+    const hospital = doc.hospital_id ? await Hospital.findById(doc.hospital_id).select('vat_status').lean() : null;
+    if (crAmount > 0 && (hospital?.vat_status || 'VATABLE') === 'VATABLE') {
+      const vatRate = settings?.VAT_RATE || 0.12;
+      const vatAmount = Math.round((crAmount * vatRate / (1 + vatRate)) * 100) / 100;
+      await createVatEntry({
+        entity_id: doc.entity_id, period: doc.period || require('../utils/periodLock').dateToPeriod(doc.cr_date),
+        vat_type: 'OUTPUT', source_module: 'COLLECTION', source_doc_ref: doc.cr_no,
+        source_event_id: doc.event_id, hospital_or_vendor: doc.hospital_id,
+        gross_amount: crAmount, vat_amount: vatAmount
+      }).catch(err => console.error('VAT entry failed (approval hub):', doc.cr_no, err.message));
+    }
+
+    // CWT Ledger
+    if (doc.cwt_amount > 0) {
+      const quarter = `Q${Math.ceil((new Date(doc.cr_date).getMonth() + 1) / 3)}`;
+      await createCwtEntry({
+        entity_id: doc.entity_id, bdm_id: doc.bdm_id,
+        period: doc.period || require('../utils/periodLock').dateToPeriod(doc.cr_date),
+        hospital_id: doc.hospital_id, cr_no: doc.cr_no, cr_date: doc.cr_date,
+        cr_amount: doc.cr_amount || 0, cwt_amount: doc.cwt_amount,
+        quarter, year: new Date(doc.cr_date).getFullYear()
+      }).catch(err => console.error('CWT entry failed (approval hub):', doc.cr_no, err.message));
+    }
+  } catch (jeErr) {
+    console.error('Auto-journal failed for collection (approval hub):', doc.cr_no || doc._id, jeErr.message);
+  }
+};
+
 module.exports = {
   createCollection, updateCollection, deleteDraftCollection,
   getCollections, getCollectionById, getOpenCsisEndpoint,
   validateCollections, submitCollections, reopenCollections,
   getArAgingEndpoint, getCollectionRateEndpoint, generateSoaEndpoint,
-  requestDeletion, approveDeletion
+  requestDeletion, approveDeletion,
+  postSingleCollection
 };

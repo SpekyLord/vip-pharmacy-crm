@@ -93,6 +93,7 @@ const salesLineSchema = new mongoose.Schema({
   },
   reopen_count: { type: Number, default: 0 },
   validation_errors: [{ type: String }],
+  rejection_reason: { type: String },
   // Phase 15.5: Cost Center dimension
   cost_center_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CostCenter' },
 

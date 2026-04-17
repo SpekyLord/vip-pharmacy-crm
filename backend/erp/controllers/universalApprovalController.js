@@ -157,8 +157,8 @@ const approvalHandlers = {
       rating.approved_by = userId;
       rating.approved_at = new Date();
     } else if (action === 'reject') {
-      rating.status = 'REJECTED';
-      rating.rejection_reason = reason;
+      rating.status = 'RETURNED';
+      rating.return_reason = reason;
       rating.reviewed_by = userId;
       rating.reviewed_at = new Date();
     }
@@ -181,7 +181,7 @@ const approvalHandlers = {
     } else if (action === 'reject') {
       doc.status = 'ERROR';
       doc.rejection_reason = reason;
-      doc.validation_errors = [{ message: reason }];
+      doc.validation_errors = [reason];
       await doc.save();
     }
     return doc;
@@ -193,15 +193,14 @@ const approvalHandlers = {
     if (!doc) throw new Error('Collection not found');
     if (doc.status !== 'VALID') throw new Error('Collection not in VALID status');
     if (action === 'post') {
-      doc.status = 'POSTED';
-      doc.posted_by = userId;
-      doc.posted_at = new Date();
+      const { postSingleCollection } = require('./collectionController');
+      await postSingleCollection(doc, userId);
     } else if (action === 'reject') {
       doc.status = 'ERROR';
       doc.rejection_reason = reason;
-      doc.validation_errors = [{ message: reason }];
+      doc.validation_errors = [reason];
+      await doc.save();
     }
-    await doc.save();
     return doc;
   },
 
@@ -211,15 +210,14 @@ const approvalHandlers = {
     if (!doc) throw new Error('SMER entry not found');
     if (doc.status !== 'VALID') throw new Error('SMER not in VALID status');
     if (action === 'post') {
-      doc.status = 'POSTED';
-      doc.posted_by = userId;
-      doc.posted_at = new Date();
+      const { postSingleSmer } = require('./expenseController');
+      await postSingleSmer(doc, userId);
     } else if (action === 'reject') {
       doc.status = 'ERROR';
       doc.rejection_reason = reason;
-      doc.validation_errors = [{ message: reason }];
+      doc.validation_errors = [reason];
+      await doc.save();
     }
-    await doc.save();
     return doc;
   },
 
@@ -229,15 +227,14 @@ const approvalHandlers = {
     if (!doc) throw new Error('Car logbook entry not found');
     if (doc.status !== 'VALID') throw new Error('Car logbook not in VALID status');
     if (action === 'post') {
-      doc.status = 'POSTED';
-      doc.posted_by = userId;
-      doc.posted_at = new Date();
+      const { postSingleCarLogbook } = require('./expenseController');
+      await postSingleCarLogbook(doc, userId);
     } else if (action === 'reject') {
       doc.status = 'ERROR';
       doc.rejection_reason = reason;
-      doc.validation_errors = [{ message: reason }];
+      doc.validation_errors = [reason];
+      await doc.save();
     }
-    await doc.save();
     return doc;
   },
 
@@ -247,15 +244,14 @@ const approvalHandlers = {
     if (!doc) throw new Error('Expense entry not found');
     if (doc.status !== 'VALID') throw new Error('Expense entry not in VALID status');
     if (action === 'post') {
-      doc.status = 'POSTED';
-      doc.posted_by = userId;
-      doc.posted_at = new Date();
+      const { postSingleExpense } = require('./expenseController');
+      await postSingleExpense(doc, userId);
     } else if (action === 'reject') {
       doc.status = 'ERROR';
       doc.rejection_reason = reason;
-      doc.validation_errors = [{ message: reason }];
+      doc.validation_errors = [reason];
+      await doc.save();
     }
-    await doc.save();
     return doc;
   },
 
@@ -265,15 +261,14 @@ const approvalHandlers = {
     if (!doc) throw new Error('PRF/CALF not found');
     if (doc.status !== 'VALID') throw new Error('PRF/CALF not in VALID status');
     if (action === 'post') {
-      doc.status = 'POSTED';
-      doc.posted_by = userId;
-      doc.posted_at = new Date();
+      const { postSinglePrfCalf } = require('./expenseController');
+      await postSinglePrfCalf(doc, userId);
     } else if (action === 'reject') {
       doc.status = 'ERROR';
       doc.rejection_reason = reason;
-      doc.validation_errors = [{ message: reason }];
+      doc.validation_errors = [reason];
+      await doc.save();
     }
-    await doc.save();
     return doc;
   }
 };

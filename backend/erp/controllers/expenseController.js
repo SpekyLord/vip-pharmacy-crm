@@ -2405,6 +2405,204 @@ const getPerdiemConfig = catchAsync(async (req, res) => {
   });
 });
 
+// ═══ Single-document posting helpers (called from Approval Hub) ═══
+
+const postSingleSmer = async (doc, userId) => {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const [event] = await TransactionEvent.create([{
+        entity_id: doc.entity_id, bdm_id: doc.bdm_id, event_type: 'SMER',
+        event_date: new Date(), document_ref: `SMER-${doc.period}-${doc.cycle}`,
+        payload: { smer_id: doc._id, total_reimbursable: doc.total_reimbursable },
+        status: 'ACTIVE', created_by: userId
+      }], { session });
+      doc.status = 'POSTED';
+      doc.posted_at = new Date();
+      doc.posted_by = userId;
+      doc.event_id = event._id;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  // Non-blocking: DocumentAttachments
+  await DocumentAttachment.updateMany(
+    { source_model: 'SmerEntry', source_id: doc._id },
+    { $set: { event_id: doc.event_id } }
+  ).catch(() => {});
+
+  // Auto-journal (non-blocking)
+  try {
+    const coaMap = await getCoaMap();
+    const lines = [];
+    const desc = `SMER ${doc.period}-${doc.cycle}`;
+    if (doc.total_perdiem > 0) lines.push({ account_code: coaMap.PER_DIEM || '6100', account_name: 'Per Diem Expense', debit: doc.total_perdiem, credit: 0, description: desc });
+    if (doc.total_transpo > 0) lines.push({ account_code: coaMap.TRANSPORT || '6150', account_name: 'Transport Expense', debit: doc.total_transpo, credit: 0, description: desc });
+    if (doc.total_special_cases > 0) lines.push({ account_code: coaMap.SPECIAL_TRANSPORT || '6160', account_name: 'Special Transport Expense', debit: doc.total_special_cases, credit: 0, description: desc });
+    if (doc.total_ore > 0) lines.push({ account_code: coaMap.OTHER_REIMBURSABLE || '6170', account_name: 'Other Reimbursable Expense', debit: doc.total_ore, credit: 0, description: desc });
+    if (lines.length > 0) {
+      lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: doc.total_reimbursable, description: desc });
+      await createAndPostJournal(doc.entity_id, {
+        je_date: doc.posted_at, period: doc.period, description: `SMER: ${desc}`,
+        source_module: 'EXPENSE', source_event_id: doc.event_id, source_doc_ref: `SMER-${doc.period}-${doc.cycle}`,
+        lines, bir_flag: 'BOTH', vat_flag: 'N/A', bdm_id: doc.bdm_id, created_by: userId
+      });
+    }
+  } catch (jeErr) { console.error('Auto-journal failed for SMER (approval hub):', doc._id, jeErr.message); }
+};
+
+const postSingleCarLogbook = async (doc, userId) => {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const [event] = await TransactionEvent.create([{
+        entity_id: doc.entity_id, bdm_id: doc.bdm_id, event_type: 'CAR_LOGBOOK',
+        event_date: doc.entry_date, document_ref: `LOGBOOK-${doc.period}-${doc.entry_date.toISOString().split('T')[0]}`,
+        payload: { logbook_id: doc._id, total_km: doc.total_km, total_fuel: doc.total_fuel_amount },
+        status: 'ACTIVE', created_by: userId
+      }], { session });
+      doc.status = 'POSTED';
+      doc.posted_at = new Date();
+      doc.posted_by = userId;
+      doc.event_id = event._id;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  await DocumentAttachment.updateMany(
+    { source_model: 'CarLogbookEntry', source_id: doc._id },
+    { $set: { event_id: doc.event_id } }
+  ).catch(() => {});
+
+  try {
+    if (doc.total_fuel_amount > 0) {
+      const coaMap = await getCoaMap();
+      let cashTotal = 0, fundedTotal = 0, fundedCoa = null;
+      for (const fuel of (doc.fuel_entries || [])) {
+        if (!fuel.payment_mode || fuel.payment_mode === 'CASH') { cashTotal += fuel.total_amount || 0; }
+        else { fundedTotal += fuel.total_amount || 0; if (!fundedCoa) fundedCoa = await resolveFundingCoa(fuel); }
+      }
+      const desc = `Logbook ${doc.period} ${doc.entry_date.toISOString().split('T')[0]}`;
+      const lines = [];
+      const totalFuel = cashTotal + fundedTotal;
+      if (totalFuel > 0) lines.push({ account_code: coaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: desc });
+      if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: desc });
+      if (fundedTotal > 0 && fundedCoa) lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: desc });
+      if (lines.length >= 2) {
+        await createAndPostJournal(doc.entity_id, {
+          je_date: doc.entry_date || new Date(), period: doc.period, description: `Car Logbook: ${desc}`,
+          source_module: 'EXPENSE', source_event_id: doc.event_id, source_doc_ref: `LOGBOOK-${doc.period}-${doc.entry_date.toISOString().split('T')[0]}`,
+          lines, bir_flag: 'BOTH', vat_flag: 'N/A', bdm_id: doc.bdm_id, created_by: userId
+        });
+      }
+    }
+  } catch (jeErr) { console.error('Auto-journal failed for logbook (approval hub):', doc._id, jeErr.message); }
+};
+
+const postSingleExpense = async (doc, userId) => {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const [event] = await TransactionEvent.create([{
+        entity_id: doc.entity_id, bdm_id: doc.bdm_id, event_type: 'EXPENSE',
+        event_date: new Date(), document_ref: `EXP-${doc.period}-${doc.cycle}`,
+        payload: { expense_id: doc._id, total_amount: doc.total_amount, ore: doc.total_ore, access: doc.total_access },
+        status: 'ACTIVE', created_by: userId
+      }], { session });
+      doc.status = 'POSTED';
+      doc.posted_at = new Date();
+      doc.posted_by = userId;
+      doc.event_id = event._id;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  await DocumentAttachment.updateMany(
+    { source_model: 'ExpenseEntry', source_id: doc._id },
+    { $set: { event_id: doc.event_id } }
+  ).catch(() => {});
+
+  try {
+    const coaMap = await getCoaMap();
+    const lines = [];
+    const desc = `EXP ${doc.period}-${doc.cycle}`;
+    let creditOre = 0, creditAccess = 0, accessCoa = null;
+    for (const line of (doc.lines || [])) {
+      const amt = line.amount || 0;
+      if (amt <= 0) continue;
+      lines.push({ account_code: line.coa_code || coaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous Expense', debit: amt, credit: 0, description: line.establishment || desc });
+      if (line.expense_type === 'ACCESS') { creditAccess += amt; if (!accessCoa) accessCoa = await resolveFundingCoa(line, coaMap.AP_TRADE || '2000'); }
+      else { creditOre += amt; }
+    }
+    if (creditOre > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: creditOre, description: desc });
+    if (creditAccess > 0) {
+      const coa = accessCoa || { coa_code: coaMap.AP_TRADE || '2000', coa_name: 'Accounts Payable — Trade' };
+      lines.push({ account_code: coa.coa_code, account_name: coa.coa_name, debit: 0, credit: creditAccess, description: desc });
+    }
+    if (lines.length >= 2) {
+      await createAndPostJournal(doc.entity_id, {
+        je_date: doc.posted_at || new Date(), period: doc.period, description: `Expenses: ${desc}`,
+        source_module: 'EXPENSE', source_event_id: doc.event_id, source_doc_ref: `EXP-${doc.period}-${doc.cycle}`,
+        lines, bir_flag: doc.bir_flag || 'BOTH', vat_flag: 'N/A', bdm_id: doc.bdm_id, created_by: userId
+      });
+    }
+  } catch (jeErr) { console.error('Auto-journal failed for expense (approval hub):', doc._id, jeErr.message); }
+};
+
+const postSinglePrfCalf = async (doc, userId) => {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const [event] = await TransactionEvent.create([{
+        entity_id: doc.entity_id, bdm_id: doc.bdm_id, event_type: doc.doc_type,
+        event_date: new Date(), document_ref: `${doc.doc_type}-${doc.prf_number || doc.calf_number || doc.period}`,
+        payload: {
+          prf_calf_id: doc._id, doc_type: doc.doc_type, amount: doc.amount,
+          ...(doc.doc_type === 'PRF' && { payee_name: doc.payee_name, partner_bank: doc.partner_bank, rebate_amount: doc.rebate_amount }),
+          ...(doc.doc_type === 'CALF' && { advance_amount: doc.advance_amount, liquidation_amount: doc.liquidation_amount, balance: doc.balance })
+        },
+        status: 'ACTIVE', created_by: userId
+      }], { session });
+      doc.status = 'POSTED';
+      doc.posted_at = new Date();
+      doc.posted_by = userId;
+      doc.event_id = event._id;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  await DocumentAttachment.updateMany(
+    { source_model: 'PrfCalf', source_id: doc._id },
+    { $set: { event_id: doc.event_id } }
+  ).catch(() => {});
+
+  try {
+    const coaMap = await getCoaMap();
+    const amount = doc.amount || 0;
+    if (amount > 0) {
+      const funding = await resolveFundingCoa(doc);
+      const docRef = doc.prf_number || doc.calf_number || `${doc.doc_type}-${doc.period}`;
+      let lines;
+      if (doc.doc_type === 'PRF') {
+        lines = [
+          { account_code: coaMap.PARTNER_REBATE || '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
+          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}` }
+        ];
+      } else {
+        lines = [
+          { account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
+          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}` }
+        ];
+      }
+      await createAndPostJournal(doc.entity_id, {
+        je_date: doc.posted_at || new Date(), period: doc.period, description: `${doc.doc_type}: ${docRef}`,
+        source_module: 'EXPENSE', source_event_id: doc.event_id, source_doc_ref: docRef,
+        lines, bir_flag: doc.bir_flag || 'BOTH', vat_flag: 'N/A', bdm_id: doc.bdm_id, created_by: userId
+      });
+    }
+  } catch (jeErr) { console.error('Auto-journal failed for PRF/CALF (approval hub):', doc._id, jeErr.message); }
+};
+
 module.exports = {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
@@ -2426,5 +2624,7 @@ module.exports = {
   // Revolving Fund
   getRevolvingFundAmount,
   // Per Diem Config
-  getPerdiemConfig
+  getPerdiemConfig,
+  // Single-document posting helpers (for Approval Hub)
+  postSingleSmer, postSingleCarLogbook, postSingleExpense, postSinglePrfCalf
 };
