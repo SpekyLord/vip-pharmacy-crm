@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 2026
-> **Version**: 6.6
-> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G4 + H1-H2 Complete (Apr 15, 2026). H2: OCR hardening — lookup-driven expense classification, entity-scoped vendor matching, resolved data in response, comma-replace bug fix, WorkflowGuide banner. Fix: Added missing "Contractor Income" sidebar link under People & HR for admin-like roles; Approval Hub reject now uses proper modal instead of browser prompt().
+> **Version**: 6.7
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G4 + H1-H2 + Phase 34 Complete (Apr 17, 2026). Phase 34: Approval Hub per-module sub-permissions, attachment/photo viewing, line-item inline editing, PO approval gate cleanup.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -109,6 +109,56 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | G4 | Subsidiary Product Catalog Access (Lookup-Driven) | ✅ |
 | H1 | Low-Priority Hardening (#13-#19) — CALF, COA, Expense, Batch Upload | ✅ |
 | H2 | OCR Hardening — Lookup-Driven Classification, Entity Scoping, Bugs | ✅ |
+| 34* | Approval Hub Enhancement: Sub-Permissions + Attachments + Line-Item Edit | ✅ |
+
+---
+
+## Phase 34* — Approval Hub Enhancement (Sub-Permissions + Attachments + Line-Item Edit)
+
+Divides approval workload per module via sub-permissions, adds attachment/photo viewing, extends quick-edit to line items, removes unnecessary PO approval gates.
+
+### Per-Module Sub-Permissions
+- **14 new sub-permissions** under `approvals` module: `approve_sales`, `approve_collections`, `approve_inventory`, `approve_expenses`, `approve_purchasing`, `approve_payroll`, `approve_journal`, `approve_banking`, `approve_petty_cash`, `approve_ic_transfer`, `approve_income`, `approve_deductions`, `approve_kpi`, `approve_perdiem`
+- **`MODULE_TO_SUB_KEY` mapping** in `universalApprovalService.js` — maps module keys to sub-permission keys
+- **`hasApprovalSub(user, subKey)`** helper — follows `erpSubAccessCheck` convention (FULL with no subs = all granted; president always passes)
+- **Layered on top** of existing ApprovalRule + MODULE_DEFAULT_ROLES — sub-permissions are additional filter, not replacement
+- **Typical assignment**: admin gets `approve_sales` + `approve_collections` + `approve_inventory`; finance gets `approve_expenses` + `approve_payroll` + `approve_journal` + etc.
+- **Contractor support**: contractors with `erp_access.modules.approvals + sub-permissions` can approve their assigned modules
+
+### Attachment/Photo Viewing
+Approvers can now see supporting documents directly in the Approval Hub without leaving the page:
+- **GRN**: waybill photo, undertaking photo
+- **Collection**: deposit slip, CR photo, CWT certificate, CSI photos
+- **Car Logbook**: fuel receipt photos per day
+- **Expenses**: OR receipt photo per line item (thumbnail in table)
+- **PRF/CALF**: supporting document photos
+- **Image preview modal**: click thumbnail → full-screen overlay → click to close
+
+### Line-Item Inline Editing
+- **New lookup category**: `APPROVAL_EDITABLE_LINE_FIELDS` — lookup-driven per module
+- **Supported**: Sales (qty, unit_price), GRN (qty, batch_lot_no, expiry_date), Expenses (amount, expense_category)
+- **Auto-recalculation**: line_total and document totals recalculated after line-item changes
+- **Audit trail**: all line-item changes logged in `edit_history`
+
+### PO Approval Gate Cleanup
+- **Removed** `checkApprovalRequired` from `approvePO` — POs don't move money; `po_approve` sub-permission is sufficient
+- **Removed** `gateApproval` from `updatePO` (non-draft minor edits)
+- **Kept** `gateApproval` in `postInvoice` (supplier invoice) — records financial liability
+
+### New Lookup Categories
+| Category | Purpose |
+|---|---|
+| `SUB_PERMISSIONS` (additions) | 14 approval sub-permissions under `approvals` module |
+| `APPROVAL_EDITABLE_LINE_FIELDS` | Whitelisted line-item fields editable per module in Approval Hub |
+
+### Key Files
+```
+backend/erp/controllers/lookupGenericController.js   # Sub-permission seeds + APPROVAL_EDITABLE_LINE_FIELDS
+backend/erp/services/universalApprovalService.js      # MODULE_TO_SUB_KEY, hasApprovalSub, sub_key mapping, attachment URLs
+backend/erp/controllers/universalApprovalController.js # TYPE_TO_MODULE, sub-perm checks in approve/edit, line-item edit support
+backend/erp/controllers/purchasingController.js       # PO approval gate removal
+frontend/src/erp/pages/ApprovalManager.jsx            # Attachment rendering, image preview modal, line-item edit UI
+```
 
 ---
 

@@ -389,6 +389,21 @@ const SEED_DEFAULTS = {
     { code: 'SALES_GOALS__MANUAL_KPI_ALL', label: 'Enter Manual KPIs for Any BDM', metadata: { module: 'sales_goals', key: 'manual_kpi_all', sort_order: 5 } },
     // Approvals
     { code: 'APPROVALS__RULE_MANAGE', label: 'Create/Edit Approval Rules', metadata: { module: 'approvals', key: 'rule_manage', sort_order: 1 } },
+    // Phase 34 — Per-module approval sub-permissions
+    { code: 'APPROVALS__APPROVE_SALES', label: 'Approve Sales / CSI / Credit Notes', metadata: { module: 'approvals', key: 'approve_sales', sort_order: 2 } },
+    { code: 'APPROVALS__APPROVE_COLLECTIONS', label: 'Approve Collection Receipts', metadata: { module: 'approvals', key: 'approve_collections', sort_order: 3 } },
+    { code: 'APPROVALS__APPROVE_INVENTORY', label: 'Approve GRN (Goods Receipt)', metadata: { module: 'approvals', key: 'approve_inventory', sort_order: 4 } },
+    { code: 'APPROVALS__APPROVE_EXPENSES', label: 'Approve SMER / Car Logbook / Expenses / PRF-CALF', metadata: { module: 'approvals', key: 'approve_expenses', sort_order: 5 } },
+    { code: 'APPROVALS__APPROVE_PURCHASING', label: 'Approve Supplier Invoices', metadata: { module: 'approvals', key: 'approve_purchasing', sort_order: 6 } },
+    { code: 'APPROVALS__APPROVE_PAYROLL', label: 'Approve Payslips', metadata: { module: 'approvals', key: 'approve_payroll', sort_order: 7 } },
+    { code: 'APPROVALS__APPROVE_JOURNAL', label: 'Approve Journal / Depreciation / Interest', metadata: { module: 'approvals', key: 'approve_journal', sort_order: 8 } },
+    { code: 'APPROVALS__APPROVE_BANKING', label: 'Approve Bank Reconciliation', metadata: { module: 'approvals', key: 'approve_banking', sort_order: 9 } },
+    { code: 'APPROVALS__APPROVE_PETTY_CASH', label: 'Approve Petty Cash', metadata: { module: 'approvals', key: 'approve_petty_cash', sort_order: 10 } },
+    { code: 'APPROVALS__APPROVE_IC_TRANSFER', label: 'Approve IC Transfers / Settlements', metadata: { module: 'approvals', key: 'approve_ic_transfer', sort_order: 11 } },
+    { code: 'APPROVALS__APPROVE_INCOME', label: 'Approve Income Reports', metadata: { module: 'approvals', key: 'approve_income', sort_order: 12 } },
+    { code: 'APPROVALS__APPROVE_DEDUCTIONS', label: 'Approve Deduction Schedules', metadata: { module: 'approvals', key: 'approve_deductions', sort_order: 13 } },
+    { code: 'APPROVALS__APPROVE_KPI', label: 'Approve KPI Ratings', metadata: { module: 'approvals', key: 'approve_kpi', sort_order: 14 } },
+    { code: 'APPROVALS__APPROVE_PERDIEM', label: 'Approve Per Diem Overrides', metadata: { module: 'approvals', key: 'approve_perdiem', sort_order: 15 } },
   ],
   // Phase 30 — Credit Note lookups (was hardcoded in CreditNotes.jsx)
   RETURN_REASON: [
@@ -520,6 +535,14 @@ const SEED_DEFAULTS = {
     { code: 'EXPENSE_ENTRY', label: 'Expenses (ORE/ACCESS)', metadata: { fields: ['notes'] } },
     { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { fields: ['purpose', 'check_no', 'notes'] } },
     { code: 'GRN', label: 'GRN', metadata: { fields: ['notes'] } },
+  ],
+
+  // Phase 34 — Editable line-item fields per module in the Approval Hub
+  // Approver can edit individual line items (qty, price, etc.) before approving
+  APPROVAL_EDITABLE_LINE_FIELDS: [
+    { code: 'SALES_LINE', label: 'Sales Line Items', metadata: { fields: ['qty', 'unit_price'] } },
+    { code: 'GRN', label: 'GRN Line Items', metadata: { fields: ['qty', 'batch_lot_no', 'expiry_date'] } },
+    { code: 'EXPENSE_ENTRY', label: 'Expense Lines', metadata: { fields: ['amount', 'expense_category'] } },
   ],
 
   // Product Catalog Access — controls which subsidiary entities can browse parent entity products

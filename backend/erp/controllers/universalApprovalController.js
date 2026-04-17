@@ -6,8 +6,25 @@
  * PATCH /universal-edit   — quick-edit whitelisted fields before approving (Phase G3)
  */
 const { catchAsync } = require('../../middleware/errorHandler');
-const { getUniversalPending } = require('../services/universalApprovalService');
+const { getUniversalPending, MODULE_TO_SUB_KEY, hasApprovalSub } = require('../services/universalApprovalService');
 const Lookup = require('../models/Lookup');
+
+// Phase 34 — Map approval handler type keys to module keys for sub-permission checks
+const TYPE_TO_MODULE = {
+  sales_line: 'SALES',
+  collection: 'COLLECTION',
+  grn: 'INVENTORY',
+  smer_entry: 'SMER',
+  car_logbook: 'CAR_LOGBOOK',
+  expense_entry: 'EXPENSES',
+  prf_calf: 'PRF_CALF',
+  payslip: 'PAYROLL',
+  kpi_rating: 'KPI',
+  income_report: 'INCOME',
+  deduction_schedule: 'DEDUCTION_SCHEDULE',
+  perdiem_override: 'PERDIEM_OVERRIDE',
+  approval_request: 'APPROVAL_REQUEST',
+};
 
 // Module-specific approval handlers (lazy-loaded to avoid circular deps)
 const approvalHandlers = {
@@ -177,7 +194,12 @@ const approvalHandlers = {
       // Full posting with TransactionEvent, inventory (FIFO/consignment), and journals
       // OPENING_AR: skips inventory + COGS automatically inside postSaleRow
       const { postSaleRow } = require('./salesController');
-      await postSaleRow(doc, userId);
+      // Determine if posting user is admin-like (president/admin/finance/ceo)
+      // so FIFO uses entity-wide stock instead of restricting to bdm_id
+      const User = require('../../models/User');
+      const { isAdminLike } = require('../../constants/roles');
+      const poster = await User.findById(userId).select('role').lean();
+      await postSaleRow(doc, userId, { isAdminLike: poster && isAdminLike(poster.role) });
     } else if (action === 'reject') {
       doc.status = 'ERROR';
       doc.rejection_reason = reason;
@@ -277,9 +299,9 @@ const approvalHandlers = {
  * GET /api/erp/approvals/universal-pending
  */
 const getUniversalPendingEndpoint = catchAsync(async (req, res) => {
-  // Pass user's entity_ids for cross-entity support (president sees all, multi-entity users see their entities)
+  // Phase 34: pass full user object for sub-permission checks
   const entityIds = req.user.entity_ids || (req.user.entity_id ? [req.user.entity_id] : []);
-  const items = await getUniversalPending(req.entityId, req.user._id, req.user.role, entityIds);
+  const items = await getUniversalPending(req.entityId, req.user, entityIds);
   res.json({ success: true, data: items, count: items.length });
 });
 
@@ -303,6 +325,16 @@ const universalApprove = catchAsync(async (req, res) => {
   const handler = approvalHandlers[type];
   if (!handler) {
     return res.status(400).json({ success: false, message: `Unknown approval type: ${type}` });
+  }
+
+  // Phase 34: sub-permission check — user must have the module's approval sub-permission
+  const moduleKey = TYPE_TO_MODULE[type];
+  const subKey = moduleKey ? MODULE_TO_SUB_KEY[moduleKey] : null;
+  if (subKey && !hasApprovalSub(req.user, subKey)) {
+    return res.status(403).json({
+      success: false,
+      message: `Access denied: approvals.${subKey} sub-permission required`,
+    });
   }
 
   const result = await handler(id, action, req.user._id, reason);
@@ -343,12 +375,26 @@ const EDITABLE_STATUSES = {
  *
  * Quick-edit whitelisted fields on a pending document (lookup-driven).
  * Editable fields come from APPROVAL_EDITABLE_FIELDS lookup (entity-scoped).
+ *
+ * Phase 34: also supports line-item edits via updates.line_items array.
+ *   updates.line_items: [{ index: 0, qty: 5, unit_price: 100 }, ...]
+ *   Allowed line-item fields come from APPROVAL_EDITABLE_LINE_FIELDS lookup.
  */
 const universalEdit = catchAsync(async (req, res) => {
   const { type, id, updates, edit_reason } = req.body;
 
   if (!type || !id || !updates || typeof updates !== 'object') {
     return res.status(400).json({ success: false, message: 'type, id, and updates object are required' });
+  }
+
+  // Phase 34: sub-permission check
+  const moduleKey = TYPE_TO_MODULE[type];
+  const subKey = moduleKey ? MODULE_TO_SUB_KEY[moduleKey] : null;
+  if (subKey && !hasApprovalSub(req.user, subKey)) {
+    return res.status(403).json({
+      success: false,
+      message: `Access denied: approvals.${subKey} sub-permission required`,
+    });
   }
 
   // 1. Check model exists for this type
@@ -382,24 +428,52 @@ const universalEdit = catchAsync(async (req, res) => {
     }
   }
 
-  if (!allowedFields || allowedFields.length === 0) {
-    return res.status(400).json({ success: false, message: `No editable fields configured for type "${type}"` });
+  // Phase 34: fetch allowed line-item fields (separate lookup category)
+  let allowedLineFields = null;
+  const lineItemUpdates = updates.line_items;
+  if (Array.isArray(lineItemUpdates) && lineItemUpdates.length > 0) {
+    const lineFieldEntry = await Lookup.findOne({
+      entity_id: req.entityId,
+      category: 'APPROVAL_EDITABLE_LINE_FIELDS',
+      code: lookupCode,
+      is_active: true
+    }).lean();
+
+    let lineFields = lineFieldEntry?.metadata?.fields;
+    if (!lineFields) {
+      const { SEED_DEFAULTS } = require('./lookupGenericController');
+      const lineSeeds = SEED_DEFAULTS.APPROVAL_EDITABLE_LINE_FIELDS || [];
+      const lineSeed = lineSeeds.find(s => s.code === lookupCode);
+      if (lineSeed) {
+        await Lookup.updateOne(
+          { entity_id: req.entityId, category: 'APPROVAL_EDITABLE_LINE_FIELDS', code: lookupCode },
+          { $setOnInsert: { label: lineSeed.label, sort_order: 0, is_active: true, metadata: lineSeed.metadata || {} } },
+          { upsert: true }
+        );
+        lineFields = lineSeed.metadata?.fields;
+      }
+    }
+    allowedLineFields = lineFields || [];
   }
 
-  // 3. Filter updates to only whitelisted fields
-  const safeUpdates = {};
-  const changes = [];
-  for (const [field, newValue] of Object.entries(updates)) {
-    if (allowedFields.includes(field)) {
-      safeUpdates[field] = newValue;
+  // Check that at least one type of edit is possible
+  const hasTopLevelUpdates = Object.keys(updates).some(k => k !== 'line_items');
+  const hasLineUpdates = allowedLineFields && lineItemUpdates && lineItemUpdates.length > 0;
+
+  if (!hasTopLevelUpdates && !hasLineUpdates) {
+    if (!allowedFields?.length && !allowedLineFields?.length) {
+      return res.status(400).json({ success: false, message: `No editable fields configured for type "${type}"` });
     }
   }
 
-  if (Object.keys(safeUpdates).length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: `None of the provided fields are editable. Allowed: ${allowedFields.join(', ')}`
-    });
+  // 3. Filter top-level updates to only whitelisted fields
+  const safeUpdates = {};
+  if (allowedFields && allowedFields.length > 0) {
+    for (const [field, newValue] of Object.entries(updates)) {
+      if (field !== 'line_items' && allowedFields.includes(field)) {
+        safeUpdates[field] = newValue;
+      }
+    }
   }
 
   // 4. Load the document
@@ -418,12 +492,63 @@ const universalEdit = catchAsync(async (req, res) => {
     });
   }
 
-  // 6. Apply updates and build change log
+  // 6. Apply top-level updates and build change log
+  const changes = [];
   for (const [field, newValue] of Object.entries(safeUpdates)) {
     const oldValue = doc[field];
     if (String(oldValue ?? '') !== String(newValue ?? '')) {
       changes.push({ field, old_value: oldValue, new_value: newValue });
       doc[field] = newValue;
+    }
+  }
+
+  // Phase 34: apply line-item updates
+  if (hasLineUpdates && allowedLineFields.length > 0) {
+    const docLines = doc.line_items || doc.lines || [];
+    for (const lineUpdate of lineItemUpdates) {
+      const idx = lineUpdate.index;
+      if (idx === undefined || idx < 0 || idx >= docLines.length) continue;
+
+      const line = docLines[idx];
+      for (const [field, newValue] of Object.entries(lineUpdate)) {
+        if (field === 'index') continue;
+        if (!allowedLineFields.includes(field)) continue;
+
+        const oldValue = line[field];
+        if (String(oldValue ?? '') !== String(newValue ?? '')) {
+          changes.push({
+            field: `line_items[${idx}].${field}`,
+            old_value: oldValue,
+            new_value: newValue,
+          });
+          line[field] = newValue;
+
+          // Recalculate line_total for sales lines
+          if ((field === 'qty' || field === 'unit_price') && line.unit_price !== undefined && line.qty !== undefined) {
+            line.line_total = (Number(line.qty) || 0) * (Number(line.unit_price) || 0);
+          }
+          // Recalculate line_total for expense lines
+          if (field === 'amount') {
+            line.amount = Number(newValue) || 0;
+          }
+        }
+      }
+    }
+
+    // Recalculate document totals after line-item changes
+    if (doc.line_items && changes.some(c => c.field.startsWith('line_items'))) {
+      // Sales: invoice_total = sum of line_totals
+      if (type === 'sales_line') {
+        doc.invoice_total = doc.line_items.reduce((sum, li) => sum + (li.line_total || 0), 0);
+      }
+      // Expenses: total_amount = sum of line amounts
+      if (type === 'expense_entry' && doc.lines) {
+        doc.total_amount = doc.lines.reduce((sum, li) => sum + (li.amount || 0), 0);
+      }
+      doc.markModified('line_items');
+    }
+    if (doc.lines && changes.some(c => c.field.startsWith('line_items'))) {
+      doc.markModified('lines');
     }
   }
 

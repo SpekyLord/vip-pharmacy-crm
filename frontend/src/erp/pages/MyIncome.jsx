@@ -7,7 +7,7 @@
  *
  * Contractor-only (not employees — they use Payroll module).
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useIncome from '../hooks/useIncome';
@@ -89,7 +89,28 @@ const pageStyles = `
   .form-field input, .form-field select, .form-field textarea { padding: 8px 10px; border: 1px solid var(--erp-border); border-radius: 6px; font-size: 13px; }
   .form-field textarea { min-height: 50px; resize: vertical; }
   .preview-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px; margin-top: 12px; font-size: 13px; }
-  @media(max-width: 768px) { .my-income-main { padding: 12px; } .payslip-grid { grid-template-columns: 1fr; } .list-grid { grid-template-columns: 1fr 1fr; } .add-form { flex-direction: column; } .form-grid { grid-template-columns: 1fr; } }
+  .bd-toggle { cursor: pointer; user-select: none; transition: background 0.15s; }
+  .bd-toggle:hover { background: var(--erp-accent-soft, #e8efff); }
+  .bd-arrow { display: inline-block; width: 16px; font-size: 10px; color: var(--erp-muted); transition: transform 0.2s; }
+  .bd-arrow.open { transform: rotate(90deg); }
+  .bd-panel { background: #f8fafc; border: 1px solid var(--erp-border); border-radius: 8px; padding: 12px; margin: 4px 0 8px; animation: bdSlide 0.2s ease-out; }
+  @keyframes bdSlide { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 2000px; } }
+  .bd-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .bd-table th { text-align: left; padding: 4px 6px; background: #e8efff; font-weight: 600; font-size: 11px; }
+  .bd-table td { padding: 4px 6px; border-top: 1px solid #e2e8f0; }
+  .bd-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .bd-subtotal { font-weight: 600; background: #f0f4ff; }
+  .bd-section-title { font-size: 12px; font-weight: 700; color: var(--erp-text); margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .bd-chip { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; margin-left: 4px; }
+  .bd-chip-full { background: #d1fae5; color: #065f46; } .bd-chip-half { background: #fef3c7; color: #92400e; } .bd-chip-zero { background: #fee2e2; color: #991b1b; }
+  .bd-chip-yes { background: #d1fae5; color: #065f46; } .bd-chip-no { background: #fee2e2; color: #991b1b; }
+  .bd-override { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 2px 6px; font-size: 11px; color: #92400e; }
+  .bd-empty { text-align: center; color: var(--erp-muted); padding: 12px; font-size: 12px; font-style: italic; }
+  .bd-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .bd-load-btn { padding: 6px 14px; border: 1px solid #2563eb; border-radius: 8px; background: transparent; color: #2563eb; font-size: 12px; font-weight: 600; cursor: pointer; margin-bottom: 8px; }
+  .bd-load-btn:hover { background: #eff6ff; }
+  .bd-load-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  @media(max-width: 768px) { .my-income-main { padding: 12px; } .payslip-grid { grid-template-columns: 1fr; } .list-grid { grid-template-columns: 1fr 1fr; } .add-form { flex-direction: column; } .form-grid { grid-template-columns: 1fr; } .bd-panel { padding: 8px; } }
   @media(max-width: 480px) { .list-grid { grid-template-columns: 1fr; } }
 `;
 
@@ -140,6 +161,11 @@ export default function MyIncome() {
   const [newDedType, setNewDedType] = useState('');
   const [newDedAmount, setNewDedAmount] = useState('');
   const [newDedDesc, setNewDedDesc] = useState('');
+
+  // ── Breakdown state (transparent payslip) ──
+  const [breakdown, setBreakdown] = useState(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({});
 
   // ── Projection state ──
   const [projection, setProjection] = useState(null);
@@ -210,7 +236,7 @@ export default function MyIncome() {
     setLoading(true);
     try {
       const res = await inc.getIncomeById(report._id);
-      if (res?.data) { setSelected(res.data); setPayslipView('detail'); }
+      if (res?.data) { setSelected(res.data); setPayslipView('detail'); setBreakdown(null); setExpandedSections({}); }
     } catch (err) { showError(err, 'Could not load payslip'); }
     setLoading(false);
   };
@@ -335,6 +361,25 @@ export default function MyIncome() {
   const canAddDeductions = selected?.status === 'GENERATED';
   const canConfirm = selected?.status === 'REVIEWED';
   const lines = selected?.deduction_lines || [];
+
+  // ── Breakdown helpers ──
+  const loadBreakdown = async (reportId) => {
+    if (breakdown?.report_id === reportId) return; // already loaded
+    setBreakdownLoading(true);
+    try {
+      const res = await inc.getIncomeBreakdown(reportId);
+      setBreakdown(res?.data || null);
+    } catch (err) { showError(err, 'Could not load breakdown'); setBreakdown(null); }
+    setBreakdownLoading(false);
+  };
+
+  const toggleSection = (key) => {
+    setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+    // Lazy-load breakdown on first expand
+    if (!breakdown && selected?._id && !expandedSections[key]) {
+      loadBreakdown(selected._id);
+    }
+  };
 
   // Resolve cycle code → label
   const cycleLabel = (code) => cycleOptions.find(c => c.code === code)?.label || code;
@@ -535,46 +580,363 @@ export default function MyIncome() {
                     {selected.return_reason && selected.status === 'RETURNED' && (
                       <div className="return-banner"><strong>Returned by Finance:</strong> {selected.return_reason}</div>
                     )}
+                    {/* ── Breakdown toggle ── */}
+                    <button className="bd-load-btn" disabled={breakdownLoading}
+                      onClick={() => { if (!breakdown) loadBreakdown(selected._id); setExpandedSections(prev => { const allOpen = Object.values(prev).some(v => v); return allOpen ? {} : { smer: true, commission: true, profitSharing: true, calf: true, personalGas: true }; }); }}>
+                      {breakdownLoading ? 'Loading...' : breakdown ? (Object.values(expandedSections).some(v => v) ? 'Collapse All' : 'Expand All') : 'View Breakdown'}
+                    </button>
+
                     <div className="payslip-grid">
+                      {/* ═══ EARNINGS ═══ */}
                       <div>
                         <table className="payslip-table">
                           <thead><tr><th colSpan={2}>Earnings</th></tr></thead>
                           <tbody>
-                            <tr><td>SMER</td><td>{fmt(selected.earnings?.smer)}</td></tr>
-                            <tr><td>CORE Commission</td><td>{fmt(selected.earnings?.core_commission)}</td></tr>
+                            {/* SMER */}
+                            <tr className="bd-toggle" onClick={() => toggleSection('smer')}>
+                              <td><span className={`bd-arrow ${expandedSections.smer ? 'open' : ''}`}>▸</span> SMER (Reimbursable)</td>
+                              <td>{fmt(selected.earnings?.smer)}</td>
+                            </tr>
+                            {expandedSections.smer && breakdown?.smer && (
+                              <tr><td colSpan={2} style={{ padding: 0 }}>
+                                <div className="bd-panel">
+                                  <div className="bd-section-title">Subtotals</div>
+                                  <table className="bd-table">
+                                    <tbody>
+                                      <tr><td>Per Diem ({breakdown.smer.working_days} working days)</td><td>{fmt(breakdown.smer.subtotals.perdiem)}</td></tr>
+                                      <tr><td>Transport (P2P)</td><td>{fmt(breakdown.smer.subtotals.transport_p2p)}</td></tr>
+                                      <tr><td>Transport (Special)</td><td>{fmt(breakdown.smer.subtotals.transport_special)}</td></tr>
+                                      <tr><td>ORE (Cash Expenses)</td><td>{fmt(breakdown.smer.subtotals.ore)}</td></tr>
+                                      <tr className="bd-subtotal"><td>Total Reimbursable</td><td>{fmt(breakdown.smer.subtotals.total_reimbursable)}</td></tr>
+                                    </tbody>
+                                  </table>
+
+                                  <div className="bd-section-title" style={{ marginTop: 10 }}>Daily Entries</div>
+                                  <div className="bd-scroll">
+                                    <table className="bd-table">
+                                      <thead><tr><th>Day</th><th>Hospital</th><th>MDs</th><th>Tier</th><th>Per Diem</th><th>Transport</th><th>ORE</th></tr></thead>
+                                      <tbody>
+                                        {breakdown.smer.daily_entries.map((d, i) => (
+                                          <tr key={i}>
+                                            <td>{d.day}{d.entry_date ? ` (${new Date(d.entry_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })})` : ''}</td>
+                                            <td style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.hospital_covered || '-'}</td>
+                                            <td>{d.md_count}</td>
+                                            <td>
+                                              <span className={`bd-chip bd-chip-${(d.perdiem_tier || 'zero').toLowerCase()}`}>{d.perdiem_tier}</span>
+                                              {d.perdiem_override && <span className="bd-chip" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 2 }}>OVR</span>}
+                                            </td>
+                                            <td>{fmt(d.perdiem_amount)}</td>
+                                            <td>{fmt((d.transpo_p2p || 0) + (d.transpo_special || 0))}</td>
+                                            <td>{fmt(d.ore_amount)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+
+                                  {/* ORE expense line details */}
+                                  {breakdown.ore && breakdown.ore.expense_lines?.length > 0 && (
+                                    <>
+                                      <div className="bd-section-title" style={{ marginTop: 10 }}>ORE Receipts (Cash Expenses)</div>
+                                      <div className="bd-scroll">
+                                        <table className="bd-table">
+                                          <thead><tr><th>Date</th><th>Category</th><th>Establishment</th><th>Particulars</th><th>OR#</th><th>Amount</th></tr></thead>
+                                          <tbody>
+                                            {breakdown.ore.expense_lines.map((l, i) => (
+                                              <tr key={i}>
+                                                <td>{l.expense_date ? new Date(l.expense_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '-'}</td>
+                                                <td>{l.expense_category || '-'}</td>
+                                                <td>{l.establishment || '-'}</td>
+                                                <td>{l.particulars || '-'}</td>
+                                                <td>{l.or_number || '-'}</td>
+                                                <td>{fmt(l.amount)}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </>
+                                  )}
+
+                                  {/* Revolving Fund */}
+                                  {(breakdown.smer.revolving_fund.travel_advance || 0) > 0 && (
+                                    <>
+                                      <div className="bd-section-title" style={{ marginTop: 10 }}>Revolving Fund</div>
+                                      <table className="bd-table">
+                                        <tbody>
+                                          <tr><td>Travel Advance</td><td>{fmt(breakdown.smer.revolving_fund.travel_advance)}</td></tr>
+                                          <tr><td>Reimbursable</td><td>{fmt(breakdown.smer.revolving_fund.total_reimbursable)}</td></tr>
+                                          <tr className="bd-subtotal"><td>Balance on Hand</td><td style={{ color: (breakdown.smer.revolving_fund.balance_on_hand || 0) >= 0 ? '#16a34a' : '#dc2626' }}>{fmt(breakdown.smer.revolving_fund.balance_on_hand)}</td></tr>
+                                        </tbody>
+                                      </table>
+                                    </>
+                                  )}
+                                </div>
+                              </td></tr>
+                            )}
+                            {expandedSections.smer && !breakdown?.smer && !breakdownLoading && (
+                              <tr><td colSpan={2}><div className="bd-empty">No SMER data for this period</div></td></tr>
+                            )}
+
+                            {/* Commission */}
+                            <tr className="bd-toggle" onClick={() => toggleSection('commission')}>
+                              <td><span className={`bd-arrow ${expandedSections.commission ? 'open' : ''}`}>▸</span> CORE Commission</td>
+                              <td>{fmt(selected.earnings?.core_commission)}</td>
+                            </tr>
+                            {expandedSections.commission && breakdown?.commission && (
+                              <tr><td colSpan={2} style={{ padding: 0 }}>
+                                <div className="bd-panel">
+                                  {breakdown.commission.collections.length === 0 && <div className="bd-empty">No posted collections for this period</div>}
+                                  {breakdown.commission.collections.map(c => (
+                                    <div key={c._id} style={{ marginBottom: 8 }}>
+                                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                                        CR# {c.cr_no} — {c.hospital_name} — {c.cr_date ? new Date(c.cr_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                                      </div>
+                                      <table className="bd-table">
+                                        <thead><tr><th>CSI Ref</th><th>Invoice</th><th>Net of VAT</th><th>Rate</th><th>Commission</th></tr></thead>
+                                        <tbody>
+                                          {c.settled_csis.map((csi, i) => (
+                                            <tr key={i}>
+                                              <td>{csi.doc_ref || '-'}</td>
+                                              <td>{fmt(csi.invoice_amount)}</td>
+                                              <td>{fmt(csi.net_of_vat)}</td>
+                                              <td>{((csi.commission_rate || 0) * 100).toFixed(1)}%</td>
+                                              <td>{fmt(csi.commission_amount)}</td>
+                                            </tr>
+                                          ))}
+                                          <tr className="bd-subtotal"><td colSpan={4}>CR Total Commission</td><td>{fmt(c.total_commission)}</td></tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td></tr>
+                            )}
+
+                            {/* Bonus */}
                             <tr><td>Bonus</td><td>{fmt(selected.earnings?.bonus)}</td></tr>
-                            <tr><td>Profit Sharing</td><td>{fmt(selected.earnings?.profit_sharing)}</td></tr>
+
+                            {/* Profit Sharing */}
+                            <tr className="bd-toggle" onClick={() => toggleSection('profitSharing')}>
+                              <td><span className={`bd-arrow ${expandedSections.profitSharing ? 'open' : ''}`}>▸</span> Profit Sharing</td>
+                              <td>{fmt(selected.earnings?.profit_sharing)}</td>
+                            </tr>
+                            {expandedSections.profitSharing && breakdown?.profit_sharing && (
+                              <tr><td colSpan={2} style={{ padding: 0 }}>
+                                <div className="bd-panel">
+                                  <div style={{ display: 'flex', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+                                    <span className={`bd-chip ${breakdown.profit_sharing.eligible ? 'bd-chip-yes' : 'bd-chip-no'}`}>
+                                      {breakdown.profit_sharing.eligible ? 'Eligible' : 'Not Eligible'}
+                                    </span>
+                                    {breakdown.profit_sharing.deficit_flag && <span className="bd-chip bd-chip-no">Deficit — reverted to commission</span>}
+                                  </div>
+
+                                  <div className="bd-section-title">P&L Summary</div>
+                                  <table className="bd-table">
+                                    <tbody>
+                                      <tr><td>Gross Profit</td><td>{fmt(breakdown.profit_sharing.pnl_summary.gross_profit)}</td></tr>
+                                      <tr><td>Total Expenses</td><td>{fmt(breakdown.profit_sharing.pnl_summary.total_expenses)}</td></tr>
+                                      <tr className="bd-subtotal"><td>Net Income</td><td style={{ color: (breakdown.profit_sharing.pnl_summary.net_income || 0) >= 0 ? '#16a34a' : '#dc2626' }}>{fmt(breakdown.profit_sharing.pnl_summary.net_income)}</td></tr>
+                                      {breakdown.profit_sharing.eligible && (
+                                        <>
+                                          <tr><td>BDM Share (30%)</td><td>{fmt(breakdown.profit_sharing.bdm_share)}</td></tr>
+                                          <tr><td>VIP Share (70%)</td><td>{fmt(breakdown.profit_sharing.vip_share)}</td></tr>
+                                        </>
+                                      )}
+                                    </tbody>
+                                  </table>
+
+                                  {breakdown.profit_sharing.products?.length > 0 && (
+                                    <>
+                                      <div className="bd-section-title" style={{ marginTop: 10 }}>Product Eligibility</div>
+                                      <div className="bd-scroll">
+                                        <table className="bd-table">
+                                          <thead><tr><th>Product</th><th>Hospitals</th><th>MDs</th><th>Months</th><th>Status</th></tr></thead>
+                                          <tbody>
+                                            {breakdown.profit_sharing.products.map((p, i) => (
+                                              <tr key={i}>
+                                                <td>{p.product_name}</td>
+                                                <td>{p.hospital_count}</td>
+                                                <td>{p.md_count}</td>
+                                                <td>{p.consecutive_months}</td>
+                                                <td><span className={`bd-chip ${p.qualified ? 'bd-chip-yes' : p.conditions_met ? 'bd-chip-half' : 'bd-chip-no'}`}>
+                                                  {p.qualified ? 'Qualified' : p.conditions_met ? 'Building' : 'Not Met'}
+                                                </span></td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </td></tr>
+                            )}
+                            {expandedSections.profitSharing && !breakdown?.profit_sharing && !breakdownLoading && (
+                              <tr><td colSpan={2}><div className="bd-empty">No P&L / Profit Sharing data for this period</div></td></tr>
+                            )}
+
+                            {/* Reimbursements */}
                             <tr><td>Reimbursements</td><td>{fmt(selected.earnings?.reimbursements)}</td></tr>
+
+                            {/* CALF Reimbursement (earnings side) */}
+                            {(selected.earnings?.calf_reimbursement || 0) > 0 && (
+                              <>
+                                <tr className="bd-toggle" onClick={() => toggleSection('calf')}>
+                                  <td><span className={`bd-arrow ${expandedSections.calf ? 'open' : ''}`}>▸</span> CALF Reimbursement</td>
+                                  <td>{fmt(selected.earnings?.calf_reimbursement)}</td>
+                                </tr>
+                                {expandedSections.calf && breakdown?.calf && (
+                                  <tr><td colSpan={2} style={{ padding: 0 }}>
+                                    <div className="bd-panel">
+                                      <table className="bd-table">
+                                        <thead><tr><th>CALF#</th><th>Advance</th><th>Liquidated</th><th>Balance</th><th>Status</th></tr></thead>
+                                        <tbody>
+                                          {breakdown.calf.documents.map(c => (
+                                            <tr key={c._id}>
+                                              <td>{c.calf_number || '-'}</td>
+                                              <td>{fmt(c.advance_amount)}</td>
+                                              <td>{fmt(c.liquidation_amount)}</td>
+                                              <td style={{ color: c.balance > 0 ? '#b45309' : '#16a34a' }}>{fmt(c.balance)}</td>
+                                              <td>{c.status}</td>
+                                            </tr>
+                                          ))}
+                                          <tr className="bd-subtotal">
+                                            <td>Total</td>
+                                            <td>{fmt(breakdown.calf.total_advance)}</td>
+                                            <td>{fmt(breakdown.calf.total_liquidation)}</td>
+                                            <td style={{ color: breakdown.calf.balance > 0 ? '#b45309' : '#16a34a' }}>{fmt(breakdown.calf.balance)}</td>
+                                            <td>{breakdown.calf.is_reimbursement ? 'Company reimburses you' : ''}</td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </td></tr>
+                                )}
+                              </>
+                            )}
+
                             <tr className="total-row"><td>Total Earnings</td><td>{fmt(selected.total_earnings)}</td></tr>
                           </tbody>
                         </table>
                       </div>
+
+                      {/* ═══ DEDUCTIONS ═══ */}
                       <div>
                         <table className="payslip-table">
                           <thead><tr><th colSpan={3}>Deductions</th></tr></thead>
                           <tbody>
                             {lines.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No deductions</td></tr>}
-                            {lines.map(line => (
-                              <tr key={line._id} style={line.status === 'REJECTED' ? { opacity: 0.5 } : {}}>
-                                <td>
-                                  {line.deduction_label}
-                                  <span className={`badge ${LINE_BADGES[line.status] || ''}`} style={{ marginLeft: 6 }}>{line.status}</span>
-                                  {line.auto_source === 'SCHEDULE' && <span style={{ fontSize: 10, color: '#6366f1', marginLeft: 4 }}>(scheduled)</span>}
-                                  {line.auto_source === 'CALF' && <span style={{ fontSize: 10, color: 'var(--erp-muted)', marginLeft: 4 }}>(auto)</span>}
-                                  {line.description && <span className="deduction-desc">{line.description}</span>}
-                                  {line.finance_note && <span className="correction-note">Finance: {line.finance_note}</span>}
-                                </td>
-                                <td style={{ textAlign: 'right' }}>
-                                  {line.original_amount != null && <span className="original-amount">{fmt(line.original_amount)}</span>}
-                                  {fmt(line.amount)}
-                                </td>
-                                <td style={{ width: 40, textAlign: 'center' }}>
-                                  {canAddDeductions && line.status === 'PENDING' && !line.auto_source && (
-                                    <button className="btn btn-danger btn-sm" onClick={() => handleRemoveDeduction(line._id)}>✕</button>
+                            {lines.map(line => {
+                              const isPersonalGas = line.auto_source === 'PERSONAL_GAS';
+                              const isCalfDed = line.auto_source === 'CALF';
+                              const isExpandable = isPersonalGas || isCalfDed;
+                              const sectionKey = isPersonalGas ? 'personalGas' : isCalfDed ? 'calfDed' : null;
+                              return (
+                                <Fragment key={line._id}>
+                                  <tr className={isExpandable ? 'bd-toggle' : ''} style={line.status === 'REJECTED' ? { opacity: 0.5 } : {}}
+                                    onClick={isExpandable ? () => toggleSection(sectionKey) : undefined}>
+                                    <td>
+                                      {isExpandable && <span className={`bd-arrow ${expandedSections[sectionKey] ? 'open' : ''}`}>▸</span>}
+                                      {line.deduction_label}
+                                      <span className={`badge ${LINE_BADGES[line.status] || ''}`} style={{ marginLeft: 6 }}>{line.status}</span>
+                                      {line.auto_source === 'SCHEDULE' && <span style={{ fontSize: 10, color: '#6366f1', marginLeft: 4 }}>(scheduled)</span>}
+                                      {isCalfDed && <span style={{ fontSize: 10, color: 'var(--erp-muted)', marginLeft: 4 }}>(auto)</span>}
+                                      {line.description && <span className="deduction-desc">{line.description}</span>}
+                                      {line.finance_note && <span className="correction-note">Finance: {line.finance_note}</span>}
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                      {line.original_amount != null && <span className="original-amount">{fmt(line.original_amount)}</span>}
+                                      {fmt(line.amount)}
+                                    </td>
+                                    <td style={{ width: 40, textAlign: 'center' }}>
+                                      {canAddDeductions && line.status === 'PENDING' && !line.auto_source && (
+                                        <button className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); handleRemoveDeduction(line._id); }}>✕</button>
+                                      )}
+                                    </td>
+                                  </tr>
+
+                                  {/* Personal Gas breakdown */}
+                                  {isPersonalGas && expandedSections.personalGas && breakdown?.personal_gas && (
+                                    <tr><td colSpan={3} style={{ padding: 0 }}>
+                                      <div className="bd-panel">
+                                        {breakdown.personal_gas.entries.length === 0 && <div className="bd-empty">No car logbook entries for this period</div>}
+                                        {breakdown.personal_gas.entries.length > 0 && (
+                                          <>
+                                            <div className="bd-section-title">Daily Logbook</div>
+                                            <div className="bd-scroll">
+                                              <table className="bd-table">
+                                                <thead><tr><th>Date</th><th>Start KM</th><th>End KM</th><th>Total</th><th>Personal</th><th>Official</th><th>Fuel</th><th>Gas Ded.</th></tr></thead>
+                                                <tbody>
+                                                  {breakdown.personal_gas.entries.map(e => (
+                                                    <tr key={e._id}>
+                                                      <td>{e.entry_date ? new Date(e.entry_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '-'}</td>
+                                                      <td>{e.starting_km?.toLocaleString()}</td>
+                                                      <td>{e.ending_km?.toLocaleString()}</td>
+                                                      <td>{e.total_km}</td>
+                                                      <td>{e.personal_km}</td>
+                                                      <td>{e.official_km}</td>
+                                                      <td>
+                                                        {e.fuel_entries.map((f, fi) => (
+                                                          <div key={fi} style={{ fontSize: 10 }}>{f.station_name || 'Fuel'}: {f.liters}L @ {fmt(f.price_per_liter)}</div>
+                                                        ))}
+                                                        {e.fuel_entries.length === 0 && '-'}
+                                                      </td>
+                                                      <td>{fmt(e.personal_gas_amount)}</td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            </div>
+
+                                            <div className="bd-section-title" style={{ marginTop: 10 }}>Computation Summary</div>
+                                            <table className="bd-table">
+                                              <tbody>
+                                                <tr><td>Total KM</td><td>{breakdown.personal_gas.summary.total_km?.toLocaleString()}</td></tr>
+                                                <tr><td>Personal KM</td><td>{breakdown.personal_gas.summary.total_personal_km?.toLocaleString()}</td></tr>
+                                                <tr><td>Official KM</td><td>{breakdown.personal_gas.summary.total_official_km?.toLocaleString()}</td></tr>
+                                                <tr><td>Total Fuel</td><td>{breakdown.personal_gas.summary.total_fuel_liters?.toFixed(2)}L @ avg {fmt(breakdown.personal_gas.summary.avg_price_per_liter)}/L</td></tr>
+                                                <tr><td>Total Fuel Cost</td><td>{fmt(breakdown.personal_gas.summary.total_fuel_cost)}</td></tr>
+                                                <tr className="bd-subtotal"><td>Personal Gas Deduction</td><td>{fmt(breakdown.personal_gas.total_deduction)}</td></tr>
+                                              </tbody>
+                                            </table>
+                                          </>
+                                        )}
+                                      </div>
+                                    </td></tr>
                                   )}
-                                </td>
-                              </tr>
-                            ))}
+
+                                  {/* CALF deduction breakdown */}
+                                  {isCalfDed && expandedSections.calfDed && breakdown?.calf && (
+                                    <tr><td colSpan={3} style={{ padding: 0 }}>
+                                      <div className="bd-panel">
+                                        <table className="bd-table">
+                                          <thead><tr><th>CALF#</th><th>Advance</th><th>Liquidated</th><th>Balance</th><th>Status</th></tr></thead>
+                                          <tbody>
+                                            {breakdown.calf.documents.map(c => (
+                                              <tr key={c._id}>
+                                                <td>{c.calf_number || '-'}</td>
+                                                <td>{fmt(c.advance_amount)}</td>
+                                                <td>{fmt(c.liquidation_amount)}</td>
+                                                <td style={{ color: c.balance > 0 ? '#b45309' : '#16a34a' }}>{fmt(c.balance)}</td>
+                                                <td>{c.status}</td>
+                                              </tr>
+                                            ))}
+                                            <tr className="bd-subtotal">
+                                              <td>Total</td>
+                                              <td>{fmt(breakdown.calf.total_advance)}</td>
+                                              <td>{fmt(breakdown.calf.total_liquidation)}</td>
+                                              <td>{fmt(breakdown.calf.balance)}</td>
+                                              <td>{breakdown.calf.is_deduction ? 'Return excess to company' : ''}</td>
+                                            </tr>
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </td></tr>
+                                  )}
+                                </Fragment>
+                              );
+                            })}
                             <tr className="total-row"><td colSpan={2}>Total Deductions</td><td style={{ textAlign: 'right' }}>{fmt(selected.total_deductions)}</td></tr>
                           </tbody>
                         </table>

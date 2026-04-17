@@ -32,7 +32,7 @@ export default function ApprovalManager() {
   const [rejectReason, setRejectReason] = useState('');
 
   // Lookup-driven options (database-driven via useLookupBatch)
-  const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE', 'APPROVAL_EDITABLE_FIELDS', 'CYCLE']);
+  const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE', 'APPROVAL_EDITABLE_FIELDS', 'APPROVAL_EDITABLE_LINE_FIELDS', 'CYCLE']);
 
   const MODULE_OPTIONS = (lookups.APPROVAL_MODULE || []).map(o => o.code || o.value);
   const APPROVER_TYPES = (lookups.APPROVER_TYPE || []).map(o => ({ value: o.code || o.value, label: o.label }));
@@ -59,6 +59,12 @@ export default function ApprovalManager() {
   const [editForm, setEditForm] = useState({});            // { field: value }
   const [editSaving, setEditSaving] = useState(false);
 
+  // Phase 34: Image preview + line-item edit state
+  const [previewImage, setPreviewImage] = useState(null); // URL of image to preview full-size
+  const [editingLineItem, setEditingLineItem] = useState(null); // { itemId, lineIndex }
+  const [lineEditForm, setLineEditForm] = useState({});
+  const [lineEditSaving, setLineEditSaving] = useState(false);
+
   // Lookup-driven editable fields map: { type_key: [field1, field2, ...] }
   const editableFieldsMap = useMemo(() => {
     const map = {};
@@ -67,6 +73,15 @@ export default function ApprovalManager() {
     });
     return map;
   }, [lookups.APPROVAL_EDITABLE_FIELDS]);
+
+  // Phase 34: Lookup-driven editable line-item fields map
+  const editableLineFieldsMap = useMemo(() => {
+    const map = {};
+    (lookups.APPROVAL_EDITABLE_LINE_FIELDS || []).forEach(entry => {
+      map[(entry.code || '').toLowerCase()] = entry.metadata?.fields || [];
+    });
+    return map;
+  }, [lookups.APPROVAL_EDITABLE_LINE_FIELDS]);
 
   useEffect(() => {
     if (tab === 'all-pending') {
@@ -177,6 +192,28 @@ export default function ApprovalManager() {
       setEditSaving(false);
     }
   }, [editingItem, editForm, universalEdit, fetchUniversalPending, universalItems, hubModuleFilter]);
+
+  // Phase 34: Save line-item edit
+  const handleSaveLineEdit = useCallback(async (item) => {
+    if (!editingLineItem) return;
+    setLineEditSaving(true);
+    try {
+      await universalEdit({
+        type: item.approve_data.type,
+        id: item.approve_data.id,
+        updates: { line_items: [{ index: editingLineItem.lineIndex, ...lineEditForm }] },
+        edit_reason: 'Line item edit from Approval Hub',
+      });
+      toast.success('Line item updated');
+      setEditingLineItem(null);
+      setLineEditForm({});
+      fetchUniversalPending().catch(() => {});
+    } catch (e) {
+      showError(e);
+    } finally {
+      setLineEditSaving(false);
+    }
+  }, [editingLineItem, lineEditForm, universalEdit, fetchUniversalPending]);
 
   const MODULE_COLORS = {
     INCOME: '#2563eb', DEDUCTION_SCHEDULE: '#7c3aed', PURCHASING: '#16a34a',
@@ -368,13 +405,51 @@ export default function ApprovalManager() {
                           {d.grn_date && <div><strong>GRN Date:</strong> {new Date(d.grn_date).toLocaleDateString()}</div>}
                           {d.notes && <div style={{ color: 'var(--erp-muted)', marginBottom: 6 }}>{d.notes}</div>}
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
-                            <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Item</th><th style={{ padding: '4px 8px' }}>Batch</th><th style={{ padding: '4px 8px' }}>Expiry</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Stock</th></tr></thead>
+                            <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Item</th><th style={{ padding: '4px 8px' }}>Batch</th><th style={{ padding: '4px 8px' }}>Expiry</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Stock</th>{(editableLineFieldsMap.grn || []).length > 0 && <th style={{ padding: '4px 8px' }} />}</tr></thead>
                             <tbody>
-                              {(d.line_items || []).map((li, i) => (
-                                <tr key={i}><td style={{ padding: '3px 8px' }}>{li.product_name || li.item_key || '—'}</td><td style={{ padding: '3px 8px' }}>{li.batch_lot_no}</td><td style={{ padding: '3px 8px' }}>{li.expiry_date ? new Date(li.expiry_date).toLocaleDateString() : '-'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.qty}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.available_stock != null ? li.available_stock : '—'}</td></tr>
-                              ))}
+                              {(d.line_items || []).map((li, i) => {
+                                const isEditingLine = editingLineItem?.itemId === item.id && editingLineItem?.lineIndex === i;
+                                return (
+                                  <tr key={i}>
+                                    <td style={{ padding: '3px 8px' }}>{li.product_name || li.item_key || '—'}</td>
+                                    <td style={{ padding: '3px 8px' }}>{isEditingLine && (editableLineFieldsMap.grn || []).includes('batch_lot_no') ? <input type="text" value={lineEditForm.batch_lot_no ?? li.batch_lot_no ?? ''} onChange={e => setLineEditForm(f => ({ ...f, batch_lot_no: e.target.value }))} style={{ width: 80, padding: '2px 4px', fontSize: 12, border: '1px solid #93c5fd', borderRadius: 4 }} /> : li.batch_lot_no}</td>
+                                    <td style={{ padding: '3px 8px' }}>{isEditingLine && (editableLineFieldsMap.grn || []).includes('expiry_date') ? <input type="date" value={lineEditForm.expiry_date ?? (li.expiry_date ? li.expiry_date.slice(0, 10) : '')} onChange={e => setLineEditForm(f => ({ ...f, expiry_date: e.target.value }))} style={{ padding: '2px 4px', fontSize: 12, border: '1px solid #93c5fd', borderRadius: 4 }} /> : (li.expiry_date ? new Date(li.expiry_date).toLocaleDateString() : '-')}</td>
+                                    <td style={{ padding: '3px 8px', textAlign: 'right' }}>{isEditingLine && (editableLineFieldsMap.grn || []).includes('qty') ? <input type="number" value={lineEditForm.qty ?? li.qty ?? ''} onChange={e => setLineEditForm(f => ({ ...f, qty: Number(e.target.value) }))} style={{ width: 60, padding: '2px 4px', fontSize: 12, border: '1px solid #93c5fd', borderRadius: 4, textAlign: 'right' }} /> : li.qty}</td>
+                                    <td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.available_stock != null ? li.available_stock : '—'}</td>
+                                    {(editableLineFieldsMap.grn || []).length > 0 && (
+                                      <td style={{ padding: '3px 8px' }}>
+                                        {isEditingLine ? (
+                                          <span style={{ display: 'flex', gap: 4 }}>
+                                            <button onClick={() => handleSaveLineEdit(item)} disabled={lineEditSaving} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer' }}>{lineEditSaving ? '...' : 'Save'}</button>
+                                            <button onClick={() => { setEditingLineItem(null); setLineEditForm({}); }} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--erp-border)', background: 'transparent', cursor: 'pointer' }}>X</button>
+                                          </span>
+                                        ) : (
+                                          <button onClick={() => { setEditingLineItem({ itemId: item.id, lineIndex: i }); setLineEditForm({}); }} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid #93c5fd', background: '#eff6ff', cursor: 'pointer', color: '#2563eb' }}>Edit</button>
+                                        )}
+                                      </td>
+                                    )}
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
+                          {/* Phase 34 — GRN attachments */}
+                          {(d.waybill_photo_url || d.undertaking_photo_url) && (
+                            <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+                              {d.waybill_photo_url && (
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>Waybill</div>
+                                  <img src={d.waybill_photo_url} alt="Waybill" style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(d.waybill_photo_url)} />
+                                </div>
+                              )}
+                              {d.undertaking_photo_url && (
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>Undertaking</div>
+                                  <img src={d.undertaking_photo_url} alt="Undertaking" style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(d.undertaking_photo_url)} />
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -430,11 +505,32 @@ export default function ApprovalManager() {
                           </div>
                           {(d.line_items || []).length > 0 && (
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
-                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Product</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Stock</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Unit Price</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Line Total</th></tr></thead>
+                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Product</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Stock</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Unit Price</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Line Total</th>{(editableLineFieldsMap.sales_line || []).length > 0 && <th style={{ padding: '4px 8px' }} />}</tr></thead>
                               <tbody>
-                                {(d.line_items || []).map((li, i) => (
-                                  <tr key={i}><td style={{ padding: '3px 8px' }}>{li.product_name || li.item_key || '—'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.qty}</td><td style={{ padding: '3px 8px', textAlign: 'right', color: li.available_stock != null && li.available_stock < li.qty ? 'var(--erp-danger, #d32f2f)' : undefined }}>{li.available_stock != null ? li.available_stock : '—'}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.unit_price)}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.line_total)}</td></tr>
-                                ))}
+                                {(d.line_items || []).map((li, i) => {
+                                  const isEditingLine = editingLineItem?.itemId === item.id && editingLineItem?.lineIndex === i;
+                                  return (
+                                    <tr key={i}>
+                                      <td style={{ padding: '3px 8px' }}>{li.product_name || li.item_key || '—'}</td>
+                                      <td style={{ padding: '3px 8px', textAlign: 'right' }}>{isEditingLine && (editableLineFieldsMap.sales_line || []).includes('qty') ? <input type="number" value={lineEditForm.qty ?? li.qty ?? ''} onChange={e => setLineEditForm(f => ({ ...f, qty: Number(e.target.value) }))} style={{ width: 60, padding: '2px 4px', fontSize: 12, border: '1px solid #93c5fd', borderRadius: 4, textAlign: 'right' }} /> : li.qty}</td>
+                                      <td style={{ padding: '3px 8px', textAlign: 'right', color: li.available_stock != null && li.available_stock < li.qty ? 'var(--erp-danger, #d32f2f)' : undefined }}>{li.available_stock != null ? li.available_stock : '—'}</td>
+                                      <td style={{ padding: '3px 8px', textAlign: 'right' }}>{isEditingLine && (editableLineFieldsMap.sales_line || []).includes('unit_price') ? <input type="number" step="0.01" value={lineEditForm.unit_price ?? li.unit_price ?? ''} onChange={e => setLineEditForm(f => ({ ...f, unit_price: Number(e.target.value) }))} style={{ width: 80, padding: '2px 4px', fontSize: 12, border: '1px solid #93c5fd', borderRadius: 4, textAlign: 'right' }} /> : fmt(li.unit_price)}</td>
+                                      <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.line_total)}</td>
+                                      {(editableLineFieldsMap.sales_line || []).length > 0 && (
+                                        <td style={{ padding: '3px 8px' }}>
+                                          {isEditingLine ? (
+                                            <span style={{ display: 'flex', gap: 4 }}>
+                                              <button onClick={() => handleSaveLineEdit(item)} disabled={lineEditSaving} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer' }}>{lineEditSaving ? '...' : 'Save'}</button>
+                                              <button onClick={() => { setEditingLineItem(null); setLineEditForm({}); }} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--erp-border)', background: 'transparent', cursor: 'pointer' }}>X</button>
+                                            </span>
+                                          ) : (
+                                            <button onClick={() => { setEditingLineItem({ itemId: item.id, lineIndex: i }); setLineEditForm({}); }} style={{ padding: '2px 6px', fontSize: 11, borderRadius: 4, border: '1px solid #93c5fd', background: '#eff6ff', cursor: 'pointer', color: '#2563eb' }}>Edit</button>
+                                          )}
+                                        </td>
+                                      )}
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           )}
@@ -468,6 +564,35 @@ export default function ApprovalManager() {
                             {d.total_partner_rebates > 0 && <span>Rebates: {fmt(d.total_partner_rebates)}</span>}
                             {d.cwt_amount > 0 && <span>CWT: {fmt(d.cwt_amount)}</span>}
                           </div>
+                          {/* Phase 34 — Collection attachments */}
+                          {(d.deposit_slip_url || d.cr_photo_url || d.cwt_certificate_url || (d.csi_photo_urls || []).length > 0) && (
+                            <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+                              {d.deposit_slip_url && (
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>Deposit Slip</div>
+                                  <img src={d.deposit_slip_url} alt="Deposit Slip" style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(d.deposit_slip_url)} />
+                                </div>
+                              )}
+                              {d.cr_photo_url && (
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>CR Photo</div>
+                                  <img src={d.cr_photo_url} alt="CR" style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(d.cr_photo_url)} />
+                                </div>
+                              )}
+                              {d.cwt_certificate_url && (
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>CWT Certificate</div>
+                                  <img src={d.cwt_certificate_url} alt="CWT" style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(d.cwt_certificate_url)} />
+                                </div>
+                              )}
+                              {(d.csi_photo_urls || []).map((url, i) => (
+                                <div key={i}>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>CSI Photo {i + 1}</div>
+                                  <img src={url} alt={`CSI ${i + 1}`} style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(url)} />
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -504,6 +629,21 @@ export default function ApprovalManager() {
                             {d.overconsumption_flag && <div><span style={{ padding: '2px 6px', borderRadius: 4, background: '#fee2e2', color: '#991b1b', fontSize: 11, fontWeight: 700 }}>OVERCONSUMPTION</span></div>}
                           </div>
                           <div style={{ marginTop: 4, fontSize: 12, color: 'var(--erp-muted)' }}>{d.fuel_entries_count || 0} fuel entries · {d.actual_liters || 0}L total</div>
+                          {/* Phase 34 — Fuel receipt photos */}
+                          {(d.fuel_receipts || []).length > 0 && (
+                            <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+                              {(d.fuel_receipts || []).map((fe, i) => (
+                                <div key={i}>
+                                  {fe.receipt_url && (
+                                    <div style={{ marginBottom: 6 }}>
+                                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>Day {fe.day} Receipt</div>
+                                      <img src={fe.receipt_url} alt={`Receipt Day ${fe.day}`} style={{ maxWidth: 140, maxHeight: 100, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(fe.receipt_url)} />
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -521,10 +661,18 @@ export default function ApprovalManager() {
                           </div>
                           {(d.lines || []).length > 0 && (
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Type</th><th style={{ padding: '4px 8px', textAlign: 'left' }}>Category</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Amount</th><th style={{ padding: '4px 8px' }}>OR#</th><th style={{ padding: '4px 8px' }}>CALF?</th></tr></thead>
+                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Type</th><th style={{ padding: '4px 8px', textAlign: 'left' }}>Category</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Amount</th><th style={{ padding: '4px 8px' }}>OR#</th><th style={{ padding: '4px 8px' }}>CALF?</th><th style={{ padding: '4px 8px' }}>OR</th></tr></thead>
                               <tbody>
                                 {(d.lines || []).map((l, i) => (
-                                  <tr key={i}><td style={{ padding: '3px 8px' }}>{l.expense_type}</td><td style={{ padding: '3px 8px' }}>{l.expense_category}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(l.amount)}</td><td style={{ padding: '3px 8px' }}>{l.or_number || '—'}</td><td style={{ padding: '3px 8px', textAlign: 'center' }}>{l.calf_required ? 'Yes' : '—'}</td></tr>
+                                  <tr key={i}>
+                                    <td style={{ padding: '3px 8px' }}>{l.expense_type}</td>
+                                    <td style={{ padding: '3px 8px' }}>{l.expense_category}</td>
+                                    <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(l.amount)}</td>
+                                    <td style={{ padding: '3px 8px' }}>{l.or_number || '—'}</td>
+                                    <td style={{ padding: '3px 8px', textAlign: 'center' }}>{l.calf_required ? 'Yes' : '—'}</td>
+                                    {/* Phase 34 — OR receipt photo thumbnail */}
+                                    <td style={{ padding: '3px 8px' }}>{l.or_photo_url && <img src={l.or_photo_url} alt="OR" style={{ maxWidth: 40, maxHeight: 30, borderRadius: 4, cursor: 'pointer' }} onClick={() => setPreviewImage(l.or_photo_url)} />}</td>
+                                  </tr>
                                 ))}
                               </tbody>
                             </table>
@@ -552,6 +700,17 @@ export default function ApprovalManager() {
                           )}
                           {d.purpose && <div style={{ color: 'var(--erp-muted)' }}><strong>Purpose:</strong> {d.purpose}</div>}
                           {d.bir_flag && <div style={{ fontSize: 11, color: 'var(--erp-muted)', marginTop: 4 }}>BIR: {d.bir_flag}</div>}
+                          {/* Phase 34 — PRF/CALF supporting document photos */}
+                          {(d.photo_urls || []).length > 0 && (
+                            <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+                              {(d.photo_urls || []).map((url, i) => (
+                                <div key={i}>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>Doc {i + 1}</div>
+                                  <img src={url} alt={`Doc ${i + 1}`} style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(url)} />
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -786,6 +945,21 @@ export default function ApprovalManager() {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Phase 34 — Image Preview Modal */}
+          {previewImage && (
+            <div
+              onClick={() => setPreviewImage(null)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, cursor: 'zoom-out' }}
+            >
+              <img
+                src={previewImage}
+                alt="Preview"
+                style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,.3)' }}
+                onClick={e => e.stopPropagation()}
+              />
             </div>
           )}
 

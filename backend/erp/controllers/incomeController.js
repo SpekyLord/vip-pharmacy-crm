@@ -12,7 +12,7 @@ const IncomeReport = require('../models/IncomeReport');
 const PnlReport = require('../models/PnlReport');
 const MonthlyArchive = require('../models/MonthlyArchive');
 const { catchAsync } = require('../../middleware/errorHandler');
-const { generateIncomeReport, projectIncome, transitionIncomeStatus } = require('../services/incomeCalc');
+const { generateIncomeReport, projectIncome, transitionIncomeStatus, getIncomeBreakdown: fetchIncomeBreakdown } = require('../services/incomeCalc');
 const {
   generatePnlReport, validateYearEndClose, executeYearEndClose, getFiscalYearStatus
 } = require('../services/pnlCalc');
@@ -103,6 +103,22 @@ const getIncomeById = catchAsync(async (req, res) => {
     .populate('deduction_lines.verified_by', 'name');
   if (!report) return res.status(404).json({ success: false, message: 'Income report not found' });
   res.json({ success: true, data: report });
+});
+
+const getIncomeBreakdown = catchAsync(async (req, res) => {
+  const report = await IncomeReport.findOne({ _id: req.params.id, ...req.tenantFilter })
+    .populate('bdm_id', 'name email')
+    .lean();
+  if (!report) {
+    return res.status(404).json({ success: false, message: 'Income report not found' });
+  }
+  // BDM can only see their own breakdown
+  const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
+  if (!canViewOther && report.bdm_id?._id?.toString() !== req.bdmId?.toString()) {
+    return res.status(403).json({ success: false, message: 'Cannot view breakdown for another BDM' });
+  }
+  const breakdown = await fetchIncomeBreakdown(report);
+  res.json({ success: true, data: breakdown });
 });
 
 const updateIncomeManual = catchAsync(async (req, res) => {
@@ -748,7 +764,7 @@ const getFiscalYearStatusEndpoint = catchAsync(async (req, res) => {
 module.exports = {
   // Income
   generateIncome, getIncomeProjection, requestIncomeGeneration,
-  getIncomeList, getIncomeById, updateIncomeManual,
+  getIncomeList, getIncomeById, getIncomeBreakdown, updateIncomeManual,
   reviewIncome, returnIncome, confirmIncome, creditIncome,
   // BDM Deduction Lines
   addDeductionLine, removeDeductionLine,

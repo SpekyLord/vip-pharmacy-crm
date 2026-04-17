@@ -578,10 +578,276 @@ async function transitionIncomeStatus(reportId, action, userId, data = {}) {
   return report;
 }
 
+/**
+ * Get detailed income breakdown for a report — fetches all source documents
+ * and returns structured data for transparent payslip display.
+ *
+ * @param {Object} report - IncomeReport document (lean)
+ * @returns {Object} Detailed breakdown by source
+ */
+async function getIncomeBreakdown(report) {
+  const entityId = report.entity_id;
+  const bdmId = report.bdm_id?._id || report.bdm_id;
+  const { period, cycle, source_refs } = report;
+  const { start, end } = periodToDates(period);
+
+  const filter = {
+    entity_id: new mongoose.Types.ObjectId(entityId),
+    bdm_id: new mongoose.Types.ObjectId(bdmId)
+  };
+
+  // Fetch all source documents in parallel
+  const [smer, collections, pnl, calfs, logbookEntries, expenseEntries] = await Promise.all([
+    // 1. SMER
+    source_refs?.smer_id
+      ? SmerEntry.findById(source_refs.smer_id).lean()
+      : null,
+
+    // 2. Collections (commission source)
+    source_refs?.collection_ids?.length
+      ? Collection.find({ _id: { $in: source_refs.collection_ids } })
+          .populate('hospital_id', 'hospital_name')
+          .populate('customer_id', 'customer_name')
+          .sort({ cr_date: 1 })
+          .lean()
+      : [],
+
+    // 3. PNL Report (profit sharing source)
+    source_refs?.pnl_report_id
+      ? PnlReport.findById(source_refs.pnl_report_id).lean()
+      : null,
+
+    // 4. CALF documents
+    PrfCalf.find({
+      ...filter, doc_type: 'CALF', period,
+      status: { $in: ['POSTED', 'VALID'] }
+    }).sort({ createdAt: 1 }).lean(),
+
+    // 5. Car Logbook entries (personal gas source)
+    CarLogbookEntry.find({
+      ...filter, period, cycle,
+      status: { $in: ['POSTED', 'VALID'] }
+    }).sort({ entry_date: 1 }).lean(),
+
+    // 6. Expense entries (ORE detail)
+    source_refs?.expense_ids?.length
+      ? ExpenseEntry.find({ _id: { $in: source_refs.expense_ids } }).lean()
+      : []
+  ]);
+
+  // ── Build SMER breakdown ──
+  let smerBreakdown = null;
+  if (smer) {
+    smerBreakdown = {
+      status: smer.status,
+      working_days: smer.working_days,
+      subtotals: {
+        perdiem: smer.total_perdiem || 0,
+        transport_p2p: smer.total_transpo || 0,
+        transport_special: smer.total_special_cases || 0,
+        ore: smer.total_ore || 0,
+        total_reimbursable: smer.total_reimbursable || 0
+      },
+      daily_entries: (smer.daily_entries || []).map(d => ({
+        day: d.day,
+        entry_date: d.entry_date,
+        activity_type: d.activity_type,
+        hospital_covered: d.hospital_covered,
+        md_count: d.md_count || 0,
+        perdiem_tier: d.perdiem_tier,
+        perdiem_amount: d.perdiem_amount || 0,
+        perdiem_override: d.perdiem_override || false,
+        override_tier: d.override_tier,
+        override_reason: d.override_reason,
+        transpo_p2p: d.transpo_p2p || 0,
+        transpo_special: d.transpo_special || 0,
+        ore_amount: d.ore_amount || 0
+      })),
+      revolving_fund: {
+        travel_advance: smer.travel_advance || 0,
+        total_reimbursable: smer.total_reimbursable || 0,
+        balance_on_hand: smer.balance_on_hand || 0
+      }
+    };
+  }
+
+  // ── Build Commission breakdown ──
+  const commissionBreakdown = {
+    total: report.earnings?.core_commission || 0,
+    collection_count: collections.length,
+    collections: collections.map(c => ({
+      _id: c._id,
+      cr_no: c.cr_no,
+      cr_date: c.cr_date,
+      cr_amount: c.cr_amount,
+      hospital_name: c.hospital_id?.hospital_name || c.customer_id?.customer_name || 'N/A',
+      total_commission: c.total_commission || 0,
+      settled_csis: (c.settled_csis || []).map(csi => ({
+        doc_ref: csi.doc_ref,
+        invoice_amount: csi.invoice_amount || 0,
+        net_of_vat: csi.net_of_vat || 0,
+        commission_rate: csi.commission_rate || 0,
+        commission_amount: csi.commission_amount || 0
+      }))
+    }))
+  };
+
+  // ── Build Profit Sharing breakdown ──
+  let profitSharingBreakdown = null;
+  if (pnl && pnl.profit_sharing) {
+    const ps = pnl.profit_sharing;
+    profitSharingBreakdown = {
+      eligible: ps.eligible || false,
+      deficit_flag: ps.deficit_flag || false,
+      bdm_share: ps.bdm_share || 0,
+      vip_share: ps.vip_share || 0,
+      products: (ps.ps_products || []).map(p => ({
+        product_name: p.product_name,
+        hospital_count: p.hospital_count || 0,
+        md_count: p.md_count || 0,
+        consecutive_months: p.consecutive_months || 0,
+        qualified: p.qualified || false,
+        conditions_met: p.conditions_met || false
+      })),
+      pnl_summary: {
+        gross_profit: pnl.gross_profit || 0,
+        total_expenses: pnl.total_expenses || 0,
+        net_income: pnl.net_income || 0
+      }
+    };
+  }
+
+  // ── Build CALF breakdown ──
+  const totalAdvance = calfs.reduce((sum, c) => sum + (c.advance_amount || 0), 0);
+  const totalLiquidation = calfs.reduce((sum, c) => sum + (c.liquidation_amount || 0), 0);
+  const calfBalance = Math.round((totalAdvance - totalLiquidation) * 100) / 100;
+
+  const calfBreakdown = {
+    total_advance: totalAdvance,
+    total_liquidation: totalLiquidation,
+    balance: calfBalance,
+    is_reimbursement: calfBalance < 0,
+    is_deduction: calfBalance > 0,
+    amount_on_payslip: Math.abs(calfBalance),
+    documents: calfs.map(c => ({
+      _id: c._id,
+      calf_number: c.calf_number,
+      advance_amount: c.advance_amount || 0,
+      liquidation_amount: c.liquidation_amount || 0,
+      balance: Math.round(((c.advance_amount || 0) - (c.liquidation_amount || 0)) * 100) / 100,
+      status: c.status,
+      notes: c.notes
+    }))
+  };
+
+  // ── Build Personal Gas breakdown (daily level) ──
+  const gasSummary = {
+    total_km: 0, total_personal_km: 0, total_official_km: 0,
+    total_fuel_liters: 0, total_fuel_cost: 0, total_personal_gas: 0
+  };
+
+  const gasEntries = logbookEntries.map(e => {
+    gasSummary.total_km += e.total_km || 0;
+    gasSummary.total_personal_km += e.personal_km || 0;
+    gasSummary.total_official_km += e.official_km || 0;
+    const entryFuelLiters = (e.fuel_entries || []).reduce((sum, f) => sum + (f.liters || 0), 0);
+    const entryFuelCost = (e.fuel_entries || []).reduce((sum, f) => sum + (f.total_amount || 0), 0);
+    gasSummary.total_fuel_liters += entryFuelLiters;
+    gasSummary.total_fuel_cost += entryFuelCost;
+    gasSummary.total_personal_gas += e.personal_gas_amount || 0;
+
+    return {
+      _id: e._id,
+      entry_date: e.entry_date,
+      starting_km: e.starting_km,
+      ending_km: e.ending_km,
+      total_km: e.total_km || 0,
+      personal_km: e.personal_km || 0,
+      official_km: e.official_km || 0,
+      km_per_liter: e.km_per_liter || 12,
+      expected_personal_liters: e.expected_personal_liters || 0,
+      avg_price_per_liter: entryFuelLiters > 0
+        ? Math.round((entryFuelCost / entryFuelLiters) * 100) / 100
+        : 0,
+      personal_gas_amount: e.personal_gas_amount || 0,
+      total_fuel_amount: entryFuelCost,
+      fuel_entries: (e.fuel_entries || []).map(f => ({
+        station_name: f.station_name,
+        liters: f.liters || 0,
+        price_per_liter: f.price_per_liter || 0,
+        total_amount: f.total_amount || 0,
+        payment_mode: f.payment_mode
+      }))
+    };
+  });
+
+  // Round summary totals
+  gasSummary.total_personal_gas = Math.round(gasSummary.total_personal_gas * 100) / 100;
+  gasSummary.total_fuel_cost = Math.round(gasSummary.total_fuel_cost * 100) / 100;
+  gasSummary.avg_price_per_liter = gasSummary.total_fuel_liters > 0
+    ? Math.round((gasSummary.total_fuel_cost / gasSummary.total_fuel_liters) * 100) / 100
+    : 0;
+
+  const personalGasBreakdown = {
+    total_deduction: report.deduction_lines
+      ?.find(l => l.auto_source === 'PERSONAL_GAS')?.amount || gasSummary.total_personal_gas,
+    entry_count: gasEntries.length,
+    entries: gasEntries,
+    summary: gasSummary
+  };
+
+  // ── Build ORE breakdown (two layers) ──
+  // Layer 1: Per-day ORE from SMER daily entries
+  const oreDays = smer
+    ? (smer.daily_entries || [])
+        .filter(d => (d.ore_amount || 0) > 0)
+        .map(d => ({
+          day: d.day,
+          entry_date: d.entry_date,
+          ore_amount: d.ore_amount
+        }))
+    : [];
+
+  // Layer 2: Actual expense lines (ORE type only)
+  const oreExpenseLines = expenseEntries.flatMap(e =>
+    (e.lines || [])
+      .filter(l => l.expense_type === 'ORE')
+      .map(l => ({
+        expense_date: l.expense_date,
+        expense_category: l.expense_category,
+        establishment: l.establishment,
+        particulars: l.particulars,
+        amount: l.amount || 0,
+        or_number: l.or_number,
+        payment_mode: l.payment_mode
+      }))
+  );
+
+  const oreBreakdown = {
+    total: smer?.total_ore || 0,
+    daily_ore: oreDays,
+    expense_lines: oreExpenseLines
+  };
+
+  return {
+    report_id: report._id,
+    period,
+    cycle,
+    bdm_name: report.bdm_id?.name || 'N/A',
+    smer: smerBreakdown,
+    commission: commissionBreakdown,
+    profit_sharing: profitSharingBreakdown,
+    calf: calfBreakdown,
+    personal_gas: personalGasBreakdown,
+    ore: oreBreakdown
+  };
+}
+
 module.exports = {
   generateIncomeReport,
   projectIncome,
   getIncomeReport,
+  getIncomeBreakdown,
   transitionIncomeStatus,
   VALID_TRANSITIONS
 };

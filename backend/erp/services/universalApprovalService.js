@@ -32,6 +32,7 @@ const MODULE_QUERIES = [
   {
     module: 'APPROVAL_REQUEST',
     label: 'Authority Matrix',
+    sub_key: null, // special: derive from item.module field
     query: async (entityId) => {
       const items = await ApprovalRequest.find({ entity_id: entityId, status: 'PENDING' })
         .populate('requested_by', 'name email')
@@ -58,6 +59,7 @@ const MODULE_QUERIES = [
   {
     module: 'DEDUCTION_SCHEDULE',
     label: 'Deduction Schedules',
+    sub_key: 'approve_deductions',
     query: async (entityId) => {
       const items = await DeductionSchedule.find({ entity_id: entityId, status: 'PENDING_APPROVAL' })
         .populate('bdm_id', 'name email')
@@ -97,6 +99,7 @@ const MODULE_QUERIES = [
   {
     module: 'INCOME',
     label: 'Income Reports',
+    sub_key: 'approve_income',
     query: async (entityId) => {
       const items = await IncomeReport.find({
         entity_id: entityId,
@@ -142,6 +145,7 @@ const MODULE_QUERIES = [
   {
     module: 'INVENTORY',
     label: 'GRN (Goods Receipt)',
+    sub_key: 'approve_inventory',
     query: async (entityId) => {
       const items = await GrnEntry.find({ entity_id: entityId, status: 'PENDING' })
         .populate('bdm_id', 'name email')
@@ -169,7 +173,10 @@ const MODULE_QUERIES = [
             product_id: li.product_id, item_key: li.item_key, batch_lot_no: li.batch_lot_no,
             expiry_date: li.expiry_date, qty: li.qty
           })),
-          notes: item.notes
+          notes: item.notes,
+          // Phase 34 — attachments for approver verification
+          waybill_photo_url: item.waybill_photo_url,
+          undertaking_photo_url: item.undertaking_photo_url,
         }
       }));
     },
@@ -178,6 +185,7 @@ const MODULE_QUERIES = [
   {
     module: 'PAYROLL',
     label: 'Payslips',
+    sub_key: 'approve_payroll',
     query: async (entityId) => {
       const Payslip = getModel('Payslip');
       if (!Payslip) return [];
@@ -219,6 +227,7 @@ const MODULE_QUERIES = [
   {
     module: 'KPI',
     label: 'KPI Ratings',
+    sub_key: 'approve_kpi',
     query: async (entityId) => {
       const KpiSelfRating = getModel('KpiSelfRating');
       if (!KpiSelfRating) return [];
@@ -265,6 +274,7 @@ const MODULE_QUERIES = [
   {
     module: 'SALES',
     label: 'Sales / CSI',
+    sub_key: 'approve_sales',
     query: async (entityId) => {
       const SalesLine = getModel('SalesLine');
       if (!SalesLine) return [];
@@ -312,6 +322,7 @@ const MODULE_QUERIES = [
   {
     module: 'COLLECTION',
     label: 'Collections / CR',
+    sub_key: 'approve_collections',
     query: async (entityId) => {
       const Collection = getModel('Collection');
       if (!Collection) return [];
@@ -349,7 +360,12 @@ const MODULE_QUERIES = [
           settled_csis: (item.settled_csis || []).map(c => ({
             doc_ref: c.doc_ref, invoice_amount: c.invoice_amount,
             commission_amount: c.commission_amount
-          }))
+          })),
+          // Phase 34 — attachments for approver verification
+          deposit_slip_url: item.deposit_slip_url,
+          cr_photo_url: item.cr_photo_url,
+          cwt_certificate_url: item.cwt_certificate_url,
+          csi_photo_urls: item.csi_photo_urls,
         }
       }));
     },
@@ -358,6 +374,7 @@ const MODULE_QUERIES = [
   {
     module: 'SMER',
     label: 'SMER',
+    sub_key: 'approve_expenses',
     query: async (entityId) => {
       const SmerEntry = getModel('SmerEntry');
       if (!SmerEntry) return [];
@@ -398,6 +415,7 @@ const MODULE_QUERIES = [
   {
     module: 'CAR_LOGBOOK',
     label: 'Car Logbook',
+    sub_key: 'approve_expenses',
     query: async (entityId) => {
       const CarLogbookEntry = getModel('CarLogbookEntry');
       if (!CarLogbookEntry) return [];
@@ -432,7 +450,13 @@ const MODULE_QUERIES = [
           actual_liters: item.actual_liters,
           km_per_liter: item.km_per_liter,
           overconsumption_flag: item.overconsumption_flag,
-          fuel_entries_count: (item.fuel_entries || []).length
+          fuel_entries_count: (item.fuel_entries || []).length,
+          // Phase 34 — fuel receipt photos for approver verification
+          fuel_receipts: (item.fuel_entries || []).filter(fe => fe.receipt_url || fe.starting_km_photo_url || fe.ending_km_photo_url).map(fe => ({
+            day: fe.day, receipt_url: fe.receipt_url,
+            starting_km_photo_url: fe.starting_km_photo_url,
+            ending_km_photo_url: fe.ending_km_photo_url,
+          })),
         }
       }));
     },
@@ -441,6 +465,7 @@ const MODULE_QUERIES = [
   {
     module: 'EXPENSES',
     label: 'Expenses (ORE/ACCESS)',
+    sub_key: 'approve_expenses',
     query: async (entityId) => {
       const ExpenseEntry = getModel('ExpenseEntry');
       if (!ExpenseEntry) return [];
@@ -473,7 +498,9 @@ const MODULE_QUERIES = [
           lines: (item.lines || []).slice(0, 10).map(l => ({
             expense_type: l.expense_type, expense_category: l.expense_category,
             amount: l.amount, or_number: l.or_number, payment_mode: l.payment_mode,
-            calf_required: l.calf_required
+            calf_required: l.calf_required,
+            // Phase 34 — OR receipt photo for approver verification
+            or_photo_url: l.or_photo_url,
           }))
         }
       }));
@@ -483,6 +510,7 @@ const MODULE_QUERIES = [
   {
     module: 'PRF_CALF',
     label: 'PRF / CALF',
+    sub_key: 'approve_expenses',
     query: async (entityId) => {
       const PrfCalf = getModel('PrfCalf');
       if (!PrfCalf) return [];
@@ -519,7 +547,9 @@ const MODULE_QUERIES = [
             advance_amount: item.advance_amount,
             liquidation_amount: item.liquidation_amount,
             balance: item.balance,
-            bir_flag: item.bir_flag
+            bir_flag: item.bir_flag,
+            // Phase 34 — supporting document photos for approver verification
+            photo_urls: item.photo_urls,
           }
         };
       });
@@ -531,6 +561,7 @@ const MODULE_QUERIES = [
   {
     module: 'PERDIEM_OVERRIDE',
     label: 'Per Diem Override',
+    sub_key: 'approve_perdiem',
     query: async (entityId) => {
       const ApprovalRequest = require('../models/ApprovalRequest');
       const pendingOverrides = await ApprovalRequest.find({
@@ -575,20 +606,77 @@ const MODULE_QUERIES = [
 ];
 
 /**
+ * Phase 34 — Map module keys (from MODULE_QUERIES or gateApproval) to approval sub-permission keys.
+ * Used by isAuthorizedForModule (pending list) and universalApprovalController (approve/edit actions).
+ */
+const MODULE_TO_SUB_KEY = {
+  APPROVAL_REQUEST: null,       // special: derive from item.module field on the ApprovalRequest
+  SALES:            'approve_sales',
+  COLLECTION:       'approve_collections',
+  INVENTORY:        'approve_inventory',
+  SMER:             'approve_expenses',
+  CAR_LOGBOOK:      'approve_expenses',
+  EXPENSES:         'approve_expenses',
+  PRF_CALF:         'approve_expenses',
+  PURCHASING:       'approve_purchasing',
+  PAYROLL:          'approve_payroll',
+  JOURNAL:          'approve_journal',
+  BANKING:          'approve_banking',
+  PETTY_CASH:       'approve_petty_cash',
+  IC_TRANSFER:      'approve_ic_transfer',
+  INCOME:           'approve_income',
+  DEDUCTION_SCHEDULE: 'approve_deductions',
+  KPI:              'approve_kpi',
+  PERDIEM_OVERRIDE: 'approve_perdiem',
+};
+
+/**
+ * Check if user has the approval sub-permission for a module.
+ * Follows the existing erpSubAccessCheck convention:
+ *   - President/CEO → always pass
+ *   - FULL access with no sub_permissions defined → all granted
+ *   - sub_permissions exist → check specific key
+ *
+ * @param {object} user - req.user with erp_access
+ * @param {string} subKey - one of the approve_* keys
+ * @returns {boolean}
+ */
+function hasApprovalSub(user, subKey) {
+  if (!subKey) return true; // null sub_key = open (e.g., APPROVAL_REQUEST — filtered per-item)
+  const { role, erp_access } = user;
+  if ([ROLES.PRESIDENT, ROLES.CEO].includes(role)) return true;
+
+  const subs = erp_access?.sub_permissions?.approvals;
+  const truthyCount = subs ? Object.values(subs).filter(Boolean).length : 0;
+  // FULL with no subs defined = all granted (matches erpSubAccessCheck convention)
+  if (!subs || truthyCount === 0) {
+    return (erp_access?.modules?.approvals === 'FULL');
+  }
+  return !!subs[subKey];
+}
+
+/**
  * Check if a user is authorized for a module.
  * 1. President/CEO → always authorized
  * 2. If ApprovalRules exist for this module → check if user matches any rule
  * 3. If no rules → fall back to lookup-driven MODULE_DEFAULT_ROLES (Rule #3 compliant)
+ * 4. Phase 34: sub-permission check — user must also have the module's approval sub-permission
  *
  * @param {ObjectId} entityId
- * @param {ObjectId} userId
- * @param {string}   userRole
+ * @param {object}   user - full req.user object (with _id, role, erp_access)
  * @param {object}   moduleEntry - entry from MODULE_QUERIES
  * @param {Map}      defaultRolesMap - pre-fetched MODULE_DEFAULT_ROLES lookup entries keyed by code
  */
-async function isAuthorizedForModule(entityId, userId, userRole, moduleEntry, defaultRolesMap) {
+async function isAuthorizedForModule(entityId, user, moduleEntry, defaultRolesMap) {
+  const userId = user._id;
+  const userRole = user.role;
+
   // President always sees everything
   if ([ROLES.PRESIDENT, ROLES.CEO].includes(userRole)) return true;
+
+  // Phase 34: sub-permission gate — check before role/rule checks
+  const subKey = moduleEntry.sub_key || MODULE_TO_SUB_KEY[moduleEntry.module];
+  if (!hasApprovalSub(user, subKey)) return false;
 
   // Check ApprovalRules for delegation
   const rules = await ApprovalRule.find({
@@ -621,8 +709,14 @@ async function isAuthorizedForModule(entityId, userId, userRole, moduleEntry, de
  * President/CEO: queries across ALL entities (cross-entity view).
  * Other roles: queries only their working entity.
  * Returns normalized array sorted by submitted_at descending.
+ *
+ * Phase 34: accepts full user object (was: userId, userRole) for sub-permission checks.
+ * @param {ObjectId} entityId
+ * @param {object}   user - full req.user object (with _id, role, erp_access)
+ * @param {ObjectId[]} entityIds - user's entity_ids for cross-entity support
  */
-async function getUniversalPending(entityId, userId, userRole, entityIds) {
+async function getUniversalPending(entityId, user, entityIds) {
+  const userRole = user.role;
   const isPresidentLike = [ROLES.PRESIDENT, ROLES.CEO].includes(userRole);
 
   // Determine which entities to query
@@ -679,7 +773,7 @@ async function getUniversalPending(entityId, userId, userRole, entityIds) {
   // Filter to modules this user is authorized for
   const authorizedModules = [];
   for (const mod of MODULE_QUERIES) {
-    const auth = await isAuthorizedForModule(entityId, userId, userRole, mod, defaultRolesMap);
+    const auth = await isAuthorizedForModule(entityId, user, mod, defaultRolesMap);
     if (auth) authorizedModules.push(mod);
   }
 
@@ -822,5 +916,7 @@ async function getUniversalPending(entityId, userId, userRole, entityIds) {
 
 module.exports = {
   getUniversalPending,
-  MODULE_QUERIES
+  MODULE_QUERIES,
+  MODULE_TO_SUB_KEY,
+  hasApprovalSub,
 };
