@@ -203,19 +203,14 @@ const parseCPTWorkbook = async (buffer) => {
  * Parse the CPT master sheet (Sheet 3).
  * Reads rows 9 through END sentinel, extracting doctor data.
  */
-const parseCPTMasterSheet = (workbook, sheetName, errors) => {
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet) {
-    errors.push(`Master sheet "${sheetName}" not found`);
+const parseCPTMasterSheet = (worksheet, errors) => {
+  if (!worksheet) {
+    errors.push('Master sheet not found');
     return [];
   }
 
   // Convert to array of arrays for easier row/column access
-  const data = XLSX.utils.sheet_to_json(sheet, {
-    header: 1,
-    defval: undefined,
-    raw: true,
-  });
+  const data = sheetToArrays(worksheet);
   const doctors = [];
 
   for (let rowIdx = CPT_DATA_START_ROW; rowIdx < Math.min(data.length, CPT_END_ROW); rowIdx++) {
@@ -304,20 +299,19 @@ const parseCPTMasterSheet = (workbook, sheetName, errors) => {
  * Parse a single day sheet (W1D1 through W4D5).
  * Reads rows 11-40 for doctor engagement data.
  */
-const parseDaySheet = (workbook, sheetName, dayIndex, label, errors) => {
-  const sheet = workbook.Sheets[sheetName];
+const parseDaySheet = (worksheet, dayIndex, label, errors) => {
   const result = {
     dayIndex,
     label,
     entries: [],
   };
 
-  if (!sheet) {
+  if (!worksheet) {
     // Day sheet may not exist if workbook has fewer sheets
     return result;
   }
 
-  const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: undefined });
+  const data = sheetToArrays(worksheet);
 
   for (let rowIdx = DAY_DATA_START_ROW; rowIdx <= Math.min(DAY_DATA_END_ROW, data.length - 1); rowIdx++) {
     const row = data[rowIdx];
@@ -343,16 +337,6 @@ const parseDaySheet = (workbook, sheetName, dayIndex, label, errors) => {
   }
 
   return result;
-};
-
-const getSheetRowCount = (sheet) => {
-  if (!sheet || !sheet['!ref']) return 0;
-  try {
-    const range = XLSX.utils.decode_range(sheet['!ref']);
-    return range.e.r - range.s.r + 1;
-  } catch {
-    return 0;
-  }
 };
 
 /**

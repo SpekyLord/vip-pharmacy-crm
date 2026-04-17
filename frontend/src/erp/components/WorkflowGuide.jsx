@@ -653,16 +653,19 @@ const WORKFLOW_GUIDES = {
     steps: [
       'Create a fund: assign a custodian (BDM), warehouse, mode, ceiling, and COA code',
       'Custodian logs deposits (from collections) and disbursements (small expenses)',
+      'For disbursements: attach Official Receipt (OR#), or toggle "Petty Cash Voucher" if no OR and describe the purchase',
+      'Admin/Finance posts DRAFT transactions — balance updates and journal entry auto-creates',
+      'DRAFT transactions can be voided if entered incorrectly',
       'When balance exceeds ceiling, generate a Remittance — custodian remits excess to owner',
-      'When balance is low, generate a Replenishment — owner sends cash to custodian',
-      'Each posted transaction creates a journal entry automatically',
+      'When balance is low, click "Replenish Fund" — owner sends cash to custodian',
+      'Process remittance/replenishment documents to finalize the balance transfer',
     ],
     next: [
       { label: 'Expenses', path: '/erp/expenses' },
       { label: 'Journal Entries', path: '/erp/journals' },
       { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
     ],
-    tip: 'Fund modes, statuses, and transaction types are lookup-driven — manage them in Control Center > Lookup Tables (PETTY_CASH_FUND_TYPE, PETTY_CASH_FUND_STATUS).',
+    tip: 'Fund modes, statuses, expense categories, and transaction types are lookup-driven — manage them in Control Center > Lookup Tables (PETTY_CASH_FUND_TYPE, PETTY_CASH_FUND_STATUS, PETTY_CASH_EXPENSE_CATEGORY).',
   },
   'consignment-aging': {
     title: 'Consignment Aging',

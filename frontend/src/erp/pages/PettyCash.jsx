@@ -184,59 +184,133 @@ function FundFormModal({ open, onClose, onSave, editData, people, warehouses, fu
 
 // ---------- Create Transaction Modal ----------
  
-function CreateTxnModal({ open, onClose, onSave, funds }) {
-  const [form, setForm] = useState({ fund_id: '', txn_type: 'DISBURSEMENT', payee: '', particulars: '', amount: '', or_number: '' });
+function TxnFormModal({ open, onClose, onSave, funds, expenseCategories, editData }) {
+  const isEdit = !!editData;
+  const today = new Date().toISOString().slice(0, 10);
+  const BLANK = { fund_id: '', txn_type: 'DISBURSEMENT', txn_date: today, payee: '', particulars: '', amount: '', or_number: '', is_pcv: false, pcv_remarks: '', expense_category: '' };
+  const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
 
-  const handleChange = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+  // Populate form when editing
+  React.useEffect(() => {
+    if (editData) {
+      setForm({
+        fund_id: editData.fund_id?._id || editData.fund_id || '',
+        txn_type: editData.txn_type || 'DISBURSEMENT',
+        txn_date: editData.txn_date ? new Date(editData.txn_date).toISOString().slice(0, 10) : today,
+        payee: editData.payee || editData.source_description || '',
+        particulars: editData.particulars || '',
+        amount: editData.amount || '',
+        or_number: editData.or_number || '',
+        is_pcv: editData.is_pcv || false,
+        pcv_remarks: editData.pcv_remarks || '',
+        expense_category: editData.expense_category || '',
+      });
+    } else {
+      setForm(BLANK);
+    }
+  }, [editData, open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setForm(f => ({ ...f, [name]: type === 'checkbox' ? checked : value }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // PCV validation
+    if (form.txn_type === 'DISBURSEMENT' && form.is_pcv && !form.pcv_remarks.trim()) {
+      showError(null, 'PCV remarks are required when using Petty Cash Voucher');
+      return;
+    }
     setSaving(true);
-    try { await onSave({ ...form, amount: Number(form.amount) }); onClose(); setForm({ fund_id: '', txn_type: 'DISBURSEMENT', payee: '', particulars: '', amount: '', or_number: '' }); }
-    catch (err) { showError(err, 'Could not create petty cash transaction'); }
+    try {
+      const payload = { ...form, amount: Number(form.amount) };
+      // DEPOSIT: map payee → source_description
+      if (payload.txn_type === 'DEPOSIT') {
+        payload.source_description = payload.payee;
+        delete payload.payee;
+      }
+      await onSave(payload, editData?._id);
+      onClose();
+      if (!isEdit) setForm({ ...BLANK, txn_date: new Date().toISOString().slice(0, 10) });
+    }
+    catch (err) { showError(err, `Could not ${isEdit ? 'update' : 'create'} petty cash transaction`); }
     finally { setSaving(false); }
   };
 
   if (!open) return null;
+  const isDisbursement = form.txn_type === 'DISBURSEMENT';
   return (
     <div style={styles.modal} onClick={onClose}>
       <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-        <h3 style={styles.modalTitle}>New Transaction</h3>
+        <h3 style={styles.modalTitle}>{isEdit ? 'Edit' : 'New'} Transaction</h3>
         <form onSubmit={handleSubmit}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Fund</label>
-            <SelectField style={styles.formInput} name="fund_id" value={form.fund_id} onChange={handleChange} required>
+            <SelectField style={styles.formInput} name="fund_id" value={form.fund_id} onChange={handleChange} required disabled={isEdit}>
               <option value="">Select fund...</option>
               {(funds || []).map(f => <option key={f._id} value={f._id}>{f.fund_name}</option>)}
             </SelectField>
           </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Type</label>
-            <SelectField style={styles.formInput} name="txn_type" value={form.txn_type} onChange={handleChange}>
-              <option value="DISBURSEMENT">Disbursement</option>
-              <option value="DEPOSIT">Deposit</option>
-            </SelectField>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Type</label>
+              <SelectField style={styles.formInput} name="txn_type" value={form.txn_type} onChange={handleChange} disabled={isEdit}>
+                <option value="DISBURSEMENT">Disbursement</option>
+                <option value="DEPOSIT">Deposit</option>
+              </SelectField>
+            </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Date</label>
+              <input style={styles.formInput} name="txn_date" type="date" value={form.txn_date} onChange={handleChange} required />
+            </div>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>{form.txn_type === 'DEPOSIT' ? 'Source' : 'Payee'}</label>
+            <label style={styles.label}>{isDisbursement ? 'Payee' : 'Source'}</label>
             <input style={styles.formInput} name="payee" value={form.payee} onChange={handleChange} required />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Description</label>
             <input style={styles.formInput} name="particulars" value={form.particulars} onChange={handleChange} required />
           </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Amount</label>
-            <input style={styles.formInput} name="amount" type="number" step="0.01" min="0.01" value={form.amount} onChange={handleChange} required />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Amount</label>
+              <input style={styles.formInput} name="amount" type="number" step="0.01" min="0.01" value={form.amount} onChange={handleChange} required />
+            </div>
+            {isDisbursement && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Expense Category</label>
+                <SelectField style={styles.formInput} name="expense_category" value={form.expense_category} onChange={handleChange}>
+                  <option value="">-- Select --</option>
+                  {(expenseCategories || []).map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+                </SelectField>
+              </div>
+            )}
           </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Receipt #</label>
-            <input style={styles.formInput} name="or_number" value={form.or_number} onChange={handleChange} />
-          </div>
+          {isDisbursement && (
+            <>
+              <div style={{ ...styles.formGroup, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input type="checkbox" id="is_pcv" name="is_pcv" checked={form.is_pcv} onChange={handleChange} style={{ width: '16px', height: '16px' }} />
+                <label htmlFor="is_pcv" style={{ fontSize: '13px', fontWeight: 500, color: '#374151', cursor: 'pointer' }}>No Official Receipt — use Petty Cash Voucher (PCV)</label>
+              </div>
+              {form.is_pcv ? (
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>PCV Remarks <span style={{ color: '#ef4444' }}>*</span></label>
+                  <textarea style={{ ...styles.formInput, minHeight: '60px', resize: 'vertical' }} name="pcv_remarks" value={form.pcv_remarks} onChange={handleChange} placeholder="Describe what was purchased and from whom..." required />
+                </div>
+              ) : (
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>OR # (Official Receipt)</label>
+                  <input style={styles.formInput} name="or_number" value={form.or_number} onChange={handleChange} />
+                </div>
+              )}
+            </>
+          )}
           <div style={styles.formActions}>
             <button type="button" style={styles.btnSecondary} onClick={onClose}>Cancel</button>
-            <button type="submit" style={styles.btnPrimary} disabled={saving}>{saving ? 'Saving...' : 'Create'}</button>
+            <button type="submit" style={styles.btnPrimary} disabled={saving}>{saving ? 'Saving...' : isEdit ? 'Update' : 'Create'}</button>
           </div>
         </form>
       </div>
@@ -247,7 +321,7 @@ function CreateTxnModal({ open, onClose, onSave, funds }) {
 
 // ---------- Fund Overview Tab ----------
  
-function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund, onGenerateRemittance, canManage, isPresident, people, warehouses, fundModes, fundStatuses }) {
+function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund, onGenerateRemittance, onGenerateReplenishment, canManage, isPresident, people, warehouses, fundModes, fundStatuses }) {
   const [showForm, setShowForm] = useState(false);
   const [editingFund, setEditingFund] = useState(null);
 
@@ -327,6 +401,14 @@ function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund
                     Generate Remittance
                   </button>
                 )}
+                {canManage && (
+                  <button
+                    style={{ ...styles.btnPrimary, marginTop: '8px', width: '100%' }}
+                    onClick={() => onGenerateReplenishment(fund._id)}
+                  >
+                    Replenish Fund
+                  </button>
+                )}
               </div>
             );
           })}
@@ -340,7 +422,7 @@ function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund
 
 // ---------- Transactions Tab ----------
  
-function TransactionsTab({ funds, pc }) {
+function TransactionsTab({ funds, pc, canManage, expenseCategories }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fundFilter, setFundFilter] = useState('');
@@ -348,6 +430,7 @@ function TransactionsTab({ funds, pc }) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [editingTxn, setEditingTxn] = useState(null);
 
   const loadTransactions = useCallback(async () => {
     setLoading(true);
@@ -377,8 +460,24 @@ function TransactionsTab({ funds, pc }) {
     }
   };
 
-  const handleCreate = async (body) => {
-    await pc.createTransaction(body);
+  const handleVoid = async (id) => {
+    const reason = window.prompt('Reason for voiding this transaction:');
+    if (!reason?.trim()) return;
+    try {
+      await pc.voidTransaction(id, { reason: reason.trim() });
+      showSuccess('Transaction voided.');
+      loadTransactions();
+    } catch (err) { showError(err, 'Could not void transaction'); }
+  };
+
+  const handleSaveTxn = async (body, txnId) => {
+    if (txnId) {
+      await pc.updateTransaction(txnId, body);
+      showSuccess('Transaction updated.');
+    } else {
+      await pc.createTransaction(body);
+      showSuccess('Transaction created.');
+    }
     loadTransactions();
   };
 
@@ -409,7 +508,7 @@ function TransactionsTab({ funds, pc }) {
         </SelectField>
         <input style={styles.input} type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} placeholder="From" />
         <input style={styles.input} type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} placeholder="To" />
-        <button style={styles.btnPrimary} onClick={() => setShowCreate(true)}>+ New Transaction</button>
+        <button style={styles.btnPrimary} onClick={() => { setEditingTxn(null); setShowCreate(true); }}>+ New Transaction</button>
       </div>
 
       {loading ? (
@@ -426,6 +525,7 @@ function TransactionsTab({ funds, pc }) {
                 <th style={styles.th}>Type</th>
                 <th style={styles.th}>Payee / Source</th>
                 <th style={styles.th}>Amount</th>
+                <th style={styles.th}>Receipt</th>
                 <th style={styles.th}>Balance</th>
                 <th style={styles.th}>Status</th>
                 <th style={styles.th}>Actions</th>
@@ -439,12 +539,27 @@ function TransactionsTab({ funds, pc }) {
                   <td style={styles.td}>{typeBadge(txn.txn_type)}</td>
                   <td style={styles.td}>{txn.payee || txn.source_description || '-'}</td>
                   <td style={styles.td}>{styles.peso(txn.amount)}</td>
+                  <td style={styles.td}>
+                    {txn.txn_type === 'DISBURSEMENT'
+                      ? txn.is_pcv
+                        ? <span style={styles.badge('amber')} title={txn.pcv_remarks || ''}>PCV</span>
+                        : (txn.or_number || <span style={{ color: '#9ca3af', fontSize: '12px' }}>—</span>)
+                      : <span style={{ color: '#9ca3af', fontSize: '12px' }}>—</span>}
+                  </td>
                   <td style={styles.td}>{styles.peso(txn.running_balance)}</td>
                   <td style={styles.td}>{statusBadge(txn.status)}</td>
                   <td style={styles.td}>
-                    {txn.status !== 'POSTED' && txn.status !== 'VOIDED' && (
-                      <button style={styles.btnSuccess} onClick={() => handlePost(txn._id)}>Post</button>
-                    )}
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {txn.status === 'DRAFT' && (
+                        <>
+                          <button style={styles.btnSecondary} onClick={() => { setEditingTxn(txn); setShowCreate(true); }}>Edit</button>
+                          {canManage && <>
+                            <button style={styles.btnSuccess} onClick={() => handlePost(txn._id)}>Post</button>
+                            <button style={styles.btnDanger} onClick={() => handleVoid(txn._id)}>Void</button>
+                          </>}
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -453,7 +568,7 @@ function TransactionsTab({ funds, pc }) {
         </div>
       )}
 
-      <CreateTxnModal open={showCreate} onClose={() => setShowCreate(false)} onSave={handleCreate} funds={funds} />
+      <TxnFormModal open={showCreate} onClose={() => { setShowCreate(false); setEditingTxn(null); }} onSave={handleSaveTxn} funds={funds} expenseCategories={expenseCategories} editData={editingTxn} />
     </div>
   );
 }
@@ -462,7 +577,7 @@ function TransactionsTab({ funds, pc }) {
 
 // ---------- Documents Tab ----------
  
-function DocumentsTab({ pc }) {
+function DocumentsTab({ pc, canManage }) {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -477,15 +592,13 @@ function DocumentsTab({ pc }) {
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
 
-  const handleSign = async (id) => {
-    try { await pc.signDocument(id, { role: 'approver' }); loadDocs(); }
-    catch (err) { showError(err, 'Could not sign document'); }
-  };
-
   const handleProcess = async (id) => {
-    if (!window.confirm('Process this document?')) return;
-    try { await pc.processDocument(id); loadDocs(); }
-    catch (err) { showError(err, 'Could not process document'); }
+    if (!window.confirm('Process this document? Balance will be updated and journal entry created.')) return;
+    try {
+      await pc.processDocument(id);
+      showSuccess('Document processed successfully.');
+      loadDocs();
+    } catch (err) { showError(err, 'Could not process document'); }
   };
 
   const handlePrint = (id) => {
@@ -505,12 +618,6 @@ function DocumentsTab({ pc }) {
     return <span style={styles.badge('gray')}>{status || 'DRAFT'}</span>;
   };
 
-  const sigStatus = (sigs) => {
-    if (!sigs || sigs.length === 0) return <span style={{ color: '#9ca3af', fontSize: '12px' }}>No signatures</span>;
-    const signed = sigs.filter(s => s.signed_at).length;
-    return <span style={{ fontSize: '12px' }}>{signed}/{sigs.length} signed</span>;
-  };
-
   return (
     <div>
       {loading ? (
@@ -526,7 +633,7 @@ function DocumentsTab({ pc }) {
                 <th style={styles.th}>Type</th>
                 <th style={styles.th}>Date</th>
                 <th style={styles.th}>Amount</th>
-                <th style={styles.th}>Signatures</th>
+                <th style={styles.th}>Fund</th>
                 <th style={styles.th}>Status</th>
                 <th style={styles.th}>Actions</th>
               </tr>
@@ -537,17 +644,14 @@ function DocumentsTab({ pc }) {
                   <td style={styles.td}>{doc.doc_number || '-'}</td>
                   <td style={styles.td}>{typeBadge(doc.doc_type)}</td>
                   <td style={styles.td}>{doc.doc_date ? new Date(doc.doc_date).toLocaleDateString() : '-'}</td>
-                  <td style={styles.td}>{styles.peso(doc.total_amount)}</td>
-                  <td style={styles.td}>{sigStatus(doc.signatures)}</td>
+                  <td style={styles.td}>{styles.peso(doc.amount)}</td>
+                  <td style={styles.td}>{doc.fund_id?.fund_name || '-'}</td>
                   <td style={styles.td}>{statusBadge(doc.status)}</td>
                   <td style={styles.td}>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                       <button style={styles.btnSecondary} onClick={() => handlePrint(doc._id)}>Print</button>
-                      {doc.status !== 'PROCESSED' && (
-                        <>
-                          <button style={styles.btnPrimary} onClick={() => handleSign(doc._id)}>Sign</button>
-                          <button style={styles.btnSuccess} onClick={() => handleProcess(doc._id)}>Process</button>
-                        </>
+                      {doc.status !== 'PROCESSED' && canManage && (
+                        <button style={styles.btnSuccess} onClick={() => handleProcess(doc._id)}>Process</button>
                       )}
                     </div>
                   </td>
@@ -569,8 +673,9 @@ export default function PettyCash() {
   const pc = usePettyCash();
   const { getPeopleList } = usePeople();
   const { getWarehouses } = useWarehouses();
-  const { data: lookups } = useLookupBatch(['PETTY_CASH_FUND_TYPE', 'PETTY_CASH_FUND_STATUS']);
-  const canManage = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const { data: lookups } = useLookupBatch(['PETTY_CASH_FUND_TYPE', 'PETTY_CASH_FUND_STATUS', 'PETTY_CASH_EXPENSE_CATEGORY']);
+  const canManage = ROLE_SETS.MANAGEMENT.includes(user?.role)
+    || user?.erp_access?.sub_permissions?.accounting?.petty_cash === true;
   const [activeTab, setActiveTab] = useState('funds');
   const [funds, setFunds] = useState([]);
   const [people, setPeople] = useState([]);
@@ -579,6 +684,7 @@ export default function PettyCash() {
 
   const fundModes = lookups.PETTY_CASH_FUND_TYPE || [];
   const fundStatuses = lookups.PETTY_CASH_FUND_STATUS || [];
+  const expenseCategories = lookups.PETTY_CASH_EXPENSE_CATEGORY || [];
 
   const loadFunds = useCallback(async () => {
     setLoading(true);
@@ -628,6 +734,18 @@ export default function PettyCash() {
     }
   };
 
+  const handleGenerateReplenishment = async (fundId) => {
+    const amountStr = window.prompt('Enter replenishment amount (owner → fund):');
+    if (!amountStr) return;
+    const amount = Number(amountStr);
+    if (!amount || amount <= 0) { showError(null, 'Enter a valid positive amount'); return; }
+    try {
+      await pc.generateReplenishment({ fund_id: fundId, amount });
+      showSuccess('Replenishment document generated. Go to Documents tab to process.');
+      setActiveTab('documents');
+    } catch (err) { showError(err, 'Could not generate replenishment'); }
+  };
+
   return (
     <div style={styles.container}>
       <WorkflowGuide pageKey="petty-cash" />
@@ -642,13 +760,13 @@ export default function PettyCash() {
       </div>
 
       {activeTab === 'funds' && (
-        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} canManage={canManage} isPresident={user?.role === ROLES.PRESIDENT} people={people} warehouses={warehouses} fundModes={fundModes} fundStatuses={fundStatuses} />
+        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} onGenerateReplenishment={handleGenerateReplenishment} canManage={canManage} isPresident={user?.role === ROLES.PRESIDENT} people={people} warehouses={warehouses} fundModes={fundModes} fundStatuses={fundStatuses} />
       )}
       {activeTab === 'transactions' && (
-        <TransactionsTab funds={funds} pc={pc} />
+        <TransactionsTab funds={funds} pc={pc} canManage={canManage} expenseCategories={expenseCategories} />
       )}
       {activeTab === 'documents' && (
-        <DocumentsTab pc={pc} />
+        <DocumentsTab pc={pc} canManage={canManage} />
       )}
     </div>
   );

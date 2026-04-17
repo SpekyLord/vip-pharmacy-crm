@@ -171,7 +171,12 @@ const createTransaction = catchAsync(async (req, res) => {
   const fund = await PettyCashFund.findOne({ _id: fund_id, ...pcFilter(req.tenantFilter, 'fund') });
   if (!fund) return res.status(404).json({ success: false, message: 'Fund not found' });
 
-  // BDMs can only transact on funds they're custodian of
+  // Fund status check — block transactions on inactive funds
+  if (['SUSPENDED', 'CLOSED'].includes(fund.status)) {
+    return res.status(400).json({ success: false, message: `Fund is ${fund.status}. Transactions are blocked.` });
+  }
+
+  // Admin/finance/president can transact on any fund; custodian only on their own
   const isPrivileged = ['admin', 'finance', 'president'].includes(req.user.role);
   if (!isPrivileged && fund.custodian_id?.toString() !== req.user._id.toString()) {
     return res.status(403).json({ success: false, message: 'Only the fund custodian can create transactions on this fund' });
@@ -191,9 +196,21 @@ const createTransaction = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: `Insufficient balance. Current: ₱${fund.current_balance}, Requested: ₱${amount}` });
   }
 
+  // PCV validation: if using Petty Cash Voucher, pcv_remarks is required
+  if (txn_type === 'DISBURSEMENT' && req.body.is_pcv && !req.body.pcv_remarks?.trim()) {
+    return res.status(400).json({ success: false, message: 'PCV remarks are required when using a Petty Cash Voucher (no Official Receipt)' });
+  }
+
+  // DEPOSIT field mapping: frontend sends payee, model uses source_description
+  const txnData = { ...req.body };
+  if (txn_type === 'DEPOSIT' && txnData.payee && !txnData.source_description) {
+    txnData.source_description = txnData.payee;
+    delete txnData.payee;
+  }
+
   // Create DRAFT — balance untouched
   const txn = await PettyCashTransaction.create({
-    ...req.body,
+    ...txnData,
     entity_id: req.entityId,
     created_by: req.user._id,
     status: 'DRAFT',
@@ -201,6 +218,56 @@ const createTransaction = catchAsync(async (req, res) => {
   });
 
   res.status(201).json({ success: true, data: txn });
+});
+
+/**
+ * PUT /transactions/:id — edit a DRAFT transaction
+ * Only DRAFT can be edited. Custodian edits their own; privileged users edit any.
+ */
+const updateTransaction = catchAsync(async (req, res) => {
+  const txn = await PettyCashTransaction.findOne({
+    _id: req.params.id,
+    ...pcFilter(req.tenantFilter, 'transaction')
+  });
+
+  if (!txn) return res.status(404).json({ success: false, message: 'Transaction not found' });
+
+  if (txn.status !== 'DRAFT') {
+    return res.status(400).json({ success: false, message: `Only DRAFT transactions can be edited. Current status: ${txn.status}` });
+  }
+
+  // Authorization: custodian can edit their own drafts; privileged users can edit any
+  const isPrivileged = ['admin', 'finance', 'president'].includes(req.user.role);
+  if (!isPrivileged && txn.created_by?.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ success: false, message: 'You can only edit transactions you created' });
+  }
+
+  // PCV validation
+  if (req.body.is_pcv && !req.body.pcv_remarks?.trim() && !txn.pcv_remarks?.trim()) {
+    return res.status(400).json({ success: false, message: 'PCV remarks are required when using a Petty Cash Voucher' });
+  }
+
+  // DEPOSIT field mapping
+  if (txn.txn_type === 'DEPOSIT' && req.body.payee && !req.body.source_description) {
+    req.body.source_description = req.body.payee;
+    delete req.body.payee;
+  }
+
+  // Balance soft-check for disbursement amount changes
+  if (txn.txn_type === 'DISBURSEMENT' && req.body.amount) {
+    const fund = await PettyCashFund.findById(txn.fund_id).lean();
+    if (fund && req.body.amount > fund.current_balance) {
+      return res.status(400).json({ success: false, message: `Insufficient balance. Current: ₱${fund.current_balance}, Requested: ₱${req.body.amount}` });
+    }
+  }
+
+  const blocked = ['_id', 'entity_id', 'fund_id', 'txn_type', 'txn_number', 'status', 'created_by', 'created_at', 'posted_at', 'posted_by', 'running_balance'];
+  for (const [key, val] of Object.entries(req.body)) {
+    if (!blocked.includes(key)) txn[key] = val;
+  }
+
+  await txn.save();
+  res.json({ success: true, data: txn });
 });
 
 /**
@@ -358,6 +425,11 @@ const generateRemittance = catchAsync(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Fund not found' });
   }
 
+  // Fund status check
+  if (['SUSPENDED', 'CLOSED'].includes(fund.status)) {
+    return res.status(400).json({ success: false, message: `Fund is ${fund.status}. Cannot generate remittance.` });
+  }
+
   // Fund mode enforcement
   if (fund.fund_mode === 'DEPOSIT_ONLY') {
     return res.status(400).json({ success: false, message: 'DEPOSIT_ONLY fund cannot generate remittance' });
@@ -417,6 +489,11 @@ const generateReplenishment = catchAsync(async (req, res) => {
 
   const fund = await PettyCashFund.findOne({ _id: fund_id, ...pcFilter(req.tenantFilter, 'fund') });
   if (!fund) return res.status(404).json({ success: false, message: 'Fund not found' });
+
+  // Fund status check
+  if (['SUSPENDED', 'CLOSED'].includes(fund.status)) {
+    return res.status(400).json({ success: false, message: `Fund is ${fund.status}. Cannot generate replenishment.` });
+  }
 
   // Fund mode enforcement
   if (fund.fund_mode === 'EXPENSE_ONLY') {
@@ -593,6 +670,35 @@ const processDocument = catchAsync(async (req, res) => {
 });
 
 /**
+ * POST /transactions/:id/void — void a DRAFT transaction (cannot void POSTED)
+ */
+const voidTransaction = catchAsync(async (req, res) => {
+  const { reason } = req.body;
+  if (!reason?.trim()) {
+    return res.status(400).json({ success: false, message: 'Void reason is required' });
+  }
+
+  const txn = await PettyCashTransaction.findOne({
+    _id: req.params.id,
+    ...pcFilter(req.tenantFilter, 'transaction')
+  });
+
+  if (!txn) return res.status(404).json({ success: false, message: 'Transaction not found' });
+
+  if (txn.status !== 'DRAFT') {
+    return res.status(400).json({ success: false, message: `Only DRAFT transactions can be voided. Current status: ${txn.status}` });
+  }
+
+  txn.status = 'VOIDED';
+  txn.voided_at = new Date();
+  txn.voided_by = req.user._id;
+  txn.void_reason = reason.trim();
+  await txn.save();
+
+  res.json({ success: true, data: txn });
+});
+
+/**
  * DELETE /funds/:id — president only, fund must have zero balance
  */
 const deleteFund = catchAsync(async (req, res) => {
@@ -621,7 +727,9 @@ module.exports = {
   deleteFund,
   getTransactions,
   createTransaction,
+  updateTransaction,
   postTransaction,
+  voidTransaction,
   checkCeiling,
   generateRemittance,
   generateReplenishment,

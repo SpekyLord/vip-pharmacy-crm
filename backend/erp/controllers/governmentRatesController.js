@@ -1,8 +1,8 @@
 const GovernmentRates = require('../models/GovernmentRates');
 const { catchAsync } = require('../../middleware/errorHandler');
-const XLSX = require('xlsx');
+const XLSX = require('xlsx'); // used for exports only (trusted server data)
 const { SEED_DEFAULTS } = require('./lookupGenericController');
-const { safeXlsxRead } = require('../../utils/safeXlsxRead');
+const { safeExcelRead, sheetToJson } = require('../../utils/safeExcelRead');
 
 /**
  * GET /api/erp/government-rates
@@ -137,17 +137,18 @@ const importRates = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Upload an Excel file' });
   }
 
-  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
+  const wb = await safeExcelRead(req.file.buffer);
   let created = 0, updated = 0, errors = [];
 
-  for (const sheetName of wb.SheetNames) {
+  for (const worksheet of wb.worksheets) {
+    const sheetName = worksheet.name;
     const rateType = sheetName.trim().toUpperCase();
     if (!['SSS', 'PHILHEALTH', 'PAGIBIG', 'WITHHOLDING_TAX', 'EC', 'DE_MINIMIS'].includes(rateType)) {
       errors.push({ sheet: sheetName, error: `Unknown rate type: ${sheetName}` });
       continue;
     }
 
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName]);
+    const rows = sheetToJson(worksheet);
     if (!rows.length) continue;
 
     // Group rows by effective_date
