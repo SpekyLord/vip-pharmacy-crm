@@ -3,6 +3,7 @@ const router = express.Router();
 const c = require('../controllers/collectionController');
 const { roleCheck } = require('../../middleware/roleCheck');
 const periodLockCheck = require('../middleware/periodLockCheck');
+const { ROLES } = require('../../constants/roles');
 
 // Static routes first (before /:id)
 router.get('/open-csis', c.getOpenCsisEndpoint);
@@ -20,6 +21,6 @@ router.post('/', c.createCollection);
 router.get('/:id', c.getCollectionById);
 router.put('/:id', c.updateCollection);
 router.post('/:id/request-deletion', c.requestDeletion);
-router.post('/:id/approve-deletion', roleCheck('admin', 'finance'), c.approveDeletion);
+router.post('/:id/approve-deletion', roleCheck(ROLES.ADMIN, ROLES.FINANCE), c.approveDeletion);
 
 module.exports = router;

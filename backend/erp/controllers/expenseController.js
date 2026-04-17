@@ -1520,6 +1520,26 @@ const getPrfCalfById = catchAsync(async (req, res) => {
 const deleteDraftPrfCalf = catchAsync(async (req, res) => {
   const result = await PrfCalf.findOneAndDelete({ _id: req.params.id, ...req.tenantFilter, status: 'DRAFT' });
   if (!result) return res.status(404).json({ success: false, message: 'Draft PRF/CALF not found' });
+
+  // Clean up calf_id references on linked expense/logbook lines (prevent orphaned refs)
+  if (result.doc_type === 'CALF' && result.linked_expense_id && result.linked_expense_line_ids?.length) {
+    const expense = await ExpenseEntry.findById(result.linked_expense_id);
+    if (expense) {
+      for (const line of expense.lines) {
+        if (line.calf_id?.toString() === result._id.toString()) line.calf_id = undefined;
+      }
+      await expense.save();
+    } else {
+      const logbook = await CarLogbookEntry.findById(result.linked_expense_id);
+      if (logbook) {
+        for (const fuel of logbook.fuel_entries) {
+          if (fuel.calf_id?.toString() === result._id.toString()) fuel.calf_id = undefined;
+        }
+        await logbook.save();
+      }
+    }
+  }
+
   res.json({ success: true, message: 'Draft PRF/CALF deleted' });
 });
 
@@ -1867,6 +1887,27 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
     await doc.save();
     reopenedDocs.push(doc);
 
+    // Clear calf_id on linked expense/logbook lines so they show as pending again
+    if (doc.doc_type === 'CALF' && doc.linked_expense_id && doc.linked_expense_line_ids?.length) {
+      try {
+        const expense = await ExpenseEntry.findById(doc.linked_expense_id);
+        if (expense) {
+          for (const line of expense.lines) {
+            if (line.calf_id?.toString() === doc._id.toString()) line.calf_id = undefined;
+          }
+          await expense.save();
+        } else {
+          const logbook = await CarLogbookEntry.findById(doc.linked_expense_id);
+          if (logbook) {
+            for (const fuel of logbook.fuel_entries) {
+              if (fuel.calf_id?.toString() === doc._id.toString()) fuel.calf_id = undefined;
+            }
+            await logbook.save();
+          }
+        }
+      } catch (linkErr) { console.error('Clear calf_id on reopen failed:', doc._id, linkErr.message); }
+    }
+
     await ErpAuditLog.logChange({
       entity_id: doc.entity_id,
       bdm_id: doc.bdm_id,
@@ -2151,6 +2192,8 @@ const getPendingCalfLines = catchAsync(async (req, res) => {
         description: l.establishment || l.particulars,
         amount: l.amount,
         payment_mode: l.payment_mode,
+        funding_card_id: l.funding_card_id || null,
+        funding_account_id: l.funding_account_id || null,
         or_photo_url: l.or_photo_url || null
       }))
     });
@@ -2560,6 +2603,16 @@ const postSingleExpense = async (doc, userId) => {
   await autoClassifyLines(doc.lines, doc.entity_id);
   await doc.save();
 
+  // CALF-POSTED gate — same check as submitExpenses (line 1176)
+  for (const line of (doc.lines || [])) {
+    if (line.calf_required && line.calf_id) {
+      const calf = await PrfCalf.findById(line.calf_id).select('status').lean();
+      if (!calf || calf.status !== 'POSTED') {
+        throw new Error(`Cannot post: line "${line.establishment || ''}" has CALF that is not POSTED (status: ${calf?.status || 'NOT_FOUND'}). Post the CALF first.`);
+      }
+    }
+  }
+
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
@@ -2661,6 +2714,104 @@ const postSinglePrfCalf = async (doc, userId) => {
       });
     }
   } catch (jeErr) { console.error('Auto-journal failed for PRF/CALF (approval hub):', doc._id, jeErr.message); }
+
+  // Auto-validate+submit linked expense/logbook when CALF is posted (mirrors submitPrfCalf logic)
+  if (doc.doc_type === 'CALF' && doc.linked_expense_id) {
+    try {
+      let source = await ExpenseEntry.findById(doc.linked_expense_id);
+      let sourceType = 'EXPENSE';
+      if (!source) {
+        source = await CarLogbookEntry.findById(doc.linked_expense_id);
+        sourceType = 'CARLOGBOOK';
+      }
+      if (source && source.status !== 'POSTED') {
+        // Validate
+        const valErrors = [];
+        if (sourceType === 'EXPENSE') {
+          await autoClassifyLines(source.lines, source.entity_id);
+          if (!source.lines.length) valErrors.push('No expense lines');
+          for (let i = 0; i < source.lines.length; i++) {
+            const l = source.lines[i];
+            if (!l.expense_date) valErrors.push(`Line ${i + 1}: date required`);
+            if (!l.amount || l.amount <= 0) valErrors.push(`Line ${i + 1}: amount required`);
+            if (!l.establishment) valErrors.push(`Line ${i + 1}: establishment required`);
+            if (!l.coa_code || l.coa_code === '6900') valErrors.push(`Line ${i + 1}: COA code missing or Miscellaneous (6900)`);
+          }
+        } else {
+          if (!source.entry_date) valErrors.push('Entry date required');
+          if (source.ending_km < source.starting_km) valErrors.push('Ending KM < Starting KM');
+        }
+
+        if (valErrors.length) {
+          source.status = 'ERROR';
+          source.validation_errors = valErrors;
+          await source.save();
+        } else {
+          // Post atomically
+          const autoSession = await mongoose.startSession();
+          try {
+            await autoSession.withTransaction(async () => {
+              source.status = 'POSTED';
+              source.posted_at = new Date();
+              source.posted_by = userId;
+              source.validation_errors = [];
+              const [event] = await TransactionEvent.create([{
+                entity_id: source.entity_id, bdm_id: source.bdm_id,
+                event_type: sourceType === 'EXPENSE' ? 'EXPENSE' : 'CAR_LOGBOOK',
+                event_date: new Date(),
+                document_ref: sourceType === 'EXPENSE'
+                  ? `EXP-${source.period}-${source.cycle}`
+                  : `LOGBOOK-${source.period}-${source.entry_date?.toISOString().split('T')[0] || ''}`,
+                status: 'ACTIVE', created_by: userId
+              }], { session: autoSession });
+              source.event_id = event._id;
+              await source.save({ session: autoSession });
+
+              // Auto-journal
+              const autoCoaMap = await getCoaMap();
+              if (sourceType === 'EXPENSE') {
+                const jLines = [];
+                let totalOre = 0, totalAccess = 0;
+                const desc = `EXP-${source.period}-${source.cycle}`;
+                for (const line of source.lines) {
+                  jLines.push({ account_code: line.coa_code || autoCoaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
+                  if (line.expense_type === 'ORE') totalOre += line.amount || 0;
+                  else totalAccess += line.amount || 0;
+                }
+                if (totalOre > 0) jLines.push({ account_code: autoCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
+                if (totalAccess > 0) {
+                  const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source, autoCoaMap.AP_TRADE);
+                  jLines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
+                }
+                if (jLines.length >= 2) {
+                  await createAndPostJournal(source.entity_id, {
+                    je_date: source.posted_at, period: source.period, description: `Expenses: ${desc}`,
+                    source_module: 'EXPENSE', source_event_id: source.event_id, source_doc_ref: desc,
+                    lines: jLines, bir_flag: source.bir_flag || 'BOTH', vat_flag: 'N/A', bdm_id: source.bdm_id, created_by: userId
+                  }, { session: autoSession });
+                }
+              } else {
+                const fuelTotal = source.official_gas_amount || source.total_fuel_amount || 0;
+                if (fuelTotal > 0) {
+                  const funding = await resolveFundingCoa(source.fuel_entries?.[0] || source);
+                  await createAndPostJournal(source.entity_id, {
+                    je_date: source.posted_at, period: source.period, description: `Car Logbook: ${source.period}`,
+                    source_module: 'EXPENSE', source_event_id: source.event_id,
+                    source_doc_ref: `LOGBOOK-${source.period}`,
+                    lines: [
+                      { account_code: autoCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
+                      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}` }
+                    ],
+                    bir_flag: 'BOTH', vat_flag: 'N/A', bdm_id: source.bdm_id, created_by: userId
+                  }, { session: autoSession });
+                }
+              }
+            });
+          } finally { autoSession.endSession(); }
+        }
+      }
+    } catch (autoErr) { console.error('Auto-submit linked source failed (approval hub):', doc.linked_expense_id, autoErr.message); }
+  }
 };
 
 module.exports = {

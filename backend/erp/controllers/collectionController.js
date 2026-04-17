@@ -663,7 +663,7 @@ const requestDeletion = catchAsync(async (req, res) => {
 });
 
 const approveDeletion = catchAsync(async (req, res) => {
-  const collection = await Collection.findOne({ _id: req.params.id, status: 'DELETION_REQUESTED' });
+  const collection = await Collection.findOne({ _id: req.params.id, ...req.tenantFilter, status: 'DELETION_REQUESTED' });
   if (!collection) return res.status(404).json({ success: false, message: 'Collection not found' });
 
   // Reversal event

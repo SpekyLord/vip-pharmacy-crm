@@ -559,6 +559,15 @@ export default function Expenses() {
     setLines(prev => {
       const updated = [...prev];
       updated[idx] = { ...updated[idx], [field]: value };
+      // Auto-switch payment mode default when expense type changes: ACCESS→CARD, ORE→CASH
+      if (field === 'expense_type') {
+        if (value === 'ACCESS' && updated[idx].payment_mode === 'CASH') {
+          const firstCard = paymentModes.find(p => p.requires_calf && p.is_active !== false);
+          updated[idx].payment_mode = firstCard?.mode_code || 'CARD';
+        } else if (value === 'ORE' && updated[idx].payment_mode !== 'CASH') {
+          updated[idx].payment_mode = 'CASH';
+        }
+      }
       // Auto-set CALF required for ACCESS non-cash (company-funded)
       if (field === 'expense_type' || field === 'payment_mode') {
         const pm = paymentModes.find(p => p.mode_code === updated[idx].payment_mode);

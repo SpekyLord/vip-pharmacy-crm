@@ -1,19 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../../middleware/auth');
 const { roleCheck } = require('../../middleware/roleCheck');
 const periodLockCheck = require('../middleware/periodLockCheck');
+const { ROLES } = require('../../constants/roles');
 const c = require('../controllers/salesController');
 
-router.post('/', protect, c.createSale);
-router.put('/:id', protect, c.updateSale);
-router.delete('/draft/:id', protect, c.deleteDraftRow);
-router.get('/', protect, c.getSales);
-router.get('/:id', protect, c.getSaleById);
-router.post('/validate', protect, c.validateSales);
-router.post('/submit', protect, periodLockCheck('SALES'), c.submitSales);
-router.post('/reopen', protect, periodLockCheck('SALES'), c.reopenSales);
-router.post('/:id/request-deletion', protect, c.requestDeletion);
-router.post('/:id/approve-deletion', protect, roleCheck('admin', 'finance'), c.approveDeletion);
+// Note: protect + tenantFilter already applied globally in erp/routes/index.js
+
+router.post('/', c.createSale);
+router.put('/:id', c.updateSale);
+router.delete('/draft/:id', c.deleteDraftRow);
+router.get('/', c.getSales);
+router.get('/:id', c.getSaleById);
+router.post('/validate', c.validateSales);
+// Period lock for submit is checked per-row inside submitSales controller
+// (body is { sale_ids } with no date field, so middleware can't extract period)
+router.post('/submit', c.submitSales);
+router.post('/reopen', periodLockCheck('SALES'), c.reopenSales);
+router.post('/:id/request-deletion', c.requestDeletion);
+router.post('/:id/approve-deletion', roleCheck(ROLES.ADMIN, ROLES.FINANCE), c.approveDeletion);
 
 module.exports = router;

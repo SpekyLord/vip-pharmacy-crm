@@ -86,6 +86,7 @@ export default function PrfCalf() {
     setForm({
       doc_type: 'PRF',
       prf_type: 'PARTNER_REBATE',
+      partner_id: partner.doctor_id || null,
       purpose: `Partner rebate — ${partner.collections?.length || 0} collection(s)`,
       payee_name: partner.doctor_name || '',
       payee_type: 'MD',
@@ -96,6 +97,7 @@ export default function PrfCalf() {
       amount: partner.remaining || 0,
       calf_number: '', advance_amount: 0, liquidation_amount: 0,
       payment_mode: 'BANK_TRANSFER', check_no: '', bank: '',
+      funding_card_id: null, funding_account_id: null,
       notes: `Auto-filled from pending rebates. Original total: ₱${partner.total_rebate}, already paid: ₱${partner.paid || 0}`,
       photo_urls: []
     });
@@ -108,6 +110,9 @@ export default function PrfCalf() {
     const sourceLabel = item.source === 'FUEL' ? 'Fuel (company card)' : 'ACCESS expenses';
     // Use the payment mode from the first line (the company fund method used)
     const primaryPaymentMode = item.lines[0]?.payment_mode || 'CARD';
+    // Auto-inherit funding card/account from linked expense lines (no redundant re-selection)
+    const primaryFundingCard = item.lines[0]?.funding_card_id || null;
+    const primaryFundingAccount = item.lines[0]?.funding_account_id || null;
     // Auto-inherit OR photos from linked expense lines (no need to scan twice)
     const linkedPhotos = item.lines.map(l => l.or_photo_url).filter(Boolean);
     setEditingDoc(null);
@@ -119,6 +124,8 @@ export default function PrfCalf() {
       amount: item.total_amount,
       calf_number: '', advance_amount: item.total_amount, liquidation_amount: item.total_amount,
       payment_mode: primaryPaymentMode,
+      funding_card_id: primaryFundingCard,
+      funding_account_id: primaryFundingAccount,
       check_no: '', bank: '',
       linked_expense_id: item.source_id,
       linked_expense_line_ids: item.lines.map(l => l._id),
@@ -131,6 +138,7 @@ export default function PrfCalf() {
   const resetForm = (docType = 'PRF') => setForm({
     doc_type: docType,
     prf_type: 'PARTNER_REBATE',
+    partner_id: null,
     purpose: '', payee_name: '', payee_type: 'MD',
     partner_bank: '', partner_account_name: '', partner_account_no: '',
     rebate_amount: 0, amount: 0,
@@ -150,11 +158,16 @@ export default function PrfCalf() {
       setForm({
         doc_type: data.doc_type,
         prf_type: data.prf_type || 'PARTNER_REBATE',
+        partner_id: data.partner_id || null,
         purpose: data.purpose || '', payee_name: data.payee_name || '', payee_type: data.payee_type || 'MD',
         partner_bank: data.partner_bank || '', partner_account_name: data.partner_account_name || '', partner_account_no: data.partner_account_no || '',
         rebate_amount: data.rebate_amount || 0, amount: data.amount || 0,
         calf_number: data.calf_number || '', advance_amount: data.advance_amount || 0, liquidation_amount: data.liquidation_amount || 0,
         payment_mode: data.payment_mode || 'CASH', check_no: data.check_no || '', bank: data.bank || '',
+        funding_card_id: data.funding_card_id || null,
+        funding_account_id: data.funding_account_id || null,
+        linked_expense_id: data.linked_expense_id || null,
+        linked_expense_line_ids: data.linked_expense_line_ids || [],
         notes: data.notes || '', photo_urls: data.photo_urls || []
       });
       setShowForm(true);

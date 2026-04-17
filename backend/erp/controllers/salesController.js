@@ -649,7 +649,7 @@ const submitSales = catchAsync(async (req, res) => {
   const gated = await gateApproval({
     entityId: req.entityId,
     module: 'SALES',
-    docType: 'CSI',
+    docType: validRows[0]?.sale_type || 'CSI',
     docId: validRows[0]._id,
     docRef: validRows.map(r => r.doc_ref || r.invoice_number).filter(Boolean).join(', '),
     amount: salesTotalAmount,

@@ -536,6 +536,14 @@ const getDoctorProducts = catchAsync(async (req, res) => {
     throw new NotFoundError('Doctor not found');
   }
 
+  // BDMs can only view products for their assigned VIP Clients
+  if (req.user.role === ROLES.CONTRACTOR) {
+    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
+    if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+      throw new ForbiddenError('You do not have access to this VIP Client');
+    }
+  }
+
   res.status(200).json({
     success: true,
     data: {
@@ -775,10 +783,8 @@ module.exports = {
   deleteDoctor,
   deleteDoctorsByUser,
   countDoctorsByUser,
-  getDoctorsByRegion,
   getDoctorVisits,
   getDoctorProducts,
-  assignEmployee,
   updateTargetProducts,
   getSpecializations,
   getDoctorsByBdm,

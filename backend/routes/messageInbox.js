@@ -3,10 +3,11 @@
  *
  * Endpoints:
  * GET    /api/messages            - Get inbox messages for logged-in user (role-based)
- * GET    /api/messages/:id        - Get single message by ID
+ * GET    /api/messages/sent       - Get sent messages (admin only)
  * POST   /api/messages            - Create new message (admin only)
+ * POST   /api/messages/notify     - Send notification to specific user (admin only)
  * PATCH  /api/messages/:id/read   - Mark message as read
- * DELETE /api/messages/:id        - Soft delete message (admin only)
+ * PATCH  /api/messages/:id/unread - Mark message as unread
  */
 
 const express = require('express');
