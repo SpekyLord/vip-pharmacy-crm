@@ -18,7 +18,7 @@ const { computePerdiemAmount, resolvePerdiemThresholds } = require('../services/
 // fuelTracker computations handled by CarLogbookEntry pre-save hook
 const { generateExpenseSummary } = require('../services/expenseSummary');
 const { getDailyMdCounts, getDailyVisitDetails } = require('../services/smerCrmBridge');
-const { journalFromExpense, resolveFundingCoa, getCoaMap } = require('../services/autoJournal');
+const { journalFromExpense, resolveFundingCoa, getCoaMap, journalFromPrfCalf } = require('../services/autoJournal');
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
 const JournalEntry = require('../models/JournalEntry');
 
@@ -1694,39 +1694,14 @@ const submitPrfCalf = catchAsync(async (req, res) => {
     }
   }
 
-  // Phase 11/22: Auto-journal — PRF/CALF (COA from Settings.COA_MAP)
-  const calfCoaMap = await getCoaMap();
+  // Phase 11/22/H3: Auto-journal — PRF/CALF (shared function in autoJournal.js)
   for (const doc of docs) {
     try {
-      const amount = doc.amount || 0;
-      if (amount <= 0) continue;
-      const funding = await resolveFundingCoa(doc);
-      const docRef = doc.prf_number || doc.calf_number || `${doc.doc_type}-${doc.period}`;
-      let lines;
-      if (doc.doc_type === 'PRF') {
-        lines = [
-          { account_code: calfCoaMap.PARTNER_REBATE || '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
-          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}` }
-        ];
-      } else {
-        lines = [
-          { account_code: calfCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
-          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}` }
-        ];
+      const jeData = await journalFromPrfCalf(doc, req.user._id);
+      if (jeData) {
+        jeData.source_event_id = doc.event_id;
+        await createAndPostJournal(doc.entity_id, jeData);
       }
-      await createAndPostJournal(doc.entity_id, {
-        je_date: doc.posted_at || new Date(),
-        period: doc.period,
-        description: `${doc.doc_type}: ${docRef}`,
-        source_module: 'EXPENSE',
-        source_event_id: doc.event_id,
-        source_doc_ref: docRef,
-        lines,
-        bir_flag: doc.bir_flag || 'BOTH',
-        vat_flag: 'N/A',
-        bdm_id: doc.bdm_id,
-        created_by: req.user._id
-      });
     } catch (jeErr) {
       console.error('Auto-journal failed for PRF/CALF:', doc._id, jeErr.message);
     }
@@ -2689,29 +2664,12 @@ const postSinglePrfCalf = async (doc, userId) => {
     { $set: { event_id: doc.event_id } }
   ).catch(() => {});
 
+  // Phase H3: Auto-journal using shared function
   try {
-    const coaMap = await getCoaMap();
-    const amount = doc.amount || 0;
-    if (amount > 0) {
-      const funding = await resolveFundingCoa(doc);
-      const docRef = doc.prf_number || doc.calf_number || `${doc.doc_type}-${doc.period}`;
-      let lines;
-      if (doc.doc_type === 'PRF') {
-        lines = [
-          { account_code: coaMap.PARTNER_REBATE || '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
-          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}` }
-        ];
-      } else {
-        lines = [
-          { account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
-          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}` }
-        ];
-      }
-      await createAndPostJournal(doc.entity_id, {
-        je_date: doc.posted_at || new Date(), period: doc.period, description: `${doc.doc_type}: ${docRef}`,
-        source_module: 'EXPENSE', source_event_id: doc.event_id, source_doc_ref: docRef,
-        lines, bir_flag: doc.bir_flag || 'BOTH', vat_flag: 'N/A', bdm_id: doc.bdm_id, created_by: userId
-      });
+    const jeData = await journalFromPrfCalf(doc, userId);
+    if (jeData) {
+      jeData.source_event_id = doc.event_id;
+      await createAndPostJournal(doc.entity_id, jeData);
     }
   } catch (jeErr) { console.error('Auto-journal failed for PRF/CALF (approval hub):', doc._id, jeErr.message); }
 

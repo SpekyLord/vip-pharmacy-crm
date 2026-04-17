@@ -1932,3 +1932,37 @@ frontend/src/erp/pages/ApprovalManager.jsx            # CSI photo display in SAL
 backend/erp/models/SalesLine.js                       # Added csi_photo_url, csi_attachment_id fields
 backend/erp/services/universalApprovalService.js      # SALES details include csi_photo_url
 ```
+
+## Customer Collection Hardening + autoJournal Extraction — Phase H3 (April 2026)
+
+Phase 18 added `customer_id` as an alternative to `hospital_id` for Sales and Collections, but several backend code paths still assumed hospital-only. This phase completes the customer collection wiring.
+
+### Bug Fixes
+| # | Severity | File | Fix |
+|---|----------|------|-----|
+| 1 | HIGH | autoJournal.js:146 | `journalFromSale()` used non-existent `invoice_date` — changed to `csi_date` (model field) |
+| 2 | CRITICAL | collectionController.js:182 | CSI validation query hardcoded `hospital_id` — now builds query dynamically for hospital OR customer |
+| 3 | CRITICAL | arEngine.js + collectionController.js:208 | AR balance check only accepted hospitalId — added `getArBalance(entityId, hospitalId, customerId)` |
+| 4 | MEDIUM | collectionController.js:321,734 | TransactionEvent payload now includes `customer_id` for audit trail |
+| 5 | MEDIUM | collectionController.js:463,805 | VAT status lookup now checks Customer model when hospital_id is absent |
+
+### Refactoring
+- Extracted inline PRF/CALF journal logic from `expenseController.js` (batch submit + approval hub single post) into shared `journalFromPrfCalf()` in `autoJournal.js`
+- PRF: DR PARTNER_REBATE (5200), CR funding source
+- CALF: DR AR_BDM (1110), CR funding source
+- Both `submitPrfCalf` and `postSinglePrfCalf` now use the shared function
+
+### Opening AR Recap
+- Sales with `csi_date < user.live_date` are auto-routed as OPENING_AR (source field)
+- OPENING_AR: skips inventory deduction and COGS journal — only Revenue JE created
+- OPENING_AR CSIs are fully collectable via Collections (no special handling needed)
+- Collections enforce one-target constraint: all settled CSIs must match the CR's hospital_id OR customer_id
+
+### Key Files
+```
+backend/erp/services/autoJournal.js          # Fixed csi_date, added journalFromPrfCalf()
+backend/erp/services/arEngine.js             # Added getArBalance() (hospital OR customer)
+backend/erp/controllers/collectionController.js  # CSI validation, AR balance, TransactionEvent, VAT lookup
+backend/erp/controllers/expenseController.js     # Refactored PRF/CALF journal to use shared function
+frontend/src/erp/components/WorkflowGuide.jsx    # Updated collection-session + prf-calf tips
+```
