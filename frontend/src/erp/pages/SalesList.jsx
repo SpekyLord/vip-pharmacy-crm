@@ -12,6 +12,7 @@ import EntityBadge from '../components/EntityBadge';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError } from '../utils/errorToast';
+import { useLookupOptions } from '../hooks/useLookups';
 
 function toTitleCase(str) {
   if (!str) return str;
@@ -219,6 +220,7 @@ export default function SalesList() {
   const sales = useSales();
   const { getEntityById } = useEntities();
   const isMultiEntity = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN].includes(user?.role);
+  const { options: sourceOptions } = useLookupOptions('SALE_SOURCE');
 
   const [data, setData] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
@@ -248,9 +250,13 @@ export default function SalesList() {
   };
 
   const handleSubmit = async (saleId) => {
+    const target = saleId ? data.find(s => s._id === saleId) : null;
+    const isOpeningAr = target?.source === 'OPENING_AR';
     const msg = saleId
-      ? 'Submit this sale? Stock will be deducted via FIFO.'
-      : 'Submit all validated sales? Stock will be deducted via FIFO.';
+      ? isOpeningAr
+        ? 'Submit this Opening AR entry? AR journal will be created (no stock deduction).'
+        : 'Submit this sale? Stock will be deducted via FIFO.'
+      : 'Submit all validated sales? Stock will be deducted via FIFO (Opening AR entries skip stock).';
     if (!window.confirm(msg)) return;
     try {
       await sales.submitSales(saleId ? [saleId] : undefined);
@@ -331,8 +337,9 @@ export default function SalesList() {
                 </SelectField>
                 <SelectField value={filters.source} onChange={e => handleFilterChange('source', e.target.value)}>
                   <option value="">All Sources</option>
-                  <option value="SALES_LINE">Sales Line</option>
-                  <option value="OPENING_AR">Opening AR</option>
+                  {sourceOptions.map(o => (
+                    <option key={o.code} value={o.code}>{o.label}</option>
+                  ))}
                 </SelectField>
                 <input type="date" value={filters.csi_date_from} onChange={e => handleFilterChange('csi_date_from', e.target.value)} placeholder="From" />
                 <input type="date" value={filters.csi_date_to} onChange={e => handleFilterChange('csi_date_to', e.target.value)} placeholder="To" />
@@ -362,7 +369,11 @@ export default function SalesList() {
                   <td data-label="CSI #"><strong>{sale.doc_ref}</strong></td>
                   <td data-label="Hospital">{toTitleCase(sale.hospital_id?.hospital_name) || sale.customer_id?.customer_name || '-'}</td>
                   <td data-label="Total">P{(sale.invoice_total || 0).toLocaleString()}</td>
-                  <td data-label="Source" style={{ fontSize: 11 }}>{sale.source}</td>
+                  <td data-label="Source" style={{ fontSize: 11 }}>
+                    <span className="badge" style={sale.source === 'OPENING_AR' ? { background: '#fef3c7', color: '#92400e' } : { background: '#e0f2fe', color: '#0369a1' }}>
+                      {sourceOptions.find(o => o.code === sale.source)?.label || sale.source}
+                    </span>
+                  </td>
                   <td data-label="Status">
                     <span className="badge" style={STATUS_COLORS[sale.status] || {}}>
                       {sale.status}
@@ -428,7 +439,8 @@ export default function SalesList() {
                 <p><strong>Hospital/Customer:</strong> {toTitleCase(selectedSale.hospital_id?.hospital_name) || selectedSale.customer_id?.customer_name || '-'}</p>
                 <p><strong>Date:</strong> {new Date(selectedSale.csi_date).toLocaleDateString('en-PH')}</p>
                 <p><strong>Status:</strong> <span className="badge" style={STATUS_COLORS[selectedSale.status] || {}}>{selectedSale.status}</span></p>
-                <p><strong>Source:</strong> {selectedSale.source}</p>
+                <p><strong>Source:</strong> <span className="badge" style={selectedSale.source === 'OPENING_AR' ? { background: '#fef3c7', color: '#92400e' } : { background: '#e0f2fe', color: '#0369a1' }}>{sourceOptions.find(o => o.code === selectedSale.source)?.label || selectedSale.source}</span></p>
+                {selectedSale.source === 'OPENING_AR' && <p style={{ fontSize: 12, color: '#92400e' }}>Pre-live-date entry — no inventory deduction on post</p>}
                 {selectedSale.reopen_count > 0 && <p><strong>Reopened:</strong> {selectedSale.reopen_count} time(s)</p>}
 
                 <h3 style={{ marginTop: 16, fontSize: 14 }}>Line Items</h3>

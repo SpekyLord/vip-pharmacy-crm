@@ -1062,6 +1062,9 @@ export default function SalesEntry() {
                             <span className="status-badge" style={{ background: STATUS_COLORS[r.status]?.bg, color: STATUS_COLORS[r.status]?.text }}>
                               {STATUS_COLORS[r.status]?.label}
                             </span>
+                            {r.source === 'OPENING_AR' && (
+                              <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
+                            )}
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -1239,6 +1242,9 @@ export default function SalesEntry() {
                       <span className="status-badge" style={{ background: STATUS_COLORS[row.status]?.bg, color: STATUS_COLORS[row.status]?.text }}>
                         {STATUS_COLORS[row.status]?.label || row.status}
                       </span>
+                      {row.source === 'OPENING_AR' && (
+                        <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
+                      )}
                     </td>
                     <td>
                       {row.status === 'DRAFT' && (
@@ -1261,6 +1267,9 @@ export default function SalesEntry() {
                   <span className="status-badge" style={{ background: STATUS_COLORS[row.status]?.bg, color: STATUS_COLORS[row.status]?.text }}>
                     {STATUS_COLORS[row.status]?.label}
                   </span>
+                  {row.source === 'OPENING_AR' && (
+                    <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4, fontSize: 10 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
+                  )}
                 </div>
                 <label>{saleType === 'CSI' ? 'Hospital' : 'Customer'}</label>
                 <SelectField value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {

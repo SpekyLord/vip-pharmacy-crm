@@ -174,15 +174,16 @@ const approvalHandlers = {
     if (!doc) throw new Error('Sales line not found');
     if (doc.status !== 'VALID') throw new Error('Sales line not in VALID status');
     if (action === 'post') {
-      doc.status = 'POSTED';
-      doc.posted_by = userId;
-      doc.posted_at = new Date();
+      // Full posting with TransactionEvent, inventory (FIFO/consignment), and journals
+      // OPENING_AR: skips inventory + COGS automatically inside postSaleRow
+      const { postSaleRow } = require('./salesController');
+      await postSaleRow(doc, userId);
     } else if (action === 'reject') {
       doc.status = 'ERROR';
       doc.rejection_reason = reason;
       doc.validation_errors = [{ message: reason }];
+      await doc.save();
     }
-    await doc.save();
     return doc;
   },
 

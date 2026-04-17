@@ -346,6 +346,7 @@ const SEED_DEFAULTS = {
   ERP_SUB_PERMISSION: [
     // Sales
     { code: 'SALES__REOPEN', label: 'Re-open Posted Sales', metadata: { module: 'sales', key: 'reopen', sort_order: 1 } },
+    { code: 'SALES__CREDIT_NOTES', label: 'Returns / Credit Notes', metadata: { module: 'sales', key: 'credit_notes', sort_order: 2 } },
     // Collections
     { code: 'COLLECTIONS__REOPEN', label: 'Re-open Posted Collections', metadata: { module: 'collections', key: 'reopen', sort_order: 1 } },
     // Expenses
@@ -362,6 +363,7 @@ const SEED_DEFAULTS = {
     { code: 'INVENTORY__CSI_BOOKLETS', label: 'CSI Booklets', metadata: { module: 'inventory', key: 'csi_booklets', sort_order: 1 } },
     { code: 'INVENTORY__OFFICE_SUPPLIES', label: 'Office Supplies', metadata: { module: 'inventory', key: 'office_supplies', sort_order: 2 } },
     { code: 'INVENTORY__COLLATERALS', label: 'Collaterals', metadata: { module: 'inventory', key: 'collaterals', sort_order: 3 } },
+    { code: 'INVENTORY__TRANSFERS', label: 'Stock Transfers', metadata: { module: 'inventory', key: 'transfers', sort_order: 4 } },
     // Accounting
     { code: 'ACCOUNTING__JOURNAL_ENTRY', label: 'Journal Entries & COA', metadata: { module: 'accounting', key: 'journal_entry', sort_order: 1 } },
     { code: 'ACCOUNTING__CHECK_WRITING', label: 'Check Writing / Payments', metadata: { module: 'accounting', key: 'check_writing', sort_order: 2 } },

@@ -246,8 +246,12 @@ export default function PurchaseOrders() {
   const handleSave = async () => {
     try {
       if (editing) {
-        await api.updatePO(editing._id, form);
-        showMsg('PO updated');
+        const result = await api.updatePO(editing._id, form);
+        if (result?.approval_pending) {
+          showMsg('PO edit sent for approval — pending authorization', 'info');
+        } else {
+          showMsg('PO updated');
+        }
       } else {
         await api.createPO(form);
         showMsg('PO created');
@@ -402,7 +406,10 @@ export default function PurchaseOrders() {
                         <td><span className={`po-badge po-badge-${po.status}`}>{po.status?.replace(/_/g, ' ')}</span></td>
                         <td>
                           <div className="po-actions">
-                            {po.status === 'DRAFT' && <button className="btn btn-primary btn-sm" onClick={() => openEdit(po)}>Edit</button>}
+                            {po.status === 'DRAFT'
+                              ? <button className="btn btn-primary btn-sm" onClick={() => openEdit(po)}>Edit</button>
+                              : <button className="btn btn-outline-primary btn-sm" onClick={() => openEdit(po)} title="Minor edits (price, warehouse) — requires approval">Edit</button>
+                            }
                             {po.status === 'DRAFT' && <button className="btn btn-success btn-sm" onClick={() => handleAction(po._id, 'approve')}>Approve</button>}
                             {['APPROVED', 'PARTIALLY_RECEIVED'].includes(po.status) && <button className="btn btn-warning btn-sm" onClick={() => openReceive(po)}>Receive</button>}
                             {['DRAFT', 'APPROVED'].includes(po.status) && <button className="btn btn-danger btn-sm" onClick={() => handleAction(po._id, 'cancel')}>Cancel</button>}
@@ -427,10 +434,15 @@ export default function PurchaseOrders() {
               <div className="po-modal" onClick={() => setShowModal(false)}>
                 <div className="po-modal-body" onClick={e => e.stopPropagation()}>
                   <h3>{editing ? 'Edit PO' : 'New Purchase Order'}</h3>
+                  {editing && editing.status !== 'DRAFT' && (
+                    <div style={{ background: '#fff3cd', color: '#856404', padding: '8px 12px', borderRadius: 6, fontSize: 12, marginBottom: 10 }}>
+                      This PO is <strong>{editing.status}</strong> — only warehouse, expected delivery, notes, and unit prices can be edited. Changes require approval.
+                    </div>
+                  )}
                   <div className="form-row">
                     <div className="form-group">
                       <label>Vendor *</label>
-                      <SelectField value={form.vendor_id} onChange={e => setForm(f => ({ ...f, vendor_id: e.target.value }))}>
+                      <SelectField value={form.vendor_id} onChange={e => setForm(f => ({ ...f, vendor_id: e.target.value }))} disabled={editing && editing.status !== 'DRAFT'}>
                         <option value="">Select vendor...</option>
                         {vendors.map(v => <option key={v._id} value={v._id}>{v.vendor_name}</option>)}
                       </SelectField>
@@ -443,7 +455,7 @@ export default function PurchaseOrders() {
                   <div className="form-row">
                     <div className="form-group">
                       <label>PO Date *</label>
-                      <input type="date" value={form.po_date} onChange={e => setForm(f => ({ ...f, po_date: e.target.value }))} />
+                      <input type="date" value={form.po_date} onChange={e => setForm(f => ({ ...f, po_date: e.target.value }))} disabled={editing && editing.status !== 'DRAFT'} />
                     </div>
                     <div className="form-group">
                       <label>Expected Delivery</label>
@@ -457,7 +469,7 @@ export default function PurchaseOrders() {
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 6px' }}>
                     <h4 style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>Line Items</h4>
-                    <button className="btn btn-sm btn-primary" onClick={addLine}>+ Add Line</button>
+                    {!(editing && editing.status !== 'DRAFT') && <button className="btn btn-sm btn-primary" onClick={addLine}>+ Add Line</button>}
                   </div>
                   {productsError && (
                     <div style={{ background: '#fff3cd', color: '#856404', padding: '8px 12px', borderRadius: 6, fontSize: 12, marginBottom: 8 }}>
@@ -478,20 +490,20 @@ export default function PurchaseOrders() {
                       {form.line_items.map((line, i) => (
                         <tr key={i}>
                           <td>
-                            <SelectField value={line.product_id} onChange={e => handleProductSelect(i, e.target.value)}>
+                            <SelectField value={line.product_id} onChange={e => handleProductSelect(i, e.target.value)} disabled={editing && editing.status !== 'DRAFT'}>
                               <option value="">Select product...</option>
                               {productOptions.map(p => <option key={p.product_id} value={p.product_id}>{p.label}</option>)}
                             </SelectField>
-                            {!line.product_id && <input value={line.item_key} onChange={e => setLineField(i, 'item_key', e.target.value)} placeholder="Or type custom item..." style={{ marginTop: 4 }} />}
+                            {!line.product_id && !(editing && editing.status !== 'DRAFT') && <input value={line.item_key} onChange={e => setLineField(i, 'item_key', e.target.value)} placeholder="Or type custom item..." style={{ marginTop: 4 }} />}
                           </td>
                           <td style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: 'var(--erp-muted, #64748b)' }}>
                             {line.unit_code || '—'}
                             {line.conversion_factor > 1 && <div style={{ fontSize: 10, fontWeight: 400, color: '#92400e' }}>1 {line.purchase_uom} = {line.conversion_factor} {line.selling_uom}</div>}
                           </td>
-                          <td><input type="number" min="1" value={line.qty_ordered} onChange={e => setLineField(i, 'qty_ordered', Number(e.target.value))} /></td>
+                          <td><input type="number" min="1" value={line.qty_ordered} onChange={e => setLineField(i, 'qty_ordered', Number(e.target.value))} disabled={editing && editing.status !== 'DRAFT'} /></td>
                           <td><input type="number" min="0" step="0.01" value={line.unit_price} onChange={e => setLineField(i, 'unit_price', Number(e.target.value))} /></td>
                           <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt((line.qty_ordered || 0) * (line.unit_price || 0))}</td>
-                          <td><button className="btn btn-danger btn-sm" onClick={() => removeLine(i)} disabled={form.line_items.length <= 1}>x</button></td>
+                          <td>{!(editing && editing.status !== 'DRAFT') && <button className="btn btn-danger btn-sm" onClick={() => removeLine(i)} disabled={form.line_items.length <= 1}>x</button>}</td>
                         </tr>
                       ))}
                     </tbody>

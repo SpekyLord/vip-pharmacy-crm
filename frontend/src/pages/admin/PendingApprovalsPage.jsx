@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
+import PageGuide from '../../components/common/PageGuide';
 import BatchDetailModal from '../../components/admin/VisitApproval';
 import * as importService from '../../services/importService';
 import userService from '../../services/userService';
@@ -659,6 +660,7 @@ const PendingApprovalsPage = () => {
         <style>{styles}</style>
         <Sidebar />
         <main className="ie-content">
+          <PageGuide pageKey="import-export" />
           <div className="ie-header">
             <h1>Import / Export</h1>
             <p>Upload CPT Excel files, export workbooks, and manage import history</p>

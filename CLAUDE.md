@@ -85,10 +85,11 @@ Every visit MUST include:
 - At least ONE photo as proof (1-10 photos per visit)
 - Visit date (must be a work day)
 
-### 4. Region-Based Access
-- BDMs can ONLY see VIP Clients in their assigned regions (uses `Region.getDescendantIds()` for cascading access)
+### 4. Assignment-Based Access
+- BDMs can ONLY see VIP Clients assigned to them via `assignedTo` field on Doctor model
 - BDMs can ONLY log visits for VIP Clients they are assigned to
-- Admins can see and access ALL regions
+- Admins can see and access ALL VIP Clients
+- **Note**: The legacy Region model has been removed. Access is now assignment-based, not region-based.
 
 ### 5. VIP Client Categorization
 - Use `visitFrequency: 2` or `visitFrequency: 4`
@@ -236,11 +237,10 @@ vip-pharmacy-crm/
 │   ├── controllers/
 │   │   ├── authController.js          # Login, register, password reset, lockout
 │   │   ├── userController.js          # User CRUD, profile management
-│   │   ├── doctorController.js        # VIP Client CRUD with region filter
+│   │   ├── doctorController.js        # VIP Client CRUD with assignment filter
 │   │   ├── visitController.js         # Visit logging with enforcement
 │   │   ├── productController.js       # Product CRUD (reads from website DB)
 │   │   ├── productAssignmentController.js  # Product-to-VIP Client assignments
-│   │   ├── regionController.js        # Region hierarchy
 │   │   ├── messageInboxController.js  # Admin→BDM messaging
 │   │   ├── communicationLogController.js  # Communication log CRUD + API messaging
 │   │   └── messageTemplateController.js   # Template CRUD + send-from-template
@@ -252,10 +252,9 @@ vip-pharmacy-crm/
 │   │   └── upload.js          # Multer + S3 processors
 │   ├── models/
 │   │   ├── User.js            # Admin, medrep, employee roles; lockout fields
-│   │   ├── Doctor.js          # VIP Client: visitFrequency (2/4), region-based
+│   │   ├── Doctor.js          # VIP Client: visitFrequency (2/4), assignment-based
 │   │   ├── Visit.js           # Weekly tracking, GPS, photos, unique constraint
 │   │   ├── ProductAssignment.js  # Product-to-VIP Client assignments
-│   │   ├── Region.js          # Hierarchical regions
 │   │   ├── WebsiteProduct.js  # Read-only website products (separate DB)
 │   │   ├── MessageInbox.js    # Admin→BDM messages with categories/priority
 │   │   ├── AuditLog.js        # Security audit logging (90-day TTL)
@@ -268,7 +267,6 @@ vip-pharmacy-crm/
 │   │   ├── visitRoutes.js     # /api/visits
 │   │   ├── productRoutes.js   # /api/products
 │   │   ├── productAssignmentRoutes.js  # /api/assignments
-│   │   ├── regionRoutes.js    # /api/regions
 │   │   ├── messageInbox.js    # /api/messages
 │   │   ├── sentRoutes.js      # /api/sent (admin sent messages)
 │   │   ├── communicationLogRoutes.js  # /api/communication-logs
@@ -313,9 +311,8 @@ vip-pharmacy-crm/
 │   │   │   │   └── MessageComposer.jsx      # Send messages via API (Phase 2)
 │   │   │   ├── admin/
 │   │   │   │   ├── Dashboard.jsx         # Admin stats display
-│   │   │   │   ├── DoctorManagement.jsx  # VIP Client CRUD, cascading regions
-│   │   │   │   ├── EmployeeManagement.jsx # BDM CRUD, multi-region assignment
-│   │   │   │   ├── RegionManagement.jsx  # Region tree CRUD
+│   │   │   │   ├── DoctorManagement.jsx  # VIP Client CRUD
+│   │   │   │   ├── EmployeeManagement.jsx # BDM CRUD, multi-entity assignment
 │   │   │   │   ├── ProductManagement.jsx # Product CRUD
 │   │   │   │   ├── EmployeeVisitReport.jsx # Call Plan Template format report
 │   │   │   │   ├── VisitApproval.jsx     # Scaffolded (mock data)
@@ -347,7 +344,6 @@ vip-pharmacy-crm/
 │   │   │   │   ├── AdminDashboard.jsx     # System-wide stats
 │   │   │   │   ├── DoctorsPage.jsx        # VIP Client management (CRUD, filters)
 │   │   │   │   ├── EmployeesPage.jsx      # BDM management (CRUD, filters)
-│   │   │   │   ├── RegionsPage.jsx        # Region hierarchy tree
 │   │   │   │   ├── ReportsPage.jsx        # BDM Visit Report, Excel/CSV export
 │   │   │   │   ├── StatisticsPage.jsx     # Scaffolded (mock data, Recharts)
 │   │   │   │   ├── ActivityMonitor.jsx    # Real data (audit logs + visits)
@@ -366,7 +362,6 @@ vip-pharmacy-crm/
 │   │   │   ├── doctorService.js       # VIP Client API calls
 │   │   │   ├── visitService.js        # Visit API calls, AbortController support
 │   │   │   ├── productService.js      # Product API calls
-│   │   │   ├── regionService.js       # Region API calls
 │   │   │   ├── assignmentService.js   # Product assignment API calls
 │   │   │   ├── userService.js         # User CRUD API calls
 │   │   │   ├── messageInboxService.js # Inbox messaging API calls
@@ -399,7 +394,7 @@ vip-pharmacy-crm/
 Before implementing a feature, verify:
 
 1. [ ] Does it align with the roles (admin, employee/BDM)? (MedRep being removed)
-2. [ ] Does it respect region-based access control?
+2. [ ] Does it respect assignment-based access control?
 3. [ ] Does it enforce weekly/monthly visit limits?
 4. [ ] Does it use AWS S3 for file storage (not Cloudinary)?
 5. [ ] Does it use `getWebsiteProductModel()` for cross-DB product queries (not populate)?
@@ -412,7 +407,7 @@ Before implementing a feature, verify:
 1. **Week numbers**: Use ISO week numbers (1-53), not simple division
 2. **Work days only**: Visits can only be logged Monday-Friday
 3. **Unique constraint**: The `{ doctor, user, yearWeekKey }` index prevents same user visiting same VIP Client twice in one week
-4. **Region filtering**: Always apply region filter for BDM (employee) queries using `Region.getDescendantIds()`
+4. **Assignment filtering**: BDM (contractor) queries filter by `assignedTo: user._id` on Doctor model (Region model removed)
 5. **Photo requirement**: Visits without photos should be rejected (1-10 photos)
 6. **Cross-database products**: NEVER use Mongoose `populate()` for products. Use `getWebsiteProductModel()` manual fetching.
 7. **httpOnly cookies**: Tokens are in cookies, NOT in localStorage or response body. Frontend uses `withCredentials: true`.
@@ -463,7 +458,6 @@ CORS_ORIGINS=https://app.vipcrm.com
 | `/admin` | AdminDashboard | admin |
 | `/admin/doctors` | DoctorsPage (VIP Client Mgmt) | admin |
 | `/admin/employees` | EmployeesPage (BDM Mgmt) | admin |
-| `/admin/regions` | RegionsPage | admin |
 | `/admin/reports` | ReportsPage | admin |
 | `/admin/statistics` | StatisticsPage | admin |
 | `/admin/activity` | ActivityMonitor | admin |
@@ -487,7 +481,6 @@ CORS_ORIGINS=https://app.vipcrm.com
 | `visitRoutes.js` | visitController | `/api/visits` |
 | `productRoutes.js` | productController | `/api/products` |
 | `productAssignmentRoutes.js` | productAssignmentController | `/api/assignments` |
-| `regionRoutes.js` | regionController | `/api/regions` |
 | `messageInbox.js` | messageInboxController | `/api/messages` |
 | `sentRoutes.js` | (admin sent messages) | `/api/sent` |
 | `communicationLogRoutes.js` | communicationLogController | `/api/communication-logs` |
@@ -559,10 +552,9 @@ App.jsx
 
 #### Models (8/8 Complete)
 - [x] `models/User.js` - Admin, medrep, employee roles; lockout fields
-- [x] `models/Doctor.js` - VIP Client: visitFrequency (2/4), region-based, clinicSchedule
+- [x] `models/Doctor.js` - VIP Client: visitFrequency (2/4), assignment-based
 - [x] `models/Visit.js` - Weekly tracking, GPS, photos, unique constraint
 - [x] `models/ProductAssignment.js` - Product-to-VIP Client assignments
-- [x] `models/Region.js` - Hierarchical regions with getDescendantIds()
 - [x] `models/WebsiteProduct.js` - Read-only website products (separate DB)
 - [x] `models/MessageInbox.js` - Admin→BDM messaging with categories/priority
 - [x] `models/AuditLog.js` - Security audit logging (90-day TTL)
@@ -577,11 +569,10 @@ App.jsx
 #### Controllers (8/8 Complete)
 - [x] `controllers/authController.js` - Login, register, password reset, lockout, audit logging
 - [x] `controllers/userController.js` - User CRUD, profile management
-- [x] `controllers/doctorController.js` - VIP Client CRUD with region filter
+- [x] `controllers/doctorController.js` - VIP Client CRUD with assignment filter
 - [x] `controllers/visitController.js` - Visit logging with enforcement, getBDMReport
 - [x] `controllers/productController.js` - Product CRUD (reads from website DB)
 - [x] `controllers/productAssignmentController.js` - Assignments
-- [x] `controllers/regionController.js` - Region hierarchy
 - [x] `controllers/messageInboxController.js` - Admin→BDM messaging
 
 #### Routes (9/9 Complete)
@@ -591,7 +582,6 @@ App.jsx
 - [x] `routes/visitRoutes.js` → `/api/visits`
 - [x] `routes/productRoutes.js` → `/api/products`
 - [x] `routes/productAssignmentRoutes.js` → `/api/assignments`
-- [x] `routes/regionRoutes.js` → `/api/regions`
 - [x] `routes/messageInbox.js` → `/api/messages`
 - [x] `routes/sentRoutes.js` → `/api/sent`
 
@@ -613,7 +603,6 @@ App.jsx
 - [x] `services/doctorService.js` - VIP Client API calls + getAssignedProducts
 - [x] `services/visitService.js` - Visit API calls, AbortController support, getBDMReport
 - [x] `services/productService.js` - Product API calls
-- [x] `services/regionService.js` - Region API calls, getChildren, getHierarchy
 - [x] `services/assignmentService.js` - Product assignment API calls
 - [x] `services/userService.js` - User CRUD API calls
 - [x] `services/messageInboxService.js` - Inbox messaging API calls
@@ -657,9 +646,8 @@ App.jsx
 
 #### Components - Admin
 - [x] `components/admin/Dashboard.jsx` - Stats display, activity feed
-- [x] `components/admin/DoctorManagement.jsx` - VIP Client CRUD, cascading region dropdowns
-- [x] `components/admin/EmployeeManagement.jsx` - BDM CRUD, multi-region assignment
-- [x] `components/admin/RegionManagement.jsx` - Tree view, stats modal
+- [x] `components/admin/DoctorManagement.jsx` - VIP Client CRUD
+- [x] `components/admin/EmployeeManagement.jsx` - BDM CRUD, multi-entity assignment
 - [x] `components/admin/ProductManagement.jsx` - Product CRUD
 - [x] `components/admin/EmployeeVisitReport.jsx` - Call Plan Template format, visit grid
 - [x] `components/admin/ReportGenerator.jsx` - Report generation
@@ -683,7 +671,6 @@ App.jsx
 - [x] `pages/admin/AdminDashboard.jsx` - Optimized API calls (limit:0)
 - [x] `pages/admin/DoctorsPage.jsx` - VIP Client CRUD, filters, pagination
 - [x] `pages/admin/EmployeesPage.jsx` - BDM CRUD, filters, pagination
-- [x] `pages/admin/RegionsPage.jsx` - Hierarchy tree, CRUD
 - [x] `pages/admin/ReportsPage.jsx` - BDM Visit Report, Excel/CSV export
 - [x] `pages/admin/SentPage.jsx` - Admin sent messages
 - [x] `pages/admin/StatisticsPage.jsx` - **WORKING** (5 tabs: overview with team avg, BDM performance with lookup-driven labels, programs, products, daily heatmap)
@@ -708,9 +695,8 @@ App.jsx
 | Visit Logger | ✅ WORKING | Photo + GPS capture, FormData upload |
 | My Visits History | ✅ WORKING | Filters, pagination, photo gallery |
 | Admin Dashboard | ✅ WORKING | Real API data, stats |
-| VIP Client Management | ✅ WORKING | Full CRUD, cascading regions |
-| BDM Management | ✅ WORKING | Full CRUD, multi-region assignment |
-| Region Management | ✅ WORKING | Tree view, hierarchy CRUD |
+| VIP Client Management | ✅ WORKING | Full CRUD, assignment-based |
+| BDM Management | ✅ WORKING | Full CRUD, multi-entity assignment |
 | MedRep Dashboard | ✅ WORKING | Full assignment CRUD, VIP Client mapping |
 | Reports Page | ✅ WORKING | BDM Visit Report, Excel/CSV export |
 | Messaging System | ✅ WORKING | Admin→BDM messaging with categories |

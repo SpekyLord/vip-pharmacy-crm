@@ -37,6 +37,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePushNotifications from '../../hooks/usePushNotifications';
 import notificationPreferenceService from '../../services/notificationPreferenceService';
+import PageGuide from '../../components/common/PageGuide';
 
 /* =============================================================================
    STYLES
@@ -753,6 +754,7 @@ const NotificationPreferences = () => {
       <div className="np-content">
         <Sidebar />
         <main className="np-main">
+          <PageGuide pageKey="notification-preferences" />
           {/* Header */}
           <div className="np-header">
             <button className="np-back-btn" onClick={() => navigate(-1)}>

@@ -348,16 +348,14 @@ const exportPrices = catchAsync(async (req, res) => {
  * Expects multipart/form-data with a file field named 'file'
  */
 const importPrices = catchAsync(async (req, res) => {
-  const XLSX = require('xlsx');
-  const { safeXlsxRead } = require('../../utils/safeXlsxRead');
+  const { safeExcelRead, sheetToJson } = require('../../utils/safeExcelRead');
 
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No file uploaded. Send as multipart/form-data with field name "file".' });
   }
 
-  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws);
+  const wb = await safeExcelRead(req.file.buffer);
+  const rows = sheetToJson(wb.worksheets[0]);
 
   if (!rows.length) {
     return res.status(400).json({ success: false, message: 'Spreadsheet is empty' });
@@ -418,8 +416,7 @@ const importPrices = catchAsync(async (req, res) => {
  *   DefaultPurchasePrice, DefaultSellingPrice, IsActive
  */
 const refreshProducts = catchAsync(async (req, res) => {
-  const XLSX = require('xlsx');
-  const { safeXlsxRead } = require('../../utils/safeXlsxRead');
+  const { safeExcelRead, sheetToJson } = require('../../utils/safeExcelRead');
   const { cleanName } = require('../utils/nameClean');
   const { normalizeUnit } = require('../utils/normalize');
 
@@ -432,9 +429,8 @@ const refreshProducts = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Entity context required' });
   }
 
-  const wb = safeXlsxRead(req.file.buffer, { type: 'buffer', raw: true });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+  const wb = await safeExcelRead(req.file.buffer);
+  const rows = sheetToJson(wb.worksheets[0], { raw: false, defval: '' });
 
   if (!rows.length) {
     return res.status(400).json({ success: false, message: 'File is empty' });

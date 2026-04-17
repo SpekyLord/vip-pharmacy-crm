@@ -20,6 +20,7 @@ import toast from 'react-hot-toast';
 import { Camera, AlertTriangle, Clock, Copy, User, Calendar, Filter, X, Eye } from 'lucide-react';
 
 import SelectField from '../../components/common/Select';
+import PageGuide from '../../components/common/PageGuide';
 
 const pageStyles = `
   .dashboard-layout {
@@ -897,6 +898,7 @@ const PhotoAuditPage = () => {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <PageGuide pageKey="photo-audit" />
           <div className="page-header">
             <h1>
               <Camera size={28} />

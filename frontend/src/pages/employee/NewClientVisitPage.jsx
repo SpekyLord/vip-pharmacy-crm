@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
+import PageGuide from '../../components/common/PageGuide';
 import CameraCapture from '../../components/employee/CameraCapture';
 import EngagementTypeSelector from '../../components/employee/EngagementTypeSelector';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -473,6 +474,7 @@ const NewClientVisitPage = () => {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <PageGuide pageKey="new-client-visit" />
           <div className="page-header">
             <Link to="/bdm" className="back-link">
               &larr; Back to Dashboard

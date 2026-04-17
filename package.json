@@ -16,6 +16,7 @@
     "startup:check": "cd backend && npm run startup:check"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "lucide-react": "^0.577.0"
   }
 }

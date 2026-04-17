@@ -35,6 +35,8 @@ const pettyCashTransactionSchema = new mongoose.Schema({
   cost_center_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CostCenter' },
   or_number: { type: String, trim: true },
   or_photo_url: { type: String },
+  is_pcv: { type: Boolean, default: false },       // true = Petty Cash Voucher (no OR)
+  pcv_remarks: { type: String, trim: true },        // required when is_pcv — describes purchase
   vat_amount: { type: Number, default: 0 },
   net_of_vat: { type: Number, default: 0 },
 
@@ -47,13 +49,18 @@ const pettyCashTransactionSchema = new mongoose.Schema({
   // Lifecycle
   status: {
     type: String,
-    enum: ['DRAFT', 'VALID', 'ERROR', 'POSTED'],
+    enum: ['DRAFT', 'VALID', 'ERROR', 'POSTED', 'VOIDED'],
     default: 'DRAFT'
   },
   posted_at: { type: Date },
   posted_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   validation_errors: [{ type: String }],
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+
+  // Void fields
+  voided_at: { type: Date },
+  voided_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  void_reason: { type: String, trim: true },
 
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   created_at: { type: Date, default: Date.now, immutable: true }

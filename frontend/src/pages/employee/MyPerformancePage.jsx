@@ -22,6 +22,7 @@ import DCRSummaryTable from '../../components/employee/DCRSummaryTable';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 import SelectField from '../../components/common/Select';
+import PageGuide from '../../components/common/PageGuide';
 
 const performanceStyles = `
   .main-content h1 {
@@ -628,6 +629,7 @@ const MyPerformancePage = () => {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <PageGuide pageKey="my-performance" />
           {/* Header + Month Picker */}
           <div className="perf-header">
             <h1>My Performance</h1>

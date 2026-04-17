@@ -1163,6 +1163,32 @@ All reopen functions call `journalEngine.reverseJournal()` (SAP Storno pattern: 
 | Owner Infusion | Cash/Bank | 3000 Owner Capital |
 | Owner Drawing | 3100 Owner Drawings | Cash/Bank |
 
+### OPENING_AR — Pre-Live-Date Sales
+
+Each BDM has a `live_date` on their User/PeopleMaster profile (set at entity onboarding). This partitions CSI entries into two sources:
+
+| Condition | Source | Inventory | COGS JE | AR/Revenue JE |
+|-----------|--------|-----------|---------|---------------|
+| `csi_date >= live_date` | `SALES_LINE` | FIFO deducted | Yes | Yes |
+| `csi_date < live_date` | `OPENING_AR` | **Skipped** | **Skipped** | Yes (AR only) |
+
+**Routing logic** (`salesController.js`):
+- `createSale` (line 35-38): auto-sets `source` based on `csi_date` vs `req.user.live_date`
+- `updateSale` (line 99-104): re-routes source when `csi_date` changes on edit
+- `validateSales` (line 305-317): skips stock allocation check for OPENING_AR (basic field validation still runs)
+- `submitSales` (line 465-472): skips FIFO/consignment deduction for OPENING_AR → posts directly
+- `autoJournal` (line 562): skips COGS JE for OPENING_AR (no inventory consumed)
+- `reopenSales`: safe — queries `InventoryLedger` by `event_id` which returns 0 entries for OPENING_AR
+
+**Approval flow**: When authority matrix is enabled, `gateApproval()` may hold posting. Upon approval, `universalApprovalController.sales_line` calls `postSaleRow()` which handles OPENING_AR identically to direct submit (no FIFO, no COGS, AR journal only).
+
+**Lookup-driven**: `SALE_SOURCE` lookup (values: `SALES_LINE`, `OPENING_AR`) — admin-configurable via Control Center.
+
+**Frontend**:
+- `SalesEntry.jsx`: shows amber "Opening AR" badge next to status for pre-live rows
+- `SalesList.jsx`: source filter dropdown is lookup-driven via `useLookupOptions('SALE_SOURCE')`; source column shows color-coded badges
+- `WorkflowGuide.jsx`: sales-entry and sales-list banners explain OPENING_AR behavior
+
 ### Funding COA Resolution
 
 `resolveFundingCoa(doc)` in `autoJournal.js` resolves credit-side COA:
@@ -1248,8 +1274,14 @@ All auto-journal COA codes are admin-configurable in `Settings.COA_MAP` (ERP Set
 19. **Inventory pages must use WarehousePicker** — All pages that call `getMyStock()` must pass a `warehouseId` parameter (e.g., `getMyStock(null, null, warehouseId)`). Without it, the FIFO engine's `buildStockMatch` has no scope and returns empty for non-admin users. Pattern: add `<WarehousePicker filterType="PHARMA" />` and load stock on warehouse change. See SalesEntry.jsx, BatchTrace.jsx as reference.
 20. **getMyStock response nesting** — `getMyStock` returns `{ data: [{ product_id, product: { brand_name, dosage_strength, ... }, batches, total_qty }] }`. Product details are nested under `product` sub-object, NOT at the top level. Access as `item.product.brand_name`, not `item.brand_name`.
 21. **Petty Cash models use `custodian_id`, NOT `bdm_id`** — The tenant filter for BDM/contractor users injects `{ entity_id, bdm_id }`, but PettyCashFund/Transaction/Remittance models have no `bdm_id` field. The controller uses `pcFilter()` helper to remap `bdm_id → custodian_id` for fund queries and strip it for transaction/document queries. Never use raw `req.tenantFilter` in petty cash controllers — always wrap with `pcFilter(req.tenantFilter, 'fund'|'transaction'|'document')`.
-22. **Petty Cash dropdowns are lookup-driven** — Fund modes from `PETTY_CASH_FUND_TYPE`, fund statuses from `PETTY_CASH_FUND_STATUS`, transaction types from `PETTY_CASH_TXN_TYPE`. All configurable in Control Center > Lookup Tables. Frontend uses `useLookupBatch()`.
+22. **Petty Cash dropdowns are lookup-driven** — Fund modes from `PETTY_CASH_FUND_TYPE`, fund statuses from `PETTY_CASH_FUND_STATUS`, transaction types from `PETTY_CASH_TXN_TYPE`, expense categories from `PETTY_CASH_EXPENSE_CATEGORY`. All configurable in Control Center > Lookup Tables. Frontend uses `useLookupBatch()`.
+22b. **Petty Cash PCV toggle** — Disbursements either have an Official Receipt (OR#) or a Petty Cash Voucher (PCV). `is_pcv: true` means no OR; `pcv_remarks` (required) describes the purchase. Backend validates PCV remarks are non-empty when `is_pcv` is true. Frontend shows OR# field or PCV remarks textarea based on checkbox toggle.
+22c. **Petty Cash lifecycle** — Transactions: DRAFT → POSTED or VOIDED (void is DRAFT-only, requires reason). Documents (remittance/replenishment): PENDING → PROCESSED (no signing gate — Process click is sufficient). Fund status SUSPENDED/CLOSED blocks all new transactions, remittances, and replenishments.
+22d. **Petty Cash sub-permission gated** — Routes use `erpSubAccessCheck('accounting', 'petty_cash')` instead of `roleCheck`. Admin/finance/president with FULL accounting access pass automatically. Contractors need explicit `accounting.petty_cash` sub-permission in their access template to post, void, process, generate, or manage funds. Frontend mirrors this: `canManage` checks both `ROLE_SETS.MANAGEMENT` and `user.erp_access.sub_permissions.accounting.petty_cash`.
+22e. **Collection→Petty Cash auto-deposit** — When a collection with `petty_cash_fund_id` is posted in `submitCollections`, a POSTED `PettyCashTransaction` (type=DEPOSIT) is auto-created and the fund balance incremented. On reopen, the deposit is VOIDED and balance decremented. The `linked_collection_id` field on PettyCashTransaction traces the source.
 23. **COA_MAP cache is cleared on Settings update** — `settingsController.updateSettings` calls both `Settings.clearVatCache()` AND `clearCoaCache()` from `autoJournal.js`. No stale window; journals immediately use new codes after admin changes Settings.
+24. **OPENING_AR skips inventory + COGS** — CSI entries with `csi_date < user.live_date` are auto-tagged `source: 'OPENING_AR'`. Validation skips stock check, submission skips FIFO/consignment, and COGS JE is not created. Only AR/Revenue JE posts. Source re-routes on edit if `csi_date` changes. `SALE_SOURCE` lookup is admin-configurable. Frontend shows amber "Opening AR" badge. Reopen is safe (no inventory entries to reverse).
+25. **Sales approval handler uses `postSaleRow`** — The `sales_line` handler in `universalApprovalController.js` calls `salesController.postSaleRow()` (shared helper) for full posting with TransactionEvent, inventory, and journals. This ensures approval-flow posts behave identically to direct `submitSales` posts — including OPENING_AR skip logic. Other module handlers (collection, smer, etc.) are still simplified stubs.
 24. **COA codes are validated on save** — `Settings.updateSettings` validates all COA_MAP codes against ChartOfAccounts before saving. VendorMaster, BankAccount, CreditCard, and PaymentMode controllers validate `coa_code` via `validateCoaCode()` utility. Invalid codes are rejected with 400.
 25. **Reopen reversal is fail-safe** — All `reopen*` functions (SMER, CarLogbook, Expense, PRF/CALF) skip the document if JE reversal fails. The document stays POSTED (ledger balanced) and the failure is reported in the response `failed[]` array. Never mark DRAFT if reversal threw.
 26. **CALF→Expense auto-submit uses transactions** — `submitPrfCalf` auto-submits linked expenses/carlogbooks inside a MongoDB session. If event creation or journal posting fails, the transaction rolls back — source stays in its previous status, no orphaned events or JEs.
@@ -1428,16 +1460,25 @@ PO (APPROVED) → GRN (PENDING → APPROVED) → PO auto-updates qty_received + 
 
 ## Workflow Guide & Dependency Guide Governance
 
-Every user-facing page MUST have a helper banner. Two systems exist — use one per page, never both.
+Every user-facing page MUST have a helper banner. Three systems exist — use one per page, never overlap.
 
-### WorkflowGuide — for standalone pages
+### WorkflowGuide — for ERP standalone pages
 
-Used on transaction, reporting, and management pages (Sales, Collections, GRN, Hospitals, etc.).
+Used on ERP transaction, reporting, and management pages (Sales, Collections, GRN, Hospitals, etc.).
 
 - **Config**: `frontend/src/erp/components/WorkflowGuide.jsx` → `WORKFLOW_GUIDES` object
 - **Structure**: Each pageKey has `title`, `steps[]` (numbered), `next[]` (links), optional `tip`
 - **Usage**: Import and render `<WorkflowGuide pageKey="..." />` at top of page content
 - **Dismissal**: Session-based via `sessionStorage` (key: `wfg_dismiss_{pageKey}`)
+
+### PageGuide — for CRM standalone pages
+
+Used on CRM pages (Admin Dashboard, BDM Dashboard, VIP Client Management, Visit pages, etc.).
+
+- **Config**: `frontend/src/components/common/PageGuide.jsx` → `PAGE_GUIDES` object
+- **Structure**: Same pattern — `title`, `steps[]`, `next[]`, optional `tip`
+- **Usage**: Import and render `<PageGuide pageKey="..." />` at top of page content
+- **Dismissal**: Session-based via `sessionStorage` (key: `pg_dismiss_{pageKey}`)
 
 ### DEPENDENCY_GUIDE — for Control Center panels only
 
@@ -1449,12 +1490,13 @@ Used on embedded panels inside ControlCenter (Entities, COA, Warehouses, Agent C
 
 ### Rule: Always Update Guides When Modifying Pages
 
-When creating or modifying any ERP page, you MUST also update the corresponding guide:
+When creating or modifying any page, you MUST also update the corresponding guide:
 
-1. **New standalone page** → add a pageKey entry to `WORKFLOW_GUIDES` + import WorkflowGuide in the page
-2. **New Control Center section** → add entry to `DEPENDENCY_GUIDE` in ControlCenter.jsx
-3. **Modified page workflow** → update the steps/tips/next-links in the guide to match the new behavior
-4. **Removed page** → remove the guide entry to avoid dead references
+1. **New ERP standalone page** → add a pageKey entry to `WORKFLOW_GUIDES` + import WorkflowGuide in the page
+2. **New CRM standalone page** → add a pageKey entry to `PAGE_GUIDES` + import PageGuide in the page
+3. **New Control Center section** → add entry to `DEPENDENCY_GUIDE` in ControlCenter.jsx
+4. **Modified page workflow** → update the steps/tips/next-links in the guide to match the new behavior
+5. **Removed page** → remove the guide entry to avoid dead references
 
 ### Lint Checks
 

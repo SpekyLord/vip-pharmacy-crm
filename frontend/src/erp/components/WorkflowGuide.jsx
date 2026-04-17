@@ -74,7 +74,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Check Inventory', path: '/erp/my-stock' },
       { label: 'Collect Payment', path: '/erp/collections' },
     ],
-    tip: 'Posted sales generate Accounts Receivable. Collect payment via Collections to clear the AR.',
+    tip: 'Posted sales generate Accounts Receivable. Collect payment via Collections to clear the AR. If the invoice date is before your ERP live date, the entry is tagged "Opening AR" — stock is NOT deducted and no COGS journal is created (AR only).',
   },
   'sales-list': {
     title: 'Sales Management',
@@ -83,13 +83,14 @@ const WORKFLOW_GUIDES = {
       'DRAFT — still editable, not yet validated',
       'VALID — passed checks, ready to post',
       'POSTED — finalized, AR created, appears in reports',
+      'Opening AR — pre-live-date entries skip stock deduction (AR only, no COGS)',
     ],
     next: [
       { label: 'Create New Sale', path: '/erp/sales/entry' },
       { label: 'Collect Payment', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L. When Authority Matrix is enabled, posting may require approval — check the Approval Hub for pending items.',
+    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L. When Authority Matrix is enabled, posting may require approval — check the Approval Hub for pending items. Use the Source filter to view Opening AR entries separately.',
   },
   'my-stock': {
     title: 'Inventory Overview',
@@ -652,16 +653,19 @@ const WORKFLOW_GUIDES = {
     steps: [
       'Create a fund: assign a custodian (BDM), warehouse, mode, ceiling, and COA code',
       'Custodian logs deposits (from collections) and disbursements (small expenses)',
+      'For disbursements: attach Official Receipt (OR#), or toggle "Petty Cash Voucher" if no OR and describe the purchase',
+      'Admin/Finance posts DRAFT transactions — balance updates and journal entry auto-creates',
+      'DRAFT transactions can be voided if entered incorrectly',
       'When balance exceeds ceiling, generate a Remittance — custodian remits excess to owner',
-      'When balance is low, generate a Replenishment — owner sends cash to custodian',
-      'Each posted transaction creates a journal entry automatically',
+      'When balance is low, click "Replenish Fund" — owner sends cash to custodian',
+      'Process remittance/replenishment documents to finalize the balance transfer',
     ],
     next: [
       { label: 'Expenses', path: '/erp/expenses' },
       { label: 'Journal Entries', path: '/erp/journals' },
       { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
     ],
-    tip: 'Fund modes, statuses, and transaction types are lookup-driven — manage them in Control Center > Lookup Tables (PETTY_CASH_FUND_TYPE, PETTY_CASH_FUND_STATUS).',
+    tip: 'Fund modes, statuses, expense categories, and transaction types are lookup-driven — manage them in Control Center > Lookup Tables (PETTY_CASH_FUND_TYPE, PETTY_CASH_FUND_STATUS, PETTY_CASH_EXPENSE_CATEGORY).',
   },
   'consignment-aging': {
     title: 'Consignment Aging',
