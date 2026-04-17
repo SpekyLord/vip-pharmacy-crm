@@ -122,7 +122,7 @@ export function parseCrDate(dateStr) {
   if (!isNaN(d) && d.getFullYear() > 2000) return d.toISOString().split('T')[0];
 
   // Try MM-DD-YY or MM-DD-YYYY (common in PH receipts)
-  const m = raw.match(/(\d{1,2})[-\/.\s]+(\d{1,2})[-\/.\s]+(\d{2,4})/);
+  const m = raw.match(/(\d{1,2})[-/.\s]+(\d{1,2})[-/.\s]+(\d{2,4})/);
   if (m) {
     let year = parseInt(m[3]);
     if (year < 100) year += 2000;

@@ -447,7 +447,6 @@ export default function CarLogbook() {
   };
 
   // Summary totals
-  const totalKm = rows.reduce((s, r) => s + (r.total_km || 0), 0);
   const totalOfficial = rows.reduce((s, r) => s + (r.official_km || 0), 0);
   const totalFuel = rows.reduce((s, r) => s + (r.total_fuel_amount || 0), 0);
   const totalLiters = rows.reduce((s, r) => s + (r.actual_liters || 0), 0);
@@ -606,7 +605,7 @@ export default function CarLogbook() {
                                         const result = await processDocument(file, 'GAS_RECEIPT');
                                         updateFuelEntry(idx, fi, 'receipt_url', result.s3_url || URL.createObjectURL(file));
                                         if (result.attachment_id) updateFuelEntry(idx, fi, 'receipt_attachment_id', result.attachment_id);
-                                      } catch (err) {
+                                      } catch {
                                         updateFuelEntry(idx, fi, 'receipt_url', URL.createObjectURL(file));
                                       }
                                     }} />

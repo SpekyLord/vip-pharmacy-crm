@@ -13,7 +13,7 @@ import WarehousePicker from '../components/WarehousePicker';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showApprovalPending } from '../utils/errorToast';
-import { normalizeStr, matchHospital, matchProduct, fieldVal, fieldConfidence } from '../utils/ocrMatching';
+import { matchHospital, matchProduct, fieldVal, fieldConfidence } from '../utils/ocrMatching';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },

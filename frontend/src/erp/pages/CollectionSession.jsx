@@ -516,7 +516,7 @@ export default function CollectionSession() {
       });
     }
     if (newSelected.size > 0) setSelectedCsis(newSelected);
-  }, [openCsis, settings]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [openCsis, settings]);
 
   const toggleCsi = (csi) => {
     setSelectedCsis(prev => {
