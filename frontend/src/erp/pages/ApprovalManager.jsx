@@ -32,7 +32,7 @@ export default function ApprovalManager() {
   const [rejectReason, setRejectReason] = useState('');
 
   // Lookup-driven options (database-driven via useLookupBatch)
-  const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE', 'APPROVAL_EDITABLE_FIELDS', 'CYCLE']);
+  const { data: lookups } = useLookupBatch(['APPROVAL_MODULE', 'APPROVER_TYPE', 'APPROVER_ROLE', 'APPROVAL_EDITABLE_FIELDS', 'APPROVAL_EDITABLE_LINE_FIELDS', 'CYCLE']);
 
   const MODULE_OPTIONS = (lookups.APPROVAL_MODULE || []).map(o => o.code || o.value);
   const APPROVER_TYPES = (lookups.APPROVER_TYPE || []).map(o => ({ value: o.code || o.value, label: o.label }));
@@ -59,6 +59,12 @@ export default function ApprovalManager() {
   const [editForm, setEditForm] = useState({});            // { field: value }
   const [editSaving, setEditSaving] = useState(false);
 
+  // Phase 34: Image preview + line-item edit state
+  const [previewImage, setPreviewImage] = useState(null); // URL of image to preview full-size
+  const [editingLineItem, setEditingLineItem] = useState(null); // { itemId, lineIndex }
+  const [lineEditForm, setLineEditForm] = useState({});
+  const [lineEditSaving, setLineEditSaving] = useState(false);
+
   // Lookup-driven editable fields map: { type_key: [field1, field2, ...] }
   const editableFieldsMap = useMemo(() => {
     const map = {};
@@ -67,6 +73,15 @@ export default function ApprovalManager() {
     });
     return map;
   }, [lookups.APPROVAL_EDITABLE_FIELDS]);
+
+  // Phase 34: Lookup-driven editable line-item fields map
+  const editableLineFieldsMap = useMemo(() => {
+    const map = {};
+    (lookups.APPROVAL_EDITABLE_LINE_FIELDS || []).forEach(entry => {
+      map[(entry.code || '').toLowerCase()] = entry.metadata?.fields || [];
+    });
+    return map;
+  }, [lookups.APPROVAL_EDITABLE_LINE_FIELDS]);
 
   useEffect(() => {
     if (tab === 'all-pending') {
@@ -177,6 +192,28 @@ export default function ApprovalManager() {
       setEditSaving(false);
     }
   }, [editingItem, editForm, universalEdit, fetchUniversalPending, universalItems, hubModuleFilter]);
+
+  // Phase 34: Save line-item edit
+  const handleSaveLineEdit = useCallback(async (item) => {
+    if (!editingLineItem) return;
+    setLineEditSaving(true);
+    try {
+      await universalEdit({
+        type: item.approve_data.type,
+        id: item.approve_data.id,
+        updates: { line_items: [{ index: editingLineItem.lineIndex, ...lineEditForm }] },
+        edit_reason: 'Line item edit from Approval Hub',
+      });
+      toast.success('Line item updated');
+      setEditingLineItem(null);
+      setLineEditForm({});
+      fetchUniversalPending().catch(() => {});
+    } catch (e) {
+      showError(e);
+    } finally {
+      setLineEditSaving(false);
+    }
+  }, [editingLineItem, lineEditForm, universalEdit, fetchUniversalPending]);
 
   const MODULE_COLORS = {
     INCOME: '#2563eb', DEDUCTION_SCHEDULE: '#7c3aed', PURCHASING: '#16a34a',
@@ -375,6 +412,23 @@ export default function ApprovalManager() {
                               ))}
                             </tbody>
                           </table>
+                          {/* Phase 34 — GRN attachments */}
+                          {(d.waybill_photo_url || d.undertaking_photo_url) && (
+                            <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+                              {d.waybill_photo_url && (
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>Waybill</div>
+                                  <img src={d.waybill_photo_url} alt="Waybill" style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(d.waybill_photo_url)} />
+                                </div>
+                              )}
+                              {d.undertaking_photo_url && (
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>Undertaking</div>
+                                  <img src={d.undertaking_photo_url} alt="Undertaking" style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(d.undertaking_photo_url)} />
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -468,6 +522,35 @@ export default function ApprovalManager() {
                             {d.total_partner_rebates > 0 && <span>Rebates: {fmt(d.total_partner_rebates)}</span>}
                             {d.cwt_amount > 0 && <span>CWT: {fmt(d.cwt_amount)}</span>}
                           </div>
+                          {/* Phase 34 — Collection attachments */}
+                          {(d.deposit_slip_url || d.cr_photo_url || d.cwt_certificate_url || (d.csi_photo_urls || []).length > 0) && (
+                            <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+                              {d.deposit_slip_url && (
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>Deposit Slip</div>
+                                  <img src={d.deposit_slip_url} alt="Deposit Slip" style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(d.deposit_slip_url)} />
+                                </div>
+                              )}
+                              {d.cr_photo_url && (
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>CR Photo</div>
+                                  <img src={d.cr_photo_url} alt="CR" style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(d.cr_photo_url)} />
+                                </div>
+                              )}
+                              {d.cwt_certificate_url && (
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>CWT Certificate</div>
+                                  <img src={d.cwt_certificate_url} alt="CWT" style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(d.cwt_certificate_url)} />
+                                </div>
+                              )}
+                              {(d.csi_photo_urls || []).map((url, i) => (
+                                <div key={i}>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>CSI Photo {i + 1}</div>
+                                  <img src={url} alt={`CSI ${i + 1}`} style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(url)} />
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -504,6 +587,21 @@ export default function ApprovalManager() {
                             {d.overconsumption_flag && <div><span style={{ padding: '2px 6px', borderRadius: 4, background: '#fee2e2', color: '#991b1b', fontSize: 11, fontWeight: 700 }}>OVERCONSUMPTION</span></div>}
                           </div>
                           <div style={{ marginTop: 4, fontSize: 12, color: 'var(--erp-muted)' }}>{d.fuel_entries_count || 0} fuel entries · {d.actual_liters || 0}L total</div>
+                          {/* Phase 34 — Fuel receipt photos */}
+                          {(d.fuel_receipts || []).length > 0 && (
+                            <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+                              {(d.fuel_receipts || []).map((fe, i) => (
+                                <div key={i}>
+                                  {fe.receipt_url && (
+                                    <div style={{ marginBottom: 6 }}>
+                                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>Day {fe.day} Receipt</div>
+                                      <img src={fe.receipt_url} alt={`Receipt Day ${fe.day}`} style={{ maxWidth: 140, maxHeight: 100, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(fe.receipt_url)} />
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -521,10 +619,18 @@ export default function ApprovalManager() {
                           </div>
                           {(d.lines || []).length > 0 && (
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Type</th><th style={{ padding: '4px 8px', textAlign: 'left' }}>Category</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Amount</th><th style={{ padding: '4px 8px' }}>OR#</th><th style={{ padding: '4px 8px' }}>CALF?</th></tr></thead>
+                              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Type</th><th style={{ padding: '4px 8px', textAlign: 'left' }}>Category</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Amount</th><th style={{ padding: '4px 8px' }}>OR#</th><th style={{ padding: '4px 8px' }}>CALF?</th><th style={{ padding: '4px 8px' }}>OR</th></tr></thead>
                               <tbody>
                                 {(d.lines || []).map((l, i) => (
-                                  <tr key={i}><td style={{ padding: '3px 8px' }}>{l.expense_type}</td><td style={{ padding: '3px 8px' }}>{l.expense_category}</td><td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(l.amount)}</td><td style={{ padding: '3px 8px' }}>{l.or_number || '—'}</td><td style={{ padding: '3px 8px', textAlign: 'center' }}>{l.calf_required ? 'Yes' : '—'}</td></tr>
+                                  <tr key={i}>
+                                    <td style={{ padding: '3px 8px' }}>{l.expense_type}</td>
+                                    <td style={{ padding: '3px 8px' }}>{l.expense_category}</td>
+                                    <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(l.amount)}</td>
+                                    <td style={{ padding: '3px 8px' }}>{l.or_number || '—'}</td>
+                                    <td style={{ padding: '3px 8px', textAlign: 'center' }}>{l.calf_required ? 'Yes' : '—'}</td>
+                                    {/* Phase 34 — OR receipt photo thumbnail */}
+                                    <td style={{ padding: '3px 8px' }}>{l.or_photo_url && <img src={l.or_photo_url} alt="OR" style={{ maxWidth: 40, maxHeight: 30, borderRadius: 4, cursor: 'pointer' }} onClick={() => setPreviewImage(l.or_photo_url)} />}</td>
+                                  </tr>
                                 ))}
                               </tbody>
                             </table>
@@ -552,6 +658,17 @@ export default function ApprovalManager() {
                           )}
                           {d.purpose && <div style={{ color: 'var(--erp-muted)' }}><strong>Purpose:</strong> {d.purpose}</div>}
                           {d.bir_flag && <div style={{ fontSize: 11, color: 'var(--erp-muted)', marginTop: 4 }}>BIR: {d.bir_flag}</div>}
+                          {/* Phase 34 — PRF/CALF supporting document photos */}
+                          {(d.photo_urls || []).length > 0 && (
+                            <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+                              {(d.photo_urls || []).map((url, i) => (
+                                <div key={i}>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>Doc {i + 1}</div>
+                                  <img src={url} alt={`Doc ${i + 1}`} style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }} onClick={() => setPreviewImage(url)} />
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -786,6 +903,21 @@ export default function ApprovalManager() {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Phase 34 — Image Preview Modal */}
+          {previewImage && (
+            <div
+              onClick={() => setPreviewImage(null)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, cursor: 'zoom-out' }}
+            >
+              <img
+                src={previewImage}
+                alt="Preview"
+                style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,.3)' }}
+                onClick={e => e.stopPropagation()}
+              />
             </div>
           )}
 

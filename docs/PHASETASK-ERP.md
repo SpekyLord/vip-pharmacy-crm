@@ -4036,3 +4036,51 @@ Fixes login-blocking bug for medrep users and adds admin-facing bulk role migrat
 ### 33.7 — Documentation ✅
 - [x] PHASETASK-ERP.md updated with Phase 33 task breakdown
 - [x] CLAUDE-ERP.md updated with Phase 33 architecture, routes, and key files
+
+---
+
+## Phase 34 — Approval Hub Enhancement: Sub-Permissions + Attachments + Line-Item Edit (April 17, 2026)
+
+Divides approval workload per module via sub-permissions, adds attachment/photo viewing for approver verification, extends quick-edit to support line-item changes, and removes unnecessary PO approval gates.
+
+### 34.1 — Per-Module Approval Sub-Permissions ✅
+- [x] Added 14 sub-permission lookup seeds under `approvals` module in `lookupGenericController.js`: `approve_sales`, `approve_collections`, `approve_inventory`, `approve_expenses`, `approve_purchasing`, `approve_payroll`, `approve_journal`, `approve_banking`, `approve_petty_cash`, `approve_ic_transfer`, `approve_income`, `approve_deductions`, `approve_kpi`, `approve_perdiem`
+- [x] Added `sub_key` field to each MODULE_QUERIES entry in `universalApprovalService.js` mapping modules to their sub-permission key
+- [x] Added `MODULE_TO_SUB_KEY` mapping and `hasApprovalSub()` helper in `universalApprovalService.js` — follows existing erpSubAccessCheck convention (FULL with no subs = all granted)
+- [x] Updated `isAuthorizedForModule()` to accept full user object and check sub-permissions ON TOP of existing ApprovalRule + MODULE_DEFAULT_ROLES checks
+- [x] Updated `getUniversalPending()` signature: now accepts user object instead of userId + userRole
+- [x] Updated `getUniversalPendingEndpoint` in controller to pass `req.user`
+- [x] Added sub-permission check to `universalApprove` — returns 403 if user lacks module's sub-permission
+- [x] Added sub-permission check to `universalEdit` — same 403 gate
+- [x] Exported `MODULE_TO_SUB_KEY` and `hasApprovalSub` from service for controller reuse
+
+### 34.2 — Attachment/Photo Viewing in Approval Hub ✅
+- [x] Added attachment URLs to MODULE_QUERIES details in `universalApprovalService.js`:
+  - GRN: `waybill_photo_url`, `undertaking_photo_url`
+  - Collection: `deposit_slip_url`, `cr_photo_url`, `cwt_certificate_url`, `csi_photo_urls`
+  - Car Logbook: `fuel_receipts[]` with `receipt_url`, `starting_km_photo_url`, `ending_km_photo_url`
+  - Expenses: `or_photo_url` per line item
+  - PRF/CALF: `photo_urls` array
+- [x] Frontend: clickable thumbnail images in `ApprovalManager.jsx` for each module's attachments
+- [x] Frontend: full-screen image preview modal (click thumbnail → overlay → click to close)
+- [x] Expense table: added "OR" column header + thumbnail column for receipt photos
+
+### 34.3 — Line-Item Inline Editing ✅
+- [x] Added `APPROVAL_EDITABLE_LINE_FIELDS` lookup seed in `lookupGenericController.js`: SALES_LINE (qty, unit_price), GRN (qty, batch_lot_no, expiry_date), EXPENSE_ENTRY (amount, expense_category)
+- [x] Extended `universalEdit` in controller to handle `updates.line_items` array — validates index, whitelists fields via lookup, applies changes, recalculates line_total and document totals
+- [x] Frontend: added `editableLineFieldsMap` state, `editingLineItem`/`lineEditForm` state, `handleSaveLineEdit` handler
+- [x] Frontend: lookup batch updated to fetch `APPROVAL_EDITABLE_LINE_FIELDS`
+
+### 34.4 — PO Approval Gate Cleanup ✅
+- [x] Removed `checkApprovalRequired` from `approvePO` in `purchasingController.js` — PO approve is now instant for users with `po_approve` sub-permission
+- [x] Removed `gateApproval` from `updatePO` (non-draft minor edits) — field restriction logic is sufficient
+- [x] Cleaned up unused `checkApprovalRequired` import
+- [x] `gateApproval` retained in `postInvoice` (supplier invoice) — stays gated as financial document
+
+### 34.5 — Contractor Access ✅
+- [x] Verified: contractors with `erp_access.enabled + approvals module + sub-permissions` can access Approval Hub — no middleware changes needed
+
+### 34.6 — Documentation ✅
+- [x] PHASETASK-ERP.md updated with Phase 34 task breakdown
+- [x] CLAUDE-ERP.md updated with Phase 34 architecture
+- [x] WorkflowGuide banner updated for approval-manager

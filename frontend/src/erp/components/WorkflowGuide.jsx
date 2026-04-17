@@ -479,9 +479,12 @@ const WORKFLOW_GUIDES = {
     steps: [
       'All Pending tab: see EVERY transaction across the ERP that needs your attention — approve, post, or reject inline.',
       'Module filter: narrow by Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Income, Deductions, GRN, Payroll, KPI, etc.',
+      'Sub-permissions: your assigned approval sub-permissions control which modules you see. Admin might handle Sales + GRN, finance handles Expenses + Payroll. President sees everything. Configure in Control Center → ERP Access Templates → Approvals sub-permissions.',
       'Posting modules (Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF): documents in VALID status appear here — click Post to transition to POSTED.',
       'Approval modules (Income, Deductions, GRN, Payroll, KPI): multi-step review/approve workflows.',
-      'Quick Edit: click Edit on any item to fix typos (description, notes, check#, amount) before approving — no need to reject and wait for resubmission. Editable fields are configured per module in Control Center → Lookup Tables → APPROVAL_EDITABLE_FIELDS.',
+      'Attachments: waybill photos, deposit slips, OR receipts, fuel receipts, and supporting documents are displayed inline — click any thumbnail to view full-size.',
+      'Quick Edit: click Edit on any item to fix typos (description, notes, check#, amount) before approving. Editable fields configured in Control Center → Lookup Tables → APPROVAL_EDITABLE_FIELDS.',
+      'Line-Item Edit: fix individual line items (qty, unit_price, batch#) directly — totals recalculate automatically. Configure in Lookup Tables → APPROVAL_EDITABLE_LINE_FIELDS.',
       'Requests tab: authority matrix approvals (rule-triggered items).',
       'Rules tab (Admin): create Approval Rules to delegate — assign specific people or roles to approve specific modules. Rules override default roles.',
       'Default Roles: each module has configurable default roles (Control Center → Lookup Tables → MODULE_DEFAULT_ROLES). These determine who sees the module when no Approval Rules are set.',
@@ -493,7 +496,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Income', path: '/erp/income' },
       { label: 'Sales', path: '/erp/sales' },
     ],
-    tip: 'Module visibility uses a 3-layer system: (1) Approval Rules override everything — delegate to specific people or roles. (2) No rules? Default roles from MODULE_DEFAULT_ROLES lookup apply. (3) President always sees all modules across all entities. Modules are categorized as Financial (expenses, purchasing, payroll, journal, banking, petty cash, IC transfers, income, PRF/CALF) or Operational (sales, collections, inventory, SMER, car logbook, KPI). Financial modules require president/finance approval; operational modules can be delegated. Categories are configurable in Control Center → Lookup Tables → APPROVAL_CATEGORY.',
+    tip: 'Module visibility uses a 4-layer system: (1) Sub-permissions (approvals.approve_sales, etc.) — control which modules each user sees and can approve. (2) Approval Rules — delegate to specific people or roles. (3) Default roles from MODULE_DEFAULT_ROLES lookup. (4) President always sees all. Assign sub-permissions in ERP Access Templates to divide workload: admin handles operational (sales, GRN, collections), finance handles financial (expenses, payroll, journal). Contractors with purchasing permission can also be given approval sub-permissions for GRN verification.',
   },
   'batch-trace': {
     title: 'Batch Trace',
