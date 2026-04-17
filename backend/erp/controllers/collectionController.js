@@ -75,6 +75,8 @@ const getCollections = catchAsync(async (req, res) => {
       .populate('hospital_id', 'hospital_name')
       .populate('customer_id', 'customer_name customer_type')
       .populate('bdm_id', 'name')
+      .populate('petty_cash_fund_id', 'fund_code fund_name')
+      .populate('bank_account_id', 'bank_name bank_code')
       .lean(),
     Collection.countDocuments(filter)
   ]);
@@ -89,6 +91,8 @@ const getCollectionById = catchAsync(async (req, res) => {
     .populate('hospital_id', 'hospital_name tin cwt_rate payment_terms')
     .populate('customer_id', 'customer_name customer_type tin payment_terms')
     .populate('bdm_id', 'name')
+    .populate('petty_cash_fund_id', 'fund_code fund_name')
+    .populate('bank_account_id', 'bank_name bank_code')
     .lean();
   if (!collection) return res.status(404).json({ success: false, message: 'Collection not found' });
   res.json({ success: true, data: collection });
@@ -210,6 +214,27 @@ const validateCollections = catchAsync(async (req, res) => {
 
     }
 
+    // Petty cash fund validation (defense-in-depth: catch bad refs before submit)
+    if (row.petty_cash_fund_id) {
+      if (row.bank_account_id) {
+        errors.push('Cannot set both bank account and petty cash fund — choose one destination');
+      }
+      const pcFund = await PettyCashFund.findById(row.petty_cash_fund_id).lean();
+      if (!pcFund) {
+        errors.push('Petty cash fund not found');
+      } else {
+        if (pcFund.entity_id?.toString() !== row.entity_id?.toString()) {
+          errors.push('Petty cash fund belongs to a different entity');
+        }
+        if (pcFund.status !== 'ACTIVE') {
+          errors.push(`Petty cash fund is ${pcFund.status} — deposits blocked`);
+        }
+        if ((pcFund.fund_mode || 'REVOLVING') === 'EXPENSE_ONLY') {
+          errors.push('Petty cash fund is EXPENSE_ONLY — deposits not allowed');
+        }
+      }
+    }
+
     // CWT recomputation — backend is authoritative, don't trust frontend cwt_amount
     const totalCsiForCwt = row.total_csi_amount || row.settled_csis?.reduce((s, c) => s + (c.invoice_amount || 0), 0) || 0;
     if (!row.cwt_na && row.cwt_rate > 0) {
@@ -309,6 +334,42 @@ const submitCollections = catchAsync(async (req, res) => {
         row.posted_by = req.user._id;
         row.event_id = event._id;
         await row.save({ session });
+
+        // Petty cash auto-deposit (inside transaction for atomicity)
+        // Approval is covered by the Collection's gateApproval — no separate petty cash gate
+        if (row.petty_cash_fund_id) {
+          const fund = await PettyCashFund.findById(row.petty_cash_fund_id).session(session);
+          if (!fund) {
+            throw new Error(`Petty cash fund not found for CR ${row.cr_no}`);
+          }
+          // Defense-in-depth: re-check status/mode (could change between validate and submit)
+          if (['SUSPENDED', 'CLOSED'].includes(fund.status)) {
+            throw new Error(`Fund ${fund.fund_code} is ${fund.status} — cannot deposit for CR ${row.cr_no}`);
+          }
+          if ((fund.fund_mode || 'REVOLVING') === 'EXPENSE_ONLY') {
+            throw new Error(`Fund ${fund.fund_code} is EXPENSE_ONLY — cannot deposit for CR ${row.cr_no}`);
+          }
+          const depositAmount = row.cr_amount || 0;
+          if (depositAmount > 0) {
+            await PettyCashTransaction.create([{
+              entity_id: row.entity_id,
+              fund_id: fund._id,
+              txn_type: 'DEPOSIT',
+              txn_date: row.cr_date || new Date(),
+              amount: depositAmount,
+              source_description: `Collection ${row.cr_no || ''}`.trim(),
+              linked_collection_id: row._id,
+              status: 'POSTED',
+              posted_at: new Date(),
+              posted_by: req.user._id,
+              created_by: req.user._id,
+              running_balance: Math.round((fund.current_balance + depositAmount) * 100) / 100
+            }], { session });
+            await PettyCashFund.findByIdAndUpdate(fund._id, {
+              $inc: { current_balance: depositAmount }
+            }, { session });
+          }
+        }
       }
     });
 
@@ -398,7 +459,7 @@ const submitCollections = catchAsync(async (req, res) => {
         }
 
         // VAT Ledger — OUTPUT VAT from collection (skip for EXEMPT/ZERO hospitals)
-        const crAmount = row.cr_amount || row.total_amount || 0;
+        const crAmount = row.cr_amount || 0;
         const hospital = row.hospital_id ? await Hospital.findById(row.hospital_id).select('vat_status').lean() : null;
         const hospitalVatStatus = hospital?.vat_status || 'VATABLE';
         if (crAmount > 0 && hospitalVatStatus === 'VATABLE') {
@@ -432,7 +493,7 @@ const submitCollections = catchAsync(async (req, res) => {
             hospital_id: row.hospital_id,
             cr_no: row.cr_no,
             cr_date: row.cr_date,
-            cr_amount: row.cr_amount || row.total_amount || 0,
+            cr_amount: row.cr_amount || 0,
             cwt_amount: row.cwt_amount,
             quarter,
             year: new Date(row.cr_date).getFullYear()
@@ -451,45 +512,7 @@ const submitCollections = catchAsync(async (req, res) => {
       }
     }
 
-    // Petty cash auto-deposit: if collection is routed to a petty cash fund,
-    // create a POSTED deposit transaction and update the fund balance.
-    for (const row of validRows) {
-      if (!row.petty_cash_fund_id) continue;
-      try {
-        const fund = await PettyCashFund.findById(row.petty_cash_fund_id);
-        if (!fund) {
-          console.error(`[PettyCash] Fund ${row.petty_cash_fund_id} not found for CR ${row.cr_no}`);
-          continue;
-        }
-        const depositAmount = row.cr_amount || row.total_amount || 0;
-        if (depositAmount <= 0) continue;
-
-        // Create POSTED deposit transaction linked to this collection
-        await PettyCashTransaction.create({
-          entity_id: row.entity_id,
-          fund_id: fund._id,
-          txn_type: 'DEPOSIT',
-          txn_date: row.cr_date || new Date(),
-          amount: depositAmount,
-          source_description: `Collection ${row.cr_no || ''}`.trim(),
-          linked_collection_id: row._id,
-          status: 'POSTED',
-          posted_at: new Date(),
-          posted_by: req.user._id,
-          created_by: req.user._id,
-          running_balance: Math.round((fund.current_balance + depositAmount) * 100) / 100
-        });
-
-        // Update fund balance atomically
-        await PettyCashFund.findByIdAndUpdate(fund._id, {
-          $inc: { current_balance: depositAmount }
-        });
-      } catch (pcErr) {
-        console.error(`[PettyCash] Auto-deposit failed for CR ${row.cr_no}:`, pcErr.message);
-        if (!warnings) warnings = [];
-        warnings.push(`Petty cash deposit failed for ${row.cr_no}: ${pcErr.message}`);
-      }
-    }
+    // Petty cash auto-deposit moved inside session.withTransaction() above for atomicity
 
     res.json({
       success: true,
@@ -534,6 +557,32 @@ const reopenCollections = catchAsync(async (req, res) => {
           await VatLedger.deleteMany({ source_event_id: row.event_id }).session(session);
           await CwtLedger.deleteMany({ cr_no: row.cr_no, entity_id: row.entity_id }).session(session);
         }
+        // Reverse petty cash deposit (inside transaction for atomicity)
+        const pcTxn = await PettyCashTransaction.findOne({
+          linked_collection_id: row._id,
+          txn_type: 'DEPOSIT',
+          status: 'POSTED'
+        }).session(session);
+        if (pcTxn) {
+          pcTxn.status = 'VOIDED';
+          pcTxn.voided_at = new Date();
+          pcTxn.voided_by = req.user._id;
+          pcTxn.void_reason = `Auto-reversed: Collection ${row.cr_no} reopened`;
+          await pcTxn.save({ session });
+          const fundResult = await PettyCashFund.findByIdAndUpdate(pcTxn.fund_id, {
+            $inc: { current_balance: -pcTxn.amount }
+          }, { session });
+          if (!fundResult) {
+            await ErpAuditLog.logChange({
+              entity_id: row.entity_id, log_type: 'LEDGER_ERROR',
+              target_ref: pcTxn.fund_id?.toString(), target_model: 'PettyCashFund',
+              field_changed: 'current_balance', old_value: pcTxn.amount.toString(),
+              new_value: 'FUND_NOT_FOUND', changed_by: req.user._id,
+              note: `Fund deleted before reopen — balance decrement skipped for CR ${row.cr_no}`
+            });
+          }
+        }
+
         row.status = 'DRAFT';
         row.reopen_count = (row.reopen_count || 0) + 1;
         row.posted_at = undefined;
@@ -558,27 +607,7 @@ const reopenCollections = catchAsync(async (req, res) => {
         }
       }
 
-      // Reverse petty cash deposit if collection was routed to a fund
-      try {
-        const pcTxn = await PettyCashTransaction.findOne({
-          linked_collection_id: item._id,
-          txn_type: 'DEPOSIT',
-          status: 'POSTED'
-        });
-        if (pcTxn) {
-          pcTxn.status = 'VOIDED';
-          pcTxn.voided_at = new Date();
-          pcTxn.voided_by = req.user._id;
-          pcTxn.void_reason = `Auto-reversed: Collection ${item.cr_no} reopened`;
-          await pcTxn.save();
-          // Deduct from fund balance
-          await PettyCashFund.findByIdAndUpdate(pcTxn.fund_id, {
-            $inc: { current_balance: -pcTxn.amount }
-          });
-        }
-      } catch (pcErr) {
-        console.error(`[PettyCash] Deposit reversal failed for CR ${item.cr_no}:`, pcErr.message);
-      }
+      // Petty cash deposit reversal moved inside session.withTransaction() above for atomicity
 
       await ErpAuditLog.logChange({
         entity_id: item.entity_id, bdm_id: item.bdm_id,

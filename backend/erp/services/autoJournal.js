@@ -127,8 +127,14 @@ async function journalFromSale(salesLine, entityId, userId) {
   // Skip journal for zero-amount sales (complimentary/samples)
   if (gross === 0) return null;
 
+  // Direct cash routing: DR PETTY_CASH instead of DR AR_TRADE when fund is set
+  const debitCode = salesLine.petty_cash_fund_id && salesLine.payment_mode === 'CASH'
+    ? c(coa, 'PETTY_CASH') : c(coa, 'AR_TRADE');
+  const debitName = salesLine.petty_cash_fund_id && salesLine.payment_mode === 'CASH'
+    ? n('PETTY_CASH') : n('AR_TRADE');
+
   const lines = [
-    { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: gross, credit: 0, description: `Sale: ${salesLine.invoice_number || ''}` },
+    { account_code: debitCode, account_name: debitName, debit: gross, credit: 0, description: `Sale: ${salesLine.invoice_number || ''}` },
     { account_code: c(coa, 'SALES_REVENUE'), account_name: n('SALES_REVENUE'), debit: 0, credit: net, description: `Sale: ${salesLine.invoice_number || ''}` },
   ];
 
@@ -464,8 +470,14 @@ async function journalFromServiceRevenue(salesLine, entityId, userId) {
   const net = gross - vat;
   const docRef = salesLine.invoice_number || salesLine.doc_ref || '';
 
+  // Direct cash routing: DR PETTY_CASH instead of DR AR_TRADE when fund is set
+  const svcDebitCode = salesLine.petty_cash_fund_id && salesLine.payment_mode === 'CASH'
+    ? c(coa, 'PETTY_CASH') : c(coa, 'AR_TRADE');
+  const svcDebitName = salesLine.petty_cash_fund_id && salesLine.payment_mode === 'CASH'
+    ? n('PETTY_CASH') : n('AR_TRADE');
+
   const lines = [
-    { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: gross, credit: 0, description: `Service: ${docRef}` },
+    { account_code: svcDebitCode, account_name: svcDebitName, debit: gross, credit: 0, description: `Service: ${docRef}` },
     { account_code: c(coa, 'SERVICE_REVENUE'), account_name: n('SERVICE_REVENUE'), debit: 0, credit: net, description: `Service: ${docRef}` },
   ];
 

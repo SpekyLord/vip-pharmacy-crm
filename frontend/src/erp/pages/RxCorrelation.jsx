@@ -248,7 +248,7 @@ export default function RxCorrelation() {
               </Link>
             </div>
           </div>
-          <WorkflowGuide guideId="rx-correlation" />
+          <WorkflowGuide pageKey="rx-correlation" />
 
           <div className="tab-bar">
             <button className={`tab-btn ${tab === 'summary' ? 'active' : ''}`} onClick={() => handleTabChange('summary')}>Territory Summary</button>
