@@ -150,6 +150,8 @@ const MODULE_QUERIES = [
     query: async (entityId) => {
       const items = await GrnEntry.find({ entity_id: entityId, status: 'PENDING' })
         .populate('bdm_id', 'name email')
+        .populate('warehouse_id', 'warehouse_name warehouse_code')
+        .populate('vendor_id', 'vendor_name')
         .sort({ createdAt: -1 })
         .lean();
       return items.map(item => ({
@@ -158,7 +160,7 @@ const MODULE_QUERIES = [
         doc_type: 'GRN',
         doc_id: item._id,
         doc_ref: item.grn_ref || `GRN-${String(item._id).slice(-6)}`,
-        description: `${item.bdm_id?.name || 'BDM'} — ${(item.line_items || []).length} item(s) received`,
+        description: `${item.bdm_id?.name || 'BDM'} — ${item.warehouse_id?.warehouse_name || 'Warehouse'} — ${(item.line_items || []).length} item(s) received`,
         amount: 0,
         submitted_by: item.bdm_id?.name || 'Unknown',
         submitted_at: item.createdAt,
@@ -168,7 +170,13 @@ const MODULE_QUERIES = [
         approve_data: { type: 'grn', id: item._id },
         details: {
           grn_date: item.grn_date,
-          _warehouse_id: item.warehouse_id,
+          warehouse_name: item.warehouse_id?.warehouse_name
+            ? `${item.warehouse_id.warehouse_name} (${item.warehouse_id.warehouse_code})`
+            : null,
+          source_type: item.source_type || 'STANDALONE',
+          po_number: item.po_number || null,
+          vendor_name: item.vendor_id?.vendor_name || null,
+          _warehouse_id: item.warehouse_id?._id || item.warehouse_id,
           _bdm_id: item.bdm_id?._id || item.bdm_id,
           line_items: (item.line_items || []).map(li => ({
             product_id: li.product_id, item_key: li.item_key, batch_lot_no: li.batch_lot_no,
@@ -919,7 +927,10 @@ async function getUniversalPending(entityId, user, entityIds) {
     try {
       const key = extractKeyFromUrl(url);
       return await getSignedDownloadUrl(key, 3600);
-    } catch { return url; }
+    } catch (err) {
+      console.error('Approval signUrl failed:', url, err.message);
+      return url;
+    }
   };
   const signUrls = (urls) => Promise.all((urls || []).map(u => signUrl(u)));
 

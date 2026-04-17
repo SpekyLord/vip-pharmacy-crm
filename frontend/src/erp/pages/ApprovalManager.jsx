@@ -402,7 +402,18 @@ export default function ApprovalManager() {
                       {/* GRN Details */}
                       {item.module === 'INVENTORY' && (
                         <div>
-                          {d.grn_date && <div><strong>GRN Date:</strong> {new Date(d.grn_date).toLocaleDateString()}</div>}
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>GRN Date:</strong> {d.grn_date ? new Date(d.grn_date).toLocaleDateString() : '—'}
+                            {d.warehouse_name && <> · <strong>Warehouse:</strong> {d.warehouse_name}</>}
+                            {d.source_type && <> · <strong>Source:</strong> {d.source_type === 'PO' ? 'Purchase Order' : d.source_type === 'INTERNAL_TRANSFER' ? 'Internal Transfer' : 'Standalone'}</>}
+                          </div>
+                          {(d.po_number || d.vendor_name) && (
+                            <div style={{ marginBottom: 6 }}>
+                              {d.po_number && <><strong>PO#:</strong> {d.po_number}</>}
+                              {d.po_number && d.vendor_name && ' · '}
+                              {d.vendor_name && <><strong>Vendor:</strong> {d.vendor_name}</>}
+                            </div>
+                          )}
                           {d.notes && <div style={{ color: 'var(--erp-muted)', marginBottom: 6 }}>{d.notes}</div>}
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
                             <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Item</th><th style={{ padding: '4px 8px' }}>Batch</th><th style={{ padding: '4px 8px' }}>Expiry</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Stock</th>{(editableLineFieldsMap.grn || []).length > 0 && <th style={{ padding: '4px 8px' }} />}</tr></thead>
