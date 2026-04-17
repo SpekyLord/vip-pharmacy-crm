@@ -103,9 +103,8 @@ const runWeeklyCompliance = async () => {
           specialty: d.specialty,
         }));
 
-      // Get area label for admin summary (Region model removed — use first doctor's area if available)
-      const areaLabel = assignedDoctors[0]?.area || assignedDoctors[0]?.city || 'Unassigned';
-      const regionName = areaLabel;
+      // Region model removed — BDM name is sufficient for admin summary identification
+      const regionName = bdm.name || 'Unassigned';
 
       // Collect stats for admin summary
       bdmStats.push({

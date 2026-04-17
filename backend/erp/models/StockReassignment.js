@@ -49,12 +49,15 @@ const stockReassignmentSchema = new mongoose.Schema({
   // Approval workflow (same pattern as GrnEntry)
   status: {
     type: String,
-    enum: ['PENDING', 'APPROVED', 'REJECTED'],
+    enum: ['PENDING', 'APPROVED', 'AWAITING_GRN', 'COMPLETED', 'REJECTED'],
     default: 'PENDING'
   },
   rejection_reason: { type: String },
   reviewed_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   reviewed_at: { type: Date },
+
+  // Link to GRN created by receiving contractor
+  grn_id: { type: mongoose.Schema.Types.ObjectId, ref: 'GrnEntry' },
 
   // Link to TransactionEvent on approval
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },

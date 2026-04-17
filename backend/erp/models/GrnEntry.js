@@ -21,10 +21,20 @@ const grnEntrySchema = new mongoose.Schema({
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   warehouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' }, // Phase 17 — receiving warehouse
 
+  // Source type: PO (supplier), INTERNAL_TRANSFER (same-entity reassignment), or standalone
+  source_type: {
+    type: String,
+    enum: ['PO', 'INTERNAL_TRANSFER', 'STANDALONE'],
+    default: 'STANDALONE'
+  },
+
   // PO cross-reference (optional — null for standalone/direct-delivery GRNs)
   po_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PurchaseOrder' },
   po_number: { type: String, trim: true },              // denormalized for display
   vendor_id: { type: mongoose.Schema.Types.ObjectId, ref: 'VendorMaster' }, // inherited from PO
+
+  // Internal transfer cross-reference (when source_type = INTERNAL_TRANSFER)
+  reassignment_id: { type: mongoose.Schema.Types.ObjectId, ref: 'StockReassignment' },
 
   grn_date: { type: Date, required: [true, 'GRN date is required'] },
   line_items: {
@@ -74,6 +84,7 @@ grnEntrySchema.pre('save', function (next) {
 grnEntrySchema.index({ entity_id: 1, bdm_id: 1, status: 1 });
 grnEntrySchema.index({ entity_id: 1, status: 1 });
 grnEntrySchema.index({ po_id: 1 });
+grnEntrySchema.index({ reassignment_id: 1 });
 grnEntrySchema.index({ created_at: -1 });
 
 module.exports = mongoose.model('GrnEntry', grnEntrySchema);

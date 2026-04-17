@@ -13,6 +13,7 @@ import SpecializationProductsModal from '../../components/common/SpecializationP
 import specializationService from '../../services/specializationService';
 import { Package, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
+import PageGuide from '../../components/common/PageGuide';
 
 const ProductSpecPage = () => {
   const [specializations, setSpecializations] = useState([]);
@@ -49,6 +50,7 @@ const ProductSpecPage = () => {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content">
+          <PageGuide pageKey="product-spec" />
 
           <div className="psp-header">
             <h1 className="psp-title">

@@ -20,6 +20,157 @@ const ProductMaster = require('../models/ProductMaster');
 const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
 
 // ═══════════════════════════════════════════════════════════
+// SHARED: Post a single SalesLine row (used by submitSales + approval handler)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Posts a single SalesLine row with full side effects:
+ * TransactionEvent, inventory (FIFO/consignment), journal entries.
+ *
+ * @param {Object} row - Mongoose SalesLine document (mutated in place)
+ * @param {ObjectId} userId - The user performing the post
+ * @param {Object} [opts] - Optional overrides
+ * @param {boolean} [opts.isAdminLike] - true if poster is president/admin/finance (entity-wide FIFO)
+ * @returns {Promise<{eventId: ObjectId}>}
+ */
+const postSaleRow = async (row, userId, opts = {}) => {
+  const saleType = row.sale_type || 'CSI';
+  const eventType = saleType === 'SERVICE_INVOICE' ? 'SERVICE_INVOICE'
+    : saleType === 'CASH_RECEIPT' ? 'CASH_RECEIPT' : 'CSI';
+
+  const session = await mongoose.startSession();
+  let eventId;
+
+  try {
+    await session.withTransaction(async () => {
+      // 1. Create TransactionEvent (immutable)
+      const [event] = await TransactionEvent.create([{
+        entity_id: row.entity_id,
+        bdm_id: row.bdm_id,
+        event_type: eventType,
+        event_date: row.csi_date,
+        document_ref: row.doc_ref || row.invoice_number,
+        payload: {
+          hospital_id: row.hospital_id,
+          customer_id: row.customer_id,
+          sale_type: saleType,
+          line_items: row.line_items,
+          invoice_total: row.invoice_total,
+          service_description: row.service_description,
+          source: row.source
+        },
+        created_by: userId
+      }], { session });
+
+      eventId = event._id;
+
+      // 2. SERVICE_INVOICE or OPENING_AR: no inventory deduction
+      if (saleType === 'SERVICE_INVOICE' || row.source === 'OPENING_AR') {
+        row.status = 'POSTED';
+        row.posted_at = new Date();
+        row.posted_by = userId;
+        row.event_id = event._id;
+        await row.save({ session });
+        return;
+      }
+
+      // 3. Inventory deduction for CSI + CASH_RECEIPT (SALES_LINE only)
+      for (const item of row.line_items) {
+        const consignment = await ConsignmentTracker.findOne({
+          entity_id: row.entity_id,
+          bdm_id: row.bdm_id,
+          hospital_id: row.hospital_id,
+          product_id: item.product_id,
+          status: 'ACTIVE'
+        }).session(session);
+
+        if (consignment) {
+          consignment.qty_consumed += item.qty;
+          consignment.conversions.push({
+            csi_doc_ref: row.doc_ref,
+            csi_date: row.csi_date,
+            qty_converted: item.qty,
+            sales_line_id: row._id
+          });
+          await consignment.save({ session });
+        } else {
+          const fifoOpts = { ...(row.warehouse_id && { warehouseId: row.warehouse_id.toString() }), session };
+          const submitBdmId = opts.isAdminLike && !row.warehouse_id ? null : row.bdm_id;
+          let consumed;
+          if (item.fifo_override && item.batch_lot_no) {
+            consumed = [await consumeSpecificBatch(
+              row.entity_id, submitBdmId, item.product_id, item.batch_lot_no, item.qty, fifoOpts
+            )];
+          } else {
+            consumed = await consumeFIFO(
+              row.entity_id, submitBdmId, item.product_id, item.qty, fifoOpts
+            );
+          }
+
+          for (const c of consumed) {
+            await InventoryLedger.create([{
+              entity_id: row.entity_id,
+              bdm_id: c.bdm_id || row.bdm_id,
+              warehouse_id: row.warehouse_id || undefined,
+              product_id: item.product_id,
+              batch_lot_no: c.batch_lot_no,
+              expiry_date: c.expiry_date,
+              transaction_type: 'CSI',
+              qty_out: c.qty_consumed,
+              event_id: event._id,
+              fifo_override: item.fifo_override || false,
+              override_reason: item.override_reason,
+              recorded_by: userId
+            }], { session });
+          }
+        }
+      }
+
+      // 4. Update SalesLine status
+      row.status = 'POSTED';
+      row.posted_at = new Date();
+      row.posted_by = userId;
+      row.event_id = event._id;
+      await row.save({ session });
+    });
+
+    // 5. Link DocumentAttachments (non-blocking)
+    await DocumentAttachment.updateMany(
+      { source_model: 'SalesLine', source_id: row._id },
+      { $set: { event_id: eventId } }
+    ).catch(() => {});
+
+    // 6. Journal entries (non-blocking)
+    try {
+      const jeData = saleType === 'SERVICE_INVOICE'
+        ? await journalFromServiceRevenue(row, row.entity_id, userId)
+        : await journalFromSale(row, row.entity_id, userId);
+      jeData.source_event_id = eventId;
+      await createAndPostJournal(row.entity_id, jeData);
+
+      // COGS JE (skip for SERVICE_INVOICE and OPENING_AR)
+      if (saleType !== 'SERVICE_INVOICE' && row.source !== 'OPENING_AR' && row.line_items?.length) {
+        const productIds = row.line_items.map(li => li.product_id);
+        const products = await ProductMaster.find({ _id: { $in: productIds } }).select('purchase_price').lean();
+        const costMap = new Map(products.map(p => [p._id.toString(), p.purchase_price || 0]));
+        const totalCogs = row.line_items.reduce((sum, li) => sum + (li.qty || 0) * (costMap.get(li.product_id?.toString()) || 0), 0);
+        const cogsData = await journalFromCOGS(row, Math.round(totalCogs * 100) / 100, userId);
+        if (cogsData) {
+          cogsData.source_event_id = eventId;
+          await createAndPostJournal(row.entity_id, cogsData);
+        }
+      }
+    } catch (jeErr) {
+      console.error('Auto-journal failed for sale:', row.doc_ref || row._id, jeErr.message);
+    }
+
+    return { eventId };
+  } finally {
+    await session.endSession();
+  }
+};
+
+// ═══════════════════════════════════════════════════════════
 // CRUD
 // ═══════════════════════════════════════════════════════════
 
@@ -99,6 +250,13 @@ const updateSale = catchAsync(async (req, res) => {
   Object.assign(sale, req.body);
   sale.status = 'DRAFT'; // Reset to DRAFT on edit
   sale.validation_errors = [];
+
+  // Re-route source when csi_date changes (same logic as createSale)
+  if (req.user.live_date && sale.csi_date) {
+    sale.source = new Date(sale.csi_date) < new Date(req.user.live_date)
+      ? 'OPENING_AR' : 'SALES_LINE';
+  }
+
   await sale.save();
 
   // Audit log
@@ -302,9 +460,19 @@ const validateSales = catchAsync(async (req, res) => {
       }
     }
 
-    // Stock check per line item (skip for SERVICE_INVOICE — no inventory)
-    if (saleType === 'SERVICE_INVOICE') {
+    // Stock check per line item (skip for SERVICE_INVOICE and OPENING_AR — no inventory)
+    if (saleType === 'SERVICE_INVOICE' || row.source === 'OPENING_AR') {
       // SERVICE_INVOICE: no stock check needed, skip line item validation
+      // OPENING_AR: pre-live-date CSI — skip allocation check per PRD
+      // Still validate basic line item fields for OPENING_AR
+      if (row.source === 'OPENING_AR' && saleType !== 'SERVICE_INVOICE') {
+        for (const item of row.line_items) {
+          if (!item.product_id) rowErrors.push('Product is required for each line item');
+          if (!item.qty || item.qty <= 0) rowErrors.push(`Quantity must be greater than 0 for ${item.item_key || 'product'}`);
+          if (!item.unit_price || item.unit_price <= 0) rowErrors.push(`Unit price must be greater than 0 for ${item.item_key || 'product'}`);
+          if (item.fifo_override && !item.override_reason) rowErrors.push(`FIFO override reason is required for ${item.item_key || 'product'}. Choose: Hospital Policy, QA Replacement, Damaged Batch, or Batch Recall.`);
+        }
+      }
     } else for (const item of row.line_items) {
       if (!item.product_id) {
         rowErrors.push('Product is required for each line item');
@@ -452,6 +620,16 @@ const submitSales = catchAsync(async (req, res) => {
         }
 
         // 3. Create InventoryLedger entries per line item (CSI + CASH_RECEIPT)
+        // OPENING_AR: pre-live-date CSI — skip inventory deduction entirely (no FIFO, no consignment)
+        if (row.source === 'OPENING_AR') {
+          row.status = 'POSTED';
+          row.posted_at = new Date();
+          row.posted_by = req.user._id;
+          row.event_id = event._id;
+          await row.save({ session });
+          continue;
+        }
+
         for (const item of row.line_items) {
           // Check if this CSI references a DR (consignment)
           const consignment = await ConsignmentTracker.findOne({
@@ -538,8 +716,8 @@ const submitSales = catchAsync(async (req, res) => {
         jeData.source_event_id = row.event_id;
         await createAndPostJournal(row.entity_id, jeData);
 
-        // COGS JE (skip for SERVICE_INVOICE — no inventory)
-        if (saleType !== 'SERVICE_INVOICE' && row.line_items?.length) {
+        // COGS JE (skip for SERVICE_INVOICE and OPENING_AR — no inventory consumed)
+        if (saleType !== 'SERVICE_INVOICE' && row.source !== 'OPENING_AR' && row.line_items?.length) {
           const productIds = row.line_items.map(li => li.product_id);
           const products = await ProductMaster.find({ _id: { $in: productIds } }).select('purchase_price').lean();
           const costMap = new Map(products.map(p => [p._id.toString(), p.purchase_price || 0]));
@@ -821,5 +999,6 @@ module.exports = {
   submitSales,
   reopenSales,
   requestDeletion,
-  approveDeletion
+  approveDeletion,
+  postSaleRow, // shared helper for approval handler
 };

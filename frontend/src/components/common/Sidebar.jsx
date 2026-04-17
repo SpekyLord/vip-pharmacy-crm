@@ -706,8 +706,8 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     if (salesHomePath !== '/erp/sales') {
       salesItems.push({ path: '/erp/sales', label: 'Sales Transactions', icon: FileText, isChild: true });
     }
-    salesItems.push({ path: '/erp/credit-notes', label: 'Returns / CN', icon: RotateCcw });
-    salesItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
+    // Sub-permission gated — also visible to contractors with purchasing.credit_notes
+    if (hasSub('sales', 'credit_notes') || hasSub('purchasing', 'credit_notes')) salesItems.push({ path: '/erp/credit-notes', label: 'Returns / CN', icon: RotateCcw });
     sections.push({
       title: 'Sales',
       collapsible: true,
@@ -721,9 +721,9 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     const invItems = [
       { path: '/erp/grn', label: 'GRN Entry', icon: FileInput },
       { path: '/erp/my-stock', label: 'Inventory', icon: Package },
-      { path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight },
     ];
-    // Sub-permission gated (access-template driven, not shown to all BDMs)
+    // Sub-permission gated (access-template driven, not shown to contractors by default)
+    if (hasSub('inventory', 'transfers')) invItems.push({ path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight });
     if (hasSub('inventory', 'csi_booklets')) invItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
     if (hasSub('inventory', 'office_supplies')) invItems.push({ path: '/erp/office-supplies', label: 'Office Supplies', icon: Package });
     if (hasSub('inventory', 'collaterals')) invItems.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
@@ -862,6 +862,14 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
       { path: '/erp/supplier-invoices', label: 'Supplier Invoices', icon: FileInput },
       { path: '/erp/vendors', label: 'Vendors', icon: Truck },
     ];
+    // Contractors with purchasing + inventory.transfers see IC/transfers here
+    if (hasSub('inventory', 'transfers')) {
+      purItems.push({ path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight });
+    }
+    // Contractors with purchasing.credit_notes see Returns / CN here (also in Sales if they have sales)
+    if (hasSub('purchasing', 'credit_notes') && !hasSub('sales', 'credit_notes')) {
+      purItems.push({ path: '/erp/credit-notes', label: 'Returns / CN', icon: RotateCcw });
+    }
     purItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({
       title: 'Purchasing',

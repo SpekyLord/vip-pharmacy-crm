@@ -311,9 +311,8 @@ vip-pharmacy-crm/
 │   │   │   │   └── MessageComposer.jsx      # Send messages via API (Phase 2)
 │   │   │   ├── admin/
 │   │   │   │   ├── Dashboard.jsx         # Admin stats display
-│   │   │   │   ├── DoctorManagement.jsx  # VIP Client CRUD, cascading regions
-│   │   │   │   ├── EmployeeManagement.jsx # BDM CRUD, multi-region assignment
-│   │   │   │   ├── RegionManagement.jsx  # Region tree CRUD
+│   │   │   │   ├── DoctorManagement.jsx  # VIP Client CRUD
+│   │   │   │   ├── EmployeeManagement.jsx # BDM CRUD, multi-entity assignment
 │   │   │   │   ├── ProductManagement.jsx # Product CRUD
 │   │   │   │   ├── EmployeeVisitReport.jsx # Call Plan Template format report
 │   │   │   │   ├── VisitApproval.jsx     # Scaffolded (mock data)
@@ -345,7 +344,6 @@ vip-pharmacy-crm/
 │   │   │   │   ├── AdminDashboard.jsx     # System-wide stats
 │   │   │   │   ├── DoctorsPage.jsx        # VIP Client management (CRUD, filters)
 │   │   │   │   ├── EmployeesPage.jsx      # BDM management (CRUD, filters)
-│   │   │   │   ├── RegionsPage.jsx        # Region hierarchy tree
 │   │   │   │   ├── ReportsPage.jsx        # BDM Visit Report, Excel/CSV export
 │   │   │   │   ├── StatisticsPage.jsx     # Scaffolded (mock data, Recharts)
 │   │   │   │   ├── ActivityMonitor.jsx    # Real data (audit logs + visits)
@@ -364,7 +362,6 @@ vip-pharmacy-crm/
 │   │   │   ├── doctorService.js       # VIP Client API calls
 │   │   │   ├── visitService.js        # Visit API calls, AbortController support
 │   │   │   ├── productService.js      # Product API calls
-│   │   │   ├── regionService.js       # Region API calls
 │   │   │   ├── assignmentService.js   # Product assignment API calls
 │   │   │   ├── userService.js         # User CRUD API calls
 │   │   │   ├── messageInboxService.js # Inbox messaging API calls

@@ -182,4 +182,54 @@ const approvalCheck = (req, res, next) => {
   });
 };
 
-module.exports = { erpAccessCheck, erpSubAccessCheck, approvalCheck };
+/**
+ * Multi-gate sub-access check — passes if ANY of the given module/subKey pairs match.
+ * Useful when a feature spans multiple modules (e.g. credit notes → sales OR purchasing).
+ *
+ * @param  {...[string, string]} pairs  [module, subKey] tuples
+ */
+const erpAnySubAccessCheck = (...pairs) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    const { role, erp_access } = req.user;
+
+    if (role === ROLES.PRESIDENT) return next();
+    if (role === ROLES.CEO) {
+      return res.status(403).json({ success: false, message: 'CEO role is view-only for ERP modules' });
+    }
+    if (role === ROLES.ADMIN && (!erp_access || !erp_access.enabled)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin account requires ERP access template for this operation.',
+      });
+    }
+    if (!erp_access || !erp_access.enabled) {
+      return res.status(403).json({ success: false, message: 'ERP access not enabled for your account' });
+    }
+
+    // Check each pair — pass if ANY matches
+    for (const [mod, subKey] of pairs) {
+      const userLevel = erp_access.modules?.[mod] || 'NONE';
+      if ((LEVELS[userLevel] || 0) < LEVELS['VIEW']) continue; // no access to this module
+
+      const moduleSubs = erp_access.sub_permissions?.[mod];
+      const truthyCount = moduleSubs ? Object.values(moduleSubs).filter(Boolean).length : 0;
+      if (!moduleSubs || truthyCount === 0) {
+        if (userLevel === 'FULL') return next(); // FULL with no subs = all granted
+        continue;
+      }
+      if (moduleSubs[subKey]) return next();
+    }
+
+    const labels = pairs.map(([m, s]) => `${m}.${s}`).join(' or ');
+    return res.status(403).json({
+      success: false,
+      message: `Access denied: requires ${labels} permission`,
+    });
+  };
+};
+
+module.exports = { erpAccessCheck, erpSubAccessCheck, erpAnySubAccessCheck, approvalCheck };

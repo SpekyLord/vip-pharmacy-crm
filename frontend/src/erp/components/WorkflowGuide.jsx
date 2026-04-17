@@ -74,7 +74,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Check Inventory', path: '/erp/my-stock' },
       { label: 'Collect Payment', path: '/erp/collections' },
     ],
-    tip: 'Posted sales generate Accounts Receivable. Collect payment via Collections to clear the AR.',
+    tip: 'Posted sales generate Accounts Receivable. Collect payment via Collections to clear the AR. If the invoice date is before your ERP live date, the entry is tagged "Opening AR" — stock is NOT deducted and no COGS journal is created (AR only).',
   },
   'sales-list': {
     title: 'Sales Management',
@@ -83,13 +83,14 @@ const WORKFLOW_GUIDES = {
       'DRAFT — still editable, not yet validated',
       'VALID — passed checks, ready to post',
       'POSTED — finalized, AR created, appears in reports',
+      'Opening AR — pre-live-date entries skip stock deduction (AR only, no COGS)',
     ],
     next: [
       { label: 'Create New Sale', path: '/erp/sales/entry' },
       { label: 'Collect Payment', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L. When Authority Matrix is enabled, posting may require approval — check the Approval Hub for pending items.',
+    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L. When Authority Matrix is enabled, posting may require approval — check the Approval Hub for pending items. Use the Source filter to view Opening AR entries separately.',
   },
   'my-stock': {
     title: 'Inventory Overview',

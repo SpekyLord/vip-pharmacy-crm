@@ -85,9 +85,9 @@ const PAGE_GUIDES = {
     ],
     next: [
       { label: 'VIP Clients', path: '/admin/doctors' },
-      { label: 'Regions', path: '/admin/regions' },
+      { label: 'Reports', path: '/admin/reports' },
     ],
-    tip: 'Region assignment is critical — BDMs can only see VIP Clients in their assigned regions.',
+    tip: 'BDMs can only see VIP Clients assigned to them. Use the Entity/ERP access section to configure module access.',
   },
   'reports-page': {
     title: 'BDM Visit Reports',
@@ -100,19 +100,6 @@ const PAGE_GUIDES = {
       { label: 'BDM Management', path: '/admin/employees' },
       { label: 'VIP Clients', path: '/admin/doctors' },
     ],
-  },
-  'regions-page': {
-    title: 'Region Management',
-    steps: [
-      'View the region hierarchy as a tree structure',
-      'Create, edit, or deactivate regions at any level',
-      'Click a region to see stats (VIP Client count, BDM assignments)',
-    ],
-    next: [
-      { label: 'BDM Management', path: '/admin/employees' },
-      { label: 'VIP Clients', path: '/admin/doctors' },
-    ],
-    tip: 'Regions cascade downward — assigning a BDM to a parent region gives access to all child regions.',
   },
   'my-visits': {
     title: 'My Visits',
@@ -295,6 +282,132 @@ const PAGE_GUIDES = {
       { label: 'VIP Clients', path: '/admin/doctors' },
       { label: 'BDMs', path: '/admin/employees' },
     ],
+  },
+  'bdm-visits': {
+    title: 'BDM Visit History',
+    steps: [
+      'Select a BDM from the dropdown to view their visit history',
+      'Filter by date range, visit type (VIP or Regular), or status',
+      'Click any visit row to see full details — photos, GPS, engagement types',
+      'Use the summary cards at top to see total visits, compliance rate, and carried count',
+    ],
+    next: [
+      { label: 'Reports', path: '/admin/reports' },
+      { label: 'Statistics', path: '/admin/statistics' },
+    ],
+    tip: 'This page shows both VIP Client visits and Regular Client visits for the selected BDM.',
+  },
+  'new-client-visit': {
+    title: 'Log Regular Client Visit',
+    steps: [
+      'Select the Regular Client you are visiting from the dropdown',
+      'Capture at least one photo as proof of visit',
+      'GPS location is captured automatically — ensure location services are on',
+      'Select engagement types and add notes about the interaction',
+      'Submit — monthly limits are enforced based on the client\'s visit frequency',
+    ],
+    next: [
+      { label: 'My Visits', path: '/bdm/visits' },
+      { label: 'Dashboard', path: '/bdm' },
+    ],
+    tip: 'Regular Clients are non-VIP contacts (pharmacists, purchasers, etc.). Up to 30 extra calls per day allowed.',
+  },
+  'import-export': {
+    title: 'Import / Export',
+    steps: [
+      'Upload a CPT Excel file — the system parses all 23 sheets and stages the data',
+      'Review the parsed batch: check VIP Client names, schedules, and duplicate warnings',
+      'Approve the batch to create VIP Client profiles + 4-week schedules automatically',
+      'Reject with a reason if the data needs corrections from the BDM',
+      'Export current VIP Clients to Excel using the Call Plan Template format',
+    ],
+    next: [
+      { label: 'VIP Clients', path: '/admin/doctors' },
+      { label: 'BDM Management', path: '/admin/employees' },
+    ],
+    tip: 'Duplicate detection uses lastName + firstName (case-insensitive). Existing VIP Clients are updated, not duplicated.',
+  },
+  'photo-audit': {
+    title: 'Photo Audit',
+    steps: [
+      'Review visit photos for authenticity — check for duplicates, screenshots, or stock images',
+      'Filter by BDM, date range, or flag status (flagged, cleared, pending)',
+      'Click a photo to see full-size image with GPS metadata and timestamp',
+      'Flag suspicious photos with a reason — the BDM will be notified',
+      'Clear flagged photos after BDM provides explanation',
+    ],
+    next: [
+      { label: 'GPS Verification', path: '/admin/gps-verification' },
+      { label: 'Activity Monitor', path: '/admin/activity' },
+    ],
+    tip: 'The AI Photo Audit agent runs nightly to auto-flag duplicates and anomalies. Review its findings here.',
+  },
+  'my-performance': {
+    title: 'My Performance',
+    steps: [
+      'View your DCR (Daily Call Report) summary for the current cycle',
+      'Check your call rate, compliance percentage, and visit trends',
+      'Review the weekly breakdown to see which weeks had missed visits',
+      'Compare your performance against team averages in the chart',
+    ],
+    next: [
+      { label: 'Call Plan', path: '/bdm/cpt' },
+      { label: 'My Visits', path: '/bdm/visits' },
+    ],
+    tip: 'Call rate = total visits / expected visits. Aim for 100% compliance each cycle.',
+  },
+  'product-spec': {
+    title: 'Product Specifications',
+    steps: [
+      'Browse products grouped by specialization or therapeutic category',
+      'Search by brand name, generic name, or category',
+      'Tap a product card to view full details — dosage, indications, and presentation images',
+      'Use this as a reference when discussing products with VIP Clients during visits',
+    ],
+    next: [
+      { label: 'Log Visit', path: '/bdm/visit/new' },
+      { label: 'Dashboard', path: '/bdm' },
+    ],
+    tip: 'Product images are optimized for tablet display. Show the detail view to VIP Clients during presentations.',
+  },
+  'schedule': {
+    title: '4-Week Schedule',
+    steps: [
+      'View your assigned VIP Clients mapped to the 4-week visit cycle (W1-W4)',
+      'Each cell shows the VIP Client name and visit status (due, completed, carried, missed)',
+      'Click a cell to navigate to the VIP Client profile or log a visit',
+      'Carried visits from earlier weeks appear in yellow — clear them before the cycle ends',
+    ],
+    next: [
+      { label: 'Call Plan', path: '/bdm/cpt' },
+      { label: 'Log Visit', path: '/bdm/visit/new' },
+    ],
+    tip: 'The cycle anchors to Jan 5, 2026 and repeats every 4 weeks. W4D5 (Friday) is the hard cutoff for carried visits.',
+  },
+  'sent-messages': {
+    title: 'Sent Messages',
+    steps: [
+      'View all messages sent by Admin to BDMs with delivery status',
+      'Filter by recipient BDM, category, priority, or date range',
+      'Click a message to see read/unread status per recipient',
+    ],
+    next: [
+      { label: 'Msg Templates', path: '/admin/message-templates' },
+      { label: 'BDM Management', path: '/admin/employees' },
+    ],
+  },
+  'notification-preferences': {
+    title: 'Notification Preferences',
+    steps: [
+      'Toggle email notifications on/off for different event types',
+      'Configure weekly compliance summary delivery (every Monday)',
+      'Set push notification preferences for real-time alerts',
+      'Changes are saved automatically when you toggle a switch',
+    ],
+    next: [
+      { label: 'Dashboard', path: '/bdm' },
+    ],
+    tip: 'Email notifications require a valid email address on your profile. Push notifications require browser permission.',
   },
 };
 
