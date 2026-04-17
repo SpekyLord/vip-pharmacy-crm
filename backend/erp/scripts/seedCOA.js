@@ -30,6 +30,7 @@ const COA_TEMPLATE = [
   // ──── 1100-1220: Receivables (ASSET) ────
   { account_code: '1100', account_name: 'Accounts Receivable — Trade', account_type: 'ASSET', account_subtype: 'Receivable', normal_balance: 'DEBIT' },
   { account_code: '1110', account_name: 'AR — BDM Advances', account_type: 'ASSET', account_subtype: 'Receivable', normal_balance: 'DEBIT' },
+  { account_code: '1150', account_name: 'IC Receivable', account_type: 'ASSET', account_subtype: 'Receivable', normal_balance: 'DEBIT' },
   { account_code: '1200', account_name: 'Inventory', account_type: 'ASSET', account_subtype: 'Inventory', normal_balance: 'DEBIT' },
   { account_code: '1210', account_name: 'Input VAT', account_type: 'ASSET', account_subtype: 'Tax Receivable', normal_balance: 'DEBIT' },
   { account_code: '1220', account_name: 'CWT Receivable', account_type: 'ASSET', account_subtype: 'Tax Receivable', normal_balance: 'DEBIT' },
@@ -42,11 +43,13 @@ const COA_TEMPLATE = [
 
   // ──── 2000-2400: Liabilities ────
   { account_code: '2000', account_name: 'Accounts Payable — Trade', account_type: 'LIABILITY', account_subtype: 'AP', normal_balance: 'CREDIT' },
+  { account_code: '2050', account_name: 'IC Payable', account_type: 'LIABILITY', account_subtype: 'AP', normal_balance: 'CREDIT' },
   { account_code: '2100', account_name: 'Output VAT', account_type: 'LIABILITY', account_subtype: 'Tax Payable', normal_balance: 'CREDIT' },
   { account_code: '2200', account_name: 'SSS Payable', account_type: 'LIABILITY', account_subtype: 'Gov Payable', normal_balance: 'CREDIT' },
   { account_code: '2210', account_name: 'PhilHealth Payable', account_type: 'LIABILITY', account_subtype: 'Gov Payable', normal_balance: 'CREDIT' },
   { account_code: '2220', account_name: 'Pag-IBIG Payable', account_type: 'LIABILITY', account_subtype: 'Gov Payable', normal_balance: 'CREDIT' },
   { account_code: '2230', account_name: 'Withholding Tax Payable', account_type: 'LIABILITY', account_subtype: 'Tax Payable', normal_balance: 'CREDIT' },
+  { account_code: '2250', account_name: 'Interest Payable', account_type: 'LIABILITY', account_subtype: 'Other', normal_balance: 'CREDIT' },
   { account_code: '2300', account_name: 'Loans Payable', account_type: 'LIABILITY', account_subtype: 'Loan', normal_balance: 'CREDIT' },
   { account_code: '2301', account_name: 'SBC Credit Card Payable', account_type: 'LIABILITY', account_subtype: 'CC Payable', normal_balance: 'CREDIT' },
   { account_code: '2302', account_name: 'Shell Fleet Card Payable', account_type: 'LIABILITY', account_subtype: 'CC Payable', normal_balance: 'CREDIT' },
@@ -78,9 +81,12 @@ const COA_TEMPLATE = [
   // ──── 6000-6900: Operating Expenses ────
   { account_code: '6000', account_name: 'Salaries & Wages', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6050', account_name: 'Allowances', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6060', account_name: '13th Month Pay', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6100', account_name: 'Per Diem Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6150', account_name: 'Transport Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6155', account_name: 'Travel & Accommodation', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6160', account_name: 'Special Transport', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6170', account_name: 'Other Reimbursable Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6200', account_name: 'Fuel & Gas', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6250', account_name: 'Vehicle Maintenance', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6260', account_name: 'Repairs & Maintenance (General)', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
