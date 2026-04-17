@@ -37,7 +37,8 @@
       "Bash(npx esbuild:*)",
       "Bash(npm install *)",
       "Read(//c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/**)",
-      "Read(//c/Users/LENOVO/**)"
+      "Read(//c/Users/LENOVO/**)",
+      "Bash(grep -E \"\\\\.\\(js|ts\\)$\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp",
