@@ -13,7 +13,7 @@ const periodLockCheck = require('../middleware/periodLockCheck');
 const {
   // Income
   generateIncome, getIncomeProjection, requestIncomeGeneration,
-  getIncomeList, getIncomeById, updateIncomeManual,
+  getIncomeList, getIncomeById, getIncomeBreakdown, updateIncomeManual,
   reviewIncome, returnIncome, confirmIncome, creditIncome,
   // BDM Deduction Lines
   addDeductionLine, removeDeductionLine,
@@ -36,6 +36,7 @@ router.get('/income/projection', getIncomeProjection);  // Read-only projection 
 router.post('/income/request-generation', roleCheck('contractor'), requestIncomeGeneration);  // BDM self-service (repeatable)
 router.post('/income/generate', roleCheck('admin', 'finance', 'president'), generateIncome);
 router.get('/income', getIncomeList);
+router.get('/income/:id/breakdown', getIncomeBreakdown);  // Transparent payslip — source data drill-down (must be before :id)
 router.get('/income/:id', getIncomeById);
 router.put('/income/:id', roleCheck('admin', 'finance', 'president'), updateIncomeManual);
 router.post('/income/:id/review', roleCheck('admin', 'finance', 'president'), reviewIncome);

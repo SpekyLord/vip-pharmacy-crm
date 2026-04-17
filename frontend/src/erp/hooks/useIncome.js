@@ -9,6 +9,7 @@ export default function useIncome() {
   const generateIncome = (data) => api.post('/income/generate', data);
   const getIncomeList = (params) => api.get('/income', { params });
   const getIncomeById = (id) => api.get(`/income/${id}`);
+  const getIncomeBreakdown = (id) => api.get(`/income/${id}/breakdown`);
   const updateIncomeManual = (id, data) => api.put(`/income/${id}`, data);
   const reviewIncome = (id) => api.post(`/income/${id}/review`);
   const returnIncome = (id, reason) => api.post(`/income/${id}/return`, { reason });
@@ -48,7 +49,7 @@ export default function useIncome() {
   return {
     ...api,
     getIncomeProjection, requestIncomeGeneration,
-    generateIncome, getIncomeList, getIncomeById, updateIncomeManual,
+    generateIncome, getIncomeList, getIncomeById, getIncomeBreakdown, updateIncomeManual,
     reviewIncome, returnIncome, confirmIncome, creditIncome,
     addDeductionLine, removeDeductionLine,
     verifyDeductionLine, financeAddDeductionLine,
