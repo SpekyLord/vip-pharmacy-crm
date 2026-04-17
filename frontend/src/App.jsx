@@ -31,6 +31,9 @@ const lazyRetry = (importFn) =>
 // Lazy-loaded pages — split by role for smaller bundles
 const ForgotPasswordPage = lazyRetry(() => import('./pages/ForgotPasswordPage'));
 const ResetPasswordPage = lazyRetry(() => import('./pages/ResetPasswordPage'));
+const PrivacyPolicyPage = lazyRetry(() => import('./pages/PrivacyPolicyPage'));
+const TermsOfServicePage = lazyRetry(() => import('./pages/TermsOfServicePage'));
+const DataDeletionPage = lazyRetry(() => import('./pages/DataDeletionPage'));
 
 // BDM pages
 const EmployeeDashboard = lazyRetry(() => import('./pages/employee/EmployeeDashboard'));
@@ -208,6 +211,9 @@ function App() {
           <Route path="/home" element={<ProtectedRoute allowedRoles={ROLE_SETS.ALL}><HomePage /></ProtectedRoute>} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms" element={<TermsOfServicePage />} />
+          <Route path="/data-deletion" element={<DataDeletionPage />} />
 
           {/* Employee Routes */}
           <Route
