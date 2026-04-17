@@ -343,12 +343,18 @@ export default function Smer() {
         return prev.map(entry => {
           // Skip "No Work" entries — CRM data should not overwrite them
           if (entry.activity_type === 'NO_WORK') return entry;
-          const crm = crmMap[entry.entry_date];
+          // Normalize: DB dates may be full ISO ("2026-04-01T00:00:00.000Z"), CRM keys are "2026-04-01"
+          const entryDateKey = (entry.entry_date || '').split('T')[0];
+          const crm = crmMap[entryDateKey];
           if (!crm) return entry;
           const updated = { ...entry, md_count: crm.md_count };
           if (!entry.perdiem_override) {
             updated.perdiem_tier = crm.perdiem_tier;
             updated.perdiem_amount = crm.perdiem_amount;
+          }
+          // Auto-fill location details from CRM visit data
+          if (crm.locations && !entry.notes) {
+            updated.notes = crm.locations;
           }
           return updated;
         });

@@ -5,6 +5,7 @@
  * Supplier Invoice CRUD + validate (3-way match) + post (auto-JE)
  * AP ledger, aging, GRNI, payment recording
  */
+const mongoose = require('mongoose');
 const PurchaseOrder = require('../models/PurchaseOrder');
 const SupplierInvoice = require('../models/SupplierInvoice');
 const VendorMaster = require('../models/VendorMaster');
@@ -465,13 +466,17 @@ const postInvoice = catchAsync(async (req, res) => {
   // Fetch vendor TIN for VAT ledger entry
   const vendor = await VendorMaster.findById(invoice.vendor_id).select('tin').lean();
 
-  // Build JE data using existing journalFromAP
+  // Build JE data using existing journalFromAP — wrap in transaction for atomicity
   const jeData = await journalFromAP(invoice.toObject(), req.user._id);
-  const je = await createAndPostJournal(req.entityId, jeData);
-
-  invoice.status = 'POSTED';
-  invoice.event_id = je._id;
-  await invoice.save();
+  const postSession = await mongoose.startSession();
+  let je;
+  await postSession.withTransaction(async () => {
+    je = await createAndPostJournal(req.entityId, jeData, { session: postSession });
+    invoice.status = 'POSTED';
+    invoice.event_id = je._id;
+    await invoice.save({ session: postSession });
+  });
+  postSession.endSession();
 
   // VAT Ledger — INPUT VAT from supplier invoice
   const inputVat = invoice.input_vat || invoice.vat_amount || 0;

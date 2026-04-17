@@ -10,7 +10,8 @@ import useSettings from '../hooks/useSettings';
 import useAccounting from '../hooks/useAccounting';
 import useErpApi from '../hooks/useErpApi';
 import doctorService from '../../services/doctorService';
-import { processDocument } from '../services/ocrService';
+import { processDocument, extractExifDateTime } from '../services/ocrService';
+import { matchHospital, matchCsis, fieldVal, fieldConfidence, parseCrDate, formatReviewReason } from '../utils/ocrMatching';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -56,8 +57,262 @@ const pageStyles = `
   .summary-row strong { font-weight: 700; }
 
   .btn-sm { padding: 4px 10px; font-size: 11px; }
-  @media(max-width: 768px) { .coll-main { padding: 76px 12px calc(96px + env(safe-area-inset-bottom, 0px)); } .form-row { flex-direction: column; } .csi-card-meta { flex-direction: column; gap: 4px; } }
+
+  /* Scan CR Modal */
+  .scan-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .scan-modal { background: var(--erp-panel, #fff); border-radius: 16px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; padding: 24px; position: relative; }
+  .scan-modal h2 { margin: 0 0 16px; font-size: 18px; color: var(--erp-text); }
+  .scan-modal .close-btn { position: absolute; top: 12px; right: 16px; background: none; border: none; font-size: 22px; cursor: pointer; color: var(--erp-muted); }
+  .scan-capture-btns { display: flex; gap: 10px; margin-bottom: 16px; }
+  .scan-capture-btns .btn { flex: 1; text-align: center; padding: 12px; font-size: 14px; }
+  .scan-preview { width: 100%; max-height: 200px; object-fit: contain; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--erp-border); }
+  .scan-progress { text-align: center; padding: 24px 0; }
+  .scan-progress .spinner { width: 36px; height: 36px; border: 3px solid var(--erp-border); border-top-color: var(--erp-accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .scan-results { margin-top: 12px; }
+  .scan-results .result-group { margin-bottom: 12px; }
+  .scan-results label { font-size: 11px; color: var(--erp-muted); font-weight: 600; text-transform: uppercase; display: block; margin-bottom: 2px; }
+  .scan-results .result-value { font-size: 14px; color: var(--erp-text); padding: 6px 10px; background: var(--erp-bg); border-radius: 6px; border: 1px solid var(--erp-border); }
+  .scan-results .match-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; margin-left: 6px; }
+  .scan-results .match-high { background: #dcfce7; color: #166534; }
+  .scan-results .match-medium { background: #fef3c7; color: #92400e; }
+  .scan-results .match-none { background: #fef2f2; color: #991b1b; }
+  .scan-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px; color: #991b1b; font-size: 13px; margin-bottom: 12px; }
+  .ocr-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: 600; background: #dcfce7; color: #166534; margin-left: 4px; vertical-align: middle; }
+
+  @media(max-width: 768px) { .coll-main { padding: 76px 12px calc(96px + env(safe-area-inset-bottom, 0px)); } .form-row { flex-direction: column; } .csi-card-meta { flex-direction: column; gap: 4px; } .scan-modal { max-width: 100%; padding: 16px; } }
 `;
+
+// ── ScanCRModal — OCR scan → auto-fill hospital, CR details, CSI matches ──
+function ScanCRModal({ open, onClose, onApply, hospitals }) {
+  const [step, setStep] = useState('capture');
+  const [preview, setPreview] = useState(null);
+  const [ocrData, setOcrData] = useState(null);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [matchedHosp, setMatchedHosp] = useState(null);
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
+
+  const reset = () => { setStep('capture'); setPreview(null); setOcrData(null); setErrorMsg(''); setMatchedHosp(null); setReviewConfirmed(false); };
+  const handleClose = () => { reset(); onClose(); };
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    setPreview(URL.createObjectURL(file));
+    setStep('scanning');
+    try {
+      const exif = await extractExifDateTime(file);
+      const result = await processDocument(file, 'CR', exif);
+      setOcrData(result);
+      // Fuzzy match hospital
+      const hospName = fieldVal(result?.extracted?.hospital);
+      if (hospName && hospitals?.length) {
+        setMatchedHosp(matchHospital(hospName, hospitals));
+      }
+      setStep('results');
+    } catch (err) {
+      setErrorMsg(err?.response?.data?.message || err.message || 'OCR processing failed');
+      setStep('error');
+    }
+  };
+
+  const handleApply = () => {
+    const e = ocrData?.extracted;
+    if (!e) return;
+    onApply({
+      hospital_id: matchedHosp?.hospital?._id || '',
+      hospital_name: matchedHosp?.hospital?.hospital_name || '',
+      cr_no: fieldVal(e.cr_no),
+      cr_date: parseCrDate(fieldVal(e.date)),
+      cr_amount: fieldVal(e.amount),
+      payment_mode: fieldVal(e.payment_mode) || 'CHECK',
+      check_no: fieldVal(e.check_no),
+      bank: fieldVal(e.bank),
+      settled_csis: (e.settled_csis || []).map(sc => ({
+        csi_no: fieldVal(sc.csi_no),
+        amount: parseFloat(fieldVal(sc.amount)) || 0
+      })),
+      s3_url: ocrData?.s3_url || '',
+      attachment_id: ocrData?.attachment_id || null
+    });
+    handleClose();
+  };
+
+  if (!open) return null;
+
+  const extracted = ocrData?.extracted;
+  const reviewReasons = [
+    ...(ocrData?.review_reasons || []),
+    ...(!matchedHosp && extracted?.hospital ? ['UNMATCHED_HOSPITAL'] : []),
+  ].filter((r, i, arr) => arr.indexOf(r) === i);
+  const requiresReviewAck = Boolean(ocrData?.review_required || reviewReasons.length > 0);
+  const canApply = !requiresReviewAck || reviewConfirmed;
+
+  return (
+    <div className="scan-modal-overlay" onClick={handleClose}>
+      <div className="scan-modal" onClick={e => e.stopPropagation()}>
+        <button className="close-btn" onClick={handleClose}>&times;</button>
+        <h2>Scan Collection Receipt</h2>
+
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+          onChange={e => handleFile(e.target.files?.[0])} />
+        <input ref={galleryRef} type="file" accept="image/*" style={{ display: 'none' }}
+          onChange={e => handleFile(e.target.files?.[0])} />
+
+        {step === 'capture' && (
+          <div>
+            <p style={{ fontSize: 13, color: 'var(--erp-muted)', marginBottom: 12 }}>
+              Take a photo of a Collection Receipt (CR) or upload from gallery. OCR will extract hospital, CR details, and settled CSIs to auto-fill the form.
+            </p>
+            <div className="scan-capture-btns">
+              <button className="btn btn-primary" onClick={() => cameraRef.current?.click()}>Take Photo</button>
+              <button className="btn btn-outline" onClick={() => galleryRef.current?.click()}>Gallery</button>
+            </div>
+          </div>
+        )}
+
+        {step === 'scanning' && (
+          <div>
+            {preview && <img src={preview} alt="CR preview" className="scan-preview" />}
+            <div className="scan-progress">
+              <div className="spinner" />
+              <div style={{ fontSize: 13, color: 'var(--erp-muted)' }}>Processing CR with OCR...</div>
+            </div>
+          </div>
+        )}
+
+        {step === 'error' && (
+          <div>
+            {preview && <img src={preview} alt="CR preview" className="scan-preview" />}
+            <div className="scan-error">{errorMsg}</div>
+            <div className="scan-capture-btns">
+              <button className="btn btn-primary" onClick={() => { reset(); cameraRef.current?.click(); }}>Re-scan</button>
+              <button className="btn btn-outline" onClick={() => { reset(); galleryRef.current?.click(); }}>Gallery</button>
+              <button className="btn btn-outline" onClick={handleClose}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {step === 'results' && extracted && (
+          <div>
+            {preview && <img src={preview} alt="CR preview" className="scan-preview" />}
+            <div className="scan-results">
+              {/* Hospital */}
+              <div className="result-group">
+                <label>Hospital / Received From</label>
+                <div className="result-value">
+                  {fieldVal(extracted.hospital) || '(not detected)'}
+                  {matchedHosp ? (
+                    <span className={`match-badge match-${matchedHosp.confidence.toLowerCase()}`}>
+                      {matchedHosp.confidence} — {matchedHosp.hospital.hospital_name}
+                    </span>
+                  ) : extracted.hospital ? (
+                    <span className="match-badge match-none">NO MATCH</span>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* CR Details */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div className="result-group">
+                  <label>CR Number</label>
+                  <div className="result-value">
+                    {fieldVal(extracted.cr_no) || '—'}
+                    {fieldConfidence(extracted.cr_no) && <span className={`match-badge match-${fieldConfidence(extracted.cr_no).toLowerCase()}`}>{fieldConfidence(extracted.cr_no)}</span>}
+                  </div>
+                </div>
+                <div className="result-group">
+                  <label>Date</label>
+                  <div className="result-value">
+                    {fieldVal(extracted.date) || '—'}
+                    {fieldConfidence(extracted.date) && <span className={`match-badge match-${fieldConfidence(extracted.date).toLowerCase()}`}>{fieldConfidence(extracted.date)}</span>}
+                  </div>
+                </div>
+                <div className="result-group">
+                  <label>Amount</label>
+                  <div className="result-value">
+                    {fieldVal(extracted.amount) ? `P${Number(fieldVal(extracted.amount)).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
+                  </div>
+                </div>
+                <div className="result-group">
+                  <label>Payment Mode</label>
+                  <div className="result-value">{fieldVal(extracted.payment_mode) || '—'}</div>
+                </div>
+              </div>
+
+              {/* Check details (if CHECK) */}
+              {fieldVal(extracted.payment_mode) === 'CHECK' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4 }}>
+                  <div className="result-group">
+                    <label>Check No.</label>
+                    <div className="result-value">{fieldVal(extracted.check_no) || '—'}</div>
+                  </div>
+                  <div className="result-group">
+                    <label>Bank</label>
+                    <div className="result-value">{fieldVal(extracted.bank) || '—'}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Settled CSIs */}
+              {(extracted.settled_csis || []).length > 0 && (
+                <div className="result-group" style={{ marginTop: 8 }}>
+                  <label>Settled CSIs ({extracted.settled_csis.length})</label>
+                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', marginTop: 4 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--erp-bg)' }}>
+                        <th style={{ padding: '4px 8px', textAlign: 'left' }}>CSI #</th>
+                        <th style={{ padding: '4px 8px', textAlign: 'right' }}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {extracted.settled_csis.map((sc, i) => (
+                        <tr key={i} style={{ borderTop: '1px solid var(--erp-border)' }}>
+                          <td style={{ padding: '3px 8px' }}>{fieldVal(sc.csi_no) || '—'}</td>
+                          <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fieldVal(sc.amount) ? `P${Number(fieldVal(sc.amount)).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Validation flags */}
+              {(ocrData?.validation_flags || []).length > 0 && (
+                <div className="scan-error" style={{ marginTop: 12 }}>
+                  {ocrData.validation_flags.map((f, i) => <div key={i}>{f}</div>)}
+                </div>
+              )}
+
+              {/* Review reasons */}
+              {reviewReasons.length > 0 && (
+                <div className="scan-error" style={{ marginTop: 12, background: '#fff7ed', color: '#9a3412', border: '1px solid #fdba74' }}>
+                  {reviewReasons.map((r, i) => <div key={i}>{formatReviewReason(r)}</div>)}
+                </div>
+              )}
+
+              {requiresReviewAck && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 12, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={reviewConfirmed} onChange={e => setReviewConfirmed(e.target.checked)} />
+                  <span>I reviewed the flagged fields and still want to apply this scan.</span>
+                </label>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                <button className="btn btn-primary" onClick={handleApply} disabled={!canApply}>
+                  Apply to Form
+                </button>
+                <button className="btn btn-outline" onClick={() => { reset(); cameraRef.current?.click(); }}>Re-scan</button>
+                <button className="btn btn-outline" onClick={handleClose}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function CollectionSession() {
   const { user } = useAuth();
@@ -78,9 +333,9 @@ export default function CollectionSession() {
   const [crDate, setCrDate] = useState(new Date().toISOString().split('T')[0]);
   const [crAmount, setCrAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('CHECK');
-  const [checkNo] = useState('');
-  const [checkDate] = useState('');
-  const [bank] = useState('');
+  const [checkNo, setCheckNo] = useState('');
+  const [checkDate, setCheckDate] = useState('');
+  const [bank, setBank] = useState('');
   const [bankAccountId, setBankAccountId] = useState('');
   const [bankAccountsList, setBankAccountsList] = useState([]);
   const [pettyCashFundId, setPettyCashFundId] = useState('');
@@ -99,6 +354,11 @@ export default function CollectionSession() {
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const [pendingUploadType, setPendingUploadType] = useState('');
+
+  // OCR scan state
+  const [scanCrOpen, setScanCrOpen] = useState(false);
+  const [ocrFilledFields, setOcrFilledFields] = useState(new Set());
+  const pendingCsiMatch = useRef(null);
 
   // CRM Doctor list for partner tags (filtered by BDMs who own the open CSIs)
   const [crmDoctors, setCrmDoctors] = useState([]);
@@ -234,6 +494,30 @@ export default function CollectionSession() {
     }).catch(err => console.error('[CollectionSession]', err.message));
   }, [hospitalId, customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Deferred CSI auto-selection after OCR scan (open CSIs load async after hospital change)
+  useEffect(() => {
+    if (!pendingCsiMatch.current || !openCsis.length) return;
+    const extracted = pendingCsiMatch.current;
+    pendingCsiMatch.current = null;
+
+    const matches = matchCsis(extracted, openCsis);
+    const newSelected = new Map();
+    for (const m of matches) {
+      if (!m.matched) continue;
+      const csi = m.matched;
+      const invoiceAmt = csi.balance_due || 0;
+      const netVat = csi.total_net_of_vat > 0
+        ? csi.total_net_of_vat
+        : Math.round(invoiceAmt / (1 + (settings?.VAT_RATE || 0.12)) * 100) / 100;
+      newSelected.set(csi._id, {
+        sales_line_id: csi._id, doc_ref: csi.doc_ref, csi_date: csi.csi_date,
+        invoice_amount: invoiceAmt, net_of_vat: netVat,
+        source: csi.source, commission_rate: 0.03, partner_tags: []
+      });
+    }
+    if (newSelected.size > 0) setSelectedCsis(newSelected);
+  }, [openCsis, settings]);
+
   const toggleCsi = (csi) => {
     setSelectedCsis(prev => {
       const next = new Map(prev);
@@ -305,6 +589,40 @@ export default function CollectionSession() {
   const computedCwt = cwtNa ? 0 : totalCsiAmount * (parseFloat(cwtRate) || 0);
   const expectedCr = totalCsiAmount - computedCwt;
 
+  // CR scan → auto-fill handler
+  const handleCrScanApply = useCallback((data) => {
+    const filled = new Set();
+
+    // Auto-select hospital
+    if (data.hospital_id) {
+      setHospitalId(data.hospital_id);
+      setCustomerId('');
+      filled.add('hospital');
+    }
+
+    // Auto-fill CR details
+    if (data.cr_no) { setCrNo(data.cr_no); filled.add('crNo'); }
+    if (data.cr_date) { setCrDate(data.cr_date); filled.add('crDate'); }
+    if (data.cr_amount) { setCrAmount(String(data.cr_amount)); filled.add('crAmount'); }
+    if (data.payment_mode) { setPaymentMode(data.payment_mode); filled.add('paymentMode'); }
+    if (data.check_no) { setCheckNo(data.check_no); filled.add('checkNo'); }
+    if (data.bank) { setBank(data.bank); filled.add('bank'); }
+
+    // Store CR photo (scan doubles as upload)
+    if (data.s3_url) {
+      setCrPhotoUrl(data.s3_url);
+      filled.add('crPhoto');
+    }
+    if (data.attachment_id) setAttachmentIds(prev => [...prev, data.attachment_id]);
+
+    // Stash extracted CSIs for deferred matching (open CSIs load async after hospital change)
+    if (data.settled_csis?.length) {
+      pendingCsiMatch.current = data.settled_csis;
+    }
+
+    setOcrFilledFields(filled);
+  }, []);
+
   // Upload handler — uploads file via OCR endpoint which stores to S3 and returns s3_url
   const handleUpload = async (file, uploadType) => {
     if (!file) return;
@@ -316,8 +634,28 @@ export default function CollectionSession() {
       const url = result?.s3_url;
       if (!url) throw new Error('No URL returned');
 
-      if (uploadType === 'cr_photo') setCrPhotoUrl(url);
-      else if (uploadType === 'cwt_cert') setCwtCertUrl(url);
+      if (uploadType === 'cr_photo') {
+        setCrPhotoUrl(url);
+        // If CR details are empty, auto-fill from OCR extraction
+        if (!crNo && !hospitalId && result?.extracted) {
+          const e = result.extracted;
+          handleCrScanApply({
+            hospital_id: matchHospital(fieldVal(e.hospital), hospitals)?.hospital?._id || '',
+            cr_no: fieldVal(e.cr_no),
+            cr_date: parseCrDate(fieldVal(e.date)),
+            cr_amount: fieldVal(e.amount),
+            payment_mode: fieldVal(e.payment_mode) || 'CHECK',
+            check_no: fieldVal(e.check_no),
+            bank: fieldVal(e.bank),
+            settled_csis: (e.settled_csis || []).map(sc => ({
+              csi_no: fieldVal(sc.csi_no),
+              amount: parseFloat(fieldVal(sc.amount)) || 0
+            })),
+            s3_url: '', // already set above
+            attachment_id: null
+          });
+        }
+      } else if (uploadType === 'cwt_cert') setCwtCertUrl(url);
       else if (uploadType === 'deposit_slip') setDepositSlipUrl(url);
       else if (uploadType === 'csi_photo') setCsiPhotoUrls(prev => [...prev, url]);
 
@@ -387,7 +725,10 @@ export default function CollectionSession() {
           <WorkflowGuide pageKey="collection-session" />
           <div className="coll-header">
             <h1>New Collection Receipt</h1>
-            <button className="btn btn-outline" onClick={() => navigate('/erp/collections')}>Back to List</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary" onClick={() => setScanCrOpen(true)}>Scan CR to Auto-Fill</button>
+              <button className="btn btn-outline" onClick={() => navigate('/erp/collections')}>Back to List</button>
+            </div>
           </div>
 
           {/* Step 1: Hospital */}
@@ -395,7 +736,7 @@ export default function CollectionSession() {
             <h2>1. Select Hospital</h2>
             <div className="form-row">
               <div className="form-group" style={{ flex: 2 }}>
-                <label>Hospital / Customer (one CR per account)</label>
+                <label>Hospital / Customer (one CR per account) {ocrFilledFields.has('hospital') && <span className="ocr-badge">OCR</span>}</label>
                 <SelectField value={hospitalId || customerId || ''} onChange={e => {
                   const val = e.target.value;
                   const isCustomer = customerList.some(c => c._id === val);
@@ -521,7 +862,7 @@ export default function CollectionSession() {
               <h2>3. CR Details</h2>
               <div className="form-row">
                 <div className="form-group">
-                  <label>CR Number {paymentMode === 'CASH' && !crNo && <span style={{ fontSize: 10, color: 'var(--erp-accent)', cursor: 'pointer', marginLeft: 8 }} onClick={async () => {
+                  <label>CR Number {ocrFilledFields.has('crNo') && <span className="ocr-badge">OCR</span>}{paymentMode === 'CASH' && !crNo && <span style={{ fontSize: 10, color: 'var(--erp-accent)', cursor: 'pointer', marginLeft: 8 }} onClick={async () => {
                     try {
                       const { default: api } = await import('../../services/api');
                       const res = await api.post('/erp/sales', { sale_type: 'CASH_RECEIPT', hospital_id: hospitalId || undefined, customer_id: customerId || undefined, csi_date: crDate, line_items: [] });
@@ -531,11 +872,11 @@ export default function CollectionSession() {
                   <input value={crNo} onChange={e => setCrNo(e.target.value)} placeholder={paymentMode === 'CASH' ? 'Click auto-generate or enter manually' : 'e.g. 002905'} />
                 </div>
                 <div className="form-group">
-                  <label>CR Date</label>
+                  <label>CR Date {ocrFilledFields.has('crDate') && <span className="ocr-badge">OCR</span>}</label>
                   <input type="date" value={crDate} onChange={e => setCrDate(e.target.value)} />
                 </div>
                 <div className="form-group">
-                  <label>CR Amount</label>
+                  <label>CR Amount {ocrFilledFields.has('crAmount') && <span className="ocr-badge">OCR</span>}</label>
                   <input type="number" step="0.01" value={crAmount} onChange={e => setCrAmount(e.target.value)} placeholder={expectedCr.toFixed(2)} />
                 </div>
               </div>
@@ -566,6 +907,24 @@ export default function CollectionSession() {
                   </SelectField>
                 </div>
               </div>
+
+              {/* CHECK details */}
+              {paymentMode === 'CHECK' && (
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Check Number {ocrFilledFields.has('checkNo') && <span className="ocr-badge">OCR</span>}</label>
+                    <input value={checkNo} onChange={e => setCheckNo(e.target.value)} placeholder="e.g. 1200041947" />
+                  </div>
+                  <div className="form-group">
+                    <label>Check Date</label>
+                    <input type="date" value={checkDate} onChange={e => setCheckDate(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>Bank {ocrFilledFields.has('bank') && <span className="ocr-badge">OCR</span>}</label>
+                    <input value={bank} onChange={e => setBank(e.target.value)} placeholder="e.g. RCBC" />
+                  </div>
+                </div>
+              )}
 
               {/* CWT */}
               <div className="form-row">
@@ -704,6 +1063,14 @@ export default function CollectionSession() {
               </button>
             </div>
           )}
+
+          {/* ScanCRModal */}
+          <ScanCRModal
+            open={scanCrOpen}
+            onClose={() => setScanCrOpen(false)}
+            onApply={handleCrScanApply}
+            hospitals={hospitals}
+          />
         </main>
       </div>
     </div>

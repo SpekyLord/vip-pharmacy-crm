@@ -29,6 +29,7 @@ export default function useExpenses() {
   const validateCarLogbook = () => api.post('/expenses/car-logbook/validate', {});
   const submitCarLogbook = () => api.post('/expenses/car-logbook/submit', {});
   const reopenCarLogbook = (ids) => api.post('/expenses/car-logbook/reopen', { logbook_ids: ids });
+  const getSmerDestinationByDate = (date) => api.get(`/expenses/car-logbook/smer-destination/${date}`);
 
   // ═══ ORE / ACCESS ═══
   const getExpenseList = (params) => api.get('/expenses/ore-access', { params });
@@ -71,7 +72,7 @@ export default function useExpenses() {
     getSmerCrmMdCounts, getSmerCrmVisitDetail, overridePerdiemDay, applyPerdiemOverride,
     // Car Logbook
     getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
-    validateCarLogbook, submitCarLogbook, reopenCarLogbook,
+    validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDestinationByDate,
     // ORE/ACCESS
     getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense,
     validateExpenses, submitExpenses, reopenExpenses,

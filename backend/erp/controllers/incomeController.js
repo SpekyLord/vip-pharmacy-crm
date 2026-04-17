@@ -514,6 +514,10 @@ const postPnl = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: `Cannot post from status ${report.status}` });
   }
 
+  // Period lock check
+  const { checkPeriodOpen } = require('../utils/periodLock');
+  if (report.period) await checkPeriodOpen(req.entityId, report.period);
+
   // Authority matrix gate
   const { gateApproval } = require('../services/approvalService');
   const gated = await gateApproval({

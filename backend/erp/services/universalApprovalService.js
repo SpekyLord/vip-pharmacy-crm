@@ -308,6 +308,7 @@ const MODULE_QUERIES = [
           invoice_total: item.invoice_total,
           total_vat: item.total_vat,
           total_net_of_vat: item.total_net_of_vat,
+          csi_photo_url: item.csi_photo_url,
           _warehouse_id: item.warehouse_id,
           _bdm_id: item.bdm_id?._id || item.bdm_id,
           line_items: (item.line_items || []).map(li => ({

@@ -13,6 +13,7 @@ const ProductMaster = require('../models/ProductMaster');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { buildStockSnapshot } = require('../services/fifoEngine');
 const { createAndPostJournal } = require('../services/journalEngine');
+const { getCoaMap } = require('../services/autoJournal');
 
 // ═══════════════════════════════════════════════════════════
 // CRUD
@@ -193,6 +194,13 @@ const submitCreditNotes = catchAsync(async (req, res) => {
   }, res);
   if (gated) return;
 
+  // Period lock check
+  const { checkPeriodOpen } = require('../utils/periodLock');
+  const { dateToPeriod } = require('../utils/periodLock');
+  for (const cn of validRows) {
+    await checkPeriodOpen(cn.entity_id, dateToPeriod(cn.cn_date || new Date()));
+  }
+
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -230,21 +238,26 @@ const submitCreditNotes = catchAsync(async (req, res) => {
         }
       }
 
-      // 3. Create reversal journal (Debit: Sales Returns, Credit: AR)
+      // 3. Create reversal journal (Debit: Sales Revenue contra, Credit: AR Trade)
       try {
-        const journalData = {
-          entity_id: cn.entity_id,
-          journal_date: cn.cn_date,
+        const coa = await getCoaMap();
+        const cnPeriod = dateToPeriod(cn.cn_date || new Date());
+        const jeData = {
+          je_date: cn.cn_date,
+          period: cnPeriod,
           description: `Credit Note ${cn.cn_number}`,
-          source_ref: cn._id.toString(),
-          source_model: 'CreditNote',
+          source_module: 'CREDIT_NOTE',
+          source_event_id: event[0]._id,
+          source_doc_ref: cn.cn_number || cn._id.toString(),
           lines: [
-            { coa_code: '4200', description: `Sales Returns — CN ${cn.cn_number}`, debit: cn.credit_total, credit: 0 },
-            { coa_code: '1200', description: `AR reduction — CN ${cn.cn_number}`, debit: 0, credit: cn.credit_total }
+            { account_code: coa.SALES_REVENUE || '4000', account_name: 'Sales Returns', debit: cn.credit_total, credit: 0, description: `CN ${cn.cn_number}` },
+            { account_code: coa.AR_TRADE || '1100', account_name: 'AR Trade', debit: 0, credit: cn.credit_total, description: `CN ${cn.cn_number}` }
           ],
+          bir_flag: 'BOTH',
+          vat_flag: 'N/A',
           created_by: req.user._id
         };
-        await createAndPostJournal(journalData);
+        await createAndPostJournal(cn.entity_id, jeData, { session });
       } catch (jeErr) {
         console.error(`[CreditNote] Journal failed for ${cn.cn_number}:`, jeErr.message);
       }

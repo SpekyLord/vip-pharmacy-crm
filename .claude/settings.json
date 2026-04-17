@@ -60,11 +60,20 @@
       "Bash(grep \"approve_\" \"c:\\\\\\\\Users\\\\\\\\LENOVO\\\\\\\\OneDrive\\\\\\\\Documents\\\\\\\\VIP and VS CODE\\\\\\\\VIP IP\\\\\\\\VIP CRM ERP\\\\\\\\vip-pharmacy-crm\\\\\\\\backend\\\\\\\\erp\\\\\\\\controllers\\\\\\\\lookupGenericController.js\")",
       "Bash(grep \"': 'approve_\" \"c:\\\\\\\\Users\\\\\\\\LENOVO\\\\\\\\OneDrive\\\\\\\\Documents\\\\\\\\VIP and VS CODE\\\\\\\\VIP IP\\\\\\\\VIP CRM ERP\\\\\\\\vip-pharmacy-crm\\\\\\\\backend\\\\\\\\erp\\\\\\\\services\\\\\\\\universalApprovalService.js\")",
       "Bash(grep \"'approve_\" \"c:\\\\\\\\Users\\\\\\\\LENOVO\\\\\\\\OneDrive\\\\\\\\Documents\\\\\\\\VIP and VS CODE\\\\\\\\VIP IP\\\\\\\\VIP CRM ERP\\\\\\\\vip-pharmacy-crm\\\\\\\\backend\\\\\\\\erp\\\\\\\\services\\\\\\\\universalApprovalService.js\")",
-      "Bash(awk '/^const MODULE_TO_SUB_KEY/,/^}/' \"c:\\\\\\\\Users\\\\\\\\LENOVO\\\\\\\\OneDrive\\\\\\\\Documents\\\\\\\\VIP and VS CODE\\\\\\\\VIP IP\\\\\\\\VIP CRM ERP\\\\\\\\vip-pharmacy-crm\\\\\\\\backend\\\\\\\\erp\\\\\\\\services\\\\\\\\universalApprovalService.js\")"
+      "Bash(awk '/^const MODULE_TO_SUB_KEY/,/^}/' \"c:\\\\\\\\Users\\\\\\\\LENOVO\\\\\\\\OneDrive\\\\\\\\Documents\\\\\\\\VIP and VS CODE\\\\\\\\VIP IP\\\\\\\\VIP CRM ERP\\\\\\\\vip-pharmacy-crm\\\\\\\\backend\\\\\\\\erp\\\\\\\\services\\\\\\\\universalApprovalService.js\")",
+      "Bash(sed -n '19,20p' \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend/erp/routes/expenseRoutes.js\")",
+      "Bash(sed -n '62,71p' \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend/erp/routes/expenseRoutes.js\")",
+      "Bash(sed -n '334,350p' \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/frontend/src/erp/pages/CarLogbook.jsx\")",
+      "Bash(sed -n '370,378p' \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/frontend/src/erp/pages/CarLogbook.jsx\")",
+      "Bash(grep -E \"\\\\.\\(jsx|js\\)$\")",
+      "Bash(npx -y acorn --ecma2020 --module --allow-import-export-everywhere frontend/src/erp/utils/ocrMatching.js)",
+      "Bash(npx -y acorn --ecma2022 --module --allow-import-export-everywhere frontend/src/erp/pages/SalesEntry.jsx)",
+      "Bash(npx -y acorn --ecma2022 --module --allow-import-export-everywhere frontend/src/erp/pages/CollectionSession.jsx)"
     ],
     "additionalDirectories": [
       "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp",
-      "C:\\Users\\LENOVO\\.claude"
+      "C:\\Users\\LENOVO\\.claude",
+      "\\tmp"
     ]
   }
 }

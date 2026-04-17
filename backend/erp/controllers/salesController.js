@@ -220,6 +220,13 @@ const postSaleRow = async (row, userId, opts = {}) => {
       }
     } catch (jeErr) {
       console.error('Auto-journal failed for sale:', row.doc_ref || row._id, jeErr.message);
+      ErpAuditLog.logChange({
+        entity_id: row.entity_id, log_type: 'LEDGER_ERROR',
+        target_ref: row.doc_ref || row._id?.toString(), target_model: 'JournalEntry',
+        field_changed: 'auto_journal', new_value: jeErr.message,
+        changed_by: row.posted_by,
+        note: `Auto-journal failed for sale ${row.doc_ref || row._id} (approval hub)`
+      }).catch(() => {});
     }
 
     return { eventId };
@@ -812,6 +819,13 @@ const submitSales = catchAsync(async (req, res) => {
         }
       } catch (jeErr) {
         console.error('Auto-journal failed for sale:', row.doc_ref || row._id, jeErr.message);
+        ErpAuditLog.logChange({
+          entity_id: row.entity_id, log_type: 'LEDGER_ERROR',
+          target_ref: row.doc_ref || row._id?.toString(), target_model: 'JournalEntry',
+          field_changed: 'auto_journal', new_value: jeErr.message,
+          changed_by: req.user._id,
+          note: `Auto-journal failed for sale ${row.doc_ref || row._id}`
+        }).catch(() => {});
       }
     }
 
@@ -857,18 +871,32 @@ const reopenSales = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No POSTED rows found to reopen' });
   }
 
-  // Save event_ids BEFORE the transaction clears them (needed for JE reversal after)
-  const rowEventMap = rows.map(r => ({ _id: r._id, event_id: r.event_id, entity_id: r.entity_id, bdm_id: r.bdm_id, doc_ref: r.doc_ref }));
+  const reopened = [];
+  const failed = [];
 
-  let reopenedCount = 0;
-  const session = await mongoose.startSession();
+  for (const row of rows) {
+    // Step 1: Reverse JEs FIRST — if fails, skip this row (keep POSTED, ledger stays balanced)
+    if (row.event_id) {
+      try {
+        const jes = await JournalEntry.find({
+          source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
+        });
+        for (const je of jes) {
+          await reverseJournal(je._id, 'Auto-reversal: SalesLine reopen', req.user._id);
+        }
+      } catch (jeErr) {
+        console.error('JE reversal failed for sale reopen:', row._id, jeErr.message);
+        failed.push({ _id: row._id, doc_ref: row.doc_ref, error: `Journal reversal failed: ${jeErr.message}` });
+        continue; // Do NOT mark as DRAFT — ledger would be unbalanced
+      }
+    }
 
-  try {
-    await session.withTransaction(async () => {
-      for (const row of rows) {
+    // Step 2: JE reversed successfully — now do inventory/status reversal in a transaction
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
         // Create reversal InventoryLedger entries
         const originalEntries = await InventoryLedger.find({ event_id: row.event_id }).session(session);
-
         for (const entry of originalEntries) {
           await InventoryLedger.create([{
             entity_id: entry.entity_id,
@@ -878,8 +906,8 @@ const reopenSales = catchAsync(async (req, res) => {
             batch_lot_no: entry.batch_lot_no,
             expiry_date: entry.expiry_date,
             transaction_type: 'ADJUSTMENT',
-            qty_in: entry.qty_out,  // Reverse: what went out comes back in
-            qty_out: entry.qty_in,  // Reverse: what came in goes out
+            qty_in: entry.qty_out,
+            qty_out: entry.qty_in,
             event_id: row.event_id,
             recorded_by: req.user._id
           }], { session });
@@ -893,7 +921,6 @@ const reopenSales = catchAsync(async (req, res) => {
             product_id: item.product_id,
             'conversions.sales_line_id': row._id
           }).session(session);
-
           if (consignment) {
             consignment.conversions = consignment.conversions.filter(
               c => !c.sales_line_id || c.sales_line_id.toString() !== row._id.toString()
@@ -939,41 +966,31 @@ const reopenSales = catchAsync(async (req, res) => {
         row.event_id = undefined;
         row.validation_errors = [];
         await row.save({ session });
-
-        reopenedCount++;
-      }
-    });
-
-    // Reverse journal entries outside transaction using saved event_ids
-    for (const item of rowEventMap) {
-      if (item.event_id) {
-        try {
-          const jes = await JournalEntry.find({
-            source_event_id: item.event_id, status: 'POSTED', is_reversal: { $ne: true }
-          });
-          for (const je of jes) {
-            await reverseJournal(je._id, 'Auto-reversal: SalesLine reopen', req.user._id);
-          }
-        } catch (jeErr) {
-          console.error('JE reversal failed for sale reopen:', item._id, jeErr.message);
-        }
-      }
-
-      await ErpAuditLog.logChange({
-        entity_id: item.entity_id,
-        bdm_id: item.bdm_id,
-        log_type: 'REOPEN',
-        target_ref: item._id.toString(),
-        target_model: 'SalesLine',
-        changed_by: req.user._id,
-        note: `Reopened CSI ${item.doc_ref || ''}`
       });
+
+      reopened.push(row._id);
+      await ErpAuditLog.logChange({
+        entity_id: row.entity_id, bdm_id: row.bdm_id,
+        log_type: 'REOPEN', target_ref: row._id.toString(),
+        target_model: 'SalesLine', changed_by: req.user._id,
+        note: `Reopened CSI ${row.doc_ref || ''}`
+      });
+    } catch (txErr) {
+      console.error('Reopen transaction failed for sale:', row._id, txErr.message);
+      failed.push({ _id: row._id, doc_ref: row.doc_ref, error: `Transaction failed: ${txErr.message}` });
+    } finally {
+      session.endSession();
     }
+  }
 
-    res.json({ success: true, reopened_count: reopenedCount });
+  if (failed.length && !reopened.length) {
+    return res.status(500).json({ success: false, message: 'All sale reopens failed', failed });
+  }
+  res.json({ success: true, message: `Reopened ${reopened.length} sale(s)${failed.length ? `, ${failed.length} failed` : ''}`, reopened, failed });
 
-    // Non-blocking: notify management of reopened sales
-    const reopenedRefs = sales.map(s => s.doc_ref).filter(Boolean).join(', ');
+  // Non-blocking: notify management of reopened sales
+  if (reopened.length) {
+    const reopenedRefs = rows.filter(r => reopened.includes(r._id)).map(r => r.doc_ref).filter(Boolean).join(', ');
     notifyDocumentReopened({
       entityId: req.entityId,
       module: 'Sales',
@@ -982,8 +999,6 @@ const reopenSales = catchAsync(async (req, res) => {
       reopenedBy: req.user.name || req.user.email,
       reason: req.body.reason,
     }).catch(err => console.error('Sales reopen notification failed:', err.message));
-  } finally {
-    await session.endSession();
   }
 });
 

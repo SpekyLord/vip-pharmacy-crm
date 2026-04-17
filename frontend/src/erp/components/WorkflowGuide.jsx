@@ -194,12 +194,13 @@ const WORKFLOW_GUIDES = {
   'smer': {
     title: 'SMER (Sales/Marketing Expense Report)',
     steps: [
-      'Select the period/cycle and your name',
+      'Select the period/cycle — SMER is submitted once per cycle (C1: 1st-15th, C2: 16th-end of month)',
+      'Click "Pull from CRM" to auto-fill MD counts and areas visited from your logged visits',
       'Fill in each day\'s activity type (Office/Field/Other/NO_WORK)',
-      'Select "NO_WORK" for days the BDM did not work — per diem is automatically zero, MD count is disabled',
-      'System auto-computes Per Diem based on MD count and your per-person thresholds',
+      'Per Diem too low? Click the [+] button to request an override — you can do this anytime while the SMER is still DRAFT, no need to wait for submit',
+      'Select "NO_WORK" for days you did not work — per diem is automatically zero, no overrides allowed',
       'Transport, ORE, and other cash expenses → enter in Expenses (ORE) for mobile-friendly input. These flow into your income automatically.',
-      'Validate and Post to generate per diem journal entries',
+      'When all days are filled → Save → Validate → Submit to post per diem journal entries',
     ],
     next: [
       { label: 'Record Car Logbook', path: '/erp/car-logbook' },
@@ -207,17 +208,18 @@ const WORKFLOW_GUIDES = {
       { label: 'View Reports', path: '/erp/reports' },
       { label: 'People (CompProfile)', path: '/erp/people' },
     ],
-    tip: 'Per diem thresholds are per-person (CompProfile). Full=0 + Half=0 means always FULL per diem for all activities. Full=8 + Half=3 means MD count from CRM drives the tier. Use the "+" button beside per diem to request an override — BDMs submit requests that go to the Approval Hub for admin/president approval. Once approved, the override applies automatically. Rejected requests can be retried. Travel advance auto-populates from CompProfile revolving fund (or global default). "NO_WORK" days do NOT count as working days and cannot have overrides.',
+    tip: 'SMER is submitted per cycle (every ~15 days), not daily. You can save your SMER as DRAFT and update it daily — submit when the cycle ends. Per diem override: click [+] beside any day to request FULL or HALF tier with a reason. Overrides go to the Approval Hub immediately (even while SMER is DRAFT). Once approved, the override applies automatically. Per diem thresholds are per-person (CompProfile). "NO_WORK" days do NOT count as working days and cannot have overrides.',
   },
   'car-logbook': {
     title: 'Car Logbook',
     steps: [
-      'Enter the date and your vehicle details',
-      'Scan odometer photo using OCR for accurate reading',
-      'Add fuel entries: station, fuel type, liters, cost',
-      'Check CALF indicators — non-cash fuel entries show pending/linked CALF status per entry',
-      'System computes mileage and fuel efficiency automatically',
-      'Validate and Post — journal posts to FUEL_GAS COA code (configurable in Settings)',
+      'Select period and cycle — all days (including weekends) are shown in a grid',
+      'Fill in Start KM and End KM for each day — use [S] and [E] buttons to scan odometer photos via OCR',
+      'Destination is auto-filled from your SMER entry for that date — you can edit it manually',
+      'Click the Fuel cell to expand and add fuel entries: station, liters, ₱/L, payment mode',
+      'Use "Scan Receipt" to OCR gas receipts — station, liters, and price are auto-extracted',
+      'Non-cash fuel entries require CALF — create in PRF/CALF before submitting',
+      'Rows auto-save when you move to the next row. Validate → Submit to post journal entries.',
     ],
     next: [
       { label: 'Record SMER', path: '/erp/smer' },
@@ -225,7 +227,7 @@ const WORKFLOW_GUIDES = {
       { label: 'PRF / CALF', path: '/erp/prf-calf' },
       { label: 'Fuel Efficiency', path: '/erp/fuel-efficiency' },
     ],
-    tip: 'Non-cash fuel entries (fleet card, GCash, card) show per-entry CALF status: "CALF (N)" = pending, "CALF OK" = all linked. Hover the badge to see which stations need CALF. Posting is blocked until all CALF documents are POSTED.',
+    tip: 'Weekends are included so no odometer days are missed. The * indicator means unsaved changes — rows save automatically on blur. Non-cash fuel entries show CALF status per entry. Posting is blocked until all CALF documents are POSTED. COA code for fuel is configurable in Settings.',
   },
   'prf-calf': {
     title: 'PRF / CALF',

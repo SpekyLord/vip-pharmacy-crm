@@ -1,6 +1,7 @@
 const Lookup = require('../models/Lookup');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { ROLES } = require('../../constants/roles');
+const { invalidateRulesCache } = require('../services/expenseClassifier');
 
 /**
  * Generic Lookup Controller — Phase 24
@@ -10,14 +11,26 @@ const { ROLES } = require('../../constants/roles');
 // Default seed data for each category — mirrors current hardcoded arrays
 const SEED_DEFAULTS = {
   EXPENSE_CATEGORY: [
-    'Transportation',
+    { code: 'TRANSPORTATION', label: 'Transportation', metadata: { coa_code: '6150' } },
     { code: 'TRANSPORT_P2P', label: 'Transport — P2P (Jeepney/Bus/Tricycle)', metadata: { coa_code: '6150', or_optional: true } },
     { code: 'TRANSPORT_SPECIAL', label: 'Transport — Grab/Taxi (Stock Delivery)', metadata: { coa_code: '6160', or_optional: true } },
-    'Travel/Accommodation', 'Fuel & Gas', 'Parking/Toll',
-    'Courier/Shipping', 'ACCESS/Meals', 'Office Supplies',
-    'Utilities/Communication', 'Rent', 'Marketing — HCP/Doctor', 'Marketing — Hospital',
-    'Marketing — Retail', 'Vehicle Maintenance', 'Repairs/Maintenance', 'Professional Fees',
-    'Regulatory/Licensing', 'IT/Software', 'Miscellaneous'
+    { code: 'TRAVEL_ACCOMMODATION', label: 'Travel/Accommodation', metadata: { coa_code: '6155' } },
+    { code: 'FUEL_GAS', label: 'Fuel & Gas', metadata: { coa_code: '6200' } },
+    { code: 'PARKING_TOLL', label: 'Parking/Toll', metadata: { coa_code: '6600' } },
+    { code: 'COURIER_SHIPPING', label: 'Courier/Shipping', metadata: { coa_code: '6500' } },
+    { code: 'ACCESS_MEALS', label: 'ACCESS/Meals', metadata: { coa_code: '6350' } },
+    { code: 'OFFICE_SUPPLIES', label: 'Office Supplies', metadata: { coa_code: '6400' } },
+    { code: 'UTILITIES_COMMUNICATION', label: 'Utilities/Communication', metadata: { coa_code: '6460' } },
+    { code: 'RENT', label: 'Rent', metadata: { coa_code: '6450' } },
+    { code: 'MARKETING_HCP', label: 'Marketing — HCP/Doctor', metadata: { coa_code: '6300' } },
+    { code: 'MARKETING_HOSPITAL', label: 'Marketing — Hospital', metadata: { coa_code: '6300' } },
+    { code: 'MARKETING_RETAIL', label: 'Marketing — Retail', metadata: { coa_code: '6300' } },
+    { code: 'VEHICLE_MAINTENANCE', label: 'Vehicle Maintenance', metadata: { coa_code: '6260' } },
+    { code: 'REPAIRS_MAINTENANCE', label: 'Repairs/Maintenance', metadata: { coa_code: '6260' } },
+    { code: 'PROFESSIONAL_FEES', label: 'Professional Fees', metadata: { coa_code: '6800' } },
+    { code: 'REGULATORY_LICENSING', label: 'Regulatory/Licensing', metadata: { coa_code: '6810' } },
+    { code: 'IT_SOFTWARE', label: 'IT/Software', metadata: { coa_code: '6820' } },
+    { code: 'MISCELLANEOUS', label: 'Miscellaneous', metadata: { coa_code: '6900' } },
   ],
   PERSON_TYPE: ['BDM', 'ECOMMERCE_BDM', 'EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'],
   EMPLOYMENT_TYPE: ['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'CONSULTANT', 'PARTNERSHIP'],
@@ -91,13 +104,13 @@ const SEED_DEFAULTS = {
     { code: 'FUEL', label: 'Fuel & Gas', metadata: { coa_code: '6200', keywords: ['SHELL', 'PETRON', 'CALTEX', 'PHOENIX', 'SEAOIL', 'GASOLINE', 'FUEL', 'DIESEL'] } },
     { code: 'PARKING_TOLL', label: 'Parking & Tolls', metadata: { coa_code: '6600', keywords: ['PARKING', 'TOLL', 'NLEX', 'SLEX', 'TPLEX', 'SKYWAY', 'CAVITEX', 'EXPRESSWAY', 'EASYTRIP', 'EASY TRIP', 'AUTOSWEEP', 'AUTO SWEEP', 'RFID', 'TESY'] } },
     { code: 'TRAVEL_ACCOMMODATION', label: 'Travel & Accommodation', metadata: { coa_code: '6155', keywords: ['HOTEL', 'INN', 'LODGE', 'PENSION', 'AIRBNB', 'ACCOMMODATION', 'RESORT'] } },
-    { code: 'ACCESS_MEALS', label: 'ACCESS Expense', metadata: { coa_code: '6350', keywords: ['RESTAURANT', 'FOOD', 'MEAL', 'CAFE', 'JOLLIBEE', 'MCDONALDS', 'DINE', 'EATERY'] } },
-    { code: 'OFFICE_SUPPLIES', label: 'Office Supplies', metadata: { coa_code: '6400', keywords: ['PRINTING', 'OFFICE', 'SUPPLIES', 'STATIONERY', 'NATIONAL BOOKSTORE'] } },
+    { code: 'ACCESS_MEALS', label: 'ACCESS Expense', metadata: { coa_code: '6350', keywords: ['RESTAURANT', 'FOOD', 'MEAL', 'CAFE', 'JOLLIBEE', 'MCDONALDS', 'DINE', 'EATERY', 'CHOWKING', 'MANG INASAL', 'KFC', 'GREENWICH', 'PIZZA HUT', 'STARBUCKS', 'MAX\'S'] } },
+    { code: 'OFFICE_SUPPLIES', label: 'Office Supplies', metadata: { coa_code: '6400', keywords: ['PRINTING', 'OFFICE', 'SUPPLIES', 'STATIONERY', 'NATIONAL BOOKSTORE', 'LANDERS', 'S&R', 'SNR', 'SM STORE', 'ROBINSONS', 'WILCON', 'HANDYMAN', 'TRUE VALUE', 'ACE HARDWARE', 'MERCURY DRUG', 'WATSONS'] } },
     { code: 'UTILITIES_COMMUNICATION', label: 'Utilities & Communication', metadata: { coa_code: '6460', keywords: ['GLOBE', 'SMART', 'PLDT', 'CONVERGE', 'MERALCO', 'WATER', 'ELECTRIC', 'UTILITY'] } },
     { code: 'TRANSPORTATION', label: 'Transport Expense', metadata: { coa_code: '6150', keywords: ['GRAB', 'TAXI', 'ANGKAS', 'FERRY', 'BOAT'] } },
     { code: 'REGULATORY_LICENSING', label: 'Regulatory & Licensing', metadata: { coa_code: '6810', keywords: ['FDA', 'DOH', 'LGU', 'LICENSE', 'PERMIT', 'REGULATORY', 'REGISTRATION', 'RENEWAL'] } },
     { code: 'IT_SOFTWARE', label: 'IT Hardware & Software', metadata: { coa_code: '6820', keywords: ['SOFTWARE', 'SUBSCRIPTION', 'DOMAIN', 'HOSTING', 'CLOUD', 'APP', 'COMPUTER', 'LAPTOP', 'PRINTER', 'HARDWARE'] } },
-    { code: 'REPAIRS_MAINTENANCE', label: 'Repairs & Maintenance', metadata: { coa_code: '6260', keywords: ['REPAIR', 'MAINTENANCE', 'AIRCON', 'PLUMBING', 'ELECTRICAL', 'FIX'] } },
+    { code: 'REPAIRS_MAINTENANCE', label: 'Repairs & Maintenance', metadata: { coa_code: '6260', keywords: ['REPAIR', 'MAINTENANCE', 'AIRCON', 'PLUMBING', 'ELECTRICAL', 'FIX', 'TOYOTA', 'HONDA', 'MITSUBISHI', 'FORD', 'ISUZU', 'NISSAN', 'HYUNDAI', 'KIA', 'AUTO SHOP', 'VULCANIZING', 'TIRE'] } },
     { code: 'RENT', label: 'Rent Expense', metadata: { coa_code: '6450', keywords: ['RENT', 'LEASE', 'BALAI LAWAAN'] } },
     { code: 'PROFESSIONAL_FEES', label: 'Professional Fees', metadata: { coa_code: '6800', keywords: ['AUDIT', 'TAX', 'LEGAL', 'ATTORNEY', 'LAWYER', 'CPA', 'ACCOUNTANT', 'PHARMACIST', 'NOTARY'] } },
     { code: 'FOOD_COST', label: 'Food Cost', metadata: { coa_code: '5400', keywords: ['GROCERY', 'MARKET', 'INGREDIENT', 'MEAT', 'VEGETABLE', 'FISH', 'SEAFOOD', 'RICE', 'COOKING', 'FOOD SUPPLY'] } },
@@ -569,18 +582,32 @@ exports.getCategories = catchAsync(async (req, res) => {
 });
 
 // Helper: build bulkWrite ops from seed defaults (supports string or {code,label} items)
+// Metadata is always merged ($set) so updated defaults propagate to existing entries.
+// Label/sort_order are only set on insert ($setOnInsert) to preserve user customizations.
 function buildSeedOps(defaults, category, entityId, userId) {
   return defaults.map((item, i) => {
     const isObj = typeof item === 'object';
     const label = isObj ? item.label : item;
     const code = isObj ? item.code.toUpperCase() : label.toUpperCase().replace(/[^A-Z0-9]/g, '_');
-    return {
+    const metadata = isObj ? (item.metadata || {}) : {};
+    const op = {
       updateOne: {
         filter: { entity_id: entityId, category, code },
-        update: { $setOnInsert: { label, sort_order: i * 10, is_active: true, metadata: isObj ? (item.metadata || {}) : {}, created_by: userId } },
+        update: {
+          $setOnInsert: { label, sort_order: i * 10, is_active: true, created_by: userId },
+        },
         upsert: true
       }
     };
+    // Merge metadata fields into existing entries (e.g. coa_code, keywords)
+    // Uses dot notation so only seed keys are set — user-added metadata keys are preserved
+    if (Object.keys(metadata).length > 0) {
+      op.updateOne.update.$set = {};
+      for (const [k, v] of Object.entries(metadata)) {
+        op.updateOne.update.$set[`metadata.${k}`] = v;
+      }
+    }
+    return op;
   });
 }
 
@@ -639,15 +666,17 @@ exports.getBatch = catchAsync(async (req, res) => {
 exports.create = catchAsync(async (req, res) => {
   if (!req.entityId) return res.status(400).json({ success: false, message: 'Entity context required. President must select a working entity first.' });
   const { category, code, label, sort_order, metadata } = req.body;
+  const cat = category.toUpperCase();
   const item = await Lookup.create({
     entity_id: req.entityId,
-    category: category.toUpperCase(),
+    category: cat,
     code: code.toUpperCase(),
     label,
     sort_order: sort_order || 0,
     metadata: metadata || {},
     created_by: req.user._id
   });
+  if (cat === 'OCR_EXPENSE_RULES' || cat === 'EXPENSE_CATEGORY') invalidateRulesCache();
   res.status(201).json({ success: true, data: item });
 });
 
@@ -660,6 +689,7 @@ exports.update = catchAsync(async (req, res) => {
   }
   const item = await Lookup.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true, runValidators: true });
   if (!item) return res.status(404).json({ success: false, message: 'Lookup item not found' });
+  if (item.category === 'OCR_EXPENSE_RULES' || item.category === 'EXPENSE_CATEGORY') invalidateRulesCache();
   res.json({ success: true, data: item });
 });
 
@@ -670,7 +700,7 @@ exports.remove = catchAsync(async (req, res) => {
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
-// Seed defaults for a category (upsert — won't overwrite existing)
+// Seed defaults for a category (upsert — won't overwrite existing; merges metadata)
 exports.seedCategory = catchAsync(async (req, res) => {
   if (!req.entityId) return res.status(400).json({ success: false, message: 'Entity context required. President must select a working entity first.' });
   const category = req.params.category.toUpperCase();
@@ -679,6 +709,8 @@ exports.seedCategory = catchAsync(async (req, res) => {
 
   const ops = buildSeedOps(defaults, category, req.entityId, req.user._id);
   await Lookup.bulkWrite(ops);
+  // Bust expense classifier cache when OCR rules or expense categories change
+  if (category === 'OCR_EXPENSE_RULES' || category === 'EXPENSE_CATEGORY') invalidateRulesCache();
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });
@@ -692,6 +724,8 @@ exports.seedAll = catchAsync(async (req, res) => {
     const result = await Lookup.bulkWrite(ops);
     results[category] = { defaults: defaults.length, inserted: result.upsertedCount };
   }
+  // Bust expense classifier cache after bulk seed
+  invalidateRulesCache();
   const populated = await Lookup.distinct('category', { entity_id: req.entityId });
   res.json({ success: true, data: results, message: `Seeded ${populated.length}/${Object.keys(SEED_DEFAULTS).length} categories` });
 });

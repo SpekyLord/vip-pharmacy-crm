@@ -545,19 +545,36 @@ const reopenCollections = catchAsync(async (req, res) => {
   const rows = await Collection.find({ _id: { $in: collection_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!rows.length) return res.status(404).json({ success: false, message: 'No POSTED collections found' });
 
-  // Save event_ids before clearing them inside transaction
-  const rowEventMap = rows.map(r => ({ _id: r._id, event_id: r.event_id, cr_no: r.cr_no, entity_id: r.entity_id, bdm_id: r.bdm_id }));
+  const reopened = [];
+  const failed = [];
 
-  const session = await mongoose.startSession();
-  try {
-    await session.withTransaction(async () => {
-      for (const row of rows) {
+  for (const row of rows) {
+    // Step 1: Reverse JEs FIRST — if fails, skip this row (keep POSTED, ledger stays balanced)
+    if (row.event_id) {
+      try {
+        const jes = await JournalEntry.find({
+          source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
+        });
+        for (const je of jes) {
+          await reverseJournal(je._id, 'Auto-reversal: Collection reopen', req.user._id);
+        }
+      } catch (jeErr) {
+        console.error('JE reversal failed for collection reopen:', row.cr_no, jeErr.message);
+        failed.push({ _id: row._id, cr_no: row.cr_no, error: `Journal reversal failed: ${jeErr.message}` });
+        continue; // Do NOT mark as DRAFT — ledger would be unbalanced
+      }
+    }
+
+    // Step 2: JE reversed successfully — now do ledger/status reversal in a transaction
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
         if (row.event_id) {
           await TransactionEvent.findByIdAndUpdate(row.event_id, { status: 'DELETED' }, { session });
           await VatLedger.deleteMany({ source_event_id: row.event_id }).session(session);
           await CwtLedger.deleteMany({ cr_no: row.cr_no, entity_id: row.entity_id }).session(session);
         }
-        // Reverse petty cash deposit (inside transaction for atomicity)
+        // Reverse petty cash deposit
         const pcTxn = await PettyCashTransaction.findOne({
           linked_collection_id: row._id,
           txn_type: 'DEPOSIT',
@@ -589,48 +606,39 @@ const reopenCollections = catchAsync(async (req, res) => {
         row.posted_by = undefined;
         row.event_id = undefined;
         await row.save({ session });
-      }
-    });
-
-    // Reverse journal entries outside transaction (non-blocking)
-    for (const item of rowEventMap) {
-      if (item.event_id) {
-        try {
-          const jes = await JournalEntry.find({
-            source_event_id: item.event_id, status: 'POSTED', is_reversal: { $ne: true }
-          });
-          for (const je of jes) {
-            await reverseJournal(je._id, 'Auto-reversal: Collection reopen', req.user._id);
-          }
-        } catch (jeErr) {
-          console.error('JE reversal failed for collection reopen:', item.cr_no, jeErr.message);
-        }
-      }
-
-      // Petty cash deposit reversal moved inside session.withTransaction() above for atomicity
-
-      await ErpAuditLog.logChange({
-        entity_id: item.entity_id, bdm_id: item.bdm_id,
-        log_type: 'STATUS_CHANGE', target_ref: item._id.toString(),
-        target_model: 'Collection', field_changed: 'status',
-        old_value: 'POSTED', new_value: 'DRAFT',
-        changed_by: req.user._id, note: `CR ${item.cr_no} reopened`
       });
+
+      reopened.push(row._id);
+      await ErpAuditLog.logChange({
+        entity_id: row.entity_id, bdm_id: row.bdm_id,
+        log_type: 'REOPEN', target_ref: row._id.toString(),
+        target_model: 'Collection', changed_by: req.user._id,
+        note: `CR ${row.cr_no} reopened`
+      });
+    } catch (txErr) {
+      console.error('Reopen transaction failed for collection:', row.cr_no, txErr.message);
+      failed.push({ _id: row._id, cr_no: row.cr_no, error: `Transaction failed: ${txErr.message}` });
+    } finally {
+      session.endSession();
     }
+  }
 
-    res.json({ success: true, message: `${rows.length} collection(s) reopened` });
+  if (failed.length && !reopened.length) {
+    return res.status(500).json({ success: false, message: 'All collection reopens failed', failed });
+  }
+  res.json({ success: true, message: `Reopened ${reopened.length} collection(s)${failed.length ? `, ${failed.length} failed` : ''}`, reopened, failed });
 
-    // Non-blocking: notify management of reopened collections
+  // Non-blocking: notify management of reopened collections
+  if (reopened.length) {
+    const reopenedRefs = rows.filter(r => reopened.includes(r._id)).map(r => r.cr_no).filter(Boolean).join(', ');
     notifyDocumentReopened({
       entityId: req.entityId,
       module: 'Collections',
       docType: 'CR',
-      docRef: rows.map(r => r.cr_no).filter(Boolean).join(', '),
+      docRef: reopenedRefs,
       reopenedBy: req.user.name || req.user.email,
       reason: req.body.reason,
     }).catch(err => console.error('Collection reopen notification failed:', err.message));
-  } finally {
-    await session.endSession();
   }
 });
 

@@ -565,6 +565,13 @@ export default function Expenses() {
         const needsCalf = pm ? pm.requires_calf : updated[idx].payment_mode !== 'CASH';
         updated[idx].calf_required = updated[idx].expense_type === 'ACCESS' && needsCalf;
       }
+      // Auto-set COA code from category lookup metadata when category changes
+      if (field === 'expense_category') {
+        const match = expCatOpts.find(o => o.label === value);
+        if (match?.metadata?.coa_code) {
+          updated[idx].coa_code = match.metadata.coa_code;
+        }
+      }
       return updated;
     });
   };

@@ -20,6 +20,7 @@
  */
 
 const Visit = require('../../models/Visit');
+const Doctor = require('../../models/Doctor');
 
 /**
  * Get MD visit count for a BDM on a specific date
@@ -80,11 +81,30 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate) {
 
   const results = await Visit.aggregate(pipeline);
 
+  // Collect all unique doctor IDs across all days to batch-fetch addresses
+  const allDoctorIds = new Set();
+  for (const r of results) {
+    for (const docId of r.doctors_visited) allDoctorIds.add(docId.toString());
+  }
+  const doctorMap = new Map();
+  if (allDoctorIds.size > 0) {
+    const doctors = await Doctor.find({ _id: { $in: [...allDoctorIds] } })
+      .select('firstName lastName clinicOfficeAddress').lean();
+    for (const d of doctors) doctorMap.set(d._id.toString(), d);
+  }
+
   const counts = {};
   for (const r of results) {
+    // Build location summary from visited doctors' addresses
+    const addresses = r.doctors_visited
+      .map(id => doctorMap.get(id.toString())?.clinicOfficeAddress)
+      .filter(Boolean);
+    const uniqueAddresses = [...new Set(addresses)];
+
     counts[r._id] = {
       md_count: r.md_count,
-      unique_doctors: r.doctors_visited.length
+      unique_doctors: r.doctors_visited.length,
+      locations: uniqueAddresses.join(', ')
     };
   }
   return counts;

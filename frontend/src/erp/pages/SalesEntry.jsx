@@ -13,6 +13,7 @@ import WarehousePicker from '../components/WarehousePicker';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showApprovalPending } from '../utils/errorToast';
+import { matchHospital, matchProduct, fieldVal, fieldConfidence } from '../utils/ocrMatching';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },
@@ -198,73 +199,6 @@ const pageStyles = `
     .sales-cards { display: none; }
   }
 `;
-
-// --- Fuzzy matching helpers for OCR → master data ---
-function normalizeStr(s) {
-  return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function matchHospital(ocrName, hospitals) {
-  if (!ocrName || !hospitals?.length) return null;
-  const cleaned = normalizeStr(ocrName);
-  if (!cleaned) return null;
-  // Exact normalized match
-  let match = hospitals.find(h => normalizeStr(h.hospital_name) === cleaned);
-  if (match) return { hospital: match, confidence: 'HIGH' };
-  // Substring match (OCR text contains hospital name or vice versa)
-  match = hospitals.find(h => {
-    const hn = normalizeStr(h.hospital_name);
-    return cleaned.includes(hn) || hn.includes(cleaned);
-  });
-  if (match) return { hospital: match, confidence: 'MEDIUM' };
-  // Word overlap scoring
-  const ocrWords = cleaned.match(/.{2,}/g) || [];
-  let best = null, bestScore = 0;
-  for (const h of hospitals) {
-    const hn = normalizeStr(h.hospital_name);
-    let score = 0;
-    for (const w of ocrWords) { if (hn.includes(w)) score++; }
-    if (score > bestScore) { bestScore = score; best = h; }
-  }
-  if (best && bestScore >= 2) return { hospital: best, confidence: 'MEDIUM' };
-  return null;
-}
-
-function matchProduct(ocrBrand, ocrDosage, productOptions) {
-  if (!ocrBrand || !productOptions?.length) return null;
-  const cleaned = normalizeStr(ocrBrand);
-  const dosage = normalizeStr(ocrDosage || '');
-  if (!cleaned) return null;
-  // Try brand+dosage combo first
-  if (dosage) {
-    const match = productOptions.find(p => {
-      const pn = normalizeStr(p.brand_name);
-      return pn === cleaned || (cleaned.includes(pn) && normalizeStr(p.label).includes(dosage));
-    });
-    if (match) return { product: match, confidence: 'HIGH' };
-  }
-  // Exact brand match
-  let match = productOptions.find(p => normalizeStr(p.brand_name) === cleaned);
-  if (match) return { product: match, confidence: 'HIGH' };
-  // Substring brand match
-  match = productOptions.find(p => {
-    const pn = normalizeStr(p.brand_name);
-    return cleaned.includes(pn) || pn.includes(cleaned);
-  });
-  if (match) return { product: match, confidence: 'MEDIUM' };
-  return null;
-}
-
-// Extract the value from a scored field (OCR returns {value, confidence} or plain string)
-function fieldVal(f) {
-  if (f == null) return '';
-  if (typeof f === 'object' && 'value' in f) return f.value ?? '';
-  return String(f);
-}
-
-function fieldConfidence(f) {
-  return (f && typeof f === 'object' && 'confidence' in f) ? f.confidence : '';
-}
 
 function formatReviewReason(reason) {
   const labels = {
@@ -739,6 +673,8 @@ export default function SalesEntry() {
       hospital_id: scannedData.hospital_id,
       csi_date: scannedData.csi_date,
       doc_ref: scannedData.doc_ref,
+      csi_photo_url: scannedData.csi_photo_url || '',
+      csi_attachment_id: scannedData.csi_attachment_id || null,
       line_items: scannedData.line_items?.length
         ? scannedData.line_items.map(li => ({ ...li, batch_lot_no: li.batch_lot_no || '', fifo_override: false, override_reason: '' }))
         : [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }]
@@ -801,6 +737,8 @@ export default function SalesEntry() {
           warehouse_id: warehouseId || undefined,
           payment_mode: saleType === 'CASH_RECEIPT' ? 'CASH' : (row.payment_mode || undefined),
           petty_cash_fund_id: saleType === 'CASH_RECEIPT' && cashReceiptFundId ? cashReceiptFundId : undefined,
+          csi_photo_url: row.csi_photo_url || undefined,
+          csi_attachment_id: row.csi_attachment_id || undefined,
           line_items: validItems.map(li => ({
             product_id: li.product_id,
             item_key: li.item_key,

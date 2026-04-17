@@ -612,6 +612,35 @@ const getCarLogbookById = catchAsync(async (req, res) => {
   res.json({ success: true, data: entry });
 });
 
+const getSmerDailyByDate = catchAsync(async (req, res) => {
+  const { date } = req.params; // YYYY-MM-DD
+  const targetDate = new Date(date + 'T00:00:00.000Z');
+  const nextDate = new Date(targetDate);
+  nextDate.setDate(nextDate.getDate() + 1);
+
+  const smer = await SmerEntry.findOne({
+    ...req.tenantFilter,
+    'daily_entries.entry_date': { $gte: targetDate, $lt: nextDate }
+  }).lean();
+
+  if (!smer) return res.json({ success: true, data: null });
+
+  const dailyEntry = smer.daily_entries.find(de => {
+    const d = new Date(de.entry_date);
+    return d >= targetDate && d < nextDate;
+  });
+
+  res.json({
+    success: true,
+    data: dailyEntry ? {
+      hospital_covered: dailyEntry.hospital_covered || '',
+      notes: dailyEntry.notes || '',
+      activity_type: dailyEntry.activity_type || '',
+      destination: [dailyEntry.hospital_covered, dailyEntry.notes].filter(Boolean).join(' — ')
+    } : null
+  });
+});
+
 const deleteDraftCarLogbook = catchAsync(async (req, res) => {
   const result = await CarLogbookEntry.findOneAndDelete({ _id: req.params.id, ...req.tenantFilter, status: 'DRAFT' });
   if (!result) return res.status(404).json({ success: false, message: 'Draft car logbook not found' });
@@ -921,8 +950,12 @@ async function autoCalfForSource(sourceDoc, sourceType) {
 // Auto-classify expense lines that have no coa_code or are still '6900' (Misc)
 async function autoClassifyLines(lines, entityId) {
   if (!lines || !lines.length) return;
+  // Pre-load EXPENSE_CATEGORY lookups once for category→COA fallback
+  const Lookup = require('../models/Lookup');
+  let catLookups = null;
   for (const line of lines) {
     if (!line.coa_code || line.coa_code === '6900') {
+      // Step 1: Try classifier (vendor/keyword match by establishment name)
       if (line.establishment) {
         try {
           const result = await classifyExpense(
@@ -933,10 +966,22 @@ async function autoClassifyLines(lines, entityId) {
             line.coa_code = result.coa_code;
             if (!line.expense_category) line.expense_category = result.expense_category;
             if (result.vendor_id) line.vendor_id = result.vendor_id;
+            continue;
           }
         } catch (err) {
-          // Non-blocking — leave coa_code as-is for manual correction
           console.warn(`[autoClassify] Line "${line.establishment}" failed:`, err.message);
+        }
+      }
+      // Step 2: Fallback — resolve COA from expense_category lookup metadata
+      if (line.expense_category && (!line.coa_code || line.coa_code === '6900')) {
+        if (!catLookups) {
+          try {
+            catLookups = await Lookup.find({ category: 'EXPENSE_CATEGORY', is_active: true }).lean();
+          } catch { catLookups = []; }
+        }
+        const catMatch = catLookups.find(l => l.label === line.expense_category || l.code === line.expense_category);
+        if (catMatch?.metadata?.coa_code && catMatch.metadata.coa_code !== '6900') {
+          line.coa_code = catMatch.metadata.coa_code;
         }
       }
     }
@@ -1034,6 +1079,9 @@ const validateExpenses = catchAsync(async (req, res) => {
   const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
 
   for (const entry of entries) {
+    // Auto-resolve COA codes before validation (tries vendor/keyword match, then category fallback)
+    await autoClassifyLines(entry.lines, entry.entity_id);
+
     const errors = [];
 
     if (!entry.lines.length) errors.push('No expense lines');
@@ -1683,12 +1731,15 @@ const submitPrfCalf = catchAsync(async (req, res) => {
       // Validate
       const valErrors = [];
       if (sourceType === 'EXPENSE') {
+        // Auto-resolve COA codes before validation
+        await autoClassifyLines(source.lines, source.entity_id);
         if (!source.lines.length) valErrors.push('No expense lines');
         for (let i = 0; i < source.lines.length; i++) {
           const l = source.lines[i];
           if (!l.expense_date) valErrors.push(`Line ${i + 1}: date required`);
           if (!l.amount || l.amount <= 0) valErrors.push(`Line ${i + 1}: amount required`);
           if (!l.establishment) valErrors.push(`Line ${i + 1}: establishment required`);
+          if (!l.coa_code || l.coa_code === '6900') valErrors.push(`Line ${i + 1}: COA code missing or Miscellaneous (6900). Map "${l.establishment || 'unknown'}" to correct account.`);
         }
       } else {
         if (!source.entry_date) valErrors.push('Entry date required');
@@ -1921,6 +1972,7 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
       day_of_week: DAYS_OF_WEEK[dow],
       md_count: crmData.md_count,
       unique_doctors: crmData.unique_doctors,
+      locations: crmData.locations || '',
       perdiem_tier: tier,
       perdiem_amount: amount,
       source: 'CRM' // indicates data came from CRM visit logs
@@ -2504,6 +2556,10 @@ const postSingleCarLogbook = async (doc, userId) => {
 };
 
 const postSingleExpense = async (doc, userId) => {
+  // Auto-resolve COA codes before posting (approval hub path)
+  await autoClassifyLines(doc.lines, doc.entity_id);
+  await doc.save();
+
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
@@ -2614,7 +2670,7 @@ module.exports = {
   overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
-  validateCarLogbook, submitCarLogbook, reopenCarLogbook,
+  validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDailyByDate,
   // Expenses (ORE/ACCESS)
   createExpense, updateExpense, getExpenseList, getExpenseById, deleteDraftExpense,
   validateExpenses, submitExpenses, reopenExpenses,
