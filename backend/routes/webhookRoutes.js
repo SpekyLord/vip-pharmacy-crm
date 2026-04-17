@@ -120,7 +120,6 @@ router.get('/messenger', (req, res) => {
 router.post('/messenger', express.json(), async (req, res) => {
   try {
     const body = req.body;
-    console.log('[Webhook] Messenger inbound:', JSON.stringify(body));
     if (body.object !== 'page') return res.sendStatus(200);
 
     for (const entry of body.entry || []) {
