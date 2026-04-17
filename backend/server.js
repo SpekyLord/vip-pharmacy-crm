@@ -23,7 +23,7 @@ const connectDB = require('./config/db');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const { logInfo, logWarn, logError } = require('./utils/logger');
 
-dotenv.config({ path: path.join(__dirname, '.env'), override: true });
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const parseIntEnv = (name, fallback) => {
   const raw = process.env[name];
