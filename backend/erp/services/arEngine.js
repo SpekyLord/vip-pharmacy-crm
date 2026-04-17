@@ -183,4 +183,12 @@ async function getHospitalArBalance(hospitalId, entityId) {
   return openCsis.reduce((sum, csi) => sum + (csi.balance_due || 0), 0);
 }
 
-module.exports = { getOpenCsis, getArAging, getCollectionRate, getHospitalArBalance };
+/**
+ * Generalized AR balance — supports hospital OR customer
+ */
+async function getArBalance(entityId, hospitalId, customerId) {
+  const openCsis = await getOpenCsis(entityId, null, hospitalId, customerId);
+  return openCsis.reduce((sum, csi) => sum + (csi.balance_due || 0), 0);
+}
+
+module.exports = { getOpenCsis, getArAging, getCollectionRate, getHospitalArBalance, getArBalance };

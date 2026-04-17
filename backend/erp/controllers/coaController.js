@@ -65,7 +65,7 @@ const updateAccount = catchAsync(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Account not found' });
   }
 
-  const allowed = ['account_name', 'account_subtype', 'bir_flag', 'is_active', 'parent_code'];
+  const allowed = ['account_name', 'normal_balance', 'account_subtype', 'bir_flag', 'is_active', 'parent_code'];
   for (const field of allowed) {
     if (req.body[field] !== undefined) account[field] = req.body[field];
   }

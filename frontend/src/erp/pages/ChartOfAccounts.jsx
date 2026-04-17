@@ -135,6 +135,7 @@ export function ChartOfAccountsContent() {
     try {
       await api.updateAccount(editingId, {
         account_name: form.account_name,
+        normal_balance: form.normal_balance,
         account_subtype: form.account_subtype,
         bir_flag: form.bir_flag,
       });
@@ -231,7 +232,7 @@ export function ChartOfAccountsContent() {
             </div>
             <div className="form-group">
               <label>Normal Balance</label>
-              <SelectField value={form.normal_balance} onChange={e => setForm({ ...form, normal_balance: e.target.value })} disabled={!!editingId}>
+              <SelectField value={form.normal_balance} onChange={e => setForm({ ...form, normal_balance: e.target.value })}>
                 <option value="DEBIT">DEBIT</option>
                 <option value="CREDIT">CREDIT</option>
               </SelectField>

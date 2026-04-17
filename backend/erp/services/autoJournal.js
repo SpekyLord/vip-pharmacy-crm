@@ -143,8 +143,8 @@ async function journalFromSale(salesLine, entityId, userId) {
   }
 
   return {
-    je_date: salesLine.invoice_date || salesLine.created_at || new Date(),
-    period: dateToPeriod(salesLine.invoice_date || salesLine.created_at || new Date()),
+    je_date: salesLine.csi_date || salesLine.created_at || new Date(),
+    period: dateToPeriod(salesLine.csi_date || salesLine.created_at || new Date()),
     description: `Sales: ${salesLine.invoice_number || salesLine._id}`,
     source_module: 'SALES',
     source_event_id: salesLine.event_id || null,
@@ -669,6 +669,44 @@ async function journalFromInventoryAdjustment(data, amount, userId) {
   };
 }
 
+/**
+ * Journal from PRF/CALF
+ * PRF: DR PARTNER_REBATE (5200), CR funding source
+ * CALF: DR AR_BDM (1110), CR funding source
+ */
+async function journalFromPrfCalf(doc, userId) {
+  const coa = await getCoaMap();
+  const amount = doc.amount || 0;
+  if (amount <= 0) return null;
+  const funding = await resolveFundingCoa(doc);
+  const docRef = doc.prf_number || doc.calf_number || `${doc.doc_type}-${doc.period}`;
+  let lines;
+  if (doc.doc_type === 'PRF') {
+    lines = [
+      { account_code: coa.PARTNER_REBATE || '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
+      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}` }
+    ];
+  } else {
+    lines = [
+      { account_code: coa.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
+      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}` }
+    ];
+  }
+  return {
+    je_date: doc.posted_at || new Date(),
+    period: doc.period,
+    description: `${doc.doc_type}: ${docRef}`,
+    source_module: 'EXPENSE',
+    source_event_id: doc.event_id || null,
+    source_doc_ref: docRef,
+    lines,
+    bir_flag: doc.bir_flag || 'BOTH',
+    vat_flag: 'N/A',
+    bdm_id: doc.bdm_id || null,
+    created_by: userId
+  };
+}
+
 module.exports = {
   getCoaMap,
   clearCoaCache,
@@ -687,5 +725,6 @@ module.exports = {
   journalFromPettyCash,
   journalFromCOGS,
   journalFromInterCompany,
-  journalFromInventoryAdjustment
+  journalFromInventoryAdjustment,
+  journalFromPrfCalf
 };

@@ -10,9 +10,10 @@ const SalesLine = require('../models/SalesLine');
 const TransactionEvent = require('../models/TransactionEvent');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const Hospital = require('../models/Hospital');
+const Customer = require('../models/Customer');
 const DocumentAttachment = require('../models/DocumentAttachment');
 const { catchAsync } = require('../../middleware/errorHandler');
-const { getOpenCsis, getArAging, getCollectionRate, getHospitalArBalance } = require('../services/arEngine');
+const { getOpenCsis, getArAging, getCollectionRate, getHospitalArBalance, getArBalance } = require('../services/arEngine');
 const { enrichArWithDunning } = require('../services/dunningService');
 const { generateSoaWorkbook } = require('../services/soaGenerator');
 const { journalFromCollection, journalFromCWT, journalFromCommission, resolveFundingCoa } = require('../services/autoJournal');
@@ -178,9 +179,10 @@ const validateCollections = catchAsync(async (req, res) => {
       }
 
       const slIds = row.settled_csis.map(s => s.sales_line_id);
-      const validSales = await SalesLine.find({
-        _id: { $in: slIds }, status: 'POSTED', hospital_id: row.hospital_id, entity_id: row.entity_id
-      }).select('_id invoice_total').lean();
+      const csiQuery = { _id: { $in: slIds }, status: 'POSTED', entity_id: row.entity_id };
+      if (row.hospital_id) csiQuery.hospital_id = row.hospital_id;
+      else if (row.customer_id) csiQuery.customer_id = row.customer_id;
+      const validSales = await SalesLine.find(csiQuery).select('_id invoice_total').lean();
       const validMap = new Map(validSales.map(s => [s._id.toString(), s]));
 
       for (const csi of row.settled_csis) {
@@ -204,11 +206,11 @@ const validateCollections = catchAsync(async (req, res) => {
         }
       }
 
-      // Hospital-wide AR balance check: total collection must not exceed total outstanding AR
-      const hospitalArBalance = await getHospitalArBalance(row.hospital_id, row.entity_id);
+      // AR balance check: total collection must not exceed total outstanding AR (hospital OR customer)
+      const arBalance = await getArBalance(row.entity_id, row.hospital_id, row.customer_id);
       const thisCollectionTotal = row.settled_csis.reduce((sum, c) => sum + (c.invoice_amount || 0), 0);
-      if (hospitalArBalance > 0 && thisCollectionTotal > hospitalArBalance + 0.01) {
-        errors.push(`Total settlement (P${thisCollectionTotal.toFixed(2)}) exceeds hospital AR balance (P${hospitalArBalance.toFixed(2)})`);
+      if (arBalance > 0 && thisCollectionTotal > arBalance + 0.01) {
+        errors.push(`Total settlement (P${thisCollectionTotal.toFixed(2)}) exceeds AR balance (P${arBalance.toFixed(2)})`);
       }
 
 
@@ -319,6 +321,7 @@ const submitCollections = catchAsync(async (req, res) => {
           document_ref: row.cr_no,
           payload: {
             hospital_id: row.hospital_id,
+            customer_id: row.customer_id,
             settled_csis: row.settled_csis,
             cr_amount: row.cr_amount,
             cwt_amount: row.cwt_amount,
@@ -458,11 +461,17 @@ const submitCollections = catchAsync(async (req, res) => {
           }
         }
 
-        // VAT Ledger — OUTPUT VAT from collection (skip for EXEMPT/ZERO hospitals)
+        // VAT Ledger — OUTPUT VAT from collection (skip for EXEMPT/ZERO hospitals/customers)
         const crAmount = row.cr_amount || 0;
-        const hospital = row.hospital_id ? await Hospital.findById(row.hospital_id).select('vat_status').lean() : null;
-        const hospitalVatStatus = hospital?.vat_status || 'VATABLE';
-        if (crAmount > 0 && hospitalVatStatus === 'VATABLE') {
+        let vatStatus = 'VATABLE';
+        if (row.hospital_id) {
+          const hosp = await Hospital.findById(row.hospital_id).select('vat_status').lean();
+          vatStatus = hosp?.vat_status || 'VATABLE';
+        } else if (row.customer_id) {
+          const cust = await Customer.findById(row.customer_id).select('vat_status').lean();
+          vatStatus = cust?.vat_status || 'VATABLE';
+        }
+        if (crAmount > 0 && vatStatus === 'VATABLE') {
           const vatRate = settings?.VAT_RATE || 0.12;
           const vatAmount = Math.round((crAmount * vatRate / (1 + vatRate)) * 100) / 100;
           await createVatEntry({
@@ -472,7 +481,7 @@ const submitCollections = catchAsync(async (req, res) => {
             source_module: 'COLLECTION',
             source_doc_ref: row.cr_no,
             source_event_id: row.event_id,
-            hospital_or_vendor: row.hospital_id,
+            hospital_or_vendor: row.hospital_id || row.customer_id,
             gross_amount: crAmount,
             vat_amount: vatAmount
           }).catch(async (err) => {
@@ -731,7 +740,8 @@ const postSingleCollection = async (doc, userId) => {
         entity_id: doc.entity_id, bdm_id: doc.bdm_id, event_type: 'CR',
         event_date: doc.cr_date, document_ref: doc.cr_no,
         payload: {
-          hospital_id: doc.hospital_id, settled_csis: doc.settled_csis,
+          hospital_id: doc.hospital_id, customer_id: doc.customer_id,
+          settled_csis: doc.settled_csis,
           cr_amount: doc.cr_amount, cwt_amount: doc.cwt_amount,
           total_commission: doc.total_commission, total_partner_rebates: doc.total_partner_rebates,
           payment_mode: doc.payment_mode
@@ -800,16 +810,23 @@ const postSingleCollection = async (doc, userId) => {
       }
     }
 
-    // VAT Ledger
+    // VAT Ledger (skip for EXEMPT/ZERO hospitals/customers)
     const crAmount = doc.cr_amount || 0;
-    const hospital = doc.hospital_id ? await Hospital.findById(doc.hospital_id).select('vat_status').lean() : null;
-    if (crAmount > 0 && (hospital?.vat_status || 'VATABLE') === 'VATABLE') {
+    let singleVatStatus = 'VATABLE';
+    if (doc.hospital_id) {
+      const hosp = await Hospital.findById(doc.hospital_id).select('vat_status').lean();
+      singleVatStatus = hosp?.vat_status || 'VATABLE';
+    } else if (doc.customer_id) {
+      const cust = await Customer.findById(doc.customer_id).select('vat_status').lean();
+      singleVatStatus = cust?.vat_status || 'VATABLE';
+    }
+    if (crAmount > 0 && singleVatStatus === 'VATABLE') {
       const vatRate = settings?.VAT_RATE || 0.12;
       const vatAmount = Math.round((crAmount * vatRate / (1 + vatRate)) * 100) / 100;
       await createVatEntry({
         entity_id: doc.entity_id, period: doc.period || require('../utils/periodLock').dateToPeriod(doc.cr_date),
         vat_type: 'OUTPUT', source_module: 'COLLECTION', source_doc_ref: doc.cr_no,
-        source_event_id: doc.event_id, hospital_or_vendor: doc.hospital_id,
+        source_event_id: doc.event_id, hospital_or_vendor: doc.hospital_id || doc.customer_id,
         gross_amount: crAmount, vat_amount: vatAmount
       }).catch(err => console.error('VAT entry failed (approval hub):', doc.cr_no, err.message));
     }

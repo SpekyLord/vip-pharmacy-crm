@@ -156,7 +156,7 @@ const WORKFLOW_GUIDES = {
       { label: 'View All Collections', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY).',
+    tip: 'Collections support both hospital and customer targets — the system validates CSIs and AR balance for whichever entity type is used. Opening AR (pre-go-live) CSIs are fully collectable. CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY).',
   },
   'ar-aging': {
     title: 'Accounts Receivable Aging',
@@ -232,7 +232,7 @@ const WORKFLOW_GUIDES = {
   'prf-calf': {
     title: 'PRF / CALF',
     steps: [
-      'PRF (Partner Rebate Form) — record partner rebate payments',
+      'PRF (Partner Rebate Form) — record partner rebate payments. Rebates accumulate from collections; BDM creates PRF when ready to pay partner.',
       'CALF (Cash Advance Liquidation) — liquidate cash advances against expenses',
       'For PRF: enter partner details, rebate amount, payment mode',
       'For CALF: link to related expenses — system validates all linked line IDs belong to the expense',
@@ -244,7 +244,7 @@ const WORKFLOW_GUIDES = {
       { label: 'View Sales', path: '/erp/sales' },
       { label: 'COA Settings', path: '/erp/settings' },
     ],
-    tip: 'CALF validates that linked expense line IDs actually belong to the referenced expense entry. Document numbers auto-generate from Territory + date + sequence — if generation fails, check Territory setup for the BDM. All COA codes are admin-configurable in Settings.',
+    tip: 'Partner rebates follow accrual basis — journal entry (DR 5200 PARTNER_REBATE, CR funding) is created only when PRF is posted, not when the collection is recorded. CALF validates that linked expense line IDs actually belong to the referenced expense entry. Document numbers auto-generate from Territory + date + sequence — if generation fails, check Territory setup for the BDM. All COA codes are admin-configurable in Settings.',
   },
   'collaterals': {
     title: 'Marketing Collaterals',
