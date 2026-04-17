@@ -287,6 +287,9 @@ const updateDoctor = catchAsync(async (req, res) => {
     'isVipAssociated',
     'clientType',
     'hospitals',
+    'messengerId',
+    'viberId',
+    'whatsappNumber',
   ];
   const employeeAllowedFields = adminAllowedFields.filter(
     (f) => !['assignedTo', 'isActive', 'isVipAssociated'].includes(f)
