@@ -24,9 +24,9 @@ const { tryAutoReply } = require('../utils/autoReply');
 // Verification (GET) — Meta sends a challenge to verify the webhook URL
 router.get('/whatsapp', (req, res) => {
   const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+  const mode = req.query['hub.mode'] || req.query['hub_mode'];
+  const token = req.query['hub.verify_token'] || req.query['hub_verify_token'];
+  const challenge = req.query['hub.challenge'] || req.query['hub_challenge'];
 
   if (mode === 'subscribe' && token === verifyToken) {
     console.log('[Webhook] WhatsApp verified');
@@ -106,9 +106,10 @@ router.post('/whatsapp', express.json(), async (req, res) => {
 
 router.get('/messenger', (req, res) => {
   const verifyToken = process.env.FB_VERIFY_TOKEN;
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+  // express-mongo-sanitize converts dots to underscores in query keys
+  const mode = req.query['hub.mode'] || req.query['hub_mode'];
+  const token = req.query['hub.verify_token'] || req.query['hub_verify_token'];
+  const challenge = req.query['hub.challenge'] || req.query['hub_challenge'];
 
   if (mode === 'subscribe' && token === verifyToken) {
     console.log('[Webhook] Messenger verified');
