@@ -38,6 +38,9 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
     clinicOfficeAddress: doctor?.clinicOfficeAddress || '',
     phone: doctor?.phone || '',
     email: doctor?.email || '',
+    messengerId: doctor?.messengerId || '',
+    viberId: doctor?.viberId || '',
+    whatsappNumber: doctor?.whatsappNumber || '',
     visitFrequency: doctor?.visitFrequency || 4,
     levelOfEngagement: doctor?.levelOfEngagement || '',
     programsToImplement: doctor?.programsToImplement || [],
@@ -75,6 +78,9 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
     if (formData.clinicOfficeAddress?.trim()) payload.clinicOfficeAddress = formData.clinicOfficeAddress.trim();
     if (formData.phone?.trim()) payload.phone = formData.phone.trim();
     if (formData.email?.trim()) payload.email = formData.email.trim();
+    payload.messengerId = formData.messengerId.trim();
+    payload.viberId = formData.viberId.trim();
+    payload.whatsappNumber = formData.whatsappNumber.trim();
     if (formData.notes?.trim()) payload.notes = formData.notes.trim();
     if (formData.otherDetails?.trim()) payload.otherDetails = formData.otherDetails.trim();
     if (formData.secretaryName?.trim()) payload.secretaryName = formData.secretaryName.trim();
@@ -182,6 +188,39 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
               <label>Email</label>
               <input type="email" name="email" value={formData.email} onChange={handleFormChange} />
             </div>
+          </div>
+
+          {/* Messaging IDs */}
+          <div className="def-row">
+            <div className="def-field">
+              <label>WhatsApp Number</label>
+              <input
+                type="tel"
+                name="whatsappNumber"
+                value={formData.whatsappNumber}
+                onChange={handleFormChange}
+                placeholder="e.g. 639171234567"
+              />
+            </div>
+            <div className="def-field">
+              <label>Viber ID</label>
+              <input
+                type="text"
+                name="viberId"
+                value={formData.viberId}
+                onChange={handleFormChange}
+              />
+            </div>
+          </div>
+          <div className="def-field">
+            <label>Messenger PSID</label>
+            <input
+              type="text"
+              name="messengerId"
+              value={formData.messengerId}
+              onChange={handleFormChange}
+              placeholder="Page-scoped ID from Messenger webhook"
+            />
           </div>
 
           {/* Visit Frequency + Engagement */}
