@@ -9,6 +9,7 @@
  */
 const mongoose = require('mongoose');
 const { ROLES } = require('../../constants/roles');
+const { getSignedDownloadUrl, extractKeyFromUrl } = require('../../config/s3');
 
 // Models
 const ApprovalRequest = require('../models/ApprovalRequest');
@@ -911,6 +912,51 @@ async function getUniversalPending(entityId, user, entityIds) {
     delete details._warehouse_id;
     delete details._bdm_id;
   }
+
+  // ── Sign S3 photo URLs so the browser can load them ──
+  const signUrl = async (url) => {
+    if (!url) return url;
+    try {
+      const key = extractKeyFromUrl(url);
+      return await getSignedDownloadUrl(key, 3600);
+    } catch { return url; }
+  };
+  const signUrls = (urls) => Promise.all((urls || []).map(u => signUrl(u)));
+
+  await Promise.all(allItems.map(async (item) => {
+    const d = item.details || {};
+    switch (item.module) {
+      case 'SALES':
+        d.csi_photo_url = await signUrl(d.csi_photo_url);
+        break;
+      case 'COLLECTION':
+        [d.deposit_slip_url, d.cr_photo_url, d.cwt_certificate_url] = await Promise.all([
+          signUrl(d.deposit_slip_url), signUrl(d.cr_photo_url), signUrl(d.cwt_certificate_url)
+        ]);
+        d.csi_photo_urls = await signUrls(d.csi_photo_urls);
+        break;
+      case 'EXPENSES':
+        await Promise.all((d.lines || []).map(async (l) => {
+          l.or_photo_url = await signUrl(l.or_photo_url);
+        }));
+        break;
+      case 'CAR_LOGBOOK':
+        await Promise.all((d.fuel_receipts || []).map(async (fr) => {
+          [fr.receipt_url, fr.starting_km_photo_url, fr.ending_km_photo_url] = await Promise.all([
+            signUrl(fr.receipt_url), signUrl(fr.starting_km_photo_url), signUrl(fr.ending_km_photo_url)
+          ]);
+        }));
+        break;
+      case 'INVENTORY':
+        [d.waybill_photo_url, d.undertaking_photo_url] = await Promise.all([
+          signUrl(d.waybill_photo_url), signUrl(d.undertaking_photo_url)
+        ]);
+        break;
+      case 'PRF_CALF':
+        d.photo_urls = await signUrls(d.photo_urls);
+        break;
+    }
+  }));
 
   return allItems;
 }
