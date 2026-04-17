@@ -5,7 +5,7 @@
  * Shows what the page is for, numbered steps, and next-step links.
  * Dismissible per session via sessionStorage.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const styles = `
@@ -411,12 +411,18 @@ const PAGE_GUIDES = {
   },
 };
 
-export default function PageGuide({ pageKey }) {
+export default function PageGuide({ pageKey, onVisibilityChange }) {
   const navigate = useNavigate();
   const storageKey = `pg_dismiss_${pageKey}`;
   const [dismissed, setDismissed] = useState(() => sessionStorage.getItem(storageKey) === '1');
 
   const guide = PAGE_GUIDES[pageKey];
+
+  useEffect(() => {
+    if (typeof onVisibilityChange === 'function') {
+      onVisibilityChange(Boolean(guide && !dismissed));
+    }
+  }, [dismissed, guide, onVisibilityChange]);
 
   const handleDismiss = () => {
     sessionStorage.setItem(storageKey, '1');
