@@ -634,15 +634,32 @@ export default function MyIncome() {
                                     </table>
                                   </div>
 
-                                  {/* ORE expense line details */}
-                                  {breakdown.ore && breakdown.ore.expense_lines?.length > 0 && (
+                                  {/* ORE expense breakdown — grouped by category */}
+                                  {breakdown.ore && (breakdown.ore.by_category?.length > 0 || breakdown.ore.expense_lines?.length > 0) && (
                                     <>
-                                      <div className="bd-section-title" style={{ marginTop: 10 }}>ORE Receipts (Cash Expenses)</div>
+                                      <div className="bd-section-title" style={{ marginTop: 10 }}>ORE / Cash Expenses (from Expenses module)</div>
+                                      {/* Category subtotals */}
+                                      {breakdown.ore.by_category?.length > 0 && (
+                                        <table className="bd-table" style={{ marginBottom: 8 }}>
+                                          <thead><tr><th>Category</th><th>Lines</th><th>Subtotal</th></tr></thead>
+                                          <tbody>
+                                            {breakdown.ore.by_category.map((cat, ci) => (
+                                              <tr key={ci}>
+                                                <td>{cat.category}</td>
+                                                <td>{cat.lines.length}</td>
+                                                <td>{fmt(cat.subtotal)}</td>
+                                              </tr>
+                                            ))}
+                                            <tr className="bd-subtotal"><td>Total ORE from Expenses</td><td>{breakdown.ore.expense_lines?.length || 0}</td><td>{fmt(breakdown.ore.expense_ore || 0)}</td></tr>
+                                          </tbody>
+                                        </table>
+                                      )}
+                                      {/* Detailed lines */}
                                       <div className="bd-scroll">
                                         <table className="bd-table">
                                           <thead><tr><th>Date</th><th>Category</th><th>Establishment</th><th>Particulars</th><th>OR#</th><th>Amount</th></tr></thead>
                                           <tbody>
-                                            {breakdown.ore.expense_lines.map((l, i) => (
+                                            {(breakdown.ore.expense_lines || []).map((l, i) => (
                                               <tr key={i}>
                                                 <td>{l.expense_date ? new Date(l.expense_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '-'}</td>
                                                 <td>{l.expense_category || '-'}</td>

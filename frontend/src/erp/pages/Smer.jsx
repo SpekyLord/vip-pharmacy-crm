@@ -692,10 +692,10 @@ export default function Smer() {
                   <div style={{ fontSize: 11, color: '#166534' }}>Per Diem</div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: '#166534' }}>₱{totals.perdiem.toLocaleString()}</div>
                 </div>
-                <div style={{ padding: '8px 14px', borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', minWidth: 80 }}>
-                  <div style={{ fontSize: 11, color: '#1e40af' }}>Transport</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: '#1e40af' }}>₱{(totals.transpo + totals.special).toLocaleString()}</div>
-                </div>
+                <a href="/erp/expenses" style={{ padding: '8px 14px', borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', minWidth: 80, textDecoration: 'none', display: 'block' }}>
+                  <div style={{ fontSize: 11, color: '#1e40af' }}>Transport & ORE</div>
+                  <div style={{ fontSize: 12, color: '#2563eb' }}>Enter in Expenses →</div>
+                </a>
               </div>
 
               {/* Per Diem Rate + Travel Advance + CRM Pull */}
@@ -740,9 +740,7 @@ export default function Smer() {
                       <th style={{ padding: 6, textAlign: 'center', width: 50 }}>Tier</th>
                       <th style={{ padding: 6, textAlign: 'right', width: 70 }}>Per Diem</th>
                       <th style={{ padding: 6, textAlign: 'center', width: 65 }}>Ovrd</th>
-                      <th style={{ padding: 6, textAlign: 'right', width: 70 }}>P2P</th>
-                      <th style={{ padding: 6, textAlign: 'right', width: 70 }}>Special</th>
-                      <th style={{ padding: 6, textAlign: 'right', width: 70 }}>ORE</th>
+                      {/* P2P, Special, ORE — hidden (entered via Expenses ORE) */}
                     </tr>
                   </thead>
                   <tbody>
@@ -789,15 +787,7 @@ export default function Smer() {
                             <button onClick={() => handleOverride(idx)} style={{ padding: '1px 5px', fontSize: 9, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', color: 'var(--erp-muted)', background: '#fff', cursor: 'pointer' }}>+</button>
                           )}
                         </td>
-                        <td style={{ padding: 3 }}>
-                          <input type="number" min={0} value={entry.transpo_p2p || 0} onChange={e => handleEntryChange(idx, 'transpo_p2p', Number(e.target.value))} style={{ width: 60, padding: '2px 3px', textAlign: 'right', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
-                        </td>
-                        <td style={{ padding: 3 }}>
-                          <input type="number" min={0} value={entry.transpo_special || 0} onChange={e => handleEntryChange(idx, 'transpo_special', Number(e.target.value))} style={{ width: 60, padding: '2px 3px', textAlign: 'right', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
-                        </td>
-                        <td style={{ padding: 3 }}>
-                          <input type="number" min={0} value={entry.ore_amount || 0} onChange={e => handleEntryChange(idx, 'ore_amount', Number(e.target.value))} style={{ width: 60, padding: '2px 3px', textAlign: 'right', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
-                        </td>
+                        {/* P2P, Special, ORE inputs hidden — enter via Expenses ORE */}
                       </tr>
                     ))}
                   </tbody>
@@ -805,9 +795,6 @@ export default function Smer() {
                     <tr style={{ background: 'var(--erp-bg-alt, #f1f5f9)', fontWeight: 600, fontSize: 12 }}>
                       <td colSpan={7} style={{ padding: 6, textAlign: 'right' }}>Totals:</td>
                       <td style={{ padding: 6, textAlign: 'right' }}>₱{totals.perdiem.toLocaleString()}</td>
-                      <td style={{ padding: 6, textAlign: 'right' }}>₱{totals.transpo.toLocaleString()}</td>
-                      <td style={{ padding: 6, textAlign: 'right' }}>₱{totals.special.toLocaleString()}</td>
-                      <td style={{ padding: 6, textAlign: 'right' }}>₱{totals.ore.toLocaleString()}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -851,18 +838,7 @@ export default function Smer() {
                         <label>Notes</label>
                         <input placeholder="Details..." value={entry.notes || ''} onChange={e => handleEntryChange(idx, 'notes', e.target.value)} />
                       </div>
-                      <div className="smer-card-field">
-                        <label>P2P Transport</label>
-                        <input type="number" min={0} value={entry.transpo_p2p || 0} onChange={e => handleEntryChange(idx, 'transpo_p2p', Number(e.target.value))} />
-                      </div>
-                      <div className="smer-card-field">
-                        <label>Special Transport</label>
-                        <input type="number" min={0} value={entry.transpo_special || 0} onChange={e => handleEntryChange(idx, 'transpo_special', Number(e.target.value))} />
-                      </div>
-                      <div className="smer-card-field">
-                        <label>ORE Amount</label>
-                        <input type="number" min={0} value={entry.ore_amount || 0} onChange={e => handleEntryChange(idx, 'ore_amount', Number(e.target.value))} />
-                      </div>
+                      {/* P2P, Special, ORE — enter via Expenses (ORE) for mobile-friendly input */}
                       {entry.activity_type !== 'NO_WORK' && (
                       <div className="smer-card-field">
                         <label>Override</label>
@@ -894,9 +870,7 @@ export default function Smer() {
                 <div className="smer-card" style={{ background: 'var(--erp-bg-alt, #f1f5f9)' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13, fontWeight: 600 }}>
                     <div>Per Diem: ₱{totals.perdiem.toLocaleString()}</div>
-                    <div>Transport: ₱{totals.transpo.toLocaleString()}</div>
-                    <div>Special: ₱{totals.special.toLocaleString()}</div>
-                    <div>ORE: ₱{totals.ore.toLocaleString()}</div>
+                    <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--erp-muted)' }}>Transport & ORE → <a href="/erp/expenses" style={{ color: '#2563eb' }}>enter in Expenses</a></div>
                   </div>
                 </div>
               </div>

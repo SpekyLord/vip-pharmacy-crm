@@ -10,7 +10,10 @@ const { ROLES } = require('../../constants/roles');
 // Default seed data for each category — mirrors current hardcoded arrays
 const SEED_DEFAULTS = {
   EXPENSE_CATEGORY: [
-    'Transportation', 'Travel/Accommodation', 'Fuel & Gas', 'Parking/Toll',
+    'Transportation',
+    { code: 'TRANSPORT_P2P', label: 'Transport — P2P (Jeepney/Bus/Tricycle)', metadata: { coa_code: '6150', or_optional: true } },
+    { code: 'TRANSPORT_SPECIAL', label: 'Transport — Grab/Taxi (Stock Delivery)', metadata: { coa_code: '6160', or_optional: true } },
+    'Travel/Accommodation', 'Fuel & Gas', 'Parking/Toll',
     'Courier/Shipping', 'ACCESS/Meals', 'Office Supplies',
     'Utilities/Communication', 'Rent', 'Marketing — HCP/Doctor', 'Marketing — Hospital',
     'Marketing — Retail', 'Vehicle Maintenance', 'Repairs/Maintenance', 'Professional Fees',

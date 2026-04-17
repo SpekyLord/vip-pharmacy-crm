@@ -594,7 +594,9 @@ export default function Expenses() {
       if (!l.amount || l.amount <= 0) issues.push(`Line ${i + 1}: Amount must be > 0`);
       if (!l.expense_date) issues.push(`Line ${i + 1}: Date is required`);
       if (l.expense_date && l.expense_date > today) issues.push(`Line ${i + 1}: Expense date cannot be in the future`);
-      if (l.or_number && !l.or_photo_url) issues.push(`Line ${i + 1}: OR# ${l.or_number} provided without receipt photo — attach photo for audit trail`);
+      // Transport categories: receipt is optional (no OR photo required)
+      const isTransport = (l.expense_category || '').startsWith('TRANSPORT_') || (l.expense_category || '').startsWith('Transport —');
+      if (!isTransport && l.or_number && !l.or_photo_url) issues.push(`Line ${i + 1}: OR# ${l.or_number} provided without receipt photo — attach photo for audit trail`);
     });
     if (!lines.length) issues.push('Add at least one expense line');
     if (issues.length) { showError(null, issues.join('. ')); return; }

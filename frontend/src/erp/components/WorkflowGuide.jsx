@@ -175,7 +175,8 @@ const WORKFLOW_GUIDES = {
   'expenses': {
     title: 'Recording Expenses (ORE / ACCESS)',
     steps: [
-      'Choose expense type: ORE (reimbursable) or ACCESS (company-funded)',
+      'Choose expense type: ORE (reimbursable from revolving fund) or ACCESS (company-funded)',
+      'For transport: use "Transport — P2P" (jeepney/bus/tricycle) or "Transport — Grab/Taxi" categories. Receipt is optional for transport.',
       'Use the OCR scanner to auto-extract receipt data, or enter manually',
       'Select category — COA code auto-resolves from vendor/keyword classification',
       'Attach receipt photo as proof (batch upload available for bulk OR processing)',
@@ -196,9 +197,9 @@ const WORKFLOW_GUIDES = {
       'Select the period/cycle and your name',
       'Fill in each day\'s activity type (Office/Field/Other/NO_WORK)',
       'Select "NO_WORK" for days the BDM did not work — per diem is automatically zero, MD count is disabled',
-      'Enter expense amounts per category (Mobile, Internet, Meals, etc.)',
       'System auto-computes Per Diem based on MD count and your per-person thresholds',
-      'Validate and Post to generate expense journal entries',
+      'Transport, ORE, and other cash expenses → enter in Expenses (ORE) for mobile-friendly input. These flow into your income automatically.',
+      'Validate and Post to generate per diem journal entries',
     ],
     next: [
       { label: 'Record Car Logbook', path: '/erp/car-logbook' },

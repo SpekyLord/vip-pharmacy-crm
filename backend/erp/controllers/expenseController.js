@@ -1048,10 +1048,14 @@ const validateExpenses = catchAsync(async (req, res) => {
       if (!line.establishment) errors.push(`Line ${i + 1}: establishment is required`);
 
       // OR proof gate: ORE and ACCESS lines require OR photo or OR number (PRD v5 §8.3)
-      if (!line.or_photo_url && !line.or_number) {
-        errors.push(`Line ${i + 1}: OR photo or OR number required for ${line.expense_type} expense`);
-      } else if (line.or_number && !line.or_photo_url) {
-        errors.push(`WARNING: Line ${i + 1}: OR# ${line.or_number} provided without receipt photo — attach photo for audit trail`);
+      // Transport categories (P2P, Grab/taxi) are exempt — receipt optional (lookup metadata.or_optional)
+      const isTransportCat = (line.expense_category || '').startsWith('TRANSPORT_') || (line.expense_category || '').startsWith('Transport —');
+      if (!isTransportCat) {
+        if (!line.or_photo_url && !line.or_number) {
+          errors.push(`Line ${i + 1}: OR photo or OR number required for ${line.expense_type} expense`);
+        } else if (line.or_number && !line.or_photo_url) {
+          errors.push(`WARNING: Line ${i + 1}: OR# ${line.or_number} provided without receipt photo — attach photo for audit trail`);
+        }
       }
 
       // #17 Hardening: BLOCK posting with coa_code=6900 (Misc) — must map to correct account
