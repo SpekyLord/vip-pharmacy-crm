@@ -9,7 +9,7 @@ import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
 import PresidentReverseModal from '../components/PresidentReverseModal';
-import { ROLES, ROLE_SETS } from '../../constants/roles';
+import { ROLE_SETS } from '../../constants/roles';
 
 const CEILING = 5000;
 

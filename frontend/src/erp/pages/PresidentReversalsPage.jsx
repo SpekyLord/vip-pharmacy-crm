@@ -134,7 +134,10 @@ export default function PresidentReversalsPage() {
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tab]);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const onReverseClick = async (row) => {
     // Preview dependents first (informational — backend re-checks on submit).
