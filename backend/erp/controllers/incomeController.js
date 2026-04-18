@@ -43,7 +43,7 @@ const getIncomeProjection = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'period and cycle are required' });
   }
   const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
-  const bdmId = (canViewOther && req.query.bdm_id) ? req.query.bdm_id : req.bdmId;
+  const bdmId = canViewOther ? (req.query.bdm_id || null) : req.bdmId;
   if (!bdmId) {
     return res.status(400).json({ success: false, message: 'bdm_id is required' });
   }

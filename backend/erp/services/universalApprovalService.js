@@ -35,7 +35,15 @@ const MODULE_QUERIES = [
     label: 'Authority Matrix',
     sub_key: null, // special: derive from item.module field
     query: async (entityId) => {
-      const items = await ApprovalRequest.find({ entity_id: entityId, status: 'PENDING' })
+      // Phase G4: exclude level-0 default-roles-gate requests (audit-only).
+      // They have no rule_id and the actionable item is the document itself,
+      // which already appears in its module-specific query (SALES/COLLECTION/etc.).
+      // Including them would double-list each gated submission.
+      const items = await ApprovalRequest.find({
+        entity_id: entityId,
+        status: 'PENDING',
+        $or: [{ level: { $gt: 0 } }, { rule_id: { $ne: null } }],
+      })
         .populate('requested_by', 'name email')
         .sort({ createdAt: -1 })
         .lean();

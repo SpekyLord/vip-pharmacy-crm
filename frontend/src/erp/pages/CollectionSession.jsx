@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -322,7 +322,9 @@ export default function CollectionSession() {
   const { getMyBankAccounts } = useAccounting();
   const lookupApi = useErpApi();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [paymentModes, setPaymentModes] = useState([]);
+  const [deepLinkNotice, setDeepLinkNotice] = useState('');
 
   const [hospitalId, setHospitalId] = useState('');
   const [customerId, setCustomerId] = useState('');
@@ -360,6 +362,10 @@ export default function CollectionSession() {
   const [ocrFilledFields, setOcrFilledFields] = useState(new Set());
   const pendingCsiMatch = useRef(null);
 
+  // Deep-link from AR Aging: pre-select a specific CSI after open CSIs load
+  const pendingCsiPreselect = useRef(null);
+  const deepLinkConsumed = useRef(false);
+
   // CRM Doctor list for partner tags (filtered by BDMs who own the open CSIs)
   const [crmDoctors, setCrmDoctors] = useState([]);
 
@@ -386,6 +392,36 @@ export default function CollectionSession() {
   useEffect(() => {
     lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Deep-link entry from AR Aging / other pages:
+  //   ?hospital_id=<id>&sales_line_id=<id>   → pre-select hospital + invoice
+  //   ?customer_id=<id>&sales_line_id=<id>   → pre-select customer + invoice
+  // The sales_line_id is resolved after the open-CSI list loads (see effect below).
+  // Entity/BDM scope is enforced by the backend getOpenCsis — out-of-scope IDs yield no match.
+  useEffect(() => {
+    if (deepLinkConsumed.current) return;
+    const qHospital = searchParams.get('hospital_id');
+    const qCustomer = searchParams.get('customer_id');
+    const qSalesLine = searchParams.get('sales_line_id');
+    if (!qHospital && !qCustomer && !qSalesLine) return;
+    deepLinkConsumed.current = true;
+
+    if (qHospital) { setHospitalId(qHospital); setCustomerId(''); }
+    else if (qCustomer) { setCustomerId(qCustomer); setHospitalId(''); }
+    if (qSalesLine) pendingCsiPreselect.current = qSalesLine;
+    if (qHospital || qCustomer || qSalesLine) {
+      setDeepLinkNotice(
+        qSalesLine
+          ? 'Opened from AR Aging — hospital loaded, invoice will be pre-selected.'
+          : 'Opened from AR Aging — hospital loaded.'
+      );
+    }
+
+    // Clean query string so back/forward + reload don't re-trigger pre-select on user edits
+    const next = new URLSearchParams(searchParams);
+    next.delete('hospital_id'); next.delete('customer_id'); next.delete('sales_line_id');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Load CRM doctors (assigned to + visited by) the BDM who owns the CSIs
   // Priority: CSI bdm_id → warehouse manager (fallback)
@@ -516,6 +552,32 @@ export default function CollectionSession() {
       });
     }
     if (newSelected.size > 0) setSelectedCsis(newSelected);
+  }, [openCsis, settings]);
+
+  // Deferred CSI pre-select after AR-Aging deep-link (open CSIs load async after hospital change)
+  useEffect(() => {
+    if (!pendingCsiPreselect.current || !openCsis.length) return;
+    const targetId = String(pendingCsiPreselect.current);
+    const csi = openCsis.find(c => String(c._id) === targetId);
+    pendingCsiPreselect.current = null;
+    if (!csi) {
+      setDeepLinkNotice('Invoice from AR Aging is no longer open (already collected or out of scope).');
+      return;
+    }
+    const invoiceAmt = csi.balance_due || 0;
+    const netVat = csi.total_net_of_vat > 0
+      ? csi.total_net_of_vat
+      : Math.round(invoiceAmt / (1 + (settings?.VAT_RATE || 0.12)) * 100) / 100;
+    setSelectedCsis(prev => {
+      const next = new Map(prev);
+      next.set(csi._id, {
+        sales_line_id: csi._id, doc_ref: csi.doc_ref, csi_date: csi.csi_date,
+        invoice_amount: invoiceAmt, net_of_vat: netVat,
+        source: csi.source, commission_rate: 0.03, partner_tags: []
+      });
+      return next;
+    });
+    setDeepLinkNotice(`Pre-selected CSI #${csi.doc_ref} from AR Aging.`);
   }, [openCsis, settings]);
 
   const toggleCsi = (csi) => {
@@ -723,6 +785,16 @@ export default function CollectionSession() {
         <Sidebar />
         <main className="coll-main">
           <WorkflowGuide pageKey="collection-session" />
+          {deepLinkNotice && (
+            <div style={{
+              background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af',
+              padding: '10px 14px', borderRadius: 10, fontSize: 13, marginBottom: 12,
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8
+            }}>
+              <span>{deepLinkNotice}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setDeepLinkNotice('')} style={{ padding: '2px 8px' }}>Dismiss</button>
+            </div>
+          )}
           <div className="coll-header">
             <h1>New Collection Receipt</h1>
             <div style={{ display: 'flex', gap: 8 }}>

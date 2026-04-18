@@ -92,7 +92,9 @@ async function createAndPostJournal(entityId, data, options = {}) {
     vat_flag: data.vat_flag || 'N/A',
     status: 'POSTED',
     is_reversal: data.is_reversal || false,
-    corrects_je_id: data.corrects_je_id || null,
+    // Omit corrects_je_id when absent so the unique+sparse index (JournalEntry.js)
+    // excludes the doc. Writing `null` would still be indexed → E11000 on 2nd insert.
+    ...(data.corrects_je_id ? { corrects_je_id: data.corrects_je_id } : {}),
     posted_by: data.created_by,
     posted_at: new Date(),
     created_by: data.created_by

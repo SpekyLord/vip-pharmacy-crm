@@ -13,7 +13,7 @@ import PresidentReverseModal from '../components/PresidentReverseModal';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showSuccess, showWarning } from '../utils/errorToast';
 import { useLookupOptions } from '../hooks/useLookups';
 
 function toTitleCase(str) {
@@ -274,7 +274,13 @@ export default function SalesList() {
   const handleReopen = async (id) => {
     if (!window.confirm('Re-open this posted sale? Stock will be reversed.')) return;
     try {
-      await sales.reopenSales([id]);
+      const res = await sales.reopenSales([id]);
+      const failed = res?.failed || [];
+      if (failed.length) {
+        showWarning(failed.map(f => `${f.doc_ref || f._id}: ${f.error}`).join('\n'));
+      } else {
+        showSuccess(res?.message || 'Sale reopened');
+      }
       loadSales(pagination.page);
     } catch (err) {
       showError(err, 'Could not reopen sale');

@@ -17,11 +17,13 @@ const approvalRequestSchema = new mongoose.Schema({
     index: true,
   },
 
-  // The approval rule that triggered this request
+  // The approval rule that triggered this request.
+  // Optional: null when triggered by the default-roles gate (MODULE_DEFAULT_ROLES lookup),
+  // populated when triggered by a configured Authority Matrix ApprovalRule.
   rule_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ApprovalRule',
-    required: true,
+    required: false,
   },
 
   // What document needs approval

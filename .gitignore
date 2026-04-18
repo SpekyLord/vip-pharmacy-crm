@@ -89,3 +89,6 @@ frontend/.env
 
 # Sync scripts with credentials
 scripts/sync-prod-to-dev.sh
+
+# Claude Code permission allowlist (accumulates session commands — can capture test creds, paths)
+.claude/settings.json
