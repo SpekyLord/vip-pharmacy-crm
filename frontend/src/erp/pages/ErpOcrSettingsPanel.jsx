@@ -136,7 +136,7 @@ export default function ErpOcrSettingsPanel() {
 
       <div className="ocr-banner">
         <strong>OCR Governance — per entity, subscription-ready</strong>
-        Disabling OCR or any document type below only skips the Vision API call — users can ALWAYS upload a photo as the manual fallback. The form simply isn't auto-filled. This makes OCR cost-controllable per subscriber.
+        Disabling OCR or any document type below only skips the Vision API call — users can ALWAYS upload a photo as the manual fallback. The form simply isn&apos;t auto-filled. This makes OCR cost-controllable per subscriber.
       </div>
 
       {error && <div className="ocr-error">{error}</div>}
@@ -263,7 +263,7 @@ export default function ErpOcrSettingsPanel() {
             </div>
           </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>
-            Review auto-learned vendors in Vendor Master (filter: "Auto-Learned, Unreviewed"). Approved vendors become first-class in classification. Rejected vendors are deactivated.
+            Review auto-learned vendors in Vendor Master (filter: &quot;Auto-Learned, Unreviewed&quot;). Approved vendors become first-class in classification. Rejected vendors are deactivated.
           </div>
         </div>
       ) : null}
