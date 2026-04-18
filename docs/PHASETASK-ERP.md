@@ -4174,3 +4174,71 @@ Closes the two items previously marked "Intentionally Deferred". Both align with
 - [x] `node -c backend/erp/services/vendorAutoLearner.js` passes
 - [x] `node -c backend/erp/controllers/lookupGenericController.js` passes
 - [x] `npx vite build` clean (12.41s, no errors)
+
+---
+
+## Phase 31 — President Reversal Console (April 2026)
+
+Cross-module SAP Storno dispatch UI replacing per-module "approve deletion" trickle.
+Fully scalable + lookup-driven + subscription-ready (no hardcoded role lists; all
+gating via ERP_SUB_PERMISSION lookups). See CLAUDE-ERP.md "President Reversal
+Console — Phase 31" section for the architecture deep-dive.
+
+### Backend
+- [x] `services/documentReversalService.js` — extended REVERSAL_HANDLERS to 12 types: SALES_LINE, COLLECTION, EXPENSE, CALF, PRF, GRN, IC_TRANSFER, CONSIGNMENT_TRANSFER, INCOME_REPORT, PAYSLIP, PETTY_CASH_TXN, JOURNAL_ENTRY
+- [x] `services/dependentDocChecker.js` — new pre-flight blocker; one checker per doc type; surfaces blocking downstream POSTED docs
+- [x] `services/documentReversalService.js` — `assertReversalPeriodOpen()` helper enforces current-period lock per module
+- [x] `services/documentReversalService.js` — `buildPresidentReverseHandler(docType)` factory removes 12× wrapper duplication
+- [x] `services/documentReversalService.js` — `listReversibleDocs`, `listReversalHistory`, `previewDependents` exports for the console
+- [x] `controllers/presidentReversalController.js` — new controller (registry/reversible/history/preview/reverse)
+- [x] `routes/presidentReversalRoutes.js` — new routes file, mounted at `/api/erp/president/reversals`
+- [x] `routes/index.js` — mounted Phase 31 sub-router
+- [x] Per-module wrappers + routes added to: inventoryController/Routes (GRN), interCompanyController/Routes (ICT), expenseController/Routes (Expense, CALF, PRF unified), incomeController/Routes (Income), payrollController/Routes (Payslip), consignmentController/Routes (DR)
+- [x] Models: added `deletion_event_id` (+ `reopen_count`) to GrnEntry, InterCompanyTransfer, PrfCalf, IncomeReport, Payslip, ExpenseEntry; added `event_id` to Payslip; extended GrnEntry.status enum with DELETION_REQUESTED
+
+### Frontend
+- [x] `hooks/usePresidentReversals.js` — client for the 5 console endpoints
+- [x] `pages/PresidentReversalsPage.jsx` — two tabs (Reversible / History), filters, type badges, dependent-preview before reverse
+- [x] `components/WorkflowGuide.jsx` — `'president-reversals'` guide entry (steps + tips + next links)
+- [x] `components/common/Sidebar.jsx` — "Reversal Console" link under Administration (MANAGEMENT roles)
+- [x] `App.jsx` — `/erp/president/reversals` route registered + lazy import
+- [x] Reuses existing `PresidentReverseModal` component for reason + DELETE confirmation
+
+### UX Polish (Phase 6)
+- [x] `?include_reversed=true` query opts in to showing reversed rows
+- [x] Default-hide filter wired into 8 list endpoints: getSales, getCollections, getExpenseList, getPrfCalfList, getGrnList, getTransfers, getIncomeList, getPayrollStaging
+
+### Sub-Permissions (lookup-driven)
+- `accounting.reverse_posted` (write) — gates per-module + central reverse endpoints
+- `accounting.reversal_console` (read) — gates list/history/preview endpoints
+- President auto-passes both. Subscribers configure other roles via Access Templates.
+
+### Verification
+- [x] All 25 touched backend files syntax-clean (node -c)
+- [x] Cross-entity isolation honored (each loader applies tenantFilter; IC Transfer allows source OR target match)
+- [x] Idempotent JE reversal (skips already-reversed JEs)
+- [x] Dependent-doc blocker tested mentally for: GRN→Sales/ICT, ICT→target Sales, DR→conversions, CALF→Expense+IncomeReport, Sales→Collection
+- [x] Period-lock landing check fires for: SALES, COLLECTION, EXPENSE, INCOME, PAYROLL, INVENTORY, IC_TRANSFER, PETTY_CASH, JOURNAL
+
+### Known Limitations / Deferred
+- collectionController.approveDeletion still leaks VAT/CWT/petty cash cleanup — the per-module "approve deletion" path is a partial reversal. **Use President Console for complete reversal.** Fix scheduled for a later sweep (separate from Phase 31 scope).
+- "REVERSED" badge in Sales/Collection list rows: deferred. Backend filter is in place; UI badge can be added per-page in a follow-up.
+
+### Phase 31 Extension — Shared Detail Panel + Universal Approval Coverage (April 2026)
+
+**Why.** The Approval Hub showed rich per-module detail (line items, photos, VAT totals) while the Reversal Console — triggering a more destructive action — showed only skeleton fields. Additionally, 5 modules call `gateApproval()` on submit but were never wired into the Approval Hub inbox (silent HTTP 202 with no visible backlog).
+
+**What shipped.**
+- [x] `backend/erp/services/documentDetailBuilder.js` — NEW shared per-module detail builders (pure functions). 17 modules registered (12 existing + 5 new).
+- [x] `backend/erp/services/universalApprovalService.js` — refactored every MODULE_QUERIES `details:` block to call `buildDocumentDetails(...)`. Byte-identical behavior. Added `buildGapModulePendingItems()` helper + 5 new entries (IC_TRANSFER, JOURNAL, BANKING, PURCHASING, PETTY_CASH) that read from `ApprovalRequest` and hydrate the underlying doc.
+- [x] `backend/erp/controllers/presidentReversalController.js` — added `getDetail` handler.
+- [x] `backend/erp/routes/presidentReversalRoutes.js` — registered `GET /detail/:doc_type/:doc_id` (gated by `accounting.reversal_console`).
+- [x] `frontend/src/erp/components/DocumentDetailPanel.jsx` — NEW shared renderer. `mode="approval"` shows inline line-edit UI; `mode="reversal"` is read-only.
+- [x] `frontend/src/erp/pages/ApprovalManager.jsx` — replaced 380 lines of inline per-module JSX with one `<DocumentDetailPanel />` call. Quick-edit form preserved.
+- [x] `frontend/src/erp/pages/PresidentReversalsPage.jsx` — expandable rows with lazy detail fetch, result cached per row, image preview modal.
+- [x] `frontend/src/erp/hooks/usePresidentReversals.js` — added `getDetail(docType, docId)`.
+- [x] `docs/APPROVAL_COVERAGE_AUDIT.md` — NEW audit doc listing all 19 `gateApproval()` call sites and their cross-registry status.
+
+**Verified.** `node -c` clean on all 4 touched backend files; `npx vite build` clean (new `DocumentDetailPanel-*.js` chunk emitted).
+
+**Deferred.** CreditNote (creditNoteController calls gateApproval with module='SALES', docType='CREDIT_NOTE' — currently only SalesLine surfaces under SALES). Add a dedicated CREDIT_NOTE MODULE_QUERIES entry + builder + frontend panel in a follow-up.

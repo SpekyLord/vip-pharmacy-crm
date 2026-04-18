@@ -889,6 +889,10 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     if (ROLE_SETS.MANAGEMENT.includes(role)) {
       adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
       adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
+      // Phase 31 — Reversal Console (cross-module SAP Storno).
+      // Visibility = MANAGEMENT role; backend enforces sub-permission gating
+      // (accounting.reversal_console / accounting.reverse_posted).
+      adminItems.push({ path: '/erp/president/reversals', label: 'Reversal Console', icon: AlertTriangle });
       if (isAdmin) {
         adminItems.push({ path: '/erp/customers', label: 'Customers', icon: Users });
         adminItems.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });

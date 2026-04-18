@@ -14,8 +14,38 @@
  */
 
 const { ROLES } = require('../../constants/roles');
+const { isDangerSubPerm } = require('../services/dangerSubPermissions');
 
 const LEVELS = { NONE: 0, VIEW: 1, FULL: 2 };
+
+/**
+ * Helper: shared danger-perm check for the "FULL = all granted" fallback.
+ * Returns `null` if the caller should proceed, or a { statusCode, message }
+ * object if the request must be rejected because the sub-key is danger-tagged.
+ *
+ * Danger sub-permissions require an EXPLICIT grant via Access Template, even
+ * when the user has module-level FULL. President is always allowed upstream.
+ * See `services/dangerSubPermissions.js` for the list (baseline + lookup-driven).
+ */
+async function denyIfDangerFallback(module, subKey, entityId) {
+  const fullKey = `${module}.${subKey}`;
+  try {
+    if (await isDangerSubPerm(fullKey, entityId)) {
+      return {
+        statusCode: 403,
+        message: `Access denied: ${fullKey} is a high-risk operation (e.g. reverse posted journals, hard delete). Module-level FULL does not grant it — an admin must explicitly add it via Access Template → Sub-Permissions.`,
+      };
+    }
+  } catch (err) {
+    // Fail-closed on danger check errors — safer to block than grant accidentally.
+    console.error('[erpAccessCheck] Danger-perm check failed:', err.message);
+    return {
+      statusCode: 503,
+      message: 'Permission system temporarily unavailable. Please retry.',
+    };
+  }
+  return null;
+}
 
 /**
  * Middleware factory: check user's erp_access.modules[module] >= requiredLevel
@@ -94,7 +124,7 @@ const erpAccessCheck = (module, requiredLevel = 'VIEW') => {
  * @param {string} subKey - specific sub-permission key (e.g. 'po_create')
  */
 const erpSubAccessCheck = (module, subKey) => {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ success: false, message: 'Authentication required' });
     }
@@ -138,19 +168,24 @@ const erpSubAccessCheck = (module, subKey) => {
     }
 
     // If no sub_permissions defined for this module:
-    // FULL → all subs granted; VIEW → deny (VIEW = read-only, no write sub-functions)
+    // FULL → all subs granted (except danger keys); VIEW → deny
     // Count only truthy entries — stale false values don't count as "defined"
     const moduleSubs = erp_access.sub_permissions?.[module];
     const truthyCount = moduleSubs ? Object.values(moduleSubs).filter(Boolean).length : 0;
     if (!moduleSubs || truthyCount === 0) {
-      if (userLevel === 'FULL') return next();
+      if (userLevel === 'FULL') {
+        // Phase 3a: danger sub-perms require explicit grant even when module is FULL
+        const denial = await denyIfDangerFallback(module, subKey, req.entityId);
+        if (denial) return res.status(denial.statusCode).json({ success: false, message: denial.message });
+        return next();
+      }
       return res.status(403).json({
         success: false,
         message: `Access denied: ${module}.${subKey} permission required`,
       });
     }
 
-    // Check specific sub-permission
+    // Check specific sub-permission (explicit grants bypass the danger gate — admin took the decision)
     if (moduleSubs[subKey]) return next();
 
     return res.status(403).json({
@@ -189,7 +224,7 @@ const approvalCheck = (req, res, next) => {
  * @param  {...[string, string]} pairs  [module, subKey] tuples
  */
 const erpAnySubAccessCheck = (...pairs) => {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ success: false, message: 'Authentication required' });
     }
@@ -210,7 +245,11 @@ const erpAnySubAccessCheck = (...pairs) => {
       return res.status(403).json({ success: false, message: 'ERP access not enabled for your account' });
     }
 
-    // Check each pair — pass if ANY matches
+    // Check each pair — pass if ANY matches (explicit grants bypass the danger gate).
+    // Collect every FULL-fallback candidate (not just the first) so we can prefer
+    // non-danger pairs: a legitimate non-danger FULL-fallback should grant access
+    // even when some OTHER pair in the group happens to be a danger key.
+    const fullFallbackCandidates = [];
     for (const [mod, subKey] of pairs) {
       const userLevel = erp_access.modules?.[mod] || 'NONE';
       if ((LEVELS[userLevel] || 0) < LEVELS['VIEW']) continue; // no access to this module
@@ -218,10 +257,24 @@ const erpAnySubAccessCheck = (...pairs) => {
       const moduleSubs = erp_access.sub_permissions?.[mod];
       const truthyCount = moduleSubs ? Object.values(moduleSubs).filter(Boolean).length : 0;
       if (!moduleSubs || truthyCount === 0) {
-        if (userLevel === 'FULL') return next(); // FULL with no subs = all granted
+        if (userLevel === 'FULL') {
+          fullFallbackCandidates.push([mod, subKey]);
+        }
         continue;
       }
       if (moduleSubs[subKey]) return next();
+    }
+
+    // No explicit grant matched — try each FULL-fallback candidate. First non-danger
+    // grant wins. If all candidates are danger, the last denial is surfaced.
+    let lastDenial = null;
+    for (const [mod, subKey] of fullFallbackCandidates) {
+      const denial = await denyIfDangerFallback(mod, subKey, req.entityId);
+      if (!denial) return next();
+      lastDenial = denial;
+    }
+    if (lastDenial) {
+      return res.status(lastDenial.statusCode).json({ success: false, message: lastDenial.message });
     }
 
     const labels = pairs.map(([m, s]) => `${m}.${s}`).join(' or ');

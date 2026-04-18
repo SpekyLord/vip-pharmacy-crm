@@ -299,4 +299,9 @@ const convertConsignment = catchAsync(async (req, res) => {
   });
 });
 
-module.exports = { createDR, getDRsByBdm, getConsignmentPool, convertConsignment };
+// President-only: Remove a DR/Consignment row that has zero conversions. Blocks
+// when any qty_consumed > 0 — caller must reverse the converting CSIs first.
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
+const presidentReverseDr = buildPresidentReverseHandler('CONSIGNMENT_TRANSFER');
+
+module.exports = { createDR, getDRsByBdm, getConsignmentPool, convertConsignment, presidentReverseDr };

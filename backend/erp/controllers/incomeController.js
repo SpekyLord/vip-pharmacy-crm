@@ -87,6 +87,11 @@ const getIncomeList = catchAsync(async (req, res) => {
   if (req.query.cycle) filter.cycle = req.query.cycle;
   if (req.query.status) filter.status = req.query.status;
 
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
+
   const reports = await IncomeReport.find(filter)
     .populate('bdm_id', 'name email')
     .sort({ period: -1, cycle: -1 })
@@ -765,11 +770,18 @@ const getFiscalYearStatusEndpoint = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+// President-only: SAP Storno reversal of a CREDITED/BDM_CONFIRMED IncomeReport.
+// Reverses the salary JE (DR Salaries / CR Payroll Payables). DRAFT/REVIEWED
+// reports are hard-deleted. Blocks if downstream Payslip references this report.
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
+const presidentReverseIncome = buildPresidentReverseHandler('INCOME_REPORT');
+
 module.exports = {
   // Income
   generateIncome, getIncomeProjection, requestIncomeGeneration,
   getIncomeList, getIncomeById, getIncomeBreakdown, updateIncomeManual,
   reviewIncome, returnIncome, confirmIncome, creditIncome,
+  presidentReverseIncome,
   // BDM Deduction Lines
   addDeductionLine, removeDeductionLine,
   // Finance Deduction Verification

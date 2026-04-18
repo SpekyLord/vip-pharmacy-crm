@@ -101,6 +101,11 @@ const getTransfers = catchAsync(async (req, res) => {
   if (req.query.source_entity_id) filter.source_entity_id = req.query.source_entity_id;
   if (req.query.target_entity_id) filter.target_entity_id = req.query.target_entity_id;
 
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
+
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
   const skip = (page - 1) * limit;
@@ -688,6 +693,12 @@ const getReassignments = catchAsync(async (req, res) => {
   });
 });
 
+// President-only: dual-side SAP Storno reversal of an SHIPPED/RECEIVED/POSTED IC
+// Transfer. DRAFT/APPROVED/CANCELLED rows are hard-deleted. Blocks if any
+// target-entity SalesLine has consumed the transferred stock.
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
+const presidentReverseIcTransfer = buildPresidentReverseHandler('IC_TRANSFER');
+
 module.exports = {
   createTransfer,
   getTransfers,
@@ -705,5 +716,6 @@ module.exports = {
   getBdmsByEntity,
   createReassignment,
   approveReassignment,
-  getReassignments
+  getReassignments,
+  presidentReverseIcTransfer
 };

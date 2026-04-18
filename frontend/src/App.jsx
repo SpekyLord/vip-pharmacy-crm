@@ -165,6 +165,9 @@ const AgentDashboard = lazyRetry(() => import('./erp/pages/AgentDashboard'));
 // Phase 28 — Approval Workflow
 const ApprovalManager = lazyRetry(() => import('./erp/pages/ApprovalManager'));
 
+// Phase 31 — President Reversal Console (cross-module SAP Storno dispatch)
+const PresidentReversalsPage = lazyRetry(() => import('./erp/pages/PresidentReversalsPage'));
+
 // Phase 31 — Functional Role Assignments
 const RoleAssignmentManager = lazyRetry(() => import('./erp/pages/RoleAssignmentManager'));
 
@@ -754,6 +757,9 @@ function App() {
           <Route path="/erp/agent-dashboard" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentDashboard /></ProtectedRoute>} />
           <Route path="/erp/approvals" element={<ProtectedRoute requiredErpModule="approvals"><ApprovalManager /></ProtectedRoute>} />
           <Route path="/erp/role-assignments" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><RoleAssignmentManager /></ProtectedRoute>} />
+
+          {/* Phase 31 — President Reversal Console (gated by accounting.reversal_console + accounting.reverse_posted) */}
+          <Route path="/erp/president/reversals" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><PresidentReversalsPage /></ProtectedRoute>} />
 
           {/* Phase 32 — KPI Self-Rating & Performance Review */}
           <Route path="/erp/kpi-library" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><KpiLibrary /></ProtectedRoute>} />

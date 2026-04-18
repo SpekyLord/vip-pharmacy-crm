@@ -17,6 +17,8 @@ export default function useCollections() {
   const generateSoa = (hospitalId, entityId, bdmId) => api.post('/collections/soa', { hospital_id: hospitalId, entity_id: entityId, bdm_id: bdmId }, { responseType: 'blob' });
   const requestDeletion = (id) => api.post(`/collections/${id}/request-deletion`, {});
   const approveDeletion = (id, reason) => api.post(`/collections/${id}/approve-deletion`, { reason });
+  const presidentReverseCollection = (id, { reason, confirm }) =>
+    api.post(`/collections/${id}/president-reverse`, { reason, confirm });
 
   return {
     ...api,
@@ -24,6 +26,6 @@ export default function useCollections() {
     createCollection, updateCollection, deleteDraft,
     validateCollections, submitCollections, reopenCollections,
     getArAging, getCollectionRate, generateSoa,
-    requestDeletion, approveDeletion
+    requestDeletion, approveDeletion, presidentReverseCollection
   };
 }

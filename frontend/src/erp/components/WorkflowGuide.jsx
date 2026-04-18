@@ -143,7 +143,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Generate SOA', path: '/erp/collections/soa' },
       { label: 'Petty Cash', path: '/erp/petty-cash' },
     ],
-    tip: 'Overdue accounts (>30 days) are flagged. Cash payments routed to a Petty Cash Fund auto-create a POSTED deposit on submission and auto-void on reopen. Only ACTIVE funds that accept deposits (REVOLVING or DEPOSIT_ONLY mode) are available.',
+    tip: 'Overdue accounts (>30 days) are flagged. Cash payments routed to a Petty Cash Fund auto-create a POSTED deposit on submission and auto-void on reopen. Only ACTIVE funds that accept deposits (REVOLVING or DEPOSIT_ONLY mode) are available. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad CRs. POSTED rows trigger SAP Storno (reverses collection + CWT + commission journals, deletes VAT/CWT ledger entries, voids petty cash deposit, decrements fund balance — all in a single transaction; original kept for audit). DRAFT/VALID/ERROR rows hard-delete. All actions logged.',
   },
   'collection-session': {
     title: 'Recording a Collection',
@@ -193,7 +193,7 @@ const WORKFLOW_GUIDES = {
       { label: 'PRF / CALF', path: '/erp/prf-calf' },
       { label: 'COA Settings', path: '/erp/settings' },
     ],
-    tip: 'Expenses with COA 6900 (Misc) are BLOCKED from posting — map to correct account first. ACCESS expenses with non-cash payment auto-create a CALF. CALF must be POSTED before expense can post. COA codes are configurable in Settings → COA Mapping. OCR scanning is optional — if it fails or is disabled, the photo still uploads as proof and you fill the form manually.',
+    tip: 'Expenses with COA 6900 (Misc) are BLOCKED from posting — map to correct account first. ACCESS expenses with non-cash payment auto-create a CALF. CALF must be POSTED before expense can post. COA codes are configurable in Settings → COA Mapping. OCR scanning is optional — if it fails or is disabled, the photo still uploads as proof and you fill the form manually. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad expense rows. POSTED/DELETION_REQUESTED → SAP Storno (reverses expense + CALF-link clear + journal entries; original kept for audit). DRAFT/VALID/ERROR → hard delete. Blocked if a POSTED CALF still references the row; reverse the CALF first. All actions logged.',
   },
   'smer': {
     title: 'SMER (Sales/Marketing Expense Report)',
@@ -248,7 +248,7 @@ const WORKFLOW_GUIDES = {
       { label: 'View Sales', path: '/erp/sales' },
       { label: 'COA Settings', path: '/erp/settings' },
     ],
-    tip: 'Partner rebates follow accrual basis — journal entry (DR 5200 PARTNER_REBATE, CR funding) is created only when PRF is posted, not when the collection is recorded. CALF validates that linked expense line IDs actually belong to the referenced expense entry. Document numbers auto-generate from Territory + date + sequence — if generation fails, check Territory setup for the BDM. All COA codes are admin-configurable in Settings.',
+    tip: 'Partner rebates follow accrual basis — journal entry (DR 5200 PARTNER_REBATE, CR funding) is created only when PRF is posted, not when the collection is recorded. CALF validates that linked expense line IDs actually belong to the referenced expense entry. Document numbers auto-generate from Territory + date + sequence — if generation fails, check Territory setup for the BDM. All COA codes are admin-configurable in Settings. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad PRF/CALF rows. POSTED → SAP Storno (CALF: clears calf_id on non-POSTED expenses; PRF: clears rebate_prf_id on the linked Collection; reverses the associated JE). Blocked if a POSTED downstream doc still depends on it (e.g., POSTED expense funded by this CALF, or an IncomeReport that auto-deducted this CALF — reverse those first). Controller auto-picks CALF vs PRF handler from the row\'s doc_type. All actions logged.',
   },
   'collaterals': {
     title: 'Marketing Collaterals',
@@ -270,14 +270,14 @@ const WORKFLOW_GUIDES = {
       'Create a transfer order to move stock between warehouses',
       'Select source warehouse, target warehouse, and products',
       'Subsidiary entities can browse parent company products — configurable via PRODUCT_CATALOG_ACCESS lookup',
-      'Enter quantities to transfer',
+      'Enter quantities to transfer — each order is assigned a human-readable ref at save time: ICT-{ENTITY}{MMDDYY}-{NNN} (e.g. ICT-VIP041826-001)',
       'Validate and Post — updates inventory in both warehouses',
     ],
     next: [
       { label: 'Receive Transfer', path: '/erp/transfers/receive' },
       { label: 'View Inventory', path: '/erp/my-stock' },
     ],
-    tip: 'Inter-company transfers (between entities) use transfer prices set by the president. Subsidiary product catalog access is lookup-driven.',
+    tip: 'Inter-company transfers (between entities) use transfer prices set by the president. Subsidiary product catalog access is lookup-driven. Transfer refs use the source entity\'s short_name as the code (admin-editable in Entity management, cache-busted on rename) — subsidiaries get their own prefix without a code change, matching JE/CALF/PO numbering. Legacy transfers created before the numbering rollout show their original ICT-YYYYMMDD-NNN format; new transfers use the unified format.',
   },
   'transfers-receive': {
     title: 'Receiving Stock Transfers',
@@ -584,16 +584,18 @@ const WORKFLOW_GUIDES = {
   'journal-entries': {
     title: 'Journal Entries',
     steps: [
-      'Create manual JE with debit and credit lines (must balance)',
-      'Add reference document or description',
-      'Post — entries flow to Trial Balance and P&L',
-      'Void if needed — creates reversal JE (Storno pattern)',
+      'Create manual JE with debit and credit lines (must balance within ₱0.01)',
+      'Add reference document or description — each JE is assigned a human-readable number at DRAFT time: JE-{ENTITY}{MMDDYY}-{NNN} (e.g. JE-VIP041826-001)',
+      'Post — the system runs the Authority gate (MODULE_DEFAULT_ROLES.JOURNAL + optional ApprovalRule). Authorized roles post directly; others route through the Approval Hub',
+      'Posted JEs flow to Trial Balance, P&L, and General Ledger',
+      'Reverse if needed — creates a new JE with flipped amounts (SAP Storno); original stays POSTED with corrects_je_id linking them. Reversal is gated by accounting.reverse_posted danger sub-permission.',
     ],
     next: [
       { label: 'Trial Balance', path: '/erp/trial-balance' },
       { label: 'P&L', path: '/erp/pnl' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
     ],
-    tip: 'Auto-journals are created by Sales, Collections, Expenses. Manual JEs are for adjustments only.',
+    tip: 'Auto-journals are created automatically by Sales, Collections, Expenses, Petty Cash, IC Transfers, GRN, Depreciation, Interest — these inherit the source document\'s approval decision and do NOT re-gate. Manual JEs (created in this page) DO go through the Authority gate on post. JE numbers use the entity\'s short_name as the code (admin-editable in Entity management, cache-busted on rename) — subsidiaries get their own prefix without a code change. Legacy JEs created before the numbering rollout show their original numeric ID; new JEs use the formatted string. Sort order is chronological (je_date) — the number is for identification, not ordering.',
   },
   'month-end-close': {
     title: 'Month-End Close',
@@ -699,7 +701,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Journal Entries', path: '/erp/journals' },
       { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
     ],
-    tip: 'Fund modes, statuses, expense categories, and transaction types are lookup-driven — manage them in Control Center > Lookup Tables (PETTY_CASH_FUND_TYPE, PETTY_CASH_FUND_STATUS, PETTY_CASH_EXPENSE_CATEGORY).',
+    tip: 'Fund modes, statuses, expense categories, and transaction types are lookup-driven — manage them in Control Center > Lookup Tables (PETTY_CASH_FUND_TYPE, PETTY_CASH_FUND_STATUS, PETTY_CASH_EXPENSE_CATEGORY). President Delete — for anyone granted accounting.reverse_posted in Access Templates (baseline: President only; delegable to CFO/Finance without a code change via ERP_DANGER_SUB_PERMISSIONS). Per-transaction SAP Storno: POSTED txn is marked VOIDED, its journal entry is reversed, and the fund balance flips back in a single atomic session. Fund delete is gated by the same danger sub-perm — the old hardcoded president-only check was removed so subsidiaries can delegate via the template editor. All actions logged to ErpAuditLog.',
   },
   'consignment-aging': {
     title: 'Consignment Aging',
@@ -1267,6 +1269,24 @@ const WORKFLOW_GUIDES = {
       { label: 'Control Center', path: '/erp/control-center' },
     ],
     tip: 'Audit logs are retained for 90 days. Archive older records if needed for compliance.',
+  },
+
+  // ═══ Phase 31 — President Reversal Console ═══
+  'president-reversals': {
+    title: 'President Reversal Console — SAP Storno across all modules',
+    steps: [
+      'Pick the Reversible Transactions tab to see POSTED docs across Sales, Collections, Expenses, CALF/PRF, GRN, IC Transfers, DR, Income, Payroll, Petty Cash, and manual JEs.',
+      'Filter by document type and date range. The type list is lookup-driven — new modules appear automatically once their handler is registered.',
+      'Click "Reverse…" on a row. The modal shows the dependent-doc preview: if any downstream POSTED doc consumed funds/stock, you must reverse those first.',
+      'Type the reason and DELETE to confirm. SAP Storno reversal posts to the current open period; the original document stays POSTED with a deletion_event_id link.',
+      'Switch to the Reversal History tab to audit every prior reversal — actor, timestamp, side effects, reason.',
+    ],
+    next: [
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'Audit Logs', path: '/erp/audit-logs' },
+      { label: 'Period Locks', path: '/erp/period-locks' },
+    ],
+    tip: 'Reversal entries land in the current period. If the current month is locked for the relevant module, unlock it first or wait. The original period is never modified. VAT (2550Q) and CWT (2307) ledger rows are NOT auto-modified by reversal — they are a finance-owned staging layer. During filing prep, check the finance_tag on any VAT/CWT rows whose source document has been reversed (look for the PRESIDENT_REVERSAL audit entry) and tag them EXCLUDE if they should not be filed, or add a reconciliation note if already filed.',
   },
 
   // ═══ Phase 28 — Sales Goals & KPI ═══

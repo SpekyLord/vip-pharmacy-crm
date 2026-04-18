@@ -39,7 +39,7 @@ const FINANCIAL_RULES = [
 const OPERATIONAL_RULES = [
   { module: 'SALES',       doc_type: 'CSI',          description: 'Customer sales invoice batch' },
   { module: 'SALES',       doc_type: 'CREDIT_NOTE',  description: 'Credit note submission' },
-  { module: 'COLLECTIONS', doc_type: 'CR',           description: 'Collection receipts' },
+  { module: 'COLLECTION',  doc_type: 'CR',           description: 'Collection receipts' },
   { module: 'INVENTORY',   doc_type: 'GRN',          description: 'Goods Received Note posting' },
 ];
 

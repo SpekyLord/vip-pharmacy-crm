@@ -1048,6 +1048,11 @@ const getExpenseList = catchAsync(async (req, res) => {
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
 
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
+
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
 
@@ -1493,6 +1498,11 @@ const getPrfCalfList = catchAsync(async (req, res) => {
   if (req.query.doc_type) filter.doc_type = req.query.doc_type;
   if (req.query.status) filter.status = req.query.status;
   if (req.query.period) filter.period = req.query.period;
+
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
@@ -2772,6 +2782,27 @@ const postSinglePrfCalf = async (doc, userId) => {
   }
 };
 
+// President-only: SAP Storno reversal for Expenses (ORE/ACCESS), CALF, and PRF.
+// CALF clears non-POSTED expense calf_id links; PRF clears Collection rebate_prf_id.
+// Idempotent JE reversal; period-locked landing month rejected.
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
+const presidentReverseExpense = buildPresidentReverseHandler('EXPENSE');
+const _reverseCalfHandler = buildPresidentReverseHandler('CALF');
+const _reversePrfHandler = buildPresidentReverseHandler('PRF');
+
+// PRF and CALF share the same Mongoose model (PrfCalf) with a `doc_type`
+// discriminator. Rather than forcing the frontend to know which URL variant to
+// call, auto-route: peek at the doc, then dispatch to the matching handler.
+// Keeps one URL per module — matches Sales/Collection ergonomics.
+const presidentReversePrfCalf = catchAsync(async (req, res) => {
+  const row = await PrfCalf.findById(req.params.id).select('doc_type').lean();
+  if (!row) return res.status(404).json({ success: false, message: 'PRF/CALF not found in your scope' });
+  const fn = row.doc_type === 'PRF' ? _reversePrfHandler : _reverseCalfHandler;
+  return fn(req, res);
+});
+const presidentReverseCalf = _reverseCalfHandler;
+const presidentReversePrf = _reversePrfHandler;
+
 module.exports = {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
@@ -2795,5 +2826,7 @@ module.exports = {
   // Per Diem Config
   getPerdiemConfig,
   // Single-document posting helpers (for Approval Hub)
-  postSingleSmer, postSingleCarLogbook, postSingleExpense, postSinglePrfCalf
+  postSingleSmer, postSingleCarLogbook, postSingleExpense, postSinglePrfCalf,
+  // President Reversal (Phase 3a rollout — lookup-driven: accounting.reverse_posted)
+  presidentReverseExpense, presidentReverseCalf, presidentReversePrf, presidentReversePrfCalf
 };

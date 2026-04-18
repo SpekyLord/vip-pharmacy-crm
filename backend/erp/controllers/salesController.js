@@ -386,6 +386,12 @@ const getSales = catchAsync(async (req, res) => {
     if (req.query.csi_date_to) filter.csi_date.$lte = new Date(req.query.csi_date_to);
   }
 
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  // Reversed rows stay POSTED for audit, but pollute working lists if shown.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
+
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
   const skip = (page - 1) * limit;

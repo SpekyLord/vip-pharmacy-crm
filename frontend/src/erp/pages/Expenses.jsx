@@ -17,6 +17,7 @@ import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError } from '../utils/errorToast';
+import PresidentReverseModal from '../components/PresidentReverseModal';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
  
@@ -366,12 +367,13 @@ const pageStyles = `
 
 export default function Expenses() {
   const { user } = useAuth();
-  const { getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense, validateExpenses, submitExpenses, reopenExpenses, getExpenseSummary, batchUploadExpenses, saveBatchExpenses, loading } = useExpenses();
+  const { getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense, validateExpenses, submitExpenses, reopenExpenses, getExpenseSummary, batchUploadExpenses, saveBatchExpenses, presidentReverseExpense, loading } = useExpenses();
   const { getPeopleList } = usePeople();
   const { getMyCards, getMyBankAccounts, listAccounts } = useAccounting();
   const { hasSubPermission } = useErpSubAccess();
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const canBatchUpload = hasSubPermission('expenses', 'batch_upload') && isAdmin;
+  const canPresidentReverse = hasSubPermission('accounting', 'reverse_posted');
   const lookupApi = useErpApi();
   const { options: expCatOpts } = useLookupOptions('EXPENSE_CATEGORY');
   const EXPENSE_CATEGORIES = expCatOpts.map(o => o.label);
@@ -384,6 +386,7 @@ export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
   const [editingExpense, setEditingExpense] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [reverseTarget, setReverseTarget] = useState(null);
   const [summary, setSummary] = useState(null);
   const [period, setPeriod] = useState(() => {
     const d = new Date();
@@ -645,6 +648,23 @@ export default function Expenses() {
   };
   const handleReopen = async (id) => { try { await reopenExpenses([id]); showMsg('Reopened'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Reopen failed', true); } };
   const handleDelete = async (id) => { try { await deleteDraftExpense(id); showMsg('Deleted'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Delete failed', true); } };
+  const handlePresidentReverse = async ({ reason, confirm }) => {
+    if (!reverseTarget) return;
+    try {
+      const res = await presidentReverseExpense(reverseTarget._id, { reason, confirm });
+      setReverseTarget(null);
+      showMsg(res?.message || 'Expense reversed');
+      loadExpenses();
+    } catch (err) {
+      const deps = err?.response?.data?.dependents;
+      const baseMsg = err?.response?.data?.message || err?.message || 'Could not reverse expense';
+      const msg = deps?.length
+        ? `${baseMsg} — depends on: ${deps.map(d => `${d.type} ${d.ref}`).join(', ')}`
+        : baseMsg;
+      showMsg(msg, true);
+      throw err;
+    }
+  };
 
   const totalOre = lines.filter(l => l.expense_type === 'ORE').reduce((s, l) => s + (l.amount || 0), 0);
   const totalAccess = lines.filter(l => l.expense_type === 'ACCESS').reduce((s, l) => s + (l.amount || 0), 0);
@@ -923,6 +943,15 @@ export default function Expenses() {
                           <button onClick={() => handleDelete(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                         )}
                         {e.status === 'POSTED' && isAdmin && <button onClick={() => handleReopen(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
+                        {canPresidentReverse && !e.deletion_event_id && (
+                          <button
+                            onClick={() => setReverseTarget(e)}
+                            title="President: delete & reverse (SAP Storno for POSTED; hard-delete otherwise)"
+                            style={{ marginLeft: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: 'none', background: '#7f1d1d', color: '#fff', cursor: 'pointer' }}
+                          >
+                            President Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                     {e.status === 'ERROR' && e.validation_errors?.length > 0 && (
@@ -987,6 +1016,15 @@ export default function Expenses() {
                     )}
                     {e.status === 'POSTED' && isAdmin && (
                       <button onClick={() => handleReopen(e._id)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>
+                    )}
+                    {canPresidentReverse && !e.deletion_event_id && (
+                      <button
+                        onClick={() => setReverseTarget(e)}
+                        title="President: delete & reverse (SAP Storno for POSTED; hard-delete otherwise)"
+                        style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: 'none', background: '#7f1d1d', color: '#fff', cursor: 'pointer' }}
+                      >
+                        President Delete
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1082,6 +1120,14 @@ export default function Expenses() {
         </main>
       </div>
       <ScanORModal open={scanOpen} onClose={() => setScanOpen(false)} onApply={handleScanApply} />
+      {reverseTarget && (
+        <PresidentReverseModal
+          docLabel={`${reverseTarget.period || ''} ${reverseTarget.cycle || ''} · ₱${(reverseTarget.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} · ${reverseTarget.status}`}
+          docStatus={reverseTarget.status}
+          onConfirm={handlePresidentReverse}
+          onClose={() => setReverseTarget(null)}
+        />
+      )}
     </div>
   );
 }

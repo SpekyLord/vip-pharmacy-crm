@@ -7,9 +7,9 @@
  */
 const mongoose = require('mongoose');
 const JournalEntry = require('../models/JournalEntry');
-const DocSequence = require('../models/DocSequence');
 const VatLedger = require('../models/VatLedger');
 const CwtLedger = require('../models/CwtLedger');
+const { generateJeNumber } = require('./docNumbering');
 
 /**
  * Create a journal entry in DRAFT status with auto-assigned JE number
@@ -18,9 +18,7 @@ const CwtLedger = require('../models/CwtLedger');
  * @returns {Object} created JournalEntry document
  */
 async function createJournal(entityId, data) {
-  const year = new Date(data.je_date).getFullYear();
-  const seqKey = `JE-${entityId}-${year}`;
-  const jeNumber = await DocSequence.getNext(seqKey);
+  const jeNumber = await generateJeNumber({ entityId, date: data.je_date });
 
   const je = await JournalEntry.create({
     entity_id: entityId,
@@ -73,9 +71,7 @@ async function postJournal(jeId, userId, entityId) {
  * @returns {Object} posted JournalEntry
  */
 async function createAndPostJournal(entityId, data, options = {}) {
-  const year = new Date(data.je_date).getFullYear();
-  const seqKey = `JE-${entityId}-${year}`;
-  const jeNumber = await DocSequence.getNext(seqKey);
+  const jeNumber = await generateJeNumber({ entityId, date: data.je_date });
 
   const doc = {
     entity_id: entityId,
@@ -130,7 +126,7 @@ async function reverseJournal(jeId, reason, userId, entityId) {
 
     // Check not already reversed
     const existing = await JournalEntry.findOne({ corrects_je_id: original._id }).session(session);
-    if (existing) throw new Error(`JE already reversed by JE #${existing.je_number}`);
+    if (existing) throw new Error(`JE already reversed by ${existing.je_number}`);
 
     // Flip debit/credit on each line
     const reversedLines = original.lines.map(line => ({
@@ -150,7 +146,7 @@ async function reverseJournal(jeId, reason, userId, entityId) {
     const reversal = await createAndPostJournal(original.entity_id, {
       je_date: now,
       period: reversalPeriod,
-      description: `Reversal of JE #${original.je_number}: ${reason || ''}`.trim(),
+      description: `Reversal of ${original.je_number}: ${reason || ''}`.trim(),
       source_module: original.source_module,
       source_event_id: original.source_event_id,
       lines: reversedLines,
@@ -194,9 +190,12 @@ async function getJournalsByPeriod(entityId, filters = {}) {
   const limit = parseInt(filters.limit) || 50;
   const skip = (page - 1) * limit;
 
+  // Chronological sort: je_date first, then created_at as tiebreaker. String
+  // je_number sort would be lexical (MMDDYY doesn't sort across years) so we
+  // cannot rely on it for ordering — numbering is for identification, not order.
   const [data, total] = await Promise.all([
     JournalEntry.find(query)
-      .sort({ je_number: -1 })
+      .sort({ je_date: -1, created_at: -1 })
       .skip(skip)
       .limit(limit)
       .lean(),
@@ -226,7 +225,7 @@ async function getGeneralLedger(entityId, accountCode, dateRange = {}) {
   }
 
   const entries = await JournalEntry.find(match)
-    .sort({ je_date: 1, je_number: 1 })
+    .sort({ je_date: 1, created_at: 1 })
     .lean();
 
   // Extract relevant lines and compute running balance

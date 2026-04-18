@@ -114,6 +114,9 @@ const incomeReportSchema = new mongoose.Schema({
 
   // ── Audit ──
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+  // SAP Storno reversal — set when IncomeReport is reversed; original stays CREDITED for audit trail
+  deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+  reopen_count: { type: Number, default: 0 },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   created_at: { type: Date, default: Date.now, immutable: true },
   edit_history: [{ type: mongoose.Schema.Types.Mixed }]

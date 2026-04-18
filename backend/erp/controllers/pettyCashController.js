@@ -12,6 +12,7 @@ const PettyCashRemittance = require('../models/PettyCashRemittance');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { journalFromPettyCash } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
 
 // ═══════════════════════════════════════════════════════════
 // HELPERS
@@ -721,6 +722,11 @@ const deleteFund = catchAsync(async (req, res) => {
   res.json({ success: true, message: `Fund ${fund.fund_code} deleted` });
 });
 
+// President-only SAP Storno reversal for a POSTED petty-cash transaction.
+// VOIDs the txn, reverses linked JE, reverses fund balance (+/- based on txn_type).
+// Gated at route by erpSubAccessCheck('accounting','reverse_posted') — lookup-driven.
+const presidentReversePettyCashTxn = buildPresidentReverseHandler('PETTY_CASH_TXN');
+
 module.exports = {
   getFunds,
   getFundById,
@@ -737,5 +743,7 @@ module.exports = {
   generateReplenishment,
   getDocuments,
   signDocument,
-  processDocument
+  processDocument,
+  // President Reversal (Phase 3a rollout)
+  presidentReversePettyCashTxn
 };

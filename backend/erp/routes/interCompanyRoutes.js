@@ -42,4 +42,9 @@ router.patch('/:id/receive', gate, ic.receiveTransfer); // Target BDM or admin
 router.patch('/:id/post', gate, roleCheck('president', 'admin'), ic.postTransfer);
 router.patch('/:id/cancel', gate, roleCheck('president', 'admin', 'contractor'), ic.cancelTransfer);
 
+// Phase 31 — President SAP Storno reversal of an SHIPPED/RECEIVED/POSTED IC Transfer.
+// Dual-side reversal (source + target). DRAFT/APPROVED/CANCELLED hard-deleted.
+// Blocks if any target-entity SalesLine consumed transferred stock.
+router.post('/:id/president-reverse', erpSubAccessCheck('accounting', 'reverse_posted'), ic.presidentReverseIcTransfer);
+
 module.exports = router;

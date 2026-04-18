@@ -68,6 +68,11 @@ const getPayrollStaging = catchAsync(async (req, res) => {
     filter.status = { $in: ['COMPUTED', 'REVIEWED', 'APPROVED'] };
   }
 
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
+
   const payslips = await Payslip.find(filter)
     .populate('person_id', 'full_name person_type department')
     .sort({ 'person_id.full_name': 1 })
@@ -262,6 +267,12 @@ const computeThirteenthMonth = catchAsync(async (req, res) => {
   });
 });
 
+// President-only: SAP Storno reversal for a POSTED Payslip. Reverses the linked
+// payroll JE (basic/allowances/SSS/PH/Pag-IBIG/WHT). Older payslips without
+// event_id fall back to JE lookup by source_module='PAYROLL' + period match.
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
+const presidentReversePayslip = buildPresidentReverseHandler('PAYSLIP');
+
 module.exports = {
   computePayroll,
   getPayrollStaging,
@@ -269,6 +280,7 @@ module.exports = {
   approvePayslip,
   postPayroll,
   getPayslip,
+  presidentReversePayslip,
   getPayslipHistory,
   computeThirteenthMonth,
 };

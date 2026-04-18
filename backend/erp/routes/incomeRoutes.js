@@ -9,6 +9,7 @@
  */
 const express = require('express');
 const { roleCheck } = require('../../middleware/roleCheck');
+const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const periodLockCheck = require('../middleware/periodLockCheck');
 const {
   // Income
@@ -26,7 +27,9 @@ const {
   // Archive
   closePeriod, reopenPeriod, getPeriodStatus, getArchiveList,
   // Year-End
-  validateYearEnd, executeYearEnd, getFiscalYearStatus
+  validateYearEnd, executeYearEnd, getFiscalYearStatus,
+  // President reversal (Phase 31)
+  presidentReverseIncome
 } = require('../controllers/incomeController');
 
 const router = express.Router();
@@ -73,5 +76,9 @@ router.get('/archive', getArchiveList);
 router.get('/archive/year-end/validate', roleCheck('admin', 'finance', 'president'), validateYearEnd);
 router.post('/archive/year-end/close', roleCheck('admin', 'finance', 'president'), executeYearEnd);
 router.get('/archive/year-end/status', getFiscalYearStatus);
+
+// Phase 31 — President SAP Storno reversal of a CREDITED/BDM_CONFIRMED IncomeReport.
+// DRAFT/REVIEWED hard-deleted. Reverses the salary JE + clears auto-pulled CALF lines.
+router.post('/income/:id/president-reverse', erpSubAccessCheck('accounting', 'reverse_posted'), presidentReverseIncome);
 
 module.exports = router;

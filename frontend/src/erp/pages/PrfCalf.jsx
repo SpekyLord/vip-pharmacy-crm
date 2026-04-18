@@ -7,11 +7,13 @@ import { ROLE_SETS } from '../../constants/roles';
 import useExpenses from '../hooks/useExpenses';
 import useAccounting from '../hooks/useAccounting';
 import useErpApi from '../hooks/useErpApi';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError, showApprovalPending } from '../utils/errorToast';
+import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
+import PresidentReverseModal from '../components/PresidentReverseModal';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -19,13 +21,16 @@ const STATUS_COLORS = {
 
 export default function PrfCalf() {
   const { user } = useAuth();
-  const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines, loading } = useExpenses();
+  const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines, presidentReversePrfCalf, loading } = useExpenses();
   const { getMyCards, getMyBankAccounts } = useAccounting();
   const lookupApi = useErpApi();
+  const { hasSubPermission } = useErpSubAccess();
+  const canPresidentReverse = hasSubPermission('accounting', 'reverse_posted');
 
   const [docs, setDocs] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [reverseTarget, setReverseTarget] = useState(null);
   const [pendingRebates, setPendingRebates] = useState([]);
   const [pendingCalfLines, setPendingCalfLines] = useState([]);
   const [myCards, setMyCards] = useState([]);
@@ -217,6 +222,23 @@ export default function PrfCalf() {
   };
   const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch (err) { showError(err, 'Could not reopen PRF/CALF'); } };
   const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch (err) { showError(err, 'Could not delete PRF/CALF'); } };
+  const handlePresidentReverse = async ({ reason, confirm }) => {
+    if (!reverseTarget) return;
+    try {
+      const res = await presidentReversePrfCalf(reverseTarget._id, { reason, confirm });
+      setReverseTarget(null);
+      showSuccess(res?.message || `${reverseTarget.doc_type || 'PRF/CALF'} reversed`);
+      loadDocs();
+    } catch (err) {
+      const deps = err?.response?.data?.dependents;
+      const baseMsg = err?.response?.data?.message || err?.message || 'Could not reverse PRF/CALF';
+      const msg = deps?.length
+        ? `${baseMsg} — depends on: ${deps.map(d => `${d.type} ${d.ref}`).join(', ')}`
+        : baseMsg;
+      showError({ message: msg }, msg);
+      throw err;
+    }
+  };
 
   const isFinance = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const calfBalance = (form.advance_amount || 0) - (form.liquidation_amount || 0);
@@ -451,6 +473,15 @@ export default function PrfCalf() {
                           <button onClick={() => handleDelete(d._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                         )}
                         {d.status === 'POSTED' && isFinance && <button onClick={() => handleReopen(d._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
+                        {canPresidentReverse && !d.deletion_event_id && (
+                          <button
+                            onClick={() => setReverseTarget(d)}
+                            title="President: delete & reverse (SAP Storno for POSTED; hard-delete otherwise)"
+                            style={{ marginLeft: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: 'none', background: '#7f1d1d', color: '#fff', cursor: 'pointer' }}
+                          >
+                            President Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -498,6 +529,15 @@ export default function PrfCalf() {
                     )}
                     {d.status === 'POSTED' && isFinance && (
                       <button onClick={() => handleReopen(d._id)} style={{ border: '1px solid #eab308', background: '#fff', color: '#b45309' }}>Re-open</button>
+                    )}
+                    {canPresidentReverse && !d.deletion_event_id && (
+                      <button
+                        onClick={() => setReverseTarget(d)}
+                        title="President: delete & reverse (SAP Storno for POSTED; hard-delete otherwise)"
+                        style={{ border: 'none', background: '#7f1d1d', color: '#fff' }}
+                      >
+                        President Delete
+                      </button>
                     )}
                   </div>
                 </div>
@@ -671,6 +711,14 @@ export default function PrfCalf() {
           )}
         </main>
       </div>
+      {reverseTarget && (
+        <PresidentReverseModal
+          docLabel={`${reverseTarget.doc_type || 'PRF/CALF'} · ${reverseTarget.period || ''} ${reverseTarget.cycle || ''} · ₱${(reverseTarget.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} · ${reverseTarget.status}`}
+          docStatus={reverseTarget.status}
+          onConfirm={handlePresidentReverse}
+          onClose={() => setReverseTarget(null)}
+        />
+      )}
     </div>
   );
 }
