@@ -75,7 +75,19 @@
       "Bash(grep -l \"gateApproval\" /c/Users/LENOVO/OneDrive/Documents/\"VIP and VS CODE\"/\"VIP IP\"/\"VIP CRM ERP\"/vip-pharmacy-crm/backend/erp/controllers/*.js)",
       "Bash(npx eslint *)",
       "Bash(npx --no-install eslint src/erp/components/VendorLearningReviewModal.jsx src/erp/pages/VendorList.jsx src/erp/pages/ControlCenter.jsx src/erp/components/WorkflowGuide.jsx)",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(ls .env*)",
+      "Bash(ls ../.env*)",
+      "WebFetch(domain:viosintegrated.net)",
+      "Bash(curl -sI https://viosintegrated.net/privacy)",
+      "Bash(git -C \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm\" status backend/scripts/debugCsi7648.js)",
+      "Bash(git -C \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm\" branch -a)",
+      "Bash(git -C \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm\" ls-tree origin/dev -- backend/scripts/debugCsi7648.js)",
+      "Bash(git -C \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm\" log origin/dev --oneline -10 -- backend/scripts/)",
+      "Bash(nslookup cluster0.e9wenoo.mongodb.net 8.8.8.8)",
+      "Bash(ping -n 1 8.8.8.8)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npx.cmd eslint *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp",

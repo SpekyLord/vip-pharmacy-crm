@@ -91,6 +91,8 @@ async function createAndPostJournal(entityId, data, options = {}) {
     bir_flag: data.bir_flag || 'BOTH',
     vat_flag: data.vat_flag || 'N/A',
     status: 'POSTED',
+    is_reversal: data.is_reversal || false,
+    corrects_je_id: data.corrects_je_id || null,
     posted_by: data.created_by,
     posted_at: new Date(),
     created_by: data.created_by
@@ -152,13 +154,10 @@ async function reverseJournal(jeId, reason, userId, entityId) {
       lines: reversedLines,
       bir_flag: original.bir_flag,
       vat_flag: original.vat_flag,
-      created_by: userId
+      created_by: userId,
+      is_reversal: true,
+      corrects_je_id: original._id
     }, { session });
-
-    // Link reversal — same transaction
-    reversal.corrects_je_id = original._id;
-    reversal.is_reversal = true;
-    await reversal.save({ session });
 
     // Clean up VAT/CWT ledger entries linked to the original source event
     if (original.source_event_id) {
