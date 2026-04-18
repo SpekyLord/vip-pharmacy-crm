@@ -7,6 +7,8 @@ import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
 import useCustomers from '../hooks/useCustomers';
 import useErpApi from '../hooks/useErpApi';
+import useReports from '../hooks/useReports';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import WarehousePicker from '../components/WarehousePicker';
 
@@ -540,6 +542,11 @@ export default function SalesEntry() {
   const [actionLoading, setActionLoading] = useState('');
   const [scanModalOpen, setScanModalOpen] = useState(false);
   const [customerList, setCustomerList] = useState([]);
+  // Phase 15.2 (softened) — BDM's available CSI numbers (monitoring hint)
+  const [availableCsi, setAvailableCsi] = useState([]);
+  const reportsHook = useReports();
+  const { hasSubPermission } = useErpSubAccess();
+  const canManageCsi = hasSubPermission('inventory', 'csi_booklets');
 
   // Phase 18: Service Invoice state (no line items — just description + total)
   const [serviceForm, setServiceForm] = useState({ customer_type: 'hospital', customer_ref: '', csi_date: new Date().toISOString().split('T')[0], service_description: '', invoice_total: '', payment_mode: 'CASH', petty_cash_fund_id: '' });
@@ -551,6 +558,8 @@ export default function SalesEntry() {
   useEffect(() => {
     lookupApi.get('/lookups/payment-modes').then(r => setPaymentModes(r?.data || [])).catch(() => {});
     lookupApi.get('/petty-cash/funds').then(r => setPettyCashFunds((r?.data || []).filter(f => f.status === 'ACTIVE' && (f.fund_mode || 'REVOLVING') !== 'EXPENSE_ONLY'))).catch(() => {});
+    // Phase 15.2 (softened) — preload my allocated CSI numbers (non-blocking monitoring hint)
+    reportsHook.getAvailableCsiNumbers().then(r => setAvailableCsi(r?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prefill from navigation (e.g. "Issue CSI" from Consignment Aging)
@@ -870,7 +879,9 @@ export default function SalesEntry() {
             <div className="sales-nav-tabs" role="tablist" aria-label="Sales navigation">
               <Link to="/erp/sales/entry" className="sales-nav-tab active" aria-current="page">Sales</Link>
               <Link to="/erp/sales" className="sales-nav-tab">Sales Transactions</Link>
-              <Link to="/erp/csi-booklets" className="sales-nav-tab">CSI Booklets</Link>
+              <Link to="/erp/csi-booklets" className="sales-nav-tab">
+                {canManageCsi ? 'CSI Booklets' : 'My CSI'}
+              </Link>
             </div>
             <div className="sales-toolbar-row">
               <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
@@ -1128,7 +1139,22 @@ export default function SalesEntry() {
                       <input type="date" value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) : ''} onChange={e => updateRow(idx, 'csi_date', e.target.value)} disabled={row.status === 'POSTED'} />
                     </td>
                     <td>
-                      <input value={row.doc_ref || ''} onChange={e => updateRow(idx, 'doc_ref', e.target.value)} placeholder="CSI#" disabled={row.status === 'POSTED'} />
+                      <input
+                        value={row.doc_ref || ''}
+                        onChange={e => updateRow(idx, 'doc_ref', e.target.value)}
+                        placeholder="CSI#"
+                        disabled={row.status === 'POSTED'}
+                        list={`available-csi-${idx}`}
+                      />
+                      {saleType === 'CSI' && availableCsi.length > 0 && (
+                        <datalist id={`available-csi-${idx}`}>
+                          {availableCsi.slice(0, 50).map(a => (
+                            <option key={`${a.booklet_id}-${a.number}`} value={a.number}>
+                              {a.booklet_code ? `${a.booklet_code} · ${a.number}` : a.number}
+                            </option>
+                          ))}
+                        </datalist>
+                      )}
                     </td>
                     <td>
                       {row.line_items?.map((item, li) => (
@@ -1264,7 +1290,25 @@ export default function SalesEntry() {
                 <label>CSI Date</label>
                 <input type="date" value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) : ''} onChange={e => updateRow(idx, 'csi_date', e.target.value)} />
                 <label>CSI #</label>
-                <input value={row.doc_ref || ''} onChange={e => updateRow(idx, 'doc_ref', e.target.value)} />
+                <input
+                  value={row.doc_ref || ''}
+                  onChange={e => updateRow(idx, 'doc_ref', e.target.value)}
+                  list={`available-csi-m-${idx}`}
+                />
+                {saleType === 'CSI' && availableCsi.length > 0 && (
+                  <>
+                    <datalist id={`available-csi-m-${idx}`}>
+                      {availableCsi.slice(0, 50).map(a => (
+                        <option key={`m-${a.booklet_id}-${a.number}`} value={a.number}>
+                          {a.booklet_code ? `${a.booklet_code} · ${a.number}` : a.number}
+                        </option>
+                      ))}
+                    </datalist>
+                    <div style={{ fontSize: 11, color: 'var(--erp-muted)', marginTop: 2 }}>
+                      Available: {availableCsi.slice(0, 8).map(a => a.number).join(', ')}{availableCsi.length > 8 ? `… (+${availableCsi.length - 8})` : ''}
+                    </div>
+                  </>
+                )}
                 {row.line_items?.map((item, li) => {
                   const prod = item.product_id ? productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id)) : null;
                   const batches = prod?.batches || [];
@@ -1311,20 +1355,44 @@ export default function SalesEntry() {
             ))}
           </div>}
 
-          {/* Validation Error Panel — only show for CSI/CASH_RECEIPT modes */}
-          {saleType !== 'SERVICE_INVOICE' && validationErrors.length > 0 && (
-            <div className="error-panel">
-              <h3>Validation Errors ({validationErrors.length})</h3>
-              <ul>
-                {validationErrors.map((err, i) => (
-                  <li key={i}>
-                    <strong>{err.doc_ref || err.sale_id}:</strong>{' '}
-                    {err.messages.join('; ')}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* Validation Error / Warning Panel — only show for CSI/CASH_RECEIPT modes */}
+          {saleType !== 'SERVICE_INVOICE' && validationErrors.length > 0 && (() => {
+            const hardErrors = validationErrors.filter(e => (e.messages || []).length > 0);
+            const softWarnings = validationErrors.filter(e => (e.warnings || []).length > 0);
+            return (
+              <>
+                {hardErrors.length > 0 && (
+                  <div className="error-panel">
+                    <h3>Validation Errors ({hardErrors.length})</h3>
+                    <ul>
+                      {hardErrors.map((err, i) => (
+                        <li key={`err-${i}`}>
+                          <strong>{err.doc_ref || err.sale_id}:</strong>{' '}
+                          {err.messages.join('; ')}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {softWarnings.length > 0 && (
+                  <div className="error-panel" style={{ background: '#fef3c7', borderColor: '#fcd34d', color: '#92400e' }}>
+                    <h3 style={{ color: '#78350f' }}>Warnings — informational only ({softWarnings.length})</h3>
+                    <ul>
+                      {softWarnings.map((err, i) => (
+                        <li key={`warn-${i}`}>
+                          <strong>{err.doc_ref || err.sale_id}:</strong>{' '}
+                          {err.warnings.join('; ')}
+                        </li>
+                      ))}
+                    </ul>
+                    <div style={{ fontSize: 12, fontStyle: 'italic', marginTop: 6 }}>
+                      Warnings do NOT block posting. They are a paper-trail trace for the CSI booklet audit.
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </main>
       </div>
       {/* Scan CSI Modal */}

@@ -6,9 +6,8 @@
  * Products, Authority, and COA Mapping.
  */
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../hooks/useAuth';
-import { ROLE_SETS } from '../../constants/roles';
 import useSettings from '../hooks/useSettings';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 
@@ -57,12 +56,14 @@ const COA_LABELS = {
 };
 
 export function ErpSettingsPanelContent() {
-  const { user } = useAuth();
   const { settings, loading: settingsLoading, refresh } = useSettings();
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  // Phase 3c — settings save gated by danger-baseline accounting.settings_write.
+  // Mirrors backend settingsRoutes PUT /. Inputs remain visible; only the Save button is gated.
+  const { hasSubPermission } = useErpSubAccess();
+  const canEdit = hasSubPermission('accounting', 'settings_write');
 
   const buildForm = (s) => {
     // Ensure COA_MAP has all expected keys (fill missing with empty string)

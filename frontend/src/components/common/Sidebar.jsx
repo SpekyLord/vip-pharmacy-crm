@@ -724,7 +724,13 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     ];
     // Sub-permission gated (access-template driven, not shown to contractors by default)
     if (hasSub('inventory', 'transfers')) invItems.push({ path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight });
-    if (hasSub('inventory', 'csi_booklets')) invItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
+    // CSI Booklets: contractors see the full management page; BDMs get the
+    // "My CSI" read-only view (same route, page auto-detects permission).
+    if (hasSub('inventory', 'csi_booklets')) {
+      invItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
+    } else {
+      invItems.push({ path: '/erp/csi-booklets', label: 'My CSI', icon: BookOpen });
+    }
     if (hasSub('inventory', 'office_supplies')) invItems.push({ path: '/erp/office-supplies', label: 'Office Supplies', icon: Package });
     if (hasSub('inventory', 'collaterals')) invItems.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
     if (isAdmin) invItems.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });

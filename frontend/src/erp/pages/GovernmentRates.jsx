@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
-import { ROLES, ROLE_SETS } from '../../constants/roles';
+import { ROLE_SETS } from '../../constants/roles';
 import useErpApi from '../hooks/useErpApi';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { useLookupBatch } from '../hooks/useLookups';
 import { showError, showSuccess } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -64,6 +65,10 @@ export function GovernmentRatesContent() {
   const { user } = useAuth();
   const api = useErpApi();
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  // Phase 3c — gov-rate delete gated by danger-baseline payroll.gov_rate_delete.
+  // isAdmin still gates Edit/New (recoverable); only delete uses the danger gate.
+  const { hasSubPermission } = useErpSubAccess();
+  const canDeleteGovRate = hasSubPermission('payroll', 'gov_rate_delete');
 
   // Lookup-driven rate types (database-driven)
   const { data: lookups } = useLookupBatch(['GOV_RATE_TYPE', 'GOV_RATE_BRACKET_TYPE', 'GOV_RATE_FLAT_TYPE']);
@@ -301,7 +306,7 @@ export function GovernmentRatesContent() {
                   {isAdmin && (
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button className="btn btn-outline btn-sm" onClick={() => openEdit(rate)}>Edit</button>
-                      {[ROLES.ADMIN, ROLES.PRESIDENT].includes(user?.role) && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(rate._id)}>Delete</button>}
+                      {canDeleteGovRate && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(rate._id)}>Delete</button>}
                     </div>
                   )}
                 </div>

@@ -5,10 +5,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
-import { ROLE_SETS } from '../../constants/roles';
 import useDashboard from '../hooks/useDashboard';
 import useIncome from '../hooks/useIncome';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { showError, showSuccess } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -45,10 +44,12 @@ function getCurrentPeriod() {
 }
 
 export default function MonthlyArchive() {
-  const { user } = useAuth();
   const dash = useDashboard();
   const inc = useIncome();
-  const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const { hasSubPermission } = useErpSubAccess();
+  // Phase 3c — close/reopen-period gated by danger-baseline accounting.period_force_unlock.
+  // Mirrors backend incomeRoutes /archive/close-period + /archive/reopen-period.
+  const canForceUnlock = hasSubPermission('accounting', 'period_force_unlock');
 
   const [archives, setArchives] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -122,7 +123,7 @@ export default function MonthlyArchive() {
           <WorkflowGuide pageKey="monthly-archive" />
 
           {/* Period Control Panel */}
-          {isAdmin && (
+          {canForceUnlock && (
             <div className="period-control">
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--erp-text)' }}>Period Control:</span>
               <input type="month" value={selectedPeriod} onChange={e => setSelectedPeriod(e.target.value)} />

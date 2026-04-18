@@ -22,6 +22,7 @@ const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/er
 const PettyCashFund = require('../models/PettyCashFund');
 const PettyCashTransaction = require('../models/PettyCashTransaction');
 const Collection = require('../models/Collection');
+const { validateCsiNumber, markUsed: markCsiUsed, unmarkUsed: unmarkCsiUsed } = require('../services/csiBookletService');
 
 // ═══════════════════════════════════════════════════════════
 // SHARED: Post a single SalesLine row (used by submitSales + approval handler)
@@ -229,6 +230,15 @@ const postSaleRow = async (row, userId, opts = {}) => {
         changed_by: row.posted_by,
         note: `Auto-journal failed for sale ${row.doc_ref || row._id} (approval hub)`
       }).catch(() => {});
+    }
+
+    // 7. Phase 15.2 (softened) — auto-mark CSI number as used. Non-blocking.
+    if ((row.sale_type || 'CSI') === 'CSI' && row.doc_ref) {
+      try {
+        await markCsiUsed(row.entity_id, null, row.doc_ref);
+      } catch (csiErr) {
+        console.error('CSI markUsed failed (non-blocking, approval hub):', row.doc_ref, csiErr.message);
+      }
     }
 
     return { eventId };
@@ -470,6 +480,7 @@ const validateSales = catchAsync(async (req, res) => {
 
   for (const row of rows) {
     const rowErrors = [];
+    const rowWarnings = []; // monitoring-only; never blocks posting
 
     // Phase 18: type-aware required field validation
     const saleType = row.sale_type || 'CSI';
@@ -483,6 +494,23 @@ const validateSales = catchAsync(async (req, res) => {
     if (saleType === 'CSI') {
       if (!row.doc_ref) rowErrors.push('Document reference (CSI#) is required');
       if (!row.line_items || row.line_items.length === 0) rowErrors.push('At least one line item is required');
+
+      // Phase 15.2 (softened) — CSI booklet traceability check.
+      // Monitoring only: never blocks posting. A warning is pushed if the
+      // CSI # is not in any allocated range, is already used, or was voided.
+      // Skipped entirely for BDMs without allocations (Iloilo-based contractors
+      // who use booklets directly).
+      if (row.doc_ref) {
+        try {
+          const csiCheck = await validateCsiNumber(row.entity_id, row.bdm_id, row.doc_ref);
+          if (!csiCheck.valid && !csiCheck.skipped) {
+            rowWarnings.push(`CSI: ${csiCheck.reason}`);
+          }
+        } catch (csiErr) {
+          // Defensive — monitoring call must never block validation
+          console.error('CSI booklet check failed (non-blocking):', csiErr.message);
+        }
+      }
     } else if (saleType === 'CASH_RECEIPT') {
       if (!row.line_items || row.line_items.length === 0) rowErrors.push('At least one line item is required');
     } else if (saleType === 'SERVICE_INVOICE') {
@@ -611,6 +639,7 @@ const validateSales = catchAsync(async (req, res) => {
     }
 
     // Update row status
+    row.validation_warnings = rowWarnings;
     if (rowErrors.length > 0) {
       row.status = 'ERROR';
       row.validation_errors = rowErrors;
@@ -618,12 +647,21 @@ const validateSales = catchAsync(async (req, res) => {
       errors.push({
         sale_id: row._id,
         doc_ref: row.doc_ref,
-        messages: rowErrors
+        messages: rowErrors,
+        warnings: rowWarnings
       });
     } else {
       row.status = 'VALID';
       row.validation_errors = [];
       validCount++;
+      if (rowWarnings.length > 0) {
+        errors.push({
+          sale_id: row._id,
+          doc_ref: row.doc_ref,
+          messages: [],
+          warnings: rowWarnings
+        });
+      }
     }
 
     await row.save();
@@ -800,6 +838,30 @@ const submitSales = catchAsync(async (req, res) => {
         { source_model: 'SalesLine', source_id: validRows[i]._id },
         { $set: { event_id: eventIds[i] } }
       ).catch(() => {});
+    }
+
+    // Phase 15.2 (softened) — auto-mark CSI numbers as used on POSTED.
+    // Non-blocking: a CSI booklet update failure must never fail the post.
+    for (const row of validRows) {
+      if ((row.sale_type || 'CSI') !== 'CSI') continue;
+      if (!row.doc_ref) continue;
+      try {
+        const result = await markCsiUsed(row.entity_id, null, row.doc_ref);
+        if (!result.ok) {
+          // Advisory only — stash for audit, do not fail the post
+          ErpAuditLog.logChange({
+            entity_id: row.entity_id, bdm_id: row.bdm_id,
+            log_type: 'CSI_TRACE',
+            target_ref: row.doc_ref, target_model: 'CsiBooklet',
+            field_changed: 'used_numbers',
+            new_value: `mark-used skipped: ${result.reason}`,
+            changed_by: req.user._id,
+            note: `CSI ${row.doc_ref} posted on sale ${row._id} but booklet mark-used skipped`
+          }).catch(() => {});
+        }
+      } catch (csiErr) {
+        console.error('CSI markUsed failed (non-blocking):', row.doc_ref, csiErr.message);
+      }
     }
 
     // Phase 11: Auto-journal entries (non-blocking — outside transaction)
@@ -995,6 +1057,17 @@ const reopenSales = catchAsync(async (req, res) => {
       });
 
       reopened.push(row._id);
+
+      // Phase 15.2 (softened) — release the CSI number back to the BDM's
+      // available pool when the sale is reopened. Non-blocking audit on failure.
+      if ((row.sale_type || 'CSI') === 'CSI' && row.doc_ref) {
+        try {
+          await unmarkCsiUsed(row.entity_id, row.doc_ref);
+        } catch (csiErr) {
+          console.error('CSI unmarkUsed failed on reopen (non-blocking):', row.doc_ref, csiErr.message);
+        }
+      }
+
       await ErpAuditLog.logChange({
         entity_id: row.entity_id, bdm_id: row.bdm_id,
         log_type: 'REOPEN', target_ref: row._id.toString(),

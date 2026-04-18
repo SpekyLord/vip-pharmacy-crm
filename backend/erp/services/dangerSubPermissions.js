@@ -25,8 +25,23 @@ const Lookup = require('../models/Lookup');
 
 // Baseline safety floor — always treated as danger across every entity.
 // Additions here are a platform-wide change (code release); subscribers cannot opt out.
+//
+// Phase 3c (Apr 2026): expanded from 1 → 8 keys covering period-lock force-unlock,
+// year-end cascade, people/login manipulation, transfer-pricing, settings write,
+// access-template delete, payroll gov-rate delete, and product hard-delete.
+// Each key gates one or more destructive routes — see CLAUDE-ERP.md Phase 3c
+// "Rollout table" for the route → key mapping.
 const BASELINE_DANGER_SUB_PERMS = new Set([
-  'accounting.reverse_posted',
+  'accounting.reverse_posted',         // Phase 3a — President Reverse (cross-module storno)
+  'accounting.period_force_unlock',    // Phase 3c — period-lock toggle, archive close/reopen-period
+  'accounting.year_end_close',         // Phase 3c — year-end JE cascade execute
+  'accounting.settings_write',         // Phase 3c — COA_MAP, VAT rates, module config write
+  'people.terminate',                  // Phase 3c — separate/deactivate person
+  'people.manage_login',               // Phase 3c — disable/unlink/change-role/bulk-change-role
+  'erp_access.template_delete',        // Phase 3c — delete Access Template
+  'payroll.gov_rate_delete',           // Phase 3c — delete government tax/BIR rate row
+  'inventory.transfer_price_set',      // Phase 3c — set/bulk-set inter-company transfer prices
+  'master.product_delete',             // Phase 3c — hard-delete ProductMaster row
 ]);
 
 const CACHE_TTL_MS = 5 * 60 * 1000;

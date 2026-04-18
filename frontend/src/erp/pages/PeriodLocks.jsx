@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
-import { ROLE_SETS } from '../../constants/roles';
 import useErpApi from '../hooks/useErpApi';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -54,9 +53,11 @@ const MODULE_LABELS = {
 };
 
 export function PeriodLocksContent() {
-  const { user } = useAuth();
   const api = useErpApi();
-  const canToggle = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const { hasSubPermission } = useErpSubAccess();
+  // Phase 3c — toggle gated by danger-baseline `accounting.period_force_unlock`.
+  // Replaces ROLE_SETS.MANAGEMENT membership check; mirrors backend periodLockRoutes /toggle.
+  const canToggle = hasSubPermission('accounting', 'period_force_unlock');
 
   const [year, setYear] = useState(new Date().getFullYear());
   const [matrix, setMatrix] = useState({});

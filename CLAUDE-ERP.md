@@ -2,7 +2,7 @@
 
 > **Last Updated**: April 18, 2026
 > **Version**: 6.9
-> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G5 + H1-H5 + Phase 34 + Phase 3a Complete. Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c Complete. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -274,6 +274,99 @@ To delegate reversal in a subsidiary:
 To mark a new key as danger (subscriber-specific, no code change):
 1. Admin adds a row to `ERP_DANGER_SUB_PERMISSIONS` lookup with `metadata: { module: 'vendor_master', key: 'delete' }`.
 2. Cache busts immediately. Users with `vendor_master = FULL` but no explicit `vendor_master.delete` grant get rejected.
+
+---
+
+## Phase 3c — Comprehensive Hardcoded-Role Migration (Apr 2026)
+
+### Problem
+After Phase 3a, only `accounting.reverse_posted` was lookup-driven. Most other destructive operations still used hardcoded `roleCheck('admin', 'finance', 'president')` gates spanning 30 endpoints across ~15 modules. These hardcoded unions:
+- **Broke the Access Template abstraction** — capabilities invisible to subscribers configuring users
+- **Blocked legitimate org structures** — subsidiary CFO / HR Head / Inventory Manager couldn't be granted specific destructive authority without becoming "admin"
+- **Created UI/backend drift risk** — every hardcoded role list was another place UI + backend could disagree
+
+### Solution
+Same pattern as Phase 3a, expanded:
+- `BASELINE_DANGER_SUB_PERMS` grew from 1 → 10 keys (platform safety floor)
+- `ERP_DANGER_SUB_PERMISSIONS` lookup seeded with 19 new keys (10 baseline + 9 Tier 2 lookup-only)
+- `ERP_SUB_PERMISSION` seed extended in parallel so the keys appear in the Access Template editor
+- `ERP_MODULE` gained two new modules — `MASTER` (master data governance) and `ERP_ACCESS` (template management) — to host their respective sub-perms in the editor UI
+- 30 routes swapped from `roleCheck(...)` to `erpSubAccessCheck(module, key)`
+- 15 frontend pages gated their destructive buttons via `useErpSubAccess().hasSubPermission(module, key)`
+- `seedAll` now also calls `invalidateDangerCache(req.entityId)` so a fresh entity gets the editor working immediately after seeding
+
+### Rollout table (route → key)
+
+**Tier 1 — baseline (platform safety floor; subscribers cannot remove via lookup)**
+
+| Route | Key |
+|---|---|
+| `periodLockRoutes.js` POST `/toggle` | `accounting.period_force_unlock` |
+| `incomeRoutes.js` POST `/archive/close-period` | `accounting.period_force_unlock` |
+| `incomeRoutes.js` POST `/archive/reopen-period` | `accounting.period_force_unlock` |
+| `incomeRoutes.js` POST `/archive/year-end/close` | `accounting.year_end_close` |
+| `peopleRoutes.js` POST `/:id/separate` | `people.terminate` |
+| `peopleRoutes.js` DELETE `/:id` | `people.terminate` |
+| `peopleRoutes.js` POST `/:id/disable-login` | `people.manage_login` |
+| `peopleRoutes.js` POST `/:id/unlink-login` | `people.manage_login` |
+| `peopleRoutes.js` POST `/:id/change-role` | `people.manage_login` |
+| `peopleRoutes.js` POST `/bulk-change-role` | `people.manage_login` |
+| `erpAccessRoutes.js` DELETE `/templates/:id` | `erp_access.template_delete` |
+| `governmentRatesRoutes.js` DELETE `/:id` | `payroll.gov_rate_delete` |
+| `interCompanyRoutes.js` PUT `/prices` | `inventory.transfer_price_set` |
+| `interCompanyRoutes.js` PUT `/prices/bulk` | `inventory.transfer_price_set` |
+| `settingsRoutes.js` PUT `/` | `accounting.settings_write` |
+| `productMasterRoutes.js` DELETE `/:id` | `master.product_delete` |
+
+**Tier 2 — lookup-only (subscriber-extensible; admins can deactivate the lookup row to drop the key from the danger gate)**
+
+| Route | Key |
+|---|---|
+| `insuranceRoutes.js` DELETE `/:id` | `payroll.insurance_delete` (closes Phase 3a residual) |
+| `creditCardRoutes.js` DELETE `/:id` | `accounting.card_delete` |
+| `customerRoutes.js` PATCH `/:id/deactivate` | `master.customer_deactivate` |
+| `hospitalRoutes.js` PATCH `/:id/deactivate` | `master.hospital_deactivate` |
+| `hospitalRoutes.js` DELETE `/:id/alias` | `master.hospital_alias_delete` |
+| `productMasterRoutes.js` PATCH `/:id/deactivate` | `master.product_deactivate` |
+| `territoryRoutes.js` DELETE `/:id` | `master.territory_delete` |
+| `collectionRoutes.js` POST `/:id/approve-deletion` | `accounting.approve_deletion` (legacy; President Reverse preferred) |
+| `salesRoutes.js` POST `/:id/approve-deletion` | `accounting.approve_deletion` |
+| `lookupRoutes.js` DELETE `/bank-accounts/:id` | `accounting.lookup_delete` |
+| `lookupRoutes.js` DELETE `/payment-modes/:id` | `accounting.lookup_delete` |
+| `lookupRoutes.js` DELETE `/expense-components/:id` | `accounting.lookup_delete` |
+| `lookupGenericRoutes.js` DELETE `/:category/:id` | `accounting.lookup_delete` |
+| `warehouseRoutes.js` POST `/` | `inventory.warehouse_manage` |
+| `warehouseRoutes.js` PUT `/:id` | `inventory.warehouse_manage` |
+
+### Out of scope (intentionally NOT migrated)
+- `entityRoutes.js POST /` — platform-scope subsidiary creation; stays `roleCheck('president')`
+- `erpAccessRoutes.js` user GET/SET/apply-template — delegating "the power to delegate" is a separate decision
+- `coaRoutes.js`, `approvalRoutes.js`, `monthEndCloseRoutes.js`, `pettyCashRoutes.js` fund-delete — already sub-perm-gated
+- All `/president-reverse` routes (Phase 3a) — already gated
+- Income/payroll/PnL/GRN workflow steps (generate/compute/review/approve/post) — governed by `gateApproval()` + Authority Matrix
+- Status-gated DRAFT deletes (Sales/Collection/Expense/PRF-CALF) — controller-side check, not destructive to ledger
+- `inventoryRoutes /seed-stock-on-hand` — one-time migration tool
+
+### Files touched (Phase 3c)
+
+Backend:
+- `services/dangerSubPermissions.js` — `BASELINE_DANGER_SUB_PERMS` 1 → 10 keys
+- `controllers/lookupGenericController.js` — `ERP_MODULE` (+ MASTER, ERP_ACCESS), `ERP_SUB_PERMISSION` (+19 keys), `ERP_DANGER_SUB_PERMISSIONS` (+19 entries), `seedAll` busts danger cache
+- 14 route files — `roleCheck(...)` → `erpSubAccessCheck(module, key)` swaps:
+  `periodLockRoutes`, `incomeRoutes`, `settingsRoutes`, `interCompanyRoutes`, `peopleRoutes`, `erpAccessRoutes`, `governmentRatesRoutes`, `productMasterRoutes`, `insuranceRoutes`, `creditCardRoutes`, `customerRoutes`, `hospitalRoutes`, `territoryRoutes`, `warehouseRoutes`, `lookupRoutes`, `lookupGenericRoutes`, `collectionRoutes`, `salesRoutes`
+
+Frontend:
+- `hooks/useErpSubAccess.js` — baseline mirror 1 → 10 keys
+- 15 pages — destructive-button gates swapped from `isAdmin`/`ROLE_SETS.MANAGEMENT` to `hasSubPermission(module, key)`:
+  `PeriodLocks`, `MonthlyArchive`, `ProfitSharing` (year-end close), `PersonDetail`, `PeopleList`, `AccessTemplateManager`, `GovernmentRates`, `TransferPriceManager`, `ErpSettingsPanel`, `ProductMaster`, `CustomerList`, `TerritoryManager`, `SalesList`, `LookupManager`, `WarehouseManager`
+
+### Migration note for existing entities
+Two new modules (`master`, `erp_access`) appear in the Access Template editor after `seedAll`. Existing user templates default to `NONE` for these — admins must grant at least `VIEW` on the parent module before the per-key sub-permission has any effect. President bypass and the legacy `admin without erp_access enabled` backward-compat path both remain — only erp_access-enabled non-president users feel the change. Run `Control Center → Lookup Tables → Seed Defaults → ERP_MODULE / ERP_SUB_PERMISSION / ERP_DANGER_SUB_PERMISSIONS` (or `seedAll`) after deploy.
+
+### Future extension (subscription-ready)
+- Subsidiary admins delegate any of the 19 new keys via Access Template ticks, no deploy.
+- New danger keys can be added Tier 2 via `ERP_DANGER_SUB_PERMISSIONS` lookup row (5-min cache, busted on write).
+- New baseline danger keys still require a code release (intentional safety floor); add to both `services/dangerSubPermissions.js` `BASELINE_DANGER_SUB_PERMS` and `frontend/src/erp/hooks/useErpSubAccess.js` mirror.
 
 ---
 
@@ -2046,6 +2139,73 @@ In **Access Templates** (Control Center > Access), set inventory module to VIEW 
 - President always passes (both module and sub-permission checks)
 - Admin with FULL inventory access and no sub_permissions entries = all granted (backward compat)
 - Admin with granular sub_permissions = only granted subs are visible
+
+---
+
+## CSI Booklets — Monitoring + Traceability (Phase 15.2 — softened, April 2026)
+
+The CSI Booklet feature is **monitoring-only**: no sales will ever be blocked by it. Its purpose is to give HQ a traceable paper-trail of which BIR-registered CSI number was used on which sale.
+
+### BIR Iloilo HQ workflow
+
+VIP's BIR "Authority to Print" is registered to the Iloilo head office. Per BIR rules, CSI booklets must be drawn from the registered address. BDMs, however, operate across the Philippines:
+
+1. **HQ records the booklet** — code, series range, optional ATP number + registered address.
+2. **HQ allocates small ranges** (typically 3–7 numbers) to specific remote BDMs. No dates are required.
+3. **The BDM uses the numbers** in the field (Cebu, Manila, Davao, etc.).
+4. **When a sale posts**, the number is auto-marked USED so the BDM's available pool updates.
+5. **HQ reconciles** via the CsiBooklets page for BIR audit.
+
+**Iloilo-based contractors are NOT monitored.** They hold booklets directly. If a BDM has no allocations on file, `validateCsiNumber` returns `{ valid: true, skipped: true }` and no warning is surfaced. Admin opts each BDM in simply by creating an allocation for them.
+
+### Soft-warning vs hard-error pattern
+
+- **Hard errors** (`rowErrors`): missing doc_ref, stock issues, etc. — row stays ERROR, cannot post.
+- **Soft warnings** (`rowWarnings` → `validation_warnings`): CSI number outside allocation, already used, or voided — row still VALID, can post. Surfaced as a yellow panel in SalesEntry.
+
+The pattern mirrors the existing `hospital.credit_limit_action` soft-warn flow at `salesController.js:532-535`.
+
+### Void-with-proof (anti-fraud)
+
+The "no return" policy means allocated numbers stay with the BDM until USED or VOIDED. A contractor may void an unused number (wrong entry, cancelled, torn, misprint) but MUST upload a photo/scan of the physical unused CSI. Without proof, a BDM could claim "voided" and then reuse the physical copy for an off-book sale.
+
+- S3 prefix: `erp-documents/csi-voids/{year}/{month}/`
+- Upload middleware: reuses `uploadSingle('proof') + compressImage` from `backend/middleware/upload.js`
+- Reader: `GET /:id/allocations/:allocIdx/voids/:voidIdx/proof` returns a 1-hour signed S3 URL
+- Reasons are lookup-driven: **`ERP_CSI_VOID_REASONS`** (admin-configurable via Control Center → Lookup Tables)
+
+### Endpoints
+
+| Path | Gate | Purpose |
+|------|------|---------|
+| `GET /erp/my-csi/available` | `protect` only | **BDM self-service**: my unused CSI numbers (bypasses inventory module gate so BDMs without inventory module access still see their list during Sales Entry) |
+| `GET /erp/csi-booklets` | `inventory` module + `inventory.csi_booklets` sub | List all booklets |
+| `GET /erp/csi-booklets/available` | same | Admin: look up any BDM's available numbers (Rule #21 — no silent self-ID fallback) |
+| `GET /erp/csi-booklets/validate` | same | Monitoring-only pre-check |
+| `POST /erp/csi-booklets` | same | Create a booklet |
+| `POST /erp/csi-booklets/:id/allocate` | same | Allocate a range to a BDM (dates optional) |
+| `POST /erp/csi-booklets/:id/allocations/:allocIdx/void` | same + multipart proof upload | Void a number with proof image |
+| `GET /erp/csi-booklets/:id/allocations/:allocIdx/voids/:voidIdx/proof` | same | Fetch signed URL for the proof image |
+
+### Model changes (backward-compatible)
+
+- `CsiBooklet.allocations[].week_start` / `week_end` → **optional** (were required).
+- `CsiBooklet.allocations[].assigned_to` → **new**, optional. Per-allocation BDM (falls back to booklet-level `assigned_to`).
+- `CsiBooklet.allocations[].voided_numbers[]` → **new**. Per-number void record with reason, proof URL, voided_by, voided_at.
+- `CsiBooklet.voided_count` → **new** auto-computed in pre-save.
+- `CsiBooklet.atp_number`, `bir_registration_address`, `issued_at`, `source_warehouse_id` → **new**, all optional, subscription-ready BIR metadata.
+- `SalesLine.validation_warnings[]` → **new** informational-only strings.
+
+### Wiring summary
+
+- **Sales validate** (`salesController.validateSales`): calls `validateCsiNumber` for CSI rows, pushes to `rowWarnings`. Skips silently when `{ skipped: true }` (Iloilo BDMs).
+- **Sales post** (`salesController.submitSales` + `postSaleRow` for approval-hub path): calls `markUsed` per CSI line after POSTED. Non-blocking — any booklet failure is audit-logged but never fails the post.
+- **Sales reopen** (`salesController.reopenSales`): calls `unmarkUsed` so the number returns to the BDM's available pool.
+
+### Key files
+
+- **Backend**: `backend/erp/models/CsiBooklet.js`, `backend/erp/services/csiBookletService.js`, `backend/erp/controllers/csiBookletController.js`, `backend/erp/routes/csiBookletRoutes.js`, `backend/erp/routes/csiBookletPublicRoutes.js`, `backend/erp/routes/index.js` (mount), `backend/erp/controllers/salesController.js` (wiring), `backend/erp/controllers/lookupGenericController.js` (seed), `backend/erp/models/SalesLine.js` (validation_warnings).
+- **Frontend**: `frontend/src/erp/pages/CsiBooklets.jsx`, `frontend/src/erp/pages/SalesEntry.jsx`, `frontend/src/erp/hooks/useReports.js`, `frontend/src/erp/components/WorkflowGuide.jsx`.
 
 ---
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useErpAccess from '../hooks/useErpAccess';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 
@@ -52,6 +53,10 @@ const pageStyles = `
 
 export function AccessTemplateManagerContent() {
   const api = useErpAccess();
+  // Phase 3c — template-delete gated by danger-baseline erp_access.template_delete.
+  // Mirrors backend erpAccessRoutes /templates/:id DELETE.
+  const { hasSubPermission } = useErpSubAccess();
+  const canDeleteTemplate = hasSubPermission('erp_access', 'template_delete');
   const [modules, setModules] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [subPermKeys, setSubPermKeys] = useState({});
@@ -202,7 +207,9 @@ export function AccessTemplateManagerContent() {
                       {!tpl.is_system && (
                         <>
                           <button className="atm-btn atm-btn-sm atm-btn-outline" onClick={() => openEdit(tpl)}>Edit</button>
-                          <button className="atm-btn atm-btn-sm atm-btn-danger" onClick={() => handleDelete(tpl._id)}>Del</button>
+                          {canDeleteTemplate && (
+                            <button className="atm-btn atm-btn-sm atm-btn-danger" onClick={() => handleDelete(tpl._id)}>Del</button>
+                          )}
                         </>
                       )}
                     </div>

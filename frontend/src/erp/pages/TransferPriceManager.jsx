@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
-import { useAuth } from '../../hooks/useAuth';
-import { ROLES } from '../../constants/roles';
 import useTransfers from '../hooks/useTransfers';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -67,8 +66,10 @@ const pageStyles = `
 `;
 
 export function TransferPriceManagerContent() {
-  const { user } = useAuth();
   const { getTransferPriceProducts, bulkSetTransferPrices, getEntities, loading: _loading } = useTransfers(); // eslint-disable-line no-unused-vars
+  // Phase 3c — set/bulk-set transfer prices gated by danger-baseline inventory.transfer_price_set.
+  // Cross-entity P&L impact and inventory cost basis change.
+  const { hasSubPermission } = useErpSubAccess();
 
   const [entities, setEntities] = useState([]);
   const [products, setProducts] = useState([]);
@@ -82,7 +83,9 @@ export function TransferPriceManagerContent() {
   const [fetching, setFetching] = useState(false);
   const searchRef = useRef(null);
 
-  const isPresidentOrAdmin = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN].includes(user?.role);
+  // `isPresidentOrAdmin` retained as a name to minimize call-site churn, but it now reflects
+  // the danger sub-perm (mirrors backend interCompanyRoutes /prices PUT + /prices/bulk PUT).
+  const isPresidentOrAdmin = hasSubPermission('inventory', 'transfer_price_set');
 
   // Load entities, auto-select VIP → MG AND CO.
   useEffect(() => {
