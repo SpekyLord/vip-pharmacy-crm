@@ -15,9 +15,33 @@ const { parseUndertaking } = require('./parsers/undertakingParser');
 const { parseDR } = require('./parsers/drParser');
 const { classifyExpense } = require('../services/expenseClassifier');
 const { resolveCustomer, resolveProduct, resolveVendor } = require('../services/productResolver');
+const { learnFromAiResult } = require('../services/vendorAutoLearner');
 
 // Document types that should get expense classification (Layer 2)
 const EXPENSE_DOC_TYPES = new Set(['OR', 'GAS_RECEIPT']);
+
+// Phase H4 — critical fields per doc type for the AI field-completion trigger.
+// If any of these are null OR LOW confidence, Claude is asked to fill the gap
+// (in addition to the legacy LOW-classification trigger).
+const CRITICAL_FIELDS_BY_DOC = {
+  OR: ['amount', 'date', 'or_number', 'supplier_name'],
+  GAS_RECEIPT: ['total_amount', 'date', 'station_name', 'liters'],
+};
+
+// Test whether a scoredField is missing or LOW confidence.
+// scoredField shape: { value, confidence: 'HIGH'|'MEDIUM'|'LOW', present }
+function isFieldWeak(field) {
+  if (field == null) return true;
+  if (typeof field !== 'object') return field === null || field === undefined || field === '';
+  if (field.value == null || field.value === '') return true;
+  if (field.confidence === 'LOW') return true;
+  return false;
+}
+
+function listMissingCriticalFields(docType, extracted) {
+  const required = CRITICAL_FIELDS_BY_DOC[docType] || [];
+  return required.filter(name => isFieldWeak(extracted[name]));
+}
 
 // Document types that should get master data resolution (Layer 3 — Phase 18)
 const CUSTOMER_DOC_TYPES = new Set(['CSI', 'CR', 'DR']);
@@ -90,23 +114,100 @@ async function processOcr(docType, ocrResult, options = {}) {
     try {
       result.classification = await classifyExpense(extracted, { entityId });
 
-      // Layer 2b: Claude AI fallback when regex classifier returns LOW confidence
-      if (result.classification?.confidence === 'LOW' && process.env.ANTHROPIC_API_KEY) {
+      // Layer 2b: Claude AI fallback — Phase H4 expanded trigger.
+      // Fires when EITHER:
+      //   (a) regex classifier returned LOW confidence (legacy behaviour), OR
+      //   (b) one or more critical extracted fields are missing/LOW (field completion)
+      // Gated by env var (system-wide) AND options.aiFallbackEnabled (per-entity).
+      // Field-completion arm is additionally gated by options.aiFieldCompletionEnabled.
+      const aiFallbackAllowed = options.aiFallbackEnabled !== false;
+      const aiFieldCompletionAllowed = options.aiFieldCompletionEnabled !== false;
+      const classificationLow = result.classification?.confidence === 'LOW';
+      const missingFields = aiFieldCompletionAllowed ? listMissingCriticalFields(normalised, extracted) : [];
+      const triggerByMissing = missingFields.length > 0;
+
+      let triggerReason = 'NONE';
+      if (classificationLow && triggerByMissing) triggerReason = 'BOTH';
+      else if (classificationLow) triggerReason = 'LOW_CLASSIFICATION';
+      else if (triggerByMissing) triggerReason = 'MISSING_FIELDS';
+      result.ai_trigger_reason = triggerReason;
+
+      if (triggerReason !== 'NONE' && aiFallbackAllowed && process.env.ANTHROPIC_API_KEY) {
         try {
           const { classifyWithClaude } = require('../../agents/ocrAutoFillAgent');
-          const aiResult = await classifyWithClaude(ocrResult.fullText || '', extracted);
-          if (aiResult && aiResult.confidence !== 'LOW') {
-            result.classification = {
-              ...result.classification,
-              ...aiResult,
-              fallback_used: true,
-              original_method: result.classification.match_method
-            };
+          const aiResult = await classifyWithClaude(ocrResult.fullText || '', extracted, {
+            doc_type: normalised,
+            missing_fields: missingFields,
+            mode: triggerReason === 'MISSING_FIELDS' ? 'FIELD_COMPLETION' : 'CLASSIFY',
+          });
+          if (aiResult) {
+            // Refine classification when Claude beat LOW
+            if (classificationLow && aiResult.confidence !== 'LOW') {
+              result.classification = {
+                ...result.classification,
+                ...aiResult,
+                fallback_used: true,
+                original_method: result.classification.match_method,
+              };
+            }
+            // Field completion: only fill weak/missing fields, never overwrite HIGH-confidence regex output
+            if (triggerByMissing) {
+              const filled = [];
+              for (const fname of missingFields) {
+                const aiVal = aiResult[fname];
+                if (aiVal != null && aiVal !== '') {
+                  // Wrap in scoredField shape so downstream consumers see a confidence
+                  extracted[fname] = { value: aiVal, confidence: aiResult.confidence || 'MEDIUM', present: true, match_method: 'CLAUDE_AI' };
+                  filled.push(fname);
+                }
+              }
+              if (filled.length > 0) {
+                result.validation_flags.push({
+                  type: 'AI_FIELDS_COMPLETED',
+                  message: `Claude filled missing fields: ${filled.join(', ')}`,
+                });
+                result.extracted = extracted; // re-bind to refreshed object
+              }
+            }
+            result.ai_fallback_used = true;
+
+            // Phase H5 — Vendor auto-learn from Claude wins. Runs best-effort
+            // after Claude succeeded with HIGH/MEDIUM confidence and returned a
+            // usable supplier_name + coa_code. Never blocks OCR on failure.
+            // Gated by options.vendorAutoLearnEnabled (per-entity setting).
+            const vendorAutoLearnAllowed = options.vendorAutoLearnEnabled !== false;
+            if (vendorAutoLearnAllowed && entityId) {
+              try {
+                const learning = await learnFromAiResult({
+                  aiResult,
+                  extractedFields: extracted,
+                  rawOcrText: ocrResult.fullText || '',
+                  docType: normalised,
+                  entityId,
+                  userId: options.userId || null,
+                });
+                result.vendor_auto_learn = learning;
+                if (learning.action === 'CREATED' || learning.action === 'ALIAS_ADDED') {
+                  result.validation_flags.push({
+                    type: 'VENDOR_AUTO_LEARNED',
+                    message: learning.action === 'CREATED'
+                      ? `New vendor learned from Claude — admin review pending`
+                      : `Vendor alias appended from OCR variation`,
+                  });
+                }
+              } catch (learnErr) {
+                // Non-blocking — learner failures never break OCR flow
+                result.vendor_auto_learn = { action: 'SKIPPED', reason: `LEARNER_ERROR: ${learnErr.message}` };
+                console.warn('[OCR] Vendor auto-learner failed:', learnErr.message);
+              }
+            } else {
+              result.vendor_auto_learn = { action: 'NONE', reason: vendorAutoLearnAllowed ? 'NO_ENTITY' : 'DISABLED' };
+            }
           }
         } catch (aiErr) {
           result.validation_flags.push({
             type: 'AI_CLASSIFICATION_FALLBACK_ERROR',
-            message: `Claude fallback failed: ${aiErr.message}`
+            message: `Claude fallback failed: ${aiErr.message}`,
           });
         }
       }

@@ -4084,3 +4084,67 @@ Divides approval workload per module via sub-permissions, adds attachment/photo 
 - [x] PHASETASK-ERP.md updated with Phase 34 task breakdown
 - [x] CLAUDE-ERP.md updated with Phase 34 architecture
 - [x] WorkflowGuide banner updated for approval-manager
+
+---
+
+## Phase H5 — OCR Vendor Auto-Learn from Claude Wins ✅ (April 18, 2026)
+
+Self-improving classifier: when Phase H4's Claude fallback successfully classifies an OR/gas receipt that the regex cascade didn't recognise, the win is captured as training data so the next identical scan hits EXACT_VENDOR / ALIAS_MATCH and skips Claude entirely. Admin-reviewable, entity-scoped, subscription-togglable.
+
+### H5.1 — Data Model ✅
+- [x] `VendorMaster`: added `auto_learned_from_ocr` (bool, indexed), `learning_source` (CLAUDE_AI|MANUAL|IMPORT|null), `learned_at` (Date), `learning_status` (UNREVIEWED|APPROVED|REJECTED), `learning_meta` subdoc (source_doc_type, source_ocr_text, source_raw_snippet, ai_confidence, suggested_coa_code, suggested_category, learn_count)
+- [x] `VendorMaster` composite index `(entity_id, auto_learned_from_ocr, learning_status, learned_at)` for fast review-queue queries
+- [x] `OcrSettings`: added `vendor_auto_learn_enabled` (bool, default true) and included in no-entity default fallback
+- [x] `OcrUsageLog`: added `vendor_auto_learned` (bool) and `vendor_auto_learn_action` enum (NONE|CREATED|ALIAS_ADDED|SKIPPED)
+
+### H5.2 — Learner Service (`vendorAutoLearner.js`) ✅
+- [x] `learnFromAiResult({ aiResult, extractedFields, rawOcrText, docType, entityId, userId })` → `{ action, vendor_id, reason }`
+- [x] 5 guardrails: entity present, name length ≥3/≤120 and not purely numeric, not in GENERIC_NAME_BLOCKLIST, confidence HIGH/MEDIUM, coa_code present
+- [x] Lookup branch: exact `vendor_name` match OR alias `$in` → `$addToSet` new aliases (Claude-cleaned name + raw OCR text variation) → action = 'ALIAS_ADDED'
+- [x] When the existing vendor itself is auto-learned → `$inc learning_meta.learn_count` + refresh `source_raw_snippet` + `learned_at`; manual vendors untouched
+- [x] No match → `VendorMaster.create` with `auto_learned_from_ocr: true`, `learning_source: 'CLAUDE_AI'`, `learning_status: 'UNREVIEWED'`, snapshot in `learning_meta`
+- [x] Duplicate-race safety (concurrent OCR): E11000 caught → 'SKIPPED'/'DUPLICATE_RACE'
+- [x] Never overwrites existing vendor's `default_coa_code` — admin-set values win
+
+### H5.3 — OCR Pipeline Wiring ✅
+- [x] `ocrProcessor.js`: imports learner, invokes `learnFromAiResult()` inside the Claude-success block after field completion, gated by `options.vendorAutoLearnEnabled !== false`
+- [x] Best-effort — learner errors go to `validation_flags` but never block OCR flow
+- [x] `result.vendor_auto_learn = { action, vendor_id, reason }` surfaced on response for telemetry
+- [x] `validation_flags.push({ type: 'VENDOR_AUTO_LEARNED' })` when action = CREATED/ALIAS_ADDED
+- [x] `ocrController.js`: threads `userId` + `vendorAutoLearnEnabled` into `processOcr()` options; captures `vendor_auto_learn_action` into `writeUsage()`; surfaces `vendor_auto_learn` on API response
+
+### H5.4 — Admin Review API ✅
+- [x] `GET /api/erp/vendor-learnings?status=UNREVIEWED|APPROVED|REJECTED&doc_type=&limit=` — list with counts summary
+- [x] `GET /api/erp/vendor-learnings/:id` — single entry with populated audit fields
+- [x] `PATCH /api/erp/vendor-learnings/:id` — action APPROVE/REJECT/UNREVIEW with optional inline edits (vendor_name, default_coa_code, default_expense_category, vendor_aliases). REJECT sets `is_active = false`
+- [x] All routes guarded by `roleCheck('admin','finance','president')`; president sees all entities
+- [x] Mounted at `/api/erp/vendor-learnings` in `erp/routes/index.js` under Phase H5 comment
+
+### H5.5 — OCR Settings UI ✅
+- [x] `ocrSettingsController.updateSettings` allowed list extended to include `ai_field_completion_enabled`, `preprocessing_enabled`, `vendor_auto_learn_enabled` (fixes pre-existing bug where H4 toggles were silently dropped on save)
+- [x] `getUsage` aggregates `vendor_auto_learned` count per group + adds `auto_learn: { CREATED, ALIAS_ADDED, SKIPPED }` summary counter to response
+- [x] `ErpOcrSettingsPanel.jsx`: new Vendor Auto-Learn toggle alongside AI fallback / field completion / preprocessing
+- [x] `ErpOcrSettingsPanel.jsx`: new "Vendor Auto-Learn (all time)" stat card showing CREATED / ALIAS_ADDED / SKIPPED
+- [x] Save payload extended to include `vendor_auto_learn_enabled`
+
+### H5.6 — Frontend Service ✅
+- [x] `ocrService.js`: `listVendorLearnings(params)`, `getVendorLearning(id)`, `reviewVendorLearning(id, action, edits)`
+
+### H5.7 — Governance Banners ✅
+- [x] `DEPENDENCY_GUIDE['ocr-settings']`: added 2 new rows explaining behaviour when Vendor Auto-Learn is ON vs OFF, with link to vendors section for the review queue
+
+### H5.8 — Verification ✅
+- [x] Syntax check (node -c) on all 10 modified backend files
+- [x] Frontend parse check (@babel/parser) on 3 modified JSX/JS files
+- [x] Require-graph load test: all models, controllers, routes, services import cleanly
+- [x] Learner unit test: 8 scenarios (CREATED / ALIAS_ADDED manual / ALIAS_ADDED auto-learned with $inc / SKIPPED: ALIAS_EXISTS, LOW_CONFIDENCE, INVALID_NAME, NO_COA, NO_ENTITY)
+- [x] Integration test through `processOcr`: CREATED (no existing), ALIAS_ADDED (similar existing), toggle OFF (action NONE), Claude not fired (learner not invoked)
+
+### H5.9 — Documentation ✅
+- [x] CLAUDE-ERP.md — added "OCR Vendor Auto-Learn — Phase H5" section with pipeline diagram, guardrails, API, key files
+- [x] CLAUDE-ERP.md phase table — added H3/H4/H5 rows
+- [x] PHASETASK-ERP.md — this section
+
+### Intentionally Deferred
+- Dedicated standalone "Auto-Learned Queue" page. The queue is already accessible via the API + DEPENDENCY_GUIDE reference; next step is adding a filter chip to the existing Vendor Master list (small UI task, out of scope for H5).
+- `VENDOR_AUTO_LEARN` lookup category for admin-tunable thresholds (min name length, blocklist). Can be layered in later without API changes; guardrail constants currently live in `vendorAutoLearner.js`.

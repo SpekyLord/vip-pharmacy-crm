@@ -53,6 +53,7 @@ const SECTIONS = {
   })),
   'hospitals': lazy(() => import('./HospitalList').then(m => ({ default: m.HospitalListContent }))),
   'agent-settings': lazy(() => import('./AgentSettings').then(m => ({ default: m.AgentSettingsContent }))),
+  'ocr-settings': lazy(() => import('./ErpOcrSettingsPanel')),
   'erp-settings': lazy(() => import('./ErpSettingsPanel')),
   'lookups': lazy(() => import('./LookupManager'))
 };
@@ -141,7 +142,8 @@ const CATEGORY_CONFIG = [
     label: 'Intelligence',
     icon: Bot,
     items: [
-      { key: 'agent-settings', label: 'Agent Config', icon: Bot }
+      { key: 'agent-settings', label: 'Agent Config', icon: Bot },
+      { key: 'ocr-settings', label: 'OCR Settings', icon: Bot }
     ]
   },
   {
@@ -389,6 +391,21 @@ const DEPENDENCY_GUIDE = {
       { action: 'When you disable an agent', deps: 'It will stop running on its cron schedule — existing data is preserved', section: null },
       { action: 'When you change notification routing', deps: 'Only the selected roles (president/admin/finance) will receive agent alerts', section: null },
       { action: 'Use "Run Now"', deps: 'Triggers instant data gathering — results appear in the Agent Dashboard', section: null },
+    ]
+  },
+  'ocr-settings': {
+    title: 'OCR Settings Dependencies',
+    items: [
+      { action: 'When you disable OCR', deps: 'Vision API calls stop — but users can ALWAYS upload a photo manually. The form simply isn\'t auto-filled.', section: null },
+      { action: 'When you disable AI Fallback', deps: 'LOW-confidence regex classifications stay LOW — review queue may grow. Saves Claude API cost.', section: null },
+      { action: 'When you disable AI Field Completion', deps: 'Missing fields (amount/date/OR number) stay blank when classification was HIGH — BDM types them in. Use to cap AI cost on top of classification fallback.', section: null },
+      { action: 'When you disable Image Preprocessing', deps: 'Vision sees the raw photo (no rotate/contrast). Confidence may drop on phone photos; disable only if a particular receipt scans worse with grayscale.', section: null },
+      { action: 'When you disable Vendor Auto-Learn', deps: 'Claude will still classify unknown vendors, but the system stops saving them to Vendor Master — every new OR will re-hit Claude until an admin creates the vendor manually. Disable only if you want strict manual control over the vendor list.', section: null },
+      { action: 'When Vendor Auto-Learn is ON', deps: 'Auto-created vendors start as UNREVIEWED. Approve them in Vendors → Auto-Learned Queue so they count with HIGH confidence, or reject to deactivate. Classifier still uses UNREVIEWED vendors (they act like manually created ones), but admins should curate the queue to catch noise.', section: 'vendors' },
+      { action: 'When you restrict allowed document types', deps: 'Disallowed types still upload as plain photos but skip OCR — useful to disable expensive types per subscription tier', section: null },
+      { action: 'When you set a monthly call quota', deps: 'OCR is skipped past the limit; photo upload keeps working. Reset on the 1st of each month (calendar month).', section: null },
+      { action: 'To customize courier/payment keyword detection', deps: 'Edit OCR_COURIER_ALIASES and OCR_PAYMENT_KEYWORDS in Lookup Tables — changes take effect within 5 minutes (cache TTL)', section: 'lookups' },
+      { action: 'To customize expense classification rules', deps: 'Edit OCR_EXPENSE_RULES in Lookup Tables — keyword→COA mapping per entity', section: 'lookups' },
     ]
   },
   'role-assignments': {

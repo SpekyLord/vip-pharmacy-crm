@@ -109,6 +109,9 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | G4 | Subsidiary Product Catalog Access (Lookup-Driven) | ✅ |
 | H1 | Low-Priority Hardening (#13-#19) — CALF, COA, Expense, Batch Upload | ✅ |
 | H2 | OCR Hardening — Lookup-Driven Classification, Entity Scoping, Bugs | ✅ |
+| H3 (OCR) | OCR Subscription-Ready — Per-Entity Settings + Usage Logging + Quotas | ✅ |
+| H4 | OCR High-Confidence — Image Preprocessing + Claude Field Completion | ✅ |
+| H5 | OCR Vendor Auto-Learn from Claude Wins — Self-Improving Classifier | ✅ |
 | 34* | Approval Hub Enhancement: Sub-Permissions + Attachments + Line-Item Edit | ✅ |
 
 ---
@@ -1966,3 +1969,72 @@ backend/erp/controllers/collectionController.js  # CSI validation, AR balance, T
 backend/erp/controllers/expenseController.js     # Refactored PRF/CALF journal to use shared function
 frontend/src/erp/components/WorkflowGuide.jsx    # Updated collection-session + prf-calf tips
 ```
+
+---
+
+## OCR Vendor Auto-Learn — Phase H5 (April 2026)
+
+Closes the loop on Phase H3+H4: when Claude successfully classifies an OR/gas receipt that the regex classifier didn't recognise, the result was previously used once and discarded, so the next receipt from the same vendor re-paid for another Claude call. Phase H5 captures the win as training data — either by appending the OCR text variation to a similar existing vendor's aliases (next scan hits `ALIAS_MATCH`) or by creating a new `VendorMaster` entry flagged for admin review (next scan hits `EXACT_VENDOR`).
+
+### Governing principle
+- **Self-improving, admin-reviewable**: the classifier gets smarter with usage, but every auto-learned vendor starts at `learning_status: 'UNREVIEWED'` so admin can approve/reject. Rejection deactivates the vendor (is_active = false) without deleting it — the audit trail is preserved.
+- **Subscription-safe**: strictly entity-scoped via `entity_id` filter. No cross-tenant learning. Per-entity toggle `OcrSettings.vendor_auto_learn_enabled` (default ON) lets subscribers opt out.
+- **Non-destructive**: never overwrites an existing vendor's `default_coa_code` (admin-set values win); only appends unique aliases.
+
+### Guardrails (all must pass or action = 'SKIPPED')
+1. `entity_id` must be non-null
+2. `supplier_name` length ≥ 3, ≤ 120 chars, not purely numeric
+3. Name not in `GENERIC_NAME_BLOCKLIST` (RECEIPT, INVOICE, UNKNOWN, CASHIER, …)
+4. Claude `confidence` must be HIGH or MEDIUM (never learn from LOW)
+5. Claude must return a `coa_code` — a vendor without COA is noise
+
+### Wiring (Pipeline)
+```
+orParser / gasReceiptParser
+  → classifyExpense (regex cascade EXACT → ALIAS → KEYWORD → FALLBACK)
+    → Layer 2b: Claude (LOW classification OR missing fields)
+      → Phase H5: vendorAutoLearner.learnFromAiResult()
+        ├─ similar vendor exists → $addToSet on vendor_aliases
+        └─ no match → VendorMaster.create({ auto_learned_from_ocr: true, learning_status: 'UNREVIEWED' })
+```
+
+### Data Model Changes
+- **VendorMaster**: `auto_learned_from_ocr`, `learning_source` (CLAUDE_AI|MANUAL|IMPORT), `learned_at`, `learning_status` (UNREVIEWED|APPROVED|REJECTED), `learning_meta` (source_doc_type, source_ocr_text, source_raw_snippet, ai_confidence, suggested_coa_code, suggested_category, learn_count). Composite index on `(entity_id, auto_learned_from_ocr, learning_status, learned_at)` for fast review-queue queries.
+- **OcrSettings**: `vendor_auto_learn_enabled` (default true).
+- **OcrUsageLog**: `vendor_auto_learned` (bool) + `vendor_auto_learn_action` (NONE|CREATED|ALIAS_ADDED|SKIPPED) for telemetry.
+
+### API
+- `GET /api/erp/vendor-learnings?status=UNREVIEWED` — admin review queue (entity-scoped; president sees all entities).
+- `GET /api/erp/vendor-learnings/:id` — single entry with populated audit fields.
+- `PATCH /api/erp/vendor-learnings/:id` — action: APPROVE | REJECT | UNREVIEW. Optional inline edits: `vendor_name`, `default_coa_code`, `default_expense_category`, `vendor_aliases`. REJECT sets `is_active = false` so the classifier stops matching it.
+- `GET /api/erp/ocr-settings/usage` — now returns `auto_learn: { CREATED, ALIAS_ADDED, SKIPPED }` counters.
+- All routes require `roleCheck('admin','finance','president')`.
+
+### UI
+- ErpOcrSettingsPanel adds a 5th master-switch toggle `Vendor Auto-Learn (Claude wins)` alongside AI fallback / field completion / preprocessing.
+- New stat card "Vendor Auto-Learn (all time)" shows CREATED / ALIAS_ADDED / SKIPPED counts from `OcrUsageLog`.
+- DependencyBanner (`ocr-settings`) explains both toggle states + references the Auto-Learned Queue.
+
+### Key Files
+```
+backend/erp/services/vendorAutoLearner.js        # New — learnFromAiResult() + guardrails
+backend/erp/models/VendorMaster.js               # +5 fields for auto-learn tracking
+backend/erp/models/OcrSettings.js                # +vendor_auto_learn_enabled toggle
+backend/erp/models/OcrUsageLog.js                # +vendor_auto_learned + vendor_auto_learn_action
+backend/erp/ocr/ocrProcessor.js                  # Layer 2b invokes learner after Claude win
+backend/erp/controllers/ocrController.js         # Threads flag + logs action to usage
+backend/erp/controllers/ocrSettingsController.js # Extended allowed list + auto_learn counters
+backend/erp/controllers/vendorLearningController.js  # New — list/getOne/review
+backend/erp/routes/vendorLearningRoutes.js       # New — admin/finance/president guard
+backend/erp/routes/index.js                      # Mount at /api/erp/vendor-learnings
+frontend/src/erp/pages/ErpOcrSettingsPanel.jsx   # New toggle + stat card
+frontend/src/erp/services/ocrService.js          # list/get/review vendor learnings
+frontend/src/erp/pages/ControlCenter.jsx         # DEPENDENCY_GUIDE entries
+```
+
+### Verified
+- Syntax check pass on 10 backend files + 3 frontend files
+- Require-graph load test (all models, controllers, routes import cleanly)
+- Learner unit tests: 8 scenarios (CREATED, ALIAS_ADDED manual + auto-learned, 5 SKIPPED paths including ALIAS_EXISTS, NO_ENTITY, LOW_CONFIDENCE, INVALID_NAME, NO_COA)
+- Integration test through `processOcr`: CREATED when no existing, ALIAS_ADDED when similar vendor exists, learner disabled when toggle off, learner not invoked when Claude not fired
+

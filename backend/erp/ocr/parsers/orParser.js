@@ -18,13 +18,96 @@ const {
   splitLines,
 } = require('../confidenceScorer');
 
-// Known courier/shipping companies for supplier detection
-const KNOWN_COURIERS = [
+// ── Lookup-driven hot paths (Phase H3 — subscription-ready) ──
+// Couriers and payment-mode keywords are pulled from the per-entity Lookup
+// table (categories OCR_COURIER_ALIASES, OCR_PAYMENT_KEYWORDS) so admins can
+// add new couriers/payment methods without code changes.
+// Hardcoded fallbacks below act as boot-time defaults and disaster recovery.
+const Lookup = require('../../models/Lookup');
+
+const FALLBACK_COURIERS = [
   'AP CARGO', 'JRS EXPRESS', 'LBC', 'J&T', 'J AND T',
   '2GO', 'AIR21', 'ABEST', 'GRAB EXPRESS', 'LALAMOVE',
   'XEND', 'ENTREGO', 'NINJA VAN', 'FLASH EXPRESS',
-  'DHL', 'FEDEX', 'UPS', 'PHLPost',
+  'DHL', 'FEDEX', 'UPS', 'PHLPOST',
 ];
+
+const FALLBACK_PAYMENT_MODES = [
+  { aliases: ['cash'], mode_code: 'CASH' },
+  { aliases: ['gcash', 'g-cash', 'g cash'], mode_code: 'GCASH' },
+  { aliases: ['maya', 'paymaya'], mode_code: 'MAYA' },
+  { aliases: ['credit card', 'creditcard'], mode_code: 'CREDIT CARD' },
+  { aliases: ['debit card', 'debitcard'], mode_code: 'DEBIT CARD' },
+  { aliases: ['check', 'cheque'], mode_code: 'CHECK' },
+  { aliases: ['bank transfer', 'banktransfer', 'fund transfer'], mode_code: 'BANK TRANSFER' },
+  { aliases: ['online', 'cashless'], mode_code: 'ONLINE' },
+  { aliases: ['prepaid'], mode_code: 'PREPAID' },
+];
+
+// Per-entity caches (5-minute TTL) — keyed by entity_id (or '__GLOBAL__' when no entity)
+const _courierCache = new Map();   // entityKey → { value: string[], expiry }
+const _paymentCache = new Map();   // entityKey → { value: { aliases, mode_code }[], expiry }
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const _entityKey = (entityId) => entityId ? String(entityId) : '__GLOBAL__';
+
+function invalidateOrParserCache(entityId) {
+  if (entityId) {
+    _courierCache.delete(_entityKey(entityId));
+    _paymentCache.delete(_entityKey(entityId));
+  } else {
+    _courierCache.clear();
+    _paymentCache.clear();
+  }
+}
+
+async function getCouriers(entityId) {
+  const key = _entityKey(entityId);
+  const now = Date.now();
+  const hit = _courierCache.get(key);
+  if (hit && now < hit.expiry) return hit.value;
+  try {
+    const filter = { category: 'OCR_COURIER_ALIASES', is_active: true };
+    if (entityId) filter.entity_id = entityId;
+    const rows = await Lookup.find(filter).lean();
+    const flat = [];
+    for (const row of rows) {
+      const aliases = row.metadata?.aliases || [row.label];
+      for (const a of aliases) if (a) flat.push(String(a).toUpperCase());
+    }
+    const value = flat.length > 0 ? flat : FALLBACK_COURIERS;
+    _courierCache.set(key, { value, expiry: now + CACHE_TTL_MS });
+    return value;
+  } catch (err) {
+    console.warn('[orParser] OCR_COURIER_ALIASES lookup failed, using fallback:', err.message);
+    _courierCache.set(key, { value: FALLBACK_COURIERS, expiry: now + CACHE_TTL_MS });
+    return FALLBACK_COURIERS;
+  }
+}
+
+async function getPaymentKeywords(entityId) {
+  const key = _entityKey(entityId);
+  const now = Date.now();
+  const hit = _paymentCache.get(key);
+  if (hit && now < hit.expiry) return hit.value;
+  try {
+    const filter = { category: 'OCR_PAYMENT_KEYWORDS', is_active: true };
+    if (entityId) filter.entity_id = entityId;
+    const rows = await Lookup.find(filter).lean();
+    const list = [];
+    for (const row of rows) {
+      const aliases = row.metadata?.aliases || [String(row.label).toLowerCase()];
+      const mode_code = row.metadata?.mode_code || row.code;
+      list.push({ aliases: aliases.map(a => String(a).toLowerCase()), mode_code });
+    }
+    const value = list.length > 0 ? list : FALLBACK_PAYMENT_MODES;
+    _paymentCache.set(key, { value, expiry: now + CACHE_TTL_MS });
+    return value;
+  } catch (err) {
+    console.warn('[orParser] OCR_PAYMENT_KEYWORDS lookup failed, using fallback:', err.message);
+    _paymentCache.set(key, { value: FALLBACK_PAYMENT_MODES, expiry: now + CACHE_TTL_MS });
+    return FALLBACK_PAYMENT_MODES;
+  }
+}
 
 // NOTE: Classification logic (EXPENSE_COA_MAP, EXPENSE_CATEGORIES) removed in task 1.17.
 // Parsers are extraction-only (Layer 1). Classification is handled by
@@ -49,23 +132,11 @@ const RE_DATE_WRITTEN = /(?:Date|Issued)\s*:?\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4})/
 const RE_TOTAL_INCL = /(?:Total\s*Sales|Total)\s*\(?(?:VAT\s*Incl|incl)/i;
 const RE_TOTAL = /(?:TOTAL|GRAND\s*TOTAL|SUB\s*TOTAL)\s*[:\s]*[₱P]?\s*([\d,]+\.?\d*)/i;
 
-// Payment mode detection
-const PAYMENT_MODES = {
-  'cash': 'CASH',
-  'gcash': 'GCASH',
-  'credit card': 'CREDIT CARD',
-  'debit card': 'DEBIT CARD',
-  'check': 'CHECK',
-  'online': 'ONLINE',
-  'prepaid': 'PREPAID',
-  'cashless': 'CASHLESS',
-  'maya': 'MAYA',
-  'paymaya': 'PAYMAYA',
-  'bank transfer': 'BANK TRANSFER',
-};
-
-function parseOR(ocrResult) {
+async function parseOR(ocrResult, options = {}) {
   const { fullText, words = [] } = ocrResult;
+  const entityId = options.entityId || null;
+  // Lookup-driven payment-mode keywords (per-entity, with hardcoded fallback)
+  const paymentKeywords = await getPaymentKeywords(entityId);
   const lines = splitLines(fullText);
   const validationFlags = [];
 
@@ -78,18 +149,22 @@ function parseOR(ocrResult) {
   const lineItems = [];
 
   // --- Supplier name ---
-  // Strategy: find the first line that looks like a company name
-  // Skip very short lines, logo fragments, and metadata lines
+  // Strategy: priority 1 = match any known courier alias from lookup (lookup-driven, scalable).
+  // Strategy: priority 2 = generic company-suffix regex.
+  // Skip very short lines, logo fragments, and metadata lines.
+  const courierAliases = await getCouriers(entityId);
   for (let i = 0; i < Math.min(lines.length, 10); i++) {
     const line = lines[i].trim();
-    // Skip short lines (logo fragments like "Cargo")
     if (line.length < 8) continue;
-    // Skip lines that are just addresses, TIN, tel, email
     if (/^(?:Tel|TIN|VAT|Email|Address|Guzman|Brgy|City|For more|customer)/i.test(line)) continue;
-    // Skip date/time lines
     if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(line)) continue;
 
-    // Look for lines with CORPORATION, INC, CO, ENTERPRISES, EXPRESS, etc.
+    const upper = line.toUpperCase();
+    if (courierAliases.some(c => upper.includes(c))) {
+      supplierName = line;
+      break;
+    }
+    // Generic suffix fallback (CORP, INC, CO., ENTERPRISE, EXPRESS, LOGISTICS, NETWORK, SERVICES, STATION)
     if (/(?:CORP|INC|CO\.|ENTERPRISE|EXPRESS|LOGISTICS|NETWORK|SERVICES|STATION)/i.test(line)) {
       supplierName = line;
       break;
@@ -177,12 +252,12 @@ function parseOR(ocrResult) {
     }
   }
 
-  // --- Payment mode ---
+  // --- Payment mode (lookup-driven via OCR_PAYMENT_KEYWORDS) ---
   for (const line of lines) {
     const lineLower = line.toLowerCase();
-    for (const [keyword, mode] of Object.entries(PAYMENT_MODES)) {
-      if (lineLower.includes(keyword)) {
-        paymentMode = mode;
+    for (const entry of paymentKeywords) {
+      if (entry.aliases.some(kw => lineLower.includes(kw))) {
+        paymentMode = entry.mode_code;
         break;
       }
     }
@@ -439,4 +514,4 @@ function parseOR(ocrResult) {
   return result;
 }
 
-module.exports = { parseOR };
+module.exports = { parseOR, invalidateOrParserCache };

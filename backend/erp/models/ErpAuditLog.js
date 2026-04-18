@@ -12,7 +12,7 @@ const erpAuditLogSchema = new mongoose.Schema({
   },
   log_type: {
     type: String,
-    enum: ['SALES_EDIT', 'PRICE_CHANGE', 'ITEM_CHANGE', 'DELETION', 'REOPEN', 'STATUS_CHANGE'],
+    enum: ['SALES_EDIT', 'PRICE_CHANGE', 'ITEM_CHANGE', 'DELETION', 'REOPEN', 'STATUS_CHANGE', 'PRESIDENT_REVERSAL'],
     required: true
   },
   target_ref: { type: String },
