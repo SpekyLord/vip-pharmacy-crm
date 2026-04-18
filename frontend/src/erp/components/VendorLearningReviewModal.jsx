@@ -172,7 +172,7 @@ export default function VendorLearningReviewModal({ vendorId, isOpen, onClose, o
                 onChange={e => setEdits(v => ({ ...v, vendor_aliases: e.target.value }))}
                 placeholder="e.g. SHELL, SHELL ALABANG HILLS"
               />
-              <div className="vlr-hint">All variations of this vendor's name that appear on receipts. Uppercased on save.</div>
+              <div className="vlr-hint">All variations of this vendor&apos;s name that appear on receipts. Uppercased on save.</div>
             </div>
 
             <div className="vlr-fg">
