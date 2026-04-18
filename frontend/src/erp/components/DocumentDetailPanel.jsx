@@ -521,7 +521,7 @@ export default function DocumentDetailPanel(props) {
           )}
           {(Math.abs((d.total_debits || 0) - (d.total_credits || 0)) > 0.01) && (
             <div style={{ marginTop: 6, padding: '6px 8px', background: '#fee2e2', color: '#991b1b', borderRadius: 4, fontSize: 11, fontWeight: 700 }}>
-              ⚠ Unbalanced: debits and credits don't match
+              ⚠ Unbalanced: debits and credits don&apos;t match
             </div>
           )}
         </div>

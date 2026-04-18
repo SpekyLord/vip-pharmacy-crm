@@ -145,7 +145,7 @@ export default function PresidentReversalsPage() {
         doc_type: row.doc_type, doc_id: row.doc_id,
         doc_ref: row.doc_ref, status: row.status, dependents: deps,
       });
-    } catch (err) {
+    } catch {
       // Even if preview fails (e.g., already reversed), let the modal open and
       // surface backend-side errors on submit.
       setReverseTarget({ doc_type: row.doc_type, doc_id: row.doc_id, doc_ref: row.doc_ref, status: row.status, dependents: [] });

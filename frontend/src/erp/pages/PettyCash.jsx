@@ -323,7 +323,7 @@ function TxnFormModal({ open, onClose, onSave, funds, expenseCategories, editDat
 
 // ---------- Fund Overview Tab ----------
  
-function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund, onGenerateRemittance, onGenerateReplenishment, canManage, isPresident, canPresidentReverse, people, warehouses, fundModes, fundStatuses }) {
+function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund, onGenerateRemittance, onGenerateReplenishment, canManage, canPresidentReverse, people, warehouses, fundModes, fundStatuses }) {
   const [showForm, setShowForm] = useState(false);
   const [editingFund, setEditingFund] = useState(null);
 
@@ -800,7 +800,7 @@ export default function PettyCash() {
       </div>
 
       {activeTab === 'funds' && (
-        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} onGenerateReplenishment={handleGenerateReplenishment} canManage={canManage} isPresident={user?.role === ROLES.PRESIDENT} canPresidentReverse={canPresidentReverse} people={people} warehouses={warehouses} fundModes={fundModes} fundStatuses={fundStatuses} />
+        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} onGenerateReplenishment={handleGenerateReplenishment} canManage={canManage} canPresidentReverse={canPresidentReverse} people={people} warehouses={warehouses} fundModes={fundModes} fundStatuses={fundStatuses} />
       )}
       {activeTab === 'transactions' && (
         <TransactionsTab funds={funds} pc={pc} canManage={canManage} canPresidentReverse={canPresidentReverse} expenseCategories={expenseCategories} />
