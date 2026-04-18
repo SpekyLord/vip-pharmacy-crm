@@ -87,7 +87,12 @@
       "Bash(nslookup cluster0.e9wenoo.mongodb.net 8.8.8.8)",
       "Bash(ping -n 1 8.8.8.8)",
       "Bash(echo \"EXIT=$?\")",
-      "Bash(npx.cmd eslint *)"
+      "Bash(npx.cmd eslint *)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:5000/api/health)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"http://localhost:5000/api/erp/collections/open-csis\")",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"http://localhost:5000/api/erp/collections/ar-aging\")",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"http://localhost:5000/api/erp/collections/nope\")",
+      "Bash(rm -f /tmp/vipcrm_cookies.txt)",
     ],
     "additionalDirectories": [
       "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp",
