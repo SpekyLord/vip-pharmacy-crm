@@ -4,6 +4,7 @@ const { ROLES } = require('../../constants/roles');
 const { invalidateRulesCache } = require('../services/expenseClassifier');
 const { invalidateOrParserCache } = require('../ocr/parsers/orParser');
 const { invalidateGuardrailCache } = require('../services/vendorAutoLearner');
+const { invalidateDangerCache } = require('../services/dangerSubPermissions');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
@@ -11,6 +12,8 @@ const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT
 const EXPENSE_CLASSIFIER_CATEGORIES = new Set(['OCR_EXPENSE_RULES', 'EXPENSE_CATEGORY']);
 // Categories whose changes must bust the vendor auto-learn guardrail cache (blocklist/thresholds)
 const VENDOR_AUTO_LEARN_CATEGORIES = new Set(['VENDOR_AUTO_LEARN_BLOCKLIST', 'VENDOR_AUTO_LEARN_THRESHOLDS']);
+// Categories whose changes must bust the danger-sub-perm cache (explicit-grant allowlist)
+const DANGER_SUB_PERM_CATEGORIES = new Set(['ERP_DANGER_SUB_PERMISSIONS']);
 
 /**
  * Generic Lookup Controller — Phase 24
@@ -295,12 +298,14 @@ const SEED_DEFAULTS = {
   // Financial vs Operational segregation — president approves financial, can delegate operational later
   APPROVAL_CATEGORY: [
     { code: 'FINANCIAL', label: 'Financial', metadata: { description: 'Involves money movement — requires president/finance approval', modules: ['EXPENSES', 'PURCHASING', 'PAYROLL', 'JOURNAL', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER', 'INCOME', 'PRF_CALF', 'PERDIEM_OVERRIDE', 'DEDUCTION_SCHEDULE'] } },
-    { code: 'OPERATIONAL', label: 'Operational', metadata: { description: 'Document processing & verification — can be delegated to admin/finance', modules: ['SALES', 'COLLECTIONS', 'INVENTORY', 'KPI', 'SMER', 'CAR_LOGBOOK', 'COLLECTION'] } },
+    { code: 'OPERATIONAL', label: 'Operational', metadata: { description: 'Document processing & verification — can be delegated to admin/finance', modules: ['SALES', 'INVENTORY', 'KPI', 'SMER', 'CAR_LOGBOOK', 'COLLECTION'] } },
   ],
   APPROVAL_MODULE: [
-    // Authority Matrix modules (Phase 29) — with financial/operational category
+    // Authority Matrix modules (Phase 29) — with financial/operational category.
+    // Collection entry lives below under the Universal Approval Hub block
+    // (Phase F.1) as the singular canonical key 'COLLECTION' — that's what
+    // gateApproval() sends, so rules must be filed under that code.
     { code: 'SALES', label: 'Sales', metadata: { category: 'OPERATIONAL' } },
-    { code: 'COLLECTIONS', label: 'Collections', metadata: { category: 'OPERATIONAL' } },
     { code: 'EXPENSES', label: 'Expenses', metadata: { category: 'FINANCIAL' } },
     { code: 'PURCHASING', label: 'Purchasing', metadata: { category: 'FINANCIAL' } },
     { code: 'PAYROLL', label: 'Payroll', metadata: { category: 'FINANCIAL' } },
@@ -470,6 +475,22 @@ const SEED_DEFAULTS = {
     { code: 'APPROVALS__APPROVE_DEDUCTIONS', label: 'Approve Deduction Schedules', metadata: { module: 'approvals', key: 'approve_deductions', sort_order: 13 } },
     { code: 'APPROVALS__APPROVE_KPI', label: 'Approve KPI Ratings', metadata: { module: 'approvals', key: 'approve_kpi', sort_order: 14 } },
     { code: 'APPROVALS__APPROVE_PERDIEM', label: 'Approve Per Diem Overrides', metadata: { module: 'approvals', key: 'approve_perdiem', sort_order: 15 } },
+  ],
+  // Phase 3a — Danger sub-permissions that require EXPLICIT grant.
+  // Even users with module-level FULL access do NOT inherit these keys — the
+  // Access Template must tick the specific sub-permission box. President always
+  // bypasses. Subscribers can add their own danger keys here without code changes
+  // (e.g., vendor_master.delete, user_master.demote_admin, integration.wipe).
+  // The baseline floor is also enforced in code (services/dangerSubPermissions.js)
+  // so deactivating these lookup rows does NOT weaken the baseline safety net.
+  // Each entry's metadata.module + metadata.key must exactly match a key in
+  // ERP_SUB_PERMISSION (or erp_access.sub_permissions[module]) to take effect.
+  ERP_DANGER_SUB_PERMISSIONS: [
+    {
+      code: 'ACCOUNTING__REVERSE_POSTED',
+      label: 'President Reverse — Destructive ledger/inventory/fund rollback',
+      metadata: { module: 'accounting', key: 'reverse_posted' },
+    },
   ],
   // Phase 30 — Credit Note lookups (was hardcoded in CreditNotes.jsx)
   RETURN_REASON: [
@@ -665,6 +686,14 @@ const SEED_DEFAULTS = {
     { code: 'MAX_NAME_LEN', label: 'Maximum vendor name length (chars)', metadata: { value: 120 } },
     { code: 'MAX_RAW_SNIPPET', label: 'Max raw OCR snippet stored (chars)', metadata: { value: 300 } },
   ],
+
+  // Phase 31b — Chart of Accounts default template (Rule #3, lookup-driven).
+  // Each entry materializes one row in ChartOfAccounts when the COA seed runs.
+  // Subscribers can add/remove/edit accounts here per entity via Control Center →
+  // Lookup Tables before triggering "Sync from Template" on the COA page.
+  // Source-of-truth: backend/erp/scripts/seedCOA.js → COA_TEMPLATE_LOOKUP_SHAPE
+  // (kept in code so new accounts auto-propagate to existing entities on next read).
+  COA_TEMPLATE: require('../scripts/seedCOA').COA_TEMPLATE_LOOKUP_SHAPE,
 };
 
 // List all distinct categories for current entity
@@ -775,6 +804,7 @@ exports.create = catchAsync(async (req, res) => {
   if (EXPENSE_CLASSIFIER_CATEGORIES.has(cat)) invalidateRulesCache();
   if (OR_PARSER_LOOKUP_CATEGORIES.has(cat)) invalidateOrParserCache();
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(cat)) invalidateGuardrailCache();
+  if (DANGER_SUB_PERM_CATEGORIES.has(cat)) invalidateDangerCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -790,6 +820,7 @@ exports.update = catchAsync(async (req, res) => {
   if (EXPENSE_CLASSIFIER_CATEGORIES.has(item.category)) invalidateRulesCache();
   if (OR_PARSER_LOOKUP_CATEGORIES.has(item.category)) invalidateOrParserCache();
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(item.category)) invalidateGuardrailCache();
+  if (DANGER_SUB_PERM_CATEGORIES.has(item.category)) invalidateDangerCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -800,6 +831,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (EXPENSE_CLASSIFIER_CATEGORIES.has(item.category)) invalidateRulesCache();
   if (OR_PARSER_LOOKUP_CATEGORIES.has(item.category)) invalidateOrParserCache();
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(item.category)) invalidateGuardrailCache();
+  if (DANGER_SUB_PERM_CATEGORIES.has(item.category)) invalidateDangerCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -812,10 +844,11 @@ exports.seedCategory = catchAsync(async (req, res) => {
 
   const ops = buildSeedOps(defaults, category, req.entityId, req.user._id);
   await Lookup.bulkWrite(ops);
-  // Bust caches when OCR-related categories change
+  // Bust caches when OCR-related or permission-gating categories change
   if (EXPENSE_CLASSIFIER_CATEGORIES.has(category)) invalidateRulesCache();
   if (OR_PARSER_LOOKUP_CATEGORIES.has(category)) invalidateOrParserCache();
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(category)) invalidateGuardrailCache();
+  if (DANGER_SUB_PERM_CATEGORIES.has(category)) invalidateDangerCache(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });

@@ -726,6 +726,11 @@ const getGrnList = catchAsync(async (req, res) => {
   if (req.query.status) filter.status = req.query.status;
   if (req.query.po_id) filter.po_id = req.query.po_id;
 
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
+
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
   const skip = (page - 1) * limit;
@@ -1087,6 +1092,12 @@ const seedStockOnHand = catchAsync(async (req, res) => {
   });
 });
 
+// President-only: SAP Storno reversal of an APPROVED GRN. PENDING/REJECTED rows
+// are hard-deleted. Blocks if downstream POSTED docs (Sales, IC Transfers) have
+// already consumed batches received via this GRN. See documentReversalService.js.
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
+const presidentReverseGrn = buildPresidentReverseHandler('GRN');
+
 module.exports = {
   getMyStock,
   getBatches,
@@ -1100,5 +1111,6 @@ module.exports = {
   getAlerts,
   getExpiryDashboard,
   getBatchTrace,
-  seedStockOnHand
+  seedStockOnHand,
+  presidentReverseGrn
 };

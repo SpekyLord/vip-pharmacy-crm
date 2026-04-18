@@ -50,7 +50,7 @@ const grnEntrySchema = new mongoose.Schema({
   // Approval workflow
   status: {
     type: String,
-    enum: ['PENDING', 'APPROVED', 'REJECTED'],
+    enum: ['PENDING', 'APPROVED', 'REJECTED', 'DELETION_REQUESTED'],
     default: 'PENDING'
   },
   notes: { type: String },
@@ -60,6 +60,10 @@ const grnEntrySchema = new mongoose.Schema({
 
   // Link to TransactionEvent on approval
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+
+  // SAP Storno reversal — set when GRN is reversed; original stays APPROVED for audit trail
+  deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+  reopen_count: { type: Number, default: 0 },
 
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   created_at: { type: Date, default: Date.now, immutable: true },

@@ -87,6 +87,11 @@ const payslipSchema = new mongoose.Schema(
 
     notes: { type: String, default: '' },
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+
+    // ═══ Reversal (SAP Storno) ═══
+    event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+    deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+    reopen_count: { type: Number, default: 0 },
   },
   {
     timestamps: true,

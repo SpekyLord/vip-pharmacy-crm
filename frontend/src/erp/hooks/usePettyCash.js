@@ -14,6 +14,11 @@ export default function usePettyCash() {
   const updateTransaction = async (id, body) => { const { data } = await api.put(`/erp/petty-cash/transactions/${id}`, body); return data; };
   const postTransaction = async (id) => { const { data } = await api.post(`/erp/petty-cash/transactions/${id}/post`); return data; };
   const voidTransaction = async (id, body) => { const { data } = await api.post(`/erp/petty-cash/transactions/${id}/void`, body); return data; };
+  // President Reverse (lookup-driven: accounting.reverse_posted). POSTED txn → VOID + JE reversal + fund balance flip.
+  const presidentReverseTxn = async (id, { reason, confirm }) => {
+    const { data } = await api.post(`/erp/petty-cash/transactions/${id}/president-reverse`, { reason, confirm });
+    return data;
+  };
 
   // Ceiling
   const checkCeiling = async (fundId) => { const { data } = await api.get(`/erp/petty-cash/ceiling/${fundId}`); return data; };
@@ -28,6 +33,7 @@ export default function usePettyCash() {
   return {
     getFunds, getFundById, createFund, updateFund, deleteFund,
     getTransactions, createTransaction, updateTransaction, postTransaction, voidTransaction,
+    presidentReverseTxn,
     checkCeiling,
     generateRemittance, generateReplenishment, getDocuments, signDocument, processDocument
   };

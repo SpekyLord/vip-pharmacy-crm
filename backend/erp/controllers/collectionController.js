@@ -18,11 +18,10 @@ const { enrichArWithDunning } = require('../services/dunningService');
 const { generateSoaWorkbook } = require('../services/soaGenerator');
 const { journalFromCollection, journalFromCWT, journalFromCommission, resolveFundingCoa } = require('../services/autoJournal');
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
+const { presidentReverse } = require('../services/documentReversalService');
 const JournalEntry = require('../models/JournalEntry');
 const { createVatEntry } = require('../services/vatService');
 const { createCwtEntry } = require('../services/cwtService');
-const VatLedger = require('../models/VatLedger');
-const CwtLedger = require('../models/CwtLedger');
 const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
 const Settings = require('../models/Settings');
 const PettyCashFund = require('../models/PettyCashFund');
@@ -65,6 +64,11 @@ const getCollections = catchAsync(async (req, res) => {
     filter.cr_date = {};
     if (req.query.cr_date_from) filter.cr_date.$gte = new Date(req.query.cr_date_from);
     if (req.query.cr_date_to) filter.cr_date.$lte = new Date(req.query.cr_date_to);
+  }
+
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
   }
 
   const page = parseInt(req.query.page) || 1;
@@ -583,8 +587,12 @@ const reopenCollections = catchAsync(async (req, res) => {
       await session.withTransaction(async () => {
         if (row.event_id) {
           await TransactionEvent.findByIdAndUpdate(row.event_id, { status: 'DELETED' }, { session });
-          await VatLedger.deleteMany({ source_event_id: row.event_id }).session(session);
-          await CwtLedger.deleteMany({ cr_no: row.cr_no, entity_id: row.entity_id }).session(session);
+          // VatLedger / CwtLedger entries are NOT deleted on reopen (Phase 3a/3b
+          // alignment): VAT/CWT rows are a staging layer owned by finance —
+          // they set finance_tag to INCLUDE/EXCLUDE/DEFER at 2550Q/2307 prep
+          // time. Reopen/reverse paths leave the rows in place; finance tags
+          // them EXCLUDE if the underlying document has been reversed. Keeps
+          // BIR audit trail intact even after a reversal.
         }
         // Reverse petty cash deposit
         const pcTxn = await PettyCashTransaction.findOne({
@@ -708,6 +716,40 @@ const approveDeletion = catchAsync(async (req, res) => {
   await collection.save();
 
   res.json({ success: true, message: 'Deletion approved — reversal event created' });
+});
+
+// ═══ PRESIDENT REVERSE — sub-permission gated, applies to any status ═══
+// (DRAFT/ERROR/VALID without event_id → hard delete; POSTED/DELETION_REQUESTED → SAP Storno)
+// Unlike `approveDeletion`, this path handles the full side-effect cleanup (VAT/CWT ledgers,
+// petty cash void, fund decrement) via documentReversalService — matching the `reopenCollections`
+// behavior so post + reverse yields the same ledger state as never-posted.
+const presidentReverseCollection = catchAsync(async (req, res) => {
+  const { reason, confirm } = req.body || {};
+  if (confirm !== 'DELETE') {
+    return res.status(400).json({ success: false, message: 'Type DELETE in the confirmation field to proceed' });
+  }
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ success: false, message: 'Reason is required' });
+  }
+
+  try {
+    const result = await presidentReverse({
+      doc_type: 'COLLECTION',
+      doc_id: req.params.id,
+      reason,
+      user: req.user,
+      tenantFilter: req.tenantFilter || {},
+    });
+    res.json({
+      success: true,
+      message: result.mode === 'HARD_DELETE'
+        ? `Deleted CR ${result.doc_ref || result.doc_id} (no posting side effects)`
+        : `Reversed CR ${result.doc_ref || result.doc_id} (SAP Storno) — original retained for audit`,
+      data: result,
+    });
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message });
+  }
 });
 
 // ═══ SOA ═══
@@ -856,6 +898,6 @@ module.exports = {
   getCollections, getCollectionById, getOpenCsisEndpoint,
   validateCollections, submitCollections, reopenCollections,
   getArAgingEndpoint, getCollectionRateEndpoint, generateSoaEndpoint,
-  requestDeletion, approveDeletion,
+  requestDeletion, approveDeletion, presidentReverseCollection,
   postSingleCollection
 };

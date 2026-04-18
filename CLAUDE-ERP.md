@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 18, 2026
-> **Version**: 6.8
-> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G5 + H1-H5 + Phase 34 Complete. Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints (AR Aging, Open CSIs, inventory FIFO/ledger/variance, SOA, streak detail, income projection) — president/admin/finance were silently filtered to their own _id when no explicit BDM was selected.
+> **Version**: 6.9
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G5 + H1-H5 + Phase 34 + Phase 3a Complete. Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -114,6 +114,166 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | H4 | OCR High-Confidence — Image Preprocessing + Claude Field Completion | ✅ |
 | H5 | OCR Vendor Auto-Learn from Claude Wins — Self-Improving Classifier | ✅ |
 | 34* | Approval Hub Enhancement: Sub-Permissions + Attachments + Line-Item Edit | ✅ |
+
+---
+
+## JE Numbering Format — Human-Readable, Entity-Scoped (Apr 2026)
+
+### Problem
+`JournalEntry.je_number` was a raw `Number` assigned via `DocSequence.getNext('JE-{entityId}-{year}')`. UI rendered `JE #47` — no date, no entity hint, no clue which subsidiary. Inconsistent with every other doc number (CALF/PRF/PO use `CALF-ILO040326-001` via `services/docNumbering.js`).
+
+### Solution
+JE numbers now follow the project's standard format:
+
+```
+JE-{ENTITY_CODE}{MMDDYY}-{NNN}
+```
+
+Examples: `JE-VIP041826-001`, `JE-MGC041826-003` (where `VIP` / `MGC` come from `Entity.short_name`).
+
+### Implementation
+
+- **`services/docNumbering.js`** — new `generateJeNumber({ entityId, date })`. Resolves entity code via `Entity.short_name` (admin-editable), sanitizes to ASCII-uppercase alphanumerics clamped to 8 chars, falls back to last 3 chars of entity `_id` if blank. In-memory cache (`_entityCodeCache`) avoids repeated Entity lookups on hot paths like bulk posting. Exports `getEntityCode` and `invalidateEntityCodeCache` for reuse.
+- **`models/JournalEntry.js`** — `je_number` field type changed from `Number` to `String`. Legacy numeric values coerced to string on read; no data migration required. Unique index `{entity_id, je_number}` retained.
+- **`services/journalEngine.js`** — `createJournal` + `createAndPostJournal` swapped from inline `DocSequence.getNext` to `generateJeNumber()`. Direct `DocSequence` import removed.
+- **Sort order** — `getJournalsByPeriod` and `getGeneralLedger` use `je_date + created_at` (chronological) instead of lexical `je_number` sort. MMDDYY doesn't sort across years.
+- **Cache invalidation** — `entityController.update` calls `invalidateEntityCodeCache(entity._id)` when `short_name` changes so renamed subsidiaries get the new code on the next JE.
+
+### Authority flow (unchanged)
+
+JE numbering is independent of the approval layer:
+- **DRAFT create** — number assigned immediately, no approval needed.
+- **POST (DRAFT → POSTED)** — `gateApproval({ module: 'JOURNAL' })` fires (Phase G4 default-roles + Phase 29 authority matrix). Number stays stable across the Approval Hub lifecycle.
+- **Reverse POSTED** — `erpSubAccessCheck('accounting', 'reverse_posted')` (Phase 3a danger gate). Reversal JE gets a fresh `generateJeNumber()`; `corrects_je_id` links it to the original.
+- **Auto-journals** from source docs (CSI/CR/Expense/PettyCash/ICT/GRN/Depreciation/Interest) bypass `gateApproval` — the source doc's own approval already gated the action.
+
+### Display
+
+Six call sites dropped the `JE #` prefix (the string is self-descriptive):
+- `services/documentReversalService.js` (reversal console list)
+- `services/journalEngine.js` (reversal description + duplicate-reversal error)
+- `pages/CreditCardLedger.jsx` (payment toast)
+- `pages/JournalEntries.jsx` (detail header + batch-post error list)
+- `pages/RecurringJournals.jsx` (run-now success toast)
+
+Legacy numeric JEs render as bare digits; new JEs render as `JE-VIP041826-001`. No migration pressure.
+
+### Subscription-safe
+
+- Entity code comes from `Entity.short_name` (admin UI field, not hardcoded). New subsidiaries pick a `short_name` on creation and get their own JE prefix immediately. No lookup table needed — Entity master is the canonical source.
+- Cache is per-process + per-entity, busted on admin rename. No cross-tenant leakage.
+
+### WorkflowGuide banner
+
+`journal-entries` entry in `WorkflowGuide.jsx` updated with new number format, approval-gate interaction, legacy vs new distinction, and chronological-sort note.
+
+### Extended to Inter-Company Transfers (Apr 2026)
+
+The same entity-code path now powers `InterCompanyTransfer.transfer_ref`:
+
+- **`services/docNumbering.js#generateDocNumber`** accepts an `entityId` option alongside the existing `bdmId` / `territoryCode` inputs. Resolution priority is `territoryCode` → `bdmId` (Territory lookup) → `entityId` (`getEntityCode`) → `fallbackCode`. Territory-scoped callers (CALF/PRF/PO/CN/SVC/PCF/REM/DS) are unchanged.
+- **`models/InterCompanyTransfer.js`** pre-save now calls `generateDocNumber({ prefix: 'ICT', entityId: source_entity_id })`. Format: `ICT-VIP041826-001`, `ICT-MGCO041826-001`. Replaces the old `Math.random()` + `YYYYMMDD` scheme that could collide under the `transfer_ref` unique index. Pre-save is now `async` with try/next error handling.
+- **Legacy refs** (`ICT-20260418-042`) render untouched — no migration pressure. Downstream display (`TransferOrders.jsx`, `IcArDashboard.jsx`, `IcSettlement.settled_transfers[].transfer_ref`, reversal console) is format-agnostic — plain string equality only.
+- **`WorkflowGuide.jsx#transfers`** banner updated with the new format and subsidiary-prefix note.
+- **Subscription-ready**: same guarantees as JE — `Entity.short_name` is admin-editable, cache invalidated by `entityController.update` via the shared `invalidateEntityCodeCache`, atomic sequencing via `DocSequence.getNext`.
+
+---
+
+## Phase 3a — Lookup-Driven Danger Sub-Permission Gate + President-Reverse Rollout (Apr 2026)
+
+### Problem
+Destructive endpoints (delete petty cash fund, reverse POSTED document) were hardcoded with `roleCheck('president')`. That works for the parent entity, but:
+
+1. **Breaks Access Template abstraction**: Access Template Manager is the canonical place to grant/revoke per-module capabilities. A hardcoded role check is invisible to the template editor — subscribers cannot see, let alone toggle, the capability.
+2. **Forecloses subsidiary delegation**: In MG AND CO. (and every future subsidiary), the CFO or Finance Head may legitimately hold reversal authority. Hardcoded President-only means the only path is a code change per tenant — the opposite of a subscription model.
+3. **Safety floor vs. flexibility tradeoff**: Purely removing the gate and replacing with a configurable lookup would let a subscriber accidentally grant a junior user ledger-destroying power. We need both: a platform-baseline safety floor AND per-tenant extensibility.
+
+### Solution — Two-layer Danger Gate
+
+**Layer 1 — Baseline Safety Floor (code-enforced, can never be removed)**
+- `backend/erp/services/dangerSubPermissions.js` exports `BASELINE_DANGER_SUB_PERMS`: a hardcoded `Set` of sub-permission keys that are treated as "danger" on every entity, regardless of lookup state.
+- Currently: `{ 'accounting.reverse_posted' }`. Adding a baseline entry is a platform release — subscribers cannot opt out.
+
+**Layer 2 — Per-Tenant Extension (lookup-driven)**
+- `ERP_DANGER_SUB_PERMISSIONS` Lookup category (entity-scoped). Each row's `metadata.{module, key}` tuple (e.g. `{ module: 'vendor_master', key: 'delete' }`) is treated as danger for that entity only.
+- Subscribers extend via Control Center → Lookup Tables. Cache TTL 5 min with immediate invalidation on write (`invalidateDangerCache` wired into `lookupGenericController.create/update/remove/seedCategory`).
+- Fail-closed: lookup read errors return 503 "Permission system temporarily unavailable" — better than silently granting.
+
+### How it plugs into the existing middleware
+
+`erpSubAccessCheck(module, subKey)` and `erpAnySubAccessCheck(...pairs)` in `backend/erp/middleware/erpAccessCheck.js` gained a `denyIfDangerFallback(module, subKey, entityId)` helper. The helper only runs on the FULL-fallback path (where module = FULL with no explicit `sub_permissions` entry and the middleware was about to grant implicit access). Explicit grants in `user.erp_access.sub_permissions[module][subKey]` bypass the danger gate — the admin who ticked that box took the decision.
+
+**Effect**: A subscriber admin with `erp_access.modules.accounting = 'FULL'` and no sub_permissions entries gets implicit access to every accounting sub-key **except** danger ones. To grant reversal, they must explicitly tick `accounting.reverse_posted` in the Access Template editor. President always bypasses.
+
+### Frontend mirror (`useErpSubAccess`)
+
+`frontend/src/erp/hooks/useErpSubAccess.js` duplicates `BASELINE_DANGER_SUB_PERMS` so the UI can hide buttons the user cannot actually use. Subscriber-added extras are NOT mirrored (the set changes rarely and the backend still rejects anything the UI slips through). Keep these two sets in sync when adding baseline keys.
+
+### Rollout — `/president-reverse` per-module routes
+
+Before Phase 3a only Sales + Collections had per-module president-reverse endpoints. Phase 3a adds three more via a shared factory (`buildPresidentReverseHandler(doc_type)` in `documentReversalService.js`), so the same auth gate + UX pattern (reason + `confirm: 'DELETE'`) applies everywhere:
+
+| Module | Route | Doc_type handler | Side effects reversed |
+|---|---|---|---|
+| Sales | `POST /api/erp/sales/:id/president-reverse` | SALES_LINE | Inventory, consignment conversions, petty-cash deposit, linked JEs |
+| Collection | `POST /api/erp/collections/:id/president-reverse` | COLLECTION | CSI release, petty-cash deposit, VAT/CWT ledger, linked JEs |
+| **Expense** | `POST /api/erp/expenses/ore-access/:id/president-reverse` | EXPENSE | Linked JEs, deletion event |
+| **PRF/CALF** | `POST /api/erp/expenses/prf-calf/:id/president-reverse` | CALF or PRF (auto-dispatched by `doc_type`) | CALF: clears `calf_id` on non-POSTED expenses; PRF: clears `rebate_prf_id` on Collection; linked JEs |
+| **Petty Cash** | `POST /api/erp/petty-cash/transactions/:id/president-reverse` | PETTY_CASH_TXN | Txn VOIDed, fund balance flipped, linked JEs |
+| Central Console | `POST /api/erp/president/reversals/reverse` (body: `{ doc_type, doc_id, reason, confirm }`) | any | Cross-module history, preview dependents |
+
+Plus: `DELETE /api/erp/petty-cash/funds/:id` — hardcoded `roleCheck('president')` swapped for `erpSubAccessCheck('accounting', 'reverse_posted')`. Subsidiaries can now delegate fund-delete to a CFO by ticking one Access Template box.
+
+### Dependent-Doc Blocker
+
+`backend/erp/services/dependentDocChecker.js` runs before every reversal. Returns `{ has_deps, dependents: [{ type, ref, doc_id, message, severity }] }`. Hard blockers abort with HTTP 409 and surface the list so the user knows what to reverse first. Registry covers: GRN, IC Transfer, Consignment, CALF, PRF, Income, Payroll, SalesLine, Collection, Expense, PO. `checkHardBlockers()` filters out `WARN`-severity entries for reversal sites that should proceed despite informational warnings.
+
+### Audit & Period-Lock
+
+Every president-reversal:
+1. Writes an `ErpAuditLog` row with `log_type: 'PRESIDENT_REVERSAL'` and full side-effect payload (doc_ref, mode, reversal_event_id, side_effects list).
+2. Refuses if the **current** period (where reversal entries will land) is locked for the relevant module — original period is never touched, so only the landing-month lock matters.
+
+### Frontend wiring
+
+- `useCollections.js`, `useSales.js` — already had `presidentReverseX()`.
+- `useExpenses.js` — gained `presidentReverseExpense(id, {reason, confirm})` and `presidentReversePrfCalf(id, {reason, confirm})`.
+- `usePettyCash.js` — gained `presidentReverseTxn(id, {reason, confirm})`.
+- Gate buttons with `useErpSubAccess().hasSubPermission('accounting', 'reverse_posted')`.
+
+### WorkflowGuide banners
+
+Updated `expenses`, `prf-calf`, and `petty-cash` entries in `frontend/src/erp/components/WorkflowGuide.jsx` to document President-Delete semantics, dependent-doc blockers, and the lookup-driven delegation path.
+
+### Files touched (Phase 3a)
+
+Backend:
+- `services/dangerSubPermissions.js` (new) — baseline set + lookup reader + cache
+- `services/dependentDocChecker.js` (new) — 11 doc-type checkers
+- `services/documentReversalService.js` — 12 handlers + `buildPresidentReverseHandler` factory
+- `middleware/erpAccessCheck.js` — `denyIfDangerFallback` wired into both `erpSubAccessCheck` and `erpAnySubAccessCheck`
+- `controllers/expenseController.js` — `presidentReverseExpense/Calf/Prf/PrfCalf` (doc_type auto-dispatch)
+- `controllers/pettyCashController.js` — `presidentReversePettyCashTxn`
+- `controllers/collectionController.js` — `presidentReverseCollection` (Phase 3a baseline)
+- `controllers/salesController.js` — `presidentReverseSale` (Phase 3a baseline)
+- `controllers/lookupGenericController.js` — `invalidateDangerCache` on lookup writes + `ERP_DANGER_SUB_PERMISSIONS` seed
+- `routes/{collection,sales,expense,pettyCash,presidentReversal}Routes.js` — gated endpoints
+
+Frontend:
+- `hooks/useErpSubAccess.js` — baseline danger set mirror
+- `hooks/useCollections.js`, `hooks/useSales.js`, `hooks/useExpenses.js`, `hooks/usePettyCash.js` — `presidentReverse*` methods
+- `pages/Collections.jsx` — reverse modal + wiring
+- `components/WorkflowGuide.jsx` — banners for collections, expenses, prf-calf, petty-cash
+
+### Future extension (subscription-ready)
+
+To delegate reversal in a subsidiary:
+1. Admin ticks `accounting.reverse_posted` in that user's Access Template (Control Center → Access Templates).
+2. No deploy needed — backend reads `erp_access.sub_permissions.accounting.reverse_posted === true` on the next request.
+
+To mark a new key as danger (subscriber-specific, no code change):
+1. Admin adds a row to `ERP_DANGER_SUB_PERMISSIONS` lookup with `metadata: { module: 'vendor_master', key: 'delete' }`.
+2. Cache busts immediately. Users with `vendor_master = FULL` but no explicit `vendor_master.delete` grant get rejected.
 
 ---
 
@@ -2129,3 +2289,171 @@ frontend/src/erp/pages/ControlCenter.jsx         # DEPENDENCY_GUIDE entries (inc
 - Learner unit tests: 8 scenarios (CREATED, ALIAS_ADDED manual + auto-learned, 5 SKIPPED paths including ALIAS_EXISTS, NO_ENTITY, LOW_CONFIDENCE, INVALID_NAME, NO_COA)
 - Integration test through `processOcr`: CREATED when no existing, ALIAS_ADDED when similar vendor exists, learner disabled when toggle off, learner not invoked when Claude not fired
 
+
+---
+
+## President Reversal Console — Phase 31 (April 2026)
+
+Cross-module SAP Storno dispatch UI + service for the President. Replaces the per-module
+"approve deletion" trickle with one place to view, audit, and reverse any POSTED
+document across Sales, Collections, Expenses, CALF/PRF, GRN, IC Transfers, DR/Consignment,
+Income Reports, Payroll, Petty Cash, and manual Journal Entries.
+
+### Architecture
+
+- **Service**: `backend/erp/services/documentReversalService.js`
+  - `REVERSAL_HANDLERS` registry — one entry per doc type. Adding a new module = add
+    one entry. The cross-module list and the type-filter dropdown are populated from
+    this registry, so new modules appear automatically.
+  - `presidentReverse({ doc_type, doc_id, reason, user, tenantFilter })` — master
+    entrypoint. Loads the doc, runs the dependent-doc blocker, reverses linked JEs,
+    creates a reversal `TransactionEvent`, performs domain-specific side effects
+    (inventory restore, AR/AP void, petty cash voiding, etc.), and stamps
+    `deletion_event_id` on the original.
+  - `listReversibleDocs({ doc_types, entityId, fromDate, toDate, page, limit })` —
+    cross-module list of POSTED docs eligible for reversal.
+  - `listReversalHistory({ entityId, doc_type, fromDate, toDate, page, limit })` —
+    audit-log feed of `PRESIDENT_REVERSAL` entries.
+  - `previewDependents({ doc_type, doc_id, tenantFilter })` — non-mutating preflight
+    so the UI can warn before the user clicks Reverse.
+  - `buildPresidentReverseHandler(docType)` — Express handler factory used by every
+    per-module controller (avoids 12× copies of the same wrapper).
+
+- **Dependent blocker**: `backend/erp/services/dependentDocChecker.js`
+  - One checker per doc type. GRN blocks if any qty_out InventoryLedger entry against
+    the GRN's batches resolves to a POSTED non-reversed downstream doc. IC Transfer
+    blocks if target-entity SalesLines consumed transferred inventory. DR blocks if
+    any conversions exist. CALF blocks if linked Expense or IncomeReport (auto-pulled
+    CASH_ADVANCE) is POSTED. Sales blocks if a POSTED Collection settled the CSI.
+
+- **Period-lock landing check**: every reverse asserts the *current* period is open
+  for the relevant module before it can land reversal entries. Original period is
+  never modified.
+
+- **Controller**: `backend/erp/controllers/presidentReversalController.js`
+  - `GET /erp/president/reversals/registry` — drives the type filter dropdown.
+  - `GET /erp/president/reversals/reversible` — paginated cross-module list.
+  - `GET /erp/president/reversals/history` — paginated audit log.
+  - `GET /erp/president/reversals/preview/:doc_type/:doc_id` — dependent preflight.
+  - `POST /erp/president/reversals/reverse` — central dispatch; same SAP Storno path
+    as per-module endpoints.
+
+- **Frontend**: `frontend/src/erp/pages/PresidentReversalsPage.jsx`
+  - Two tabs (Reversible Transactions / Reversal History), filters (type/date),
+    type badges per doc kind, "Reverse…" button opens `PresidentReverseModal` which
+    prompts for reason + DELETE confirmation. Sidebar link: "Reversal Console" under
+    Administration. Route: `/erp/president/reversals` (MANAGEMENT roles).
+
+### Sub-Permissions (lookup-driven, subscription-ready)
+
+| Sub-Permission              | Lookup Code                          | Used For                                     |
+|-----------------------------|--------------------------------------|----------------------------------------------|
+| `accounting.reverse_posted` | `ACCOUNTING__REVERSE_POSTED`         | Per-module president-reverse endpoints + central reverse |
+| `accounting.reversal_console` | `ACCOUNTING__REVERSAL_CONSOLE`     | Read-only access to the cross-module Console (list/history/preview) |
+
+President auto-passes both. Subscribers configure other roles via Access Templates —
+no code changes needed per tenant.
+
+### Wired Per-Module Routes
+
+| Module       | Route                                                    | Controller Function                |
+|--------------|----------------------------------------------------------|------------------------------------|
+| Sales        | `POST /api/erp/sales/:id/president-reverse`              | `salesController.presidentReverseSale` |
+| Collection   | `POST /api/erp/collections/:id/president-reverse`        | `collectionController.presidentReverseCollection` |
+| Expense      | `POST /api/erp/expenses/ore-access/:id/president-reverse`| `expenseController.presidentReverseExpense` |
+| CALF / PRF   | `POST /api/erp/expenses/prf-calf/:id/president-reverse`  | `expenseController.presidentReversePrfCalf` (auto-routes by doc_type) |
+| GRN          | `POST /api/erp/inventory/grn/:id/president-reverse`      | `inventoryController.presidentReverseGrn` |
+| IC Transfer  | `POST /api/erp/transfers/:id/president-reverse`          | `interCompanyController.presidentReverseIcTransfer` |
+| DR / Consignment | `POST /api/erp/consignment/dr/:id/president-reverse` | `consignmentController.presidentReverseDr` |
+| Income       | `POST /api/erp/income/:id/president-reverse`             | `incomeController.presidentReverseIncome` |
+| Payroll      | `POST /api/erp/payroll/:id/president-reverse`            | `payrollController.presidentReversePayslip` |
+| Petty Cash   | (via central console)                                    | `documentReversalService` registry: `PETTY_CASH_TXN` |
+| Manual JE    | (via central console)                                    | `documentReversalService` registry: `JOURNAL_ENTRY` |
+
+### Schema Additions
+
+Added `deletion_event_id: ObjectId` (and `reopen_count` where missing) to:
+`GrnEntry`, `InterCompanyTransfer`, `PrfCalf`, `IncomeReport`, `Payslip`, `ExpenseEntry`.
+`Payslip` also gained `event_id` (reverse handler falls back to JE lookup when missing for legacy rows).
+`GrnEntry.status` enum extended with `DELETION_REQUESTED`.
+
+### UX Polish (Phase 6)
+
+`?include_reversed=true` query parameter on list endpoints opts back into showing reversed
+rows; default behavior hides them (filter: `deletion_event_id: { $exists: false }`).
+Wired into: `getSales`, `getCollections`, `getExpenseList`, `getPrfCalfList`,
+`getGrnList`, `getTransfers`, `getIncomeList`, `getPayrollStaging`.
+
+### Common Gotchas (Phase 31)
+
+- **Reversal lands in current period** — if the current month is locked for the
+  relevant module key (`PERIOD_LOCK_MODULE` map in documentReversalService), reversal
+  is refused with HTTP 403. Unlock the period or wait. Original period is never touched.
+- **Idempotent JE reversal** — `reverseLinkedJEs()` skips JEs that already have a
+  `corrects_je_id` pointer, so partial-failure retries succeed cleanly.
+- **IC Transfer is dual-event** — handler reverses BOTH `source_event_id` and
+  `target_event_id`, with separate inventory restoration on each side.
+- **DR/Consignment has no JE/event** — handler hard-deletes the tracker row when
+  `qty_consumed === 0`; otherwise blocks with the dependent-doc error.
+- **The collectionController.approveDeletion path is a partial reversal** (does not
+  void petty cash deposit, does not clean up VAT/CWT). For complete reversal, use
+  the President Console (which calls `documentReversalService.reverseCollection`).
+- **CALF/PRF share one route** (`/prf-calf/:id/president-reverse`) — wrapper peeks
+  at `doc_type` and dispatches to the matching handler.
+
+### Shared Detail Panel + Universal Approval Coverage (Phase 31 extension, April 2026)
+
+Two hubs, one detail layer, one coverage invariant.
+
+**Backend**
+- `backend/erp/services/documentDetailBuilder.js` — shared per-module detail
+  builders (pure functions). Used by BOTH `universalApprovalService.getUniversalPending()`
+  (Approval Hub) and `presidentReversalController.getDetail` (Reversal Console).
+  17 modules registered: 12 existing (SALES, COLLECTION, EXPENSES, PRF_CALF, INCOME,
+  INVENTORY/GRN, PAYROLL, KPI, DEDUCTION_SCHEDULE, SMER, CAR_LOGBOOK, PERDIEM_OVERRIDE)
+  + 5 new for the coverage gap (IC_TRANSFER, JOURNAL, BANKING, PURCHASING, PETTY_CASH).
+- `REVERSAL_DOC_TYPE_TO_MODULE` map — translates REVERSAL_HANDLERS doc_type
+  (SALES_LINE, PAYSLIP, etc.) to the approval module key (SALES, PAYROLL, etc.)
+  so the same builder serves both hubs.
+
+**Coverage invariant (see `docs/APPROVAL_COVERAGE_AUDIT.md`).** Every `gateApproval()`
+call site must have a matching `MODULE_QUERIES` entry, otherwise the pending doc
+silently generates an ApprovalRequest that never surfaces to an approver.
+Phase 31 extension closed the 5 gaps identified by the audit.
+
+**How gap-module queries work.** The 5 new entries use `buildGapModulePendingItems()`
+helper: queries `ApprovalRequest` filtered by `{module, status: 'PENDING'}`, batches
+doc-hydration per docType using the appropriate model, then runs the shared detail
+builder. This pattern means adding a 6th gap module = one more entry, no new code.
+
+**Frontend**
+- `frontend/src/erp/components/DocumentDetailPanel.jsx` — shared renderer. Two
+  modes: `mode="approval"` (inline line-edit UI, Edit buttons per row based on
+  `APPROVAL_EDITABLE_LINE_FIELDS` lookup) and `mode="reversal"` (read-only,
+  clickable image previews only).
+- `frontend/src/erp/pages/ApprovalManager.jsx` — replaced 380 lines of inline
+  per-module JSX with one `<DocumentDetailPanel />` call.
+- `frontend/src/erp/pages/PresidentReversalsPage.jsx` — expandable rows with
+  lazy detail fetch via `GET /api/erp/president/reversals/detail/:doc_type/:doc_id`,
+  result cached client-side per `${doc_type}:${doc_id}` key.
+
+**Lifecycle signal.** A doc's path is now fully visible end-to-end:
+`Submit → Approval Hub (rich detail) → approve (leaves hub, count decrements)
+→ POSTED → Reversal Console (same rich detail, read-only) → reverse (optional)`.
+Every module that blocks posting via `gateApproval()` surfaces in the inbox.
+The Reversal Console matches the detail fidelity of the Approval Hub.
+
+### Common Gotchas (Phase 31 extension)
+
+- **Detail builders are pure — no DB calls inside.** Callers hydrate the doc
+  (populate, lean) then pass to the builder. This lets the reversal detail
+  endpoint reuse the SAME builder without running duplicate queries.
+- **Gap modules carry data in ApprovalRequest, not on the doc itself.** The
+  gap-module pattern reads ApprovalRequest.module=PENDING, maps doc_id to the
+  source model, hydrates. If a batch docType has no single doc (DEPRECIATION,
+  INTEREST — doc_id is the entity_id), the `fallbackToRequest: true` flag on
+  the helper passes the ApprovalRequest itself to the builder.
+- **Approval Hub progress signal depends on items leaving on approve.** Do
+  NOT move POSTED docs back into the inbox — they belong in the Reversal
+  Console for audit. The two hubs serve DIFFERENT stages of the same
+  document lifecycle.

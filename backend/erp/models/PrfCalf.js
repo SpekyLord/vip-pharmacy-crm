@@ -111,6 +111,9 @@ const prfCalfSchema = new mongoose.Schema({
   rejection_reason: { type: String },
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
+  // SAP Storno reversal — set when PRF/CALF is reversed; original stays POSTED for audit trail
+  deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+
   // Audit
   created_at: { type: Date, default: Date.now, immutable: true },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

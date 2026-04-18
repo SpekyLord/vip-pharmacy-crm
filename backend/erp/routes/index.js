@@ -107,6 +107,11 @@ router.use('/coa', erpAccessCheck('accounting'), require('./coaRoutes'));
 router.use('/accounting', erpAccessCheck('accounting'), require('./accountingRoutes'));
 router.use('/month-end-close', erpAccessCheck('accounting'), require('./monthEndCloseRoutes'));
 
+// ═══ Phase 31 — President Reversal Console (cross-module SAP Storno dispatch) ═══
+// Sub-permission gating happens inside the route file; both `accounting.reversal_console`
+// (read-only audit) and `accounting.reverse_posted` (write) are enforced per-endpoint.
+router.use('/president/reversals', require('./presidentReversalRoutes'));
+
 // ═══ Phase 12 — Purchasing & AP ═══
 router.use('/purchasing', erpAccessCheck('purchasing'), require('./purchasingRoutes'));
 

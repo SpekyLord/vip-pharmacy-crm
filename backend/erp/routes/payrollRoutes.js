@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { roleCheck } = require('../../middleware/roleCheck');
+const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const {
   computePayroll,
   getPayrollStaging,
@@ -10,6 +11,7 @@ const {
   getPayslip,
   getPayslipHistory,
   computeThirteenthMonth,
+  presidentReversePayslip,
 } = require('../controllers/payrollController');
 
 // ═══ Payroll Operations (Finance/Admin) ═══
@@ -23,5 +25,8 @@ router.post('/thirteenth-month', roleCheck('admin', 'finance', 'president'), com
 // ═══ Read ═══
 router.get('/history/:personId', getPayslipHistory);
 router.get('/:id', getPayslip);
+
+// Phase 31 — President SAP Storno reversal of a POSTED Payslip.
+router.post('/:id/president-reverse', erpSubAccessCheck('accounting', 'reverse_posted'), presidentReversePayslip);
 
 module.exports = router;

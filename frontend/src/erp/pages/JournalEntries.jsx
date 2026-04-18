@@ -229,7 +229,7 @@ export default function JournalEntries() {
               <span className="je-back" onClick={() => { setView('list'); setSelected(null); }}>← Back to list</span>
               {selected && (
                 <div className="je-detail">
-                  <h2>JE #{selected.je_number}</h2>
+                  <h2>{selected.je_number}</h2>
                   <p><strong>Date:</strong> {new Date(selected.je_date).toLocaleDateString()} &nbsp; <strong>Period:</strong> {selected.period} &nbsp; <strong>Source:</strong> {selected.source_module} &nbsp; <span className={`badge badge-${selected.status}`}>{selected.status}</span></p>
                   <p>{selected.description}</p>
                   {selected.is_reversal && <p style={{ color: '#dc2626' }}>↩ This is a reversal entry</p>}
@@ -269,7 +269,7 @@ export default function JournalEntries() {
                   {batchResults.some(r => !r.success) && <span style={{ color: '#dc2626', fontWeight: 600, marginLeft: 12 }}>{batchResults.filter(r => !r.success).length} failed</span>}
                 </div>
                 {batchResults.filter(r => !r.success).map((r, i) => (
-                  <div key={i} style={{ fontSize: 12, color: '#dc2626', marginBottom: 4 }}>JE #{r.je_number || r.id}: {r.reason}</div>
+                  <div key={i} style={{ fontSize: 12, color: '#dc2626', marginBottom: 4 }}>{r.je_number || r.id}: {r.reason}</div>
                 ))}
                 <div style={{ textAlign: 'right', marginTop: 16 }}>
                   <button className="btn btn-primary" onClick={() => setBatchResults(null)}>Close</button>

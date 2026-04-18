@@ -63,6 +63,15 @@ export default function useExpenses() {
   // ═══ Per Diem Config ═══
   const getPerdiemConfig = () => api.get('/expenses/perdiem-config');
 
+  // ═══ President Reverse (lookup-driven: accounting.reverse_posted) ═══
+  // POSTED/DELETION_REQUESTED → SAP Storno; DRAFT/ERROR/VALID → hard delete.
+  // Backend returns { success, message, data: { doc_type, doc_id, mode, ... } }.
+  // 409 with `dependents[]` when blocked (e.g., CALF funds POSTED expense).
+  const presidentReverseExpense = (id, { reason, confirm }) =>
+    api.post(`/expenses/ore-access/${id}/president-reverse`, { reason, confirm });
+  const presidentReversePrfCalf = (id, { reason, confirm }) =>
+    api.post(`/expenses/prf-calf/${id}/president-reverse`, { reason, confirm });
+
   return {
     ...api,
     getExpenseSummary,
@@ -84,6 +93,8 @@ export default function useExpenses() {
     // Revolving Fund
     getRevolvingFundAmount,
     // Per Diem Config
-    getPerdiemConfig
+    getPerdiemConfig,
+    // President Reverse
+    presidentReverseExpense, presidentReversePrfCalf
   };
 }
