@@ -587,6 +587,14 @@ const SEED_DEFAULTS = {
     { code: 'EXPENSES', label: 'Expenses (ORE/ACCESS)', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated expense entries' } },
     { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated PRF/CALF documents' } },
     { code: 'PERDIEM_OVERRIDE', label: 'Per Diem Override', metadata: { roles: ['admin', 'finance', 'president'], description: 'Approve BDM per diem override requests' } },
+    // Phase G4 — Default-Roles Gate coverage for remaining wired controllers (gateApproval).
+    // Without these entries the default-roles gate is a no-op for the module.
+    // Subscribers may set metadata.roles = null to disable gating per module (open-post).
+    { code: 'JOURNAL', label: 'Journal Entries', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated journal entries (manual JE, depreciation, interest)' } },
+    { code: 'BANKING', label: 'Banking', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post bank reconciliations and deposits' } },
+    { code: 'PETTY_CASH', label: 'Petty Cash', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post petty cash transactions' } },
+    { code: 'IC_TRANSFER', label: 'Inter-Company Transfer', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post inter-company transfers and settlements' } },
+    { code: 'PURCHASING', label: 'Purchasing', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post supplier invoices' } },
   ],
 
   // Phase G3 — Editable fields per module in the Universal Approval Hub (quick-edit for typo fixes)

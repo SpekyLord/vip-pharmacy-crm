@@ -12,7 +12,7 @@ import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError, showApprovalPending } from '../utils/errorToast';
+import { showError, showApprovalPending, showSuccess, showWarning } from '../utils/errorToast';
 import { matchHospital, matchProduct, fieldVal, fieldConfidence } from '../utils/ocrMatching';
 
 const STATUS_COLORS = {
@@ -838,11 +838,17 @@ export default function SalesEntry() {
     try {
       const postedIds = rows.filter(r => r.status === 'POSTED' && r._id).map(r => r._id);
       if (postedIds.length) {
-        await sales.reopenSales(postedIds);
+        const res = await sales.reopenSales(postedIds);
+        const failed = res?.failed || [];
+        if (failed.length) {
+          showWarning(failed.map(f => `${f.doc_ref || f._id}: ${f.error}`).join('\n'));
+        } else {
+          showSuccess(res?.message || 'Reopened');
+        }
         await loadSales();
       }
     } catch (err) {
-      console.error('Reopen error:', err);
+      showError(err, 'Could not reopen sale');
     } finally {
       setActionLoading('');
     }

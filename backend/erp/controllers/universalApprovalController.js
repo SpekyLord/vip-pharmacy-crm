@@ -344,6 +344,42 @@ const universalApprove = catchAsync(async (req, res) => {
   }
 
   const result = await handler(id, action, req.user._id, reason);
+
+  // Phase G4 — Resolve any open default-roles ApprovalRequest for this doc.
+  // Closes the audit loop: when an approver acts in the Hub, mark the synthetic
+  // request as APPROVED/REJECTED so it stops appearing in the Authority Matrix list.
+  // Skipped for 'approval_request' / 'perdiem_override' (handler manages its own request).
+  if (!['approval_request', 'perdiem_override'].includes(type)) {
+    try {
+      const ApprovalRequest = require('../models/ApprovalRequest');
+      const decisionStatus = (action === 'reject') ? 'REJECTED'
+        : (['post', 'approve', 'credit'].includes(action)) ? 'APPROVED'
+        : null;
+      if (decisionStatus) {
+        await ApprovalRequest.updateMany(
+          { doc_id: id, status: 'PENDING' },
+          {
+            $set: {
+              status: decisionStatus,
+              decided_by: req.user._id,
+              decided_at: new Date(),
+              decision_reason: reason || `${action} via Approval Hub`,
+            },
+            $push: {
+              history: {
+                status: decisionStatus,
+                by: req.user._id,
+                reason: reason || `${action} via Approval Hub`,
+              },
+            },
+          }
+        );
+      }
+    } catch (err) {
+      console.error('Approval request resolution failed:', err.message);
+    }
+  }
+
   res.json({ success: true, data: result, message: `${action} successful` });
 });
 

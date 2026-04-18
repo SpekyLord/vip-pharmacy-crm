@@ -108,8 +108,9 @@ const getOpenCsisEndpoint = catchAsync(async (req, res) => {
 
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.entity_id
     ? req.query.entity_id : req.entityId;
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.bdm_id
-    ? req.query.bdm_id : req.bdmId;
+  const bdmId = (req.isPresident || req.isAdmin || req.isFinance)
+    ? (req.query.bdm_id || null)
+    : req.bdmId;
 
   const csis = await getOpenCsis(entityId, bdmId, hospitalId, customerId);
   res.json({ success: true, data: csis });
@@ -118,8 +119,9 @@ const getOpenCsisEndpoint = catchAsync(async (req, res) => {
 const getArAgingEndpoint = catchAsync(async (req, res) => {
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.entity_id
     ? req.query.entity_id : req.entityId;
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.bdm_id
-    ? req.query.bdm_id : req.bdmId;
+  const bdmId = (req.isPresident || req.isAdmin || req.isFinance)
+    ? (req.query.bdm_id || null)
+    : req.bdmId;
 
   const arData = await getArAging(entityId, bdmId, req.query.hospital_id);
   const enriched = enrichArWithDunning(arData);
@@ -129,8 +131,9 @@ const getArAgingEndpoint = catchAsync(async (req, res) => {
 const getCollectionRateEndpoint = catchAsync(async (req, res) => {
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.entity_id
     ? req.query.entity_id : req.entityId;
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.bdm_id
-    ? req.query.bdm_id : req.bdmId;
+  const bdmId = (req.isPresident || req.isAdmin || req.isFinance)
+    ? (req.query.bdm_id || null)
+    : req.bdmId;
 
   const rate = await getCollectionRate(entityId, bdmId, req.query.date_from, req.query.date_to);
   res.json({ success: true, data: rate });
@@ -291,7 +294,7 @@ const submitCollections = catchAsync(async (req, res) => {
   const crTotalAmount = validRows.reduce((sum, r) => sum + (r.cr_amount || 0), 0);
   const gated = await gateApproval({
     entityId: req.entityId,
-    module: 'COLLECTIONS',
+    module: 'COLLECTION',
     docType: 'CR',
     docId: validRows[0]._id,
     docRef: validRows.map(r => r.cr_no).filter(Boolean).join(', '),
@@ -715,8 +718,9 @@ const generateSoaEndpoint = catchAsync(async (req, res) => {
 
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.body.entity_id
     ? req.body.entity_id : req.entityId;
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && req.body.bdm_id
-    ? req.body.bdm_id : req.bdmId;
+  const bdmId = (req.isPresident || req.isAdmin || req.isFinance)
+    ? (req.body.bdm_id || null)
+    : req.bdmId;
 
   const buffer = await generateSoaWorkbook(hospital_id, entityId, bdmId);
 

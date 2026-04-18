@@ -21,6 +21,7 @@ const ProductMaster = require('../models/ProductMaster');
 const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
 const PettyCashFund = require('../models/PettyCashFund');
 const PettyCashTransaction = require('../models/PettyCashTransaction');
+const Collection = require('../models/Collection');
 
 // ═══════════════════════════════════════════════════════════
 // SHARED: Post a single SalesLine row (used by submitSales + approval handler)
@@ -876,6 +877,24 @@ const reopenSales = catchAsync(async (req, res) => {
   const failed = [];
 
   for (const row of rows) {
+    // Step 0: Block reopen if CSI is settled by a POSTED collection.
+    // Entity-scoped to prevent cross-entity leaks. Reopen the collection first
+    // to release the CSI, then the CSI becomes reopenable.
+    const settledBy = await Collection.findOne({
+      entity_id: row.entity_id,
+      status: 'POSTED',
+      deletion_event_id: { $exists: false },
+      'settled_csis.sales_line_id': row._id
+    }).select('_id cr_no').lean();
+    if (settledBy) {
+      failed.push({
+        _id: row._id,
+        doc_ref: row.doc_ref,
+        error: `Cannot reopen: settled by Collection ${settledBy.cr_no || settledBy._id}. Reopen the collection first to release this CSI.`
+      });
+      continue;
+    }
+
     // Step 1: Reverse JEs FIRST — if fails, skip this row (keep POSTED, ledger stays balanced)
     if (row.event_id) {
       try {
@@ -1043,6 +1062,21 @@ const approveDeletion = catchAsync(async (req, res) => {
 
   if (!sale) {
     return res.status(404).json({ success: false, message: 'Deletion-requested sale not found' });
+  }
+
+  // Block deletion if CSI is settled by a POSTED collection — keeps AR balanced.
+  // Entity-scoped. Collection must be reopened first to release the CSI.
+  const settledBy = await Collection.findOne({
+    entity_id: sale.entity_id,
+    status: 'POSTED',
+    deletion_event_id: { $exists: false },
+    'settled_csis.sales_line_id': sale._id
+  }).select('_id cr_no').lean();
+  if (settledBy) {
+    return res.status(409).json({
+      success: false,
+      message: `Cannot delete: CSI is settled by Collection ${settledBy.cr_no || settledBy._id}. Reopen the collection first to release this CSI.`
+    });
   }
 
   // SAP Storno: create reversal TransactionEvent

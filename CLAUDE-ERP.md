@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
-> **Last Updated**: April 2026
-> **Version**: 6.7
-> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G4 + H1-H2 + Phase 34 Complete (Apr 17, 2026). Phase 34: Approval Hub per-module sub-permissions, attachment/photo viewing, line-item inline editing, PO approval gate cleanup.
+> **Last Updated**: April 18, 2026
+> **Version**: 6.8
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G5 + H1-H5 + Phase 34 Complete. Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints (AR Aging, Open CSIs, inventory FIFO/ledger/variance, SOA, streak detail, income projection) — president/admin/finance were silently filtered to their own _id when no explicit BDM was selected.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -107,12 +107,76 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | G2 | Photo Upload Compression + Approval Hub Populate Fixes | ✅ |
 | G3 | Approval Hub Inline Quick-Edit (Typo Fix Before Approve) | ✅ |
 | G4 | Subsidiary Product Catalog Access (Lookup-Driven) | ✅ |
+| G5 | Privileged User BDM Filter Fix — Cross-BDM Visibility for President/Admin/Finance | ✅ |
 | H1 | Low-Priority Hardening (#13-#19) — CALF, COA, Expense, Batch Upload | ✅ |
 | H2 | OCR Hardening — Lookup-Driven Classification, Entity Scoping, Bugs | ✅ |
 | H3 (OCR) | OCR Subscription-Ready — Per-Entity Settings + Usage Logging + Quotas | ✅ |
 | H4 | OCR High-Confidence — Image Preprocessing + Claude Field Completion | ✅ |
 | H5 | OCR Vendor Auto-Learn from Claude Wins — Self-Improving Classifier | ✅ |
 | 34* | Approval Hub Enhancement: Sub-Permissions + Attachments + Line-Item Edit | ✅ |
+
+---
+
+## Phase G5 — Privileged User BDM Filter Fix (AR Aging, Open CSIs, Inventory, Streak, SOA)
+
+### Problem
+President/admin/finance users opening AR Aging, Collection Session (Open CSIs dropdown), inventory FIFO/ledger/variance, SOA export, product streak detail, or income projection saw only records whose `bdm_id` equaled their own user `_id` — silently filtering out every other BDM's data. Symptom: AR Aging and Collection Session showed "No open CSIs" for hospitals where CSIs clearly existed under other BDMs.
+
+### Root Cause
+`tenantFilter` middleware sets `req.bdmId = req.user._id` for **every** authenticated user (including president — who is not a BDM on any record). Nine endpoints used this ternary:
+```js
+const bdmId = (privileged && req.query.bdm_id) ? req.query.bdm_id : req.bdmId;
+```
+Privileged user with no `?bdm_id=` in the URL falls through to `req.bdmId` (their own _id). The query filter `bdm_id = <president>` then matches nothing.
+
+### Fix
+Replaced the ternary in all nine endpoints:
+```js
+const bdmId = privileged ? (req.query.bdm_id || null) : req.bdmId;
+```
+- Privileged + no query → `bdmId = null` → no BDM filter → sees all BDMs in the working entity
+- Privileged + query → scoped to that BDM
+- Non-privileged (contractor) → still locked to their own `_id` (unchanged)
+
+### Safeguard
+`getProductStreakDetail` passes `bdmId` directly into `new mongoose.Types.ObjectId(bdmId)` — `ObjectId(null)` silently generates a random ID. Added an explicit `if (!bdmId) return 400 'bdm_id is required'` guard (mirroring `getIncomeProjection`).
+
+### Services Verified for Null-Safe bdmId
+| Service Function | File | Null Handling |
+|---|---|---|
+| `getOpenCsis` | arEngine.js | `if (bdmId) match.bdm_id = ...` — skips filter |
+| `getArAging` | arEngine.js | Delegates to `getOpenCsis` |
+| `getCollectionRate` | arEngine.js | `if (bdmId) match.bdm_id = ...` |
+| `generateSoaWorkbook` | soaGenerator.js | `if (bdmId) match.bdm_id = ...` |
+| `getAvailableBatches` | fifoEngine.js | `buildStockMatch()` skips bdm_id on null |
+| `InventoryLedger` (getLedger/getVariance) | inventoryController inline | `else if (bdmId)` guard |
+| `getProductStreakDetail` | profitShareEngine.js | **Not null-safe** — controller returns 400 |
+| `projectIncome` | incomeCalc.js | Controller already 400s on null |
+
+### Entity Scoping — Deliberately Different
+The same endpoints have an `entity_id` ternary:
+```js
+const entityId = (privileged && req.query.entity_id) ? req.query.entity_id : req.entityId;
+```
+This is **left as-is and is correct**: entity isolation is stricter than BDM isolation. For a president, `req.entityId` is the working entity (X-Entity-Id header or primary) — a valid scope. Cross-entity visibility must be an explicit opt-in via `?entity_id=`, never a silent null.
+
+### Banner Updates (Rule #1)
+- `ar-aging` — added role visibility clarification to the tip: "President/admin/finance see all BDMs' CSIs across the working entity by default (use the BDM filter to scope); BDMs see only their own."
+- `collection-session` — same clarification added.
+
+### Key Files
+```
+backend/erp/controllers/collectionController.js      # 4 fixed: getOpenCsis, getArAging, getCollectionRate, generateSoa
+backend/erp/controllers/inventoryController.js       # 3 fixed: getBatches, getLedger, getVariance
+backend/erp/controllers/erpReportController.js       # getProductStreakDetail fixed + null guard
+backend/erp/controllers/incomeController.js          # getIncomeProjection fixed
+frontend/src/erp/components/WorkflowGuide.jsx        # ar-aging + collection-session role visibility
+```
+
+### Follow-up (Optional, Not Blocking)
+The pattern `req.isPresident || req.isAdmin || req.isFinance` is repeated in 21+ controllers — candidate for centralization via a `canViewOtherBdms(req)` helper, or (fully Rule #3 compliant) a Lookup-driven `CROSS_BDM_VIEW_ROLES` category that subscribers can configure without code changes. Not required for correctness — the fix is complete as-is.
+
+See global CLAUDE.md Rule 21 for the anti-pattern documented for future projects.
 
 ---
 
@@ -634,21 +698,29 @@ Layer 3: President/CEO              → Always sees all modules across all entit
 |----------|---------|
 | `MODULE_DEFAULT_ROLES` | Per-module default role arrays for Approval Hub visibility. `metadata.roles` = `['admin', 'finance', 'president']` or `null` (open). Auto-seeded on first access. |
 
-### Default Seed Values (12 modules)
-| Code | Label | Default Roles |
-|------|-------|---------------|
-| APPROVAL_REQUEST | Authority Matrix | null (open) |
-| DEDUCTION_SCHEDULE | Deduction Schedules | admin, finance, president |
-| INCOME | Income Reports | admin, finance, president |
-| INVENTORY | GRN (Goods Receipt) | admin, finance |
-| PAYROLL | Payslips | admin, finance, president |
-| KPI | KPI Ratings | admin, president |
-| SALES | Sales / CSI | admin, finance, president |
-| COLLECTION | Collections / CR | admin, finance, president |
-| SMER | SMER | admin, finance, president |
-| CAR_LOGBOOK | Car Logbook | admin, finance, president |
-| EXPENSES | Expenses (ORE/ACCESS) | admin, finance, president |
-| PRF_CALF | PRF / CALF | admin, finance, president |
+### Default Seed Values (18 modules — Phase G4 expanded coverage)
+| Code | Label | Default Roles | Used By Gate |
+|------|-------|---------------|---------------|
+| APPROVAL_REQUEST | Authority Matrix | null (open) | Hub visibility only |
+| DEDUCTION_SCHEDULE | Deduction Schedules | admin, finance, president | Hub visibility |
+| INCOME | Income Reports | admin, finance, president | gateApproval + Hub |
+| INVENTORY | GRN (Goods Receipt) | admin, finance | gateApproval + Hub |
+| PAYROLL | Payslips | admin, finance, president | gateApproval + Hub |
+| KPI | KPI Ratings | admin, president | Hub visibility |
+| SALES | Sales / CSI | admin, finance, president | gateApproval + Hub |
+| COLLECTION | Collections / CR | admin, finance, president | gateApproval + Hub |
+| SMER | SMER | admin, finance, president | Hub visibility (gate uses EXPENSES) |
+| CAR_LOGBOOK | Car Logbook | admin, finance, president | Hub visibility (gate uses EXPENSES) |
+| EXPENSES | Expenses (ORE/ACCESS) | admin, finance, president | gateApproval + Hub |
+| PRF_CALF | PRF / CALF | admin, finance, president | Hub visibility (gate uses EXPENSES) |
+| PERDIEM_OVERRIDE | Per Diem Override | admin, finance, president | gateApproval + Hub |
+| **JOURNAL** | Journal Entries | admin, finance, president | gateApproval (Phase G4) |
+| **BANKING** | Banking | admin, finance, president | gateApproval (Phase G4) |
+| **PETTY_CASH** | Petty Cash | admin, finance, president | gateApproval (Phase G4) |
+| **IC_TRANSFER** | Inter-Company Transfer | admin, finance, president | gateApproval (Phase G4) |
+| **PURCHASING** | Purchasing | admin, finance, president | gateApproval (Phase G4) |
+
+**Subscription tuning**: each entity edits its own row via Control Center → Lookup Tables → MODULE_DEFAULT_ROLES. Set `metadata.roles = null` to disable the gate for that module (open-post). Lazy-seeded on first submit per entity — no admin pre-action required.
 
 ### ApprovalRule Enum Expansion
 Added 7 new module values to `ApprovalRule.module` enum so Approval Rules can be created for ALL Universal Hub modules:
@@ -869,19 +941,26 @@ Recipients are resolved dynamically from the database — no hardcoded recipient
 
 ---
 
-## Approval Workflow (Phase 29 — Authority Matrix)
+## Approval Workflow (Phase 29 — Authority Matrix + Phase G4 — Default-Roles Gate)
 
 ### Governing Principle
 **"Any person can CREATE transactions, but all transactions must route through proper authority for POSTING."**
 
 This is enforced via:
 - `gateApproval()` on every submit/post controller (20 functions across 13 controllers)
-- 3-layer authorization: ApprovalRules → MODULE_DEFAULT_ROLES (lookup) → President override
+- **Two-layer authorization** (Phase G4):
+  - **Layer 1 — Default-Roles Gate (always enforced, lookup-driven)**: requester's role must be in `MODULE_DEFAULT_ROLES.metadata.roles` for the module. Holds otherwise.
+  - **Layer 2 — Authority Matrix (escalation rules, optional)**: when `Settings.ENFORCE_AUTHORITY_MATRIX = true` and matching `ApprovalRule` exists, even authorized posters route through level-1/2/3 approvers (typically for amount thresholds).
+- President / CEO bypass both layers (cross-entity superusers).
 - APPROVAL_CATEGORY lookup: FINANCIAL vs OPERATIONAL classification
 - Frontend 202 handling with `showApprovalPending()` utility
 - Period locks prevent posting to closed months
 
-Multi-level, database-driven approval workflow. Controlled by `Settings.ENFORCE_AUTHORITY_MATRIX` (default: `false`).
+### Subscription-Readiness (Phase G4)
+- Each entity configures its own posting authority via Control Center → Lookup Tables → `MODULE_DEFAULT_ROLES`.
+- Set `metadata.roles = ['admin', 'finance', 'president']` to gate that module.
+- Set `metadata.roles = null` (or remove the entry) to disable the gate (open-post — anyone can post).
+- No code changes when subscribers tune. Same lookup is read by both `gateApproval()` (submission side) and `isAuthorizedForModule()` (Hub visibility side) — symmetric configuration.
 
 ### Architecture
 - **ApprovalRule** — entity-scoped rules: module + doc_type + amount threshold + level + approver config
@@ -890,13 +969,13 @@ Multi-level, database-driven approval workflow. Controlled by `Settings.ENFORCE_
 - Multi-level: Level 1 must approve before Level 2 is evaluated. Up to 5 levels.
 
 ### How It Works
-1. When a controller calls `checkApprovalRequired()`, the service checks if `ENFORCE_AUTHORITY_MATRIX` is true
-2. If true, finds matching rules for the entity/module/docType/amount
-3. If rules match, creates `ApprovalRequest(PENDING)` and notifies approvers via email
-4. Controller returns HTTP 202 (Accepted) with `approval_pending: true`
-5. Approver visits `/erp/approvals` → approves or rejects (rejection requires reason)
-6. On approve, if next-level rules exist, escalates automatically
-7. Once fully approved, the controller's next attempt proceeds without blocking
+1. Controller calls `gateApproval()` → service runs `checkApprovalRequired()`.
+2. **Layer 1 (Default-Roles)**: looks up `MODULE_DEFAULT_ROLES` for the module. If requester's role is not in `metadata.roles` (and not President/CEO), creates `ApprovalRequest(PENDING, level: 0, rule_id: null)`, notifies approvers via email, returns 202 with `approval_pending: true`. Document stays in VALID status — appears in Approval Hub via existing module queries.
+3. **Layer 2 (Authority Matrix)**: only checked if requester passed Layer 1 AND `ENFORCE_AUTHORITY_MATRIX = true`. Finds matching rules for entity/module/docType/amount. If rules match, creates `ApprovalRequest(level: 1+)`, notifies approvers, returns 202.
+4. Approver opens `/erp/approvals` (Approval Hub) → sees the document via its module query (e.g. SALES with `status: 'VALID'`) → clicks Post / Approve / Reject.
+5. `universalApprovalController` invokes the proper post handler (e.g. `postSaleRow`) → document → POSTED.
+6. Controller marks any open `ApprovalRequest(PENDING)` for the doc as `APPROVED` / `REJECTED` to close the audit loop.
+7. For matrix multi-level: on Layer 2 approve, if next-level rules exist, escalates automatically.
 
 ### Key Files
 ```
@@ -945,7 +1024,7 @@ if (gated) return; // 202 already sent
 | PURCHASING | purchasingController | postInvoice | SUPPLIER_INVOICE |
 | SALES | salesController | submitSales | CSI |
 | SALES | creditNoteController | submitCreditNotes | CREDIT_NOTE |
-| COLLECTIONS | collectionController | submitCollections | CR |
+| COLLECTION | collectionController | submitCollections | CR |
 | EXPENSES | expenseController | submitSmer | SMER |
 | EXPENSES | expenseController | submitExpenses | EXPENSE_ENTRY |
 | EXPENSES | expenseController | submitCarLogbook | CAR_LOGBOOK |
@@ -1354,6 +1433,8 @@ All auto-journal COA codes are admin-configurable in `Settings.COA_MAP` (ERP Set
 25. **Sales approval handler uses `postSaleRow`** — The `sales_line` handler in `universalApprovalController.js` calls `salesController.postSaleRow()` (shared helper) for full posting with TransactionEvent, inventory, and journals. This ensures approval-flow posts behave identically to direct `submitSales` posts — including OPENING_AR skip logic. Other module handlers (collection, smer, etc.) are still simplified stubs.
 24. **COA codes are validated on save** — `Settings.updateSettings` validates all COA_MAP codes against ChartOfAccounts before saving. VendorMaster, BankAccount, CreditCard, and PaymentMode controllers validate `coa_code` via `validateCoaCode()` utility. Invalid codes are rejected with 400.
 25. **Reopen reversal is fail-safe** — All `reopen*` functions (SMER, CarLogbook, Expense, PRF/CALF) skip the document if JE reversal fails. The document stays POSTED (ledger balanced) and the failure is reported in the response `failed[]` array. Never mark DRAFT if reversal threw.
+25a. **Settled-CSI guard on sales reopen + deletion** — `reopenSales` and `approveDeletion` in `salesController.js` refuse to process a CSI that is referenced by any POSTED `Collection.settled_csis[].sales_line_id` (entity-scoped, excludes collections with `deletion_event_id`). Reopening a settled CSI would leave the Collection's settled amounts pointing at a DRAFT/deleted sale → AR and GL diverge. User must reopen the Collection first (which releases the CSI), then reopen/delete the CSI. `reopenSales` returns the block in `failed[]` with message `"Cannot reopen: settled by Collection CR#..."`; `approveDeletion` returns HTTP 409. Frontend (`SalesList.jsx`, `SalesEntry.jsx`) surfaces `failed[]` via `showWarning` toast. Banner text updated in `WorkflowGuide.jsx` (`sales-list`, `sales-entry`).
+25b. **`corrects_je_id` is omitted when absent** — `createAndPostJournal` in `journalEngine.js` spreads `corrects_je_id` only when truthy (line 95 area). Writing `corrects_je_id: null` would be indexed by the `{ corrects_je_id: 1 }, { unique: true, sparse: true }` index — MongoDB sparse treats null as present — and the second non-reversal JE insert would hit E11000. Omit → field absent → sparse excludes → safe.
 26. **CALF→Expense auto-submit uses transactions** — `submitPrfCalf` auto-submits linked expenses/carlogbooks inside a MongoDB session. If event creation or journal posting fails, the transaction rolls back — source stays in its previous status, no orphaned events or JEs.
 27. **ACCESS expense fallback is AP_TRADE** — `resolveFundingCoa()` for ACCESS (company-funded) lines passes `COA_MAP.AP_TRADE` as fallback, not CASH_ON_HAND. This ensures the credit account is Accounts Payable when no funding source is resolved.
 28. **`recorded_on_behalf_of` stores the BDM** — In `saveBatchExpenses`, `recorded_on_behalf_of` = the BDM on whose behalf the record was made (matches field name semantics). The admin/uploader is captured in `created_by`. When set, it signals a delegated action.

@@ -148,8 +148,8 @@ const getMyStock = catchAsync(async (req, res) => {
  * Sorted by expiry ASC (FIFO order). BDM-scoped.
  */
 const getBatches = catchAsync(async (req, res) => {
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.bdm_id
-    ? req.query.bdm_id
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
+    ? (req.query.bdm_id || null)
     : req.bdmId;
 
   // Allow privileged users to query a different entity's stock (for IC transfers)
@@ -188,8 +188,8 @@ const getBatches = catchAsync(async (req, res) => {
  * Paginated, date-range filterable. BDM-scoped.
  */
 const getLedger = catchAsync(async (req, res) => {
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.bdm_id
-    ? req.query.bdm_id
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
+    ? (req.query.bdm_id || null)
     : req.bdmId;
 
   const filter = {
@@ -234,8 +234,8 @@ const getLedger = catchAsync(async (req, res) => {
  * Per product: opening_balance + total_in - total_out = expected_balance
  */
 const getVariance = catchAsync(async (req, res) => {
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.bdm_id
-    ? req.query.bdm_id
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
+    ? (req.query.bdm_id || null)
     : req.bdmId;
 
   const match = { entity_id: new mongoose.Types.ObjectId(req.entityId) };

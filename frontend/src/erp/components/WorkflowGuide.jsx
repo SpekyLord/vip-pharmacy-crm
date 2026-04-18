@@ -69,6 +69,7 @@ const WORKFLOW_GUIDES = {
       'For Cash Receipt or Service Invoice with CASH payment: optionally select a Petty Cash Fund to deposit cash directly',
       'Save as DRAFT, then Validate to check for errors',
       'Post to finalize — CSI creates AR; Cash Receipt/Service Invoice with fund creates direct petty cash deposit instead of AR',
+      'Re-open a POSTED sale to correct it — reverses stock, petty-cash deposit, and journal entries (SAP Storno). Blocked if a POSTED Collection already settled this CSI; reopen the collection first to release it.',
     ],
     next: [
       { label: 'View All Sales', path: '/erp/sales' },
@@ -76,7 +77,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Collect Payment', path: '/erp/collections' },
       { label: 'Petty Cash', path: '/erp/petty-cash' },
     ],
-    tip: 'CSI sales always create AR (collect via Collections). Cash Receipt and Service Invoice with CASH payment can route directly to a Petty Cash Fund — bypassing AR and auto-creating a deposit on posting. Only ACTIVE funds with REVOLVING or DEPOSIT_ONLY mode are available.',
+    tip: 'CSI sales always create AR (collect via Collections). Cash Receipt and Service Invoice with CASH payment can route directly to a Petty Cash Fund — bypassing AR and auto-creating a deposit on posting. Only ACTIVE funds with REVOLVING or DEPOSIT_ONLY mode are available. Re-opening a CSI that a Collection already settled is blocked to keep AR and GL balanced — reopen the Collection first.',
   },
   'sales-list': {
     title: 'Sales Management',
@@ -86,6 +87,7 @@ const WORKFLOW_GUIDES = {
       'VALID — passed checks, ready to post',
       'POSTED — finalized, AR created, appears in reports',
       'Opening AR — pre-live-date entries skip stock deduction (AR only, no COGS)',
+      'Re-open — reverses stock, consignment, petty cash deposit, and journal entries (SAP Storno). Blocked if CSI is already settled by a POSTED Collection — reopen the collection first to release the CSI.',
       'President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad rows. POSTED rows trigger SAP Storno (reversal entries in current period; original kept for audit); DRAFT/ERROR rows are hard-deleted. All actions logged.',
     ],
     next: [
@@ -93,7 +95,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Collect Payment', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L. When Authority Matrix is enabled, posting may require approval — check the Approval Hub for pending items. Use the Source filter to view Opening AR entries separately. Stuck on an ERROR row? The President can delete + reverse it from this list.',
+    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L. Posting routes through the Approval Hub for users not in MODULE_DEFAULT_ROLES.SALES (lookup-driven, per-entity). When Authority Matrix is enabled, additional escalation rules can layer on top. Use the Source filter to view Opening AR entries separately. To re-open a POSTED CSI that has already been collected, first reopen the Collection that settles it — only unsettled CSIs are reopenable. Stuck on an ERROR row? The President can delete + reverse it from this list.',
   },
   'my-stock': {
     title: 'Inventory Overview',
@@ -157,7 +159,7 @@ const WORKFLOW_GUIDES = {
       { label: 'View All Collections', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'Collections support both hospital and customer targets — the system validates CSIs and AR balance for whichever entity type is used. Opening AR (pre-go-live) CSIs are fully collectable. CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY). Arriving from AR Aging? The hospital and invoice are pre-filled — entity/BDM scope is still enforced by the backend so out-of-scope URLs resolve to an empty form.',
+    tip: 'Collections support both hospital and customer targets — the system validates CSIs and AR balance for whichever entity type is used. Opening AR (pre-go-live) CSIs are fully collectable. CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY). Arriving from AR Aging? The hospital and invoice are pre-filled — entity/BDM scope is still enforced by the backend so out-of-scope URLs resolve to an empty form. Role visibility: President/admin/finance see every BDM\'s open CSIs for the selected hospital by default (use the BDM filter to narrow); BDMs see only their own.',
   },
   'ar-aging': {
     title: 'Accounts Receivable Aging',
@@ -172,7 +174,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Collect Payment', path: '/erp/collections/session' },
       { label: 'Generate SOA', path: '/erp/collections/soa' },
     ],
-    tip: 'High AR aging affects your collection rate and profit sharing eligibility. The "Collect" quick-action deep-links to the Collection form with the hospital (and optionally the specific invoice) pre-selected — posting logic, authority gating, and journal entries still run through the single Collections workflow so the ledger stays consistent across entities and subscribers.',
+    tip: 'High AR aging affects your collection rate and profit sharing eligibility. The "Collect" quick-action deep-links to the Collection form with the hospital (and optionally the specific invoice) pre-selected — posting logic, authority gating, and journal entries still run through the single Collections workflow so the ledger stays consistent across entities and subscribers. Role visibility: President/admin/finance see all BDMs\' CSIs across the working entity by default (use the BDM filter to scope); BDMs see only their own.',
   },
   'expenses': {
     title: 'Recording Expenses (ORE / ACCESS)',
@@ -484,17 +486,19 @@ const WORKFLOW_GUIDES = {
   'approval-manager': {
     title: 'Universal Approval Hub',
     steps: [
+      'Governing principle: "Any person can CREATE, but authority POSTS." Submitters validate; the Hub posts.',
       'All Pending tab: see EVERY transaction across the ERP that needs your attention — approve, post, or reject inline.',
       'Module filter: narrow by Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Income, Deductions, GRN, Payroll, KPI, etc.',
       'Sub-permissions: your assigned approval sub-permissions control which modules you see. Admin might handle Sales + GRN, finance handles Expenses + Payroll. President sees everything. Configure in Control Center → ERP Access Templates → Approvals sub-permissions.',
-      'Posting modules (Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF): documents in VALID status appear here — click Post to transition to POSTED.',
+      'Posting modules (Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Banking, Journal, Petty Cash, IC Transfer, Purchasing): documents in VALID status appear here — click Post to transition to POSTED.',
       'Approval modules (Income, Deductions, GRN, Payroll, KPI): multi-step review/approve workflows.',
+      'Default-Roles Gate (always on): when a submitter\'s role is not in MODULE_DEFAULT_ROLES.metadata.roles, their submit creates a pending request and the document waits here. Set roles = null on a module to disable the gate (open-post).',
       'Attachments: waybill photos, deposit slips, OR receipts, fuel receipts, and supporting documents are displayed inline — click any thumbnail to view full-size.',
       'Quick Edit: click Edit on any item to fix typos (description, notes, check#, amount) before approving. Editable fields configured in Control Center → Lookup Tables → APPROVAL_EDITABLE_FIELDS.',
       'Line-Item Edit: fix individual line items (qty, unit_price, batch#) directly — totals recalculate automatically. Configure in Lookup Tables → APPROVAL_EDITABLE_LINE_FIELDS.',
-      'Requests tab: authority matrix approvals (rule-triggered items).',
-      'Rules tab (Admin): create Approval Rules to delegate — assign specific people or roles to approve specific modules. Rules override default roles.',
-      'Default Roles: each module has configurable default roles (Control Center → Lookup Tables → MODULE_DEFAULT_ROLES). These determine who sees the module when no Approval Rules are set.',
+      'Requests tab: authority matrix approvals (rule-triggered escalations on top of the default-roles gate).',
+      'Rules tab (Admin): create Approval Rules to delegate — assign specific people or roles to approve specific modules. Rules layer on top of default roles, they don\'t replace them.',
+      'Default Roles: each module has configurable default roles (Control Center → Lookup Tables → MODULE_DEFAULT_ROLES). Edit per-entity to fit each subsidiary.',
       'Sidebar badge shows how many items need your attention.',
     ],
     next: [
@@ -503,7 +507,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Income', path: '/erp/income' },
       { label: 'Sales', path: '/erp/sales' },
     ],
-    tip: 'Module visibility uses a 4-layer system: (1) Sub-permissions (approvals.approve_sales, etc.) — control which modules each user sees and can approve. (2) Approval Rules — delegate to specific people or roles. (3) Default roles from MODULE_DEFAULT_ROLES lookup. (4) President always sees all. Assign sub-permissions in ERP Access Templates to divide workload: admin handles operational (sales, GRN, collections), finance handles financial (expenses, payroll, journal). Contractors with purchasing permission can also be given approval sub-permissions for GRN verification.',
+    tip: 'Module visibility uses a 4-layer system: (1) Sub-permissions (approvals.approve_sales, etc.) — control which modules each user sees and can approve. (2) Approval Rules — delegate to specific people or roles for amount-based escalation. (3) Default-Roles Gate from MODULE_DEFAULT_ROLES lookup — always enforced; if submitter is not in the role list, their post is held here. (4) President / CEO always bypass. Per-entity, lookup-driven, subscription-ready: each subsidiary configures its own posting roles. To disable the gate for a module, set metadata.roles = null in the lookup.',
   },
   'batch-trace': {
     title: 'Batch Trace',
