@@ -10,7 +10,7 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ROLES, ROLE_SETS } from '../../constants/roles';
+import { ROLE_SETS } from '../../constants/roles';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -123,7 +123,6 @@ export default function PersonDetail() {
   const DEPARTMENTS = codes('DEPARTMENT');
 
   const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
-  const isPresident = user?.role === ROLES.PRESIDENT;
   // Phase 3c — danger-baseline gates for destructive people/login operations.
   // canEdit still gates non-destructive Edit/Save (recoverable). Insurance delete now uses
   // payroll.insurance_delete (lookup-only Tier 2) instead of president-only role check.
