@@ -23,7 +23,7 @@ export default function PrivacyPolicyPage() {
       <p style={pageStyles.meta}>Last updated: April 18, 2026</p>
 
       <p style={pageStyles.p}>
-        VIOS Integrated ("we", "us", "our") operates the VIP Pharmacy CRM platform and associated
+        VIOS Integrated (&quot;we&quot;, &quot;us&quot;, &quot;our&quot;) operates the VIP Pharmacy CRM platform and associated
         Facebook Messenger, Viber, and WhatsApp business messaging integrations. This Privacy
         Policy explains how we collect, use, and protect information when you interact with our
         services.
@@ -157,7 +157,7 @@ export default function PrivacyPolicyPage() {
       <h2 style={pageStyles.h2}>9. Changes to This Policy</h2>
       <p style={pageStyles.p}>
         We may update this policy from time to time. Material changes will be posted on this page
-        with an updated "Last updated" date.
+        with an updated &quot;Last updated&quot; date.
       </p>
 
       <h2 style={pageStyles.h2}>10. Contact</h2>

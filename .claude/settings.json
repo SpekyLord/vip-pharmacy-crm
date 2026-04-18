@@ -85,7 +85,9 @@
       "Bash(git -C \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm\" ls-tree origin/dev -- backend/scripts/debugCsi7648.js)",
       "Bash(git -C \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm\" log origin/dev --oneline -10 -- backend/scripts/)",
       "Bash(nslookup cluster0.e9wenoo.mongodb.net 8.8.8.8)",
-      "Bash(ping -n 1 8.8.8.8)"
+      "Bash(ping -n 1 8.8.8.8)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npx.cmd eslint *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp",

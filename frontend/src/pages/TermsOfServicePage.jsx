@@ -23,9 +23,9 @@ export default function TermsOfServicePage() {
       <p style={pageStyles.meta}>Last updated: April 18, 2026</p>
 
       <p style={pageStyles.p}>
-        These Terms of Service ("Terms") govern your access to and use of the VIP Pharmacy CRM
+        These Terms of Service (&quot;Terms&quot;) govern your access to and use of the VIP Pharmacy CRM
         platform and associated messaging integrations (Facebook Messenger, Viber, WhatsApp)
-        operated by VIOS Integrated ("we", "us", "our"). By accessing or using the service, you
+        operated by VIOS Integrated (&quot;we&quot;, &quot;us&quot;, &quot;our&quot;). By accessing or using the service, you
         agree to be bound by these Terms.
       </p>
 
@@ -111,7 +111,7 @@ export default function TermsOfServicePage() {
 
       <h2 style={pageStyles.h2}>7. Disclaimers</h2>
       <p style={pageStyles.p}>
-        The service is provided "as is" and "as available" without warranties of any kind, either
+        The service is provided &quot;as is&quot; and &quot;as available&quot; without warranties of any kind, either
         express or implied. We do not warrant that the service will be uninterrupted, error-free,
         or completely secure.
       </p>
@@ -126,7 +126,7 @@ export default function TermsOfServicePage() {
       <h2 style={pageStyles.h2}>9. Changes to Terms</h2>
       <p style={pageStyles.p}>
         We may revise these Terms at any time. Material changes will be communicated by updating
-        the "Last updated" date on this page. Continued use of the service after such changes
+        the &quot;Last updated&quot; date on this page. Continued use of the service after such changes
         constitutes acceptance of the revised Terms.
       </p>
 
