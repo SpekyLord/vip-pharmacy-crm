@@ -4145,6 +4145,32 @@ Self-improving classifier: when Phase H4's Claude fallback successfully classifi
 - [x] CLAUDE-ERP.md phase table — added H3/H4/H5 rows
 - [x] PHASETASK-ERP.md — this section
 
-### Intentionally Deferred
-- Dedicated standalone "Auto-Learned Queue" page. The queue is already accessible via the API + DEPENDENCY_GUIDE reference; next step is adding a filter chip to the existing Vendor Master list (small UI task, out of scope for H5).
-- `VENDOR_AUTO_LEARN` lookup category for admin-tunable thresholds (min name length, blocklist). Can be layered in later without API changes; guardrail constants currently live in `vendorAutoLearner.js`.
+### H5.10 — Follow-up Work (April 18, 2026) ✅
+
+Closes the two items previously marked "Intentionally Deferred". Both align with CLAUDE.md Rules #3 + #19 (no hardcoded business values; lookup-driven configuration for subscription readiness), so deferral was reversed — every new subscriber should start with the correct pattern, not inherit hardcoded defaults.
+
+#### H5.10a — Admin Review Queue UI ✅
+- [x] Filter chip "Learning Queue (n)" on `VendorList.jsx` (between search and Add Vendor), showing unreviewed count live
+- [x] Row badge "AI-learned" next to vendor name when `auto_learned_from_ocr === true`
+- [x] "Review" row action (purple, only when `learning_status === 'UNREVIEWED'`)
+- [x] New modal `frontend/src/erp/components/VendorLearningReviewModal.jsx` — displays raw OCR snippet, Claude's suggested COA with "use this" link, editable vendor_name / default_coa_code / default_expense_category / vendor_aliases. COA dropdown reuses `useAccounting().listAccounts({ is_active: true })` filtered to `account_type === 'EXPENSE'`.
+- [x] Three actions: Reject (red, confirms first, sets is_active=false), Approve (green, accepts Claude's suggestion as-is), Edit+Approve (primary, sends edits payload)
+- [x] Empty-state copy for queueMode: "No vendors waiting for review. Claude auto-saves vendors when it confidently identifies them on an OCR scan."
+- [x] Notice when `OcrSettings.vendor_auto_learn_enabled === false` + queue empty + chip active, with link to Control Center → OCR Settings
+- [x] Dual-endpoint pattern preserved: chip off → `vendorService.list` (general endpoint), chip on → `listVendorLearnings` (admin/finance/president-gated). Rejected the single-endpoint approach to keep governance fields off the open vendor list.
+- [x] `WorkflowGuide['vendor-list']` updated with 4th step and tip about the queue
+
+#### H5.10b — Lookup-Driven Guardrails ✅
+- [x] Two new Lookup categories seeded in `lookupGenericController.js::SEED_DEFAULTS`:
+  - `VENDOR_AUTO_LEARN_BLOCKLIST` — 23 entries (RECEIPT, INVOICE, CASH, etc.) with `metadata.blocked_value` uppercased for match
+  - `VENDOR_AUTO_LEARN_THRESHOLDS` — 3 entries (MIN_NAME_LEN=3, MAX_NAME_LEN=120, MAX_RAW_SNIPPET=300) with `metadata.value`
+- [x] `vendorAutoLearner.js` refactored with `getGuardrails(entityId)` — per-entity 5-min cache mirroring `expenseClassifier.getKeywordRules`. `FALLBACK_BLOCKLIST` and `FALLBACK_THRESHOLDS` keep the learner safe on fresh installs before `ensureSeed` runs.
+- [x] `invalidateGuardrailCache()` exported and wired into 5 places in `lookupGenericController.js`: create, update, remove, seedCategory, seedAll
+- [x] `VENDOR_AUTO_LEARN_CATEGORIES` Set added alongside `EXPENSE_CLASSIFIER_CATEGORIES` and `OR_PARSER_LOOKUP_CATEGORIES` — same pattern
+- [x] `isValidCandidateName(name)` signature changed to `isValidCandidateName(name, guardrails)` — guardrails passed explicitly from `learnFromAiResult`
+- [x] `DEPENDENCY_GUIDE['lookups']` in ControlCenter.jsx — new entry describing the blocklist/thresholds + 5-min cache refresh semantic
+
+#### Verification ✅
+- [x] `node -c backend/erp/services/vendorAutoLearner.js` passes
+- [x] `node -c backend/erp/controllers/lookupGenericController.js` passes
+- [x] `npx vite build` clean (12.41s, no errors)

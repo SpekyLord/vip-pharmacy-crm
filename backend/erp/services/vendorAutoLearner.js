@@ -22,27 +22,74 @@
  * auto-learned entries via PATCH /vendor-learnings/:id (sets is_active = false).
  */
 const VendorMaster = require('../models/VendorMaster');
+const Lookup = require('../models/Lookup');
 
-// ── Guardrail constants (kept in-code for now; if admin tuning is ever needed a
-//    VENDOR_AUTO_LEARN lookup category can replace these without API changes) ──
-const MIN_NAME_LEN = 3;
-const MAX_NAME_LEN = 120;
-const MAX_RAW_SNIPPET = 300;
-
-// Strings Claude sometimes returns as supplier_name that are too generic to learn from
-const GENERIC_NAME_BLOCKLIST = new Set([
+// ── Guardrail fallbacks (used when the Lookup table has no entries for a given
+//    entity — fresh install before `ensureSeed` runs, or if admin deleted
+//    every row). Keeps the learner safe even with an empty DB. Admin-facing
+//    tuning lives in Control Center → Lookup Tables → VENDOR_AUTO_LEARN_*. ──
+const FALLBACK_THRESHOLDS = {
+  MIN_NAME_LEN: 3,
+  MAX_NAME_LEN: 120,
+  MAX_RAW_SNIPPET: 300,
+};
+const FALLBACK_BLOCKLIST = new Set([
   'RECEIPT', 'OFFICIAL RECEIPT', 'OR', 'INVOICE', 'UNKNOWN', 'N/A', 'NA',
   'SUPPLIER', 'VENDOR', 'ESTABLISHMENT', 'STORE', 'SHOP', 'CUSTOMER',
   'CASH', 'SALES', 'CASHIER', 'THANK YOU', 'THANK', 'NONE', 'NULL',
   'GAS STATION', 'STATION', 'PUMP',
 ]);
 
-function isValidCandidateName(name) {
+// ── Per-entity guardrail cache — mirrors expenseClassifier.getKeywordRules pattern.
+//    Invalidation is wired into lookupGenericController.js (create/update/delete/seed). ──
+const _guardrailCache = new Map(); // entityKey → { value, expiry }
+const GUARDRAIL_CACHE_TTL_MS = 5 * 60 * 1000;
+const _entityKey = (entityId) => entityId ? String(entityId) : '__GLOBAL__';
+
+async function getGuardrails(entityId) {
+  const key = _entityKey(entityId);
+  const now = Date.now();
+  const hit = _guardrailCache.get(key);
+  if (hit && now < hit.expiry) return hit.value;
+
+  // Lookups require entity_id — without it, fall back immediately.
+  let thresholds = [];
+  let blocklist = [];
+  if (entityId) {
+    try {
+      [thresholds, blocklist] = await Promise.all([
+        Lookup.find({ entity_id: entityId, category: 'VENDOR_AUTO_LEARN_THRESHOLDS', is_active: true }).lean(),
+        Lookup.find({ entity_id: entityId, category: 'VENDOR_AUTO_LEARN_BLOCKLIST',  is_active: true }).lean(),
+      ]);
+    } catch (_) {
+      // swallow — fallbacks below keep the learner safe
+    }
+  }
+
+  const tMap = Object.fromEntries((thresholds || []).map(t => [t.code, t.metadata?.value]));
+  const value = {
+    MIN_NAME_LEN:    Number.isFinite(tMap.MIN_NAME_LEN)    ? tMap.MIN_NAME_LEN    : FALLBACK_THRESHOLDS.MIN_NAME_LEN,
+    MAX_NAME_LEN:    Number.isFinite(tMap.MAX_NAME_LEN)    ? tMap.MAX_NAME_LEN    : FALLBACK_THRESHOLDS.MAX_NAME_LEN,
+    MAX_RAW_SNIPPET: Number.isFinite(tMap.MAX_RAW_SNIPPET) ? tMap.MAX_RAW_SNIPPET : FALLBACK_THRESHOLDS.MAX_RAW_SNIPPET,
+    BLOCKLIST: (blocklist && blocklist.length)
+      ? new Set(blocklist.map(b => String(b.metadata?.blocked_value || b.code).toUpperCase().trim()))
+      : FALLBACK_BLOCKLIST,
+  };
+  _guardrailCache.set(key, { value, expiry: now + GUARDRAIL_CACHE_TTL_MS });
+  return value;
+}
+
+function invalidateGuardrailCache(entityId) {
+  if (entityId) _guardrailCache.delete(_entityKey(entityId));
+  else _guardrailCache.clear();
+}
+
+function isValidCandidateName(name, guardrails) {
   if (!name || typeof name !== 'string') return false;
   const trimmed = name.trim();
-  if (trimmed.length < MIN_NAME_LEN || trimmed.length > MAX_NAME_LEN) return false;
+  if (trimmed.length < guardrails.MIN_NAME_LEN || trimmed.length > guardrails.MAX_NAME_LEN) return false;
   if (/^\d+$/.test(trimmed)) return false; // purely numeric
-  if (GENERIC_NAME_BLOCKLIST.has(trimmed.toUpperCase())) return false;
+  if (guardrails.BLOCKLIST.has(trimmed.toUpperCase())) return false;
   return true;
 }
 
@@ -73,10 +120,13 @@ async function learnFromAiResult({ aiResult, extractedFields = {}, rawOcrText = 
     return { action: 'SKIPPED', vendor_id: null, reason: 'NO_ENTITY' };
   }
 
+  // Load per-entity guardrails (lookup-driven; cached 5 min; falls back to defaults)
+  const guardrails = await getGuardrails(entityId);
+
   const supplierName = aiResult?.supplier_name || aiResult?.station_name || null;
 
   // Guardrail 1 + 2: candidate name quality
-  if (!isValidCandidateName(supplierName)) {
+  if (!isValidCandidateName(supplierName, guardrails)) {
     return { action: 'SKIPPED', vendor_id: null, reason: 'INVALID_NAME' };
   }
 
@@ -139,7 +189,7 @@ async function learnFromAiResult({ aiResult, extractedFields = {}, rawOcrText = 
       // preserve learning_meta on manually-created admin vendors untouched.
       if (existing.auto_learned_from_ocr) {
         update.$inc = { 'learning_meta.learn_count': 1 };
-        update.$set['learning_meta.source_raw_snippet'] = (rawOcrText || '').slice(0, MAX_RAW_SNIPPET);
+        update.$set['learning_meta.source_raw_snippet'] = (rawOcrText || '').slice(0, guardrails.MAX_RAW_SNIPPET);
         update.$set.learned_at = new Date();
       }
       await VendorMaster.updateOne({ _id: existing._id }, update);
@@ -171,7 +221,7 @@ async function learnFromAiResult({ aiResult, extractedFields = {}, rawOcrText = 
       learning_meta: {
         source_doc_type: docType || null,
         source_ocr_text: rawOcrVariation || cleanName,
-        source_raw_snippet: (rawOcrText || '').slice(0, MAX_RAW_SNIPPET),
+        source_raw_snippet: (rawOcrText || '').slice(0, guardrails.MAX_RAW_SNIPPET),
         ai_confidence: confidence,
         suggested_coa_code: aiResult.coa_code,
         suggested_category: aiResult.expense_category || null,
@@ -192,6 +242,8 @@ async function learnFromAiResult({ aiResult, extractedFields = {}, rawOcrText = 
 
 module.exports = {
   learnFromAiResult,
+  getGuardrails,
+  invalidateGuardrailCache,
   // exported for unit tests / admin diagnostics
-  _internal: { isValidCandidateName, normaliseForCompare, GENERIC_NAME_BLOCKLIST, MIN_NAME_LEN },
+  _internal: { isValidCandidateName, normaliseForCompare, FALLBACK_BLOCKLIST, FALLBACK_THRESHOLDS },
 };

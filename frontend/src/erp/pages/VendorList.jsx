@@ -3,6 +3,8 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePurchasing from '../hooks/usePurchasing';
 import { showError } from '../utils/errorToast';
+import { listVendorLearnings, getOcrSettings } from '../services/ocrService';
+import VendorLearningReviewModal from '../components/VendorLearningReviewModal';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -25,6 +27,11 @@ const styles = `
   .vl-badge-inactive { background: #fee2e2; color: #dc2626; }
   .vl-badge-vat { background: #dbeafe; color: #1e40af; }
   .vl-badge-exempt { background: #fef3c7; color: #92400e; }
+  .vl-badge-ai { background: #ede9fe; color: #6d28d9; margin-left: 8px; }
+  .vl-chip { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--erp-border, #e2e8f0); background: #fff; color: #334155; cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .vl-chip-active { background: var(--erp-accent, #1e5eff); color: #fff; border-color: var(--erp-accent, #1e5eff); }
+  .vl-notice { background: #fef3c7; color: #92400e; padding: 8px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 10px; }
+  .vl-notice a { color: #1e40af; text-decoration: underline; cursor: pointer; }
   .vl-modal { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
   .vl-modal-body { background: var(--erp-panel, #fff); border-radius: 12px; padding: 24px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
   .vl-modal-body h3 { margin: 0 0 16px; font-size: 16px; }
@@ -58,19 +65,41 @@ export function VendorListContent() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [msg, setMsg] = useState({ text: '', type: '' });
+  const [queueMode, setQueueMode] = useState(false);
+  const [queueCount, setQueueCount] = useState(0);
+  const [reviewId, setReviewId] = useState(null);
+  const [autoLearnEnabled, setAutoLearnEnabled] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = {};
-      if (search) params.q = search;
-      const res = await api.listVendors(params);
-      setVendors(res?.data || []);
+      if (queueMode) {
+        const res = await listVendorLearnings({ status: 'UNREVIEWED', limit: 200 });
+        setVendors(res?.rows || []);
+      } else {
+        const params = {};
+        if (search) params.q = search;
+        const res = await api.listVendors(params);
+        setVendors(res?.data || []);
+      }
     } catch (err) { showError(err, 'Could not load vendors'); }
     setLoading(false);
-  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, queueMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const refreshCount = useCallback(async () => {
+    try {
+      const res = await listVendorLearnings({ status: 'UNREVIEWED', limit: 500 });
+      setQueueCount((res?.rows || []).length);
+    } catch { /* silent — non-critical */ }
+  }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { refreshCount(); }, [refreshCount]);
+  useEffect(() => {
+    getOcrSettings()
+      .then(s => setAutoLearnEnabled(s?.vendor_auto_learn_enabled !== false))
+      .catch(() => {});
+  }, []);
 
   const showMsg = (text, type = 'ok') => {
     setMsg({ text, type });
@@ -135,16 +164,34 @@ export function VendorListContent() {
       <style>{styles}</style>
             <div className="vl-header">
               <h2>Vendor Master</h2>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input className="vl-search" placeholder="Search vendors..." value={search} onChange={e => setSearch(e.target.value)} />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input className="vl-search" placeholder="Search vendors..." value={search} onChange={e => setSearch(e.target.value)} disabled={queueMode} />
+                <button
+                  className={`vl-chip ${queueMode ? 'vl-chip-active' : ''}`}
+                  onClick={() => { setQueueMode(q => !q); setSearch(''); }}
+                  title={queueMode ? 'Back to all vendors' : 'Show AI-learned vendors awaiting review'}
+                >
+                  Learning Queue{queueCount > 0 ? ` (${queueCount})` : ''}
+                </button>
                 <button className="btn btn-primary" onClick={openCreate}>+ Add Vendor</button>
               </div>
             </div>
 
             {msg.text && <div className={`vl-msg vl-msg-${msg.type}`}>{msg.text}</div>}
 
+            {queueMode && !autoLearnEnabled && vendors.length === 0 && !loading && (
+              <div className="vl-notice">
+                Vendor Auto-Learn is OFF — new OCR scans will not create auto-learned vendors.
+                {' '}<a onClick={() => window.location.assign('/erp/control-center?section=ocr-settings')}>Enable in OCR Settings</a>.
+              </div>
+            )}
+
             {loading ? <p>Loading...</p> : vendors.length === 0 ? (
-              <div className="vl-empty">No vendors found</div>
+              <div className="vl-empty">
+                {queueMode
+                  ? 'No vendors waiting for review. Claude auto-saves vendors when it confidently identifies them on an OCR scan.'
+                  : 'No vendors found'}
+              </div>
             ) : (
               <table className="vl-table">
                 <thead>
@@ -161,7 +208,17 @@ export function VendorListContent() {
                 <tbody>
                   {vendors.map(v => (
                     <tr key={v._id}>
-                      <td style={{ fontWeight: 600 }}>{v.vendor_name}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {v.vendor_name}
+                        {v.auto_learned_from_ocr && (
+                          <span
+                            className="vl-badge vl-badge-ai"
+                            title={`AI-learned · ${v.learning_status || 'UNREVIEWED'}`}
+                          >
+                            AI-learned
+                          </span>
+                        )}
+                      </td>
                       <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{v.vendor_code || '—'}</td>
                       <td>{v.tin || '—'}</td>
                       <td>{v.payment_terms_days || 0}d</td>
@@ -169,6 +226,15 @@ export function VendorListContent() {
                       <td><span className={`vl-badge ${v.is_active !== false ? 'vl-badge-active' : 'vl-badge-inactive'}`}>{v.is_active !== false ? 'Active' : 'Inactive'}</span></td>
                       <td>
                         <div className="vl-actions">
+                          {v.auto_learned_from_ocr && v.learning_status === 'UNREVIEWED' && (
+                            <button
+                              className="btn btn-sm"
+                              style={{ background: '#8b5cf6', color: '#fff' }}
+                              onClick={() => setReviewId(v._id)}
+                            >
+                              Review
+                            </button>
+                          )}
                           <button className="btn btn-primary btn-sm" onClick={() => openEdit(v)}>Edit</button>
                           {v.is_active !== false && <button className="btn btn-danger btn-sm" onClick={() => handleDeactivate(v._id)}>Deactivate</button>}
                         </div>
@@ -251,6 +317,18 @@ export function VendorListContent() {
                 </div>
               </div>
             )}
+
+            <VendorLearningReviewModal
+              vendorId={reviewId}
+              isOpen={!!reviewId}
+              onClose={() => setReviewId(null)}
+              onReviewed={() => {
+                setReviewId(null);
+                showMsg('Vendor learning updated');
+                load();
+                refreshCount();
+              }}
+            />
     </>
   );
 }

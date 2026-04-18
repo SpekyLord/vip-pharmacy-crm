@@ -72,7 +72,10 @@
       "Bash(grep -n '$unwind\\\\|$match\\\\|$group\\\\|$lookup' '/c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend/erp/controllers/collectionController.js')",
       "Bash(npx jest *)",
       "Bash(grep -l \"WorkflowGuide\" \"c:\\\\Users\\\\LENOVO\\\\OneDrive\\\\Documents\\\\VIP and VS CODE\\\\VIP IP\\\\VIP CRM ERP\\\\vip-pharmacy-crm\\\\frontend\\\\src\\\\erp\\\\pages\"/*.jsx)",
-      "Bash(grep -l \"gateApproval\" /c/Users/LENOVO/OneDrive/Documents/\"VIP and VS CODE\"/\"VIP IP\"/\"VIP CRM ERP\"/vip-pharmacy-crm/backend/erp/controllers/*.js)"
+      "Bash(grep -l \"gateApproval\" /c/Users/LENOVO/OneDrive/Documents/\"VIP and VS CODE\"/\"VIP IP\"/\"VIP CRM ERP\"/vip-pharmacy-crm/backend/erp/controllers/*.js)",
+      "Bash(npx eslint *)",
+      "Bash(npx --no-install eslint src/erp/components/VendorLearningReviewModal.jsx src/erp/pages/VendorList.jsx src/erp/pages/ControlCenter.jsx src/erp/components/WorkflowGuide.jsx)",
+      "Bash(echo \"exit=$?\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\LENOVO\\OneDrive\\Documents\\VIP and VS CODE\\VIP IP\\VIP CRM ERP\\vip-pharmacy-crm\\frontend\\src\\erp",

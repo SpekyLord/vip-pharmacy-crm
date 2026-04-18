@@ -3,11 +3,14 @@ const { catchAsync } = require('../../middleware/errorHandler');
 const { ROLES } = require('../../constants/roles');
 const { invalidateRulesCache } = require('../services/expenseClassifier');
 const { invalidateOrParserCache } = require('../ocr/parsers/orParser');
+const { invalidateGuardrailCache } = require('../services/vendorAutoLearner');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
 // Categories whose changes must bust the expense classifier's keyword-rules cache
 const EXPENSE_CLASSIFIER_CATEGORIES = new Set(['OCR_EXPENSE_RULES', 'EXPENSE_CATEGORY']);
+// Categories whose changes must bust the vendor auto-learn guardrail cache (blocklist/thresholds)
+const VENDOR_AUTO_LEARN_CATEGORIES = new Set(['VENDOR_AUTO_LEARN_BLOCKLIST', 'VENDOR_AUTO_LEARN_THRESHOLDS']);
 
 /**
  * Generic Lookup Controller — Phase 24
@@ -616,6 +619,44 @@ const SEED_DEFAULTS = {
   PRODUCT_CATALOG_ACCESS: [
     { code: 'INHERIT_PARENT', label: 'Inherit Parent Entity Products', metadata: { access_mode: 'ACTIVE_ONLY', description: 'Subsidiary can browse parent entity products for PO creation and catalog views' } },
   ],
+
+  // OCR Vendor Auto-Learn guardrails — Phase H5.10 (subscription-ready)
+  // Words Claude sometimes returns as supplier_name that should never become learned vendors.
+  // Admin can add/remove per-entity (e.g. local slang, store types that aren't real vendors).
+  // Uppercased metadata.blocked_value is what the learner actually matches against.
+  VENDOR_AUTO_LEARN_BLOCKLIST: [
+    { code: 'RECEIPT', label: 'Receipt', metadata: { blocked_value: 'RECEIPT' } },
+    { code: 'OFFICIAL_RECEIPT', label: 'Official Receipt', metadata: { blocked_value: 'OFFICIAL RECEIPT' } },
+    { code: 'OR', label: 'OR', metadata: { blocked_value: 'OR' } },
+    { code: 'INVOICE', label: 'Invoice', metadata: { blocked_value: 'INVOICE' } },
+    { code: 'UNKNOWN', label: 'Unknown', metadata: { blocked_value: 'UNKNOWN' } },
+    { code: 'NA_SLASH', label: 'N/A', metadata: { blocked_value: 'N/A' } },
+    { code: 'NA', label: 'NA', metadata: { blocked_value: 'NA' } },
+    { code: 'SUPPLIER', label: 'Supplier', metadata: { blocked_value: 'SUPPLIER' } },
+    { code: 'VENDOR', label: 'Vendor', metadata: { blocked_value: 'VENDOR' } },
+    { code: 'ESTABLISHMENT', label: 'Establishment', metadata: { blocked_value: 'ESTABLISHMENT' } },
+    { code: 'STORE', label: 'Store', metadata: { blocked_value: 'STORE' } },
+    { code: 'SHOP', label: 'Shop', metadata: { blocked_value: 'SHOP' } },
+    { code: 'CUSTOMER', label: 'Customer', metadata: { blocked_value: 'CUSTOMER' } },
+    { code: 'CASH', label: 'Cash', metadata: { blocked_value: 'CASH' } },
+    { code: 'SALES', label: 'Sales', metadata: { blocked_value: 'SALES' } },
+    { code: 'CASHIER', label: 'Cashier', metadata: { blocked_value: 'CASHIER' } },
+    { code: 'THANK_YOU', label: 'Thank You', metadata: { blocked_value: 'THANK YOU' } },
+    { code: 'THANK', label: 'Thank', metadata: { blocked_value: 'THANK' } },
+    { code: 'NONE', label: 'None', metadata: { blocked_value: 'NONE' } },
+    { code: 'NULL', label: 'Null', metadata: { blocked_value: 'NULL' } },
+    { code: 'GAS_STATION', label: 'Gas Station', metadata: { blocked_value: 'GAS STATION' } },
+    { code: 'STATION', label: 'Station', metadata: { blocked_value: 'STATION' } },
+    { code: 'PUMP', label: 'Pump', metadata: { blocked_value: 'PUMP' } },
+  ],
+  // OCR Vendor Auto-Learn size thresholds — admin-tunable without code deploy.
+  // metadata.value = integer. Admin can tighten MIN_NAME_LEN if too many 3-char false positives,
+  // or loosen MAX_RAW_SNIPPET for larger audit context.
+  VENDOR_AUTO_LEARN_THRESHOLDS: [
+    { code: 'MIN_NAME_LEN', label: 'Minimum vendor name length (chars)', metadata: { value: 3 } },
+    { code: 'MAX_NAME_LEN', label: 'Maximum vendor name length (chars)', metadata: { value: 120 } },
+    { code: 'MAX_RAW_SNIPPET', label: 'Max raw OCR snippet stored (chars)', metadata: { value: 300 } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -725,6 +766,7 @@ exports.create = catchAsync(async (req, res) => {
   });
   if (EXPENSE_CLASSIFIER_CATEGORIES.has(cat)) invalidateRulesCache();
   if (OR_PARSER_LOOKUP_CATEGORIES.has(cat)) invalidateOrParserCache();
+  if (VENDOR_AUTO_LEARN_CATEGORIES.has(cat)) invalidateGuardrailCache();
   res.status(201).json({ success: true, data: item });
 });
 
@@ -739,6 +781,7 @@ exports.update = catchAsync(async (req, res) => {
   if (!item) return res.status(404).json({ success: false, message: 'Lookup item not found' });
   if (EXPENSE_CLASSIFIER_CATEGORIES.has(item.category)) invalidateRulesCache();
   if (OR_PARSER_LOOKUP_CATEGORIES.has(item.category)) invalidateOrParserCache();
+  if (VENDOR_AUTO_LEARN_CATEGORIES.has(item.category)) invalidateGuardrailCache();
   res.json({ success: true, data: item });
 });
 
@@ -748,6 +791,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (!item) return res.status(404).json({ success: false, message: 'Lookup item not found' });
   if (EXPENSE_CLASSIFIER_CATEGORIES.has(item.category)) invalidateRulesCache();
   if (OR_PARSER_LOOKUP_CATEGORIES.has(item.category)) invalidateOrParserCache();
+  if (VENDOR_AUTO_LEARN_CATEGORIES.has(item.category)) invalidateGuardrailCache();
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -763,6 +807,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   // Bust caches when OCR-related categories change
   if (EXPENSE_CLASSIFIER_CATEGORIES.has(category)) invalidateRulesCache();
   if (OR_PARSER_LOOKUP_CATEGORIES.has(category)) invalidateOrParserCache();
+  if (VENDOR_AUTO_LEARN_CATEGORIES.has(category)) invalidateGuardrailCache();
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });
@@ -776,9 +821,10 @@ exports.seedAll = catchAsync(async (req, res) => {
     const result = await Lookup.bulkWrite(ops);
     results[category] = { defaults: defaults.length, inserted: result.upsertedCount };
   }
-  // Bust expense classifier + OR parser caches after bulk seed
+  // Bust expense classifier + OR parser + vendor auto-learn caches after bulk seed
   invalidateRulesCache();
   invalidateOrParserCache();
+  invalidateGuardrailCache();
   const populated = await Lookup.distinct('category', { entity_id: req.entityId });
   res.json({ success: true, data: results, message: `Seeded ${populated.length}/${Object.keys(SEED_DEFAULTS).length} categories` });
 });
