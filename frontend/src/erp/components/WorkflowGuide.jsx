@@ -1315,14 +1315,14 @@ const WORKFLOW_GUIDES = {
 
   salesGoalSetup: {
     title: 'Sales Goal Plan Setup',
-    type: 'dependency',
-    items: [
-      { action: 'Before creating a plan', deps: 'Seed Lookup categories (GROWTH_DRIVER, KPI_CODE, INCENTIVE_TIER) from Control Center → Lookup Tables', section: null },
-      { action: 'When you set entity targets', deps: 'Sum of entity targets should match the plan target revenue. Over-allocation is allowed for execution buffer.', section: null },
-      { action: 'When you set BDM targets', deps: 'Sum of BDM targets under an entity should match the entity target. Check the validation message.', section: null },
-      { action: 'When you add a growth driver', deps: 'Select driver codes from Lookup GROWTH_DRIVER. Add KPI definitions using codes from Lookup KPI_CODE.', section: null },
-      { action: 'When you activate the plan', deps: 'All targets move from DRAFT to ACTIVE. BDMs can then see their goals on the dashboard.', section: null },
-      { action: 'To adjust incentive tiers mid-year', deps: 'Edit INCENTIVE_TIER in Control Center → Lookup Tables. Change budgets, add reward descriptions.', section: null },
+    steps: [
+      'Before creating a plan — seed Lookup categories (GROWTH_DRIVER, KPI_CODE, INCENTIVE_TIER) from Control Center → Lookup Tables',
+      'Fill in Plan Details: fiscal year, plan name, baseline revenue, target revenue, and collection target %',
+      'Add Growth Drivers — select driver codes from Lookup GROWTH_DRIVER, then add KPI definitions using codes from Lookup KPI_CODE',
+      'Set Entity Targets — the sum should match the plan target revenue (over-allocation is allowed as an execution buffer)',
+      'Set BDM Targets — the sum under each entity should match the entity target (check the validation message)',
+      'Define Incentive Programs (optional) — choose whether each program uses tiered rewards',
+      'Activate the plan — all targets move from DRAFT to ACTIVE and become visible to BDMs on the dashboard',
     ],
     next: [
       { label: 'Goal Dashboard', path: '/erp/sales-goals' },
