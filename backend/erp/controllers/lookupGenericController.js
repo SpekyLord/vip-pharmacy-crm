@@ -407,6 +407,14 @@ const SEED_DEFAULTS = {
     { code: 'BANKING', label: 'Banking', metadata: { key: 'banking', short_label: 'Bank', sort_order: 10 } },
     { code: 'SALES_GOALS', label: 'Sales Goals', metadata: { key: 'sales_goals', short_label: 'Goals', sort_order: 11 } },
     { code: 'APPROVALS', label: 'Approvals', metadata: { key: 'approvals', short_label: 'Appr', sort_order: 12 } },
+    // Phase 3c — Master Data governance (customers, hospitals, territories, products).
+    // Distinct from `purchasing` (which is workflow: PO, vendor, AP). `master` is the
+    // governance surface — who can deactivate/delete master records that other modules consume.
+    { code: 'MASTER', label: 'Master Data', metadata: { key: 'master', short_label: 'Master', sort_order: 13 } },
+    // Phase 3c — ERP Access Templates module. Owns delegation of access itself
+    // (template CRUD). Kept separate so admins can grant template-edit without
+    // bundling it with another functional module.
+    { code: 'ERP_ACCESS', label: 'ERP Access', metadata: { key: 'erp_access', short_label: 'Access', sort_order: 14 } },
   ],
   ERP_SUB_PERMISSION: [
     // Sales
@@ -429,6 +437,9 @@ const SEED_DEFAULTS = {
     { code: 'INVENTORY__OFFICE_SUPPLIES', label: 'Office Supplies', metadata: { module: 'inventory', key: 'office_supplies', sort_order: 2 } },
     { code: 'INVENTORY__COLLATERALS', label: 'Collaterals', metadata: { module: 'inventory', key: 'collaterals', sort_order: 3 } },
     { code: 'INVENTORY__TRANSFERS', label: 'Stock Transfers', metadata: { module: 'inventory', key: 'transfers', sort_order: 4 } },
+    // Phase 3c — Inventory danger sub-permissions
+    { code: 'INVENTORY__TRANSFER_PRICE_SET', label: 'Set/Bulk-Set Inter-Company Transfer Prices (DANGER)', metadata: { module: 'inventory', key: 'transfer_price_set', sort_order: 5 } },
+    { code: 'INVENTORY__WAREHOUSE_MANAGE', label: 'Create/Edit Warehouses (DANGER)', metadata: { module: 'inventory', key: 'warehouse_manage', sort_order: 6 } },
     // Accounting
     { code: 'ACCOUNTING__JOURNAL_ENTRY', label: 'Journal Entries & COA', metadata: { module: 'accounting', key: 'journal_entry', sort_order: 1 } },
     { code: 'ACCOUNTING__CHECK_WRITING', label: 'Check Writing / Payments', metadata: { module: 'accounting', key: 'check_writing', sort_order: 2 } },
@@ -444,6 +455,13 @@ const SEED_DEFAULTS = {
     // SAP Storno pattern: original stays in original period, reversal entries post to current period.
     { code: 'ACCOUNTING__REVERSE_POSTED', label: 'President Reverse — Delete & Reverse Posted Transactions (DANGER)', metadata: { module: 'accounting', key: 'reverse_posted', sort_order: 9 } },
     { code: 'ACCOUNTING__REVERSAL_CONSOLE', label: 'President Console — View Cross-Module Reversal History', metadata: { module: 'accounting', key: 'reversal_console', sort_order: 10 } },
+    // Phase 3c — Accounting danger sub-permissions
+    { code: 'ACCOUNTING__PERIOD_FORCE_UNLOCK', label: 'Force-Unlock Period / Open-Close Periods (DANGER)', metadata: { module: 'accounting', key: 'period_force_unlock', sort_order: 11 } },
+    { code: 'ACCOUNTING__YEAR_END_CLOSE', label: 'Execute Year-End Close JE Cascade (DANGER)', metadata: { module: 'accounting', key: 'year_end_close', sort_order: 12 } },
+    { code: 'ACCOUNTING__SETTINGS_WRITE', label: 'Write ERP Settings — COA_MAP, VAT, Module Config (DANGER)', metadata: { module: 'accounting', key: 'settings_write', sort_order: 13 } },
+    { code: 'ACCOUNTING__APPROVE_DELETION', label: 'Approve Document Deletion Requests — legacy path (DANGER)', metadata: { module: 'accounting', key: 'approve_deletion', sort_order: 14 } },
+    { code: 'ACCOUNTING__LOOKUP_DELETE', label: 'Delete Lookup Rows — bank accounts, payment modes, components (DANGER)', metadata: { module: 'accounting', key: 'lookup_delete', sort_order: 15 } },
+    { code: 'ACCOUNTING__CARD_DELETE', label: 'Delete Credit Card Records (DANGER)', metadata: { module: 'accounting', key: 'card_delete', sort_order: 16 } },
     // ACCOUNTING__OFFICE_SUPPLIES moved → INVENTORY__OFFICE_SUPPLIES (sub-permission gated)
     // Banking
     { code: 'BANKING__BANK_ACCOUNTS', label: 'Bank Accounts', metadata: { module: 'banking', key: 'bank_accounts', sort_order: 1 } },
@@ -475,6 +493,23 @@ const SEED_DEFAULTS = {
     { code: 'APPROVALS__APPROVE_DEDUCTIONS', label: 'Approve Deduction Schedules', metadata: { module: 'approvals', key: 'approve_deductions', sort_order: 13 } },
     { code: 'APPROVALS__APPROVE_KPI', label: 'Approve KPI Ratings', metadata: { module: 'approvals', key: 'approve_kpi', sort_order: 14 } },
     { code: 'APPROVALS__APPROVE_PERDIEM', label: 'Approve Per Diem Overrides', metadata: { module: 'approvals', key: 'approve_perdiem', sort_order: 15 } },
+    // Phase 3c — People danger sub-permissions (separate from PeopleMaster CRUD which inherits FULL)
+    { code: 'PEOPLE__TERMINATE', label: 'Terminate / Separate / Deactivate Person (DANGER)', metadata: { module: 'people', key: 'terminate', sort_order: 1 } },
+    { code: 'PEOPLE__MANAGE_LOGIN', label: 'Manage Login — Disable/Unlink/Change-Role/Bulk-Change-Role (DANGER)', metadata: { module: 'people', key: 'manage_login', sort_order: 2 } },
+    // Phase 3c — Payroll danger sub-permission
+    { code: 'PAYROLL__GOV_RATE_DELETE', label: 'Delete Government Tax/BIR Rate Row (DANGER)', metadata: { module: 'payroll', key: 'gov_rate_delete', sort_order: 1 } },
+    { code: 'PAYROLL__INSURANCE_DELETE', label: 'Delete Insurance Policy (DANGER)', metadata: { module: 'payroll', key: 'insurance_delete', sort_order: 2 } },
+    // Phase 3c — Master Data sub-permissions. All gated through the danger layer (baseline OR
+    // ERP_DANGER_SUB_PERMISSIONS lookup) so module-FULL does NOT inherit them — explicit grant required.
+    { code: 'MASTER__PRODUCT_DELETE', label: 'Hard-Delete Product Master Row (DANGER)', metadata: { module: 'master', key: 'product_delete', sort_order: 1 } },
+    { code: 'MASTER__PRODUCT_DEACTIVATE', label: 'Deactivate Product Master Row (DANGER)', metadata: { module: 'master', key: 'product_deactivate', sort_order: 2 } },
+    { code: 'MASTER__CUSTOMER_DEACTIVATE', label: 'Deactivate Customer Record (DANGER)', metadata: { module: 'master', key: 'customer_deactivate', sort_order: 3 } },
+    { code: 'MASTER__HOSPITAL_DEACTIVATE', label: 'Deactivate Hospital Record (DANGER)', metadata: { module: 'master', key: 'hospital_deactivate', sort_order: 4 } },
+    { code: 'MASTER__HOSPITAL_ALIAS_DELETE', label: 'Delete Hospital Alias (DANGER)', metadata: { module: 'master', key: 'hospital_alias_delete', sort_order: 5 } },
+    { code: 'MASTER__TERRITORY_DELETE', label: 'Delete Territory Record (DANGER)', metadata: { module: 'master', key: 'territory_delete', sort_order: 6 } },
+    // Phase 3c — ERP Access governance (delegating the delegator is intentionally NOT here —
+    // user access GET/SET is still admin/president-only; only template-delete is delegable.)
+    { code: 'ERP_ACCESS__TEMPLATE_DELETE', label: 'Delete ERP Access Template (DANGER)', metadata: { module: 'erp_access', key: 'template_delete', sort_order: 1 } },
   ],
   // Phase 3a — Danger sub-permissions that require EXPLICIT grant.
   // Even users with module-level FULL access do NOT inherit these keys — the
@@ -486,11 +521,120 @@ const SEED_DEFAULTS = {
   // Each entry's metadata.module + metadata.key must exactly match a key in
   // ERP_SUB_PERMISSION (or erp_access.sub_permissions[module]) to take effect.
   ERP_DANGER_SUB_PERMISSIONS: [
+    // ── Baseline keys (also enforced in code; lookup row exposes them in editor) ──
     {
       code: 'ACCOUNTING__REVERSE_POSTED',
       label: 'President Reverse — Destructive ledger/inventory/fund rollback',
       metadata: { module: 'accounting', key: 'reverse_posted' },
     },
+    // Phase 3c — Tier 1 baseline danger keys (mirrored in BASELINE_DANGER_SUB_PERMS)
+    {
+      code: 'ACCOUNTING__PERIOD_FORCE_UNLOCK',
+      label: 'Force-unlock period — open/close any financial period',
+      metadata: { module: 'accounting', key: 'period_force_unlock' },
+    },
+    {
+      code: 'ACCOUNTING__YEAR_END_CLOSE',
+      label: 'Execute year-end JE cascade (irreversible without manual reversal)',
+      metadata: { module: 'accounting', key: 'year_end_close' },
+    },
+    {
+      code: 'ACCOUNTING__SETTINGS_WRITE',
+      label: 'Write ERP settings — COA_MAP, VAT, module config (cache-invalidating)',
+      metadata: { module: 'accounting', key: 'settings_write' },
+    },
+    {
+      code: 'PEOPLE__TERMINATE',
+      label: 'Terminate / separate / deactivate person (cascading login disable)',
+      metadata: { module: 'people', key: 'terminate' },
+    },
+    {
+      code: 'PEOPLE__MANAGE_LOGIN',
+      label: 'Manage login — disable / unlink / change / bulk-change system role',
+      metadata: { module: 'people', key: 'manage_login' },
+    },
+    {
+      code: 'ERP_ACCESS__TEMPLATE_DELETE',
+      label: 'Delete ERP Access Template (orphans every user previously assigned)',
+      metadata: { module: 'erp_access', key: 'template_delete' },
+    },
+    {
+      code: 'PAYROLL__GOV_RATE_DELETE',
+      label: 'Delete government tax/BIR rate row (impacts payroll computation)',
+      metadata: { module: 'payroll', key: 'gov_rate_delete' },
+    },
+    {
+      code: 'INVENTORY__TRANSFER_PRICE_SET',
+      label: 'Set or bulk-set inter-company transfer prices (cross-entity P&L impact)',
+      metadata: { module: 'inventory', key: 'transfer_price_set' },
+    },
+    {
+      code: 'MASTER__PRODUCT_DELETE',
+      label: 'Hard-delete ProductMaster row (irreversible; breaks historical references)',
+      metadata: { module: 'master', key: 'product_delete' },
+    },
+    // ── Tier 2 lookup-only danger keys (not in BASELINE; subscriber-removable) ──
+    // These are visible in the editor and subscriber admins can deactivate the row to drop them
+    // from the danger gate (an unusual choice, but it's their entity to govern).
+    {
+      code: 'PAYROLL__INSURANCE_DELETE',
+      label: 'Delete insurance policy row (closes Phase 3a residual)',
+      metadata: { module: 'payroll', key: 'insurance_delete' },
+    },
+    {
+      code: 'ACCOUNTING__CARD_DELETE',
+      label: 'Delete credit card record (audit-visible, may have linked txns)',
+      metadata: { module: 'accounting', key: 'card_delete' },
+    },
+    {
+      code: 'MASTER__CUSTOMER_DEACTIVATE',
+      label: 'Deactivate customer record (downstream invoices/AR remain)',
+      metadata: { module: 'master', key: 'customer_deactivate' },
+    },
+    {
+      code: 'MASTER__HOSPITAL_DEACTIVATE',
+      label: 'Deactivate hospital record (downstream visits/SMERs remain)',
+      metadata: { module: 'master', key: 'hospital_deactivate' },
+    },
+    {
+      code: 'MASTER__HOSPITAL_ALIAS_DELETE',
+      label: 'Delete hospital alias (impacts OCR matching)',
+      metadata: { module: 'master', key: 'hospital_alias_delete' },
+    },
+    {
+      code: 'MASTER__PRODUCT_DEACTIVATE',
+      label: 'Deactivate product master row (stock/price history retained)',
+      metadata: { module: 'master', key: 'product_deactivate' },
+    },
+    {
+      code: 'MASTER__TERRITORY_DELETE',
+      label: 'Delete territory record (BDM/customer assignments orphaned)',
+      metadata: { module: 'master', key: 'territory_delete' },
+    },
+    {
+      code: 'ACCOUNTING__APPROVE_DELETION',
+      label: 'Approve document deletion request (legacy; use President Reverse for full cleanup)',
+      metadata: { module: 'accounting', key: 'approve_deletion' },
+    },
+    {
+      code: 'ACCOUNTING__LOOKUP_DELETE',
+      label: 'Delete lookup rows (bank accounts / payment modes / components / generic categories)',
+      metadata: { module: 'accounting', key: 'lookup_delete' },
+    },
+    {
+      code: 'INVENTORY__WAREHOUSE_MANAGE',
+      label: 'Create/edit warehouse rows (impacts stock segregation)',
+      metadata: { module: 'inventory', key: 'warehouse_manage' },
+    },
+  ],
+  // Phase 15.2 (softened) — CSI Void reasons (contractor marks a physical CSI as unused)
+  // Lookup-driven so subscribers can add new reasons without code changes.
+  ERP_CSI_VOID_REASONS: [
+    { code: 'WRONG_ENTRY', label: 'Wrong Entry' },
+    { code: 'CANCELLED', label: 'Cancelled Sale' },
+    { code: 'TORN', label: 'Torn / Damaged' },
+    { code: 'MISPRINT', label: 'Misprint' },
+    { code: 'OTHER', label: 'Other' },
   ],
   // Phase 30 — Credit Note lookups (was hardcoded in CreditNotes.jsx)
   RETURN_REASON: [
@@ -866,6 +1010,10 @@ exports.seedAll = catchAsync(async (req, res) => {
   invalidateRulesCache();
   invalidateOrParserCache();
   invalidateGuardrailCache();
+  // Phase 3c — bulk seed adds Tier 2 danger keys that need to be picked up immediately
+  // (without waiting for the 5-minute TTL). Per-category seed already invalidates; mirror
+  // that for seedAll so a fresh entity gets the Access Template editor working right away.
+  invalidateDangerCache(req.entityId);
   const populated = await Lookup.distinct('category', { entity_id: req.entityId });
   res.json({ success: true, data: results, message: `Seeded ${populated.length}/${Object.keys(SEED_DEFAULTS).length} categories` });
 });

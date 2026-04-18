@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback, useContext } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { EntityContext } from '../../context/EntityContextObject';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
@@ -57,6 +58,10 @@ export function LookupManagerContent() {
   const entityCtx = useContext(EntityContext);
   const workingEntityId = entityCtx?.workingEntityId || null;
   const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  // Phase 3c — lookup-row delete (Deactivate) gated by Tier 2 lookup-only accounting.lookup_delete.
+  // Activate (PUT to flip is_active back) remains under canEdit (recoverable).
+  const { hasSubPermission } = useErpSubAccess();
+  const canDeleteLookup = hasSubPermission('accounting', 'lookup_delete');
 
   const [categories, setCategories] = useState([]);
   const [seedDefaults, setSeedDefaults] = useState({});
@@ -267,9 +272,12 @@ export function LookupManagerContent() {
                           {canEdit && (
                             <td>
                               <button className="btn btn-sm btn-outline" onClick={() => openEdit(item)} style={{ marginRight: 4 }}>Edit</button>
-                              <button className="btn btn-sm btn-danger-outline" onClick={() => handleToggle(item)}>
-                                {item.is_active ? 'Deactivate' : 'Activate'}
-                              </button>
+                              {/* Phase 3c — Deactivate is a DELETE call (gated). Activate is a PUT (recoverable, canEdit-only). */}
+                              {(item.is_active ? canDeleteLookup : true) && (
+                                <button className="btn btn-sm btn-danger-outline" onClick={() => handleToggle(item)}>
+                                  {item.is_active ? 'Deactivate' : 'Activate'}
+                                </button>
+                              )}
                             </td>
                           )}
                         </tr>

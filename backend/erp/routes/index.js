@@ -136,6 +136,10 @@ router.use('/period-locks', erpAccessCheck('accounting'), require('./periodLockR
 router.use('/recurring-journals', erpAccessCheck('accounting'), require('./recurringJournalRoutes'));
 
 // ═══ Phase 15 — SAP-Equivalent Improvements ═══
+// CSI Booklets: the inventory gate blocks the management UI from BDMs without
+// inventory module access. BDMs still need to see their OWN available numbers
+// during Sales Entry, so /my-csi exposes just GET /available without that gate.
+router.use('/my-csi', require('./csiBookletPublicRoutes'));
 router.use('/csi-booklets', erpAccessCheck('inventory'), require('./csiBookletRoutes'));
 router.use('/cycle-reports', erpAccessCheck('reports'), require('./cycleReportRoutes'));
 router.use('/cost-centers', erpAccessCheck('accounting'), require('./costCenterRoutes'));

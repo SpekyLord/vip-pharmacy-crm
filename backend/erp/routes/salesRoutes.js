@@ -1,9 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { roleCheck } = require('../../middleware/roleCheck');
 const periodLockCheck = require('../middleware/periodLockCheck');
 const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
-const { ROLES } = require('../../constants/roles');
 const c = require('../controllers/salesController');
 
 // Note: protect + tenantFilter already applied globally in erp/routes/index.js
@@ -19,7 +17,8 @@ router.post('/validate', c.validateSales);
 router.post('/submit', c.submitSales);
 router.post('/reopen', periodLockCheck('SALES'), c.reopenSales);
 router.post('/:id/request-deletion', c.requestDeletion);
-router.post('/:id/approve-deletion', roleCheck(ROLES.ADMIN, ROLES.FINANCE), c.approveDeletion);
+// Phase 3c — legacy approve-deletion path (President Reverse preferred). Tier 2 lookup-only.
+router.post('/:id/approve-deletion', erpSubAccessCheck('accounting', 'approve_deletion'), c.approveDeletion);
 
 // President-only delete + reverse (lookup-driven sub-permission; default: only President)
 // SAP Storno for POSTED rows, hard delete for DRAFT/ERROR. Reversal entries post to current period.

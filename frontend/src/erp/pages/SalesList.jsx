@@ -324,6 +324,9 @@ export default function SalesList() {
 
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const canCreateSales = ROLE_SETS.BDM_ADMIN.includes(user?.role);
+  // Phase 3c — approve-deletion gated by Tier 2 lookup-only accounting.approve_deletion
+  // (legacy path; President Reverse is preferred for full cleanup). Mirrors backend salesRoutes /:id/approve-deletion.
+  const canApproveDeletion = hasSubPermission('accounting', 'approve_deletion');
 
   return (
     <div className="admin-page erp-page saleslist-page">
@@ -338,7 +341,9 @@ export default function SalesList() {
               <div className="sales-nav-tabs" role="tablist" aria-label="Sales navigation">
                 {canCreateSales && <Link to="/erp/sales/entry" className="sales-nav-tab">Sales</Link>}
                 <Link to="/erp/sales" className="sales-nav-tab active" aria-current="page">Sales Transactions</Link>
-                <Link to="/erp/csi-booklets" className="sales-nav-tab">CSI Booklets</Link>
+                <Link to="/erp/csi-booklets" className="sales-nav-tab">
+                  {hasSubPermission('inventory', 'csi_booklets') ? 'CSI Booklets' : 'My CSI'}
+                </Link>
               </div>
               <div className="saleslist-header">
                 <div>
@@ -427,7 +432,7 @@ export default function SalesList() {
                         Req. Delete
                       </button>
                     )}
-                    {sale.status === 'DELETION_REQUESTED' && isAdmin && (
+                    {sale.status === 'DELETION_REQUESTED' && canApproveDeletion && (
                       <button className="btn btn-danger btn-sm" onClick={() => handleApproveDeletion(sale._id)}>
                         Approve Delete
                       </button>

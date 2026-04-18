@@ -4242,3 +4242,40 @@ Console — Phase 31" section for the architecture deep-dive.
 **Verified.** `node -c` clean on all 4 touched backend files; `npx vite build` clean (new `DocumentDetailPanel-*.js` chunk emitted).
 
 **Deferred.** CreditNote (creditNoteController calls gateApproval with module='SALES', docType='CREDIT_NOTE' — currently only SalesLine surfaces under SALES). Add a dedicated CREDIT_NOTE MODULE_QUERIES entry + builder + frontend panel in a follow-up.
+
+---
+
+## Phase 3c — Comprehensive Hardcoded-Role Migration ✅ (April 18, 2026)
+
+**Why.** After Phase 3a, only `accounting.reverse_posted` was lookup-driven; 30 destructive endpoints across ~15 modules still used hardcoded `roleCheck('admin', 'finance', 'president')`. Subscribers (subsidiaries) couldn't delegate per-capability via Access Template, breaking the subscription-readiness goal.
+
+**What shipped.**
+- [x] `backend/erp/services/dangerSubPermissions.js` — `BASELINE_DANGER_SUB_PERMS` 1 → 10 keys: `accounting.{period_force_unlock,year_end_close,settings_write}`, `people.{terminate,manage_login}`, `erp_access.template_delete`, `payroll.gov_rate_delete`, `inventory.transfer_price_set`, `master.product_delete` (+ existing `accounting.reverse_posted`).
+- [x] `backend/erp/controllers/lookupGenericController.js`:
+  - `ERP_MODULE` seed +2 entries: `MASTER` (master data governance), `ERP_ACCESS` (template management).
+  - `ERP_SUB_PERMISSION` seed +19 entries (sort_order continued under each module).
+  - `ERP_DANGER_SUB_PERMISSIONS` seed +19 entries (10 baseline + 9 Tier 2 lookup-only).
+  - `seedAll` now calls `invalidateDangerCache(req.entityId)` so a fresh entity gets the editor working immediately.
+- [x] **30 routes swapped** from `roleCheck(...)` to `erpSubAccessCheck(module, key)`:
+  - Tier 1 baseline (16): `periodLockRoutes /toggle`, `incomeRoutes /archive/close-period|/archive/reopen-period|/archive/year-end/close`, `peopleRoutes /:id/{separate,disable-login,unlink-login,change-role}|DELETE /:id|/bulk-change-role`, `erpAccessRoutes DELETE /templates/:id`, `governmentRatesRoutes DELETE /:id`, `interCompanyRoutes PUT /prices|/prices/bulk`, `settingsRoutes PUT /`, `productMasterRoutes DELETE /:id`.
+  - Tier 2 lookup-only (14): `insuranceRoutes DELETE /:id` (closes Phase 3a residual), `creditCardRoutes DELETE /:id`, `customerRoutes /:id/deactivate`, `hospitalRoutes /:id/deactivate|DELETE /:id/alias`, `productMasterRoutes /:id/deactivate`, `territoryRoutes DELETE /:id`, `collectionRoutes /:id/approve-deletion`, `salesRoutes /:id/approve-deletion`, `lookupRoutes DELETE /{bank-accounts,payment-modes,expense-components}/:id`, `lookupGenericRoutes DELETE /:category/:id`, `warehouseRoutes POST /|PUT /:id`.
+- [x] `frontend/src/erp/hooks/useErpSubAccess.js` — baseline mirror 1 → 10 keys (kept in sync with backend).
+- [x] **15 frontend pages** gated destructive buttons with `useErpSubAccess().hasSubPermission(module, key)`:
+  `PeriodLocks`, `MonthlyArchive` (close/reopen-period), `ProfitSharing` (year-end close), `PersonDetail` (separate, disable/unlink/change-role, insurance delete), `PeopleList` (bulk role migration banner), `AccessTemplateManager` (delete-template), `GovernmentRates` (delete), `TransferPriceManager` (set/bulk-set), `ErpSettingsPanel` (Save Settings), `ProductMaster` (deactivate + delete, separate gates), `CustomerList` (deactivate), `TerritoryManager` (delete), `SalesList` (approve-deletion), `LookupManager` (deactivate row = DELETE), `WarehouseManager` (create/edit).
+- [x] `CLAUDE-ERP.md` — Phase 3c section added with full rollout table + migration note.
+
+**Out of scope (intentional).** `entityRoutes POST /` (platform-scope), `erpAccessRoutes` user GET/SET/apply-template (delegating-the-delegator is a separate decision), already-sub-perm-gated routes (`coaRoutes`, `approvalRoutes`, `monthEndCloseRoutes`, `pettyCashRoutes` fund-delete), all `/president-reverse` routes (already Phase 3a), workflow steps (income/payroll/PnL/GRN — governed by `gateApproval()` + Authority Matrix), DRAFT-only deletes (status-gated in controller), `inventoryRoutes /seed-stock-on-hand` (one-time migration tool).
+
+**Verified.**
+- `node -c` clean on `dangerSubPermissions.js`, `lookupGenericController.js`, all 18 modified route files.
+- Audit script confirms all 19 new keys present in both `ERP_SUB_PERMISSION` and `ERP_DANGER_SUB_PERMISSIONS` seed lists.
+- `cd frontend && npx vite build` — clean, no errors. New chunk emissions: `PersonDetail-*.js`, `CustomerList-*.js`, `LookupManager-*.js`, `WarehouseManager-*.js`, etc. (all updated bundles built).
+- Backend baseline (10 keys) matches frontend mirror (10 keys) byte-for-byte.
+
+**Migration note.** Existing entities must run `Control Center → Lookup Tables → Seed Defaults` (or `POST /api/erp/lookup-values/seed-all`) once after deploy. This adds the `MASTER` + `ERP_ACCESS` modules to the Access Template editor and seeds the new `ERP_SUB_PERMISSION` + `ERP_DANGER_SUB_PERMISSIONS` rows. Until granted, only president (auto-bypass) and legacy admins without `erp_access.enabled` (backward-compat path) can use the gated operations. President Reverse (Phase 3a) is unaffected by Phase 3c — its key was already baseline.
+
+**Deferred / future.**
+- Optional: split `people.manage_login` into `people.disable_login` + `people.change_role` if a subscriber requests finer granularity. Currently a shared key per plan question #1.
+- Optional: remove the legacy `approve-deletion` routes once all subscribers migrate to President Reverse for full ledger cleanup. Plan question #2.
+- `creditNoteRoutes DELETE /:id` already uses `erpAnySubAccessCheck` (sub-perm gated) — left in place.
+

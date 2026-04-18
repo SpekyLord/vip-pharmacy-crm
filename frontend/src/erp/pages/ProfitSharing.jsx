@@ -15,6 +15,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
 import useIncome from '../hooks/useIncome';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
@@ -79,6 +80,11 @@ export default function ProfitSharing() {
   const { user } = useAuth();
   const inc = useIncome();
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  // Phase 3c — Close-Year button gated by danger-baseline accounting.year_end_close.
+  // isAdmin still gates the section visibility (validate is read-only); only the execute
+  // button uses the danger gate to align with backend incomeRoutes /archive/year-end/close.
+  const { hasSubPermission } = useErpSubAccess();
+  const canExecuteYearEnd = hasSubPermission('accounting', 'year_end_close');
 
   const [period, setPeriod] = useState(getCurrentPeriod());
   const [bdmId, setBdmId] = useState('');
@@ -300,7 +306,9 @@ export default function ProfitSharing() {
                   <button className="btn btn-outline" onClick={handleValidateYearEnd} disabled={loading}>
                     Validate Readiness
                   </button>
-                  {fyValidation?.ready && (
+                  {/* Phase 3c — Close Year gated by danger-baseline accounting.year_end_close.
+                      Validate is read-only and stays under isAdmin (admin/finance/president). */}
+                  {fyValidation?.ready && canExecuteYearEnd && (
                     <button className="btn btn-danger" onClick={() => setShowConfirm(true)} disabled={loading}>
                       Close Year {fyYear}
                     </button>

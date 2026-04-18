@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { roleCheck } = require('../../middleware/roleCheck');
 const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const c = require('../controllers/productMasterController');
 
@@ -23,8 +22,9 @@ router.get('/export-prices', erpSubAccessCheck('purchasing', 'product_manage'), 
 router.put('/import-prices', erpSubAccessCheck('purchasing', 'product_manage'), xlsUpload.single('file'), c.importPrices);
 router.put('/refresh', erpSubAccessCheck('purchasing', 'product_manage'), xlsUpload.single('file'), c.refreshProducts);
 
-// Deactivate & Delete — president/admin/finance only (approval-level actions)
-router.patch('/:id/deactivate', roleCheck('admin', 'finance', 'president'), c.deactivate);
-router.delete('/:id', roleCheck('admin', 'finance', 'president'), c.deleteProduct);
+// Deactivate & Delete — Phase 3c lookup-driven sub-perms.
+// Deactivate is recoverable (Tier 2). Hard-delete is irreversible (Tier 1 baseline).
+router.patch('/:id/deactivate', erpSubAccessCheck('master', 'product_deactivate'), c.deactivate);
+router.delete('/:id', erpSubAccessCheck('master', 'product_delete'), c.deleteProduct);
 
 module.exports = router;

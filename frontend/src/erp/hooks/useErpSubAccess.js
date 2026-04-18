@@ -23,8 +23,20 @@ import { ROLES } from '../../constants/roles';
 
 // Mirrors BASELINE_DANGER_SUB_PERMS in backend/erp/services/dangerSubPermissions.js.
 // Keep in sync when adding/removing baseline danger keys.
+// Phase 3c (Apr 2026): expanded from 1 → 10 keys covering period-lock, year-end,
+// settings, transfer-pricing, people/login mgmt, access-template delete, payroll
+// gov-rate delete, and product hard-delete. See backend file for the full mapping.
 const BASELINE_DANGER_SUB_PERMS = new Set([
   'accounting.reverse_posted',
+  'accounting.period_force_unlock',
+  'accounting.year_end_close',
+  'accounting.settings_write',
+  'people.terminate',
+  'people.manage_login',
+  'erp_access.template_delete',
+  'payroll.gov_rate_delete',
+  'inventory.transfer_price_set',
+  'master.product_delete',
 ]);
 
 export default function useErpSubAccess() {

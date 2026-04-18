@@ -6,7 +6,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useWorkingEntity from '../../hooks/useWorkingEntity';
-import { useAuth } from '../../hooks/useAuth';
 import useErpApi from '../hooks/useErpApi';
 import { broadcastProductsChanged } from '../hooks/useProducts';
 import useWarehouses from '../hooks/useWarehouses';
@@ -258,14 +257,15 @@ function ProductModal({ open, onClose, onSave, editItem, vatOptions, unitCodes =
 
 // ---------- Main Page ----------
 
-const DEACTIVATE_ROLES = ['admin', 'finance', 'president'];
-
 export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const api = useErpApi();
-  const { user } = useAuth();
   const { hasSubPermission } = useErpSubAccess();
   const canAddEdit = hasSubPermission('purchasing', 'product_manage');
-  const canDeactivateDelete = DEACTIVATE_ROLES.includes(user?.role);
+  // Phase 3c — deactivate (Tier 2 lookup-only) and delete (Tier 1 baseline) gated separately.
+  // Mirrors backend productMasterRoutes /:id/deactivate (master.product_deactivate) +
+  // /:id DELETE (master.product_delete). Replaces hardcoded DEACTIVATE_ROLES role list.
+  const canDeactivate = hasSubPermission('master', 'product_deactivate');
+  const canDelete = hasSubPermission('master', 'product_delete');
   const { getWarehouses } = useWarehouses();
   const { entities, workingEntityId, loaded: entityLoaded, isMultiEntity } = useWorkingEntity();
   const { data: lookups } = useLookupBatch(['VAT_TYPE', 'STOCK_TYPE', 'UNIT_CODE']);
@@ -593,10 +593,10 @@ export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
                         ) : (
                         <div style={{ display: 'flex', gap: 4 }}>
                           {canAddEdit && <button className="btn btn-secondary" onClick={() => { setEditItem(p); setShowModal(true); }}>Edit</button>}
-                          {canDeactivateDelete && p.is_active && (
+                          {canDeactivate && p.is_active && (
                             <button className="btn btn-danger" onClick={() => handleDeactivate(p._id, p.brand_name)}>Deactivate</button>
                           )}
-                          {canDeactivateDelete && (
+                          {canDelete && (
                             <button className="btn btn-outline" onClick={() => handleDelete(p._id, p.brand_name)} style={{ color: '#991b1b', borderColor: '#fca5a5', fontSize: 11 }}>Delete</button>
                           )}
                         </div>
