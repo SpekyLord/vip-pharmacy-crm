@@ -2,6 +2,12 @@ const Lookup = require('../models/Lookup');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { ROLES } = require('../../constants/roles');
 const { invalidateRulesCache } = require('../services/expenseClassifier');
+const { invalidateOrParserCache } = require('../ocr/parsers/orParser');
+
+// Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
+const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
+// Categories whose changes must bust the expense classifier's keyword-rules cache
+const EXPENSE_CLASSIFIER_CATEGORIES = new Set(['OCR_EXPENSE_RULES', 'EXPENSE_CATEGORY']);
 
 /**
  * Generic Lookup Controller — Phase 24
@@ -120,6 +126,41 @@ const SEED_DEFAULTS = {
     { code: 'PROPERTY_TAX', label: 'Property Tax & Fees', metadata: { coa_code: '6890', keywords: ['PROPERTY TAX', 'REAL PROPERTY', 'AMILYAR', 'REALTY TAX'] } },
     { code: 'PROPERTY_INSURANCE', label: 'Property Insurance', metadata: { coa_code: '6880', keywords: ['INSURANCE', 'FIRE INSURANCE', 'PROPERTY INSURANCE', 'COMPREHENSIVE'] } },
     { code: 'PROPERTY_MAINTENANCE', label: 'Property Maintenance', metadata: { coa_code: '6870', keywords: ['PROPERTY REPAIR', 'BUILDING MAINTENANCE', 'RENOVATION', 'PAINT', 'CONSTRUCTION'] } },
+  ],
+  // OCR Courier/Shipping aliases — used by orParser.js to detect supplier as a courier
+  // (separate from OCR_EXPENSE_RULES so admin can edit "what looks like a courier" without touching COA mapping)
+  OCR_COURIER_ALIASES: [
+    { code: 'AP_CARGO', label: 'AP Cargo', metadata: { aliases: ['AP CARGO', 'AP-CARGO', 'APCARGO'] } },
+    { code: 'JRS_EXPRESS', label: 'JRS Express', metadata: { aliases: ['JRS EXPRESS', 'JRS'] } },
+    { code: 'LBC', label: 'LBC Express', metadata: { aliases: ['LBC'] } },
+    { code: 'JNT', label: 'J&T Express', metadata: { aliases: ['J&T', 'J AND T', 'JNT'] } },
+    { code: '2GO', label: '2GO Express', metadata: { aliases: ['2GO'] } },
+    { code: 'AIR21', label: 'Air21', metadata: { aliases: ['AIR21', 'AIR 21'] } },
+    { code: 'ABEST', label: 'Abest Express', metadata: { aliases: ['ABEST'] } },
+    { code: 'GRAB_EXPRESS', label: 'Grab Express', metadata: { aliases: ['GRAB EXPRESS'] } },
+    { code: 'LALAMOVE', label: 'Lalamove', metadata: { aliases: ['LALAMOVE'] } },
+    { code: 'XEND', label: 'Xend', metadata: { aliases: ['XEND'] } },
+    { code: 'ENTREGO', label: 'Entrego', metadata: { aliases: ['ENTREGO'] } },
+    { code: 'NINJA_VAN', label: 'Ninja Van', metadata: { aliases: ['NINJA VAN', 'NINJAVAN'] } },
+    { code: 'FLASH_EXPRESS', label: 'Flash Express', metadata: { aliases: ['FLASH EXPRESS'] } },
+    { code: 'DHL', label: 'DHL', metadata: { aliases: ['DHL'] } },
+    { code: 'FEDEX', label: 'FedEx', metadata: { aliases: ['FEDEX', 'FED EX'] } },
+    { code: 'UPS', label: 'UPS', metadata: { aliases: ['UPS'] } },
+    { code: 'PHLPOST', label: 'PHLPost', metadata: { aliases: ['PHLPOST', 'PHL POST', 'PHILPOST'] } },
+  ],
+  // OCR Payment-mode keyword detection — used by orParser.js to detect payment mode from receipt text
+  // metadata.aliases = lowercase keyword variants found on receipts; metadata.mode_code references PaymentMode.mode_code
+  // Admin can add/customize per-entity payment keywords (e.g. new e-wallets) without code changes.
+  OCR_PAYMENT_KEYWORDS: [
+    { code: 'CASH', label: 'Cash', metadata: { aliases: ['cash'], mode_code: 'CASH' } },
+    { code: 'GCASH', label: 'GCash', metadata: { aliases: ['gcash', 'g-cash', 'g cash'], mode_code: 'GCASH' } },
+    { code: 'MAYA', label: 'Maya', metadata: { aliases: ['maya', 'paymaya'], mode_code: 'MAYA' } },
+    { code: 'CREDIT_CARD', label: 'Credit Card', metadata: { aliases: ['credit card', 'creditcard'], mode_code: 'CC_RCBC' } },
+    { code: 'DEBIT_CARD', label: 'Debit Card', metadata: { aliases: ['debit card', 'debitcard'], mode_code: 'CC_RCBC' } },
+    { code: 'CHECK', label: 'Check', metadata: { aliases: ['check', 'cheque'], mode_code: 'CHECK' } },
+    { code: 'BANK_TRANSFER', label: 'Bank Transfer', metadata: { aliases: ['bank transfer', 'banktransfer', 'fund transfer'], mode_code: 'BANK_TRANSFER' } },
+    { code: 'ONLINE', label: 'Online Payment', metadata: { aliases: ['online', 'cashless'], mode_code: 'BANK_TRANSFER' } },
+    { code: 'PREPAID', label: 'Prepaid', metadata: { aliases: ['prepaid'], mode_code: 'CASH' } },
   ],
   SALE_TYPE: ['CSI', 'SERVICE_INVOICE', 'CASH_RECEIPT'],
   VAT_TYPE: ['VATABLE', 'EXEMPT', 'ZERO'],
@@ -389,6 +430,12 @@ const SEED_DEFAULTS = {
     { code: 'ACCOUNTING__LOANS', label: 'Loan Management', metadata: { module: 'accounting', key: 'loans', sort_order: 6 } },
     { code: 'ACCOUNTING__OWNER_EQUITY', label: 'Owner Equity', metadata: { module: 'accounting', key: 'owner_equity', sort_order: 7 } },
     { code: 'ACCOUNTING__PETTY_CASH', label: 'Petty Cash', metadata: { module: 'accounting', key: 'petty_cash', sort_order: 8 } },
+    // President-only reversal capability — delegable via Access Template (default: only President)
+    // Grants the per-module "President Delete" button to reverse + delete POSTED/ERROR/DRAFT transactions
+    // across every module (Sales, Collections, Expenses, Petty Cash, Journal, Transfers, GRN, etc.)
+    // SAP Storno pattern: original stays in original period, reversal entries post to current period.
+    { code: 'ACCOUNTING__REVERSE_POSTED', label: 'President Reverse — Delete & Reverse Posted Transactions (DANGER)', metadata: { module: 'accounting', key: 'reverse_posted', sort_order: 9 } },
+    { code: 'ACCOUNTING__REVERSAL_CONSOLE', label: 'President Console — View Cross-Module Reversal History', metadata: { module: 'accounting', key: 'reversal_console', sort_order: 10 } },
     // ACCOUNTING__OFFICE_SUPPLIES moved → INVENTORY__OFFICE_SUPPLIES (sub-permission gated)
     // Banking
     { code: 'BANKING__BANK_ACCOUNTS', label: 'Bank Accounts', metadata: { module: 'banking', key: 'bank_accounts', sort_order: 1 } },
@@ -676,7 +723,8 @@ exports.create = catchAsync(async (req, res) => {
     metadata: metadata || {},
     created_by: req.user._id
   });
-  if (cat === 'OCR_EXPENSE_RULES' || cat === 'EXPENSE_CATEGORY') invalidateRulesCache();
+  if (EXPENSE_CLASSIFIER_CATEGORIES.has(cat)) invalidateRulesCache();
+  if (OR_PARSER_LOOKUP_CATEGORIES.has(cat)) invalidateOrParserCache();
   res.status(201).json({ success: true, data: item });
 });
 
@@ -689,7 +737,8 @@ exports.update = catchAsync(async (req, res) => {
   }
   const item = await Lookup.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true, runValidators: true });
   if (!item) return res.status(404).json({ success: false, message: 'Lookup item not found' });
-  if (item.category === 'OCR_EXPENSE_RULES' || item.category === 'EXPENSE_CATEGORY') invalidateRulesCache();
+  if (EXPENSE_CLASSIFIER_CATEGORIES.has(item.category)) invalidateRulesCache();
+  if (OR_PARSER_LOOKUP_CATEGORIES.has(item.category)) invalidateOrParserCache();
   res.json({ success: true, data: item });
 });
 
@@ -697,6 +746,8 @@ exports.update = catchAsync(async (req, res) => {
 exports.remove = catchAsync(async (req, res) => {
   const item = await Lookup.findByIdAndUpdate(req.params.id, { $set: { is_active: false } }, { new: true });
   if (!item) return res.status(404).json({ success: false, message: 'Lookup item not found' });
+  if (EXPENSE_CLASSIFIER_CATEGORIES.has(item.category)) invalidateRulesCache();
+  if (OR_PARSER_LOOKUP_CATEGORIES.has(item.category)) invalidateOrParserCache();
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -709,8 +760,9 @@ exports.seedCategory = catchAsync(async (req, res) => {
 
   const ops = buildSeedOps(defaults, category, req.entityId, req.user._id);
   await Lookup.bulkWrite(ops);
-  // Bust expense classifier cache when OCR rules or expense categories change
-  if (category === 'OCR_EXPENSE_RULES' || category === 'EXPENSE_CATEGORY') invalidateRulesCache();
+  // Bust caches when OCR-related categories change
+  if (EXPENSE_CLASSIFIER_CATEGORIES.has(category)) invalidateRulesCache();
+  if (OR_PARSER_LOOKUP_CATEGORIES.has(category)) invalidateOrParserCache();
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });
@@ -724,8 +776,9 @@ exports.seedAll = catchAsync(async (req, res) => {
     const result = await Lookup.bulkWrite(ops);
     results[category] = { defaults: defaults.length, inserted: result.upsertedCount };
   }
-  // Bust expense classifier cache after bulk seed
+  // Bust expense classifier + OR parser caches after bulk seed
   invalidateRulesCache();
+  invalidateOrParserCache();
   const populated = await Lookup.distinct('category', { entity_id: req.entityId });
   res.json({ success: true, data: results, message: `Seeded ${populated.length}/${Object.keys(SEED_DEFAULTS).length} categories` });
 });

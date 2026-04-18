@@ -7,7 +7,9 @@ import { useAuth } from '../../hooks/useAuth';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
 import useSales from '../hooks/useSales';
 import useEntities from '../hooks/useEntities';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import EntityBadge from '../components/EntityBadge';
+import PresidentReverseModal from '../components/PresidentReverseModal';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -219,7 +221,9 @@ export default function SalesList() {
   const { user } = useAuth();
   const sales = useSales();
   const { getEntityById } = useEntities();
+  const { hasSubPermission } = useErpSubAccess();
   const isMultiEntity = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN].includes(user?.role);
+  const canPresidentReverse = hasSubPermission('accounting', 'reverse_posted');
   const { options: sourceOptions } = useLookupOptions('SALE_SOURCE');
 
   const [data, setData] = useState([]);
@@ -227,6 +231,7 @@ export default function SalesList() {
   const [filters, setFilters] = useState({ status: '', csi_date_from: '', csi_date_to: '', source: '' });
   const [selectedSale, setSelectedSale] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [reverseTarget, setReverseTarget] = useState(null);
 
   const loadSales = useCallback(async (page = 1) => {
     setLoading(true);
@@ -290,6 +295,18 @@ export default function SalesList() {
       await sales.approveDeletion(id, 'Approved by admin');
       loadSales(pagination.page);
     } catch (err) { showError(err, 'Could not approve deletion'); }
+  };
+
+  const handlePresidentReverse = async ({ reason, confirm }) => {
+    if (!reverseTarget) return;
+    try {
+      await sales.presidentReverseSale(reverseTarget._id, { reason, confirm });
+      setReverseTarget(null);
+      loadSales(pagination.page);
+    } catch (err) {
+      showError(err, 'Could not reverse sale');
+      throw err;
+    }
   };
 
   const viewDetail = async (id) => {
@@ -409,6 +426,16 @@ export default function SalesList() {
                         Approve Delete
                       </button>
                     )}
+                    {canPresidentReverse && !sale.deletion_event_id && (
+                      <button
+                        className="btn btn-sm"
+                        style={{ background: '#7f1d1d', color: '#fff' }}
+                        title="President: delete & reverse this transaction (SAP Storno for POSTED, hard-delete for DRAFT/ERROR)"
+                        onClick={() => setReverseTarget(sale)}
+                      >
+                        President Delete
+                      </button>
+                    )}
                     </div>
                   </td>
                 </tr>
@@ -427,6 +454,16 @@ export default function SalesList() {
               </div>
             )}
             </div>
+
+          {/* President Reverse Modal */}
+          {reverseTarget && (
+            <PresidentReverseModal
+              docLabel={`CSI #${reverseTarget.doc_ref || reverseTarget.invoice_number || '—'} · ₱${(reverseTarget.invoice_total || 0).toLocaleString()} · ${reverseTarget.status}`}
+              docStatus={reverseTarget.status}
+              onConfirm={handlePresidentReverse}
+              onClose={() => setReverseTarget(null)}
+            />
+          )}
 
           {/* Detail Modal */}
           {selectedSale && (

@@ -32,6 +32,12 @@ router.use('/entities', require('./entityRoutes'));
 router.use('/control-center', require('./controlCenterRoutes'));
 router.use('/lookup-values', require('./lookupGenericRoutes'));
 
+// ═══ Phase H3 — OCR Settings & Usage Metering (per-entity, subscription-ready) ═══
+router.use('/ocr-settings', require('./ocrSettingsRoutes'));
+
+// ═══ Phase H5 — Vendor Auto-Learn Review (admin queue for Claude-learned vendors) ═══
+router.use('/vendor-learnings', require('./vendorLearningRoutes'));
+
 // ═══ Phase 24 — Agent Intelligence ═══
 router.use('/agents', require('./agentRoutes'));
 

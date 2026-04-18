@@ -86,13 +86,14 @@ const WORKFLOW_GUIDES = {
       'VALID — passed checks, ready to post',
       'POSTED — finalized, AR created, appears in reports',
       'Opening AR — pre-live-date entries skip stock deduction (AR only, no COGS)',
+      'President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad rows. POSTED rows trigger SAP Storno (reversal entries in current period; original kept for audit); DRAFT/ERROR rows are hard-deleted. All actions logged.',
     ],
     next: [
       { label: 'Create New Sale', path: '/erp/sales/entry' },
       { label: 'Collect Payment', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L. When Authority Matrix is enabled, posting may require approval — check the Approval Hub for pending items. Use the Source filter to view Opening AR entries separately.',
+    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L. When Authority Matrix is enabled, posting may require approval — check the Approval Hub for pending items. Use the Source filter to view Opening AR entries separately. Stuck on an ERROR row? The President can delete + reverse it from this list.',
   },
   'my-stock': {
     title: 'Inventory Overview',
@@ -189,7 +190,7 @@ const WORKFLOW_GUIDES = {
       { label: 'PRF / CALF', path: '/erp/prf-calf' },
       { label: 'COA Settings', path: '/erp/settings' },
     ],
-    tip: 'Expenses with COA 6900 (Misc) are BLOCKED from posting — map to correct account first. ACCESS expenses with non-cash payment auto-create a CALF. CALF must be POSTED before expense can post. COA codes are configurable in Settings → COA Mapping.',
+    tip: 'Expenses with COA 6900 (Misc) are BLOCKED from posting — map to correct account first. ACCESS expenses with non-cash payment auto-create a CALF. CALF must be POSTED before expense can post. COA codes are configurable in Settings → COA Mapping. OCR scanning is optional — if it fails or is disabled, the photo still uploads as proof and you fill the form manually.',
   },
   'smer': {
     title: 'SMER (Sales/Marketing Expense Report)',
@@ -217,7 +218,7 @@ const WORKFLOW_GUIDES = {
       'Fill in Start KM and End KM for each day — use [S] and [E] buttons to scan odometer photos via OCR',
       'Destination is auto-filled from your SMER entry for that date — you can edit it manually',
       'Click the Fuel cell to expand and add fuel entries: station, liters, ₱/L, payment mode',
-      'Use "Scan Receipt" to OCR gas receipts — station, liters, and price are auto-extracted',
+      'Use "Scan Receipt" to OCR gas receipts — station, liters, and price are auto-extracted. If OCR fails the photo still attaches; just type the values in.',
       'Non-cash fuel entries require CALF — create in PRF/CALF before submitting',
       'Rows auto-save when you move to the next row. Validate → Submit to post journal entries.',
     ],

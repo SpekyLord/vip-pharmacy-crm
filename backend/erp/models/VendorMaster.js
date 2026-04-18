@@ -42,6 +42,35 @@ const vendorMasterSchema = new mongoose.Schema({
   },
   is_active: { type: Boolean, default: true },
 
+  // ── Phase H5 — Vendor Auto-Learn from Claude Wins ──
+  // When Claude successfully classifies an OR/GAS_RECEIPT that didn't match any existing
+  // VendorMaster entry, the OCR pipeline creates a new vendor here (or appends a fresh OCR
+  // text variation to an existing vendor's aliases). These fields let admin review and
+  // approve/reject machine-learned vendors before they influence future classifications.
+  auto_learned_from_ocr: { type: Boolean, default: false, index: true },
+  learning_source: {
+    type: String,
+    enum: ['CLAUDE_AI', 'MANUAL', 'IMPORT', null],
+    default: null,
+  },
+  learned_at: { type: Date, default: null },
+  learning_status: {
+    type: String,
+    enum: ['UNREVIEWED', 'APPROVED', 'REJECTED'],
+    default: 'UNREVIEWED',
+  },
+  // Snapshot of the OCR context that produced this vendor — helps admin judge whether
+  // the learning was correct before approving. Rejecting sets is_active = false.
+  learning_meta: {
+    source_doc_type: { type: String, default: null },    // OR | GAS_RECEIPT
+    source_ocr_text: { type: String, default: null },    // the supplier_name string Claude returned
+    source_raw_snippet: { type: String, default: null }, // first ~300 chars of raw OCR text
+    ai_confidence: { type: String, enum: ['HIGH', 'MEDIUM', 'LOW', null], default: null },
+    suggested_coa_code: { type: String, default: null },
+    suggested_category: { type: String, default: null },
+    learn_count: { type: Number, default: 1 },           // bumped each time an alias is added via auto-learn
+  },
+
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, {
@@ -53,5 +82,7 @@ const vendorMasterSchema = new mongoose.Schema({
 vendorMasterSchema.index({ entity_id: 1, vendor_code: 1 }, { unique: true, partialFilterExpression: { vendor_code: { $type: 'string' } } });
 vendorMasterSchema.index({ entity_id: 1, is_active: 1 });
 vendorMasterSchema.index({ vendor_name: 'text', vendor_aliases: 'text' });
+// Phase H5 — admin review queue (unreviewed auto-learned vendors per entity, newest first)
+vendorMasterSchema.index({ entity_id: 1, auto_learned_from_ocr: 1, learning_status: 1, learned_at: -1 });
 
 module.exports = mongoose.model('VendorMaster', vendorMasterSchema);

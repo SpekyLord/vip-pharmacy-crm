@@ -15,6 +15,7 @@ const { catchAsync } = require('../../middleware/errorHandler');
 const { consumeFIFO, consumeSpecificBatch, buildStockSnapshot } = require('../services/fifoEngine');
 const { journalFromSale, journalFromServiceRevenue, journalFromCOGS } = require('../services/autoJournal');
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
+const { presidentReverse } = require('../services/documentReversalService');
 const JournalEntry = require('../models/JournalEntry');
 const ProductMaster = require('../models/ProductMaster');
 const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
@@ -1114,6 +1115,40 @@ const approveDeletion = catchAsync(async (req, res) => {
   });
 });
 
+// ═══════════════════════════════════════════════════════════
+// PRESIDENT REVERSE — sub-permission gated, applies to any status
+// (DRAFT/ERROR → hard delete, POSTED/DELETION_REQUESTED → SAP Storno)
+// ═══════════════════════════════════════════════════════════
+
+const presidentReverseSale = catchAsync(async (req, res) => {
+  const { reason, confirm } = req.body || {};
+  if (confirm !== 'DELETE') {
+    return res.status(400).json({ success: false, message: 'Type DELETE in the confirmation field to proceed' });
+  }
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ success: false, message: 'Reason is required' });
+  }
+
+  try {
+    const result = await presidentReverse({
+      doc_type: 'SALES_LINE',
+      doc_id: req.params.id,
+      reason,
+      user: req.user,
+      tenantFilter: req.tenantFilter || {},
+    });
+    res.json({
+      success: true,
+      message: result.mode === 'HARD_DELETE'
+        ? `Deleted ${result.doc_ref || result.doc_id} (no posting side effects)`
+        : `Reversed ${result.doc_ref || result.doc_id} (SAP Storno) — original retained for audit`,
+      data: result,
+    });
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = {
   createSale,
   updateSale,
@@ -1125,5 +1160,6 @@ module.exports = {
   reopenSales,
   requestDeletion,
   approveDeletion,
+  presidentReverseSale,
   postSaleRow, // shared helper for approval handler
 };

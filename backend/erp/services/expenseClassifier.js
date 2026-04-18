@@ -51,18 +51,23 @@ const FALLBACK = {
   match_method: 'FALLBACK'
 };
 
-// ── In-memory cache for lookup-driven rules (5-minute TTL) ──
-let _rulesCache = null;
-let _rulesCacheExpiry = 0;
+// ── Per-entity cache for lookup-driven rules (5-minute TTL) ──
+// Phase H3: keyed by entity_id to prevent cross-tenant data leak under load.
+// '__GLOBAL__' bucket is used when no entity context is provided.
+const _rulesCache = new Map(); // entityKey → { value, expiry }
+const RULES_CACHE_TTL_MS = 5 * 60 * 1000;
+const _rulesEntityKey = (entityId) => entityId ? String(entityId) : '__GLOBAL__';
 
 /**
  * Load keyword rules from Lookup table (entity-scoped).
  * Falls back to HARDCODED_RULES if no lookup entries exist.
- * Cached for 5 minutes to avoid DB hits on every OCR scan.
+ * Cached per-entity for 5 minutes to avoid DB hits on every OCR scan.
  */
 async function getKeywordRules(entityId) {
+  const key = _rulesEntityKey(entityId);
   const now = Date.now();
-  if (_rulesCache && now < _rulesCacheExpiry) return _rulesCache;
+  const hit = _rulesCache.get(key);
+  if (hit && now < hit.expiry) return hit.value;
 
   try {
     const filter = { category: 'OCR_EXPENSE_RULES', is_active: true };
@@ -70,29 +75,30 @@ async function getKeywordRules(entityId) {
     const lookupRules = await Lookup.find(filter).sort({ sort_order: 1 }).lean();
 
     if (lookupRules.length > 0) {
-      _rulesCache = lookupRules.map(r => ({
+      const value = lookupRules.map(r => ({
         keywords: r.metadata?.keywords || [],
         coa_code: r.metadata?.coa_code || '6900',
         coa_name: r.label,
         category: r.code,
       }));
-      _rulesCacheExpiry = now + 5 * 60 * 1000;
-      return _rulesCache;
+      _rulesCache.set(key, { value, expiry: now + RULES_CACHE_TTL_MS });
+      return value;
     }
   } catch (err) {
     console.warn('[ExpenseClassifier] Lookup query failed, using hardcoded rules:', err.message);
   }
 
-  // Fallback to hardcoded
-  _rulesCache = HARDCODED_RULES;
-  _rulesCacheExpiry = now + 5 * 60 * 1000;
+  _rulesCache.set(key, { value: HARDCODED_RULES, expiry: now + RULES_CACHE_TTL_MS });
   return HARDCODED_RULES;
 }
 
-/** Bust the rules cache (called when admin updates lookups) */
-function invalidateRulesCache() {
-  _rulesCache = null;
-  _rulesCacheExpiry = 0;
+/** Bust the rules cache (called when admin updates lookups). Pass entityId for targeted bust, omit for full clear. */
+function invalidateRulesCache(entityId) {
+  if (entityId) {
+    _rulesCache.delete(_rulesEntityKey(entityId));
+  } else {
+    _rulesCache.clear();
+  }
 }
 
 /**
