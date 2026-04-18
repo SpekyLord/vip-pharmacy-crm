@@ -354,6 +354,7 @@ const DEPENDENCY_GUIDE = {
       { action: 'INCENTIVE_TIER — Incentive budgets', deps: 'Defines tier names, attainment thresholds, and budget amounts. Edit anytime to adjust rewards mid-year.', section: null },
       { action: 'GROWTH_DRIVER — Sales growth drivers', deps: 'Used when creating Sales Goal Plans. Add new drivers here before adding them to a plan.', section: null },
       { action: 'KPI_CODE — KPI metric definitions', deps: 'Defines auto/manual computation, units, and direction. Add here before linking to a growth driver.', section: null },
+      { action: 'VENDOR_AUTO_LEARN_BLOCKLIST / VENDOR_AUTO_LEARN_THRESHOLDS', deps: 'Controls which words OCR skips when auto-learning vendors (e.g. RECEIPT, INVOICE) and the min/max vendor name length. Tune per-entity if receipts keep misidentifying generic words as vendors. Cache refreshes within 5 min of save.', section: null },
     ]
   },
   'org-chart': {

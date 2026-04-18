@@ -1982,9 +1982,11 @@ Closes the loop on Phase H3+H4: when Claude successfully classifies an OR/gas re
 - **Non-destructive**: never overwrites an existing vendor's `default_coa_code` (admin-set values win); only appends unique aliases.
 
 ### Guardrails (all must pass or action = 'SKIPPED')
+Guardrails are **lookup-driven per-entity** (5-min cache, fallbacks only on fresh install). Admins tune them from Control Center → Lookup Tables — `VENDOR_AUTO_LEARN_BLOCKLIST` (generic words to skip) and `VENDOR_AUTO_LEARN_THRESHOLDS` (name length, snippet cap). Changes take effect within 5 minutes of save; `invalidateGuardrailCache()` is wired into all lookup create/update/delete hooks.
+
 1. `entity_id` must be non-null
-2. `supplier_name` length ≥ 3, ≤ 120 chars, not purely numeric
-3. Name not in `GENERIC_NAME_BLOCKLIST` (RECEIPT, INVOICE, UNKNOWN, CASHIER, …)
+2. `supplier_name` length ≥ MIN_NAME_LEN, ≤ MAX_NAME_LEN, not purely numeric (defaults 3 / 120; admin-tunable)
+3. Name not in the blocklist (defaults: RECEIPT, INVOICE, UNKNOWN, CASHIER, … 23 entries; admin-editable per-entity)
 4. Claude `confidence` must be HIGH or MEDIUM (never learn from LOW)
 5. Claude must return a `coa_code` — a vendor without COA is noise
 
@@ -2014,22 +2016,30 @@ orParser / gasReceiptParser
 - ErpOcrSettingsPanel adds a 5th master-switch toggle `Vendor Auto-Learn (Claude wins)` alongside AI fallback / field completion / preprocessing.
 - New stat card "Vendor Auto-Learn (all time)" shows CREATED / ALIAS_ADDED / SKIPPED counts from `OcrUsageLog`.
 - DependencyBanner (`ocr-settings`) explains both toggle states + references the Auto-Learned Queue.
+- **VendorList.jsx** — `Learning Queue (n)` filter chip, `AI-learned` row badge (purple), `Review` row action (only when UNREVIEWED). Modal `VendorLearningReviewModal.jsx` shows Claude's raw snippet + suggested COA (with "use this" link) + COA dropdown (reuses `useAccounting().listAccounts`, filtered to `EXPENSE` type). Three actions: Reject / Approve / Edit + Approve.
+- **ControlCenter `DEPENDENCY_GUIDE['lookups']`** — new entry for `VENDOR_AUTO_LEARN_BLOCKLIST / VENDOR_AUTO_LEARN_THRESHOLDS` explaining per-entity tuning and 5-min cache semantics.
+- **WorkflowGuide `vendor-list`** — 4th step + tip explaining the review queue and where to toggle the learner / edit the blocklist.
 
 ### Key Files
 ```
-backend/erp/services/vendorAutoLearner.js        # New — learnFromAiResult() + guardrails
+backend/erp/services/vendorAutoLearner.js        # learnFromAiResult() + getGuardrails() per-entity cached lookup reader + fallbacks
 backend/erp/models/VendorMaster.js               # +5 fields for auto-learn tracking
 backend/erp/models/OcrSettings.js                # +vendor_auto_learn_enabled toggle
 backend/erp/models/OcrUsageLog.js                # +vendor_auto_learned + vendor_auto_learn_action
 backend/erp/ocr/ocrProcessor.js                  # Layer 2b invokes learner after Claude win
 backend/erp/controllers/ocrController.js         # Threads flag + logs action to usage
 backend/erp/controllers/ocrSettingsController.js # Extended allowed list + auto_learn counters
-backend/erp/controllers/vendorLearningController.js  # New — list/getOne/review
-backend/erp/routes/vendorLearningRoutes.js       # New — admin/finance/president guard
+backend/erp/controllers/vendorLearningController.js  # list/getOne/review
+backend/erp/controllers/lookupGenericController.js   # VENDOR_AUTO_LEARN_* seeds + invalidateGuardrailCache() hooks
+backend/erp/routes/vendorLearningRoutes.js       # admin/finance/president guard
 backend/erp/routes/index.js                      # Mount at /api/erp/vendor-learnings
-frontend/src/erp/pages/ErpOcrSettingsPanel.jsx   # New toggle + stat card
+frontend/src/erp/pages/ErpOcrSettingsPanel.jsx   # Toggle + stat card
+frontend/src/erp/pages/VendorList.jsx            # H5.10 — Learning Queue chip, AI-learned badge, Review row action
+frontend/src/erp/components/VendorLearningReviewModal.jsx  # H5.10 — review modal with COA dropdown
+frontend/src/erp/components/WorkflowGuide.jsx    # vendor-list step + tip for review queue
 frontend/src/erp/services/ocrService.js          # list/get/review vendor learnings
-frontend/src/erp/pages/ControlCenter.jsx         # DEPENDENCY_GUIDE entries
+frontend/src/erp/hooks/useAccounting.js          # Reused for COA dropdown in modal
+frontend/src/erp/pages/ControlCenter.jsx         # DEPENDENCY_GUIDE entries (incl. VENDOR_AUTO_LEARN_* lookups)
 ```
 
 ### Verified

@@ -1148,7 +1148,9 @@ const WORKFLOW_GUIDES = {
       'View and search all vendors with status filters',
       'Create new vendors with contact info and aliases',
       'Edit or deactivate vendors — active vendors cannot be deleted if referenced in POs',
+      'Click "Learning Queue" chip to review AI-learned vendors — approve to confirm Claude\u2019s classification, reject to deactivate. Rejection preserves the audit trail but stops the classifier from matching.',
     ],
+    tip: 'AI-learned vendors come from Claude wins on OCR scans. Toggle the learner in Control Center \u2192 OCR Settings. Tune the generic-word blocklist in Lookup Tables \u2192 VENDOR_AUTO_LEARN_BLOCKLIST.',
     next: [
       { label: 'Purchase Orders', path: '/erp/purchase-orders' },
       { label: 'Supplier Invoices', path: '/erp/supplier-invoices' },
