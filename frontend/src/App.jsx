@@ -34,6 +34,7 @@ const ResetPasswordPage = lazyRetry(() => import('./pages/ResetPasswordPage'));
 const PrivacyPolicyPage = lazyRetry(() => import('./pages/PrivacyPolicyPage'));
 const TermsOfServicePage = lazyRetry(() => import('./pages/TermsOfServicePage'));
 const DataDeletionPage = lazyRetry(() => import('./pages/DataDeletionPage'));
+const DataDeletionStatusPage = lazyRetry(() => import('./pages/DataDeletionStatusPage'));
 
 // BDM pages
 const EmployeeDashboard = lazyRetry(() => import('./pages/employee/EmployeeDashboard'));
@@ -214,6 +215,7 @@ function App() {
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/terms" element={<TermsOfServicePage />} />
           <Route path="/data-deletion" element={<DataDeletionPage />} />
+          <Route path="/data-deletion/status/:code" element={<DataDeletionStatusPage />} />
 
           {/* Employee Routes */}
           <Route

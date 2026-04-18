@@ -20,7 +20,7 @@ export default function TermsOfServicePage() {
   return (
     <div style={pageStyles.container}>
       <h1 style={pageStyles.h1}>Terms of Service</h1>
-      <p style={pageStyles.meta}>Last updated: April 17, 2026</p>
+      <p style={pageStyles.meta}>Last updated: April 18, 2026</p>
 
       <p style={pageStyles.p}>
         These Terms of Service ("Terms") govern your access to and use of the VIP Pharmacy CRM
@@ -60,12 +60,32 @@ export default function TermsOfServicePage() {
       <h2 style={pageStyles.h2}>3. Messaging Services</h2>
       <p style={pageStyles.p}>
         When you message our Facebook Page, Viber bot, or WhatsApp business number, your messages
-        are routed to authorized staff. Outside business hours, an automated reply may be sent.
-        Messages are logged for operational, audit, and compliance purposes as described in our{' '}
+        are routed to authorized staff. Outside business hours (Monday–Friday, 8:00 AM – 5:00 PM
+        Philippine Time), an automated reply may be sent. Messages are logged for operational,
+        audit, and compliance purposes for up to 90 days after the last activity in a conversation,
+        then permanently deleted, except where retention is required by law. Details are described
+        in our{' '}
         <a href="/privacy" style={pageStyles.a}>
           Privacy Policy
         </a>
         .
+      </p>
+      <p style={pageStyles.p}>
+        Our use of Facebook Messenger, Viber, and WhatsApp integrations is governed by, and we
+        comply with, the{' '}
+        <a href="https://developers.facebook.com/terms/" target="_blank" rel="noopener noreferrer" style={pageStyles.a}>
+          Meta Platform Terms
+        </a>
+        ,{' '}
+        <a href="https://developers.facebook.com/devpolicy/" target="_blank" rel="noopener noreferrer" style={pageStyles.a}>
+          Meta Developer Policies
+        </a>
+        ,{' '}
+        <a href="https://www.whatsapp.com/legal/business-policy" target="_blank" rel="noopener noreferrer" style={pageStyles.a}>
+          WhatsApp Business Messaging Policy
+        </a>
+        , and Viber business messaging terms. You must not use our messaging services for any
+        purpose prohibited by those policies.
       </p>
 
       <h2 style={pageStyles.h2}>4. Intellectual Property</h2>

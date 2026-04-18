@@ -20,7 +20,7 @@ export default function PrivacyPolicyPage() {
   return (
     <div style={pageStyles.container}>
       <h1 style={pageStyles.h1}>Privacy Policy</h1>
-      <p style={pageStyles.meta}>Last updated: April 17, 2026</p>
+      <p style={pageStyles.meta}>Last updated: April 18, 2026</p>
 
       <p style={pageStyles.p}>
         VIOS Integrated ("we", "us", "our") operates the VIP Pharmacy CRM platform and associated
@@ -37,8 +37,14 @@ export default function PrivacyPolicyPage() {
           register as a user of the CRM.
         </li>
         <li style={pageStyles.li}>
-          <strong>Messaging data</strong>: messages you send to our Facebook Page, Viber bot, or
-          WhatsApp business number, including sender ID, timestamps, and message content.
+          <strong>Messaging data from Meta (Facebook Messenger and WhatsApp)</strong>: your
+          page-scoped ID (PSID) or WhatsApp phone number, public display name and profile photo
+          (when provided by the platform), message content (text, images, files), delivery and
+          read receipts, and conversation timestamps.
+        </li>
+        <li style={pageStyles.li}>
+          <strong>Messaging data from Viber</strong>: your Viber sender ID, display name, message
+          content, and delivery/seen receipts.
         </li>
         <li style={pageStyles.li}>
           <strong>Operational data</strong>: visit records, GPS coordinates, and photos uploaded by
@@ -82,43 +88,79 @@ export default function PrivacyPolicyPage() {
       </ul>
 
       <h2 style={pageStyles.h2}>4. Data Retention</h2>
+      <ul style={pageStyles.ul}>
+        <li style={pageStyles.li}>
+          <strong>Messenger, Viber, and WhatsApp conversations</strong>: retained up to 90 days
+          after the last activity in a conversation, then permanently deleted.
+        </li>
+        <li style={pageStyles.li}>
+          <strong>Security audit logs</strong>: retained for 90 days, then automatically deleted.
+        </li>
+        <li style={pageStyles.li}>
+          <strong>Account data</strong>: retained for the duration of your business relationship
+          with us, then deleted within 30 days of account closure, unless longer retention is
+          required by law.
+        </li>
+        <li style={pageStyles.li}>
+          <strong>Operational data (visits, GPS, photos)</strong>: retained for the duration of
+          the business engagement and up to 7 years thereafter for compliance with Philippine tax
+          and audit regulations.
+        </li>
+        <li style={pageStyles.li}>
+          <strong>Financial records</strong>: retained for 10 years as required by the Bureau of
+          Internal Revenue and related regulations.
+        </li>
+      </ul>
       <p style={pageStyles.p}>
-        Account and operational data are retained for the duration of your business relationship
-        with us and as required by applicable laws. Security audit logs are retained for 90 days.
-        Messaging data is retained as long as necessary to service active conversations and
-        contractual engagements.
+        You may request earlier deletion at any time as described on our{' '}
+        <a href="/data-deletion" style={pageStyles.a}>
+          Data Deletion page
+        </a>
+        , subject to the legal retention obligations listed above.
       </p>
 
-      <h2 style={pageStyles.h2}>5. Security</h2>
+      <h2 style={pageStyles.h2}>5. International Data Transfers</h2>
+      <p style={pageStyles.p}>
+        Your messaging data is transmitted through Meta (Facebook Messenger, WhatsApp) and Viber,
+        which may process data on servers located outside the Philippines, including in the United
+        States and the European Union. By using our messaging services, you acknowledge and consent
+        to the transfer of your information to these jurisdictions. Our primary infrastructure
+        providers (AWS in the ap-southeast-1 region in Singapore and MongoDB Atlas) also process
+        data outside the Philippines under standard contractual safeguards.
+      </p>
+
+      <h2 style={pageStyles.h2}>6. Security</h2>
       <p style={pageStyles.p}>
         We use industry-standard security measures including encryption in transit (HTTPS),
         httpOnly cookies for authentication, account lockout protections, and signed URLs for
         media. No system is perfectly secure, but we take reasonable steps to protect your data.
       </p>
 
-      <h2 style={pageStyles.h2}>6. Your Rights</h2>
+      <h2 style={pageStyles.h2}>7. Your Rights</h2>
       <p style={pageStyles.p}>
-        You may request access to, correction of, or deletion of your personal information by
-        contacting us. See our{' '}
+        Under the Philippine Data Privacy Act (Republic Act No. 10173), you have the right to be
+        informed, to object, to access, to rectify, to erase or block, to damages, to data
+        portability, and to file a complaint with the National Privacy Commission. To exercise any
+        of these rights, contact us using the details below or see our{' '}
         <a href="/data-deletion" style={pageStyles.a}>
           Data Deletion page
-        </a>{' '}
-        for instructions.
+        </a>
+        .
       </p>
 
-      <h2 style={pageStyles.h2}>7. Children</h2>
+      <h2 style={pageStyles.h2}>8. Children</h2>
       <p style={pageStyles.p}>
         Our services are not directed to children under 13. We do not knowingly collect personal
         information from children.
       </p>
 
-      <h2 style={pageStyles.h2}>8. Changes to This Policy</h2>
+      <h2 style={pageStyles.h2}>9. Changes to This Policy</h2>
       <p style={pageStyles.p}>
         We may update this policy from time to time. Material changes will be posted on this page
         with an updated "Last updated" date.
       </p>
 
-      <h2 style={pageStyles.h2}>9. Contact</h2>
+      <h2 style={pageStyles.h2}>10. Contact</h2>
       <p style={pageStyles.p}>
         Questions? Email{' '}
         <a href="mailto:yourpartner@viosintegrated.net" style={pageStyles.a}>
