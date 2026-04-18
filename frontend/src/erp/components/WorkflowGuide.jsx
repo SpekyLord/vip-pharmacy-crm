@@ -146,8 +146,8 @@ const WORKFLOW_GUIDES = {
   'collection-session': {
     title: 'Recording a Collection',
     steps: [
-      'Select the customer/hospital',
-      'Choose which invoices (CSIs) are being paid',
+      'Select the customer/hospital (auto-filled when you arrive here via the AR Aging "Collect" button)',
+      'Choose which invoices (CSIs) are being paid (the CSI you clicked from AR Aging is pre-selected; add more if the same CR settles multiple invoices)',
       'Enter the payment mode (Cash, Check, Bank Transfer, GCash)',
       'Choose payment destination — Petty Cash Fund (ACTIVE, deposit-enabled) or Bank Account',
       'Enter amount received — can be partial or full payment',
@@ -157,7 +157,7 @@ const WORKFLOW_GUIDES = {
       { label: 'View All Collections', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'Collections support both hospital and customer targets — the system validates CSIs and AR balance for whichever entity type is used. Opening AR (pre-go-live) CSIs are fully collectable. CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY).',
+    tip: 'Collections support both hospital and customer targets — the system validates CSIs and AR balance for whichever entity type is used. Opening AR (pre-go-live) CSIs are fully collectable. CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY). Arriving from AR Aging? The hospital and invoice are pre-filled — entity/BDM scope is still enforced by the backend so out-of-scope URLs resolve to an empty form.',
   },
   'ar-aging': {
     title: 'Accounts Receivable Aging',
@@ -165,13 +165,14 @@ const WORKFLOW_GUIDES = {
       'Review outstanding balances by customer and age bracket',
       'Current (0-30 days), Overdue (31-60), Critical (60+)',
       'Prioritize collection on oldest receivables first',
+      'Click "Collect" on a hospital row to open the Collection form with the hospital pre-filled; click "Collect" on a specific CSI (expanded detail) to also pre-select that invoice',
       'Generate SOA for customers with high balances',
     ],
     next: [
       { label: 'Collect Payment', path: '/erp/collections/session' },
       { label: 'Generate SOA', path: '/erp/collections/soa' },
     ],
-    tip: 'High AR aging affects your collection rate and profit sharing eligibility.',
+    tip: 'High AR aging affects your collection rate and profit sharing eligibility. The "Collect" quick-action deep-links to the Collection form with the hospital (and optionally the specific invoice) pre-selected — posting logic, authority gating, and journal entries still run through the single Collections workflow so the ledger stays consistent across entities and subscribers.',
   },
   'expenses': {
     title: 'Recording Expenses (ORE / ACCESS)',

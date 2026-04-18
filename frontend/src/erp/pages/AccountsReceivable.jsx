@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useCollections from '../hooks/useCollections';
@@ -77,10 +77,18 @@ function fmt(n) { return 'P' + (n || 0).toLocaleString(undefined, { minimumFract
 
 export default function AccountsReceivable() {
   const coll = useCollections();
+  const navigate = useNavigate();
   const [arData, setArData] = useState(null);
   const [rateData, setRateData] = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const goCollect = (hospitalId, salesLineId) => {
+    const params = new URLSearchParams();
+    if (hospitalId) params.set('hospital_id', String(hospitalId));
+    if (salesLineId) params.set('sales_line_id', String(salesLineId));
+    navigate(`/erp/collections/session${params.toString() ? `?${params.toString()}` : ''}`);
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -178,7 +186,16 @@ export default function AccountsReceivable() {
                             {h.dunning && <span className="badge" style={{ background: h.dunning.color, color: '#fff' }}>{h.dunning.label}</span>}
                           </td>
                           <td onClick={e => e.stopPropagation()}>
-                            <button className="btn btn-sm btn-outline" onClick={() => handleSoa(h.hospital_id)}>SOA</button>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                              <button
+                                className="btn btn-sm btn-primary"
+                                onClick={() => goCollect(h.hospital_id)}
+                                title="Record a collection for this hospital"
+                              >
+                                Collect
+                              </button>
+                              <button className="btn btn-sm btn-outline" onClick={() => handleSoa(h.hospital_id)}>SOA</button>
+                            </div>
                           </td>
                         </tr>
                         {expanded === h.hospital_id && h.csis?.length > 0 && (
@@ -186,7 +203,7 @@ export default function AccountsReceivable() {
                             <td colSpan={8} style={{ padding: 0 }}>
                               <div className="csi-detail">
                                 <table>
-                                  <thead><tr><th>CSI #</th><th>Date</th><th>Invoice</th><th>Collected</th><th>Balance</th><th>Days</th><th>Dunning</th></tr></thead>
+                                  <thead><tr><th>CSI #</th><th>Date</th><th>Invoice</th><th>Collected</th><th>Balance</th><th>Days</th><th>Dunning</th><th>Action</th></tr></thead>
                                   <tbody>
                                     {h.csis.map((csi) => (
                                       <tr key={csi._id || csi.doc_ref}>
@@ -197,6 +214,15 @@ export default function AccountsReceivable() {
                                         <td style={{ fontWeight: 600 }}>{fmt(csi.balance_due)}</td>
                                         <td>{csi.days_outstanding}d</td>
                                         <td>{csi.dunning && <span className="badge" style={{ background: csi.dunning.color, color: '#fff', fontSize: 10 }}>{csi.dunning.label}</span>}</td>
+                                        <td>
+                                          <button
+                                            className="btn btn-sm btn-primary"
+                                            onClick={() => goCollect(h.hospital_id, csi._id)}
+                                            title="Open Collection form with this CSI pre-selected"
+                                          >
+                                            Collect
+                                          </button>
+                                        </td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -237,6 +263,9 @@ export default function AccountsReceivable() {
                       </div>
 
                       <div className="ar-card-actions">
+                        <button className="btn btn-sm btn-primary" style={{ flex: 1 }} onClick={() => goCollect(h.hospital_id)}>
+                          Collect
+                        </button>
                         <button className="btn btn-sm btn-outline" style={{ flex: 1 }} onClick={() => setExpanded(isOpen ? null : h.hospital_id)}>
                           {isOpen ? 'Hide CSI' : 'View CSI'}
                         </button>
@@ -248,7 +277,16 @@ export default function AccountsReceivable() {
                           <div className="ar-mini-table">
                             {h.csis.map((csi) => (
                               <div className="ar-mini-row" key={csi._id || csi.doc_ref}>
-                                <strong>{csi.doc_ref}</strong>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                                  <strong>{csi.doc_ref}</strong>
+                                  <button
+                                    className="btn btn-sm btn-primary"
+                                    style={{ padding: '3px 10px', fontSize: 11 }}
+                                    onClick={() => goCollect(h.hospital_id, csi._id)}
+                                  >
+                                    Collect
+                                  </button>
+                                </div>
                                 <div>{new Date(csi.csi_date).toLocaleDateString('en-PH')} | Inv: {fmt(csi.invoice_total)} | Col: {fmt(csi.amount_collected)}</div>
                                 <div>Bal: {fmt(csi.balance_due)} | {csi.days_outstanding}d {csi.dunning && <span className="badge" style={{ background: csi.dunning.color, color: '#fff', fontSize: 10, marginLeft: 6 }}>{csi.dunning.label}</span>}</div>
                               </div>
