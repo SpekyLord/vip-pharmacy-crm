@@ -8,6 +8,7 @@ import { showError, showApprovalPending } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 
 const pageStyles = `
   .je-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -212,7 +213,12 @@ export default function JournalEntries() {
                         <td>{j.source_module}</td>
                         <td>{fmt(j.total_debit)}</td>
                         <td>{fmt(j.total_credit)}</td>
-                        <td><span className={`badge badge-${j.status}`}>{j.status}</span></td>
+                        <td>
+                          <span className={`badge badge-${j.status}`}>{j.status}</span>
+                          <div style={{ marginTop: 4 }}>
+                            <RejectionBanner row={j} moduleKey="JOURNAL" variant="row" />
+                          </div>
+                        </td>
                         <td onClick={e => e.stopPropagation()}>
                           {j.status === 'DRAFT' && isAdmin && <button className="btn btn-success btn-sm" onClick={() => handlePost(j._id)}>Post</button>}
                           {j.status === 'POSTED' && isAdmin && <button className="btn btn-danger btn-sm" onClick={() => handleReverse(j._id)}>Reverse</button>}
@@ -231,6 +237,13 @@ export default function JournalEntries() {
                 <div className="je-detail">
                   <h2>{selected.je_number}</h2>
                   <p><strong>Date:</strong> {new Date(selected.je_date).toLocaleDateString()} &nbsp; <strong>Period:</strong> {selected.period} &nbsp; <strong>Source:</strong> {selected.source_module} &nbsp; <span className={`badge badge-${selected.status}`}>{selected.status}</span></p>
+                  <RejectionBanner
+                    row={selected}
+                    moduleKey="JOURNAL"
+                    variant="page"
+                    docLabel={selected.je_number}
+                    onResubmit={() => { setView('list'); setSelected(null); }}
+                  />
                   <p>{selected.description}</p>
                   {selected.is_reversal && <p style={{ color: '#dc2626' }}>↩ This is a reversal entry</p>}
                   <table className="je-lines-table">

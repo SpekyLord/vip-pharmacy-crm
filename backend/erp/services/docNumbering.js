@@ -125,13 +125,17 @@ function invalidateEntityCodeCache(entityId) {
  * @param {Object} options
  * @param {String|ObjectId} options.entityId
  * @param {Date}   [options.date] — JE date (default: now)
+ * @param {ClientSession} [options.session] — pass to enlist the sequence bump
+ *   in a caller-managed mongoose transaction (Phase SG-Q2 W3 — used by the
+ *   incentive accrual atomic wrap so JE# allocation and IncentivePayout upsert
+ *   commit together).
  * @returns {Promise<String>} formatted JE number
  */
-async function generateJeNumber({ entityId, date }) {
+async function generateJeNumber({ entityId, date, session }) {
   const code = await getEntityCode(entityId);
   const dateStr = formatMMDDYY(date || new Date());
   const seqKey = `JE-${code}-${dateStr}`;
-  const seq = await DocSequence.getNext(seqKey);
+  const seq = await DocSequence.getNext(seqKey, { session });
   const seqStr = String(seq).padStart(3, '0');
   return `JE-${code}${dateStr}-${seqStr}`;
 }

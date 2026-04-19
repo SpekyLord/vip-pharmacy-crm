@@ -394,63 +394,120 @@ async function accrueIncentive({
     return existing;
   }
 
-  // ── Post the accrual JE FIRST so we can link journal_id on the upsert. ──
-  // If the JE post fails we throw so the snapshot txn rolls back (or, when
-  // called outside a txn, we simply skip the payout).
-  let journal;
+  // Resolve a BDM label once for the JE description
+  const person = personId ? await PeopleMaster.findById(personId).select('full_name bdm_code').lean() : null;
+  const bdmLabel = person ? `${person.full_name}${person.bdm_code ? ` (${person.bdm_code})` : ''}` : 'BDM';
+
+  // ── Phase SG-Q2 W3 — Per-accrual transaction wrap ───────────────────────
+  // Wrap (a) accrual JE create+post, (b) IncentivePayout upsert in a single
+  // mongoose transaction so a partial failure leaves nothing behind. Without
+  // this wrap, two parallel snapshot computes (e.g. cron + manual Run Now)
+  // could each post a JE, then race on the upsert and one would lose its
+  // backing row — orphan JE in the GL with no payout to point at.
+  //
+  // The transaction also threads through generateJeNumber → DocSequence so
+  // the sequence bump rolls back if anything downstream fails.
+  //
+  // Best-effort: if the txn fails we log + return null so the outer snapshot
+  // batch still completes for the other BDMs. The next run picks it up.
+  let doc = null;
+  const session = await mongoose.startSession();
   try {
-    // Resolve a BDM label once for the JE description
-    const person = personId ? await PeopleMaster.findById(personId).select('full_name bdm_code').lean() : null;
-    const bdmLabel = person ? `${person.full_name}${person.bdm_code ? ` (${person.bdm_code})` : ''}` : 'BDM';
+    await session.withTransaction(async () => {
+      // Re-check inside the txn to catch the race where a parallel run won.
+      const raceCheck = await IncentivePayout.findOne(upsertKey).session(session).lean();
+      if (raceCheck) {
+        doc = raceCheck;
+        return;
+      }
 
-    // Build a pseudo payout object so journalFromIncentive has enough context.
-    // The real IncentivePayout row is upserted after so we can store the JE id.
-    const pseudo = {
-      _id: existing?._id || new mongoose.Types.ObjectId(),
-      entity_id: entityId,
-      plan_id: plan._id,
-      bdm_id: bdmId,
-      period,
-      tier_code: incentiveRow.tier_code,
-      tier_label: incentiveRow.tier_label || incentiveRow.tier_code,
-      tier_budget: capped,
-    };
-    const { postAccrualJournal } = require('./journalFromIncentive');
-    journal = await postAccrualJournal(pseudo, plan.reference, bdmLabel, userId || null);
-  } catch (err) {
-    console.error('[salesGoal.accrueIncentive] JE post failed — payout NOT created:', err.message);
-    return null;
-  }
-
-  const doc = await IncentivePayout.findOneAndUpdate(
-    upsertKey,
-    {
-      $set: {
+      // Build a pseudo payout object so journalFromIncentive has enough context.
+      // The real IncentivePayout row is upserted after so we can store the JE id.
+      const pseudo = {
+        _id: new mongoose.Types.ObjectId(),
         entity_id: entityId,
         plan_id: plan._id,
         bdm_id: bdmId,
-        person_id: personId || null,
-        fiscal_year: plan.fiscal_year,
         period,
-        period_type: periodType,
-        program_code: incentiveRow.program_code || '',
         tier_code: incentiveRow.tier_code,
         tier_label: incentiveRow.tier_label || incentiveRow.tier_code,
         tier_budget: capped,
-        uncapped_budget: uncapped,
-        attainment_pct: Number(incentiveRow.attainment_pct) || 0,
-        sales_target: Number(incentiveRow.qualifying_amount) || 0,
-        sales_actual: Number(incentiveRow.actual_amount) || 0,
-        status: 'ACCRUED',
-        journal_id: journal._id,
-        journal_number: journal.je_number,
-      },
-      $setOnInsert: {
-        created_by: userId || null,
-      },
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
+      };
+      const { postAccrualJournal } = require('./journalFromIncentive');
+      const journal = await postAccrualJournal(pseudo, plan.reference, bdmLabel, userId || null, { session });
+
+      doc = await IncentivePayout.findOneAndUpdate(
+        upsertKey,
+        {
+          $set: {
+            entity_id: entityId,
+            plan_id: plan._id,
+            bdm_id: bdmId,
+            person_id: personId || null,
+            fiscal_year: plan.fiscal_year,
+            period,
+            period_type: periodType,
+            program_code: incentiveRow.program_code || '',
+            tier_code: incentiveRow.tier_code,
+            tier_label: incentiveRow.tier_label || incentiveRow.tier_code,
+            tier_budget: capped,
+            uncapped_budget: uncapped,
+            attainment_pct: Number(incentiveRow.attainment_pct) || 0,
+            sales_target: Number(incentiveRow.qualifying_amount) || 0,
+            sales_actual: Number(incentiveRow.actual_amount) || 0,
+            status: 'ACCRUED',
+            journal_id: journal._id,
+            journal_number: journal.je_number,
+          },
+          $setOnInsert: {
+            created_by: userId || null,
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true, session }
+      );
+    });
+  } catch (err) {
+    // Duplicate-key races resolve to "the other run won" — treat as success.
+    if (err && err.code === 11000) {
+      try {
+        doc = await IncentivePayout.findOne(upsertKey).lean();
+      } catch (_) { /* fall through to null */ }
+      console.warn(
+        `[salesGoal.accrueIncentive] Concurrent accrual race for plan ${plan._id} `
+        + `bdm ${bdmId} period ${period} — kept existing payout, JE rolled back.`
+      );
+    } else {
+      console.error('[salesGoal.accrueIncentive] Atomic accrual failed — payout NOT created:', err.message);
+      doc = null;
+    }
+  } finally {
+    session.endSession();
+  }
+
+  // Fire tier-reached notification (non-blocking; outside the txn so an email
+  // hiccup never reverts a posted accrual). Only on a fresh accrual (not a
+  // race-recovery hit on an existing row).
+  if (doc && String(doc._id) !== String(existing?._id) && bdmId) {
+    try {
+      const { notifyTierReached } = require('./erpNotificationService');
+      // Caller (snapshot agent) doesn't await — we don't either.
+      notifyTierReached({
+        entityId,
+        bdmId,
+        bdmLabel,
+        planRef: plan.reference || plan.plan_name,
+        fiscalYear: plan.fiscal_year,
+        period,
+        periodType,
+        tierCode: incentiveRow.tier_code,
+        tierLabel: incentiveRow.tier_label || incentiveRow.tier_code,
+        tierBudget: capped,
+        attainmentPct: Number(incentiveRow.attainment_pct) || 0,
+      }).catch(e => console.error('[notifyTierReached] failed:', e.message));
+    } catch (e) {
+      console.error('[notifyTierReached] dispatch error:', e.message);
+    }
+  }
 
   return doc;
 }

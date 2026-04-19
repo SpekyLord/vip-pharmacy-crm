@@ -10,6 +10,7 @@ import useHospitals from '../hooks/useHospitals';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
@@ -655,6 +656,19 @@ export default function Smer() {
                         )}
                       </td>
                     </tr>
+                    {s.status === 'ERROR' && s.rejection_reason && (
+                      <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
+                        <td colSpan={8} style={{ padding: '6px 8px 4px' }}>
+                          <RejectionBanner
+                            row={s}
+                            moduleKey="SMER"
+                            variant="page"
+                            docLabel={`${s.period} ${s.cycle}`}
+                            onResubmit={(row) => handleEditSmer(row)}
+                          />
+                        </td>
+                      </tr>
+                    )}
                     {s.status === 'ERROR' && s.validation_errors?.length > 0 && (
                       <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
                         <td colSpan={8} style={{ padding: '4px 8px 8px', background: '#fef2f2' }}>

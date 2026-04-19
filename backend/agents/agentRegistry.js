@@ -14,6 +14,8 @@ const AGENT_DEFINITIONS = {
   system_integrity: { key: 'system_integrity', label: 'System Integrity', modulePath: './systemIntegrityAgent', type: 'FREE' },
   // Phase SG-Q2 W2 — KPI snapshot + incentive accrual (FREE; no AI)
   kpi_snapshot: { key: 'kpi_snapshot', label: 'KPI Snapshot & Incentive Accrual', modulePath: './kpiSnapshotAgent', type: 'FREE' },
+  // Phase SG-Q2 W3 — KPI variance detection + alerts (FREE; no AI)
+  kpi_variance: { key: 'kpi_variance', label: 'KPI Variance Alerts', modulePath: './kpiVarianceAgent', type: 'FREE' },
 };
 
 const AGENT_KEYS = Object.keys(AGENT_DEFINITIONS);

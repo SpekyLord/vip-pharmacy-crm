@@ -71,7 +71,9 @@ async function postJournal(jeId, userId, entityId) {
  * @returns {Object} posted JournalEntry
  */
 async function createAndPostJournal(entityId, data, options = {}) {
-  const jeNumber = await generateJeNumber({ entityId, date: data.je_date });
+  // Phase SG-Q2 W3 — thread `session` into JE# allocation so the entire
+  // accrual flow (sequence bump + JE create + payout upsert) commits together.
+  const jeNumber = await generateJeNumber({ entityId, date: data.je_date, session: options.session });
 
   const doc = {
     entity_id: entityId,

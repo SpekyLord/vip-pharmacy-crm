@@ -1,7 +1,11 @@
 const mongoose = require('mongoose');
 const IncentivePayout = require('../models/IncentivePayout');
 const SalesGoalPlan = require('../models/SalesGoalPlan');
+const SalesGoalTarget = require('../models/SalesGoalTarget');
+const KpiSnapshot = require('../models/KpiSnapshot');
 const PeopleMaster = require('../models/PeopleMaster');
+const User = require('../../models/User');
+const Entity = require('../models/Entity');
 const PaymentMode = require('../models/PaymentMode');
 const Lookup = require('../models/Lookup');
 const ErpAuditLog = require('../models/ErpAuditLog');
@@ -12,6 +16,8 @@ const {
   postSettlementJournal,
   reverseAccrualJournal,
 } = require('../services/journalFromIncentive');
+const salesGoalService = require('../services/salesGoalService');
+const { renderCompensationStatement } = require('../templates/compensationStatement');
 
 /**
  * IncentivePayout controller — Phase SG-Q2 Week 2
@@ -331,3 +337,280 @@ exports.reversePayout = catchAsync(async (req, res) => {
 
   res.json({ success: true, data: payout, message: 'Payout reversed — storno journal posted' });
 });
+
+// ─── COMPENSATION STATEMENT (Phase SG-Q2 Week 3) ────────────────────────
+//
+// "My Compensation" view + printable PDF. Composes a {earned, accrued,
+// adjusted, paid} breakdown across all of a BDM's IncentivePayout rows for
+// the chosen fiscal year, plus per-period rollups, current/projected tier,
+// and the underlying ledger rows. BDMs see only their own; finance/admin/
+// president can pass ?bdm_id= to view any BDM in scope.
+//
+// `period` is optional: when present, statement is scoped to that single
+// period (YYYY-MM or fiscal year). When absent, full FY view is returned.
+//
+// Definitions (see CLAUDE-ERP.md Phase SG-Q2 W3):
+//   earned   = SUM(tier_budget) for status ∈ {ACCRUED, APPROVED, PAID}
+//              — total compensation BDM has been credited with this FY.
+//   accrued  = SUM(tier_budget) for status = ACCRUED
+//              — credited but not yet authority-approved.
+//   adjusted = SUM(uncapped_budget - tier_budget) for cap-reduced rows
+//              + SUM(tier_budget) for status = REVERSED
+//              — visibility for cap clamps + post-hoc reversals.
+//   paid     = SUM(tier_budget) for status = PAID
+//              — settled with a settlement JE.
+
+function _resolveStatementScope(req) {
+  // Returns { bdmId, isAdminView, error? } — null bdmId means caller is privileged
+  // and asked to see "all". For the statement endpoint we require an explicit
+  // bdm_id (statement is per-BDM by definition); privileged users pass it.
+  const isPrivileged = req.isPresident || req.isAdmin || req.isFinance;
+  const requested = req.query.bdm_id || req.params.bdm_id;
+  if (!isPrivileged) {
+    if (requested && String(requested) !== String(req.user._id)) {
+      return { bdmId: null, isAdminView: false, error: { status: 403, message: 'Forbidden — non-privileged users can only view their own statement' } };
+    }
+    return { bdmId: req.user._id, isAdminView: false };
+  }
+  // Privileged: explicit bdm_id required so we know whose statement to render.
+  if (!requested) {
+    return { bdmId: null, isAdminView: false, error: { status: 400, message: 'bdm_id is required (privileged callers must pass ?bdm_id=)' } };
+  }
+  return { bdmId: requested, isAdminView: true };
+}
+
+async function _composeStatement({ bdmId, fiscalYear, period, entityScope }) {
+  // Build the IncentivePayout filter. fiscal_year is required so we always
+  // bound the rollup; period further narrows when present (YYYY-MM or year).
+  const filter = { bdm_id: bdmId, fiscal_year: fiscalYear };
+  if (period) filter.period = period;
+  if (entityScope) filter.entity_id = entityScope;
+
+  const rows = await IncentivePayout.find(filter)
+    .populate('plan_id', 'plan_name fiscal_year reference')
+    .populate('journal_id', 'je_number je_date')
+    .populate('settlement_journal_id', 'je_number je_date')
+    .populate('reversal_journal_id', 'je_number je_date')
+    .populate('approved_by', 'name email')
+    .populate('paid_by', 'name email')
+    .sort({ period: 1, createdAt: 1 })
+    .lean();
+
+  // Roll-up totals
+  const summary = { earned: 0, accrued: 0, adjusted: 0, paid: 0, count: rows.length, reversed: 0, approved: 0 };
+  const byPeriod = new Map();
+
+  for (const r of rows) {
+    const amt = Number(r.tier_budget) || 0;
+    const uncapped = Number(r.uncapped_budget) || amt;
+    const capDelta = Math.max(uncapped - amt, 0);
+
+    const key = r.period || 'unknown';
+    if (!byPeriod.has(key)) {
+      byPeriod.set(key, {
+        period: key, period_type: r.period_type,
+        earned: 0, accrued: 0, approved: 0, paid: 0, adjusted: 0, reversed: 0, count: 0,
+      });
+    }
+    const bucket = byPeriod.get(key);
+    bucket.count += 1;
+
+    if (['ACCRUED', 'APPROVED', 'PAID'].includes(r.status)) {
+      summary.earned += amt;
+      bucket.earned += amt;
+    }
+    if (r.status === 'ACCRUED') { summary.accrued += amt; bucket.accrued += amt; }
+    if (r.status === 'APPROVED') { summary.approved += amt; bucket.approved += amt; }
+    if (r.status === 'PAID') { summary.paid += amt; bucket.paid += amt; }
+    if (r.status === 'REVERSED') { summary.reversed += amt; bucket.reversed += amt; summary.adjusted += amt; bucket.adjusted += amt; }
+    summary.adjusted += capDelta;
+    bucket.adjusted += capDelta;
+  }
+
+  // Round all totals to the nearest peso (PHP has no centavo display in our UI)
+  const roundObj = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v) : v]));
+  const periods = Array.from(byPeriod.values())
+    .map(roundObj)
+    .sort((a, b) => String(a.period).localeCompare(String(b.period)));
+
+  return { rows, summary: roundObj(summary), periods };
+}
+
+async function _resolveTierContext(entityId, planId, bdmId, fiscalYear) {
+  // Pull the latest YTD KpiSnapshot for the BDM under the plan to surface
+  // current tier + projected tier in the statement header. This is the same
+  // data the dashboard ring shows; we just embed it in the statement.
+  if (!planId) return null;
+  const ytdSnap = await KpiSnapshot.findOne({
+    plan_id: planId, bdm_id: bdmId, period: String(fiscalYear), period_type: 'YTD',
+  }).sort({ computed_at: -1 }).lean();
+  if (!ytdSnap) return null;
+
+  const inc = (ytdSnap.incentive_status || [])[0] || {};
+  return {
+    sales_attainment_pct: Number(ytdSnap.sales_attainment_pct) || 0,
+    sales_target: Number(ytdSnap.sales_target) || 0,
+    sales_actual: Number(ytdSnap.sales_actual) || 0,
+    current_tier_code: inc.tier_code || '',
+    current_tier_label: inc.tier_label || '',
+    current_tier_budget: Number(inc.tier_budget) || 0,
+    projected_tier_code: inc.projected_tier_code || '',
+    projected_tier_label: inc.projected_tier_label || '',
+    projected_tier_budget: Number(inc.projected_tier_budget) || 0,
+    qualifying_amount: Number(inc.qualifying_amount) || 0,
+    actual_amount: Number(inc.actual_amount) || 0,
+  };
+}
+
+exports.getCompensationStatement = catchAsync(async (req, res) => {
+  const scope = _resolveStatementScope(req);
+  if (scope.error) return res.status(scope.error.status).json({ success: false, message: scope.error.message });
+  const bdmId = scope.bdmId;
+
+  const fiscalYear = Number(req.query.fiscal_year) || new Date().getFullYear();
+  const period = req.query.period ? String(req.query.period).trim() : null;
+
+  // Entity scoping: privileged users with no explicit ?entity_id= see across
+  // entities (consistent with listPayouts behavior); BDMs are scoped to their
+  // working entity (req.entityId).
+  let entityScope = null;
+  if (req.isPresident) {
+    if (req.query.entity_id) entityScope = req.query.entity_id;
+  } else {
+    entityScope = req.entityId;
+  }
+
+  // BDM identity for the header (full name + bdm_code)
+  const userDoc = await User.findById(bdmId).select('name email').lean();
+  const personDoc = await PeopleMaster.findOne({ user_id: bdmId, is_active: true }).select('full_name bdm_code position territory_id').lean();
+  const bdmHeader = {
+    bdm_id: bdmId,
+    name: personDoc?.full_name || userDoc?.name || userDoc?.email || 'BDM',
+    bdm_code: personDoc?.bdm_code || '',
+    position: personDoc?.position || '',
+    email: userDoc?.email || '',
+  };
+
+  // Resolve the active plan for this fiscal year + entity (best match)
+  const planFilter = { fiscal_year: fiscalYear };
+  if (entityScope) planFilter.entity_id = entityScope;
+  // Prefer ACTIVE plan; fall back to most-recent of any status so closed years still print
+  const plan = await SalesGoalPlan.findOne({ ...planFilter, status: 'ACTIVE' }).lean()
+    || await SalesGoalPlan.findOne(planFilter).sort({ createdAt: -1 }).lean();
+
+  const planHeader = plan ? {
+    plan_id: plan._id,
+    reference: plan.reference || '',
+    plan_name: plan.plan_name || '',
+    fiscal_year: plan.fiscal_year,
+    status: plan.status,
+    target_revenue: Number(plan.target_revenue) || 0,
+  } : null;
+
+  // Statement body
+  const { rows, summary, periods } = await _composeStatement({
+    bdmId, fiscalYear, period, entityScope,
+  });
+
+  // Tier context (current/projected) — uses the plan we resolved above
+  const tier = plan ? await _resolveTierContext(plan.entity_id, plan._id, bdmId, fiscalYear) : null;
+
+  // Entity branding (for print header)
+  const entity = (entityScope || plan?.entity_id)
+    ? await Entity.findById(entityScope || plan?.entity_id).select('entity_name short_name').lean()
+    : null;
+
+  res.json({
+    success: true,
+    data: {
+      bdm: bdmHeader,
+      plan: planHeader,
+      entity: entity ? { _id: entity._id, name: entity.entity_name, short_name: entity.short_name } : null,
+      fiscal_year: fiscalYear,
+      period,
+      summary,
+      periods,
+      tier,
+      rows,
+      generated_at: new Date(),
+    },
+  });
+});
+
+// Printable HTML statement — same data shape as getCompensationStatement,
+// rendered through templates/compensationStatement.js. Browser-print or
+// "Save as PDF" produces the PDF (matches existing printController pattern
+// for sales receipts / petty cash forms — no extra PDF library needed).
+exports.printCompensationStatement = catchAsync(async (req, res) => {
+  // Re-use the same scope/composition logic
+  const scope = _resolveStatementScope(req);
+  if (scope.error) return res.status(scope.error.status).send(`<h1>${scope.error.message}</h1>`);
+  const bdmId = scope.bdmId;
+
+  const fiscalYear = Number(req.query.fiscal_year) || new Date().getFullYear();
+  const period = req.query.period ? String(req.query.period).trim() : null;
+
+  let entityScope = null;
+  if (req.isPresident) {
+    if (req.query.entity_id) entityScope = req.query.entity_id;
+  } else {
+    entityScope = req.entityId;
+  }
+
+  const userDoc = await User.findById(bdmId).select('name email').lean();
+  const personDoc = await PeopleMaster.findOne({ user_id: bdmId, is_active: true }).select('full_name bdm_code position').lean();
+  const bdmHeader = {
+    bdm_id: bdmId,
+    name: personDoc?.full_name || userDoc?.name || userDoc?.email || 'BDM',
+    bdm_code: personDoc?.bdm_code || '',
+    position: personDoc?.position || '',
+    email: userDoc?.email || '',
+  };
+
+  const planFilter = { fiscal_year: fiscalYear };
+  if (entityScope) planFilter.entity_id = entityScope;
+  const plan = await SalesGoalPlan.findOne({ ...planFilter, status: 'ACTIVE' }).lean()
+    || await SalesGoalPlan.findOne(planFilter).sort({ createdAt: -1 }).lean();
+
+  const { rows, summary, periods } = await _composeStatement({
+    bdmId, fiscalYear, period, entityScope,
+  });
+  const tier = plan ? await _resolveTierContext(plan.entity_id, plan._id, bdmId, fiscalYear) : null;
+  const entity = (entityScope || plan?.entity_id)
+    ? await Entity.findById(entityScope || plan?.entity_id).select('entity_name short_name').lean()
+    : null;
+
+  // Lookup-driven template metadata (subscriber-configurable header line,
+  // disclaimer, signatory text) — falls back to safe defaults when missing.
+  let templateOverrides = {};
+  try {
+    const tplRows = await Lookup.find({
+      entity_id: plan?.entity_id || entityScope,
+      category: 'COMP_STATEMENT_TEMPLATE',
+      is_active: true,
+    }).lean();
+    for (const r of tplRows) {
+      templateOverrides[r.code] = (r.metadata && r.metadata.value) || r.label || '';
+    }
+  } catch (err) {
+    console.warn('[compensationStatement] template lookup unavailable:', err.message);
+  }
+
+  const html = renderCompensationStatement({
+    bdm: bdmHeader,
+    plan,
+    entity,
+    fiscalYear,
+    period,
+    summary,
+    periods,
+    tier,
+    rows,
+    template: templateOverrides,
+    generatedAt: new Date(),
+  });
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+});
+

@@ -21,6 +21,12 @@ const c = require('../controllers/incentivePayoutController');
 // ── Reads (VIEW level — BDMs can see their own via automatic bdm_id filter) ──
 router.get('/payable', erpAccessCheck('sales_goals', 'VIEW'), erpSubAccessCheck('sales_goals', 'payout_view'), c.getPayable);
 router.get('/mine', erpAccessCheck('sales_goals', 'VIEW'), c.myPayouts);
+// Phase SG-Q2 W3 — Compensation Statement (BDM view + printable HTML/PDF).
+// MUST be declared before `/:id` so Express does not match these as IDs.
+// VIEW gate (BDM scope is enforced inside the controller via _resolveStatementScope —
+// non-privileged callers can only ever see their own statement).
+router.get('/statement', erpAccessCheck('sales_goals', 'VIEW'), c.getCompensationStatement);
+router.get('/statement/print', erpAccessCheck('sales_goals', 'VIEW'), c.printCompensationStatement);
 router.get('/:id', erpAccessCheck('sales_goals', 'VIEW'), c.getPayoutById);
 router.get('/', erpAccessCheck('sales_goals', 'VIEW'), c.listPayouts);
 

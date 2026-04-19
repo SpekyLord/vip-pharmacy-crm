@@ -7,6 +7,7 @@ import useSettings from '../hooks/useSettings';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError, showApprovalPending } from '../utils/errorToast';
 import { ROLE_SETS } from '../../constants/roles';
 import { useAuth } from '../../hooks/useAuth';
@@ -494,6 +495,27 @@ export default function CarLogbook() {
               {actionMsg.msg}
             </div>
           )}
+
+          {/* Period-level rejection — Approval Hub batch-rejects entire period+cycle */}
+          {(() => {
+            const rejectedRow = rows.find(r => r.status === 'ERROR' && r.rejection_reason);
+            if (!rejectedRow) return null;
+            return (
+              <RejectionBanner
+                row={rejectedRow}
+                moduleKey="CAR_LOGBOOK"
+                variant="page"
+                docLabel={`${period} ${cycle}`}
+                onResubmit={() => {
+                  const firstEditableIdx = rows.findIndex(r => r.status === 'ERROR');
+                  if (firstEditableIdx >= 0) {
+                    setExpandedRow(firstEditableIdx);
+                    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                }}
+              />
+            );
+          })()}
 
           {/* ═══ Desktop Grid ═══ */}
           <div className="cl-table" style={{ overflowX: 'auto' }}>

@@ -11,6 +11,7 @@ import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WarehousePicker from '../components/WarehousePicker';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 
 const styles = `
   .po-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -403,7 +404,12 @@ export default function PurchaseOrders() {
                         <td>{po.vendor_id?.vendor_name || '—'}</td>
                         <td>{po.line_items?.length || 0}</td>
                         <td style={{ fontWeight: 600 }}>{fmt(po.total_amount)}</td>
-                        <td><span className={`po-badge po-badge-${po.status}`}>{po.status?.replace(/_/g, ' ')}</span></td>
+                        <td>
+                          <span className={`po-badge po-badge-${po.status}`}>{po.status?.replace(/_/g, ' ')}</span>
+                          <div style={{ marginTop: 4 }}>
+                            <RejectionBanner row={po} moduleKey="PURCHASING" variant="row" />
+                          </div>
+                        </td>
                         <td>
                           <div className="po-actions">
                             {po.status === 'DRAFT'
@@ -541,6 +547,13 @@ export default function PurchaseOrders() {
                           <button className="btn btn-sm" style={{ background: '#e2e8f0' }} onClick={() => setShowDetail(null)}>Close</button>
                         </div>
                       </div>
+                      <RejectionBanner
+                        row={showDetail}
+                        moduleKey="PURCHASING"
+                        variant="page"
+                        docLabel={`PO ${showDetail.po_number || ''}`}
+                        onResubmit={(row) => { setShowDetail(null); openEdit(row); }}
+                      />
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 20px', fontSize: 13, marginBottom: 16, background: '#f8fafc', padding: 12, borderRadius: 8 }}>
                         <div><strong>Vendor:</strong> {showDetail.vendor_id?.vendor_name || '—'} {showDetail.vendor_id?.vendor_code ? `(${showDetail.vendor_id.vendor_code})` : ''}</div>

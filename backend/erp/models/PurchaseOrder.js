@@ -46,11 +46,14 @@ const purchaseOrderSchema = new mongoose.Schema({
   net_amount: { type: Number, default: 0 },
   status: {
     type: String,
-    enum: ['DRAFT', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'],
+    enum: ['DRAFT', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED', 'REJECTED'],
     default: 'DRAFT'
   },
   approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   approved_at: { type: Date },
+  rejection_reason: { type: String, trim: true, default: '' },
+  rejected_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejected_at: { type: Date },
   notes: { type: String, trim: true },
   activity_log: { type: [poActivitySchema], default: [] },
   share_token: { type: String, unique: true, sparse: true },

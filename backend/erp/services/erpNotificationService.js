@@ -25,6 +25,10 @@ const {
   approvalRequestTemplate,
   approvalDecisionTemplate,
   payrollPostedTemplate,
+  // Phase SG-Q2 W3
+  salesGoalPlanLifecycleTemplate,
+  tierReachedTemplate,
+  kpiVarianceAlertTemplate,
 } = require('../../templates/erpEmails');
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -289,12 +293,255 @@ const notifyPayrollPosted = async (opts) => {
   }
 };
 
+// ─── Phase SG-Q2 Week 3 — Sales Goal lifecycle + tier-reached + variance ───
+
+/**
+ * Filter a recipient list by NotificationPreference opt-in for a given category.
+ * Falls open (does NOT filter) on read errors — better to over-notify than to
+ * silently drop alerts when the preferences collection is unavailable.
+ *
+ * Categories used:
+ *   - 'compensation' — plan lifecycle + tier milestones (BDM-impacting)
+ *   - 'kpiVariance'  — KPI deviation alerts (BDM + manager)
+ *
+ * NotificationPreference schema is permissive (Mixed metadata), so we look at
+ * `compensationAlerts` / `kpiVarianceAlerts` boolean flags first, then fall
+ * back to the broader `emailNotifications` master switch.
+ */
+const filterByPreference = async (recipients, category) => {
+  if (!recipients || recipients.length === 0) return [];
+  let prefs = [];
+  try {
+    const NotificationPreference = require('../../models/NotificationPreference');
+    prefs = await NotificationPreference.find({
+      user: { $in: recipients.map(r => r._id) },
+    }).lean();
+  } catch (err) {
+    console.warn('[notify] NotificationPreference unavailable — sending to all recipients:', err.message);
+    return recipients;
+  }
+  const prefsByUser = new Map(prefs.map(p => [String(p.user), p]));
+  return recipients.filter(r => {
+    const pref = prefsByUser.get(String(r._id));
+    if (!pref) return true; // no pref doc → opt-in by default
+    if (pref.emailNotifications === false) return false;
+    // Category-specific opt-in (when admin defined it). Missing = use master switch.
+    if (category === 'compensation' && pref.compensationAlerts === false) return false;
+    if (category === 'kpiVariance' && pref.kpiVarianceAlerts === false) return false;
+    return true;
+  });
+};
+
+/**
+ * Notify when a Sales Goal Plan is activated, closed, or reopened.
+ *
+ * Audience:
+ *   - Management (configured via NOTIFICATION_RECIPIENT_ROLES Settings)
+ *   - All BDMs assigned to the plan (so they see when their target activates
+ *     or a closed plan stops accruing)
+ *
+ * Non-blocking: never throws; never blocks the controller flow.
+ */
+const notifySalesGoalPlanLifecycle = async ({ entityId, planId, planRef, planName, fiscalYear, event, triggeredBy, enrollmentCount }) => {
+  try {
+    const entityName = await resolveEntityName(entityId);
+    const management = await findManagementRecipients(entityId);
+
+    // Pull BDMs assigned to the plan — they're the ones the activation/closure
+    // most directly affects. Use SalesGoalTarget → bdm_id (User._id) → User.
+    let bdms = [];
+    try {
+      const SalesGoalTarget = require('../models/SalesGoalTarget');
+      const targets = await SalesGoalTarget.find({
+        plan_id: planId,
+        target_type: 'BDM',
+        bdm_id: { $exists: true, $ne: null },
+      }).select('bdm_id').lean();
+      const bdmIds = [...new Set(targets.map(t => String(t.bdm_id)))];
+      if (bdmIds.length > 0) {
+        bdms = await User.find({
+          _id: { $in: bdmIds },
+          isActive: true,
+          email: { $exists: true, $ne: '' },
+        }).select('_id email name role').lean();
+      }
+    } catch (err) {
+      console.warn('[notifySalesGoalPlanLifecycle] failed to resolve BDM list:', err.message);
+    }
+
+    // De-dupe management ∪ bdms by _id
+    const seen = new Set();
+    const recipients = [...management, ...bdms].filter(r => {
+      const key = String(r._id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const filtered = await filterByPreference(recipients, 'compensation');
+    if (!filtered.length) return;
+
+    await sendToRecipients(filtered, salesGoalPlanLifecycleTemplate, {
+      event,
+      planRef,
+      planName,
+      fiscalYear,
+      entityName,
+      triggeredBy,
+      enrollmentCount,
+    }, `ERP_SALES_GOAL_${event}`);
+  } catch (err) {
+    console.error('notifySalesGoalPlanLifecycle failed:', err.message);
+  }
+};
+
+/**
+ * Notify when a BDM reaches an incentive tier (called from accrueIncentive).
+ *
+ * Audience:
+ *   - The BDM directly (motivating)
+ *   - The BDM's reports_to chain via PeopleMaster (manager visibility)
+ *   - President (always — they own the incentive program)
+ *
+ * Suppresses noise: only fires once per (plan, bdm, period, tier) combination
+ * — guaranteed by accrueIncentive checking `existing` before calling.
+ */
+const notifyTierReached = async ({ entityId, bdmId, bdmLabel, planRef, fiscalYear, period, periodType, tierCode, tierLabel, tierBudget, attainmentPct }) => {
+  try {
+    const entityName = await resolveEntityName(entityId);
+
+    // Recipient set
+    const recipients = [];
+    const seen = new Set();
+    const addUnique = (u) => {
+      if (!u || !u._id || !u.email) return;
+      const key = String(u._id);
+      if (seen.has(key)) return;
+      seen.add(key);
+      recipients.push(u);
+    };
+
+    // The BDM themselves
+    try {
+      const bdmUser = await User.findById(bdmId).select('_id email name role').lean();
+      addUnique(bdmUser);
+    } catch { /* skip */ }
+
+    // Manager chain via PeopleMaster.reports_to (single hop is usually enough;
+    // expand to N hops here later if reports_to chains run deep).
+    try {
+      const PeopleMaster = require('../models/PeopleMaster');
+      const person = await PeopleMaster.findOne({ user_id: bdmId, is_active: true }).select('reports_to').lean();
+      if (person?.reports_to) {
+        const manager = await PeopleMaster.findById(person.reports_to).select('user_id').lean();
+        if (manager?.user_id) {
+          const mgrUser = await User.findById(manager.user_id).select('_id email name role').lean();
+          addUnique(mgrUser);
+        }
+      }
+    } catch (err) {
+      console.warn('[notifyTierReached] reports_to lookup failed:', err.message);
+    }
+
+    // President(s) — always notified
+    const presidents = await User.find({
+      role: { $in: ROLE_SETS.PRESIDENT_ROLES },
+      isActive: true,
+      email: { $exists: true, $ne: '' },
+    }).select('_id email name role').lean();
+    for (const p of presidents) addUnique(p);
+
+    const filtered = await filterByPreference(recipients, 'compensation');
+    if (!filtered.length) return;
+
+    await sendToRecipients(filtered, tierReachedTemplate, {
+      bdmName: bdmLabel || 'BDM',
+      tierLabel: tierLabel || tierCode,
+      tierBudget,
+      attainmentPct,
+      period,
+      fiscalYear,
+      planRef,
+      entityName,
+    }, 'ERP_TIER_REACHED');
+  } catch (err) {
+    console.error('notifyTierReached failed:', err.message);
+  }
+};
+
+/**
+ * Notify when KPI variance crosses a configured threshold (called from
+ * kpiVarianceAgent on each affected BDM).
+ *
+ * Audience: BDM + reports_to chain + president.
+ * Filtered by NotificationPreference.kpiVarianceAlerts (opt-in).
+ */
+const notifyKpiVariance = async ({ entityId, bdmId, bdmLabel, fiscalYear, period, alerts }) => {
+  try {
+    if (!alerts || alerts.length === 0) return;
+    const entityName = await resolveEntityName(entityId);
+
+    const recipients = [];
+    const seen = new Set();
+    const addUnique = (u) => {
+      if (!u || !u._id || !u.email) return;
+      const key = String(u._id);
+      if (seen.has(key)) return;
+      seen.add(key);
+      recipients.push(u);
+    };
+
+    try {
+      const bdmUser = await User.findById(bdmId).select('_id email name role').lean();
+      addUnique(bdmUser);
+    } catch { /* skip */ }
+
+    try {
+      const PeopleMaster = require('../models/PeopleMaster');
+      const person = await PeopleMaster.findOne({ user_id: bdmId, is_active: true }).select('reports_to').lean();
+      if (person?.reports_to) {
+        const manager = await PeopleMaster.findById(person.reports_to).select('user_id').lean();
+        if (manager?.user_id) {
+          const mgrUser = await User.findById(manager.user_id).select('_id email name role').lean();
+          addUnique(mgrUser);
+        }
+      }
+    } catch (err) {
+      console.warn('[notifyKpiVariance] reports_to lookup failed:', err.message);
+    }
+
+    const presidents = await User.find({
+      role: { $in: ROLE_SETS.PRESIDENT_ROLES },
+      isActive: true,
+      email: { $exists: true, $ne: '' },
+    }).select('_id email name role').lean();
+    for (const p of presidents) addUnique(p);
+
+    const filtered = await filterByPreference(recipients, 'kpiVariance');
+    if (!filtered.length) return;
+
+    await sendToRecipients(filtered, kpiVarianceAlertTemplate, {
+      bdmName: bdmLabel || 'BDM',
+      fiscalYear,
+      period,
+      entityName,
+      alerts,
+    }, 'ERP_KPI_VARIANCE');
+  } catch (err) {
+    console.error('notifyKpiVariance failed:', err.message);
+  }
+};
+
 module.exports = {
   notifyDocumentPosted,
   notifyDocumentReopened,
   notifyApprovalRequest,
   notifyApprovalDecision,
   notifyPayrollPosted,
+  // Phase SG-Q2 W3
+  notifySalesGoalPlanLifecycle,
+  notifyTierReached,
+  notifyKpiVariance,
   // Exported for testing / advanced use
   findManagementRecipients,
   findNotificationRecipients,

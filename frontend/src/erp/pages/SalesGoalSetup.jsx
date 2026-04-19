@@ -12,6 +12,7 @@ import useSalesGoals from '../hooks/useSalesGoals';
 import useEntities from '../hooks/useEntities';
 import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError, showSuccess, showApprovalPending, isApprovalPending } from '../utils/errorToast';
 
 const php = (n) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(n || 0);
@@ -544,6 +545,13 @@ export default function SalesGoalSetup() {
                 <span className="sgs-status-badge" style={statusBadgeStyle(planStatus)}>
                   {planStatus}
                 </span>
+              )}
+              {currentPlan && (
+                <RejectionBanner
+                  row={currentPlan}
+                  moduleKey="SALES_GOAL_PLAN"
+                  variant="row"
+                />
               )}
               {planStatus === 'DRAFT' && selectedPlanId && (
                 <button className="sgs-btn sgs-btn-success" onClick={handleActivate}>Activate Plan</button>

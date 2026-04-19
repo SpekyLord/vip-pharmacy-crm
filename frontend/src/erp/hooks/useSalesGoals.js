@@ -49,6 +49,27 @@ export default function useSalesGoals() {
   const payPayout = (id, data) => api.post(`/incentive-payouts/${id}/pay`, data || {});
   const reversePayout = (id, data) => api.post(`/incentive-payouts/${id}/reverse`, data || {});
 
+  // ── Phase SG-Q2 W3 — Compensation Statement (BDM-facing) ───────────────
+  // Returns { bdm, plan, entity, fiscal_year, period, summary, periods, tier, rows }
+  // BDMs see only their own; finance/admin/president pass ?bdm_id=. The print
+  // route returns HTML that the browser turns into a PDF via window.print().
+  const getCompensationStatement = (params) => api.get('/incentive-payouts/statement', { params });
+  // Build the printable URL for window.open(). The print route returns HTML
+  // that the browser turns into a PDF via the in-page Print button (window.print()).
+  // Auth is cookie-based (httpOnly) so opening in a new window inherits the session
+  // automatically — no token-passing needed.
+  //
+  // Base prefix mirrors api.js getApiUrl(): VITE_API_URL when set, else `/api`
+  // so Vite's dev proxy resolves it to the backend.
+  const compensationStatementPrintUrl = (params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+    });
+    const base = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+    return `${base}/erp/incentive-payouts/statement/print${qs.toString() ? `?${qs.toString()}` : ''}`;
+  };
+
   return {
     ...api,
     getPlans, getPlan, createPlan, updatePlan, activatePlan, reopenPlan, closePlan,
@@ -59,5 +80,7 @@ export default function useSalesGoals() {
     enterManualKpi,
     getPayouts, getPayout, getMyPayouts, getPayablePayouts,
     approvePayout, payPayout, reversePayout,
+    // Phase SG-Q2 W3
+    getCompensationStatement, compensationStatementPrintUrl,
   };
 }

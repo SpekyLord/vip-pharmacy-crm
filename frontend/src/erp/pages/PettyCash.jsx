@@ -7,6 +7,7 @@ import useWarehouses from '../hooks/useWarehouses';
 import useErpSubAccess from '../hooks/useErpSubAccess';
 import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
 import PresidentReverseModal from '../components/PresidentReverseModal';
 import { ROLE_SETS } from '../../constants/roles';
@@ -512,6 +513,7 @@ function TransactionsTab({ funds, pc, canManage, canPresidentReverse, expenseCat
     if (status === 'POSTED') return <span style={styles.badge('green')}>POSTED</span>;
     if (status === 'DRAFT') return <span style={styles.badge('amber')}>DRAFT</span>;
     if (status === 'VOIDED') return <span style={styles.badge('red')}>VOIDED</span>;
+    if (status === 'REJECTED') return <span style={styles.badge('red')}>REJECTED</span>;
     return <span style={styles.badge('gray')}>{status || 'DRAFT'}</span>;
   };
 
@@ -554,7 +556,8 @@ function TransactionsTab({ funds, pc, canManage, canPresidentReverse, expenseCat
             </thead>
             <tbody>
               {transactions.map(txn => (
-                <tr key={txn._id}>
+                <React.Fragment key={txn._id}>
+                <tr>
                   <td style={styles.td}>{txn.txn_date ? new Date(txn.txn_date).toLocaleDateString() : '-'}</td>
                   <td style={styles.td}>{txn.txn_number || '-'}</td>
                   <td style={styles.td}>{typeBadge(txn.txn_type)}</td>
@@ -592,6 +595,20 @@ function TransactionsTab({ funds, pc, canManage, canPresidentReverse, expenseCat
                     </div>
                   </td>
                 </tr>
+                {txn.status === 'REJECTED' && txn.rejection_reason && (
+                  <tr>
+                    <td colSpan={9} style={{ ...styles.td, padding: '6px 12px' }}>
+                      <RejectionBanner
+                        row={txn}
+                        moduleKey="PETTY_CASH"
+                        variant="page"
+                        docLabel={txn.txn_number || `Petty Cash Txn`}
+                        onResubmit={(row) => { setEditingTxn(row); setShowCreate(true); }}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>

@@ -4453,3 +4453,91 @@ Console — Phase 31" section for the architecture deep-dive.
 
 **Known limitation (documented, not a bug).** Concurrent accruals on the exact same `(plan, bdm, period, period_type, program)` key can theoretically produce one orphaned JE if two snapshot-compute processes race in the milliseconds between `findOne` and `findOneAndUpdate`. In practice, `AgentConfig.is_running` serializes cron runs, and manual president computes are rare, so this race is a documented theoretical risk rather than an observed bug. Week 3 can add per-accrual transaction wrap (requires threading `session` through `generateJeNumber` → `DocSequence.getNext`) if production shows the race occurring.
 
+---
+
+## Phase SG-Q2 Week 3 — Compensation Statement, Notifications, Variance Agent, Mobile
+
+**Shipped 2026-04-19.** Closes the deferred items #16-19 from the SG-Q2 Week 2 hand-off.
+
+### #16 — Compensation Statement endpoint + "My Compensation" tab + PDF
+- **Backend.** `GET /api/erp/incentive-payouts/statement` (controller `getCompensationStatement`) — returns `{ bdm, plan, entity, fiscal_year, period, summary: {earned, accrued, adjusted, paid, ...}, periods: […], tier: {…}, rows: […] }`. BDMs see only their own; finance/admin/president pass `?bdm_id=`. Privileged callers MUST pass `?bdm_id=` (HTTP 400 otherwise) — no silent self-id fallback (Rule #21).
+- **Print route.** `GET /api/erp/incentive-payouts/statement/print` returns printable HTML via `templates/compensationStatement.js` (`renderCompensationStatement`). Browser-print produces the PDF (same pattern as `salesReceipt.js` / `pettyCashForm.js`). Cookie auth carries to the new window.
+- **Lookup-driven branding.** `COMP_STATEMENT_TEMPLATE` Lookup category (per-entity) overrides `HEADER_TITLE`, `HEADER_SUBTITLE`, `DISCLAIMER`, `SIGNATORY_LINE`, `SIGNATORY_TITLE`. Falls back to safe defaults so fresh entities render day one. Subscribers re-brand from Control Center → Lookup Tables — zero code change.
+- **Frontend.** `SalesGoalBdmView.jsx` now has a top-of-page tab strip: **Performance** (existing content) | **My Compensation** (new statement view). Compensation tab loads lazily via `sg.getCompensationStatement()`. The Print button opens `sg.compensationStatementPrintUrl(...)` in a new tab; user uses browser Print menu to save as PDF.
+- **Hook.** `useSalesGoals` exports `getCompensationStatement(params)` and `compensationStatementPrintUrl(params)` helper (uses `import.meta.env.VITE_API_URL || '/api'` to match `services/api.js`).
+- **Banner.** `WORKFLOW_GUIDES.salesGoalCompensation` added — explains earned/accrued/paid/adjusted breakdown + print flow + opt-out.
+- **Definitions** (used in summary rollup):
+  - `earned` = SUM(tier_budget) for status ∈ {ACCRUED, APPROVED, PAID}
+  - `accrued` = SUM(tier_budget) for status = ACCRUED (waiting on authority)
+  - `adjusted` = SUM(uncapped_budget − tier_budget) for cap-reduced rows + SUM(tier_budget) for status = REVERSED
+  - `paid` = SUM(tier_budget) for status = PAID
+
+### #17 — Notifications on plan activate/close/reopen + tier-milestone
+- **Templates.** `templates/erpEmails.js` adds `salesGoalPlanLifecycleTemplate` (handles ACTIVATED/CLOSED/REOPENED with shared layout) + `tierReachedTemplate` + `kpiVarianceAlertTemplate`.
+- **Service.** `erpNotificationService.js` adds `notifySalesGoalPlanLifecycle`, `notifyTierReached`, `notifyKpiVariance`, plus a `filterByPreference(recipients, category)` helper that respects `NotificationPreference.compensationAlerts` / `kpiVarianceAlerts`.
+- **Wiring.** `salesGoalController.{activatePlan, reopenPlan, closePlan}` fire `notifySalesGoalPlanLifecycle` after the txn commits (fire-and-forget `.catch()`). `salesGoalService.accrueIncentive` fires `notifyTierReached` after the atomic accrual succeeds (only on a fresh row, never on a race-recovery hit).
+- **Audience.**
+  - Plan lifecycle → management (`NOTIFICATION_RECIPIENT_ROLES` Settings) ∪ all BDMs assigned to the plan, de-duped by user_id.
+  - Tier reached → BDM + reports_to chain (PeopleMaster) + president(s).
+  - KPI variance → BDM + reports_to chain + president(s).
+- **Opt-in.** `NotificationPreference` schema extended with two new boolean fields: `compensationAlerts` (default `true`) gates plan-lifecycle + tier-reached. `kpiVarianceAlerts` (default `true`) gates variance alerts. Master `emailNotifications=false` still suppresses everything.
+
+### #18 — kpiVarianceAgent + KPI_VARIANCE_THRESHOLDS lookup
+- **Agent.** `backend/agents/kpiVarianceAgent.js` (FREE, no AI). Walks every active Entity → ACTIVE plan → YTD KpiSnapshot → driver_kpis → checks each KPI against the per-KPI deviation threshold from `KPI_VARIANCE_THRESHOLDS` Lookup. Alerts dispatched via `notifyKpiVariance` per BDM (one email per BDM with all alerts batched).
+- **Direction-aware.** `LOWER_BETTER_KPIS` set (LOST_SALES_INCIDENTS, EXPIRY_RETURNS) inverts the deviation calc — overshooting the target is the bad state for those KPIs.
+- **Threshold lookup.** `KPI_VARIANCE_THRESHOLDS` Lookup category, `code = KPI_CODE` (or `GLOBAL` for fallback). `metadata.warning_pct` triggers `warning` severity; `metadata.critical_pct` triggers `critical`. Defaults: warning at 20%, critical at 40% deviation. Per-entity, subscriber-configurable from Control Center.
+- **Registry + scheduler.** Agent key `kpi_variance` registered in `agentRegistry.js`. Cron: `0 6 2 * *` Asia/Manila (monthly day 2 at 6:00 AM — runs the day after `kpi_snapshot` so it reads the freshly-computed snapshots). Manual Run Now via Agent Console.
+- **Active-only.** Skips BDMs whose PeopleMaster is `is_active=false` so deactivated BDMs never appear in alerts.
+
+### #19 — 360px mobile breakpoint
+- **Pages.** `SalesGoalBdmView.jsx`, `SalesGoalDashboard.jsx`, `IncentivePayoutLedger.jsx` — added `@media(max-width: 360px)` blocks. Single-column summary cards, smaller heading sizes, full-width buttons, scroll-friendly tabs, condensed table cells, smaller ring (96px from 120px) on BdmView.
+- **Print template.** `compensationStatement.js` includes `@media(max-width: 360px)` so a BDM can print/preview from a phone.
+- **Banner already mobile-friendly.** `WorkflowGuide.jsx` already had a 600px breakpoint; no change needed.
+
+### Per-accrual transaction wrap (production hardening)
+The "documented theoretical risk" from Week 2 is now closed.
+- **Threaded.** `DocSequence.getNext(key, { session })` now accepts a session and forwards it. `generateJeNumber({ entityId, date, session })` threads it through. `journalEngine.createAndPostJournal` now passes `options.session` into `generateJeNumber`.
+- **Wrapped.** `salesGoalService.accrueIncentive` opens a `mongoose.startSession()` + `session.withTransaction()` around (a) re-check for race winner, (b) `postAccrualJournal({ session })`, (c) `IncentivePayout.findOneAndUpdate({ session })`. On commit failure the JE is rolled back; on E11000 race the existing payout is read and returned.
+- **Backwards-compatible.** Every callsite that doesn't pass a session (e.g. legacy controllers) keeps the old non-transactional behavior — the session option is purely additive.
+
+### Wiring map (Week 3)
+
+```
+backend/erp/models/DocSequence.js                   • getNext(key, options) — accepts {session}
+backend/erp/services/docNumbering.js                • generateJeNumber({entityId, date, session})
+backend/erp/services/journalEngine.js               • createAndPostJournal threads options.session into generateJeNumber
+backend/erp/services/salesGoalService.js            • accrueIncentive wraps JE + upsert in mongoose.session txn
+backend/erp/controllers/incentivePayoutController.js• getCompensationStatement, printCompensationStatement (NEW)
+backend/erp/templates/compensationStatement.js      • NEW — renderCompensationStatement(data)
+backend/erp/routes/incentivePayoutRoutes.js         • GET /statement, GET /statement/print (BEFORE /:id)
+backend/erp/services/erpNotificationService.js      • notifySalesGoalPlanLifecycle, notifyTierReached, notifyKpiVariance
+backend/erp/controllers/salesGoalController.js      • activate/reopen/close fire notifySalesGoalPlanLifecycle (post-txn)
+backend/templates/erpEmails.js                      • salesGoalPlanLifecycleTemplate, tierReachedTemplate, kpiVarianceAlertTemplate
+backend/models/NotificationPreference.js            • +compensationAlerts, +kpiVarianceAlerts
+backend/agents/kpiVarianceAgent.js                  • NEW — variance detection + dispatch
+backend/agents/agentRegistry.js                     • +kpi_variance entry
+backend/agents/agentScheduler.js                    • cron 0 6 2 * * Asia/Manila
+
+frontend/src/erp/hooks/useSalesGoals.js             • getCompensationStatement, compensationStatementPrintUrl
+frontend/src/erp/pages/SalesGoalBdmView.jsx         • Tab strip + My Compensation panel + Print button + 360px CSS
+frontend/src/erp/pages/SalesGoalDashboard.jsx       • 360px CSS
+frontend/src/erp/pages/IncentivePayoutLedger.jsx    • 360px CSS (extended from W2 stub)
+frontend/src/erp/components/WorkflowGuide.jsx       • +salesGoalCompensation banner
+```
+
+### Acceptance checklist (Week 3)
+- [ ] `node -c` passes on all 14 modified backend files.
+- [ ] `npx vite build` passes (verified: 9.06s, no errors).
+- [ ] BDM opens `/erp/sales-goals/my` → "My Compensation" tab loads, summary cards populate, Print button opens printable HTML.
+- [ ] President opens `/erp/sales-goals/bdm/:bdmId` → "My Compensation" tab loads with that BDM's data; Print URL carries `?bdm_id=`.
+- [ ] President activates a plan → all assigned BDMs + management receive `salesGoalPlanLifecycleTemplate` email (or are skipped if `compensationAlerts=false`).
+- [ ] BDM accrues a tier (snapshot run) → BDM + manager + president receive `tierReachedTemplate`.
+- [ ] Run `kpi_variance` from Agent Console → AgentRun row written; BDMs with deviations > threshold receive `kpiVarianceAlertTemplate` (one email each, batched alerts).
+- [ ] Open BdmView at 360px viewport (Chrome DevTools) → no horizontal scroll, tab strip scrolls horizontally, summary cards stack 1-col.
+- [ ] Concurrent accruals on the same key → one row, one JE, one settlement; no orphans (txn wrap holds).
+
+### Known limitations (Week 3)
+- **Print route returns HTML, not PDF binary.** Browser does the PDF conversion via "Save as PDF" in Print menu. This is the same pattern as every other print route (`/print/receipt/:id`, etc.) — no PDF library added (would bloat the bundle and require font management). If a true PDF binary is needed later, `puppeteer` or `pdfkit` can be added without changing the controller signature.
+- **In-app notifications.** Only email channel implemented. SMS + in-app are scaffolded in `NotificationPreference` (`smsNotifications`, `inAppAlerts`) but not yet routed by `notifyTierReached` / `notifyKpiVariance` — opt-in slots are reserved for when a unified push/SMS dispatcher exists.
+- **Reports_to chain depth = 1.** `notifyTierReached` and `notifyKpiVariance` look up one manager hop. Multi-level escalation (skip-level managers) is straightforward to add when the org chart needs it.
+

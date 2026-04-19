@@ -52,9 +52,14 @@ const salesGoalPlanSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['DRAFT', 'ACTIVE', 'CLOSED'],
+    enum: ['DRAFT', 'ACTIVE', 'CLOSED', 'REJECTED'],
     default: 'DRAFT',
   },
+
+  // Rejection (Phase G6)
+  rejection_reason: { type: String, trim: true, default: '' },
+  rejected_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejected_at: { type: Date },
 
   // Company-wide targets
   baseline_revenue: { type: Number, default: 0 },  // Previous year actual (e.g., PHP 25M)

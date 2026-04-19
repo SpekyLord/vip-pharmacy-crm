@@ -13,6 +13,7 @@ import PresidentReverseModal from '../components/PresidentReverseModal';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
@@ -194,7 +195,12 @@ export default function Collections() {
                     <td style={{ color: '#7c3aed' }}>{c.total_partner_rebates ? `P${c.total_partner_rebates.toFixed(2)}` : '—'}</td>
                     <td>{c.settled_csis?.length || 0}</td>
                     <td style={{ fontSize: 11 }}>{c.petty_cash_fund_id ? <span className="badge" style={{ background: '#fef3c7', color: '#92400e' }}>PC: {c.petty_cash_fund_id.fund_code}</span> : c.bank_account_id ? <span className="badge" style={{ background: '#dbeafe', color: '#1e40af' }}>{c.bank_account_id.bank_name}</span> : '—'}</td>
-                    <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span></td>
+                    <td>
+                      <span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span>
+                      <div style={{ marginTop: 4 }}>
+                        <RejectionBanner row={c} moduleKey="COLLECTION" variant="row" />
+                      </div>
+                    </td>
                     <td onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {(c.status === 'DRAFT' || c.status === 'ERROR') && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
                       {c.status === 'DRAFT' && <button className="btn btn-sm" style={{ border: '1px solid #ef4444', color: '#ef4444', background: '#fff' }} onClick={() => handleDeleteDraft(c._id)}>Del</button>}
@@ -228,6 +234,9 @@ export default function Collections() {
                       <div className="coll-card-sub">{new Date(c.cr_date).toLocaleDateString('en-PH')}</div>
                     </div>
                     <span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span>
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <RejectionBanner row={c} moduleKey="COLLECTION" variant="row" />
                   </div>
                   <div className="coll-card-grid">
                     <div className="coll-card-item">
@@ -290,6 +299,16 @@ export default function Collections() {
                   <h2>CR# {selected.cr_no}</h2>
                   <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}>&times;</button>
                 </div>
+                <RejectionBanner
+                  row={selected}
+                  moduleKey="COLLECTION"
+                  variant="page"
+                  docLabel={`CR# ${selected.cr_no}`}
+                  onResubmit={(row) => {
+                    setSelected(null);
+                    handleValidate([row._id]);
+                  }}
+                />
                 <p><strong>Hospital / Customer:</strong> {selected.hospital_id?.hospital_name || selected.customer_id?.customer_name || '—'}</p>
                 <p><strong>Date:</strong> {new Date(selected.cr_date).toLocaleDateString('en-PH')}</p>
                 <p><strong>Amount:</strong> P{(selected.cr_amount || 0).toFixed(2)}</p>

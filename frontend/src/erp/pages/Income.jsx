@@ -18,6 +18,7 @@ import usePeople from '../hooks/usePeople';
 import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { useLookupOptions } from '../hooks/useLookups';
 
 const pageStyles = `
@@ -714,11 +715,16 @@ export default function Income() {
                   <span className={`badge ${STATUS_BADGES[selected.status] || ''}`}>{selected.status}</span>
                 </div>
 
-                {selected.return_reason && selected.status === 'RETURNED' && (
-                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 13 }}>
-                    <strong>Return Reason:</strong> {selected.return_reason}
-                  </div>
-                )}
+                <RejectionBanner
+                  row={selected}
+                  moduleKey="INCOME"
+                  variant="page"
+                  docLabel={`${bdmName(selected)} | ${selected.period} ${cycleLabel(selected.cycle)}`}
+                  onResubmit={() => {
+                    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                />
+
 
                 {/* ── Breakdown toggle ── */}
                 <button style={{ padding: '6px 14px', border: '1px solid #2563eb', borderRadius: 8, background: 'transparent', color: '#2563eb', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8 }}

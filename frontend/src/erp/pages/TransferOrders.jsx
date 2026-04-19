@@ -11,6 +11,7 @@ import { ROLES } from '../../constants/roles';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
@@ -436,7 +437,12 @@ export default function TransferOrders() {
                         <td>{t.target_entity_id?.entity_name || '—'}</td>
                         <td>{t.total_items}</td>
                         <td>₱{(t.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{t.status}</span></td>
+                        <td>
+                          <span className="badge" style={{ background: sc.bg, color: sc.text }}>{t.status}</span>
+                          <div style={{ marginTop: 4 }}>
+                            <RejectionBanner row={t} moduleKey="IC_TRANSFER" variant="row" />
+                          </div>
+                        </td>
                         <td onClick={e => e.stopPropagation()}>
                           {t.status === 'DRAFT' && isPresidentOrAdmin && <button className="btn btn-sm btn-success" onClick={() => handleAction(t._id, 'approve')}>Approve</button>}
                           {t.status === 'APPROVED' && isPresidentOrAdmin && <button className="btn btn-sm btn-warning" onClick={() => handleAction(t._id, 'ship')}>Ship</button>}
@@ -465,6 +471,9 @@ export default function TransferOrders() {
                           <div className="transfers-card-sub">{new Date(t.transfer_date).toLocaleDateString()}</div>
                         </div>
                         <span className="badge" style={{ background: sc.bg, color: sc.text }}>{t.status}</span>
+                      </div>
+                      <div style={{ marginTop: 6 }}>
+                        <RejectionBanner row={t} moduleKey="IC_TRANSFER" variant="row" />
                       </div>
                       <div className="transfers-card-grid">
                         <div className="transfers-card-item">
