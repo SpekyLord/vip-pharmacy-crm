@@ -11,7 +11,11 @@
  */
 const mongoose = require('mongoose');
 
-const ALL_DOC_TYPES = ['CSI', 'CR', 'CWT_2307', 'GAS_RECEIPT', 'ODOMETER', 'OR', 'UNDERTAKING', 'DR'];
+// Phase H6 — Sales OCR adds BANK_SLIP (bank deposit slip) and CHECK (received
+// check) so BDMs can scan any sales-side document in the field. Existing
+// subscriber entities get both new chips enabled by default; admins can
+// deselect in the existing OCR Settings panel to restrict.
+const ALL_DOC_TYPES = ['CSI', 'CR', 'CWT_2307', 'GAS_RECEIPT', 'ODOMETER', 'OR', 'UNDERTAKING', 'DR', 'BANK_SLIP', 'CHECK'];
 
 const ocrSettingsSchema = new mongoose.Schema({
   entity_id: {

@@ -25,6 +25,16 @@ const consignmentTrackerSchema = new mongoose.Schema({
     required: true
   },
   hospital_name: { type: String },
+  // Phase H6 — Sales OCR: a DR can represent either a standard consignment
+  // (converts to CSI when consumed) or a sampling dispatch (free product,
+  // never converts to sale). The scanner's drRouter detects the marker on
+  // the slip and sets this field. Existing records default to CONSIGNMENT
+  // so every downstream query is backward compatible.
+  dispatch_type: {
+    type: String,
+    enum: ['CONSIGNMENT', 'SAMPLING'],
+    default: 'CONSIGNMENT',
+  },
   dr_ref: { type: String, required: true },
   dr_date: { type: Date, required: true },
   product_id: {
@@ -74,10 +84,14 @@ consignmentTrackerSchema.pre('save', function (next) {
     this.days_outstanding = Math.floor((Date.now() - this.dr_date.getTime()) / (1000 * 60 * 60 * 24));
   }
   // Auto-update aging_status
+  // Phase H6 — SAMPLING dispatches never convert to sale, so skip FORCE_CSI.
+  // They still age OPEN → OVERDUE → COLLECTED so unused samples surface in
+  // the OVERDUE bucket for BDM follow-up (sample accountability).
+  const isSampling = this.dispatch_type === 'SAMPLING';
   if (this.qty_remaining <= 0) {
     this.status = 'FULLY_CONSUMED';
     this.aging_status = 'COLLECTED';
-  } else if (this.days_outstanding >= this.max_days_force_csi) {
+  } else if (!isSampling && this.days_outstanding >= this.max_days_force_csi) {
     this.aging_status = 'FORCE_CSI';
   } else if (this.days_outstanding >= this.max_days_alert) {
     this.aging_status = 'OVERDUE';

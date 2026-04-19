@@ -88,7 +88,7 @@ const processDocument = catchAsync(async (req, res) => {
     }
   };
 
-  const writeUsage = async ({ vision_called, ai_fallback_called, preprocessing_applied, ai_trigger_reason, vendor_auto_learn_action, success, classification, error_message }) => {
+  const writeUsage = async ({ vision_called, ai_fallback_called, preprocessing_applied, ai_trigger_reason, vendor_auto_learn_action, success, classification, error_message, ai_skipped_reason, cost_usd }) => {
     if (!entityId || !settings.usage_logging_enabled) return;
     try {
       const action = vendor_auto_learn_action || 'NONE';
@@ -108,6 +108,9 @@ const processDocument = catchAsync(async (req, res) => {
         latency_ms: Date.now() - startedAt,
         error_message: error_message || null,
         skipped_reason: skipReason,
+        // Phase H6 — AI spend-cap visibility + cost attribution for AI Budget
+        ai_skipped_reason: ai_skipped_reason || 'NONE',
+        cost_usd: typeof cost_usd === 'number' && cost_usd > 0 ? cost_usd : 0,
       });
     } catch (err) {
       console.error('[OCR] OcrUsageLog write failed:', err.message);
@@ -146,6 +149,8 @@ const processDocument = catchAsync(async (req, res) => {
   let preprocessing_applied = false;
   let ai_trigger_reason = 'NONE';
   let vendor_auto_learn_action = 'NONE';
+  let ai_skipped_reason = 'NONE';
+  let cost_usd = 0;
   try {
     // Phase H4: enhance the image for Vision (auto-rotate, grayscale, contrast, sharpen).
     // Original buffer is preserved on S3 so the BDM still sees their actual photo;
@@ -171,6 +176,8 @@ const processDocument = catchAsync(async (req, res) => {
     ai_fallback_called = !!processed.ai_fallback_used;
     ai_trigger_reason = processed.ai_trigger_reason || 'NONE';
     vendor_auto_learn_action = processed.vendor_auto_learn?.action || 'NONE';
+    ai_skipped_reason = processed.ai_skipped_reason || 'NONE';
+    cost_usd = typeof processed.ai_cost_usd === 'number' ? processed.ai_cost_usd : 0;
 
     const attachmentId = await writeAttachment(true);
     await writeUsage({
@@ -181,6 +188,8 @@ const processDocument = catchAsync(async (req, res) => {
       vendor_auto_learn_action,
       success: true,
       classification: processed.classification,
+      ai_skipped_reason,
+      cost_usd,
     });
 
     return res.status(200).json({
@@ -215,6 +224,8 @@ const processDocument = catchAsync(async (req, res) => {
       success: false,
       classification: null,
       error_message: err.message,
+      ai_skipped_reason,
+      cost_usd,
     });
     return res.status(200).json({
       success: true,

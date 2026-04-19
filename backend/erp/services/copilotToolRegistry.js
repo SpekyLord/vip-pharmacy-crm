@@ -524,6 +524,589 @@ async function draftNewEntry(ctx, args = {}) {
   };
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+// Phase G8 (P2-10 through P2-19) — 10 new Copilot handlers
+//
+// 5 Secretary: createTask, listOverdueItems, draftDecisionBrief,
+//              draftAnnouncement, weeklySummary
+// 5 HR:        suggestKpiTargets, draftCompAdjustment, auditSelfRatings,
+//              rankPeople, recommendHrAction
+//
+// All write_confirm handlers route through existing controllers / models —
+// never bypass gateApproval / period locks (Rule #20). All handlers derive
+// entity from ctx.entityId — never accept entity_id in args (Rule #21).
+// ═════════════════════════════════════════════════════════════════════════
+
+// ── Secretary: CREATE_TASK (write_confirm) ────────────────────────────────
+async function createTask(ctx, args = {}) {
+  const { title, description = '', assignee_user_id = null, due_date = null, priority = 'normal' } = args;
+  if (!title || !String(title).trim()) throw bad('title is required');
+
+  const Task = tryModel('Task');
+  if (!Task) throw bad('Task model not registered', 500);
+  const User = tryModel('User');
+
+  // Normalise assignee (default = self)
+  let assigneeId = null;
+  let assigneeName = ctx.user.full_name || ctx.user.name || 'Me';
+  if (assignee_user_id && mongoose.isValidObjectId(assignee_user_id)) {
+    const u = User ? await User.findById(assignee_user_id).select('_id name full_name').lean() : null;
+    if (!u) throw bad('assignee not found', 404);
+    assigneeId = u._id;
+    assigneeName = u.full_name || u.name;
+  }
+
+  // Normalise due date — accept ISO; relative words ("friday", "next week") are
+  // resolved by Claude into ISO before this handler runs, so we only need
+  // defensive parsing here.
+  let dueDate = null;
+  if (due_date) {
+    const d = new Date(due_date);
+    if (!isNaN(d.getTime())) dueDate = d;
+  }
+
+  const cleanPriority = Task.TASK_PRIORITIES && Task.TASK_PRIORITIES.includes(String(priority).toLowerCase())
+    ? String(priority).toLowerCase()
+    : 'normal';
+
+  if (ctx.mode !== 'execute') {
+    return {
+      result: {
+        confirmation_payload: {
+          tool_code: 'CREATE_TASK',
+          title: String(title).slice(0, 200),
+          description: String(description).slice(0, 5000),
+          assignee_user_id: assigneeId ? String(assigneeId) : null,
+          assignee_name: assigneeName,
+          due_date: dueDate ? dueDate.toISOString() : null,
+          priority: cleanPriority,
+        },
+        confirmation_text: `Create task "${String(title).slice(0, 80)}"${dueDate ? ` due ${dueDate.toISOString().slice(0, 10)}` : ''} for ${assigneeName}?`,
+      },
+      display: 'Task draft prepared. Click Execute to save.',
+    };
+  }
+
+  const doc = await Task.create({
+    entity_id: ctx.entityId,
+    title: String(title).slice(0, 200),
+    description: String(description).slice(0, 5000),
+    assignee_user_id: assigneeId,
+    created_by: ctx.user._id,
+    due_date: dueDate,
+    priority: cleanPriority,
+  });
+
+  return {
+    result: { ok: true, task_id: String(doc._id), assignee_name: assigneeName },
+    display: `Task created: "${doc.title}"${dueDate ? ` (due ${dueDate.toISOString().slice(0, 10)})` : ''}`,
+  };
+}
+
+// ── Secretary: LIST_OVERDUE_ITEMS (read) ──────────────────────────────────
+async function listOverdueItems(ctx, args = {}) {
+  const scope = String(args.scope || 'both').toLowerCase();
+  const assigneeMode = String(args.assignee || 'me').toLowerCase();
+  const limit = clampLimit(args.limit, 50, 200);
+  const now = new Date();
+
+  const out = { tasks: [], approvals: [] };
+
+  if (scope === 'tasks' || scope === 'both') {
+    const Task = tryModel('Task');
+    if (Task) {
+      const filter = {
+        entity_id: ctx.entityId,
+        status: { $in: ['OPEN', 'IN_PROGRESS'] },
+        due_date: { $lt: now, $ne: null },
+      };
+      if (!isPrivileged(ctx.user.role) || assigneeMode === 'me') {
+        filter.assignee_user_id = ctx.user._id;
+      }
+      const rows = await Task.find(filter).sort({ due_date: 1 }).limit(limit).lean();
+      out.tasks = rows.map(t => ({
+        id: String(t._id),
+        title: t.title,
+        due_date: t.due_date,
+        priority: t.priority,
+        days_overdue: Math.floor((now - t.due_date) / (24 * 3600 * 1000)),
+      }));
+    }
+  }
+
+  if (scope === 'approvals' || scope === 'both') {
+    const AR = tryModel('ApprovalRequest');
+    if (AR) {
+      const cutoff = new Date(now.getTime() - 3 * 24 * 3600 * 1000); // 3 days = overdue for approvals
+      // ApprovalRequest has no created_at field — `requested_at` is the canonical
+      // submission timestamp. Fall back to createdAt from timestamps plugin for older rows.
+      const filter = {
+        entity_id: ctx.entityId,
+        status: 'PENDING',
+        $or: [{ requested_at: { $lt: cutoff } }, { createdAt: { $lt: cutoff } }],
+      };
+      const rows = await AR.find(filter).sort({ requested_at: 1 }).limit(limit).lean();
+      out.approvals = rows.map(a => ({
+        id: String(a._id),
+        module: a.module || a.doc_type,
+        doc_ref: a.doc_ref,
+        days_waiting: Math.floor((now - (a.requested_at || a.createdAt)) / (24 * 3600 * 1000)),
+      }));
+    }
+  }
+
+  const total = out.tasks.length + out.approvals.length;
+  return {
+    result: { total, ...out },
+    display: `${total} overdue item(s): ${out.tasks.length} task(s), ${out.approvals.length} approval(s).`,
+  };
+}
+
+// ── Secretary: DRAFT_DECISION_BRIEF (read) ────────────────────────────────
+// Pure aggregation — reuses searchDocuments + summarizeModule internally to
+// assemble a structured 1-page brief. No Claude writes.
+async function draftDecisionBrief(ctx, args = {}) {
+  const { subject, modules = [] } = args;
+  if (!subject || !String(subject).trim()) throw bad('subject is required');
+
+  // Gather facts via existing SEARCH_DOCUMENTS handler (guarantees entity scope)
+  let facts = [];
+  try {
+    const search = await searchDocuments(ctx, { query: subject, modules, limit: 15 });
+    facts = search?.result?.items || [];
+  } catch {
+    facts = [];
+  }
+
+  const brief = {
+    subject: String(subject).slice(0, 200),
+    generated_at: new Date().toISOString(),
+    background: facts.length
+      ? `${facts.length} related document(s) across ${new Set(facts.map(f => f.module)).size} module(s). Most recent: ${facts[0]?.ref || facts[0]?.id}.`
+      : 'No related documents found in this entity.',
+    facts: facts.slice(0, 8).map(f => ({ module: f.module, ref: f.ref, status: f.status, excerpt: f.excerpt })),
+    options: [
+      'Option A — proceed as currently scoped',
+      'Option B — defer pending more data',
+      'Option C — escalate to finance for impact review',
+    ],
+    recommendation: 'Insufficient automated signal — use this brief as a fact scaffold and overlay your judgement.',
+  };
+  return {
+    result: brief,
+    display: `Brief assembled for "${brief.subject}" with ${facts.length} supporting fact(s).`,
+  };
+}
+
+// ── Secretary: DRAFT_ANNOUNCEMENT (write_confirm) ─────────────────────────
+async function draftAnnouncement(ctx, args = {}) {
+  const { subject, body, scope_type, recipient_role, target_entity_id, priority = 'normal' } = args;
+  if (!subject || !body) throw bad('subject and body are required');
+  const st = String(scope_type || '').toLowerCase();
+  if (!['by_role', 'by_entity', 'both'].includes(st)) {
+    throw bad('scope_type must be by_role | by_entity | both');
+  }
+  const User = tryModel('User');
+  if (!User) throw bad('User model not registered', 500);
+
+  // Resolve recipient filter. Entity filter NEVER accepts client entity_id
+  // unless the caller is privileged and explicitly wants a different entity.
+  const filter = { isActive: true };
+  if (st === 'by_role' || st === 'both') {
+    if (!recipient_role) throw bad('recipient_role required for by_role / both');
+    filter.role = String(recipient_role).toLowerCase();
+  }
+  if (st === 'by_entity' || st === 'both') {
+    // privileged users can broadcast to a different entity they have access to;
+    // non-privileged users are always scoped to their own working entity.
+    const useEntity = isPrivileged(ctx.user.role) && target_entity_id && mongoose.isValidObjectId(target_entity_id)
+      ? target_entity_id
+      : ctx.entityId;
+    filter.$or = [
+      { entity_id: useEntity },
+      { entity_ids: useEntity },
+    ];
+  }
+
+  const recipients = await User.find(filter).select('_id role full_name name').lean();
+
+  if (ctx.mode !== 'execute') {
+    return {
+      result: {
+        confirmation_payload: {
+          tool_code: 'DRAFT_ANNOUNCEMENT',
+          subject: String(subject).slice(0, 200),
+          body: String(body).slice(0, 5000),
+          scope_type: st,
+          recipient_role: recipient_role || null,
+          target_entity_id: target_entity_id || null,
+          priority,
+          recipient_count: recipients.length,
+        },
+        confirmation_text: `Broadcast "${String(subject).slice(0, 80)}" to ${recipients.length} recipient(s) (${st.replace('_', ' ')})?`,
+        scope_summary: st.replace('_', ' '),
+        recipient_count: recipients.length,
+      },
+      display: `Broadcast prepared for ${recipients.length} recipient(s). Click Execute to send.`,
+    };
+  }
+
+  // Execute — fan out via MessageInbox. One row per recipient so individual
+  // read/archive state works per-user; broadcast rows (recipientUserId=null)
+  // already exist in this system and work too, but targeted rows give
+  // better telemetry and per-user archival.
+  const MessageInbox = require('../../models/MessageInbox');
+  const created = [];
+  for (const u of recipients) {
+    try {
+      const msg = await MessageInbox.create({
+        senderName: ctx.user.full_name || ctx.user.name || 'President',
+        senderRole: ctx.user.role,
+        senderUserId: ctx.user._id,
+        title: String(subject).slice(0, 200),
+        body: String(body).slice(0, 5000),
+        category: 'announcement',
+        priority: ['normal', 'important', 'high'].includes(String(priority)) ? String(priority) : 'normal',
+        recipientRole: u.role,
+        recipientUserId: u._id,
+      });
+      created.push(String(msg._id));
+    } catch (e) {
+      // one bad recipient shouldn't kill the broadcast — log and continue
+      console.warn('[draftAnnouncement] send failed for user:', String(u._id), e.message);
+    }
+  }
+
+  return {
+    result: { ok: true, sent: created.length, message_ids: created.slice(0, 10) },
+    display: `Announcement sent to ${created.length} recipient(s).`,
+  };
+}
+
+// ── Secretary: WEEKLY_SUMMARY (read) ──────────────────────────────────────
+async function weeklySummary(ctx, args = {}) {
+  const offset = Number.isInteger(args.week_offset) ? args.week_offset : 0;
+  const now = new Date();
+  const day = now.getDay() === 0 ? 7 : now.getDay();
+  const start = new Date(now); start.setDate(now.getDate() - (day - 1) + offset * 7); start.setHours(0, 0, 0, 0);
+  const end = new Date(start); end.setDate(end.getDate() + 7);
+
+  const mongooseLib = mongoose;
+  const entityObjId = new mongooseLib.Types.ObjectId(ctx.entityId);
+
+  const SalesLine = tryModel('SalesLine');
+  const Collection = tryModel('Collection');
+  const AR = tryModel('ApprovalRequest');
+
+  const [salesAgg, collAgg, pendingApproval, approvedThisWeek] = await Promise.all([
+    SalesLine ? SalesLine.aggregate([
+      { $match: { entity_id: entityObjId, csi_date: { $gte: start, $lt: end } } },
+      { $group: { _id: null, total: { $sum: { $ifNull: ['$invoice_total', 0] } }, count: { $sum: 1 } } },
+    ]) : Promise.resolve([]),
+    Collection ? Collection.aggregate([
+      { $match: { entity_id: entityObjId, cr_date: { $gte: start, $lt: end } } },
+      { $group: { _id: null, total: { $sum: { $ifNull: ['$cr_amount', 0] } }, count: { $sum: 1 } } },
+    ]) : Promise.resolve([]),
+    AR ? AR.countDocuments({ entity_id: entityObjId, status: 'PENDING' }) : Promise.resolve(0),
+    AR ? AR.countDocuments({ entity_id: entityObjId, status: 'APPROVED', decided_at: { $gte: start, $lt: end } }) : Promise.resolve(0),
+  ]);
+
+  const sales = salesAgg[0] || { total: 0, count: 0 };
+  const coll = collAgg[0] || { total: 0, count: 0 };
+  const collRatio = sales.total > 0 ? coll.total / sales.total : 0;
+
+  const result = {
+    week_of: { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) },
+    sales: { total: Number(sales.total.toFixed(2)), count: sales.count },
+    collections: { total: Number(coll.total.toFixed(2)), count: coll.count, ratio_vs_sales: Number((collRatio * 100).toFixed(1)) },
+    approvals: { pending_now: pendingApproval, approved_this_week: approvedThisWeek },
+  };
+  return {
+    result,
+    display: `Week ${result.week_of.from}: sales ₱${result.sales.total.toLocaleString()} · collections ${result.collections.ratio_vs_sales}% of sales · ${result.approvals.pending_now} pending approval(s).`,
+  };
+}
+
+// ── HR: SUGGEST_KPI_TARGETS (write_confirm) ───────────────────────────────
+async function suggestKpiTargets(ctx, args = {}) {
+  const { person_id, period, peer_scope = 'same_role_same_entity' } = args;
+  if (!person_id || !mongoose.isValidObjectId(person_id)) throw bad('valid person_id required');
+  if (!period) throw bad('period is required');
+
+  const PeopleMaster = tryModel('PeopleMaster');
+  const SGT = tryModel('SalesGoalTarget');
+  const Person = PeopleMaster ? await PeopleMaster.findById(person_id).lean() : null;
+  if (!Person) throw bad('person not found', 404);
+
+  // Peer scope
+  const peerFilter = { is_active: true, person_type: Person.person_type };
+  if (peer_scope === 'same_role_same_entity') peerFilter.entity_id = ctx.entityId;
+
+  const peers = PeopleMaster ? await PeopleMaster.find(peerFilter).select('_id').limit(50).lean() : [];
+  const peerIds = peers.map(p => p._id);
+
+  // Peer historical attainment (median revenue_target_actual) — proxy for target
+  let suggestedRevenue = 0;
+  if (SGT && peerIds.length) {
+    const agg = await SGT.aggregate([
+      { $match: { person_id: { $in: peerIds } } },
+      { $sort: { period: -1 } },
+      { $limit: 200 },
+      { $group: { _id: null, avg: { $avg: { $ifNull: ['$revenue_target', 0] } } } },
+    ]);
+    suggestedRevenue = Math.round(agg[0]?.avg || 0);
+  }
+  const suggestedCollectionPct = 80; // safe conservative default
+
+  if (ctx.mode !== 'execute') {
+    return {
+      result: {
+        confirmation_payload: {
+          tool_code: 'SUGGEST_KPI_TARGETS',
+          person_id: String(person_id),
+          period,
+          peer_scope,
+          suggested: {
+            revenue_target: suggestedRevenue,
+            collection_target_pct: suggestedCollectionPct,
+          },
+          peer_sample_size: peerIds.length,
+        },
+        confirmation_text: `Create DRAFT SalesGoalTarget for ${Person.full_name || Person.name} (${period}) with revenue ₱${suggestedRevenue.toLocaleString()} / collection ${suggestedCollectionPct}%?`,
+        person_name: Person.full_name || Person.name,
+      },
+      display: `Suggested from ${peerIds.length} peer(s). Click Execute to create DRAFT target.`,
+    };
+  }
+
+  if (!SGT) throw bad('SalesGoalTarget model not registered', 500);
+  const doc = await SGT.create({
+    entity_id: ctx.entityId,
+    person_id,
+    period,
+    revenue_target: suggestedRevenue,
+    collection_target_pct: suggestedCollectionPct,
+    status: 'DRAFT',
+    created_by: ctx.user._id,
+  });
+
+  return {
+    result: { ok: true, target_id: String(doc._id) },
+    display: `DRAFT SalesGoalTarget created for ${Person.full_name || Person.name} (${period}). Submit from Sales Goals page to route through gateApproval.`,
+  };
+}
+
+// ── HR: DRAFT_COMP_ADJUSTMENT (write_confirm) ─────────────────────────────
+async function draftCompAdjustment(ctx, args = {}) {
+  const { person_id, component, new_amount, effective_date, reason = '' } = args;
+  if (!person_id || !mongoose.isValidObjectId(person_id)) throw bad('valid person_id required');
+  if (!component) throw bad('component required (e.g. base_salary, allowance)');
+  if (typeof new_amount !== 'number' || new_amount < 0) throw bad('new_amount must be a non-negative number');
+  if (!effective_date) throw bad('effective_date required (ISO)');
+
+  const PeopleMaster = tryModel('PeopleMaster');
+  const Person = PeopleMaster ? await PeopleMaster.findById(person_id).lean() : null;
+  if (!Person) throw bad('person not found', 404);
+
+  if (ctx.mode !== 'execute') {
+    return {
+      result: {
+        confirmation_payload: {
+          tool_code: 'DRAFT_COMP_ADJUSTMENT',
+          person_id: String(person_id),
+          component: String(component).toLowerCase(),
+          new_amount,
+          effective_date,
+          reason: String(reason).slice(0, 500),
+        },
+        confirmation_text: `Adjust ${component} for ${Person.full_name || Person.name} to ₱${Number(new_amount).toLocaleString()} effective ${effective_date}?`,
+        person_name: Person.full_name || Person.name,
+      },
+      display: 'Compensation change drafted. Click Execute to queue for gateApproval.',
+    };
+  }
+
+  // Execute routes through PersonComp model (if present) — goes through
+  // gateApproval internally via the existing PeopleMaster controller.
+  // Writing a DRAFT row so the PRESIDENT can verify then submit.
+  const PersonComp = tryModel('PersonComp');
+  if (!PersonComp) {
+    return {
+      result: { ok: false, note: 'PersonComp model not registered on this install — change not persisted. Use the People > Comp UI.' },
+      display: 'PersonComp model not registered. No changes saved.',
+    };
+  }
+  const doc = await PersonComp.create({
+    entity_id: ctx.entityId,
+    person_id,
+    component: String(component).toLowerCase(),
+    amount: Number(new_amount),
+    effective_date: new Date(effective_date),
+    reason: String(reason).slice(0, 500),
+    status: 'DRAFT',
+    created_by: ctx.user._id,
+  });
+  return {
+    result: { ok: true, personcomp_id: String(doc._id) },
+    display: `DRAFT comp adjustment saved. Submit from People > Compensation to route through gateApproval.`,
+  };
+}
+
+// ── HR: AUDIT_SELF_RATINGS (read) ─────────────────────────────────────────
+async function auditSelfRatings(ctx, args = {}) {
+  const { period, person_id } = args;
+  if (!period) throw bad('period is required');
+
+  const KpiRating = tryModel('KpiRating') || tryModel('KpiSelfRating');
+  const KpiSnapshot = tryModel('KpiSnapshot');
+  if (!KpiRating) return { result: { found: 0, flags: [] }, display: 'KpiRating model not registered — nothing to audit.' };
+
+  const filter = { period };
+  if (person_id && mongoose.isValidObjectId(person_id)) filter.person_id = person_id;
+  if (ctx.entityId) filter.entity_id = ctx.entityId;
+  const ratings = await KpiRating.find(filter).limit(200).lean();
+
+  const flags = [];
+  for (const r of ratings) {
+    const selfScore = Number(r.self_score || r.score || 0);
+    let actualScore = null;
+    if (KpiSnapshot && r.person_id) {
+      const snap = await KpiSnapshot.findOne({ person_id: r.person_id, period }).select('composite_score attainment_pct').lean();
+      actualScore = snap?.composite_score ?? snap?.attainment_pct ?? null;
+    }
+    if (selfScore && actualScore !== null) {
+      const gap = selfScore - actualScore;
+      if (Math.abs(gap) >= 20) {
+        flags.push({
+          person_id: String(r.person_id),
+          self_score: selfScore,
+          actual_score: actualScore,
+          gap,
+          direction: gap > 0 ? 'over_rating' : 'under_rating',
+        });
+      }
+    }
+  }
+
+  return {
+    result: { found: ratings.length, flags },
+    display: `${flags.length} flagged variance(s) out of ${ratings.length} self-rating(s) reviewed.`,
+  };
+}
+
+// ── HR: RANK_PEOPLE (read) ────────────────────────────────────────────────
+async function rankPeople(ctx, args = {}) {
+  const { role, period, direction = 'top', limit } = args;
+  if (!period) throw bad('period is required');
+  const cap = clampLimit(limit, 10, 50);
+  const asc = String(direction).toLowerCase() === 'bottom';
+
+  const PeopleMaster = tryModel('PeopleMaster');
+  const KpiSnapshot = tryModel('KpiSnapshot');
+  if (!PeopleMaster) throw bad('PeopleMaster model not registered', 500);
+
+  const peopleFilter = { is_active: true, entity_id: ctx.entityId };
+  if (role) peopleFilter.person_type = String(role).toUpperCase();
+  const people = await PeopleMaster.find(peopleFilter).limit(200).lean();
+
+  const scored = [];
+  for (const p of people) {
+    let attainment = null;
+    if (KpiSnapshot) {
+      const snap = await KpiSnapshot.findOne({ person_id: p._id, period }).select('composite_score attainment_pct').lean();
+      attainment = snap?.composite_score ?? snap?.attainment_pct ?? null;
+    }
+    scored.push({
+      person_id: String(p._id),
+      name: p.full_name || p.name,
+      role: p.person_type,
+      attainment,
+    });
+  }
+  scored.sort((a, b) => {
+    const aa = a.attainment ?? (asc ? Infinity : -Infinity);
+    const bb = b.attainment ?? (asc ? Infinity : -Infinity);
+    return asc ? aa - bb : bb - aa;
+  });
+  const top = scored.slice(0, cap);
+
+  return {
+    result: { period, direction: asc ? 'bottom' : 'top', count: top.length, items: top },
+    display: `${asc ? 'Bottom' : 'Top'} ${top.length} ${role || 'people'} by KPI attainment for ${period}.`,
+  };
+}
+
+// ── HR: RECOMMEND_HR_ACTION (read, read-only recommendation) ──────────────
+async function recommendHrAction(ctx, args = {}) {
+  const { person_id, period } = args;
+  if (!person_id || !mongoose.isValidObjectId(person_id)) throw bad('valid person_id required');
+  if (!period) throw bad('period is required');
+
+  // Bluntness from lookup (default 'balanced' — never auto-executes anything)
+  let bluntness = 'balanced';
+  try {
+    const Lookup = require('../models/Lookup');
+    const row = await Lookup.findOne({ category: 'HR_ACTION_BLUNTNESS', code: 'DEFAULT', is_active: { $ne: false } }).lean();
+    if (row?.metadata?.value) bluntness = String(row.metadata.value).toLowerCase();
+  } catch { /* default */ }
+
+  const PeopleMaster = tryModel('PeopleMaster');
+  const KpiSnapshot = tryModel('KpiSnapshot');
+  const VarianceAlert = tryModel('VarianceAlert');
+
+  const person = PeopleMaster ? await PeopleMaster.findById(person_id).lean() : null;
+  if (!person) throw bad('person not found', 404);
+
+  const snap = KpiSnapshot ? await KpiSnapshot.findOne({ person_id, period }).lean() : null;
+  const attainment = snap?.composite_score ?? snap?.attainment_pct ?? null;
+
+  const variances = VarianceAlert
+    ? await VarianceAlert.countDocuments({ person_id, status: { $ne: 'RESOLVED' } })
+    : 0;
+
+  // Decision tree — intentionally simple. Each tier flags requires_hr_legal_review
+  // for actions above 'coach'. Blunt tier drops hedges but never changes the
+  // available action set.
+  let action = 'no_action';
+  let rationale = 'Insufficient data or performance within band.';
+
+  if (attainment !== null) {
+    if (attainment >= 110) { action = 'promote'; rationale = `Attainment ${attainment}% — consistently above target.`; }
+    else if (attainment >= 90) { action = 'no_action'; rationale = `Attainment ${attainment}% — on track.`; }
+    else if (attainment >= 70) { action = 'coach'; rationale = `Attainment ${attainment}% — below target; coaching conversation recommended.`; }
+    else if (attainment >= 50) { action = 'warn'; rationale = `Attainment ${attainment}% — warning with clear improvement plan.`; }
+    else { action = 'PIP'; rationale = `Attainment ${attainment}% — formal Performance Improvement Plan.`; }
+  }
+  if (variances >= 3 && (action === 'warn' || action === 'PIP')) {
+    action = 'manage_out';
+    rationale += ` ${variances} unresolved variance alert(s) — escalate to HR/legal review.`;
+  }
+
+  // Conservative bluntness never recommends manage_out; downgrade to PIP.
+  if (bluntness === 'conservative' && action === 'manage_out') {
+    action = 'PIP';
+    rationale = `[Conservative mode] Downgraded from manage_out to PIP. ${rationale}`;
+  }
+  // Blunt drops hedges; text is already direct.
+
+  const requires_hr_legal_review = ['warn', 'PIP', 'manage_out'].includes(action);
+
+  return {
+    result: {
+      person_id: String(person_id),
+      person_name: person.full_name || person.name,
+      period,
+      attainment_pct: attainment,
+      unresolved_variances: variances,
+      recommendation: action,
+      rationale,
+      requires_hr_legal_review,
+      bluntness_applied: bluntness,
+    },
+    display: `Recommendation for ${person.full_name || person.name}: ${action}${requires_hr_legal_review ? ' (requires HR/legal review)' : ''}.`,
+  };
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────
 const HANDLERS = {
   listPendingApprovals,
@@ -535,6 +1118,17 @@ const HANDLERS = {
   draftRejectionReason,
   draftMessage,
   draftNewEntry,
+  // ── Phase G8 ──
+  createTask,
+  listOverdueItems,
+  draftDecisionBrief,
+  draftAnnouncement,
+  weeklySummary,
+  suggestKpiTargets,
+  draftCompAdjustment,
+  auditSelfRatings,
+  rankPeople,
+  recommendHrAction,
 };
 
 function getHandler(handlerKey) {

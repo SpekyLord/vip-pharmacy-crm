@@ -6,11 +6,15 @@ const { ROLES, ROLE_SETS } = require('../../constants/roles');
  * Governs enable/disable and notification routing.
  */
 const agentConfigSchema = new mongoose.Schema({
+  // Phase G8 — enum removed. agentRegistry.AGENT_KEYS is the source of truth;
+  // controller validates via isKnownAgent before calling update/upsert. Keeping
+  // the hardcoded enum silently blocked writes for every agent added after the
+  // original 13. Unique index preserved so each agent has exactly one config row.
   agent_key: {
     type: String,
     required: true,
     unique: true,
-    enum: ['performance_coach', 'visit_planner', 'engagement_decay', 'smart_collection', 'bir_filing', 'expense_anomaly', 'inventory_reorder', 'credit_risk', 'document_expiry', 'visit_compliance', 'photo_audit', 'org_intelligence', 'system_integrity']
+    trim: true,
   },
   enabled: { type: Boolean, default: true },
   notify_roles: {

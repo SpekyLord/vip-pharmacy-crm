@@ -5,11 +5,16 @@ const mongoose = require('mongoose');
  * Created by agents after each cron run for audit trail and dashboard visibility.
  */
 const agentRunSchema = new mongoose.Schema({
+  // Phase G8 — enum removed. agent_key is validated against agentRegistry.AGENT_KEYS
+  // at the controller level (isKnownAgent); hardcoding the list in a mongoose enum
+  // required a schema migration every time a new agent shipped and blocked runs
+  // for kpi_snapshot / kpi_variance / dispute_sla / daily_briefing / Phase G8
+  // agents since they were never added. Registry is the single source of truth.
   agent_key: {
     type: String,
     required: true,
-    enum: ['performance_coach', 'visit_planner', 'engagement_decay', 'smart_collection', 'bir_filing', 'expense_anomaly', 'inventory_reorder', 'credit_risk', 'document_expiry', 'visit_compliance', 'photo_audit', 'org_intelligence', 'system_integrity'],
-    index: true
+    trim: true,
+    index: true,
   },
   agent_label: { type: String, required: true },
   run_date: { type: Date, default: Date.now, index: true },

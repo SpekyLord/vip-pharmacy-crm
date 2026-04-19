@@ -22,6 +22,15 @@ const AGENT_DEFINITIONS = {
   dispute_sla: { key: 'dispute_sla', label: 'Dispute SLA Escalator', modulePath: './disputeSlaAgent', type: 'FREE' },
   // Phase G7.9 — Daily morning briefing for the President (uses Copilot infra; AI tier)
   daily_briefing: { key: 'daily_briefing', label: 'Daily Briefing (Copilot)', modulePath: './dailyBriefingAgent', type: 'AI' },
+  // ── Phase G8 (P2-1 to P2-8) — 8 new rule-based agents (FREE by default; AI toggles per-agent via lookup) ──
+  treasury:              { key: 'treasury',              label: 'Treasury & Cash Flow',          modulePath: './treasuryAgent',              type: 'FREE' },
+  fpa_forecast:          { key: 'fpa_forecast',          label: 'FP&A Rolling Forecast',          modulePath: './fpaForecastAgent',           type: 'FREE' },
+  procurement_scorecard: { key: 'procurement_scorecard', label: 'Procurement & Vendor Scorecard', modulePath: './procurementScorecardAgent',  type: 'FREE' },
+  compliance_calendar:   { key: 'compliance_calendar',   label: 'Compliance Deadline Calendar',   modulePath: './complianceDeadlineAgent',    type: 'FREE' },
+  internal_audit_sod:    { key: 'internal_audit_sod',    label: 'Internal Audit / SoD',           modulePath: './internalAuditSodAgent',      type: 'FREE' },
+  data_quality:          { key: 'data_quality',          label: 'Data Quality',                   modulePath: './dataQualityAgent',           type: 'FREE' },
+  fefo_audit:            { key: 'fefo_audit',            label: 'FEFO / Expiry Audit',            modulePath: './fefoAuditAgent',             type: 'FREE' },
+  expansion_readiness:   { key: 'expansion_readiness',   label: 'Expansion Readiness',            modulePath: './expansionReadinessAgent',    type: 'FREE' },
 };
 
 const AGENT_KEYS = Object.keys(AGENT_DEFINITIONS);

@@ -17,25 +17,44 @@ import { invalidateAiCoworkCache } from '../hooks/useAiCoworkFeature';
 import { getAiCoworkUsage, invokeAiCoworkFeature } from '../services/aiCoworkService';
 import { getCopilotUsage } from '../services/copilotService';
 
-const AGENT_META = {
-  smart_collection:   { label: 'Smart Collection',      schedule: 'Weekdays 7 AM',  type: 'AI' },
-  performance_coach:  { label: 'BDM Performance Coach', schedule: 'Mon 6 AM',       type: 'AI' },
-  bir_filing:         { label: 'BIR Filing Review',     schedule: '15th monthly',    type: 'AI' },
-  visit_planner:      { label: 'Smart Visit Planner',   schedule: 'Sun 6 PM',        type: 'AI' },
-  engagement_decay:   { label: 'Engagement Decay',      schedule: 'Mon 7 AM',        type: 'AI' },
-  org_intelligence:   { label: 'Org Intelligence',      schedule: 'Mon 5:30 AM',     type: 'AI' },
-  daily_briefing:     { label: 'Daily Briefing (Copilot)', schedule: 'Weekdays 7 AM',  type: 'AI' },
-  expense_anomaly:    { label: 'Expense Anomaly',       schedule: 'Daily 6 AM',      type: 'Free' },
-  inventory_reorder:  { label: 'Inventory Reorder',     schedule: 'Daily 6:30 AM',   type: 'Free' },
-  credit_risk:        { label: 'Credit Risk Scoring',   schedule: 'Sun 11 PM',       type: 'Free' },
-  document_expiry:    { label: 'Document Expiry',       schedule: 'Daily 7:30 AM',   type: 'Free' },
-  visit_compliance:   { label: 'Visit Compliance',      schedule: 'Wed + Fri',       type: 'Free' },
-  photo_audit:        { label: 'Photo Audit',           schedule: 'Daily 8:30 AM',   type: 'Free' },
-  system_integrity:   { label: 'System Integrity',     schedule: 'Mon 5:00 AM',     type: 'Free' },
-  kpi_snapshot:       { label: 'KPI Snapshot & Incentive Accrual', schedule: 'Monthly day 1 5:00 AM', type: 'Free' },
-  kpi_variance:       { label: 'KPI Variance Alerts',   schedule: 'Monthly day 2 6:00 AM', type: 'Free' },
-  dispute_sla:        { label: 'Dispute SLA Escalator', schedule: 'Daily 6:30 AM',   type: 'Free' },
+// Phase G8 — Display-only schedule copy per agent. List of agents rendered
+// on this panel comes from the backend registry (/erp/agents/registry), NOT
+// this map. Keys without an entry here fall back to DEFAULT_SCHEDULE so a
+// new backend agent auto-surfaces without a frontend code change (Rule #3).
+const AGENT_SCHEDULE = {
+  smart_collection:      'Weekdays 7 AM',
+  performance_coach:     'Mon 6 AM',
+  bir_filing:            '15th monthly',
+  visit_planner:         'Sun 6 PM',
+  engagement_decay:      'Mon 7 AM',
+  org_intelligence:      'Mon 5:30 AM',
+  daily_briefing:        'Weekdays 7 AM',
+  expense_anomaly:       'Daily 6 AM',
+  inventory_reorder:     'Daily 6:30 AM',
+  credit_risk:           'Sun 11 PM',
+  document_expiry:       'Daily 7:30 AM',
+  visit_compliance:      'Wed + Fri',
+  photo_audit:           'Daily 8:30 AM',
+  system_integrity:      'Mon 5:00 AM',
+  kpi_snapshot:          'Monthly day 1 5:00 AM',
+  kpi_variance:          'Monthly day 2 6:00 AM',
+  kpi_variance_digest:   'Mon 7:00 AM',
+  dispute_sla:           'Daily 6:30 AM',
+  // Phase G8 — 8 new rule-based agents
+  treasury:              'Weekdays 5:30 AM',
+  fpa_forecast:          'Mon 6:00 AM',
+  procurement_scorecard: 'Tue 7:00 AM',
+  compliance_calendar:   'Mon 5:00 AM',
+  internal_audit_sod:    'Wed 8:00 AM',
+  data_quality:          'Daily 9:00 AM',
+  fefo_audit:            'Daily 7:30 AM',
+  expansion_readiness:   '1st of month 10 AM',
 };
+const DEFAULT_SCHEDULE = 'Scheduled';
+
+function prettifyAgentKey(k) {
+  return String(k).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 const NOTIFY_OPTIONS = [...ROLE_SETS.MANAGEMENT];
 
@@ -52,6 +71,7 @@ const styles = {
 
 export function AgentSettingsContent() {
   const [configs, setConfigs] = useState([]);
+  const [registry, setRegistry] = useState([]); // Phase G8 — [{ key, label, type }]
   const [loading, setLoading] = useState(true);
   const [runningAgent, setRunningAgent] = useState(null);
   const [saving, setSaving] = useState(null);
@@ -59,9 +79,16 @@ export function AgentSettingsContent() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/erp/agents/config');
-      setConfigs(res.data?.data || []);
-    } catch (err) { showError(err, 'Could not load agent configs'); setConfigs([]); }
+      const [cfgRes, regRes] = await Promise.all([
+        api.get('/erp/agents/config'),
+        api.get('/erp/agents/registry'),
+      ]);
+      setConfigs(cfgRes.data?.data || []);
+      setRegistry(Array.isArray(regRes.data?.data) ? regRes.data.data : []);
+    } catch (err) {
+      showError(err, 'Could not load agent configs');
+      setConfigs([]); setRegistry([]);
+    }
     setLoading(false);
   }, []);
 
@@ -98,8 +125,11 @@ export function AgentSettingsContent() {
     setRunningAgent(null);
   };
 
-  const freeAgents = Object.keys(AGENT_META).filter(k => AGENT_META[k].type === 'Free');
-  const aiAgents = Object.keys(AGENT_META).filter(k => AGENT_META[k].type === 'AI');
+  // Phase G8 — Iterate the backend registry (source of truth) rather than a
+  // frontend hardcoded map. Normalise the type casing since registry returns
+  // 'FREE'|'AI' but this component historically used 'Free'.
+  const aiAgents = registry.filter((r) => r.type === 'AI').map((r) => r.key);
+  const freeAgents = registry.filter((r) => r.type === 'FREE' || r.type === 'Free').map((r) => r.key);
 
   const renderTable = (agentKeys, title, icon) => (
     <div style={{ marginBottom: 24 }}>
@@ -119,16 +149,19 @@ export function AgentSettingsContent() {
           </thead>
           <tbody>
             {agentKeys.map(key => {
-              const meta = AGENT_META[key];
+              const reg = registry.find((r) => r.key === key);
+              const type = reg?.type === 'AI' ? 'AI' : 'Free';
+              const label = reg?.label || prettifyAgentKey(key);
+              const schedule = AGENT_SCHEDULE[key] || DEFAULT_SCHEDULE;
               const config = configs.find(c => c.agent_key === key) || { enabled: true, notify_roles: [ROLES.PRESIDENT] };
               return (
                 <tr key={key}>
                   <td style={styles.td}>
-                    <div style={{ fontWeight: 600 }}>{meta.label}</div>
-                    <span style={styles.badge(meta.type)}>{meta.type}</span>
+                    <div style={{ fontWeight: 600 }}>{label}</div>
+                    <span style={styles.badge(type)}>{type}</span>
                   </td>
                   <td style={styles.td}>
-                    <span style={{ fontSize: 12, color: '#64748b' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {meta.schedule}</span>
+                    <span style={{ fontSize: 12, color: '#64748b' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {schedule}</span>
                   </td>
                   <td style={styles.td}>
                     <button style={styles.toggle(config.enabled)} onClick={() => handleToggle(key, config.enabled)} disabled={saving === key}>

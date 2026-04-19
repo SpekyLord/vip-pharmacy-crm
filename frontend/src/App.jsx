@@ -202,6 +202,9 @@ const SoxControlMatrix = lazyRetry(() => import('./erp/pages/SoxControlMatrix'))
 const PresidentCopilot = lazyRetry(() => import('./erp/components/PresidentCopilot'));
 const CommandPalette   = lazyRetry(() => import('./erp/components/CommandPalette'));
 
+// Phase G8 (P2-9) — Tasks page (backs CREATE_TASK / LIST_OVERDUE_ITEMS Copilot tools)
+const TasksPage = lazyRetry(() => import('./erp/pages/TasksPage'));
+
 // Standalone routes redirect to ControlCenter with the right section param
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
 const EntityManagerRedirect = () => <Navigate to="/erp/control-center?section=entities" replace />;
@@ -827,6 +830,9 @@ function App() {
           <Route path="/erp/variance-alerts" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><VarianceAlertCenter /></ProtectedRoute>} />
           {/* Phase SG-6 #29 — SOX Control Matrix (admin/finance/president only) */}
           <Route path="/erp/sales-goals/sox" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT, ROLES.FINANCE]} requiredErpModule="sales_goals"><SoxControlMatrix /></ProtectedRoute>} />
+
+          {/* Phase G8 (P2-9) — Tasks (cross-cutting productivity; every ERP user) */}
+          <Route path="/erp/tasks" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><TasksPage /></ProtectedRoute>} />
 
           {/* Orphaned page direct routes — redirect to Control Center with correct section */}
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentSettingsRedirect /></ProtectedRoute>} />

@@ -13,19 +13,32 @@ const { parseOdometer } = require('./parsers/odometerParser');
 const { parseOR } = require('./parsers/orParser');
 const { parseUndertaking } = require('./parsers/undertakingParser');
 const { parseDR } = require('./parsers/drParser');
+// Phase H6 — Sales OCR new parsers
+const { parseBankSlip } = require('./parsers/bankSlipParser');
+const { parseCheck } = require('./parsers/checkParser');
 const { classifyExpense } = require('../services/expenseClassifier');
 const { resolveCustomer, resolveProduct, resolveVendor } = require('../services/productResolver');
 const { learnFromAiResult } = require('../services/vendorAutoLearner');
 
-// Document types that should get expense classification (Layer 2)
+// Document types that should get expense classification (Layer 2a — COA mapping)
+// Sales docs (CSI/CR/DR/BANK_SLIP/CHECK) are deliberately excluded — they do
+// not map to COA. They still benefit from Claude field-completion (below).
 const EXPENSE_DOC_TYPES = new Set(['OR', 'GAS_RECEIPT']);
 
-// Phase H4 — critical fields per doc type for the AI field-completion trigger.
-// If any of these are null OR LOW confidence, Claude is asked to fill the gap
-// (in addition to the legacy LOW-classification trigger).
+// Phase H4 + H6 — critical fields per doc type for the AI field-completion
+// trigger. If any of these are null OR LOW confidence, Claude is asked to
+// fill the gap. Phase H6 extends this to sales doc types so handwritten
+// CSI/CR/DR scans benefit from the same smart-OCR fallback that expense
+// docs do.
 const CRITICAL_FIELDS_BY_DOC = {
   OR: ['amount', 'date', 'or_number', 'supplier_name'],
   GAS_RECEIPT: ['total_amount', 'date', 'station_name', 'liters'],
+  // Phase H6 — sales docs
+  CSI: ['csi_no', 'csi_date', 'hospital_name', 'total_amount'],
+  CR: ['cr_no', 'cr_date', 'hospital_name', 'cr_amount'],
+  DR: ['dr_ref', 'dr_date', 'hospital_name', 'dispatch_type'],
+  BANK_SLIP: ['bank_name', 'account_number', 'deposit_date', 'amount'],
+  CHECK: ['check_no', 'bank', 'check_date', 'amount'],
 };
 
 // Test whether a scoredField is missing or LOW confidence.
@@ -57,6 +70,9 @@ const PARSERS = {
   OR: parseOR,
   UNDERTAKING: parseUndertaking,
   DR: parseDR,
+  // Phase H6 — Sales OCR
+  BANK_SLIP: parseBankSlip,
+  CHECK: parseCheck,
 };
 
 /**
@@ -109,113 +125,133 @@ async function processOcr(docType, ocrResult, options = {}) {
     raw_ocr_text: ocrResult.fullText || '',
   };
 
-  // Layer 2: Expense classification for OR and GAS_RECEIPT doc types
+  // Layer 2a: Expense classification (COA mapping) — OR / GAS_RECEIPT only.
+  // Sales docs have no COA; they're customer-facing, not vendor-facing.
   if (EXPENSE_DOC_TYPES.has(normalised)) {
     try {
       result.classification = await classifyExpense(extracted, { entityId });
+    } catch (err) {
+      result.validation_flags.push({
+        type: 'CLASSIFICATION_ERROR',
+        message: `Classification failed: ${err.message}`,
+      });
+    }
+  }
 
-      // Layer 2b: Claude AI fallback — Phase H4 expanded trigger.
-      // Fires when EITHER:
-      //   (a) regex classifier returned LOW confidence (legacy behaviour), OR
-      //   (b) one or more critical extracted fields are missing/LOW (field completion)
-      // Gated by env var (system-wide) AND options.aiFallbackEnabled (per-entity).
-      // Field-completion arm is additionally gated by options.aiFieldCompletionEnabled.
-      const aiFallbackAllowed = options.aiFallbackEnabled !== false;
-      const aiFieldCompletionAllowed = options.aiFieldCompletionEnabled !== false;
-      const classificationLow = result.classification?.confidence === 'LOW';
-      const missingFields = aiFieldCompletionAllowed ? listMissingCriticalFields(normalised, extracted) : [];
-      const triggerByMissing = missingFields.length > 0;
+  // Layer 2b: Claude AI fallback — Phase H4 + H6.
+  // Fires for ANY doc type registered in CRITICAL_FIELDS_BY_DOC when EITHER:
+  //   (a) regex classifier returned LOW confidence (expense docs only), OR
+  //   (b) one or more critical extracted fields are missing/LOW (field completion — all doc types)
+  // Phase H6: this block is no longer gated by EXPENSE_DOC_TYPES, so CSI/CR/DR/
+  // BANK_SLIP/CHECK also benefit from Claude handwriting recovery. Classifier
+  // refinement and vendor auto-learn remain gated to expense docs only.
+  if (CRITICAL_FIELDS_BY_DOC[normalised]) {
+    const aiFallbackAllowed = options.aiFallbackEnabled !== false;
+    const aiFieldCompletionAllowed = options.aiFieldCompletionEnabled !== false;
+    const classificationLow = result.classification?.confidence === 'LOW';
+    const missingFields = aiFieldCompletionAllowed ? listMissingCriticalFields(normalised, extracted) : [];
+    const triggerByMissing = missingFields.length > 0;
 
-      let triggerReason = 'NONE';
-      if (classificationLow && triggerByMissing) triggerReason = 'BOTH';
-      else if (classificationLow) triggerReason = 'LOW_CLASSIFICATION';
-      else if (triggerByMissing) triggerReason = 'MISSING_FIELDS';
-      result.ai_trigger_reason = triggerReason;
+    let triggerReason = 'NONE';
+    if (classificationLow && triggerByMissing) triggerReason = 'BOTH';
+    else if (classificationLow) triggerReason = 'LOW_CLASSIFICATION';
+    else if (triggerByMissing) triggerReason = 'MISSING_FIELDS';
+    result.ai_trigger_reason = triggerReason;
 
-      if (triggerReason !== 'NONE' && aiFallbackAllowed && process.env.ANTHROPIC_API_KEY) {
-        try {
-          const { classifyWithClaude } = require('../../agents/ocrAutoFillAgent');
-          const aiResult = await classifyWithClaude(ocrResult.fullText || '', extracted, {
-            doc_type: normalised,
-            missing_fields: missingFields,
-            mode: triggerReason === 'MISSING_FIELDS' ? 'FIELD_COMPLETION' : 'CLASSIFY',
-          });
-          if (aiResult) {
-            // Refine classification when Claude beat LOW
-            if (classificationLow && aiResult.confidence !== 'LOW') {
-              result.classification = {
-                ...result.classification,
-                ...aiResult,
-                fallback_used: true,
-                original_method: result.classification.match_method,
-              };
+    if (triggerReason !== 'NONE' && aiFallbackAllowed && process.env.ANTHROPIC_API_KEY) {
+      try {
+        const { classifyWithClaude } = require('../../agents/ocrAutoFillAgent');
+        const aiResult = await classifyWithClaude(ocrResult.fullText || '', extracted, {
+          doc_type: normalised,
+          missing_fields: missingFields,
+          mode: triggerReason === 'MISSING_FIELDS' ? 'FIELD_COMPLETION' : 'CLASSIFY',
+          entityId, // Phase H6 — required for AI_SPEND_CAPS enforcement
+        });
+        // Phase H6 — surface Claude $USD cost so the controller can record it
+        // against the monthly AI budget via OcrUsageLog.cost_usd.
+        if (aiResult && typeof aiResult.ai_cost === 'number') {
+          result.ai_cost_usd = (result.ai_cost_usd || 0) + aiResult.ai_cost;
+        }
+        if (aiResult) {
+          // Classifier refinement — expense docs only (sales docs have no classification to refine)
+          if (EXPENSE_DOC_TYPES.has(normalised) && classificationLow && aiResult.confidence !== 'LOW') {
+            result.classification = {
+              ...result.classification,
+              ...aiResult,
+              fallback_used: true,
+              original_method: result.classification.match_method,
+            };
+          }
+          // Field completion — all doc types. Never overwrite HIGH-confidence regex output.
+          if (triggerByMissing) {
+            const filled = [];
+            for (const fname of missingFields) {
+              const aiVal = aiResult[fname];
+              if (aiVal != null && aiVal !== '') {
+                extracted[fname] = { value: aiVal, confidence: aiResult.confidence || 'MEDIUM', present: true, match_method: 'CLAUDE_AI' };
+                filled.push(fname);
+              }
             }
-            // Field completion: only fill weak/missing fields, never overwrite HIGH-confidence regex output
-            if (triggerByMissing) {
-              const filled = [];
-              for (const fname of missingFields) {
-                const aiVal = aiResult[fname];
-                if (aiVal != null && aiVal !== '') {
-                  // Wrap in scoredField shape so downstream consumers see a confidence
-                  extracted[fname] = { value: aiVal, confidence: aiResult.confidence || 'MEDIUM', present: true, match_method: 'CLAUDE_AI' };
-                  filled.push(fname);
-                }
-              }
-              if (filled.length > 0) {
-                result.validation_flags.push({
-                  type: 'AI_FIELDS_COMPLETED',
-                  message: `Claude filled missing fields: ${filled.join(', ')}`,
-                });
-                result.extracted = extracted; // re-bind to refreshed object
-              }
-            }
-            result.ai_fallback_used = true;
-
-            // Phase H5 — Vendor auto-learn from Claude wins. Runs best-effort
-            // after Claude succeeded with HIGH/MEDIUM confidence and returned a
-            // usable supplier_name + coa_code. Never blocks OCR on failure.
-            // Gated by options.vendorAutoLearnEnabled (per-entity setting).
-            const vendorAutoLearnAllowed = options.vendorAutoLearnEnabled !== false;
-            if (vendorAutoLearnAllowed && entityId) {
-              try {
-                const learning = await learnFromAiResult({
-                  aiResult,
-                  extractedFields: extracted,
-                  rawOcrText: ocrResult.fullText || '',
-                  docType: normalised,
-                  entityId,
-                  userId: options.userId || null,
-                });
-                result.vendor_auto_learn = learning;
-                if (learning.action === 'CREATED' || learning.action === 'ALIAS_ADDED') {
-                  result.validation_flags.push({
-                    type: 'VENDOR_AUTO_LEARNED',
-                    message: learning.action === 'CREATED'
-                      ? `New vendor learned from Claude — admin review pending`
-                      : `Vendor alias appended from OCR variation`,
-                  });
-                }
-              } catch (learnErr) {
-                // Non-blocking — learner failures never break OCR flow
-                result.vendor_auto_learn = { action: 'SKIPPED', reason: `LEARNER_ERROR: ${learnErr.message}` };
-                console.warn('[OCR] Vendor auto-learner failed:', learnErr.message);
-              }
-            } else {
-              result.vendor_auto_learn = { action: 'NONE', reason: vendorAutoLearnAllowed ? 'NO_ENTITY' : 'DISABLED' };
+            if (filled.length > 0) {
+              result.validation_flags.push({
+                type: 'AI_FIELDS_COMPLETED',
+                message: `Claude filled missing fields: ${filled.join(', ')}`,
+              });
+              result.extracted = extracted;
             }
           }
-        } catch (aiErr) {
+          result.ai_fallback_used = true;
+
+          // Phase H5 — Vendor auto-learn. Expense docs only (sales docs don't have vendors).
+          const vendorAutoLearnAllowed = options.vendorAutoLearnEnabled !== false;
+          if (EXPENSE_DOC_TYPES.has(normalised) && vendorAutoLearnAllowed && entityId) {
+            try {
+              const learning = await learnFromAiResult({
+                aiResult,
+                extractedFields: extracted,
+                rawOcrText: ocrResult.fullText || '',
+                docType: normalised,
+                entityId,
+                userId: options.userId || null,
+              });
+              result.vendor_auto_learn = learning;
+              if (learning.action === 'CREATED' || learning.action === 'ALIAS_ADDED') {
+                result.validation_flags.push({
+                  type: 'VENDOR_AUTO_LEARNED',
+                  message: learning.action === 'CREATED'
+                    ? `New vendor learned from Claude — admin review pending`
+                    : `Vendor alias appended from OCR variation`,
+                });
+              }
+            } catch (learnErr) {
+              result.vendor_auto_learn = { action: 'SKIPPED', reason: `LEARNER_ERROR: ${learnErr.message}` };
+              console.warn('[OCR] Vendor auto-learner failed:', learnErr.message);
+            }
+          } else {
+            result.vendor_auto_learn = {
+              action: 'NONE',
+              reason: !EXPENSE_DOC_TYPES.has(normalised)
+                ? 'NOT_EXPENSE_DOC'
+                : (vendorAutoLearnAllowed ? 'NO_ENTITY' : 'DISABLED'),
+            };
+          }
+        }
+      } catch (aiErr) {
+        // Phase H6 — spend-cap gate throws status=429 with reason='SPEND_CAP_EXCEEDED'.
+        // Vision + parser already ran; we keep the rule-based result and flag the skip.
+        if (aiErr && aiErr.status === 429 && aiErr.reason === 'SPEND_CAP_EXCEEDED') {
+          result.ai_skipped_reason = 'SPEND_CAP_EXCEEDED';
+          result.validation_flags.push({
+            type: 'AI_SPEND_CAP_EXCEEDED',
+            message: aiErr.message || 'Monthly AI spend cap reached — rule-based result returned.',
+          });
+        } else {
           result.validation_flags.push({
             type: 'AI_CLASSIFICATION_FALLBACK_ERROR',
             message: `Claude fallback failed: ${aiErr.message}`,
           });
         }
       }
-    } catch (err) {
-      result.validation_flags.push({
-        type: 'CLASSIFICATION_ERROR',
-        message: `Classification failed: ${err.message}`
-      });
     }
   }
 

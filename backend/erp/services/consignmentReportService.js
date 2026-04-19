@@ -27,10 +27,20 @@ async function getConsolidatedConsignmentAging(entityId, filters = {}) {
       $addFields: {
         days_outstanding_live: { $floor: { $divide: [{ $subtract: [now, '$dr_date'] }, 86400000] } },
         aging_status_live: {
+          // Phase H6 — SAMPLING dispatches never convert to sale, so they
+          // skip FORCE_CSI. OPEN → OVERDUE → COLLECTED only.
           $switch: {
             branches: [
               { case: { $lte: ['$qty_remaining', 0] }, then: 'COLLECTED' },
-              { case: { $gte: [{ $floor: { $divide: [{ $subtract: [now, '$dr_date'] }, 86400000] } }, '$max_days_force_csi'] }, then: 'FORCE_CSI' },
+              {
+                case: {
+                  $and: [
+                    { $ne: ['$dispatch_type', 'SAMPLING'] },
+                    { $gte: [{ $floor: { $divide: [{ $subtract: [now, '$dr_date'] }, 86400000] } }, '$max_days_force_csi'] }
+                  ]
+                },
+                then: 'FORCE_CSI'
+              },
               { case: { $gte: [{ $floor: { $divide: [{ $subtract: [now, '$dr_date'] }, 86400000] } }, '$max_days_alert'] }, then: 'OVERDUE' }
             ],
             default: 'OPEN'
