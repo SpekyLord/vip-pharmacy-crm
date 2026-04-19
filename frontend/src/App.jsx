@@ -185,6 +185,8 @@ const SalesGoalDashboard = lazyRetry(() => import('./erp/pages/SalesGoalDashboar
 const SalesGoalSetup = lazyRetry(() => import('./erp/pages/SalesGoalSetup'));
 const SalesGoalBdmView = lazyRetry(() => import('./erp/pages/SalesGoalBdmView'));
 const IncentiveTracker = lazyRetry(() => import('./erp/pages/IncentiveTracker'));
+// Phase SG-Q2 W2 — Incentive Payout Ledger (accrued → approved → paid → reversed)
+const IncentivePayoutLedger = lazyRetry(() => import('./erp/pages/IncentivePayoutLedger'));
 
 // Standalone routes redirect to ControlCenter with the right section param
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
@@ -776,6 +778,8 @@ function App() {
           <Route path="/erp/sales-goals/bdm/:bdmId" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><SalesGoalBdmView /></ProtectedRoute>} />
           <Route path="/erp/sales-goals/my" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><SalesGoalBdmView /></ProtectedRoute>} />
           <Route path="/erp/sales-goals/incentives" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><IncentiveTracker /></ProtectedRoute>} />
+          {/* Phase SG-Q2 W2 — Incentive Payout Ledger */}
+          <Route path="/erp/incentive-payouts" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><IncentivePayoutLedger /></ProtectedRoute>} />
 
           {/* Orphaned page direct routes — redirect to Control Center with correct section */}
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentSettingsRedirect /></ProtectedRoute>} />

@@ -1,20 +1,124 @@
+const mongoose = require('mongoose');
 const SalesGoalPlan = require('../models/SalesGoalPlan');
 const SalesGoalTarget = require('../models/SalesGoalTarget');
 const KpiSnapshot = require('../models/KpiSnapshot');
 const ActionItem = require('../models/ActionItem');
 const Entity = require('../models/Entity');
 const PeopleMaster = require('../models/PeopleMaster');
+const Lookup = require('../models/Lookup');
+const ErpAuditLog = require('../models/ErpAuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
 const salesGoalService = require('../services/salesGoalService');
+const { gateApproval } = require('../services/approvalService');
+const { checkPeriodOpen } = require('../utils/periodLock');
+const { generateSalesGoalNumber } = require('../services/docNumbering');
 
 /**
- * Sales Goal Controller — Phase 28
+ * Sales Goal Controller — Phase 28 (SG-Q2 compliance floor April 2026)
  * CRUD for plans, targets, KPI snapshots, actions, and dashboard endpoints.
+ *
+ * Compliance plumbing (SG-Q2 W1):
+ *  - Default-Roles Gate via gateApproval({ module: 'SALES_GOAL_PLAN' }) on every
+ *    state transition (activate/reopen/close/bulkTarget/computeSnapshots).
+ *  - State changes wrapped in mongoose.startSession + withTransaction.
+ *  - Every transition emits an ErpAuditLog.logChange() entry.
+ *  - Reference number generated on first activation via generateSalesGoalNumber().
+ *  - Auto-enrollment of sales-goal-eligible BDMs from PeopleMaster on activate
+ *    (role registry lookup-driven: SALES_GOAL_ELIGIBLE_ROLES). Idempotent.
  */
 
 function currentPeriod() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SG-Q2 W1 — Auto-enrollment of active BDMs on plan activation.
+// Reads SALES_GOAL_ELIGIBLE_ROLES (lookup-driven, subscription-ready) to decide
+// which person_types enroll automatically. Zero code change when subscribers
+// add new sales-facing roles (SALES_REP, SALES_MANAGER, etc.) via Control Center.
+//
+// Idempotent — skips persons who already have a BDM target under this plan.
+// Caller is responsible for transaction session management; pass `session` so
+// all creates are part of the plan-activation txn.
+// ─────────────────────────────────────────────────────────────────────────────
+async function autoEnrollEligibleBdms(plan, userId, session) {
+  // 1) Read eligible role codes (auto-seed if this is a fresh entity)
+  let eligibleLookups = await Lookup.find({
+    entity_id: plan.entity_id,
+    category: 'SALES_GOAL_ELIGIBLE_ROLES',
+    is_active: true,
+  }).session(session).lean();
+
+  // Lazy self-seed mirror of getModulePostingRoles — a new subsidiary does not
+  // need an admin to open Control Center before activation works.
+  if (eligibleLookups.length === 0) {
+    try {
+      const SEED = [{ code: 'BDM', label: 'BDM (Business Development Manager)' }];
+      await Lookup.updateOne(
+        { entity_id: plan.entity_id, category: 'SALES_GOAL_ELIGIBLE_ROLES', code: 'BDM' },
+        { $setOnInsert: { label: SEED[0].label, sort_order: 0, is_active: true, metadata: {} } },
+        { upsert: true, session }
+      );
+      eligibleLookups = await Lookup.find({
+        entity_id: plan.entity_id,
+        category: 'SALES_GOAL_ELIGIBLE_ROLES',
+        is_active: true,
+      }).session(session).lean();
+    } catch (err) {
+      console.error('[salesGoal] SALES_GOAL_ELIGIBLE_ROLES lazy-seed failed:', err.message);
+    }
+  }
+
+  const eligibleCodes = eligibleLookups.map(l => l.code).filter(Boolean);
+  if (eligibleCodes.length === 0) return { enrolled: 0, skipped: 0 };
+
+  // 2) Read GOAL_CONFIG defaults (fall back to zero if not seeded for this entity)
+  const config = await salesGoalService.getGoalConfig(plan.entity_id);
+  const defaultTargetRevenue = Number(config.DEFAULT_TARGET_REVENUE) || 0;
+  const collectionPct = Number(plan.collection_target_pct) || 0;
+
+  // 3) Enumerate eligible active people for this entity
+  const people = await PeopleMaster.find({
+    entity_id: plan.entity_id,
+    person_type: { $in: eligibleCodes },
+    is_active: true,
+  }).select('_id user_id full_name territory_id').session(session).lean();
+
+  if (people.length === 0) return { enrolled: 0, skipped: 0 };
+
+  // 4) Find which already have a BDM target under this plan (idempotent check)
+  const personIds = people.map(p => p._id);
+  const existing = await SalesGoalTarget.find({
+    plan_id: plan._id,
+    target_type: 'BDM',
+    person_id: { $in: personIds },
+  }).select('person_id').session(session).lean();
+  const alreadyEnrolled = new Set(existing.map(e => e.person_id?.toString()).filter(Boolean));
+
+  // 5) Create target rows for the rest
+  const toCreate = people.filter(p => !alreadyEnrolled.has(p._id.toString()));
+  let enrolled = 0;
+  for (const p of toCreate) {
+    const collectionTarget = Math.round(defaultTargetRevenue * collectionPct);
+    await SalesGoalTarget.create([{
+      entity_id: plan.entity_id,
+      plan_id: plan._id,
+      fiscal_year: plan.fiscal_year,
+      target_type: 'BDM',
+      bdm_id: p.user_id || null,       // null is valid — some BDMs have no login yet
+      person_id: p._id,
+      territory_id: p.territory_id || null,
+      target_label: p.full_name || '',
+      sales_target: defaultTargetRevenue,
+      collection_target: collectionTarget,
+      status: 'ACTIVE',                 // matches the activated plan
+      created_by: userId,
+    }], { session });
+    enrolled++;
+  }
+
+  return { enrolled, skipped: people.length - toCreate.length };
 }
 
 // ═══════════════════════════════════════
@@ -79,18 +183,67 @@ exports.activatePlan = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Only DRAFT plans can be activated' });
   }
 
-  plan.status = 'ACTIVE';
-  plan.approved_by = req.user._id;
-  plan.approved_at = new Date();
-  await plan.save();
+  // ── Default-Roles Gate (Phase G4) ─────────────────────────────────────────
+  // Non-authorized submitters are held in the Approval Hub (HTTP 202).
+  const gated = await gateApproval({
+    entityId: plan.entity_id,
+    module: 'SALES_GOAL_PLAN',
+    docType: 'PLAN_ACTIVATE',
+    docId: plan._id,
+    docRef: plan.reference || `${plan.plan_name} FY${plan.fiscal_year}`,
+    amount: plan.target_revenue || 0,
+    description: `Activate Sales Goal Plan — ${plan.plan_name} FY${plan.fiscal_year}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
 
-  // Activate all targets under this plan
-  await SalesGoalTarget.updateMany(
-    { plan_id: plan._id, status: 'DRAFT' },
-    { $set: { status: 'ACTIVE' } }
-  );
+  // ── Transaction wrap (matches expenseController.js:248-269) ────────────────
+  let enrollmentSummary = { enrolled: 0, skipped: 0 };
+  let priorReference = plan.reference;
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      // Populate reference on first activation (preserved across reopen → re-activate)
+      if (!plan.reference) {
+        plan.reference = await generateSalesGoalNumber({ entityId: plan.entity_id });
+      }
+      plan.status = 'ACTIVE';
+      plan.approved_by = req.user._id;
+      plan.approved_at = new Date();
+      await plan.save({ session });
 
-  res.json({ success: true, data: plan, message: 'Plan activated' });
+      await SalesGoalTarget.updateMany(
+        { plan_id: plan._id, status: 'DRAFT' },
+        { $set: { status: 'ACTIVE' } },
+        { session }
+      );
+
+      // Auto-enroll active eligible BDMs (idempotent; lookup-driven roles)
+      enrollmentSummary = await autoEnrollEligibleBdms(plan, req.user._id, session);
+
+      await ErpAuditLog.logChange([{
+        entity_id: plan.entity_id,
+        log_type: 'STATUS_CHANGE',
+        target_ref: plan._id.toString(),
+        target_model: 'SalesGoalPlan',
+        field_changed: 'status',
+        old_value: 'DRAFT',
+        new_value: 'ACTIVE',
+        changed_by: req.user._id,
+        note: `Activated plan ${plan.reference || plan.plan_name} — auto-enrolled ${enrollmentSummary.enrolled} BDM(s)${priorReference ? '' : ' (reference assigned: ' + plan.reference + ')'}`,
+      }], { session });
+    });
+  } finally {
+    session.endSession();
+  }
+
+  res.json({
+    success: true,
+    data: plan,
+    message: `Plan activated — ${enrollmentSummary.enrolled} BDM(s) auto-enrolled${enrollmentSummary.skipped ? ` (${enrollmentSummary.skipped} already enrolled)` : ''}`,
+    enrollment: enrollmentSummary,
+  });
 });
 
 exports.reopenPlan = catchAsync(async (req, res) => {
@@ -100,15 +253,48 @@ exports.reopenPlan = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Only ACTIVE plans can be reopened' });
   }
 
-  plan.status = 'DRAFT';
-  plan.reopened_by = req.user._id;
-  plan.reopened_at = new Date();
-  await plan.save();
+  const gated = await gateApproval({
+    entityId: plan.entity_id,
+    module: 'SALES_GOAL_PLAN',
+    docType: 'PLAN_REOPEN',
+    docId: plan._id,
+    docRef: plan.reference || `${plan.plan_name} FY${plan.fiscal_year}`,
+    amount: plan.target_revenue || 0,
+    description: `Reopen Sales Goal Plan to DRAFT — ${plan.plan_name} FY${plan.fiscal_year}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
 
-  await SalesGoalTarget.updateMany(
-    { plan_id: plan._id, status: 'ACTIVE' },
-    { $set: { status: 'DRAFT' } }
-  );
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      plan.status = 'DRAFT';
+      plan.reopened_by = req.user._id;
+      plan.reopened_at = new Date();
+      await plan.save({ session });
+
+      await SalesGoalTarget.updateMany(
+        { plan_id: plan._id, status: 'ACTIVE' },
+        { $set: { status: 'DRAFT' } },
+        { session }
+      );
+
+      await ErpAuditLog.logChange([{
+        entity_id: plan.entity_id,
+        log_type: 'REOPEN',
+        target_ref: plan._id.toString(),
+        target_model: 'SalesGoalPlan',
+        field_changed: 'status',
+        old_value: 'ACTIVE',
+        new_value: 'DRAFT',
+        changed_by: req.user._id,
+        note: `Reopened plan ${plan.reference || plan.plan_name}`,
+      }], { session });
+    });
+  } finally {
+    session.endSession();
+  }
 
   res.json({ success: true, data: plan, message: 'Plan reopened to DRAFT' });
 });
@@ -116,14 +302,53 @@ exports.reopenPlan = catchAsync(async (req, res) => {
 exports.closePlan = catchAsync(async (req, res) => {
   const plan = await SalesGoalPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+  if (plan.status === 'CLOSED') {
+    return res.status(400).json({ success: false, message: 'Plan is already closed' });
+  }
 
-  plan.status = 'CLOSED';
-  await plan.save();
+  const gated = await gateApproval({
+    entityId: plan.entity_id,
+    module: 'SALES_GOAL_PLAN',
+    docType: 'PLAN_CLOSE',
+    docId: plan._id,
+    docRef: plan.reference || `${plan.plan_name} FY${plan.fiscal_year}`,
+    amount: plan.target_revenue || 0,
+    description: `Close Sales Goal Plan — ${plan.plan_name} FY${plan.fiscal_year}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
 
-  await SalesGoalTarget.updateMany(
-    { plan_id: plan._id },
-    { $set: { status: 'CLOSED' } }
-  );
+  const previousStatus = plan.status;
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      plan.status = 'CLOSED';
+      plan.closed_by = req.user._id;
+      plan.closed_at = new Date();
+      await plan.save({ session });
+
+      await SalesGoalTarget.updateMany(
+        { plan_id: plan._id },
+        { $set: { status: 'CLOSED' } },
+        { session }
+      );
+
+      await ErpAuditLog.logChange([{
+        entity_id: plan.entity_id,
+        log_type: 'STATUS_CHANGE',
+        target_ref: plan._id.toString(),
+        target_model: 'SalesGoalPlan',
+        field_changed: 'status',
+        old_value: previousStatus,
+        new_value: 'CLOSED',
+        changed_by: req.user._id,
+        note: `Closed plan ${plan.reference || plan.plan_name}`,
+      }], { session });
+    });
+  } finally {
+    session.endSession();
+  }
 
   res.json({ success: true, data: plan, message: 'Plan closed' });
 });
@@ -192,28 +417,66 @@ exports.createTarget = catchAsync(async (req, res) => {
 
 exports.bulkCreateTargets = catchAsync(async (req, res) => {
   const { plan_id, targets } = req.body;
+  if (!Array.isArray(targets) || targets.length === 0) {
+    return res.status(400).json({ success: false, message: 'targets array required' });
+  }
   const plan = await SalesGoalPlan.findById(plan_id).lean();
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
 
+  const totalSalesTarget = targets.reduce((s, t) => s + (Number(t.sales_target) || 0), 0);
+
+  const gated = await gateApproval({
+    entityId: plan.entity_id,
+    module: 'SALES_GOAL_PLAN',
+    docType: 'BULK_TARGETS',
+    docId: plan._id,
+    docRef: plan.reference || `${plan.plan_name} FY${plan.fiscal_year}`,
+    amount: totalSalesTarget,
+    description: `Bulk-assign ${targets.length} target(s) under ${plan.plan_name} FY${plan.fiscal_year} (total ₱${totalSalesTarget.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
   const results = [];
-  for (const t of targets) {
-    const collectionTarget = t.collection_target || Math.round(t.sales_target * plan.collection_target_pct);
-    const target = await SalesGoalTarget.findOneAndUpdate(
-      { plan_id, target_type: t.target_type, bdm_id: t.bdm_id || null, target_entity_id: t.target_entity_id || null, territory_id: t.territory_id || null },
-      {
-        $set: {
-          ...t,
-          entity_id: t.entity_id || req.entityId,
-          plan_id,
-          fiscal_year: plan.fiscal_year,
-          collection_target: collectionTarget,
-          status: plan.status === 'ACTIVE' ? 'ACTIVE' : 'DRAFT',
-          created_by: req.user._id,
-        },
-      },
-      { upsert: true, new: true }
-    );
-    results.push(target);
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      for (const t of targets) {
+        const salesTarget = Number(t.sales_target) || 0;
+        const collectionTarget = t.collection_target || Math.round(salesTarget * (plan.collection_target_pct || 0));
+        const target = await SalesGoalTarget.findOneAndUpdate(
+          { plan_id, target_type: t.target_type, bdm_id: t.bdm_id || null, target_entity_id: t.target_entity_id || null, territory_id: t.territory_id || null },
+          {
+            $set: {
+              ...t,
+              entity_id: t.entity_id || req.entityId,
+              plan_id,
+              fiscal_year: plan.fiscal_year,
+              collection_target: collectionTarget,
+              status: plan.status === 'ACTIVE' ? 'ACTIVE' : 'DRAFT',
+              created_by: req.user._id,
+            },
+          },
+          { upsert: true, new: true, session }
+        );
+        results.push(target);
+      }
+
+      await ErpAuditLog.logChange([{
+        entity_id: plan.entity_id,
+        log_type: 'STATUS_CHANGE',
+        target_ref: plan._id.toString(),
+        target_model: 'SalesGoalPlan',
+        field_changed: 'targets_bulk',
+        old_value: null,
+        new_value: `${results.length} targets upserted`,
+        changed_by: req.user._id,
+        note: `Bulk-assigned ${results.length} targets (total ₱${totalSalesTarget.toLocaleString()}) under plan ${plan.reference || plan.plan_name}`,
+      }], { session });
+    });
+  } finally {
+    session.endSession();
   }
 
   res.json({ success: true, data: results, message: `${results.length} targets saved` });
@@ -243,9 +506,60 @@ exports.computeSnapshots = catchAsync(async (req, res) => {
 
   const period = req.body.period || req.query.period || currentPeriod();
 
-  // Compute monthly + YTD
-  const monthlyResults = await salesGoalService.computeAllSnapshots(plan, period, 'MONTHLY');
-  const ytdResults = await salesGoalService.computeAllSnapshots(plan, String(plan.fiscal_year), 'YTD');
+  // Period lock — refuse to compute snapshots for a CLOSED/LOCKED period.
+  // Snapshot computation writes KpiSnapshot rows; those rows drive incentive
+  // accrual downstream (Week 2), which would post journals into the period.
+  // Blocking here keeps the ledger consistent with finance's month-end close.
+  try {
+    await checkPeriodOpen(plan.entity_id, period);
+  } catch (err) {
+    if (err.code === 'PERIOD_LOCKED') {
+      return res.status(err.status || 400).json({ success: false, message: err.message, code: err.code });
+    }
+    throw err;
+  }
+
+  // ── Default-Roles Gate ────────────────────────────────────────────────────
+  // Computing snapshots is a company-wide operation (touches every active BDM)
+  // and produces the data incentive payouts will key off. Gate it behind the
+  // same authority matrix as plan lifecycle operations.
+  const gated = await gateApproval({
+    entityId: plan.entity_id,
+    module: 'SALES_GOAL_PLAN',
+    docType: 'COMPUTE_SNAPSHOT',
+    docId: plan._id,
+    docRef: plan.reference || `${plan.plan_name} FY${plan.fiscal_year}`,
+    amount: 0,
+    description: `Compute KPI snapshots for ${plan.plan_name} FY${plan.fiscal_year} (period ${period})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
+  // Compute monthly + YTD. NOT transaction-wrapped: KpiSnapshot upserts are
+  // idempotent, and MongoDB transactions have a practical size ceiling that a
+  // full company-wide re-compute can exceed. Failures mid-loop leave partial
+  // data; re-running closes the gap.
+  //
+  // Incentive accrual fires inside each YTD snapshot (see
+  // salesGoalService.computeBdmSnapshot → accrueIncentive). Upserts are
+  // idempotent on (plan_id, bdm_id, period, period_type, program_code), so
+  // re-computing the same period does NOT double-post the journal.
+  const runOpts = { userId: req.user._id };
+  const monthlyResults = await salesGoalService.computeAllSnapshots(plan, period, 'MONTHLY', { ...runOpts, accrueIncentives: false });
+  const ytdResults = await salesGoalService.computeAllSnapshots(plan, String(plan.fiscal_year), 'YTD', runOpts);
+
+  await ErpAuditLog.logChange({
+    entity_id: plan.entity_id,
+    log_type: 'STATUS_CHANGE',
+    target_ref: plan._id.toString(),
+    target_model: 'SalesGoalPlan',
+    field_changed: 'snapshot_compute',
+    old_value: null,
+    new_value: `${monthlyResults.length}M + ${ytdResults.length}Y`,
+    changed_by: req.user._id,
+    note: `KPI snapshots computed for ${plan.reference || plan.plan_name} period ${period}`,
+  });
 
   res.json({
     success: true,
@@ -317,15 +631,19 @@ exports.getGoalDashboard = catchAsync(async (req, res) => {
   const config = await salesGoalService.getGoalConfig(req.entityId);
 
   // Get YTD snapshots
-  const snapshots = await KpiSnapshot.find({
+  const rawSnapshots = await KpiSnapshot.find({
     plan_id: plan._id,
     period_type: 'YTD',
   })
     .populate('bdm_id', 'name email')
-    .populate('person_id', 'full_name bdm_code position')
+    .populate('person_id', 'full_name bdm_code position is_active')
     .populate('territory_id', 'territory_code territory_name')
     .sort({ sales_attainment_pct: -1 })
     .lean();
+
+  // SG-Q2 W1 — drop snapshots whose person_id is a deactivated BDM. Keep
+  // snapshots with no person_id (legacy data) so historic coverage isn't hidden.
+  const snapshots = rawSnapshots.filter(s => !s.person_id || s.person_id.is_active !== false);
 
   // Entity targets — keep raw target_entity_id (no populate) so orphan references survive
   const entityTargetsRaw = await SalesGoalTarget.find({
@@ -432,6 +750,9 @@ exports.getGoalDashboard = catchAsync(async (req, res) => {
       entity_targets: entityTargets,
       leaderboard,
       tiers: await salesGoalService.getIncentiveTiers(req.entityId),
+      // Lookup-driven STATUS_PALETTE — colors + labels for ON_TRACK / NEEDS_ATTENTION / AT_RISK.
+      // Subscribers re-brand via Control Center → Lookup Tables (no code change).
+      palette: await salesGoalService.getStatusPalette(req.entityId),
       config: {
         attainment_green: config.ATTAINMENT_GREEN,
         attainment_yellow: config.ATTAINMENT_YELLOW,
@@ -476,6 +797,7 @@ exports.getBdmGoalDetail = catchAsync(async (req, res) => {
 
   const config = await salesGoalService.getGoalConfig(req.entityId);
   const tiers = await salesGoalService.getIncentiveTiers(req.entityId);
+  const palette = await salesGoalService.getStatusPalette(req.entityId);
 
   // Enrich target with running actual + remaining from YTD snapshot
   const enrichedTarget = target ? {
@@ -527,6 +849,7 @@ exports.getBdmGoalDetail = catchAsync(async (req, res) => {
       actions,
       config,
       tiers,
+      palette,
     },
   });
 });
@@ -583,11 +906,14 @@ exports.getIncentiveBoard = catchAsync(async (req, res) => {
 
   if (!plan) return res.json({ success: true, data: null });
 
-  const snapshots = await KpiSnapshot.find({ plan_id: plan._id, period_type: 'YTD' })
-    .populate('person_id', 'full_name bdm_code position')
+  const rawBoardSnapshots = await KpiSnapshot.find({ plan_id: plan._id, period_type: 'YTD' })
+    .populate('person_id', 'full_name bdm_code position is_active')
     .populate('territory_id', 'territory_name')
     .sort({ 'incentive_status.0.attainment_pct': -1 })
     .lean();
+
+  // SG-Q2 W1 — hide deactivated BDMs from the leaderboard and tier counts.
+  const snapshots = rawBoardSnapshots.filter(s => !s.person_id || s.person_id.is_active !== false);
 
   const tiersRaw = await salesGoalService.getIncentiveTiers(req.entityId);
   const advisor = await salesGoalService.getIncentiveBudgetAdvisor(req.entityId, plan);
@@ -646,6 +972,7 @@ exports.getIncentiveBoard = catchAsync(async (req, res) => {
       tiers,
       board,
       advisor,
+      palette: await salesGoalService.getStatusPalette(req.entityId),
       config: {
         attainment_green: config.ATTAINMENT_GREEN,
         attainment_yellow: config.ATTAINMENT_YELLOW,

@@ -12,6 +12,8 @@ const AGENT_DEFINITIONS = {
   visit_compliance: { key: 'visit_compliance', label: 'Visit Compliance', modulePath: './visitComplianceAgent', type: 'FREE' },
   photo_audit: { key: 'photo_audit', label: 'Photo Audit', modulePath: './photoAuditAgent', type: 'FREE' },
   system_integrity: { key: 'system_integrity', label: 'System Integrity', modulePath: './systemIntegrityAgent', type: 'FREE' },
+  // Phase SG-Q2 W2 — KPI snapshot + incentive accrual (FREE; no AI)
+  kpi_snapshot: { key: 'kpi_snapshot', label: 'KPI Snapshot & Incentive Accrual', modulePath: './kpiSnapshotAgent', type: 'FREE' },
 };
 
 const AGENT_KEYS = Object.keys(AGENT_DEFINITIONS);

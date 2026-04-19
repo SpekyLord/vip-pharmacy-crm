@@ -136,10 +136,46 @@ async function generateJeNumber({ entityId, date }) {
   return `JE-${code}${dateStr}-${seqStr}`;
 }
 
+/**
+ * Format date as YYMM (e.g. "2604" for April 2026).
+ */
+function formatYYMM(date) {
+  const d = new Date(date);
+  const yy = String(d.getFullYear()).slice(-2);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${yy}${mm}`;
+}
+
+/**
+ * Generate a Sales Goal Plan reference number.
+ *
+ * Format: `SG-{ENTITY_CODE}{YYMM}-{NNN}` (e.g. `SG-VIP2604-001`).
+ *
+ * Plans are annual/quarterly, so YYMM is more informative than MMDDYY —
+ * it answers "which month was this plan activated" without needing the day.
+ * Sequence is per-entity-per-month, atomic via DocSequence. Matches the
+ * generateJeNumber pattern for consistency.
+ *
+ * @param {Object} options
+ * @param {String|ObjectId} options.entityId
+ * @param {Date} [options.date] — activation date (default: now)
+ * @returns {Promise<String>}
+ */
+async function generateSalesGoalNumber({ entityId, date }) {
+  const code = await getEntityCode(entityId);
+  const monthStr = formatYYMM(date || new Date());
+  const seqKey = `SG-${code}-${monthStr}`;
+  const seq = await DocSequence.getNext(seqKey);
+  const seqStr = String(seq).padStart(3, '0');
+  return `SG-${code}${monthStr}-${seqStr}`;
+}
+
 module.exports = {
   generateDocNumber,
   formatMMDDYY,
+  formatYYMM,
   generateJeNumber,
+  generateSalesGoalNumber,
   getEntityCode,
   invalidateEntityCodeCache,
 };

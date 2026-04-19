@@ -220,6 +220,10 @@ const SEED_DEFAULTS = {
     { code: 'SNAPSHOT_AUTO_COMPUTE', label: 'Auto-Compute Monthly Snapshots', metadata: { value: true } },
     { code: 'LOST_SALES_THRESHOLD_DAYS', label: 'Stock-Out Threshold (days)', metadata: { value: 3 } },
     { code: 'ACCREDITATION_LEVEL', label: 'Hospital Accreditation Engagement Level', metadata: { value: 4 } },
+    // Phase SG-Q2 — defaults used by auto-enrollment of BDMs from PeopleMaster on plan activation.
+    // 0 means "create target rows with zero sales_target — president will fill in per-BDM manually".
+    // Set a non-zero value if your subsidiary wants every BDM to start with the same baseline target.
+    { code: 'DEFAULT_TARGET_REVENUE', label: 'Default BDM Sales Target (auto-enroll)', metadata: { value: 0 } },
   ],
   GROWTH_DRIVER: [
     { code: 'HOSP_ACCRED', label: 'Hospital Accreditation' },
@@ -273,6 +277,16 @@ const SEED_DEFAULTS = {
     { code: 'TIER_4', label: 'Bronze', metadata: { attainment_min: 70, budget_per_bdm: 30000, reward_description: '', sort_order: 4, bg_color: '#fed7aa', text_color: '#9a3412' } },
     { code: 'TIER_5', label: 'Participant', metadata: { attainment_min: 50, budget_per_bdm: 15000, reward_description: '', sort_order: 5, bg_color: '#dbeafe', text_color: '#1e40af' } },
   ],
+  // Phase 28 — Status palette for sales-goal attainment buckets.
+  // Codes match the bucket emitted by salesGoalController.getGoalDashboard()
+  // (ON_TRACK / NEEDS_ATTENTION / AT_RISK). Subscribers can rebrand colors
+  // and labels per entity via Control Center → Lookup Tables — zero code change.
+  // bar_color drives progress fills; bg_color/text_color drive badges.
+  STATUS_PALETTE: [
+    { code: 'ON_TRACK',         label: 'On Track', metadata: { bar_color: '#22c55e', bg_color: '#dcfce7', text_color: '#166534', sort_order: 1 } },
+    { code: 'NEEDS_ATTENTION',  label: 'At Risk',  metadata: { bar_color: '#f59e0b', bg_color: '#fef3c7', text_color: '#92400e', sort_order: 2 } },
+    { code: 'AT_RISK',          label: 'Behind',   metadata: { bar_color: '#ef4444', bg_color: '#fee2e2', text_color: '#991b1b', sort_order: 3 } },
+  ],
   ACTION_TYPE: [
     { code: 'ACCREDITATION', label: 'Hospital Accreditation' },
     { code: 'FORMULARY_LISTING', label: 'Formulary/CSR Listing' },
@@ -297,8 +311,8 @@ const SEED_DEFAULTS = {
   ],
   // Financial vs Operational segregation — president approves financial, can delegate operational later
   APPROVAL_CATEGORY: [
-    { code: 'FINANCIAL', label: 'Financial', metadata: { description: 'Involves money movement — requires president/finance approval', modules: ['EXPENSES', 'PURCHASING', 'PAYROLL', 'JOURNAL', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER', 'INCOME', 'PRF_CALF', 'PERDIEM_OVERRIDE', 'DEDUCTION_SCHEDULE'] } },
-    { code: 'OPERATIONAL', label: 'Operational', metadata: { description: 'Document processing & verification — can be delegated to admin/finance', modules: ['SALES', 'INVENTORY', 'KPI', 'SMER', 'CAR_LOGBOOK', 'COLLECTION'] } },
+    { code: 'FINANCIAL', label: 'Financial', metadata: { description: 'Involves money movement — requires president/finance approval', modules: ['EXPENSES', 'PURCHASING', 'PAYROLL', 'JOURNAL', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER', 'INCOME', 'PRF_CALF', 'PERDIEM_OVERRIDE', 'DEDUCTION_SCHEDULE', 'INCENTIVE_PAYOUT'] } },
+    { code: 'OPERATIONAL', label: 'Operational', metadata: { description: 'Document processing & verification — can be delegated to admin/finance', modules: ['SALES', 'INVENTORY', 'KPI', 'SMER', 'CAR_LOGBOOK', 'COLLECTION', 'SALES_GOAL_PLAN'] } },
   ],
   APPROVAL_MODULE: [
     // Authority Matrix modules (Phase 29) — with financial/operational category.
@@ -324,6 +338,14 @@ const SEED_DEFAULTS = {
     { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { category: 'FINANCIAL' } },
     { code: 'APPROVAL_REQUEST', label: 'Authority Matrix Approvals', metadata: { category: 'FINANCIAL' } },
     { code: 'PERDIEM_OVERRIDE', label: 'Per Diem Override', metadata: { category: 'FINANCIAL' } },
+    // Phase SG-Q2 — Sales Goal plan lifecycle (activate/close/reopen/bulk-target/compute)
+    // gateApproval() key for the Default-Roles Gate. Category=OPERATIONAL so admins
+    // can delegate posting without full financial authority.
+    { code: 'SALES_GOAL_PLAN', label: 'Sales Goal Plan Lifecycle', metadata: { category: 'OPERATIONAL' } },
+    // Phase SG-Q2 W2 — Incentive payout lifecycle (accrue/approve/pay/reverse)
+    // Category=FINANCIAL — moves money (DR Incentive Expense / CR Incentive Accrual),
+    // settlement debits the accrual and credits cash/bank. Default roles president/finance.
+    { code: 'INCENTIVE_PAYOUT', label: 'Incentive Payout Lifecycle', metadata: { category: 'FINANCIAL' } },
   ],
   // Phase 30 — PersonDetail dropdowns (migrated from hardcoded arrays)
   CIVIL_STATUS: ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'],
@@ -476,6 +498,13 @@ const SEED_DEFAULTS = {
     { code: 'SALES_GOALS__ACTION_MANAGE_ALL', label: 'Create Actions for Any BDM', metadata: { module: 'sales_goals', key: 'action_manage_all', sort_order: 3 } },
     { code: 'SALES_GOALS__INCENTIVE_MANAGE', label: 'Manage Incentive Programs', metadata: { module: 'sales_goals', key: 'incentive_manage', sort_order: 4 } },
     { code: 'SALES_GOALS__MANUAL_KPI_ALL', label: 'Enter Manual KPIs for Any BDM', metadata: { module: 'sales_goals', key: 'manual_kpi_all', sort_order: 5 } },
+    // Phase SG-Q2 W2 — IncentivePayout lifecycle sub-permissions.
+    // Delegable via Access Template ticks so Finance can run the ledger without
+    // blanket FULL access to Sales Goals. President always bypasses.
+    { code: 'SALES_GOALS__PAYOUT_VIEW', label: 'View Incentive Payout Ledger', metadata: { module: 'sales_goals', key: 'payout_view', sort_order: 6 } },
+    { code: 'SALES_GOALS__PAYOUT_APPROVE', label: 'Approve Incentive Payouts', metadata: { module: 'sales_goals', key: 'payout_approve', sort_order: 7 } },
+    { code: 'SALES_GOALS__PAYOUT_PAY', label: 'Mark Incentive Payouts Paid (posts settlement JE)', metadata: { module: 'sales_goals', key: 'payout_pay', sort_order: 8 } },
+    { code: 'SALES_GOALS__PAYOUT_REVERSE', label: 'Reverse Incentive Payout (posts reversal JE) (DANGER)', metadata: { module: 'sales_goals', key: 'payout_reverse', sort_order: 9 } },
     // Approvals
     { code: 'APPROVALS__RULE_MANAGE', label: 'Create/Edit Approval Rules', metadata: { module: 'approvals', key: 'rule_manage', sort_order: 1 } },
     // Phase 34 — Per-module approval sub-permissions
@@ -626,6 +655,14 @@ const SEED_DEFAULTS = {
       label: 'Create/edit warehouse rows (impacts stock segregation)',
       metadata: { module: 'inventory', key: 'warehouse_manage' },
     },
+    // Phase SG-Q2 W2 — reversing an IncentivePayout posts a SAP-Storno JE against
+    // the original accrual. Subscriber-removable (Tier 2) so admins who want
+    // unrestricted reversal can deactivate the row, but default = gated.
+    {
+      code: 'SALES_GOALS__PAYOUT_REVERSE',
+      label: 'Reverse Sales Goal incentive payout (posts reversal JE)',
+      metadata: { module: 'sales_goals', key: 'payout_reverse' },
+    },
   ],
   // Phase 15.2 (softened) — CSI Void reasons (contractor marks a physical CSI as unused)
   // Lookup-driven so subscribers can add new reasons without code changes.
@@ -760,6 +797,44 @@ const SEED_DEFAULTS = {
     { code: 'PETTY_CASH', label: 'Petty Cash', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post petty cash transactions' } },
     { code: 'IC_TRANSFER', label: 'Inter-Company Transfer', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post inter-company transfers and settlements' } },
     { code: 'PURCHASING', label: 'Purchasing', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post supplier invoices' } },
+    // Phase SG-Q2 — Default-Roles Gate for Sales Goal plan lifecycle.
+    // "Any person can CREATE a plan (DRAFT), but authority ACTIVATES/CLOSES/REOPENS."
+    // Non-authorized submitters are held in the Approval Hub (HTTP 202).
+    // Subscribers: set metadata.roles = null to open-post this module (anyone can activate).
+    { code: 'SALES_GOAL_PLAN', label: 'Sales Goal Plan', metadata: { roles: ['president', 'finance'], description: 'Activate/close/reopen annual sales plans; run KPI snapshots; bulk-create targets' } },
+    // Phase SG-Q2 W2 — Default-Roles Gate for IncentivePayout lifecycle.
+    // "Any authorized snapshot-run may ACCRUE, but only authority APPROVES/PAYS/REVERSES."
+    // Accrual is automatic inside computeBdmSnapshot (no gate — it's the system writing).
+    // Approve/Pay/Reverse route through gateApproval — default president/finance only.
+    // Subscribers: set metadata.roles = null for open-post (anyone with payout_process can pay).
+    { code: 'INCENTIVE_PAYOUT', label: 'Incentive Payouts', metadata: { roles: ['president', 'finance'], description: 'Approve, pay, and reverse Sales Goal incentive payouts (Accrued → Approved → Paid → Reversed)' } },
+  ],
+  // Phase SG-Q2 — Period lock modules. UI (Period Locks page) reads this to render
+  // toggle rows per module. Each code becomes a lockable unit. Subscribers can add
+  // their own modules via Control Center → Lookup Tables (no code change).
+  // The actual lock state lives in MonthlyArchive; this lookup is the module registry.
+  PERIOD_LOCK_MODULES: [
+    { code: 'SALES', label: 'Sales (CSI)', metadata: { description: 'Posting new sales in a closed period' } },
+    { code: 'COLLECTION', label: 'Collections (CR)', metadata: { description: 'Posting new collections in a closed period' } },
+    { code: 'EXPENSE', label: 'Expenses', metadata: { description: 'Posting new expenses in a closed period' } },
+    { code: 'INCOME', label: 'Income Reports / Payslips', metadata: { description: 'Income reports + payslip posting' } },
+    { code: 'PAYROLL', label: 'Payroll', metadata: { description: 'Payroll journal entries' } },
+    { code: 'INVENTORY', label: 'Inventory / GRN', metadata: { description: 'GRN, transfers, adjustments' } },
+    { code: 'IC_TRANSFER', label: 'Inter-Company Transfers', metadata: { description: 'ICT/ICS documents' } },
+    { code: 'PETTY_CASH', label: 'Petty Cash', metadata: { description: 'PCV + replenishments' } },
+    { code: 'JOURNAL', label: 'Journal Entries', metadata: { description: 'Manual JEs + depreciation' } },
+    { code: 'SALES_GOAL', label: 'Sales Goal Snapshots', metadata: { description: 'KPI snapshot compute per period (plan lifecycle itself is annual, not period-locked)' } },
+    { code: 'INCENTIVE_PAYOUT', label: 'Incentive Payouts', metadata: { description: 'Accrue/Approve/Pay/Reverse — period derived from payout.period for accrual, current date for settlement' } },
+  ],
+  // Phase SG-Q2 — Sales Goal auto-enrollment role registry (subscription-ready).
+  // On plan activation, the system enumerates PeopleMaster where `person_type ∈ codes`
+  // AND `is_active = true` AND `entity_id = plan.entity_id`, then upserts BDM targets
+  // using GOAL_CONFIG.DEFAULT_TARGET_REVENUE / DEFAULT_COLLECTION_TARGET_PCT.
+  // Default (seeded): only BDM. Subscribers add ECOMMERCE_BDM, SALES_REP,
+  // Sales Manager, Territory Manager, etc. via Control Center → Lookup Tables —
+  // zero code change required. Codes MUST exactly match PERSON_TYPE lookup codes.
+  SALES_GOAL_ELIGIBLE_ROLES: [
+    { code: 'BDM', label: 'BDM (Business Development Manager)', metadata: { description: 'Primary field sales role. Seeded as default enrollment target.' } },
   ],
 
   // Phase G3 — Editable fields per module in the Universal Approval Hub (quick-edit for typo fixes)
@@ -774,6 +849,54 @@ const SEED_DEFAULTS = {
     { code: 'EXPENSE_ENTRY', label: 'Expenses (ORE/ACCESS)', metadata: { fields: ['notes'] } },
     { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { fields: ['purpose', 'check_no', 'notes'] } },
     { code: 'GRN', label: 'GRN', metadata: { fields: ['notes'] } },
+  ],
+
+  // Phase G6 — Rejection feedback config per module (subscription-ready, per-entity).
+  // Drives the contractor-side <RejectionBanner> and "Fix & Resubmit" deep-link across
+  // every module that routes through gateApproval(). One row per canonical module key.
+  //
+  // Keys MUST match MODULE_DEFAULT_ROLES codes (Phase G4) so the G4 gate and the G6
+  // rejection surface stay aligned. The verifyRejectionWiring script (G6.9) enforces
+  // this on CI — drift between the two lookups causes a build-break.
+  //
+  // metadata.rejected_status — the terminal status value the banner reacts to. Varies
+  //   per module because distinct semantics are preserved (see design decision #2 in
+  //   the plan). ERROR = validation + approver reject; REJECTED = approver-only reject;
+  //   RETURNED = reviewer returned for edit.
+  // metadata.reason_field — `rejection_reason` for most, `return_reason` for modules
+  //   that historically used that field name (Income, KPI). Lookup indirection avoids a
+  //   migration.
+  // metadata.resubmit_allowed — when true, banner renders a "Fix & Resubmit" button.
+  //   Set false for terminal/embedded docs that cannot be independently re-submitted
+  //   (PERDIEM_OVERRIDE is an embedded entry inside SmerEntry).
+  // metadata.editable_statuses — which status values the module's existing edit flow
+  //   accepts. Banner's resubmit handler only navigates when row.status is in this list.
+  MODULE_REJECTION_CONFIG: [
+    // ── Group A — modules with dedicated reject handlers in universalApprovalController ──
+    { code: 'SALES',             label: 'Sales / CSI — Rejection Config',   metadata: { rejected_status: 'ERROR',    reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'Sales line items rejected from Approval Hub' } },
+    { code: 'COLLECTION',        label: 'Collections / CR — Rejection Config', metadata: { rejected_status: 'ERROR', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'Collection receipts rejected from Approval Hub' } },
+    { code: 'SMER',              label: 'SMER — Rejection Config',            metadata: { rejected_status: 'ERROR',  reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'SMER documents rejected from Approval Hub' } },
+    { code: 'CAR_LOGBOOK',       label: 'Car Logbook — Rejection Config',     metadata: { rejected_status: 'ERROR',  reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'Car logbook entries rejected from Approval Hub (batch reject affects entire period+cycle)' } },
+    { code: 'EXPENSES',          label: 'Expenses (ORE/ACCESS) — Rejection Config', metadata: { rejected_status: 'ERROR', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['DRAFT', 'ERROR'],      banner_tone: 'danger', description: 'Expense entries rejected from Approval Hub' } },
+    { code: 'PRF_CALF',          label: 'PRF / CALF — Rejection Config',      metadata: { rejected_status: 'ERROR',  reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'PRF/CALF documents rejected from Approval Hub' } },
+    { code: 'INVENTORY',         label: 'GRN (Goods Receipt) — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['DRAFT', 'PENDING', 'REJECTED'], banner_tone: 'danger', description: 'GRN entries rejected from Approval Hub' } },
+    { code: 'PAYROLL',           label: 'Payslips — Rejection Config',        metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['COMPUTED', 'REJECTED'],     banner_tone: 'danger', description: 'Payslips rejected from Approval Hub (reopens for recomputation)' } },
+    { code: 'INCOME',            label: 'Income Reports — Rejection Config',  metadata: { rejected_status: 'RETURNED', reason_field: 'return_reason',    resubmit_allowed: true,  editable_statuses: ['GENERATED', 'RETURNED'],    banner_tone: 'warning', description: 'Income reports returned by reviewer for edit (RETURNED status preserves prior review chain)' } },
+    { code: 'KPI',               label: 'KPI Ratings — Rejection Config',     metadata: { rejected_status: 'RETURNED', reason_field: 'return_reason',    resubmit_allowed: true,  editable_statuses: ['SUBMITTED', 'RETURNED'],    banner_tone: 'warning', description: 'KPI self-ratings returned by reviewer for edit' } },
+    { code: 'DEDUCTION_SCHEDULE', label: 'Deduction Schedules — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['PENDING_APPROVAL', 'REJECTED'], banner_tone: 'danger', description: 'Deduction schedules rejected from Approval Hub' } },
+    { code: 'PERDIEM_OVERRIDE',  label: 'Per Diem Override — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'decision_reason', resubmit_allowed: false, editable_statuses: [],                          banner_tone: 'warning', description: 'Per diem overrides are embedded entries inside SMER — reason surfaces on the parent SMER, no standalone resubmit' } },
+    { code: 'APPROVAL_REQUEST',  label: 'Authority Matrix Request — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'decision_reason', resubmit_allowed: false, editable_statuses: [],                      banner_tone: 'warning', description: 'ApprovalRequest itself — lives in Approval Hub history, not resubmitted directly' } },
+
+    // ── Group B — placeholders pending G6.7 dedicated reject handlers ──
+    // G6.7 adds matching `rejection_reason` fields + handlers in universalApprovalController.
+    // These rows are seeded now so the lookup is complete; they activate when G6.7 lands.
+    { code: 'JOURNAL',           label: 'Journal Entries — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Journal entries rejected from Approval Hub (pending G6.7 handler wiring)' } },
+    { code: 'BANKING',           label: 'Banking — Rejection Config',         metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Bank transactions rejected from Approval Hub (pending G6.7 handler wiring)' } },
+    { code: 'PETTY_CASH',        label: 'Petty Cash — Rejection Config',      metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Petty cash transactions rejected from Approval Hub (pending G6.7 handler wiring)' } },
+    { code: 'IC_TRANSFER',       label: 'Inter-Company Transfer — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['DRAFT', 'REJECTED'], banner_tone: 'danger', description: 'Inter-company transfers and settlements rejected from Approval Hub (pending G6.7 handler wiring)' } },
+    { code: 'PURCHASING',        label: 'Purchasing — Rejection Config',      metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Purchase orders / supplier invoices rejected from Approval Hub (pending G6.7 handler wiring)' } },
+    { code: 'SALES_GOAL_PLAN',   label: 'Sales Goal Plan — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Annual sales goal plans rejected from Approval Hub (pending G6.7 handler wiring)' } },
+    { code: 'INCENTIVE_PAYOUT',  label: 'Incentive Payouts — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['ACCRUED', 'REJECTED'],      banner_tone: 'danger', description: 'Incentive payouts rejected from Approval Hub (pending G6.7 handler wiring)' } },
   ],
 
   // Phase 34 — Editable line-item fields per module in the Approval Hub

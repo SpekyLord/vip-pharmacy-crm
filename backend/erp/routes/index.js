@@ -47,6 +47,12 @@ router.use('/scorecards', require('./scorecardRoutes'));
 // ═══ Phase 28 — Sales Goals & KPI ═══
 router.use('/sales-goals', erpAccessCheck('sales_goals'), require('./salesGoalRoutes'));
 
+// ═══ Phase SG-Q2 W2 — Incentive Payout Ledger (sibling of sales-goals) ═══
+// Mounted at its own path so payroll/finance can consume `/payable` without
+// granting Sales Goals module access; route file still enforces
+// erpAccessCheck('sales_goals', ...) since payouts are derived from plans.
+router.use('/incentive-payouts', require('./incentivePayoutRoutes'));
+
 // ═══ Phase 28 — Approval Workflow (Authority Matrix) ═══
 router.use('/approvals', require('./approvalRoutes'));
 

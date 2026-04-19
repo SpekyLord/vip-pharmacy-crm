@@ -47,6 +47,12 @@ function initAgentScheduler() {
   cron.schedule('0 5 * * 1', () => triggerScheduled('system_integrity', 'System Integrity'), { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #S System Integrity - weekly Monday 5:00 AM');
 
+  // Phase SG-Q2 W2 — KPI Snapshot & Incentive Accrual. Day 1 of each month at
+  // 5:00 AM Manila so the previous month's KPI data is frozen before anyone
+  // starts posting Q2+1 sales. Manual Run Now available from Agent Console.
+  cron.schedule('0 5 1 * *', () => triggerScheduled('kpi_snapshot', 'KPI Snapshot & Incentive Accrual'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #K KPI Snapshot - monthly day 1 5:00 AM');
+
   const hasAiKey = !!process.env.ANTHROPIC_API_KEY;
 
   if (hasAiKey) {

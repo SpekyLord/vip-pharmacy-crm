@@ -783,11 +783,14 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     sections.push({ title: 'Reports', collapsible: true, defaultOpen: false, items: repItems });
   }
 
-  // ── Sales Goals & KPI (Phase 28) ────────────────────────────────────────
+  // ── Sales Goals & KPI (Phase 28 + SG-Q2 W2 — Incentive Payouts) ──────────
   if (hasModule('sales_goals')) {
     const goalItems = [
       { path: '/erp/sales-goals', label: 'Goal Dashboard', icon: Target },
       { path: '/erp/sales-goals/incentives', label: 'Incentive Tracker', icon: Trophy },
+      // Payout Ledger — VIEW sufficient so BDMs can see their own rows;
+      // Approve/Pay/Reverse actions are gated per-row by sub-perm + gateApproval.
+      { path: '/erp/incentive-payouts', label: 'Payout Ledger', icon: DollarSign },
     ];
     if (isAdmin) {
       goalItems.push({ path: '/erp/sales-goals/setup', label: 'Goal Setup', icon: Settings });

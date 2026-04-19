@@ -12,6 +12,7 @@ import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
@@ -634,9 +635,8 @@ export default function GrnEntry() {
                             <button className="btn btn-danger btn-sm" onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>
                           </div>
                         )}
-                        {g.status === 'REJECTED' && g.rejection_reason && (
-                          <span style={{ fontSize: 12, color: '#991b1b' }}>{g.rejection_reason}</span>
-                        )}
+                        <RejectionBanner row={g} moduleKey="INVENTORY" variant="row" />
+
                       </td>
                     </tr>
                   ))}
@@ -680,9 +680,9 @@ export default function GrnEntry() {
                       </div>
                     </div>
 
-                    {g.status === 'REJECTED' && g.rejection_reason && (
-                      <div style={{ marginTop: 8, fontSize: 12, color: '#991b1b' }}>{g.rejection_reason}</div>
-                    )}
+                    <div style={{ marginTop: 8 }}>
+                      <RejectionBanner row={g} moduleKey="INVENTORY" variant="row" />
+                    </div>
 
                     {g.status === 'PENDING' && (ROLE_SETS.MANAGEMENT.includes(user?.role)) && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>

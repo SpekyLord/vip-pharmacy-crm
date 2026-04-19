@@ -73,11 +73,38 @@ const pageStyles = `
   @media(max-width: 768px) { .bdv-main { padding: 12px; } .bdv-row { flex-direction: column; } }
 `;
 
-// Colors from Lookup config (database-driven, not hardcoded)
-function attainColor(pctVal, config) {
-  if (config?.attainment_green && pctVal >= config.attainment_green) return '#22c55e';
-  if (config?.attainment_yellow && pctVal >= config.attainment_yellow) return '#f59e0b';
-  return '#ef4444';
+// Lookup-driven STATUS_PALETTE — codes match the buckets emitted by
+// salesGoalController (ON_TRACK / NEEDS_ATTENTION / AT_RISK). Subscribers
+// re-brand bar/badge colors per entity from Control Center → Lookup Tables.
+const NEUTRAL_PALETTE = { bar: '#9ca3af', bg: '#f3f4f6', text: '#374151', label: '' };
+
+function statusBucket(attPct, config) {
+  if (attPct >= (config?.attainment_green ?? 90)) return 'ON_TRACK';
+  if (attPct >= (config?.attainment_yellow ?? 70)) return 'NEEDS_ATTENTION';
+  return 'AT_RISK';
+}
+
+function buildPaletteMap(palette) {
+  const map = {};
+  for (const p of palette || []) {
+    if (!p?.code) continue;
+    map[p.code.toUpperCase()] = {
+      bar: p.bar_color || NEUTRAL_PALETTE.bar,
+      bg: p.bg_color || NEUTRAL_PALETTE.bg,
+      text: p.text_color || NEUTRAL_PALETTE.text,
+      label: p.label || p.code,
+    };
+  }
+  return map;
+}
+
+function paletteFor(code, paletteMap) {
+  const key = String(code || '').toUpperCase();
+  return paletteMap[key] || { ...NEUTRAL_PALETTE, label: key || NEUTRAL_PALETTE.label };
+}
+
+function attainColor(pctVal, config, paletteMap) {
+  return paletteFor(statusBucket(pctVal, config), paletteMap).bar;
 }
 
 function buildTierColorMap(tiers) {
@@ -113,8 +140,11 @@ export default function SalesGoalBdmView() {
   const [expandedDrivers, setExpandedDrivers] = useState({});
   const [actionForm, setActionForm] = useState({ title: '', driver_code: '', priority: 'MEDIUM', due_date: '' });
   const [savingAction, setSavingAction] = useState(false);
+  // Phase SG-Q2 W2 — My Payouts section
+  const [payouts, setPayouts] = useState([]);
 
   const effectiveId = bdmId || user?._id || user?.id;
+  const isSelfView = !bdmId || String(bdmId) === String(user?._id || user?.id);
 
   const loadDetail = useCallback(async () => {
     if (!effectiveId) return;
@@ -127,6 +157,27 @@ export default function SalesGoalBdmView() {
   }, [effectiveId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadDetail(); }, [effectiveId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase SG-Q2 W2 — pull payouts for the effective BDM (self-view uses /mine,
+  // admin viewing another BDM uses the filtered ledger endpoint).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!effectiveId) return;
+      try {
+        const res = isSelfView
+          ? await sg.getMyPayouts({})
+          : await sg.getPayouts({ bdm_id: effectiveId });
+        if (cancelled) return;
+        // useErpApi unwraps to HTTP body → res is { success, data: [...] }
+        const data = res?.data || [];
+        setPayouts(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setPayouts([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [effectiveId, isSelfView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleDriver = (code) => {
     setExpandedDrivers(prev => ({ ...prev, [code]: !prev[code] }));
@@ -166,9 +217,10 @@ export default function SalesGoalBdmView() {
   const actions = detail?.actions || [];
   const goalConfig = detail?.config || {};
   const colorMap = buildTierColorMap(detail?.tiers);
+  const paletteMap = buildPaletteMap(detail?.palette);
 
   const attainPct = ytdSnap.sales_attainment_pct || 0;
-  const ringColor = attainColor(attainPct, goalConfig);
+  const ringColor = attainColor(attainPct, goalConfig, paletteMap);
   const ringRadius = 50;
   const ringCircumference = 2 * Math.PI * ringRadius;
   const ringOffset = ringCircumference - (Math.min(attainPct, 100) / 100) * ringCircumference;
@@ -328,7 +380,7 @@ export default function SalesGoalBdmView() {
                                   <div className="bdv-kpi-track">
                                     <div className="bdv-kpi-fill" style={{
                                       width: `${Math.min(kpiPct, 100)}%`,
-                                      background: attainColor(kpiPct, goalConfig)
+                                      background: attainColor(kpiPct, goalConfig, paletteMap)
                                     }} />
                                   </div>
                                   <span className="bdv-kpi-nums">
@@ -344,6 +396,45 @@ export default function SalesGoalBdmView() {
                   })}
                 </div>
               )}
+
+              {/* Phase SG-Q2 W2 — My Payouts */}
+              <div className="bdv-panel">
+                <h3>My Incentive Payouts</h3>
+                {payouts.length === 0 ? (
+                  <p style={{ color: 'var(--erp-muted)', fontSize: 13, margin: 0 }}>
+                    No payouts yet. Hit a tier threshold on your YTD attainment and a payout will be accrued automatically.{' '}
+                    <Link to="/erp/incentive-payouts" style={{ color: 'var(--erp-accent, #2563eb)' }}>Open Payout Ledger →</Link>
+                  </p>
+                ) : (
+                  <>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', background: 'var(--erp-accent-soft, #eef2ff)' }}>Period</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', background: 'var(--erp-accent-soft, #eef2ff)' }}>Tier</th>
+                          <th style={{ textAlign: 'right', padding: '6px 8px', background: 'var(--erp-accent-soft, #eef2ff)' }}>Amount</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', background: 'var(--erp-accent-soft, #eef2ff)' }}>Status</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', background: 'var(--erp-accent-soft, #eef2ff)' }}>Paid</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payouts.map(p => (
+                          <tr key={p._id} style={{ borderTop: '1px solid var(--erp-border)' }}>
+                            <td style={{ padding: '6px 8px' }}>{p.period}</td>
+                            <td style={{ padding: '6px 8px' }}>{p.tier_label || p.tier_code}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{php(p.tier_budget)}</td>
+                            <td style={{ padding: '6px 8px' }}>{p.status}</td>
+                            <td style={{ padding: '6px 8px' }}>{p.paid_at ? new Date(p.paid_at).toLocaleDateString() : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div style={{ marginTop: 8 }}>
+                      <Link to="/erp/incentive-payouts" style={{ color: 'var(--erp-accent, #2563eb)', fontSize: 12 }}>See full ledger →</Link>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Action Items */}
               <div className="bdv-panel">

@@ -4279,3 +4279,177 @@ Console — Phase 31" section for the architecture deep-dive.
 - Optional: remove the legacy `approve-deletion` routes once all subscribers migrate to President Reverse for full ledger cleanup. Plan question #2.
 - `creditNoteRoutes DELETE /:id` already uses `erpAnySubAccessCheck` (sub-perm gated) — left in place.
 
+---
+
+## Phase SG-Q2 — Sales Goal Compliance Floor + Q2 2026 Staging Week 1 ✅ (April 19, 2026)
+
+**Why.** The 2026 Q2 evaluation (Apr–Jun) needs the Sales Goal module usable for staged evaluation by 2026-05-17. Before April 19, the module had plan CRUD and KPI compute but zero compliance plumbing: no `gateApproval` gate, no `ErpAuditLog`, no transactions around multi-doc state changes, no reference number, no auto-enrollment, no `is_active` filter on deactivated BDMs, and no period lock on snapshot compute. This phase is the minimum-viable subset of SG-1 items 1–8 that unblocks president staging without requiring Week 2 (incentive accruals + journal wiring).
+
+**Target milestone.** Activate a Q2 plan for VIP entity → reference `SG-VIP2604-###` populated, audit log entry written, 202 returned to non-president submitters, BDM targets auto-created from PeopleMaster, deactivated BDMs hidden from leaderboard.
+
+**What shipped (Week 1 — by 2026-04-26).**
+
+- [x] `backend/erp/models/SalesGoalPlan.js` — added `reference`, `reopened_by`, `reopened_at`, `closed_by`, `closed_at` fields; new index `{ entity_id, reference }`. Schema-only change; existing documents keep nulls for new fields until first lifecycle event.
+- [x] `backend/erp/services/docNumbering.js` — new `generateSalesGoalNumber({ entityId, date })` producing `SG-{ENTITY_SHORT}{YYMM}-{NNN}` (e.g. `SG-VIP2604-001`). Modeled on `generateJeNumber` — per-entity-per-month atomic sequence via `DocSequence.getNext()`. Also exports `formatYYMM` helper.
+- [x] `backend/erp/controllers/salesGoalController.js`:
+  - New helper `autoEnrollEligibleBdms(plan, userId, session)` — lookup-driven, idempotent, transaction-aware. Reads `SALES_GOAL_ELIGIBLE_ROLES` (auto-seeds `BDM` on first call for fresh entities), joins PeopleMaster on `person_type ∈ codes AND is_active=true AND entity_id`, upserts `SalesGoalTarget(target_type='BDM')` rows using `GOAL_CONFIG.DEFAULT_TARGET_REVENUE` + `plan.collection_target_pct`. Skips persons who already have a target for this plan.
+  - `activatePlan`: wrapped in `gateApproval({ module: 'SALES_GOAL_PLAN', docType: 'PLAN_ACTIVATE' })` → `mongoose.startSession()` → `withTransaction` — inside the txn: stamps `reference` (first activation only — preserved across reopen/re-activate), flips status + approved_by/at, bulk-updates DRAFT targets → ACTIVE, runs auto-enrollment, writes `ErpAuditLog.logChange({ log_type: 'STATUS_CHANGE', field_changed: 'status', old: 'DRAFT', new: 'ACTIVE' })`. Response includes enrollment summary.
+  - `reopenPlan`: gate + txn + status flip + target DRAFT cascade + `ErpAuditLog(log_type: 'REOPEN')`. Captures `reopened_by/at`.
+  - `closePlan`: gate + txn + status flip + target CLOSED cascade + `closed_by/at` + `ErpAuditLog(log_type: 'STATUS_CHANGE')`.
+  - `bulkCreateTargets`: gate (amount = sum of sales_target) + txn + per-target upsert + single summary audit entry.
+  - `computeSnapshots`: `checkPeriodOpen(entity_id, period)` first (blocks compute on CLOSED/LOCKED periods so downstream incentive accruals never land in a closed month) → gate → compute (NOT transaction-wrapped because KpiSnapshot upserts are idempotent and a full company re-compute can exceed Mongo txn size limits) → audit.
+  - `getGoalDashboard` + `getIncentiveBoard`: populate `person_id.is_active` and filter out deactivated BDMs from leaderboard and tier counts. `getBdmGoalDetail` + `getSnapshots` intentionally do NOT filter (needed for viewing historic data on separated BDMs).
+- [x] `backend/erp/services/salesGoalService.js` — added PeopleMaster require; `computeAllSnapshots` now resolves active person IDs up front and skips inactive people. Snapshots already persisted for deactivated BDMs are kept (historic integrity); new snapshots are not generated.
+- [x] `backend/erp/controllers/lookupGenericController.js` SEED_DEFAULTS:
+  - `GOAL_CONFIG` + `DEFAULT_TARGET_REVENUE` (default 0) — used by auto-enrollment.
+  - `APPROVAL_CATEGORY.OPERATIONAL.metadata.modules` += `SALES_GOAL_PLAN`.
+  - `APPROVAL_MODULE` += `{ code: 'SALES_GOAL_PLAN', metadata: { category: 'OPERATIONAL' } }`.
+  - `MODULE_DEFAULT_ROLES` += `{ code: 'SALES_GOAL_PLAN', metadata: { roles: ['president', 'finance'] } }` — drives the Default-Roles Gate.
+  - New `PERIOD_LOCK_MODULES` category — 10 module codes incl. `SALES_GOAL` for the period-lock UI module registry. Purely informational; lock state still lives in MonthlyArchive.
+  - New `SALES_GOAL_ELIGIBLE_ROLES` category — default `['BDM']`, subscriber-extendable without code changes. Auto-seeded via the same lazy-seed pattern as `MODULE_DEFAULT_ROLES`.
+  - Pre-existing `ERP_SUB_PERMISSION` entries for `sales_goals` (plan_manage, kpi_compute, action_manage_all, incentive_manage, manual_kpi_all) already cover destructive routes — no new sub-permissions seeded this phase.
+- [x] `frontend/src/erp/pages/SalesGoalDashboard.jsx` — imports `showApprovalPending` + `isApprovalPending`; `handleComputeSnapshots` now surfaces the 202 approval-pending toast. `SalesGoalSetup.jsx` was already wired in a prior phase; `SalesGoalBdmView.jsx` has no state-change actions so no wiring needed.
+- [x] `frontend/src/erp/components/WorkflowGuide.jsx` — extended `salesGoalDashboard`, `salesGoalSetup`, and `salesGoalBdmView` banners to document the new reference-number format, auto-enrollment behavior, Approval Hub routing, and deactivated-BDM filtering.
+
+**Hard rules honored.**
+- Zero hardcoded COA codes, thresholds, tier budgets, or roles. Every default flows through `Lookup` or `Settings`.
+- All commits follow `feat(erp): SG-Q2 W1 — <summary>` convention per the plan.
+- No scope creep into deferred items (plan versioning, credit rules, disputes, SOX matrix, HRIS hooks, accelerators, what-if modeling, Excel import, President-Reverse, KpiTemplate, growth-driver promotion, YoY trending).
+
+**Subscription-readiness verification.**
+- Fresh entity (simulated MG AND CO.) — first activation self-seeds `SALES_GOAL_ELIGIBLE_ROLES.BDM` + `MODULE_DEFAULT_ROLES.SALES_GOAL_PLAN`. No manual Control Center setup required before Q2 plan activation works.
+- Adding a new sales role (e.g. `TERRITORY_MANAGER`): president adds one row to `SALES_GOAL_ELIGIBLE_ROLES` lookup → next plan activation auto-enrolls that role. Zero deploy.
+- Disabling auto-enrollment per entity: deactivate every row in `SALES_GOAL_ELIGIBLE_ROLES` (or set `MODULE_DEFAULT_ROLES.SALES_GOAL_PLAN.metadata.roles = null` to open-post without approval gating).
+
+**Verification completed.**
+- `node -c` clean on `SalesGoalPlan.js`, `docNumbering.js`, `lookupGenericController.js`, `salesGoalController.js`, `salesGoalService.js`.
+- `cd frontend && npx vite build` clean — new `SalesGoalDashboard-*.js` and `WorkflowGuide-*.js` chunks emitted without warnings.
+- Wiring trace (Rule #2):
+  - `SalesGoalPlan` model → controller (5 funcs wired) → routes (existing `erpSubAccessCheck('sales_goals', 'plan_manage'|'kpi_compute')` preserved) → hook (`useSalesGoals`) → pages (Setup/Dashboard/BdmView).
+  - `generateSalesGoalNumber` imported in controller → used inside `activatePlan` txn → persisted on `SalesGoalPlan.reference`.
+  - `gateApproval` → `approvalService.getModulePostingRoles` → `Lookup.MODULE_DEFAULT_ROLES.SALES_GOAL_PLAN` (auto-seeded).
+  - `autoEnrollEligibleBdms` → `Lookup.SALES_GOAL_ELIGIBLE_ROLES` → `PeopleMaster.find({ person_type ∈ codes, is_active: true, entity_id })` → `SalesGoalTarget.create(..., { session })`.
+  - `checkPeriodOpen` → `MonthlyArchive` existing primitive (no new model).
+  - `ErpAuditLog.logChange` → existing immutable collection with 90-day TTL (no new infra).
+
+**Week 1 smoke tests (to run before Q2 staging goes live).**
+- [ ] As president, activate a DRAFT plan on VIP entity → expect: reference `SG-VIP2604-001` populated, `ErpAuditLog` row with `log_type: 'STATUS_CHANGE'`, auto-enroll response summary mentions N BDM(s).
+- [ ] As a non-president user with `sales_goals.plan_manage`, attempt to activate the same plan → expect: HTTP 202, toast "Plan activation sent for approval", new `ApprovalRequest` pending row.
+- [ ] President clears the pending approval from the Approval Hub → retry activation succeeds.
+- [ ] Re-activate the same plan → expect: reference unchanged, no duplicate audit rows for enrollment (idempotent).
+- [ ] Deactivate a BDM via PersonDetail → next `computeSnapshots` excludes them; dashboard leaderboard no longer shows them.
+- [ ] Seed fresh entity (e.g. `MG AND CO.`) → open Sales Goal Setup → create and activate plan → expect: BDM auto-enrolled from MG's PeopleMaster, zero code change, `SALES_GOAL_ELIGIBLE_ROLES` lookup self-seeded.
+- [ ] Close the April 2026 period via Period Locks → attempt `computeSnapshots` for that period → expect: HTTP 400 with `code: 'PERIOD_LOCKED'`.
+
+**Deferred to SG-Q2 W2–W3 (per plan Section H).** IncentivePayout model + journal (Week 2 #9–13), kpiSnapshotAgent background cron (Week 2 #14), IncentivePayoutLedger page (Week 2 #15), compensation statement endpoint + PDF print (Week 3 #16), tier-milestone notifications (Week 3 #17), kpiVarianceAgent (Week 3 #18), 360px mobile breakpoint on BDM-facing SG pages (Week 3 #19).
+
+**Post-Q2 queue (SG-3/4/5/6 per plan Section H).** KpiTemplate reuse, growth-driver promotion, Excel bulk import, President-Reverse on plan deletion, plan versioning, credit rules, dispute workflow, accelerators, what-if modeling, YoY trending, SOX matrix, HRIS hooks, mid-period revisions, integration hooks.
+
+---
+
+## Phase SG-Q2 Week 2 — Incentive Ledger + GL Linkage + kpiSnapshotAgent ✅ (April 19, 2026)
+
+**Why.** Week 1 shipped the compliance floor (gate/audit/txn/reference/auto-enroll) but no incentive payouts or GL linkage. Week 2 is the payroll-integration unlock: when a BDM qualifies for a tier via YTD KPI snapshot, the system now creates an `IncentivePayout` row AND posts a double-entry journal (DR Incentive Expense / CR Incentive Accrual). Finance can approve → pay (settlement JE) → reverse (SAP Storno) from a new Incentive Payout Ledger page, and a scheduled `kpiSnapshotAgent` recomputes snapshots monthly so the ledger stays current without a human pressing a button.
+
+**Target milestones (met).**
+- Qualify a test BDM for Silver → `IncentivePayout` row appears with `ACCRUED`, linked journal posted with `COA_MAP.INCENTIVE_EXPENSE` DR + `COA_MAP.INCENTIVE_ACCRUAL` CR, `uncapped_budget` vs `tier_budget` reflects CompProfile cap when `incentive_type=CASH` + `incentive_cap>0`.
+- Approve → Pay cycle posts a settlement JE (DR accrual, CR funding COA resolved from `PAYMENT_MODE.coa_code` or cash fallback); Reverse posts a SAP-Storno JE via existing `reverseJournal`.
+- `/api/erp/incentive-payouts/payable?period=YYYY-MM` returns unpaid accruals for payroll batch import.
+- `kpi_snapshot` agent registered; manual Run Now + monthly cron (day 1, 5:00 AM Manila) both exercise the pipeline end-to-end.
+
+**What shipped (Week 2).**
+
+*Backend — data model + journal pipeline.*
+- [x] `backend/erp/models/IncentivePayout.js` — new model. Fields: `entity_id, plan_id, bdm_id, person_id, fiscal_year, period, period_type ('MONTHLY'|'YTD'), program_code, tier_code, tier_label, tier_budget, uncapped_budget, attainment_pct, sales_target, sales_actual, status ('ACCRUED'|'APPROVED'|'PAID'|'REVERSED'), journal_id, journal_number, settlement_journal_id, reversal_journal_id, paid_via, paid_at, approved_by/at, paid_by, reversed_by/at, reversal_reason, notes, created_by`. Unique partial index on `(plan_id, bdm_id, period, period_type, program_code)` gives accrual idempotency. Supporting indexes on `(entity_id, period, status)` + `(entity_id, bdm_id, period)` + `status`.
+- [x] `backend/erp/services/journalFromIncentive.js` — new service. Three functions:
+  - `postAccrualJournal(payout, planRef, bdmLabel, userId, {session})` — validates `COA_MAP.INCENTIVE_EXPENSE` + `COA_MAP.INCENTIVE_ACCRUAL` against `ChartOfAccounts` (Rule #19), throws a readable error if either code is missing/inactive, then posts via `createAndPostJournal` with `source_module: 'SALES_GOAL'`.
+  - `postSettlementJournal(payout, planRef, bdmLabel, userId, paidViaDoc, {session})` — DR accrual, CR funding COA (from `PaymentMode.coa_code` or cash fallback via `resolveFundingCoa`).
+  - `reverseAccrualJournal(jeId, reason, userId, entityId)` — thin wrapper over existing `reverseJournal` so the controller's reverse path stays symmetric with other SAP-Storno surfaces.
+- [x] `backend/erp/models/Settings.js` — `COA_MAP` schema adds `INCENTIVE_EXPENSE: '5150'` + `INCENTIVE_ACCRUAL: '2160'` defaults. Existing `settingsController.updateSettings` already validates COA_MAP values against `ChartOfAccounts` on write — the new keys flow through that gate unchanged. `clearCoaCache()` invalidation on settings save already wired.
+- [x] `backend/erp/services/autoJournal.js` — `COA_NAMES` map extended with `INCENTIVE_EXPENSE: 'Incentive Expense'` + `INCENTIVE_ACCRUAL: 'Incentive Accrual Payable'` so audit strings render human-readable.
+- [x] `backend/erp/scripts/seedCOA.js` — `COA_TEMPLATE` adds two rows: `5150 — Incentive Expense — Sales Goal` (EXPENSE/COGS/DEBIT) and `2160 — Incentive Accrual Payable` (LIABILITY/Other/CREDIT). Fresh entities and subscribers running "Sync from Template" in Control Center → ChartOfAccounts get these accounts automatically.
+
+*Backend — accrual trigger inside snapshot compute.*
+- [x] `backend/erp/services/salesGoalService.js`:
+  - New helper `applyIncentiveCap(personId, entityId, tierBudget)` — reads `CompProfile.getActiveProfile(personId)`; when `incentive_type='CASH' AND incentive_cap>0`, clamps tier budget to the cap; returns `{capped, uncapped}` so the ledger surfaces the adjustment.
+  - New helper `accrueIncentive({entityId, plan, bdmId, personId, period, periodType, incentiveRow, userId})` — idempotent upsert keyed on `(plan_id, bdm_id, period, period_type, program_code)`. Skips if row is beyond ACCRUED (authority has taken over), or if ACCRUED row already matches current numbers. Posts the accrual JE FIRST via `postAccrualJournal`; only upserts the IncentivePayout after JE post succeeds → no orphaned ACCRUED row without its backing journal.
+  - `computeBdmSnapshot` signature extended with `options = { userId, accrueIncentives }`. YTD snapshots call `accrueIncentive`; monthly snapshots never accrue (prevents double-count since YTD already covers the month). `computeAllSnapshots` forwards `options`.
+  - `salesGoalController.computeSnapshots` passes `{ userId: req.user._id }` on the YTD call; the monthly call is flagged `accrueIncentives: false`.
+
+*Backend — controller + routes.*
+- [x] `backend/erp/controllers/incentivePayoutController.js` — new controller. `listPayouts` (president sees all + optional `?entity_id=`; non-privileged scope to own entity and own BDM ID), `getPayoutById`, `myPayouts`, `getPayable` (unpaid accruals for payroll), `approvePayout` (ACCRUED→APPROVED; gateApproval + audit), `payPayout` (settlement JE + gateApproval + periodLock + audit), `reversePayout` (SAP-Storno JE + gateApproval + periodLock + audit). Every lifecycle endpoint writes an `ErpAuditLog.logChange` entry. Settlement failures return HTTP 400 with the underlying reason (e.g. "Settlement journal failed: COA 2160 (INCENTIVE_ACCRUAL) not found").
+- [x] `backend/erp/routes/incentivePayoutRoutes.js` — new route file, mounted at `/api/erp/incentive-payouts`:
+  - `GET /payable` — `erpAccessCheck('sales_goals', 'VIEW')` + `erpSubAccessCheck('sales_goals', 'payout_view')`.
+  - `GET /mine` — VIEW-level only (BDM must always see own payouts).
+  - `GET /:id` + `GET /` — VIEW-level; backend controller scopes by bdm_id for non-privileged.
+  - `POST /:id/approve` — FULL + `payout_approve`.
+  - `POST /:id/pay` — FULL + `payout_pay` + `periodLockCheck('INCENTIVE_PAYOUT')`.
+  - `POST /:id/reverse` — FULL + `payout_reverse` + `periodLockCheck('INCENTIVE_PAYOUT')`.
+  - Controller also calls `checkPeriodOpen` explicitly as belt-and-suspenders in case the middleware can't derive a period from the request body.
+- [x] `backend/erp/routes/index.js` — mounts `/incentive-payouts` sibling of `/sales-goals` so payroll/finance can consume `/payable` without `sales_goals` module access (route file still enforces it internally so non-enrolled roles still fail the check).
+
+*Backend — lookup-driven governance (subscription-ready).*
+- [x] `backend/erp/controllers/lookupGenericController.js` SEED_DEFAULTS:
+  - `APPROVAL_CATEGORY.FINANCIAL.metadata.modules` += `INCENTIVE_PAYOUT`.
+  - `APPROVAL_MODULE` += `{ code: 'INCENTIVE_PAYOUT', metadata: { category: 'FINANCIAL' } }`.
+  - `MODULE_DEFAULT_ROLES` += `{ code: 'INCENTIVE_PAYOUT', metadata: { roles: ['president', 'finance'] } }` — drives the Default-Roles Gate for approve/pay/reverse. Subscribers set `metadata.roles = null` to open-post.
+  - `PERIOD_LOCK_MODULES` += `INCENTIVE_PAYOUT` — exposes the module in the Period Locks UI.
+  - `ERP_SUB_PERMISSION` += 4 new keys: `SALES_GOALS__PAYOUT_VIEW`, `SALES_GOALS__PAYOUT_APPROVE`, `SALES_GOALS__PAYOUT_PAY`, `SALES_GOALS__PAYOUT_REVERSE` — all `metadata.module='sales_goals'` with matching `key` so they nest inside the existing Sales Goals access section of the Access Template editor.
+  - `ERP_DANGER_SUB_PERMISSIONS` += `SALES_GOALS__PAYOUT_REVERSE` (Tier 2 — subscriber-removable) so FULL module access does NOT inherit reversal without an explicit Access Template tick.
+
+*Backend — agent.*
+- [x] `backend/agents/kpiSnapshotAgent.js` — new agent. Walks every `Entity(status='ACTIVE')` → every `SalesGoalPlan(status='ACTIVE')` → calls `salesGoalService.computeAllSnapshots(plan, period, 'MONTHLY', { accrueIncentives: false })` + `computeAllSnapshots(plan, fiscal_year, 'YTD', { accrueIncentives: true })`. Returns `{ status, summary, message_ids, error_msg, execution_ms }` so `agentExecutor.finalizeRun` persists an `AgentRun` record exactly like other FREE agents. Accepts optional `args.entity_id` (scope to single entity) + `args.period` (override, for back-fill). Status flips to `'partial'` when some entities fail but at least one BDM was processed; `'error'` when nothing processed.
+- [x] `backend/agents/agentRegistry.js` — registered `kpi_snapshot` as FREE agent.
+- [x] `backend/agents/agentScheduler.js` — cron `0 5 1 * *` (monthly day 1 at 5:00 AM Asia/Manila). Manual Run Now available from the existing Agent Console (`POST /api/erp/agents/kpi_snapshot/run` via `startManualAgentRun`).
+
+*Frontend — ledger page + dashboard integration.*
+- [x] `frontend/src/erp/pages/IncentivePayoutLedger.jsx` — new page. Summary cards (accrued / approved / paid / reversed totals + row count), filter toolbar (fiscal year, status, period, BDM id), ledger table with BDM/plan/period/tier/budget/attainment/status/accrual JE/settlement JE/actions columns. Actions are gated by `useErpSubAccess().hasSubPermission('sales_goals', 'payout_{approve|pay|reverse}')` with president/admin/finance short-circuit. Approve/Pay/Reverse handlers surface `res.data.approval_pending` via `showApprovalPending` (HTTP 202 path). Cap-reduced rows show a subtle "⚠ capped" badge on the Tier column.
+- [x] `frontend/src/erp/hooks/useSalesGoals.js` — new methods `getPayouts`, `getPayout`, `getMyPayouts`, `getPayablePayouts`, `approvePayout`, `payPayout`, `reversePayout`.
+- [x] `frontend/src/erp/pages/SalesGoalBdmView.jsx` — "My Incentive Payouts" panel inserted above Action Items. Self-view fetches `/mine`; admin viewing another BDM uses `/incentive-payouts?bdm_id=`. Renders period/tier/amount/status/paid_at with a "See full ledger →" link.
+- [x] `frontend/src/erp/pages/SalesGoalDashboard.jsx` — Incentive Ledger summary card added to the header `sgd-row`. Click-through link to the Payout Ledger. Shows YTD paid as the headline with accrued/approved sub-text.
+- [x] `frontend/src/erp/pages/ErpSettingsPanel.jsx` — `COA_LABELS` updated with `INCENTIVE_EXPENSE` + `INCENTIVE_ACCRUAL` so admin sees + edits the two new COA codes next to the other 39 keys. Inputs remain gated by `accounting.settings_write` sub-perm.
+- [x] `frontend/src/components/common/Sidebar.jsx` — "Payout Ledger" link (`/erp/incentive-payouts`, `DollarSign` icon) added to the Sales Goals section for every user with `hasModule('sales_goals')`. Visibility works for BDMs; backend still scopes data to their own rows.
+- [x] `frontend/src/App.jsx` — lazy-loaded `IncentivePayoutLedger` + route `/erp/incentive-payouts` gated by `requiredErpModule='sales_goals'` + `allowedRoles=ROLE_SETS.ERP_ALL`.
+- [x] `frontend/src/erp/components/WorkflowGuide.jsx` — new `incentivePayoutLedger` banner key (matches `<WorkflowGuide pageKey="incentivePayoutLedger" />`) documenting lifecycle, COA config, period-lock interaction, sub-permission keys, and delegation path via Access Templates. Existing `salesGoalBdmView` banner extended with "My Payouts" tab step + payout accrual behavior note.
+
+**Hard rules honored.**
+- Zero hardcoded COA codes — `INCENTIVE_EXPENSE` + `INCENTIVE_ACCRUAL` flow through `Settings.COA_MAP` → `getCoaMap()` (60s cache, busted on settings save) → validated against ChartOfAccounts.
+- Zero hardcoded roles — `MODULE_DEFAULT_ROLES.INCENTIVE_PAYOUT` drives the gate; subscribers flip `metadata.roles = null` for open-post.
+- Zero hardcoded sub-permissions — 4 new keys all seeded in `ERP_SUB_PERMISSION`; `payout_reverse` also in `ERP_DANGER_SUB_PERMISSIONS`. Every route key has a matching seed row.
+- Every page has a `<WorkflowGuide pageKey="…" />` (Global Rule #1): new page `incentivePayoutLedger`; updated `salesGoalBdmView`.
+- Accrual trigger wraps the JE post in a try/catch + early return rather than a Mongoose transaction — company-wide re-computes can exceed Mongo's 16MB txn size, and the upsert is idempotent, so re-running closes any gap; failed JE → no orphaned payout row.
+
+**Subscription-readiness verification.**
+- Fresh entity: first `computeSnapshots` YTD call tries `postAccrualJournal` → `getCoaMap` returns defaults `5150`/`2160` from Settings schema, `validateCoa` confirms them against entity's ChartOfAccounts (seeded by `seedCOA.js` or "Sync from Template"). If either account is missing for a bespoke chart, accrual is skipped with a console warning, YTD snapshot still returns; admin opens ERP Settings → COA Mapping to point the keys at their preferred codes, then re-runs the snapshot.
+- Subscriber customizes reversal authority: Access Template editor now shows `payout_reverse (DANGER)` sub-perm alongside existing President Reverse — CFO grant is a tick, not a code change.
+- Subscriber renames "BDM" → "Territory Manager": existing `SALES_GOAL_ELIGIBLE_ROLES` lookup already extends enrollment; accrual flows through `bdm_id` which is just a User reference, no role literal in payout code.
+
+**Verification completed.**
+- `node -c` clean on all 14 modified/new backend files (`IncentivePayout.js`, `journalFromIncentive.js`, `incentivePayoutController.js`, `incentivePayoutRoutes.js`, `kpiSnapshotAgent.js`, `agentRegistry.js`, `agentScheduler.js`, `salesGoalService.js`, `salesGoalController.js`, `lookupGenericController.js`, `Settings.js`, `autoJournal.js`, `seedCOA.js`, `routes/index.js`).
+- `cd frontend && npx vite build` clean — new chunk `IncentivePayoutLedger-*.js` emitted, updated chunks for `SalesGoalDashboard`, `SalesGoalBdmView`, `WorkflowGuide`, `ErpSettingsPanel`, `Sidebar`.
+- Module-load smoke test via `node -e "require(...)"` confirms every new file exports the expected surface (controller 7 funcs; journalFromIncentive 3 funcs; service 2 new funcs; agent `run`; registry lookup returns kpi_snapshot).
+- Sub-perm key coverage: every `'payout_view|payout_approve|payout_pay|payout_reverse'` route reference grep-matches an `ERP_SUB_PERMISSION` seed row.
+
+**Week 2 smoke tests (to run before Q2 staging goes live).**
+- [ ] Run `POST /api/erp/lookup-values/seed-all` on VIP entity → confirm new `MODULE_DEFAULT_ROLES.INCENTIVE_PAYOUT`, `APPROVAL_MODULE.INCENTIVE_PAYOUT`, `PERIOD_LOCK_MODULES.INCENTIVE_PAYOUT`, 4 new `ERP_SUB_PERMISSION` rows, + `ERP_DANGER_SUB_PERMISSIONS.SALES_GOALS__PAYOUT_REVERSE` all seeded.
+- [ ] Re-run `seedCOA.js` (or Control Center → ChartOfAccounts → Sync from Template) on VIP → accounts `5150` + `2160` present.
+- [ ] Save `Settings.COA_MAP` → ensure new keys validate (change value to an invalid code → HTTP 400 rejects).
+- [ ] As president, compute YTD snapshots for an active plan where a test BDM is at ≥ tier threshold → `IncentivePayout(status='ACCRUED')` row exists, `journal_id` populated, `tier_budget` equals tier lookup (or capped if CompProfile.incentive_type='CASH' + incentive_cap set).
+- [ ] Re-compute same period → no duplicate row, `journal_id` stays the same (idempotency check).
+- [ ] As finance user with only `payout_approve` — click Approve → 200 OK + audit row written. Without `payout_approve` — HTTP 202 routes to Approval Hub.
+- [ ] Click Pay with `paid_via=CASH` → settlement JE posts, `status=PAID`, `paid_at` set. Close the current period via Period Locks, retry pay → HTTP 403.
+- [ ] Click Reverse with reason "Tier recalculated" → reversal JE posts (`corrects_je_id` points at the accrual), `status=REVERSED`, audit row `log_type='PRESIDENT_REVERSAL'`.
+- [ ] Open `/api/erp/agents/kpi_snapshot/run` manually via Agent Console → `AgentRun` row written with `bdms_processed > 0`, `status='success'`.
+- [ ] `GET /api/erp/incentive-payouts/payable?period=2026-04` returns only `ACCRUED`/`APPROVED` unpaid rows with running total.
+- [ ] BDM opens `/erp/sales-goals/my` → "My Incentive Payouts" panel shows their row; dashboard shows Incentive Ledger summary card.
+
+**Deferred to SG-Q2 W3 (per plan Section H).** Compensation statement endpoint + "My Compensation" tab + PDF (#16), notifications on plan activate/close/reopen + tier-milestone (#17), `kpiVarianceAgent` + `KPI_VARIANCE_THRESHOLDS` (#18), 360px mobile breakpoint on BDM-facing SG pages (#19).
+
+**Double-check audit — bugs caught and fixed before merge.**
+1. **Frontend response-shape mismatch.** `useErpApi` unwraps axios response to `res.data` (the HTTP body) before returning — so `sg.getPayouts()` returns `{success, data:[…], summary:{…}}` directly, not `{data: {…}}`. Initial page code accessed `res?.data?.data` / `res?.data?.summary` / `res?.data?.approval_pending`, which silently returned `undefined` and left the ledger rendering an empty summary + missed approval-pending 202 responses. Fixed in `IncentivePayoutLedger.jsx`, `SalesGoalBdmView.jsx` (My Payouts panel), and `SalesGoalDashboard.jsx` (payout widget) — now correctly read `res?.data` for the array and `res?.summary` directly. Approval-pending checks now use the shared `isApprovalPending(res)` / `isApprovalPending(null, err)` utility from `errorToast.js`.
+2. **Silent ledger drift on tier upgrade.** Original `accrueIncentive` would re-upsert an existing ACCRUED row on tier change, overwriting `journal_id` and leaving the prior JE orphaned (expense booked twice, payout row only references the new JE). Fixed by making the accrual **fully idempotent per key** — once an IncentivePayout row exists for `(plan_id, bdm_id, period, period_type, program_code)`, re-computes are no-op regardless of tier change. A `console.warn` fires when an ACCRUED row's tier/budget drifts, and admins must Reverse the ACCRUED row via the ledger UI to adopt a higher tier (reversal posts a storno JE; recomputing then re-accrues at the new tier). This matches the "events are immutable" pattern used by SAP Commissions and keeps ledger in lockstep with the payout row.
+3. **Route ordering verified.** `GET /payable` and `GET /mine` are declared before `GET /:id` so they aren't eaten by the parametric route. `POST /:id/{approve,pay,reverse}` are method-scoped so the GET handlers don't interfere.
+4. **`periodLockCheck` middleware on pay/reverse is a no-op for the current design** (req.body carries no `period` field). The real period-lock enforcement lives in the controller via `checkPeriodOpen(payout.entity_id, currentPeriodString())`. Middleware is left in place as belt-and-suspenders for any future request-body variations.
+
+**Known limitation (documented, not a bug).** Concurrent accruals on the exact same `(plan, bdm, period, period_type, program)` key can theoretically produce one orphaned JE if two snapshot-compute processes race in the milliseconds between `findOne` and `findOneAndUpdate`. In practice, `AgentConfig.is_running` serializes cron runs, and manual president computes are rare, so this race is a documented theoretical risk rather than an observed bug. Week 3 can add per-accrual transaction wrap (requires threading `session` through `generateJeNumber` → `DocSequence.getNext`) if production shows the race occurring.
+

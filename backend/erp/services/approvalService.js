@@ -91,6 +91,66 @@ const getModulePostingRoles = async (entityId, moduleKey) => {
 };
 
 /**
+ * Phase G6 — Get the lookup-driven rejection config for a module.
+ * Returns { rejected_status, reason_field, resubmit_allowed, editable_statuses,
+ * banner_tone, description } or null if the module has no config.
+ *
+ * Self-seeds from SEED_DEFAULTS on miss — mirrors getModulePostingRoles so a fresh
+ * subsidiary gets a working banner on first render without requiring admin to open
+ * Control Center first. Keeps G4 (posting roles) and G6 (rejection surface) in sync.
+ *
+ * Frontend <RejectionBanner> calls this via GET /api/erp/lookups/module-rejection-config/:code.
+ *
+ * @param {ObjectId} entityId
+ * @param {string} moduleKey - canonical MODULE_DEFAULT_ROLES code (e.g. 'SALES', 'INCOME')
+ * @returns {Promise<Object|null>}
+ */
+const getModuleRejectionConfig = async (entityId, moduleKey) => {
+  const upper = (moduleKey || '').toUpperCase();
+  const code = MODULE_KEY_ALIASES[upper] || upper;
+  if (!code || !entityId) return null;
+  let entry = await Lookup.findOne({
+    entity_id: entityId,
+    category: 'MODULE_REJECTION_CONFIG',
+    code,
+    is_active: true,
+  }).lean();
+
+  if (!entry) {
+    try {
+      const { SEED_DEFAULTS } = require('../controllers/lookupGenericController');
+      const seeds = SEED_DEFAULTS?.MODULE_REJECTION_CONFIG || [];
+      const seed = seeds.find(s => (s.code || '').toUpperCase() === code);
+      if (seed) {
+        await Lookup.updateOne(
+          { entity_id: entityId, category: 'MODULE_REJECTION_CONFIG', code },
+          {
+            $setOnInsert: {
+              label: seed.label,
+              sort_order: 0,
+              is_active: true,
+              metadata: seed.metadata || {},
+            },
+          },
+          { upsert: true }
+        );
+        entry = await Lookup.findOne({
+          entity_id: entityId,
+          category: 'MODULE_REJECTION_CONFIG',
+          code,
+          is_active: true,
+        }).lean();
+      }
+    } catch (seedErr) {
+      console.error(`MODULE_REJECTION_CONFIG lazy-seed failed for ${code}:`, seedErr.message);
+    }
+  }
+
+  if (!entry) return null;
+  return entry.metadata || null;
+};
+
+/**
  * Check whether the authority matrix is enabled for this entity.
  * @returns {Promise<boolean>}
  */
@@ -555,5 +615,6 @@ module.exports = {
   isFullyApproved,
   getPendingForApprover,
   getModulePostingRoles,
+  getModuleRejectionConfig,
   MODULE_KEY_ALIASES,
 };
