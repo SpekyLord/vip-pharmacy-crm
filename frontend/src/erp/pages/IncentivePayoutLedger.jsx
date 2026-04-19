@@ -72,7 +72,6 @@ export default function IncentivePayoutLedger() {
   const { options: paymentModeOpts } = useLookupOptions('PAYMENT_MODE');
 
   const [rows, setRows] = useState([]);
-  const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(null); // payout._id currently being acted on
 
@@ -102,15 +101,15 @@ export default function IncentivePayoutLedger() {
       if (filters.status) params.status = filters.status;
       if (filters.period) params.period = filters.period;
       if (filters.bdm_id) params.bdm_id = filters.bdm_id;
-      // useErpApi unwraps to the HTTP body, so res is { success, data: [...], summary: {...} }
+      // useErpApi unwraps to the HTTP body, so res is { success, data: [...], summary: {...} }.
+      // Backend `summary` is not persisted in state — `statusTotals` below recomputes it from
+      // `rows` with the exact same math, so keeping the server copy would be dead weight.
       const res = await sg.getPayouts(params);
       const data = res?.data || [];
       setRows(Array.isArray(data) ? data : []);
-      setSummary(res?.summary || null);
     } catch (err) {
       showError(err, 'Failed to load payout ledger');
       setRows([]);
-      setSummary(null);
     } finally {
       setLoading(false);
     }
