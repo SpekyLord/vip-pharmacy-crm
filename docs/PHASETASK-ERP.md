@@ -5129,3 +5129,103 @@ Close the Phase 2 scope from `HANDOFF-phase-agents-copilot.md`: a proper `Task` 
 - **Rule-based first.** Treasury + FP&A agents produce a useful body purely from SQL aggregations. The AI toggle only APPENDS a short narrative — never replaces the numbers. Flipping the toggle to `ai` counts Claude calls against `AI_SPEND_CAPS` for that entity.
 - **Internal Audit + Data Quality dual-route notifications** use two separate `notify()` calls (PRESIDENT + ALL_ADMINS). The second call uses `channels: ['in_app']` only, so finance / admin don't also receive the email — email always goes to the primary (PRESIDENT) route.
 - **verify:copilot-wiring baseline is now 35/35.** Any new tool added after G8 that forgets to register a handler will fail CI. Don't regress this.
+
+---
+
+## Phase G9 — Unified Operational Inbox (April 20, 2026, COMPLETE)
+
+### Goal
+Single inbox surface for ALL roles that fuses approvals, tasks, AI agent findings, broadcasts, and chat. Replaces the BDM-only EMP_InboxPage and removes the email-only path for AI agent findings.
+
+### What shipped
+| Layer | Change |
+|---|---|
+| Schema | `MessageInbox` + `entity_id`, `folder`, `thread_id`, `parent_message_id`, `requires_action`, `action_type`, `action_payload`, `action_completed_at`, `action_completed_by`. 4 new compound indexes. |
+| Lookups (subscription-ready) | `MESSAGE_FOLDERS` (9 codes), `MESSAGE_ACTIONS` (6 codes), `MESSAGE_ACCESS_ROLES` (6 roles, can_dm/can_broadcast/can_cross_entity). All lazy-seed via `inboxLookups.get*Config(entityId)`. |
+| Lookups (governance) | `ERP_MODULE.MESSAGING` (sort 15) + 5 `ERP_SUB_PERMISSION` rows (`messaging.dm_any_role`, `dm_direct_reports`, `broadcast`, `cross_entity`, `impersonate_reply`) + `MODULE_DEFAULT_ROLES.MESSAGING` (open). |
+| Lookup (cooldown) | `TASK_OVERDUE_COOLDOWN_DAYS.GLOBAL.metadata.days = 1`. Lazy-seeds on first agent run. |
+| Helper module | `backend/erp/utils/inboxLookups.js` (10 exports including `folderForCategory`, `canDm`, `canBroadcast`). |
+| Notification dispatch | `dispatchMultiChannel` + `persistInApp` extended with folder/thread/action affordance fields. 7 notify* helpers flipped from email-only to multi-channel + new `notifyTaskEvent`. |
+| Approval threading | `approvalService.js` passes `approvalRequestId` to `notifyApprovalRequest`/`notifyApprovalDecision` so request → decision → reopen events fold into one thread. |
+| Task overdue agent | `backend/agents/taskOverdueAgent.js` (FREE, weekdays 06:15 Manila). Cooldown via lookup. New Task field `last_overdue_notify_at`. Registered in `agentRegistry.task_overdue` and Agent Dashboard. |
+| AI agents audit | `dailyBriefingAgent`, `orgIntelligenceAgent`, `notificationService.sendInApp` now stamp `entity_id` + `folder` on every `MessageInbox.create` (auto-derived from category via `folderForCategory` for the generic helper). |
+| API | `GET /messages` (folder/thread/counts), `GET /messages/counts`, `GET /messages/folders`, `GET /messages/thread/:id`, `POST /messages/compose`, `POST /messages/:id/reply`, `POST /messages/:id/action`. |
+| Frontend | `pages/common/InboxPage.jsx` (3-pane desktop, stacked mobile ≥360 px) + 4 sub-components in `components/common/inbox/` + `NotificationBell.jsx` in navbar. TASKS folder mounts existing `TaskMiniEditor` (ships intact). `EMP_InboxPage` is now a re-export shim. |
+| Routes | `/inbox` and `/inbox/thread/:thread_id` (allowedRoles = ALL); Sidebar links added to ERP Administration + CRM admin Main + existing BDM Work. |
+| Banners | `PageGuide.inbox` (CRM) refreshed for the new model. New `WorkflowGuide.inbox` (ERP) entry. |
+| Copilot | New tool `DRAFT_REPLY_TO_MESSAGE` (write_confirm) + handler `draftReplyToMessage` in `copilotToolRegistry`. Routes through inbox reply pathway (Rule #20). |
+| Verify scripts | `verify:inbox-wiring` (NEW, 19 checks) + `verify:copilot-wiring` (now 36/36). |
+
+### Migration / deploy order
+1. Deploy schema + helper + lookups (R1–R3).
+2. Run `node backend/scripts/backfillMessageInboxEntityId.js` once (already idempotent; supports `--dry-run`).
+3. Deploy R4 (controller/route expansion).
+4. Deploy R5–R8 (frontend + Copilot tool + verify scripts).
+5. Verify: `npm --prefix backend run verify:inbox-wiring && npm --prefix backend run verify:copilot-wiring && cd frontend && npx vite build`.
+6. Smoke test (per CLAUDE-ERP Phase G9 section).
+
+### Integrity results
+- `node -c` clean on all 19 backend files modified/created.
+- `verify:inbox-wiring` → **19/19 passes, 0 errors, 0 warnings**.
+- `verify:copilot-wiring` → **36/36 passes, 0 errors, 0 warnings** (was 35/35 pre-G9).
+- `npx vite build` (frontend) → built in 12.89 s, no errors.
+
+### Common gotchas (G9)
+- **Agent path normalization.** Handoff said `backend/erp/agents/taskOverdueAgent.js`; canonical is `backend/agents/taskOverdueAgent.js` (matches the rest of the registry). The agent imports models from `../erp/models/*`.
+- **`agent_key` enum was removed in Phase G8.** No need to extend `AgentRun` — registry is the source of truth via `isKnownAgent`.
+- **Folder map duplication.** `CATEGORY_TO_FOLDER` lives in BOTH `inboxLookups.js` AND `backfillMessageInboxEntityId.js`. The verify script asserts the backfill script *references* `CATEGORY_TO_FOLDER` (regex check) so a missing import is caught — but the maps must stay in lockstep manually.
+- **Privileged scope (Rule #21).** `messageInboxController.resolveEntityScope` returns `null` for privileged users with no `?entity_id=` → no entity filter (sees everything). Non-privileged callers always pin to their own `entity_id`. Never silently fall back to `req.user.entity_id` for privileged users.
+- **Action delegation (Rule #20).** `POST /messages/:id/action` does NOT reimplement approve/reject/resolve. It dispatches into `universalApprovalController.approvalHandlers.approval_request` (for approve/reject) and mirrors `varianceAlertController.resolveVarianceAlert`'s permission logic (for resolve). The approve handler enforces sub-perms + period locks — the inbox endpoint is a thin facade.
+- **Entity field on existing AI-agent rows.** Pre-G9 `MessageInbox` rows have `entity_id = null` until the migration runs. The new list endpoint scopes by entity for non-privileged users — those legacy rows will not appear for them after the migration unless backfilled. Run the backfill before users notice.
+- **Task editor URL.** `TaskMiniEditor` is mounted ONLY when `activeFolder === 'TASKS'` AND the task was successfully fetched via `GET /erp/tasks/:id`. If the underlying task was deleted (orphaned message), the standard `InboxThreadView` renders instead — graceful fallback.
+
+---
+
+## Phase G10 — Tasks ↔ KPI Alignment + Gantt + Kanban + Bulk Ops ✅ (April 20, 2026)
+
+### Scope
+Align `/erp/tasks` with the **2026 Sales GOAL and POA** (source:
+`C:\Users\LENOVO\OneDrive\Documents\2026\TRAINING\2026 Sales GOAL and POA.pdf`).
+5 growth drivers, 13 KPIs, responsibility tags, revenue bands — all
+lookup-driven and per-entity so subscribers configure without a code
+deploy. Four view tabs on `/erp/tasks`: List, Gantt, Kanban, Revenue
+Bridge.
+
+### What shipped
+
+| Area | Details |
+|---|---|
+| Task model | Added (all optional): `growth_driver_code`, `kpi_code`, `goal_period` (`YYYY` \| `YYYY-QN` \| `YYYY-MM`), `milestone_label`, `start_date`, `kpi_ref_id`, `responsibility_tags[]`. New index `{ entity_id, growth_driver_code, goal_period, status }`. |
+| Lookup seeds | `GROWTH_DRIVER` (5 POA drivers), `KPI_CODE` (13 KPIs — 3 existing reused + 10 new), `RESPONSIBILITY_TAG` (4 POA tags: BDM, PRESIDENT, EBDM, OM), `TASK_BULK_NOTIFY_THRESHOLD` (scalar, default 5). Lazy-seeded per entity via `backend/erp/utils/kpiLookups.js` mirroring the G9 `inboxLookups.js` pattern. |
+| New KPI codes | `TIME_TO_ACCREDITATION_DAYS`, `FORMULARY_APPROVAL_RATE`, `MONTHLY_REORDER_FREQ`, `LOST_SALES_INCIDENTS`, `INVENTORY_TURNOVER`, `EXPIRY_RETURNS`, `MD_ENGAGEMENT_COVERAGE`, `HOSP_REORDER_CYCLE_TIME`, `VOLUME_RETENTION_POST_PI`, `GROSS_MARGIN_PER_SKU`. All start with `metadata.auto_compute = false` (manual data source) — no `salesGoalService.computeKpi` switch cases added in G10. |
+| Controller | `listTasks` grew: `growth_driver_code` / `kpi_code` / `goal_period` / `responsibility_tags` / `due_from` / `due_to` / `q` (regex-safe free-text). `createTask` + `updateTask` validate driver + KPI against per-entity lookup and reject on unknown codes or driver/KPI misalignment. New endpoints: `listDrivers`, `listKpiCodes?driver=`, `listByDriver` (POA-ordered groups for Gantt), `bulkUpdate` (whitelisted patch + per-task auth + rollup notifications), `bulkDelete` (creator-or-privileged gate). |
+| Routes | `GET /erp/tasks/drivers`, `GET /erp/tasks/kpi-codes`, `GET /erp/tasks/by-driver`, `POST /erp/tasks/bulk-update`, `POST /erp/tasks/bulk-delete` — all registered **before** `:id` patterns so static paths resolve first. |
+| Bulk-notify rollup | Per-assignee event count ≤ `TASK_BULK_NOTIFY_THRESHOLD` → fire N `notifyTaskEvent` (preserves taskId threading). Count > threshold → single `dispatchMultiChannel` summary row in the TASKS folder with `action_type=open_link` + `deep_link=/erp/tasks?ids=<csv>`. Prevents 50-row inbox spam on bulk reassignment. |
+| Frontend | `TasksGantt.jsx` (POA-driver-grouped CSS Gantt with week/month/quarter zoom, today marker, responsibility-tag chips, drawer-mounted `TaskMiniEditor`), `TasksKanban.jsx` (5-column HTML5 drag-to-column, optimistic + revert), `RevenueBridge.jsx` (driver × status progress + total vs PHP 10M increment goal), `TaskMiniEditor.jsx` extended with driver/KPI/period chips + Owners multi-select tag picker. `TasksPage.jsx` rewritten with 4 tabs, advanced filter bar (driver/KPI cascade, period, priority, date range, search), bulk action bar (status/priority/delete), Owners column, and `inbox:updated` event dispatch after bulk ops. |
+| Banners | `WorkflowGuide.tasks` refreshed: 8 steps covering all 4 tabs + Owners tags + bulk-notify rollup + Copilot path. |
+| Verify scripts | New `verify:task-kpi-wiring` (lookup presence, lazy-seed null safety, controller exports, route mounts, frontend imports, rollup wiring, inbox-sync dispatch). No impact on `verify:copilot-wiring` (36/36) or `verify:inbox-wiring`. |
+
+### Migration / deploy order
+1. Deploy R1 (model + lookup util + controller + routes). All fields are optional; no schema migration required for existing data.
+2. Run `node backend/scripts/backfillTaskKpiFields.js --dry-run` — documentation-only, verifies field counts on existing rows. Produces no writes.
+3. Deploy R2 (frontend components + TasksPage + WorkflowGuide). Verify: `cd frontend && npx vite build`.
+4. Verify: `npm --prefix backend run verify:task-kpi-wiring` passes.
+5. Optional smoke: create one task tagged HOSPITAL_ACCREDITATION + PCT_HOSP_ACCREDITED + 2026-Q1 → verify it appears in all four tabs correctly. Bulk-reassign 6 tasks to one BDM → verify single rollup inbox row (threshold=5).
+
+### Integrity results
+- `node -c` clean on all backend files modified/created.
+- `verify:task-kpi-wiring` → **ALL CHECKS PASS**.
+- `cd frontend && npx vite build` → clean.
+- `verify:copilot-wiring` → **36/36** (unchanged; G10 adds no Copilot tools).
+- `verify:inbox-wiring` → unchanged.
+
+### Common gotchas (G10)
+- **Route order.** `/drivers`, `/kpi-codes`, `/by-driver`, `/bulk-update`, `/bulk-delete` MUST be registered before `PATCH /:id` and `DELETE /:id` — otherwise Express matches `bulk-update` as an ObjectId and shadows the bulk handler.
+- **KPI/driver alignment.** `createTask` / `updateTask` / `bulkUpdate` reject with 400 if `kpi_code`'s `metadata.driver` doesn't match `growth_driver_code`. Lookup rows with no `metadata.driver` skip the check (migration-friendly).
+- **Milestone-only for new KPIs.** The 10 new KPI codes have `metadata.auto_compute = false` — `salesGoalService.computeKpi` has no cases for them. Flip `auto_compute` + add a case in a later phase when the rule is defined. The Gantt + Kanban + Revenue Bridge work on task state, not KPI actuals.
+- **Bulk-notify rollup.** Threshold is per-assignee, not global. If one bulk reassigns 4 tasks to Alice and 8 tasks to Bob (threshold=5), Alice gets 4 per-task rows (preserving threading) and Bob gets 1 summary row with a deep-link to the filtered list.
+- **Drawer `TaskMiniEditor`.** Both Gantt and Kanban open the same mini-editor in a side drawer. Rule #20 — no parallel detail view. The drawer component dispatches `inbox:updated` after every save so the NotificationBell + InboxPage refresh.
+- **Responsibility tags are freeform at save time.** Controller's `sanitizeTags` upper-cases + trims + dedupes but does NOT reject unknown codes. `validateResponsibilityTags` exists in `kpiLookups` for future strict contexts (importer) but taskController keeps it flexible so admins can tag with entity-specific codes before updating the lookup.
+- **Privileged `scope=all` is opt-in.** `RevenueBridge.jsx` tries `scope=all` first; on 403 falls back to `scope=mine` silently so the widget remains useful for non-privileged users. No toast on the fallback path.
+- **Goal period format.** `sanitizePeriod` accepts `YYYY`, `YYYY-QN`, `YYYY-MM` only. Anything else is cleared to null. `updateTask` returns 400 on non-empty-but-invalid input (refuses to silently lose the value).
+- **G10.D (POA Excel import) deferred.** The 2026-POA-Tasks.xlsx template is not finalized. Schema and controller placeholder exist in the plan (see `g10-tasks-kpi-gantt.md` G10.D section) — defer until the admin-side Excel sheet is confirmed.

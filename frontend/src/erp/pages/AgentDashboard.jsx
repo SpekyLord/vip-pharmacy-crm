@@ -111,6 +111,8 @@ const AGENT_META = {
   data_quality:          { icon: Database,      color: '#0284c7', schedule: 'Daily 9:00 AM' },
   fefo_audit:            { icon: PackageCheck,  color: '#dc2626', schedule: 'Daily 7:30 AM' },
   expansion_readiness:   { icon: Rocket,        color: '#7c3aed', schedule: '1st of month 10 AM' },
+  // Phase G9.R1
+  task_overdue:          { icon: Clock,         color: '#ea580c', schedule: 'Weekdays 6:15 AM' },
 };
 const DEFAULT_META = { icon: Bot, color: '#64748b', schedule: 'Scheduled' };
 

@@ -491,6 +491,92 @@ async function draftMessage(ctx, args = {}) {
   };
 }
 
+// ── Write-confirm tool: DRAFT_REPLY_TO_MESSAGE (Phase G9.R8) ──────────────
+//
+// Threaded reply to an existing MessageInbox row. Routes through the SAME
+// /api/messages/:id/reply controller path the inbox UI uses (Rule #20: never
+// reimplement reply / threading / audience guards in the AI path). Preview
+// returns the draft + parent metadata; execute creates the child row.
+async function draftReplyToMessage(ctx, args = {}) {
+  const { message_id, body } = args;
+  if (!message_id || !mongoose.isValidObjectId(message_id)) {
+    throw bad('valid message_id required');
+  }
+  const text = String(body || '').trim();
+  if (!text) throw bad('body required');
+
+  const MessageInbox = require('../../models/MessageInbox');
+  const parent = await MessageInbox.findById(message_id).lean();
+  if (!parent) throw bad('Parent message not found', 404);
+
+  // Audience guard mirroring messageInboxController.replyToMessage
+  const allowedRecipient =
+    String(parent.recipientUserId) === String(ctx.user._id)
+    || (!parent.recipientUserId && parent.recipientRole === ctx.user.role)
+    || String(parent.senderUserId) === String(ctx.user._id);
+  if (!allowedRecipient && !isPrivileged(ctx.user.role)) {
+    throw bad('You cannot reply to this message', 403);
+  }
+  // Entity scope (Rule #21): non-privileged callers can only reply within
+  // their working entity.
+  if (parent.entity_id && ctx.entityId && String(parent.entity_id) !== String(ctx.entityId) && !isPrivileged(ctx.user.role)) {
+    throw bad('Message belongs to another entity', 403);
+  }
+
+  if (ctx.mode !== 'execute') {
+    return {
+      result: {
+        confirmation_payload: {
+          tool_code: 'DRAFT_REPLY_TO_MESSAGE',
+          message_id,
+          body: text.slice(0, 5000),
+          parent_title: parent.title,
+        },
+        confirmation_text: `Send reply to "${String(parent.title || '').slice(0, 80)}"?`,
+        parent_title: parent.title,
+      },
+      display: 'Reply draft prepared. Click Execute to send.',
+    };
+  }
+
+  // Execute — write the reply via the canonical reply pathway. We construct
+  // the row directly using the SAME field assembly the controller uses,
+  // staying in-process (no HTTP self-call) but mirroring the controller's
+  // contract exactly: thread_id = parent.thread_id || parent._id,
+  // parent_message_id = parent._id, audience swap (sender ↔ recipient).
+  const replyToUserId = String(parent.senderUserId) === String(ctx.user._id)
+    ? parent.recipientUserId
+    : parent.senderUserId;
+  const replyToRole = String(parent.senderUserId) === String(ctx.user._id)
+    ? parent.recipientRole
+    : parent.senderRole;
+
+  const reply = await MessageInbox.create({
+    senderName: ctx.user.full_name || ctx.user.name || 'Copilot User',
+    senderRole: ctx.user.role,
+    senderUserId: ctx.user._id,
+    title: String(parent.title || '').startsWith('Re: ')
+      ? String(parent.title).slice(0, 200)
+      : `Re: ${String(parent.title || '').slice(0, 196)}`,
+    body: text.slice(0, 5000),
+    category: parent.category || 'reply',
+    priority: parent.priority || 'normal',
+    recipientRole: replyToRole || 'admin',
+    recipientUserId: replyToUserId || null,
+    readBy: [],
+    isArchived: false,
+    entity_id: parent.entity_id,
+    folder: parent.folder || 'CHAT',
+    thread_id: parent.thread_id || parent._id,
+    parent_message_id: parent._id,
+  });
+
+  return {
+    result: { ok: true, message_id: String(reply._id), thread_id: String(reply.thread_id) },
+    display: `Reply sent (${String(parent.title || '').slice(0, 60)}).`,
+  };
+}
+
 // ── Write-confirm tool: DRAFT_NEW_ENTRY ───────────────────────────────────
 //
 // Returns a target route + values in preview mode. In execute mode, returns
@@ -1117,6 +1203,7 @@ const HANDLERS = {
   compareEntities,
   draftRejectionReason,
   draftMessage,
+  draftReplyToMessage, // Phase G9.R8
   draftNewEntry,
   // ── Phase G8 ──
   createTask,

@@ -339,6 +339,7 @@ const checkApprovalRequired = async (opts) => {
         amount: opts.amount,
         description: opts.description,
         approvers,
+        approvalRequestId: request._id, // G9.B — thread linkage for inbox
       }).catch(err => console.error('Default-roles gate notification failed:', err.message));
 
       return {
@@ -407,6 +408,7 @@ const checkApprovalRequired = async (opts) => {
     amount: opts.amount,
     description: opts.description,
     approvers,
+    approvalRequestId: request._id, // G9.B — thread linkage for inbox
   }).catch(err => console.error('Approval request notification failed:', err.message));
 
   return {
@@ -465,6 +467,7 @@ const processDecision = async (requestId, decision, deciderId, reason) => {
     decidedBy: deciderUser?.name || 'Approver',
     ownerId: request.requested_by,
     reason,
+    approvalRequestId: request._id, // G9.B — thread continuity with original request
   }).catch(err => console.error('Approval decision notification failed:', err.message));
 
   // If approved, check if there's a next level
@@ -511,6 +514,7 @@ const processDecision = async (requestId, decision, deciderId, reason) => {
           amount: request.amount,
           description: request.description,
           approvers: nextApprovers,
+          approvalRequestId: nextRequest._id, // G9.B — thread linkage for escalated level
         }).catch(err => console.error('Next-level approval notification failed:', err.message));
 
         return { request, nextLevel: nextRequest };

@@ -14,6 +14,15 @@ const c = require('../controllers/taskController');
 
 router.get('/', c.listTasks);
 router.get('/overdue', c.listOverdue);
+// Phase G10 — lookup + Gantt + bulk routes. Registered BEFORE the
+// `/:id` PATCH/DELETE so the static path segments resolve first (Express
+// matches top-down; an ObjectId route registered before these would
+// shadow them).
+router.get('/drivers', c.listDrivers);
+router.get('/kpi-codes', c.listKpiCodes);
+router.get('/by-driver', c.listByDriver);
+router.post('/bulk-update', c.bulkUpdate);
+router.post('/bulk-delete', c.bulkDelete);
 router.post('/', c.createTask);
 router.patch('/:id', c.updateTask);
 router.delete('/:id', c.deleteTask);

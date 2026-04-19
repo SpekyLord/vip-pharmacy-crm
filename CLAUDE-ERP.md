@@ -3282,3 +3282,85 @@ A new subsidiary onboarded tomorrow gets:
 - All 8 agents run on their crons but post only when the subsidiary's data surfaces signals.
 - All 10 Copilot tools available in chat; gated per-role via each row's `allowed_roles`.
 - Zero code change needed to add a new compliance deadline, raise the BDM graduation threshold, or flip an agent to AI mode — all lookup-driven via Control Center.
+
+---
+
+## Phase G9 — Unified Operational Inbox (April 20, 2026)
+
+### Why
+SAP Fiori / Odoo / NetSuite all converge on one read-pane for everything that needs a user's attention: approvals, tasks, agent findings, broadcasts, chat. Pre-G9 the CRM had three disjoint surfaces (Inbox = admin broadcasts only, Approval Hub = approvals only, Tasks page = standalone) and email was the only path for AI-agent findings. G9 fuses them.
+
+### Architecture
+- **Schema**: `MessageInbox` extended with `entity_id`, `folder`, `thread_id`, `parent_message_id`, `requires_action`, `action_type`, `action_payload`, `action_completed_at`, `action_completed_by`. 4 new compound indexes for (entity_id, folder), (entity_id, requires_action), (thread_id, createdAt), (entity_id, recipientRole, recipientUserId, isArchived, createdAt).
+- **Folders are lookup-driven**: `MESSAGE_FOLDERS` lookup (lazy-seeds via `inboxLookups.getFoldersConfig`) → 9 codes (INBOX, ACTION_REQUIRED, APPROVALS, TASKS, AI_AGENT_REPORTS, ANNOUNCEMENTS, CHAT, SENT, ARCHIVE). 4 are virtual (computed at query time).
+- **Action affordance is lookup-driven**: `MESSAGE_ACTIONS` lookup → 6 codes (approve / reject / resolve / acknowledge / reply / open_link) with `metadata.variant`, `confirm`, `reason_required`, `api_path` template.
+- **Two-way DM matrix is lookup-driven**: `MESSAGE_ACCESS_ROLES` lookup → 6 rows (president/ceo/admin/finance/contractor/employee), each with `can_dm_roles` (or `*`), `can_broadcast`, `can_cross_entity`, `can_dm_direct_reports`.
+- **Helper module**: `backend/erp/utils/inboxLookups.js` exports `FOLDER_DEFAULTS`, `ACTION_DEFAULTS`, `ACCESS_ROLES_DEFAULTS`, `CATEGORY_TO_FOLDER`, `folderForCategory`, `getFoldersConfig`, `getActionsConfig`, `getAccessRolesConfig`, `canDm`, `canBroadcast`. Same lazy-seed pattern as `getChannelConfig`.
+
+### Routing & dispatch upgrade
+- `dispatchMultiChannel` (in `erpNotificationService.js`) gained 7 new options: `inAppFolder`, `inAppThreadId`, `inAppParentMessageId`, `inAppRequiresAction`, `inAppActionType`, `inAppActionPayload`, `inAppSender`.
+- `persistInApp` extended with the same fields. Folder auto-derives from category via `folderForCategory()` when not passed.
+- All 7 existing notify* helpers (`notifyDocumentPosted/Reopened`, `notifyApprovalRequest/Decision`, `notifyPayrollPosted`, `notifyTierReached`, `notifyKpiVariance`) flipped from email-only `sendToRecipients` to `dispatchMultiChannel` so they ALSO write inbox rows.
+- New helper `notifyTaskEvent({ event: 'assigned'|'reassigned'|'completed'|'commented'|'overdue', ... })` writes to TASKS folder. Thread-id = task._id. Wired into `taskController.createTask` + `updateTask`.
+- **Approval threading**: `approvalService.js` passes `approvalRequestId: request._id` (and `nextRequest._id` for escalated levels) to `notifyApprovalRequest` and `notifyApprovalDecision`. Thread-id = `ApprovalRequest._id` so request → decision → reopen all fold into the same conversation in the inbox.
+
+### API
+- `GET /api/messages` — list w/ `?folder=&requires_action=&thread_id=&counts=1` (counts=1 returns `{ data, counts: { unread, action_required, inbox, approvals, tasks, ai_agent_reports, announcements, chat } }`).
+- `GET /api/messages/counts` — lightweight bell counts (Cache-Control: 25s).
+- `GET /api/messages/folders` — lookup-driven folder + action config.
+- `GET /api/messages/thread/:thread_id` — full thread (oldest first; entity-scoped; audience-guarded).
+- `POST /api/messages/compose` — two-way DM (recipient_user_id OR recipient_role); gated by `messaging.* sub-perms` + `MESSAGE_ACCESS_ROLES` matrix; president bypasses.
+- `POST /api/messages/:id/reply` — child row; `thread_id = parent.thread_id || parent._id`; audience swap.
+- `POST /api/messages/:id/action` — delegates to canonical downstream:
+  - `approve`/`reject` → `universalApprovalController.approvalHandlers.approval_request(id, action, userId, reason)` (NO bypass of gateApproval / period locks; Rule #20).
+  - `resolve` → mirrors `varianceAlertController.resolveVarianceAlert` permission logic.
+  - `acknowledge` → stamp completion only.
+  - `open_link` → frontend-only.
+  - Stamps `action_completed_at` + `action_completed_by` on success; force-marks read.
+
+### Sub-permissions (Phase G9.R3)
+New module **MESSAGING** in `ERP_MODULE` lookup (sort_order 15). Five sub-perms in `ERP_SUB_PERMISSION`:
+- `messaging.dm_any_role` — direct-message any role
+- `messaging.dm_direct_reports` — DM your reports_to children only
+- `messaging.broadcast` — broadcast to a role group
+- `messaging.cross_entity` — send across entities
+- `messaging.impersonate_reply` — admin tool, reply as another sender
+
+`MODULE_DEFAULT_ROLES.MESSAGING` defaults `roles=['president','ceo','admin','finance','contractor','employee']` (open). Subscribers tighten via Control Center → Lookup Tables.
+
+### Frontend
+- `pages/common/InboxPage.jsx` — 3-pane (folders / list / thread) on desktop; stacked + drawer on mobile (≥360 px). Replaces the BDM-only `EMP_InboxPage` (now a re-export shim for `/bdm/inbox` URL stability).
+- `components/common/inbox/InboxFolderNav.jsx` — vertical desktop / horizontal scroll on mobile, lookup-driven labels + icons + per-folder badge counts.
+- `components/common/inbox/InboxMessageList.jsx` — compact rows w/ sender initials, action/high-priority chips, time-aware timestamps.
+- `components/common/inbox/InboxThreadView.jsx` — thread + action button row + reply composer + reason modal for reject/resolve.
+- `components/common/inbox/InboxComposeModal.jsx` — direct/broadcast toggle, lazy-loaded user list, rate-limited 5000-char body.
+- `components/common/NotificationBell.jsx` — replaces the mock `NotificationCenter`. Polls `/messages/counts` every 30 s and on `inbox:updated` event. Red badge = action_required, blue = unread.
+- TASKS folder branch mounts `TaskMiniEditor` (already shipped) instead of `InboxThreadView`. The mini editor saves via `PATCH /erp/tasks/:id` (Rule #20).
+- Routes: `/inbox` and `/inbox/thread/:thread_id` (allowedRoles = ALL); `/bdm/inbox` aliases the same component.
+- Sidebar: Inbox link added to ERP Administration section AND CRM admin "Main" section AND existing BDM "Work" section.
+- Navbar: `<NotificationBell />` mounted next to the theme toggle.
+
+### Verify scripts
+- `npm --prefix backend run verify:inbox-wiring` — 19/19 checks (FOLDER_DEFAULTS shape, CATEGORY_TO_FOLDER cross-file consistency, lazy-seed null-safety, notify* dispatch coverage, controller/route alignment, frontend mounts, agent-direct-write entity_id/folder presence, agentRegistry+scheduler for task_overdue, ERP_MODULE+ERP_SUB_PERMISSION+MODULE_DEFAULT_ROLES seed for MESSAGING, DRAFT_REPLY_TO_MESSAGE tool+handler).
+- `npm --prefix backend run verify:copilot-wiring` — bumped to 36/36 with new `DRAFT_REPLY_TO_MESSAGE` tool (handler `draftReplyToMessage`, allowed_roles include contractor so BDMs can reply via Copilot).
+
+### Task Overdue Agent (Phase G9.R1)
+- `backend/agents/taskOverdueAgent.js` — FREE (rule-based). Cron `15 6 * * 1-5` Manila (weekdays 06:15, between Treasury 05:30 and Inventory Reorder 06:30, before Daily Briefing 07:00).
+- Walks every active entity for `Task` rows with `status ∈ {OPEN, IN_PROGRESS, BLOCKED}` AND `due_date < now` AND `assignee_user_id ≠ null`.
+- Cooldown: per-entity `TASK_OVERDUE_COOLDOWN_DAYS` lookup (GLOBAL row, default 1 day; lazy-seeds on first run). New Task field `last_overdue_notify_at` is the dedup stamp.
+- Fires `notifyTaskEvent({ event: 'overdue' })` per task → row lands in TASKS folder w/ `requires_action=true`, `action_type='open_link'`, `action_payload.deep_link='/erp/tasks?id=…'`.
+- Registered in `agentRegistry.AGENT_DEFINITIONS.task_overdue` (FREE) and surfaced on the Agent Dashboard with Clock icon `#ea580c`.
+
+### Subscription posture
+A new subsidiary tomorrow gets:
+- Inbox UI immediately for every authenticated role (no per-tenant seed; folders/actions lazy-seed on first read).
+- Their MESSAGE_FOLDERS / MESSAGE_ACTIONS / MESSAGE_ACCESS_ROLES rows materialise on first call to `inboxLookups.get*Config(entityId)`; admin can re-label "Tasks / To-Do" → "ToDos" via Control Center → Lookup Tables without a code deploy.
+- `task_overdue` cron fires for them on the next weekday morning; the agent skips entities with no overdue tasks.
+- Two-way messaging is open by default (MESSAGING module + all 6 roles in MODULE_DEFAULT_ROLES); admin tightens via Access Templates.
+- Existing `NOTIFICATION_CHANNELS.IN_APP.metadata.enabled = false` kill-switch suppresses NEW inbox writes immediately; existing rows stay visible (so no data loss when toggling).
+
+### Known follow-ups (intentionally deferred)
+- Broadcast UI for "Reply All" on broadcast rows (currently single-recipient).
+- Inbox bulk-archive / bulk-mark-read (admin convenience; not blocking).
+- Cross-entity inbox view for presidents (currently surfaces all entities when `?entity_id=` omitted; no per-entity grouping pill in the list yet).
+- Dual-route POSTED-event notifications (Phase G8 SoD pattern): currently `notifyDocumentPosted` writes one row to all of management; subscribers complaining of in-app noise can later split into PRESIDENT-with-all-channels + FINANCE/ADMIN-in-app-only without schema changes.

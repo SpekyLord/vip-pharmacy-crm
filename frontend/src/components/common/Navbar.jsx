@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import useWorkingEntity from '../../hooks/useWorkingEntity';
+// Phase G9.R6 — unified inbox bell with action-required + unread counts.
+import NotificationBell from './NotificationBell';
 
 const ERP_TABS = [
   { label: 'Dashboard', path: '/erp', icon: LayoutGrid },
@@ -808,6 +810,8 @@ const Navbar = () => {
         <button className="navbar-theme-btn" onClick={toggleTheme} aria-label="Toggle dark mode">
           {isDark ? <Sun size={17} /> : <Moon size={17} />}
         </button>
+
+        {user && <NotificationBell />}
 
         {user && (
           <>

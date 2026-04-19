@@ -109,6 +109,57 @@ const messageService = {
     const res = await api.delete(`/messages/${id}`);
     return res.data;
   },
+
+  // ─── Phase G9.R5 — Unified Operational Inbox ───────────────────────
+  /** Lightweight unread + action_required counts for the navbar bell. */
+  getCounts: async (options = {}) => {
+    const res = await api.get('/messages/counts', { withCredentials: true, ...options });
+    return res.data;
+  },
+
+  /** Lookup-driven folder + action config (cached on server). */
+  getFolders: async (options = {}) => {
+    const res = await api.get('/messages/folders', { withCredentials: true, ...options });
+    return res.data;
+  },
+
+  /** Folder/filter list. Pass `?folder=APPROVALS&counts=1` etc. */
+  list: async (params = {}, options = {}) => {
+    const res = await api.get('/messages', { params, withCredentials: true, ...options });
+    return res.data;
+  },
+
+  /** Full thread, oldest first. */
+  getThread: async (threadId, options = {}) => {
+    const res = await api.get(`/messages/thread/${threadId}`, {
+      withCredentials: true,
+      ...options,
+    });
+    return res.data;
+  },
+
+  /** Threaded reply to a parent message. */
+  reply: async (id, body) => {
+    const res = await api.post(`/messages/${id}/reply`, { body }, { withCredentials: true });
+    return res.data;
+  },
+
+  /** Two-way compose. payload = { recipient_user_id?, recipient_role?, subject, body, category?, priority? }. */
+  compose: async (payload) => {
+    const res = await api.post('/messages/compose', payload, { withCredentials: true });
+    return res.data;
+  },
+
+  /**
+   * Execute the row's action (approve/reject/resolve/acknowledge).
+   * args: { reason? }. The controller delegates to the canonical downstream
+   * controller (universalApprovalController, varianceAlertController) — the
+   * inbox endpoint is a thin facade (Rule #20: never bypass).
+   */
+  executeAction: async (id, args = {}) => {
+    const res = await api.post(`/messages/${id}/action`, args, { withCredentials: true });
+    return res.data;
+  },
 };
 
 export default messageService;

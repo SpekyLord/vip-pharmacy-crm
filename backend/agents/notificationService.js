@@ -24,13 +24,33 @@ const { ROLES, ROLE_SETS } = require('../constants/roles');
 // ═══════════════════════════════════════════
 // Channel: In-App Message (ready now)
 // ═══════════════════════════════════════════
-async function sendInApp({ recipientId, title, body, category, priority }) {
+async function sendInApp({ recipientId, title, body, category, priority, entityId = null, folder = null }) {
   try {
-    // Resolve recipient's role for MessageInbox (required field)
+    // Resolve recipient's role + entity for MessageInbox (entity_id is needed
+    // for Phase G9 unified inbox folder/list endpoints).
     let recipientRole = 'admin';
+    let resolvedEntityId = entityId;
     if (recipientId) {
-      const recipient = await User.findById(recipientId).select('role').lean();
-      if (recipient) recipientRole = recipient.role;
+      const recipient = await User.findById(recipientId).select('role entity_id entity_ids').lean();
+      if (recipient) {
+        recipientRole = recipient.role;
+        if (!resolvedEntityId) {
+          resolvedEntityId = recipient.entity_id
+            || (Array.isArray(recipient.entity_ids) && recipient.entity_ids.length > 0
+              ? recipient.entity_ids[0]
+              : null);
+        }
+      }
+    }
+    // Phase G9.R2 — derive folder from category when caller didn't specify.
+    let resolvedFolder = folder;
+    if (!resolvedFolder) {
+      try {
+        const { folderForCategory } = require('../erp/utils/inboxLookups');
+        resolvedFolder = folderForCategory(category);
+      } catch {
+        resolvedFolder = 'INBOX';
+      }
     }
     const message = await MessageInbox.create({
       title,
@@ -40,7 +60,10 @@ async function sendInApp({ recipientId, title, body, category, priority }) {
       recipientRole,
       recipientUserId: recipientId || null,
       senderName: 'System Agent',
-      senderId: null
+      senderRole: 'system',
+      senderUserId: null,
+      entity_id: resolvedEntityId,
+      folder: resolvedFolder,
     });
     return { channel: 'in_app', success: true, messageId: message._id?.toString?.() || null };
   } catch (err) {
@@ -181,7 +204,7 @@ async function resolveRecipients(recipientId) {
 /**
  * Send notification to one or many recipients via multiple channels
  */
-async function notify({ recipient_id, title, body, category, priority, channels, agent }) {
+async function notify({ recipient_id, title, body, category, priority, channels, agent, entity_id, folder }) {
   const defaultChannels = ['in_app', 'email'];
   const activeChannels = channels || defaultChannels;
   const recipients = await resolveRecipients(recipient_id);
@@ -199,7 +222,7 @@ async function notify({ recipient_id, title, body, category, priority, channels,
 
       switch (channel) {
         case 'in_app':
-          result = await sendInApp({ recipientId: user._id, title, body, category, priority });
+          result = await sendInApp({ recipientId: user._id, title, body, category, priority, entityId: entity_id, folder });
           break;
         case 'email':
           if (user.email) {

@@ -183,15 +183,31 @@ const notifyDocumentPosted = async (opts) => {
     const recipients = await findManagementRecipients(opts.entityId);
     if (!recipients.length) return;
 
-    await sendToRecipients(recipients, documentPostedTemplate, {
-      module: opts.module,
-      docType: opts.docType,
-      docRef: opts.docRef,
-      postedBy: opts.postedBy,
-      entityName,
-      amount: opts.amount,
-      period: opts.period,
-    }, 'ERP_DOCUMENT_POSTED');
+    // Phase G9.B — dispatchMultiChannel persists an in-app MessageInbox row
+    // in addition to the email, so management sees POSTED events inside the
+    // inbox Approvals folder (badge + acknowledge action). Email kill-switch
+    // and per-user preferences are honoured by dispatchMultiChannel.
+    await dispatchMultiChannel(recipients, {
+      templateFn: documentPostedTemplate,
+      templateData: {
+        module: opts.module,
+        docType: opts.docType,
+        docRef: opts.docRef,
+        postedBy: opts.postedBy,
+        entityName,
+        amount: opts.amount,
+        period: opts.period,
+      },
+      emailType: 'ERP_DOCUMENT_POSTED',
+      category: 'document_posted',
+      entityId: opts.entityId,
+      inAppCategory: 'document_posted',
+      inAppFolder: 'APPROVALS',
+      inAppPriority: 'normal',
+      inAppRequiresAction: false,
+      inAppActionType: 'acknowledge',
+      inAppActionPayload: { module: opts.module, doc_type: opts.docType, doc_ref: opts.docRef, deep_link: `/erp/${String(opts.module || '').toLowerCase()}` },
+    });
   } catch (err) {
     console.error('notifyDocumentPosted failed:', err.message);
   }
@@ -206,14 +222,28 @@ const notifyDocumentReopened = async (opts) => {
     const recipients = await findManagementRecipients(opts.entityId);
     if (!recipients.length) return;
 
-    await sendToRecipients(recipients, documentReopenedTemplate, {
-      module: opts.module,
-      docType: opts.docType,
-      docRef: opts.docRef,
-      reopenedBy: opts.reopenedBy,
-      entityName,
-      reason: opts.reason,
-    }, 'ERP_DOCUMENT_REOPENED');
+    // Phase G9.B — also surfaces in-app so auditors see reversals in their
+    // Approvals folder (critical for SOX reviewers).
+    await dispatchMultiChannel(recipients, {
+      templateFn: documentReopenedTemplate,
+      templateData: {
+        module: opts.module,
+        docType: opts.docType,
+        docRef: opts.docRef,
+        reopenedBy: opts.reopenedBy,
+        entityName,
+        reason: opts.reason,
+      },
+      emailType: 'ERP_DOCUMENT_REOPENED',
+      category: 'document_reopened',
+      entityId: opts.entityId,
+      inAppCategory: 'document_posted',
+      inAppFolder: 'APPROVALS',
+      inAppPriority: 'high',
+      inAppRequiresAction: false,
+      inAppActionType: 'acknowledge',
+      inAppActionPayload: { module: opts.module, doc_type: opts.docType, doc_ref: opts.docRef, reversal: true },
+    });
   } catch (err) {
     console.error('notifyDocumentReopened failed:', err.message);
   }
@@ -240,15 +270,38 @@ const notifyApprovalRequest = async (opts) => {
       : await findManagementRecipients(opts.entityId);
     if (!recipients.length) return;
 
-    await sendToRecipients(recipients, approvalRequestTemplate, {
-      module: opts.module,
-      docType: opts.docType,
-      docRef: opts.docRef,
-      requestedBy: opts.requestedBy,
-      entityName,
-      amount: opts.amount,
-      description: opts.description,
-    }, 'ERP_APPROVAL_REQUEST');
+    // Phase G9.B — approvers see a red-dot [Approve]/[Reject] row in their
+    // inbox. Thread-id = ApprovalRequest._id so approve + decision + reopen
+    // events fold into the same conversation.
+    await dispatchMultiChannel(recipients, {
+      templateFn: approvalRequestTemplate,
+      templateData: {
+        module: opts.module,
+        docType: opts.docType,
+        docRef: opts.docRef,
+        requestedBy: opts.requestedBy,
+        entityName,
+        amount: opts.amount,
+        description: opts.description,
+      },
+      emailType: 'ERP_APPROVAL_REQUEST',
+      category: 'approval_request',
+      entityId: opts.entityId,
+      inAppCategory: 'approval_request',
+      inAppFolder: 'APPROVALS',
+      inAppPriority: 'high',
+      inAppThreadId: opts.approvalRequestId || null,
+      inAppRequiresAction: true,
+      inAppActionType: 'approve',
+      inAppActionPayload: {
+        approval_request_id: opts.approvalRequestId ? String(opts.approvalRequestId) : null,
+        module: opts.module,
+        doc_type: opts.docType,
+        doc_ref: opts.docRef,
+        amount: opts.amount,
+        deep_link: '/erp/approvals',
+      },
+    });
   } catch (err) {
     console.error('notifyApprovalRequest failed:', err.message);
   }
@@ -263,15 +316,37 @@ const notifyApprovalDecision = async (opts) => {
     const owner = await findDocumentOwner(opts.ownerId);
     if (!owner?.email) return;
 
-    await sendToRecipients([owner], approvalDecisionTemplate, {
-      module: opts.module,
-      docType: opts.docType,
-      docRef: opts.docRef,
-      decision: opts.decision, // 'APPROVED' or 'REJECTED'
-      decidedBy: opts.decidedBy,
-      entityName,
-      reason: opts.reason,
-    }, 'ERP_APPROVAL_DECISION');
+    // Phase G9.B — submitter sees their verdict inside the same thread as
+    // the original approval request (thread_id = ApprovalRequest._id).
+    await dispatchMultiChannel([owner], {
+      templateFn: approvalDecisionTemplate,
+      templateData: {
+        module: opts.module,
+        docType: opts.docType,
+        docRef: opts.docRef,
+        decision: opts.decision,
+        decidedBy: opts.decidedBy,
+        entityName,
+        reason: opts.reason,
+      },
+      emailType: 'ERP_APPROVAL_DECISION',
+      category: 'approval_decision',
+      entityId: opts.entityId,
+      inAppCategory: 'approval_decision',
+      inAppFolder: 'APPROVALS',
+      inAppPriority: opts.decision === 'REJECTED' ? 'high' : 'normal',
+      inAppThreadId: opts.approvalRequestId || null,
+      inAppRequiresAction: false,
+      inAppActionType: 'acknowledge',
+      inAppActionPayload: {
+        approval_request_id: opts.approvalRequestId ? String(opts.approvalRequestId) : null,
+        module: opts.module,
+        doc_type: opts.docType,
+        doc_ref: opts.docRef,
+        decision: opts.decision,
+        reason: opts.reason || null,
+      },
+    });
   } catch (err) {
     console.error('notifyApprovalDecision failed:', err.message);
   }
@@ -286,14 +361,28 @@ const notifyPayrollPosted = async (opts) => {
     const recipients = await findManagementRecipients(opts.entityId);
     if (!recipients.length) return;
 
-    await sendToRecipients(recipients, payrollPostedTemplate, {
-      period: opts.period,
-      cycle: opts.cycle,
-      postedCount: opts.postedCount,
-      totalNetPay: opts.totalNetPay,
-      postedBy: opts.postedBy,
-      entityName,
-    }, 'ERP_PAYROLL_POSTED');
+    // Phase G9.B — also in-app in the Approvals folder so payroll postings
+    // surface next to expense approvals (same reviewer audience).
+    await dispatchMultiChannel(recipients, {
+      templateFn: payrollPostedTemplate,
+      templateData: {
+        period: opts.period,
+        cycle: opts.cycle,
+        postedCount: opts.postedCount,
+        totalNetPay: opts.totalNetPay,
+        postedBy: opts.postedBy,
+        entityName,
+      },
+      emailType: 'ERP_PAYROLL_POSTED',
+      category: 'document_posted',
+      entityId: opts.entityId,
+      inAppCategory: 'document_posted',
+      inAppFolder: 'APPROVALS',
+      inAppPriority: 'normal',
+      inAppRequiresAction: false,
+      inAppActionType: 'acknowledge',
+      inAppActionPayload: { module: 'Payroll', period: opts.period, cycle: opts.cycle, deep_link: '/erp/payroll' },
+    });
   } catch (err) {
     console.error('notifyPayrollPosted failed:', err.message);
   }
@@ -584,10 +673,39 @@ function normalizePhoneForSms(phone) {
 /**
  * Persist an in-app MessageInbox row for a single recipient.
  * Non-blocking: catches and logs its own errors.
+ *
+ * Phase G9.A: extended with entity_id / folder / thread / action affordance
+ * fields. Folder is derived from category when not explicitly provided. All
+ * new params are optional to keep legacy callers working.
  */
-async function persistInApp(recipient, { title, body, category, priority }) {
+async function persistInApp(recipient, {
+  title,
+  body,
+  category,
+  priority,
+  entityId = null,
+  folder = null,
+  threadId = null,
+  parentMessageId = null,
+  requiresAction = false,
+  actionType = null,
+  actionPayload = null,
+  senderName = 'VIP ERP',
+  senderRole = 'system',
+  senderUserId = null,
+}) {
   try {
     if (!recipient?._id) return { ok: false, reason: 'no_recipient' };
+    // Derive folder from category if caller didn't specify. Keeps callers simple.
+    let resolvedFolder = folder;
+    if (!resolvedFolder) {
+      try {
+        const { folderForCategory } = require('../utils/inboxLookups');
+        resolvedFolder = folderForCategory(category);
+      } catch {
+        resolvedFolder = 'INBOX';
+      }
+    }
     await MessageInbox.create({
       title: title || 'VIP ERP Notification',
       body: body || title || 'See the ERP for details.',
@@ -595,8 +713,16 @@ async function persistInApp(recipient, { title, body, category, priority }) {
       priority: priority || 'normal',
       recipientRole: recipient.role || 'admin',
       recipientUserId: recipient._id,
-      senderName: 'VIP ERP',
-      senderRole: 'system',
+      senderName,
+      senderRole,
+      senderUserId,
+      entity_id: entityId || recipient.entity_id || null,
+      folder: resolvedFolder,
+      thread_id: threadId,
+      parent_message_id: parentMessageId,
+      requires_action: !!requiresAction,
+      action_type: actionType,
+      action_payload: actionPayload,
     });
     return { ok: true };
   } catch (err) {
@@ -702,6 +828,14 @@ async function dispatchMultiChannel(recipients, {
   entityId,
   inAppCategory = 'system',
   inAppPriority = 'normal',
+  // Phase G9.B — action affordance + threading forwarded to persistInApp
+  inAppFolder = null,
+  inAppThreadId = null,
+  inAppParentMessageId = null,
+  inAppRequiresAction = false,
+  inAppActionType = null,
+  inAppActionPayload = null,
+  inAppSender = null, // { name, role, userId }
 }) {
   if (!recipients || recipients.length === 0) return;
 
@@ -751,6 +885,16 @@ async function dispatchMultiChannel(recipients, {
         body: text || (html ? html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 2000) : subject),
         category: inAppCategory,
         priority: inAppPriority,
+        entityId,
+        folder: inAppFolder,
+        threadId: inAppThreadId,
+        parentMessageId: inAppParentMessageId,
+        requiresAction: inAppRequiresAction,
+        actionType: inAppActionType,
+        actionPayload: inAppActionPayload,
+        senderName: inAppSender?.name || 'VIP ERP',
+        senderRole: inAppSender?.role || 'system',
+        senderUserId: inAppSender?.userId || null,
       });
     }
 
@@ -868,7 +1012,11 @@ const notifyTierReached = async ({ entityId, bdmId, bdmLabel, planRef, fiscalYea
       category: 'compensation',
       entityId,
       inAppCategory: 'compensation',
+      inAppFolder: 'AI_AGENT_REPORTS',
       inAppPriority: 'important', // tier milestones are meaningful BDM events
+      inAppRequiresAction: false,
+      inAppActionType: 'acknowledge',
+      inAppActionPayload: { bdm_id: bdmId ? String(bdmId) : null, tier: tierCode, plan_ref: planRef, deep_link: '/erp/my-compensation' },
     });
   } catch (err) {
     console.error('notifyTierReached failed:', err.message);
@@ -907,7 +1055,17 @@ const notifyKpiVariance = async ({ entityId, bdmId, bdmLabel, fiscalYear, period
       category: 'kpiVariance',
       entityId,
       inAppCategory: 'compliance_alert',
+      inAppFolder: 'AI_AGENT_REPORTS',
       inAppPriority: hasCritical ? 'high' : 'important',
+      inAppRequiresAction: true,
+      inAppActionType: 'resolve',
+      inAppActionPayload: {
+        bdm_id: bdmId ? String(bdmId) : null,
+        fiscal_year: fiscalYear,
+        period,
+        variance_alert_ids: alerts.map(a => a.variance_alert_id).filter(Boolean).map(String),
+        deep_link: '/erp/variance-alerts',
+      },
     });
   } catch (err) {
     console.error('notifyKpiVariance failed:', err.message);
@@ -993,6 +1151,83 @@ const notifyCompensationStatement = async ({
   }
 };
 
+// ─── Phase G9.B.2 — Task lifecycle inbox notifications ─────────────────
+// Task events (assigned / reassigned / completed / commented / overdue) are
+// pushed to the recipient's `TASKS` folder as MessageInbox rows via the
+// same dispatchMultiChannel pipe (email + in-app + SMS), honouring
+// NOTIFICATION_CHANNELS + NotificationPreference. One recipient per call.
+// Minimal body, no templateFn — the inbox row IS the message.
+const notifyTaskEvent = async ({
+  entityId,
+  event,                    // 'assigned' | 'reassigned' | 'completed' | 'commented' | 'overdue'
+  recipientUserId,          // who gets the row (assignee, or creator for 'completed')
+  actorName,                // who triggered it (e.g., task creator or the person who marked DONE)
+  taskId,
+  taskTitle,
+  dueDate,
+  priority,
+  comment,                  // optional — for 'commented'
+}) => {
+  try {
+    if (!recipientUserId) return;
+    const recipient = await User.findById(recipientUserId)
+      .select('_id email name role phone entity_id').lean();
+    if (!recipient) return;
+
+    const EVENT_CONFIG = {
+      assigned:   { subject: 'New task assigned',     category: 'task_assigned',   priority: 'normal', action: 'open_link', requiresAction: true  },
+      reassigned: { subject: 'Task reassigned to you', category: 'task_reassigned', priority: 'normal', action: 'open_link', requiresAction: true  },
+      completed:  { subject: 'Task completed',         category: 'task_completed',  priority: 'normal', action: 'acknowledge', requiresAction: false },
+      commented:  { subject: 'New comment on your task', category: 'task_comment', priority: 'normal', action: 'reply',    requiresAction: false },
+      overdue:    { subject: 'Task overdue',           category: 'task_overdue',    priority: 'high',   action: 'open_link', requiresAction: true  },
+    };
+    const cfg = EVENT_CONFIG[event];
+    if (!cfg) return;
+
+    const dueLine = dueDate ? `  Due: ${new Date(dueDate).toLocaleDateString('en-PH')}` : '';
+    const prioLine = priority ? `  Priority: ${priority}` : '';
+    const subject = `${cfg.subject}: ${taskTitle || 'Untitled task'}`;
+    const text = [
+      `${actorName || 'Someone'} ${event} a task for you:`,
+      `  "${taskTitle || 'Untitled task'}"`,
+      dueLine,
+      prioLine,
+      comment ? `  Comment: ${comment}` : '',
+    ].filter(Boolean).join('\n');
+    const html = `<p>${actorName || 'Someone'} ${event} a task for you:</p>
+      <p><strong>${taskTitle || 'Untitled task'}</strong></p>
+      ${dueDate ? `<p>Due: ${new Date(dueDate).toLocaleDateString('en-PH')}</p>` : ''}
+      ${priority ? `<p>Priority: ${priority}</p>` : ''}
+      ${comment ? `<p><em>${String(comment).substring(0, 400)}</em></p>` : ''}
+      <p><a href="${process.env.FRONTEND_URL || ''}/erp/tasks?id=${taskId}">Open task</a></p>`;
+
+    // Template fn — inlined because task body is short and doesn't need an
+    // HTML email template file.
+    const templateFn = () => ({ subject, html, text });
+
+    await dispatchMultiChannel([recipient], {
+      templateFn,
+      templateData: {},
+      emailType: 'ERP_TASK_EVENT',
+      category: 'task',
+      entityId: entityId || recipient.entity_id,
+      inAppCategory: cfg.category,
+      inAppFolder: 'TASKS',
+      inAppPriority: cfg.priority,
+      inAppThreadId: taskId || null,
+      inAppRequiresAction: cfg.requiresAction,
+      inAppActionType: cfg.action,
+      inAppActionPayload: {
+        task_id: taskId ? String(taskId) : null,
+        event,
+        deep_link: taskId ? `/erp/tasks?id=${taskId}` : '/erp/tasks',
+      },
+    });
+  } catch (err) {
+    console.error(`notifyTaskEvent[${event}] failed:`, err.message);
+  }
+};
+
 module.exports = {
   notifyDocumentPosted,
   notifyDocumentReopened,
@@ -1005,6 +1240,8 @@ module.exports = {
   notifyKpiVariance,
   // Phase SG-4 #23 ext
   notifyCompensationStatement,
+  // Phase G9.B.2 — task inbox events
+  notifyTaskEvent,
   // Exported for testing / advanced use
   findManagementRecipients,
   findNotificationRecipients,

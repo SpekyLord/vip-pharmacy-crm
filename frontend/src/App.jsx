@@ -42,6 +42,9 @@ const MyVisits = lazyRetry(() => import('./pages/employee/MyVisits'));
 const NewVisitPage = lazyRetry(() => import('./pages/employee/NewVisitPage'));
 const NewClientVisitPage = lazyRetry(() => import('./pages/employee/NewClientVisitPage'));
 const EmployeeInbox = lazyRetry(() => import('./pages/employee/EMP_InboxPage'));
+// Phase G9.R5 — unified inbox surface for ALL roles. EMP_InboxPage now
+// re-exports this so /bdm/inbox keeps the same component.
+const InboxPage = lazyRetry(() => import('./pages/common/InboxPage'));
 const CallPlanPage = lazyRetry(() => import('./pages/employee/CallPlanPage'));
 const DoctorDetailPage = lazyRetry(() => import('./pages/employee/DoctorDetailPage'));
 const ProductSpecPage = lazyRetry(() => import('./pages/employee/ProductSpecPage'));
@@ -298,6 +301,23 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN}>
                 <EmployeeInbox />
+              </ProtectedRoute>
+            }
+          />
+          {/* Phase G9.R5 — unified inbox for every authenticated role */}
+          <Route
+            path="/inbox"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ALL}>
+                <InboxPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inbox/thread/:thread_id"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ALL}>
+                <InboxPage />
               </ProtectedRoute>
             }
           />
