@@ -22,6 +22,9 @@ const InventoryLedger = require('../models/InventoryLedger');
 
 // Phase 31 — shared per-module detail builders (also used by Reversal Console)
 const { buildDocumentDetails } = require('./documentDetailBuilder');
+// CRM bridge — used to enrich CAR_LOGBOOK approvals with same-day visit data
+// (mirrors how SMER pulls md_count via the same bridge during generation).
+const { getDailyVisitDetails } = require('./smerCrmBridge');
 
 // Lazy-load optional models (may not exist in all deployments)
 function getModel(name) {
@@ -75,6 +78,7 @@ const MODULE_QUERIES = [
     query: async (entityId) => {
       const items = await DeductionSchedule.find({ entity_id: entityId, status: 'PENDING_APPROVAL' })
         .populate('bdm_id', 'name email')
+        .populate('approved_by', 'name')
         .sort({ created_at: -1 })
         .lean();
       return items.map(item => ({
@@ -106,6 +110,8 @@ const MODULE_QUERIES = [
         status: { $in: ['GENERATED', 'BDM_CONFIRMED'] }
       })
         .populate('bdm_id', 'name email')
+        .populate('reviewed_by', 'name')
+        .populate('credited_by', 'name')
         .sort({ updatedAt: -1 })
         .lean();
       return items.map(item => ({
@@ -140,6 +146,7 @@ const MODULE_QUERIES = [
         .populate('bdm_id', 'name email')
         .populate('warehouse_id', 'warehouse_name warehouse_code')
         .populate('vendor_id', 'vendor_name')
+        .populate('reviewed_by', 'name')
         .sort({ createdAt: -1 })
         .lean();
       return items.map(item => ({
@@ -173,6 +180,8 @@ const MODULE_QUERIES = [
         status: { $in: ['COMPUTED', 'REVIEWED'] }
       })
         .populate('person_id', 'full_name email')
+        .populate('reviewed_by', 'name')
+        .populate('approved_by', 'name')
         .sort({ updatedAt: -1 })
         .lean();
       return items.map(item => ({
@@ -210,6 +219,8 @@ const MODULE_QUERIES = [
         status: { $in: ['SUBMITTED', 'REVIEWED'] }
       })
         .populate('person_id', 'full_name email')
+        .populate('reviewer_id', 'full_name')
+        .populate('approved_by', 'name')
         .sort({ updatedAt: -1 })
         .lean();
       return items.map(item => ({
@@ -309,6 +320,7 @@ const MODULE_QUERIES = [
       if (!SmerEntry) return [];
       const items = await SmerEntry.find({ entity_id: entityId, status: 'VALID' })
         .populate('bdm_id', 'name email')
+        .populate('daily_entries.overridden_by', 'name')
         .sort({ createdAt: -1 })
         .lean();
       return items.map(item => ({
@@ -341,21 +353,49 @@ const MODULE_QUERIES = [
         .populate('bdm_id', 'name email')
         .sort({ createdAt: -1 })
         .lean();
-      return items.map(item => ({
-        id: `CAR_LOGBOOK:${item._id}`,
-        module: 'CAR_LOGBOOK',
-        doc_type: 'CAR_LOGBOOK',
-        doc_id: item._id,
-        doc_ref: `${item.period}-${item.cycle || ''}`.trim(),
-        description: `${item.bdm_id?.name || 'BDM'} — ${item.period} ${item.cycle || ''} — ${item.total_km || 0} km`,
-        amount: item.total_fuel_amount || 0,
-        submitted_by: item.bdm_id?.name || 'Unknown',
-        submitted_at: item.createdAt,
-        status: 'PENDING_POST',
-        current_action: 'Post',
-        action_key: 'POST',
-        approve_data: { type: 'car_logbook', id: item._id, action: 'post' },
-        details: buildDocumentDetails('CAR_LOGBOOK', item),
+      // Enrich each item with CRM visit details (cities/MDs visited that day)
+      // so the approver can sanity-check distance vs. actual route. Best-effort:
+      // a CRM bridge failure must not break the approval listing.
+      return Promise.all(items.map(async (item) => {
+        const details = buildDocumentDetails('CAR_LOGBOOK', item);
+        const bdmUserId = item.bdm_id?._id || item.bdm_id;
+        if (details && bdmUserId && item.entry_date) {
+          try {
+            const visits = await getDailyVisitDetails(bdmUserId, item.entry_date);
+            const crmVisits = (visits || []).map(v => ({
+              doctor_name: v.doctor ? `${v.doctor.firstName || ''} ${v.doctor.lastName || ''}`.trim() : 'Unknown',
+              specialization: v.doctor?.specialization || null,
+              clinic_address: v.doctor?.clinicOfficeAddress || null,
+              visit_time: v.visitDate,
+              visit_type: v.visitType || null,
+              week_label: v.weekLabel || null,
+            }));
+            const cities = [...new Set(crmVisits.map(v => v.clinic_address).filter(Boolean))];
+            details.crm_visit_count = crmVisits.length;
+            details.crm_visits = crmVisits;
+            details.cities_visited = cities;
+          } catch (err) {
+            // Surface the gap to the approver instead of silently hiding it
+            details.crm_visit_count = null;
+            details.crm_lookup_error = err?.message || 'CRM lookup failed';
+          }
+        }
+        return {
+          id: `CAR_LOGBOOK:${item._id}`,
+          module: 'CAR_LOGBOOK',
+          doc_type: 'CAR_LOGBOOK',
+          doc_id: item._id,
+          doc_ref: `${item.period}-${item.cycle || ''}`.trim(),
+          description: `${item.bdm_id?.name || 'BDM'} — ${item.period} ${item.cycle || ''} — ${item.total_km || 0} km`,
+          amount: item.total_fuel_amount || 0,
+          submitted_by: item.bdm_id?.name || 'Unknown',
+          submitted_at: item.createdAt,
+          status: 'PENDING_POST',
+          current_action: 'Post',
+          action_key: 'POST',
+          approve_data: { type: 'car_logbook', id: item._id, action: 'post' },
+          details,
+        };
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
@@ -369,6 +409,7 @@ const MODULE_QUERIES = [
       if (!ExpenseEntry) return [];
       const items = await ExpenseEntry.find({ entity_id: entityId, status: 'VALID' })
         .populate('bdm_id', 'name email')
+        .populate('recorded_on_behalf_of', 'name')
         .sort({ createdAt: -1 })
         .lean();
       return items.map(item => ({
@@ -492,10 +533,16 @@ const MODULE_QUERIES = [
             { path: 'target_entity_id', select: 'entity_name' },
             { path: 'source_warehouse_id', select: 'warehouse_name' },
             { path: 'target_warehouse_id', select: 'warehouse_name' },
+            { path: 'approved_by', select: 'name' },
+            { path: 'shipped_by', select: 'name' },
+            { path: 'received_by', select: 'name' },
+            { path: 'posted_by', select: 'name' },
+            { path: 'cancelled_by', select: 'name' },
           ],
           IC_SETTLEMENT: [
             { path: 'creditor_entity_id', select: 'entity_name' },
             { path: 'debtor_entity_id', select: 'entity_name' },
+            { path: 'posted_by', select: 'name' },
           ],
         },
         actionType: 'ic_transfer',
@@ -516,7 +563,11 @@ const MODULE_QUERIES = [
         module: 'JOURNAL',
         docTypeToModel: { JOURNAL_ENTRY: 'JournalEntry' },
         populateByDocType: {
-          JOURNAL_ENTRY: [],
+          JOURNAL_ENTRY: [
+            { path: 'posted_by', select: 'name' },
+            { path: 'created_by', select: 'name' },
+            { path: 'corrects_je_id', select: 'je_number je_date' },
+          ],
         },
         actionType: 'journal',
         // For DEPRECIATION/INTEREST (batch), there's no single doc to hydrate.
@@ -575,8 +626,18 @@ const MODULE_QUERIES = [
         // not a fixed string — map both to the same model.
         docTypeToModel: { DISBURSEMENT: 'PettyCashTransaction', DEPOSIT: 'PettyCashTransaction' },
         populateByDocType: {
-          DISBURSEMENT: [{ path: 'fund_id', select: 'fund_name fund_code current_balance' }],
-          DEPOSIT:      [{ path: 'fund_id', select: 'fund_name fund_code current_balance' }],
+          DISBURSEMENT: [
+            { path: 'fund_id', select: 'fund_name fund_code current_balance' },
+            { path: 'approved_by', select: 'name' },
+            { path: 'posted_by', select: 'name' },
+            { path: 'voided_by', select: 'name' },
+          ],
+          DEPOSIT: [
+            { path: 'fund_id', select: 'fund_name fund_code current_balance' },
+            { path: 'approved_by', select: 'name' },
+            { path: 'posted_by', select: 'name' },
+            { path: 'voided_by', select: 'name' },
+          ],
         },
         actionType: 'petty_cash',
       });
@@ -1001,11 +1062,18 @@ async function getUniversalPending(entityId, user, entityIds) {
         }));
         break;
       case 'CAR_LOGBOOK':
-        await Promise.all((d.fuel_receipts || []).map(async (fr) => {
-          [fr.receipt_url, fr.starting_km_photo_url, fr.ending_km_photo_url] = await Promise.all([
-            signUrl(fr.receipt_url), signUrl(fr.starting_km_photo_url), signUrl(fr.ending_km_photo_url)
-          ]);
-        }));
+        await Promise.all([
+          ...(d.fuel_receipts || []).map(async (fr) => {
+            [fr.receipt_url, fr.starting_km_photo_url, fr.ending_km_photo_url] = await Promise.all([
+              signUrl(fr.receipt_url), signUrl(fr.starting_km_photo_url), signUrl(fr.ending_km_photo_url)
+            ]);
+          }),
+          (async () => {
+            [d.starting_km_photo_url, d.ending_km_photo_url] = await Promise.all([
+              signUrl(d.starting_km_photo_url), signUrl(d.ending_km_photo_url)
+            ]);
+          })(),
+        ]);
         break;
       case 'INVENTORY':
         [d.waybill_photo_url, d.undertaking_photo_url] = await Promise.all([
