@@ -52,7 +52,9 @@ const SECTIONS = {
     return { default: FnbProductsContent };
   })),
   'hospitals': lazy(() => import('./HospitalList').then(m => ({ default: m.HospitalListContent }))),
-  'agent-settings': lazy(() => import('./AgentSettings').then(m => ({ default: m.AgentSettingsContent }))),
+  // Phase G7 — use the default export (tabbed shell: Agents / AI Cowork / Copilot Tools / AI Budget)
+  // instead of the legacy AgentSettingsContent named export which only renders the agents table.
+  'agent-settings': lazy(() => import('./AgentSettings')),
   'ocr-settings': lazy(() => import('./ErpOcrSettingsPanel')),
   'erp-settings': lazy(() => import('./ErpSettingsPanel')),
   'lookups': lazy(() => import('./LookupManager'))

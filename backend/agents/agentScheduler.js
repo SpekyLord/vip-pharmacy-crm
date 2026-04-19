@@ -59,6 +59,19 @@ function initAgentScheduler() {
   cron.schedule('0 6 2 * *', () => triggerScheduled('kpi_variance', 'KPI Variance Alerts'), { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #V KPI Variance - monthly day 2 6:00 AM');
 
+  // Phase SG-5 #27 — KPI Variance Weekly Digest. Monday 07:00 Manila. Rolls up
+  // every VarianceAlert fired in the past 7 days into a single per-manager
+  // email so persistent low performers don't spam the inbox daily.
+  cron.schedule('0 7 * * 1', () => triggerScheduled('kpi_variance_digest', 'KPI Variance Digest'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #VD KPI Variance Digest - Mon 7:00 AM');
+
+  // Phase SG-4 #24 — Dispute SLA Escalator. Daily 06:30 Manila — runs after
+  // the early-morning snapshot/variance jobs so the system is settled. Walks
+  // every non-CLOSED IncentiveDispute and pings the escalation chain on
+  // any state breach. Idempotent — re-runs do not re-fire alerts.
+  cron.schedule('30 6 * * *', () => triggerScheduled('dispute_sla', 'Dispute SLA Escalator'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #DSP Dispute SLA - daily 6:30 AM');
+
   const hasAiKey = !!process.env.ANTHROPIC_API_KEY;
 
   if (hasAiKey) {

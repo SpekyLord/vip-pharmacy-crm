@@ -4633,3 +4633,224 @@ Frontend:
 - **President-Reverse is synchronous.** A plan with hundreds of paid payouts could take several seconds because each `reverseJournal` runs its own session. Acceptable for current scale (max ~12 BDMs × 12 months ≈ 144 potential payouts). Multi-subsidiary scale may warrant moving the cascade to a background agent (kpi_snapshot pattern).
 - **No UI reversal-history view for plans yet.** `documentReversalService.listReversibleDocs` / `listReversalHistory` would need a `SALES_GOAL_PLAN` branch — deferred to a thin follow-up (one if-block per function, ~20 LOC).
 
+
+---
+
+## Phase SG-4 — Sales Goal Commercial-Grade Features (April 19, 2026)
+
+Closes Section D items 21, 22, 23 (extensions), and 24 from `dreamy-skipping-cookie.md`. Brings VIP Sales Goal to commercial parity with SAP Commissions, SuiteCommissions, Workday ICM, and Oracle Fusion ICM patterns. **All four PRs ship together** — backend models + services + controllers + routes + agent + lookups + frontend pages + sidebar + WorkflowGuide entries + App.jsx routes.
+
+### Scope (4 PRs in one commit)
+
+#### PR1 — Plan Versioning (#21, SuiteCommissions pattern)
+- **NEW** `backend/erp/models/IncentivePlan.js` — header per (entity_id, fiscal_year). Owns the *logical* plan; SalesGoalPlan rows become *versions*.
+- `backend/erp/models/SalesGoalPlan.js` — added `incentive_plan_id`, `version_no`, `effective_from`, `effective_to`, `supersedes_plan_id`, `superseded_by_plan_id`. Replaced legacy `{entity_id,fiscal_year}` UNIQUE index with composite `{entity_id,fiscal_year,version_no}` UNIQUE.
+- **NEW** `backend/erp/services/incentivePlanService.js` — `ensureHeader()` (lazy-backfill), `getActiveVersion()`, `listVersions()`, `createNewVersion()`, `syncHeaderOnActivation()`, `syncHeaderOnLifecycleChange()`.
+- **NEW** `backend/scripts/migrateSalesGoalVersioning.js` — one-time idempotent migration: drops legacy unique index, creates composite, backfills `version_no=1`, creates IncentivePlan headers, syncs `current_version_id`.
+- **Source of truth for "active version per FY"**: `IncentivePlan.current_version_id` (already O(1) via the unique index on `{entity_id, fiscal_year}`). An earlier draft seeded a parallel `ACTIVE_PLAN_VERSION` Lookup mirror — **removed** because operational state doesn't belong in the configuration table; admins shouldn't see / edit a row the runtime overwrites on every activation.
+- **Endpoints**: `GET /sales-goals/plans/:id/versions`, `POST /sales-goals/plans/:id/new-version` (gated by `gateApproval('SALES_GOAL_PLAN','PLAN_NEW_VERSION')`).
+- **Backward-compat**: existing plans + endpoints continue working unchanged. KpiSnapshot.plan_id stays tied to the version active at compute time — historical snapshots never re-pointed.
+
+#### PR2 — Credit Rules (#22, SAP Commissions pattern)
+- **NEW** `backend/erp/models/CreditRule.js` — entity-scoped, priority, AND-combined conditions (territory_ids, product_codes, customer_codes, hospital_ids, sale_types, min/max_amount), credit_bdm_id, credit_pct, effective dates.
+- **NEW** `backend/erp/models/SalesCredit.js` — append-only audit trail of credit assignments. Sources: `rule | fallback | manual | reversal`. Pre-save guard prevents updates.
+- **NEW** `backend/erp/services/creditRuleEngine.js` — `assign(saleLine)` evaluates rules in priority order, capped at 100% total, residual goes to sale.bdm_id (legacy fallback). Idempotent — re-runs delete only `rule`/`fallback` rows; `manual`/`reversal` survive.
+- **NEW** `backend/erp/controllers/creditRuleController.js` — CRUD on rules + read-only credit ledger + `POST /reassign/:saleLineId` admin tool.
+- **NEW** `backend/erp/routes/creditRuleRoutes.js` — mounted at `/api/erp/credit-rules`.
+- **Hook**: `salesController.postSaleRow()` calls `creditRuleEngine.assign(row, { userId })` after the journal posts. Non-blocking — failures logged to ErpAuditLog, sale still posts.
+- **Lookup** `CREDIT_RULE_TEMPLATES` — preset shapes (TERRITORY_PRIMARY, PRODUCT_SPLIT, KEY_ACCOUNT_OVERRIDE) seeded with empty arrays so admins fill in values per entity.
+- **Frontend**: `CreditRuleManager.jsx` (rule CRUD + credit ledger tab + template picker). Sidebar entry "Credit Rules" (admin-only). WorkflowGuide entry `credit-rule-manager`.
+
+#### PR3 — Compensation Statement Extensions (#23 ext, Workday ICM pattern)
+- **Lookup** `COMP_STATEMENT_TEMPLATE` re-seeded with 6 rows: HEADER_TITLE, HEADER_SUBTITLE, DISCLAIMER, SIGNATORY_LINE, SIGNATORY_TITLE, EMAIL_ON_PERIOD_CLOSE. Admin-editable from Control Center.
+- **NEW** `compensationStatementReadyTemplate` in `backend/templates/erpEmails.js` — minimal email with deep-link to `/erp/sales-goals/my?tab=compensation&fiscal_year=...&period=...`.
+- **NEW** `notifyCompensationStatement()` in `erpNotificationService.js` — multi-channel dispatch (email + in-app + SMS opt-in via NotificationPreference). Reads COMP_STATEMENT_TEMPLATE for brand chrome + EMAIL_ON_PERIOD_CLOSE.metadata.enabled gate.
+- **Endpoints**: `GET /incentive-payouts/statement/archive` (BDM rollup of prior periods, group by fy+period); `POST /incentive-payouts/statements/dispatch` (admin mass-mail for a period; gated by `gateApproval('INCENTIVE_PAYOUT','STATEMENT_DISPATCH')`).
+
+#### PR4 — Dispute / Clawback Workflow (#24, Oracle Fusion pattern)
+- **NEW** `backend/erp/models/IncentiveDispute.js` — state machine `OPEN → UNDER_REVIEW → RESOLVED_APPROVED|RESOLVED_DENIED → CLOSED`. Fields: filed_by, affected_bdm_id, dispute_type, artifact links (payout_id / sales_credit_id / sale_line_id / plan_id), reason, evidence_urls, history[], sla_breaches[].
+- **NEW** `backend/erp/controllers/incentiveDisputeController.js` — `fileDispute`, `listDisputes`, `getDisputeById`, `takeReview`, `resolveDispute`, `closeDispute`, `cancelDispute`. Every transition through `gateApproval('INCENTIVE_DISPUTE', ...)` (Rule #20). Resolution APPROVED on a payout dispute cascades `reverseAccrualJournal()` (SAP Storno via existing helper); on a credit dispute appends a negative SalesCredit row (source='reversal').
+- **NEW** `backend/erp/routes/incentiveDisputeRoutes.js` — mounted at `/api/erp/incentive-disputes`.
+- **Lookups**:
+  - `INCENTIVE_DISPUTE_TYPE` — 5 starter types (WRONG_TIER, MISSING_CREDIT, CAP_DISPUTE, PERIOD_MISMATCH, OTHER) with metadata.artifact mapping to payout|credit.
+  - `DISPUTE_SLA_DAYS` — 4 starter rows (OPEN=3d, UNDER_REVIEW=7d, RESOLVED_APPROVED=5d, RESOLVED_DENIED=14d) with escalate_to_role.
+  - `MODULE_DEFAULT_ROLES.INCENTIVE_DISPUTE` — default president/finance/admin.
+  - `APPROVAL_MODULE.INCENTIVE_DISPUTE` — category=OPERATIONAL.
+- **NEW** `backend/agents/disputeSlaAgent.js` (#DSP, FREE) — daily 06:30 Asia/Manila. Walks every non-CLOSED dispute, flags SLA breaches per state, dispatches escalation via `dispatchMultiChannel`. Idempotent — one breach row per (state, post-state-change). Never auto-transitions.
+- **Frontend**: `DisputeCenter.jsx` (file modal + list + take-review/resolve/close actions + detail view with history + SLA breach badges). Sidebar entry "Dispute Center" (all sales_goals VIEW). WorkflowGuide entry `dispute-center`.
+
+### Wiring map (Phase SG-4)
+
+```
+Backend NEW:
+  backend/erp/models/IncentivePlan.js
+  backend/erp/models/CreditRule.js
+  backend/erp/models/SalesCredit.js
+  backend/erp/models/IncentiveDispute.js
+  backend/erp/services/incentivePlanService.js
+  backend/erp/services/creditRuleEngine.js
+  backend/erp/controllers/creditRuleController.js
+  backend/erp/controllers/incentiveDisputeController.js
+  backend/erp/routes/creditRuleRoutes.js
+  backend/erp/routes/incentiveDisputeRoutes.js
+  backend/agents/disputeSlaAgent.js
+  backend/scripts/migrateSalesGoalVersioning.js
+
+Backend MODIFIED:
+  backend/erp/models/SalesGoalPlan.js                        [+versioning fields, replaced unique index]
+  backend/erp/controllers/salesGoalController.js             [+ensureHeader on createPlan, +syncHeaderOnActivation in activate txn, +syncHeaderOnLifecycleChange in close/reopen, +listPlanVersions, +createNewVersion]
+  backend/erp/controllers/salesController.js                 [+creditRuleEngine.assign() at end of postSaleRow]
+  backend/erp/controllers/incentivePayoutController.js       [+getStatementArchive, +dispatchStatementsForPeriod]
+  backend/erp/controllers/lookupGenericController.js         [+CREDIT_RULE_TEMPLATES, +COMP_STATEMENT_TEMPLATE re-seed, +DISPUTE_SLA_DAYS, +INCENTIVE_DISPUTE_TYPE, +MODULE_DEFAULT_ROLES.INCENTIVE_DISPUTE, +APPROVAL_MODULE.INCENTIVE_DISPUTE]
+  backend/erp/routes/salesGoalRoutes.js                      [+/plans/:id/versions, +/plans/:id/new-version]
+  backend/erp/routes/incentivePayoutRoutes.js                [+/statement/archive, +/statements/dispatch]
+  backend/erp/routes/index.js                                [+mount /credit-rules, +mount /incentive-disputes]
+  backend/erp/services/erpNotificationService.js             [+notifyCompensationStatement]
+  backend/templates/erpEmails.js                             [+compensationStatementReadyTemplate]
+  backend/agents/agentRegistry.js                            [+dispute_sla agent]
+  backend/agents/agentScheduler.js                           [+#DSP cron 30 6 * * * Asia/Manila]
+
+Frontend NEW:
+  frontend/src/erp/pages/CreditRuleManager.jsx
+  frontend/src/erp/pages/DisputeCenter.jsx
+
+Frontend MODIFIED:
+  frontend/src/erp/hooks/useSalesGoals.js                    [+19 methods: plan-versions, credit-rules, sales-credits, comp-archive, dispute lifecycle]
+  frontend/src/erp/components/WorkflowGuide.jsx              [+credit-rule-manager guide, +dispute-center guide]
+  frontend/src/App.jsx                                       [+CreditRuleManager + DisputeCenter lazy imports + routes]
+  frontend/src/components/common/Sidebar.jsx                 [+Credit Rules link (admin-only), +Dispute Center link (all)]
+```
+
+### Acceptance checklist (Phase SG-4)
+
+- [x] `node -c` clean on every modified/new backend file (24 files).
+- [x] `npx vite build --mode development` clean (1m 20s; CreditRuleManager + DisputeCenter chunks emitted).
+- [x] `npm run verify:rejection-wiring` — OK (20 modules verified, 0 warnings).
+- [x] `gateApproval(` count: backend baseline 31 → 44 (5 new gates: createNewVersion, dispatchStatementsForPeriod, takeReview, resolveDispute, closeDispute; rest are imports / comments).
+- [x] No modifications to other modules' controllers (Expense/Collection/CALF/SMER/PettyCash/Journal/Payroll/CRM untouched). Only `salesController.postSaleRow` got 1 non-blocking `creditRuleEngine.assign()` call at the end.
+- [x] No schema changes to existing models outside Sales Goal's own set. (SalesGoalPlan only — additive fields + replaced index.)
+- [x] All new lookups are entity-scoped, lazy-seeded; subscribers configure via Control Center → Lookup Tables.
+- [ ] **Manual smoke (staging — required before activation)**:
+  - Run `node backend/scripts/migrateSalesGoalVersioning.js` once to drop the legacy unique index + create the new composite index + backfill version_no=1 + create IncentivePlan headers.
+  - Activate a v1 plan → confirm `IncentivePlan.current_version_id` points at it. (No parallel lookup row — header is the single source of truth.)
+  - `POST /plans/:id/new-version` → confirm v2 created in DRAFT, basis untouched.
+  - Activate v2 → basis flipped: superseded_by_plan_id + effective_to set; header.current_version_id moved to v2.
+  - Post a sale → SalesCredit row(s) created; with no rules, source='fallback' @ 100% to sale.bdm_id.
+  - Create a CreditRule with priority 50, 70% credit to BDM_X, condition product_codes=['SKU-1'] → post a sale containing SKU-1 → SalesCredit shows 70% to BDM_X (rule) + 30% to sale.bdm_id (fallback).
+  - File a dispute as a contractor → state OPEN. Privileged user takes review → UNDER_REVIEW. Resolve as APPROVED on a linked payout → cascade reverses the accrual JE, payout flips to REVERSED.
+  - Sit a dispute in OPEN past 3 days → run `disputeSlaAgent` → red SLA badge appears, escalation email goes to filer + reports_to + president.
+  - Admin edits COMP_STATEMENT_TEMPLATE.HEADER_TITLE → next print/email shows the new title.
+  - `POST /incentive-payouts/statements/dispatch` for a period → BDMs receive the email (subject + deep link).
+
+### Known limitations / future hooks (Phase SG-4)
+
+- **KpiSnapshot consumers still read sale.bdm_id**, not SalesCredit. Migrating snapshot computation to read from SalesCredit (so credit-split rules influence incentive accruals) is **SG-5 scope**. Keeps SG-4 PRs reviewable and limits blast radius — credit rules currently produce auditable rows that are visible in the ledger but don't yet drive accrual math.
+- **SalesGoalSetup.jsx** does not yet render a version strip / "Create New Version" button. The `/plans/:id/versions` and `/plans/:id/new-version` endpoints are fully callable via API; admin UI integration is a thin follow-up (deferred to keep SG-4 in one commit).
+- **IncentivePayoutLedger.jsx** has no "Send Statements for Period" button yet — admins use the API directly. Same deferral rationale.
+- **Reversal of SalesCredit on SalesLine reopen/storno** — when a posted sale is reopened, existing SalesCredit rows are left with the previous values (no auto-reversal). Consumers should ignore credits whose parent sale is no longer POSTED. Hook for SG-5.
+- **Plan-version-aware credit rules** — `CreditRule.plan_id` is supported but the engine currently evaluates rules with `plan_id: null` only (rules apply across all versions). Per-version rule scoping is a one-line engine change deferred to SG-5 when snapshots migrate to read SalesCredit.
+- **disputeSlaAgent does not auto-transition.** By design (Rule #20). Resolution is always a human decision.
+- **migrateSalesGoalVersioning.js is a one-time admin script.** It is not idempotent at the level of "every restart" — it only needs to run once per environment. Re-runs are safe (all operations are guarded with existence checks) but not necessary.
+
+---
+
+## Phase SG-5 — Sales Goal Analytics & Modeling ✅ (April 19, 2026)
+
+Closes Section D items **25–28** of `dreamy-skipping-cookie.md`. Fills the G.1 analytics gaps flagged in the SAP/SuiteCommissions/Workday ICM comparison — commission accelerators, what-if modeling, variance alert cooldown + weekly digest, and YoY trending.
+
+### Scope (4 sub-deliverables in one commit)
+
+#### #25 — Commission Accelerators (INCENTIVE_TIER metadata extension)
+- `backend/erp/services/salesGoalService.js` — `getIncentiveTiers()` surfaces `accelerator_factor` (default 1.0, clamped non-negative); new helper `applyTierAccelerator(tier)` returns `{ accelerated_budget, accelerator_factor, base_budget }`.
+- `computeBdmSnapshot` applies the accelerator to `incentive_status[].tier_budget` + stores `tier_base_budget` and `tier_accelerator_factor` on the snapshot row (transparency, mirrors `uncapped_budget` pattern from SG-Q2 W2).
+- `backend/erp/controllers/salesGoalController.js` — `getIncentiveBoard` exposes `accelerator_factor` + `effective_budget` on every tier so frontend can render multiplier badges.
+- `backend/erp/controllers/lookupGenericController.js` — INCENTIVE_TIER seed extended with `accelerator_factor: 1.0` per tier. Admins opt in per-tier by editing metadata in Control Center (no code change).
+- **Downstream behavior:** accrual ledger and journals automatically use the accelerated amount (existing `accrueIncentive` path — zero code change). `uncapped_budget` on IncentivePayout still reflects the pre-cap (but accelerated) number.
+
+#### #26 — What-if / Scenario Modeling
+- **NEW** `salesGoalService.simulatePlanSnapshots(plan, overrides)` — pure compute, no DB writes, no journal post. Reuses `computeIncentiveTier` / `applyTierAccelerator` / `applyIncentiveCap` so simulated accruals match production math one-for-one.
+- Overrides: `target_revenue_override`, `baseline_override`, `driver_weight_overrides`, `tier_attainment_overrides`.
+- **Endpoint** `POST /sales-goals/plans/:id/simulate` (no approval gate, VIEW sufficient; contractor-scoped to own BDM row via Rule #21).
+- **NEW** `frontend/src/erp/pages/ScenarioPlanner.jsx` — side-by-side "current vs scenario" columns for company summary, driver weight mix, and per-BDM tier projection. Delta badges highlight budget/attainment swings.
+- Sidebar entry "Scenario Planner" (admin/finance/president). App.jsx route `/erp/sales-goals/scenario`. WorkflowGuide key `scenarioPlanner`.
+
+#### #27 — KPI Variance Extensions (cooldown + persistence + digest + center)
+- **NEW** `backend/erp/models/VarianceAlert.js` — persisted audit trail of every alert fired. Fields: `entity_id, plan_id, bdm_id, person_id, fiscal_year, period, kpi_code, severity, actual_value, target_value, deviation_pct, threshold_pct, status (OPEN|RESOLVED), fired_at, resolved_at, resolved_by, resolution_note, digested_at`.
+- `backend/agents/kpiVarianceAgent.js` — cooldown check via `VARIANCE_ALERT_COOLDOWN_DAYS` lookup (global + per-severity rows) before firing; each breach persists a VarianceAlert row BEFORE dispatching notifications so cooldown works across runs. Summary now reports `alerts_suppressed` and `alerts_persisted`.
+- **NEW** `backend/agents/kpiVarianceDigestAgent.js` (#VD, FREE) — Monday 07:00 Manila. Rolls up every undigested VarianceAlert in the `VARIANCE_ALERT_DIGEST_WINDOW_DAYS` window (default 7) into a single per-manager email via `reports_to` chain. Marks each included alert with `digested_at` so the next run starts clean.
+- **NEW** `backend/templates/erpEmails.js` — `kpiVarianceDigestTemplate` exported.
+- **NEW** `backend/erp/controllers/varianceAlertController.js` — `listVarianceAlerts`, `getVarianceAlertStats`, `resolveVarianceAlert` with BDM scoping (Rule #21) + manager-of-reports_to allowance for resolve.
+- **NEW** `backend/erp/routes/varianceAlertRoutes.js` — mounted at `/api/erp/variance-alerts`. VIEW gate (not a financial op — no gateApproval).
+- **Lookups**: `VARIANCE_ALERT_COOLDOWN_DAYS` (GLOBAL 7d), `VARIANCE_ALERT_DIGEST_WINDOW_DAYS` (GLOBAL 7d). Both seeded with sensible defaults; admins retune per entity from Control Center.
+- **Agent registry + scheduler**: `kpi_variance_digest` registered; cron `0 7 * * 1` Asia/Manila.
+- **NEW** `frontend/src/erp/pages/VarianceAlertCenter.jsx` — stats cards (open critical/warning, total open/resolved), filters (status/severity/KPI), resolve action with optional note. Sidebar entry "Variance Alerts". App.jsx route `/erp/variance-alerts`. WorkflowGuide key `varianceAlertCenter`.
+
+#### #28 — Year-over-Year & Quarter-over-Quarter Trending
+- **Endpoint** `GET /sales-goals/trending?fiscal_year=&bdm_id=&kpi_code=` — joins current + prior fiscal-year YTD `KpiSnapshot` rows by `(bdm_id, kpi_code)`. Plan-version-aware implicitly (snapshots are tied to whichever IncentivePlan version was active at write time — SG-4 #21).
+- Output: `company.revenue {current, prior, delta_pct}`, `company.attainment {current, prior}`, `per_bdm[]`, `per_kpi[]` (company averages).
+- **SalesGoalDashboard.jsx** gains a "Year-over-Year Trending" panel with a Recharts bar chart (top 12 BDMs) + per-KPI delta table. Empty state when no prior-year snapshots exist. Uses the existing `charts` bundle (no new dep).
+
+### Wiring map (Phase SG-5)
+
+```
+Backend NEW:
+  backend/erp/models/VarianceAlert.js
+  backend/erp/controllers/varianceAlertController.js
+  backend/erp/routes/varianceAlertRoutes.js
+  backend/agents/kpiVarianceDigestAgent.js
+
+Backend MODIFIED:
+  backend/erp/services/salesGoalService.js              [+accelerator + simulatePlanSnapshots + exports]
+  backend/erp/controllers/salesGoalController.js        [+simulatePlan, +getTrending, accelerator exposure]
+  backend/erp/controllers/lookupGenericController.js    [+INCENTIVE_TIER.accelerator_factor, +VARIANCE_ALERT_COOLDOWN_DAYS, +VARIANCE_ALERT_DIGEST_WINDOW_DAYS]
+  backend/erp/routes/salesGoalRoutes.js                 [+/plans/:id/simulate, +/trending]
+  backend/erp/routes/index.js                           [+mount /variance-alerts]
+  backend/agents/kpiVarianceAgent.js                    [+cooldown lookup + VarianceAlert persistence]
+  backend/agents/agentRegistry.js                       [+kpi_variance_digest]
+  backend/agents/agentScheduler.js                      [+#VD Monday 07:00]
+  backend/templates/erpEmails.js                        [+kpiVarianceDigestTemplate + export]
+
+Frontend NEW:
+  frontend/src/erp/pages/ScenarioPlanner.jsx
+  frontend/src/erp/pages/VarianceAlertCenter.jsx
+
+Frontend MODIFIED:
+  frontend/src/erp/hooks/useSalesGoals.js               [+simulatePlan, getTrending, listVarianceAlerts, getVarianceAlertStats, resolveVarianceAlert]
+  frontend/src/erp/pages/SalesGoalDashboard.jsx         [+YoY trending panel (recharts BarChart + per-KPI delta table)]
+  frontend/src/erp/components/WorkflowGuide.jsx         [+scenarioPlanner, +varianceAlertCenter guides; salesGoalDashboard updated with SG-5 cross-links]
+  frontend/src/App.jsx                                  [+ScenarioPlanner + VarianceAlertCenter lazy imports + routes]
+  frontend/src/components/common/Sidebar.jsx            [+Scenario Planner (admin), +Variance Alerts (all)]
+```
+
+### Acceptance checklist (Phase SG-5)
+
+- [x] `node -c` clean on every modified/new backend file.
+- [x] Runtime `require` loads every new agent + service export without missing-module errors.
+- [x] `npx vite build --mode development` clean — `ScenarioPlanner-*.js` and `VarianceAlertCenter-*.js` chunks emitted.
+- [x] `node backend/scripts/verifyRejectionWiring.js` — OK (20 modules verified, 0 warnings).
+- [x] `node backend/scripts/startupCheck.js` — passed.
+- [x] No modifications to Expense/Collection/CALF/SMER/PettyCash/Journal/Payroll/CRM controllers. All SG-5 additions are self-contained inside the Sales Goal namespace + two new agents.
+- [x] No schema changes to existing models. New `VarianceAlert` model is additive.
+- [x] All new lookups are entity-scoped, seeded with defaults, admin-editable (`INCENTIVE_TIER.accelerator_factor`, `VARIANCE_ALERT_COOLDOWN_DAYS`, `VARIANCE_ALERT_DIGEST_WINDOW_DAYS`).
+- [x] Commission accelerator default = 1.0 on every seed tier so existing accrual math is byte-identical until an admin opts in.
+- [x] Simulate endpoint writes nothing — verified by inspection (no `.save()`, `.create()`, `.findOneAndUpdate()` in `simulatePlanSnapshots`).
+- [x] Cooldown dedup verified in the agent loop — same `(plan, bdm, kpi, severity)` within N days is suppressed; re-runs do not re-email.
+- [x] Manager resolution path covered by `resolveVarianceAlert` — reports_to manager of the BDM's PeopleMaster can resolve without admin privilege.
+- [ ] **Manual smoke (staging — required before wider rollout)**:
+  - Set `INCENTIVE_TIER.TIER_1.metadata.accelerator_factor = 1.25` in Control Center → Lookup Tables → rerun Compute KPIs → a BDM at 115% attainment gets tier_budget ×1.25 in IncentivePayout + journal.
+  - `POST /sales-goals/plans/:id/simulate` with `{ target_revenue_override: 1.2 * current }` → response shows scaled per-BDM targets + recomputed tiers; no new rows in IncentivePayout/KpiSnapshot/Journal collections.
+  - `POST /variance-alerts/:id/resolve` as the BDM → status flips to RESOLVED; `resolved_by` set. As an unrelated BDM → 403.
+  - Trigger `kpi_variance` agent twice within the cooldown window → second run's `alerts_suppressed` counter increments; no duplicate emails.
+  - Trigger `kpi_variance_digest` on Monday → one digest email per manager with all undigested alerts from last 7 days; `digested_at` stamped. Re-run same day → zero new emails.
+  - Open Goal Dashboard in an entity with prior-year snapshots → YoY panel renders with per-BDM bars + per-KPI deltas.
+  - Open Goal Dashboard in a fresh entity (no prior year) → YoY panel renders empty-state copy, no console error.
+
+### Known limitations / future hooks (Phase SG-5)
+
+- **Simulate endpoint scales per-BDM targets proportionally** when `target_revenue_override` is passed. Does NOT recompute per-BDM actuals (those stay at current live values). Intentional — scenario is "what if the bar moved?" not "what if everyone sold more?". For that, combine with `tier_attainment_overrides` per BDM.
+- **Driver weight overrides are visual-only in simulate.** The revenue-share split recomputes, but the scenario does NOT re-run per-driver auto KPI calculations (those require live SalesLine / Visit queries and would defeat the fast-dry-run goal). Admins re-run "Compute KPIs" after editing the plan live if they want the refresh.
+- **Variance Alert Center resolve is coaching acknowledgement** — does NOT reverse any journal or payout. If the underlying KPI value is wrong, the correct path is a Dispute (SG-4 #24).
+- **Auto-resolve on recovery not implemented.** When a subsequent snapshot recomputes a KPI back above threshold, the open VarianceAlert stays open until someone clicks Resolve. Adding a `salesGoalService.autoResolveRecoveredAlerts()` call inside `computeBdmSnapshot` is a one-line follow-up — deferred to SG-6 to keep the SG-5 blast radius narrow.
+- **Digest agent routes exclusively to `reports_to` managers.** BDMs without a `reports_to` line in PeopleMaster are excluded from the digest email pool (their alerts still fire in the per-event email path). Filling in PeopleMaster.reports_to is a data-quality task, not a code change.
+- **YoY chart is capped at top 12 BDMs** to keep the legend readable on tablet. For larger teams, Statistics page (Phase G2) is the right surface for a full per-BDM drill-down.
+- **Plan-version reconciliation in trending is implicit** (via `KpiSnapshot.plan_id` → `IncentivePlan.current_version_id` from SG-4 #21). Joining two snapshots from different versions of the same logical plan works; joining snapshots from entirely different plan headers (different fiscal year is expected; same fiscal-year different entity is not).

@@ -1317,14 +1317,96 @@ const WORKFLOW_GUIDES = {
       'Activate the plan — reference number (SG-{ENTITY}{YYMM}-###) is stamped and targets go visible to BDMs',
       'Click "Compute KPIs" to refresh KPI snapshots from live ERP data (President/Finance only; others are routed through the Approval Hub)',
       'Monitor the BDM leaderboard, incentive tiers, and driver progress — deactivated BDMs are hidden automatically',
+      'Scroll to Year-over-Year Trending to compare this year vs last year per BDM + per KPI (SG-5 #28). Needs at least one prior fiscal year of YTD snapshots',
     ],
     next: [
       { label: 'Goal Setup', path: '/erp/sales-goals/setup' },
       { label: 'Incentive Tracker', path: '/erp/sales-goals/incentives' },
+      { label: 'Scenario Planner', path: '/erp/sales-goals/scenario' },
+      { label: 'Variance Alerts', path: '/erp/variance-alerts' },
       { label: 'Approval Hub', path: '/erp/approvals' },
       { label: 'My Goals', path: '/erp/sales-goals/my' },
     ],
-    tip: 'BDMs see only their own goals. President and delegates with FULL sales_goals access see all BDMs. Non-authorized compute/activate actions route through the Approval Hub (HTTP 202) — check there if a button silently "succeeded" with no data refresh. Status colors (green/amber/red bars + badges) are driven by the STATUS_PALETTE Lookup — rebrand per entity from Control Center → Lookup Tables.',
+    tip: 'BDMs see only their own goals. President and delegates with FULL sales_goals access see all BDMs. Non-authorized compute/activate actions route through the Approval Hub (HTTP 202) — check there if a button silently "succeeded" with no data refresh. Status colors (green/amber/red bars + badges) are driven by the STATUS_PALETTE Lookup — rebrand per entity from Control Center → Lookup Tables. Commission accelerators (INCENTIVE_TIER.metadata.accelerator_factor) multiply a tier\'s payout for over-attainment — 1.0× by default (no-op); set > 1.0 per-tier to reward stretch performance.',
+  },
+
+  // ═══ Phase SG-4 #22 — Credit Rule Manager ═══
+  'credit-rule-manager': {
+    title: 'Credit Rules',
+    steps: [
+      'Each rule says "for sales matching THESE conditions, give THIS BDM THIS percentage of credit"',
+      'Conditions are AND-combined — leave fields empty to skip that constraint. Empty rules match every sale (use min/max amount to scope by deal size)',
+      'Priority controls evaluation order (lower runs first). Engine assigns credits until total hits 100%; the residual goes to sale.bdm_id (legacy fallback)',
+      'When no rule matches a sale, full credit goes to sale.bdm_id — preserves pre-SG-4 behavior on day one',
+      'Use Templates (CREDIT_RULE_TEMPLATES lookup) for common shapes: territory primary, product split, key-account override',
+      'Deactivating a rule preserves the historical SalesCredit rows it produced — never hard-delete (audit trail)',
+      'Engine runs automatically inside salesController.postSaleRow on every sale post — no manual trigger needed. Use the Reassign action on the Sale detail page to re-run after rule edits',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Credit Ledger (this page → Credit Ledger tab)', path: '/erp/credit-rules' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'Engine never throws into the sales path. If credit assignment fails, the sale still posts and the failure is logged to ErpAuditLog — admins re-run via the Reassign action. Add new templates by creating CREDIT_RULE_TEMPLATES Lookup rows — no code change.',
+  },
+
+  // ═══ Phase SG-4 #24 — Dispute Center ═══
+  'dispute-center': {
+    title: 'Incentive Dispute Center',
+    steps: [
+      'BDMs file disputes against an IncentivePayout (wrong tier, cap dispute, period mismatch) or a SalesCredit (missing/wrong credit)',
+      'OPEN → UNDER_REVIEW (reviewer takes ownership) → RESOLVED_APPROVED or RESOLVED_DENIED → CLOSED',
+      'Every transition routes through gateApproval(\'INCENTIVE_DISPUTE\') — non-authorized actions are held in the Approval Hub',
+      'RESOLVED_APPROVED on a payout dispute cascades a SAP Storno reversal of the accrual journal (period-lock-respecting). On a credit dispute, appends a negative SalesCredit row',
+      'SLA breaches are detected daily by the Dispute SLA Escalator agent (#DSP) — per-state SLA_DAYS configured via the DISPUTE_SLA_DAYS lookup. Breaches show a red SLA badge on the row',
+      'Filer can CANCEL their own OPEN dispute (no gate). Once UNDER_REVIEW, only the resolver path applies',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Payout Ledger', path: '/erp/incentive-payouts' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'Dispute typology + SLAs are lookup-driven (INCENTIVE_DISPUTE_TYPE + DISPUTE_SLA_DAYS). Subscribers add new dispute types or tune SLA days per entity without code changes. SLA agent never auto-transitions — resolution is always a human decision.',
+  },
+
+  // ═══ Phase SG-5 #26 — Scenario Planner ═══
+  scenarioPlanner: {
+    title: 'Scenario Planner',
+    steps: [
+      'Load the active plan automatically — overrides drive a dry-run projection (no DB writes)',
+      'Tweak Target Revenue or Baseline Revenue to see how company attainment % recomputes',
+      'Adjust per-driver weight mix (must total 100% for a balanced plan — a warning banner flags any mismatch)',
+      'Optionally force a per-BDM attainment % to preview tier placement under the stretch scenario',
+      'Click Run Simulation — side-by-side "current vs scenario" columns render per BDM + company totals',
+      'Accelerator column shows the INCENTIVE_TIER.metadata.accelerator_factor currently applied — set via Control Center → Lookup Tables',
+      'Nothing persists. Push the scenario live by editing the plan (Goal Setup) and re-running Compute KPIs from the dashboard',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Goal Setup', path: '/erp/sales-goals/setup' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'Use this to answer "what if we raised the bar?" or "what if Juan finishes at 120%?" before committing to a new target. Because the engine reuses live computeIncentiveTier + applyTierAccelerator + applyIncentiveCap logic, the forecast matches production accrual math one-for-one — no drift.',
+  },
+
+  // ═══ Phase SG-5 #27 — Variance Alert Center ═══
+  varianceAlertCenter: {
+    title: 'Variance Alert Center',
+    steps: [
+      'kpiVarianceAgent runs monthly day 2 at 6:00 AM and flags every KPI whose deviation crosses the warning/critical threshold',
+      'Each alert persists to VarianceAlert — the cooldown window (VARIANCE_ALERT_COOLDOWN_DAYS, default 7) blocks re-firing the same breach within the window',
+      'The Monday 7:00 AM digest agent (kpiVarianceDigestAgent) rolls undelivered alerts into one per-manager email — so persistent low performers do not flood the inbox',
+      'BDMs see only their own alerts; managers see their direct reports (via PeopleMaster.reports_to); admin/finance/president see the full queue',
+      'Click Resolve once you have acknowledged the signal — optionally jot a short note. Resolved rows stay visible for audit',
+      'Retune thresholds per KPI via Control Center → Lookup Tables → KPI_VARIANCE_THRESHOLDS (per-entity, subscription-ready)',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Dispute Center', path: '/erp/disputes' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'Resolve is a coaching acknowledgement, not a financial op — it does not reverse any journal or payout. If the underlying data is wrong (payout or credit), file a Dispute instead so the reversal flows through the approval gate.',
   },
 
   // ═══ Phase SG-3R — KPI Template Library ═══

@@ -654,3 +654,175 @@ exports.printCompensationStatement = catchAsync(async (req, res) => {
   res.send(html);
 });
 
+// ─── BDM Statement Archive (Phase SG-4 #23 ext) ─────────────────────────
+//
+// Lightweight rollup of every prior period for which the BDM had IncentivePayout
+// activity. Used by the "My Compensation → Past Statements" tab. Returns a
+// tabular summary; clicking a row deep-links to the existing `/statement` and
+// `/statement/print` endpoints which already do the heavy rendering.
+//
+// Authority follows the same rules as listPayouts:
+//   - BDMs see only their own (Rule #21 — no privileged self-id fallback).
+//   - admin/finance/president can pass ?bdm_id= to view any BDM in scope.
+exports.getStatementArchive = catchAsync(async (req, res) => {
+  const scope = _resolveStatementScope(req);
+  if (scope.error) return res.status(scope.error.status).json({ success: false, message: scope.error.message });
+  const bdmId = scope.bdmId;
+
+  const filter = { bdm_id: bdmId };
+  if (req.query.entity_id && req.isPresident) filter.entity_id = req.query.entity_id;
+  else if (!req.isPresident) filter.entity_id = req.entityId;
+
+  if (req.query.fiscal_year) filter.fiscal_year = Number(req.query.fiscal_year);
+  if (req.query.from_year || req.query.to_year) {
+    filter.fiscal_year = filter.fiscal_year || {};
+    if (typeof filter.fiscal_year !== 'object') filter.fiscal_year = { $eq: filter.fiscal_year };
+    if (req.query.from_year) filter.fiscal_year.$gte = Number(req.query.from_year);
+    if (req.query.to_year) filter.fiscal_year.$lte = Number(req.query.to_year);
+  }
+
+  // Group by (fiscal_year, period) and aggregate totals + last activity.
+  const archive = await IncentivePayout.aggregate([
+    { $match: filter },
+    {
+      $group: {
+        _id: { fiscal_year: '$fiscal_year', period: '$period', period_type: '$period_type' },
+        count: { $sum: 1 },
+        earned: {
+          $sum: {
+            $cond: [
+              { $in: ['$status', ['ACCRUED', 'APPROVED', 'PAID']] },
+              { $ifNull: ['$tier_budget', 0] },
+              0,
+            ],
+          },
+        },
+        accrued: { $sum: { $cond: [{ $eq: ['$status', 'ACCRUED'] }, { $ifNull: ['$tier_budget', 0] }, 0] } },
+        approved: { $sum: { $cond: [{ $eq: ['$status', 'APPROVED'] }, { $ifNull: ['$tier_budget', 0] }, 0] } },
+        paid: { $sum: { $cond: [{ $eq: ['$status', 'PAID'] }, { $ifNull: ['$tier_budget', 0] }, 0] } },
+        reversed: { $sum: { $cond: [{ $eq: ['$status', 'REVERSED'] }, { $ifNull: ['$tier_budget', 0] }, 0] } },
+        last_activity: { $max: '$updatedAt' },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        fiscal_year: '$_id.fiscal_year',
+        period: '$_id.period',
+        period_type: '$_id.period_type',
+        count: 1,
+        earned: { $round: ['$earned', 0] },
+        accrued: { $round: ['$accrued', 0] },
+        approved: { $round: ['$approved', 0] },
+        paid: { $round: ['$paid', 0] },
+        reversed: { $round: ['$reversed', 0] },
+        last_activity: 1,
+      },
+    },
+    { $sort: { fiscal_year: -1, period: -1 } },
+  ]);
+
+  res.json({
+    success: true,
+    data: archive,
+    meta: {
+      bdm_id: bdmId,
+      total_periods: archive.length,
+      lifetime_earned: Math.round(archive.reduce((s, r) => s + (r.earned || 0), 0)),
+      lifetime_paid: Math.round(archive.reduce((s, r) => s + (r.paid || 0), 0)),
+    },
+  });
+});
+
+// POST /incentive-payouts/statements/dispatch — Phase SG-4 #23 ext.
+// Email the compensation statement to every BDM with payout activity in the
+// given period. Idempotent at the email layer (the email backend dedupes
+// against EmailLog history; re-running won't double-send within the same
+// period+template combo).
+//
+// Gated by gateApproval('INCENTIVE_PAYOUT', 'STATEMENT_DISPATCH') so only
+// authority can mass-mail. Body: { period: 'YYYY-MM' | 'YYYY', entity_id? }.
+//
+// Designed to be called manually from Control Center "Send Statements" or
+// chained from the month-end close finalize step (a future PR — out of SG-4
+// scope to keep this commit reviewable).
+exports.dispatchStatementsForPeriod = catchAsync(async (req, res) => {
+  const period = String(req.body?.period || '').trim();
+  if (!period) return res.status(400).json({ success: false, message: 'period is required (YYYY-MM or YYYY)' });
+
+  // Scope: president can target any entity via body.entity_id; everyone else
+  // is locked to req.entityId.
+  let entityScope = req.entityId;
+  if (req.isPresident && req.body?.entity_id) entityScope = req.body.entity_id;
+  if (!entityScope) return res.status(400).json({ success: false, message: 'entity_id missing — pass in body when president' });
+
+  const gated = await gateApproval({
+    entityId: entityScope,
+    module: 'INCENTIVE_PAYOUT',
+    docType: 'STATEMENT_DISPATCH',
+    docId: req.user._id,
+    docRef: `STMT-${period}`,
+    description: `Dispatch compensation statements for ${period}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
+  // Find every distinct BDM with payout activity in the requested period.
+  const distinctBdms = await IncentivePayout.distinct('bdm_id', { entity_id: entityScope, period });
+  if (distinctBdms.length === 0) {
+    return res.json({ success: true, message: `No BDMs with payout activity for ${period}`, dispatched: 0 });
+  }
+
+  const fiscalYear = period.includes('-') ? Number(period.split('-')[0]) : Number(period);
+  const { notifyCompensationStatement } = require('../services/erpNotificationService');
+
+  let dispatched = 0;
+  const failures = [];
+  for (const bdmId of distinctBdms) {
+    if (!bdmId) continue;
+    try {
+      // Compose totals once per BDM (re-uses the same aggregation as the
+      // single-statement endpoint to keep numbers in lockstep).
+      const { summary } = await _composeStatement({
+        bdmId, fiscalYear, period, entityScope,
+      });
+      const personDoc = await PeopleMaster.findOne({ user_id: bdmId, is_active: true })
+        .select('full_name bdm_code').lean();
+      const userDoc = await User.findById(bdmId).select('name email').lean();
+      const bdmName = personDoc?.full_name || userDoc?.name || 'BDM';
+
+      await notifyCompensationStatement({
+        entityId: entityScope,
+        bdmId,
+        bdmName,
+        fiscalYear,
+        period,
+        totals: { earned: summary.earned, paid: summary.paid, accrued: summary.accrued },
+      });
+      dispatched++;
+    } catch (e) {
+      failures.push({ bdm_id: bdmId, error: e.message });
+    }
+  }
+
+  await ErpAuditLog.logChange({
+    entity_id: entityScope,
+    log_type: 'STATUS_CHANGE',
+    target_ref: `STMT-${period}`,
+    target_model: 'IncentivePayout',
+    field_changed: 'statement_dispatch',
+    new_value: `${dispatched}/${distinctBdms.length}`,
+    changed_by: req.user._id,
+    note: `Dispatched comp statements for ${period} — ${dispatched} sent, ${failures.length} failed`,
+  });
+
+  res.json({
+    success: true,
+    message: `Dispatched ${dispatched} of ${distinctBdms.length} statements`,
+    dispatched,
+    failed: failures.length,
+    failures,
+  });
+});
+

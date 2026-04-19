@@ -217,6 +217,47 @@ function checkFrontendServiceURL() {
   }
 }
 
+// ── 12.5: ControlCenter loads AgentSettings DEFAULT export (the tabbed shell),
+//          not the legacy AgentSettingsContent named export. The named export
+//          renders only the agents table — losing the AI Cowork / Copilot Tools
+//          / AI Budget tabs. This bug hid AI Budget from the user during G7.
+function checkControlCenterAgentSettingsImport() {
+  const cc = readFile(path.join(FRONTEND_DIR, 'erp/pages/ControlCenter.jsx'));
+  if (!cc) return;
+  // Match the agent-settings entry; ensure it does NOT pluck AgentSettingsContent
+  const m = cc.match(/'agent-settings'\s*:\s*lazy\([^)]+\)/);
+  if (!m) {
+    fail('ControlCenter.jsx has no agent-settings lazy import');
+    return;
+  }
+  if (/AgentSettingsContent/.test(m[0])) {
+    fail('ControlCenter.jsx imports AgentSettingsContent (named) — must use the default export so tabs render (Agents / AI Cowork / Copilot Tools / AI Budget)');
+  } else {
+    ok('ControlCenter.jsx loads AgentSettings default export (tabbed shell)');
+  }
+}
+
+// ── 12: Lookup PUT/DELETE path includes category (route is /:category/:id) ──
+// Regression guard for a real bug found in G7: AgentSettings.jsx originally used
+// PUT /lookup-values/<id> (missing category) which 404'd because the route is
+// PUT /lookup-values/:category/:id. Without the category segment, all toggles
+// in AI Cowork / Copilot Tools / AI Budget tabs silently fail.
+function checkLookupValuesPutPath() {
+  const settings = readFile(path.join(FRONTEND_DIR, 'erp/pages/AgentSettings.jsx'));
+  if (!settings) return;
+  // Find every PUT/DELETE on /erp/lookup-values/... and assert the path has
+  // exactly two segments after lookup-values/ (category + id).
+  const re = /api\.(put|delete)\(\s*[`'"]\/erp\/lookup-values\/([^`'"]+)[`'"]/g;
+  let m;
+  while ((m = re.exec(settings))) {
+    const segs = m[2].split('/').filter(Boolean);
+    if (segs.length !== 2) {
+      fail(`AgentSettings.jsx api.${m[1]}('/erp/lookup-values/${m[2]}') — must be /lookup-values/<CATEGORY>/<id>; route 404s without the category`);
+    }
+  }
+  ok('AgentSettings PUT/DELETE on /lookup-values include the category segment');
+}
+
 // ── Run ──────────────────────────────────────────────────────────────────
 function main() {
   try {
@@ -229,6 +270,8 @@ function main() {
     checkAppShellMount();
     checkWriteConfirmRouting();
     checkFrontendServiceURL();
+    checkControlCenterAgentSettingsImport();
+    checkLookupValuesPutPath();
   } catch (e) {
     console.error('verifyCopilotWiring crashed:', e.stack);
     process.exit(1);

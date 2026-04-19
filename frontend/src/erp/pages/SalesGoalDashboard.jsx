@@ -10,6 +10,8 @@ import { useAuth } from '../../hooks/useAuth';
 import useSalesGoals from '../hooks/useSalesGoals';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess, showApprovalPending, isApprovalPending } from '../utils/errorToast';
+// Phase SG-5 #28 — YoY / QoQ trending chart (existing Recharts dep; no new lib)
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 
 const php = (n) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(n || 0);
 const pct = (n) => `${(n || 0).toFixed(1)}%`;
@@ -138,6 +140,9 @@ export default function SalesGoalDashboard() {
   const [sortDir, setSortDir] = useState('asc');
   // Phase SG-Q2 W2 — payout summary widget (YTD accrued / paid / pending)
   const [payoutSummary, setPayoutSummary] = useState(null);
+  // Phase SG-5 #28 — YoY / QoQ trending data
+  const [trending, setTrending] = useState(null);
+  const [trendingLoading, setTrendingLoading] = useState(false);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -158,7 +163,22 @@ export default function SalesGoalDashboard() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadDashboard(); loadPayoutSummary(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Phase SG-5 #28 — YoY / QoQ trending fetch. Silent failure: an entity with
+  // no prior-year snapshots simply shows an empty-state message instead of a
+  // console error.
+  const loadTrending = useCallback(async () => {
+    setTrendingLoading(true);
+    try {
+      const fiscalYear = new Date().getFullYear();
+      const res = await sg.getTrending({ fiscal_year: String(fiscalYear) });
+      setTrending(res?.data || null);
+    } catch {
+      setTrending(null);
+    }
+    setTrendingLoading(false);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadDashboard(); loadPayoutSummary(); loadTrending(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleComputeSnapshots = useCallback(async () => {
     if (!dashboard?.plan?._id) return;
@@ -461,6 +481,84 @@ export default function SalesGoalDashboard() {
                       })}
                     </tbody>
                   </table>
+                )}
+              </div>
+
+              {/* Phase SG-5 #28 — Year-over-Year / QoQ trending */}
+              <div className="sgd-panel">
+                <h3>Year-over-Year Trending{trending ? ` (FY ${trending.fiscal_year_current} vs FY ${trending.fiscal_year_prior})` : ''}</h3>
+                {trendingLoading && <div className="loading">Loading trending data…</div>}
+                {!trendingLoading && (!trending || (trending.per_bdm || []).length === 0) && (
+                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--erp-muted)', fontSize: 13 }}>
+                    Trending needs at least one prior-fiscal-year YTD snapshot to render. Close the current fiscal year and let next year&apos;s snapshots populate to unlock this chart.
+                  </div>
+                )}
+                {!trendingLoading && trending && (trending.per_bdm || []).length > 0 && (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
+                      <div className="sgd-card">
+                        <div className="sgd-card-label">Revenue {trending.fiscal_year_current}</div>
+                        <div className="sgd-card-value">{php(trending.company?.revenue?.current || 0)}</div>
+                        <div className="sgd-card-sub">
+                          vs {php(trending.company?.revenue?.prior || 0)} ({trending.company?.revenue?.prior > 0 ? `${trending.company.revenue.delta_pct > 0 ? '+' : ''}${trending.company.revenue.delta_pct}%` : '—'})
+                        </div>
+                      </div>
+                      <div className="sgd-card">
+                        <div className="sgd-card-label">Avg Attainment</div>
+                        <div className="sgd-card-value">{pct(trending.company?.attainment?.current || 0)}</div>
+                        <div className="sgd-card-sub">Prior: {pct(trending.company?.attainment?.prior || 0)}</div>
+                      </div>
+                      <div className="sgd-card">
+                        <div className="sgd-card-label">BDMs (cur / prior)</div>
+                        <div className="sgd-card-value">
+                          {trending.company?.bdm_count_current || 0} / {trending.company?.bdm_count_prior || 0}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ width: '100%', height: 280 }}>
+                      <ResponsiveContainer>
+                        <BarChart data={(trending.per_bdm || []).slice(0, 12).map(r => ({
+                          name: r.name || '—',
+                          [`FY${trending.fiscal_year_prior}`]: r.prior_revenue,
+                          [`FY${trending.fiscal_year_current}`]: r.current_revenue,
+                        }))}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                          <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
+                          <YAxis tickFormatter={(v) => Intl.NumberFormat('en-PH', { notation: 'compact' }).format(v || 0)} tick={{ fontSize: 11 }} />
+                          <Tooltip formatter={(v) => php(v)} />
+                          <Legend />
+                          <Bar dataKey={`FY${trending.fiscal_year_prior}`} fill="#94a3b8" />
+                          <Bar dataKey={`FY${trending.fiscal_year_current}`} fill="#2563eb" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {(trending.per_kpi || []).length > 0 && (
+                      <div style={{ marginTop: 16, overflowX: 'auto' }}>
+                        <table className="sgd-table">
+                          <thead>
+                            <tr>
+                              <th>KPI (company avg)</th>
+                              <th className="num">FY {trending.fiscal_year_prior}</th>
+                              <th className="num">FY {trending.fiscal_year_current}</th>
+                              <th className="num">Δ %</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(trending.per_kpi || []).slice(0, 20).map(k => (
+                              <tr key={k.kpi_code}>
+                                <td>{k.kpi_label}</td>
+                                <td className="num">{Number(k.prior_avg || 0).toLocaleString()}</td>
+                                <td className="num">{Number(k.current_avg || 0).toLocaleString()}</td>
+                                <td className="num" style={{ color: k.delta_pct > 0 ? '#166534' : k.delta_pct < 0 ? '#991b1b' : 'var(--erp-muted)', fontWeight: 600 }}>
+                                  {k.delta_pct > 0 ? '+' : ''}{k.delta_pct}%
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 

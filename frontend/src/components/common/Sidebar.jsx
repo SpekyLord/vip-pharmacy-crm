@@ -803,7 +803,18 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
       goalItems.push({ path: '/erp/sales-goals/setup', label: 'Goal Setup', icon: Settings });
       // Phase SG-3R — admin-only KPI Template Library (reusable plan defaults)
       goalItems.push({ path: '/erp/kpi-templates', label: 'KPI Templates', icon: Target });
+      // Phase SG-4 #22 — Credit Rule Manager (admin-only audit/admin tool)
+      goalItems.push({ path: '/erp/credit-rules', label: 'Credit Rules', icon: Scale });
+      // Phase SG-5 #26 — What-if scenario planner (admin/finance/president only)
+      goalItems.push({ path: '/erp/sales-goals/scenario', label: 'Scenario Planner', icon: Activity });
     }
+    // Phase SG-4 #24 — Dispute Center is visible to everyone with sales_goals
+    // VIEW (BDMs file disputes; reviewers act on them — page renders the right
+    // controls per role).
+    goalItems.push({ path: '/erp/disputes', label: 'Dispute Center', icon: AlertTriangle });
+    // Phase SG-5 #27 — Variance Alert Center (all with sales_goals VIEW; BDMs
+    // scoped to own alerts via controller Rule #21).
+    goalItems.push({ path: '/erp/variance-alerts', label: 'Variance Alerts', icon: AlertTriangle });
     goalItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'Sales Goals', collapsible: true, defaultOpen: false, items: goalItems });
   }

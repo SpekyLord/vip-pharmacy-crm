@@ -28,10 +28,51 @@ const KpiSnapshot = require('../erp/models/KpiSnapshot');
 const SalesGoalTarget = require('../erp/models/SalesGoalTarget');
 const PeopleMaster = require('../erp/models/PeopleMaster');
 const Lookup = require('../erp/models/Lookup');
+const VarianceAlert = require('../erp/models/VarianceAlert');
 const { notifyKpiVariance } = require('../erp/services/erpNotificationService');
 
 const DEFAULT_WARNING_PCT = 20;
 const DEFAULT_CRITICAL_PCT = 40;
+
+// SG-5 #27 — Cooldown window for re-firing the same (plan, bdm, kpi, severity)
+// breach. Lookup-driven via VARIANCE_ALERT_COOLDOWN_DAYS; this is the last-
+// resort fallback used only if the Lookup read fails or is missing.
+const DEFAULT_COOLDOWN_DAYS = 7;
+
+/**
+ * Read VARIANCE_ALERT_COOLDOWN_DAYS for the entity. A single GLOBAL row is the
+ * typical shape, but admins can add per-severity rows (code = 'WARNING' or
+ * 'CRITICAL') to differentiate cooldowns.
+ */
+async function loadCooldown(entityId) {
+  try {
+    const rows = await Lookup.find({
+      entity_id: entityId,
+      category: 'VARIANCE_ALERT_COOLDOWN_DAYS',
+      is_active: true,
+    }).lean();
+    if (!rows.length) return { global: DEFAULT_COOLDOWN_DAYS, warning: null, critical: null };
+    const out = { global: DEFAULT_COOLDOWN_DAYS, warning: null, critical: null };
+    for (const r of rows) {
+      const d = Number(r.metadata?.days ?? r.metadata?.value);
+      const days = Number.isFinite(d) && d >= 0 ? d : DEFAULT_COOLDOWN_DAYS;
+      const code = String(r.code).toUpperCase();
+      if (code === 'GLOBAL') out.global = days;
+      else if (code === 'WARNING') out.warning = days;
+      else if (code === 'CRITICAL') out.critical = days;
+    }
+    return out;
+  } catch (err) {
+    console.warn('[kpiVarianceAgent] cooldown lookup failed, using default:', err.message);
+    return { global: DEFAULT_COOLDOWN_DAYS, warning: null, critical: null };
+  }
+}
+
+function cooldownFor(severity, cooldown) {
+  if (severity === 'warning' && cooldown.warning !== null) return cooldown.warning;
+  if (severity === 'critical' && cooldown.critical !== null) return cooldown.critical;
+  return cooldown.global;
+}
 
 /**
  * Load KPI_VARIANCE_THRESHOLDS for the entity, indexed by KPI code (uppercase).
@@ -143,6 +184,8 @@ async function run(args = {}) {
   let bdmsProcessed = 0;
   let bdmsFlagged = 0;
   let alertsGenerated = 0;
+  let alertsSuppressed = 0;
+  let alertsPersisted = 0;
   let messagesSent = 0;
   const errors = [];
   const findings = [];
@@ -150,6 +193,7 @@ async function run(args = {}) {
   for (const entity of entities) {
     try {
       const thresholds = await loadThresholds(entity._id);
+      const cooldown = await loadCooldown(entity._id);
 
       // ACTIVE plans for this entity
       const plans = await SalesGoalPlan.find({
@@ -182,16 +226,37 @@ async function run(args = {}) {
             if (person && !person.is_active) continue;
           }
 
-          // Walk every driver KPI; flag deviations
+          // Walk every driver KPI; flag deviations. Cooldown dedup (SG-5 #27)
+          // filters out breaches that already fired within the window so
+          // persistent low-performers don't spam the inbox every run.
           const alerts = [];
+          const suppressedCodes = [];
           for (const driver of (snap.driver_kpis || [])) {
             for (const kpi of (driver.kpis || [])) {
-              const t = thresholds.map.get(String(kpi.kpi_code).toUpperCase()) || thresholds.global;
+              const upperCode = String(kpi.kpi_code).toUpperCase();
+              const t = thresholds.map.get(upperCode) || thresholds.global;
               const deviation = computeDeviationPct(kpi.kpi_code, kpi.actual_value, kpi.target_value);
               const severity = classifySeverity(deviation, t);
               if (!severity) continue;
+
+              const cdDays = cooldownFor(severity, cooldown);
+              const suppress = cdDays > 0 ? await VarianceAlert.findOne({
+                entity_id: entity._id,
+                plan_id: plan._id,
+                bdm_id: snap.bdm_id,
+                kpi_code: upperCode,
+                severity,
+                fired_at: { $gte: new Date(Date.now() - cdDays * 24 * 60 * 60 * 1000) },
+              }).select('_id').lean() : null;
+
+              if (suppress) {
+                suppressedCodes.push(upperCode);
+                alertsSuppressed++;
+                continue;
+              }
+
               alerts.push({
-                kpi_code: kpi.kpi_code,
+                kpi_code: upperCode,
                 kpi_label: kpi.kpi_label || kpi.kpi_code,
                 actual: kpi.actual_value,
                 target: kpi.target_value,
@@ -202,9 +267,44 @@ async function run(args = {}) {
             }
           }
 
-          if (alerts.length === 0) continue;
+          if (alerts.length === 0) {
+            if (suppressedCodes.length > 0) {
+              // Keep a trace on findings for visibility even when no email fires.
+              findings.push(`Cooldown suppressed ${suppressedCodes.length} alert(s) for ${snap.bdm_id}`);
+            }
+            continue;
+          }
           bdmsFlagged++;
           alertsGenerated += alerts.length;
+
+          // Persist each alert BEFORE dispatch so cooldown works for the next
+          // run even if the notification path fails.
+          try {
+            const toPersist = alerts.map(a => ({
+              entity_id: entity._id,
+              plan_id: plan._id,
+              bdm_id: snap.bdm_id,
+              person_id: target?.person_id || snap.person_id || null,
+              fiscal_year: plan.fiscal_year,
+              period: snap.period,
+              kpi_code: a.kpi_code,
+              kpi_label: a.kpi_label,
+              severity: a.severity,
+              actual_value: Number(a.actual) || 0,
+              target_value: Number(a.target) || 0,
+              deviation_pct: Math.round((Number(a.deviation_pct) || 0) * 100) / 100,
+              threshold_pct: Math.round((Number(a.threshold_pct) || 0) * 100) / 100,
+              status: 'OPEN',
+              fired_at: new Date(),
+            }));
+            await VarianceAlert.insertMany(toPersist, { ordered: false });
+            alertsPersisted += toPersist.length;
+          } catch (persistErr) {
+            // Duplicate key collisions can occur if two agent runs race; safe
+            // to log and move on (cooldown check above already prevents most
+            // of this).
+            console.warn('[kpiVarianceAgent] persist alerts failed:', persistErr.message);
+          }
 
           // Resolve a readable name for the BDM (PeopleMaster preferred, else snap.person_id)
           let bdmLabel = 'BDM';
@@ -240,10 +340,12 @@ async function run(args = {}) {
   const summary = {
     bdms_processed: bdmsProcessed,
     alerts_generated: alertsGenerated,
+    alerts_suppressed: alertsSuppressed,
+    alerts_persisted: alertsPersisted,
     messages_sent: messagesSent,
     key_findings: [
       `BDMs flagged: ${bdmsFlagged} of ${bdmsProcessed}`,
-      `Total alerts: ${alertsGenerated} (warning + critical)`,
+      `Total alerts: ${alertsGenerated} (persisted ${alertsPersisted}; cooldown-suppressed ${alertsSuppressed})`,
       `Notifications dispatched: ${messagesSent}`,
       ...findings.slice(0, 5),
       ...(errors.length > 0 ? [`Errors: ${errors.length} — ${errors.slice(0, 2).join(' | ')}`] : []),
