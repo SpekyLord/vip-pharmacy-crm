@@ -146,7 +146,7 @@ export default function TasksPage() {
         <main className="tsk-main">
           <div className="tsk-header">
             <h1>My Tasks</h1>
-            <p>Personal + delegated task list. Create here, or ask the Copilot: "create a task to X by Friday".</p>
+            <p>Personal + delegated task list. Create here, or ask the Copilot: &quot;create a task to X by Friday&quot;.</p>
           </div>
 
           <WorkflowGuide pageKey="tasks" />
@@ -210,7 +210,7 @@ export default function TasksPage() {
             </div>
 
             {tasks.length === 0 ? (
-              <div className="empty">No tasks. Add one above, or say "create a task" to the Copilot.</div>
+              <div className="empty">No tasks. Add one above, or say &quot;create a task&quot; to the Copilot.</div>
             ) : (
               <table className="tsk-table">
                 <thead>
