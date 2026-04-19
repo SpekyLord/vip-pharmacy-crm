@@ -186,6 +186,12 @@ export default function SalesGoalBdmView() {
   // param lets the sidebar "My Compensation" entry land on the right tab.
   const initialTab = searchParams.get('tab') === 'compensation' ? 'compensation' : 'performance';
   const [activeTab, setActiveTab] = useState(initialTab); // 'performance' | 'compensation'
+  // Re-sync when the query param changes (user clicks the sidebar entry while
+  // already mounted on this page — useState's initial value would not re-fire).
+  useEffect(() => {
+    const qTab = searchParams.get('tab');
+    if (qTab === 'compensation' || qTab === 'performance') setActiveTab(qTab);
+  }, [searchParams]);
   const [statement, setStatement] = useState(null);
   const [statementLoading, setStatementLoading] = useState(false);
   const fiscalYear = new Date().getFullYear();

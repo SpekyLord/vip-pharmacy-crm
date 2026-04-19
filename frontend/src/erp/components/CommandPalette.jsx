@@ -101,16 +101,14 @@ export default function CommandPalette() {
     setResult(null);
     try {
       const res = await postCopilotChat([{ role: 'user', content: text }], 'quick');
-      // If the Copilot called NAVIGATE_TO, jump there directly + close
-      const nav = (res?.tool_calls || []).find((tc) => tc.tool_code === 'NAVIGATE_TO' && tc.args);
-      // Look for the NAVIGATE_TO result URL by inspecting the result_summary text
-      // (handler.display = "Open <url>"); fall back to scanning args + reply.
-      let url = null;
-      if (nav) {
-        // The handler returned `display: "Open <url>"`. Re-derive the URL by
-        // re-running the same logic: respect args.page → known map, append filters.
-        // Simpler: extract from display.
-        const m = (nav.result_summary || '').match(/Open\s+(\/\S+)/);
+      // If the Copilot called NAVIGATE_TO, jump there directly + close.
+      // copilotService now surfaces the handler's structured result so we can
+      // read `result.url` reliably instead of regex-matching the display string.
+      const nav = (res?.tool_calls || []).find((tc) => tc.tool_code === 'NAVIGATE_TO');
+      let url = nav?.result?.url || null;
+      // Fallbacks: legacy display string, then a /erp/ path inside the reply.
+      if (!url && nav?.result_summary) {
+        const m = nav.result_summary.match(/Open\s+(\/\S+)/);
         if (m) url = m[1];
       }
       if (!url && res?.reply) {

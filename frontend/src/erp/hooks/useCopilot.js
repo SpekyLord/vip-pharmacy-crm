@@ -61,7 +61,7 @@ export function useCopilot() {
     try {
       const s = await getCopilotStatus();
       if (mountedRef.current) setStatus(s);
-    } catch (e) {
+    } catch {
       if (mountedRef.current) setStatus({ widget_enabled: false });
     }
   }, []);

@@ -18,6 +18,12 @@ const {
 } = require('../services/journalFromIncentive');
 const salesGoalService = require('../services/salesGoalService');
 const { renderCompensationStatement } = require('../templates/compensationStatement');
+// Phase SG-Q2 W3 follow-up #3 — lookup-driven binary PDF (puppeteer optional).
+const {
+  resolvePdfPreference,
+  htmlToPdf,
+  PDF_UNAVAILABLE_ERR,
+} = require('../services/pdfRenderer');
 
 /**
  * IncentivePayout controller — Phase SG-Q2 Week 2
@@ -609,6 +615,40 @@ exports.printCompensationStatement = catchAsync(async (req, res) => {
     template: templateOverrides,
     generatedAt: new Date(),
   });
+
+  // Phase SG-Q2 W3 follow-up #3 — Binary PDF rendering.
+  // Precedence: ?format=pdf query > PDF_RENDERER.BINARY_ENABLED lookup > html.
+  // Graceful fallback: if puppeteer is not installed, emit the HTML (unchanged
+  // behavior) plus an X-PDF-Fallback header so the UI can warn the admin.
+  const pdfEntityScope = plan?.entity_id || entityScope;
+  const preference = await resolvePdfPreference(pdfEntityScope, req.query.format);
+
+  if (preference === 'pdf') {
+    try {
+      const buffer = await htmlToPdf(html);
+      const safeName = (bdmHeader.name || 'bdm').replace(/[^a-z0-9\-_]+/gi, '_');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="compensation-${safeName}-FY${fiscalYear}.pdf"`
+      );
+      return res.send(buffer);
+    } catch (err) {
+      if (err?.code === PDF_UNAVAILABLE_ERR) {
+        // Puppeteer not installed — transparent fallback to HTML with a
+        // signal so the client (or admin) sees what happened.
+        console.warn('[compensationStatement] PDF requested but renderer unavailable; returning HTML');
+        res.setHeader('X-PDF-Fallback', 'html');
+        res.setHeader('X-PDF-Fallback-Reason', 'puppeteer_not_installed');
+      } else {
+        // Real PDF engine error — log, surface, fall back so the user still
+        // sees their statement.
+        console.error('[compensationStatement] PDF render failed:', err.message);
+        res.setHeader('X-PDF-Fallback', 'html');
+        res.setHeader('X-PDF-Fallback-Reason', 'render_error');
+      }
+    }
+  }
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(html);

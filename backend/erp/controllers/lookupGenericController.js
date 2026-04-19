@@ -15,6 +15,14 @@ const VENDOR_AUTO_LEARN_CATEGORIES = new Set(['VENDOR_AUTO_LEARN_BLOCKLIST', 'VE
 // Categories whose changes must bust the danger-sub-perm cache (explicit-grant allowlist)
 const DANGER_SUB_PERM_CATEGORIES = new Set(['ERP_DANGER_SUB_PERMISSIONS']);
 
+// Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
+// subscribers explicitly opt in (Anthropic-billable features, spend caps that
+// could surprise-block in-flight calls). Without this, the first AgentSettings
+// load auto-seeds via getByCategory → buildSeedOps → is_active: true and the
+// President Copilot / Daily Briefing / spend cap go live before the president
+// has a chance to review prompts and budget.
+const SUBSCRIPTION_OPT_IN_CATEGORIES = new Set(['AI_COWORK_FEATURES', 'AI_SPEND_CAPS']);
+
 /**
  * Generic Lookup Controller — Phase 24
  * CRUD for configurable dropdown values (replaces hardcoded frontend arrays).
@@ -1132,7 +1140,7 @@ const SEED_DEFAULTS = {
           input_schema: {
             type: 'object',
             properties: {
-              module: { type: 'string', description: 'COLLECTION | SALES | EXPENSES | SMER | PETTY_CASH | INCOME | KPI' },
+              module: { type: 'string', description: 'COLLECTION | SALES | EXPENSES | SMER | CAR_LOGBOOK | PETTY_CASH | INCOME | PURCHASING | BANKING | INCENTIVE' },
               range: { type: 'string', description: 'today | week | month | ytd | custom' },
               from: { type: 'string', description: 'ISO date — required if range=custom' },
               to:   { type: 'string', description: 'ISO date — required if range=custom' },
@@ -1404,6 +1412,11 @@ exports.getCategories = catchAsync(async (req, res) => {
 // Metadata is always merged ($set) so updated defaults propagate to existing entries.
 // Label/sort_order are only set on insert ($setOnInsert) to preserve user customizations.
 function buildSeedOps(defaults, category, entityId, userId) {
+  // Phase G6.10/G7 — billable AI features default OFF so the president must
+  // explicitly enable them after reviewing prompts/budgets. All other lookup
+  // categories keep the original is_active:true default so dropdowns work
+  // immediately on first load.
+  const defaultActive = !SUBSCRIPTION_OPT_IN_CATEGORIES.has(category);
   return defaults.map((item, i) => {
     const isObj = typeof item === 'object';
     const label = isObj ? item.label : item;
@@ -1413,7 +1426,7 @@ function buildSeedOps(defaults, category, entityId, userId) {
       updateOne: {
         filter: { entity_id: entityId, category, code },
         update: {
-          $setOnInsert: { label, sort_order: i * 10, is_active: true, created_by: userId },
+          $setOnInsert: { label, sort_order: i * 10, is_active: defaultActive, created_by: userId },
         },
         upsert: true
       }

@@ -166,7 +166,10 @@ export default function PresidentCopilot() {
   const [open, setOpen] = useState(false);
   const [full, setFull] = useState(false);
   const [input, setInput] = useState('');
-  const [cancelledIds, setCancelledIds] = useState(new Set());
+  // resolved = confirm cards that should hide (user clicked Cancel OR Execute).
+  // Tracked by JSON.stringify(payload) since payloads come from the backend in a
+  // stable shape (we constructed them, key order is preserved).
+  const [resolvedIds, setResolvedIds] = useState(() => new Set());
   const bodyRef = useRef(null);
   const taRef = useRef(null);
 
@@ -212,20 +215,23 @@ export default function PresidentCopilot() {
   }, [input, sending, send]);
 
   const handleExecute = useCallback(async (payload) => {
+    const key = JSON.stringify(payload);
     try {
       const res = await execute(payload);
+      // Hide the confirm card on success (executed)
+      setResolvedIds((prev) => {
+        const n = new Set(prev); n.add(key); return n;
+      });
       // For DRAFT_NEW_ENTRY, navigate to the prefilled URL after execution
       if (payload?.tool_code === 'DRAFT_NEW_ENTRY' && res?.result?.url) {
         navigate(res.result.url);
       }
-    } catch { /* hook already surfaced the error */ }
+    } catch { /* hook surfaced the error; leave the card visible so user can retry */ }
   }, [execute, navigate]);
 
   const handleCancel = useCallback((payload) => {
-    setCancelledIds((prev) => {
-      const n = new Set(prev);
-      n.add(JSON.stringify(payload));
-      return n;
+    setResolvedIds((prev) => {
+      const n = new Set(prev); n.add(JSON.stringify(payload)); return n;
     });
   }, []);
 
@@ -294,7 +300,7 @@ export default function PresidentCopilot() {
                 {(m.tool_calls || []).map((tc, j) => <ToolCard key={`tc-${i}-${j}`} tc={tc} />)}
                 {(m.pending_confirmations || []).map((pc, j) => {
                   const k = JSON.stringify(pc.confirmation_payload);
-                  if (cancelledIds.has(k) || m.executed_payload) return null;
+                  if (resolvedIds.has(k)) return null;
                   return (
                     <ConfirmCard
                       key={`pc-${i}-${j}`}

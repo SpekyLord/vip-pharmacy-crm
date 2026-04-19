@@ -203,14 +203,20 @@ const LookupManagerRedirect = () => <Navigate to="/erp/control-center?section=lo
 // chunks aren't downloaded on /admin or /bdm pages. Components themselves also
 // guard with useLocation + lookup-driven role gate, but the path check here
 // avoids the network round-trip entirely on non-ERP pages.
+//
+// Wrapped in its OWN Suspense with a null fallback so the floating widget
+// chunks loading in the background don't block the ERP page from rendering
+// (parent Suspense's fallback would otherwise hide the page until both chunks
+// resolve). On chunk error, the ErrorBoundary higher up catches it without
+// nuking navigation.
 const ErpAddons = () => {
   const location = useLocation();
   if (!location.pathname.startsWith('/erp')) return null;
   return (
-    <>
+    <Suspense fallback={null}>
       <PresidentCopilot />
       <CommandPalette />
-    </>
+    </Suspense>
   );
 };
 

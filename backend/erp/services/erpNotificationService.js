@@ -83,7 +83,9 @@ const findNotificationRecipients = async (entityId, filter = {}) => {
       ];
     }
 
-    return await User.find(query).select('_id email name role').lean();
+    // `phone` is included so multi-channel SMS dispatch can use it (Phase
+    // SG-Q2 W3 follow-ups). Callers that don't need SMS simply ignore it.
+    return await User.find(query).select('_id email name role phone').lean();
   } catch (err) {
     console.error('Failed to find notification recipients:', err.message);
     return [];
@@ -774,6 +776,8 @@ const notifySalesGoalPlanLifecycle = async ({ entityId, planId, planRef, planNam
 
     // Pull BDMs assigned to the plan — they're the ones the activation/closure
     // most directly affects. Use SalesGoalTarget → bdm_id (User._id) → User.
+    // `phone` is selected so SMS dispatch works when enabled per-entity +
+    // per-user (Phase SG-Q2 W3 follow-up).
     let bdms = [];
     try {
       const SalesGoalTarget = require('../models/SalesGoalTarget');
@@ -788,7 +792,7 @@ const notifySalesGoalPlanLifecycle = async ({ entityId, planId, planRef, planNam
           _id: { $in: bdmIds },
           isActive: true,
           email: { $exists: true, $ne: '' },
-        }).select('_id email name role').lean();
+        }).select('_id email name role phone').lean();
       }
     } catch (err) {
       console.warn('[notifySalesGoalPlanLifecycle] failed to resolve BDM list:', err.message);
@@ -802,19 +806,25 @@ const notifySalesGoalPlanLifecycle = async ({ entityId, planId, planRef, planNam
       seen.add(key);
       return true;
     });
+    if (!recipients.length) return;
 
-    const filtered = await filterByPreference(recipients, 'compensation');
-    if (!filtered.length) return;
-
-    await sendToRecipients(filtered, salesGoalPlanLifecycleTemplate, {
-      event,
-      planRef,
-      planName,
-      fiscalYear,
-      entityName,
-      triggeredBy,
-      enrollmentCount,
-    }, `ERP_SALES_GOAL_${event}`);
+    await dispatchMultiChannel(recipients, {
+      templateFn: salesGoalPlanLifecycleTemplate,
+      templateData: {
+        event,
+        planRef,
+        planName,
+        fiscalYear,
+        entityName,
+        triggeredBy,
+        enrollmentCount,
+      },
+      emailType: `ERP_SALES_GOAL_${event}`,
+      category: 'compensation',
+      entityId,
+      inAppCategory: 'compensation',
+      inAppPriority: event === 'ACTIVATED' ? 'important' : 'normal',
+    });
   } catch (err) {
     console.error('notifySalesGoalPlanLifecycle failed:', err.message);
   }
@@ -835,60 +845,29 @@ const notifyTierReached = async ({ entityId, bdmId, bdmLabel, planRef, fiscalYea
   try {
     const entityName = await resolveEntityName(entityId);
 
-    // Recipient set
-    const recipients = [];
-    const seen = new Set();
-    const addUnique = (u) => {
-      if (!u || !u._id || !u.email) return;
-      const key = String(u._id);
-      if (seen.has(key)) return;
-      seen.add(key);
-      recipients.push(u);
-    };
+    // BDM + N-hop reports_to chain + presidents (Phase SG-Q2 W3 follow-up #2:
+    // multi-hop escalation via NOTIFICATION_ESCALATION lookup, cycle-safe).
+    const recipients = await buildBdmEscalationAudience({ entityId, bdmId });
+    if (!recipients.length) return;
 
-    // The BDM themselves
-    try {
-      const bdmUser = await User.findById(bdmId).select('_id email name role').lean();
-      addUnique(bdmUser);
-    } catch { /* skip */ }
-
-    // Manager chain via PeopleMaster.reports_to (single hop is usually enough;
-    // expand to N hops here later if reports_to chains run deep).
-    try {
-      const PeopleMaster = require('../models/PeopleMaster');
-      const person = await PeopleMaster.findOne({ user_id: bdmId, is_active: true }).select('reports_to').lean();
-      if (person?.reports_to) {
-        const manager = await PeopleMaster.findById(person.reports_to).select('user_id').lean();
-        if (manager?.user_id) {
-          const mgrUser = await User.findById(manager.user_id).select('_id email name role').lean();
-          addUnique(mgrUser);
-        }
-      }
-    } catch (err) {
-      console.warn('[notifyTierReached] reports_to lookup failed:', err.message);
-    }
-
-    // President(s) — always notified
-    const presidents = await User.find({
-      role: { $in: ROLE_SETS.PRESIDENT_ROLES },
-      isActive: true,
-      email: { $exists: true, $ne: '' },
-    }).select('_id email name role').lean();
-    for (const p of presidents) addUnique(p);
-
-    const filtered = await filterByPreference(recipients, 'compensation');
-    if (!filtered.length) return;
-
-    await sendToRecipients(filtered, tierReachedTemplate, {
-      bdmName: bdmLabel || 'BDM',
-      tierLabel: tierLabel || tierCode,
-      tierBudget,
-      attainmentPct,
-      period,
-      fiscalYear,
-      planRef,
-      entityName,
-    }, 'ERP_TIER_REACHED');
+    await dispatchMultiChannel(recipients, {
+      templateFn: tierReachedTemplate,
+      templateData: {
+        bdmName: bdmLabel || 'BDM',
+        tierLabel: tierLabel || tierCode,
+        tierBudget,
+        attainmentPct,
+        period,
+        fiscalYear,
+        planRef,
+        entityName,
+      },
+      emailType: 'ERP_TIER_REACHED',
+      category: 'compensation',
+      entityId,
+      inAppCategory: 'compensation',
+      inAppPriority: 'important', // tier milestones are meaningful BDM events
+    });
   } catch (err) {
     console.error('notifyTierReached failed:', err.message);
   }
@@ -906,52 +885,28 @@ const notifyKpiVariance = async ({ entityId, bdmId, bdmLabel, fiscalYear, period
     if (!alerts || alerts.length === 0) return;
     const entityName = await resolveEntityName(entityId);
 
-    const recipients = [];
-    const seen = new Set();
-    const addUnique = (u) => {
-      if (!u || !u._id || !u.email) return;
-      const key = String(u._id);
-      if (seen.has(key)) return;
-      seen.add(key);
-      recipients.push(u);
-    };
+    // BDM + N-hop reports_to chain + presidents (Phase SG-Q2 W3 follow-up #2).
+    const recipients = await buildBdmEscalationAudience({ entityId, bdmId });
+    if (!recipients.length) return;
 
-    try {
-      const bdmUser = await User.findById(bdmId).select('_id email name role').lean();
-      addUnique(bdmUser);
-    } catch { /* skip */ }
+    // Promote priority when at least one alert is critical.
+    const hasCritical = alerts.some(a => String(a.severity).toLowerCase() === 'critical');
 
-    try {
-      const PeopleMaster = require('../models/PeopleMaster');
-      const person = await PeopleMaster.findOne({ user_id: bdmId, is_active: true }).select('reports_to').lean();
-      if (person?.reports_to) {
-        const manager = await PeopleMaster.findById(person.reports_to).select('user_id').lean();
-        if (manager?.user_id) {
-          const mgrUser = await User.findById(manager.user_id).select('_id email name role').lean();
-          addUnique(mgrUser);
-        }
-      }
-    } catch (err) {
-      console.warn('[notifyKpiVariance] reports_to lookup failed:', err.message);
-    }
-
-    const presidents = await User.find({
-      role: { $in: ROLE_SETS.PRESIDENT_ROLES },
-      isActive: true,
-      email: { $exists: true, $ne: '' },
-    }).select('_id email name role').lean();
-    for (const p of presidents) addUnique(p);
-
-    const filtered = await filterByPreference(recipients, 'kpiVariance');
-    if (!filtered.length) return;
-
-    await sendToRecipients(filtered, kpiVarianceAlertTemplate, {
-      bdmName: bdmLabel || 'BDM',
-      fiscalYear,
-      period,
-      entityName,
-      alerts,
-    }, 'ERP_KPI_VARIANCE');
+    await dispatchMultiChannel(recipients, {
+      templateFn: kpiVarianceAlertTemplate,
+      templateData: {
+        bdmName: bdmLabel || 'BDM',
+        fiscalYear,
+        period,
+        entityName,
+        alerts,
+      },
+      emailType: 'ERP_KPI_VARIANCE',
+      category: 'kpiVariance',
+      entityId,
+      inAppCategory: 'compliance_alert',
+      inAppPriority: hasCritical ? 'high' : 'important',
+    });
   } catch (err) {
     console.error('notifyKpiVariance failed:', err.message);
   }
@@ -971,4 +926,11 @@ module.exports = {
   findManagementRecipients,
   findNotificationRecipients,
   resolveEntityName,
+  // SG-Q2 W3 follow-ups (Items 1a/1b/2) — exposed for tests and for reuse by
+  // other future notification paths (document-posted etc. may migrate here).
+  getEscalationConfig,
+  getChannelConfig,
+  resolveReportsToChain,
+  buildBdmEscalationAudience,
+  dispatchMultiChannel,
 };

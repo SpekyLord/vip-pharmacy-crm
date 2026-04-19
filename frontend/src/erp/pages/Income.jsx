@@ -70,8 +70,8 @@ const pageStyles = `
   .list-mobile-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--erp-muted); font-weight: 700; }
   .list-mobile-value { font-size: 13px; font-weight: 700; color: var(--erp-text); margin-top: 4px; }
   .list-mobile-actions { display: flex; gap: 8px; margin-top: 12px; }
-  .return-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-  .return-modal-content { background: var(--erp-panel); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; }
+  .return-modal { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  .return-modal-content { background: var(--erp-panel, #fff); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25); }
   .return-modal textarea { width: 100%; padding: 8px; border: 1px solid var(--erp-border); border-radius: 8px; min-height: 80px; font-size: 13px; margin: 12px 0; }
   .badge-pending { background: #fef3c7; color: #92400e; }
   .badge-verified { background: #d1fae5; color: #065f46; }
@@ -87,8 +87,8 @@ const pageStyles = `
   .finance-add-form .field { display: flex; flex-direction: column; gap: 4px; }
   .finance-add-form label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--erp-muted); }
   .finance-add-form input, .finance-add-form select { padding: 4px 8px; border: 1px solid var(--erp-border); border-radius: 4px; font-size: 12px; }
-  .correct-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-  .correct-modal-content { background: var(--erp-panel); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; }
+  .correct-modal { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  .correct-modal-content { background: var(--erp-panel, #fff); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25); }
   .correct-modal input, .correct-modal textarea { width: 100%; padding: 8px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 13px; margin: 8px 0; }
   .tab-bar { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid var(--erp-border); }
   .tab-btn { padding: 10px 20px; border: none; background: none; font-size: 14px; font-weight: 600; color: var(--erp-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }

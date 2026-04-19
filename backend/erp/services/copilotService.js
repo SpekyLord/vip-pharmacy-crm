@@ -354,10 +354,26 @@ async function runChat({ entityId, user, entityIds = [], messages = [], mode = '
       try {
         const out = await handler({ ...ctx, mode: 'preview' }, tu.input || {});
         const display = out?.display || '';
+        // Surface the structured result back to the frontend (CommandPalette
+        // needs `result.url` for NAVIGATE_TO; the widget uses
+        // `confirmation_payload` for write-confirm cards). For tools that may
+        // return large datasets (SEARCH_DOCUMENTS, LIST_PENDING_APPROVALS),
+        // truncate the items array to keep the chat payload bounded.
+        const safeResult = (() => {
+          const r = out?.result;
+          if (!r || typeof r !== 'object') return null;
+          const clone = { ...r };
+          if (Array.isArray(clone.items) && clone.items.length > 25) {
+            clone.items = clone.items.slice(0, 25);
+            clone._truncated = true;
+          }
+          return clone;
+        })();
         toolCallsAccum.push({
           tool_code: toolRow.code,
           args: tu.input || {},
           result_summary: display,
+          result: safeResult,
           confirmation_payload: out?.result?.confirmation_payload || null,
         });
         if (toolRow.metadata?.tool_type === 'write_confirm' && out?.result?.confirmation_payload) {

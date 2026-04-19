@@ -106,19 +106,24 @@ async function searchDocuments(ctx, args = {}) {
   if (!query || !String(query).trim()) throw bad('query is required');
   const cap = clampLimit(limit, 25, 50);
 
-  // Per-module collections + searchable text fields.
+  // Per-module collections + searchable text fields. Field names verified against
+  // erp/models/*.js — the FIRST entry in `fields` is treated as the canonical
+  // doc_ref for display; remaining fields are joined into the excerpt.
+  // Models without a stable text doc_ref (SmerEntry, IncomeReport, CarLogbookEntry,
+  // PettyCashTransaction) use `period` or fall through to the date excerpt.
   const SEARCH_TARGETS = [
-    { module: 'SALES',       Model: tryModel('Sale'),                fields: ['si_no', 'customer_name', 'notes'] },
-    { module: 'COLLECTION',  Model: tryModel('Collection'),          fields: ['cr_no', 'customer_name', 'notes'] },
-    { module: 'EXPENSES',    Model: tryModel('SmerEntry'),           fields: ['smer_no', 'description'] },
-    { module: 'SMER',        Model: tryModel('SmerEntry'),           fields: ['smer_no', 'description'] },
-    { module: 'CAR_LOGBOOK', Model: tryModel('CarLogbook'),          fields: ['logbook_no', 'description'] },
-    { module: 'PRF_CALF',    Model: tryModel('PrfCalf'),             fields: ['prf_no', 'description'] },
-    { module: 'PURCHASING',  Model: tryModel('PurchaseOrder'),       fields: ['po_no', 'vendor_name'] },
-    { module: 'JOURNAL',     Model: tryModel('JournalEntry'),        fields: ['je_number', 'description'] },
-    { module: 'BANKING',     Model: tryModel('BankStatement'),       fields: ['statement_no', 'description'] },
-    { module: 'PETTY_CASH',  Model: tryModel('PettyCashTransaction'), fields: ['pct_no', 'description'] },
-    { module: 'INCOME',      Model: tryModel('IncomeReport'),        fields: ['income_no', 'notes'] },
+    { module: 'SALES',       Model: tryModel('SalesLine'),            fields: ['csi_no', 'service_description'] },
+    { module: 'COLLECTION',  Model: tryModel('Collection'),           fields: ['cr_no', 'check_no', 'bank'] },
+    { module: 'EXPENSES',    Model: tryModel('SmerEntry'),            fields: ['period', 'cycle'] },
+    { module: 'SMER',        Model: tryModel('SmerEntry'),            fields: ['period', 'cycle'] },
+    { module: 'CAR_LOGBOOK', Model: tryModel('CarLogbookEntry'),      fields: ['period', 'cycle'] },
+    { module: 'PRF_CALF',    Model: tryModel('PrfCalf'),              fields: ['prf_number', 'prf_type', 'payee_type'] },
+    { module: 'PURCHASING',  Model: tryModel('PurchaseOrder'),        fields: ['po_number'] },
+    { module: 'JOURNAL',     Model: tryModel('JournalEntry'),         fields: ['je_number', 'description'] },
+    { module: 'BANKING',     Model: tryModel('BankStatement'),        fields: ['period'] },
+    { module: 'PETTY_CASH',  Model: tryModel('PettyCashTransaction'), fields: ['source_description'] },
+    { module: 'INCOME',      Model: tryModel('IncomeReport'),         fields: ['period', 'cycle'] },
+    { module: 'INCENTIVE',   Model: tryModel('IncentivePayout'),      fields: ['program_code', 'tier_label'] },
   ].filter((t) => !!t.Model);
 
   const wantedModules = (modules || []).map((m) => String(m).toUpperCase());
@@ -174,14 +179,22 @@ async function summarizeModule(ctx, args = {}) {
   if (!moduleKey) throw bad('module is required');
   const { start, end } = rangeToDates(args.range || 'month', args.from, args.to);
 
+  // Field names verified against erp/models/*.js (April 2026).
+  // SmerEntry/IncomeReport keep `period` as a "YYYY-MM" string (no period_start),
+  // so summaries for those modules are scoped via the doc's createdAt instead —
+  // the most reliable cross-module date field. CarLogbookEntry exposes
+  // `entry_date` per row; PettyCashTransaction uses `txn_date`.
   const MODULE_CONFIG = {
-    COLLECTION: { Model: tryModel('Collection'), dateField: 'cr_date',     amountField: 'amount_received' },
-    SALES:      { Model: tryModel('Sale'),       dateField: 'si_date',     amountField: 'gross_amount' },
-    EXPENSES:   { Model: tryModel('SmerEntry'),  dateField: 'period_start', amountField: 'total_amount' },
-    SMER:       { Model: tryModel('SmerEntry'),  dateField: 'period_start', amountField: 'total_amount' },
-    PETTY_CASH: { Model: tryModel('PettyCashTransaction'), dateField: 'pct_date', amountField: 'amount' },
-    INCOME:     { Model: tryModel('IncomeReport'), dateField: 'period_start', amountField: 'gross_income' },
-    KPI:        { Model: tryModel('SalesGoalPlan'), dateField: 'period_start', amountField: 'target_amount' },
+    COLLECTION: { Model: tryModel('Collection'),           dateField: 'cr_date',         amountField: 'cr_amount' },
+    SALES:      { Model: tryModel('SalesLine'),            dateField: 'csi_date',        amountField: 'invoice_total' },
+    EXPENSES:   { Model: tryModel('SmerEntry'),            dateField: 'createdAt',       amountField: 'total_reimbursable' },
+    SMER:       { Model: tryModel('SmerEntry'),            dateField: 'createdAt',       amountField: 'total_reimbursable' },
+    CAR_LOGBOOK:{ Model: tryModel('CarLogbookEntry'),      dateField: 'createdAt',       amountField: 'total_amount' },
+    PETTY_CASH: { Model: tryModel('PettyCashTransaction'), dateField: 'txn_date',        amountField: 'amount' },
+    INCOME:     { Model: tryModel('IncomeReport'),         dateField: 'createdAt',       amountField: 'net_pay' },
+    PURCHASING: { Model: tryModel('PurchaseOrder'),        dateField: 'po_date',         amountField: 'total_amount' },
+    BANKING:    { Model: tryModel('BankStatement'),        dateField: 'statement_date',  amountField: 'closing_balance' },
+    INCENTIVE:  { Model: tryModel('IncentivePayout'),      dateField: 'createdAt',       amountField: 'tier_budget' },
   };
 
   const cfg = MODULE_CONFIG[moduleKey];
@@ -240,7 +253,7 @@ async function explainRejection(ctx, args = {}) {
     }
   } else {
     // doc_id may be the source doc directly — search the universal models
-    const candidates = ['SmerEntry', 'CarLogbook', 'Collection', 'Sale', 'SmerEntry', 'PurchaseOrder', 'JournalEntry', 'BankStatement', 'PettyCashTransaction', 'IncomeReport', 'IncentivePayout'];
+    const candidates = ['SmerEntry', 'CarLogbookEntry', 'Collection', 'SalesLine', 'PrfCalf', 'PurchaseOrder', 'JournalEntry', 'BankStatement', 'PettyCashTransaction', 'IncomeReport', 'IncentivePayout'];
     for (const name of candidates) {
       const M = tryModel(name);
       if (!M) continue;
@@ -264,11 +277,21 @@ async function explainRejection(ctx, args = {}) {
   }
 
   const reason = sourceDoc?.rejection_reason || sourceDoc?.return_reason || request?.decision_reason || null;
+  // doc_ref derivation prefers the model's canonical text identifier; falls back
+  // to period+cycle for SMER/Income/CarLogbook (no doc number) — verified
+  // against erp/models/*.js (April 2026).
+  const docRef = sourceDoc?.csi_no
+    || sourceDoc?.cr_no
+    || sourceDoc?.po_number
+    || sourceDoc?.je_number
+    || sourceDoc?.prf_number
+    || (sourceDoc?.period && sourceDoc?.cycle ? `${sourceDoc.period}/${sourceDoc.cycle}` : null)
+    || null;
   const result = {
     found: true,
     module: modelName,
     doc_id: sourceDoc?._id?.toString(),
-    doc_ref: sourceDoc?.smer_no || sourceDoc?.cr_no || sourceDoc?.po_no || sourceDoc?.je_number || sourceDoc?.si_no || null,
+    doc_ref: docRef,
     status: sourceDoc?.status,
     rejected_by: sourceDoc?.rejected_by || request?.decided_by || null,
     rejected_at: sourceDoc?.rejected_at || request?.decided_at || null,
@@ -330,9 +353,9 @@ async function compareEntities(ctx, args = {}) {
     : (await Entity.find({ status: { $ne: 'INACTIVE' } }).select('_id').lean()).map((e) => e._id);
 
   const METRIC_CONFIG = {
-    sales:       { Model: tryModel('Sale'),       dateField: 'si_date',      sumField: 'gross_amount' },
-    collections: { Model: tryModel('Collection'), dateField: 'cr_date',      sumField: 'amount_received' },
-    expenses:    { Model: tryModel('SmerEntry'),  dateField: 'period_start', sumField: 'total_amount' },
+    sales:       { Model: tryModel('SalesLine'),  dateField: 'csi_date',  sumField: 'invoice_total' },
+    collections: { Model: tryModel('Collection'), dateField: 'cr_date',   sumField: 'cr_amount' },
+    expenses:    { Model: tryModel('SmerEntry'),  dateField: 'createdAt', sumField: 'total_reimbursable' },
     pending_approvals: { custom: 'pending_approvals' },
   };
   const cfg = METRIC_CONFIG[metric];

@@ -483,7 +483,7 @@ function CopilotToolsContent() {
     <div style={styles.panel}>
       <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 8px' }}>Copilot Tools</h2>
       <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 16px' }}>
-        Each row is a capability the President's Copilot can call. Disable any tool to hide it from Claude — the widget and Cmd+K palette will refuse to use it.
+        Each row is a capability the President&apos;s Copilot can call. Disable any tool to hide it from Claude — the widget and Cmd+K palette will refuse to use it.
         {!isPresident && ' Read-only view (president manages toggles and allowed roles).'}
       </p>
 
