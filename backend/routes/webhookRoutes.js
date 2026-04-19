@@ -18,6 +18,7 @@ const CommunicationLog = require('../models/CommunicationLog');
 const DataDeletionRequest = require('../models/DataDeletionRequest');
 const { handleFacebookDataDeletion } = require('../services/dataDeletionService');
 const { tryAutoReply } = require('../utils/autoReply');
+const { fetchSenderInfo, matchSenderToDoctor } = require('../utils/aiMatcher');
 
 // Capture raw request bytes so HMAC signatures can be verified against the exact payload
 // Meta and Viber sign the raw body, so re-serializing JSON breaks the signature.
@@ -128,7 +129,6 @@ router.post('/whatsapp', rawJson, verifyMetaSignature, async (req, res) => {
           const from = msg.from; // phone number
           const text = msg.text?.body || '';
           if (from && text) {
-            // Find which doctor has this WhatsApp number
             const Doctor = require('../models/Doctor');
             const doctor = await Doctor.findOne({
               $or: [{ whatsappNumber: from }, { phone: from }],
@@ -146,14 +146,55 @@ router.post('/whatsapp', rawJson, verifyMetaSignature, async (req, res) => {
                 deliveryStatus: 'delivered',
                 contactedAt: new Date(),
               });
+              await tryAutoReply({ channel: 'WHATSAPP', contactId: from, doctorId: doctor._id, userId: doctor.assignedTo });
+            } else {
+              // Unknown sender — try AI matching
+              const senderInfo = await fetchSenderInfo('WHATSAPP', from);
+              const senderName = senderInfo?.name || from;
+              const match = await matchSenderToDoctor(senderName, text, 'WHATSAPP');
 
-              // Auto-reply if outside business hours
-              await tryAutoReply({
-                channel: 'WHATSAPP',
-                contactId: from,
-                doctorId: doctor._id,
-                userId: doctor.assignedTo,
-              });
+              if (match && match.confidence === 'high') {
+                const matched = await Doctor.findByIdAndUpdate(
+                  match.doctorId,
+                  { whatsappNumber: from },
+                  { new: true }
+                ).lean();
+                if (matched) {
+                  await CommunicationLog.create({
+                    doctor: matched._id,
+                    user: matched.assignedTo,
+                    channel: 'WHATSAPP',
+                    direction: 'inbound',
+                    source: 'api',
+                    messageContent: text,
+                    externalMessageId: msg.id,
+                    deliveryStatus: 'delivered',
+                    contactedAt: new Date(),
+                    senderExternalId: from,
+                    senderName,
+                    senderProfilePic: senderInfo?.profilePic || null,
+                    aiMatchStatus: 'auto_assigned',
+                  });
+                  await tryAutoReply({ channel: 'WHATSAPP', contactId: from, doctorId: matched._id, userId: matched.assignedTo });
+                }
+              } else {
+                await CommunicationLog.create({
+                  user: null,
+                  channel: 'WHATSAPP',
+                  direction: 'inbound',
+                  source: 'api',
+                  messageContent: text,
+                  externalMessageId: msg.id,
+                  deliveryStatus: 'delivered',
+                  contactedAt: new Date(),
+                  pendingAssignment: true,
+                  senderExternalId: from,
+                  senderName,
+                  senderProfilePic: senderInfo?.profilePic || null,
+                  aiMatchSuggestion: match ? { doctorId: match.doctorId, confidence: match.confidence, reason: match.reason } : undefined,
+                  aiMatchStatus: match ? 'pending' : undefined,
+                });
+              }
             }
           }
         }
@@ -234,14 +275,55 @@ router.post('/messenger', rawJson, verifyMetaSignature, async (req, res) => {
                 deliveryStatus: 'delivered',
                 contactedAt: new Date(),
               });
+              await tryAutoReply({ channel: 'MESSENGER', contactId: senderId, doctorId: doctor._id, userId: doctor.assignedTo });
+            } else {
+              // Unknown sender — try AI matching
+              const senderInfo = await fetchSenderInfo('MESSENGER', senderId);
+              const senderName = senderInfo?.name || senderId;
+              const match = await matchSenderToDoctor(senderName, text, 'MESSENGER');
 
-              // Auto-reply if outside business hours
-              await tryAutoReply({
-                channel: 'MESSENGER',
-                contactId: senderId,
-                doctorId: doctor._id,
-                userId: doctor.assignedTo,
-              });
+              if (match && match.confidence === 'high') {
+                const matched = await Doctor.findByIdAndUpdate(
+                  match.doctorId,
+                  { messengerId: senderId },
+                  { new: true }
+                ).lean();
+                if (matched) {
+                  await CommunicationLog.create({
+                    doctor: matched._id,
+                    user: matched.assignedTo,
+                    channel: 'MESSENGER',
+                    direction: 'inbound',
+                    source: 'api',
+                    messageContent: text,
+                    externalMessageId: event.message.mid,
+                    deliveryStatus: 'delivered',
+                    contactedAt: new Date(),
+                    senderExternalId: senderId,
+                    senderName,
+                    senderProfilePic: senderInfo?.profilePic || null,
+                    aiMatchStatus: 'auto_assigned',
+                  });
+                  await tryAutoReply({ channel: 'MESSENGER', contactId: senderId, doctorId: matched._id, userId: matched.assignedTo });
+                }
+              } else {
+                await CommunicationLog.create({
+                  user: null,
+                  channel: 'MESSENGER',
+                  direction: 'inbound',
+                  source: 'api',
+                  messageContent: text,
+                  externalMessageId: event.message.mid,
+                  deliveryStatus: 'delivered',
+                  contactedAt: new Date(),
+                  pendingAssignment: true,
+                  senderExternalId: senderId,
+                  senderName,
+                  senderProfilePic: senderInfo?.profilePic || null,
+                  aiMatchSuggestion: match ? { doctorId: match.doctorId, confidence: match.confidence, reason: match.reason } : undefined,
+                  aiMatchStatus: match ? 'pending' : undefined,
+                });
+              }
             }
           }
         }
@@ -355,14 +437,55 @@ router.post('/viber', rawJson, verifyViberSignature, async (req, res) => {
             deliveryStatus: 'delivered',
             contactedAt: new Date(),
           });
+          await tryAutoReply({ channel: 'VIBER', contactId: senderId, doctorId: doctor._id, userId: doctor.assignedTo });
+        } else {
+          // Unknown sender — try AI matching using Viber sender name from body
+          const senderName = body.sender.name || senderId;
+          const senderProfilePic = body.sender.avatar || null;
+          const match = await matchSenderToDoctor(senderName, text, 'VIBER');
 
-          // Auto-reply if outside business hours
-          await tryAutoReply({
-            channel: 'VIBER',
-            contactId: senderId,
-            doctorId: doctor._id,
-            userId: doctor.assignedTo,
-          });
+          if (match && match.confidence === 'high') {
+            const matched = await Doctor.findByIdAndUpdate(
+              match.doctorId,
+              { viberId: senderId },
+              { new: true }
+            ).lean();
+            if (matched) {
+              await CommunicationLog.create({
+                doctor: matched._id,
+                user: matched.assignedTo,
+                channel: 'VIBER',
+                direction: 'inbound',
+                source: 'api',
+                messageContent: text,
+                externalMessageId: String(body.message_token || ''),
+                deliveryStatus: 'delivered',
+                contactedAt: new Date(),
+                senderExternalId: senderId,
+                senderName,
+                senderProfilePic,
+                aiMatchStatus: 'auto_assigned',
+              });
+              await tryAutoReply({ channel: 'VIBER', contactId: senderId, doctorId: matched._id, userId: matched.assignedTo });
+            }
+          } else {
+            await CommunicationLog.create({
+              user: null,
+              channel: 'VIBER',
+              direction: 'inbound',
+              source: 'api',
+              messageContent: text,
+              externalMessageId: String(body.message_token || ''),
+              deliveryStatus: 'delivered',
+              contactedAt: new Date(),
+              pendingAssignment: true,
+              senderExternalId: senderId,
+              senderName,
+              senderProfilePic,
+              aiMatchSuggestion: match ? { doctorId: match.doctorId, confidence: match.confidence, reason: match.reason } : undefined,
+              aiMatchStatus: match ? 'pending' : undefined,
+            });
+          }
         }
       }
     }

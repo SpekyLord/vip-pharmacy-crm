@@ -14,6 +14,7 @@ import LoadingSpinner from '../common/LoadingSpinner';
 import visitService from '../../services/visitService';
 import TargetProductsModal from './TargetProductsModal';
 import DoctorEditForm from './DoctorEditForm';
+import ConversationDrawer from '../common/ConversationDrawer';
 import useLookupData from '../../hooks/useLookupData';
 
 import SelectField from '../common/Select';
@@ -678,6 +679,7 @@ const DoctorList = memo(function DoctorList({
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [productsDoctor, setProductsDoctor] = useState(null);
   const [editDoctor, setEditDoctor] = useState(null);
+  const [conversationDoctor, setConversationDoctor] = useState(null);
   const requestIdRef = useRef(0);
 
   // Fetch visit status for all doctors using batch endpoint (eliminates N+1 problem)
@@ -1010,6 +1012,16 @@ const DoctorList = memo(function DoctorList({
                 >
                   Products
                 </button>
+                <button
+                  className="edit-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConversationDoctor(doctor);
+                  }}
+                  title="Open conversation"
+                >
+                  Message
+                </button>
               </div>
             </div>
           );
@@ -1037,6 +1049,12 @@ const DoctorList = memo(function DoctorList({
             setEditDoctor(null);
             onEditDoctor?.();
           }}
+        />
+      )}
+      {conversationDoctor && (
+        <ConversationDrawer
+          doctor={conversationDoctor}
+          onClose={() => setConversationDoctor(null)}
         />
       )}
     </div>
