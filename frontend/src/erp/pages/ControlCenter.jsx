@@ -392,6 +392,14 @@ const DEPENDENCY_GUIDE = {
       { action: 'When you disable an agent', deps: 'It will stop running on its cron schedule — existing data is preserved', section: null },
       { action: 'When you change notification routing', deps: 'Only the selected roles (president/admin/finance) will receive agent alerts', section: null },
       { action: 'Use "Run Now"', deps: 'Triggers instant data gathering — results appear in the Agent Dashboard', section: null },
+      // ── Phase G6.10 / G7 — AI Cowork, Copilot Tools, AI Budget tabs ──
+      { action: 'AI Cowork tab — toggle a feature ON', deps: 'Buttons appear inside RejectionBanner / ApprovalManager for users in allowed_roles. Edit prompts via the Edit modal; dry-run before exposing to staff.', section: null },
+      { action: 'Copilot Tools tab — disable a tool', deps: 'Claude can no longer call it from the Copilot widget OR Cmd+K. Existing chat history is preserved but new turns won\'t see the tool.', section: null },
+      { action: 'Copilot Tools tab — change allowed roles', deps: 'Tool will hide from users outside the role list. President/CEO always bypass.', section: null },
+      { action: 'AI Budget tab — toggle ON + set monthly budget', deps: 'Spend cap becomes enforced. Once monthly Anthropic spend reaches the cap, Cowork + Copilot + OCR calls return 429 and feature buttons hide via fallback_behavior.', section: null },
+      { action: 'AI Budget tab — change cap mid-month', deps: 'Takes effect within 60s (spendCapService cache). To see immediate effect, restart the backend or hit any AI endpoint to bust the cache.', section: null },
+      { action: 'PRESIDENT_DAILY_BRIEFING (in AI Cowork tab)', deps: 'Both this row AND PRESIDENT_COPILOT must be active for the briefing to run. Briefing is delivered to MessageInbox at 7AM weekdays. Cost counts toward the same monthly cap.', section: null },
+      { action: 'For per-feature budget overrides', deps: 'Edit AI_SPEND_CAPS/MONTHLY metadata.feature_overrides in Lookup Tables — e.g. cap OCR at $30 while Copilot stays at $150.', section: 'lookups' },
     ]
   },
   'ocr-settings': {

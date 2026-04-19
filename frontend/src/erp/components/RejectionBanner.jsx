@@ -23,9 +23,10 @@
  * without stealing focus. Banner styling mirrors WorkflowGuide.jsx conventions
  * (inline <style> block, dark-mode support, mobile-responsive).
  */
-import { useRef, useEffect } from 'react';
-import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { useRef, useEffect, useState } from 'react';
+import { AlertTriangle, RotateCcw, Sparkles } from 'lucide-react';
 import { useRejectionConfig } from '../hooks/useRejectionConfig';
+import { useAiCoworkFeature } from '../hooks/useAiCoworkFeature';
 
 const bannerStyles = `
   .rjb { border-radius: 10px; padding: 12px 14px; margin: 0 0 12px; position: relative; font-size: 13px; line-height: 1.5; display: flex; gap: 10px; align-items: flex-start; }
@@ -116,11 +117,70 @@ function RejectionBanner({ row, moduleKey, variant = 'page', onResubmit, docLabe
                 <RotateCcw /> Fix & Resubmit
               </button>
             )}
+            {/* Phase G6.10 — AI Cowork buttons (rendered only if president has enabled
+                the feature for this entity AND user role is in allowed_roles).
+                Prompts/models/etc. all live in AI_COWORK_FEATURES lookup. */}
+            <AiCoworkFixHelperButton row={row} moduleKey={moduleKey} reason={reason} tone={tone} />
             {children && <span className="rjb-slot">{children}</span>}
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * AiCoworkFixHelperButton — opens an inline panel with Claude's plain-language
+ * fix suggestions. Renders nothing if the feature isn't available for this user.
+ * Lives inside RejectionBanner so it shares the alert region (a11y-friendly).
+ */
+function AiCoworkFixHelperButton({ row, moduleKey, reason, tone }) {
+  const { available, button, invoke, invokeLoading, error } = useAiCoworkFeature('APPROVAL_FIX_HELPER');
+  const [output, setOutput] = useState(null);
+  const [open, setOpen] = useState(false);
+
+  if (!available) return null;
+
+  const handleClick = async () => {
+    setOpen(true);
+    if (output) return;
+    try {
+      const result = await invoke({
+        module: moduleKey,
+        doc_ref: row?._id || row?.doc_ref || row?.invoice_number || '—',
+        reason,
+        summary: row?.description || row?.notes || row?.payee_name || '',
+      });
+      setOutput(result?.text || '');
+    } catch {
+      // error captured by hook; render below
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`rjb-btn rjb-btn-primary ${tone === 'warning' ? 'warning' : ''}`}
+        style={{ background: tone === 'warning' ? '#7c3aed' : '#2563eb' }}
+        onClick={handleClick}
+        disabled={invokeLoading}
+        title={button.description}
+      >
+        <Sparkles /> {invokeLoading ? 'Asking…' : button.label}
+      </button>
+      {open && (
+        <div style={{
+          marginTop: 8, padding: '8px 10px', borderRadius: 6,
+          background: '#eff6ff', border: '1px solid #bfdbfe',
+          color: '#1e3a8a', fontSize: 12, whiteSpace: 'pre-wrap', width: '100%',
+        }}>
+          {error ? <span style={{ color: '#991b1b' }}>{error}</span>
+            : invokeLoading ? 'Thinking…'
+            : output || '(no response)'}
+        </div>
+      )}
+    </>
   );
 }
 

@@ -4541,3 +4541,95 @@ frontend/src/erp/components/WorkflowGuide.jsx       • +salesGoalCompensation b
 - **In-app notifications.** Only email channel implemented. SMS + in-app are scaffolded in `NotificationPreference` (`smsNotifications`, `inAppAlerts`) but not yet routed by `notifyTierReached` / `notifyKpiVariance` — opt-in slots are reserved for when a unified push/SMS dispatcher exists.
 - **Reports_to chain depth = 1.** `notifyTierReached` and `notifyKpiVariance` look up one manager hop. Multi-level escalation (skip-level managers) is straightforward to add when the org chart needs it.
 
+## Phase SG-3R — Sales Goal Scalability Polish (Remainder of SG-3) ✅ (April 19, 2026)
+
+**Context.** Phase SG-Q2 W1-W3 shipped the Q2 2026 critical path (compliance floor + incentive ledger + compensation statement + variance agent + mobile). Four SG-3 items were deferred as "subscription polish not Q2-blocking": KpiTemplate reuse (#14), growth-driver master promotion (#15), Excel bulk import (#18), President-Reverse on plans (#19), plus the 360px breakpoint for the admin setup page (remainder of #20). Plan reference: `C:\Users\LENOVO\.claude\plans\dreamy-skipping-cookie.md` Section D items 14/15/18/19 + tail of 20.
+
+### #14 — Reusable KpiTemplate (advisory plan defaults)
+
+- **Model.** `backend/erp/models/KpiTemplate.js` — `{ entity_id, template_name, driver_code, kpi_code, kpi_label, default_target, unit_code, computation, direction, functional_roles[], sort_order, description, is_active, created_by, updated_by }` + timestamps. Unique `(entity_id, template_name, driver_code, kpi_code)` index + `(entity_id, is_active)` query index. Entity-scoped so subsidiaries never see each other's libraries.
+- **Controller.** `backend/erp/controllers/kpiTemplateController.js` — list (grouped into sets), get, create, update, delete-row, delete-set. Audit-logged via `ErpAuditLog.logChange`. President may query another entity via `?entity_id=`; other roles pinned to `req.entityId` (Rule #19 isolation).
+- **Routes.** `backend/erp/routes/kpiTemplateRoutes.js` mounted at `/api/erp/kpi-templates` from `backend/erp/routes/index.js`. Reads gated by `erpAccessCheck('sales_goals')`; writes additionally require `erpSubAccessCheck('sales_goals','plan_manage')` so the same permission as Goal Setup applies.
+- **Plan integration.** `salesGoalController.createPlan` now optionally expands `template_id` / `template_name` into `growth_drivers[].kpi_definitions[]`, grouped by driver. Advisory only — the plan owns its copy after creation, so later template edits never mutate existing plans (matches SAP Commissions "events are immutable" posture). On UPDATE the keys are stripped; updates never re-seed.
+- **Frontend page.** `frontend/src/erp/pages/KpiTemplateManager.jsx` (new) at `/erp/kpi-templates` — full CRUD, driver/KPI selectors auto-fill label + unit + direction + computation from `KPI_CODE` lookup metadata, 360px mobile styles, admin-only write.
+- **Sidebar.** Admin/President gate picks up new "KPI Templates" link under "Sales Goals" (icon: Target). Route protected by `allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT]}` + `requiredErpModule="sales_goals"`.
+- **Hook.** `useSalesGoals.listKpiTemplates / getKpiTemplate / createKpiTemplate / updateKpiTemplate / deleteKpiTemplate / deleteKpiTemplateSet`.
+- **WorkflowGuide.** New `kpiTemplateManager` guide key — describes the template set → plan expansion flow, cross-entity usage, and the lookup-driven extension path.
+
+### #15 — Growth-driver master promotion
+
+- **Seed enrichment.** `lookupGenericController.SEED_DEFAULTS.GROWTH_DRIVER` now carries `metadata.default_kpi_codes[]` + `metadata.default_weight` + `metadata.description` per code (5 drivers). Subscribers re-map per entity via Control Center → Lookup Tables — zero code change.
+- **Plan-creation expansion.** `createPlan` honors an explicit `use_driver_defaults: true` flag: for every `growth_drivers[]` row whose `kpi_definitions` is empty AND template expansion left it empty, the controller reads the entity's `GROWTH_DRIVER.metadata.default_kpi_codes[]` and expands KPI defs using the `KPI_CODE` lookup (label + unit + direction + computation + source_model). Caller-supplied definitions are always preserved.
+- **UI surface.** `SalesGoalSetup.jsx` "Plan Details" tab — on a **new** plan only — renders a dashed "Pre-populate defaults (optional)" panel with a template picker (feeds from `listKpiTemplates`) and a "Seed KPIs from each driver's lookup metadata" checkbox. Non-destructive on existing plans (the panel is hidden once `selectedPlanId` is set).
+
+### #18 — Excel bulk import of targets
+
+- **Route.** `POST /api/erp/sales-goals/targets/import` (mounted BEFORE `/targets/:id` so "import" is never captured as a param). Gated by `erpAccessCheck('sales_goals','FULL')` + `erpSubAccessCheck('sales_goals','plan_manage')`. Multer (memory storage, 5 MB cap, single file, field name `file`).
+- **Handler.** `salesGoalController.importTargets` — uses `safeXlsxRead` (prototype-pollution + ReDoS hardened wrapper), recognizes two sheets (`ENTITY`, `BDM`; aliases accepted). Resolves `entity_code` against `Entity.short_name` / `entity_code` / `entity_name`; `bdm_code` against `PeopleMaster.bdm_code` / `full_name`; optional `territory_code` against `Territory.territory_code`. Row-level errors returned as `{ sheet, row_number, error, raw }`. Valid rows upsert atomically under `mongoose.session.withTransaction`; if ANY upsert fails, the whole import rolls back.
+- **Approval gate.** `gateApproval({ module: 'SALES_GOAL_PLAN', docType: 'BULK_TARGETS_IMPORT' })` — amount = sum of valid `sales_target`. Non-authorized submitters return HTTP 202 (Approval Hub).
+- **Audit.** `ErpAuditLog.logChange` records valid count + invalid count + filename.
+- **UI.** `SalesGoalSetup.jsx` Entity Targets tab AND BDM Targets tab both render an "Import Excel (ENTITY + BDM sheets)" button (file input hidden behind the label). Success displays count; errors are collapsible `<details>` with a per-row table (sheet + row_number + message). Approval-pending is surfaced via `showApprovalPending`.
+- **Hook.** `useSalesGoals.importTargets(formData)` — wraps `api.post('/sales-goals/targets/import', fd, { headers: 'multipart/form-data' })`.
+
+### #19 — President-Reverse on a Sales Goal plan
+
+- **Reversal handler.** `documentReversalService.reverseSalesGoalPlan` + `loadSalesGoalPlan` added. DRAFT plans → hard-delete with their DRAFT targets. ACTIVE/CLOSED/REJECTED → SAP Storno cascade:
+  1. `reverseJournal()` on every `IncentivePayout.journal_id` (accrual JE) and `settlement_journal_id` (paid JE), idempotent — "already reversed" errors are swallowed, anything else aborts the cascade.
+  2. `IncentivePayout` rows → `status = REVERSED` + `reversed_by/at/reason` (preserve `journal_id` refs for audit).
+  3. `KpiSnapshot` rows under the plan → deleted (derived data; no audit value once plan is reversed).
+  4. `SalesGoalTarget` rows → `status = CLOSED` (retained for audit).
+  5. Plan itself → `status = REVERSED` + `deletion_event_id` stamped from `TransactionEvent`.
+  All phase-2 writes run under one `mongoose.session.withTransaction`.
+- **Registry.** `REVERSAL_HANDLERS.SALES_GOAL_PLAN` wired; `PERIOD_LOCK_MODULE.SALES_GOAL_PLAN = 'INCENTIVE_PAYOUT'` (reversal JEs land where the payouts already live, so the relevant lock is the same one).
+- **Schema extension.** `SalesGoalPlan.status` enum now includes `REVERSED`; new optional `deletion_event_id` ref on the plan schema. G6 handler already had `terminalStates: ['CLOSED','REVERSED']` — confirmed no regression in `universalApprovalController`.
+- **Route.** `POST /api/erp/sales-goals/plans/:id/president-reverse` — wraps `buildPresidentReverseHandler('SALES_GOAL_PLAN')` (the same Phase 3a factory used by Sales/Collection/Expense/PRF-CALF/GRN/IC-Transfer/PettyCash/Payslip/Income). Gated by `erpSubAccessCheck('accounting','reverse_posted')` (baseline danger sub-perm — never inherited from FULL).
+- **UI.** `SalesGoalSetup.jsx` header action bar now renders a "President Reverse" button for plans whose status is NOT in `['DRAFT','REVERSED']`. Prompts for reason + `DELETE` confirmation (matches other president-reverse UX). New status palette entry for `REVERSED` (pink) so it renders distinct from `REJECTED` (red).
+- **Hook.** `useSalesGoals.presidentReversePlan(id, { reason, confirm: 'DELETE' })`.
+
+### #20 (remainder) — 360px on SalesGoalSetup.jsx
+
+- `@media(max-width: 360px)` block added: full-width buttons, column-stacked action bar + form rows, scrollable tab strip, compressed tables (font-size 11 / padding 6 5), single-column KPI rows. Matches the 360px work already done on BDM-facing pages in SG-Q2 W3.
+
+### Wiring map (Phase SG-3R)
+
+```
+Backend:
+  backend/erp/models/KpiTemplate.js                             [NEW]
+  backend/erp/models/SalesGoalPlan.js                           [+REVERSED enum, +deletion_event_id]
+  backend/erp/controllers/kpiTemplateController.js              [NEW]
+  backend/erp/controllers/salesGoalController.js                [expandTemplateIntoDrivers, expanded createPlan, importTargets, presidentReversePlan factory call]
+  backend/erp/controllers/lookupGenericController.js            [GROWTH_DRIVER metadata enriched]
+  backend/erp/routes/kpiTemplateRoutes.js                       [NEW]
+  backend/erp/routes/salesGoalRoutes.js                         [+/targets/import (multer), +/plans/:id/president-reverse]
+  backend/erp/routes/index.js                                   [+mount /kpi-templates]
+  backend/erp/services/documentReversalService.js               [+SALES_GOAL_PLAN handler + PERIOD_LOCK_MODULE + registry entry]
+
+Frontend:
+  frontend/src/erp/pages/KpiTemplateManager.jsx                 [NEW]
+  frontend/src/erp/pages/SalesGoalSetup.jsx                     [template picker, import button, president-reverse button, 360px, REVERSED badge]
+  frontend/src/erp/components/WorkflowGuide.jsx                 [+kpiTemplateManager guide]
+  frontend/src/erp/hooks/useSalesGoals.js                       [+8 methods: kpi-template CRUD + importTargets + presidentReversePlan]
+  frontend/src/App.jsx                                          [+/erp/kpi-templates route]
+  frontend/src/components/common/Sidebar.jsx                    [+KPI Templates link (admin-only)]
+```
+
+### Acceptance checklist (Phase SG-3R)
+
+- [x] `node -c` clean on all 10 modified/new backend files.
+- [x] `npx vite build --mode development` clean (~11s, `KpiTemplateManager-*.js` chunk emitted, `SalesGoalSetup-*.js` rebuilt).
+- [x] `node backend/scripts/verifyRejectionWiring.js` — OK (20 modules verified, 0 warnings). G6 wiring intact.
+- [x] `universalApprovalController` already includes `terminalStates: ['CLOSED','REVERSED']` for `sales_goal_plan` — no additional wiring needed.
+- [x] `ERP_SUB_PERMISSION.SALES_GOALS__PLAN_MANAGE` covers KPI Template writes (reused, no new key) + the import endpoint (same key as bulk targets).
+- [ ] Manual smoke (staging): create template set "VIP FY2026 Base" with 3 rows → create new plan referencing it → growth_drivers auto-populate with kpi_definitions from template.
+- [ ] Manual smoke: toggle `use_driver_defaults=true` on a fresh plan → empty drivers inherit their KPI codes from GROWTH_DRIVER.metadata.default_kpi_codes.
+- [ ] Manual smoke: upload an xlsx with one valid ENTITY row + one invalid BDM row → response shows `imported_count=1, error_count=1, errors=[{sheet:'BDM',row_number,error}]`.
+- [ ] Manual smoke: run President Reverse on a CLOSED plan that has 2 PAID IncentivePayouts → both accrual + settlement JEs reverse; payouts flip to REVERSED; snapshots delete; targets CLOSED; plan status REVERSED.
+- [ ] 360px visual verification on SalesGoalSetup.jsx (Chrome DevTools: 360 × 640).
+
+### Known limitations / future hooks (Phase SG-3R)
+
+- **KpiTemplate has no versioning.** Editing a template row does not cascade to existing plans (by design — plan immutability). If subscribers want "forward-apply to active plan," that's Phase SG-4 #21 (plan versioning) or a separate "apply template to draft" action.
+- **Excel import accepts only the master ENTITY/BDM sheet set.** Per-month breakdowns (`monthly_targets[]`) and per-driver breakdowns (`driver_targets[]`) are not parsed — they can be edited row-by-row after import. Adding sheets `ENTITY_MONTHLY` / `BDM_MONTHLY` with a `month` column is the extension path; the handler is structured for it.
+- **President-Reverse is synchronous.** A plan with hundreds of paid payouts could take several seconds because each `reverseJournal` runs its own session. Acceptable for current scale (max ~12 BDMs × 12 months ≈ 144 potential payouts). Multi-subsidiary scale may warrant moving the cascade to a background agent (kpi_snapshot pattern).
+- **No UI reversal-history view for plans yet.** `documentReversalService.listReversibleDocs` / `listReversalHistory` would need a `SALES_GOAL_PLAN` branch — deferred to a thin follow-up (one if-block per function, ~20 LOC).
+

@@ -3,7 +3,7 @@
  * Shows attainment ring, incentive tier, monthly trend, driver KPIs, and action items.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -171,6 +171,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 export default function SalesGoalBdmView() {
   const { bdmId } = useParams();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const sg = useSalesGoals();
 
@@ -181,8 +182,16 @@ export default function SalesGoalBdmView() {
   const [savingAction, setSavingAction] = useState(false);
   // Phase SG-Q2 W2 — My Payouts section
   const [payouts, setPayouts] = useState([]);
-  // Phase SG-Q2 W3 — Compensation tab + statement
-  const [activeTab, setActiveTab] = useState('performance'); // 'performance' | 'compensation'
+  // Phase SG-Q2 W3 — Compensation tab + statement. `?tab=compensation` query
+  // param lets the sidebar "My Compensation" entry land on the right tab.
+  const initialTab = searchParams.get('tab') === 'compensation' ? 'compensation' : 'performance';
+  const [activeTab, setActiveTab] = useState(initialTab); // 'performance' | 'compensation'
+  // Re-sync when the query param changes (user clicks the sidebar entry while
+  // already mounted on this page — useState's initial value would not re-fire).
+  useEffect(() => {
+    const qTab = searchParams.get('tab');
+    if (qTab === 'compensation' || qTab === 'performance') setActiveTab(qTab);
+  }, [searchParams]);
   const [statement, setStatement] = useState(null);
   const [statementLoading, setStatementLoading] = useState(false);
   const fiscalYear = new Date().getFullYear();

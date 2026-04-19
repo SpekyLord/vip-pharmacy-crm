@@ -187,11 +187,38 @@ const SalesGoalBdmView = lazyRetry(() => import('./erp/pages/SalesGoalBdmView'))
 const IncentiveTracker = lazyRetry(() => import('./erp/pages/IncentiveTracker'));
 // Phase SG-Q2 W2 — Incentive Payout Ledger (accrued → approved → paid → reversed)
 const IncentivePayoutLedger = lazyRetry(() => import('./erp/pages/IncentivePayoutLedger'));
+// Phase SG-3R — KPI Template Library (reusable plan defaults)
+const KpiTemplateManager = lazyRetry(() => import('./erp/pages/KpiTemplateManager'));
+
+// Phase G7 — President's Copilot + Cmd+K palette (ERP-only, role-gated by lookup)
+const PresidentCopilot = lazyRetry(() => import('./erp/components/PresidentCopilot'));
+const CommandPalette   = lazyRetry(() => import('./erp/components/CommandPalette'));
 
 // Standalone routes redirect to ControlCenter with the right section param
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
 const EntityManagerRedirect = () => <Navigate to="/erp/control-center?section=entities" replace />;
 const LookupManagerRedirect = () => <Navigate to="/erp/control-center?section=lookups" replace />;
+
+// Phase G7 — Mount Copilot widget + Cmd+K palette only on ERP routes so the
+// chunks aren't downloaded on /admin or /bdm pages. Components themselves also
+// guard with useLocation + lookup-driven role gate, but the path check here
+// avoids the network round-trip entirely on non-ERP pages.
+//
+// Wrapped in its OWN Suspense with a null fallback so the floating widget
+// chunks loading in the background don't block the ERP page from rendering
+// (parent Suspense's fallback would otherwise hide the page until both chunks
+// resolve). On chunk error, the ErrorBoundary higher up catches it without
+// nuking navigation.
+const ErpAddons = () => {
+  const location = useLocation();
+  if (!location.pathname.startsWith('/erp')) return null;
+  return (
+    <Suspense fallback={null}>
+      <PresidentCopilot />
+      <CommandPalette />
+    </Suspense>
+  );
+};
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -780,6 +807,8 @@ function App() {
           <Route path="/erp/sales-goals/incentives" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><IncentiveTracker /></ProtectedRoute>} />
           {/* Phase SG-Q2 W2 — Incentive Payout Ledger */}
           <Route path="/erp/incentive-payouts" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><IncentivePayoutLedger /></ProtectedRoute>} />
+          {/* Phase SG-3R — KPI Template Library */}
+          <Route path="/erp/kpi-templates" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT]} requiredErpModule="sales_goals"><KpiTemplateManager /></ProtectedRoute>} />
 
           {/* Orphaned page direct routes — redirect to Control Center with correct section */}
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentSettingsRedirect /></ProtectedRoute>} />
@@ -795,6 +824,13 @@ function App() {
           {/* 404 catch-all */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+        {/* Phase G7 — Floating Copilot widget + Cmd+K palette. ErpAddons wrapper
+            checks the path BEFORE rendering the lazy chunks so non-ERP pages
+            never download these bundles. Components themselves also guard via
+            lookup-driven PRESIDENT_COPILOT.allowed_roles (role gate in backend
+            /status response). Mounted at App level so the chat persists across
+            ERP page navigation. */}
+        <ErpAddons />
       </Suspense>
     </ErrorBoundary>
   );

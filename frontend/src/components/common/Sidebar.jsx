@@ -792,8 +792,17 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
       // Approve/Pay/Reverse actions are gated per-row by sub-perm + gateApproval.
       { path: '/erp/incentive-payouts', label: 'Payout Ledger', icon: DollarSign },
     ];
+    // Phase SG-Q2 W3 follow-up — direct sidebar entry for the BDM-self
+    // compensation statement. BDMs land on `/erp/sales-goals/my` (auto-scopes
+    // to themselves in the controller — Rule #21). Privileged users can still
+    // reach any BDM via `/erp/sales-goals/bdm/:bdmId`.
+    if (role === ROLES.CONTRACTOR) {
+      goalItems.push({ path: '/erp/sales-goals/my?tab=compensation', label: 'My Compensation', icon: Wallet });
+    }
     if (isAdmin) {
       goalItems.push({ path: '/erp/sales-goals/setup', label: 'Goal Setup', icon: Settings });
+      // Phase SG-3R — admin-only KPI Template Library (reusable plan defaults)
+      goalItems.push({ path: '/erp/kpi-templates', label: 'KPI Templates', icon: Target });
     }
     goalItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'Sales Goals', collapsible: true, defaultOpen: false, items: goalItems });

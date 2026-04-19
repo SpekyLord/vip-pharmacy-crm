@@ -15,6 +15,14 @@ const VENDOR_AUTO_LEARN_CATEGORIES = new Set(['VENDOR_AUTO_LEARN_BLOCKLIST', 'VE
 // Categories whose changes must bust the danger-sub-perm cache (explicit-grant allowlist)
 const DANGER_SUB_PERM_CATEGORIES = new Set(['ERP_DANGER_SUB_PERMISSIONS']);
 
+// Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
+// subscribers explicitly opt in (Anthropic-billable features, spend caps that
+// could surprise-block in-flight calls). Without this, the first AgentSettings
+// load auto-seeds via getByCategory → buildSeedOps → is_active: true and the
+// President Copilot / Daily Briefing / spend cap go live before the president
+// has a chance to review prompts and budget.
+const SUBSCRIPTION_OPT_IN_CATEGORIES = new Set(['AI_COWORK_FEATURES', 'AI_SPEND_CAPS']);
+
 /**
  * Generic Lookup Controller — Phase 24
  * CRUD for configurable dropdown values (replaces hardcoded frontend arrays).
@@ -225,12 +233,19 @@ const SEED_DEFAULTS = {
     // Set a non-zero value if your subsidiary wants every BDM to start with the same baseline target.
     { code: 'DEFAULT_TARGET_REVENUE', label: 'Default BDM Sales Target (auto-enroll)', metadata: { value: 0 } },
   ],
+  // Phase SG-3R — growth driver master promotion.
+  // `metadata.default_kpi_codes[]` and `metadata.default_weight` are consumed by
+  // `createPlan` (salesGoalController) when the client passes `use_driver_defaults: true`
+  // and does not supply explicit `kpi_definitions`. Subscribers re-map KPIs per driver
+  // via Control Center → Lookup Tables (zero code change). Weight is a relative
+  // emphasis hint the setup UI can use to pre-fill revenue_target share; plan math
+  // never blocks on it, so leaving it zero is safe.
   GROWTH_DRIVER: [
-    { code: 'HOSP_ACCRED', label: 'Hospital Accreditation' },
-    { code: 'PHARMACY_CSR', label: 'Pharmacy & CSR Inclusion' },
-    { code: 'ZERO_LOST_SALES', label: 'Inventory Optimization / Zero Lost Sales' },
-    { code: 'STRATEGIC_MD', label: 'Strategic Partnerships with MDs' },
-    { code: 'PRICE_INCREASE', label: 'Surgical Price Increases' },
+    { code: 'HOSP_ACCRED', label: 'Hospital Accreditation', metadata: { default_kpi_codes: ['PCT_HOSP_ACCREDITED', 'TIME_TO_ACCREDITATION', 'REV_PER_ACCREDITED_HOSP'], default_weight: 0.30, description: 'Drive formulary penetration in target hospitals' } },
+    { code: 'PHARMACY_CSR', label: 'Pharmacy & CSR Inclusion', metadata: { default_kpi_codes: ['SKUS_LISTED_PER_HOSP', 'FORMULARY_APPROVAL_RATE', 'MONTHLY_REORDER_FREQ'], default_weight: 0.20, description: 'Expand pharmacy/CSR SKU coverage and reorder cadence' } },
+    { code: 'ZERO_LOST_SALES', label: 'Inventory Optimization / Zero Lost Sales', metadata: { default_kpi_codes: ['LOST_SALES_INCIDENTS', 'INVENTORY_TURNOVER', 'EXPIRY_RETURNS'], default_weight: 0.15, description: 'Eliminate stockouts and expiry write-offs' } },
+    { code: 'STRATEGIC_MD', label: 'Strategic Partnerships with MDs', metadata: { default_kpi_codes: ['MD_ENGAGEMENT_COVERAGE', 'HOSP_REORDER_CYCLE_TIME'], default_weight: 0.20, description: 'Build decision-maker relationships that drive prescriptions' } },
+    { code: 'PRICE_INCREASE', label: 'Surgical Price Increases', metadata: { default_kpi_codes: ['VOLUME_RETENTION_POST_INCREASE', 'GROSS_MARGIN_PER_SKU'], default_weight: 0.15, description: 'Protect margin without losing volume' } },
   ],
   KPI_CODE: [
     // ═══ SALES KPIs (existing, extended with functional_roles) ═══
@@ -899,6 +914,426 @@ const SEED_DEFAULTS = {
     { code: 'INCENTIVE_PAYOUT',  label: 'Incentive Payouts — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['ACCRUED', 'REJECTED'],      banner_tone: 'danger', description: 'Incentive payouts rejected from Approval Hub (pending G6.7 handler wiring)' } },
   ],
 
+  // ── Phase G6.10 — AI Cowork Features (president-managed, lookup-driven) ──
+  // Each row defines one Claude-powered assist surface. President can toggle is_active,
+  // edit prompt/model/role/limits per-entity from Control Center → AI Cowork tab.
+  // Adding a new AI cowork surface = new row, no code change. The runtime
+  // (`approvalAiService`) reads metadata at request time — Rule #3 compliant.
+  //
+  // metadata schema:
+  //   surface: 'approver' | 'contractor'   — which side renders the button
+  //   endpoint_key: string                 — reserved for future routing variations
+  //   system_prompt: string                — full Claude system prompt (editable)
+  //   user_template: string                — Mustache-style {{var}} placeholders
+  //   model: string                        — Anthropic model id
+  //   max_tokens: number
+  //   temperature: number
+  //   allowed_roles: string[]              — who sees the button
+  //   rate_limit_per_min: number
+  //   button_label: string
+  //   fallback_behavior: 'hide_button'|'show_error'
+  //   description: string                  — admin-facing tooltip
+  //
+  // Cost note: each row carries its own model. Cost is logged to AiUsageLog with
+  // feature_code = row.code (per-feature attribution). G7.8 spend caps enforce per
+  // feature/per entity budgets. NEW SUBSIDIARIES INHERIT NOTHING until president seeds.
+  AI_COWORK_FEATURES: [
+    {
+      code: 'APPROVAL_REJECT_SUGGEST',
+      label: 'AI: Suggest Rejection Reason',
+      metadata: {
+        surface: 'approver',
+        endpoint_key: 'approval-reject-suggest',
+        system_prompt: 'You are an ERP approver assistant. Given a document summary and any validation errors, draft 2-3 short professional rejection reasons (≤30 words each). Use a constructive tone — explain what to fix, not just what is wrong. Output as a JSON array of strings.',
+        user_template: 'Module: {{module}}\nDoc: {{doc_ref}} (status={{status}})\nSummary: {{summary}}\nValidation errors:\n{{errors}}\n\nDraft 2-3 rejection reasons.',
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 400,
+        temperature: 0.4,
+        allowed_roles: ['approver', 'president', 'admin', 'finance'],
+        rate_limit_per_min: 10,
+        button_label: '✨ AI Suggest',
+        fallback_behavior: 'hide_button',
+        description: 'In the Approval Hub reject dialog, suggests 2-3 phrasings the approver can pick from.',
+      },
+    },
+    {
+      code: 'APPROVAL_FIX_HELPER',
+      label: 'AI: Help Me Fix This',
+      metadata: {
+        surface: 'contractor',
+        endpoint_key: 'approval-fix-helper',
+        system_prompt: 'You are an ERP submission assistant. Given a rejected document and the approver\'s reason, explain in 1-2 short sentences what needs to change, then list the specific edits as bullet points. Be concrete — reference actual fields. End with a one-line summary of the resubmit checklist.',
+        user_template: 'Module: {{module}}\nDoc: {{doc_ref}}\nRejection reason: {{reason}}\nDoc summary: {{summary}}\n\nExplain what to fix and how.',
+        model: 'claude-sonnet-4-6',
+        max_tokens: 600,
+        temperature: 0.3,
+        allowed_roles: ['employee', 'contractor', 'bdm', 'admin', 'finance', 'president'],
+        rate_limit_per_min: 6,
+        button_label: '🤝 Help Me Fix',
+        fallback_behavior: 'hide_button',
+        description: 'In RejectionBanner, explains the rejection in plain language with concrete edit suggestions.',
+      },
+    },
+    {
+      code: 'APPROVAL_FIX_CHECK',
+      label: 'AI: Check My Fix Before Resubmit',
+      metadata: {
+        surface: 'contractor',
+        endpoint_key: 'approval-fix-check',
+        system_prompt: 'You are an ERP pre-submit reviewer. Compare the original rejection reason against the document\'s current state. Reply with: PASS or FAIL on the first line, then 1-2 sentences explaining what still needs work (or confirming the fix addresses the original feedback).',
+        user_template: 'Module: {{module}}\nDoc: {{doc_ref}}\nOriginal rejection reason: {{reason}}\nCurrent doc state: {{summary}}\n\nDoes the fix address the rejection?',
+        model: 'claude-sonnet-4-6',
+        max_tokens: 300,
+        temperature: 0.2,
+        allowed_roles: ['employee', 'contractor', 'bdm', 'admin', 'finance', 'president'],
+        rate_limit_per_min: 6,
+        button_label: '🔎 Check My Fix',
+        fallback_behavior: 'hide_button',
+        description: 'In RejectionBanner before Resubmit, verifies edits address the original reason.',
+      },
+    },
+    // ── Phase G7 — President's Copilot system prompt (chat widget + Cmd+K) ──
+    // copilotService renders this row as the system prompt for every chat turn.
+    // President can edit prompt/model/role gates without code change.
+    {
+      code: 'PRESIDENT_COPILOT',
+      label: 'President Copilot — Chat Widget',
+      metadata: {
+        surface: 'copilot',
+        endpoint_key: 'copilot-chat',
+        system_prompt:
+          "You are the President's operations copilot for the VIP ERP. Answer concisely (≤4 sentences unless explicitly asked for detail). " +
+          "When the user asks to find/filter/navigate, CALL A TOOL — don't describe what you'd do. " +
+          "For any write action, use a write_confirm tool so the user reviews before executing. " +
+          "Respect entity scoping — never leak data across entities. " +
+          "Pharmaceutical context: VIP is parent; subsidiaries like MG AND CO. access via transfer pricing. " +
+          "If a user request can't be served by an enabled tool, say so and suggest the closest option.",
+        // Cmd+K quick-mode addendum — appended to system_prompt when the request
+        // arrives with mode='quick' (CommandPalette).
+        quick_mode_prompt:
+          "QUICK MODE: interpret the user's terse phrase as a command. " +
+          "Prefer NAVIGATE_TO or SEARCH_DOCUMENTS tools. Respond with ≤1 sentence + the tool action.",
+        user_template: '', // chat uses raw messages array; template unused
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1200,
+        temperature: 0.3,
+        allowed_roles: ['president', 'ceo'],
+        rate_limit_per_min: 30,
+        button_label: '✨ Copilot',
+        fallback_behavior: 'hide_button',
+        description: 'Floating Copilot chat widget on every ERP page. Cmd+K opens it in quick mode.',
+        max_chat_turns: 8,           // safety cap on the tool-use loop
+        history_persist: 'session',  // session | local | none
+      },
+    },
+    // ── Phase G7.9 — Daily Briefing scheduled Copilot turn ──
+    // agentScheduler triggers a Copilot run with this prompt; output posts to
+    // MessageInbox (category=briefing) and the ERP dashboard "Today's Briefing" card.
+    {
+      code: 'PRESIDENT_DAILY_BRIEFING',
+      label: 'Daily Briefing — Morning Copilot',
+      metadata: {
+        surface: 'scheduled',
+        endpoint_key: 'copilot-briefing',
+        system_prompt:
+          'You are the President\'s morning operations briefer. Use the available tools to gather facts (LIST_PENDING_APPROVALS, SUMMARIZE_MODULE, COMPARE_ENTITIES), then write a concise markdown briefing.',
+        user_template:
+          'Generate the {{date}} morning briefing for entity {{entity_name}}. Include: ' +
+          '1) Pending approvals count + top 3 oldest; ' +
+          '2) Yesterday\'s collections vs target; ' +
+          '3) Period-lock warnings (any module with an upcoming lock in 3 days); ' +
+          '4) Any anomalies flagged by free agents in the last 24h. ' +
+          'Keep under 200 words. Use bullet points. End with one suggested action.',
+        model: 'claude-sonnet-4-6',
+        max_tokens: 800,
+        temperature: 0.4,
+        allowed_roles: ['president', 'ceo'],
+        rate_limit_per_min: 2,
+        button_label: '☀️ Daily Briefing',
+        fallback_behavior: 'hide_button',
+        description: 'Scheduled morning briefing posted to MessageInbox + dashboard. Counts toward Copilot spend cap.',
+        // Cron schedule (Asia/Manila) — agentScheduler reads this on init.
+        // Subscribers can change without code change.
+        schedule_cron: '0 7 * * 1-5',  // weekdays 7:00 AM Manila
+      },
+    },
+  ],
+
+  // ── Phase G7.1 — Copilot tool registry (lookup-driven capability list) ──
+  //
+  // Each row = one capability the Copilot can call. Adding a new tool = new row +
+  // register one handler in copilotToolRegistry.js. President toggles per entity.
+  //
+  // metadata shape:
+  //   tool_type: 'read' | 'write_confirm'
+  //   handler_key: string                  — must match a key in copilotToolRegistry
+  //   json_schema: { name, description, input_schema } — Claude tool-use shape
+  //   allowed_roles: string[]
+  //   description_for_claude: string       — one-line hint Claude sees
+  //   confirmation_template: string        — empty for read; mustache for write_confirm
+  //   entity_scoped: boolean               — handler asserts req.entityId
+  //   rate_limit_per_min: number           — per user
+  //
+  // Defaults seed as is_active: true so the Copilot is functional out of the box,
+  // but the parent PRESIDENT_COPILOT feature is is_active: false until president
+  // opts in (subscription-safe — same pattern as AI_COWORK_FEATURES).
+  COPILOT_TOOLS: [
+    {
+      code: 'LIST_PENDING_APPROVALS',
+      label: 'List my pending approvals',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'listPendingApprovals',
+        json_schema: {
+          name: 'list_pending_approvals',
+          description: 'Lists documents pending the current user\'s approval across all modules in their entities.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Max items to return (default 20).' },
+            },
+          },
+        },
+        allowed_roles: ['president', 'admin', 'finance', 'ceo'],
+        description_for_claude: 'Returns the Approval Hub items the current user can act on, newest first. Use when the user asks "what needs my approval".',
+        confirmation_template: '',
+        entity_scoped: true,
+        rate_limit_per_min: 30,
+      },
+    },
+    {
+      code: 'SEARCH_DOCUMENTS',
+      label: 'Search documents across modules',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'searchDocuments',
+        json_schema: {
+          name: 'search_documents',
+          description: 'Cross-module document search by free-text query. Returns matching docs with module, ref, status, owner, date.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Free-text to match against doc_ref, vendor, customer, notes.' },
+              modules: { type: 'array', items: { type: 'string' }, description: 'Module keys to scope search (SALES, COLLECTION, EXPENSES, ...). Empty = all.' },
+              status: { type: 'string', description: 'Optional status filter (DRAFT, SUBMITTED, REJECTED, POSTED, ...).' },
+              limit: { type: 'integer' },
+            },
+            required: ['query'],
+          },
+        },
+        allowed_roles: ['president', 'admin', 'finance', 'ceo'],
+        description_for_claude: 'Use when the user asks to find a specific document by name, number, or vendor — e.g. "Jake Montero rejected SMERs in March".',
+        confirmation_template: '',
+        entity_scoped: true,
+        rate_limit_per_min: 30,
+      },
+    },
+    {
+      code: 'SUMMARIZE_MODULE',
+      label: 'Summarize a module',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'summarizeModule',
+        json_schema: {
+          name: 'summarize_module',
+          description: 'Returns aggregate counts/totals for a module over a date range (today, week, month, ytd, custom).',
+          input_schema: {
+            type: 'object',
+            properties: {
+              module: { type: 'string', description: 'COLLECTION | SALES | EXPENSES | SMER | CAR_LOGBOOK | PETTY_CASH | INCOME | PURCHASING | BANKING | INCENTIVE' },
+              range: { type: 'string', description: 'today | week | month | ytd | custom' },
+              from: { type: 'string', description: 'ISO date — required if range=custom' },
+              to:   { type: 'string', description: 'ISO date — required if range=custom' },
+            },
+            required: ['module', 'range'],
+          },
+        },
+        allowed_roles: ['president', 'admin', 'finance', 'ceo'],
+        description_for_claude: 'Use when the user asks for a quick number — "today\'s collections", "Q1 sales", "expenses this week".',
+        confirmation_template: '',
+        entity_scoped: true,
+        rate_limit_per_min: 30,
+      },
+    },
+    {
+      code: 'EXPLAIN_REJECTION',
+      label: 'Explain a rejection',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'explainRejection',
+        json_schema: {
+          name: 'explain_rejection',
+          description: 'Given a doc_id (or approval_request id), returns the full chain of why it was rejected: original reason, approver, audit trail, and any prior submissions.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              doc_id: { type: 'string', description: 'Source document id OR ApprovalRequest id.' },
+              module: { type: 'string', description: 'Optional hint of which module this doc lives in.' },
+            },
+            required: ['doc_id'],
+          },
+        },
+        allowed_roles: ['president', 'admin', 'finance', 'ceo'],
+        description_for_claude: 'Use when the user asks "why was X rejected" or "what happened to doc Y".',
+        confirmation_template: '',
+        entity_scoped: true,
+        rate_limit_per_min: 30,
+      },
+    },
+    {
+      code: 'NAVIGATE_TO',
+      label: 'Navigate to a page',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'navigateTo',
+        json_schema: {
+          name: 'navigate_to',
+          description: 'Returns a target URL with filters pre-applied. The frontend will navigate the user there.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              page: { type: 'string', description: 'Page key — sales | collections | expenses | smer | approvals | incentives | etc.' },
+              filters: { type: 'object', description: 'Key-value filters appended as query params.' },
+            },
+            required: ['page'],
+          },
+        },
+        allowed_roles: ['president', 'admin', 'finance', 'ceo'],
+        description_for_claude: 'Use when the user asks to "go to" or "open" a page. Always prefer this over describing the URL.',
+        confirmation_template: '',
+        entity_scoped: false, // path-only; no data leak
+        rate_limit_per_min: 60,
+      },
+    },
+    {
+      code: 'COMPARE_ENTITIES',
+      label: 'Compare entities',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'compareEntities',
+        json_schema: {
+          name: 'compare_entities',
+          description: 'Cross-entity reporting — given a metric and date range, returns the metric per active entity. Only entities the user has access to are included.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              metric: { type: 'string', description: 'sales | collections | expenses | gross_profit | pending_approvals' },
+              range:  { type: 'string', description: 'today | week | month | ytd' },
+            },
+            required: ['metric', 'range'],
+          },
+        },
+        allowed_roles: ['president', 'ceo'],
+        description_for_claude: 'Use when the user asks "VIP vs MG AND CO." or compares performance across entities. Hidden for users without multi-entity access.',
+        confirmation_template: '',
+        entity_scoped: false, // operates ACROSS entities, gated by user.entity_ids
+        rate_limit_per_min: 10,
+      },
+    },
+    {
+      code: 'DRAFT_REJECTION_REASON',
+      label: 'Draft a rejection reason',
+      metadata: {
+        tool_type: 'write_confirm',
+        handler_key: 'draftRejectionReason',
+        json_schema: {
+          name: 'draft_rejection_reason',
+          description: 'Drafts a rejection reason for an approval. RETURNS A DRAFT — does not execute. The user must confirm before the rejection is applied.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              approval_request_id: { type: 'string', description: 'ApprovalRequest id to reject.' },
+              reason: { type: 'string', description: 'Draft rejection reason text.' },
+            },
+            required: ['approval_request_id', 'reason'],
+          },
+        },
+        allowed_roles: ['president', 'ceo', 'admin', 'finance'],
+        description_for_claude: 'Use when the user asks to reject an approval. Always returns a draft — the UI shows a confirmation card before the rejection is committed.',
+        confirmation_template: 'Reject {{doc_ref}} ({{module}}) with reason: "{{reason}}"?',
+        entity_scoped: true,
+        rate_limit_per_min: 10,
+      },
+    },
+    {
+      code: 'DRAFT_MESSAGE',
+      label: 'Draft a message to a user',
+      metadata: {
+        tool_type: 'write_confirm',
+        handler_key: 'draftMessage',
+        json_schema: {
+          name: 'draft_message',
+          description: 'Drafts a message to a recipient (BDM, approver). Returns the draft text — does not send. User confirms before send.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              recipient_id: { type: 'string', description: 'User id to receive the message.' },
+              subject:      { type: 'string' },
+              body:         { type: 'string' },
+              category:     { type: 'string', description: 'general | approval | task | briefing' },
+            },
+            required: ['recipient_id', 'subject', 'body'],
+          },
+        },
+        allowed_roles: ['president', 'ceo', 'admin'],
+        description_for_claude: 'Use when the user asks to send a message to a BDM or staff member.',
+        confirmation_template: 'Send to {{recipient_name}}: "{{subject}}"?',
+        entity_scoped: true,
+        rate_limit_per_min: 10,
+      },
+    },
+    {
+      code: 'DRAFT_NEW_ENTRY',
+      label: 'Pre-fill a new entry form',
+      metadata: {
+        tool_type: 'write_confirm',
+        handler_key: 'draftNewEntry',
+        json_schema: {
+          name: 'draft_new_entry',
+          description: 'Pre-fills a new module entry (expense, smer, sales) with proposed values. Returns the target route + values — the UI navigates to the form with values pre-loaded for the user to review and submit.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              module: { type: 'string', description: 'EXPENSES | SMER | SALES | COLLECTION | PETTY_CASH' },
+              values: { type: 'object', description: 'Field values to pre-fill.' },
+            },
+            required: ['module', 'values'],
+          },
+        },
+        allowed_roles: ['president', 'ceo', 'admin', 'finance'],
+        description_for_claude: 'Use when the user asks to "create a new" expense/smer/sales/etc. with specific values. Always returns a pre-fill route — the user submits via the existing form.',
+        confirmation_template: 'Open new {{module}} form pre-filled with these values?',
+        entity_scoped: true,
+        rate_limit_per_min: 20,
+      },
+    },
+  ],
+
+  // ── Phase G7.8 — AI spend caps (per-entity, lookup-driven) ──
+  //
+  // checkSpendCap() is called by approvalAiService, copilotService, and the OCR
+  // controller BEFORE every Claude call. At cap with action_when_reached='disable',
+  // the call returns 429 and feature buttons hide via fallback_behavior. Defaults
+  // ship as is_active: false so existing entities don't get a surprise cap on
+  // first deploy — president opts in via Control Center → Lookup Tables or the
+  // AgentSettings AI Budget tab.
+  AI_SPEND_CAPS: [
+    {
+      code: 'MONTHLY',
+      label: 'Monthly AI Spend Cap',
+      metadata: {
+        monthly_budget_usd: 150,
+        notify_at_pct: 80,
+        action_when_reached: 'disable', // 'disable' | 'warn_only'
+        notify_channels: ['dashboard_banner'], // 'email:president' | 'dashboard_banner' | 'inbox:president'
+        // Per-feature overrides — keys are AI_COWORK_FEATURES.code or 'OCR' or COPILOT_TOOLS.code
+        // Example: { OCR: { monthly_budget_usd: 30, action_when_reached: 'disable' } }
+        feature_overrides: {},
+        description: 'Total Anthropic API spend cap per calendar month for this entity. Resets on month rollover. Per-feature overrides take precedence.',
+      },
+    },
+  ],
+
   // Phase 34 — Editable line-item fields per module in the Approval Hub
   // Approver can edit individual line items (qty, price, etc.) before approving
   APPROVAL_EDITABLE_LINE_FIELDS: [
@@ -977,6 +1412,11 @@ exports.getCategories = catchAsync(async (req, res) => {
 // Metadata is always merged ($set) so updated defaults propagate to existing entries.
 // Label/sort_order are only set on insert ($setOnInsert) to preserve user customizations.
 function buildSeedOps(defaults, category, entityId, userId) {
+  // Phase G6.10/G7 — billable AI features default OFF so the president must
+  // explicitly enable them after reviewing prompts/budgets. All other lookup
+  // categories keep the original is_active:true default so dropdowns work
+  // immediately on first load.
+  const defaultActive = !SUBSCRIPTION_OPT_IN_CATEGORIES.has(category);
   return defaults.map((item, i) => {
     const isObj = typeof item === 'object';
     const label = isObj ? item.label : item;
@@ -986,7 +1426,7 @@ function buildSeedOps(defaults, category, entityId, userId) {
       updateOne: {
         filter: { entity_id: entityId, category, code },
         update: {
-          $setOnInsert: { label, sort_order: i * 10, is_active: true, created_by: userId },
+          $setOnInsert: { label, sort_order: i * 10, is_active: defaultActive, created_by: userId },
         },
         upsert: true
       }

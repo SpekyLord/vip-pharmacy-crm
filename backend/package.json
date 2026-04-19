@@ -12,7 +12,8 @@
     "test:smoke": "jest --ci --runInBand --testPathPattern=smoke",
     "startup:check": "node scripts/startupCheck.js",
     "seed": "node scripts/seedData.js",
-    "verify:rejection-wiring": "node scripts/verifyRejectionWiring.js"
+    "verify:rejection-wiring": "node scripts/verifyRejectionWiring.js",
+    "verify:copilot-wiring": "node scripts/verifyCopilotWiring.js"
   },
   "keywords": [
     "pharmacy",

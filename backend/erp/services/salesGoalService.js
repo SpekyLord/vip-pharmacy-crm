@@ -130,6 +130,54 @@ async function getStatusPalette(entityId) {
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
 }
 
+// Defaults applied when an entity has no KPI_VARIANCE_THRESHOLDS row.
+// Kept aligned with kpiVarianceAgent.DEFAULT_WARNING_PCT / DEFAULT_CRITICAL_PCT.
+const KPI_VARIANCE_GLOBAL_DEFAULT = {
+  warning_pct: 20,
+  critical_pct: 40,
+};
+
+/**
+ * Ensure a fallback `KPI_VARIANCE_THRESHOLDS.GLOBAL` lookup row exists for the
+ * given entity. Idempotent — safe to call repeatedly. Called lazily on plan
+ * activation so day-1 subscribers see kpiVarianceAgent fire alerts without an
+ * admin first opening Control Center. Mirrors the STATUS_PALETTE self-seed
+ * pattern above.
+ *
+ * Passing `session` makes the write part of an open transaction (used by
+ * salesGoalController.activatePlan).
+ */
+async function ensureKpiVarianceGlobalThreshold(entityId, session = null) {
+  if (!entityId) return { seeded: false, reason: 'no_entity' };
+  try {
+    const filter = { entity_id: entityId, category: 'KPI_VARIANCE_THRESHOLDS', code: 'GLOBAL' };
+    const existing = await Lookup.findOne(filter).session(session || null).lean();
+    if (existing) return { seeded: false, reason: 'already_present' };
+
+    await Lookup.updateOne(
+      filter,
+      {
+        $setOnInsert: {
+          label: 'Global KPI Variance Threshold',
+          sort_order: 0,
+          is_active: true,
+          metadata: {
+            warning_pct: KPI_VARIANCE_GLOBAL_DEFAULT.warning_pct,
+            critical_pct: KPI_VARIANCE_GLOBAL_DEFAULT.critical_pct,
+            note: 'Auto-seeded on first plan activation. Override per-KPI by adding rows with code=<KPI_CODE>.',
+          },
+        },
+      },
+      { upsert: true, ...(session ? { session } : {}) }
+    );
+    return { seeded: true };
+  } catch (err) {
+    console.error('[salesGoal] KPI_VARIANCE_THRESHOLDS.GLOBAL lazy-seed failed:', err.message);
+    // Non-fatal — agent has in-memory fallback. Never blocks plan activation.
+    return { seeded: false, reason: 'error', error: err.message };
+  }
+}
+
 /**
  * Match attainment % to highest qualifying tier.
  */
@@ -784,6 +832,8 @@ module.exports = {
   getGoalConfig,
   getIncentiveTiers,
   getStatusPalette,
+  ensureKpiVarianceGlobalThreshold,
+  KPI_VARIANCE_GLOBAL_DEFAULT,
   computeIncentiveTier,
   computeProjectedTier,
   computeBdmSnapshot,

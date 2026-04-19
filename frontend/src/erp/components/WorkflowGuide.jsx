@@ -1327,6 +1327,25 @@ const WORKFLOW_GUIDES = {
     tip: 'BDMs see only their own goals. President and delegates with FULL sales_goals access see all BDMs. Non-authorized compute/activate actions route through the Approval Hub (HTTP 202) — check there if a button silently "succeeded" with no data refresh. Status colors (green/amber/red bars + badges) are driven by the STATUS_PALETTE Lookup — rebrand per entity from Control Center → Lookup Tables.',
   },
 
+  // ═══ Phase SG-3R — KPI Template Library ═══
+  kpiTemplateManager: {
+    title: 'KPI Template Library',
+    steps: [
+      'Create a template set name (e.g. "VIP FY2026 Base") that groups KPI defaults you want to reuse across plans or subsidiaries',
+      'Add one row per (driver, KPI) — picking from existing GROWTH_DRIVER and KPI_CODE Lookup entries. Labels + units auto-fill from the KPI lookup; override if you need entity-specific phrasing',
+      'Set a default target and sort order per row. Mark a row inactive to hide it from plan-creation expansion without losing the row',
+      'When you create a new Sales Goal Plan, pass template_name (or template_id) in the POST body — plan creation will expand the template into growth_drivers[].kpi_definitions[]',
+      'Combine with the GROWTH_DRIVER lookup metadata (default_kpi_codes + default_weight) for zero-typing onboarding of new subsidiaries',
+      'The plan owns its copy after creation — editing the template later never mutates existing plans (SAP Commissions "events are immutable" posture)',
+    ],
+    next: [
+      { label: 'Goal Setup', path: '/erp/sales-goals/setup' },
+      { label: 'KPI Library', path: '/erp/kpi-library' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'Templates are per-entity. Each subsidiary can have its own library — copy-paste the same template_name in MG AND CO. with different default targets if needed. Extend GROWTH_DRIVER.metadata.default_kpi_codes in Control Center to add more drivers without code changes.',
+  },
+
   salesGoalSetup: {
     title: 'Sales Goal Plan Setup',
     steps: [
