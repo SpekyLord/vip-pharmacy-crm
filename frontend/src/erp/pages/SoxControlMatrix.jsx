@@ -114,9 +114,13 @@ export default function SoxControlMatrix() {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const controls = matrix?.controls || [];
-  const violations = matrix?.segregation_violations || [];
-  const events = matrix?.integration_events || [];
+  // Memoize the array projections so downstream useMemo/useCallback deps
+  // stay stable across renders when `matrix` hasn't changed. Otherwise
+  // `matrix?.controls || []` creates a fresh [] on every render and defeats
+  // the dep array (react-hooks/exhaustive-deps lint warning).
+  const controls = useMemo(() => matrix?.controls || [], [matrix]);
+  const violations = useMemo(() => matrix?.segregation_violations || [], [matrix]);
+  const events = useMemo(() => matrix?.integration_events || [], [matrix]);
 
   const dangerCount = useMemo(
     () => controls.filter(c => c.is_danger).length,
