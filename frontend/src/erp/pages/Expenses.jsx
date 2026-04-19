@@ -16,6 +16,7 @@ import { compressImageFile } from '../utils/compressImage';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError } from '../utils/errorToast';
 import PresidentReverseModal from '../components/PresidentReverseModal';
 
@@ -954,6 +955,19 @@ export default function Expenses() {
                         )}
                       </td>
                     </tr>
+                    {e.status === 'ERROR' && e.rejection_reason && (
+                      <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
+                        <td colSpan={8} style={{ padding: '6px 8px 4px' }}>
+                          <RejectionBanner
+                            row={e}
+                            moduleKey="EXPENSES"
+                            variant="page"
+                            docLabel={`${e.period} ${e.cycle}`}
+                            onResubmit={(row) => handleEdit(row)}
+                          />
+                        </td>
+                      </tr>
+                    )}
                     {e.status === 'ERROR' && e.validation_errors?.length > 0 && (
                       <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
                         <td colSpan={8} style={{ padding: '4px 8px 8px', background: '#fef2f2' }}>
@@ -1000,6 +1014,17 @@ export default function Expenses() {
                       <div style={{ fontWeight: 600 }}>₱{(e.total_amount || 0).toLocaleString()}</div>
                     </div>
                   </div>
+                  {e.status === 'ERROR' && e.rejection_reason && (
+                    <div style={{ marginTop: 8 }}>
+                      <RejectionBanner
+                        row={e}
+                        moduleKey="EXPENSES"
+                        variant="page"
+                        docLabel={`${e.period} ${e.cycle}`}
+                        onResubmit={(row) => handleEdit(row)}
+                      />
+                    </div>
+                  )}
                   {e.status === 'ERROR' && e.validation_errors?.length > 0 && (
                     <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 6, background: '#fef2f2', border: '1px solid #fca5a5' }}>
                       <div style={{ fontSize: 12, color: '#dc2626' }}>

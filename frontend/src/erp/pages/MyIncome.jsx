@@ -16,6 +16,7 @@ import { useLookupOptions } from '../hooks/useLookups';
 import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 
 const pageStyles = `
   .my-income-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -577,9 +578,13 @@ export default function MyIncome() {
                       <h3>Payslip — {selected.period} {cycleLabel(selected.cycle)}</h3>
                       <span className={`badge ${STATUS_BADGES[selected.status] || ''}`}>{selected.status}</span>
                     </div>
-                    {selected.return_reason && selected.status === 'RETURNED' && (
-                      <div className="return-banner"><strong>Returned by Finance:</strong> {selected.return_reason}</div>
-                    )}
+                    <RejectionBanner
+                      row={selected}
+                      moduleKey="INCOME"
+                      variant="page"
+                      docLabel={`${selected.period} ${cycleLabel(selected.cycle)}`}
+                    />
+
                     {/* ── Breakdown toggle ── */}
                     <button className="bd-load-btn" disabled={breakdownLoading}
                       onClick={() => { if (!breakdown) loadBreakdown(selected._id); setExpandedSections(prev => { const allOpen = Object.values(prev).some(v => v); return allOpen ? {} : { smer: true, commission: true, profitSharing: true, calf: true, personalGas: true }; }); }}>

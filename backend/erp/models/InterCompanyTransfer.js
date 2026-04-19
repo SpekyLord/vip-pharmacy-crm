@@ -82,13 +82,18 @@ const interCompanyTransferSchema = new mongoose.Schema({
   // Status lifecycle
   status: {
     type: String,
-    enum: ['DRAFT', 'APPROVED', 'SHIPPED', 'RECEIVED', 'POSTED', 'CANCELLED'],
+    enum: ['DRAFT', 'APPROVED', 'SHIPPED', 'RECEIVED', 'POSTED', 'CANCELLED', 'REJECTED'],
     default: 'DRAFT'
   },
 
   // Approval
   approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   approved_at: { type: Date },
+
+  // Rejection (Phase G6)
+  rejection_reason: { type: String, trim: true, default: '' },
+  rejected_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejected_at: { type: Date },
 
   // Shipping
   shipped_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

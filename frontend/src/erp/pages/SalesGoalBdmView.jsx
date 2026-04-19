@@ -70,7 +70,46 @@ const pageStyles = `
   .bdv-btn-sm { padding: 4px 10px; font-size: 12px; }
   .bdv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .loading { text-align: center; padding: 40px; color: var(--erp-muted); }
-  @media(max-width: 768px) { .bdv-main { padding: 12px; } .bdv-row { flex-direction: column; } }
+  /* Phase SG-Q2 W3 — Tab strip + compensation summary cards */
+  .bdv-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--erp-border); }
+  .bdv-tab { padding: 10px 18px; background: transparent; border: none; border-bottom: 3px solid transparent; margin-bottom: -2px; font-size: 13px; font-weight: 600; color: var(--erp-muted); cursor: pointer; transition: color 0.15s, border-color 0.15s; }
+  .bdv-tab:hover { color: var(--erp-text); }
+  .bdv-tab.active { color: var(--erp-accent, #2563eb); border-bottom-color: var(--erp-accent, #2563eb); }
+  .bdv-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .bdv-summary-card { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border); border-radius: 12px; padding: 14px 16px; }
+  .bdv-summary-card.earned { border-left: 3px solid #1f2937; }
+  .bdv-summary-card.accrued { border-left: 3px solid #2563eb; background: #eff6ff; }
+  .bdv-summary-card.paid { border-left: 3px solid #16a34a; background: #f0fdf4; }
+  .bdv-summary-card.adjusted { border-left: 3px solid #dc2626; background: #fef2f2; }
+  .bdv-summary-label { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--erp-muted); letter-spacing: 0.05em; }
+  .bdv-summary-value { font-size: 20px; font-weight: 700; color: var(--erp-text); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .bdv-comp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .bdv-comp-table th { padding: 8px; text-align: left; background: var(--erp-accent-soft, #eef2ff); font-weight: 600; color: var(--erp-text); font-size: 12px; }
+  .bdv-comp-table td { padding: 8px; border-top: 1px solid var(--erp-border); color: var(--erp-text); }
+  .bdv-comp-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bdv-print-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--erp-accent, #2563eb); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .bdv-print-btn:hover { background: #1d4ed8; }
+  .bdv-comp-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
+  .bdv-comp-empty { padding: 28px; text-align: center; color: var(--erp-muted); font-size: 13px; }
+  @media(max-width: 768px) { .bdv-main { padding: 12px; } .bdv-row { flex-direction: column; } .bdv-summary-grid { grid-template-columns: repeat(2, 1fr); } .bdv-tab { padding: 8px 12px; font-size: 12px; } }
+  @media(max-width: 360px) {
+    .bdv-main { padding: 8px; }
+    .bdv-header h1 { font-size: 18px; }
+    .bdv-profile { padding: 12px; gap: 10px; }
+    .bdv-card, .bdv-panel { padding: 14px; min-width: 0; }
+    .bdv-ring { width: 96px; height: 96px; }
+    .bdv-ring svg { width: 96px; height: 96px; }
+    .bdv-ring-pct { font-size: 20px; }
+    .bdv-summary-grid { grid-template-columns: 1fr; gap: 8px; }
+    .bdv-summary-value { font-size: 18px; }
+    .bdv-tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+    .bdv-tab { white-space: nowrap; padding: 8px 10px; font-size: 11px; flex-shrink: 0; }
+    .bdv-form-row { flex-direction: column; }
+    .bdv-form-row input, .bdv-form-row select, .bdv-btn { width: 100%; }
+    .bdv-comp-table th, .bdv-comp-table td { padding: 6px 4px; font-size: 11px; }
+    .bdv-comp-toolbar { flex-direction: column; align-items: stretch; }
+    .bdv-print-btn { width: 100%; justify-content: center; }
+  }
 `;
 
 // Lookup-driven STATUS_PALETTE — codes match the buckets emitted by
@@ -142,6 +181,11 @@ export default function SalesGoalBdmView() {
   const [savingAction, setSavingAction] = useState(false);
   // Phase SG-Q2 W2 — My Payouts section
   const [payouts, setPayouts] = useState([]);
+  // Phase SG-Q2 W3 — Compensation tab + statement
+  const [activeTab, setActiveTab] = useState('performance'); // 'performance' | 'compensation'
+  const [statement, setStatement] = useState(null);
+  const [statementLoading, setStatementLoading] = useState(false);
+  const fiscalYear = new Date().getFullYear();
 
   const effectiveId = bdmId || user?._id || user?.id;
   const isSelfView = !bdmId || String(bdmId) === String(user?._id || user?.id);
@@ -178,6 +222,42 @@ export default function SalesGoalBdmView() {
     })();
     return () => { cancelled = true; };
   }, [effectiveId, isSelfView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase SG-Q2 W3 — Compensation Statement (lazy: only loaded when the tab opens
+  // for the first time, and refreshed if the BDM changes). Self-view passes no
+  // bdm_id (backend uses req.user._id); admin views pass the explicit one.
+  useEffect(() => {
+    if (activeTab !== 'compensation') return;
+    let cancelled = false;
+    (async () => {
+      if (!effectiveId) return;
+      setStatementLoading(true);
+      try {
+        const params = { fiscal_year: fiscalYear };
+        if (!isSelfView) params.bdm_id = effectiveId;
+        const res = await sg.getCompensationStatement(params);
+        if (!cancelled) setStatement(res?.data || null);
+      } catch (err) {
+        if (!cancelled) {
+          showError(err, 'Failed to load compensation statement');
+          setStatement(null);
+        }
+      } finally {
+        if (!cancelled) setStatementLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, effectiveId, isSelfView, fiscalYear]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Print handler — opens the printable HTML in a new tab; user clicks "Print /
+  // Save as PDF" to produce the PDF (uses the same browser-print pattern as
+  // sales receipts). Cookie-based auth carries over to the new window.
+  const handlePrintStatement = useCallback(() => {
+    const params = { fiscal_year: fiscalYear };
+    if (!isSelfView) params.bdm_id = effectiveId;
+    const url = sg.compensationStatementPrintUrl(params);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, [effectiveId, isSelfView, fiscalYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleDriver = (code) => {
     setExpandedDrivers(prev => ({ ...prev, [code]: !prev[code] }));
@@ -262,6 +342,32 @@ export default function SalesGoalBdmView() {
           )}
 
           {!loading && detail && (
+            <>
+              {/* Phase SG-Q2 W3 — Tab strip (Performance | My Compensation) */}
+              <div className="bdv-tabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  className={`bdv-tab ${activeTab === 'performance' ? 'active' : ''}`}
+                  aria-selected={activeTab === 'performance'}
+                  onClick={() => setActiveTab('performance')}
+                >
+                  Performance
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className={`bdv-tab ${activeTab === 'compensation' ? 'active' : ''}`}
+                  aria-selected={activeTab === 'compensation'}
+                  onClick={() => setActiveTab('compensation')}
+                >
+                  My Compensation
+                </button>
+              </div>
+            </>
+          )}
+
+          {!loading && detail && activeTab === 'performance' && (
             <>
               {/* Profile Header */}
               <div className="bdv-profile">
@@ -500,6 +606,171 @@ export default function SalesGoalBdmView() {
                   </button>
                 </div>
               </div>
+            </>
+          )}
+
+          {/* Phase SG-Q2 W3 — My Compensation tab */}
+          {!loading && detail && activeTab === 'compensation' && (
+            <>
+              <WorkflowGuide pageKey="salesGoalCompensation" />
+
+              <div className="bdv-comp-toolbar">
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, color: 'var(--erp-text)' }}>
+                    Fiscal Year {fiscalYear} Compensation Statement
+                  </h3>
+                  <p style={{ margin: '2px 0 0', color: 'var(--erp-muted)', fontSize: 12 }}>
+                    Live read of your incentive ledger. Print to PDF for your records.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="bdv-print-btn"
+                  onClick={handlePrintStatement}
+                  disabled={!effectiveId}
+                  title="Open the printable statement — use the browser Print menu to save as PDF"
+                >
+                  <span aria-hidden="true">🖨</span> Print / Save as PDF
+                </button>
+              </div>
+
+              {statementLoading && <div className="loading">Loading statement…</div>}
+
+              {!statementLoading && statement && (
+                <>
+                  <div className="bdv-summary-grid">
+                    <div className="bdv-summary-card earned">
+                      <div className="bdv-summary-label">Earned</div>
+                      <div className="bdv-summary-value">{php(statement.summary?.earned)}</div>
+                    </div>
+                    <div className="bdv-summary-card accrued">
+                      <div className="bdv-summary-label">Accrued (pending)</div>
+                      <div className="bdv-summary-value">{php(statement.summary?.accrued)}</div>
+                    </div>
+                    <div className="bdv-summary-card paid">
+                      <div className="bdv-summary-label">Paid</div>
+                      <div className="bdv-summary-value">{php(statement.summary?.paid)}</div>
+                    </div>
+                    <div className="bdv-summary-card adjusted">
+                      <div className="bdv-summary-label">Adjustments</div>
+                      <div className="bdv-summary-value">{php(statement.summary?.adjusted)}</div>
+                    </div>
+                  </div>
+
+                  {statement.tier && (
+                    <div className="bdv-row">
+                      <div className="bdv-card">
+                        <h4>YTD Attainment</h4>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--erp-text)' }}>
+                          {pct(statement.tier.sales_attainment_pct)}
+                        </div>
+                        <div style={{ color: 'var(--erp-muted)', fontSize: 12, marginTop: 4 }}>
+                          {php(statement.tier.sales_actual)} of {php(statement.tier.sales_target)}
+                        </div>
+                      </div>
+                      <div className="bdv-card">
+                        <h4>Current Tier</h4>
+                        <div style={{ fontSize: 18, fontWeight: 700 }}>
+                          {statement.tier.current_tier_label || statement.tier.current_tier_code || 'Participant'}
+                        </div>
+                        <div style={{ color: 'var(--erp-muted)', fontSize: 12, marginTop: 4 }}>
+                          Budget: {php(statement.tier.current_tier_budget)}
+                        </div>
+                      </div>
+                      <div className="bdv-card">
+                        <h4>Projected Tier (FY-end)</h4>
+                        <div style={{ fontSize: 18, fontWeight: 700 }}>
+                          {statement.tier.projected_tier_label || statement.tier.projected_tier_code || '—'}
+                        </div>
+                        <div style={{ color: 'var(--erp-muted)', fontSize: 12, marginTop: 4 }}>
+                          Projected: {php(statement.tier.projected_tier_budget)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="bdv-panel">
+                    <h3>By Period</h3>
+                    {(statement.periods || []).length === 0 ? (
+                      <div className="bdv-comp-empty">No qualifying periods in FY {fiscalYear}.</div>
+                    ) : (
+                      <table className="bdv-comp-table">
+                        <thead>
+                          <tr>
+                            <th>Period</th>
+                            <th>Type</th>
+                            <th className="num">Earned</th>
+                            <th className="num">Accrued</th>
+                            <th className="num">Paid</th>
+                            <th className="num">Adjusted</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {statement.periods.map(p => (
+                            <tr key={`${p.period}-${p.period_type}`}>
+                              <td>{p.period}</td>
+                              <td style={{ color: 'var(--erp-muted)', fontSize: 11 }}>{p.period_type || ''}</td>
+                              <td className="num">{php(p.earned)}</td>
+                              <td className="num" style={{ color: '#1e40af' }}>{php(p.accrued)}</td>
+                              <td className="num" style={{ color: '#166534' }}>{php(p.paid)}</td>
+                              <td className="num" style={{ color: '#991b1b' }}>{php(p.adjusted)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  <div className="bdv-panel">
+                    <h3>Detail Ledger</h3>
+                    {(statement.rows || []).length === 0 ? (
+                      <div className="bdv-comp-empty">
+                        No incentive ledger entries for FY {fiscalYear} yet. Hit a tier threshold and a payout will accrue automatically.
+                      </div>
+                    ) : (
+                      <table className="bdv-comp-table">
+                        <thead>
+                          <tr>
+                            <th>Period</th>
+                            <th>Tier</th>
+                            <th className="num">Amount</th>
+                            <th className="num">Attain%</th>
+                            <th>Status</th>
+                            <th>Accrual JE</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {statement.rows.map(r => (
+                            <tr key={r._id}>
+                              <td>{r.period}</td>
+                              <td>
+                                {r.tier_label || r.tier_code}
+                                {Number(r.uncapped_budget) > Number(r.tier_budget) ? (
+                                  <span title={`Uncapped: ${php(r.uncapped_budget)} — reduced by CompProfile cap`} style={{ color: 'var(--erp-muted)', fontSize: 10, marginLeft: 4 }}>⚠ capped</span>
+                                ) : null}
+                              </td>
+                              <td className="num">{php(r.tier_budget)}</td>
+                              <td className="num">{(Number(r.attainment_pct) || 0).toFixed(1)}%</td>
+                              <td>{r.status}</td>
+                              <td style={{ fontSize: 11 }}>
+                                {r.journal_id?.je_number || r.journal_number || '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {!statementLoading && !statement && (
+                <div className="bdv-panel">
+                  <p style={{ color: 'var(--erp-muted)', fontSize: 13, margin: 0 }}>
+                    No statement data available. The plan may not be active for FY {fiscalYear}, or no payouts have accrued yet.
+                  </p>
+                </div>
+              )}
             </>
           )}
         </main>

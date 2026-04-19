@@ -1166,6 +1166,77 @@ frontend/src/erp/pages/IncentiveTracker.jsx     # Tiered leaderboard with budget
 - Budget advisor reads P&L to suggest sustainable tier budgets
 - President adjusts tiers anytime via Control Center → Lookup Tables (no code changes)
 
+### Phase SG-Q2 — Compliance Floor + Incentive Ledger + Compensation (Apr 2026)
+
+**Phase SG-Q2 Week 1** (compliance floor): reference number on first activation, gateApproval on activate/reopen/close, period locks, idempotent auto-enrollment of BDMs (lookup-driven `SALES_GOAL_ELIGIBLE_ROLES`), state changes wrapped in mongoose transactions.
+
+**Phase SG-Q2 Week 2** (incentive ledger + GL):
+- `IncentivePayout` model — lifecycle ACCRUED → APPROVED → PAID → REVERSED
+- `journalFromIncentive.js` — accrual JE (DR INCENTIVE_EXPENSE / CR INCENTIVE_ACCRUAL) + settlement JE (DR INCENTIVE_ACCRUAL / CR funding) + reversal (SAP Storno)
+- `salesGoalService.accrueIncentive` triggered from YTD KpiSnapshot computation; CompProfile cap enforced
+- `kpiSnapshotAgent` — monthly day 1 cron, FREE agent
+- Approval Hub integration via `gateApproval(module: 'INCENTIVE_PAYOUT')`, period locks on settle/reverse
+- Sub-permissions: `sales_goals.payout_view / payout_approve / payout_pay / payout_reverse`
+- Subscriber-configurable COA via `Settings.COA_MAP.INCENTIVE_EXPENSE` + `INCENTIVE_ACCRUAL`
+
+**Phase SG-Q2 Week 3** (compensation statement, notifications, variance agent, mobile — shipped 2026-04-19):
+- **Per-accrual transaction wrap.** `mongoose.startSession() + withTransaction` around (re-check) → `postAccrualJournal({ session })` → `IncentivePayout.findOneAndUpdate({ session })`. `DocSequence.getNext`, `generateJeNumber`, `createAndPostJournal` all thread the session through. Concurrent accruals on the same key now resolve to one row + one JE — orphaned-JE risk eliminated.
+- **Compensation statement.** `GET /api/erp/incentive-payouts/statement` (controller `getCompensationStatement`) returns `{ summary: {earned, accrued, adjusted, paid}, periods: […], tier: {…}, rows: […] }`. BDMs see their own; privileged users pass `?bdm_id=` (no silent self-id fallback — Rule #21).
+- **Print PDF.** `GET /api/erp/incentive-payouts/statement/print` returns printable HTML via `templates/compensationStatement.js`. Browser-print produces the PDF (same pattern as sales receipts). Lookup-driven branding via `COMP_STATEMENT_TEMPLATE` Lookup category (HEADER_TITLE / HEADER_SUBTITLE / DISCLAIMER / SIGNATORY_LINE / SIGNATORY_TITLE — per-entity overrides).
+- **My Compensation tab.** `SalesGoalBdmView.jsx` has a Performance | My Compensation tab strip. Compensation tab loads lazily, shows summary cards, tier context, by-period rollup, detail ledger, and a Print button.
+- **Notifications.**
+  - `notifySalesGoalPlanLifecycle` on activate/reopen/close → management + assigned BDMs (de-duped). Email template: `salesGoalPlanLifecycleTemplate`.
+  - `notifyTierReached` from inside `accrueIncentive` (only on a fresh row) → BDM + reports_to chain + president(s). Template: `tierReachedTemplate`.
+  - `notifyKpiVariance` from `kpiVarianceAgent` → BDM + reports_to chain + president(s). Template: `kpiVarianceAlertTemplate`.
+  - All filtered by `NotificationPreference.compensationAlerts` / `kpiVarianceAlerts` (new fields, default `true`). Master `emailNotifications=false` still wins.
+- **kpiVarianceAgent (#V).** New FREE agent; reads YTD KpiSnapshots, classifies deviations against `KPI_VARIANCE_THRESHOLDS` Lookup (per-KPI `metadata.warning_pct` / `metadata.critical_pct`; falls back to GLOBAL row, defaults 20% / 40%). Direction-aware (`LOWER_BETTER_KPIS` set). Cron: `0 6 2 * *` Asia/Manila (day 2, runs after `kpi_snapshot`).
+- **360px mobile.** SalesGoalBdmView, SalesGoalDashboard, IncentivePayoutLedger, compensationStatement print template all have `@media(max-width: 360px)` blocks: 1-col summary cards, scrollable tab strip, condensed tables, 96px ring (was 120px), full-width buttons.
+- **Banner.** `WORKFLOW_GUIDES.salesGoalCompensation` added to WorkflowGuide.
+
+### SG-Q2 Wiring Map
+
+```
+backend/erp/models/IncentivePayout.js                  • Lifecycle: ACCRUED→APPROVED→PAID→REVERSED
+backend/erp/models/DocSequence.js                      • getNext supports {session} (W3)
+backend/erp/services/docNumbering.js                   • generateJeNumber threads session (W3)
+backend/erp/services/journalEngine.js                  • createAndPostJournal threads options.session (W3)
+backend/erp/services/salesGoalService.js               • accrueIncentive wraps in txn + fires notifyTierReached (W3)
+backend/erp/services/journalFromIncentive.js           • postAccrualJournal / postSettlementJournal / reverseAccrualJournal
+backend/erp/services/erpNotificationService.js         • notifySalesGoalPlanLifecycle / notifyTierReached / notifyKpiVariance (W3)
+backend/erp/controllers/salesGoalController.js         • activate/reopen/close fire lifecycle notifications (W3)
+backend/erp/controllers/incentivePayoutController.js   • getCompensationStatement / printCompensationStatement (W3)
+backend/erp/templates/compensationStatement.js         • renderCompensationStatement (W3)
+backend/erp/routes/incentivePayoutRoutes.js            • /statement + /statement/print BEFORE /:id (W3)
+
+backend/agents/kpiSnapshotAgent.js                     • Monthly KPI compute + accrual trigger (W2)
+backend/agents/kpiVarianceAgent.js                     • Variance detection + alerts (W3)
+backend/agents/agentRegistry.js                        • +kpi_snapshot (W2), +kpi_variance (W3)
+backend/agents/agentScheduler.js                       • cron 0 5 1 * * (W2), cron 0 6 2 * * (W3)
+
+backend/templates/erpEmails.js                         • +salesGoalPlanLifecycleTemplate / tierReachedTemplate / kpiVarianceAlertTemplate (W3)
+backend/models/NotificationPreference.js               • +compensationAlerts / kpiVarianceAlerts (W3)
+
+frontend/src/erp/hooks/useSalesGoals.js                • +getCompensationStatement / compensationStatementPrintUrl (W3)
+frontend/src/erp/pages/SalesGoalBdmView.jsx            • Tab strip + My Compensation panel + Print + 360px CSS (W3)
+frontend/src/erp/pages/SalesGoalDashboard.jsx          • 360px CSS (W3)
+frontend/src/erp/pages/IncentivePayoutLedger.jsx       • Full 360px CSS (W3, expanded from W2 stub)
+frontend/src/erp/components/WorkflowGuide.jsx          • +salesGoalCompensation banner (W3)
+```
+
+### SG-Q2 Lookup categories (subscription-configurable)
+| Category | Purpose | Phase |
+|----------|---------|-------|
+| `SALES_GOAL_ELIGIBLE_ROLES` | Person-types auto-enrolled on plan activation | W1 |
+| `STATUS_PALETTE` | Bar/badge colors per attainment bucket (lazy-seeded) | W1 |
+| `MODULE_DEFAULT_ROLES.INCENTIVE_PAYOUT` | Default-Roles Gate for payout lifecycle | W2 |
+| `APPROVAL_MODULE.INCENTIVE_PAYOUT` | Authority Matrix routing | W2 |
+| `APPROVAL_CATEGORY.FINANCIAL` | Adds INCENTIVE_PAYOUT to financial bucket | W2 |
+| `PERIOD_LOCK_MODULES` | Adds INCENTIVE_PAYOUT to lockable modules | W2 |
+| `ERP_SUB_PERMISSION` | 4 new keys: payout_view/approve/pay/reverse | W2 |
+| `ERP_DANGER_SUB_PERMISSIONS` | +SALES_GOALS__PAYOUT_REVERSE (Tier 2) | W2 |
+| `COMP_STATEMENT_TEMPLATE` | Print template branding overrides per entity | W3 |
+| `KPI_VARIANCE_THRESHOLDS` | Per-KPI warning/critical % (+ GLOBAL fallback) | W3 |
+
 ---
 
 ## ERP Email Notifications (Phase 29)

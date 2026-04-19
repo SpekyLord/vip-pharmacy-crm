@@ -42,6 +42,19 @@ const styles = `
   }
 `;
 
+// ── Phase G6.9 — Pages whose document workflow includes Approval Hub rejection ──
+// Each page key here renders the shared "Rejected? See banner above" footer note.
+// Source-of-truth: MODULE_REJECTION_CONFIG seed in backend/erp/controllers/lookupGenericController.js.
+// Adding a new module = adding the page key here AND seeding MODULE_REJECTION_CONFIG.
+const PAGES_WITH_REJECTION_FLOW = new Set([
+  'sales-entry', 'collections', 'smer', 'car-logbook', 'expenses', 'prf-calf',
+  'grn-entry', 'payslip-view', 'kpi-rating', 'income', 'my-income',
+  'purchase-orders', 'journal-entries', 'bank-reconciliation', 'transfer-orders',
+  'ic-settlement', 'sales-goal-setup', 'sales-goal-bdm', 'incentive-payout-ledger',
+  'petty-cash',
+]);
+const REJECTION_FOOTER_NOTE = 'If an approver rejects this document, a red banner with the reason will appear on this page. Click Fix & Resubmit to edit and re-send for approval — your data is preserved.';
+
 // ── Complete BDM workflow guide config ──
 const WORKFLOW_GUIDES = {
   'erp-dashboard': {
@@ -1354,6 +1367,26 @@ const WORKFLOW_GUIDES = {
     tip: 'Complete action items consistently — they drive the KPIs that determine your incentive tier. Your target appears automatically once the president activates the annual plan; no manual enrollment is needed. Payouts accrue automatically once YTD attainment hits a tier threshold — the amount posts to the GL as Incentive Expense DR / Incentive Accrual CR, capped by your CompProfile if CASH-type + cap is set.',
   },
 
+  // ═══ Phase SG-Q2 W3 — My Compensation tab on BDM view ═══
+
+  salesGoalCompensation: {
+    title: 'My Compensation Statement',
+    steps: [
+      'Earned — total incentive credited this fiscal year (ACCRUED + APPROVED + PAID)',
+      'Accrued — credited but not yet authority-approved; sits in the Approval Hub',
+      'Paid — settled via a settlement journal entry; cash already moved through your funding COA',
+      'Adjustments — sum of CompProfile cap reductions + reversed payouts (transparency for what was clawed back or capped)',
+      'Tier context shows your current YTD attainment, current tier, and FY-end projected tier',
+      'Click "Print / Save as PDF" — opens the printable statement; use your browser\'s Print menu to save as PDF',
+    ],
+    next: [
+      { label: 'Goal Detail', path: '/erp/sales-goals/my' },
+      { label: 'Payout Ledger', path: '/erp/incentive-payouts' },
+      { label: 'Notification Preferences', path: '/notifications/preferences' },
+    ],
+    tip: 'The statement is a live read of the Sales Goal incentive ledger — generated on demand, no caching, no stale snapshots. Tier milestone notifications fire to you, your manager, and the President when a payout accrues; opt out per-channel via Notification Preferences (compensationAlerts switch). The printable HTML is also subscriber-brandable via the COMP_STATEMENT_TEMPLATE Lookup category — admins set HEADER_TITLE / DISCLAIMER / SIGNATORY_TITLE per entity from Control Center → Lookup Tables.',
+  },
+
   // ═══ Phase SG-Q2 W2 — Incentive Payout Ledger ═══
 
   incentivePayoutLedger: {
@@ -1526,6 +1559,9 @@ export default function WorkflowGuide({ pageKey }) {
           </div>
         )}
         {guide.tip && <div className="wfg-tip">💡 {guide.tip}</div>}
+        {PAGES_WITH_REJECTION_FLOW.has(pageKey) && (
+          <div className="wfg-tip" style={{ color: '#991b1b' }}>⚠ {REJECTION_FOOTER_NOTE}</div>
+        )}
       </div>
     </>
   );

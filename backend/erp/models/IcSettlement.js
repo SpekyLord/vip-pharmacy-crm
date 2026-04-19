@@ -46,10 +46,15 @@ const icSettlementSchema = new mongoose.Schema({
   cr_photo_url: { type: String },
 
   // Lifecycle
-  status: { type: String, enum: ['DRAFT', 'POSTED'], default: 'DRAFT' },
+  status: { type: String, enum: ['DRAFT', 'POSTED', 'REJECTED'], default: 'DRAFT' },
   posted_at: { type: Date },
   posted_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+
+  // Rejection (Phase G6)
+  rejection_reason: { type: String, trim: true, default: '' },
+  rejected_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejected_at: { type: Date },
 
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', immutable: true },
   created_at: { type: Date, default: Date.now, immutable: true }

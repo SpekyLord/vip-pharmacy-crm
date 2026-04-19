@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -12,6 +12,7 @@ import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
 import PresidentReverseModal from '../components/PresidentReverseModal';
 
@@ -446,7 +447,8 @@ export default function PrfCalf() {
                 </thead>
                 <tbody>
                   {docs.map(d => (
-                    <tr key={d._id} style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
+                    <Fragment key={d._id}>
+                    <tr style={{ borderBottom: d.status === 'ERROR' && d.rejection_reason ? 'none' : '1px solid var(--erp-border, #dbe4f0)' }}>
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, color: '#fff', background: d.doc_type === 'PRF' ? '#7c3aed' : '#0891b2' }}>{d.doc_type}</span>
                       </td>
@@ -484,6 +486,20 @@ export default function PrfCalf() {
                         )}
                       </td>
                     </tr>
+                    {d.status === 'ERROR' && d.rejection_reason && (
+                      <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
+                        <td colSpan={7} style={{ padding: '6px 8px 4px' }}>
+                          <RejectionBanner
+                            row={d}
+                            moduleKey="PRF_CALF"
+                            variant="page"
+                            docLabel={`${d.doc_type} ${d.calf_number || ''} — ${d.period} ${d.cycle}`.trim()}
+                            onResubmit={(row) => handleEdit(row)}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                   {!docs.length && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>No PRF/CALF documents</td></tr>}
                 </tbody>
@@ -500,6 +516,17 @@ export default function PrfCalf() {
                     <span style={{ padding: '2px 10px', borderRadius: 4, fontSize: 12, fontWeight: 700, color: '#fff', background: d.doc_type === 'PRF' ? '#7c3aed' : '#0891b2' }}>{d.doc_type}</span>
                     <span style={{ padding: '2px 10px', borderRadius: 4, fontSize: 12, color: '#fff', background: STATUS_COLORS[d.status] || '#6b7280' }}>{d.status}</span>
                   </div>
+                  {d.status === 'ERROR' && d.rejection_reason && (
+                    <div style={{ marginTop: 6 }}>
+                      <RejectionBanner
+                        row={d}
+                        moduleKey="PRF_CALF"
+                        variant="page"
+                        docLabel={`${d.doc_type} ${d.calf_number || ''} — ${d.period} ${d.cycle}`.trim()}
+                        onResubmit={(row) => handleEdit(row)}
+                      />
+                    </div>
+                  )}
                   <div className="prf-calf-card-body">
                     <div>
                       <span className="prf-calf-card-label">Period: </span>

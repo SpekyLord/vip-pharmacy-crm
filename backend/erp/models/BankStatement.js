@@ -19,9 +19,12 @@ const bankStatementSchema = new mongoose.Schema({
   period:          { type: String, required: true },           // "YYYY-MM"
   entries:         [bankStatementEntrySchema],
   closing_balance: { type: Number, default: 0 },
-  status:          { type: String, enum: ['DRAFT', 'IN_PROGRESS', 'FINALIZED'], default: 'DRAFT' },
+  status:          { type: String, enum: ['DRAFT', 'IN_PROGRESS', 'FINALIZED', 'REJECTED'], default: 'DRAFT' },
   uploaded_at:     { type: Date },
-  uploaded_by:     { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  uploaded_by:     { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejection_reason: { type: String, trim: true, default: '' },
+  rejected_by:     { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejected_at:     { type: Date }
 }, { timestamps: true, collection: 'erp_bank_statements' });
 
 bankStatementSchema.index({ entity_id: 1, bank_account_id: 1, period: 1 }, { unique: true });

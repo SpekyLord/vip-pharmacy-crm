@@ -23,6 +23,7 @@ import useSalesGoals from '../hooks/useSalesGoals';
 import useErpSubAccess from '../hooks/useErpSubAccess';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError, showSuccess, showApprovalPending, isApprovalPending } from '../utils/errorToast';
 
 const php = (n) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(n || 0);
@@ -62,7 +63,18 @@ const pageStyles = `
   .ipl-muted-link { color: var(--erp-accent, #2563eb); font-size: 11px; text-decoration: none; }
   .ipl-muted-link:hover { text-decoration: underline; }
   @media(max-width: 768px) { .ipl-main { padding: 12px; } .ipl-filters { flex-direction: column; } .ipl-filters input, .ipl-filters select { min-width: 0; width: 100%; } }
-  @media(max-width: 360px) { .ipl-summary-row { flex-direction: column; } }
+  /* Phase SG-Q2 W3 — full 360px phone breakpoint */
+  @media(max-width: 360px) {
+    .ipl-main { padding: 8px; }
+    .ipl-header h1 { font-size: 18px; }
+    .ipl-summary-row { flex-direction: column; gap: 8px; }
+    .ipl-summary-card { min-width: 0; padding: 10px 12px; }
+    .ipl-summary-value { font-size: 17px; }
+    .ipl-panel { padding: 12px; overflow-x: auto; }
+    .ipl-table th, .ipl-table td { padding: 6px 4px; font-size: 11px; }
+    .ipl-btn { padding: 6px 8px; font-size: 11px; }
+    .ipl-btn + .ipl-btn { margin-left: 4px; margin-top: 4px; }
+  }
 `;
 
 export default function IncentivePayoutLedger() {
@@ -314,6 +326,9 @@ export default function IncentivePayoutLedger() {
                         <td className="num">{(Number(r.attainment_pct) || 0).toFixed(1)}%</td>
                         <td>
                           <span className="ipl-badge" style={{ background: badge.bg, color: badge.color }}>{badge.label}</span>
+                          <div style={{ marginTop: 4 }}>
+                            <RejectionBanner row={r} moduleKey="INCENTIVE_PAYOUT" variant="row" />
+                          </div>
                         </td>
                         <td style={{ fontSize: 11 }}>
                           {r.journal_id

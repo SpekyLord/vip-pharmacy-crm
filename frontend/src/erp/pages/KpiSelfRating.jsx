@@ -18,6 +18,7 @@ import { ROLE_SETS } from '../../constants/roles';
 import useKpiSelfRating from '../hooks/useKpiSelfRating';
 import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { useLookupBatch } from '../hooks/useLookups';
 import toast from 'react-hot-toast';
 
@@ -299,11 +300,17 @@ function KpiSelfRatingContent() {
             {draft.reviewer_id && (
               <span style={{ fontSize: 13, color: '#6b7280' }}>Reviewer: <strong>{draft.reviewer_id.full_name || '—'}</strong></span>
             )}
-            {draft.return_reason && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '8px 12px', fontSize: 12, color: '#991b1b', width: '100%' }}>
-                <strong>Returned:</strong> {draft.return_reason}
-              </div>
-            )}
+            <div style={{ width: '100%' }}>
+              <RejectionBanner
+                row={draft}
+                moduleKey="KPI"
+                variant="page"
+                docLabel={`${draft.period} (${draft.period_type})`}
+                onResubmit={() => {
+                  if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
+            </div>
           </div>
 
           {/* KPI Ratings Section */}

@@ -20,13 +20,21 @@ const docSequenceSchema = new mongoose.Schema({
 /**
  * Get next sequence number atomically
  * @param {String} key — e.g., "CALF-ILO-040326"
+ * @param {Object} [options]
+ * @param {ClientSession} [options.session] — pass to enlist this counter bump in
+ *   a caller-managed mongoose transaction. Phase SG-Q2 W3 added this so the
+ *   incentive accrual flow (JE create + IncentivePayout upsert) stays atomic
+ *   under concurrent runs of kpiSnapshotAgent + manual recompute. Without a
+ *   session the upsert still works the same (legacy behavior preserved).
  * @returns {Promise<Number>} next sequence (1-based)
  */
-docSequenceSchema.statics.getNext = async function (key) {
+docSequenceSchema.statics.getNext = async function (key, options = {}) {
+  const opts = { upsert: true, new: true };
+  if (options.session) opts.session = options.session;
   const result = await this.findOneAndUpdate(
     { key },
     { $inc: { current_seq: 1 } },
-    { upsert: true, new: true }
+    opts
   );
   return result.current_seq;
 };

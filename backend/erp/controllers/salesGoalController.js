@@ -12,6 +12,7 @@ const salesGoalService = require('../services/salesGoalService');
 const { gateApproval } = require('../services/approvalService');
 const { checkPeriodOpen } = require('../utils/periodLock');
 const { generateSalesGoalNumber } = require('../services/docNumbering');
+const { notifySalesGoalPlanLifecycle } = require('../services/erpNotificationService');
 
 /**
  * Sales Goal Controller — Phase 28 (SG-Q2 compliance floor April 2026)
@@ -238,6 +239,18 @@ exports.activatePlan = catchAsync(async (req, res) => {
     session.endSession();
   }
 
+  // Phase SG-Q2 W3 — Plan-lifecycle notification (fire-and-forget; never blocks).
+  notifySalesGoalPlanLifecycle({
+    entityId: plan.entity_id,
+    planId: plan._id,
+    planRef: plan.reference,
+    planName: plan.plan_name,
+    fiscalYear: plan.fiscal_year,
+    event: 'ACTIVATED',
+    triggeredBy: req.user.name || req.user.email,
+    enrollmentCount: enrollmentSummary.enrolled,
+  }).catch(e => console.error('[notifySalesGoalPlanLifecycle ACTIVATED] failed:', e.message));
+
   res.json({
     success: true,
     data: plan,
@@ -296,6 +309,16 @@ exports.reopenPlan = catchAsync(async (req, res) => {
     session.endSession();
   }
 
+  notifySalesGoalPlanLifecycle({
+    entityId: plan.entity_id,
+    planId: plan._id,
+    planRef: plan.reference,
+    planName: plan.plan_name,
+    fiscalYear: plan.fiscal_year,
+    event: 'REOPENED',
+    triggeredBy: req.user.name || req.user.email,
+  }).catch(e => console.error('[notifySalesGoalPlanLifecycle REOPENED] failed:', e.message));
+
   res.json({ success: true, data: plan, message: 'Plan reopened to DRAFT' });
 });
 
@@ -349,6 +372,16 @@ exports.closePlan = catchAsync(async (req, res) => {
   } finally {
     session.endSession();
   }
+
+  notifySalesGoalPlanLifecycle({
+    entityId: plan.entity_id,
+    planId: plan._id,
+    planRef: plan.reference,
+    planName: plan.plan_name,
+    fiscalYear: plan.fiscal_year,
+    event: 'CLOSED',
+    triggeredBy: req.user.name || req.user.email,
+  }).catch(e => console.error('[notifySalesGoalPlanLifecycle CLOSED] failed:', e.message));
 
   res.json({ success: true, data: plan, message: 'Plan closed' });
 });

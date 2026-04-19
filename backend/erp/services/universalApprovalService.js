@@ -643,6 +643,42 @@ const MODULE_QUERIES = [
       });
     },
   },
+
+  // ── Phase G6.7 — Sales Goal Plans + Incentive Payouts (gap modules) ──
+  {
+    module: 'SALES_GOAL_PLAN',
+    label: 'Sales Goal Plan',
+    sub_key: 'approve_sales_goal',
+    query: async (entityId) => {
+      return buildGapModulePendingItems({
+        entityId,
+        module: 'SALES_GOAL_PLAN',
+        docTypeToModel: { SALES_GOAL_PLAN: 'SalesGoalPlan' },
+        populateByDocType: {
+          SALES_GOAL_PLAN: [],
+        },
+        actionType: 'sales_goal_plan',
+      });
+    },
+  },
+  {
+    module: 'INCENTIVE_PAYOUT',
+    label: 'Incentive Payouts',
+    sub_key: 'approve_incentive_payout',
+    query: async (entityId) => {
+      return buildGapModulePendingItems({
+        entityId,
+        module: 'INCENTIVE_PAYOUT',
+        docTypeToModel: { INCENTIVE_PAYOUT: 'IncentivePayout' },
+        populateByDocType: {
+          INCENTIVE_PAYOUT: [
+            { path: 'bdm_id', select: 'name email' },
+          ],
+        },
+        actionType: 'incentive_payout',
+      });
+    },
+  },
 ];
 
 /**
@@ -748,6 +784,8 @@ const MODULE_TO_SUB_KEY = {
   DEDUCTION_SCHEDULE: 'approve_deductions',
   KPI:              'approve_kpi',
   PERDIEM_OVERRIDE: 'approve_perdiem',
+  SALES_GOAL_PLAN:  'approve_sales_goal',
+  INCENTIVE_PAYOUT: 'approve_incentive_payout',
 };
 
 /**

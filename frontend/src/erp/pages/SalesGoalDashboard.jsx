@@ -57,6 +57,19 @@ const pageStyles = `
   .sgd-sort-btn:hover { color: var(--erp-accent); }
   .loading { text-align: center; padding: 40px; color: var(--erp-muted); }
   @media(max-width: 768px) { .sgd-main { padding: 12px; } .sgd-row { flex-direction: column; } }
+  /* Phase SG-Q2 W3 — 360px phone breakpoint */
+  @media(max-width: 360px) {
+    .sgd-main { padding: 8px; }
+    .sgd-header h1 { font-size: 18px; }
+    .sgd-card { padding: 14px; min-width: 0; }
+    .sgd-card-value { font-size: 18px; }
+    .sgd-progress-panel, .sgd-panel { padding: 14px; }
+    .sgd-entity-grid { grid-template-columns: 1fr; }
+    .sgd-driver-card { min-width: 0; }
+    .sgd-table th, .sgd-table td { padding: 6px; font-size: 11px; }
+    .sgd-section-title, .sgd-panel h3 { font-size: 13px; }
+    .sgd-btn { width: 100%; padding: 10px 14px; }
+  }
 `;
 
 // Bucket attainment % into a STATUS_PALETTE code using GOAL_CONFIG thresholds.

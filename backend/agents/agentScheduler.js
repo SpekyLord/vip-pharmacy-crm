@@ -53,6 +53,12 @@ function initAgentScheduler() {
   cron.schedule('0 5 1 * *', () => triggerScheduled('kpi_snapshot', 'KPI Snapshot & Incentive Accrual'), { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #K KPI Snapshot - monthly day 1 5:00 AM');
 
+  // Phase SG-Q2 W3 — KPI Variance Alerts. Day 2 at 6:00 AM Manila so the day-1
+  // snapshot is fully written before the variance pass reads it. Threshold
+  // breaches trigger emails to the BDM, their reports_to chain, and president.
+  cron.schedule('0 6 2 * *', () => triggerScheduled('kpi_variance', 'KPI Variance Alerts'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #V KPI Variance - monthly day 2 6:00 AM');
+
   const hasAiKey = !!process.env.ANTHROPIC_API_KEY;
 
   if (hasAiKey) {

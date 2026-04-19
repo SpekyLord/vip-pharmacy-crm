@@ -97,7 +97,7 @@ const journalEntrySchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['DRAFT', 'POSTED', 'VOID'],
+    enum: ['DRAFT', 'POSTED', 'VOID', 'REJECTED'],
     default: 'DRAFT'
   },
   posted_by: {
@@ -107,6 +107,9 @@ const journalEntrySchema = new mongoose.Schema({
   posted_at: {
     type: Date
   },
+  rejection_reason: { type: String, trim: true, default: '' },
+  rejected_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejected_at: { type: Date },
   corrects_je_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'JournalEntry'
