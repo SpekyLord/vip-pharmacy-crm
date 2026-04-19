@@ -7,7 +7,11 @@ const Entity = require('../models/Entity');
 const PeopleMaster = require('../models/PeopleMaster');
 const Lookup = require('../models/Lookup');
 const ErpAuditLog = require('../models/ErpAuditLog');
+const KpiTemplate = require('../models/KpiTemplate');
+const Territory = require('../models/Territory');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { safeXlsxRead } = require('../../utils/safeXlsxRead');
+const XLSX = require('xlsx');
 const salesGoalService = require('../services/salesGoalService');
 const { gateApproval } = require('../services/approvalService');
 const { checkPeriodOpen } = require('../utils/periodLock');
@@ -156,10 +160,136 @@ exports.getPlanById = catchAsync(async (req, res) => {
   res.json({ success: true, data: plan });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SG-3R — Plan defaults expansion.
+//
+// `createPlan` optionally pre-populates `growth_drivers[].kpi_definitions[]`
+// from two lookup-driven sources:
+//   (a) KpiTemplate rows — when the client passes `template_id` (row._id) OR
+//       `template_name` in the request body. Template rows are grouped by
+//       driver_code and mapped to kpi_definitions subdocs.
+//   (b) GROWTH_DRIVER lookup `metadata.default_kpi_codes[]` — applied only for
+//       drivers that have no `kpi_definitions` already set AND `template_id`
+//       was not used to fill them. KPI labels + units are sourced from the
+//       KPI_CODE lookup.
+//
+// Both sources are advisory — the plan owns its own copy after creation, so
+// subsequent lookup edits do NOT mutate existing plans (prevents retroactive
+// schema drift, matches SAP Commissions "events are immutable" posture).
+//
+// Backwards-compatible: callers who do not pass `template_id` /
+// `use_driver_defaults=true` see the previous behavior (plain create).
+// ─────────────────────────────────────────────────────────────────────────────
+async function expandTemplateIntoDrivers(entityId, body) {
+  const out = Array.isArray(body.growth_drivers) ? JSON.parse(JSON.stringify(body.growth_drivers)) : [];
+
+  // Helper: find a driver entry by code; create if missing. Returns the entry.
+  const ensureDriver = (driverCode, label, sortOrder) => {
+    let d = out.find(x => String(x.driver_code).toUpperCase() === String(driverCode).toUpperCase());
+    if (!d) {
+      d = {
+        driver_code: String(driverCode).toUpperCase(),
+        driver_label: label || driverCode,
+        revenue_target_min: 0,
+        revenue_target_max: 0,
+        description: '',
+        sort_order: sortOrder || 0,
+        kpi_definitions: [],
+      };
+      out.push(d);
+    }
+    if (!Array.isArray(d.kpi_definitions)) d.kpi_definitions = [];
+    return d;
+  };
+
+  // ── (a) KpiTemplate expansion ────────────────────────────────────────────
+  let templateRows = [];
+  if (body.template_id) {
+    const anchor = await KpiTemplate.findOne({ _id: body.template_id, entity_id: entityId }).lean();
+    if (anchor) {
+      templateRows = await KpiTemplate.find({
+        entity_id: entityId,
+        template_name: anchor.template_name,
+        is_active: true,
+      }).sort({ sort_order: 1, kpi_code: 1 }).lean();
+    }
+  } else if (body.template_name) {
+    templateRows = await KpiTemplate.find({
+      entity_id: entityId,
+      template_name: String(body.template_name).trim(),
+      is_active: true,
+    }).sort({ sort_order: 1, kpi_code: 1 }).lean();
+  }
+
+  for (const row of templateRows) {
+    const d = ensureDriver(row.driver_code);
+    // Skip if caller already provided this KPI (idempotent merge)
+    const dup = d.kpi_definitions.some(k => String(k.kpi_code) === String(row.kpi_code));
+    if (dup) continue;
+    d.kpi_definitions.push({
+      kpi_code: row.kpi_code,
+      kpi_label: row.kpi_label || '',
+      target_value: Number(row.default_target) || 0,
+      unit: row.unit_code || '',
+      direction: row.direction || 'higher_better',
+      computation: row.computation || 'manual',
+      source_model: '',
+    });
+  }
+
+  // ── (b) GROWTH_DRIVER metadata.default_kpi_codes[] expansion ──────────────
+  // Applied ONLY to drivers whose kpi_definitions is still empty after template
+  // expansion. Respects caller's explicit definitions — never overwrites them.
+  if (body.use_driver_defaults && out.length > 0) {
+    const driverCodes = out.map(d => String(d.driver_code).toUpperCase());
+    const [driverLookups, kpiLookups] = await Promise.all([
+      Lookup.find({ entity_id: entityId, category: 'GROWTH_DRIVER', code: { $in: driverCodes }, is_active: true }).lean(),
+      Lookup.find({ entity_id: entityId, category: 'KPI_CODE', is_active: true }).select('code label metadata').lean(),
+    ]);
+    const kpiMap = new Map(kpiLookups.map(k => [k.code, k]));
+    const driverMap = new Map(driverLookups.map(d => [d.code, d]));
+
+    for (const d of out) {
+      if (d.kpi_definitions.length > 0) continue;     // respect caller
+      const meta = driverMap.get(String(d.driver_code).toUpperCase())?.metadata;
+      const codes = Array.isArray(meta?.default_kpi_codes) ? meta.default_kpi_codes : [];
+      for (const code of codes) {
+        const k = kpiMap.get(code);
+        if (!k) continue;                             // silently skip unknown codes
+        d.kpi_definitions.push({
+          kpi_code: code,
+          kpi_label: k.label || '',
+          target_value: 0,
+          unit: k.metadata?.unit || '',
+          direction: k.metadata?.direction || 'higher_better',
+          computation: k.metadata?.computation || 'manual',
+          source_model: k.metadata?.source_model || '',
+        });
+      }
+    }
+  }
+
+  return out;
+}
+
 exports.createPlan = catchAsync(async (req, res) => {
+  const entityId = req.body.entity_id || req.entityId;
+  const body = { ...req.body };
+
+  // Expand advisory defaults (template_id / template_name / use_driver_defaults).
+  // Falls back to the supplied growth_drivers when no expansion source matches.
+  if (body.template_id || body.template_name || body.use_driver_defaults) {
+    body.growth_drivers = await expandTemplateIntoDrivers(entityId, body);
+  }
+
+  // Strip non-schema hint keys before persisting so the lean model stays clean.
+  delete body.template_id;
+  delete body.template_name;
+  delete body.use_driver_defaults;
+
   const plan = await SalesGoalPlan.create({
-    ...req.body,
-    entity_id: req.body.entity_id || req.entityId,
+    ...body,
+    entity_id: entityId,
     created_by: req.user._id,
   });
   res.status(201).json({ success: true, data: plan, message: 'Sales goal plan created' });
@@ -222,6 +352,12 @@ exports.activatePlan = catchAsync(async (req, res) => {
 
       // Auto-enroll active eligible BDMs (idempotent; lookup-driven roles)
       enrollmentSummary = await autoEnrollEligibleBdms(plan, req.user._id, session);
+
+      // Phase SG-Q2 W3 follow-up — lazy-seed KPI_VARIANCE_THRESHOLDS.GLOBAL so
+      // kpiVarianceAgent fires on day one for a fresh subsidiary without
+      // requiring an admin to open Control Center first. Non-fatal; the agent
+      // also has in-memory defaults as a final safety net.
+      await salesGoalService.ensureKpiVarianceGlobalThreshold(plan.entity_id, session);
 
       await ErpAuditLog.logChange([{
         entity_id: plan.entity_id,
@@ -527,6 +663,266 @@ exports.updateTarget = catchAsync(async (req, res) => {
   Object.assign(target, req.body);
   await target.save();
   res.json({ success: true, data: target, message: 'Target updated' });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SG-3R — Bulk Excel import of sales goal targets.
+//
+// Accepts a .xlsx upload (`req.file.buffer`, field name `file`) via multer.
+// Two sheets are recognized, both optional (import succeeds if at least one
+// has valid rows):
+//
+//   Sheet "ENTITY" — columns: entity_code (matches Entity.short_name or .code),
+//                    sales_target, collection_target (optional; auto-derived
+//                    from plan.collection_target_pct if omitted), target_label.
+//   Sheet "BDM"    — columns: bdm_code (PeopleMaster.bdm_code or full_name),
+//                    sales_target, collection_target (optional), target_label,
+//                    territory_code (optional; Territory.territory_code).
+//
+// Required query/body param: `plan_id` (identifies which plan the targets attach to).
+// Approval: gated by gateApproval('SALES_GOAL_PLAN','BULK_TARGETS_IMPORT'); non-
+// authorized submitters get HTTP 202 (Approval Hub). Valid rows import atomically
+// under one transaction; if ANY row in the valid set fails, the whole transaction
+// rolls back and the response lists row-level errors.
+//
+// Row-level errors are returned as { sheet, row_number, error, raw } so admins
+// can correct the spreadsheet and re-upload without re-deriving which row broke.
+//
+// Scalability: lookup-based resolution of entity_code / bdm_code / territory_code
+// means onboarding a new subsidiary requires no code change — populate Entity +
+// PeopleMaster and the import works immediately.
+// ─────────────────────────────────────────────────────────────────────────────
+exports.importTargets = catchAsync(async (req, res) => {
+  if (!req.file || !req.file.buffer) {
+    return res.status(400).json({ success: false, message: 'Excel file (field `file`) is required' });
+  }
+  const planId = req.body.plan_id || req.query.plan_id;
+  if (!planId) return res.status(400).json({ success: false, message: 'plan_id is required' });
+
+  const plan = await SalesGoalPlan.findById(planId).lean();
+  if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+  // Subscription safety: refuse to import targets into another entity's plan.
+  if (String(plan.entity_id) !== String(req.entityId) && !req.isPresident) {
+    return res.status(403).json({ success: false, message: 'Plan belongs to a different entity' });
+  }
+
+  // Parse workbook
+  let wb;
+  try {
+    wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
+  } catch (err) {
+    return res.status(400).json({ success: false, message: `Could not parse Excel: ${err.message}` });
+  }
+
+  const pickSheet = (nameOrNames) => {
+    const names = Array.isArray(nameOrNames) ? nameOrNames : [nameOrNames];
+    for (const n of names) {
+      const hit = wb.SheetNames.find(s => String(s).trim().toLowerCase() === String(n).toLowerCase());
+      if (hit) return wb.Sheets[hit];
+    }
+    return null;
+  };
+  const entitySheet = pickSheet(['ENTITY', 'entity', 'Entity Targets', 'entity_targets']);
+  const bdmSheet = pickSheet(['BDM', 'bdm', 'BDM Targets', 'bdm_targets']);
+  if (!entitySheet && !bdmSheet) {
+    return res.status(400).json({ success: false, message: 'Workbook must contain at least one of: ENTITY, BDM sheet' });
+  }
+
+  const toRows = (sheet) => sheet ? XLSX.utils.sheet_to_json(sheet, { defval: '' }) : [];
+  const entityRows = toRows(entitySheet);
+  const bdmRows = toRows(bdmSheet);
+
+  // Resolve ALL referenced codes up front so the transaction phase is pure DB writes.
+  const entityCodesRaw = entityRows.map(r => String(r.entity_code || r['Entity Code'] || r.code || '').trim()).filter(Boolean);
+  const bdmCodesRaw = bdmRows.map(r => String(r.bdm_code || r['BDM Code'] || r.full_name || r['Full Name'] || '').trim()).filter(Boolean);
+  const territoryCodesRaw = bdmRows.map(r => String(r.territory_code || r['Territory Code'] || '').trim()).filter(Boolean);
+
+  const [entities, people, territories] = await Promise.all([
+    entityCodesRaw.length
+      ? Entity.find({
+          $or: [
+            { short_name: { $in: entityCodesRaw } },
+            { entity_name: { $in: entityCodesRaw } },
+          ],
+        }).select('_id entity_name short_name').lean()
+      : [],
+    bdmCodesRaw.length
+      ? PeopleMaster.find({
+          entity_id: plan.entity_id,
+          $or: [
+            { bdm_code: { $in: bdmCodesRaw } },
+            { full_name: { $in: bdmCodesRaw } },
+          ],
+        }).select('_id user_id bdm_code full_name territory_id').lean()
+      : [],
+    territoryCodesRaw.length
+      ? Territory.find({ entity_id: plan.entity_id, territory_code: { $in: territoryCodesRaw } }).select('_id territory_code').lean()
+      : [],
+  ]);
+
+  const entityByCode = new Map();
+  for (const e of entities) {
+    if (e.short_name) entityByCode.set(e.short_name, e);
+    if (e.entity_code) entityByCode.set(e.entity_code, e);
+    if (e.entity_name) entityByCode.set(e.entity_name, e);
+  }
+  const personByCode = new Map();
+  for (const p of people) {
+    if (p.bdm_code) personByCode.set(p.bdm_code, p);
+    if (p.full_name) personByCode.set(p.full_name, p);
+  }
+  const territoryByCode = new Map(territories.map(t => [t.territory_code, t]));
+
+  // Validate rows and build write plan.
+  const errors = [];
+  const toUpsert = [];
+  const collectionPct = Number(plan.collection_target_pct) || 0;
+
+  entityRows.forEach((raw, idx) => {
+    const rowNumber = idx + 2;  // +2 for header row + 1-based
+    const code = String(raw.entity_code || raw['Entity Code'] || raw.code || '').trim();
+    const salesTarget = Number(raw.sales_target || raw['Sales Target'] || 0);
+    if (!code) {
+      errors.push({ sheet: 'ENTITY', row_number: rowNumber, error: 'entity_code is required', raw });
+      return;
+    }
+    if (!(salesTarget > 0)) {
+      errors.push({ sheet: 'ENTITY', row_number: rowNumber, error: 'sales_target must be > 0', raw });
+      return;
+    }
+    const ent = entityByCode.get(code);
+    if (!ent) {
+      errors.push({ sheet: 'ENTITY', row_number: rowNumber, error: `entity_code "${code}" did not match any Entity (short_name / entity_code / entity_name)`, raw });
+      return;
+    }
+    const explicitCollection = Number(raw.collection_target || raw['Collection Target'] || 0);
+    toUpsert.push({
+      sheet: 'ENTITY',
+      filter: { plan_id: plan._id, target_type: 'ENTITY', target_entity_id: ent._id, bdm_id: null, territory_id: null },
+      doc: {
+        entity_id: plan.entity_id,
+        plan_id: plan._id,
+        fiscal_year: plan.fiscal_year,
+        target_type: 'ENTITY',
+        target_entity_id: ent._id,
+        target_label: String(raw.target_label || raw['Label'] || ent.entity_name || ent.short_name || ''),
+        sales_target: salesTarget,
+        collection_target: explicitCollection > 0 ? explicitCollection : Math.round(salesTarget * collectionPct),
+        status: plan.status === 'ACTIVE' ? 'ACTIVE' : 'DRAFT',
+        created_by: req.user._id,
+      },
+    });
+  });
+
+  bdmRows.forEach((raw, idx) => {
+    const rowNumber = idx + 2;
+    const code = String(raw.bdm_code || raw['BDM Code'] || raw.full_name || raw['Full Name'] || '').trim();
+    const salesTarget = Number(raw.sales_target || raw['Sales Target'] || 0);
+    if (!code) {
+      errors.push({ sheet: 'BDM', row_number: rowNumber, error: 'bdm_code (or full_name) is required', raw });
+      return;
+    }
+    if (!(salesTarget > 0)) {
+      errors.push({ sheet: 'BDM', row_number: rowNumber, error: 'sales_target must be > 0', raw });
+      return;
+    }
+    const person = personByCode.get(code);
+    if (!person) {
+      errors.push({ sheet: 'BDM', row_number: rowNumber, error: `bdm_code "${code}" did not match any active PeopleMaster row in this entity`, raw });
+      return;
+    }
+    const territoryCode = String(raw.territory_code || raw['Territory Code'] || '').trim();
+    let territoryId = person.territory_id || null;
+    if (territoryCode) {
+      const t = territoryByCode.get(territoryCode);
+      if (!t) {
+        errors.push({ sheet: 'BDM', row_number: rowNumber, error: `territory_code "${territoryCode}" did not match any Territory in this entity`, raw });
+        return;
+      }
+      territoryId = t._id;
+    }
+    const explicitCollection = Number(raw.collection_target || raw['Collection Target'] || 0);
+    toUpsert.push({
+      sheet: 'BDM',
+      filter: { plan_id: plan._id, target_type: 'BDM', bdm_id: person.user_id || null, target_entity_id: null, territory_id: null },
+      doc: {
+        entity_id: plan.entity_id,
+        plan_id: plan._id,
+        fiscal_year: plan.fiscal_year,
+        target_type: 'BDM',
+        bdm_id: person.user_id || null,
+        person_id: person._id,
+        territory_id: territoryId || null,
+        target_label: String(raw.target_label || raw['Label'] || person.full_name || ''),
+        sales_target: salesTarget,
+        collection_target: explicitCollection > 0 ? explicitCollection : Math.round(salesTarget * collectionPct),
+        status: plan.status === 'ACTIVE' ? 'ACTIVE' : 'DRAFT',
+        created_by: req.user._id,
+      },
+    });
+  });
+
+  // If every row is invalid, don't even try to import — nothing to do.
+  if (toUpsert.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: `No valid rows to import. ${errors.length} row(s) had errors.`,
+      errors,
+    });
+  }
+
+  // Approval gate — amount = total sales target of valid rows (same semantics as bulkCreateTargets).
+  const totalSalesTarget = toUpsert.reduce((s, u) => s + (Number(u.doc.sales_target) || 0), 0);
+  const gated = await gateApproval({
+    entityId: plan.entity_id,
+    module: 'SALES_GOAL_PLAN',
+    docType: 'BULK_TARGETS_IMPORT',
+    docId: plan._id,
+    docRef: plan.reference || `${plan.plan_name} FY${plan.fiscal_year}`,
+    amount: totalSalesTarget,
+    description: `Excel import: ${toUpsert.length} target row(s) under ${plan.plan_name} FY${plan.fiscal_year} (total ₱${totalSalesTarget.toLocaleString()})`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
+  // Atomic upsert under a transaction. If ANY upsert throws, the whole import rolls back.
+  const imported = [];
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      for (const u of toUpsert) {
+        const target = await SalesGoalTarget.findOneAndUpdate(
+          u.filter,
+          { $set: u.doc },
+          { upsert: true, new: true, session }
+        );
+        imported.push(target);
+      }
+      await ErpAuditLog.logChange([{
+        entity_id: plan.entity_id,
+        log_type: 'STATUS_CHANGE',
+        target_ref: plan._id.toString(),
+        target_model: 'SalesGoalPlan',
+        field_changed: 'targets_excel_import',
+        old_value: null,
+        new_value: `${imported.length} targets imported`,
+        changed_by: req.user._id,
+        note: `Excel import under ${plan.reference || plan.plan_name}: ${imported.length} valid row(s), ${errors.length} invalid (total ₱${totalSalesTarget.toLocaleString()}). File: ${req.file.originalname || 'upload.xlsx'}`,
+      }], { session });
+    });
+  } finally {
+    session.endSession();
+  }
+
+  res.json({
+    success: true,
+    message: `${imported.length} target(s) imported${errors.length ? `, ${errors.length} row(s) skipped` : ''}`,
+    data: imported,
+    imported_count: imported.length,
+    error_count: errors.length,
+    errors,
+  });
 });
 
 // ═══════════════════════════════════════
@@ -1131,3 +1527,16 @@ exports.enterManualKpi = catchAsync(async (req, res) => {
   await snapshot.save();
   res.json({ success: true, data: snapshot, message: 'Manual KPI value saved' });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SG-3R — President-Reverse on a Sales Goal plan.
+//
+// Reuses `buildPresidentReverseHandler('SALES_GOAL_PLAN')` — the same factory
+// used by Sales/Collection/Expense/PRF-CALF/GRN/IC-Transfer/PettyCash/Payslip.
+// UX contract: body = { reason: string, confirm: 'DELETE' }. Cascade logic
+// lives in `documentReversalService.reverseSalesGoalPlan`. Route must be gated
+// by `erpSubAccessCheck('accounting', 'reverse_posted')` — the baseline danger
+// sub-perm (lookup-driven, subscriber-extendable).
+// ─────────────────────────────────────────────────────────────────────────────
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
+exports.presidentReversePlan = buildPresidentReverseHandler('SALES_GOAL_PLAN');

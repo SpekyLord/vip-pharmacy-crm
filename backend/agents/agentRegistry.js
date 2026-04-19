@@ -16,6 +16,8 @@ const AGENT_DEFINITIONS = {
   kpi_snapshot: { key: 'kpi_snapshot', label: 'KPI Snapshot & Incentive Accrual', modulePath: './kpiSnapshotAgent', type: 'FREE' },
   // Phase SG-Q2 W3 — KPI variance detection + alerts (FREE; no AI)
   kpi_variance: { key: 'kpi_variance', label: 'KPI Variance Alerts', modulePath: './kpiVarianceAgent', type: 'FREE' },
+  // Phase G7.9 — Daily morning briefing for the President (uses Copilot infra; AI tier)
+  daily_briefing: { key: 'daily_briefing', label: 'Daily Briefing (Copilot)', modulePath: './dailyBriefingAgent', type: 'AI' },
 };
 
 const AGENT_KEYS = Object.keys(AGENT_DEFINITIONS);

@@ -45,6 +45,11 @@ const JournalEntry = require('../models/JournalEntry');
 const TransactionEvent = require('../models/TransactionEvent');
 const PeriodLock = require('../models/PeriodLock');
 const ErpAuditLog = require('../models/ErpAuditLog');
+// Phase SG-3R — Sales Goal plan reversal (cascade to targets/snapshots/payouts)
+const SalesGoalPlan = require('../models/SalesGoalPlan');
+const SalesGoalTarget = require('../models/SalesGoalTarget');
+const KpiSnapshot = require('../models/KpiSnapshot');
+const IncentivePayout = require('../models/IncentivePayout');
 
 const { reverseJournal } = require('./journalEngine');
 const { checkHardBlockers } = require('./dependentDocChecker');
@@ -66,6 +71,12 @@ const PERIOD_LOCK_MODULE = {
   CONSIGNMENT_TRANSFER: 'INVENTORY',
   PETTY_CASH_TXN: 'PETTY_CASH',
   JOURNAL_ENTRY: 'JOURNAL',
+  // Phase SG-3R — plan reversal cascades through reverseJournal for every
+  // linked IncentivePayout, producing reversal JEs in the current period.
+  // Gate against the JOURNAL period-lock (the module that actually receives
+  // the reversal entries). INCENTIVE_PAYOUT is NOT a valid PeriodLock.module
+  // enum value, so picking it here would silently skip the check.
+  SALES_GOAL_PLAN: 'JOURNAL',
 };
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -767,6 +778,140 @@ async function reverseManualJournal({ doc, userId, reason }) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+// SALES_GOAL_PLAN handler — Phase SG-3R
+//
+// Unlike transactional documents, a Sales Goal plan has no JE of its own. The
+// financial side-effects live entirely inside linked IncentivePayout rows
+// (accrual JE, optional settlement JE). Reversal therefore:
+//   - DRAFT plan → hard-delete plan + all DRAFT targets (no side effects).
+//   - ACTIVE / CLOSED / REJECTED plan → SAP Storno cascade:
+//       * every IncentivePayout with a journal_id → reverseJournal (idempotent)
+//       * every IncentivePayout with a settlement_journal_id → reverseJournal
+//       * every IncentivePayout row → mark REVERSED (preserves audit, prevents re-accrue)
+//       * every KpiSnapshot under this plan → hard-delete (snapshots are
+//         derived data, no audit value once the plan itself is reversed)
+//       * every SalesGoalTarget under this plan → status = CLOSED (retain for audit)
+//       * plan itself → status = REVERSED (new enum value) + deletion_event_id stamp
+//   Atomic under one transaction. If any reverseJournal fails the whole thing rolls back.
+// ───────────────────────────────────────────────────────────────────────────────
+
+async function loadSalesGoalPlan({ doc_id, tenantFilter }) {
+  const filter = { _id: doc_id };
+  if (tenantFilter?.entity_id) filter.entity_id = tenantFilter.entity_id;
+  const plan = await SalesGoalPlan.findOne(filter);
+  if (!plan) { const e = new Error('Sales Goal plan not found in your scope'); e.statusCode = 404; throw e; }
+  if (plan.status === 'REVERSED') { const e = new Error('Plan already reversed'); e.statusCode = 409; throw e; }
+  return plan;
+}
+
+async function reverseSalesGoalPlan({ doc, userId, reason }) {
+  const sideEffects = [];
+
+  // DRAFT plans never posted a JE, never accrued; hard-delete with their targets.
+  if (doc.status === 'DRAFT') {
+    const session = await mongoose.startSession();
+    try {
+      let deletedTargets = 0;
+      await session.withTransaction(async () => {
+        const t = await SalesGoalTarget.deleteMany({ plan_id: doc._id }, { session });
+        deletedTargets = t.deletedCount || 0;
+        await SalesGoalPlan.deleteOne({ _id: doc._id }, { session });
+      });
+      if (deletedTargets) sideEffects.push(`targets_hard_deleted=${deletedTargets}`);
+      sideEffects.push('plan_hard_deleted');
+    } finally { session.endSession(); }
+    return {
+      doc_type: 'SALES_GOAL_PLAN',
+      doc_id: doc._id,
+      doc_ref: doc.reference || doc.plan_name || String(doc._id),
+      mode: 'HARD_DELETE',
+      reversal_event_id: null,
+      side_effects: sideEffects,
+    };
+  }
+
+  // Posted-plan path — ensure the period where reversal JEs will land is open
+  // (lookup via INCENTIVE_PAYOUT key, matches what IncentivePayout.reverse uses).
+  await assertReversalPeriodOpen({ doc_type: 'SALES_GOAL_PLAN', entityId: doc.entity_id });
+
+  // ── Phase 1 — Reverse every IncentivePayout JE BEFORE opening the plan txn ──
+  // reverseJournal runs its own session; doing it outside the plan txn keeps
+  // the code symmetric with reverseManualJournal's pattern and avoids nested
+  // transaction complications. Idempotent: reverseJournal skips already-reversed.
+  const payouts = await IncentivePayout.find({
+    plan_id: doc._id,
+    status: { $in: ['ACCRUED', 'APPROVED', 'PAID'] },
+  });
+  let accrualJes = 0, settlementJes = 0;
+  for (const p of payouts) {
+    if (p.journal_id) {
+      try {
+        await reverseJournal(p.journal_id, `President-reversal of plan ${doc.reference || doc.plan_name}: ${reason}`, userId, doc.entity_id);
+        accrualJes++;
+      } catch (err) {
+        // "already reversed" is fine — surface anything else as a hard failure.
+        if (!/already reversed/i.test(err.message || '')) throw err;
+      }
+    }
+    if (p.settlement_journal_id) {
+      try {
+        await reverseJournal(p.settlement_journal_id, `President-reversal of plan ${doc.reference || doc.plan_name} (settlement): ${reason}`, userId, doc.entity_id);
+        settlementJes++;
+      } catch (err) {
+        if (!/already reversed/i.test(err.message || '')) throw err;
+      }
+    }
+  }
+  if (accrualJes) sideEffects.push(`accrual_jes_reversed=${accrualJes}`);
+  if (settlementJes) sideEffects.push(`settlement_jes_reversed=${settlementJes}`);
+
+  // ── Phase 2 — Flip payout + snapshot + target state under one transaction ──
+  const session = await mongoose.startSession();
+  let reversalEvent;
+  try {
+    await session.withTransaction(async () => {
+      reversalEvent = await createReversalEvent({
+        doc, doc_type: 'SALES_GOAL_PLAN', entity_id: doc.entity_id, bdm_id: null, reason, userId, session,
+      });
+
+      // IncentivePayout → REVERSED (preserve journal_id refs for audit).
+      const payoutRes = await IncentivePayout.updateMany(
+        { plan_id: doc._id, status: { $in: ['ACCRUED', 'APPROVED', 'PAID'] } },
+        { $set: { status: 'REVERSED', reversed_by: userId, reversed_at: new Date(), reversal_reason: `President-reverse plan: ${reason}` } },
+        { session }
+      );
+      if (payoutRes.modifiedCount) sideEffects.push(`payouts_reversed=${payoutRes.modifiedCount}`);
+
+      // KpiSnapshot → delete (derived data — once plan is reversed, snapshots are meaningless).
+      const snapRes = await KpiSnapshot.deleteMany({ plan_id: doc._id }, { session });
+      if (snapRes.deletedCount) sideEffects.push(`snapshots_deleted=${snapRes.deletedCount}`);
+
+      // SalesGoalTarget → CLOSED (keep for audit, prevent further use).
+      const targetRes = await SalesGoalTarget.updateMany(
+        { plan_id: doc._id },
+        { $set: { status: 'CLOSED' } },
+        { session }
+      );
+      if (targetRes.modifiedCount) sideEffects.push(`targets_closed=${targetRes.modifiedCount}`);
+
+      // Plan itself.
+      doc.status = 'REVERSED';
+      doc.deletion_event_id = reversalEvent._id;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  return {
+    doc_type: 'SALES_GOAL_PLAN',
+    doc_id: doc._id,
+    doc_ref: doc.reference || doc.plan_name || String(doc._id),
+    mode: 'SAP_STORNO',
+    reversal_event_id: reversalEvent?._id,
+    side_effects: sideEffects,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 // Registry — Phase 1-4 complete
 // ───────────────────────────────────────────────────────────────────────────────
 
@@ -783,6 +928,8 @@ const REVERSAL_HANDLERS = {
   PAYSLIP:              { load: loadPayslip,        reverse: reversePayslip,        label: 'Payroll Payslip',       module: 'payroll' },
   PETTY_CASH_TXN:       { load: loadPettyCashTxn,   reverse: reversePettyCashTxn,   label: 'Petty Cash Transaction',module: 'petty_cash' },
   JOURNAL_ENTRY:        { load: loadJournal,        reverse: reverseManualJournal,  label: 'Manual Journal Entry',  module: 'accounting' },
+  // Phase SG-3R — plan reversal cascades to payouts/snapshots/targets/journals.
+  SALES_GOAL_PLAN:      { load: loadSalesGoalPlan,  reverse: reverseSalesGoalPlan,  label: 'Sales Goal Plan',       module: 'sales_goals' },
 };
 
 /**

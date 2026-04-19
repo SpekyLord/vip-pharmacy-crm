@@ -47,6 +47,12 @@ router.use('/scorecards', require('./scorecardRoutes'));
 // ═══ Phase 28 — Sales Goals & KPI ═══
 router.use('/sales-goals', erpAccessCheck('sales_goals'), require('./salesGoalRoutes'));
 
+// ═══ Phase SG-3R — KPI Template (advisory defaults consumed by createPlan) ═══
+// Mounted outside /sales-goals so the admin UI can list/curate templates without
+// needing plan context. Access still gated by erpAccessCheck('sales_goals') inside
+// the route file so non-Sales-Goals users can't enumerate another team's library.
+router.use('/kpi-templates', erpAccessCheck('sales_goals'), require('./kpiTemplateRoutes'));
+
 // ═══ Phase SG-Q2 W2 — Incentive Payout Ledger (sibling of sales-goals) ═══
 // Mounted at its own path so payroll/finance can consume `/payable` without
 // granting Sales Goals module access; route file still enforces
@@ -55,6 +61,17 @@ router.use('/incentive-payouts', require('./incentivePayoutRoutes'));
 
 // ═══ Phase 28 — Approval Workflow (Authority Matrix) ═══
 router.use('/approvals', require('./approvalRoutes'));
+
+// ═══ Phase G6.10 — AI Cowork (Claude-powered approval/rejection assist) ═══
+// Lookup-driven: AI_COWORK_FEATURES rows control prompts, models, role gates,
+// rate limits per-entity. Subscription opt-in (rows seeded as is_active: false).
+router.use('/ai-cowork', require('./aiCoworkRoutes'));
+
+// ═══ Phase G7 — President's Copilot (chat widget + Cmd+K) ═══
+// Lookup-driven tool registry (COPILOT_TOOLS) + lookup-driven feature row
+// (PRESIDENT_COPILOT). Spend cap (AI_SPEND_CAPS) blocks calls at budget.
+// Write-confirm tools route through existing controllers (Rule #20: no bypass).
+router.use('/copilot', require('./copilotRoutes'));
 
 // ═══ Phase 3 — Sales & Inventory ═══
 router.use('/sales', erpAccessCheck('sales'), require('./salesRoutes'));

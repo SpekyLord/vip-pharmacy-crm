@@ -54,6 +54,29 @@ const pageStyles = `
   .sgs-kpi-row input, .sgs-kpi-row select { flex: 1; min-width: 120px; padding: 6px 8px; border: 1px solid var(--erp-border); border-radius: 6px; font-size: 13px; background: var(--erp-panel); color: var(--erp-text); box-sizing: border-box; }
   .loading { text-align: center; padding: 40px; color: var(--erp-muted); }
   @media(max-width: 768px) { .sgs-main { padding: 12px; } .sgs-form-row { flex-direction: column; } .sgs-tab-bar { overflow-x: auto; } }
+  /* Phase SG-3R — 360px (small Android, Global Rule #18). Tabs scroll horizontally
+     without hijacking the page; buttons go full-width; table cells compress. */
+  @media(max-width: 360px) {
+    .sgs-main { padding: 8px; }
+    .sgs-header h1 { font-size: 18px; }
+    .sgs-header p { font-size: 12px; }
+    .sgs-actions { flex-direction: column; align-items: stretch; gap: 6px; }
+    .sgs-actions button, .sgs-actions select, .sgs-actions label { width: 100%; }
+    .sgs-tab-bar { overflow-x: auto; gap: 4px; padding: 2px; }
+    .sgs-tab { flex: 0 0 auto; min-width: 90px; font-size: 11px; padding: 7px 10px; }
+    .sgs-panel { padding: 12px; border-radius: 10px; }
+    .sgs-panel h3 { font-size: 14px; margin-bottom: 12px; }
+    .sgs-field input, .sgs-field select, .sgs-field textarea { font-size: 12px; }
+    .sgs-btn { padding: 10px 12px; font-size: 13px; }
+    .sgs-btn-sm { padding: 6px 8px; font-size: 11px; }
+    .sgs-table { font-size: 11px; }
+    .sgs-table th, .sgs-table td { padding: 6px 5px; }
+    .sgs-table input, .sgs-table select { font-size: 11px; padding: 4px 6px; }
+    .sgs-validation { font-size: 11px; padding: 8px 10px; }
+    .sgs-driver-section { padding: 10px; }
+    .sgs-kpi-row { flex-direction: column; gap: 4px; }
+    .sgs-kpi-row input, .sgs-kpi-row select { flex: none; width: 100%; }
+  }
 `;
 
 const TABS = [
@@ -198,6 +221,12 @@ export default function SalesGoalSetup() {
         growth_drivers: form.growth_drivers,
         incentive_programs: form.incentive_programs,
       };
+      // Phase SG-3R — advisory defaults expansion. Applied only on CREATE so
+      // re-editing an existing plan never silently re-seeds its drivers.
+      if (!selectedPlanId) {
+        if (templateChoice) payload.template_name = templateChoice;
+        if (useDriverDefaults) payload.use_driver_defaults = true;
+      }
       let res;
       const wasNew = !selectedPlanId;
       if (selectedPlanId) {
@@ -221,7 +250,7 @@ export default function SalesGoalSetup() {
       }
     }
     setSaving(false);
-  }, [form, selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [form, selectedPlanId, templateChoice, useDriverDefaults]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Activate / Close
   const handleActivate = useCallback(async () => {
@@ -253,6 +282,88 @@ export default function SalesGoalSetup() {
     } catch (err) {
       if (isApprovalPending(null, err)) showApprovalPending('Plan close sent for approval.');
       else showError(err, 'Failed to close plan');
+    }
+  }, [selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Phase SG-3R — KPI Template picker + "use driver defaults" ──────────
+  // Only applied on NEW plan create. Server ignores these keys on update.
+  const [templateSets, setTemplateSets] = useState([]);
+  const [templateChoice, setTemplateChoice] = useState('');           // template_name or ''
+  const [useDriverDefaults, setUseDriverDefaults] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await sg.listKpiTemplates();
+        if (cancelled) return;
+        setTemplateSets(res?.data?.sets || []);
+      } catch (err) {
+        // Non-critical — the rest of the page still works without templates.
+        if (!cancelled) console.warn('[SalesGoalSetup] kpi-templates load failed:', err?.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Phase SG-3R — Excel import of targets ──────────────────────────────
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+
+  const handleImportTargets = useCallback(async (file) => {
+    if (!file || !selectedPlanId) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('plan_id', selectedPlanId);
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const res = await sg.importTargets(fd);
+      if (isApprovalPending(res)) {
+        showApprovalPending('Excel import sent for approval.');
+        setImportResult({ approval_pending: true });
+      } else {
+        setImportResult(res || null);
+        const msg = res?.message || `Imported ${res?.imported_count || 0} target(s)`;
+        if ((res?.error_count || 0) > 0) {
+          showError(null, `${msg} — see the error list below the buttons`);
+        } else {
+          showSuccess(msg);
+        }
+        await selectPlan(selectedPlanId);  // refresh target lists
+      }
+    } catch (err) {
+      if (isApprovalPending(null, err)) {
+        showApprovalPending('Excel import sent for approval.');
+      } else {
+        const errors = err?.response?.data?.errors;
+        if (Array.isArray(errors)) setImportResult({ error_count: errors.length, errors });
+        showError(err, 'Excel import failed');
+      }
+    } finally {
+      setImporting(false);
+    }
+  }, [selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Phase SG-3R — President-Reverse a plan (cascade) ────────────────────
+  const handlePresidentReverse = useCallback(async () => {
+    if (!selectedPlanId) return;
+    const reason = window.prompt('Reason for reversing this plan? (required — this is audit-logged and cannot be undone)');
+    if (!reason || !reason.trim()) return;
+    if (!window.confirm('This will REVERSE the plan: all targets close, all snapshots delete, every IncentivePayout reverses (with SAP-Storno reversal JEs). Type DELETE in the next prompt to confirm.')) return;
+    const confirm = window.prompt('Type DELETE to confirm:');
+    if (confirm !== 'DELETE') { showError(null, 'Reversal cancelled — confirmation text did not match.'); return; }
+    try {
+      const res = await sg.presidentReversePlan(selectedPlanId, { reason: reason.trim(), confirm: 'DELETE' });
+      const sideEffects = res?.data?.side_effects;
+      showSuccess(res?.message || 'Plan reversed');
+      if (Array.isArray(sideEffects) && sideEffects.length) {
+        // Surface the cascade summary to the admin — they'll want to see what moved.
+        console.info('[SalesGoalSetup] President reverse side effects:', sideEffects);
+      }
+      await loadPlans();
+    } catch (err) {
+      showError(err, 'Failed to reverse plan');
     }
   }, [selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -524,6 +635,10 @@ export default function SalesGoalSetup() {
   const statusBadgeStyle = (s) => {
     if (s === 'ACTIVE') return { background: '#dcfce7', color: '#166534' };
     if (s === 'CLOSED') return { background: '#f1f5f9', color: '#475569' };
+    if (s === 'REJECTED') return { background: '#fee2e2', color: '#b91c1c' };
+    // Phase SG-3R — REVERSED styled distinct from REJECTED: lifecycle terminal,
+    // not a validation failure.
+    if (s === 'REVERSED') return { background: '#fce7f3', color: '#9d174d' };
     return { background: '#fef9c3', color: '#854d0e' };
   };
 
@@ -561,6 +676,19 @@ export default function SalesGoalSetup() {
                   <button className="sgs-btn sgs-btn-outline" onClick={handleReopen} title="Revert to DRAFT to edit header fields">Reopen to Draft</button>
                   <button className="sgs-btn sgs-btn-danger" onClick={handleClose}>Close Plan</button>
                 </>
+              )}
+              {/* Phase SG-3R — Reverse-plan visible for ACTIVE/CLOSED/REJECTED. President-only
+                  at the backend via accounting.reverse_posted danger sub-perm. Non-privileged
+                  users will see a 403 rather than silently bypassing — that's the correct
+                  failure mode for a destructive operation. */}
+              {selectedPlanId && planStatus && !['DRAFT', 'REVERSED'].includes(planStatus) && (
+                <button
+                  className="sgs-btn sgs-btn-danger"
+                  onClick={handlePresidentReverse}
+                  title="President-only — cascades to targets, snapshots, incentive payouts, and journals"
+                >
+                  President Reverse
+                </button>
               )}
               <select
                 style={{ padding: '8px 12px', border: '1px solid var(--erp-border)', borderRadius: 8, fontSize: 13, background: 'var(--erp-panel)', color: 'var(--erp-text)' }}
@@ -647,6 +775,40 @@ export default function SalesGoalSetup() {
                         <button className="sgs-btn sgs-btn-primary" onClick={savePlan} disabled={saving || planLocked}>
                           {saving ? 'Saving...' : selectedPlanId ? 'Update Plan' : 'Create Plan'}
                         </button>
+
+                        {/* Phase SG-3R — Advisory defaults (new plan only).
+                            Choice picks a KpiTemplate set name curated at /erp/kpi-templates;
+                            the "Use driver defaults" checkbox additionally applies
+                            GROWTH_DRIVER.metadata.default_kpi_codes to drivers that are empty. */}
+                        {!selectedPlanId && (
+                          <div style={{ marginTop: 16, padding: 12, border: '1px dashed var(--erp-border)', borderRadius: 8 }}>
+                            <strong style={{ fontSize: 12, color: 'var(--erp-muted)', display: 'block', marginBottom: 8 }}>
+                              Pre-populate defaults (optional)
+                            </strong>
+                            <div className="sgs-form-row">
+                              <div className="sgs-field">
+                                <label>KPI Template Set</label>
+                                <select value={templateChoice} onChange={e => setTemplateChoice(e.target.value)}>
+                                  <option value="">— none (define manually) —</option>
+                                  {templateSets.map(s => (
+                                    <option key={s.template_name} value={s.template_name}>
+                                      {s.template_name} ({s.driver_count} driver(s), {s.kpi_count} KPI row(s))
+                                    </option>
+                                  ))}
+                                </select>
+                                <small style={{ fontSize: 11, color: 'var(--erp-muted)' }}>
+                                  Curate sets at <Link to="/erp/kpi-templates" style={{ color: 'var(--erp-accent)' }}>KPI Templates</Link>.
+                                </small>
+                              </div>
+                              <div className="sgs-field" style={{ alignSelf: 'flex-end' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <input type="checkbox" checked={useDriverDefaults} onChange={e => setUseDriverDefaults(e.target.checked)} />
+                                  Seed KPIs from each driver&#39;s lookup metadata (default_kpi_codes)
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </>
                     );
                   })()}
@@ -840,12 +1002,48 @@ export default function SalesGoalSetup() {
                           : `Entity sum (${php(entitySum)}) does not match plan target (${php(planTarget)}). Difference: ${php(Math.abs(entitySum - planTarget))}`
                         }
                       </div>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                         <button className="sgs-btn sgs-btn-outline" onClick={addEntityTarget}>+ Add Entity</button>
                         <button className="sgs-btn sgs-btn-primary" onClick={saveEntityTargets} disabled={saving}>
                           {saving ? 'Saving...' : 'Save Entity Targets'}
                         </button>
+                        {/* Phase SG-3R — Excel import. Shared handler imports from ENTITY + BDM sheets
+                            in one round trip; rendered on both tabs so admins can upload from either. */}
+                        <label className="sgs-btn sgs-btn-outline" style={{ cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.6 : 1 }}>
+                          {importing ? 'Importing…' : 'Import Excel (ENTITY + BDM sheets)'}
+                          <input
+                            type="file"
+                            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            style={{ display: 'none' }}
+                            disabled={importing}
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) handleImportTargets(f);
+                              e.target.value = '';  // reset so same file can be re-picked
+                            }}
+                          />
+                        </label>
                       </div>
+                      {importResult && (importResult.imported_count > 0 || importResult.error_count > 0) && (
+                        <div style={{ marginTop: 10 }}>
+                          <div className={`sgs-validation ${(importResult.error_count || 0) === 0 ? 'ok' : ''}`}>
+                            {importResult.imported_count || 0} row(s) imported · {importResult.error_count || 0} row(s) skipped
+                          </div>
+                          {Array.isArray(importResult.errors) && importResult.errors.length > 0 && (
+                            <details style={{ marginTop: 6, background: 'var(--erp-bg)', padding: 8, borderRadius: 8, fontSize: 12 }}>
+                              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Show row-level errors ({importResult.errors.length})</summary>
+                              <table className="sgs-table" style={{ marginTop: 6 }}>
+                                <thead><tr><th>Sheet</th><th>Row</th><th>Error</th></tr></thead>
+                                <tbody>
+                                  {importResult.errors.map((e, i) => (
+                                    <tr key={i}><td>{e.sheet}</td><td>{e.row_number}</td><td>{e.error}</td></tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </details>
+                          )}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -938,12 +1136,47 @@ export default function SalesGoalSetup() {
                           : `BDM sum (${php(bdmSum)}) does not match entity target sum (${php(entitySum)}). Difference: ${php(Math.abs(bdmSum - entitySum))}`
                         }
                       </div>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                         <button className="sgs-btn sgs-btn-outline" onClick={addBdmTarget}>+ Add BDM</button>
                         <button className="sgs-btn sgs-btn-primary" onClick={saveBdmTargets} disabled={saving}>
                           {saving ? 'Saving...' : 'Save BDM Targets'}
                         </button>
+                        {/* Phase SG-3R — Excel import (same endpoint, both tabs). */}
+                        <label className="sgs-btn sgs-btn-outline" style={{ cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.6 : 1 }}>
+                          {importing ? 'Importing…' : 'Import Excel (ENTITY + BDM sheets)'}
+                          <input
+                            type="file"
+                            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            style={{ display: 'none' }}
+                            disabled={importing}
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) handleImportTargets(f);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
                       </div>
+                      {importResult && (importResult.imported_count > 0 || importResult.error_count > 0) && (
+                        <div style={{ marginTop: 10 }}>
+                          <div className={`sgs-validation ${(importResult.error_count || 0) === 0 ? 'ok' : ''}`}>
+                            {importResult.imported_count || 0} row(s) imported · {importResult.error_count || 0} row(s) skipped
+                          </div>
+                          {Array.isArray(importResult.errors) && importResult.errors.length > 0 && (
+                            <details style={{ marginTop: 6, background: 'var(--erp-bg)', padding: 8, borderRadius: 8, fontSize: 12 }}>
+                              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Show row-level errors ({importResult.errors.length})</summary>
+                              <table className="sgs-table" style={{ marginTop: 6 }}>
+                                <thead><tr><th>Sheet</th><th>Row</th><th>Error</th></tr></thead>
+                                <tbody>
+                                  {importResult.errors.map((e, i) => (
+                                    <tr key={i}><td>{e.sheet}</td><td>{e.row_number}</td><td>{e.error}</td></tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </details>
+                          )}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

@@ -81,6 +81,13 @@ function initAgentScheduler() {
 
     cron.schedule('30 5 * * 1', () => triggerScheduled('org_intelligence', 'Org Intelligence'), { timezone: TIMEZONE });
     console.log('[AgentScheduler]   ✓ #O Org Intelligence - Monday 5:30 AM');
+
+    // Phase G7.9 — Daily Briefing via Copilot.
+    // Default 7:00 AM Manila on weekdays. Per-entity, schedule may be overridden
+    // via the lookup row AI_COWORK_FEATURES.PRESIDENT_DAILY_BRIEFING.metadata.schedule_cron;
+    // for v1, the central cron fires for every entity that has the row enabled.
+    cron.schedule('0 7 * * 1-5', () => triggerScheduled('daily_briefing', 'Daily Briefing (Copilot)'), { timezone: TIMEZONE });
+    console.log('[AgentScheduler]   ✓ #DB Daily Briefing - weekdays 7:00 AM');
   } else {
     console.log('[AgentScheduler] No ANTHROPIC_API_KEY - paid agents disabled. Add key to .env to enable.');
   }

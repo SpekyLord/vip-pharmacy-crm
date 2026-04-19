@@ -128,12 +128,23 @@ async function askClaude({ system, prompt, maxTokens = 1024, model = 'claude-hai
  * Sonnet 4.6: $3/MTok in, $15/MTok out
  */
 function estimateCost(model, inputTokens, outputTokens) {
+  // USD per million tokens. Keys cover both date-suffixed and undated model ids
+  // so callers using either form get accurate cost attribution (Phase G7.8).
   const pricing = {
-    'claude-haiku-4-5-20251001': { input: 0.80, output: 4.00 },
-    'claude-sonnet-4-6-20250514': { input: 3.00, output: 15.00 },
+    'claude-haiku-4-5-20251001':  { input: 0.80, output: 4.00 },
+    'claude-haiku-4-5':            { input: 0.80, output: 4.00 },
+    'claude-sonnet-4-6-20250514':  { input: 3.00, output: 15.00 },
+    'claude-sonnet-4-6':           { input: 3.00, output: 15.00 },
+    'claude-opus-4-7':             { input: 15.00, output: 75.00 },
   };
-  // Default to haiku pricing
-  const p = pricing[model] || pricing['claude-haiku-4-5-20251001'];
+  // Resolve by exact match, then prefix match (handles future date suffixes),
+  // and finally default to haiku pricing as a conservative floor.
+  let p = pricing[model];
+  if (!p && model) {
+    const prefix = Object.keys(pricing).find((k) => model.startsWith(k));
+    if (prefix) p = pricing[prefix];
+  }
+  if (!p) p = pricing['claude-haiku-4-5-20251001'];
   return parseFloat(((inputTokens * p.input + outputTokens * p.output) / 1_000_000).toFixed(6));
 }
 

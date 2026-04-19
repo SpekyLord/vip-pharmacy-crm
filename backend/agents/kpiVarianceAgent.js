@@ -39,11 +39,32 @@ const DEFAULT_CRITICAL_PCT = 40;
  * explicit threshold.
  */
 async function loadThresholds(entityId) {
-  const rows = await Lookup.find({
+  let rows = await Lookup.find({
     entity_id: entityId,
     category: 'KPI_VARIANCE_THRESHOLDS',
     is_active: true,
   }).lean();
+
+  // Safety net: seed the GLOBAL row if no thresholds exist yet for this entity.
+  // The primary seed happens on plan activation (salesGoalService.
+  // ensureKpiVarianceGlobalThreshold); this catches historical entities whose
+  // plans were activated before the seeder was deployed. Non-fatal — the
+  // hardcoded DEFAULT_* constants keep the agent functional either way.
+  if (rows.length === 0 && entityId) {
+    try {
+      const salesGoalService = require('../erp/services/salesGoalService');
+      const seedResult = await salesGoalService.ensureKpiVarianceGlobalThreshold(entityId);
+      if (seedResult.seeded) {
+        rows = await Lookup.find({
+          entity_id: entityId,
+          category: 'KPI_VARIANCE_THRESHOLDS',
+          is_active: true,
+        }).lean();
+      }
+    } catch (err) {
+      console.warn('[kpiVarianceAgent] GLOBAL self-seed skipped:', err.message);
+    }
+  }
 
   const map = new Map();
   let global = { warning_pct: DEFAULT_WARNING_PCT, critical_pct: DEFAULT_CRITICAL_PCT };

@@ -49,6 +49,25 @@ export default function useSalesGoals() {
   const payPayout = (id, data) => api.post(`/incentive-payouts/${id}/pay`, data || {});
   const reversePayout = (id, data) => api.post(`/incentive-payouts/${id}/reverse`, data || {});
 
+  // ── Phase SG-3R — KPI Template library (reusable plan defaults) ───────
+  // Templates are advisory; plan creation copies them. Backend is entity-scoped.
+  const listKpiTemplates = (params) => api.get('/kpi-templates', { params });
+  const getKpiTemplate = (id) => api.get(`/kpi-templates/${id}`);
+  const createKpiTemplate = (data) => api.post('/kpi-templates', data);
+  const updateKpiTemplate = (id, data) => api.put(`/kpi-templates/${id}`, data);
+  // useErpApi exposes `del` (not `delete` — reserved word avoidance).
+  const deleteKpiTemplate = (id) => api.del(`/kpi-templates/${id}`);
+  const deleteKpiTemplateSet = (name) => api.del(`/kpi-templates/set/${encodeURIComponent(name)}`);
+
+  // ── Phase SG-3R — Bulk Excel import of targets ─────────────────────────
+  // POST multipart/form-data with field `file`. Returns per-row errors.
+  const importTargets = (formData) => api.post('/sales-goals/targets/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+
+  // ── Phase SG-3R — President-Reverse on a Sales Goal plan ───────────────
+  const presidentReversePlan = (id, data) => api.post(`/sales-goals/plans/${id}/president-reverse`, data || {});
+
   // ── Phase SG-Q2 W3 — Compensation Statement (BDM-facing) ───────────────
   // Returns { bdm, plan, entity, fiscal_year, period, summary, periods, tier, rows }
   // BDMs see only their own; finance/admin/president pass ?bdm_id=. The print
@@ -82,5 +101,9 @@ export default function useSalesGoals() {
     approvePayout, payPayout, reversePayout,
     // Phase SG-Q2 W3
     getCompensationStatement, compensationStatementPrintUrl,
+    // Phase SG-3R
+    listKpiTemplates, getKpiTemplate, createKpiTemplate, updateKpiTemplate,
+    deleteKpiTemplate, deleteKpiTemplateSet,
+    importTargets, presidentReversePlan,
   };
 }

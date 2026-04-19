@@ -372,7 +372,9 @@ const approvalHandlers = {
     actionType: 'sales_goal_plan', id, action, userId, reason,
     modelByDocType: { SALES_GOAL_PLAN: 'SalesGoalPlan' },
     fallbackModel: 'SalesGoalPlan',
-    terminalStates: ['CLOSED'],
+    // CLOSED = normal end-of-life; REVERSED = President-Reverse cascade (Phase SG-3R).
+    // Both are terminal — must not be demoted to REJECTED.
+    terminalStates: ['CLOSED', 'REVERSED'],
   }),
 
   incentive_payout: async (id, action, userId, reason) => buildGroupBReject({
@@ -761,5 +763,10 @@ const universalEdit = catchAsync(async (req, res) => {
 module.exports = {
   getUniversalPendingEndpoint,
   universalApprove,
-  universalEdit
+  universalEdit,
+  // Phase G7.2 — exported so copilotToolRegistry can route DRAFT_REJECTION_REASON
+  // through the SAME handler path /universal-approve uses (Rule #20 — never
+  // bypass gateApproval/period locks; for rejection, the handler is the gate).
+  approvalHandlers,
+  TYPE_TO_MODULE,
 };

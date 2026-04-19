@@ -52,7 +52,11 @@ const salesGoalPlanSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['DRAFT', 'ACTIVE', 'CLOSED', 'REJECTED'],
+    // Phase SG-3R — `REVERSED` is a terminal state produced by the President-
+    // Reverse flow (documentReversalService.reverseSalesGoalPlan). Distinct
+    // from `CLOSED` (normal lifecycle end): REVERSED always has a
+    // `deletion_event_id` + a cascade of reversed IncentivePayout/JE records.
+    enum: ['DRAFT', 'ACTIVE', 'CLOSED', 'REJECTED', 'REVERSED'],
     default: 'DRAFT',
   },
 
@@ -86,6 +90,10 @@ const salesGoalPlanSchema = new mongoose.Schema({
   closed_at: { type: Date },
 
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+
+  // Phase SG-3R — President-Reverse cascade marker. Set when status → REVERSED.
+  // Lets the Reversal Console show "already reversed" and prevents re-entry.
+  deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 }, {
   timestamps: true,
   collection: 'erp_sales_goal_plans',
