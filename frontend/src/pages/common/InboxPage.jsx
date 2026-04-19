@@ -22,7 +22,7 @@
  *   reimplement task logic in the inbox).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -91,7 +91,6 @@ const DEFAULT_FOLDERS = [
 export default function InboxPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const params = useParams();
   const initialThreadId = params.thread_id || null;
 
@@ -185,7 +184,7 @@ export default function InboxPage() {
       try {
         const res = await api.get(`/erp/tasks/${msg.action_payload.task_id}`, { withCredentials: true });
         setTaskFromMsg(res?.data?.data || res?.data || null);
-      } catch (e) {
+      } catch {
         // Task may have been deleted; silent fall-through.
         setTaskFromMsg(null);
       }
