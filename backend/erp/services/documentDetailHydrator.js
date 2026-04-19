@@ -80,6 +80,7 @@ const POPULATED_LOADERS = {
   EXPENSE: async (id, filter) => {
     return ExpenseEntry.findOne({ _id: id, ...filter })
       .populate('bdm_id', 'name email')
+      .populate('recorded_on_behalf_of', 'name')
       .lean();
   },
 
@@ -100,6 +101,7 @@ const POPULATED_LOADERS = {
       .populate('warehouse_id', 'warehouse_name warehouse_code')
       .populate('vendor_id', 'vendor_name')
       .populate('bdm_id', 'name email')
+      .populate('reviewed_by', 'name')
       .lean();
   },
 
@@ -120,6 +122,11 @@ const POPULATED_LOADERS = {
       .populate('target_warehouse_id', 'warehouse_name warehouse_code')
       .populate('creditor_entity_id', 'entity_name entity_code')
       .populate('debtor_entity_id', 'entity_name entity_code')
+      .populate('approved_by', 'name')
+      .populate('shipped_by', 'name')
+      .populate('received_by', 'name')
+      .populate('posted_by', 'name')
+      .populate('cancelled_by', 'name')
       .lean();
   },
 
@@ -134,12 +141,16 @@ const POPULATED_LOADERS = {
   INCOME_REPORT: async (id, filter) => {
     return IncomeReport.findOne({ _id: id, ...filter })
       .populate('bdm_id', 'name email')
+      .populate('reviewed_by', 'name')
+      .populate('credited_by', 'name')
       .lean();
   },
 
   PAYSLIP: async (id, filter) => {
     return Payslip.findOne({ _id: id, ...filter })
-      .populate('person_id', 'first_name last_name')
+      .populate('person_id', 'first_name last_name full_name')
+      .populate('reviewed_by', 'name')
+      .populate('approved_by', 'name')
       .lean();
   },
 
@@ -148,13 +159,20 @@ const POPULATED_LOADERS = {
     if (filter?.entity_id) q.entity_id = filter.entity_id;
     return PettyCashTransaction.findOne(q)
       .populate('fund_id', 'fund_name fund_code current_balance')
+      .populate('approved_by', 'name')
+      .populate('posted_by', 'name')
+      .populate('voided_by', 'name')
       .lean();
   },
 
   JOURNAL_ENTRY: async (id, filter) => {
     const q = { _id: id };
     if (filter?.entity_id) q.entity_id = filter.entity_id;
-    return JournalEntry.findOne(q).lean();
+    return JournalEntry.findOne(q)
+      .populate('posted_by', 'name')
+      .populate('created_by', 'name')
+      .populate('corrects_je_id', 'je_number je_date')
+      .lean();
   },
 };
 
@@ -283,13 +301,21 @@ async function signPhotoUrls(details, moduleKey) {
       }));
       break;
     case 'CAR_LOGBOOK':
-      await Promise.all((details.fuel_receipts || []).map(async (fr) => {
-        [fr.receipt_url, fr.starting_km_photo_url, fr.ending_km_photo_url] = await Promise.all([
-          signUrl(fr.receipt_url),
-          signUrl(fr.starting_km_photo_url),
-          signUrl(fr.ending_km_photo_url),
-        ]);
-      }));
+      await Promise.all([
+        ...(details.fuel_receipts || []).map(async (fr) => {
+          [fr.receipt_url, fr.starting_km_photo_url, fr.ending_km_photo_url] = await Promise.all([
+            signUrl(fr.receipt_url),
+            signUrl(fr.starting_km_photo_url),
+            signUrl(fr.ending_km_photo_url),
+          ]);
+        }),
+        (async () => {
+          [details.starting_km_photo_url, details.ending_km_photo_url] = await Promise.all([
+            signUrl(details.starting_km_photo_url),
+            signUrl(details.ending_km_photo_url),
+          ]);
+        })(),
+      ]);
       break;
     case 'INVENTORY':
       [details.waybill_photo_url, details.undertaking_photo_url] = await Promise.all([
