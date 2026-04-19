@@ -69,11 +69,11 @@ async function run() {
 
     for (const [hash, matches] of Object.entries(hashToVisits)) {
       if (matches.length <= 1) continue;
-      const details = matches.map((match) => `${match.bdmName} -> ${match.doctorName} (ID: ${match.visitId})`).join('; ');
+      const details = matches.map((match) => `${match.bdmName} -> ${match.doctorName}`).join('; ');
       flags.push({
         type: 'DUPLICATE_PHOTO',
         severity: 'high',
-        detail: `Same photo hash (${hash.substring(0, 12)}...) found in ${matches.length} visits: ${details}`,
+        detail: `Same photo reused across ${matches.length} visits: ${details}`,
         bdm_names: [...new Set(matches.map((match) => match.bdmName))],
       });
     }
@@ -84,7 +84,7 @@ async function run() {
         flags.push({
           type: 'DUPLICATE_PHOTO_SAME_VISIT',
           severity: 'medium',
-          detail: `${visit.user?.name || 'Unknown'} submitted duplicate photos within visit to ${visit.doctor ? `Dr. ${visit.doctor.lastName}` : 'Unknown'} (ID: ${visit._id})`,
+          detail: `${visit.user?.name || 'Unknown'} submitted duplicate photos within visit to ${visit.doctor ? `Dr. ${visit.doctor.lastName}` : 'Unknown'}`,
           bdm_names: [visit.user?.name || 'Unknown'],
         });
       }
@@ -114,7 +114,7 @@ async function run() {
           flags.push({
             type: 'SUSPICIOUS_TIMING',
             severity: 'high',
-            detail: `${curr.user?.name || prev.user?.name || 'Unknown'}: visits to ${prev.doctor ? `Dr. ${prev.doctor.lastName}` : 'Unknown'} and ${curr.doctor ? `Dr. ${curr.doctor.lastName}` : 'Unknown'} were ${timeDiffMinutes.toFixed(0)} minutes apart (IDs: ${prev._id}, ${curr._id})`,
+            detail: `${curr.user?.name || prev.user?.name || 'Unknown'}: visits to ${prev.doctor ? `Dr. ${prev.doctor.lastName}` : 'Unknown'} and ${curr.doctor ? `Dr. ${curr.doctor.lastName}` : 'Unknown'} were ${timeDiffMinutes.toFixed(0)} minutes apart`,
             bdm_names: [curr.user?.name || 'Unknown'],
           });
         }
@@ -156,7 +156,7 @@ async function run() {
           flags.push({
             type: 'GPS_ANOMALY',
             severity: 'high',
-            detail: `${curr.user?.name || 'Unknown'}: ${distanceKm.toFixed(1)} km between ${prev.doctor ? `Dr. ${prev.doctor.lastName}` : 'Unknown'} and ${curr.doctor ? `Dr. ${curr.doctor.lastName}` : 'Unknown'} in ${(timeDiffHours * 60).toFixed(0)} minutes (would require ${requiredSpeed.toFixed(0)} km/h). IDs: ${prev._id}, ${curr._id}`,
+            detail: `${curr.user?.name || 'Unknown'}: ${distanceKm.toFixed(1)} km between ${prev.doctor ? `Dr. ${prev.doctor.lastName}` : 'Unknown'} and ${curr.doctor ? `Dr. ${curr.doctor.lastName}` : 'Unknown'} in ${(timeDiffHours * 60).toFixed(0)} minutes (would require ${requiredSpeed.toFixed(0)} km/h)`,
             bdm_names: [curr.user?.name || 'Unknown'],
           });
         }
@@ -177,7 +177,7 @@ async function run() {
       flags.push({
         type: 'WEEKEND_VISIT',
         severity: 'medium',
-        detail: `${visit.user?.name || 'Unknown'} logged a visit to ${visit.doctor ? `Dr. ${visit.doctor.lastName}, ${visit.doctor.firstName}` : 'Unknown'} on ${dayName} (${new Date(visit.visitDate).toLocaleDateString()}) - ID: ${visit._id}`,
+        detail: `${visit.user?.name || 'Unknown'} logged a visit to ${visit.doctor ? `Dr. ${visit.doctor.lastName}, ${visit.doctor.firstName}` : 'Unknown'} on ${dayName} (${new Date(visit.visitDate).toLocaleDateString()})`,
         bdm_names: [visit.user?.name || 'Unknown'],
       });
     }
