@@ -390,6 +390,24 @@ exports.resolveDispute = catchAsync(async (req, res) => {
   await _logAndPushHistory(dispute, 'UNDER_REVIEW', newState, req.user._id, summary, extras);
   await dispute.save();
 
+  // Phase SG-6 #32 — integration event (subscribers: finance, payroll, BDM notification).
+  try {
+    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
+    emit(INTEGRATION_EVENTS.DISPUTE_RESOLVED, {
+      entity_id: dispute.entity_id,
+      actor_id: req.user._id,
+      ref: String(dispute._id),
+      data: {
+        state: newState,
+        outcome,
+        reference_model: dispute.reference_model,
+        reference_id: dispute.reference_id ? String(dispute.reference_id) : null,
+        claim_amount: dispute.claim_amount,
+        summary,
+      },
+    });
+  } catch (err) { console.warn('[resolveDispute] integrationHooks emit skipped:', err.message); }
+
   res.json({ success: true, data: dispute, message: `Dispute ${newState}` });
 });
 

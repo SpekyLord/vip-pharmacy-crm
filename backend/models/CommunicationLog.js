@@ -27,7 +27,7 @@ const communicationLogSchema = new mongoose.Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'User (BDM) is required'],
+      default: null,
     },
 
     // Channel and direction (lookup-driven: COMM_CHANNEL, COMM_DIRECTION)
@@ -105,6 +105,21 @@ const communicationLogSchema = new mongoose.Schema(
       },
       default: 'logged',
     },
+
+    // AI-assisted unmatched inbound message fields
+    pendingAssignment: { type: Boolean, default: false },
+    senderExternalId: { type: String, trim: true },
+    senderName: { type: String, trim: true },
+    senderProfilePic: { type: String, trim: true },
+    aiMatchSuggestion: {
+      doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' },
+      confidence: { type: String, enum: ['high', 'medium', 'low'] },
+      reason: { type: String },
+    },
+    aiMatchStatus: {
+      type: String,
+      enum: ['pending', 'accepted', 'declined', 'auto_assigned'],
+    },
   },
   {
     timestamps: true,
@@ -113,10 +128,13 @@ const communicationLogSchema = new mongoose.Schema(
   }
 );
 
-// ── Pre-validate: at least one of doctor or client must be set ──
+// ── Pre-validate: at least one of doctor or client must be set (unless pendingAssignment) ──
 communicationLogSchema.pre('validate', function (next) {
-  if (!this.doctor && !this.client) {
+  if (!this.doctor && !this.client && !this.pendingAssignment) {
     this.invalidate('doctor', 'At least one of doctor or client is required');
+  }
+  if (!this.user && !this.pendingAssignment) {
+    this.invalidate('user', 'User (BDM) is required');
   }
   // Manual logs require at least 1 screenshot
   if (this.source === 'manual' && (!this.photos || this.photos.length === 0)) {
@@ -139,6 +157,7 @@ communicationLogSchema.index({ client: 1, contactedAt: -1 });
 communicationLogSchema.index({ channel: 1, contactedAt: -1 });
 communicationLogSchema.index({ user: 1, status: 1, contactedAt: -1 });
 communicationLogSchema.index({ externalMessageId: 1 }, { sparse: true });
+communicationLogSchema.index({ pendingAssignment: 1, contactedAt: -1 }, { sparse: true });
 
 // ── Virtuals ──
 communicationLogSchema.virtual('clientType').get(function () {

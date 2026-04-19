@@ -23,6 +23,9 @@ const {
   getLogById,
   archiveLog,
   sendMessage,
+  getUnmatched,
+  assignLog,
+  declineLog,
 } = require('../controllers/communicationLogController');
 
 const { protect } = require('../middleware/auth');
@@ -52,13 +55,20 @@ router.get('/my', adminOrEmployee, getMyLogs);
 router.get('/doctor/:doctorId', adminOrEmployee, getLogsByDoctor);
 router.get('/client/:clientId', adminOrEmployee, getLogsByClient);
 
+// Admin: unmatched pending inbound messages
+router.get('/unmatched', adminOnly, getUnmatched);
+
 // Admin: all logs
 router.get('/', adminOnly, getAllLogs);
 
-// Single log (must be after /my, /doctor, /client to avoid param conflicts)
+// Single log (must be after /my, /doctor, /client, /unmatched to avoid param conflicts)
 router.get('/:id', adminOrEmployee, getLogById);
 
 // Archive
 router.patch('/:id/archive', adminOrEmployee, archiveLog);
+
+// Assign or decline a pending log (admin)
+router.post('/:id/assign', adminOnly, assignLog);
+router.post('/:id/decline', adminOnly, declineLog);
 
 module.exports = router;

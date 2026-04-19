@@ -9,7 +9,8 @@
  */
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Edit2, Trash2, ArrowUpCircle, AlertTriangle, X, ChevronDown, Building2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, ArrowUpCircle, AlertTriangle, X, ChevronDown, Building2, MessageSquare } from 'lucide-react';
+import ConversationDrawer from '../common/ConversationDrawer';
 import doctorService from '../../services/doctorService';
 import userService from '../../services/userService';
 import specializationService from '../../services/specializationService';
@@ -507,6 +508,15 @@ const doctorManagementStyles = `
 
   .action-btn.upgrade:hover {
     background: #ddd6fe;
+  }
+
+  .action-btn.message {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .action-btn.message:hover {
+    background: #bfdbfe;
   }
 
   /* Pagination */
@@ -1348,6 +1358,7 @@ const DoctorManagement = ({
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
   const [hardDeleteTyped, setHardDeleteTyped] = useState('');
+  const [conversationDoctor, setConversationDoctor] = useState(null);
 
   // Mass delete state
   const [showMassDelete, setShowMassDelete] = useState(false);
@@ -1762,6 +1773,13 @@ const DoctorManagement = ({
                           {doctor._clientType !== 'regular' ? (
                             <>
                               <button
+                                onClick={() => setConversationDoctor(doctor)}
+                                className="action-btn message"
+                                title="Open conversation"
+                              >
+                                <MessageSquare size={14} />
+                              </button>
+                              <button
                                 onClick={() => handleEdit(doctor)}
                                 className="action-btn edit"
                               >
@@ -1844,6 +1862,9 @@ const DoctorManagement = ({
                   <div className="mobile-card-actions">
                     {doctor._clientType !== 'regular' ? (
                       <>
+                        <button onClick={() => setConversationDoctor(doctor)} className="action-btn message">
+                          <MessageSquare size={16} /> Message
+                        </button>
                         <button onClick={() => handleEdit(doctor)} className="action-btn edit">
                           <Edit2 size={16} /> Edit
                         </button>
@@ -2516,6 +2537,14 @@ const DoctorManagement = ({
         loading={massDeleteLoading}
         itemCount={massDeleteCount}
       />
+
+      {/* Conversation Drawer */}
+      {conversationDoctor && (
+        <ConversationDrawer
+          doctor={conversationDoctor}
+          onClose={() => setConversationDoctor(null)}
+        />
+      )}
     </div>
   );
 };

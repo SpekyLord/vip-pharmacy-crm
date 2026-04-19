@@ -45,11 +45,15 @@ const pageStyles = `
 `;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Phase SG-Q2 W4 — labels added for SALES_GOAL, INCENTIVE_PAYOUT, DEDUCTION
+// to match the extended PeriodLock.module enum (single source of truth).
+// Keep in sync with backend/erp/models/PeriodLock.js `module` enum.
 const MODULE_LABELS = {
   SALES: 'Sales', COLLECTION: 'Collections', EXPENSE: 'Expenses', JOURNAL: 'Journals',
   PAYROLL: 'Payroll', PURCHASING: 'Purchasing', INVENTORY: 'Inventory',
   BANKING: 'Banking', PETTY_CASH: 'Petty Cash', IC_TRANSFER: 'IC Transfers',
-  INCOME: 'Income'
+  INCOME: 'Income', SALES_GOAL: 'Sales Goals', INCENTIVE_PAYOUT: 'Incentive Payouts',
+  DEDUCTION: 'Deduction Schedules'
 };
 
 export function PeriodLocksContent() {

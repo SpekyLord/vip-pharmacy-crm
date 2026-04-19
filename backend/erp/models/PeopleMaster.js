@@ -167,4 +167,49 @@ peopleMasterSchema.index({ user_id: 1 }, { sparse: true });
 peopleMasterSchema.index({ entity_id: 1, full_name: 'text' });
 peopleMasterSchema.index({ entity_id: 1, reports_to: 1 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase SG-6 #30 — Sales-Goal lifecycle hooks (HRIS-free).
+// Captures the pre-save state so the post-save hook can classify the
+// transition (enroll / close / revise). Additive: does NOT replace any
+// pre-existing hook. Hook logic lives in salesGoalLifecycleHooks.js — it
+// wraps its own writes in a transaction and swallows errors so a Sales
+// Goal issue never blocks a PeopleMaster save.
+// ═══════════════════════════════════════════════════════════════════════════
+peopleMasterSchema.pre('save', async function (next) {
+  try {
+    this.__sgIsNew = this.isNew;
+    if (this.isNew) {
+      this.__sgPrior = null;
+    } else {
+      // Only snapshot the fields the lifecycle hook inspects. Keeps the
+      // synthetic prior object tiny + avoids lazy-loading select:false rows.
+      const prior = await this.constructor.findById(this._id)
+        .select('is_active person_type territory_id entity_id')
+        .lean();
+      this.__sgPrior = prior || null;
+    }
+  } catch (err) {
+    // Non-fatal — prior capture failure degrades the hook to a fresh-enroll
+    // judgement, but never blocks the save.
+    console.warn('[PeopleMaster.pre-save sg-lifecycle capture] failed:', err.message);
+    this.__sgPrior = null;
+    this.__sgIsNew = false;
+  }
+  next();
+});
+
+peopleMasterSchema.post('save', function (doc) {
+  // Lazy require to avoid circular deps at model-load time.
+  try {
+    const { onPersonChanged } = require('../services/salesGoalLifecycleHooks');
+    // Fire-and-forget. onPersonChanged has its own error handling + txn isolation.
+    Promise.resolve().then(() => onPersonChanged(doc)).catch(err => {
+      console.error('[PeopleMaster.post-save sg-lifecycle] failed:', err.message);
+    });
+  } catch (err) {
+    // require() itself failed (e.g. missing service during tests) — ignore.
+    console.warn('[PeopleMaster.post-save sg-lifecycle] require skipped:', err.message);
+  }
+});
+
 module.exports = mongoose.model('PeopleMaster', peopleMasterSchema);

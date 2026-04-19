@@ -4854,3 +4854,173 @@ Frontend MODIFIED:
 - **Digest agent routes exclusively to `reports_to` managers.** BDMs without a `reports_to` line in PeopleMaster are excluded from the digest email pool (their alerts still fire in the per-event email path). Filling in PeopleMaster.reports_to is a data-quality task, not a code change.
 - **YoY chart is capped at top 12 BDMs** to keep the legend readable on tablet. For larger teams, Statistics page (Phase G2) is the right surface for a full per-BDM drill-down.
 - **Plan-version reconciliation in trending is implicit** (via `KpiSnapshot.plan_id` → `IncentivePlan.current_version_id` from SG-4 #21). Joining two snapshots from different versions of the same logical plan works; joining snapshots from entirely different plan headers (different fiscal year is expected; same fiscal-year different entity is not).
+
+## Phase SG-6 — Compliance & Integration Layer ✅ (April 19, 2026)
+
+Closes Section D items **29–32** of `dreamy-skipping-cookie.md`. Brings Sales Goal to full parity with mature VIP ERP modules AND commercial-grade on the core loop. HRIS NOT in scope — user confirmed no external HRIS subscription planned; PeopleMaster alone covers the sales-goal-eligible lifecycle.
+
+### Scope (4 sub-deliverables in one commit)
+
+#### #29 — SOX-readiness Control Matrix
+- **NEW** `backend/erp/controllers/soxControlMatrixController.js` — materializes a control matrix for every Sales Goal state change (16 controls). Reads LIVE config from `MODULE_DEFAULT_ROLES` + `ERP_SUB_PERMISSIONS` + `APPROVAL_MODULE` + `APPROVAL_CATEGORY` + last-N-days `ErpAuditLog` activity per op + segregation-of-duties analyzer (flags users who both CREATE and POST/APPROVE/PAY/REVERSE the same document in the window) + live `integrationHooks.describeRegistry()` panel.
+- **Routes** `GET /sales-goals/sox-control-matrix[?window_days=]` + `/print[?format=pdf|html]`. Reuses existing `pdfRenderer.resolvePdfPreference()` + `htmlToPdf()` — HTML by default, puppeteer PDF when `PDF_RENDERER.BINARY_ENABLED=true`.
+- **NEW** `frontend/src/erp/pages/SoxControlMatrix.jsx` — admin page: window selector + summary cards + control table + SoD findings panel + integration registry panel + Print/Save-as-PDF button. Sidebar entry "SOX Control Matrix" (admin only). App.jsx route `/erp/sales-goals/sox`. WorkflowGuide key `soxControlMatrix`.
+- **Design invariant**: CONTROLS definition is a module constant (not a Lookup). Intentional — the matrix AUDITS the live authorization posture; moving CONTROLS to a lookup would let an admin hide a control by deleting its row (defeats SOX).
+
+#### #30 — PeopleMaster Lifecycle Helpers (HRIS-free)
+- **NEW** `backend/erp/services/salesGoalLifecycleHooks.js` — attached to PeopleMaster via `post('save')`. Pre-save hook snapshots `is_active`, `person_type`, `territory_id`, `entity_id` on `this.__sgPrior`; post-save hook classifies the transition:
+  - **(a) Enroll**: new or newly-eligible → idempotent `SalesGoalTarget(target_type='BDM')` insert using `GOAL_CONFIG.DEFAULT_TARGET_REVENUE` + `plan.collection_target_pct`. Emits `person.auto_enrolled`.
+  - **(b) Close**: deactivated OR role left eligible set → append `TargetRevision` sub-doc on BDM's target + apply `GOAL_CONFIG.DEACTIVATION_PAYOUT_POLICY` lookup (default `finalize_accrued` = leave ACCRUED intact; `reverse_accrued` = flag REJECTED so authority posts reversal JE via ledger UI). Emits `person.lifecycle_closed`.
+  - **(c) Revise**: in-role territory/role change → append `TargetRevision` (source=`PEOPLE_LIFECYCLE`), update territory_id. No payout impact.
+- **Guardrails** (F.1 cross-module safety):
+  - Additive — does NOT replace any existing PeopleMaster hook.
+  - Short-circuits if no active plan for entity (fresh subsidiaries work).
+  - Own transaction per branch — Sales Goal failure NEVER blocks PeopleMaster save.
+  - NEVER posts FI journals auto (human-in-loop invariant — policy `reverse_accrued` flags REJECTED, doesn't post reversal).
+  - All auto-actions write `ErpAuditLog` with `[SG-6 lifecycle]` prefix.
+- **Subscription-ready**: `SALES_GOAL_ELIGIBLE_ROLES` + `GOAL_CONFIG.DEACTIVATION_PAYOUT_POLICY` fully lookup-driven. Adding a new sales role (e.g. `SALES_REP`, `TERRITORY_MANAGER`) is a 1-row lookup edit.
+
+#### #31 — Mid-Period Target Revision Workflow
+- **NEW** `salesGoalController.reviseTarget` + `POST /sales-goals/targets/:id/revise`. Required `revision_reason`. Gated via `gateApproval(module='SALES_GOAL_PLAN', docType='TARGET_REVISION')` — non-authorized submitters routed through Approval Hub (HTTP 202). Transaction-wrapped. Emits `target.revised`.
+- **NEW schema field** `SalesGoalTarget.target_revisions[]` — append-only sub-doc array with `{ revised_at, revised_by, revision_reason, prior_sales_target, prior_collection_target, prior_territory_id, prior_person_id, source (MANUAL|PEOPLE_LIFECYCLE|SYSTEM), approval_request_id }`.
+- **Feature toggle**: `MID_PERIOD_REVISION_ENABLED` lookup (default disabled). Canonical path remains "reopen plan → edit → reactivate" unless admin opts in via Control Center.
+- **Historical snapshot safety**: existing KpiSnapshot rows stay tied to the value that was active at compute time. Future snapshots re-compute from revision point forward (SG-4 plan-versioning pattern, applied at the target level).
+
+#### #32 — Integration Hook Registry
+- **NEW** `backend/erp/services/integrationHooks.js` — in-process event bus. `on(event, handler)` registers a listener, `emit(event, payload)` dispatches. Listeners run on next microtask (non-blocking). Per-handler try/catch — one bad listener never blocks emission. Every emit also writes to `ErpAuditLog` (`target_model: 'IntegrationEvent'`) for replayable signal stream.
+- **Event codes** (all lookup-registered in `INTEGRATION_EVENTS`):
+  - `plan.activated`, `plan.closed`, `plan.reopened`, `plan.versioned`
+  - `payout.accrued`, `payout.approved`, `payout.paid`, `payout.reversed`
+  - `dispute.filed`, `dispute.resolved`
+  - `target.revised`
+  - `person.auto_enrolled`, `person.lifecycle_closed`
+- **Emit sites wired** (Sales Goal never imports consumers):
+  - `salesGoalController.activatePlan/closePlan/reopenPlan/reviseTarget`
+  - `salesGoalService.accrueIncentive` (fresh payout only, not race-recovery)
+  - `incentivePayoutController.approvePayout/payPayout/reversePayout`
+  - `incentiveDisputeController.resolveDispute`
+  - `salesGoalLifecycleHooks.enrollPerson/closePersonLifecycle`
+- **describeRegistry()** surfaces listener counts + enabled state for the SOX matrix registry panel.
+
+### Wiring map (Phase SG-6)
+
+```
+Backend NEW:
+  backend/erp/services/integrationHooks.js
+  backend/erp/services/salesGoalLifecycleHooks.js
+  backend/erp/controllers/soxControlMatrixController.js
+
+Backend MODIFIED:
+  backend/erp/models/PeopleMaster.js                  [+pre('save') prior-capture, +post('save') sg-lifecycle fire-and-forget]
+  backend/erp/models/SalesGoalTarget.js               [+targetRevisionSchema sub-doc + target_revisions[] array]
+  backend/erp/controllers/salesGoalController.js      [+reviseTarget, +integration emit on activate/close/reopen]
+  backend/erp/controllers/incentivePayoutController.js[+integration emit on approve/pay/reverse]
+  backend/erp/controllers/incentiveDisputeController.js[+integration emit on resolve]
+  backend/erp/services/salesGoalService.js            [+integration emit on accrueIncentive (fresh only)]
+  backend/erp/controllers/lookupGenericController.js  [+MID_PERIOD_REVISION_ENABLED, +INTEGRATION_EVENTS, +GOAL_CONFIG.DEACTIVATION_PAYOUT_POLICY]
+  backend/erp/routes/salesGoalRoutes.js               [+POST /targets/:id/revise, +GET /sox-control-matrix, +/print]
+
+Frontend NEW:
+  frontend/src/erp/pages/SoxControlMatrix.jsx
+
+Frontend MODIFIED:
+  frontend/src/erp/hooks/useSalesGoals.js             [+getSoxControlMatrix, soxControlMatrixPrintUrl, reviseTarget]
+  frontend/src/erp/components/WorkflowGuide.jsx       [+soxControlMatrix guide]
+  frontend/src/App.jsx                                [+SoxControlMatrix lazy + route /erp/sales-goals/sox]
+  frontend/src/components/common/Sidebar.jsx          [+SOX Control Matrix (admin/finance/president)]
+```
+
+### Acceptance checklist (Phase SG-6)
+
+- [x] `node -c` clean on every modified/new backend file (11 files verified).
+- [x] Runtime `require()` loads every new service + controller without missing-module errors.
+- [x] `npx vite build --mode development` clean — `SoxControlMatrix-*.js` chunk emitted.
+- [x] `node backend/scripts/startupCheck.js` — passed.
+- [x] `node backend/scripts/verifyRejectionWiring.js` — OK (20 modules verified, 0 warnings).
+- [x] No modifications to Expense/Collection/CALF/SMER/PettyCash/Journal/Payroll controllers. PeopleMaster gets ONLY a pre/post-save hook attached — no schema field additions.
+- [x] All new lookups are entity-scoped, seeded with defaults, admin-editable (`MID_PERIOD_REVISION_ENABLED`, `INTEGRATION_EVENTS`, `GOAL_CONFIG.DEACTIVATION_PAYOUT_POLICY`).
+- [x] SOX matrix NEVER governs access — it REPORTS. Changing a matrix row has no effect; change the underlying lookup to actually adjust posture.
+- [x] Lifecycle hook short-circuits on first-entity save (no active plan yet — zero crashes).
+- [x] Integration emit is fire-and-forget — no `await` in any emit site. Listener errors are per-handler, never block emitting module.
+- [x] Mid-period revision gated by `MID_PERIOD_REVISION_ENABLED` lookup; default disabled — "reopen plan" remains canonical unless admin opts in.
+- [x] Integration emit functional test: `on('plan.activated', fn) + emit('plan.activated', {...})` roundtrips payload.
+- [ ] **Manual smoke (staging — required before wider rollout)**:
+  - Deactivate a BDM in PeopleMaster (flip `is_active=false`) → next compute excludes them from leaderboard; per `DEACTIVATION_PAYOUT_POLICY`, their open ACCRUED rows are either left intact (`finalize_accrued`) or flagged REJECTED (`reverse_accrued`). `ErpAuditLog` shows `[SG-6 lifecycle]` entry. PeopleMaster save NEVER errors.
+  - Add a new active BDM → lifecycle hook creates `SalesGoalTarget(target_type='BDM')` with `GOAL_CONFIG.DEFAULT_TARGET_REVENUE`. Emits `person.auto_enrolled`.
+  - Toggle `MID_PERIOD_REVISION_ENABLED.metadata.enabled = true` → POST `/sales-goals/targets/:id/revise` with `{ revision_reason, sales_target }` → authority gate fires for non-president; president path appends `target_revisions[]` + emits `target.revised`. Historical KpiSnapshot rows untouched; re-run Compute KPIs → future snapshots use new target.
+  - Open `/erp/sales-goals/sox` as admin → 16 controls rendered, live allowed_roles match MODULE_DEFAULT_ROLES, actor counts populated from recent activity, segregation findings panel populated, integration registry shows 13 event codes (listener counts = 0 until a subscriber wires `integrationHooks.on`).
+  - Click Print / Save as PDF → new window opens with HTML view (or PDF if PDF_RENDERER.BINARY_ENABLED=true + puppeteer installed).
+  - Activate a plan as president → check ErpAuditLog for a `target_model: 'IntegrationEvent'` row with `new_value: 'plan.activated'`.
+
+### Known limitations / future hooks (Phase SG-6)
+
+- **SOX CONTROLS list is a module constant, not a lookup.** Intentional — see §#29 design invariant. If subscribers add new Sales Goal state changes (unlikely in ERP core, possible for plugin modules), they extend `CONTROLS` in `soxControlMatrixController.js` — one edit, not a lookup race.
+- **Lifecycle hook runs on EVERY PeopleMaster save**, including no-op saves (touching a non-classified field). Short-circuits after the `prior === current` classification, so the cost is one indexed query + one memory compare. Does NOT introduce measurable latency on the PeopleMaster write path.
+- **Integration event bus is in-process only.** Cross-process (multi-node) subscribers need a message broker. Acceptable for current VIP deployment (single Node instance); for horizontal scaling this file is the right place to swap in Redis/Kafka without changing emit sites.
+- **`reverse_accrued` policy flags REJECTED — does NOT auto-post reversal JE.** By design (human-in-loop invariant). Authority sees the REJECTED row in the payout ledger and clicks Reverse, which posts the SAP-Storno JE via `reverseJournal`. Documented in the GOAL_CONFIG lookup metadata so admins understand before flipping.
+- **Mid-period revision does NOT cascade to IncentivePayout retroactively.** If a BDM already has an ACCRUED payout and you revise their target downward, the accrued tier_budget STAYS at the pre-revision value (matches "historical snapshots immutable" posture from SG-4). To re-accrue at the new tier, authority reverses the payout, then re-runs Compute KPIs.
+- **SOX matrix audit window is capped at 365 days** to keep the query fast. For annual SOX reports, run the endpoint on a dated window and archive the PDF offsite.
+- **No auto-discovery of subscribers** — listeners are registered by module init code. Drop-in extension is one-liner (`integrationHooks.on('payout.paid', handler)` at module startup), but there's no registration CLI.
+
+---
+
+## Phase SG-Q2 W4 — Period-Lock Hardening on Sales Goals + Orphan Cleanup ✅ (April 19, 2026)
+
+Closes the Q2 evaluation gap on Rule #20 compliance for the Sales Goal module AND fixes three pre-existing orphan bugs in the period-lock matrix that were silently broken since SG-Q2 W2.
+
+### Scope
+
+#### Period-lock wiring (the Gap-1 work)
+- **Extended `PeriodLock.module` enum** ([backend/erp/models/PeriodLock.js](backend/erp/models/PeriodLock.js)) — added `SALES_GOAL`, `INCENTIVE_PAYOUT`, `DEDUCTION`. Non-breaking; existing rows already use values inside the new superset.
+- **NEW middleware** [backend/erp/middleware/periodLockCheckByPlan.js](backend/erp/middleware/periodLockCheckByPlan.js) — sibling to `periodLockCheck`. For plan-spanning routes, loads the referenced `SalesGoalPlan`, derives `fiscal_year`, and rejects if ANY month of that year is locked for the moduleKey. Read plan id from `req.params.id` (preferred) or `req.body.plan_id`. POST/PUT/PATCH only; gracefully skips when plan id, plan, or `req.entityId` missing.
+- **Wired 7 sales-goal routes** ([backend/erp/routes/salesGoalRoutes.js](backend/erp/routes/salesGoalRoutes.js)):
+  - Plan-spanning (use `periodLockCheckByPlan('SALES_GOAL')`): `/plans/:id/activate`, `/plans/:id/reopen`, `/plans/:id/close`, `/targets/bulk`, `/targets/import`
+  - Period-specific (use `periodLockCheck('SALES_GOAL')`): `/snapshots/compute`, `/kpi/manual`
+  - Order: erpAccessCheck → erpSubAccessCheck → period guard → handler → `gateApproval` (internal). Matches existing convention.
+
+#### Orphan-bug cleanup (discovered during the audit)
+- **O1 — `INCENTIVE_PAYOUT` was wired but missing from enum.** Wire-up at `incentivePayoutRoutes.js:49,55` (Pay/Reverse) was silently no-op since SG-Q2 W2 — the middleware queried an enum value that didn't exist. Now closed via the enum extension.
+- **O2 — `DEDUCTION` was wired but missing from enum.** Same orphan pattern at `deductionScheduleRoutes.js:28,31,34`. Now closed.
+- **O3 — `periodLockController.MODULES` constant out of sync with model.** Hardcoded list never updated when `INCOME` was added → matrix UI silently dropped INCOME locks. Replaced the constant with `PeriodLock.schema.path('module').enumValues` so the controller is a single-source-of-truth derivative.
+- **O4 — `controlCenterController.js:78` hardcoded "10 modules" stat.** Replaced with `PeriodLock.schema.path('module').enumValues.length` so the stat card stays accurate forever.
+- **O5 — Frontend `PeriodLocks.jsx` MODULE_LABELS missing 3 keys.** Added `SALES_GOAL`, `INCENTIVE_PAYOUT`, `DEDUCTION` labels (INCOME was already present — agent earlier was wrong).
+
+#### Workflow guides (Rule #1)
+- **`salesGoalDashboard` banner** ([frontend/src/erp/components/WorkflowGuide.jsx:1311](frontend/src/erp/components/WorkflowGuide.jsx)) — added a step explaining which actions are gated by SALES_GOAL period locks and how to unlock.
+- **`incentivePayoutLedger` banner** — already documented period-lock interaction (line 1498, 1511); no edit needed. Verified.
+
+### Files touched (10)
+
+| File | Change |
+|---|---|
+| `backend/erp/models/PeriodLock.js` | enum +3 keys |
+| `backend/erp/controllers/periodLockController.js` | MODULES → enum derive |
+| `backend/erp/controllers/controlCenterController.js` | totalModules → enum derive |
+| `backend/erp/middleware/periodLockCheckByPlan.js` | NEW |
+| `backend/erp/routes/salesGoalRoutes.js` | wire 7 routes |
+| `frontend/src/erp/pages/PeriodLocks.jsx` | +3 labels |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | salesGoalDashboard step |
+| `CLAUDE-ERP.md` | period-lock invariant updated |
+| `docs/PHASETASK-ERP.md` | this entry |
+
+### Audit findings — what was already shipped (false alarms in the original gap list)
+
+The Q2-eval gap brief listed four items. Only Gap 1 (period-lock middleware) was a real gap. The others were already shipped:
+
+- **Gap 2 (payout lifecycle routes)** — `/incentive-payouts/:id/{approve,pay,reverse}` + `/payable?period=` all wired in `incentivePayoutRoutes.js:22,41-57` since SG-Q2 W2 with full middleware stack. No work.
+- **Gap 3 (lookup seeds)** — `CREDIT_RULE_TEMPLATES`, `DISPUTE_SLA_DAYS`, `COMP_STATEMENT_TEMPLATE` all lazy-seeded in `lookupGenericController.js:941,1012,981`. `ACTIVE_PLAN_VERSION` is intentionally NOT a lookup — operational state lives in `IncentivePlan.current_version_id` (see `incentivePlanService.js:15` design note). No work.
+- **Gap 4 (auto-enrollment from PeopleMaster)** — `autoEnrollEligibleBdms()` ([salesGoalController.js:51](backend/erp/controllers/salesGoalController.js)) called inside `activatePlan` transaction at line 365. Plus ongoing post-save hook in `salesGoalLifecycleHooks.js`. No admin click-enroll required. No work.
+
+### Integrity guarantees
+
+- **Single source of truth**: every module list (controller MODULES, Control Center stat) derives from `PeriodLock.schema.path('module').enumValues`. Adding a future module = one edit (enum), zero downstream code changes.
+- **Entity isolation preserved**: middleware filters by `req.entityId` (Tenant A's lock doesn't bleed to Tenant B). Unique index already includes `entity_id`.
+- **No regression to 26 existing `periodLockCheck()` call sites**: original middleware unchanged. New behavior lives in sibling `periodLockCheckByPlan`.
+- **Default-Roles Gate order preserved**: erpAccessCheck → erpSubAccessCheck → period guard → handler (which calls `gateApproval` internally). Authority Matrix routing unaffected.
+- **Agent (cron) bypass intentional**: `kpiSnapshotAgent` calls `salesGoalService` directly, not HTTP. No req.body collision; agent can compute snapshots even in locked periods because it writes to historical YTD rows that admins lock specifically to freeze user-facing edits, not to halt the daily catch-up cron.
+
+### Future hooks (deferred — not blocking Q2)
+
+- **`PERIOD_LOCKABLE_MODULES` lookup category** — to remove the enum entirely, swap the schema enum for a custom validator that reads the lookup. Migration is non-breaking. Useful for plugin-style subsidiaries that want to lock additional custom modules. Skipped here per Rule #3 carve-out for immutable code identifiers.
+- **`GET /api/erp/period-locks/modules` endpoint** — to remove frontend `MODULE_LABELS` hardcoding and let subscribers customize labels. Skipped here.
+- **Wiring-check script** that fails CI if any `periodLockCheck('X')` argument is not in `PeriodLock.module` enum — would have caught O1+O2 earlier. Worth Phase SG-Q2 W5.

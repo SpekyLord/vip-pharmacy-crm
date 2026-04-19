@@ -2,7 +2,15 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { erpAccessCheck, erpSubAccessCheck } = require('../middleware/erpAccessCheck');
+// Phase SG-Q2 W4 — period-lock guards on plan-spanning + period-specific writes.
+// `periodLockCheck` reads explicit period from req.body; `periodLockCheckByPlan`
+// derives fiscal_year from the referenced SalesGoalPlan and rejects if any
+// month in that year is locked for SALES_GOAL.
+const periodLockCheck = require('../middleware/periodLockCheck');
+const periodLockCheckByPlan = require('../middleware/periodLockCheckByPlan');
 const c = require('../controllers/salesGoalController');
+// Phase SG-6 #29 — SOX Control Matrix (sibling controller for readability).
+const sox = require('../controllers/soxControlMatrixController');
 
 // Phase SG-3R — xlsx upload for /targets/import (in-memory, 5 MB cap,
 // single-file). The handler validates MIME/extension itself to keep route
@@ -22,9 +30,9 @@ router.get('/plans', c.getPlans);
 router.get('/plans/:id', c.getPlanById);
 router.post('/plans', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.createPlan);
 router.put('/plans/:id', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.updatePlan);
-router.post('/plans/:id/activate', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.activatePlan);
-router.post('/plans/:id/reopen', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.reopenPlan);
-router.post('/plans/:id/close', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.closePlan);
+router.post('/plans/:id/activate', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), periodLockCheckByPlan('SALES_GOAL'), c.activatePlan);
+router.post('/plans/:id/reopen', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), periodLockCheckByPlan('SALES_GOAL'), c.reopenPlan);
+router.post('/plans/:id/close', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), periodLockCheckByPlan('SALES_GOAL'), c.closePlan);
 // Phase SG-3R — President-Reverse (SAP Storno cascade to targets, snapshots,
 // IncentivePayouts, journals). Gated by accounting.reverse_posted (baseline
 // danger sub-perm, never inherited from FULL). President bypasses automatically.
@@ -48,14 +56,19 @@ router.get('/trending', c.getTrending);
 router.get('/targets', c.getTargets);
 router.get('/targets/mine', c.getMyTarget);
 router.post('/targets', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.createTarget);
-router.post('/targets/bulk', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.bulkCreateTargets);
+router.post('/targets/bulk', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), periodLockCheckByPlan('SALES_GOAL'), c.bulkCreateTargets);
 // Phase SG-3R — Excel import endpoint. Mounted BEFORE /targets/:id so
 // the string literal "import" is never captured as a param.
-router.post('/targets/import', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), upload.single('file'), c.importTargets);
+router.post('/targets/import', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), periodLockCheckByPlan('SALES_GOAL'), upload.single('file'), c.importTargets);
 router.put('/targets/:id', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.updateTarget);
+// Phase SG-6 #31 — Mid-period target revision (opt-in via MID_PERIOD_REVISION_ENABLED lookup).
+// Gated by gateApproval(module='SALES_GOAL_PLAN', docType='TARGET_REVISION'). Period-lock
+// check runs inside the controller (route :id is the target, not the plan — the controller
+// resolves target.plan_id and checks PeriodLock directly).
+router.post('/targets/:id/revise', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.reviseTarget);
 
 // ═══ KPI Snapshots ═══
-router.post('/snapshots/compute', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'kpi_compute'), c.computeSnapshots);
+router.post('/snapshots/compute', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'kpi_compute'), periodLockCheck('SALES_GOAL'), c.computeSnapshots);
 router.get('/snapshots', c.getSnapshots);
 router.get('/snapshots/mine', c.getMySnapshot);
 
@@ -73,6 +86,14 @@ router.put('/actions/:id', c.updateAction);
 router.post('/actions/:id/complete', c.completeAction);
 
 // ═══ Manual KPI Entry ═══
-router.post('/kpi/manual', c.enterManualKpi);
+router.post('/kpi/manual', periodLockCheck('SALES_GOAL'), c.enterManualKpi);
+
+// ═══ Phase SG-6 #29 — SOX Control Matrix ═══
+// Admin/finance/president only (never a line user). Granular access uses
+// erpSubAccessCheck('sales_goals', 'plan_manage') because the matrix surfaces
+// the same operational surface as plan governance. Print route serves HTML
+// (or PDF via puppeteer if PDF_RENDERER.BINARY_ENABLED is true).
+router.get('/sox-control-matrix', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), sox.getControlMatrix);
+router.get('/sox-control-matrix/print', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), sox.printControlMatrix);
 
 module.exports = router;

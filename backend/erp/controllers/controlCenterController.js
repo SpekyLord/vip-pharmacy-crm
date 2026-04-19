@@ -73,9 +73,10 @@ exports.getHealth = catchAsync(async (req, res) => {
     govRates[row._id] = row.count;
   }
 
-  // Period locks for current month
+  // Period locks for current month — derive total from PeriodLock enum so the
+  // count never drifts when modules are added (Phase SG-Q2 W4 added 3 new keys).
   const lockedModules = periodLocksCurrent.filter(p => p.is_locked).length;
-  const totalModules = 10; // SALES, COLLECTION, EXPENSE, JOURNAL, PAYROLL, PURCHASING, INVENTORY, BANKING, PETTY_CASH, IC_TRANSFER
+  const totalModules = PeriodLock.schema.path('module').enumValues.length;
 
   res.json({
     success: true,

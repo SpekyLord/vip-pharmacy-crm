@@ -232,6 +232,25 @@ const SEED_DEFAULTS = {
     // 0 means "create target rows with zero sales_target — president will fill in per-BDM manually".
     // Set a non-zero value if your subsidiary wants every BDM to start with the same baseline target.
     { code: 'DEFAULT_TARGET_REVENUE', label: 'Default BDM Sales Target (auto-enroll)', metadata: { value: 0 } },
+    // Phase SG-6 #30 — policy for what to do with OPEN IncentivePayout rows
+    // when a BDM is deactivated or leaves the eligible role set (PeopleMaster
+    // lifecycle hook). `finalize_accrued` (default) keeps accruals intact so
+    // authority finishes the lifecycle; `reverse_accrued` flags them REJECTED
+    // so authority can post a reversal JE via the payout ledger UI.
+    // Lifecycle hook NEVER posts a reversal JE automatically — always human-in-loop.
+    {
+      code: 'DEACTIVATION_PAYOUT_POLICY',
+      label: 'Lifecycle Deactivation Payout Policy',
+      metadata: {
+        value: 'finalize_accrued',
+        allowed_values: ['finalize_accrued', 'reverse_accrued'],
+        description:
+          'When a BDM is deactivated or their role leaves SALES_GOAL_ELIGIBLE_ROLES, ' +
+          'what happens to open ACCRUED IncentivePayout rows? ' +
+          '`finalize_accrued` (default) = leave as ACCRUED, authority finishes. ' +
+          '`reverse_accrued` = flag REJECTED, authority posts reversal JE from ledger.',
+      },
+    },
   ],
   // Phase SG-3R — growth driver master promotion.
   // `metadata.default_kpi_codes[]` and `metadata.default_weight` are consumed by
@@ -866,6 +885,49 @@ const SEED_DEFAULTS = {
   // zero code change required. Codes MUST exactly match PERSON_TYPE lookup codes.
   SALES_GOAL_ELIGIBLE_ROLES: [
     { code: 'BDM', label: 'BDM (Business Development Manager)', metadata: { description: 'Primary field sales role. Seeded as default enrollment target.' } },
+  ],
+
+  // Phase SG-6 #31 — Mid-period target revision feature toggle.
+  // DISABLED by default: the canonical adjustment path is "reopen plan → edit
+  // target → reactivate". Enabling this lookup row opens the POST
+  // /sales-goal-targets/:id/revise endpoint, which appends a TargetRevision
+  // sub-doc and preserves historical snapshot accuracy. Gated by
+  // gateApproval(module='SALES_GOAL_PLAN', docType='TARGET_REVISION') when on.
+  MID_PERIOD_REVISION_ENABLED: [
+    {
+      code: 'DEFAULT',
+      label: 'Enable Mid-Period Target Revision',
+      metadata: {
+        enabled: false,
+        value: false,
+        description:
+          'When enabled, admins can adjust individual SalesGoalTarget rows ' +
+          'mid-period without reopening the whole plan. Revisions are logged ' +
+          'as TargetRevision sub-docs; historical snapshots remain immutable. ' +
+          'Disabled by default — flip to true to opt in.',
+      },
+    },
+  ],
+
+  // Phase SG-6 #32 — Integration event registry. Other ERP modules
+  // (payroll, accounting close, HR, future integrations) subscribe to these
+  // events via integrationHooks.on(); Sales Goal never imports consumers.
+  // Admins see this registry in the SOX Control Matrix to confirm which
+  // events are wired + how many listeners each has.
+  INTEGRATION_EVENTS: [
+    { code: 'plan.activated',    label: 'Sales Goal Plan Activated',    metadata: { description: 'Plan transitioned to ACTIVE. Payload: plan_id, plan_name, fiscal_year, enrolled_count, target_revenue.' } },
+    { code: 'plan.closed',       label: 'Sales Goal Plan Closed',       metadata: { description: 'Plan transitioned to CLOSED. Payload: plan_id, plan_name, fiscal_year.' } },
+    { code: 'plan.reopened',     label: 'Sales Goal Plan Reopened',     metadata: { description: 'Plan transitioned back to DRAFT. Payload: plan_id, plan_name, fiscal_year.' } },
+    { code: 'plan.versioned',    label: 'Plan New Version Created',     metadata: { description: 'SG-4 #21 — v(N+1) of logical IncentivePlan header minted. Payload: basis_plan_id, new_plan_id, version_no.' } },
+    { code: 'payout.accrued',    label: 'Incentive Payout Accrued',     metadata: { description: 'Tier qualification posted DR Incentive Expense / CR Incentive Accrual. Payload: plan_id, bdm_id, period, tier_code, tier_budget, journal_number.' } },
+    { code: 'payout.approved',   label: 'Incentive Payout Approved',    metadata: { description: 'Authority confirmed accrued amount. Payload: bdm_id, period, tier_code, tier_budget.' } },
+    { code: 'payout.paid',       label: 'Incentive Payout Paid',        metadata: { description: 'Settlement JE posted DR Incentive Accrual / CR funding COA. Payload: bdm_id, period, tier_code, tier_budget, paid_via, settlement_je.' } },
+    { code: 'payout.reversed',   label: 'Incentive Payout Reversed',    metadata: { description: 'SAP-Storno reversal posted on accrual. Payload: bdm_id, period, tier_code, tier_budget, reason, reversal_je.' } },
+    { code: 'dispute.filed',     label: 'Incentive Dispute Filed',      metadata: { description: 'BDM filed against payout or credit. Payload: reference_model, reference_id, claim_amount.' } },
+    { code: 'dispute.resolved',  label: 'Incentive Dispute Resolved',   metadata: { description: 'Reviewer approved or denied dispute. Payload: state, outcome, reference_model, reference_id, claim_amount.' } },
+    { code: 'target.revised',    label: 'Target Mid-Period Revised',    metadata: { description: 'SG-6 #31 — TargetRevision sub-doc appended. Payload: plan_id, target_type, target_label, prior_sales_target, new_sales_target.' } },
+    { code: 'person.auto_enrolled',     label: 'Person Auto-Enrolled (SG-6 #30)',        metadata: { description: 'PeopleMaster lifecycle hook created a BDM target. Payload: plan_id, person_name, role.' } },
+    { code: 'person.lifecycle_closed',  label: 'Person Lifecycle Closed (SG-6 #30)',     metadata: { description: 'PeopleMaster deactivated or left eligible role. Payload: plan_id, person_name, policy, open_payouts_affected, prior_role, new_role.' } },
   ],
 
   // Phase SG-4 #22 — Credit rule presets. Each row is a starter template that
